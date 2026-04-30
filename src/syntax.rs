@@ -1966,7 +1966,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::FunctionCallExtended => {
       // Merged rule: FunctionCall + optional Part extraction + optional implicit multiplication suffix
-      // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ [PartIndexSuffix | FunctionCallImplicitSuffix]
+      // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ DerivativePrime? [PartIndexSuffix | FunctionCallImplicitSuffix]
       // Note: Anonymous function suffix (&) is NOT handled here — it is handled
       // at the Expression level via AnonymousFunctionSuffix so that `&` gets the
       // correct low precedence (binds the whole infix chain, not just the call).
@@ -1974,11 +1974,38 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
 
       let name_pair = &inner_pairs[0];
 
-      // Check for derivative prime notation (f', f'', f''')
-      let derivative_order = inner_pairs
-        .iter()
-        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-        .map(|p| p.as_str().len());
+      // A leading DerivativePrime (between Identifier and BracketArgs)
+      // applies to the head symbol: `f'[x]` → `Derivative[1][f][x]`. A
+      // trailing DerivativePrime (after the last BracketArgs) wraps the
+      // entire call: `h[1]'` → `Derivative[1][h[1]]`.
+      let first_bracket_idx_fce =
+        inner_pairs.iter().enumerate().find_map(|(i, p)| {
+          if matches!(p.as_rule(), Rule::BracketArgs) {
+            Some(i)
+          } else {
+            None
+          }
+        });
+      let last_bracket_idx_fce =
+        inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
+          if matches!(p.as_rule(), Rule::BracketArgs) {
+            Some(i)
+          } else {
+            None
+          }
+        });
+      let derivative_order = first_bracket_idx_fce.and_then(|fb| {
+        inner_pairs[..fb]
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+          .map(|p| p.as_str().len())
+      });
+      let trailing_prime_order_fce = last_bracket_idx_fce.and_then(|lb| {
+        inner_pairs[lb + 1..]
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+          .map(|p| p.as_str().len())
+      });
 
       // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
       let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
@@ -2062,6 +2089,20 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
             result
           }
         };
+
+      // A trailing DerivativePrime wraps the entire constructed call in
+      // `Derivative[n][...]` (e.g. `h[1]'` → `Derivative[1][h[1]]`).
+      let base_func = if let Some(order) = trailing_prime_order_fce {
+        Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![Expr::Integer(order as i128)],
+          }),
+          args: vec![base_func],
+        }
+      } else {
+        base_func
+      };
 
       // Helper: parse FunctionCallImplicitSuffix inner pairs into multiplication factors
       // (same logic as ImplicitTimes handler)
@@ -2179,11 +2220,37 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::FunctionCall => {
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let name_pair = &inner_pairs[0];
-      // Check for derivative prime notation
-      let derivative_order = inner_pairs
-        .iter()
-        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
-        .map(|p| p.as_str().len());
+      // Leading vs. trailing DerivativePrime: a leading prime applies to
+      // the head (`f'[x]` → `Derivative[1][f][x]`); a trailing prime wraps
+      // the entire call (`h[1]'` → `Derivative[1][h[1]]`).
+      let first_bracket_idx_fc =
+        inner_pairs.iter().enumerate().find_map(|(i, p)| {
+          if matches!(p.as_rule(), Rule::BracketArgs) {
+            Some(i)
+          } else {
+            None
+          }
+        });
+      let last_bracket_idx_fc =
+        inner_pairs.iter().enumerate().rev().find_map(|(i, p)| {
+          if matches!(p.as_rule(), Rule::BracketArgs) {
+            Some(i)
+          } else {
+            None
+          }
+        });
+      let derivative_order = first_bracket_idx_fc.and_then(|fb| {
+        inner_pairs[..fb]
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+          .map(|p| p.as_str().len())
+      });
+      let trailing_prime_order_fc = last_bracket_idx_fc.and_then(|lb| {
+        inner_pairs[lb + 1..]
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+          .map(|p| p.as_str().len())
+      });
       // Collect bracket sequences separately for proper chained call handling
       let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
         .iter()
@@ -2234,7 +2301,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       } else {
         let name = name_pair.as_str().to_string();
         // Build chained calls: f[a][b] becomes Apply(f[a], b)
-        if bracket_sequences.len() == 1 {
+        let result = if bracket_sequences.len() == 1 {
           Expr::FunctionCall {
             name,
             args: bracket_sequences.into_iter().next().unwrap(),
@@ -2253,6 +2320,19 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               args,
             };
           }
+          result
+        };
+        // Trailing DerivativePrime wraps the entire call:
+        // `h[1]'` → `Derivative[1][h[1]]`.
+        if let Some(order) = trailing_prime_order_fc {
+          Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: "Derivative".to_string(),
+              args: vec![Expr::Integer(order as i128)],
+            }),
+            args: vec![result],
+          }
+        } else {
           result
         }
       }

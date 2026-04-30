@@ -121,6 +121,28 @@ pub fn dispatch_calculus_functions(
       }));
     }
     "Derivative" if args.len() == 2 => {
+      // `Derivative[n][expr]` where `expr` is not an identifier or pure
+      // function (e.g. a String, FunctionCall like `h[1]`, etc.) keeps the
+      // curried form unchanged in Wolfram, since there is no symbolic
+      // derivative rule for such heads. Returning the CurriedCall avoids
+      // collapsing to `Derivative[n, expr]` which would lose the AST shape
+      // wolframscript preserves. Skip Integer/BigInteger arg shapes — those
+      // belong to the multi-index `Derivative[n1, n2]` form, which is
+      // unrelated to applying a derivative to a value.
+      if !matches!(&args[1],
+        Expr::Identifier(_)
+          | Expr::Function { .. }
+          | Expr::Integer(_)
+          | Expr::BigInteger(_))
+      {
+        return Some(Ok(Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![args[0].clone()],
+          }),
+          args: vec![args[1].clone()],
+        }));
+      }
       // Derivative[n][f] → compute the nth derivative symbolically
       // and return as a pure function body&
       if let Expr::Integer(n) = &args[0] {

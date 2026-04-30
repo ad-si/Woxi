@@ -789,6 +789,18 @@ pub fn expr_sort_key(e: &Expr) -> String {
       // For other function calls (like C[1], Sin[x]), use the function name
       name.clone()
     }
+    // For CurriedCall whose head is itself a FunctionCall (e.g. the
+    // `Derivative[1][f]` shape stored as `CurriedCall { Derivative[1], [f] }`),
+    // use the inner head name as the sort key. This keeps mixed flat
+    // (`FunctionCall { Derivative, [1, f] }`) and curried forms in the
+    // same sort bucket so Times canonical ordering can compare their
+    // arguments structurally.
+    Expr::CurriedCall { func, .. } => {
+      if let Expr::FunctionCall { name, .. } = func.as_ref() {
+        return name.clone();
+      }
+      crate::syntax::expr_to_string(e)
+    }
     Expr::BinaryOp { op, left, right } => {
       use crate::syntax::BinaryOperator;
       match op {

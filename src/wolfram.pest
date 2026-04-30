@@ -330,6 +330,7 @@ DerivativeIdentifier = { Identifier ~ DerivativePrime }
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 FunctionCallExtended = {
     Identifier ~ DerivativePrime? ~ BracketArgs+
+    ~ DerivativePrime?
     ~ (
         PartIndexSuffix ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
       | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix
@@ -588,7 +589,7 @@ FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? }
 FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
-FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }
+FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
 FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }

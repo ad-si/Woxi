@@ -2819,7 +2819,19 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       }
       _ => 2,
     },
-    // CurriedCall (e.g. Derivative[1][y][x]) sorts after regular function calls
+    // CurriedCall (e.g. Derivative[1][y][x]) sorts after regular function
+    // calls — except curried `Derivative[n][expr]`, which gets the same
+    // subpriority as the equivalent flat `Derivative[n, expr]` form
+    // (FunctionCall, subpriority 2). Without this, mixed `Derivative[1][f]`
+    // (flat) and `Derivative[1][string]` (curried) factors don't share
+    // a sort bucket and can't be compared structurally for canonical Times
+    // ordering.
+    Expr::CurriedCall { func, .. }
+      if matches!(func.as_ref(),
+        Expr::FunctionCall { name, .. } if name == "Derivative") =>
+    {
+      2
+    }
     Expr::CurriedCall { .. } => 3,
     _ => 0,
   }
