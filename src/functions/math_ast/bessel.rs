@@ -116,7 +116,69 @@ fn half_int_bessel_i(
     return Ok(None);
   }
   let p = half_int_bessel_polynomial(m, z_expr, "Sinh", "Cosh", BesselSign::I)?;
-  Ok(Some(wrap_with_sqrt_factor(&p, z_expr)?))
+  // For multi-term polynomials wolframscript prints BesselI in the rationalised
+  // form `Distribute[2*P, Plus] / (Sqrt[2*Pi] Sqrt[z])` instead of the bare
+  // `Sqrt[2/Pi]*P/Sqrt[z]`. Single-term P (e.g. BesselI[1/2,z] = Sinh[z]) keeps
+  // the original `Sqrt[2/Pi]*Sinh[z]/Sqrt[z]` form.
+  if is_plus_expr(&p) {
+    Ok(Some(wrap_with_sqrt_factor_rationalised(&p, z_expr)?))
+  } else {
+    Ok(Some(wrap_with_sqrt_factor(&p, z_expr)?))
+  }
+}
+
+fn is_plus_expr(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "Plus" => true,
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus
+    ),
+    _ => false,
+  }
+}
+
+fn wrap_with_sqrt_factor_rationalised(
+  p: &Expr,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::Expr::*;
+  // Build Distribute[2*p, Plus] / (Sqrt[2*Pi] * Sqrt[z]).
+  let two_p = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Integer(2), p.clone()],
+  };
+  let distributed = FunctionCall {
+    name: "Distribute".to_string(),
+    args: vec![two_p, Identifier("Plus".to_string())],
+  };
+  let denom = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Integer(2), Identifier("Pi".to_string())],
+        }],
+      },
+      FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![z_expr.clone()],
+      },
+    ],
+  };
+  let expr = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      distributed,
+      FunctionCall {
+        name: "Power".to_string(),
+        args: vec![denom, Integer(-1)],
+      },
+    ],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 /// Sign convention for the half-integer Bessel polynomial recurrence.
