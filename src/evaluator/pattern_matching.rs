@@ -1112,6 +1112,72 @@ fn try_align_groups(
 ) -> Option<Vec<(String, Expr)>> {
   let mut bindings: Vec<(String, Expr)> = Vec::new();
   for (pi, group) in groups.iter().enumerate() {
+    // BlankSequence/BlankNullSequence at this position binds to the entire
+    // group as a `Sequence[...]` rather than receiving the group wrapped in
+    // the Flat function head. Required so e.g. `n_Integer + s__Symbol +
+    // rest_` matches `a + 2 + b + c + x*y` with `s = Sequence[a, b, c]`.
+    if let Some(seq_info) = get_sequence_info(&pat_args[pi]) {
+      let count = group.len();
+      if count < seq_info.min_count {
+        return None;
+      }
+      if let Some(max) = seq_info.max_count
+        && count > max
+      {
+        return None;
+      }
+      let elements: Vec<Expr> =
+        group.iter().map(|&i| expr_args[i].clone()).collect();
+      // Type-filter every element against the optional head (e.g. `Symbol`
+      // for `s__Symbol`).
+      if let Some(head) = &seq_info.head {
+        for e in &elements {
+          let actual = match e {
+            Expr::Identifier(_) => "Symbol".to_string(),
+            Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
+            Expr::Real(_) | Expr::BigFloat(_, _) => "Real".to_string(),
+            Expr::String(_) => "String".to_string(),
+            Expr::List(_) => "List".to_string(),
+            Expr::FunctionCall { name, .. } => name.clone(),
+            _ => String::new(),
+          };
+          if &actual != head {
+            return None;
+          }
+        }
+      }
+      // Apply optional `?test` predicate to each element.
+      if let Some(test) = &seq_info.test {
+        for e in &elements {
+          let test_call = Expr::FunctionCall {
+            name: crate::syntax::expr_to_string(test),
+            args: vec![e.clone()],
+          };
+          let result = crate::evaluator::evaluate_expr_to_expr(&test_call)
+            .ok()?;
+          if !matches!(&result, Expr::Identifier(s) if s == "True") {
+            return None;
+          }
+        }
+      }
+      let value = if elements.len() == 1 {
+        Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: elements,
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: elements,
+        }
+      };
+      if !seq_info.name.is_empty()
+        && !merge_bindings(&mut bindings, vec![(seq_info.name, value)])
+      {
+        return None;
+      }
+      continue;
+    }
     let eff = if group.len() == 1 {
       expr_args[group[0]].clone()
     } else {
@@ -2761,6 +2827,28 @@ fn match_pattern_impl(
         let has_sequence =
           pat_args.iter().any(|p| get_sequence_info(p).is_some());
         if has_sequence {
+          // For Orderless functions (Plus, Times, …) with a sequence pattern
+          // we need to try every permutation of the expression args, since
+          // sequential matching alone won't find e.g. the BlankSequence-of-
+          // Symbols partition of `Plus[a, 2, b, c, x*y]` against
+          // `Plus[n_Integer, s__Symbol, rest_]`.
+          let is_orderless =
+            crate::evaluator::listable::is_builtin_orderless(pat_name)
+              || crate::FUNC_ATTRS.with(|m| {
+                m.borrow()
+                  .get(pat_name.as_str())
+                  .is_some_and(|attrs| {
+                    attrs.contains(&"Orderless".to_string())
+                  })
+              });
+          if is_orderless && expr_args.len() >= 2 {
+            for perm in permutations(expr_args) {
+              if let Some(b) = match_args_with_sequences(&perm, pat_args) {
+                return Some(b);
+              }
+            }
+            return None;
+          }
           match_args_with_sequences(expr_args, pat_args)
         } else {
           if pat_args.len() != expr_args.len() {
