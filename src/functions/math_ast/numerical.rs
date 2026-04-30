@@ -471,6 +471,18 @@ pub fn n_eval_arbitrary(
     return Ok(expr.clone());
   }
 
+  // BigFloat input with already-tracked precision: wolframscript clamps the
+  // result precision to the input's. `N[1.012345...123, 50]` keeps the
+  // 24-digit-equivalent precision marker the literal carried in, rather
+  // than fabricating extra digits we don't have. Re-emit the same digits
+  // with the original precision marker.
+  if let Expr::BigFloat(digits, prec_f64) = expr {
+    let prec_floor = if *prec_f64 > 0.0 { *prec_f64 } else { 0.0 };
+    if (precision as f64) > prec_floor {
+      return Ok(Expr::BigFloat(digits.clone(), prec_floor));
+    }
+  }
+
   use astro_float::{Consts, RoundingMode};
 
   let mut cc = Consts::new().map_err(|e| {
