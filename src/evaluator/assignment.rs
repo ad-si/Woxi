@@ -177,7 +177,9 @@ fn collect_binary_children(
 
 /// Collect all pattern variable names from an expression.
 /// Returns tuples of (name, head, is_optional) for each Pattern/PatternOptional node found.
-fn collect_pattern_vars(expr: &Expr) -> Vec<(String, Option<String>, bool)> {
+fn collect_pattern_vars(
+  expr: &Expr,
+) -> Vec<(String, Option<String>, bool, u8)> {
   let mut vars = Vec::new();
   collect_pattern_vars_inner(expr, &mut vars);
   vars
@@ -185,29 +187,37 @@ fn collect_pattern_vars(expr: &Expr) -> Vec<(String, Option<String>, bool)> {
 
 fn collect_pattern_vars_inner(
   expr: &Expr,
-  vars: &mut Vec<(String, Option<String>, bool)>,
+  vars: &mut Vec<(String, Option<String>, bool, u8)>,
 ) {
   match expr {
-    Expr::Pattern { name, head, .. }
-      if !vars.iter().any(|(n, _, _)| n == name) =>
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } if !vars.iter().any(|(n, _, _, _)| n == name) =>
     {
-      vars.push((name.clone(), head.clone(), false));
+      vars.push((name.clone(), head.clone(), false, *blank_type));
     }
     Expr::PatternOptional {
       name,
       head,
       default,
     } => {
-      if !vars.iter().any(|(n, _, _)| n == name) {
-        vars.push((name.clone(), head.clone(), true));
+      if !vars.iter().any(|(n, _, _, _)| n == name) {
+        vars.push((name.clone(), head.clone(), true, 1));
       }
       if let Some(d) = default {
         collect_pattern_vars_inner(d, vars);
       }
     }
-    Expr::PatternTest { name, test, .. } => {
-      if !vars.iter().any(|(n, _, _)| n == name) {
-        vars.push((name.clone(), None, false));
+    Expr::PatternTest {
+      name,
+      test,
+      blank_type,
+      ..
+    } => {
+      if !vars.iter().any(|(n, _, _, _)| n == name) {
+        vars.push((name.clone(), None, false, *blank_type));
       }
       collect_pattern_vars_inner(test, vars);
     }
@@ -236,18 +246,18 @@ fn collect_pattern_vars_inner(
 /// Returns the substituted expression.
 fn replace_patterns_with_placeholders(
   expr: &Expr,
-  vars: &[(String, Option<String>, bool)],
+  vars: &[(String, Option<String>, bool, u8)],
 ) -> Expr {
   match expr {
     Expr::Pattern { name, .. } | Expr::PatternOptional { name, .. } => {
-      if vars.iter().any(|(n, _, _)| n == name) {
+      if vars.iter().any(|(n, _, _, _)| n == name) {
         Expr::Identifier(format!("__patvar{}__", name))
       } else {
         expr.clone()
       }
     }
     Expr::PatternTest { name, .. } => {
-      if vars.iter().any(|(n, _, _)| n == name) {
+      if vars.iter().any(|(n, _, _, _)| n == name) {
         Expr::Identifier(format!("__patvar{}__", name))
       } else {
         expr.clone()
@@ -282,15 +292,15 @@ fn replace_patterns_with_placeholders(
 /// Replace placeholder identifiers back with Pattern or PatternOptional nodes.
 fn replace_placeholders_with_patterns(
   expr: &Expr,
-  vars: &[(String, Option<String>, bool)],
+  vars: &[(String, Option<String>, bool, u8)],
 ) -> Expr {
   match expr {
     Expr::Identifier(name) => {
       if let Some(stripped) = name
         .strip_prefix("__patvar")
         .and_then(|s| s.strip_suffix("__"))
-        && let Some((pat_name, head, is_optional)) =
-          vars.iter().find(|(n, _, _)| n == stripped)
+        && let Some((pat_name, head, is_optional, blank_type)) =
+          vars.iter().find(|(n, _, _, _)| n == stripped)
       {
         if *is_optional {
           return Expr::PatternOptional {
@@ -302,7 +312,7 @@ fn replace_placeholders_with_patterns(
           return Expr::Pattern {
             name: pat_name.clone(),
             head: head.clone(),
-            blank_type: 1,
+            blank_type: *blank_type,
           };
         }
       }

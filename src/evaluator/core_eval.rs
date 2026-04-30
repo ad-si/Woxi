@@ -1053,14 +1053,77 @@ pub fn evaluate_expr_to_expr_inner(
               ));
               return Ok(Expr::Identifier("$Failed".to_string()));
             }
-            // At least one rule exists for this head — Woxi has no per-pattern
-            // removal yet, so clear all of them for now (matches the common
-            // 'f[x_] =. after f[x_] := ...' case where exactly one rule was
-            // defined). Emit no warning, return Null.
-            let _ = lhs_args;
+            // Reconstruct each entry's LHS pattern and remove only the entry
+            // whose LHS matches the unset pattern. Two entries with the same
+            // outer head can have different inner patterns (e.g.
+            // `MakeBoxes[F[x__], fmt_]` vs `MakeBoxes[G[x___], fmt_]`); we
+            // need per-entry comparison so unsetting one keeps the other.
+            let target_lhs_str = crate::syntax::expr_to_string(&args[0]);
+            let mut removed_any = false;
             crate::FUNC_DEFS.with(|m| {
-              m.borrow_mut().remove(head);
+              let mut map = m.borrow_mut();
+              if let Some(entries) = map.get_mut(head) {
+                let original_len = entries.len();
+                entries.retain(
+                  |(params, conds, _defaults, heads, blank_types, _body)| {
+                    let pattern_args: Vec<Expr> = params
+                      .iter()
+                      .enumerate()
+                      .map(|(i, p)| {
+                        // Structural pattern: pull the original pattern AST
+                        // out of the __StructuralPattern__ marker.
+                        if let Some(Some(Expr::FunctionCall {
+                          name: cn,
+                          args: ca,
+                        })) = conds.get(i)
+                          && cn == "__StructuralPattern__"
+                          && ca.len() == 2
+                        {
+                          return ca[1].clone();
+                        }
+                        // Literal-match (SameQ): use the literal value.
+                        if let Some(Some(Expr::Comparison {
+                          operands,
+                          operators,
+                        })) = conds.get(i)
+                          && operators.iter().any(|op| {
+                            matches!(op, crate::syntax::ComparisonOp::SameQ)
+                          })
+                          && let Some(literal_val) = operands.get(1)
+                        {
+                          return literal_val.clone();
+                        }
+                        Expr::Pattern {
+                          name: p.clone(),
+                          head: heads.get(i).and_then(|h| h.clone()),
+                          blank_type: blank_types.get(i).copied().unwrap_or(1),
+                        }
+                      })
+                      .collect();
+                    let entry_lhs = Expr::FunctionCall {
+                      name: head.clone(),
+                      args: pattern_args,
+                    };
+                    let entry_lhs_str =
+                      crate::syntax::expr_to_string(&entry_lhs);
+                    entry_lhs_str != target_lhs_str
+                  },
+                );
+                removed_any = entries.len() < original_len;
+                if entries.is_empty() {
+                  map.remove(head);
+                }
+              }
             });
+            if !removed_any {
+              let lhs_str = crate::syntax::expr_to_string(&args[0]);
+              crate::emit_message(&format!(
+                "Unset::norep: Assignment on {} for {} not found.",
+                head, lhs_str
+              ));
+              return Ok(Expr::Identifier("$Failed".to_string()));
+            }
+            let _ = lhs_args;
             return Ok(Expr::Identifier("Null".to_string()));
           }
           return Ok(Expr::Identifier("Null".to_string()));
