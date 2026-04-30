@@ -862,6 +862,15 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Trigonometric equations of the form `Trig[var] == const` where the trig
+  // head is Sin/Cos/Tan/Cot. Wolframscript prints the periodic solution set
+  // as `{{var -> ConditionalExpression[base + 2*Pi*C[1], Element[C[1],
+  // Integers]]}, …}` for Sin/Cos and `{var -> ConditionalExpression[base +
+  // Pi*C[1], Element[C[1], Integers]]}` for Tan/Cot.
+  if let Some(result) = try_solve_trig_eq(&args[0], var) {
+    return Ok(result);
+  }
+
   // Expand and collect polynomial coefficients
   // Clear denominators: f(x)/g(x) == 0 ↔ f(x) == 0
   let expanded_raw = expand_and_combine(&poly);
@@ -1664,6 +1673,142 @@ fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
 ///          Sqrt[expr] == a → expr == a^2,
 ///          Exp[expr] == a → expr == Log[a],
 ///          Sin/Cos/Tan/ArcSin/ArcCos/ArcTan[expr] == a → inverse function
+/// Solve `Trig[var] == const` symbolically with the wolframscript
+/// `ConditionalExpression[base + period*C[1], Element[C[1], Integers]]`
+/// shape. Currently handles `Sin/Cos/Tan/Cot` against constants in
+/// `{-1, 0, 1}` (the cases where the inverse trig has a closed-form
+/// rational multiple of `Pi`). Returns `None` for everything else so the
+/// caller falls through to the generic polynomial path.
+fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
+  use crate::syntax::ComparisonOp;
+  // Extract lhs == rhs.
+  let (lhs, rhs) = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == ComparisonOp::Equal =>
+    {
+      (&operands[0], &operands[1])
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  // lhs must be `Trig[var]` for some trig head.
+  let (trig_name, trig_arg) = match lhs {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      (name.as_str(), &args[0])
+    }
+    _ => return None,
+  };
+  if !matches!(trig_name, "Sin" | "Cos" | "Tan" | "Cot") {
+    return None;
+  }
+  // Inner argument has to be the bare solve variable.
+  if !matches!(trig_arg, Expr::Identifier(s) if s == var) {
+    return None;
+  }
+  // Constant rhs in {-1, 0, 1}.
+  let rhs_int = match rhs {
+    Expr::Integer(n) if matches!(*n, -1 | 0 | 1) => *n,
+    _ => return None,
+  };
+
+  let var_expr = Expr::Identifier(var.to_string());
+  let pi = Expr::Constant("Pi".to_string());
+  let c1 = Expr::FunctionCall {
+    name: "C".to_string(),
+    args: vec![Expr::Integer(1)],
+  };
+  let element_c1_integers = Expr::FunctionCall {
+    name: "Element".to_string(),
+    args: vec![
+      c1.clone(),
+      Expr::Identifier("Integers".to_string()),
+    ],
+  };
+  let two_pi_c1 = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(Expr::Integer(2)),
+    right: Box::new(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(pi.clone()),
+      right: Box::new(c1.clone()),
+    }),
+  };
+  let pi_c1 = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(pi.clone()),
+    right: Box::new(c1.clone()),
+  };
+  let neg_half_pi = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(crate::functions::math_ast::make_rational_pub(-1, 2)),
+    right: Box::new(pi.clone()),
+  };
+  let half_pi = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(pi.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  // Helper: build `ConditionalExpression[expr, Element[C[1], Integers]]`.
+  let cond = |body: Expr| Expr::FunctionCall {
+    name: "ConditionalExpression".to_string(),
+    args: vec![body, element_c1_integers.clone()],
+  };
+  let make_rule_list = |bodies: Vec<Expr>| -> Expr {
+    Expr::List(
+      bodies
+        .into_iter()
+        .map(|body| {
+          Expr::List(vec![Expr::Rule {
+            pattern: Box::new(var_expr.clone()),
+            replacement: Box::new(cond(body)),
+          }])
+        })
+        .collect(),
+    )
+  };
+
+  // Build "base + 2*Pi*C[1]" / "base + Pi*C[1]" expressions.
+  let plus = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+
+  let solutions: Vec<Expr> = match (trig_name, rhs_int) {
+    ("Sin", 0) => vec![two_pi_c1.clone(), plus(pi.clone(), two_pi_c1.clone())],
+    ("Sin", 1) => vec![plus(half_pi.clone(), two_pi_c1.clone())],
+    ("Sin", -1) => vec![plus(neg_half_pi.clone(), two_pi_c1.clone())],
+    ("Cos", 0) => vec![
+      plus(neg_half_pi.clone(), two_pi_c1.clone()),
+      plus(half_pi.clone(), two_pi_c1.clone()),
+    ],
+    ("Cos", 1) => vec![two_pi_c1.clone()],
+    ("Cos", -1) => {
+      // Wolframscript returns the two-solution list `{x -> -Pi + 2*Pi*C[1],
+      // x -> Pi + 2*Pi*C[1]}` even though they coincide modulo 2*Pi.
+      let neg_pi = Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(pi.clone()),
+      };
+      vec![
+        plus(neg_pi, two_pi_c1.clone()),
+        plus(pi.clone(), two_pi_c1.clone()),
+      ]
+    }
+    ("Tan", 0) => vec![pi_c1.clone()],
+    ("Cot", 0) => vec![plus(half_pi.clone(), pi_c1.clone())],
+    _ => return None,
+  };
+
+  Some(make_rule_list(solutions))
+}
+
 fn try_solve_inverse_function(
   eq: &Expr,
   var: &str,
