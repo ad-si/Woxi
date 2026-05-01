@@ -589,8 +589,8 @@ fn apart_symbolic(
   // Defer to canonical Plus ordering so terms (positive and negative) sort
   // by Wolfram's rules. Falls back to a simple positive-then-negative
   // chain if plus_ast can't handle the inputs.
-  let summed =
-    crate::functions::math_ast::plus_ast(&result_terms).unwrap_or_else(|_| {
+  let summed = crate::functions::math_ast::plus_ast(&result_terms)
+    .unwrap_or_else(|_| {
       let mut positive: Vec<Expr> = Vec::new();
       let mut negative: Vec<Expr> = Vec::new();
       for t in &result_terms {

@@ -851,13 +851,15 @@ pub fn evaluate_expr_to_expr_inner(
           // via `(F[x_] := s_) ^:= Q[x, s]`) matches the call. This is
           // what lets `F[1] := 2` evaluate to `Q[1, 2]` for case 4709 —
           // Wolfram's UpValues-on-SetDelayed mechanism.
-          let has_setdelayed_rules = crate::FUNC_DEFS
-            .with(|m| m.borrow().get("SetDelayed").is_some_and(|v| !v.is_empty()));
+          let has_setdelayed_rules = crate::FUNC_DEFS.with(|m| {
+            m.borrow().get("SetDelayed").is_some_and(|v| !v.is_empty())
+          });
           if has_setdelayed_rules {
-            let result = crate::evaluator::dispatch::evaluate_function_call_ast(
-              "SetDelayed",
-              args,
-            )?;
+            let result =
+              crate::evaluator::dispatch::evaluate_function_call_ast(
+                "SetDelayed",
+                args,
+              )?;
             // If a user-defined rule matched, the result will differ from
             // the original `SetDelayed[…]` shell. Otherwise fall through
             // to the built-in handler. `Expr` doesn't impl `PartialEq` so

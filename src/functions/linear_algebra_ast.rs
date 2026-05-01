@@ -1578,8 +1578,7 @@ fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
     name: "Times".to_string(),
     args: vec![Expr::Integer(-1), b.clone()],
   };
-  let neg_b_eval =
-    crate::evaluator::evaluate_expr_to_expr(&neg_b).ok()?;
+  let neg_b_eval = crate::evaluator::evaluate_expr_to_expr(&neg_b).ok()?;
   if expr_to_string(c) != expr_to_string(&neg_b_eval) {
     return None;
   }

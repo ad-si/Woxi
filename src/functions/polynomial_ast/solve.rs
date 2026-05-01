@@ -1713,7 +1713,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   }
   // Constant rhs in {-1, 0, 1}.
   let rhs_int = match rhs {
-    Expr::Integer(n) if matches!(*n, -1 | 0 | 1) => *n,
+    Expr::Integer(n) if matches!(*n, -1..=1) => *n,
     _ => return None,
   };
 
@@ -1725,10 +1725,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
   let element_c1_integers = Expr::FunctionCall {
     name: "Element".to_string(),
-    args: vec![
-      c1.clone(),
-      Expr::Identifier("Integers".to_string()),
-    ],
+    args: vec![c1.clone(), Expr::Identifier("Integers".to_string())],
   };
   let two_pi_c1 = Expr::BinaryOp {
     op: BinaryOperator::Times,

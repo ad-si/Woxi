@@ -4630,8 +4630,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   );
   // Slot(1) inside Function bodies is stored differently from Identifier
   // "#1"; substitute that variant too.
-  let poly_in_var =
-    substitute_slot_with_identifier(&poly_in_var, 1, var);
+  let poly_in_var = substitute_slot_with_identifier(&poly_in_var, 1, var);
   let expanded =
     crate::functions::polynomial_ast::expand_and_combine(&poly_in_var);
   let coeffs_i = extract_poly_coeffs(&expanded, var)?;
@@ -4663,10 +4662,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
         Expr::Real(sum_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            Expr::Real(sum_im),
-            Expr::Identifier("I".to_string()),
-          ],
+          args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())],
         },
       ],
     })
@@ -4811,9 +4807,8 @@ fn poly_deriv_eval_complex(coeffs: &[f64], zr: f64, zi: f64) -> (f64, f64) {
   if coeffs.len() < 2 {
     return (0.0, 0.0);
   }
-  let dcoeffs: Vec<f64> = (1..coeffs.len())
-    .map(|k| (k as f64) * coeffs[k])
-    .collect();
+  let dcoeffs: Vec<f64> =
+    (1..coeffs.len()).map(|k| (k as f64) * coeffs[k]).collect();
   poly_eval_complex(&dcoeffs, zr, zi)
 }
 

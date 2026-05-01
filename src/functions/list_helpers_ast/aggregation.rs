@@ -1782,9 +1782,12 @@ fn find_clusters_distance_fn(
   }
   for i in 0..n {
     for j in (i + 1)..n {
-      let d = crate::functions::list_helpers_ast::utilities::apply_func_to_two_args(
-        distance_fn, &items[i], &items[j],
-      )?;
+      let d =
+        crate::functions::list_helpers_ast::utilities::apply_func_to_two_args(
+          distance_fn,
+          &items[i],
+          &items[j],
+        )?;
       let is_zero = matches!(&d, Expr::Integer(0))
         || matches!(&d, Expr::Real(v) if *v == 0.0);
       if is_zero {
@@ -1809,7 +1812,8 @@ fn find_clusters_distance_fn(
   // Wolframscript orders the clusters with the highest first-input-index
   // first (later-encountered cluster first).
   groups.sort_by(|a, b| b.0.cmp(&a.0));
-  let result: Vec<Expr> = groups.into_iter().map(|(_, g)| Expr::List(g)).collect();
+  let result: Vec<Expr> =
+    groups.into_iter().map(|(_, g)| Expr::List(g)).collect();
   Ok(Expr::List(result))
 }
 

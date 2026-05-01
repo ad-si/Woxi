@@ -970,8 +970,7 @@ mod unimplemented_warnings {
   #[test]
   fn multiple_unimplemented_calls_consolidated_into_single_warning() {
     clear_state();
-    let result =
-      interpret_with_stdout("{CityData[1], GridGraph[2]}").unwrap();
+    let result = interpret_with_stdout("{CityData[1], GridGraph[2]}").unwrap();
     assert_eq!(result.warnings.len(), 1);
     assert!(result.warnings[0].contains("CityData[1]"));
     assert!(result.warnings[0].contains("GridGraph[2]"));

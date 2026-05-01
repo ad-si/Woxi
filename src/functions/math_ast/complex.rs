@@ -250,8 +250,10 @@ fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
       }
       _ => return None,
     };
-    let i_count =
-      factors.iter().filter(|f| matches!(f, Expr::Identifier(s) if s == "I")).count();
+    let i_count = factors
+      .iter()
+      .filter(|f| matches!(f, Expr::Identifier(s) if s == "I"))
+      .count();
     if i_count != 1 {
       return None;
     }
@@ -278,8 +280,8 @@ fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
     (None, Some(i), Some(r), None) => (r, i),
     _ => return None,
   };
-  let has_bigfloat = matches!(&re, Expr::BigFloat(_, _))
-    || contains_bigfloat(&im);
+  let has_bigfloat =
+    matches!(&re, Expr::BigFloat(_, _)) || contains_bigfloat(&im);
   if !has_bigfloat {
     return None;
   }

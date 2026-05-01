@@ -4188,21 +4188,21 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
       // Log[Sqrt[X]] → Log[X] / 2 (also catches the canonical
       // `Power[X, Rational[1, 2]]` shape Wolfram emits internally).
       let sqrt_arg: Option<&Expr> = match &inner {
-        Expr::FunctionCall { name: sn, args: sargs }
-          if sn == "Sqrt" && sargs.len() == 1 =>
-        {
-          Some(&sargs[0])
-        }
-        Expr::FunctionCall { name: pn, args: pargs }
-          if pn == "Power" && pargs.len() == 2 && is_one_half(&pargs[1]) =>
-        {
+        Expr::FunctionCall {
+          name: sn,
+          args: sargs,
+        } if sn == "Sqrt" && sargs.len() == 1 => Some(&sargs[0]),
+        Expr::FunctionCall {
+          name: pn,
+          args: pargs,
+        } if pn == "Power" && pargs.len() == 2 && is_one_half(&pargs[1]) => {
           Some(&pargs[0])
         }
-        Expr::BinaryOp { op: BinaryOperator::Power, left, right }
-          if is_one_half(right) =>
-        {
-          Some(left.as_ref())
-        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } if is_one_half(right) => Some(left.as_ref()),
         _ => None,
       };
       if let Some(x) = sqrt_arg {
@@ -4217,7 +4217,10 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
         });
       }
       // Log[Times[positive_const, …]] → Log[positive_const] + Log[Times[…]]
-      if let Expr::FunctionCall { name: tn, args: tfactors } = &inner
+      if let Expr::FunctionCall {
+        name: tn,
+        args: tfactors,
+      } = &inner
         && tn == "Times"
       {
         let mut pos_const_factors: Vec<Expr> = Vec::new();
@@ -4902,9 +4905,7 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
   }
   // Abs[Power[positive_real, c]] → Power[positive_real, Re[c]]
   let power_parts: Option<(Expr, Expr)> = match arg {
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       Some((args[0].clone(), args[1].clone()))
     }
     Expr::BinaryOp {

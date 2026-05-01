@@ -566,9 +566,7 @@ fn denominator_has_power_factor(den: &Expr) -> bool {
       right,
       ..
     } => matches!(right.as_ref(), Expr::Integer(n) if *n >= 2),
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       matches!(&args[1], Expr::Integer(n) if *n >= 2)
     }
     Expr::FunctionCall { name, args } if name == "Times" => {

@@ -1325,12 +1325,11 @@ fn legendre_q_associated_ast(
     name: "LegendreQ".to_string(),
     args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()],
   };
-  let any_inexact =
-    [n_expr, m_expr, z_expr].iter().any(|a| {
-      matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-        || crate::functions::math_ast::try_extract_complex_float(a)
-          .is_some_and(|(_, im)| im != 0.0)
-    });
+  let any_inexact = [n_expr, m_expr, z_expr].iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(a)
+        .is_some_and(|(_, im)| im != 0.0)
+  });
   if !any_inexact {
     return Ok(unevaluated());
   }

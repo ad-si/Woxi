@@ -7498,17 +7498,17 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
     {
       args.iter().all(is_bigfloat_evaluable_factor)
     }
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
-      is_bigfloat_evaluable_factor(&args[0]) && bigfloat_int_exponent(&args[1]).is_some()
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_bigfloat_evaluable_factor(&args[0])
+        && bigfloat_int_exponent(&args[1]).is_some()
     }
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left,
       right,
     } => {
-      is_bigfloat_evaluable_factor(left) && bigfloat_int_exponent(right).is_some()
+      is_bigfloat_evaluable_factor(left)
+        && bigfloat_int_exponent(right).is_some()
     }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
@@ -7547,9 +7547,7 @@ fn factor_precision_contribution(e: &Expr) -> Option<f64> {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
     } => factor_precision_contribution(operand),
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       let p = factor_precision_contribution(&args[0])?;
       let n = bigfloat_int_exponent(&args[1])?;
       let abs_n = (n.unsigned_abs() as f64).max(1.0);

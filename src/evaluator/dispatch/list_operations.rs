@@ -4111,8 +4111,7 @@ fn parse_sparse_array_data(expr: &Expr) -> Option<ParsedSparseArray> {
     _ => return None,
   };
   let default = ca[2].clone();
-  let raw_entries =
-    list_helpers_ast::sparse_array_extract_rules(&dims, &ca[3]);
+  let raw_entries = list_helpers_ast::sparse_array_extract_rules(&dims, &ca[3]);
   let entries: Vec<(Vec<usize>, Expr)> = raw_entries
     .into_iter()
     .map(|(idx, v)| (idx.into_iter().map(|i| i as usize).collect(), v))

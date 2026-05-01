@@ -314,8 +314,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       // suffix asserted by `Mod[$RandomState, 10^100]` in case 1492.
       // Total length: 578 (matches `IntegerLength[$RandomState]` in
       // case 1493).
-      let prefix: String =
-        std::iter::once('1').chain(std::iter::repeat_n('0', 477)).collect();
+      let prefix: String = std::iter::once('1')
+        .chain(std::iter::repeat_n('0', 477))
+        .collect();
       let suffix = "4741994566655706294890138869165136649510315974360597429933393392703942354819024473254400806573416326";
       let digits = format!("{}{}", prefix, suffix);
       let big = num_bigint::BigInt::parse_bytes(digits.as_bytes(), 10)?;

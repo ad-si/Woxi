@@ -1598,7 +1598,8 @@ fn is_valid_regex_capture_name(name: &str) -> bool {
 
 /// Public entry point: builds the regex with a fresh names-seen set.
 fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
-  let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   string_pattern_to_regex_inner(expr, &mut seen)
 }
 

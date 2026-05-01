@@ -550,10 +550,8 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           prev,
         ],
       };
-      let expanded = crate::evaluator::evaluate_function_call_ast(
-        "Expand",
-        &[next],
-      )?;
+      let expanded =
+        crate::evaluator::evaluate_function_call_ast("Expand", &[next])?;
       prev = curr;
       curr = expanded;
     }

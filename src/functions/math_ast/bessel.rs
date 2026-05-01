@@ -132,7 +132,8 @@ fn is_plus_expr(e: &Expr) -> bool {
     Expr::FunctionCall { name, .. } if name == "Plus" => true,
     Expr::BinaryOp { op, .. } => matches!(
       op,
-      crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus
+      crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus
     ),
     _ => false,
   }

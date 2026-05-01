@@ -5115,10 +5115,7 @@ fn is_polynomial_in(expr: &Expr, var: &str) -> bool {
 /// `RootSum[Function[p in #1], Function[Log[x - #1] / p'(#1)]]` antiderivative.
 /// Returns `None` for everything else, leaving the standard integration
 /// rules in charge for low-degree denominators that have closed forms.
-fn try_integrate_one_over_poly_rootsum(
-  expr: &Expr,
-  var: &str,
-) -> Option<Expr> {
+fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::polynomial_ast::{
     expand_and_combine, extract_poly_coeffs, find_integer_root,
   };

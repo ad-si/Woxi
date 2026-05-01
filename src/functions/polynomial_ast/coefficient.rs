@@ -1033,8 +1033,7 @@ fn coefficient_arrays_multi(
   let m = polys.len();
   let n = vars.len();
   // For each poly, collect (degree, sorted_indices, coefficient).
-  let mut per_poly: Vec<Vec<(usize, Vec<usize>, Expr)>> =
-    Vec::with_capacity(m);
+  let mut per_poly: Vec<Vec<(usize, Vec<usize>, Expr)>> = Vec::with_capacity(m);
   let mut max_degree = 0usize;
   for poly in polys {
     let expanded = super::expand::expand_and_combine(poly);
@@ -1072,9 +1071,8 @@ fn coefficient_arrays_multi(
     // single-poly path but kept per-polynomial here.
     let mut grouped: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
     for (deg, idx, coef) in entries {
-      if let Some(existing) = grouped
-        .iter_mut()
-        .find(|(d, i, _)| *d == deg && *i == idx)
+      if let Some(existing) =
+        grouped.iter_mut().find(|(d, i, _)| *d == deg && *i == idx)
       {
         existing.2 = add_exprs(&existing.2, &coef);
       } else {

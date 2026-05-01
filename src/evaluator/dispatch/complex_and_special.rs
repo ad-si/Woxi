@@ -6062,8 +6062,7 @@ fn expr_contains_imag(expr: &Expr) -> bool {
 fn contains_unevaluated_integrate(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args } => {
-      name == "Integrate"
-        || args.iter().any(contains_unevaluated_integrate)
+      name == "Integrate" || args.iter().any(contains_unevaluated_integrate)
     }
     Expr::CompoundExpr(items) | Expr::List(items) => {
       items.iter().any(contains_unevaluated_integrate)
