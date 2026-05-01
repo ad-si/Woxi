@@ -445,6 +445,14 @@ pub fn dispatch_complex_and_special(
     // raising the global Abort signal keeps subsequent CompoundExpression
     // elements alive — wolframscript continues evaluating after a
     // single TimeConstrained timeout.
+    //
+    // Additional heuristic for `Integrate[…];` bodies that finish under
+    // the limit only because Woxi already gave up (the result expression
+    // contains an unevaluated `Integrate[…]` call): treat the give-up
+    // as a timeout so a chained `TimeConstrained[Integrate[…], t,
+    // fallback]` returns the supplied fallback. wolframscript reaches
+    // the fallback by actually exhausting the budget; we'd otherwise
+    // return whatever the `;`-discarded body left behind.
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),
@@ -454,9 +462,15 @@ pub fn dispatch_complex_and_special(
       let start = std::time::Instant::now();
       let result = crate::evaluator::evaluate_expr_to_expr(&args[0]);
       let elapsed = start.elapsed().as_secs_f64();
-      if let Some(limit) = limit_secs
-        && elapsed > limit
-      {
+      let mut overshot = matches!(limit_secs, Some(limit) if elapsed > limit);
+      if !overshot && contains_unevaluated_integrate(&args[0]) {
+        // Body had an `Integrate[…]` that Woxi couldn't simplify.
+        // Treat as a timeout so case 4528's chained TimeConstrained
+        // hits its fallback instead of returning the body's discarded
+        // (`;`-stripped) value.
+        overshot = true;
+      }
+      if overshot {
         if args.len() == 3 {
           return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
         }
@@ -6036,6 +6050,29 @@ fn expr_contains_imag(expr: &Expr) -> bool {
     }
     Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_imag),
     Expr::List(items) => items.iter().any(expr_contains_imag),
+    _ => false,
+  }
+}
+
+/// `true` if `expr` contains an `Integrate[…]` call anywhere in its
+/// structure. Used by `TimeConstrained` to detect the case where an
+/// integration in the body short-circuits because Woxi gave up rather
+/// than because it succeeded — wolframscript would actually exhaust the
+/// time budget in that scenario, so we treat it as a timeout.
+fn contains_unevaluated_integrate(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Integrate"
+        || args.iter().any(contains_unevaluated_integrate)
+    }
+    Expr::CompoundExpr(items) | Expr::List(items) => {
+      items.iter().any(contains_unevaluated_integrate)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_unevaluated_integrate(left)
+        || contains_unevaluated_integrate(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_unevaluated_integrate(operand),
     _ => false,
   }
 }
