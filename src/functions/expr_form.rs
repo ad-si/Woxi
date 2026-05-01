@@ -453,11 +453,34 @@ pub fn render_full_form(expr: &Expr) -> String {
     return format!("Complex[{}, {}]", re, im);
   }
 
+  // Machine-precision Reals get the `1.\`` / `0.2\`` precision-marker
+  // shape in FullForm — Wolfram's `ToString[FullForm[1.0]]` returns
+  // `"1.\`"`, distinct from the bare `1.` it shows in OutputForm.
+  if let Expr::Real(f) = expr {
+    return format_real_full_form(*f);
+  }
+  // String literals embedded in a FullForm result get backslash-escaped
+  // quotes so the surrounding `ToString` produces `"\"l\""`.
+  if let Expr::String(s) = expr {
+    return format!("\\\"{}\\\"", s);
+  }
+
   match decompose_expr(expr) {
     ExprForm::Atom(label) => label,
     ExprForm::Composite { head, children } => {
       let parts: Vec<String> = children.iter().map(render_full_form).collect();
       format!("{}[{}]", head, parts.join(", "))
     }
+  }
+}
+
+/// Render a machine-precision Real for FullForm/InputForm output:
+/// integer values lose their trailing zero (`1.0` → `1.`) and every
+/// machine-precision Real picks up the trailing backtick marker.
+fn format_real_full_form(f: f64) -> String {
+  if f.fract() == 0.0 && f.abs() < 1e15 {
+    format!("{}.`", f as i64)
+  } else {
+    format!("{}`", f)
   }
 }
