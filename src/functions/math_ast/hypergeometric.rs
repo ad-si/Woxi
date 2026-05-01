@@ -322,6 +322,75 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[a_list[0].clone(), b_list[0].clone(), z.clone()],
     );
   }
+  // 3F2[{1, 1, 2}, {3, 3}, z] closed form. Partial-fractioning the
+  // collapsed series Σ 4·z^k/((k+1)(k+2)^2) over the standard sums
+  //   Σ z^k/(k+1) = -Log[1-z]/z,
+  //   Σ z^k/(k+2) = -Log[1-z]/z^2 - 1/z,
+  //   Σ z^k/(k+2)^2 = PolyLog[2,z]/z^2 - 1/z
+  // gives the closed form `4·(2z + Log[1-z] - z·Log[1-z] - PolyLog[2, z])/z^2`,
+  // which Wolfram displays with a leading −4: the form below matches its
+  // exact InputForm.
+  if a_list.len() == 3
+    && b_list.len() == 2
+    && matches!(&a_list[0], Expr::Integer(1))
+    && matches!(&a_list[1], Expr::Integer(1))
+    && matches!(&a_list[2], Expr::Integer(2))
+    && matches!(&b_list[0], Expr::Integer(3))
+    && matches!(&b_list[1], Expr::Integer(3))
+  {
+    let log_one_minus_z = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), z.clone()],
+          },
+        ],
+      }],
+    };
+    let polylog = Expr::FunctionCall {
+      name: "PolyLog".to_string(),
+      args: vec![Expr::Integer(2), z.clone()],
+    };
+    // Build the negated inner sum so the leading `-4·(−2·z − Log[1−z] + z·Log[1−z] + PolyLog[2,z])`
+    // matches wolframscript's exact InputForm rather than the mathematically
+    // equivalent `4·(2·z + …)` factoring.
+    let inner_neg = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-2), z.clone()],
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), log_one_minus_z.clone()],
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![z.clone(), log_one_minus_z],
+        },
+        polylog,
+      ],
+    };
+    return crate::functions::math_ast::times_ast(&[
+      Expr::Integer(-4),
+      inner_neg,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![z.clone(), Expr::Integer(2)],
+          },
+          Expr::Integer(-1),
+        ],
+      },
+    ]);
+  }
   // 3F2[{1, 1, 3}, {2, 2}, z] closed form. Derivation: collapsing the
   // Pochhammers gives Σ_{k≥0} (k+2)/(2(k+1)) z^k = (1/2)·(1/(1-z) - Log[1-z]/z).
   // Wolfram normalises that to `(-z + Log[1-z] - z*Log[1-z])/(2*(-1+z)*z)`.
