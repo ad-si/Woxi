@@ -1491,6 +1491,46 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::String(text.to_string()));
   }
 
+  // BezierFunction[{p1, p2, ...}] → wolframscript's structured 7-arg form
+  // BezierFunction[degree, knots, {n}, {points, {}}, {0}, MachinePrecision, "Unevaluated"].
+  // Already-structured (multi-arg) calls and `BezierFunction[points][t]` (handled
+  // at function-application time) fall through unchanged.
+  if name == "BezierFunction"
+    && args.len() == 1
+    && let Expr::List(points) = &args[0]
+    && !points.is_empty()
+  {
+    let to_real = |e: &Expr| -> Expr {
+      match e {
+        Expr::Integer(n) => Expr::Real(*n as f64),
+        Expr::Real(_) => e.clone(),
+        _ => e.clone(),
+      }
+    };
+    let points_real: Vec<Expr> = points
+      .iter()
+      .map(|p| match p {
+        Expr::List(coords) => Expr::List(coords.iter().map(to_real).collect()),
+        _ => to_real(p),
+      })
+      .collect();
+    return Ok(Expr::FunctionCall {
+      name: "BezierFunction".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        Expr::List(vec![Expr::List(vec![
+          Expr::Real(0.0),
+          Expr::Real(1.0),
+        ])]),
+        Expr::List(vec![Expr::Integer((points.len() as i128) - 1)]),
+        Expr::List(vec![Expr::List(points_real), Expr::List(vec![])]),
+        Expr::List(vec![Expr::Integer(0)]),
+        Expr::Identifier("MachinePrecision".to_string()),
+        Expr::String("Unevaluated".to_string()),
+      ],
+    });
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"

@@ -574,6 +574,24 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "BezierFunction" && func_args.len() == 7 => {
+      // Structured form: BezierFunction[degree, knots, {n}, {points, {}}, ...]
+      // The control points live in args[3][0]. Wrap them in a 1-arg
+      // BezierFunction and reuse the standard evaluator.
+      if let Expr::List(slot) = &func_args[3]
+        && !slot.is_empty()
+      {
+        let pts = vec![slot[0].clone()];
+        evaluate_bezier_function(&pts, args)
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "BezierFunction: invalid structured form".into(),
+        ))
+      }
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "TransformationFunction" && func_args.len() == 1 => {
       // TransformationFunction[matrix][{x, y, ...}] — apply affine transformation
       apply_transformation_function(&func_args[0], args)
@@ -608,7 +626,9 @@ pub fn apply_curried_call(
             use std::str::FromStr;
             Expr::Real(f64::from_str(&n.to_string()).unwrap_or(f64::NAN))
           }
-          Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 => {
+          Expr::FunctionCall { name, args: ra }
+            if name == "Rational" && ra.len() == 2 =>
+          {
             if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
               Expr::Real(*n as f64 / *d as f64)
             } else {

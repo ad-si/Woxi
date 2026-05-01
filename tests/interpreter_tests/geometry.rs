@@ -410,9 +410,12 @@ mod bezier_function {
 
   #[test]
   fn unevaluated_symbolic() {
+    // wolframscript expands `BezierFunction[points]` into its 7-arg
+    // structured form: BezierFunction[degree, knots, {n}, {points, {}},
+    // {0}, MachinePrecision, Unevaluated].
     assert_eq!(
       interpret("BezierFunction[{{0,0},{1,1},{2,0}}]").unwrap(),
-      "BezierFunction[{{0, 0}, {1, 1}, {2, 0}}]"
+      "BezierFunction[1, {{0., 1.}}, {2}, {{{0., 0.}, {1., 1.}, {2., 0.}}, {}}, {0}, MachinePrecision, Unevaluated]"
     );
   }
 
