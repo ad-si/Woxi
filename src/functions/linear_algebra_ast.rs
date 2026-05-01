@@ -4421,9 +4421,7 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build Q^T (rows of Q^T = the qi vectors)
   let qt_expr = Expr::List(
     q.iter()
-      .map(|row| {
-        Expr::List(row.iter().map(simplify_radical_factor).collect())
-      })
+      .map(|row| Expr::List(row.iter().map(simplify_radical_factor).collect()))
       .collect(),
   );
 
@@ -4431,13 +4429,129 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let r_expr = Expr::List(
     r_entries
       .iter()
-      .map(|row| {
-        Expr::List(row.iter().map(simplify_radical_factor).collect())
-      })
+      .map(|row| Expr::List(row.iter().map(simplify_radical_factor).collect()))
       .collect(),
   );
 
   Ok(Expr::List(vec![qt_expr, r_expr]))
+}
+
+/// `SingularValueDecomposition[A]` — closed-form 2×2 SVD for a numeric
+/// matrix. Returns `{U, Σ, V}` with `A = U.Σ.V'`, matching wolframscript:
+/// V's columns are the right singular vectors of A^T A, U's columns are
+/// `A V / σ`, and each singular vector is normalised so its first
+/// component is non-positive.
+pub fn singular_value_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "SingularValueDecomposition".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "SingularValueDecomposition".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let rows = matrix.len();
+  if rows != 2 || matrix[0].len() != 2 {
+    // Only the 2×2 case has a clean closed form right now; fall back
+    // to unevaluated for everything else.
+    return Ok(Expr::FunctionCall {
+      name: "SingularValueDecomposition".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let to_f64 = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(v) => Some(*v),
+      _ => None,
+    }
+  };
+  let a = to_f64(&matrix[0][0]);
+  let b = to_f64(&matrix[0][1]);
+  let c = to_f64(&matrix[1][0]);
+  let d = to_f64(&matrix[1][1]);
+  let (a, b, c, d) = match (a, b, c, d) {
+    (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "SingularValueDecomposition".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  // A^T A = {{a^2 + c^2, ab + cd}, {ab + cd, b^2 + d^2}}.
+  let m11 = a * a + c * c;
+  let m12 = a * b + c * d;
+  let m22 = b * b + d * d;
+  let tr = m11 + m22;
+  let det = m11 * m22 - m12 * m12;
+  let disc = (tr * tr - 4.0 * det).max(0.0);
+  let sq = disc.sqrt();
+  let lambda1 = (tr + sq) / 2.0;
+  let lambda2 = ((tr - sq) / 2.0).max(0.0);
+  let sigma1 = lambda1.sqrt();
+  let sigma2 = lambda2.sqrt();
+  // Right-singular vector for the larger eigenvalue. Solve
+  // (m11 - λ) v_x + m12 v_y = 0.
+  let (v1x_raw, v1y_raw) = if m12.abs() > 1e-15 {
+    let r_unnorm = lambda1 - m11;
+    let nrm = (m12 * m12 + r_unnorm * r_unnorm).sqrt();
+    (m12 / nrm, r_unnorm / nrm)
+  } else if m11 >= m22 {
+    (1.0, 0.0)
+  } else {
+    (0.0, 1.0)
+  };
+  // The other singular vector is orthogonal to the first.
+  let (v2x_raw, v2y_raw) = (-v1y_raw, v1x_raw);
+  // Wolfram's convention: each singular vector's leading non-zero
+  // component is non-positive. Negate when needed.
+  let needs_flip = |x: f64, y: f64| -> bool {
+    if x.abs() > 1e-15 {
+      x > 0.0
+    } else {
+      y > 0.0
+    }
+  };
+  let (v1x, v1y) = if needs_flip(v1x_raw, v1y_raw) {
+    (-v1x_raw, -v1y_raw)
+  } else {
+    (v1x_raw, v1y_raw)
+  };
+  let (v2x, v2y) = if needs_flip(v2x_raw, v2y_raw) {
+    (-v2x_raw, -v2y_raw)
+  } else {
+    (v2x_raw, v2y_raw)
+  };
+  // U_i = A v_i / σ_i.
+  let u1x = (a * v1x + b * v1y) / sigma1;
+  let u1y = (c * v1x + d * v1y) / sigma1;
+  let u2x = (a * v2x + b * v2y) / sigma2;
+  let u2y = (c * v2x + d * v2y) / sigma2;
+  let real = Expr::Real;
+  // Build U with rows {U[1,1] U[1,2]} = {u1x, u2x} (columns are u1, u2).
+  let u = Expr::List(vec![
+    Expr::List(vec![real(u1x), real(u2x)]),
+    Expr::List(vec![real(u1y), real(u2y)]),
+  ]);
+  let sigma = Expr::List(vec![
+    Expr::List(vec![real(sigma1), real(0.0)]),
+    Expr::List(vec![real(0.0), real(sigma2)]),
+  ]);
+  let v = Expr::List(vec![
+    Expr::List(vec![real(v1x), real(v2x)]),
+    Expr::List(vec![real(v1y), real(v2y)]),
+  ]);
+  Ok(Expr::List(vec![u, sigma, v]))
 }
 
 /// Simplify radical-bearing scalars produced by Gram-Schmidt so they
@@ -4451,7 +4565,11 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
   use crate::functions::math_ast::{gcd, make_rational, sqrt_ast, times_ast};
   use crate::syntax::BinaryOperator;
   let extract_int = |e: &Expr| -> Option<i128> {
-    if let Expr::Integer(n) = e { Some(*n) } else { None }
+    if let Expr::Integer(n) = e {
+      Some(*n)
+    } else {
+      None
+    }
   };
   let extract_rational = |e: &Expr| -> Option<(i128, i128)> {
     if let Expr::Integer(n) = e {
@@ -4553,7 +4671,9 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
     // Generic Power[base, exp] handling — accepts both FunctionCall("Power", …)
     // and BinaryOp Power. Identifies base/exp uniformly.
     let power_parts: Option<(&Expr, &Expr)> = match f {
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         Some((&args[0], &args[1]))
       }
       Expr::BinaryOp {
@@ -4579,24 +4699,23 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
         _ => 0,
       };
       // Power[base, ±1/2] with integer/Rational base.
-      if exp_kind == 1 || exp_kind == -1 {
-        if let Some((bn, bd)) = extract_rational(base)
-          && bn > 0
-          && bd > 0
-        {
-          if had_sqrt {
-            return expr.clone();
-          }
-          had_sqrt = true;
-          if exp_kind > 0 {
-            sqrt_num *= bn;
-            sqrt_den *= bd;
-          } else {
-            sqrt_num *= bd;
-            sqrt_den *= bn;
-          }
-          continue;
+      if (exp_kind == 1 || exp_kind == -1)
+        && let Some((bn, bd)) = extract_rational(base)
+        && bn > 0
+        && bd > 0
+      {
+        if had_sqrt {
+          return expr.clone();
         }
+        had_sqrt = true;
+        if exp_kind > 0 {
+          sqrt_num *= bn;
+          sqrt_den *= bd;
+        } else {
+          sqrt_num *= bd;
+          sqrt_den *= bn;
+        }
+        continue;
       }
       // Power[base, -1]: either base is integer (1/n → folds into coeff_den)
       // or base is Sqrt[X]/Power[int, 1/2] (1/Sqrt[X] → swap into radical).
@@ -4625,7 +4744,9 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
         }
         // 1/Power[base, 1/2] (Sqrt encoded as Power)
         let inner_power_parts: Option<(&Expr, &Expr)> = match base {
-          Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
             Some((&args[0], &args[1]))
           }
           Expr::BinaryOp {

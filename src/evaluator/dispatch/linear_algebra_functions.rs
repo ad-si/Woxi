@@ -1140,6 +1140,13 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "SingularValueDecomposition" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::singular_value_decomposition_ast(
+          args,
+        ),
+      );
+    }
     "DiagonalizableMatrixQ" if args.len() == 1 => {
       // A matrix is diagonalizable if eigenvalues have correct multiplicities
       // For numeric matrices: check if eigenvalues list has n elements (counting multiplicity)

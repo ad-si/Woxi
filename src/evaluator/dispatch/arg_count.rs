@@ -796,6 +796,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "QFactorial" => Some((2, 2)),
     "QPochhammer" => Some((3, 3)),
     "QRDecomposition" => Some((1, 1)),
+    "SingularValueDecomposition" => Some((1, 1)),
     "Quantile" => Some((2, 2)),
     "Quantity" => Some((1, 2)),
     "QuantityMagnitude" => Some((1, 2)),
