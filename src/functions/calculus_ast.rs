@@ -5110,6 +5110,85 @@ fn is_polynomial_in(expr: &Expr, var: &str) -> bool {
   false
 }
 
+/// Match `1/p(x)` where `p` is an irreducible-looking univariate polynomial
+/// of degree ≥ 5 with no rational roots. Returns the wolframscript-style
+/// `RootSum[Function[p in #1], Function[Log[x - #1] / p'(#1)]]` antiderivative.
+/// Returns `None` for everything else, leaving the standard integration
+/// rules in charge for low-degree denominators that have closed forms.
+fn try_integrate_one_over_poly_rootsum(
+  expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::{
+    expand_and_combine, extract_poly_coeffs, find_integer_root,
+  };
+  use crate::syntax::BinaryOperator::*;
+  // Match `Power[poly, -1]` in either BinaryOp or FunctionCall form.
+  let poly_raw: Expr = match expr {
+    Expr::BinaryOp {
+      op: Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => (**left).clone(),
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(-1)) =>
+    {
+      args[0].clone()
+    }
+    _ => return None,
+  };
+  // Need an integer-coefficient univariate polynomial in `var` of degree ≥ 5.
+  let poly = expand_and_combine(&poly_raw);
+  let coeffs = extract_poly_coeffs(&poly, var)?;
+  if coeffs.len() < 6 {
+    return None;
+  }
+  // Skip when wolframscript's preferred form is plain Log/ArcTan: any
+  // polynomial with a rational root factors out a linear term and the
+  // standard partial-fractions path takes over instead. (`find_integer_root`
+  // is sufficient for monic polynomials, which is the common case here.)
+  if find_integer_root(&coeffs).is_some() {
+    return None;
+  }
+  // p'(x) = sum k * c_k * x^(k-1). Use the symbolic differentiator so the
+  // result is in the same canonical form as the integrand.
+  let pprime = differentiate(&poly, var).ok()?;
+  let pprime = simplify(pprime);
+  // Substitute `x → #1` in both poly and p' to build the Function bodies.
+  let poly_in_slot =
+    crate::syntax::substitute_variable(&poly, var, &Expr::Slot(1));
+  let pprime_in_slot =
+    crate::syntax::substitute_variable(&pprime, var, &Expr::Slot(1));
+  // Inner function body: Log[x - #1] / p'(#1).
+  let var_expr = Expr::Identifier(var.to_string());
+  let log_arg = Expr::BinaryOp {
+    op: Minus,
+    left: Box::new(var_expr),
+    right: Box::new(Expr::Slot(1)),
+  };
+  let log_term = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![log_arg],
+  };
+  let body = Expr::BinaryOp {
+    op: Divide,
+    left: Box::new(log_term),
+    right: Box::new(pprime_in_slot),
+  };
+  let log_fn = Expr::Function {
+    body: Box::new(body),
+  };
+  let poly_fn = Expr::Function {
+    body: Box::new(poly_in_slot),
+  };
+  Some(Expr::FunctionCall {
+    name: "RootSum".to_string(),
+    args: vec![poly_fn, log_fn],
+  })
+}
+
 /// Closed-form integration of polynomial × constant-base exponential:
 /// ∫ P(x) * a^(c*x) dx = a^(c*x) * Σ_{k=0}^{deg} (-1)^k * P^(k)(x) / r^(k+1)
 /// where r = c * Log[a] is the effective rate.
@@ -5598,6 +5677,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
       left: Box::new(expr.clone()),
       right: Box::new(Expr::Identifier(var.to_string())),
     });
+  }
+
+  // Closed form for `1/p(x)` with `p` an irreducible-looking degree-≥5
+  // univariate polynomial: wolframscript emits a `RootSum[…]` shape.
+  if let Some(rs) = try_integrate_one_over_poly_rootsum(expr, var) {
+    return Some(rs);
   }
 
   match expr {
