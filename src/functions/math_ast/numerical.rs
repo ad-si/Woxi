@@ -85,6 +85,15 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(r);
         }
       }
+      // RootSum[poly &, fn &] — apply fn to each (complex) root of poly
+      // and sum, returning a machine-precision Real (or Complex when the
+      // imaginary part doesn't cancel).
+      if name == "RootSum"
+        && args.len() == 2
+        && let Some(r) = root_sum_n_eval(&args[0], &args[1])
+      {
+        return Ok(r);
+      }
       // Honour NHoldAll / NHoldFirst / NHoldRest attributes (built-in or
       // user-set). When a slot is held, leave the argument literal and
       // skip the recursive N application.
@@ -2352,8 +2361,9 @@ fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
     Expr::Real(v) => v,
     _ => return None,
   };
-  let combined =
-    -((10f64.powf(-2.0 * re_acc) + 10f64.powf(-2.0 * im_acc)).sqrt().log10());
+  let combined = -((10f64.powf(-2.0 * re_acc) + 10f64.powf(-2.0 * im_acc))
+    .sqrt()
+    .log10());
   Some(Expr::Real(combined))
 }
 
@@ -4595,4 +4605,321 @@ fn bandstop_kernel(n: usize, omega1: f64, omega2: f64) -> Vec<f64> {
     kernel.push(w * sinc_bs);
   }
   kernel
+}
+
+// ─── Numeric RootSum ────────────────────────────────────────────────
+
+/// `N[RootSum[poly &, fn &]]`: find every (complex) root of `poly`, apply
+/// `fn` to each, and sum. Returns `Some(Real)` (or a Plus[Real, Times[Real,
+/// I]] for residual imaginary parts) on success and `None` for shapes that
+/// don't fit — letting the caller fall back to the generic recursive `N`.
+fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
+  use crate::functions::polynomial_ast::extract_poly_coeffs;
+  // poly_arg should be a Function whose body is a polynomial in #1.
+  let poly_body = match poly_arg {
+    Expr::Function { body } => body.as_ref(),
+    _ => return None,
+  };
+  // Substitute Slot(1) → __rs_x__ to get a polynomial in a named variable
+  // (extract_poly_coeffs needs an identifier).
+  let var = "__rs_x__";
+  let poly_in_var = crate::syntax::substitute_variable(
+    poly_body,
+    "#1",
+    &Expr::Identifier(var.to_string()),
+  );
+  // Slot(1) inside Function bodies is stored differently from Identifier
+  // "#1"; substitute that variant too.
+  let poly_in_var =
+    substitute_slot_with_identifier(&poly_in_var, 1, var);
+  let expanded =
+    crate::functions::polynomial_ast::expand_and_combine(&poly_in_var);
+  let coeffs_i = extract_poly_coeffs(&expanded, var)?;
+  if coeffs_i.len() < 2 {
+    return None;
+  }
+  let coeffs_f: Vec<f64> = coeffs_i.iter().map(|&c| c as f64).collect();
+  let roots = aberth_complex_roots(&coeffs_f);
+  if roots.is_empty() {
+    return None;
+  }
+  // Apply fn_arg (a Function or a builtin like Sin) to each complex root,
+  // sum the results numerically.
+  let mut sum_re = 0.0f64;
+  let mut sum_im = 0.0f64;
+  for (zr, zi) in &roots {
+    let val = apply_fn_to_complex(fn_arg, *zr, *zi)?;
+    sum_re += val.0;
+    sum_im += val.1;
+  }
+  if sum_im.abs() < 1e-10 * sum_re.abs().max(1.0) {
+    Some(Expr::Real(sum_re))
+  } else {
+    // Build Real + Real*I as Plus[..., Times[..., I]] so subsequent
+    // Chop can drop the imaginary tail.
+    Some(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(sum_re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Real(sum_im),
+            Expr::Identifier("I".to_string()),
+          ],
+        },
+      ],
+    })
+  }
+}
+
+/// Replace every `Slot(k)` in `expr` with `Identifier(name)`. A companion
+/// to `substitute_variable` so `Function`-bodied polynomials in `#1` can
+/// be passed through the named-variable polynomial helpers.
+fn substitute_slot_with_identifier(expr: &Expr, k: usize, name: &str) -> Expr {
+  match expr {
+    Expr::Slot(n) if *n == k => Expr::Identifier(name.to_string()),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_slot_with_identifier(e, k, name))
+        .collect(),
+    ),
+    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
+      name: fname.clone(),
+      args: args
+        .iter()
+        .map(|e| substitute_slot_with_identifier(e, k, name))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_slot_with_identifier(left, k, name)),
+      right: Box::new(substitute_slot_with_identifier(right, k, name)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_slot_with_identifier(operand, k, name)),
+    },
+    _ => expr.clone(),
+  }
+}
+
+/// Aberth's method for finding all complex roots of a real-coefficient
+/// polynomial `p(x) = c_0 + c_1 x + … + c_n x^n`. Returns a vector of
+/// `(re, im)` pairs of length `n` (degree of polynomial).
+fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
+  let n = coeffs.len() - 1;
+  if n == 0 {
+    return vec![];
+  }
+  if coeffs[n].abs() < 1e-300 {
+    return vec![];
+  }
+  // Cauchy bound on |roots|: 1 + max_{i<n} |c_i / c_n|.
+  let lead = coeffs[n].abs();
+  let r = 1.0
+    + coeffs[..n]
+      .iter()
+      .map(|c| c.abs() / lead)
+      .fold(0.0f64, f64::max);
+  let pi = std::f64::consts::PI;
+  // Initial guesses on the Cauchy circle, slightly off-axis.
+  let mut zs: Vec<(f64, f64)> = (0..n)
+    .map(|k| {
+      let theta = 2.0 * pi * (k as f64 + 0.5) / (n as f64) + 0.7;
+      (r * theta.cos(), r * theta.sin())
+    })
+    .collect();
+  for _ in 0..200 {
+    let mut max_change: f64 = 0.0;
+    let mut new_zs: Vec<(f64, f64)> = Vec::with_capacity(n);
+    for k in 0..n {
+      let (zr, zi) = zs[k];
+      let (pr, pi_) = poly_eval_complex(coeffs, zr, zi);
+      let (dr, di) = poly_deriv_eval_complex(coeffs, zr, zi);
+      let denom = dr * dr + di * di;
+      if denom < 1e-300 {
+        new_zs.push((zr, zi));
+        continue;
+      }
+      // q = p(z) / p'(z) = (pr + i*pi) * (dr - i*di) / |p'|^2
+      let qr = (pr * dr + pi_ * di) / denom;
+      let qi = (pi_ * dr - pr * di) / denom;
+      // sum_{j != k} 1 / (z_k - z_j)
+      let mut sr = 0.0f64;
+      let mut si = 0.0f64;
+      for j in 0..n {
+        if j == k {
+          continue;
+        }
+        let dxr = zr - zs[j].0;
+        let dxi = zi - zs[j].1;
+        let d = dxr * dxr + dxi * dxi;
+        if d < 1e-300 {
+          continue;
+        }
+        sr += dxr / d;
+        si += -dxi / d;
+      }
+      // Aberth: z_new = z - q / (1 - q*sum)
+      let qsr = qr * sr - qi * si;
+      let qsi = qr * si + qi * sr;
+      let denr = 1.0 - qsr;
+      let deni = -qsi;
+      let dnorm = denr * denr + deni * deni;
+      if dnorm < 1e-300 {
+        new_zs.push((zr, zi));
+        continue;
+      }
+      // q / (1 - q*sum)
+      let dxr = (qr * denr + qi * deni) / dnorm;
+      let dxi = (qi * denr - qr * deni) / dnorm;
+      let new_zr = zr - dxr;
+      let new_zi = zi - dxi;
+      let change = (dxr * dxr + dxi * dxi).sqrt();
+      if change > max_change {
+        max_change = change;
+      }
+      new_zs.push((new_zr, new_zi));
+    }
+    zs = new_zs;
+    if max_change < 1e-13 {
+      break;
+    }
+  }
+  zs
+}
+
+/// Horner-style polynomial evaluation at a complex point `z = zr + i*zi`.
+fn poly_eval_complex(coeffs: &[f64], zr: f64, zi: f64) -> (f64, f64) {
+  let mut rr = 0.0f64;
+  let mut ri = 0.0f64;
+  for &c in coeffs.iter().rev() {
+    // r = r * z + c
+    let nr = rr * zr - ri * zi + c;
+    let ni = rr * zi + ri * zr;
+    rr = nr;
+    ri = ni;
+  }
+  (rr, ri)
+}
+
+/// Evaluate `p'(z)` at a complex point `z`. `p'(x) = sum_{k>=1} k * c_k *
+/// x^(k-1)`.
+fn poly_deriv_eval_complex(coeffs: &[f64], zr: f64, zi: f64) -> (f64, f64) {
+  if coeffs.len() < 2 {
+    return (0.0, 0.0);
+  }
+  let dcoeffs: Vec<f64> = (1..coeffs.len())
+    .map(|k| (k as f64) * coeffs[k])
+    .collect();
+  poly_eval_complex(&dcoeffs, zr, zi)
+}
+
+/// Apply a simple unary numeric function (or a `Function` body) to a
+/// complex argument. Supports `Sin`, `Cos`, `Tan`, `Exp`, `Log`, `Identity`,
+/// and arbitrary `Function`-bodied expressions in #1 by substituting the
+/// complex value back through the symbolic evaluator.
+fn apply_fn_to_complex(fnexpr: &Expr, zr: f64, zi: f64) -> Option<(f64, f64)> {
+  match fnexpr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Sin" => Some(complex_sin(zr, zi)),
+      "Cos" => Some(complex_cos(zr, zi)),
+      "Identity" => Some((zr, zi)),
+      _ => None,
+    },
+    Expr::Function { body } => {
+      // Substitute Slot(1) → Complex[zr, zi] and evaluate symbolically.
+      let value = if zi.abs() < 1e-300 {
+        Expr::Real(zr)
+      } else {
+        Expr::FunctionCall {
+          name: "Complex".to_string(),
+          args: vec![Expr::Real(zr), Expr::Real(zi)],
+        }
+      };
+      let substituted = crate::syntax::substitute_slots(body, &[value]);
+      let evaluated =
+        crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+      let n_form = n_eval(&evaluated).ok()?;
+      complex_from_expr(&n_form)
+    }
+    _ => None,
+  }
+}
+
+/// Convert an evaluated numeric expression into a `(re, im)` pair when
+/// possible. Recognises plain Reals, Complex[a, b], and Plus[real, im*I]
+/// shapes.
+fn complex_from_expr(e: &Expr) -> Option<(f64, f64)> {
+  match e {
+    Expr::Real(v) => Some((*v, 0.0)),
+    Expr::Integer(n) => Some((*n as f64, 0.0)),
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      let r = match &args[0] {
+        Expr::Real(v) => *v,
+        Expr::Integer(n) => *n as f64,
+        _ => return None,
+      };
+      let i = match &args[1] {
+        Expr::Real(v) => *v,
+        Expr::Integer(n) => *n as f64,
+        _ => return None,
+      };
+      Some((r, i))
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut re = 0.0;
+      let mut im = 0.0;
+      for a in args {
+        if let Some((r, i)) = complex_from_expr(a) {
+          re += r;
+          im += i;
+        } else if let Some(coef) = imaginary_coeff(a) {
+          im += coef;
+        } else {
+          return None;
+        }
+      }
+      Some((re, im))
+    }
+    Expr::Identifier(s) if s == "I" => Some((0.0, 1.0)),
+    _ => imaginary_coeff(e).map(|im| (0.0, im)),
+  }
+}
+
+/// Recognise `Times[real, I]` (in either nesting) and return the real
+/// coefficient.
+fn imaginary_coeff(e: &Expr) -> Option<f64> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Times"
+  {
+    let mut coef = 1.0f64;
+    let mut has_i = false;
+    for a in args {
+      match a {
+        Expr::Identifier(s) if s == "I" => has_i = true,
+        Expr::Real(v) => coef *= *v,
+        Expr::Integer(n) => coef *= *n as f64,
+        _ => return None,
+      }
+    }
+    if has_i {
+      return Some(coef);
+    }
+  }
+  None
+}
+
+fn complex_sin(zr: f64, zi: f64) -> (f64, f64) {
+  // Sin(a + bi) = Sin(a) Cosh(b) + i Cos(a) Sinh(b)
+  (zr.sin() * zi.cosh(), zr.cos() * zi.sinh())
+}
+
+fn complex_cos(zr: f64, zi: f64) -> (f64, f64) {
+  // Cos(a + bi) = Cos(a) Cosh(b) - i Sin(a) Sinh(b)
+  (zr.cos() * zi.cosh(), -zr.sin() * zi.sinh())
 }
