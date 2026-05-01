@@ -1683,27 +1683,134 @@ fn cluster_keys_emit_values(
 
 /// `FindClusters[list]` / `FindClusters[list, k]` — dispatch entry that
 /// hands off to the 1-arg path when no cluster count is given, or runs
-/// the explicit `k-1` largest-gap split when `k` is provided.
+/// the explicit `k-1` largest-gap split when `k` is provided. Also
+/// accepts a `DistanceFunction -> fn` option, which switches to a
+/// distance-based equivalence-class clustering.
 pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "FindClusters expects 1 or 2 arguments".into(),
+      "FindClusters expects 1 to 3 arguments".into(),
     ));
   }
-  if args.len() == 1 {
-    return find_clusters_ast(&args[0]);
+  // Pull out a DistanceFunction option from any trailing arg.
+  let mut distance_fn: Option<Expr> = None;
+  let mut k_arg: Option<&Expr> = None;
+  for arg in &args[1..] {
+    if let Some(fnexpr) = extract_distance_function_option(arg) {
+      distance_fn = Some(fnexpr);
+    } else {
+      k_arg = Some(arg);
+    }
   }
-  // 2-arg form: extract k.
-  let k = match &args[1] {
-    Expr::Integer(n) if *n >= 1 => *n as usize,
+  if let Some(fnexpr) = distance_fn {
+    return find_clusters_distance_fn(&args[0], &fnexpr, args);
+  }
+  if let Some(kexp) = k_arg {
+    let k = match kexp {
+      Expr::Integer(n) if *n >= 1 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "FindClusters".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    return find_clusters_with_k(&args[0], k, args);
+  }
+  find_clusters_ast(&args[0])
+}
+
+/// Extract `DistanceFunction -> fn` from a single option argument.
+fn extract_distance_function_option(opt: &Expr) -> Option<Expr> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && let Expr::Identifier(s) = pattern.as_ref()
+    && s == "DistanceFunction"
+  {
+    return Some((**replacement).clone());
+  }
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && let Expr::Identifier(s) = &args[0]
+    && s == "DistanceFunction"
+  {
+    return Some(args[1].clone());
+  }
+  None
+}
+
+/// `FindClusters[list, DistanceFunction -> fn]` — group items into
+/// equivalence classes where every internal pairwise distance is zero.
+/// Clusters are emitted in descending order of their first item's input
+/// index, matching wolframscript on simple cases like the Length-based
+/// distance test in the docs.
+fn find_clusters_distance_fn(
+  list: &Expr,
+  distance_fn: &Expr,
+  raw_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FindClusters".to_string(),
-        args: args.to_vec(),
+        args: raw_args.to_vec(),
       });
     }
   };
-  find_clusters_with_k(&args[0], k, args)
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  let n = items.len();
+  // Union-Find over indices, joining pairs with zero distance.
+  let mut parent: Vec<usize> = (0..n).collect();
+  fn find(parent: &mut [usize], x: usize) -> usize {
+    let mut root = x;
+    while parent[root] != root {
+      root = parent[root];
+    }
+    let mut cur = x;
+    while parent[cur] != root {
+      let nxt = parent[cur];
+      parent[cur] = root;
+      cur = nxt;
+    }
+    root
+  }
+  for i in 0..n {
+    for j in (i + 1)..n {
+      let d = crate::functions::list_helpers_ast::utilities::apply_func_to_two_args(
+        distance_fn, &items[i], &items[j],
+      )?;
+      let is_zero = matches!(&d, Expr::Integer(0))
+        || matches!(&d, Expr::Real(v) if *v == 0.0);
+      if is_zero {
+        let ri = find(&mut parent, i);
+        let rj = find(&mut parent, j);
+        if ri != rj {
+          parent[ri] = rj;
+        }
+      }
+    }
+  }
+  // Group indices by root, preserving input order within each group.
+  let mut groups: Vec<(usize, Vec<Expr>)> = Vec::new();
+  for i in 0..n {
+    let r = find(&mut parent, i);
+    if let Some(g) = groups.iter_mut().find(|(rt, _)| *rt == r) {
+      g.1.push(items[i].clone());
+    } else {
+      groups.push((r, vec![items[i].clone()]));
+    }
+  }
+  // Wolframscript orders the clusters with the highest first-input-index
+  // first (later-encountered cluster first).
+  groups.sort_by(|a, b| b.0.cmp(&a.0));
+  let result: Vec<Expr> = groups.into_iter().map(|(_, g)| Expr::List(g)).collect();
+  Ok(Expr::List(result))
 }
 
 /// `FindClusters[list, k]` — split a 1-D numeric list into exactly `k`
