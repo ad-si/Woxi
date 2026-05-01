@@ -47,21 +47,19 @@ fn make_bigfloat(value: f64, precision: f64) -> Expr {
   )
 }
 
-/// Format a real number, trimming trailing zeros but keeping decimal point
+/// Format a real number using its shortest round-trip representation
+/// (Rust's `{}` uses Ryu), so e.g. `3823.15_f64` prints as `3823.15`
+/// rather than the IEEE-754 expansion `3823.150000000000091`. The
+/// precision marker the caller appends covers significance separately.
 fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
   if value == 0.0 {
     return "0.".to_string();
   }
-  // Use enough decimal places to capture all digits, then trim trailing zeros
-  let sign = if value < 0.0 { "-" } else { "" };
-  let abs_val = value.abs();
-  let s = format!("{:.15}", abs_val);
-  let s = s.trim_end_matches('0');
-
-  if s.ends_with('.') {
-    format!("{}{}", sign, s)
+  let s = format!("{}", value);
+  if s.contains('.') {
+    s
   } else {
-    format!("{}{}", sign, s)
+    format!("{}.", s)
   }
 }
 
@@ -2312,14 +2310,18 @@ fn get_property(elem: &Element, property: &str) -> Expr {
         // Celsius → Kelvin. Round to 2 decimals to mask IEEE-754 drift
         // (source data has 2 decimal places).
         let kelvin = ((v + 273.15) * 100.0).round() / 100.0;
-        Expr::Real(kelvin)
+        let prec_c = temp_precision(v);
+        let kelvin_prec = absolute_temp_precision(prec_c, v, kelvin);
+        make_quantity(make_bigfloat(kelvin, kelvin_prec), "Kelvins")
       }
       None => missing_not_available(),
     },
     "AbsoluteMeltingPoint" => match elem.melting_point {
       Some(v) => {
         let kelvin = ((v + 273.15) * 100.0).round() / 100.0;
-        Expr::Real(kelvin)
+        let prec_c = temp_precision(v);
+        let kelvin_prec = absolute_temp_precision(prec_c, v, kelvin);
+        make_quantity(make_bigfloat(kelvin, kelvin_prec), "Kelvins")
       }
       None => {
         if elem.electronegativity.is_none() && elem.melting_point.is_none() {
@@ -2475,6 +2477,17 @@ fn temp_precision(v: f64) -> f64 {
     // At least 2 digits of precision for temperatures
     if count < 2.0 { 2.0 } else { count }
   }
+}
+
+/// Convert Celsius precision into Kelvin precision after the constant
+/// shift `K = C + 273.15`. Subtraction preserves absolute uncertainty,
+/// so the new significant-digit count is `prec_c - log10(|C|/|K|)` —
+/// matching wolframscript's `Precision[ElementData[…, "AbsoluteBoilingPoint"]]`.
+fn absolute_temp_precision(prec_c: f64, celsius: f64, kelvin: f64) -> f64 {
+  if kelvin.abs() < 1e-12 || celsius.abs() < 1e-12 {
+    return prec_c;
+  }
+  prec_c - (celsius.abs().log10() - kelvin.abs().log10())
 }
 
 // Alphabetical list of property names ElementData can be queried with.

@@ -304,10 +304,12 @@ mod element_data_tests {
 
   #[test]
   fn element_data_absolute_boiling_point_helium() {
-    // -268.93 °C + 273.15 = 4.22 K
+    // -268.93 °C + 273.15 = 4.22 K. Wolframscript wraps the value in
+    // `Quantity[…, "Kelvins"]` and carries the precision-loss from the
+    // subtraction in the backtick precision marker.
     assert_eq!(
       interpret(r#"ElementData["He", "AbsoluteBoilingPoint"]"#).unwrap(),
-      "4.22"
+      "Quantity[4.22`3.19567319910012, Kelvins]"
     );
   }
 
@@ -315,7 +317,7 @@ mod element_data_tests {
   fn element_data_absolute_melting_point_carbon() {
     assert_eq!(
       interpret(r#"ElementData["Carbon", "AbsoluteMeltingPoint"]"#).unwrap(),
-      "3823.15"
+      "Quantity[3823.15`4.032192984695641, Kelvins]"
     );
   }
 
