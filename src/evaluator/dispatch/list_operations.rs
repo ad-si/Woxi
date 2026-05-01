@@ -2148,6 +2148,7 @@ pub fn dispatch_list_operations(
       // Convert any SparseArray argument to its Normal (dense-list) form so
       // Outer can treat it as a regular nested list. Wolfram handles the
       // mixed case `Outer[Times, SparseArray[...], {c, d}]` the same way.
+      let mut had_sparse = false;
       let lists_owned: Vec<Expr> = lists_in
         .iter()
         .map(|e| {
@@ -2157,6 +2158,7 @@ pub fn dispatch_list_operations(
           } = e
             && name == "SparseArray"
           {
+            had_sparse = true;
             list_helpers_ast::sparse_array_ast(sa_args)
               .unwrap_or_else(|_| e.clone())
           } else {
@@ -2165,11 +2167,26 @@ pub fn dispatch_list_operations(
         })
         .collect();
 
-      return Some(list_helpers_ast::outer_ast_with_levels(
+      let dense = list_helpers_ast::outer_ast_with_levels(
         &args[0],
         &lists_owned,
         &levels,
-      ));
+      );
+      // For `Times` over any SparseArray input, wolframscript collapses the
+      // result into a single SparseArray with default 0 (since Times[…, 0]
+      // = 0 makes every product involving a zero default to zero).
+      // Other heads keep the dense nested form.
+      if had_sparse
+        && matches!(&args[0], Expr::Identifier(s) if s == "Times")
+        && let Ok(d) = &dense
+      {
+        if let Some(sparse) =
+          dense_to_sparse_array_with_default(d, &Expr::Integer(0))
+        {
+          return Some(Ok(sparse));
+        }
+      }
+      return Some(dense);
     }
     "TensorProduct" if args.len() >= 2 => {
       // TensorProduct[v1, v2, ...] = Outer[Times, v1, v2, ...]
@@ -3889,4 +3906,149 @@ fn array_depth(expr: &Expr) -> usize {
     }
     _ => 0,
   }
+}
+
+/// Convert a fully-dense nested-list `expr` into a `SparseArray[Automatic, …]`
+/// with the given default value. Only used by Outer's `Times` collapse path
+/// (cases 470 and 473), so the layout exactly matches wolframscript's
+/// CSR-like inner form: `{1, {{rowPtr}, {colIndices…}}, {values…}}` for
+/// rank ≥ 2 and `{1, {{0, count}, {{idx}…}}, {values…}}` for rank 1.
+fn dense_to_sparse_array_with_default(
+  expr: &Expr,
+  default: &Expr,
+) -> Option<Expr> {
+  let dims = sparse_dims(expr)?;
+  if dims.is_empty() {
+    return None;
+  }
+  let default_str = expr_to_string(default);
+  let mut entries: Vec<(Vec<usize>, Expr)> = Vec::new();
+  let mut idx_buf: Vec<usize> = Vec::with_capacity(dims.len());
+  collect_non_default_entries(expr, &mut idx_buf, &mut entries, &default_str);
+  Some(build_sparse_array_csr(&dims, default, &entries))
+}
+
+/// Walk a nested-list `expr`, collecting the dimension at each level.
+/// Returns `None` if any sublist's length disagrees with its sibling — i.e.
+/// the expression isn't a proper rectangular tensor and can't be sparsified.
+fn sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
+  match expr {
+    Expr::List(items) => {
+      let mut dims = vec![items.len()];
+      if items.is_empty() {
+        return Some(dims);
+      }
+      let inner = sparse_dims(&items[0])?;
+      for it in &items[1..] {
+        let other = sparse_dims(it)?;
+        if other != inner {
+          return None;
+        }
+      }
+      dims.extend(inner);
+      Some(dims)
+    }
+    _ => Some(vec![]),
+  }
+}
+
+fn collect_non_default_entries(
+  expr: &Expr,
+  idx: &mut Vec<usize>,
+  out: &mut Vec<(Vec<usize>, Expr)>,
+  default_str: &str,
+) {
+  match expr {
+    Expr::List(items) => {
+      for (i, it) in items.iter().enumerate() {
+        idx.push(i + 1);
+        collect_non_default_entries(it, idx, out, default_str);
+        idx.pop();
+      }
+    }
+    _ => {
+      if expr_to_string(expr) != default_str {
+        out.push((idx.clone(), expr.clone()));
+      }
+    }
+  }
+}
+
+fn build_sparse_array_csr(
+  dims: &[usize],
+  default: &Expr,
+  entries: &[(Vec<usize>, Expr)],
+) -> Expr {
+  let dims_list = Expr::List(
+    dims.iter().map(|&d| Expr::Integer(d as i128)).collect(),
+  );
+  let k = dims.len();
+  let n = dims[0];
+  let make_outer = |inner: Expr| Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      Expr::Identifier("Automatic".to_string()),
+      dims_list.clone(),
+      default.clone(),
+      inner,
+    ],
+  };
+  if entries.is_empty() {
+    let row_ptr = if k == 1 {
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])
+    } else {
+      Expr::List(vec![Expr::Integer(0); n + 1])
+    };
+    let inner = Expr::List(vec![
+      Expr::Integer(1),
+      Expr::List(vec![row_ptr, Expr::List(vec![])]),
+      Expr::List(vec![]),
+    ]);
+    return make_outer(inner);
+  }
+  let mut sorted: Vec<(Vec<usize>, Expr)> = entries.to_vec();
+  sorted.sort_by(|a, b| a.0.cmp(&b.0));
+  if k == 1 {
+    let row_ptr = Expr::List(vec![
+      Expr::Integer(0),
+      Expr::Integer(sorted.len() as i128),
+    ]);
+    let col_indices = Expr::List(
+      sorted
+        .iter()
+        .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)]))
+        .collect(),
+    );
+    let values =
+      Expr::List(sorted.iter().map(|(_, v)| v.clone()).collect());
+    let inner = Expr::List(vec![
+      Expr::Integer(1),
+      Expr::List(vec![row_ptr, col_indices]),
+      values,
+    ]);
+    return make_outer(inner);
+  }
+  let mut row_counts = vec![0i128; n];
+  let mut col_indices_list: Vec<Expr> = Vec::with_capacity(sorted.len());
+  let mut values_list: Vec<Expr> = Vec::with_capacity(sorted.len());
+  for (idx, v) in &sorted {
+    let row = idx[0] - 1;
+    row_counts[row] += 1;
+    let col_idx: Vec<Expr> =
+      idx[1..].iter().map(|&i| Expr::Integer(i as i128)).collect();
+    col_indices_list.push(Expr::List(col_idx));
+    values_list.push(v.clone());
+  }
+  let mut row_ptr = vec![Expr::Integer(0)];
+  let mut acc = 0i128;
+  for c in row_counts {
+    acc += c;
+    row_ptr.push(Expr::Integer(acc));
+  }
+  let inner = Expr::List(vec![
+    Expr::Integer(1),
+    Expr::List(vec![Expr::List(row_ptr), Expr::List(col_indices_list)]),
+    Expr::List(values_list),
+  ]);
+  make_outer(inner)
 }

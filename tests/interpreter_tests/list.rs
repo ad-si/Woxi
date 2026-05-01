@@ -467,12 +467,15 @@ mod outer_extended {
 
   #[test]
   fn sparse_array_with_list() {
+    // wolframscript collapses Outer[Times, …SparseArray…] into a single
+    // SparseArray (default 0) since Times[…, 0] = 0 always defaults.
     assert_eq!(
       interpret(
         "Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]"
       )
       .unwrap(),
-      "{{{0, 0}, {a*c, a*d}}, {{b*c, b*d}, {0, 0}}}"
+      "SparseArray[Automatic, {2, 2, 2}, 0, {1, {{0, 2, 4}, \
+       {{2, 1}, {2, 2}, {1, 1}, {1, 2}}}, {a*c, a*d, b*c, b*d}}]"
     );
   }
 
