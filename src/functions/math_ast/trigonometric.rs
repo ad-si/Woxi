@@ -3757,16 +3757,20 @@ fn extract_integer_factor(expr: &Expr) -> (i128, Expr) {
 
 // ─── Sin/Cos expansion helpers ──────────────────────────────────────
 
-/// Expand Sin[a + b + ...] using recursive addition formula.
+/// Expand Sin[a + b + ...] using recursive addition formula. Each
+/// per-term `Sin[a]` / `Cos[a]` is built via `expand_trig_function` so
+/// integer-multiple terms like `Sin[2 x y]` are themselves expanded
+/// (matching wolframscript's full TrigExpand which decomposes both the
+/// sum and any embedded multiple-angle subterms).
 fn expand_sin_sum(terms: &[Expr]) -> Expr {
   if terms.len() == 1 {
-    return make_fn("Sin", &[terms[0].clone()]);
+    return expand_trig_function("Sin", &terms[0]);
   }
   // Sin[a + rest] = Sin[a]*Cos[rest] + Cos[a]*Sin[rest]
   let a = &terms[0];
   let rest = &terms[1..];
-  let sin_a = make_fn("Sin", &[a.clone()]);
-  let cos_a = make_fn("Cos", &[a.clone()]);
+  let sin_a = expand_trig_function("Sin", a);
+  let cos_a = expand_trig_function("Cos", a);
   let sin_rest = expand_sin_sum(rest);
   let cos_rest = expand_cos_sum(rest);
   make_plus(
@@ -3778,13 +3782,13 @@ fn expand_sin_sum(terms: &[Expr]) -> Expr {
 /// Expand Cos[a + b + ...] using recursive addition formula.
 fn expand_cos_sum(terms: &[Expr]) -> Expr {
   if terms.len() == 1 {
-    return make_fn("Cos", &[terms[0].clone()]);
+    return expand_trig_function("Cos", &terms[0]);
   }
   // Cos[a + rest] = Cos[a]*Cos[rest] - Sin[a]*Sin[rest]
   let a = &terms[0];
   let rest = &terms[1..];
-  let sin_a = make_fn("Sin", &[a.clone()]);
-  let cos_a = make_fn("Cos", &[a.clone()]);
+  let sin_a = expand_trig_function("Sin", a);
+  let cos_a = expand_trig_function("Cos", a);
   let sin_rest = expand_sin_sum(rest);
   let cos_rest = expand_cos_sum(rest);
   make_minus(

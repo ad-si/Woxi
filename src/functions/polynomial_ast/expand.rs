@@ -34,14 +34,13 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript:
   //   Expand[(x+a)^2 + (y+a)^2 + (x+y)*(x+a), y]
   //     → a^2 + x*(a + x) + (a + x)^2 + 2*a*y + (a + x)*y + y^2
-  if args.len() == 2 && modulus.is_none() && !trig
-    && is_pattern_arg(&args[1])
-  {
+  if args.len() == 2 && modulus.is_none() && !trig && is_pattern_arg(&args[1]) {
     let var_name = match &args[1] {
       Expr::Identifier(n) => Some(n.clone()),
       _ => None,
     };
-    let result = expand_with_pattern_top(&args[0], &args[1], var_name.as_deref());
+    let result =
+      expand_with_pattern_top(&args[0], &args[1], var_name.as_deref());
     return Ok(result);
   }
 
@@ -192,7 +191,9 @@ fn contains_pattern(expr: &Expr, pat: &Expr) -> bool {
     return true;
   }
   match expr {
-    Expr::FunctionCall { args, .. } => args.iter().any(|a| contains_pattern(a, pat)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| contains_pattern(a, pat))
+    }
     Expr::BinaryOp { left, right, .. } => {
       contains_pattern(left, pat) || contains_pattern(right, pat)
     }
@@ -372,7 +373,6 @@ fn flatten_plus_into(expr: &Expr, out: &mut Vec<Expr>) {
     _ => out.push(expr.clone()),
   }
 }
-
 
 /// Extract Trig -> True from an option argument
 fn extract_trig_option(opt: &Expr) -> bool {
@@ -1355,7 +1355,20 @@ pub fn expand_all_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
-  let expanded = expand_all_recursive(&args[0]);
+  let trig = if args.len() == 2 {
+    extract_trig_option(&args[1])
+  } else {
+    false
+  };
+  let mut expanded = expand_all_recursive(&args[0]);
+  if trig {
+    // After the recursive Power/Times expansion, apply trig identities
+    // to every Sin/Cos/Tan etc. that survives. Re-expand the result so
+    // any new Sum*Sum products from the addition formulas distribute.
+    expanded = crate::functions::math_ast::trig_expand_ast(&[expanded])
+      .unwrap_or_else(|_| args[0].clone());
+    expanded = expand_all_recursive(&expanded);
+  }
   if let Some(m) = modulus {
     // wolframscript keeps the fraction `(num)/(den)` together when a
     // Modulus is supplied even though the default ExpandAll distributes
