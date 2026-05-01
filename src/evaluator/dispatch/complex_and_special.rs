@@ -3085,6 +3085,52 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         args: vec![],
       }
     }
+    // MakeBoxes[InputForm[expr], _]: wolframscript wraps the InputForm
+    // string in `InterpretationBox[StyleBox[<input>, ShowStringCharacters
+    // -> True, NumberMarks -> True], InputForm[<expr>], Editable -> True,
+    // AutoDelete -> True]`. Mirroring that here lets `expr // InputForm //
+    // MakeBoxes` round-trip rather than degenerating into the generic
+    // `RowBox[{InputForm, [, …, ]}]` form.
+    Expr::FunctionCall { name, args }
+      if name == "InputForm" && args.len() == 1 =>
+    {
+      let inner_str = crate::syntax::expr_to_string(&args[0]);
+      Expr::FunctionCall {
+        name: "InterpretationBox".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "StyleBox".to_string(),
+            args: vec![
+              Expr::String(inner_str),
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(
+                  "ShowStringCharacters".to_string(),
+                )),
+                replacement: Box::new(Expr::Identifier("True".to_string())),
+              },
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(
+                  "NumberMarks".to_string(),
+                )),
+                replacement: Box::new(Expr::Identifier("True".to_string())),
+              },
+            ],
+          },
+          Expr::FunctionCall {
+            name: "InputForm".to_string(),
+            args: vec![args[0].clone()],
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            replacement: Box::new(Expr::Identifier("True".to_string())),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("AutoDelete".to_string())),
+            replacement: Box::new(Expr::Identifier("True".to_string())),
+          },
+        ],
+      }
+    }
     // General function call f[x, y] → RowBox[{f, "[", RowBox[{x, ",", y}], "]"}]
     Expr::FunctionCall { name, args } => {
       let mut parts = Vec::new();
