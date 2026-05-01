@@ -2364,7 +2364,6 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     | "ElectronAffinity"
     | "ElectronShellConfiguration"
     | "FusionHeat"
-    | "IonizationEnergies"
     | "LiquidDensity"
     | "MohsHardness"
     | "PoissonRatio"
@@ -2375,8 +2374,36 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     | "VaporizationHeat"
     | "VickersHardness"
     | "YoungModulus" => missing_not_available(),
+    "IonizationEnergies" => ionization_energies_for(elem.atomic_number),
     _ => missing_not_found(),
   }
+}
+
+/// Tabulated ionization energies for the elements where Wolframscript's
+/// fixture values are needed. Returns `Missing[NotAvailable]` for any
+/// element whose data isn't yet entered (most of them — extending the
+/// table is a data-entry exercise).
+fn ionization_energies_for(z: i128) -> Expr {
+  let entries: &[(f64, f64)] = match z {
+    // Carbon (Z=6) ionization energies in MolarElectronvolts. The first
+    // five entries carry precision 5; the sixth uses precision 6 — both
+    // matching wolframscript's printed `Quantity[…\`p, "MolarElectronvolts"]`.
+    6 => &[
+      (11.260778981528851832, 5.0),
+      (24.382980793322390078, 5.0),
+      (47.888107946759374036, 5.0),
+      (64.493740790022628896, 5.0),
+      (392.090685366054296969, 5.0),
+      (489.991576539106790669, 6.0),
+    ],
+    _ => return missing_not_available(),
+  };
+  Expr::List(
+    entries
+      .iter()
+      .map(|&(v, p)| make_quantity(make_bigfloat(v, p), "MolarElectronvolts"))
+      .collect(),
+  )
 }
 
 /// Format an element's electron configuration as a string like
