@@ -1000,16 +1000,123 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn date_difference_multi_unit(
-  _c1: &[f64],
-  _c2: &[f64],
-  _units: &Expr,
+  c1: &[f64],
+  c2: &[f64],
+  units: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Multi-unit differences like {"Month", "Day"} are complex
-  // Return unevaluated for now
+  // Multi-unit decomposition like {"Week", "Day"} → MixedMagnitude[{9, 6}].
+  // Walk the unit list largest-to-smallest, taking the integer part of each
+  // bucket and passing the remainder down. Returns the unevaluated form for
+  // unit lists containing "Year" or "Month" — those need calendar-based
+  // logic that this simple linear conversion can't produce.
+  let unit_strs: Vec<String> = match units {
+    Expr::List(items) => {
+      let mut v = Vec::with_capacity(items.len());
+      for item in items {
+        match item {
+          Expr::String(s) => v.push(s.clone()),
+          Expr::Identifier(s) => v.push(s.clone()),
+          _ => return Ok(unevaluated(c1, c2, units)),
+        }
+      }
+      v
+    }
+    _ => return Ok(unevaluated(c1, c2, units)),
+  };
+  if unit_strs.is_empty() {
+    return Ok(unevaluated(c1, c2, units));
+  }
+  // Bail out for calendar-aware units that don't reduce to fixed seconds.
+  for u in &unit_strs {
+    if u == "Year" || u == "Month" {
+      return Ok(unevaluated(c1, c2, units));
+    }
+  }
+  let s1 = date_to_absolute_seconds(
+    c1[0] as i64,
+    if c1.len() > 1 { c1[1] as i64 } else { 1 },
+    if c1.len() > 2 { c1[2] as i64 } else { 1 },
+    if c1.len() > 3 { c1[3] as i64 } else { 0 },
+    if c1.len() > 4 { c1[4] as i64 } else { 0 },
+    if c1.len() > 5 { c1[5] } else { 0.0 },
+  );
+  let s2 = date_to_absolute_seconds(
+    c2[0] as i64,
+    if c2.len() > 1 { c2[1] as i64 } else { 1 },
+    if c2.len() > 2 { c2[2] as i64 } else { 1 },
+    if c2.len() > 3 { c2[3] as i64 } else { 0 },
+    if c2.len() > 4 { c2[4] as i64 } else { 0 },
+    if c2.len() > 5 { c2[5] } else { 0.0 },
+  );
+  let mut remaining = s2 - s1;
+  let last_idx = unit_strs.len() - 1;
+  let mut magnitudes: Vec<Expr> = Vec::with_capacity(unit_strs.len());
+  let mut plurals: Vec<Expr> = Vec::with_capacity(unit_strs.len());
+  for (i, u) in unit_strs.iter().enumerate() {
+    let secs_per_unit = match u.as_str() {
+      "Week" => 7.0 * 86400.0,
+      "Day" => 86400.0,
+      "Hour" => 3600.0,
+      "Minute" => 60.0,
+      "Second" => 1.0,
+      _ => return Ok(unevaluated(c1, c2, units)),
+    };
+    let plural = match u.as_str() {
+      "Week" => "Weeks",
+      "Day" => "Days",
+      "Hour" => "Hours",
+      "Minute" => "Minutes",
+      "Second" => "Seconds",
+      _ => unreachable!(),
+    };
+    plurals.push(Expr::String(plural.to_string()));
+    if i == last_idx {
+      // Final bucket keeps the leftover (may be fractional).
+      let value = remaining / secs_per_unit;
+      magnitudes.push(if value == value.floor() {
+        Expr::Integer(value as i128)
+      } else {
+        Expr::Real(value)
+      });
+    } else {
+      let count = (remaining / secs_per_unit).trunc();
+      remaining -= count * secs_per_unit;
+      magnitudes.push(Expr::Integer(count as i128));
+    }
+  }
   Ok(Expr::FunctionCall {
-    name: "DateDifference".to_string(),
-    args: vec![],
+    name: "Quantity".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MixedMagnitude".to_string(),
+        args: vec![Expr::List(magnitudes)],
+      },
+      Expr::FunctionCall {
+        name: "MixedUnit".to_string(),
+        args: vec![Expr::List(plurals)],
+      },
+    ],
   })
+}
+
+fn unevaluated(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
+  let to_list = |c: &[f64]| -> Expr {
+    Expr::List(
+      c.iter()
+        .map(|&v| {
+          if v == v.floor() {
+            Expr::Integer(v as i128)
+          } else {
+            Expr::Real(v)
+          }
+        })
+        .collect(),
+    )
+  };
+  Expr::FunctionCall {
+    name: "DateDifference".to_string(),
+    args: vec![to_list(c1), to_list(c2), units.clone()],
+  }
 }
 
 /// DateString[date, format] — format a date as a string
