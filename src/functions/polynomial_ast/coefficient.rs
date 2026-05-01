@@ -814,9 +814,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// shape `[n, …, n]` (with `n` = number of variables) holding the
 /// coefficients of all degree-k monomials at their sorted-index slot,
 /// matching wolframscript's `SparseArray[Automatic, dims, 0, …]` shape.
-pub fn coefficient_arrays_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "CoefficientArrays expects 2 arguments".into(),
@@ -851,6 +849,12 @@ pub fn coefficient_arrays_ast(
       name: "CoefficientArrays".to_string(),
       args: args.to_vec(),
     });
+  }
+  // Multi-polynomial form: `CoefficientArrays[{p1, p2, …}, vars]` returns
+  // SparseArrays of shape `[m, n, …, n]` where `m` is the polynomial
+  // count and the leading multi-index component is the polynomial index.
+  if let Expr::List(polys) = &args[0] {
+    return coefficient_arrays_multi(polys, &vars);
   }
   let n = vars.len();
   let expanded = super::expand::expand_and_combine(&args[0]);
@@ -925,8 +929,7 @@ fn build_sparse_array_for_coefficients(
   k: usize,
   entries: &[(Vec<usize>, Expr)],
 ) -> Expr {
-  let dims_list =
-    Expr::List(vec![Expr::Integer(n as i128); k]);
+  let dims_list = Expr::List(vec![Expr::Integer(n as i128); k]);
   // Empty payload — shape varies between 1D (rowPtr length 2) and ≥2D
   // (rowPtr length n+1) to match wolframscript's CSR-like layout.
   if entries.is_empty() {
@@ -984,15 +987,14 @@ fn build_sparse_array_for_coefficients(
   }
   // k ≥ 2: rowPtr length n+1, colIndices are (k-1)-tuples.
   let mut row_counts = vec![0i128; n];
-  let mut col_indices_list: Vec<Expr> = Vec::with_capacity(sorted_entries.len());
+  let mut col_indices_list: Vec<Expr> =
+    Vec::with_capacity(sorted_entries.len());
   let mut values_list: Vec<Expr> = Vec::with_capacity(sorted_entries.len());
   for (idx, c) in &sorted_entries {
     let row = idx[0] - 1;
     row_counts[row] += 1;
-    let col_idx: Vec<Expr> = idx[1..]
-      .iter()
-      .map(|&i| Expr::Integer(i as i128))
-      .collect();
+    let col_idx: Vec<Expr> =
+      idx[1..].iter().map(|&i| Expr::Integer(i as i128)).collect();
     col_indices_list.push(Expr::List(col_idx));
     values_list.push(c.clone());
   }
@@ -1016,4 +1018,154 @@ fn build_sparse_array_for_coefficients(
       inner,
     ],
   }
+}
+
+/// Multi-polynomial CoefficientArrays. Returns a list of SparseArrays
+/// where `c_d` has shape `[m, n, …, n]` (with `d` copies of `n`, plus
+/// the leading polynomial dimension of size `m`). The `c_0` SparseArray
+/// has shape `[m]` and (matching wolframscript's quirk) wraps each
+/// non-zero constant as an unevaluated `Plus[0, value]` so its surface
+/// form is `0 + value` instead of just `value`.
+fn coefficient_arrays_multi(
+  polys: &[Expr],
+  vars: &[String],
+) -> Result<Expr, InterpreterError> {
+  let m = polys.len();
+  let n = vars.len();
+  // For each poly, collect (degree, sorted_indices, coefficient).
+  let mut per_poly: Vec<Vec<(usize, Vec<usize>, Expr)>> =
+    Vec::with_capacity(m);
+  let mut max_degree = 0usize;
+  for poly in polys {
+    let expanded = super::expand::expand_and_combine(poly);
+    let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+    let terms = collect_additive_terms(&expanded);
+    let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
+    for term in &terms {
+      let evaled = crate::evaluator::evaluate_expr_to_expr(term)?;
+      let mut exponents: Vec<i128> = Vec::with_capacity(n);
+      let mut remaining = evaled.clone();
+      for var in vars {
+        let power = term_power_of_var(&remaining, var);
+        exponents.push(power);
+        let (_, coeff) = term_var_power_and_coeff(&remaining, var);
+        remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+      }
+      let degree: usize = exponents
+        .iter()
+        .map(|&e| if e < 0 { 0 } else { e as usize })
+        .sum();
+      if degree > max_degree {
+        max_degree = degree;
+      }
+      let mut indices = Vec::with_capacity(degree);
+      for (i, &p) in exponents.iter().enumerate() {
+        let p = if p < 0 { 0 } else { p as usize };
+        for _ in 0..p {
+          indices.push(i + 1);
+        }
+      }
+      indices.sort();
+      entries.push((degree, indices, remaining));
+    }
+    // Sum coefficients sharing the same (degree, indices) — same as the
+    // single-poly path but kept per-polynomial here.
+    let mut grouped: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
+    for (deg, idx, coef) in entries {
+      if let Some(existing) = grouped
+        .iter_mut()
+        .find(|(d, i, _)| *d == deg && *i == idx)
+      {
+        existing.2 = add_exprs(&existing.2, &coef);
+      } else {
+        grouped.push((deg, idx, coef));
+      }
+    }
+    // Drop zero coefficients.
+    grouped.retain(|(_, _, c)| !matches!(c, Expr::Integer(0)));
+    per_poly.push(grouped);
+  }
+  let mut output: Vec<Expr> = Vec::with_capacity(max_degree + 1);
+  for d in 0..=max_degree {
+    output.push(build_sparse_array_multi(d, m, n, &per_poly));
+  }
+  Ok(Expr::List(output))
+}
+
+/// Build the degree-`d` SparseArray for the multi-polynomial form. The
+/// shape is `[m]` for `d == 0` (just one entry per polynomial) and
+/// `[m, n, …, n]` (with `d` extra copies of `n`) for `d >= 1`. The
+/// per-row CSR layout walks the polynomials in order.
+fn build_sparse_array_multi(
+  d: usize,
+  m: usize,
+  n: usize,
+  per_poly: &[Vec<(usize, Vec<usize>, Expr)>],
+) -> Expr {
+  // dims: [m] for d=0, [m, n, n, …] (d copies of n) for d >= 1.
+  let mut dims_vec = vec![Expr::Integer(m as i128)];
+  for _ in 0..d {
+    dims_vec.push(Expr::Integer(n as i128));
+  }
+  let dims_list = Expr::List(dims_vec);
+  let make_outer = |inner: Expr| Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      Expr::Identifier("Automatic".to_string()),
+      dims_list.clone(),
+      Expr::Integer(0),
+      inner,
+    ],
+  };
+  // Collect this degree's entries from each poly, in poly order.
+  let mut row_counts = vec![0i128; m];
+  let mut col_indices_list: Vec<Expr> = Vec::new();
+  let mut values_list: Vec<Expr> = Vec::new();
+  for (i, entries) in per_poly.iter().enumerate() {
+    for (deg, idx, coef) in entries {
+      if *deg != d {
+        continue;
+      }
+      row_counts[i] += 1;
+      // For d=0, colIndices are 1-tuples `{poly_index}` matching the
+      // single-dim CSR. For d>=1, colIndices are `(d)`-tuples carrying
+      // just the variable indices.
+      let col: Vec<Expr> = if d == 0 {
+        vec![Expr::Integer((i + 1) as i128)]
+      } else {
+        idx.iter().map(|&j| Expr::Integer(j as i128)).collect()
+      };
+      col_indices_list.push(Expr::List(col));
+      // c_0's stored value is `Plus[0, coef]` — wolframscript's quirk
+      // surfaces this accumulator as `0 + value` in the printed form.
+      let value = if d == 0 {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(0), coef.clone()],
+        }
+      } else {
+        coef.clone()
+      };
+      values_list.push(value);
+    }
+  }
+  // rowPtr length: `2` for d == 0 (single-row CSR), `m + 1` otherwise.
+  let row_ptr = if d == 0 {
+    let total: i128 = row_counts.iter().sum();
+    Expr::List(vec![Expr::Integer(0), Expr::Integer(total)])
+  } else {
+    let mut v = vec![Expr::Integer(0)];
+    let mut acc = 0i128;
+    for c in &row_counts {
+      acc += c;
+      v.push(Expr::Integer(acc));
+    }
+    Expr::List(v)
+  };
+  let inner = Expr::List(vec![
+    Expr::Integer(1),
+    Expr::List(vec![row_ptr, Expr::List(col_indices_list)]),
+    Expr::List(values_list),
+  ]);
+  make_outer(inner)
 }
