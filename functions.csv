@@ -1795,7 +1795,7 @@ CornerNeighbors,Corner neighbors option,,unevaluated,7.0,1827
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2.0,1827
 RealExponent,Real exponent,,unevaluated,6.0,1827
 TriangularDistribution,Triangular distribution,,unevaluated,6.0,1827
-BinaryWrite,Write binary data,,unevaluated,5.1,1833
+BinaryWrite,Write binary data,✅,io,5.1,1833
 CheckboxBar,Checkbox bar control,,unevaluated,6.0,1833
 DuplicateFreeQ,Test if list has no duplicates,✅,computation,10.0,1833
 OutputForm,Converts expression to output form,✅,pure,1.0,1833
@@ -1887,7 +1887,7 @@ NotElement,Test non-membership of an expression in a mathematical domain,✅,pur
 SubsuperscriptBox,Represents a box with both subscript and superscript for typesetting,✅,pure,3.0,1921
 TakeLargestBy,Takes the n largest elements by a criterion,✅,pure,10.1,1921
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8.0,1921
-BinaryRead,Reads a single binary object from a file or stream,🚫,io,5.1,1926
+BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
 LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
 Overflow,Symbol representing arithmetic overflow,✅,pure,1.0,1926
 SignedRegionDistance,Computational geometry function for signed distance to a region,🚫,,10.0,1926

@@ -928,14 +928,23 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::String(url)));
     }
     // OpenRead[file] — open a file for reading, return InputStream[name, id]
+    // OpenRead[file, BinaryFormat -> True] — same; binary mode is handled
+    // by BinaryRead at read time, so the option is accepted as a pass-through.
     #[cfg(not(target_arch = "wasm32"))]
-    "OpenRead" if args.len() == 1 => {
-      let filename = match &args[0] {
-        Expr::String(s) => s.clone(),
-        other => {
+    "OpenRead" if (1..=2).contains(&args.len()) => {
+      let (filename_arg, _opts) = io_split_filename_and_options(args);
+      let filename = match filename_arg {
+        Some(Expr::String(s)) => s.clone(),
+        Some(other) => {
           return Some(Ok(Expr::FunctionCall {
             name: "OpenRead".to_string(),
             args: vec![other.clone()],
+          }));
+        }
+        None => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "OpenRead".to_string(),
+            args: args.to_vec(),
           }));
         }
       };
@@ -956,25 +965,26 @@ pub fn dispatch_io_functions(
       }));
     }
     // OpenWrite[file] — open a file for writing, return OutputStream[name, id]
+    // OpenWrite[BinaryFormat -> True] — same, options pass-through.
     #[cfg(not(target_arch = "wasm32"))]
-    "OpenWrite" if args.len() <= 1 => {
-      let filename = if args.is_empty() {
-        let path = match crate::utils::create_file(None)
-          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
-        {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
-        path.to_string_lossy().into_owned()
-      } else {
-        match &args[0] {
-          Expr::String(s) => s.clone(),
-          other => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "OpenWrite".to_string(),
-              args: vec![other.clone()],
-            }));
-          }
+    "OpenWrite" if args.len() <= 2 => {
+      let (filename_arg, _opts) = io_split_filename_and_options(args);
+      let filename = match filename_arg {
+        Some(Expr::String(s)) => s.clone(),
+        Some(other) => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "OpenWrite".to_string(),
+            args: vec![other.clone()],
+          }));
+        }
+        None => {
+          let path = match crate::utils::create_file(None)
+            .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+          {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+          };
+          path.to_string_lossy().into_owned()
         }
       };
       // Create or truncate the file
@@ -994,6 +1004,131 @@ pub fn dispatch_io_functions(
         name: "OutputStream".to_string(),
         args: vec![Expr::String(filename), Expr::Integer(id as i128)],
       }));
+    }
+    // BinaryWrite[stream, bytes] — write bytes (Integers in 0..255) to the
+    // file backing `stream`. Returns the same `stream`. Supports a single
+    // Integer or a List of Integers.
+    #[cfg(not(target_arch = "wasm32"))]
+    "BinaryWrite" if args.len() == 2 => {
+      let path = match io_stream_path(&args[0]) {
+        Some(p) => p,
+        None => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "BinaryWrite".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      let bytes: Vec<u8> = match &args[1] {
+        Expr::Integer(n) => vec![(*n & 0xff) as u8],
+        Expr::List(items) => {
+          let mut out = Vec::with_capacity(items.len());
+          for it in items {
+            match it {
+              Expr::Integer(n) => out.push((*n & 0xff) as u8),
+              _ => {
+                return Some(Ok(Expr::FunctionCall {
+                  name: "BinaryWrite".to_string(),
+                  args: args.to_vec(),
+                }));
+              }
+            }
+          }
+          out
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "BinaryWrite".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      use std::io::Write;
+      let mut f = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+      {
+        Ok(f) => f,
+        Err(e) => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "BinaryWrite: cannot open {}: {}",
+            path, e
+          ))));
+        }
+      };
+      if let Err(e) = f.write_all(&bytes) {
+        return Some(Err(InterpreterError::EvaluationError(format!(
+          "BinaryWrite: write failed on {}: {}",
+          path, e
+        ))));
+      }
+      return Some(Ok(args[0].clone()));
+    }
+    // BinaryRead[stream]            — read 1 Byte (Integer 0..255)
+    // BinaryRead[stream, "Byte"]    — read 1 Byte
+    // BinaryRead[stream, {forms…}]  — read N items, returning a List
+    #[cfg(not(target_arch = "wasm32"))]
+    "BinaryRead" if (1..=2).contains(&args.len()) => {
+      let path = match io_stream_path(&args[0]) {
+        Some(p) => p,
+        None => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "BinaryRead".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "BinaryRead: cannot read {}: {}",
+            path, e
+          ))));
+        }
+      };
+      let form = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::String("Byte".to_string())
+      };
+      match &form {
+        Expr::String(s) if s == "Byte" => {
+          if bytes.is_empty() {
+            return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+          }
+          return Some(Ok(Expr::Integer(bytes[0] as i128)));
+        }
+        Expr::List(items) => {
+          let mut out = Vec::with_capacity(items.len());
+          for (i, it) in items.iter().enumerate() {
+            match it {
+              Expr::String(s) if s == "Byte" => {
+                if i < bytes.len() {
+                  out.push(Expr::Integer(bytes[i] as i128));
+                } else {
+                  out.push(Expr::Identifier("EndOfFile".to_string()));
+                }
+              }
+              _ => {
+                // Unsupported form spec — fall back to unevaluated.
+                return Some(Ok(Expr::FunctionCall {
+                  name: "BinaryRead".to_string(),
+                  args: args.to_vec(),
+                }));
+              }
+            }
+          }
+          return Some(Ok(Expr::List(out)));
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "BinaryRead".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      }
     }
     // OpenAppend[file] — open a file for appending, return OutputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
@@ -1084,7 +1219,10 @@ pub fn dispatch_io_functions(
             }
           };
           match crate::close_stream(id) {
-            Some(name) => return Some(Ok(Expr::Identifier(name))),
+            // Wolframscript's `Close[stream]` returns the underlying file
+            // name as a `String` (so `OpenRead[Close[stream]]` round-trips
+            // through a binary write/read cycle).
+            Some(name) => return Some(Ok(Expr::String(name))),
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!("{} is not open.", stream_str));
@@ -2078,6 +2216,46 @@ pub fn dispatch_io_functions(
     _ => {}
   }
   None
+}
+
+/// Split an `OpenWrite[…]` / `OpenRead[…]` arg list into the optional
+/// filename argument and the remaining option-Rule arguments. Used so the
+/// `BinaryFormat -> True` option can be passed through alongside (or
+/// instead of) a filename.
+#[cfg(not(target_arch = "wasm32"))]
+fn io_split_filename_and_options(args: &[Expr]) -> (Option<&Expr>, Vec<&Expr>) {
+  let mut filename = None;
+  let mut opts = Vec::new();
+  for a in args {
+    if matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
+      opts.push(a);
+    } else if filename.is_none() {
+      filename = Some(a);
+    } else {
+      opts.push(a);
+    }
+  }
+  (filename, opts)
+}
+
+/// Extract the file path backing an `InputStream[name, id]` /
+/// `OutputStream[name, id]` expression. Used by `BinaryWrite` /
+/// `BinaryRead` to find the underlying file.
+#[cfg(not(target_arch = "wasm32"))]
+fn io_stream_path(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "InputStream" && name != "OutputStream" {
+    return None;
+  }
+  if args.is_empty() {
+    return None;
+  }
+  match &args[0] {
+    Expr::String(s) => Some(s.clone()),
+    _ => None,
+  }
 }
 
 /// Render a single CSV/TSV cell. Numeric/symbolic atoms are emitted bare;
