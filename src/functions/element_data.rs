@@ -2348,9 +2348,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
         .collect();
       Expr::List(shells)
     }
-    "ElectronConfigurationString" => {
-      Expr::String(format_electron_configuration(elem))
-    }
+    "ElectronConfigurationString" => format_electron_configuration_row(elem),
     // Properties we recognise by name but don't yet have tabulated data for —
     // mirror Mathematica's behaviour of returning Missing[NotAvailable] so
     // callers can distinguish "unknown datum" from "unrecognised property".
@@ -2389,12 +2387,12 @@ fn ionization_energies_for(z: i128) -> Expr {
     // five entries carry precision 5; the sixth uses precision 6 — both
     // matching wolframscript's printed `Quantity[…\`p, "MolarElectronvolts"]`.
     6 => &[
-      (11.260778981528851832, 5.0),
-      (24.382980793322390078, 5.0),
-      (47.888107946759374036, 5.0),
-      (64.493740790022628896, 5.0),
-      (392.090685366054296969, 5.0),
-      (489.991576539106790669, 6.0),
+      (11.260_778_981_528_851, 5.0),
+      (24.382_980_793_322_39, 5.0),
+      (47.888_107_946_759_376, 5.0),
+      (64.493_740_790_022_63, 5.0),
+      (392.090_685_366_054_3, 5.0),
+      (489.991_576_539_106_8, 6.0),
     ],
     _ => return missing_not_available(),
   };
@@ -2409,6 +2407,66 @@ fn ionization_energies_for(z: i128) -> Expr {
 /// Format an element's electron configuration as a string like
 /// `[Ne] 3s2 3p4`. Uses the largest noble gas whose shells are a prefix of
 /// the element's shells; the remainder becomes explicit `nS<count>` terms.
+/// Wolframscript renders `ElementData[…, "ElectronConfigurationString"]`
+/// as a `Row[…]` whose elements alternate between principal-quantum-number
+/// integers (e.g. `3`) and `Superscript[Style[<letter>, Italic], <count>]`
+/// for each populated subshell, prefixed by the noble-gas string when
+/// applicable. We assemble the Row in the same order
+/// `format_electron_configuration` builds its space-joined string —
+/// shell-major: shell 1, shell 2, … with subshells s, p, d, f within
+/// each shell.
+fn format_electron_configuration_row(elem: &Element) -> Expr {
+  let s = format_electron_configuration(elem);
+  let mut parts: Vec<Expr> = Vec::new();
+  for token in s.split(' ') {
+    if token.is_empty() {
+      continue;
+    }
+    if token.starts_with('[') {
+      parts.push(Expr::String(token.to_string()));
+      continue;
+    }
+    // Token shape: `<n><letter><count>` (e.g. `3p4`). The letter is a
+    // single alpha char; everything before it is the principal quantum
+    // number, everything after is the count.
+    let bytes = token.as_bytes();
+    let mut letter_idx = None;
+    for (i, &b) in bytes.iter().enumerate() {
+      if (b as char).is_ascii_alphabetic() {
+        letter_idx = Some(i);
+        break;
+      }
+    }
+    let Some(li) = letter_idx else {
+      parts.push(Expr::String(token.to_string()));
+      continue;
+    };
+    let n_str = &token[..li];
+    let letter = &token[li..li + 1];
+    let count_str = &token[li + 1..];
+    let n: i128 = n_str.parse().unwrap_or(0);
+    let count: i128 = count_str.parse().unwrap_or(0);
+    parts.push(Expr::Integer(n));
+    parts.push(Expr::FunctionCall {
+      name: "Superscript".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Style".to_string(),
+          args: vec![
+            Expr::String(letter.to_string()),
+            Expr::Identifier("Italic".to_string()),
+          ],
+        },
+        Expr::Integer(count),
+      ],
+    });
+  }
+  Expr::FunctionCall {
+    name: "Row".to_string(),
+    args: vec![Expr::List(parts)],
+  }
+}
+
 fn format_electron_configuration(elem: &Element) -> String {
   // Noble gases (group 18), ordered by atomic number descending.
   const NOBLE_GASES: &[(i128, &str)] = &[

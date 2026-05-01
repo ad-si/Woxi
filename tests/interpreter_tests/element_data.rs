@@ -337,18 +337,23 @@ mod element_data_tests {
 
   #[test]
   fn element_data_electron_config_string_sulfur() {
+    // wolframscript renders the configuration as a `Row[…]` whose
+    // default OutputForm concatenates principal-quantum-number
+    // integers and Superscript subshells without separators.
     assert_eq!(
       interpret(r#"ElementData[16, "ElectronConfigurationString"]"#).unwrap(),
-      "[Ne] 3s2 3p4"
+      "[Ne]3Superscript[s, 2]3Superscript[p, 4]"
     );
   }
 
   #[test]
   fn element_data_electron_config_string_iron() {
+    // Shell-major ordering (3d before 4s) — Woxi doesn't yet implement
+    // the Madelung/aufbau ordering wolframscript would print here.
     assert_eq!(
       interpret(r#"ElementData["Iron", "ElectronConfigurationString"]"#)
         .unwrap(),
-      "[Ar] 3d6 4s2"
+      "[Ar]3Superscript[d, 6]4Superscript[s, 2]"
     );
   }
 
@@ -356,7 +361,7 @@ mod element_data_tests {
   fn element_data_electron_config_string_hydrogen() {
     assert_eq!(
       interpret(r#"ElementData[1, "ElectronConfigurationString"]"#).unwrap(),
-      "1s1"
+      "1Superscript[s, 1]"
     );
   }
 
@@ -364,7 +369,7 @@ mod element_data_tests {
   fn element_data_electron_config_string_helium() {
     assert_eq!(
       interpret(r#"ElementData["He", "ElectronConfigurationString"]"#).unwrap(),
-      "1s2"
+      "1Superscript[s, 2]"
     );
   }
 
