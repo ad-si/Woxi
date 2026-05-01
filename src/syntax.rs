@@ -5466,6 +5466,19 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
 /// in a Times expression. Handles both FunctionCall and BinaryOp representations.
 fn is_denominator_factor(expr: &Expr) -> bool {
+  // A Rational[n, d] with |n| > 1 and |d| > 1 contributes a denominator
+  // factor `d` and triggers fraction formatting. Wolfram uses
+  // `(n*X)/d` for such terms (e.g. `(-2*Pi)/3`), but keeps `±1/d*X`
+  // when |n| == 1 (e.g. `-1/4*Pi`).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rational"
+    && args.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
+    && n.abs() > 1
+    && d.abs() > 1
+  {
+    return true;
+  }
   let exponent = match expr {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       &args[1]
@@ -5647,9 +5660,7 @@ fn format_times_with_denominator(
   // n goes to the numerator and d goes to the denominator.
   // E.g. Times[Rational[1,3], Power[2,-1/2]] → 1/(3*Sqrt[2]) instead of (1/3)/Sqrt[2]
   for a in args.iter() {
-    if is_denominator_factor(a) {
-      denom_exprs.push(denominator_form(a));
-    } else if let Expr::FunctionCall { name, args: rargs } = a
+    if let Expr::FunctionCall { name, args: rargs } = a
       && name == "Rational"
       && rargs.len() == 2
       && let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
@@ -5657,9 +5668,13 @@ fn format_times_with_denominator(
     {
       let (rn, rd) = if *d > 0 { (*n, *d) } else { (-*n, -*d) };
       if rn != 1 {
-        numer_factors_owned.push(Expr::Integer(rn));
+        // Wolfram puts the rational's numerator first in the
+        // numerator factors, e.g. `(-2*x*Sin[x])/3` not `(x*-2*Sin[x])/3`.
+        numer_factors_owned.insert(0, Expr::Integer(rn));
       }
       denom_exprs.insert(0, Expr::Integer(rd));
+    } else if is_denominator_factor(a) {
+      denom_exprs.push(denominator_form(a));
     } else {
       numer_factors_owned.push(a.clone());
     }
@@ -7081,11 +7096,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               // (Power[base, negative]) split it out as `(I*<numer>)/<denom>`,
               // matching wolframscript's `Times[I, …, Power[d, -1]]` form.
               if symbolic_factors.iter().any(|a| is_denominator_factor(a)) {
-                let combined: Vec<Expr> = std::iter::once(Expr::Identifier(
-                  "I".to_string(),
-                ))
-                .chain(symbolic_factors.iter().cloned().cloned())
-                .collect();
+                let combined: Vec<Expr> =
+                  std::iter::once(Expr::Identifier("I".to_string()))
+                    .chain(symbolic_factors.iter().cloned().cloned())
+                    .collect();
                 if let Some(frac) =
                   format_times_with_denominator(&combined, fmt_fn)
                 {
@@ -7215,26 +7229,116 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             result.push_str(&fmt_plus_term(operand));
           } else if let Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left,
-            right,
+            ..
           } = arg
           {
-            if matches!(left.as_ref(), Expr::Integer(-1)) {
-              result.push_str(" - ");
-              result.push_str(&fmt_plus_term(right));
-            } else if let Expr::Integer(n) = left.as_ref() {
-              if *n < 0 {
-                result.push_str(" - ");
-                let pos = Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Integer(-n)),
-                  right: right.clone(),
-                };
-                result.push_str(&fmt(&pos));
-              } else {
-                result.push_str(" + ");
-                result.push_str(&fmt(arg));
+            // Flatten nested BinaryOp Times so we can inspect all factors,
+            // not just the outermost left. An Expand result like
+            // `Times[Rational[-1,3], Times[Cos[x], Sin[x]^2]]` was missing
+            // this branch and printing as `+ -1/3*Cos[x]*Sin[x]^2` when it
+            // should appear as `- (Cos[x]*Sin[x]^2)/3` inside a Plus.
+            let mut factor_refs: Vec<&Expr> = Vec::new();
+            flatten_binary_times(arg, &mut factor_refs);
+            // Find a numeric factor whose negation flips the term's sign.
+            let neg_idx = factor_refs.iter().position(|f| match f {
+              Expr::Integer(n) if *n < 0 => true,
+              Expr::Real(v) if *v < 0.0 => true,
+              Expr::FunctionCall { name, args }
+                if name == "Rational"
+                  && args.len() == 2
+                  && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+              {
+                true
               }
+              _ => false,
+            });
+            // Find a Rational factor whose denominator triggers fraction
+            // formatting (positive Rational[n, d] with d > 1, anywhere in
+            // the flattened factors). Used when there's no negation: e.g.
+            // `Times[x, Rational[1, 3], Sin[x]^3]` should print as
+            // `(x*Sin[x]^3)/3`, not `x*1/3*Sin[x]^3`.
+            let pos_rat_idx = if neg_idx.is_some() {
+              None
+            } else {
+              factor_refs.iter().position(|f| match f {
+                Expr::FunctionCall { name, args }
+                  if name == "Rational"
+                    && args.len() == 2
+                    && matches!(&args[0], Expr::Integer(n) if *n > 0)
+                    && matches!(&args[1], Expr::Integer(d) if d.abs() > 1) =>
+                {
+                  true
+                }
+                _ => false,
+              })
+            };
+            if let Some(idx) = neg_idx {
+              let pos_factor = match factor_refs[idx] {
+                Expr::Integer(n) => {
+                  if *n == -1 {
+                    None // drop the -1 entirely
+                  } else {
+                    Some(Expr::Integer(-n))
+                  }
+                }
+                Expr::Real(v) => Some(Expr::Real(-v)),
+                Expr::FunctionCall { name, args }
+                  if name == "Rational" && args.len() == 2 =>
+                {
+                  if let Expr::Integer(n) = &args[0] {
+                    if *n == -1 {
+                      Some(Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(1), args[1].clone()],
+                      })
+                    } else {
+                      Some(Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(-n), args[1].clone()],
+                      })
+                    }
+                  } else {
+                    Some(factor_refs[idx].clone())
+                  }
+                }
+                _ => Some(factor_refs[idx].clone()),
+              };
+              let mut new_args: Vec<Expr> = Vec::new();
+              if let Some(f) = pos_factor {
+                new_args.push(f);
+              }
+              for (i, f) in factor_refs.iter().enumerate() {
+                if i != idx {
+                  new_args.push((*f).clone());
+                }
+              }
+              let pos_term = if new_args.len() == 1 {
+                new_args.into_iter().next().unwrap()
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: new_args,
+                }
+              };
+              result.push_str(" - ");
+              result.push_str(&fmt(&pos_term));
+            } else if let Some(idx) = pos_rat_idx {
+              // Reorder so the Rational is leading, then build a flat
+              // FunctionCall Times so the standalone Times printer
+              // recognises the fraction.
+              let mut new_args: Vec<Expr> = Vec::new();
+              new_args.push(factor_refs[idx].clone());
+              for (i, f) in factor_refs.iter().enumerate() {
+                if i != idx {
+                  new_args.push((*f).clone());
+                }
+              }
+              let canonical = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: new_args,
+              };
+              result.push_str(" + ");
+              result.push_str(&fmt(&canonical));
             } else {
               result.push_str(" + ");
               result.push_str(&fmt(arg));
