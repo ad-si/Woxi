@@ -714,24 +714,23 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(s) => s.clone(),
         _ => return Some(Ok(Expr::List(vec![]))),
       };
-      let rules: Vec<Expr> =
-        crate::evaluator::assignment::N_VALUES.with(|m| {
-          m.borrow()
-            .get(&head)
-            .map(|entries| {
-              entries
-                .iter()
-                .map(|(lhs, rhs)| Expr::RuleDelayed {
-                  pattern: Box::new(Expr::FunctionCall {
-                    name: "HoldPattern".to_string(),
-                    args: vec![lhs.clone()],
-                  }),
-                  replacement: Box::new(rhs.clone()),
-                })
-                .collect()
-            })
-            .unwrap_or_default()
-        });
+      let rules: Vec<Expr> = crate::evaluator::assignment::N_VALUES.with(|m| {
+        m.borrow()
+          .get(&head)
+          .map(|entries| {
+            entries
+              .iter()
+              .map(|(lhs, rhs)| Expr::RuleDelayed {
+                pattern: Box::new(Expr::FunctionCall {
+                  name: "HoldPattern".to_string(),
+                  args: vec![lhs.clone()],
+                }),
+                replacement: Box::new(rhs.clone()),
+              })
+              .collect()
+          })
+          .unwrap_or_default()
+      });
       return Some(Ok(Expr::List(rules)));
     }
     "SubValues" if args.len() == 1 => {
@@ -1600,6 +1599,15 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
     "Expand" | "ExpandAll" => vec![
       make_rule("Modulus", Expr::Integer(0)),
       make_rule("Trig", id("False")),
+    ],
+    // Integrate's options. `Assumptions :> $Assumptions` is delayed so the
+    // option's reported `Definition[Integrate]` line uses `:=` (see
+    // `is_builtin_options_delayed`).
+    "Integrate" => vec![
+      make_rule_delayed("Assumptions", id("$Assumptions")),
+      make_rule("GenerateConditions", id("Automatic")),
+      make_rule("GeneratedParameters", id("None")),
+      make_rule("PrincipalValue", id("False")),
     ],
     _ => vec![],
   }

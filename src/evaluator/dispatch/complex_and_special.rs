@@ -682,8 +682,7 @@ pub fn dispatch_complex_and_special(
         // (DownValues, UpValues, Format/MakeBoxes, NValues, SubValues),
         // surfacing only Attributes / Default / Options. Skip those
         // sections when the symbol is read-protected.
-        let read_protected =
-          attrs_to_show.iter().any(|a| a == "ReadProtected");
+        let read_protected = attrs_to_show.iter().any(|a| a == "ReadProtected");
         // 3. Show UpValues first (rules attached via Real /: F[x_Real] := x
         // etc.), matching wolframscript's ordering. UpValues precede
         // DownValues in Definition output.
@@ -895,17 +894,26 @@ pub fn dispatch_complex_and_special(
         // Show Options if the symbol has any (user-stored or built-in).
         let stored_opts =
           crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
+        let is_user_stored = stored_opts.is_some();
         let opts = stored_opts.unwrap_or_else(|| {
           crate::evaluator::dispatch::predicate_functions::builtin_default_options(sym)
         });
         if !opts.is_empty() {
           let opts_str: Vec<String> = opts.iter().map(expr_to_string).collect();
-          let op =
-            if crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym)) {
-              ":="
-            } else {
-              "="
-            };
+          // For user-stored options, use the operator the user wrote
+          // (tracked in `FUNC_OPTIONS_DELAYED`). For built-in options,
+          // wolframscript prints `:=` when the symbol carries
+          // `ReadProtected` and `=` otherwise — matches the Definition
+          // outputs of `D`/`Integrate` (`:=`) vs. `Solve`/`Reduce` (`=`).
+          let user_delayed = crate::FUNC_OPTIONS_DELAYED
+            .with(|m| m.borrow().contains(sym));
+          let op = if is_user_stored {
+            if user_delayed { ":=" } else { "=" }
+          } else if get_builtin_attributes(sym).contains(&"ReadProtected") {
+            ":="
+          } else {
+            "="
+          };
           lines.push(format!(
             "Options[{}] {} {{{}}}",
             sym,

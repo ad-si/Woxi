@@ -468,7 +468,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Reduce"
     | "Eliminate"
     | "D"
-    | "Integrate"
     | "NIntegrate"
     | "Sum"
     | "Product"
@@ -624,7 +623,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Information"
     | "Reals"
     | "Thick"
-    | "Thin" => {
+    | "Thin"
+    | "Integrate" => {
       vec!["Protected", "ReadProtected"]
     }
 
