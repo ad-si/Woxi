@@ -4419,18 +4419,299 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Build Q^T (rows of Q^T = the qi vectors)
-  let qt_expr =
-    Expr::List(q.iter().map(|row| Expr::List(row.clone())).collect());
+  let qt_expr = Expr::List(
+    q.iter()
+      .map(|row| {
+        Expr::List(row.iter().map(simplify_radical_factor).collect())
+      })
+      .collect(),
+  );
 
   // Build R
   let r_expr = Expr::List(
     r_entries
       .iter()
-      .map(|row| Expr::List(row.clone()))
+      .map(|row| {
+        Expr::List(row.iter().map(simplify_radical_factor).collect())
+      })
       .collect(),
   );
 
   Ok(Expr::List(vec![qt_expr, r_expr]))
+}
+
+/// Simplify radical-bearing scalars produced by Gram-Schmidt so they
+/// match Wolfram's canonical form:
+///   `n / Sqrt[d]`             → `Sqrt[n^2/d]`           (when gcd(n^2, d) > 1)
+///   `(n * Sqrt[a/b]) / d`     → `Sqrt[n^2*a / (d^2*b)]` (when reduction applies)
+/// Both then run through `Sqrt[…]` so any leftover perfect-square factor is
+/// extracted (e.g. `Sqrt[20/7]` → `2*Sqrt[5/7]`). Other expression shapes
+/// pass through unchanged.
+fn simplify_radical_factor(expr: &Expr) -> Expr {
+  use crate::functions::math_ast::{gcd, make_rational, sqrt_ast, times_ast};
+  use crate::syntax::BinaryOperator;
+  let extract_int = |e: &Expr| -> Option<i128> {
+    if let Expr::Integer(n) = e { Some(*n) } else { None }
+  };
+  let extract_rational = |e: &Expr| -> Option<(i128, i128)> {
+    if let Expr::Integer(n) = e {
+      return Some((*n, 1));
+    }
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Rational"
+      && args.len() == 2
+      && let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
+    {
+      return Some((*n, *d));
+    }
+    None
+  };
+  // Pull factors out of Times (FunctionCall or BinaryOp) into a flat Vec.
+  let mut factors: Vec<Expr> = Vec::new();
+  let mut sign: i128 = 1;
+  fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          flatten(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        out.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![right.as_ref().clone(), Expr::Integer(-1)],
+        });
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  flatten(expr, &mut factors);
+  if factors.is_empty() {
+    return expr.clone();
+  }
+  // Collect numeric coefficient (Integer/Rational) and an optional Sqrt
+  // argument (positive Integer or Rational). Reject the case if there
+  // are non-numeric, non-radical factors left over.
+  let mut coeff_num: i128 = 1;
+  let mut coeff_den: i128 = 1;
+  let mut sqrt_num: i128 = 1;
+  let mut sqrt_den: i128 = 1;
+  let mut had_sqrt = false;
+  let mut other: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } = f
+    {
+      sign = -sign;
+      if let Some((n, d)) = extract_rational(operand) {
+        coeff_num *= n;
+        coeff_den *= d;
+        continue;
+      }
+      other.push(*operand.clone());
+      continue;
+    }
+    if let Some((n, d)) = extract_rational(f) {
+      coeff_num *= n;
+      coeff_den *= d;
+      continue;
+    }
+    if let Expr::FunctionCall { name, args } = f
+      && name == "Sqrt"
+      && args.len() == 1
+    {
+      if let Some((n, d)) = extract_rational(&args[0])
+        && n > 0
+        && d > 0
+      {
+        if had_sqrt {
+          return expr.clone();
+        }
+        had_sqrt = true;
+        sqrt_num *= n;
+        sqrt_den *= d;
+        continue;
+      }
+      other.push(f.clone());
+      continue;
+    }
+    // Generic Power[base, exp] handling — accepts both FunctionCall("Power", …)
+    // and BinaryOp Power. Identifies base/exp uniformly.
+    let power_parts: Option<(&Expr, &Expr)> = match f {
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        Some((&args[0], &args[1]))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      _ => None,
+    };
+    if let Some((base, exp)) = power_parts {
+      let exp_kind: i32 = match exp {
+        Expr::Integer(-1) => -2, // sentinel for "Power[base, -1]"
+        Expr::Integer(_) => 0,
+        Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2 =>
+        {
+          match (&ra[0], &ra[1]) {
+            (Expr::Integer(1), Expr::Integer(2)) => 1, // Sqrt[base]
+            (Expr::Integer(-1), Expr::Integer(2)) => -1, // 1/Sqrt[base]
+            _ => 0,
+          }
+        }
+        _ => 0,
+      };
+      // Power[base, ±1/2] with integer/Rational base.
+      if exp_kind == 1 || exp_kind == -1 {
+        if let Some((bn, bd)) = extract_rational(base)
+          && bn > 0
+          && bd > 0
+        {
+          if had_sqrt {
+            return expr.clone();
+          }
+          had_sqrt = true;
+          if exp_kind > 0 {
+            sqrt_num *= bn;
+            sqrt_den *= bd;
+          } else {
+            sqrt_num *= bd;
+            sqrt_den *= bn;
+          }
+          continue;
+        }
+      }
+      // Power[base, -1]: either base is integer (1/n → folds into coeff_den)
+      // or base is Sqrt[X]/Power[int, 1/2] (1/Sqrt[X] → swap into radical).
+      if exp_kind == -2 {
+        if let Some(b) = extract_int(base)
+          && b > 0
+        {
+          coeff_den *= b;
+          continue;
+        }
+        // 1/Sqrt[d] where Sqrt[d] is FunctionCall("Sqrt", [d])
+        if let Expr::FunctionCall { name: sn, args: sa } = base
+          && sn == "Sqrt"
+          && sa.len() == 1
+          && let Some((sn_n, sn_d)) = extract_rational(&sa[0])
+          && sn_n > 0
+          && sn_d > 0
+        {
+          if had_sqrt {
+            return expr.clone();
+          }
+          had_sqrt = true;
+          sqrt_num *= sn_d;
+          sqrt_den *= sn_n;
+          continue;
+        }
+        // 1/Power[base, 1/2] (Sqrt encoded as Power)
+        let inner_power_parts: Option<(&Expr, &Expr)> = match base {
+          Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+            Some((&args[0], &args[1]))
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => Some((left.as_ref(), right.as_ref())),
+          _ => None,
+        };
+        if let Some((ibase, iexp)) = inner_power_parts
+          && matches!(
+            iexp,
+            Expr::FunctionCall { name, args }
+              if name == "Rational"
+                && args.len() == 2
+                && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2)))
+          )
+          && let Some((bn, bd)) = extract_rational(ibase)
+          && bn > 0
+          && bd > 0
+        {
+          if had_sqrt {
+            return expr.clone();
+          }
+          had_sqrt = true;
+          sqrt_num *= bd;
+          sqrt_den *= bn;
+          continue;
+        }
+      }
+    }
+    other.push(f.clone());
+  }
+  if !other.is_empty() {
+    return expr.clone();
+  }
+  // Combine coefficient and radical: result = sign * (coeff_num / coeff_den) * sqrt(sqrt_num/sqrt_den)
+  // = sign * sqrt(coeff_num^2 * sqrt_num / (coeff_den^2 * sqrt_den))
+  let n2 = match coeff_num.checked_mul(coeff_num) {
+    Some(v) => v,
+    None => return expr.clone(),
+  };
+  let d2 = match coeff_den.checked_mul(coeff_den) {
+    Some(v) => v,
+    None => return expr.clone(),
+  };
+  let inner_num = match n2.checked_mul(sqrt_num) {
+    Some(v) => v,
+    None => return expr.clone(),
+  };
+  let inner_den = match d2.checked_mul(sqrt_den) {
+    Some(v) => v,
+    None => return expr.clone(),
+  };
+  if inner_den == 0 {
+    return expr.clone();
+  }
+  let g = gcd(inner_num.abs(), inner_den.abs());
+  if g == 0 {
+    return expr.clone();
+  }
+  // Only commit the rewrite when actual reduction happens — otherwise the
+  // sqrt_ast pass would just re-extract the perfect-square factor back
+  // into the coefficient (e.g. `4/Sqrt[35]` → `Sqrt[16/35]` → `4/Sqrt[35]`).
+  if g <= 1 {
+    return expr.clone();
+  }
+  let nn = inner_num / g;
+  let dd = inner_den / g;
+  let inner_expr = if dd == 1 {
+    Expr::Integer(nn)
+  } else {
+    make_rational(nn, dd)
+  };
+  let simplified = match sqrt_ast(&[inner_expr]) {
+    Ok(e) => e,
+    Err(_) => return expr.clone(),
+  };
+  if sign < 0 {
+    match times_ast(&[Expr::Integer(-1), simplified]) {
+      Ok(e) => e,
+      Err(_) => expr.clone(),
+    }
+  } else {
+    simplified
+  }
 }
 
 /// Helper: evaluate a dot product of two vectors
