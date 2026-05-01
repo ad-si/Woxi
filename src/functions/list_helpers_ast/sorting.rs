@@ -219,6 +219,40 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         // Function calls sort after atoms but before lists
         (Expr::FunctionCall { .. }, _) => return std::cmp::Ordering::Greater,
         (_, Expr::FunctionCall { .. }) => return std::cmp::Ordering::Less,
+        // Pattern-vs-Pattern: order by the head name (e.g. `_Integer` <
+        // `_Symbol` because `Integer` < `Symbol` alphabetically), then by
+        // the optional pattern variable name. Matches wolframscript's
+        // `Sort[{_Symbol, _Integer}]` = `{_Integer, _Symbol}`.
+        (
+          Expr::Pattern {
+            name: a_name,
+            head: a_head,
+            blank_type: a_bt,
+          },
+          Expr::Pattern {
+            name: b_name,
+            head: b_head,
+            blank_type: b_bt,
+          },
+        ) => {
+          let a_h = a_head.as_deref().unwrap_or("");
+          let b_h = b_head.as_deref().unwrap_or("");
+          let head_ord = wolfram_string_cmp(a_h, b_h);
+          if head_ord != std::cmp::Ordering::Equal {
+            return head_ord;
+          }
+          let bt_ord = a_bt.cmp(b_bt);
+          if bt_ord != std::cmp::Ordering::Equal {
+            return bt_ord;
+          }
+          return wolfram_string_cmp(a_name, b_name);
+        }
+        // Patterns (`_Symbol`, `x_Integer`, etc.) sort like function calls:
+        // an atomic Identifier comes before a Pattern. Matches
+        // wolframscript's `Sort[{a, _Symbol, _Integer}]` =
+        // `{a, _Integer, _Symbol}`.
+        (Expr::Pattern { .. }, _) => return std::cmp::Ordering::Greater,
+        (_, Expr::Pattern { .. }) => return std::cmp::Ordering::Less,
         _ => {}
       }
 
@@ -637,15 +671,23 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   let b_is_power = is_power_expr(b);
   let a_is_func_call = !a_is_atom && !a_is_power && is_plain_func_call(a);
   let b_is_func_call = !b_is_atom && !b_is_power && is_plain_func_call(b);
+  // Patterns (`_Symbol`, `x_`, `x_Integer`, etc.) sort like function calls
+  // for canonical-order purposes: an atom always comes before a Pattern,
+  // matching wolframscript's `Sort[{a, _Symbol, _Integer}]` =
+  // `{a, _Integer, _Symbol}`.
+  let a_is_pattern = matches!(a, Expr::Pattern { .. });
+  let b_is_pattern = matches!(b, Expr::Pattern { .. });
 
   // Atoms and powers always sort before plain function calls
   let a_is_atom_like = a_is_atom || a_is_power;
   let b_is_atom_like = b_is_atom || b_is_power;
+  let a_is_compound = a_is_func_call || a_is_pattern;
+  let b_is_compound = b_is_func_call || b_is_pattern;
 
-  if a_is_atom_like && b_is_func_call {
-    1 // atom/power always before function call
-  } else if a_is_func_call && b_is_atom_like {
-    -1 // function call always after atom/power
+  if a_is_atom_like && b_is_compound {
+    1 // atom/power always before function call / pattern
+  } else if a_is_compound && b_is_atom_like {
+    -1 // function call / pattern always after atom/power
   } else {
     // Same category: use standard ordering
     match (a_is_atom, b_is_atom) {
