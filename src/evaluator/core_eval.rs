@@ -846,6 +846,32 @@ pub fn evaluate_expr_to_expr_inner(
         }
         // Special handling for SetDelayed - stores function definitions
         if name == "SetDelayed" && args.len() == 2 {
+          // Before applying the SetDelayed normally, check if any
+          // user-defined SetDelayed rule (typically an UpValue installed
+          // via `(F[x_] := s_) ^:= Q[x, s]`) matches the call. This is
+          // what lets `F[1] := 2` evaluate to `Q[1, 2]` for case 4709 —
+          // Wolfram's UpValues-on-SetDelayed mechanism.
+          let has_setdelayed_rules = crate::FUNC_DEFS
+            .with(|m| m.borrow().get("SetDelayed").is_some_and(|v| !v.is_empty()));
+          if has_setdelayed_rules {
+            let result = crate::evaluator::dispatch::evaluate_function_call_ast(
+              "SetDelayed",
+              args,
+            )?;
+            // If a user-defined rule matched, the result will differ from
+            // the original `SetDelayed[…]` shell. Otherwise fall through
+            // to the built-in handler. `Expr` doesn't impl `PartialEq` so
+            // compare via the canonical InputForm rendering.
+            let original = Expr::FunctionCall {
+              name: "SetDelayed".to_string(),
+              args: args.to_vec(),
+            };
+            let unchanged = crate::syntax::expr_to_string(&result)
+              == crate::syntax::expr_to_string(&original);
+            if !unchanged {
+              return Ok(result);
+            }
+          }
           return set_delayed_ast(&args[0], &args[1]);
         }
         // Special handling for TagSetDelayed - stores upvalue definitions
