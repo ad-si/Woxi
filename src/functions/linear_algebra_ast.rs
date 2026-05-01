@@ -1957,9 +1957,24 @@ fn numeric_eigenvectors(
     // Normalize to unit length
     let norm: f64 = vec.iter().map(|x| x * x).sum::<f64>().sqrt();
     if norm > 1e-15 {
-      let normalized: Vec<Expr> =
-        vec.iter().map(|&x| Expr::Real(x / norm)).collect();
-      eigenvectors.push(Expr::List(normalized));
+      // 2x2 sign convention: leading non-zero entry is non-positive,
+      // matching wolframscript's GEEV-derived output. For larger
+      // matrices the sign comes from LAPACK QR iterations and isn't
+      // reproducible by Gaussian elimination, so we leave it alone.
+      let mut normalized: Vec<f64> = vec.iter().map(|&x| x / norm).collect();
+      if n == 2
+        && let Some(&first) = normalized
+          .iter()
+          .find(|&&v| v.abs() > 1e-12)
+        && first > 0.0
+      {
+        for v in normalized.iter_mut() {
+          *v = -*v;
+        }
+      }
+      let normalized_exprs: Vec<Expr> =
+        normalized.into_iter().map(Expr::Real).collect();
+      eigenvectors.push(Expr::List(normalized_exprs));
     } else {
       eigenvectors.push(Expr::List(vec![Expr::Real(0.0); n].to_vec()));
     }
@@ -4516,11 +4531,7 @@ pub fn singular_value_decomposition_ast(
   // Wolfram's convention: each singular vector's leading non-zero
   // component is non-positive. Negate when needed.
   let needs_flip = |x: f64, y: f64| -> bool {
-    if x.abs() > 1e-15 {
-      x > 0.0
-    } else {
-      y > 0.0
-    }
+    if x.abs() > 1e-15 { x > 0.0 } else { y > 0.0 }
   };
   let (v1x, v1y) = if needs_flip(v1x_raw, v1y_raw) {
     (-v1x_raw, -v1y_raw)
