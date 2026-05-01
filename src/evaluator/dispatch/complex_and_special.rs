@@ -826,6 +826,55 @@ pub fn dispatch_complex_and_special(
         if let Some(def_str) = builtin_default_value_str(sym) {
           lines.push(format!("Default[{}] := {}", sym, def_str));
         }
+        // Show user-set DefaultValues. They live in `FUNC_DEFS["Default"]`
+        // because that's how Default[r, n] := v is dispatched, but
+        // wolframscript surfaces them as a TagSet line: `r /: Default[r, n] := v`.
+        let default_defs = crate::FUNC_DEFS
+          .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
+        for (params, _conds, _defaults, _heads, _blanks, body) in &default_defs {
+          // Our SetDelayed stores `Default[r, 1]` with the first param named
+          // `"r"` (a pattern variable named after the symbol). Match by name.
+          if params.first().is_none_or(|p| p != sym) {
+            continue;
+          }
+          // Reconstruct the inner Default[sym, …] arguments. The first
+          // arg is the literal symbol; trailing slot-literal conditions
+          // give the additional args (e.g. `1` for `Default[r, 1]`).
+          let mut default_args = vec![sym.to_string()];
+          for p in params.iter().skip(1) {
+            // Skip the param name; the actual literal lives in the
+            // SameQ condition on this slot. Reconstruct via the same
+            // helper used by DefaultValues.
+            let lit = _conds.iter().find_map(|c| {
+              if let Some(crate::syntax::Expr::Comparison {
+                operands,
+                operators,
+              }) = c
+                && operators.len() == 1
+                && matches!(
+                  operators[0],
+                  crate::syntax::ComparisonOp::SameQ
+                )
+                && operands.len() == 2
+                && let crate::syntax::Expr::Identifier(name) = &operands[0]
+                && name == p
+              {
+                Some(expr_to_string(&operands[1]))
+              } else {
+                None
+              }
+            });
+            if let Some(s) = lit {
+              default_args.push(s);
+            }
+          }
+          lines.push(format!(
+            "{} /: Default[{}] := {}",
+            sym,
+            default_args.join(", "),
+            expr_to_string(body)
+          ));
+        }
 
         // Show Options if the symbol has any (user-stored or built-in).
         let stored_opts =
@@ -835,7 +884,19 @@ pub fn dispatch_complex_and_special(
         });
         if !opts.is_empty() {
           let opts_str: Vec<String> = opts.iter().map(expr_to_string).collect();
-          lines.push(format!("Options[{}] = {{{}}}", sym, opts_str.join(", ")));
+          let op = if crate::FUNC_OPTIONS_DELAYED
+            .with(|m| m.borrow().contains(sym))
+          {
+            ":="
+          } else {
+            "="
+          };
+          lines.push(format!(
+            "Options[{}] {} {{{}}}",
+            sym,
+            op,
+            opts_str.join(", ")
+          ));
         }
 
         if lines.is_empty() {
@@ -3260,9 +3321,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // i.e. content like `\"a + b c\"`. Since Woxi strings render
       // unquoted in OutputForm, we have to bake the literal `"` and
       // backslash-escaped newlines into the string content directly.
-      let escaped = output_text
-        .replace('\\', "\\\\")
-        .replace('\n', "\\\n");
+      let escaped = output_text.replace('\\', "\\\\").replace('\n', "\\\n");
       let pane_string = format!("\"\\\"{}\\\"\"", escaped);
       Expr::FunctionCall {
         name: "InterpretationBox".to_string(),
@@ -3275,9 +3334,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 pattern: Box::new(Expr::Identifier(
                   "BaselinePosition".to_string(),
                 )),
-                replacement: Box::new(Expr::Identifier(
-                  "Baseline".to_string(),
-                )),
+                replacement: Box::new(Expr::Identifier("Baseline".to_string())),
               },
             ],
           },

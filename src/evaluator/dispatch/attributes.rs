@@ -239,6 +239,20 @@ pub fn dispatch_attributes(
         crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
+        crate::FUNC_OPTIONS_DELAYED.with(|m| {
+          m.borrow_mut().remove(sym);
+        });
+        // Drop any `Default[sym, …] := v` rules — they live keyed under
+        // `Default` but reference this symbol as their first slot, and
+        // ClearAll[sym] removes the symbol's DefaultValues alongside its
+        // DownValues / Options / etc.
+        crate::FUNC_DEFS.with(|m| {
+          if let Some(entries) = m.borrow_mut().get_mut("Default") {
+            entries.retain(|(params, _, _, _, _, _)| {
+              params.first().is_none_or(|p| p != sym)
+            });
+          }
+        });
         crate::FUNC_OPTS_INLINE.with(|m| m.borrow_mut().remove(sym));
         crate::evaluator::assignment::FORMAT_VALUES
           .with(|m| m.borrow_mut().remove(sym));

@@ -38,6 +38,9 @@ thread_local! {
     pub static FUNC_ATTRS_REMOVED: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
     pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
+    // Track whether Options[f] was set with `:=` (SetDelayed) so Definition can
+    // re-emit the matching operator. Symbols set with plain `=` are absent.
+    pub static FUNC_OPTIONS_DELAYED: RefCell<std::collections::HashSet<String>> = RefCell::new(std::collections::HashSet::new());
     // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body, original_lhs, original_body)
     // Stored by tag symbol; checked during evaluation when a function's arguments contain the tag as head
     pub static UPVALUES: RefCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr, syntax::Expr, syntax::Expr)>>> = RefCell::new(HashMap::new());
@@ -750,6 +753,7 @@ pub fn clear_state() {
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
+  FUNC_OPTIONS_DELAYED.with(|m| m.borrow_mut().clear());
   FUNC_OPTS_INLINE.with(|m| m.borrow_mut().clear());
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());

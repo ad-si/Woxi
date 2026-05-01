@@ -194,8 +194,7 @@ fn collect_pattern_vars_inner(
       name,
       head,
       blank_type,
-    } if !vars.iter().any(|(n, _, _, _)| n == name) =>
-    {
+    } if !vars.iter().any(|(n, _, _, _)| n == name) => {
       vars.push((name.clone(), head.clone(), false, *blank_type));
     }
     Expr::PatternOptional {
@@ -811,7 +810,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_options_from_value(sym_name, &rhs_value);
+    let result = set_options_from_value(sym_name, &rhs_value);
+    // Plain `=` clears any prior `:=` marker so Definition emits the
+    // matching operator on subsequent reads.
+    crate::FUNC_OPTIONS_DELAYED.with(|m| {
+      m.borrow_mut().remove(sym_name);
+    });
+    return result;
   }
 
   // Handle `N[sym, …] = value` (and `N[sym] = value`): store under
@@ -1414,6 +1419,9 @@ pub fn set_delayed_ast(
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
     set_options_from_value(sym_name, &rhs_value)?;
+    crate::FUNC_OPTIONS_DELAYED.with(|m| {
+      m.borrow_mut().insert(sym_name.to_string());
+    });
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
