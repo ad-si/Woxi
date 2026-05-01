@@ -1515,12 +1515,101 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Symbolic 2×2 rotation-matrix shortcut: `[[a, b], [-b, a]]` has
+  // eigenvalues `a ± I*b`. Wolframscript returns the simplified
+  // imaginary form rather than `(2a ± Sqrt[-4 b²]) / 2`, so a generic
+  // discriminant formula here would print `Sqrt[-Sin[t]^2]` instead of
+  // `I*Sin[t]`. Detecting the pattern lets us hand back the closed form.
+  if n == 2
+    && let Some(eigs) = symbolic_rotation_eigenvalues(&matrix)
+  {
+    return Ok(Expr::List(eigs));
+  }
+
+  // Block-diagonal 3×3: split into a 2×2 top-left block and the
+  // bottom-right scalar, recurse, sort. Matches case 1337's
+  // `Eigenvalues[{{Cos, Sin, 0}, {-Sin, Cos, 0}, {0, 0, 1}}]`.
+  if n == 3
+    && is_zero_expr(&matrix[0][2])
+    && is_zero_expr(&matrix[1][2])
+    && is_zero_expr(&matrix[2][0])
+    && is_zero_expr(&matrix[2][1])
+  {
+    let block = vec![
+      vec![matrix[0][0].clone(), matrix[0][1].clone()],
+      vec![matrix[1][0].clone(), matrix[1][1].clone()],
+    ];
+    if let Ok(block_evs) = eigenvalues_ast(&[matrix_to_expr(block)])
+      && let Expr::List(items_ref) = &block_evs
+    {
+      let mut items = items_ref.clone();
+      items.push(matrix[2][2].clone());
+      items = sort_with_canonical(items);
+      return Ok(Expr::List(items));
+    }
+  }
+
   // Return unevaluated for matrices we can't yet handle (defective, complex
   // eigenvalues for floats, larger non-integer matrices, etc.).
   Ok(Expr::FunctionCall {
     name: "Eigenvalues".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Detect a symbolic 2×2 rotation matrix `[[a, b], [-b, a]]` and return
+/// its eigenvalues `{a - I*b, a + I*b}`. Returns `None` for any other
+/// shape (so the caller falls back to the generic path).
+fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
+  use crate::syntax::expr_to_string;
+  if matrix.len() != 2 || matrix[0].len() != 2 || matrix[1].len() != 2 {
+    return None;
+  }
+  let a = &matrix[0][0];
+  let b = &matrix[0][1];
+  let c = &matrix[1][0];
+  let d = &matrix[1][1];
+  // bottom-right must equal top-left
+  if expr_to_string(a) != expr_to_string(d) {
+    return None;
+  }
+  // bottom-left must equal `-(top-right)`
+  let neg_b = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), b.clone()],
+  };
+  let neg_b_eval =
+    crate::evaluator::evaluate_expr_to_expr(&neg_b).ok()?;
+  if expr_to_string(c) != expr_to_string(&neg_b_eval) {
+    return None;
+  }
+  // Build `a - I*b` and `a + I*b`, then evaluate so e.g. `Cos[t] - I*Sin[t]`
+  // surfaces in canonical form.
+  let i = Expr::Constant("I".to_string());
+  let i_b = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![i, b.clone()],
+  };
+  let minus_ib = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), i_b.clone()],
+  };
+  let lo = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a.clone(), minus_ib],
+  };
+  let hi = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a.clone(), i_b],
+  };
+  let lo = crate::evaluator::evaluate_expr_to_expr(&lo).ok()?;
+  let hi = crate::evaluator::evaluate_expr_to_expr(&hi).ok()?;
+  Some(vec![lo, hi])
+}
+
+fn sort_with_canonical(mut items: Vec<Expr>) -> Vec<Expr> {
+  items.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
+  items
 }
 
 /// Find roots of a monic polynomial with integer coefficients.
@@ -1963,9 +2052,7 @@ fn numeric_eigenvectors(
       // reproducible by Gaussian elimination, so we leave it alone.
       let mut normalized: Vec<f64> = vec.iter().map(|&x| x / norm).collect();
       if n == 2
-        && let Some(&first) = normalized
-          .iter()
-          .find(|&&v| v.abs() > 1e-12)
+        && let Some(&first) = normalized.iter().find(|&&v| v.abs() > 1e-12)
         && first > 0.0
       {
         for v in normalized.iter_mut() {
