@@ -1480,6 +1480,14 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // Rectangle[] → Rectangle[{0, 0}] (default origin)
+  if name == "Rectangle" && args.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Rectangle".to_string(),
+      args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])],
+    });
+  }
+
   // MessageName[sym, tag] — fall back to built-in message templates when
   // the user has not installed their own DownValue. Wolfram returns the
   // template text; without this, e.g. `General::argr` would stay
@@ -1518,10 +1526,7 @@ pub fn evaluate_function_call_ast_inner(
       name: "BezierFunction".to_string(),
       args: vec![
         Expr::Integer(1),
-        Expr::List(vec![Expr::List(vec![
-          Expr::Real(0.0),
-          Expr::Real(1.0),
-        ])]),
+        Expr::List(vec![Expr::List(vec![Expr::Real(0.0), Expr::Real(1.0)])]),
         Expr::List(vec![Expr::Integer((points.len() as i128) - 1)]),
         Expr::List(vec![Expr::List(points_real), Expr::List(vec![])]),
         Expr::List(vec![Expr::Integer(0)]),

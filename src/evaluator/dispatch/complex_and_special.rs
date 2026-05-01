@@ -905,8 +905,8 @@ pub fn dispatch_complex_and_special(
           // wolframscript prints `:=` when the symbol carries
           // `ReadProtected` and `=` otherwise — matches the Definition
           // outputs of `D`/`Integrate` (`:=`) vs. `Solve`/`Reduce` (`=`).
-          let user_delayed = crate::FUNC_OPTIONS_DELAYED
-            .with(|m| m.borrow().contains(sym));
+          let user_delayed =
+            crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym));
           let op = if is_user_stored {
             if user_delayed { ":=" } else { "=" }
           } else if get_builtin_attributes(sym).contains(&"ReadProtected") {
@@ -3783,9 +3783,9 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           })
         }
       }
-      // Rectangle[] = 1, Rectangle[{x1,y1}, {x2,y2}] = |x2-x1| * |y2-y1|
+      // Rectangle[] = 1, Rectangle[{x1,y1}] = 1, Rectangle[{x1,y1}, {x2,y2}] = |x2-x1| * |y2-y1|
       "Rectangle" => {
-        if args.is_empty() {
+        if args.is_empty() || args.len() == 1 {
           Ok(Expr::Integer(1))
         } else if args.len() == 2 {
           if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1])
