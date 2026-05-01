@@ -2530,6 +2530,136 @@ fn to_graphics_boxes(expr: &Expr) -> Expr {
   }
 }
 
+/// Convert an expression to its FullForm box-tree representation.
+/// Atoms become bare strings (negative integers `-n` become
+/// `RowBox[{"-", n}]`); compound expressions render as
+/// `RowBox[{"<Head>", "[", RowBox[{<arg1>, ",", <arg2>, …}], "]"}]`,
+/// with operator BinaryOp/UnaryOp first rewritten to their canonical
+/// FunctionCall head (Plus / Times / Power; Subtract → Plus[a, Times[-1,
+/// b]]; Divide → Times[a, Power[b, -1]]; UnaryMinus → Times[-1, x]).
+fn expr_to_full_box_form(expr: &Expr) -> Expr {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  // Atoms.
+  match expr {
+    Expr::Integer(n) => {
+      if *n < 0 {
+        return Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            Expr::String("-".to_string()),
+            Expr::String((-n).to_string()),
+          ])],
+        };
+      }
+      return Expr::String(n.to_string());
+    }
+    Expr::BigInteger(n) => {
+      let s = n.to_string();
+      if let Some(rest) = s.strip_prefix('-') {
+        return Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            Expr::String("-".to_string()),
+            Expr::String(rest.to_string()),
+          ])],
+        };
+      }
+      return Expr::String(s);
+    }
+    Expr::Real(f) => {
+      return Expr::String(format!("{}`", crate::syntax::format_real(*f)));
+    }
+    Expr::BigFloat(digits, prec) => {
+      return Expr::String(crate::syntax::format_bigfloat(digits, *prec));
+    }
+    Expr::Identifier(s) | Expr::Constant(s) => {
+      return Expr::String(s.clone());
+    }
+    Expr::String(s) => {
+      // Strings render with explicit quotes inside FullForm.
+      return Expr::String(format!("\"{}\"", s));
+    }
+    _ => {}
+  }
+  // Reduce operator forms to canonical FunctionCall (head, args).
+  let (head, args): (String, Vec<Expr>) = match expr {
+    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => ("Plus".to_string(), vec![*left.clone(), *right.clone()]),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => ("Times".to_string(), vec![*left.clone(), *right.clone()]),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => ("Power".to_string(), vec![*left.clone(), *right.clone()]),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => (
+      "Times".to_string(),
+      vec![
+        *left.clone(),
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![*right.clone(), Expr::Integer(-1)],
+        },
+      ],
+    ),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => (
+      "Plus".to_string(),
+      vec![
+        *left.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), *right.clone()],
+        },
+      ],
+    ),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (
+      "Times".to_string(),
+      vec![Expr::Integer(-1), *operand.clone()],
+    ),
+    _ => return Expr::String(crate::syntax::expr_to_string(expr)),
+  };
+  let mut parts: Vec<Expr> =
+    vec![Expr::String(head), Expr::String("[".to_string())];
+  if args.len() == 1 {
+    parts.push(expr_to_full_box_form(&args[0]));
+  } else if args.len() >= 2 {
+    let mut inner = Vec::with_capacity(args.len() * 2 - 1);
+    for (i, arg) in args.iter().enumerate() {
+      if i > 0 {
+        inner.push(Expr::String(",".to_string()));
+      }
+      inner.push(expr_to_full_box_form(arg));
+    }
+    parts.push(Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(inner)],
+    });
+  }
+  parts.push(Expr::String("]".to_string()));
+  Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(parts)],
+  }
+}
+
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
@@ -2998,12 +3128,45 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         args: vec![Expr::List(parts)],
       }
     }
-    // FullForm[expr] → render in canonical notation as a single string
+    // FullForm[expr] inside MakeBoxes: TagBox[StyleBox[<full-form-boxes>,
+    // ShowSpecialCharacters -> False, ShowStringCharacters -> True,
+    // NumberMarks -> True], FullForm]. The inner content uses head[args]
+    // notation (RowBox of "Head", "[", arguments separated by ",", "]")
+    // even for built-in operators like Plus/Times/Power/Divide.
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
-      let full = crate::functions::predicate_ast::expr_to_full_form(&args[0]);
-      Expr::String(full)
+      let full_box = expr_to_full_box_form(&args[0]);
+      Expr::FunctionCall {
+        name: "TagBox".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "StyleBox".to_string(),
+            args: vec![
+              full_box,
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(
+                  "ShowSpecialCharacters".to_string(),
+                )),
+                replacement: Box::new(Expr::Identifier("False".to_string())),
+              },
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(
+                  "ShowStringCharacters".to_string(),
+                )),
+                replacement: Box::new(Expr::Identifier("True".to_string())),
+              },
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(
+                  "NumberMarks".to_string(),
+                )),
+                replacement: Box::new(Expr::Identifier("True".to_string())),
+              },
+            ],
+          },
+          Expr::Identifier("FullForm".to_string()),
+        ],
+      }
     }
     // Style[content, ...] → just the content
     Expr::FunctionCall { name, args }
@@ -3109,9 +3272,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 replacement: Box::new(Expr::Identifier("True".to_string())),
               },
               Expr::Rule {
-                pattern: Box::new(Expr::Identifier(
-                  "NumberMarks".to_string(),
-                )),
+                pattern: Box::new(Expr::Identifier("NumberMarks".to_string())),
                 replacement: Box::new(Expr::Identifier("True".to_string())),
               },
             ],
