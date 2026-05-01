@@ -322,6 +322,82 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &[a_list[0].clone(), b_list[0].clone(), z.clone()],
     );
   }
+  // 3F2[{1, 1, 3}, {2, 2}, z] closed form. Derivation: collapsing the
+  // Pochhammers gives Σ_{k≥0} (k+2)/(2(k+1)) z^k = (1/2)·(1/(1-z) - Log[1-z]/z).
+  // Wolfram normalises that to `(-z + Log[1-z] - z*Log[1-z])/(2*(-1+z)*z)`.
+  if a_list.len() == 3
+    && b_list.len() == 2
+    && matches!(&a_list[0], Expr::Integer(1))
+    && matches!(&a_list[1], Expr::Integer(1))
+    && matches!(&a_list[2], Expr::Integer(3))
+    && matches!(&b_list[0], Expr::Integer(2))
+    && matches!(&b_list[1], Expr::Integer(2))
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), z.clone()],
+            },
+            Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  Expr::Integer(1),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), z.clone()],
+                  },
+                ],
+              }],
+            },
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(-1),
+                z.clone(),
+                Expr::FunctionCall {
+                  name: "Log".to_string(),
+                  args: vec![Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![
+                      Expr::Integer(1),
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: vec![Expr::Integer(-1), z.clone()],
+                      },
+                    ],
+                  }],
+                },
+              ],
+            },
+          ],
+        },
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(2),
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![Expr::Integer(-1), z.clone()],
+                },
+                z.clone(),
+              ],
+            },
+            Expr::Integer(-1),
+          ],
+        },
+      ],
+    });
+  }
 
   // Numeric evaluation: all parameters and z must be numeric
   let z_val = match z {
