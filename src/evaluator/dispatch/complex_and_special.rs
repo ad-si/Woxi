@@ -678,13 +678,23 @@ pub fn dispatch_complex_and_special(
           lines.push(format!("{} = {}", sym, val_str));
         }
 
+        // ReadProtected hides the symbol's implementation details
+        // (DownValues, UpValues, Format/MakeBoxes, NValues, SubValues),
+        // surfacing only Attributes / Default / Options. Skip those
+        // sections when the symbol is read-protected.
+        let read_protected =
+          attrs_to_show.iter().any(|a| a == "ReadProtected");
         // 3. Show UpValues first (rules attached via Real /: F[x_Real] := x
         // etc.), matching wolframscript's ordering. UpValues precede
         // DownValues in Definition output.
-        let up_values = crate::UPVALUES.with(|m| {
-          let defs = m.borrow();
-          defs.get(sym).cloned()
-        });
+        let up_values = if read_protected {
+          None
+        } else {
+          crate::UPVALUES.with(|m| {
+            let defs = m.borrow();
+            defs.get(sym).cloned()
+          })
+        };
         if let Some(entries) = up_values {
           for (
             _outer,
@@ -724,10 +734,14 @@ pub fn dispatch_complex_and_special(
           }
           keys
         });
-        let down_values = crate::FUNC_DEFS.with(|m| {
-          let defs = m.borrow();
-          defs.get(sym).cloned()
-        });
+        let down_values = if read_protected {
+          None
+        } else {
+          crate::FUNC_DEFS.with(|m| {
+            let defs = m.borrow();
+            defs.get(sym).cloned()
+          })
+        };
         if let Some(overloads) = down_values {
           for (params, conds, _defaults, heads, _blank_types, body) in
             overloads.iter().filter(|(params, _, _, heads, _, _)| {
@@ -797,8 +811,12 @@ pub fn dispatch_complex_and_special(
         }
 
         // 4b. Show SubValues (rules like `f[1][x_] := x` keyed under f).
-        let sub_value_entries = crate::evaluator::assignment::SUB_VALUES
-          .with(|m| m.borrow().get(sym).cloned());
+        let sub_value_entries = if read_protected {
+          None
+        } else {
+          crate::evaluator::assignment::SUB_VALUES
+            .with(|m| m.borrow().get(sym).cloned())
+        };
         if let Some(entries) = sub_value_entries {
           for (lhs, rhs) in &entries {
             lines.push(format!(
@@ -831,7 +849,8 @@ pub fn dispatch_complex_and_special(
         // wolframscript surfaces them as a TagSet line: `r /: Default[r, n] := v`.
         let default_defs = crate::FUNC_DEFS
           .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
-        for (params, _conds, _defaults, _heads, _blanks, body) in &default_defs {
+        for (params, _conds, _defaults, _heads, _blanks, body) in &default_defs
+        {
           // Our SetDelayed stores `Default[r, 1]` with the first param named
           // `"r"` (a pattern variable named after the symbol). Match by name.
           if params.first().is_none_or(|p| p != sym) {
@@ -851,10 +870,7 @@ pub fn dispatch_complex_and_special(
                 operators,
               }) = c
                 && operators.len() == 1
-                && matches!(
-                  operators[0],
-                  crate::syntax::ComparisonOp::SameQ
-                )
+                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
                 && operands.len() == 2
                 && let crate::syntax::Expr::Identifier(name) = &operands[0]
                 && name == p
@@ -884,13 +900,12 @@ pub fn dispatch_complex_and_special(
         });
         if !opts.is_empty() {
           let opts_str: Vec<String> = opts.iter().map(expr_to_string).collect();
-          let op = if crate::FUNC_OPTIONS_DELAYED
-            .with(|m| m.borrow().contains(sym))
-          {
-            ":="
-          } else {
-            "="
-          };
+          let op =
+            if crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym)) {
+              ":="
+            } else {
+              "="
+            };
           lines.push(format!(
             "Options[{}] {} {{{}}}",
             sym,
