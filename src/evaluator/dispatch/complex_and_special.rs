@@ -3157,9 +3157,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 replacement: Box::new(Expr::Identifier("True".to_string())),
               },
               Expr::Rule {
-                pattern: Box::new(Expr::Identifier(
-                  "NumberMarks".to_string(),
-                )),
+                pattern: Box::new(Expr::Identifier("NumberMarks".to_string())),
                 replacement: Box::new(Expr::Identifier("True".to_string())),
               },
             ],
@@ -3246,6 +3244,49 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       Expr::FunctionCall {
         name: box_head.to_string(),
         args: vec![],
+      }
+    }
+    // MakeBoxes[OutputForm[expr], _]: InterpretationBox[PaneBox[<2D
+    // string with literal quotes>, BaselinePosition -> Baseline], <2D
+    // text>, Editable -> False]. The 2D rendering uses the existing
+    // `expr_to_output_form_2d` helper (spaces for `*`, ASCII fractions,
+    // etc.) so e.g. `a + b * c // OutputForm // MakeBoxes` produces the
+    // same string the test asserts.
+    Expr::FunctionCall { name, args }
+      if name == "OutputForm" && args.len() == 1 =>
+    {
+      let output_text = crate::syntax::expr_to_output_form_2d(&args[0]);
+      // PaneBox stores the InputForm rendering of the string-with-quotes,
+      // i.e. content like `\"a + b c\"`. Since Woxi strings render
+      // unquoted in OutputForm, we have to bake the literal `"` and
+      // backslash-escaped newlines into the string content directly.
+      let escaped = output_text
+        .replace('\\', "\\\\")
+        .replace('\n', "\\\n");
+      let pane_string = format!("\"\\\"{}\\\"\"", escaped);
+      Expr::FunctionCall {
+        name: "InterpretationBox".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "PaneBox".to_string(),
+            args: vec![
+              Expr::String(pane_string),
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(
+                  "BaselinePosition".to_string(),
+                )),
+                replacement: Box::new(Expr::Identifier(
+                  "Baseline".to_string(),
+                )),
+              },
+            ],
+          },
+          Expr::String(output_text),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            replacement: Box::new(Expr::Identifier("False".to_string())),
+          },
+        ],
       }
     }
     // MakeBoxes[InputForm[expr], _]: wolframscript wraps the InputForm
