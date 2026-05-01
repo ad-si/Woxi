@@ -2197,6 +2197,48 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       op: crate::syntax::BinaryOperator::Divide,
       ..
     } => Ok(Expr::Identifier("Infinity".to_string())),
+    // Complex number with finite-accuracy parts: apply Wolfram's formula
+    // Accuracy[Complex[re, im]] = -Log10[Sqrt[10^(-2*Acc[re]) + 10^(-2*Acc[im])]].
+    // Without this, `Accuracy[Complex[3.00``2, 4.00``2]]` would just take
+    // min(2, 2) = 2 instead of the correct 1.8494…
+    _ if try_complex_accuracy(&args[0]).is_some() => {
+      Ok(try_complex_accuracy(&args[0]).unwrap())
+    }
+    // Compound arithmetic in BinaryOp form: take the minimum accuracy
+    // across both operands (mirrors the FunctionCall Plus/Times path
+    // below). Otherwise `Plus[BigFloat, Times[BigFloat, I]]` — the
+    // canonical form of `Complex[3.00``2, 4.00``2]` — would fall through
+    // to Infinity even though both operands have finite accuracy.
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus
+        | crate::syntax::BinaryOperator::Times
+        | crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let mut min_finite: Option<f64> = None;
+      for arg in [left.as_ref(), right.as_ref()] {
+        let a = accuracy_ast(&[arg.clone()])?;
+        match a {
+          Expr::Identifier(ref n) if n == "Infinity" => {}
+          Expr::Real(v) => {
+            min_finite = Some(min_finite.map_or(v, |m| m.min(v)));
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Accuracy".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      Ok(match min_finite {
+        Some(v) => Expr::Real(v),
+        None => Expr::Identifier("Infinity".to_string()),
+      })
+    }
     // Symbolic identifiers (variables) have infinite accuracy
     Expr::Identifier(_) => Ok(Expr::Identifier("Infinity".to_string())),
     // For symbolic expressions and lists, take the minimum of the
@@ -2229,6 +2271,90 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::Identifier("Infinity".to_string())),
   }
+}
+
+/// Detect a complex number `Plus[real_part, Times[imag_part, I]]` (in
+/// either FunctionCall or BinaryOp form) where both parts have finite
+/// accuracy, and return Wolfram's combined accuracy:
+///   Acc = -Log10[Sqrt[10^(-2*Acc[re]) + 10^(-2*Acc[im])]].
+/// Returns None if the structure isn't a recognised real+imag pair, if
+/// either part has infinite accuracy, or if there's no I factor — in
+/// those cases the caller falls back to the generic min-of-children path.
+fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  let plus_args: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      args.clone()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![*left.clone(), *right.clone()],
+    _ => return None,
+  };
+  let split = |term: &Expr| -> Option<(bool, Expr)> {
+    // Returns (is_imaginary, raw_part). For pure imaginary `I`, raw_part
+    // is the implicit coefficient `1`.
+    if matches!(term, Expr::Identifier(s) if s == "I") {
+      return Some((true, Expr::Integer(1)));
+    }
+    let factors: Vec<&Expr> = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().collect()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => vec![left.as_ref(), right.as_ref()],
+      _ => return Some((false, term.clone())),
+    };
+    let i_count = factors
+      .iter()
+      .filter(|f| matches!(f, Expr::Identifier(s) if s == "I"))
+      .count();
+    if i_count == 0 {
+      return Some((false, term.clone()));
+    }
+    if i_count != 1 {
+      return None;
+    }
+    let others: Vec<Expr> = factors
+      .iter()
+      .filter(|f| !matches!(f, Expr::Identifier(s) if s == "I"))
+      .map(|f| (*f).clone())
+      .collect();
+    let coeff = if others.is_empty() {
+      Expr::Integer(1)
+    } else if others.len() == 1 {
+      others.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: others,
+      }
+    };
+    Some((true, coeff))
+  };
+  let (a_imag, a_part) = split(&plus_args[0])?;
+  let (b_imag, b_part) = split(&plus_args[1])?;
+  let (re_part, im_part) = match (a_imag, b_imag) {
+    (false, true) => (a_part, b_part),
+    (true, false) => (b_part, a_part),
+    _ => return None,
+  };
+  let re_acc = match accuracy_ast(&[re_part]).ok()? {
+    Expr::Real(v) => v,
+    _ => return None,
+  };
+  let im_acc = match accuracy_ast(&[im_part]).ok()? {
+    Expr::Real(v) => v,
+    _ => return None,
+  };
+  let combined =
+    -((10f64.powf(-2.0 * re_acc) + 10f64.powf(-2.0 * im_acc)).sqrt().log10());
+  Some(Expr::Real(combined))
 }
 
 /// PowerExpand[expr] - expand powers of products and powers

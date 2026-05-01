@@ -35,6 +35,14 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(make_rational(rn, rd));
   }
 
+  // Preserve BigFloat precision: `Plus[BigFloat, Times[BigFloat, I]]`
+  // would otherwise be eaten by the float extractor below and downgraded
+  // to a machine-precision Real, losing the precision marker that
+  // Accuracy[…] needs.
+  if let Some((re, _)) = try_extract_complex_bigfloat(&args[0]) {
+    return Ok(re);
+  }
+
   // Try float complex extraction: handles 1.5 + 2.5*I patterns
   if let Some((re, _)) = try_extract_complex_float(&args[0]) {
     return Ok(Expr::Real(re));
@@ -97,6 +105,12 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try exact integer/rational complex extraction: handles a + b*I patterns
   if let Some((_, (in_, id))) = try_extract_complex_exact(&args[0]) {
     return Ok(make_rational(in_, id));
+  }
+
+  // Preserve BigFloat precision (mirrors `re_ast` above): keep the
+  // imaginary BigFloat factor rather than collapsing to f64.
+  if let Some((_, im)) = try_extract_complex_bigfloat(&args[0]) {
+    return Ok(im);
   }
 
   // Try float complex extraction: handles 1.5 + 2.5*I patterns
@@ -187,6 +201,101 @@ fn extract_i_times_any(expr: &Expr) -> Option<Expr> {
     }
   }
   None
+}
+
+/// Extract `(re, im)` from `Plus[a, Times[b, I]]` or just `Plus[a, I]`,
+/// where `a` and `b` are BigFloats (or other expressions). Returns the
+/// pieces as `Expr` so BigFloat precision markers survive — unlike
+/// `try_extract_complex_float`, which collapses to `f64`.
+/// Only matches when the input contains at least one BigFloat to avoid
+/// stealing simpler real cases handled elsewhere.
+fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
+  use crate::syntax::BinaryOperator;
+  let plus_args: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![*left.clone(), *right.clone()],
+    _ => return None,
+  };
+  if plus_args.len() != 2 {
+    return None;
+  }
+  let split_real_imag = |term: &Expr| -> Option<(Option<Expr>, Option<Expr>)> {
+    // Pure real BigFloat
+    if matches!(term, Expr::BigFloat(_, _)) {
+      return Some((Some(term.clone()), None));
+    }
+    // Pure imaginary I
+    if matches!(term, Expr::Identifier(s) if s == "I") {
+      return Some((None, Some(Expr::Integer(1))));
+    }
+    // Times[..., I, ...]: collect non-I factors; require an I to be present
+    let factors: Vec<&Expr> = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().collect()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        // Flatten one level
+        let mut v: Vec<&Expr> = Vec::new();
+        v.push(left.as_ref());
+        v.push(right.as_ref());
+        v
+      }
+      _ => return None,
+    };
+    let i_count =
+      factors.iter().filter(|f| matches!(f, Expr::Identifier(s) if s == "I")).count();
+    if i_count != 1 {
+      return None;
+    }
+    let others: Vec<Expr> = factors
+      .iter()
+      .filter(|f| !matches!(f, Expr::Identifier(s) if s == "I"))
+      .map(|f| (*f).clone())
+      .collect();
+    let im_part = if others.len() == 1 {
+      others.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: others,
+      }
+    };
+    Some((None, Some(im_part)))
+  };
+  let (a_re, a_im) = split_real_imag(&plus_args[0])?;
+  let (b_re, b_im) = split_real_imag(&plus_args[1])?;
+  // Exactly one term is real, the other imaginary
+  let (re, im) = match (a_re, a_im, b_re, b_im) {
+    (Some(r), None, None, Some(i)) => (r, i),
+    (None, Some(i), Some(r), None) => (r, i),
+    _ => return None,
+  };
+  let has_bigfloat = matches!(&re, Expr::BigFloat(_, _))
+    || contains_bigfloat(&im);
+  if !has_bigfloat {
+    return None;
+  }
+  Some((re, im))
+}
+
+fn contains_bigfloat(expr: &Expr) -> bool {
+  match expr {
+    Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_bigfloat),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_bigfloat(left) || contains_bigfloat(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_bigfloat(operand),
+    _ => false,
+  }
 }
 
 /// Check if an expression is known to be real-valued (not just known real constants,
@@ -507,7 +616,9 @@ fn match_re_plus_i_im(expr: &Expr) -> Option<String> {
   }
   fn extract_i_im_var(e: &Expr) -> Option<String> {
     let factors: Vec<&Expr> = match e {
-      Expr::FunctionCall { name, args } if name == "Times" => args.iter().collect(),
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().collect()
+      }
       Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Times,
         left,
