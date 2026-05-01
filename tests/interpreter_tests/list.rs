@@ -446,10 +446,10 @@ mod outer_extended {
     );
   }
 
-  // SparseArray arguments are expanded to Normal (dense nested list) form
-  // before Outer runs, matching Wolfram's behaviour on mixed
-  // `Outer[f, SparseArray[...], SparseArray[...]]` / `Outer[f,
-  // SparseArray[...], {c, d}]` inputs.
+  // When the LAST argument to `Outer` is a SparseArray, wolframscript
+  // wraps the leaves as SparseArray[…] with the function applied to the
+  // accumulated outer values plus each sparse value/default. The earlier
+  // arguments densify normally.
   #[test]
   fn sparse_array_pair() {
     assert_eq!(
@@ -458,10 +458,14 @@ mod outer_extended {
          SparseArray[{{1, 2} -> c, {2, 1} -> d}]]"
       )
       .unwrap(),
-      "{{{{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}, \
-       {{f[a, 0], f[a, c]}, {f[a, d], f[a, 0]}}}, \
-       {{{f[b, 0], f[b, c]}, {f[b, d], f[b, 0]}}, \
-       {{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}}}"
+      "{{SparseArray[Automatic, {2, 2}, f[0, 0], \
+       {1, {{0, 1, 2}, {{2}, {1}}}, {f[0, c], f[0, d]}}], \
+       SparseArray[Automatic, {2, 2}, f[a, 0], \
+       {1, {{0, 1, 2}, {{2}, {1}}}, {f[a, c], f[a, d]}}]}, \
+       {SparseArray[Automatic, {2, 2}, f[b, 0], \
+       {1, {{0, 1, 2}, {{2}, {1}}}, {f[b, c], f[b, d]}}], \
+       SparseArray[Automatic, {2, 2}, f[0, 0], \
+       {1, {{0, 1, 2}, {{2}, {1}}}, {f[0, c], f[0, d]}}]}}"
     );
   }
 

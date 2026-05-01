@@ -2179,12 +2179,27 @@ pub fn dispatch_list_operations(
       if had_sparse
         && matches!(&args[0], Expr::Identifier(s) if s == "Times")
         && let Ok(d) = &dense
-      {
-        if let Some(sparse) =
+        && let Some(sparse) =
           dense_to_sparse_array_with_default(d, &Expr::Integer(0))
-        {
-          return Some(Ok(sparse));
-        }
+      {
+        return Some(Ok(sparse));
+      }
+      // For non-Times functions, when the LAST argument is a SparseArray,
+      // wolframscript wraps the leaf level (corresponding to that last
+      // SparseArray's dims) as SparseArray with the function applied.
+      // Outer dense iteration is unchanged for the earlier args.
+      if !lists_in.is_empty()
+        && matches!(lists_in.last(), Some(Expr::FunctionCall { name, .. }) if name == "SparseArray")
+        && !matches!(&args[0], Expr::Identifier(s) if s == "Times")
+        && let Some(sparse_last) = lists_in.last()
+        && let Some(sa_data) = parse_sparse_array_data(sparse_last)
+        && let Some(nested) = build_outer_with_sparse_last(
+          &args[0],
+          &lists_owned[..lists_owned.len() - 1],
+          &sa_data,
+        )
+      {
+        return Some(Ok(nested));
       }
       return Some(dense);
     }
@@ -3979,9 +3994,8 @@ fn build_sparse_array_csr(
   default: &Expr,
   entries: &[(Vec<usize>, Expr)],
 ) -> Expr {
-  let dims_list = Expr::List(
-    dims.iter().map(|&d| Expr::Integer(d as i128)).collect(),
-  );
+  let dims_list =
+    Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect());
   let k = dims.len();
   let n = dims[0];
   let make_outer = |inner: Expr| Expr::FunctionCall {
@@ -4009,18 +4023,15 @@ fn build_sparse_array_csr(
   let mut sorted: Vec<(Vec<usize>, Expr)> = entries.to_vec();
   sorted.sort_by(|a, b| a.0.cmp(&b.0));
   if k == 1 {
-    let row_ptr = Expr::List(vec![
-      Expr::Integer(0),
-      Expr::Integer(sorted.len() as i128),
-    ]);
+    let row_ptr =
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(sorted.len() as i128)]);
     let col_indices = Expr::List(
       sorted
         .iter()
         .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)]))
         .collect(),
     );
-    let values =
-      Expr::List(sorted.iter().map(|(_, v)| v.clone()).collect());
+    let values = Expr::List(sorted.iter().map(|(_, v)| v.clone()).collect());
     let inner = Expr::List(vec![
       Expr::Integer(1),
       Expr::List(vec![row_ptr, col_indices]),
@@ -4051,4 +4062,143 @@ fn build_sparse_array_csr(
     Expr::List(values_list),
   ]);
   make_outer(inner)
+}
+
+/// Parsed structure of a `SparseArray[Automatic, dims, default, payload]`
+/// expression — used by Outer's nested-leaf path to apply the user
+/// function to each non-default value while preserving the default-vs-
+/// non-default distinction.
+struct ParsedSparseArray {
+  dims: Vec<usize>,
+  default: Expr,
+  /// Each entry: (1-based multi-index, value).
+  entries: Vec<(Vec<usize>, Expr)>,
+}
+
+fn parse_sparse_array_data(expr: &Expr) -> Option<ParsedSparseArray> {
+  let Expr::FunctionCall { name, args: sa } = expr else {
+    return None;
+  };
+  if name != "SparseArray" {
+    return None;
+  }
+  // Re-normalize so we always start from canonical 4-arg form.
+  let canonical = list_helpers_ast::sparse_array_normalize_ast(sa).ok()?;
+  let Expr::FunctionCall {
+    name: cname,
+    args: ca,
+  } = &canonical
+  else {
+    return None;
+  };
+  if cname != "SparseArray" || ca.len() != 4 {
+    return None;
+  }
+  if !matches!(&ca[0], Expr::Identifier(s) if s == "Automatic") {
+    return None;
+  }
+  let dims: Vec<usize> = match &ca[1] {
+    Expr::List(items) => {
+      let mut d = Vec::with_capacity(items.len());
+      for it in items {
+        match it {
+          Expr::Integer(n) if *n >= 0 => d.push(*n as usize),
+          _ => return None,
+        }
+      }
+      d
+    }
+    _ => return None,
+  };
+  let default = ca[2].clone();
+  let raw_entries =
+    list_helpers_ast::sparse_array_extract_rules(&dims, &ca[3]);
+  let entries: Vec<(Vec<usize>, Expr)> = raw_entries
+    .into_iter()
+    .map(|(idx, v)| (idx.into_iter().map(|i| i as usize).collect(), v))
+    .collect();
+  Some(ParsedSparseArray {
+    dims,
+    default,
+    entries,
+  })
+}
+
+/// Build the `Outer[func, lists…, sa]` result where `sa` is the last
+/// argument and stays as `SparseArray` at the leaves. Walks each dense
+/// `lists` arg through every nest level (accumulating one scalar at each
+/// leaf), then once all outer args have contributed a scalar, builds the
+/// inner `SparseArray` with `func` applied to the accumulated values and
+/// each entry/default of `sa`.
+fn build_outer_with_sparse_last(
+  func: &Expr,
+  outer_lists: &[Expr],
+  sa: &ParsedSparseArray,
+) -> Option<Expr> {
+  fn walk_arg(
+    func: &Expr,
+    arg: &Expr,
+    accumulated: &mut Vec<Expr>,
+    rest: &[Expr],
+    sa: &ParsedSparseArray,
+  ) -> Option<Expr> {
+    match arg {
+      Expr::List(items) => {
+        let mut results = Vec::with_capacity(items.len());
+        for it in items {
+          results.push(walk_arg(func, it, accumulated, rest, sa)?);
+        }
+        Some(Expr::List(results))
+      }
+      _ => {
+        accumulated.push(arg.clone());
+        let r = process_outer_args(func, rest, accumulated, sa);
+        accumulated.pop();
+        r
+      }
+    }
+  }
+
+  fn process_outer_args(
+    func: &Expr,
+    rest: &[Expr],
+    accumulated: &mut Vec<Expr>,
+    sa: &ParsedSparseArray,
+  ) -> Option<Expr> {
+    if rest.is_empty() {
+      return Some(build_inner_sparse(func, accumulated, sa));
+    }
+    walk_arg(func, &rest[0], accumulated, &rest[1..], sa)
+  }
+
+  let mut acc = Vec::with_capacity(outer_lists.len());
+  process_outer_args(func, outer_lists, &mut acc, sa)
+}
+
+fn build_inner_sparse(
+  func: &Expr,
+  outer_vals: &[Expr],
+  sa: &ParsedSparseArray,
+) -> Expr {
+  let func_name = match func {
+    Expr::Identifier(s) => s.clone(),
+    _ => crate::syntax::expr_to_string(func),
+  };
+  let make_call = |trailing: Expr| {
+    let mut call_args = Vec::with_capacity(outer_vals.len() + 1);
+    call_args.extend(outer_vals.iter().cloned());
+    call_args.push(trailing);
+    let call = Expr::FunctionCall {
+      name: func_name.clone(),
+      args: call_args,
+    };
+    crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
+  };
+  let new_default = make_call(sa.default.clone());
+  let new_entries: Vec<(Vec<usize>, Expr)> = sa
+    .entries
+    .iter()
+    .map(|(idx, v)| (idx.clone(), make_call(v.clone())))
+    .collect();
+  build_sparse_array_csr(&sa.dims, &new_default, &new_entries)
 }
