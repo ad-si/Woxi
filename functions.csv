@@ -951,7 +951,7 @@ Region,,🚫,,11.1,959
 EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,✅,pure,8.0,962
 JacobiP,Jacobi polynomial,✅,pure,1.0,962
 VectorAngle,Angle between two vectors,✅,pure,6.0,962
-CoefficientArrays,,🚫,,5.0,964
+CoefficientArrays,Returns sparse arrays of polynomial coefficients indexed by total degree,✅,pure,5.0,964
 SubscriptBox,Represents a subscript box for typesetting,✅,pure,3.0,964
 ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9.0,965
 Key,Operator form for extracting values from associations by key,✅,none,10.0,966

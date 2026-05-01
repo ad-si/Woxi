@@ -152,6 +152,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Coefficient" => Some((2, 3)),
     "CoefficientList" => Some((2, 2)),
     "CoefficientRules" => Some((2, 2)),
+    "CoefficientArrays" => Some((2, 2)),
     "ClusteringComponents" => Some((1, 3)),
     "FindClusters" => Some((1, 3)),
     "Collect" => Some((2, 3)),

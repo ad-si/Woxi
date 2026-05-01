@@ -82,6 +82,11 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "CoefficientArrays" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::coefficient_arrays_ast(
+        args,
+      ));
+    }
     "Exponent" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::polynomial_ast::exponent_ast(args));
     }

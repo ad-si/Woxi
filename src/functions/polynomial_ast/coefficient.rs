@@ -806,3 +806,214 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return empty list for zero polynomial
   Ok(Expr::List(rules))
 }
+
+// ─── CoefficientArrays ─────────────────────────────────────────────────
+
+/// CoefficientArrays[poly, var] or CoefficientArrays[poly, {x, y, …}]
+/// Returns `{c_0, c_1, …, c_d}` where `c_k` is a sparse rank-k tensor of
+/// shape `[n, …, n]` (with `n` = number of variables) holding the
+/// coefficients of all degree-k monomials at their sorted-index slot,
+/// matching wolframscript's `SparseArray[Automatic, dims, 0, …]` shape.
+pub fn coefficient_arrays_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "CoefficientArrays expects 2 arguments".into(),
+    ));
+  }
+  let vars: Vec<String> = match &args[1] {
+    Expr::List(items) => {
+      let mut v = Vec::with_capacity(items.len());
+      for item in items {
+        match item {
+          Expr::Identifier(name) => v.push(name.clone()),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "CoefficientArrays".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      v
+    }
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CoefficientArrays".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if vars.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "CoefficientArrays".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let n = vars.len();
+  let expanded = super::expand::expand_and_combine(&args[0]);
+  let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+  let terms = collect_additive_terms(&expanded);
+  // Each entry: (degree, sorted_indices_1based, coefficient_expr).
+  let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
+  let mut max_degree = 0usize;
+  for term in &terms {
+    let evaled = crate::evaluator::evaluate_expr_to_expr(term)?;
+    let mut exponents: Vec<i128> = Vec::with_capacity(n);
+    let mut remaining = evaled.clone();
+    for var in &vars {
+      let power = term_power_of_var(&remaining, var);
+      exponents.push(power);
+      let (_, coeff) = term_var_power_and_coeff(&remaining, var);
+      remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+    }
+    let degree: usize = exponents
+      .iter()
+      .map(|&e| if e < 0 { 0 } else { e as usize })
+      .sum();
+    if degree > max_degree {
+      max_degree = degree;
+    }
+    let mut indices = Vec::with_capacity(degree);
+    for (i, &p) in exponents.iter().enumerate() {
+      let p = if p < 0 { 0 } else { p as usize };
+      for _ in 0..p {
+        indices.push(i + 1);
+      }
+    }
+    indices.sort();
+    entries.push((degree, indices, remaining));
+  }
+  // Group entries by degree. Sum coefficients for duplicate index lists.
+  let mut by_degree: Vec<Vec<(Vec<usize>, Expr)>> =
+    (0..=max_degree).map(|_| Vec::new()).collect();
+  for (deg, idx, coef) in entries {
+    let bucket = &mut by_degree[deg];
+    if let Some(existing) = bucket.iter_mut().find(|(i, _)| *i == idx) {
+      existing.1 = add_exprs(&existing.1, &coef);
+    } else {
+      bucket.push((idx, coef));
+    }
+  }
+  let mut output: Vec<Expr> = Vec::with_capacity(max_degree + 1);
+  // c_0: sum of constant terms (degree 0 → empty index list).
+  let c0 = by_degree[0]
+    .iter()
+    .map(|(_, c)| c.clone())
+    .reduce(|a, b| add_exprs(&a, &b))
+    .unwrap_or(Expr::Integer(0));
+  let c0 = crate::evaluator::evaluate_expr_to_expr(&c0)?;
+  output.push(c0);
+  for k in 1..=max_degree {
+    let bucket = &by_degree[k];
+    let non_zero: Vec<(Vec<usize>, Expr)> = bucket
+      .iter()
+      .filter(|(_, c)| !matches!(c, Expr::Integer(0)))
+      .cloned()
+      .collect();
+    output.push(build_sparse_array_for_coefficients(n, k, &non_zero));
+  }
+  Ok(Expr::List(output))
+}
+
+/// Build a `SparseArray[Automatic, [n; k], 0, …]` expression from a list
+/// of (sorted-index, coefficient) entries.
+fn build_sparse_array_for_coefficients(
+  n: usize,
+  k: usize,
+  entries: &[(Vec<usize>, Expr)],
+) -> Expr {
+  let dims_list =
+    Expr::List(vec![Expr::Integer(n as i128); k]);
+  // Empty payload — shape varies between 1D (rowPtr length 2) and ≥2D
+  // (rowPtr length n+1) to match wolframscript's CSR-like layout.
+  if entries.is_empty() {
+    let row_ptr = if k == 1 {
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])
+    } else {
+      Expr::List(vec![Expr::Integer(0); n + 1])
+    };
+    let inner = Expr::List(vec![
+      Expr::Integer(1),
+      Expr::List(vec![row_ptr, Expr::List(vec![])]),
+      Expr::List(vec![]),
+    ]);
+    return Expr::FunctionCall {
+      name: "SparseArray".to_string(),
+      args: vec![
+        Expr::Identifier("Automatic".to_string()),
+        dims_list,
+        Expr::Integer(0),
+        inner,
+      ],
+    };
+  }
+  // Sort entries by index for deterministic CSR layout.
+  let mut sorted_entries: Vec<(Vec<usize>, Expr)> = entries.to_vec();
+  sorted_entries.sort_by(|a, b| a.0.cmp(&b.0));
+  if k == 1 {
+    // 1D: rowPtr is `{0, count}`. Each colIndex is a 1-tuple `{idx}`.
+    let row_ptr = Expr::List(vec![
+      Expr::Integer(0),
+      Expr::Integer(sorted_entries.len() as i128),
+    ]);
+    let col_indices = Expr::List(
+      sorted_entries
+        .iter()
+        .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)]))
+        .collect(),
+    );
+    let values =
+      Expr::List(sorted_entries.iter().map(|(_, c)| c.clone()).collect());
+    let inner = Expr::List(vec![
+      Expr::Integer(1),
+      Expr::List(vec![row_ptr, col_indices]),
+      values,
+    ]);
+    return Expr::FunctionCall {
+      name: "SparseArray".to_string(),
+      args: vec![
+        Expr::Identifier("Automatic".to_string()),
+        dims_list,
+        Expr::Integer(0),
+        inner,
+      ],
+    };
+  }
+  // k ≥ 2: rowPtr length n+1, colIndices are (k-1)-tuples.
+  let mut row_counts = vec![0i128; n];
+  let mut col_indices_list: Vec<Expr> = Vec::with_capacity(sorted_entries.len());
+  let mut values_list: Vec<Expr> = Vec::with_capacity(sorted_entries.len());
+  for (idx, c) in &sorted_entries {
+    let row = idx[0] - 1;
+    row_counts[row] += 1;
+    let col_idx: Vec<Expr> = idx[1..]
+      .iter()
+      .map(|&i| Expr::Integer(i as i128))
+      .collect();
+    col_indices_list.push(Expr::List(col_idx));
+    values_list.push(c.clone());
+  }
+  let mut row_ptr = vec![Expr::Integer(0)];
+  let mut acc = 0i128;
+  for c in row_counts {
+    acc += c;
+    row_ptr.push(Expr::Integer(acc));
+  }
+  let inner = Expr::List(vec![
+    Expr::Integer(1),
+    Expr::List(vec![Expr::List(row_ptr), Expr::List(col_indices_list)]),
+    Expr::List(values_list),
+  ]);
+  Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      Expr::Identifier("Automatic".to_string()),
+      dims_list,
+      Expr::Integer(0),
+      inner,
+    ],
+  }
+}
