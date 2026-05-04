@@ -1,0 +1,30 @@
+# Keep the build context small and reproducible. Anything not needed
+# to compile + test the Rust code is excluded.
+
+.git
+.direnv
+.env
+.DS_Store
+target
+node_modules
+tests/book
+tests/jupyterlite
+tests/playground/pkg
+tests/_*
+tests/scripts/_*
+
+# Generated artefacts and scratch files
+factorials
+mathics
+examples
+*-checkpoint.ipynb
+.jupyterlite.doit.db
+sample.txt
+
+# Editor / IDE state
+.idea
+.vscode
+
+# Don't ship the Dockerfile itself into the build context
+Dockerfile
+.dockerignore

@@ -345,6 +345,7 @@ mod interpreter_tests {
   mod io;
   mod linear_algebra;
   mod list;
+  mod machine_specific;
   mod math;
   mod patterns;
   mod property;
