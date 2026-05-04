@@ -4962,6 +4962,19 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
 
+  // `Show[{g1, g2, …}, opts…]` — flatten a leading List argument into
+  // multiple graphics args (Wolfram convention; not Listable but accepts
+  // a list-of-graphics form alongside the variadic form).
+  let flat_args_owned: Vec<Expr>;
+  let args: &[Expr] = if let Some((first, rest)) = args.split_first()
+    && let Expr::List(items) = first
+  {
+    flat_args_owned = items.iter().chain(rest.iter()).cloned().collect();
+    &flat_args_owned
+  } else {
+    args
+  };
+
   for arg in args {
     // If the arg is not already a Graphics/Graphics3D expression,
     // try evaluating it (e.g. it could be a variable or function call)
