@@ -1231,7 +1231,10 @@ pub fn dispatch_predicate_functions(
         None
       });
       match result {
-        Some(val) => return Some(Ok(val)),
+        // Evaluate the looked-up value: option rules from `:>` (RuleDelayed)
+        // store the RHS held, so `OptionValue[a]` for `a :> Print["x"]`
+        // must trigger the Print at lookup time, matching Wolfram.
+        Some(val) => return Some(evaluate_expr_to_expr(&val)),
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),

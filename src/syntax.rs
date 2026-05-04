@@ -8016,7 +8016,15 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           Expr::Pattern { .. }
             | Expr::PatternOptional { .. }
             | Expr::PatternTest { .. }
-        ));
+        ))
+        // Rule/RuleDelayed have very low precedence (`->`/`:>`); wrap in
+        // parens when they appear inside any binary operator so the printed
+        // form re-parses to the same structure (e.g. `(a -> b)^2`, not
+        // `a -> b^2`).
+        || matches!(
+          left.as_ref(),
+          Expr::Rule { .. } | Expr::RuleDelayed { .. }
+        );
       let left_formatted = if left_needs_parens {
         format!("({})", left_str)
       } else {
@@ -8105,7 +8113,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               left: rl,
               ..
             } if matches!(rl.as_ref(), Expr::Integer(_))
-          ));
+          ))
+        // Rule/RuleDelayed have very low precedence; wrap in parens when
+        // they appear inside any binary operator so the printed form
+        // re-parses to the same structure.
+        || matches!(
+          right.as_ref(),
+          Expr::Rule { .. } | Expr::RuleDelayed { .. }
+        );
       let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {

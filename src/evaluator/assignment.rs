@@ -108,6 +108,48 @@ pub fn suppress_specificity_sort() -> bool {
   SUPPRESS_SPECIFICITY_SORT.with(|c| c.get())
 }
 
+/// Walk an expression and wrap each `Rule`/`RuleDelayed` pattern (LHS) in
+/// `HoldPattern[…]` so subsequent evaluation doesn't strip the LHS shape.
+/// Used by NValues/UpValues/etc. assignment to mirror Wolfram's behavior of
+/// implicitly wrapping rule LHSs (Wolfram returns `{HoldPattern[N[b, MachinePrecision]] :> 2}`
+/// for `NValues[b] := {N[b, MachinePrecision] :> 2}`).
+fn wrap_rule_lhs_in_holdpattern(expr: &Expr) -> Expr {
+  fn already_held(p: &Expr) -> bool {
+    matches!(p, Expr::FunctionCall { name, args }
+      if (name == "HoldPattern" || name == "Verbatim") && args.len() == 1)
+  }
+  fn wrap_pattern(p: &Expr) -> Expr {
+    if already_held(p) {
+      p.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "HoldPattern".to_string(),
+        args: vec![p.clone()],
+      }
+    }
+  }
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(wrap_pattern(pattern)),
+      replacement: replacement.clone(),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(wrap_pattern(pattern)),
+      replacement: replacement.clone(),
+    },
+    Expr::List(items) => Expr::List(
+      items.iter().map(wrap_rule_lhs_in_holdpattern).collect(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
 /// Resolve a function name through the environment to pick up Module-scoped
 /// unique symbols.  When Module[{f}, …] creates a unique symbol like `f$1` and
 /// stores it in the environment as `ENV["f"] = Raw("f$1")`, DownValue
@@ -1004,7 +1046,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && lhs_args.len() == 1
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
-    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    let wrapped_rhs = wrap_rule_lhs_in_holdpattern(rhs);
+    let rhs_value = evaluate_expr_to_expr(&wrapped_rhs)?;
     let rule_items: Vec<Expr> = match &rhs_value {
       Expr::List(items) => items.clone(),
       _ => vec![],
@@ -1332,7 +1375,8 @@ pub fn set_delayed_ast(
     && lhs_args.len() == 1
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
-    let rhs_value = evaluate_expr_to_expr(body)?;
+    let wrapped_body = wrap_rule_lhs_in_holdpattern(body);
+    let rhs_value = evaluate_expr_to_expr(&wrapped_body)?;
     let rule_items: Vec<Expr> = match &rhs_value {
       Expr::List(items) => items.clone(),
       _ => vec![],

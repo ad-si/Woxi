@@ -239,10 +239,16 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     // Sequence patterns count too — Repeated[p] / RepeatedNull[p] /
     // BlankSequence[] / BlankNullSequence[] let the pattern consume a
     // variable number of args without themselves being Expr::Pattern.
+    // OptionsPattern[…] is also a sequence pattern (matches zero or more
+    // Rule/RuleDelayed args).
     Expr::FunctionCall { name, .. }
       if matches!(
         name.as_str(),
-        "Repeated" | "RepeatedNull" | "BlankSequence" | "BlankNullSequence"
+        "Repeated"
+          | "RepeatedNull"
+          | "BlankSequence"
+          | "BlankNullSequence"
+          | "OptionsPattern"
       ) =>
     {
       true
@@ -2829,6 +2835,27 @@ fn match_pattern_impl(
         }
       }
       None
+    }
+    // OptionsPattern[…] matched in a non-sequence position (e.g. as the
+    // base of `(OptionsPattern[{}])^2`): matches a single `Rule` or
+    // `RuleDelayed`. The matched rule is captured under the reserved
+    // `__OptionsPattern__` key so `OptionValue[…]` lookups in the
+    // replacement resolve against it.
+    Expr::FunctionCall { name: pat_name, .. }
+      if pat_name == "OptionsPattern"
+        && match_options_pattern(pattern).is_some() =>
+    {
+      let opt_defaults = match_options_pattern(pattern).unwrap_or_default();
+      match expr {
+        Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+          let merged = merge_option_rules(&opt_defaults, &[expr.clone()]);
+          Some(vec![(
+            "__OptionsPattern__".to_string(),
+            Expr::List(merged),
+          )])
+        }
+        _ => None,
+      }
     }
     // Verbatim[expr] - matches literally, not treating contents as patterns
     Expr::FunctionCall {

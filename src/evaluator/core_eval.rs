@@ -2376,9 +2376,11 @@ pub fn evaluate_expr_to_expr_inner(
       pattern,
       replacement,
     } => {
-      // Delayed rules don't evaluate the replacement
+      // RuleDelayed has HoldRest: evaluate the pattern (LHS) but hold the
+      // replacement (RHS) so it re-evaluates per match.
+      let p = evaluate_expr_to_expr(pattern)?;
       Ok(Expr::RuleDelayed {
-        pattern: pattern.clone(),
+        pattern: Box::new(p),
         replacement: replacement.clone(),
       })
     }
