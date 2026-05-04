@@ -1692,12 +1692,16 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FindClusters expects 1 to 3 arguments".into(),
     ));
   }
-  // Pull out a DistanceFunction option from any trailing arg.
+  // Pull out a DistanceFunction option from any trailing arg. Other
+  // recognised options (Method, CriterionFunction, …) are accepted
+  // and silently ignored — the default algorithm is used regardless.
   let mut distance_fn: Option<Expr> = None;
   let mut k_arg: Option<&Expr> = None;
   for arg in &args[1..] {
     if let Some(fnexpr) = extract_distance_function_option(arg) {
       distance_fn = Some(fnexpr);
+    } else if is_ignorable_findclusters_option(arg) {
+      // skip — unsupported but recognised; fall back to default
     } else {
       k_arg = Some(arg);
     }
@@ -1718,6 +1722,43 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return find_clusters_with_k(&args[0], k, args);
   }
   find_clusters_ast(&args[0])
+}
+
+/// Recognise `Method`, `CriterionFunction`, `PerformanceGoal`,
+/// `WorkingPrecision`, etc. — `FindClusters` options that Woxi
+/// accepts but doesn't use to switch algorithm.
+fn is_ignorable_findclusters_option(opt: &Expr) -> bool {
+  let key = match opt {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      if let Expr::Identifier(s) = pattern.as_ref() {
+        s.as_str()
+      } else {
+        return false;
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      if let Expr::Identifier(s) = &args[0] {
+        s.as_str()
+      } else {
+        return false;
+      }
+    }
+    _ => return false,
+  };
+  matches!(
+    key,
+    "Method"
+      | "CriterionFunction"
+      | "PerformanceGoal"
+      | "WorkingPrecision"
+      | "Weights"
+      | "FeatureExtractor"
+      | "FeatureNames"
+      | "RandomSeeding"
+      | "Tolerance"
+  )
 }
 
 /// Extract `DistanceFunction -> fn` from a single option argument.
