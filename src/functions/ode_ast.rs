@@ -24,11 +24,14 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let indep_var = &args[2];
 
   // PDE branch: `DSolve[eqn, f, {x, y}]` (or `DSolve[eqn, f[x, y], {x, y}]`)
-  // for a first-order linear PDE in two variables. Two recognised
+  // for a first-order linear PDE in two variables. Three recognised
   // shapes:
   //   * Constant coefficients with f-divided derivatives:
   //       a*D[f,x]/f + b*D[f,y]/f == c
   //     Solution: f -> Function[{x, y}, E^((c/a)*x) * C[1][y - (b/a)*x]]
+  //   * Constant coefficients on bare derivatives, RHS constant:
+  //       a*D[f,x] + b*D[f,y] == c
+  //     Solution: f[x, y] -> (c/a)*x + C[1][y - (b/a)*x]
   //   * Euler-type with the variable as coefficient:
   //       x*D[f,x] + y*D[f,y] == c
   //     Solution: f[x, y] -> c*Log[x] + C[1][y/x]
@@ -52,6 +55,11 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(fname) = fname_opt {
       if let Some(body) =
         try_linear_first_order_pde_body(eqns_arg, &fname, xn, yn)
+      {
+        return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
+      }
+      if let Some(body) =
+        try_direct_linear_pde_body(eqns_arg, &fname, xn, yn)
       {
         return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
       }
@@ -2553,6 +2561,214 @@ fn try_linear_first_order_pde_body(
 /// Recognise the Euler-type PDE `x*D[f[x,y], x] + y*D[f[x,y], y] == c`
 /// (constant c) and return the body
 /// `c*Log[x] + C[1][y/x]` of the closed-form solution.
+/// Recognise `a*D[f[x,y], x] + b*D[f[x,y], y] == c` (constant integer
+/// coefficients on bare derivatives, integer RHS) and return the body
+/// `(c/a)*x + C[1][y - (b/a)*x]`. Inhomogeneous (c ≠ 0) and homogeneous
+/// (c = 0) cases are both handled.
+fn try_direct_linear_pde_body(
+  eqn: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+) -> Option<Expr> {
+  let (lhs, rhs) = pde_split_equation(eqn)?;
+  // LHS: collect coefficients of Fx and Fy via Plus walking. Reject
+  // shapes that don't fit (e.g. divided-by-f, mixed parameters, etc.).
+  let mut a = 0i128;
+  let mut b = 0i128;
+  collect_direct_pde_terms(&lhs, fname, xn, yn, 1, &mut a, &mut b)?;
+  // RHS must be an integer constant for the closed form below.
+  let mut c = match &rhs {
+    Expr::Integer(n) => *n,
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => match operand.as_ref() {
+      Expr::Integer(n) => -*n,
+      _ => return None,
+    },
+    _ => return None,
+  };
+  // If we accumulated any constant terms on the LHS, fold them into
+  // -c on the RHS by negating: a*Fx + b*Fy + k == c  ⇒  a*Fx + b*Fy
+  // == c - k. We don't currently parse a separate `k` slot, so any
+  // non-derivative LHS term aborts the recognition above.
+  let _ = &mut c;
+  if a == 0 {
+    return None; // No Fx term means no characteristic to integrate along.
+  }
+  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  // Argument to C[1]: y - (b/a)*x.
+  let c1_arg = if b == 0 {
+    n_var(yn)
+  } else {
+    let coeff = make_neg_b_over_a(b, a);
+    let bx = match &coeff {
+      Expr::Integer(1) => n_var(xn),
+      Expr::Integer(n) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(*n)),
+        right: Box::new(n_var(xn)),
+      },
+      other => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(other.clone()),
+        right: Box::new(n_var(xn)),
+      },
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(n_var(yn)),
+      right: Box::new(bx),
+    }
+  };
+  let c1_applied = Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "C".to_string(),
+      args: vec![Expr::Integer(1)],
+    }),
+    args: vec![c1_arg],
+  };
+  // Inhomogeneous head term: (c/a)*x.
+  if c == 0 {
+    return Some(c1_applied);
+  }
+  let coeff = make_c_over_a(c, a);
+  let head_term = match &coeff {
+    Expr::Integer(1) => n_var(xn),
+    Expr::Integer(n) => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(*n)),
+      right: Box::new(n_var(xn)),
+    },
+    other => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(other.clone()),
+      right: Box::new(n_var(xn)),
+    },
+  };
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(head_term),
+    right: Box::new(c1_applied),
+  })
+}
+
+/// `-b/a` reduced to either an `Integer` (if `a` divides `b`) or a
+/// `Rational` literal. Sign is folded into the numerator.
+fn make_neg_b_over_a(b: i128, a: i128) -> Expr {
+  use crate::functions::math_ast::make_rational_pub;
+  let g = gcd_i128(b.abs(), a.abs());
+  let g = if g == 0 { 1 } else { g };
+  let (num, den) = (-b / g, a / g);
+  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+  if den == 1 {
+    Expr::Integer(num)
+  } else {
+    make_rational_pub(num, den)
+  }
+}
+
+fn make_c_over_a(c: i128, a: i128) -> Expr {
+  use crate::functions::math_ast::make_rational_pub;
+  let g = gcd_i128(c.abs(), a.abs());
+  let g = if g == 0 { 1 } else { g };
+  let (num, den) = (c / g, a / g);
+  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+  if den == 1 {
+    Expr::Integer(num)
+  } else {
+    make_rational_pub(num, den)
+  }
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a, b);
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Walk a Plus chain and accumulate signed integer coefficients of
+/// bare `Derivative[1,0][f][x,y]` and `Derivative[0,1][f][x,y]` terms.
+/// Anything else (constants, divided-by-f terms, mixed factors) bails.
+fn collect_direct_pde_terms(
+  expr: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+  sign: i128,
+  a: &mut i128,
+  b: &mut i128,
+) -> Option<()> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for arg in args {
+        collect_direct_pde_terms(arg, fname, xn, yn, sign, a, b)?;
+      }
+      Some(())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_direct_pde_terms(left, fname, xn, yn, sign, a, b)?;
+      collect_direct_pde_terms(right, fname, xn, yn, sign, a, b)
+    }
+    _ => {
+      let (coeff, kind) = classify_direct_pde_term(expr, fname, xn, yn)?;
+      let signed = sign * coeff;
+      match kind {
+        PdeTerm::Fx => *a += signed,
+        PdeTerm::Fy => *b += signed,
+        PdeTerm::Const => return None, // not allowed in this branch
+      }
+      Some(())
+    }
+  }
+}
+
+fn classify_direct_pde_term(
+  expr: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+) -> Option<(i128, PdeTerm)> {
+  // Bare derivative call (coefficient 1).
+  if let Some(kind) = classify_derivative_call(expr, fname, xn, yn) {
+    return Some((1, kind));
+  }
+  // Times[coeff, Derivative…] with integer coefficient.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+  {
+    let mut coeff = 1i128;
+    let mut deriv_kind: Option<PdeTerm> = None;
+    for factor in args {
+      if let Expr::Integer(n) = factor {
+        coeff *= *n;
+        continue;
+      }
+      if let Some(kind) = classify_derivative_call(factor, fname, xn, yn) {
+        if deriv_kind.is_some() {
+          return None;
+        }
+        deriv_kind = Some(kind);
+        continue;
+      }
+      return None;
+    }
+    if let Some(kind) = deriv_kind {
+      return Some((coeff, kind));
+    }
+  }
+  None
+}
+
 fn try_euler_pde_body(
   eqn: &Expr,
   fname: &str,
