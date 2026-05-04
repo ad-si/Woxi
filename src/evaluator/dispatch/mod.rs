@@ -5642,6 +5642,20 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // XML`Parser`XMLGetString[xml] — minimal stub: return an expression
+  // whose head is `XMLObject["Document"]`, so `Head[XML`Parser`XMLGetString[…]]`
+  // matches the documented `XMLObject["Document"]`. The inner XML is
+  // wrapped opaquely; full XML parsing is out of scope here.
+  if name == "XML`Parser`XMLGetString" && args.len() == 1 {
+    return Ok(Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "XMLObject".to_string(),
+        args: vec![Expr::String("Document".to_string())],
+      }),
+      args: vec![Expr::List(vec![]), args[0].clone()],
+    });
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function
   if is_known_wolfram_function(name) {
     let args_str = args

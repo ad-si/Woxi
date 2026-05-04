@@ -1266,6 +1266,10 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, .. } => {
       return Ok(Expr::Identifier(name.clone()));
     }
+    // f[a][b] — the head is the inner call expression itself, not a symbol.
+    Expr::CurriedCall { func, .. } => {
+      return Ok((**func).clone());
+    }
     Expr::Rule { .. } => "Rule",
     Expr::RuleDelayed { .. } => "RuleDelayed",
     Expr::BinaryOp { op, left, .. } => {
