@@ -4,6 +4,8 @@
 /.env
 /.jupyterlite.doit.db
 /examples
+/factorials
+/mathics
 /node_modules
 /target
 /tests/_*
@@ -12,7 +14,6 @@
 /tests/playground/pkg
 /tests/scripts/_*
 /todos.md
-/mathics
 
 # Side effects of FilePrint/Export round-trip tests (cases 3268, 3269).
 /sample.txt

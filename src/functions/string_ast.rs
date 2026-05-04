@@ -1657,9 +1657,7 @@ fn maybe_named_group(
   if let Some(first_body) = state.first_body.get(name).cloned() {
     let dup_name = format!("{}__dup{}", name, state.dup_counter);
     state.dup_counter += 1;
-    state
-      .constraints
-      .push((name.to_string(), dup_name.clone()));
+    state.constraints.push((name.to_string(), dup_name.clone()));
     format!("(?P<{}>{})", dup_name, first_body)
   } else {
     state.first_body.insert(name.to_string(), body.to_string());
@@ -2040,7 +2038,9 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
         })
         .take(max_count)
-        .filter_map(|caps| caps.get(0).map(|m| Expr::String(m.as_str().to_string())))
+        .filter_map(|caps| {
+          caps.get(0).map(|m| Expr::String(m.as_str().to_string()))
+        })
         .collect()
     };
     return Ok(Expr::List(matches));
