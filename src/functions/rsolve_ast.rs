@@ -228,6 +228,14 @@ fn solve_const_coeff_linear(
     return build_general_solution(&roots, var_name);
   }
 
+  // Under-determined: fewer ICs than order. Keep the first
+  // (order - ics.len()) constants symbolic (as `C[1]`, `C[2]`, …) and use
+  // the ICs to eliminate the remaining ones, matching wolframscript's
+  // convention of preserving low-indexed C[k]s as the free parameters.
+  if initial_conditions.len() < order {
+    return build_partial_solution(&roots, initial_conditions, var_name);
+  }
+
   // Check initial conditions match order
   if initial_conditions.len() != order {
     return None;
@@ -240,6 +248,125 @@ fn solve_const_coeff_linear(
 
   // Build the solution expression: c1*r1^n + c2*r2^n + ...
   build_solution(&constants, &roots, var_name)
+}
+
+/// Build the solution when there are fewer initial conditions than
+/// recurrence order. The first `free_count = order - ics.len()` constants
+/// stay symbolic (as `C[1], C[2], …`) and the remaining constants are
+/// expressed as linear combinations of the free constants and the IC
+/// values, matching wolframscript's parameterization.
+///
+/// Currently handles `free_count == 1`, which covers the common
+/// 2nd-order-with-one-IC case (e.g. `RSolve[{a[n+2] == a[n], a[0] == 1},
+/// a, n]`).
+fn build_partial_solution(
+  roots: &[(i128, i128)],
+  ics: &[(i128, Expr)],
+  var_name: &str,
+) -> Option<Expr> {
+  let order = roots.len();
+  let free_count = order - ics.len();
+  // Generalising beyond a single free parameter requires solving a
+  // multivariate symbolic system; keep the implementation focused on the
+  // shapes wolframscript actually surfaces in tests for now.
+  if free_count != 1 || order != 2 || ics.len() != 1 {
+    return None;
+  }
+
+  let (k, v_expr) = &ics[0];
+  let v = match v_expr {
+    Expr::Integer(n) => *n,
+    _ => return None,
+  };
+
+  // Only support integer roots for now (rational roots add denominator
+  // bookkeeping that the test cases don't exercise).
+  let (r1, r1d) = roots[0];
+  let (r2, r2d) = roots[1];
+  if r1d != 1 || r2d != 1 {
+    return None;
+  }
+
+  // Equation: c_1 * r_1^k + c_2 * r_2^k = v   (k is the IC index)
+  // With c_1 = C[1] free, eliminate c_2:
+  //   c_2 = (v - C[1] * r_1^k) / r_2^k
+  // General solution: a(n) = c_1*r_1^n + c_2*r_2^n
+  //   = C[1] * r_1^n + v * r_2^(n-k) - C[1] * r_1^k * r_2^(n-k)
+  //
+  // For the common k = 0 case this collapses to:
+  //   a(n) = C[1] * r_1^n + v * r_2^n - C[1] * r_2^n
+  //
+  // Non-zero k would need a rational scaling by r_2^(-k). Skip for now
+  // since the under-determined cases the tests cover all use a[0].
+  if *k != 0 {
+    return None;
+  }
+
+  let n_var = Expr::Identifier(var_name.to_string());
+  let c1 = Expr::FunctionCall {
+    name: "C".to_string(),
+    args: vec![Expr::Integer(1)],
+  };
+
+  fn root_pow(r: i128, n_var: &Expr) -> Expr {
+    if r == 1 {
+      Expr::Integer(1)
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Integer(r)),
+        right: Box::new(n_var.clone()),
+      }
+    }
+  }
+
+  let r1_pow_n = root_pow(r1, &n_var);
+  let r2_pow_n = root_pow(r2, &n_var);
+
+  // Term 1: C[1] * r_1^n   (collapses to just C[1] when r_1 == 1)
+  let term1 = if matches!(&r1_pow_n, Expr::Integer(1)) {
+    c1.clone()
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(r1_pow_n.clone()),
+      right: Box::new(c1.clone()),
+    }
+  };
+
+  // Term 2: v * r_2^n  (collapsing on v == 1 / -1 / r_2 == 1)
+  let term2 = if matches!(&r2_pow_n, Expr::Integer(1)) {
+    Expr::Integer(v)
+  } else if v == 1 {
+    r2_pow_n.clone()
+  } else if v == -1 {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(r2_pow_n.clone()),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(v)),
+      right: Box::new(r2_pow_n.clone()),
+    }
+  };
+
+  // Term 3: -C[1] * r_2^n
+  let neg_c1_r2n = Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(if matches!(&r2_pow_n, Expr::Integer(1)) {
+      c1.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(r2_pow_n),
+        right: Box::new(c1.clone()),
+      }
+    }),
+  };
+
+  crate::functions::math_ast::plus_ast(&[term1, term2, neg_c1_r2n]).ok()
 }
 
 /// Build the general solution `C[1]*r1^n + C[2]*r2^n + ...`. Roots equal to
