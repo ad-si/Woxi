@@ -1596,26 +1596,73 @@ fn is_valid_regex_capture_name(name: &str) -> bool {
   chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Public entry point: builds the regex with a fresh names-seen set.
-fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
-  let mut seen: std::collections::HashSet<String> =
-    std::collections::HashSet::new();
-  string_pattern_to_regex_inner(expr, &mut seen)
+/// Tracks pattern-variable bindings while translating a Wolfram string
+/// pattern to a regex. Repeated pattern names are realised as Wolfram-style
+/// back-references: the second occurrence reuses the first occurrence's
+/// regex body (so e.g. `x : WordCharacter .. ~~ "-" ~~ x_` matches the same
+/// run on both sides of the dash), and the resulting (orig, dup) capture-name
+/// pair is recorded so callers can post-filter matches whose captures don't
+/// actually agree.
+struct PatternState {
+  /// Maps a pattern name to the regex body of its first occurrence.
+  first_body: std::collections::HashMap<String, String>,
+  /// Counter used to name duplicate captures uniquely (`name__dupN`).
+  dup_counter: usize,
+  /// Pairs `(original_capture_name, duplicate_capture_name)` whose captures
+  /// must compare equal for the overall match to be accepted.
+  constraints: Vec<(String, String)>,
 }
 
-/// Wrap a regex body in a named capture group, deduplicating names so the
-/// Rust `regex` crate doesn't reject the pattern with "duplicate capture
-/// group name". A repeated name becomes a non-capturing group — we lose
-/// the back-reference semantics Wolfram has, but matching still succeeds
-/// in cases where names don't actually need to coincide.
+impl PatternState {
+  fn new() -> Self {
+    Self {
+      first_body: std::collections::HashMap::new(),
+      dup_counter: 0,
+      constraints: Vec::new(),
+    }
+  }
+}
+
+/// Public entry point: builds the regex and discards any back-reference
+/// constraints (callers that need them should use
+/// `string_pattern_to_regex_with_state` instead).
+fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
+  string_pattern_to_regex_with_state(expr).map(|(s, _)| s)
+}
+
+/// Like `string_pattern_to_regex` but also returns the list of `(orig, dup)`
+/// capture-name pairs that must agree for a regex match to be considered a
+/// real Wolfram pattern match.
+fn string_pattern_to_regex_with_state(
+  expr: &Expr,
+) -> Option<(String, Vec<(String, String)>)> {
+  let mut state = PatternState::new();
+  let regex = string_pattern_to_regex_inner(expr, &mut state)?;
+  Some((regex, state.constraints))
+}
+
+/// Wrap a regex body in a named capture group. On a repeated name, reuse the
+/// first occurrence's regex body (so the duplicate matches the *same* shape
+/// as the original) and record a constraint that the captured substrings
+/// must compare equal — emulating Wolfram's pattern back-references on top
+/// of the Rust `regex` crate, which has no native backreference support.
 fn maybe_named_group(
   name: &str,
   body: &str,
-  seen: &mut std::collections::HashSet<String>,
+  state: &mut PatternState,
 ) -> String {
-  if !is_valid_regex_capture_name(name) || !seen.insert(name.to_string()) {
-    format!("(?:{})", body)
+  if !is_valid_regex_capture_name(name) {
+    return format!("(?:{})", body);
+  }
+  if let Some(first_body) = state.first_body.get(name).cloned() {
+    let dup_name = format!("{}__dup{}", name, state.dup_counter);
+    state.dup_counter += 1;
+    state
+      .constraints
+      .push((name.to_string(), dup_name.clone()));
+    format!("(?P<{}>{})", dup_name, first_body)
   } else {
+    state.first_body.insert(name.to_string(), body.to_string());
     format!("(?P<{}>{})", name, body)
   }
 }
@@ -1624,7 +1671,7 @@ fn maybe_named_group(
 /// Returns None if the expression is not a recognized string pattern.
 fn string_pattern_to_regex_inner(
   expr: &Expr,
-  seen: &mut std::collections::HashSet<String>,
+  seen: &mut PatternState,
 ) -> Option<String> {
   match expr {
     // String literal patterns — convert Wolfram metacharacters (* and @)
@@ -1839,8 +1886,19 @@ fn string_pattern_to_regex_inner(
     Expr::FunctionCall { name, args }
       if name == "Shortest" && args.len() == 1 =>
     {
+      let constraints_before = seen.constraints.len();
       let inner = string_pattern_to_regex_inner(&args[0], seen)?;
-      Some(make_non_greedy(&inner))
+      if seen.constraints.len() > constraints_before {
+        // A duplicate-name back-reference inside Shortest would conflict
+        // with non-greedy semantics: the engine would commit to a shortest
+        // match that fails the equality post-filter and never try the
+        // longer match where both captures agree. Skip the non-greedy
+        // rewrite here — the equality constraint already pins down the
+        // unique valid match length.
+        Some(inner)
+      } else {
+        Some(make_non_greedy(&inner))
+      }
     }
 
     // Longest[pat] — default greedy match; equivalent to pat itself.
@@ -1911,27 +1969,33 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Rule or list of rules: at each position, try each rule's LHS pattern;
   // on a match, emit the (capture-substituted) RHS and advance past it.
   if let Some(rules) = extract_cases_rules(&args[1]) {
-    let mut compiled: Vec<(regex::Regex, Expr)> =
+    let mut compiled: Vec<(regex::Regex, Vec<(String, String)>, Expr)> =
       Vec::with_capacity(rules.len());
-    for (pat, rhs) in &rules {
+    for (pat, constraints, rhs) in &rules {
       let re = regex::Regex::new(pat).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "Invalid string pattern: {}",
           e
         ))
       })?;
-      compiled.push((re, rhs.clone()));
+      compiled.push((re, constraints.clone(), rhs.clone()));
     }
 
     let mut result: Vec<Expr> = Vec::new();
     let mut i = 0;
     while i < s.len() && result.len() < max_count {
       let mut matched = false;
-      for (re, rhs) in &compiled {
+      for (re, constraints, rhs) in &compiled {
         if let Some(caps) = re.captures_at(&s, i)
           && let Some(m) = caps.get(0)
           && m.start() == i
           && !m.as_str().is_empty()
+          && constraints.iter().all(|(orig, dup)| {
+            match (caps.name(orig), caps.name(dup)) {
+              (Some(a), Some(b)) => a.as_str() == b.as_str(),
+              _ => true,
+            }
+          })
         {
           let substituted = substitute_captures(rhs, &caps);
           let evaluated =
@@ -1951,18 +2015,34 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Try pattern-based matching first
-  if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
+  if let Some((regex_str, constraints)) =
+    string_pattern_to_regex_with_state(&args[1])
+  {
     let re = regex::Regex::new(&regex_str).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Invalid string pattern: {}",
         e
       ))
     })?;
-    let matches: Vec<Expr> = re
-      .find_iter(&s)
-      .take(max_count)
-      .map(|m| Expr::String(m.as_str().to_string()))
-      .collect();
+    let matches: Vec<Expr> = if constraints.is_empty() {
+      re.find_iter(&s)
+        .take(max_count)
+        .map(|m| Expr::String(m.as_str().to_string()))
+        .collect()
+    } else {
+      re.captures_iter(&s)
+        .filter(|caps| {
+          constraints.iter().all(|(orig, dup)| {
+            match (caps.name(orig), caps.name(dup)) {
+              (Some(a), Some(b)) => a.as_str() == b.as_str(),
+              _ => true,
+            }
+          })
+        })
+        .take(max_count)
+        .filter_map(|caps| caps.get(0).map(|m| Expr::String(m.as_str().to_string())))
+        .collect()
+    };
     return Ok(Expr::List(matches));
   }
 
@@ -1982,11 +2062,14 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matches))
 }
 
-/// Extract a list of (pattern_regex, replacement_expr) from a rule or list of rules.
-/// Returns None if the expression is not a rule or rule list, or if any pattern
-/// cannot be converted to a regex.
-fn extract_cases_rules(expr: &Expr) -> Option<Vec<(String, Expr)>> {
-  fn one(e: &Expr) -> Option<(String, Expr)> {
+/// Extract a list of (pattern_regex, back_reference_constraints,
+/// replacement_expr) tuples from a rule or list of rules. Returns None if
+/// the expression is not a rule or rule list, or if any pattern cannot be
+/// converted to a regex.
+fn extract_cases_rules(
+  expr: &Expr,
+) -> Option<Vec<(String, Vec<(String, String)>, Expr)>> {
+  fn one(e: &Expr) -> Option<(String, Vec<(String, String)>, Expr)> {
     let (pat, rep) = match e {
       Expr::Rule {
         pattern,
@@ -1998,8 +2081,8 @@ fn extract_cases_rules(expr: &Expr) -> Option<Vec<(String, Expr)>> {
       } => (pattern.as_ref(), replacement.as_ref()),
       _ => return None,
     };
-    let regex_str = string_pattern_to_regex(pat)?;
-    Some((regex_str, rep.clone()))
+    let (regex_str, constraints) = string_pattern_to_regex_with_state(pat)?;
+    Some((regex_str, constraints, rep.clone()))
   }
   match expr {
     Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(vec![one(expr)?]),
