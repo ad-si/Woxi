@@ -1862,6 +1862,122 @@ fn find_clusters_distance_fn(
 /// clusters by cutting at the `k - 1` largest gaps between sorted
 /// values. Preserves the input ordering inside each cluster, so e.g.
 /// `FindClusters[{1, 2, 10, 11, 20, 21}, 2]` → `{{1, 2, 10, 11}, {20, 21}}`.
+/// Single-linkage agglomerative clustering of `String` items into `k`
+/// groups using `EditDistance` (Levenshtein) as the pairwise metric.
+/// Returns clusters in the order of their first input element so the
+/// output is deterministic and preserves input order within each
+/// cluster.
+fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
+  let n = items.len();
+  if n == 0 {
+    return Expr::List(vec![]);
+  }
+  if k <= 1 {
+    return Expr::List(vec![Expr::List(items.to_vec())]);
+  }
+  if k >= n {
+    return Expr::List(items.iter().map(|e| Expr::List(vec![e.clone()])).collect());
+  }
+  let strs: Vec<&str> = items
+    .iter()
+    .map(|e| match e {
+      Expr::String(s) => s.as_str(),
+      _ => "",
+    })
+    .collect();
+  // Pairwise EditDistance.
+  let dist = |i: usize, j: usize| -> u32 {
+    edit_distance_str(strs[i], strs[j])
+  };
+  // Each item starts in its own cluster (cluster id == initial item idx).
+  let mut cluster_of: Vec<usize> = (0..n).collect();
+  let mut active: std::collections::BTreeSet<usize> = (0..n).collect();
+  // Repeatedly merge the two closest clusters until `k` remain.
+  while active.len() > k {
+    let mut best: Option<(u32, usize, usize)> = None;
+    let act: Vec<usize> = active.iter().copied().collect();
+    for i in 0..act.len() {
+      for j in (i + 1)..act.len() {
+        let ci = act[i];
+        let cj = act[j];
+        // Single-linkage: minimum pairwise distance between any items
+        // currently labelled `ci` vs any items labelled `cj`.
+        let mut min_d = u32::MAX;
+        for p in 0..n {
+          if cluster_of[p] != ci {
+            continue;
+          }
+          for q in 0..n {
+            if cluster_of[q] != cj {
+              continue;
+            }
+            let d = dist(p, q);
+            if d < min_d {
+              min_d = d;
+            }
+          }
+        }
+        if best.is_none_or(|(d, _, _)| min_d < d) {
+          best = Some((min_d, ci, cj));
+        }
+      }
+    }
+    let (_, ci, cj) = best.unwrap();
+    // Merge cj into ci.
+    for label in &mut cluster_of {
+      if *label == cj {
+        *label = ci;
+      }
+    }
+    active.remove(&cj);
+  }
+  // Emit clusters in the order their first member appears in the input.
+  let mut seen: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+  let mut order: Vec<usize> = Vec::new();
+  for i in 0..n {
+    if seen.insert(cluster_of[i]) {
+      order.push(cluster_of[i]);
+    }
+  }
+  let groups: Vec<Expr> = order
+    .into_iter()
+    .map(|cid| {
+      let members: Vec<Expr> = (0..n)
+        .filter(|&i| cluster_of[i] == cid)
+        .map(|i| items[i].clone())
+        .collect();
+      Expr::List(members)
+    })
+    .collect();
+  Expr::List(groups)
+}
+
+/// Levenshtein distance between two byte-strings (ASCII fast path).
+fn edit_distance_str(a: &str, b: &str) -> u32 {
+  let a: Vec<char> = a.chars().collect();
+  let b: Vec<char> = b.chars().collect();
+  let (m, n) = (a.len(), b.len());
+  if m == 0 {
+    return n as u32;
+  }
+  if n == 0 {
+    return m as u32;
+  }
+  let mut prev: Vec<u32> = (0..=n as u32).collect();
+  let mut curr: Vec<u32> = vec![0; n + 1];
+  for i in 1..=m {
+    curr[0] = i as u32;
+    for j in 1..=n {
+      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+      curr[j] = (prev[j] + 1)
+        .min(curr[j - 1] + 1)
+        .min(prev[j - 1] + cost);
+    }
+    std::mem::swap(&mut prev, &mut curr);
+  }
+  prev[n]
+}
+
 fn find_clusters_with_k(
   list: &Expr,
   k: usize,
@@ -1888,18 +2004,28 @@ fn find_clusters_with_k(
       items.into_iter().map(|e| Expr::List(vec![e])).collect(),
     ));
   }
-  // Convert items to f64 for gap analysis. Bail out if any item isn't numeric.
+  // Convert items to f64 for gap analysis. If any item isn't numeric,
+  // try the string-input path via agglomerative clustering on
+  // `EditDistance`.
   let mut values: Vec<f64> = Vec::with_capacity(items.len());
+  let mut all_numeric = true;
   for item in &items {
     match expr_to_f64(item) {
       Some(v) => values.push(v),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "FindClusters".to_string(),
-          args: raw_args.to_vec(),
-        });
+        all_numeric = false;
+        break;
       }
     }
+  }
+  if !all_numeric {
+    if items.iter().all(|e| matches!(e, Expr::String(_))) {
+      return Ok(agglomerative_cluster_strings(&items, k));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "FindClusters".to_string(),
+      args: raw_args.to_vec(),
+    });
   }
   // Sort indices by value to find gaps in ascending value order.
   let n = values.len();
