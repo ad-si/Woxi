@@ -3361,22 +3361,34 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::Increment => {
-      // x++ -> Increment[x]
-      let inner = pair.into_inner().next().unwrap();
-      let var = pair_to_expr(inner);
-      Expr::FunctionCall {
-        name: "Increment".to_string(),
-        args: vec![var],
+      // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
+      // Grammar emits one base pair followed by N `IncrementOp` pairs
+      // (N ≥ 1). Wrap `Increment` around the base once per op pair.
+      let mut inner = pair.into_inner();
+      let base = pair_to_expr(inner.next().unwrap());
+      let op_count = inner.count();
+      let mut result = base;
+      for _ in 0..op_count {
+        result = Expr::FunctionCall {
+          name: "Increment".to_string(),
+          args: vec![result],
+        };
       }
+      result
     }
     Rule::Decrement => {
-      // x-- -> Decrement[x]
-      let inner = pair.into_inner().next().unwrap();
-      let var = pair_to_expr(inner);
-      Expr::FunctionCall {
-        name: "Decrement".to_string(),
-        args: vec![var],
+      // x-- -> Decrement[x]; chained `x----` -> Decrement[Decrement[x]].
+      let mut inner = pair.into_inner();
+      let base = pair_to_expr(inner.next().unwrap());
+      let op_count = inner.count();
+      let mut result = base;
+      for _ in 0..op_count {
+        result = Expr::FunctionCall {
+          name: "Decrement".to_string(),
+          args: vec![result],
+        };
       }
+      result
     }
     Rule::PreIncrement => {
       // ++x -> PreIncrement[x]
@@ -6301,17 +6313,49 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "DivideBy" && args.len() == 2 {
         return format!("{} /= {}", fmt(&args[0]), fmt(&args[1]));
       }
+      // Chained ++/-- variants: parenthesize the inner expression when
+      // it is itself an Increment/PreIncrement family call so the
+      // printed form re-parses to the same structure (e.g. `(a++)++`,
+      // `++(a++)`). Bare operands keep the compact form (`a++`, `++a`).
+      let needs_inc_parens = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::FunctionCall { name: n, args: a }
+            if a.len() == 1 && (n == "Increment" || n == "Decrement"
+              || n == "PreIncrement" || n == "PreDecrement")
+        )
+      };
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("({})++", inner)
+        } else {
+          format!("{}++", inner)
+        };
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("({})--", inner)
+        } else {
+          format!("{}--", inner)
+        };
       }
       if name == "PreIncrement" && args.len() == 1 {
-        return format!("++{}", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("++({})", inner)
+        } else {
+          format!("++{}", inner)
+        };
       }
       if name == "PreDecrement" && args.len() == 1 {
-        return format!("--{}", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("--({})", inner)
+        } else {
+          format!("--{}", inner)
+        };
       }
       if name == "Condition" && args.len() == 2 {
         // When the LHS is Plus (BinaryOp or FunctionCall), parenthesize
@@ -6397,17 +6441,48 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         }
         return format!("({})?{}", pat, test);
       }
+      // Chained ++/-- variants: parenthesize when the inner is itself
+      // another Increment/PreIncrement family call so the print
+      // round-trips through the parser.
+      let needs_inc_parens = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::FunctionCall { name: n, args: a }
+            if a.len() == 1 && (n == "Increment" || n == "Decrement"
+              || n == "PreIncrement" || n == "PreDecrement")
+        )
+      };
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("({})++", inner)
+        } else {
+          format!("{}++", inner)
+        };
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("({})--", inner)
+        } else {
+          format!("{}--", inner)
+        };
       }
       if name == "PreIncrement" && args.len() == 1 {
-        return format!("++{}", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("++({})", inner)
+        } else {
+          format!("++{}", inner)
+        };
       }
       if name == "PreDecrement" && args.len() == 1 {
-        return format!("--{}", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if needs_inc_parens(&args[0]) {
+          format!("--({})", inner)
+        } else {
+          format!("--{}", inner)
+        };
       }
       if name == "Optional" && args.len() == 1 {
         return format!("{}.", fmt(&args[0]));

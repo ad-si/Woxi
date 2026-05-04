@@ -2435,6 +2435,47 @@ pub fn evaluate_expr_to_expr_inner(
       apply_function_to_arg(func, &evaluated_arg)
     }
     Expr::Postfix { expr: e, func } => {
+      // `expr // f` is `f[expr]`. If `f` is a head with HoldAll/
+      // HoldAllComplete (e.g. `Hold`, `FullForm`), pre-evaluating expr
+      // would defeat the hold and let side effects fire. Normalize the
+      // Postfix chain to a `FunctionCall` and let the regular evaluator
+      // apply f's hold attributes — including for chained postfix like
+      // `e // OutputForm // MakeBoxes`, where the inner Postfix needs
+      // to surface as `OutputForm[e]` (a FunctionCall) before MakeBoxes
+      // sees it.
+      let func_holds_all = matches!(
+        func.as_ref(),
+        Expr::Identifier(name)
+          if has_hold_attribute(name, "HoldAll")
+            || has_hold_attribute(name, "HoldAllComplete")
+      );
+      if func_holds_all
+        && let Expr::Identifier(name) = func.as_ref()
+      {
+        // Convert any nested `Postfix(e, f)` to `FunctionCall { name: f,
+        // args: [e] }` recursively so the held argument is in normal
+        // structural form.
+        fn normalize_postfix(e: &Expr) -> Expr {
+          if let Expr::Postfix {
+            expr: inner_e,
+            func: inner_f,
+          } = e
+            && let Expr::Identifier(inner_name) = inner_f.as_ref()
+          {
+            Expr::FunctionCall {
+              name: inner_name.clone(),
+              args: vec![normalize_postfix(inner_e)],
+            }
+          } else {
+            e.clone()
+          }
+        }
+        let arg = normalize_postfix(e);
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![arg],
+        });
+      }
       let evaluated_expr = evaluate_expr_to_expr(e)?;
       apply_postfix_ast(&evaluated_expr, func)
     }

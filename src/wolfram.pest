@@ -191,15 +191,26 @@ PostfixFunction = {
 
 // Increment/Decrement: x++ or x-- (postfix operators)
 // Also supports Part extraction: x[[i]]++ or x[[i]]--
-Increment = { (PartExtract | Identifier) ~ "++" }
-Decrement = { (PartExtract | Identifier) ~ "--" }
+// Allow chained postfix: `a++++` = `(a++)++` (folded in pair_to_expr).
+// `IncrementOp` / `DecrementOp` are named so the chain count survives
+// pest's tokenization (silent literals in `("++")*` would not).
+IncrementOp = { "++" }
+DecrementOp = { "--" }
+Increment = { (PartExtract | Identifier) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (PartExtract | Identifier) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
 // Numeric literals are accepted too (wolframscript parses --5 as
 // PreDecrement[5] and then errors at evaluation time — matching that).
-PreIncrement = { "++" ~ (PartExtract | Identifier | NumericValue) }
-PreDecrement = { "--" ~ (PartExtract | Identifier | NumericValue) }
+// Right-recursive on PreIncrement so `++++a` parses as `++(++a)` — the
+// rightmost `++a` matches the inner alternative, then each preceding
+// `++` wraps another PreIncrement around it. Allow `Increment` as inner
+// operand so `++++a+++++2` parses as `++(++(a++++)) + 2` (Wolfram's
+// greedy reading: the postfix `++++` chain after `a` is inside the
+// innermost PreIncrement, not split by the trailing `+`).
+PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | Identifier | NumericValue) }
+PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | Identifier | NumericValue) }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }
