@@ -52,12 +52,46 @@ ENV USER=woxi \
 
 WORKDIR /home/woxi/woxi
 
+# Fetch crates in their own layer, keyed only on the manifests +
+# lockfile. Source-only edits no longer redownload from crates.io /
+# the astro-float git remote on rebuild. Stub source files are needed
+# because cargo validates that each workspace member's lib/bin paths
+# exist before resolving.
+COPY Cargo.toml Cargo.lock ./
+COPY woxi-studio/Cargo.toml woxi-studio/Cargo.toml
+RUN mkdir -p src woxi-studio/src \
+  && : > src/lib.rs \
+  && echo 'fn main() {}' > src/main.rs \
+  && echo 'fn main() {}' > woxi-studio/src/main.rs \
+  && cargo fetch --locked
+
+# Bring in the real source (overwrites the stubs above).
 COPY . .
 
-# Run only the `machine_specific` module; everything else belongs in
-# the host's `make test`.
+# build.rs registers `.git/HEAD` and `.git/index` as rerun-if-changed
+# triggers. .dockerignore excludes `.git`, so without these stubs
+# cargo treats the fingerprint as perpetually stale and recompiles
+# woxi on every `docker run`. Empty files are fine — `git describe`
+# still fails and the build script falls back to CARGO_PKG_VERSION.
+RUN mkdir -p .git && : > .git/HEAD && : > .git/index
+
+# Pre-build the test binaries while online with the exact nextest
+# invocation used at runtime so `docker run` reuses the artefacts
+# instead of recompiling. --offline guarantees we'd notice if
+# `cargo fetch` above missed anything; --package woxi avoids
+# dragging in woxi-studio's GUI dependency tree (iced, resvg, …)
+# which the machine-specific tests don't need.
+RUN cargo nextest run --no-run \
+      --locked --offline \
+      --package woxi \
+      -E "test(machine_specific)"
+
+# Run only the `machine_specific` module from the woxi crate;
+# everything else belongs in the host's `make test`.
 CMD ["cargo", "nextest", "run", \
+     "--package", "woxi", \
+     "--offline", \
      "--show-progress=none", \
-     "--status-level=all", \
+     "--status-level=pass", \
      "--failure-output=final", \
      "-E", "test(machine_specific)"]
