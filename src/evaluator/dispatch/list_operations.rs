@@ -3373,6 +3373,18 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
 /// Distance between two expressions. Falls back to absolute scalar difference
 /// and, for equal-length numeric lists, the Euclidean norm.
 fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
+  // Colors compare via Euclidean distance on their RGB triple.
+  // `GrayLevel[g]` is treated as `RGBColor[g, g, g]`. Mixed
+  // RGBColor↔GrayLevel comparisons work because both lift to a
+  // 3-element float vector.
+  if let (Some(ra), Some(rb)) = (color_to_rgb(a), color_to_rgb(b)) {
+    let mut sum = 0.0;
+    for (x, y) in ra.iter().zip(rb.iter()) {
+      let dx = x - y;
+      sum += dx * dx;
+    }
+    return Some(sum.sqrt());
+  }
   match (a, b) {
     (Expr::List(va), Expr::List(vb)) if va.len() == vb.len() => {
       let mut sum = 0.0;
@@ -3388,6 +3400,25 @@ fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
       Some((av - bv).abs())
     }
   }
+}
+
+/// Lift a colour expression to a 3-element RGB float vector.
+/// Recognises `RGBColor[r, g, b]`, `RGBColor[r, g, b, a]` (alpha
+/// dropped), and `GrayLevel[g]` (mapped to `[g, g, g]`).
+fn color_to_rgb(e: &Expr) -> Option<[f64; 3]> {
+  if let Expr::FunctionCall { name, args } = e {
+    if name == "RGBColor" && (args.len() == 3 || args.len() == 4) {
+      let r = expr_to_f64(&args[0])?;
+      let g = expr_to_f64(&args[1])?;
+      let b = expr_to_f64(&args[2])?;
+      return Some([r, g, b]);
+    }
+    if name == "GrayLevel" && (args.len() == 1 || args.len() == 2) {
+      let g = expr_to_f64(&args[0])?;
+      return Some([g, g, g]);
+    }
+  }
+  None
 }
 
 /// Nearest[list, x] - find elements of list nearest to x
@@ -3421,7 +3452,39 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       (pts, Some(lbls))
     }
-    Expr::List(v) => (v.clone(), None),
+    Expr::List(v) => {
+      // `{point1 -> label1, point2 -> label2, …}` is the list-of-rules
+      // form: split into separate point and label vectors. If every
+      // element is a `Rule` / `RuleDelayed`, treat this as the labelled
+      // form so the result is drawn from the labels rather than the
+      // points themselves.
+      let all_rules = !v.is_empty()
+        && v.iter().all(|e| matches!(e,
+          Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+      if all_rules {
+        let mut pts = Vec::with_capacity(v.len());
+        let mut lbls = Vec::with_capacity(v.len());
+        for r in v {
+          match r {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } => {
+              pts.push((**pattern).clone());
+              lbls.push((**replacement).clone());
+            }
+            _ => unreachable!(),
+          }
+        }
+        (pts, Some(lbls))
+      } else {
+        (v.clone(), None)
+      }
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Nearest".to_string(),
@@ -3433,6 +3496,29 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if items.is_empty() {
     return Ok(Expr::List(vec![]));
+  }
+
+  // Multi-target form: when `target` is a List and each item in it
+  // produces a valid distance against `items[0]`, recurse per-target
+  // and return a list of results — `Nearest[items, {t1, t2, …}]` →
+  // `{Nearest[items, t1], Nearest[items, t2], …}`. This handles e.g.
+  // `Nearest[{colors…}, {Orange, Gray}]` where each target is itself
+  // a colour. We skip this branch when `target` matches `items[0]`
+  // dimensionally as a single vector (the common scalar-list case).
+  if let Expr::List(targets) = &args[1]
+    && !targets.is_empty()
+    && nearest_distance(&items[0], &args[1]).is_none()
+    && targets
+      .iter()
+      .all(|t| nearest_distance(&items[0], t).is_some())
+  {
+    let mut sub_args = args.to_vec();
+    let mut results = Vec::with_capacity(targets.len());
+    for t in targets {
+      sub_args[1] = t.clone();
+      results.push(nearest_ast(&sub_args)?);
+    }
+    return Ok(Expr::List(results));
   }
 
   let target = &args[1];
