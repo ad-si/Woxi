@@ -148,3 +148,28 @@ pub fn memory_in_use() -> i128 {
     0
   }
 }
+
+/// Returns the total CPU time used by the current process in seconds
+/// (user + system). Falls back to 0.0 on platforms without `getrusage`.
+pub fn cpu_time_used() -> f64 {
+  #[cfg(unix)]
+  {
+    use std::mem::MaybeUninit;
+    unsafe {
+      let mut usage = MaybeUninit::<libc::rusage>::uninit();
+      if libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) == 0 {
+        let u = usage.assume_init();
+        let user = u.ru_utime.tv_sec as f64
+          + (u.ru_utime.tv_usec as f64) * 1e-6;
+        let sys = u.ru_stime.tv_sec as f64
+          + (u.ru_stime.tv_usec as f64) * 1e-6;
+        return user + sys;
+      }
+    }
+    0.0
+  }
+  #[cfg(not(unix))]
+  {
+    0.0
+  }
+}

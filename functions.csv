@@ -2056,7 +2056,7 @@ HeavisidePi,Rectangular pulse function: 1 for |x| < 1/2,✅,1,7.0,2094
 MomentGeneratingFunction,MGF of distribution,🚫,,8.0,2094
 NonPositive,Tests if a number is non-positive,✅,pure,3.0,2097
 StringPartition,Partition a string into substrings of a given length,✅,1,10.1,2097
-TimeUsed,CPU time used,🚫,,2.0,2097
+TimeUsed,Total CPU time (user+system) used by the current process in seconds,✅,nondeterministic,1.0,2097
 HTTPRequest,HTTP request object,🚫,,11.0,2100
 ImageConvolve,Convolve image with kernel,🚫,,7.0,2100
 SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
