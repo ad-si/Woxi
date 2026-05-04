@@ -23,18 +23,42 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let dep_arg = &args[1];
   let indep_var = &args[2];
 
-  // PDE branch: `DSolve[eqn, f, {x, y}]` for a first-order linear
-  // constant-coefficient PDE in two variables (e.g.
-  // `D[f[x,y], x] + 3 D[f[x,y], y] == 2 f[x,y]`). Returns the closed
-  // form `{{f -> Function[{x, y}, E^((c/a)*x) * C[1][y - (b/a)*x]]}}`.
+  // PDE branch: `DSolve[eqn, f, {x, y}]` (or `DSolve[eqn, f[x, y], {x, y}]`)
+  // for a first-order linear PDE in two variables. Two recognised
+  // shapes:
+  //   * Constant coefficients with f-divided derivatives:
+  //       a*D[f,x]/f + b*D[f,y]/f == c
+  //     Solution: f -> Function[{x, y}, E^((c/a)*x) * C[1][y - (b/a)*x]]
+  //   * Euler-type with the variable as coefficient:
+  //       x*D[f,x] + y*D[f,y] == c
+  //     Solution: f[x, y] -> c*Log[x] + C[1][y/x]
+  // The output rule's LHS depends on whether `dep_arg` is `f` (Function
+  // form) or `f[x, y]` (rule on the call form).
   if let Expr::List(vars) = indep_var
     && vars.len() == 2
-    && let (Expr::Identifier(xn), Expr::Identifier(yn)) =
-      (&vars[0], &vars[1])
-    && let Expr::Identifier(fname) = dep_arg
-    && let Some(sol) = try_linear_first_order_pde(eqns_arg, fname, xn, yn)
+    && let (Expr::Identifier(xn), Expr::Identifier(yn)) = (&vars[0], &vars[1])
   {
-    return Ok(sol);
+    let (fname_opt, return_call_form) = match dep_arg {
+      Expr::Identifier(name) => (Some(name.clone()), false),
+      Expr::FunctionCall { name, args: fargs }
+        if fargs.len() == 2
+          && matches!(&fargs[0], Expr::Identifier(s) if s == xn)
+          && matches!(&fargs[1], Expr::Identifier(s) if s == yn) =>
+      {
+        (Some(name.clone()), true)
+      }
+      _ => (None, false),
+    };
+    if let Some(fname) = fname_opt {
+      if let Some(body) =
+        try_linear_first_order_pde_body(eqns_arg, &fname, xn, yn)
+      {
+        return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
+      }
+      if let Some(body) = try_euler_pde_body(eqns_arg, &fname, xn, yn) {
+        return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
+      }
+    }
   }
 
   // Extract independent variable name
@@ -2447,26 +2471,13 @@ fn extract_point(expr: &Expr) -> Result<(f64, f64), InterpreterError> {
 /// sides of the equation, classifies each as either a constant, a
 /// derivative-over-`f[x,y]` term, or a multiple of `f[x,y]`, and
 /// solves for the (a, b, c) triple.
-fn try_linear_first_order_pde(
+fn try_linear_first_order_pde_body(
   eqn: &Expr,
   fname: &str,
   xn: &str,
   yn: &str,
 ) -> Option<Expr> {
-  // Pull the (lhs, rhs) pair out of an Equal.
-  let (lhs, rhs) = match eqn {
-    Expr::Comparison { operands, operators }
-      if operands.len() == 2
-        && operators.len() == 1
-        && operators[0] == crate::syntax::ComparisonOp::Equal =>
-    {
-      (operands[0].clone(), operands[1].clone())
-    }
-    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
-      (args[0].clone(), args[1].clone())
-    }
-    _ => return None,
-  };
+  let (lhs, rhs) = pde_split_equation(eqn)?;
   // Move everything to the LHS: lhs - rhs == 0. Each term then
   // contributes a signed coefficient.
   let mut a = 0i128; // coefficient of D[f[x,y], x] / f[x,y]
@@ -2520,12 +2531,11 @@ fn try_linear_first_order_pde(
       right: Box::new(n_var(yn)),
     }
   };
-  let c1_call = Expr::FunctionCall {
-    name: "C".to_string(),
-    args: vec![Expr::Integer(1)],
-  };
   let c1_applied = Expr::CurriedCall {
-    func: Box::new(c1_call),
+    func: Box::new(Expr::FunctionCall {
+      name: "C".to_string(),
+      args: vec![Expr::Integer(1)],
+    }),
     args: vec![c1_arg],
   };
   let body = if matches!(&exp_part, Expr::Integer(1)) {
@@ -2537,18 +2547,185 @@ fn try_linear_first_order_pde(
       right: Box::new(c1_applied),
     }
   };
-  let function_expr = Expr::FunctionCall {
-    name: "Function".to_string(),
-    args: vec![
-      Expr::List(vec![n_var(xn), n_var(yn)]),
-      body,
-    ],
+  Some(body)
+}
+
+/// Recognise the Euler-type PDE `x*D[f[x,y], x] + y*D[f[x,y], y] == c`
+/// (constant c) and return the body
+/// `c*Log[x] + C[1][y/x]` of the closed-form solution.
+fn try_euler_pde_body(
+  eqn: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+) -> Option<Expr> {
+  let (lhs, rhs) = pde_split_equation(eqn)?;
+  // Walk the LHS Plus chain: expect exactly two terms — `x * Fx` and
+  // `y * Fy`, in either order. RHS must be an integer constant.
+  let mut saw_fx = false;
+  let mut saw_fy = false;
+  walk_euler_terms(&lhs, fname, xn, yn, &mut saw_fx, &mut saw_fy)?;
+  if !(saw_fx && saw_fy) {
+    return None;
+  }
+  let c = match &rhs {
+    Expr::Integer(n) => *n,
+    _ => return None,
   };
-  let rule = Expr::Rule {
-    pattern: Box::new(Expr::Identifier(fname.to_string())),
-    replacement: Box::new(function_expr),
+  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  // Build c*Log[x] + C[1][y/x].
+  let log_x = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![n_var(xn)],
   };
-  Some(Expr::List(vec![Expr::List(vec![rule])]))
+  let log_term = if c == 1 {
+    log_x
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(c)),
+      right: Box::new(log_x),
+    }
+  };
+  let y_over_x = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(n_var(yn)),
+    right: Box::new(n_var(xn)),
+  };
+  let c1_applied = Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "C".to_string(),
+      args: vec![Expr::Integer(1)],
+    }),
+    args: vec![y_over_x],
+  };
+  let body = Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(log_term),
+    right: Box::new(c1_applied),
+  };
+  Some(body)
+}
+
+fn walk_euler_terms(
+  expr: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+  saw_fx: &mut bool,
+  saw_fy: &mut bool,
+) -> Option<()> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for arg in args {
+        walk_euler_terms(arg, fname, xn, yn, saw_fx, saw_fy)?;
+      }
+      Some(())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      walk_euler_terms(left, fname, xn, yn, saw_fx, saw_fy)?;
+      walk_euler_terms(right, fname, xn, yn, saw_fx, saw_fy)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Look for exactly one Identifier matching xn or yn and exactly
+      // one Derivative call on f.
+      let mut coord: Option<&str> = None;
+      let mut deriv_kind: Option<PdeTerm> = None;
+      for factor in args {
+        if let Expr::Identifier(s) = factor {
+          if s == xn || s == yn {
+            if coord.is_some() {
+              return None;
+            }
+            coord = Some(if s == xn { xn } else { yn });
+            continue;
+          }
+          return None;
+        }
+        if let Some(kind) = classify_derivative_call(factor, fname, xn, yn) {
+          if deriv_kind.is_some() {
+            return None;
+          }
+          deriv_kind = Some(kind);
+          continue;
+        }
+        return None;
+      }
+      match (coord, deriv_kind) {
+        (Some(c), Some(PdeTerm::Fx)) if c == xn => {
+          if *saw_fx {
+            return None;
+          }
+          *saw_fx = true;
+          Some(())
+        }
+        (Some(c), Some(PdeTerm::Fy)) if c == yn => {
+          if *saw_fy {
+            return None;
+          }
+          *saw_fy = true;
+          Some(())
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Wrap a PDE body expression as the rule the test expects.
+/// `return_call_form` selects between `f[x, y] -> body` and
+/// `f -> Function[{x, y}, body]`.
+fn wrap_pde_solution(
+  body: Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+  return_call_form: bool,
+) -> Expr {
+  let n_var = |s: &str| Expr::Identifier(s.to_string());
+  let rule = if return_call_form {
+    Expr::Rule {
+      pattern: Box::new(Expr::FunctionCall {
+        name: fname.to_string(),
+        args: vec![n_var(xn), n_var(yn)],
+      }),
+      replacement: Box::new(body),
+    }
+  } else {
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier(fname.to_string())),
+      replacement: Box::new(Expr::FunctionCall {
+        name: "Function".to_string(),
+        args: vec![Expr::List(vec![n_var(xn), n_var(yn)]), body],
+      }),
+    }
+  };
+  Expr::List(vec![Expr::List(vec![rule])])
+}
+
+/// Pull `(lhs, rhs)` out of an `Equal` expression, accepting either the
+/// `Comparison` AST node or a literal `Equal[…]` FunctionCall.
+fn pde_split_equation(eqn: &Expr) -> Option<(Expr, Expr)> {
+  match eqn {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      Some((operands[0].clone(), operands[1].clone()))
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    _ => None,
+  }
 }
 
 /// Walk a Plus chain in `expr`, classifying each term by its shape and
@@ -2654,9 +2831,7 @@ fn classify_pde_term(
       // Unknown factor — give up.
       return None;
     }
-    if saw_inverse_f
-      && let Some(kind) = deriv_kind
-    {
+    if saw_inverse_f && let Some(kind) = deriv_kind {
       return Some((coeff, kind));
     }
   }
@@ -2695,17 +2870,26 @@ fn classify_derivative_call(
 ) -> Option<PdeTerm> {
   // Shape: CurriedCall { func: FunctionCall { name: "Derivative", args: [i, j] },
   //                     args: [Identifier f] } applied to [x, y].
-  if let Expr::CurriedCall { func, args: call_args } = expr
+  if let Expr::CurriedCall {
+    func,
+    args: call_args,
+  } = expr
     && call_args.len() == 2
     && let Expr::Identifier(x_arg) = &call_args[0]
     && let Expr::Identifier(y_arg) = &call_args[1]
     && x_arg == xn
     && y_arg == yn
-    && let Expr::CurriedCall { func: deriv, args: f_args } = func.as_ref()
+    && let Expr::CurriedCall {
+      func: deriv,
+      args: f_args,
+    } = func.as_ref()
     && f_args.len() == 1
     && let Expr::Identifier(fa) = &f_args[0]
     && fa == fname
-    && let Expr::FunctionCall { name: dn, args: dargs } = deriv.as_ref()
+    && let Expr::FunctionCall {
+      name: dn,
+      args: dargs,
+    } = deriv.as_ref()
     && dn == "Derivative"
     && dargs.len() == 2
     && let (Expr::Integer(di), Expr::Integer(dj)) = (&dargs[0], &dargs[1])
@@ -2753,4 +2937,3 @@ fn is_f_at_xy(expr: &Expr, fname: &str, xn: &str, yn: &str) -> bool {
         && matches!(&args[1], Expr::Identifier(s) if s == yn)
   )
 }
-
