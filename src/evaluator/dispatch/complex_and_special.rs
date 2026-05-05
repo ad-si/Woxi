@@ -1675,14 +1675,6 @@ pub fn dispatch_complex_and_special(
       );
     }
 
-    // Format[expr, OutputForm] and OutputForm[expr] → 2D rendering
-    "Format"
-      if args.len() == 2
-        && matches!(&args[1], Expr::Identifier(f) if f == "OutputForm") =>
-    {
-      let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
-      return Some(Ok(Expr::Raw(rendered)));
-    }
     "OutputForm" if args.len() == 1 => {
       // `wolframscript -code 'OutputForm[expr]'` returns the unevaluated
       // wrapper `OutputForm[<expr>]`; preserve it. Graphics/Graphics3D
@@ -1974,25 +1966,37 @@ pub fn dispatch_complex_and_special(
         };
         let rules = crate::evaluator::assignment::FORMAT_VALUES
           .with(|m| m.borrow().get(head).cloned().unwrap_or_default());
-        for (rule_form, lhs, rhs) in &rules {
-          // Skip rules whose form doesn't match (empty form_name applies
-          // to any form).
-          if !rule_form.is_empty()
-            && let Some(t) = &target_form
-            && rule_form != t
-          {
-            continue;
-          }
-          if let Some(bindings) =
-            crate::evaluator::pattern_matching::match_pattern(&args[0], lhs)
-          {
-            let substituted =
-              bindings.iter().fold(rhs.clone(), |acc, (k, v)| {
-                crate::syntax::substitute_variable(&acc, k, v)
-              });
-            return Some(crate::evaluator::evaluate_expr_to_expr(&substituted));
+        // Two-phase lookup: when a target form is given, prefer rules
+        // tagged with that form, then fall back to 1-arg rules (empty
+        // form name). Without a target form, only consider 1-arg rules.
+        let phases: Vec<&str> = match &target_form {
+          Some(t) => vec![t.as_str(), ""],
+          None => vec![""],
+        };
+        for phase in phases {
+          for (rule_form, lhs, rhs) in &rules {
+            if rule_form != phase {
+              continue;
+            }
+            if let Some(bindings) =
+              crate::evaluator::pattern_matching::match_pattern(&args[0], lhs)
+            {
+              let substituted =
+                bindings.iter().fold(rhs.clone(), |acc, (k, v)| {
+                  crate::syntax::substitute_variable(&acc, k, v)
+                });
+              return Some(crate::evaluator::evaluate_expr_to_expr(&substituted));
+            }
           }
         }
+      }
+      // No user rule matched. With `Format[expr, OutputForm]`, wolframscript
+      // returns the 2D ASCII rendering of the expression.
+      if args.len() == 2
+        && matches!(&args[1], Expr::Identifier(f) if f == "OutputForm")
+      {
+        let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
+        return Some(Ok(Expr::Raw(rendered)));
       }
       return Some(Ok(args[0].clone()));
     }
@@ -2799,15 +2803,21 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
 /// rules so subexpressions surface in their formatted shape. Used by
 /// `MakeBoxes[OutputForm[expr], …]` so the printed text matches what
 /// the OutputForm renderer would show after Format substitution.
-fn apply_format_recursively(expr: &Expr) -> Expr {
+fn apply_format_recursively(expr: &Expr, target_form: &str) -> Expr {
   let recursed = match expr {
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(apply_format_recursively).collect(),
+      args: args
+        .iter()
+        .map(|a| apply_format_recursively(a, target_form))
+        .collect(),
     },
-    Expr::List(items) => {
-      Expr::List(items.iter().map(apply_format_recursively).collect())
-    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|i| apply_format_recursively(i, target_form))
+        .collect(),
+    ),
     _ => expr.clone(),
   };
   if let Expr::FunctionCall { name: head, .. } = &recursed {
@@ -2816,15 +2826,19 @@ fn apply_format_recursively(expr: &Expr) -> Expr {
     if has_format {
       let format_call = Expr::FunctionCall {
         name: "Format".to_string(),
-        args: vec![recursed.clone()],
+        args: vec![
+          recursed.clone(),
+          Expr::Identifier(target_form.to_string()),
+        ],
       };
-      if let Ok(formatted) = crate::evaluator::evaluate_expr_to_expr(&format_call)
+      if let Ok(formatted) =
+        crate::evaluator::evaluate_expr_to_expr(&format_call)
       {
         let unchanged = matches!(
           &formatted,
           Expr::FunctionCall { name, args }
             if name == "Format"
-            && args.len() == 1
+            && (args.len() == 1 || args.len() == 2)
             && crate::evaluator::pattern_matching::expr_equal(&args[0], &recursed)
         );
         if !unchanged {
@@ -3481,7 +3495,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // expression bottom-up so e.g. `Format[F[x_]] := {...}` causes
       // `OutputForm[G[F[3.002]]]` to render as the formatted form
       // `G[{Formatted f, {3.002}, Standard}]`.
-      let formatted_inner = apply_format_recursively(&args[0]);
+      let formatted_inner = apply_format_recursively(&args[0], "OutputForm");
       let output_text = crate::syntax::expr_to_output_form_2d(&formatted_inner);
       // PaneBox stores the InputForm rendering of the string-with-quotes,
       // i.e. content like `\"a + b c\"`. Since Woxi strings render
