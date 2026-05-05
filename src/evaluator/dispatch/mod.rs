@@ -1369,11 +1369,33 @@ pub fn evaluate_function_call_ast_inner(
     let ctx = crate::pop_context().unwrap_or_else(|| "Global`".to_string());
     return Ok(Expr::String(ctx));
   }
-  // EndPackage[] pops the context stack and returns Null. It also
-  // pops the saved $ContextPath that BeginPackage[] pushed.
+  // EndPackage[] pops the context stack and returns Null. WL semantics:
+  // the package context (and the extras passed to BeginPackage[]) are
+  // prepended to the underlying $ContextPath, so the package's exports
+  // remain reachable after EndPackage[].
   if name == "EndPackage" && args.is_empty() {
     crate::pop_context();
-    crate::pop_context_path();
+    if let Some(active) = crate::pop_context_path() {
+      // The pushed path is `[pkg, extras..., "System`"]`; the prepend
+      // list is everything before that trailing baseline entry.
+      let prepend: Vec<String> = if active
+        .last()
+        .map(|s| s == "System`")
+        .unwrap_or(false)
+      {
+        active[..active.len() - 1].to_vec()
+      } else {
+        active.clone()
+      };
+      let base = crate::current_context_path();
+      let mut merged: Vec<String> = Vec::with_capacity(prepend.len() + base.len());
+      for entry in prepend.into_iter().chain(base.into_iter()) {
+        if !merged.contains(&entry) {
+          merged.push(entry);
+        }
+      }
+      crate::push_context_path(merged);
+    }
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
