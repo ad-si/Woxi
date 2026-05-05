@@ -3539,7 +3539,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "InputForm" && args.len() == 1 =>
     {
-      let inner_str = crate::syntax::expr_to_string(&args[0]);
+      // Apply user-defined `Format[head[…], InputForm]` rules to the
+      // inner expression bottom-up so the rendered text reflects the
+      // formatted shape (e.g. `Format[F[x_, y_], InputForm] := {…}`
+      // turns `InputForm[F[1., "l"]]` into `{"In", GG[…]}` text).
+      let formatted_inner = apply_format_recursively(&args[0], "InputForm");
+      let inner_str = crate::syntax::expr_to_string(&formatted_inner);
       Expr::FunctionCall {
         name: "InterpretationBox".to_string(),
         args: vec![
