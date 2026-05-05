@@ -2223,8 +2223,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           return Ok(Expr::String(expr_to_c(&inner_args[0])));
         }
-        // InputForm: infix operators + quoted strings
-        let s = crate::syntax::expr_to_input_form(&args[0]);
+        // InputForm: infix operators + quoted strings. Apply
+        // user-defined `Format[head[…], InputForm]` rules bottom-up
+        // first so e.g. `Format[F[x_, y_], InputForm] := {F[x], "In"}`
+        // surfaces in the printed text.
+        let formatted =
+          crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
+            &args[0],
+            "InputForm",
+          );
+        let s = crate::syntax::expr_to_input_form(&formatted);
         return Ok(Expr::String(s));
       }
       "TeXForm" => {

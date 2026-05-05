@@ -2805,7 +2805,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
 /// rules so subexpressions surface in their formatted shape. Used by
 /// `MakeBoxes[OutputForm[expr], …]` so the printed text matches what
 /// the OutputForm renderer would show after Format substitution.
-fn apply_format_recursively(expr: &Expr, target_form: &str) -> Expr {
+pub fn apply_format_recursively(expr: &Expr, target_form: &str) -> Expr {
   let recursed = match expr {
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -2863,10 +2863,7 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
     if has_format_rule {
       let format_call = Expr::FunctionCall {
         name: "Format".to_string(),
-        args: vec![
-          expr.clone(),
-          Expr::Identifier("StandardForm".to_string()),
-        ],
+        args: vec![expr.clone(), Expr::Identifier("StandardForm".to_string())],
       };
       if let Ok(formatted) =
         crate::evaluator::evaluate_expr_to_expr(&format_call)
