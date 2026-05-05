@@ -2159,7 +2159,11 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )));
   }
 
-  // If the expression is TeXForm[inner], produce TeX representation
+  // If the expression is TeXForm[inner], produce TeX representation.
+  // When the inner expression's head has user-defined MakeBoxes or
+  // Format rules, route through the box AST (so user delimiters like
+  // `<~` / `~>` surface in the rendered TeX), otherwise use the
+  // direct expression-to-TeX path.
   if let Expr::FunctionCall {
     name,
     args: inner_args,
@@ -2167,7 +2171,50 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "TeXForm"
     && inner_args.len() == 1
   {
-    return Ok(Expr::String(expr_to_tex(&inner_args[0])));
+    let inner = &inner_args[0];
+    if let Expr::FunctionCall { name: head, .. } = inner {
+      let has_format = crate::evaluator::assignment::FORMAT_VALUES
+        .with(|m| m.borrow().contains_key(head));
+      let has_user_mb = crate::FUNC_DEFS.with(|m| {
+        m.borrow().get("MakeBoxes").is_some_and(|entries| {
+          entries.iter().any(|(_, conditions, _, _, _, _)| {
+            // User MakeBoxes patterns like `MakeBoxes[F[x__], fmt_]`
+            // are stored as `__StructuralPattern__[__sp0, F[x__]]` in
+            // the conditions of the first slot. Check whether any
+            // entry's structural pattern matches the inner head.
+            conditions.first().is_some_and(|cond| {
+              matches!(
+                cond,
+                Some(Expr::FunctionCall { name: cn, args: ca })
+                  if cn == "__StructuralPattern__"
+                  && ca.len() == 2
+                  && matches!(
+                    &ca[1],
+                    Expr::FunctionCall { name: pn, .. } if pn == head
+                  )
+              )
+            })
+          })
+        })
+      });
+      if has_format || has_user_mb {
+        // Pass `TeXForm` as the target so the Format pre-check in
+        // MakeBoxes only fires on `Format[…, TeXForm]` rules. User
+        // MakeBoxes patterns use `fmt_` and match any form, so they
+        // still apply.
+        let mb_call = Expr::FunctionCall {
+          name: "MakeBoxes".to_string(),
+          args: vec![
+            inner.clone(),
+            Expr::Identifier("TeXForm".to_string()),
+          ],
+        };
+        if let Ok(box_ast) = crate::evaluator::evaluate_expr_to_expr(&mb_call) {
+          return Ok(Expr::String(box_ast_to_tex(&box_ast)));
+        }
+      }
+    }
+    return Ok(Expr::String(expr_to_tex(inner)));
   }
 
   // If the expression is OutputForm[inner], produce the OutputForm-rendered
@@ -2382,6 +2429,76 @@ fn resolve_form_wrappers(expr: &Expr) -> Expr {
 }
 
 /// Convert a Wolfram expression to LaTeX (TeX) notation.
+/// Render a box AST (typically the result of `MakeBoxes[expr,
+/// StandardForm]`) as TeX. Used by `ToString[TeXForm[expr]]` when the
+/// expression's head has user-defined MakeBoxes or Format rules so
+/// custom box delimiters (`<~`, `~>`, etc.) surface in the rendered
+/// TeX.
+fn box_ast_to_tex(expr: &Expr) -> String {
+  fn tex_special_chars(s: &str) -> String {
+    s.replace('~', "\\sim ")
+  }
+  match expr {
+    Expr::String(s) => {
+      // Box-element strings whose contents are wrapped in literal `"`
+      // characters represent user-supplied Wolfram strings — wrap
+      // their unquoted contents in `\text{…}`. Strings ending in a
+      // backtick (the precision/accuracy marker on Real / BigFloat
+      // box elements) drop the trailing `\``. Everything else gets
+      // TeX special-character translation (notably `~` → `\sim `).
+      if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+        format!("\\text{{{}}}", &s[1..s.len() - 1])
+      } else if let Some(stripped) = s.strip_suffix('`') {
+        tex_special_chars(stripped)
+      } else {
+        tex_special_chars(s)
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "RowBox" && args.len() == 1 =>
+    {
+      if let Expr::List(items) = &args[0] {
+        items.iter().map(box_ast_to_tex).collect::<Vec<_>>().join("")
+      } else {
+        box_ast_to_tex(&args[0])
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "FractionBox" && args.len() == 2 =>
+    {
+      format!(
+        "\\frac{{{}}}{{{}}}",
+        box_ast_to_tex(&args[0]),
+        box_ast_to_tex(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SqrtBox" && !args.is_empty() =>
+    {
+      format!("\\sqrt{{{}}}", box_ast_to_tex(&args[0]))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SuperscriptBox" && args.len() == 2 =>
+    {
+      format!(
+        "{}^{{{}}}",
+        box_ast_to_tex(&args[0]),
+        box_ast_to_tex(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SubscriptBox" && args.len() == 2 =>
+    {
+      format!(
+        "{}_{{{}}}",
+        box_ast_to_tex(&args[0]),
+        box_ast_to_tex(&args[1])
+      )
+    }
+    _ => expr_to_tex(expr),
+  }
+}
+
 pub fn expr_to_tex(expr: &Expr) -> String {
   use crate::syntax::{BinaryOperator, UnaryOperator};
   // HoldForm[x] is a display wrapper; render its content transparently.
