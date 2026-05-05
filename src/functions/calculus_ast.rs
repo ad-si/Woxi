@@ -1497,10 +1497,16 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           Ok(Expr::List(diffed))
         }
         // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
-        // element-wise through the coefficient list, leaving the
-        // (var, x0, nmin, nmax, denom) header alone. Strips leading zero
-        // coefficients (and bumps nmin) so e.g. d/da of `1 - a x + a²/2 x²`
-        // collapses to `SeriesData[x, 0, {-1, a}, 1, 3, 1]`.
+        // element-wise through the coefficient list and, when the center
+        // x0 itself depends on `var`, apply the chain rule on the
+        // `(var - x0)^p` factors. The chain-rule contribution at slot
+        // `i` is `-((nmin + i + den)/den) * coeffs[i+den] * D[x0, var]`,
+        // which both shrinks the coefficient list by `den` slots and
+        // drops `nmax` by `den`. Strips leading zero coefficients (and
+        // bumps nmin) so e.g. d/da of `1 - a x + a²/2 x²` collapses to
+        // `SeriesData[x, 0, {-1, a}, 1, 3, 1]`, and so the F-series
+        // identity `D[Series[F[x],{x, g[y], n}], y]` collapses to the
+        // empty series `SeriesData[x, g[y], {}, n, n, 1]`.
         "SeriesData" if args.len() == 6 => {
           let coeffs = match &args[2] {
             Expr::List(items) => items.clone(),
@@ -1511,32 +1517,128 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               });
             }
           };
+          let nmin_val = match &args[3] {
+            Expr::Integer(n) => *n,
+            _ => 0,
+          };
+          let nmax_val = match &args[4] {
+            Expr::Integer(n) => *n,
+            _ => 0,
+          };
+          let den_val = match &args[5] {
+            Expr::Integer(n) => *n,
+            _ => 1,
+          };
+          let center = &args[1];
+
+          // First, the element-wise contribution from differentiating
+          // each coefficient.
           let mut diffed: Vec<Expr> = Vec::with_capacity(coeffs.len());
           for c in &coeffs {
             diffed.push(simplify(differentiate(c, var)?));
           }
-          let mut new_nmin = match &args[3] {
-            Expr::Integer(n) => *n,
-            _ => 0,
+
+          let center_depends = !is_constant_wrt(center, var);
+          let den_step = den_val.max(1) as usize;
+
+          let (mut new_coeffs, new_nmax) = if center_depends
+            && coeffs.len() > den_step
+          {
+            // Chain-rule shift on (var - x0)^p factors. Shrinks both the
+            // coefficient list and `nmax` by `den` slots.
+            let dx0 = simplify(differentiate(center, var)?);
+            let new_len = coeffs.len() - den_step;
+            let mut shifted: Vec<Expr> = Vec::with_capacity(new_len);
+            for i in 0..new_len {
+              let pow_num = nmin_val + (i as i128) + den_val;
+              let power_factor = if den_val == 1 {
+                Expr::Integer(pow_num)
+              } else {
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![
+                    Expr::Integer(pow_num),
+                    Expr::Integer(den_val),
+                  ],
+                }
+              };
+              let next_coeff = coeffs[i + den_step].clone();
+              // shift_term = power_factor * next_coeff * dx0
+              let shift_term =
+                crate::functions::math_ast::times_ast(&[
+                  power_factor,
+                  next_coeff,
+                  dx0.clone(),
+                ])
+                .unwrap_or(Expr::Integer(0));
+              // new_coeff_i = diffed[i] - shift_term
+              let neg_shift = crate::functions::math_ast::times_ast(&[
+                Expr::Integer(-1),
+                shift_term,
+              ])
+              .unwrap_or(Expr::Integer(0));
+              let combined = crate::functions::math_ast::plus_ast(&[
+                diffed[i].clone(),
+                neg_shift,
+              ])
+              .unwrap_or_else(|_| diffed[i].clone());
+              // Run a full evaluation so subterms like `g'[y]*F''[g[y]]
+              // - F''[g[y]]*g'[y]` collapse to `0` via Times's canonical
+              // ordering (the local `simplify` doesn't always sort
+              // commutative factors the same way).
+              let canon = crate::evaluator::evaluate_expr_to_expr(&combined)
+                .unwrap_or_else(|_| simplify(combined));
+              shifted.push(canon);
+            }
+            (shifted, nmax_val - den_val)
+          } else if center_depends {
+            // Center depends on var but coefficient list is too short to
+            // shift; the result is just the all-zero series with one
+            // less integer power of accuracy.
+            (Vec::new(), nmax_val - den_val)
+          } else {
+            (diffed, nmax_val)
           };
-          let new_nmax = match &args[4] {
-            Expr::Integer(n) => *n,
-            _ => 0,
+
+          let mut new_nmin = nmin_val;
+
+          // Treat empty inner SeriesData as structurally zero so leading
+          // zero trimming collapses series-of-series correctly.
+          let is_zero_expr = |e: &Expr| -> bool {
+            matches!(e, Expr::Integer(0))
+              || matches!(e, Expr::FunctionCall { name, args }
+                          if name == "SeriesData"
+                          && args.len() == 6
+                          && matches!(&args[2], Expr::List(items)
+                                      if items.is_empty()))
           };
-          let new_denom = match &args[5] {
-            Expr::Integer(n) => *n,
-            _ => 1,
-          };
-          while !diffed.is_empty() && matches!(diffed[0], Expr::Integer(0)) {
-            diffed.remove(0);
+
+          while !new_coeffs.is_empty() && is_zero_expr(&new_coeffs[0]) {
+            new_coeffs.remove(0);
             new_nmin += 1;
           }
-          while diffed.len() > 1
-            && matches!(diffed.last(), Some(Expr::Integer(0)))
+          while new_coeffs.len() > 1
+            && new_coeffs
+              .last()
+              .map(is_zero_expr)
+              .unwrap_or(false)
           {
-            diffed.pop();
+            new_coeffs.pop();
           }
-          if diffed.is_empty() {
+          if new_coeffs.is_empty() {
+            if center_depends {
+              return Ok(Expr::FunctionCall {
+                name: "SeriesData".to_string(),
+                args: vec![
+                  args[0].clone(),
+                  args[1].clone(),
+                  Expr::List(vec![]),
+                  Expr::Integer(new_nmax),
+                  Expr::Integer(new_nmax),
+                  Expr::Integer(den_val),
+                ],
+              });
+            }
             return Ok(Expr::Integer(0));
           }
           Ok(Expr::FunctionCall {
@@ -1544,10 +1646,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             args: vec![
               args[0].clone(),
               args[1].clone(),
-              Expr::List(diffed),
+              Expr::List(new_coeffs),
               Expr::Integer(new_nmin),
               Expr::Integer(new_nmax),
-              Expr::Integer(new_denom),
+              Expr::Integer(den_val),
             ],
           })
         }
