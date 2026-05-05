@@ -2245,7 +2245,14 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::String(expr_to_fortran(&args[0])));
       }
       "OutputForm" => {
-        let s = crate::syntax::expr_to_output_form_2d(&args[0]);
+        // Apply user-defined `Format[head[…], OutputForm]` rules
+        // bottom-up before rendering, matching wolframscript.
+        let formatted =
+          crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
+            &args[0],
+            "OutputForm",
+          );
+        let s = crate::syntax::expr_to_output_form_2d(&formatted);
         return Ok(Expr::String(s));
       }
       "StandardForm" => {
