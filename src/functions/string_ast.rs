@@ -2172,6 +2172,26 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && inner_args.len() == 1
   {
     let inner = &inner_args[0];
+    // `TeXForm[InputForm[expr]]` renders the InputForm string of `expr`
+    // (with user `Format[…, InputForm]` rules applied) inside `\text{…}`,
+    // with `{` / `}` escaped using TeX's `$\{$` / `$\}$` braces.
+    if let Expr::FunctionCall {
+      name: ifname,
+      args: ifargs,
+    } = inner
+      && ifname == "InputForm"
+      && ifargs.len() == 1
+    {
+      let formatted = crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
+        &ifargs[0],
+        "InputForm",
+      );
+      // Use OutputForm-style rendering (strings without surrounding
+      // quotes), then escape `{` / `}` using TeX's `$\{$` / `$\}$`.
+      let input_text = crate::syntax::expr_to_output(&formatted);
+      let escaped = input_text.replace('{', "$\\{$").replace('}', "$\\}$");
+      return Ok(Expr::String(format!("\\text{{{}}}", escaped)));
+    }
     if let Expr::FunctionCall { name: head, .. } = inner {
       let has_format = crate::evaluator::assignment::FORMAT_VALUES
         .with(|m| m.borrow().contains_key(head));
@@ -2204,10 +2224,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // still apply.
         let mb_call = Expr::FunctionCall {
           name: "MakeBoxes".to_string(),
-          args: vec![
-            inner.clone(),
-            Expr::Identifier("TeXForm".to_string()),
-          ],
+          args: vec![inner.clone(), Expr::Identifier("TeXForm".to_string())],
         };
         if let Ok(box_ast) = crate::evaluator::evaluate_expr_to_expr(&mb_call) {
           return Ok(Expr::String(box_ast_to_tex(&box_ast)));
@@ -2458,7 +2475,11 @@ fn box_ast_to_tex(expr: &Expr) -> String {
       if name == "RowBox" && args.len() == 1 =>
     {
       if let Expr::List(items) = &args[0] {
-        items.iter().map(box_ast_to_tex).collect::<Vec<_>>().join("")
+        items
+          .iter()
+          .map(box_ast_to_tex)
+          .collect::<Vec<_>>()
+          .join("")
       } else {
         box_ast_to_tex(&args[0])
       }
