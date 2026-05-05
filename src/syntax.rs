@@ -11094,18 +11094,33 @@ fn box_string_to_display_form(s: &str) -> String {
     .trim_start_matches(BOX_OPEN)
     .trim_start_matches(BOX_SEP)
     .trim_end_matches(BOX_CLOSE);
-  // Unquote atoms: remove `"` wrapping around atoms in the box expression
+  // The inner text is the InputForm rendering of a box AST: every box
+  // element string is wrapped in `"…"` with embedded `"` and `\`
+  // escaped as `\"` / `\\`. The OutputForm display strips the outer
+  // wrapping quotes (so `"G"` shows as `G`) but converts escaped
+  // sequences back to their literal form (so `"\"Standard\""` shows
+  // as `"Standard"`).
+  let chars: Vec<char> = inner.chars().collect();
   let mut result = String::with_capacity(inner.len());
-  let mut in_quote = false;
-  let mut prev_backslash = false;
-  for ch in inner.chars() {
-    if ch == '"' && !prev_backslash {
-      in_quote = !in_quote;
-      // Skip the quote character itself
-    } else {
-      result.push(ch);
+  let mut i = 0;
+  while i < chars.len() {
+    match chars[i] {
+      '"' => {
+        // Outer quote delimiter — skip it.
+      }
+      '\\' if i + 1 < chars.len() => {
+        // Unescape `\"` and `\\` back to their literal characters.
+        let next = chars[i + 1];
+        if next == '"' || next == '\\' {
+          result.push(next);
+          i += 2;
+          continue;
+        }
+        result.push('\\');
+      }
+      c => result.push(c),
     }
-    prev_backslash = ch == '\\';
+    i += 1;
   }
   format!("DisplayForm[{}]", result)
 }

@@ -1985,7 +1985,9 @@ pub fn dispatch_complex_and_special(
                 bindings.iter().fold(rhs.clone(), |acc, (k, v)| {
                   crate::syntax::substitute_variable(&acc, k, v)
                 });
-              return Some(crate::evaluator::evaluate_expr_to_expr(&substituted));
+              return Some(crate::evaluator::evaluate_expr_to_expr(
+                &substituted,
+              ));
             }
           }
         }
@@ -2826,10 +2828,7 @@ fn apply_format_recursively(expr: &Expr, target_form: &str) -> Expr {
     if has_format {
       let format_call = Expr::FunctionCall {
         name: "Format".to_string(),
-        args: vec![
-          recursed.clone(),
-          Expr::Identifier(target_form.to_string()),
-        ],
+        args: vec![recursed.clone(), Expr::Identifier(target_form.to_string())],
       };
       if let Ok(formatted) =
         crate::evaluator::evaluate_expr_to_expr(&format_call)
@@ -2864,18 +2863,26 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
     if has_format_rule {
       let format_call = Expr::FunctionCall {
         name: "Format".to_string(),
-        args: vec![expr.clone()],
+        args: vec![
+          expr.clone(),
+          Expr::Identifier("StandardForm".to_string()),
+        ],
       };
       if let Ok(formatted) =
         crate::evaluator::evaluate_expr_to_expr(&format_call)
       {
-        let unchanged = matches!(
+        // The Format dispatcher returns `args[0].clone()` when no user
+        // rule matches; only treat the result as a real substitution
+        // when it actually differs from the input.
+        let is_format_wrapper = matches!(
           &formatted,
           Expr::FunctionCall { name, args }
             if name == "Format"
-            && args.len() == 1
-            && crate::evaluator::pattern_matching::expr_equal(&args[0], expr)
+              && (args.len() == 1 || args.len() == 2)
+              && crate::evaluator::pattern_matching::expr_equal(&args[0], expr)
         );
+        let unchanged = is_format_wrapper
+          || crate::evaluator::pattern_matching::expr_equal(&formatted, expr);
         if !unchanged {
           return expr_to_box_form(&formatted);
         }
@@ -3330,14 +3337,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       parts.push(Expr::String("{".to_string()));
       if !items.is_empty() {
         if items.len() == 1 {
-          parts.push(expr_to_box_form(&items[0]));
+          parts.push(box_subexpr_via_user_rules(&items[0]));
         } else {
           let mut inner = Vec::new();
           for (i, item) in items.iter().enumerate() {
             if i > 0 {
               inner.push(Expr::String(",".to_string()));
             }
-            inner.push(expr_to_box_form(item));
+            inner.push(box_subexpr_via_user_rules(item));
           }
           parts.push(Expr::FunctionCall {
             name: "RowBox".to_string(),

@@ -2240,6 +2240,27 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let s = crate::syntax::expr_to_output_form_2d(&args[0]);
         return Ok(Expr::String(s));
       }
+      "StandardForm" => {
+        // Build the box AST via MakeBoxes (which dispatches user-defined
+        // Format / MakeBoxes rules), then encode it using Wolfram's
+        // box-syntax escape characters (`\!\(\*…\)`). The resulting
+        // String displays as `DisplayForm[…]` in OutputForm — matching
+        // what wolframscript prints for `ToString[expr, StandardForm]`.
+        let make_boxes_call = Expr::FunctionCall {
+          name: "MakeBoxes".to_string(),
+          args: vec![
+            args[0].clone(),
+            Expr::Identifier("StandardForm".to_string()),
+          ],
+        };
+        let box_ast = crate::evaluator::evaluate_expr_to_expr(&make_boxes_call)
+          .unwrap_or_else(|_| args[0].clone());
+        let box_inner_text = crate::syntax::expr_to_input_form(&box_ast);
+        return Ok(Expr::String(format!(
+          "{}{}{}{}{}",
+          BOX_START, BOX_OPEN, BOX_SEP, box_inner_text, BOX_CLOSE
+        )));
+      }
       _ => {}
     }
   }

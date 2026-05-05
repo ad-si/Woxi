@@ -565,6 +565,61 @@ pub fn evaluate_function_call_ast_inner(
     _ => {}
   }
 
+  // MakeBoxes[head[args], form] consults user `Format[head[…], form]`
+  // rules BEFORE user `MakeBoxes[head[…], fmt_]` patterns — Format
+  // definitions take precedence over MakeBoxes downvalues for the same
+  // head, matching wolframscript. When a Format rule applies, the
+  // formatted result is fed back into MakeBoxes for recursive boxing.
+  if name == "MakeBoxes"
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::FunctionCall { name: head, .. } = &args[0]
+  {
+    let target_form = if args.len() == 2 {
+      if let Expr::Identifier(form) = &args[1] {
+        Some(form.clone())
+      } else {
+        None
+      }
+    } else {
+      None
+    };
+    let has_format_rule = crate::evaluator::assignment::FORMAT_VALUES
+      .with(|m| m.borrow().contains_key(head));
+    if has_format_rule {
+      let mut format_args = vec![args[0].clone()];
+      if let Some(form) = &target_form {
+        format_args.push(Expr::Identifier(form.clone()));
+      }
+      let format_call = Expr::FunctionCall {
+        name: "Format".to_string(),
+        args: format_args,
+      };
+      if let Ok(formatted) = evaluate_expr_to_expr(&format_call) {
+        // The Format dispatcher returns `args[0].clone()` (or
+        // `Format[args[0], …]` unevaluated) when no user rule matches.
+        // Detect both shapes so we only recurse when Format actually
+        // substituted something different.
+        let is_format_wrapper = matches!(
+          &formatted,
+          Expr::FunctionCall { name: fname, args: fargs }
+            if fname == "Format"
+              && (fargs.len() == 1 || fargs.len() == 2)
+              && crate::evaluator::pattern_matching::expr_equal(&fargs[0], &args[0])
+        );
+        let unchanged = is_format_wrapper
+          || crate::evaluator::pattern_matching::expr_equal(&formatted, &args[0]);
+        if !unchanged {
+          // Box the formatted result through the standard MakeBoxes path.
+          let mut new_args = vec![formatted];
+          if let Some(form) = target_form {
+            new_args.push(Expr::Identifier(form));
+          }
+          return evaluate_function_call_ast_inner("MakeBoxes", &new_args);
+        }
+      }
+    }
+  }
+
   // Check for user-defined functions (before built-in dispatch, so user
   // overrides take precedence — matching Wolfram Language semantics)
   // Clone overloads to avoid holding the borrow across evaluate calls.
@@ -1378,18 +1433,16 @@ pub fn evaluate_function_call_ast_inner(
     if let Some(active) = crate::pop_context_path() {
       // The pushed path is `[pkg, extras..., "System`"]`; the prepend
       // list is everything before that trailing baseline entry.
-      let prepend: Vec<String> = if active
-        .last()
-        .map(|s| s == "System`")
-        .unwrap_or(false)
-      {
-        active[..active.len() - 1].to_vec()
-      } else {
-        active.clone()
-      };
+      let prepend: Vec<String> =
+        if active.last().map(|s| s == "System`").unwrap_or(false) {
+          active[..active.len() - 1].to_vec()
+        } else {
+          active.clone()
+        };
       let base = crate::current_context_path();
-      let mut merged: Vec<String> = Vec::with_capacity(prepend.len() + base.len());
-      for entry in prepend.into_iter().chain(base.into_iter()) {
+      let mut merged: Vec<String> =
+        Vec::with_capacity(prepend.len() + base.len());
+      for entry in prepend.into_iter().chain(base) {
         if !merged.contains(&entry) {
           merged.push(entry);
         }
