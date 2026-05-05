@@ -2759,6 +2759,31 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
 }
 
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
+/// Box a sub-expression while honoring any user-defined `MakeBoxes`
+/// DownValues. When the user has defined a `MakeBoxes[F[x_], fmt_]`
+/// rule, calling MakeBoxes on a matching sub-expression dispatches to
+/// the user's rule via the standard evaluator. With no matching rule
+/// the evaluator's default branch falls back to `expr_to_box_form`,
+/// so untouched sub-expressions render the same as before.
+fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
+  let has_user_rule =
+    crate::FUNC_DEFS.with(|m| m.borrow().contains_key("MakeBoxes"));
+  if !has_user_rule {
+    return expr_to_box_form(expr);
+  }
+  let call = Expr::FunctionCall {
+    name: "MakeBoxes".to_string(),
+    args: vec![
+      expr.clone(),
+      Expr::Identifier("StandardForm".to_string()),
+    ],
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&call) {
+    Ok(result) => result,
+    Err(_) => expr_to_box_form(expr),
+  }
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(n) => Expr::String(n.to_string()),
@@ -3434,14 +3459,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       parts.push(Expr::String("[".to_string()));
       if !args.is_empty() {
         if args.len() == 1 {
-          parts.push(expr_to_box_form(&args[0]));
+          parts.push(box_subexpr_via_user_rules(&args[0]));
         } else {
           let mut inner = Vec::new();
           for (i, arg) in args.iter().enumerate() {
             if i > 0 {
               inner.push(Expr::String(",".to_string()));
             }
-            inner.push(expr_to_box_form(arg));
+            inner.push(box_subexpr_via_user_rules(arg));
           }
           parts.push(Expr::FunctionCall {
             name: "RowBox".to_string(),
