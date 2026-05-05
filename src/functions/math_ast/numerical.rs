@@ -4886,7 +4886,9 @@ fn complex_from_expr(e: &Expr) -> Option<(f64, f64)> {
     // (a+bi)(c+di) = (ac-bd) + (ad+bc)i, recursively. Enables shapes
     // like `Times[Plus[real, im*I], Complex[…, …]]` produced by `N[]`
     // on a rational of complex inputs to collapse to a single complex.
-    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
       let mut re = 1.0f64;
       let mut im = 0.0f64;
       for a in args {

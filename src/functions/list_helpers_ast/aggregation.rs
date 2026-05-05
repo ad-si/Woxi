@@ -1876,7 +1876,9 @@ fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
     return Expr::List(vec![Expr::List(items.to_vec())]);
   }
   if k >= n {
-    return Expr::List(items.iter().map(|e| Expr::List(vec![e.clone()])).collect());
+    return Expr::List(
+      items.iter().map(|e| Expr::List(vec![e.clone()])).collect(),
+    );
   }
   let strs: Vec<&str> = items
     .iter()
@@ -1886,9 +1888,8 @@ fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
     })
     .collect();
   // Pairwise EditDistance.
-  let dist = |i: usize, j: usize| -> u32 {
-    edit_distance_str(strs[i], strs[j])
-  };
+  let dist =
+    |i: usize, j: usize| -> u32 { edit_distance_str(strs[i], strs[j]) };
   // Each item starts in its own cluster (cluster id == initial item idx).
   let mut cluster_of: Vec<usize> = (0..n).collect();
   let mut active: std::collections::BTreeSet<usize> = (0..n).collect();
@@ -1932,7 +1933,8 @@ fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
     active.remove(&cj);
   }
   // Emit clusters in the order their first member appears in the input.
-  let mut seen: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+  let mut seen: std::collections::BTreeSet<usize> =
+    std::collections::BTreeSet::new();
   let mut order: Vec<usize> = Vec::new();
   for i in 0..n {
     if seen.insert(cluster_of[i]) {
@@ -1969,9 +1971,7 @@ fn edit_distance_str(a: &str, b: &str) -> u32 {
     curr[0] = i as u32;
     for j in 1..=n {
       let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-      curr[j] = (prev[j] + 1)
-        .min(curr[j - 1] + 1)
-        .min(prev[j - 1] + cost);
+      curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
     }
     std::mem::swap(&mut prev, &mut curr);
   }

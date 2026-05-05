@@ -159,10 +159,9 @@ pub fn cpu_time_used() -> f64 {
       let mut usage = MaybeUninit::<libc::rusage>::uninit();
       if libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) == 0 {
         let u = usage.assume_init();
-        let user = u.ru_utime.tv_sec as f64
-          + (u.ru_utime.tv_usec as f64) * 1e-6;
-        let sys = u.ru_stime.tv_sec as f64
-          + (u.ru_stime.tv_usec as f64) * 1e-6;
+        let user =
+          u.ru_utime.tv_sec as f64 + (u.ru_utime.tv_usec as f64) * 1e-6;
+        let sys = u.ru_stime.tv_sec as f64 + (u.ru_stime.tv_usec as f64) * 1e-6;
         return user + sys;
       }
     }

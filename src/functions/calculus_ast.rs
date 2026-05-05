@@ -1541,64 +1541,59 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let center_depends = !is_constant_wrt(center, var);
           let den_step = den_val.max(1) as usize;
 
-          let (mut new_coeffs, new_nmax) = if center_depends
-            && coeffs.len() > den_step
-          {
-            // Chain-rule shift on (var - x0)^p factors. Shrinks both the
-            // coefficient list and `nmax` by `den` slots.
-            let dx0 = simplify(differentiate(center, var)?);
-            let new_len = coeffs.len() - den_step;
-            let mut shifted: Vec<Expr> = Vec::with_capacity(new_len);
-            for i in 0..new_len {
-              let pow_num = nmin_val + (i as i128) + den_val;
-              let power_factor = if den_val == 1 {
-                Expr::Integer(pow_num)
-              } else {
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![
-                    Expr::Integer(pow_num),
-                    Expr::Integer(den_val),
-                  ],
-                }
-              };
-              let next_coeff = coeffs[i + den_step].clone();
-              // shift_term = power_factor * next_coeff * dx0
-              let shift_term =
-                crate::functions::math_ast::times_ast(&[
+          let (mut new_coeffs, new_nmax) =
+            if center_depends && coeffs.len() > den_step {
+              // Chain-rule shift on (var - x0)^p factors. Shrinks both the
+              // coefficient list and `nmax` by `den` slots.
+              let dx0 = simplify(differentiate(center, var)?);
+              let new_len = coeffs.len() - den_step;
+              let mut shifted: Vec<Expr> = Vec::with_capacity(new_len);
+              for i in 0..new_len {
+                let pow_num = nmin_val + (i as i128) + den_val;
+                let power_factor = if den_val == 1 {
+                  Expr::Integer(pow_num)
+                } else {
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(pow_num), Expr::Integer(den_val)],
+                  }
+                };
+                let next_coeff = coeffs[i + den_step].clone();
+                // shift_term = power_factor * next_coeff * dx0
+                let shift_term = crate::functions::math_ast::times_ast(&[
                   power_factor,
                   next_coeff,
                   dx0.clone(),
                 ])
                 .unwrap_or(Expr::Integer(0));
-              // new_coeff_i = diffed[i] - shift_term
-              let neg_shift = crate::functions::math_ast::times_ast(&[
-                Expr::Integer(-1),
-                shift_term,
-              ])
-              .unwrap_or(Expr::Integer(0));
-              let combined = crate::functions::math_ast::plus_ast(&[
-                diffed[i].clone(),
-                neg_shift,
-              ])
-              .unwrap_or_else(|_| diffed[i].clone());
-              // Run a full evaluation so subterms like `g'[y]*F''[g[y]]
-              // - F''[g[y]]*g'[y]` collapse to `0` via Times's canonical
-              // ordering (the local `simplify` doesn't always sort
-              // commutative factors the same way).
-              let canon = crate::evaluator::evaluate_expr_to_expr(&combined)
-                .unwrap_or_else(|_| simplify(combined));
-              shifted.push(canon);
-            }
-            (shifted, nmax_val - den_val)
-          } else if center_depends {
-            // Center depends on var but coefficient list is too short to
-            // shift; the result is just the all-zero series with one
-            // less integer power of accuracy.
-            (Vec::new(), nmax_val - den_val)
-          } else {
-            (diffed, nmax_val)
-          };
+                // new_coeff_i = diffed[i] - shift_term
+                let neg_shift = crate::functions::math_ast::times_ast(&[
+                  Expr::Integer(-1),
+                  shift_term,
+                ])
+                .unwrap_or(Expr::Integer(0));
+                let combined = crate::functions::math_ast::plus_ast(&[
+                  diffed[i].clone(),
+                  neg_shift,
+                ])
+                .unwrap_or_else(|_| diffed[i].clone());
+                // Run a full evaluation so subterms like `g'[y]*F''[g[y]]
+                // - F''[g[y]]*g'[y]` collapse to `0` via Times's canonical
+                // ordering (the local `simplify` doesn't always sort
+                // commutative factors the same way).
+                let canon = crate::evaluator::evaluate_expr_to_expr(&combined)
+                  .unwrap_or_else(|_| simplify(combined));
+                shifted.push(canon);
+              }
+              (shifted, nmax_val - den_val)
+            } else if center_depends {
+              // Center depends on var but coefficient list is too short to
+              // shift; the result is just the all-zero series with one
+              // less integer power of accuracy.
+              (Vec::new(), nmax_val - den_val)
+            } else {
+              (diffed, nmax_val)
+            };
 
           let mut new_nmin = nmin_val;
 
@@ -1618,10 +1613,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             new_nmin += 1;
           }
           while new_coeffs.len() > 1
-            && new_coeffs
-              .last()
-              .map(is_zero_expr)
-              .unwrap_or(false)
+            && new_coeffs.last().map(is_zero_expr).unwrap_or(false)
           {
             new_coeffs.pop();
           }

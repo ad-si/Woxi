@@ -3459,8 +3459,9 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // form so the result is drawn from the labels rather than the
       // points themselves.
       let all_rules = !v.is_empty()
-        && v.iter().all(|e| matches!(e,
-          Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+        && v
+          .iter()
+          .all(|e| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
       if all_rules {
         let mut pts = Vec::with_capacity(v.len());
         let mut lbls = Vec::with_capacity(v.len());

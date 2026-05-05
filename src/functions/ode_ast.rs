@@ -58,9 +58,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
       }
-      if let Some(body) =
-        try_direct_linear_pde_body(eqns_arg, &fname, xn, yn)
-      {
+      if let Some(body) = try_direct_linear_pde_body(eqns_arg, &fname, xn, yn) {
         return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
       }
       if let Some(body) = try_euler_pde_body(eqns_arg, &fname, xn, yn) {

@@ -2849,10 +2849,7 @@ fn match_pattern_impl(
       match expr {
         Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
           let merged = merge_option_rules(&opt_defaults, &[expr.clone()]);
-          Some(vec![(
-            "__OptionsPattern__".to_string(),
-            Expr::List(merged),
-          )])
+          Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged))])
         }
         _ => None,
       }

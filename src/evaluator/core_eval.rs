@@ -2449,9 +2449,7 @@ pub fn evaluate_expr_to_expr_inner(
           if has_hold_attribute(name, "HoldAll")
             || has_hold_attribute(name, "HoldAllComplete")
       );
-      if func_holds_all
-        && let Expr::Identifier(name) = func.as_ref()
-      {
+      if func_holds_all && let Expr::Identifier(name) = func.as_ref() {
         // Convert any nested `Postfix(e, f)` to `FunctionCall { name: f,
         // args: [e] }` recursively so the held argument is in normal
         // structural form.

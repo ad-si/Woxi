@@ -607,7 +607,9 @@ pub fn evaluate_function_call_ast_inner(
               && crate::evaluator::pattern_matching::expr_equal(&fargs[0], &args[0])
         );
         let unchanged = is_format_wrapper
-          || crate::evaluator::pattern_matching::expr_equal(&formatted, &args[0]);
+          || crate::evaluator::pattern_matching::expr_equal(
+            &formatted, &args[0],
+          );
         if !unchanged {
           // Box the formatted result through the standard MakeBoxes path.
           let mut new_args = vec![formatted];
