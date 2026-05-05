@@ -57,6 +57,10 @@ thread_local! {
     // currently-active path; an empty stack falls back to the System`/Global`
     // default.
     static CONTEXT_PATH_STACK: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
+    // Extra packages registered by `BeginPackage[]` (and the explicit second
+    // argument). `$Packages` returns these prepended to the canonical
+    // `{"System`", "Global`"}` baseline.
+    pub static PACKAGES_EXTRA: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     // Current option bindings for OptionValue during function evaluation
     // Stack of (function_name, Vec<(option_name, option_value)>)
     pub static OPTION_VALUE_CONTEXT: RefCell<Vec<(String, Vec<(String, syntax::Expr)>)>> = const { RefCell::new(Vec::new()) };
@@ -746,6 +750,27 @@ pub fn pop_context_path() -> Option<Vec<String>> {
   CONTEXT_PATH_STACK.with(|s| s.borrow_mut().pop())
 }
 
+/// Register an additional package context to be reported by `$Packages`.
+/// Pushed by `BeginPackage[]` (the first argument and any extras in the
+/// second argument). Duplicate entries are ignored.
+pub fn register_package(name: String) {
+  PACKAGES_EXTRA.with(|s| {
+    let mut v = s.borrow_mut();
+    if !v.contains(&name) {
+      v.push(name);
+    }
+  });
+}
+
+/// Return the dynamic `$Packages` list — extras pushed by `BeginPackage[]`
+/// followed by the canonical `{"System`", "Global`"}` baseline.
+pub fn packages_list() -> Vec<String> {
+  let mut out = PACKAGES_EXTRA.with(|s| s.borrow().clone());
+  out.push("System`".to_string());
+  out.push("Global`".to_string());
+  out
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {
@@ -759,6 +784,7 @@ pub fn clear_state() {
   SOW_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_PATH_STACK.with(|s| s.borrow_mut().clear());
+  PACKAGES_EXTRA.with(|s| s.borrow_mut().clear());
   RECURSION_DEPTH.with(|d| d.set(0));
   EVAL_STACK.with(|s| s.borrow_mut().clear());
   LAST_ERROR_TRACE.with(|t| *t.borrow_mut() = None);

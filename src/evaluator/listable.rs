@@ -699,13 +699,17 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .map(Expr::String)
         .collect(),
     )),
-    // Woxi only tracks the System` and Global` contexts; wolframscript lists
-    // many kernel packages here, but MemberQ[$Packages, "System`"] is the
-    // main observable use.
-    "$Packages" => Some(Expr::List(vec![
-      Expr::String("System`".to_string()),
-      Expr::String("Global`".to_string()),
-    ])),
+    // Woxi only tracks the System`/Global` baseline plus any contexts
+    // registered by `BeginPackage[]`; wolframscript lists many kernel
+    // packages here, but `MemberQ[$Packages, "System`"]` and
+    // `MemberQ[$Packages, "MyPackage`"]` after `BeginPackage["MyPackage`"]`
+    // are the main observable uses.
+    "$Packages" => Some(Expr::List(
+      crate::packages_list()
+        .into_iter()
+        .map(Expr::String)
+        .collect(),
+    )),
     "$ImportFormats" => Some(Expr::List(
       [
         "3DS",

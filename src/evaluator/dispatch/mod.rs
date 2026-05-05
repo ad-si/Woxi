@@ -1353,11 +1353,14 @@ pub fn evaluate_function_call_ast_inner(
         for item in items {
           if let Expr::String(extra) = item {
             path.push(extra.clone());
+            crate::register_package(extra.clone());
           }
         }
       }
       path.push("System`".to_string());
       crate::push_context_path(path);
+      // Register the new context so `$Packages` reflects it.
+      crate::register_package(resolved.clone());
     }
     return Ok(Expr::String(resolved));
   }
