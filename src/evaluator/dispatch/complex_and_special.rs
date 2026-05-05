@@ -1977,12 +1977,11 @@ pub fn dispatch_complex_and_special(
         for (rule_form, lhs, rhs) in &rules {
           // Skip rules whose form doesn't match (empty form_name applies
           // to any form).
-          if !rule_form.is_empty() {
-            if let Some(t) = &target_form {
-              if rule_form != t {
-                continue;
-              }
-            }
+          if !rule_form.is_empty()
+            && let Some(t) = &target_form
+            && rule_form != t
+          {
+            continue;
           }
           if let Some(bindings) =
             crate::evaluator::pattern_matching::match_pattern(&args[0], lhs)
@@ -2796,6 +2795,47 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
 }
 
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
+/// Walk `expr` bottom-up and apply any user-defined `Format[head[…]]`
+/// rules so subexpressions surface in their formatted shape. Used by
+/// `MakeBoxes[OutputForm[expr], …]` so the printed text matches what
+/// the OutputForm renderer would show after Format substitution.
+fn apply_format_recursively(expr: &Expr) -> Expr {
+  let recursed = match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(apply_format_recursively).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(apply_format_recursively).collect())
+    }
+    _ => expr.clone(),
+  };
+  if let Expr::FunctionCall { name: head, .. } = &recursed {
+    let has_format = crate::evaluator::assignment::FORMAT_VALUES
+      .with(|m| m.borrow().contains_key(head));
+    if has_format {
+      let format_call = Expr::FunctionCall {
+        name: "Format".to_string(),
+        args: vec![recursed.clone()],
+      };
+      if let Ok(formatted) = crate::evaluator::evaluate_expr_to_expr(&format_call)
+      {
+        let unchanged = matches!(
+          &formatted,
+          Expr::FunctionCall { name, args }
+            if name == "Format"
+            && args.len() == 1
+            && crate::evaluator::pattern_matching::expr_equal(&args[0], &recursed)
+        );
+        if !unchanged {
+          return formatted;
+        }
+      }
+    }
+  }
+  recursed
+}
+
 /// Box a sub-expression while honoring any user-defined `Format[…]`
 /// or `MakeBoxes[…]` DownValues. `Format` is checked first — when it
 /// is defined, the formatted result is what gets boxed (this matches
@@ -3437,7 +3477,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "OutputForm" && args.len() == 1 =>
     {
-      let output_text = crate::syntax::expr_to_output_form_2d(&args[0]);
+      // Apply any user-defined `Format[head[…]]` rules to the inner
+      // expression bottom-up so e.g. `Format[F[x_]] := {...}` causes
+      // `OutputForm[G[F[3.002]]]` to render as the formatted form
+      // `G[{Formatted f, {3.002}, Standard}]`.
+      let formatted_inner = apply_format_recursively(&args[0]);
+      let output_text = crate::syntax::expr_to_output_form_2d(&formatted_inner);
       // PaneBox stores the InputForm rendering of the string-with-quotes,
       // i.e. content like `\"a + b c\"`. Since Woxi strings render
       // unquoted in OutputForm, we have to bake the literal `"` and
