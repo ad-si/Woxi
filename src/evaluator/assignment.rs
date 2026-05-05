@@ -143,9 +143,9 @@ fn wrap_rule_lhs_in_holdpattern(expr: &Expr) -> Expr {
       pattern: Box::new(wrap_pattern(pattern)),
       replacement: replacement.clone(),
     },
-    Expr::List(items) => Expr::List(
-      items.iter().map(wrap_rule_lhs_in_holdpattern).collect(),
-    ),
+    Expr::List(items) => {
+      Expr::List(items.iter().map(wrap_rule_lhs_in_holdpattern).collect())
+    }
     _ => expr.clone(),
   }
 }
@@ -1414,25 +1414,40 @@ pub fn set_delayed_ast(
   // `Format[expr, FORM] := …` (or its UpSet/UpSetDelayed cousins) registers
   // FORM in `$PrintForms`/`$OutputForms` and stores the rule under
   // `FormatValues[head]` where `head` is the head symbol of `expr`.
+  // The 1-arg form `Format[expr] := …` stores under `FormatValues[head]`
+  // with the empty form name `""`, which `box_subexpr_via_user_rules`
+  // treats as "applies to every form".
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,
   } = lhs
     && func_name == "Format"
-    && lhs_args.len() >= 2
-    && let Expr::Identifier(form_name) = &lhs_args[1]
+    && (lhs_args.len() == 1 || lhs_args.len() == 2)
   {
-    register_user_print_form(form_name);
-    if let Some(head) = format_pattern_head(&lhs_args[0]) {
-      FORMAT_VALUES.with(|m| {
-        m.borrow_mut().entry(head).or_default().push((
-          form_name.clone(),
-          lhs_args[0].clone(),
-          body.clone(),
-        ));
-      });
+    let form_name = if lhs_args.len() == 2 {
+      if let Expr::Identifier(name) = &lhs_args[1] {
+        Some(name.clone())
+      } else {
+        None
+      }
+    } else {
+      Some(String::new())
+    };
+    if let Some(form_name) = form_name {
+      if !form_name.is_empty() {
+        register_user_print_form(&form_name);
+      }
+      if let Some(head) = format_pattern_head(&lhs_args[0]) {
+        FORMAT_VALUES.with(|m| {
+          m.borrow_mut().entry(head).or_default().push((
+            form_name,
+            lhs_args[0].clone(),
+            body.clone(),
+          ));
+        });
+      }
+      return Ok(Expr::Identifier("Null".to_string()));
     }
-    return Ok(Expr::Identifier("Null".to_string()));
   }
 
   // Handle DownValues[sym] := rules / SubValues[sym] := rules: replay each

@@ -1956,8 +1956,45 @@ pub fn dispatch_complex_and_special(
         args: args.to_vec(),
       }));
     }
-    // Format is transparent -- returns the inner expression
+    // Format[expr] / Format[expr, fmt] — look up user-defined rules in
+    // FORMAT_VALUES (registered by `Format[pat] := body` and
+    // `Format[pat, fmt] := body`). 1-arg rules (form-name = "") apply
+    // to every form. With no matching rule the call is transparent and
+    // returns the inner expression unchanged.
     "Format" if !args.is_empty() => {
+      if let Expr::FunctionCall { name: head, .. } = &args[0] {
+        let target_form = if args.len() >= 2 {
+          if let Expr::Identifier(form) = &args[1] {
+            Some(form.clone())
+          } else {
+            None
+          }
+        } else {
+          None
+        };
+        let rules = crate::evaluator::assignment::FORMAT_VALUES
+          .with(|m| m.borrow().get(head).cloned().unwrap_or_default());
+        for (rule_form, lhs, rhs) in &rules {
+          // Skip rules whose form doesn't match (empty form_name applies
+          // to any form).
+          if !rule_form.is_empty() {
+            if let Some(t) = &target_form {
+              if rule_form != t {
+                continue;
+              }
+            }
+          }
+          if let Some(bindings) =
+            crate::evaluator::pattern_matching::match_pattern(&args[0], lhs)
+          {
+            let substituted =
+              bindings.iter().fold(rhs.clone(), |acc, (k, v)| {
+                crate::syntax::substitute_variable(&acc, k, v)
+              });
+            return Some(crate::evaluator::evaluate_expr_to_expr(&substituted));
+          }
+        }
+      }
       return Some(Ok(args[0].clone()));
     }
 
@@ -2759,13 +2796,38 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
 }
 
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
-/// Box a sub-expression while honoring any user-defined `MakeBoxes`
-/// DownValues. When the user has defined a `MakeBoxes[F[x_], fmt_]`
-/// rule, calling MakeBoxes on a matching sub-expression dispatches to
-/// the user's rule via the standard evaluator. With no matching rule
-/// the evaluator's default branch falls back to `expr_to_box_form`,
-/// so untouched sub-expressions render the same as before.
+/// Box a sub-expression while honoring any user-defined `Format[…]`
+/// or `MakeBoxes[…]` DownValues. `Format` is checked first — when it
+/// is defined, the formatted result is what gets boxed (this matches
+/// wolframscript: `Format` definitions take precedence over user
+/// `MakeBoxes` definitions). With neither rule defined, the
+/// evaluator's default branch falls back to `expr_to_box_form`, so
+/// untouched sub-expressions render the same as before.
 fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
+  if let Expr::FunctionCall { name: head, .. } = expr {
+    let has_format_rule = crate::evaluator::assignment::FORMAT_VALUES
+      .with(|m| m.borrow().contains_key(head));
+    if has_format_rule {
+      let format_call = Expr::FunctionCall {
+        name: "Format".to_string(),
+        args: vec![expr.clone()],
+      };
+      if let Ok(formatted) =
+        crate::evaluator::evaluate_expr_to_expr(&format_call)
+      {
+        let unchanged = matches!(
+          &formatted,
+          Expr::FunctionCall { name, args }
+            if name == "Format"
+            && args.len() == 1
+            && crate::evaluator::pattern_matching::expr_equal(&args[0], expr)
+        );
+        if !unchanged {
+          return expr_to_box_form(&formatted);
+        }
+      }
+    }
+  }
   let has_user_rule =
     crate::FUNC_DEFS.with(|m| m.borrow().contains_key("MakeBoxes"));
   if !has_user_rule {
@@ -2773,10 +2835,7 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
   }
   let call = Expr::FunctionCall {
     name: "MakeBoxes".to_string(),
-    args: vec![
-      expr.clone(),
-      Expr::Identifier("StandardForm".to_string()),
-    ],
+    args: vec![expr.clone(), Expr::Identifier("StandardForm".to_string())],
   };
   match crate::evaluator::evaluate_expr_to_expr(&call) {
     Ok(result) => result,
