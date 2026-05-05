@@ -1,28 +1,18 @@
-// Tests whose expected values depend on the host machine (current
-// user, home directory, hostname, OS, …). They are kept out of
-// `test_cases.rs` and excluded from `make test` via the nextest
-// filter `!test(machine_specific)`, because outside a controlled
-// environment the host-derived values are unpredictable.
+// Tests for host-derived symbols (`$UserName`, `$MachineName`,
+// `$HomeDirectory`, …). Expected values are computed dynamically
+// from the same OS facilities the implementation in
+// `src/evaluator/listable.rs` consults (env vars, `gethostname`,
+// `current_dir`, `cfg!(target_os = …)`), so the assertions hold on
+// any host without a controlled capture environment.
 //
-// To run them, use the Docker target which rebuilds a deterministic
-// capture environment (USER, HOME, hostname, WORKDIR, OS) inside a
-// Linux container. The expected values below are pinned to that
-// environment:
-//
-//   make test-docker
-//
-// The container is configured with:
-//   USER=woxi
-//   HOME=/home/woxi
-//   hostname=woxi-test
-//   WORKDIR=/home/woxi/woxi
-//   (Linux base image → `$OperatingSystem` resolves to "Unix")
-//
-// Cases that depend on the host's CPU architecture (`$SystemID`) or
-// physical RAM (`$SystemMemory`) are intentionally not asserted here
-// — `tests/interpreter_tests/math/numeric.rs` covers them with
-// type/range checks (`Head[$SystemID] == String`, `$SystemMemory > 0`)
-// that work on any host.
+// What the tests catch even though the expected value is host-derived:
+//   * the symbol resolves at all (no Identifier passthrough),
+//   * the result is a String of the expected shape (quoting, trailing
+//     slash policy, short-hostname stripping, …),
+//   * the implementation reads the right source (e.g. `$UserName`
+//     from `$USER`, not `$LOGNAME`),
+//   * platform branches stay in sync (e.g. `$OperatingSystem` returns
+//     "MacOSX" on macOS and "Unix" on Linux).
 
 use super::*;
 
@@ -52,61 +42,143 @@ mod machine_specific {
     }
   }
 
-  #[test]
-  fn environment_home() {
-    assert_eval(r#"Environment["HOME"]"#, r#""/home/woxi""#);
+  fn host_home() -> String {
+    std::env::var("HOME")
+      .or_else(|_| std::env::var("USERPROFILE"))
+      .expect("HOME (or USERPROFILE) must be set in the test environment")
+  }
+
+  fn host_user() -> String {
+    std::env::var("USER")
+      .or_else(|_| std::env::var("USERNAME"))
+      .expect("USER (or USERNAME) must be set in the test environment")
+  }
+
+  /// Short hostname, stripped of trailing `.local` / `.lan` etc, to
+  /// mirror `$MachineName` in `src/evaluator/listable.rs`.
+  #[cfg(unix)]
+  fn host_machine_name() -> String {
+    let mut buf = [0u8; 256];
+    let ret = unsafe {
+      libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len())
+    };
+    assert_eq!(ret, 0, "gethostname() failed");
+    let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    let host =
+      std::str::from_utf8(&buf[..len]).expect("hostname is not valid UTF-8");
+    host.split('.').next().unwrap_or(host).to_string()
+  }
+
+  fn host_initial_dir() -> String {
+    std::env::current_dir()
+      .expect("current_dir() failed")
+      .to_string_lossy()
+      .into_owned()
+  }
+
+  fn host_temp_dir() -> String {
+    let tmp = std::env::temp_dir();
+    let canon = std::fs::canonicalize(&tmp).unwrap_or(tmp);
+    let mut s = canon.to_string_lossy().into_owned();
+    while s.len() > 1 && s.ends_with('/') {
+      s.pop();
+    }
+    s
   }
 
   #[test]
+  fn environment_home() {
+    assert_eval(r#"Environment["HOME"]"#, &format!(r#""{}""#, host_home()));
+  }
+
+  #[cfg(unix)]
+  #[test]
   fn machine_name() {
-    assert_eval(r#"$MachineName"#, r#""woxi-test""#);
+    assert_eval(r#"$MachineName"#, &format!(r#""{}""#, host_machine_name()));
   }
 
   #[test]
   fn user_name() {
-    assert_eval(r#"$UserName"#, r#""woxi""#);
+    assert_eval(r#"$UserName"#, &format!(r#""{}""#, host_user()));
   }
 
   #[test]
   fn home_directory() {
-    assert_eval(r#"$HomeDirectory"#, r#""/home/woxi""#);
+    assert_eval(r#"$HomeDirectory"#, &format!(r#""{}""#, host_home()));
   }
 
   #[test]
   fn user_base_directory() {
-    assert_eval(r#"$UserBaseDirectory"#, r#""/home/woxi/.Wolfram""#);
+    let sub = if cfg!(target_os = "macos") {
+      "Library/Wolfram"
+    } else if cfg!(target_os = "windows") {
+      "AppData\\Roaming\\Wolfram"
+    } else {
+      ".Wolfram"
+    };
+    let expected =
+      format!(r#""{}/{}""#, host_home().trim_end_matches('/'), sub);
+    assert_eval(r#"$UserBaseDirectory"#, &expected);
   }
 
   #[test]
   fn base_directory() {
-    assert_eval(r#"$BaseDirectory"#, r#""/usr/share/Wolfram""#);
+    let root = if cfg!(target_os = "macos") {
+      "/Library/Wolfram"
+    } else if cfg!(target_os = "windows") {
+      "C:\\ProgramData\\Wolfram"
+    } else {
+      "/usr/share/Wolfram"
+    };
+    assert_eval(r#"$BaseDirectory"#, &format!(r#""{}""#, root));
   }
 
   #[test]
   fn initial_directory() {
-    assert_eval(r#"$InitialDirectory"#, r#""/home/woxi/woxi""#);
-  }
-
-  #[test]
-  fn temporary_directory() {
-    assert_eval(r#"$TemporaryDirectory"#, r#""/tmp""#);
-  }
-
-  #[test]
-  fn parent_directory() {
-    assert_eval(r#"ParentDirectory[]"#, r#""/home/woxi""#);
-  }
-
-  #[test]
-  fn expand_file_name() {
     assert_eval(
-      r#"ExpandFileName["ExampleData/sunflowers.jpg"]"#,
-      r#""/home/woxi/woxi/ExampleData/sunflowers.jpg""#,
+      r#"$InitialDirectory"#,
+      &format!(r#""{}""#, host_initial_dir()),
     );
   }
 
   #[test]
+  fn temporary_directory() {
+    assert_eval(
+      r#"$TemporaryDirectory"#,
+      &format!(r#""{}""#, host_temp_dir()),
+    );
+  }
+
+  #[test]
+  fn parent_directory() {
+    let parent = std::path::PathBuf::from(host_initial_dir())
+      .parent()
+      .expect("current_dir has no parent")
+      .to_string_lossy()
+      .into_owned();
+    assert_eval(r#"ParentDirectory[]"#, &format!(r#""{}""#, parent));
+  }
+
+  #[test]
+  fn expand_file_name() {
+    let expected = format!(
+      r#""{}/ExampleData/sunflowers.jpg""#,
+      host_initial_dir().trim_end_matches('/'),
+    );
+    assert_eval(r#"ExpandFileName["ExampleData/sunflowers.jpg"]"#, &expected);
+  }
+
+  #[test]
   fn operating_system() {
-    assert_eval(r#"$OperatingSystem"#, r#""Unix""#);
+    let os = if cfg!(target_os = "macos") {
+      "MacOSX"
+    } else if cfg!(target_os = "linux") {
+      "Unix"
+    } else if cfg!(target_os = "windows") {
+      "Windows"
+    } else {
+      "Unknown"
+    };
+    assert_eval(r#"$OperatingSystem"#, &format!(r#""{}""#, os));
   }
 }

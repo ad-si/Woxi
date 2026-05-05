@@ -12,8 +12,7 @@ test-unit:
 	cargo nextest run \
 		--show-progress=none \
 		--status-level=fail \
-		--failure-output=final \
-		-E '!test(machine_specific)'
+		--failure-output=final
 
 
 # Alias the CLI command to test before running the tests.
@@ -70,11 +69,13 @@ test-all: test-unit test-cli test-shebang
 test-conformance: test-unit-wolframscript test-cli-wolframscript test-scripts-wolframscript
 
 
-# Build a Docker image with a pinned Rust toolchain and run **only**
-# the machine-specific tests inside it (everything else runs via
-# `make test` on the host). The container reproduces the original
-# capture environment — USER, HOME, WORKDIR, hostname — so the
-# host-derived values these tests expect match deterministically.
+# Build a Docker image with a pinned Rust toolchain and run the
+# machine-specific tests inside a clean Linux environment. The tests
+# themselves derive expected values from the host (env vars,
+# `gethostname`, `current_dir`, …), so this target's purpose is to
+# exercise the Linux branches of the platform-dependent impl
+# (`$OperatingSystem` = "Unix", `$BaseDirectory` = "/usr/share/Wolfram",
+# `$UserBaseDirectory` = "$HOME/.Wolfram") on hosts that aren't Linux.
 .PHONY: test-docker
 test-docker:
 	docker build -t woxi-test -f Dockerfile .
