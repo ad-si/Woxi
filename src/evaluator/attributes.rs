@@ -116,6 +116,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Conjugate"
     | "Re"
     | "Im"
+    | "ReIm"
     | "Arg"
     | "Gudermannian"
     | "InverseGudermannian"
@@ -186,7 +187,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
     | "EvenQ" | "OddQ" | "PrimeQ" | "IntegerQ" | "NumberQ" | "NumericQ"
     | "AtomQ" | "Clip" | "Cyclotomic" | "PartitionsQ" | "Rescale"
-    | "Resultant" | "Unitize" | "UnitStep" | "N" | "FactorSquareFree" => {
+    | "Resultant" | "Unitize" | "UnitStep" | "N" | "FactorSquareFree"
+    | "PrimePi" => {
       vec!["Listable", "Protected"]
     }
 
@@ -501,7 +503,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "QuotientRemainder"
     | "Divisors"
     | "FactorInteger"
-    | "PrimePi"
     | "Prime"
     | "NextPrime"
     | "RandomInteger"

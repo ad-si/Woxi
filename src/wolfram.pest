@@ -241,8 +241,10 @@ DivideBy = { (PartExtract | Identifier) ~ "/=" ~ Expression }
 // "b y^3" parses as b*(y^3) not (b*y)^3 and "2 x[[1]]" parses as 2*x[[1]]
 // Allow a leading unary minus in the exponent so `y^-m` parses as
 // y^(-m) instead of y^0 - m (Wolfram's implicit-power semantics).
-NegSimpleTerm = { "-" ~ SimpleTerm }
-ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm | SimpleTerm) }
+// The optional `PartIndexSuffix?` after the exponent term lets `y^-m[[1]]`
+// parse as `y^(-Part[m, 1])`, matching Wolfram's `Part` precedence.
+NegSimpleTerm = { "-" ~ SimpleTerm ~ PartIndexSuffix? }
+ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm | SimpleTerm ~ PartIndexSuffix?) }
 // Allow trailing `..` / `...` (Repeated/RepeatedNull) so `0..1` parses
 // as `Repeated[0] * 1` rather than splitting into two statements.
 ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }

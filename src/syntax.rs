@@ -1342,16 +1342,43 @@ use crate::Rule;
 use pest::iterators::Pair;
 
 /// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
-/// Handles both the plain `^expr` and the `^-expr` (NegSimpleTerm) forms.
+/// Handles `^expr`, `^-expr`, and forms with a `PartIndexSuffix` after the
+/// term (e.g. `^m[[1]]` → `Part[m, 1]`, `^-m[[1]]` → `-Part[m, 1]`).
 pub fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
-  let inner = pair.into_inner().next().unwrap();
-  match inner.as_rule() {
-    Rule::NegSimpleTerm => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(pair_to_expr(inner.into_inner().next().unwrap())),
-    },
-    _ => pair_to_expr(inner),
+  let inners: Vec<_> = pair.into_inner().collect();
+  let first = inners[0].clone();
+  let mut expr = match first.as_rule() {
+    Rule::NegSimpleTerm => {
+      let neg_inners: Vec<_> = first.into_inner().collect();
+      let mut base = pair_to_expr(neg_inners[0].clone());
+      for p in neg_inners.iter().skip(1) {
+        if p.as_rule() == Rule::PartIndexSuffix {
+          for idx_pair in p.clone().into_inner() {
+            base = Expr::Part {
+              expr: Box::new(base),
+              index: Box::new(pair_to_expr(idx_pair)),
+            };
+          }
+        }
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(base),
+      }
+    }
+    _ => pair_to_expr(first),
+  };
+  for p in inners.iter().skip(1) {
+    if p.as_rule() == Rule::PartIndexSuffix {
+      for idx_pair in p.clone().into_inner() {
+        expr = Expr::Part {
+          expr: Box::new(expr),
+          index: Box::new(pair_to_expr(idx_pair)),
+        };
+      }
+    }
   }
+  expr
 }
 
 /// True if an AssociationItem source slice uses `:>` as its separator
@@ -3982,9 +4009,21 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       }
       _ => {
         if leading_minus {
-          terms.push(Expr::Integer(0));
-          term_was_implicit_times.push(false);
-          operators.push("NEGATE".to_string());
+          // When `^` is followed by `-`, replace the `^` operator with the
+          // synthetic `^_NEG` (Power-with-negated-right) instead of inserting
+          // a synthetic 0 NEGATE pair. This is required because Power has
+          // higher precedence than NEGATE: `a^-b` would otherwise parse as
+          // `(a^0) - b`. With `^_NEG`, the right operand of the chain
+          // (e.g. `b^c` in `a^-b^c`) is wrapped in unary minus before being
+          // used as the exponent — matching Wolfram's `Power[a, -(b^c)]`.
+          if operators.last().is_some_and(|o| o == "^") {
+            operators.pop();
+            operators.push("^_NEG".to_string());
+          } else {
+            terms.push(Expr::Integer(0));
+            term_was_implicit_times.push(false);
+            operators.push("NEGATE".to_string());
+          }
           leading_minus = false;
         }
         // When an `ImplicitTimes` follows a Divide operator (`/`), splice
@@ -4186,8 +4225,14 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           // Check for LeadingMinus after operator
           if let Some(next_pair) = iter.next() {
             if next_pair.as_rule() == Rule::LeadingMinus {
-              post_terms.push(Expr::Integer(0));
-              post_ops.push("NEGATE".to_string());
+              // Use `^_NEG` for `^-` (see comment in main expression branch).
+              if post_ops.last().is_some_and(|o| o == "^") {
+                post_ops.pop();
+                post_ops.push("^_NEG".to_string());
+              } else {
+                post_terms.push(Expr::Integer(0));
+                post_ops.push("NEGATE".to_string());
+              }
               if let Some(term_pair) = iter.next() {
                 post_terms.push(pair_to_expr(term_pair));
               }
@@ -4215,6 +4260,8 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
             }
           }
         } else if op_pair.as_rule() == Rule::AnonymousFunctionSuffix {
+          // (TildeInfix doesn't need `^_NEG` handling — Power is never the
+          // operator immediately preceding a tilde infix.)
           // A second `&` after the first: wrap the accumulated infix chain
           // built so far (including any infix continuation) in a Function
           // and apply its BracketArgs. Matches Wolfram's `f & [x] & [y]`
@@ -4280,7 +4327,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
-    "~~" => 8,          // StringExpression (lower than Alternatives)
+    "~~" => 8,           // StringExpression (lower than Alternatives)
     "|" => 9, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 10, // Plus/Minus
     "*" | "/" => 11, // Times/Divide
@@ -4290,7 +4337,7 @@ fn operator_precedence(op: &str) -> u8 {
     "/@" => 14, // Map (higher than Apply)
     "@*" | "/*" => 14, // Composition/RightComposition (same level as Map)
     "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
-    "^" => 16, // Power
+    "^" | "^_NEG" => 16, // Power (`^_NEG` is `a^-b` with negated right operand)
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
     "@" => 18,  // Prefix application
     "::" => 19, // MessageName (highest — a::b binds tighter than everything)
@@ -4335,6 +4382,7 @@ fn build_expr_with_precedence(
 
     // For right-associative operators, use prec, otherwise use prec + 1
     let next_min_prec = if op_str == "^"
+      || op_str == "^_NEG"
       || op_str == "@"
       || op_str == "="
       || op_str == ":="
@@ -4406,6 +4454,14 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       op: BinaryOperator::Power,
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
+    },
+    "^_NEG" => Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(left.clone()),
+      right: Box::new(Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(right.clone()),
+      }),
     },
     "&&" => Expr::BinaryOp {
       op: BinaryOperator::And,

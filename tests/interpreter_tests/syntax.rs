@@ -230,6 +230,42 @@ mod unary_minus_parsing {
   fn negative_power_exponent() {
     assert_eq!(interpret("x^(-2)").unwrap(), "x^(-2)");
   }
+
+  #[test]
+  fn power_with_negated_symbol_exponent() {
+    // Regression: `a^-x` was parsed as `(a^0) - x` instead of `a^(-x)`
+    // because Power had higher precedence than NEGATE in the climbing
+    // algorithm. Now `^-` emits the synthetic `^_NEG` operator.
+    assert_eq!(interpret("a^-x").unwrap(), "a^(-x)");
+    assert_eq!(interpret("Hold[a^-x]").unwrap(), "Hold[a^(-x)]");
+  }
+
+  #[test]
+  fn power_with_negated_function_call_exponent() {
+    // `I^-PrimePi[Range[5]]` should parse as `Power[I, -PrimePi[Range[5]]]`.
+    assert_eq!(
+      interpret("Hold[I^-PrimePi[Range[5]]]").unwrap(),
+      "Hold[I^(-PrimePi[Range[5]])]"
+    );
+  }
+
+  #[test]
+  fn power_with_negated_chained_power() {
+    // `a^-b^c` must parse as `a^(-(b^c))`, matching Wolfram's `Power[a,
+    // -Power[b, c]]` semantics.
+    assert_eq!(interpret("Hold[a^-b^c]").unwrap(), "Hold[a^(-b^c)]");
+  }
+
+  #[test]
+  fn implicit_times_power_with_part_exponent() {
+    // Regression: `a I^-#2[[1]]` failed to parse because the
+    // `ImplicitPowerSuffix` rule did not allow a `PartIndexSuffix` after
+    // the exponent term.
+    assert_eq!(
+      interpret("MapIndexed[# I^-#2[[1]]&, {a, b, c}]").unwrap(),
+      "{-I*a, -b, I*c}"
+    );
+  }
 }
 
 mod plus_formatting {
@@ -6435,6 +6471,25 @@ mod reim {
   #[test]
   fn reim_pure_imaginary() {
     assert_eq!(interpret("ReIm[3 I]").unwrap(), "{0, 3}");
+  }
+
+  #[test]
+  fn reim_threads_over_list() {
+    // ReIm is Listable, so it should thread over a list of complex numbers,
+    // returning a list of `{Re, Im}` pairs (rather than `{Re[list], Im[list]}`).
+    assert_eq!(
+      interpret("ReIm[{1 + I, 2 + 3 I}]").unwrap(),
+      "{{1, 1}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn prime_pi_threads_over_list() {
+    // PrimePi is Listable in Wolfram (Attributes[PrimePi] = {Listable, Protected}).
+    assert_eq!(
+      interpret("PrimePi[{1, 2, 3, 4, 5}]").unwrap(),
+      "{0, 1, 2, 2, 3}"
+    );
   }
 }
 

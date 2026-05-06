@@ -127,10 +127,12 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "RealAbs"
       | "Re"
       | "Im"
+      | "ReIm"
       | "Arg"
       | "Conjugate"
       | "Numerator"
       | "Denominator"
+      | "PrimePi"
   )
 }
 
