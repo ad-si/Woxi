@@ -2061,17 +2061,21 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Identifier("Infinity".to_string()))
     }
     Expr::List(items) => {
-      // Precision of a list is the minimum precision of its elements.
-      // If the minimum comes from a machine-real element, return the
-      // symbol MachinePrecision (matches wolframscript).
+      // Precision of a list is the minimum precision of its elements,
+      // with one Wolfram-specific quirk: when both MachinePrecision and
+      // arbitrary-precision Reals appear in the same list, the whole
+      // result is MachinePrecision (machine arithmetic infects the mix).
       let mp: f64 = 15.954589770191003;
       let mut min_prec: Option<f64> = None;
       let mut min_is_machine = false;
+      let mut saw_machine = false;
+      let mut saw_arb = false;
       for item in items {
         let p = precision_ast(&[item.clone()])?;
         match p {
           Expr::Identifier(ref name) if name == "Infinity" => {}
           Expr::Identifier(ref name) if name == "MachinePrecision" => {
+            saw_machine = true;
             match min_prec {
               None => {
                 min_prec = Some(mp);
@@ -2084,19 +2088,25 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               _ => {}
             }
           }
-          Expr::Real(f) => match min_prec {
-            None => {
-              min_prec = Some(f);
-              min_is_machine = false;
+          Expr::Real(f) => {
+            saw_arb = true;
+            match min_prec {
+              None => {
+                min_prec = Some(f);
+                min_is_machine = false;
+              }
+              Some(v) if f < v => {
+                min_prec = Some(f);
+                min_is_machine = false;
+              }
+              _ => {}
             }
-            Some(v) if f < v => {
-              min_prec = Some(f);
-              min_is_machine = false;
-            }
-            _ => {}
-          },
+          }
           _ => {}
         }
+      }
+      if saw_machine && saw_arb {
+        return Ok(Expr::Identifier("MachinePrecision".to_string()));
       }
       match min_prec {
         Some(_) if min_is_machine => {

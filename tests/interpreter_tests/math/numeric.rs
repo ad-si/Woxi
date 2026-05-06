@@ -493,14 +493,14 @@ mod precision {
 
   // Precision of a nested list is the minimum across all numeric leaves.
   // Integers contribute Infinity, MachineReal contributes MachinePrecision,
-  // and BigFloat contributes its literal precision. For
-  // `{{1, 1.`}, {1.`5, 1.`10}}`, the minimum is 5. Regression for the
-  // mathics numbers.py doctest `Precision[{{1, 1.`},{1.`5, 1.`10}}] == 5.`.
+  // and BigFloat contributes its literal precision. When MachinePrecision
+  // is mixed with arbitrary-precision Reals, wolframscript collapses the
+  // result to MachinePrecision (machine arithmetic dominates the mix).
   #[test]
   fn precision_nested_list_minimum() {
     assert_eq!(
       interpret("Precision[{{1, 1.`},{1.`5, 1.`10}}]").unwrap(),
-      "5."
+      "MachinePrecision"
     );
   }
 
