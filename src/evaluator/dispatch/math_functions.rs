@@ -2372,8 +2372,13 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "CoordinateBounds" if args.len() == 1 => {
-      // CoordinateBounds[{{x1,y1,...}, {x2,y2,...}, ...}] returns {{xmin,xmax}, {ymin,ymax}, ...}
+    "CoordinateBounds" if args.len() == 1 || args.len() == 2 => {
+      // CoordinateBounds[coords] returns {{xmin,xmax}, {ymin,ymax}, ...}
+      // CoordinateBounds[coords, pad] also pads each dimension. `pad` may be:
+      //   - a scalar (number) or Scaled[s] applied uniformly in all dims
+      //   - {p1, p2, ...}  (one entry per dim; entries may be scalars,
+      //     Scaled[s], or {pmin, pmax} pairs whose elements may be scaled)
+      //   - {{p1min, p1max}, ...} pair-per-dim form
       if let Expr::List(points) = &args[0]
         && !points.is_empty()
         && let Expr::List(first) = &points[0]
@@ -2408,10 +2413,93 @@ pub fn dispatch_math_functions(
             }
           }
         }
-        let bounds: Vec<Expr> = (0..dim)
-          .map(|d| Expr::List(vec![mins[d].clone(), maxs[d].clone()]))
+        if args.len() == 1 {
+          let bounds: Vec<Expr> = (0..dim)
+            .map(|d| Expr::List(vec![mins[d].clone(), maxs[d].clone()]))
+            .collect();
+          return Some(Ok(Expr::List(bounds)));
+        }
+
+        // Resolve a single pad spec (scalar or Scaled[s]) given the range
+        // width to use for the Scaled multiplier.
+        fn resolve_pad(spec: &Expr, width: &Expr) -> Expr {
+          if let Expr::FunctionCall { name, args } = spec
+            && name == "Scaled"
+            && args.len() == 1
+          {
+            return evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![args[0].clone(), width.clone()],
+            })
+            .unwrap_or_else(|_| Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![args[0].clone(), width.clone()],
+            });
+          }
+          spec.clone()
+        }
+
+        // Per-dimension widths: maxs[d] - mins[d]
+        let widths: Vec<Expr> = (0..dim)
+          .map(|d| {
+            evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(maxs[d].clone()),
+              right: Box::new(mins[d].clone()),
+            })
+            .unwrap_or_else(|_| Expr::Integer(0))
+          })
           .collect();
-        return Some(Ok(Expr::List(bounds)));
+
+        // Build per-dimension (pad_min, pad_max).
+        let pad_pairs: Option<Vec<(Expr, Expr)>> = match &args[1] {
+          Expr::List(items) if items.len() == dim => Some(
+            items
+              .iter()
+              .enumerate()
+              .map(|(d, item)| match item {
+                Expr::List(pair) if pair.len() == 2 => (
+                  resolve_pad(&pair[0], &widths[d]),
+                  resolve_pad(&pair[1], &widths[d]),
+                ),
+                _ => {
+                  let p = resolve_pad(item, &widths[d]);
+                  (p.clone(), p)
+                }
+              })
+              .collect(),
+          ),
+          // Scalar Scaled[s] or any non-list spec: apply uniformly per dim.
+          spec => Some(
+            (0..dim)
+              .map(|d| {
+                let p = resolve_pad(spec, &widths[d]);
+                (p.clone(), p)
+              })
+              .collect(),
+          ),
+        };
+
+        if let Some(pads) = pad_pairs {
+          let bounds: Vec<Expr> = (0..dim)
+            .map(|d| {
+              let new_min = evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Minus,
+                left: Box::new(mins[d].clone()),
+                right: Box::new(pads[d].0.clone()),
+              })
+              .unwrap_or_else(|_| mins[d].clone());
+              let new_max = evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(maxs[d].clone()),
+                right: Box::new(pads[d].1.clone()),
+              })
+              .unwrap_or_else(|_| maxs[d].clone());
+              Expr::List(vec![new_min, new_max])
+            })
+            .collect();
+          return Some(Ok(Expr::List(bounds)));
+        }
       }
     }
     "ChessboardDistance" | "ChebyshevDistance" if args.len() == 2 => {

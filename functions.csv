@@ -2426,7 +2426,7 @@ ScreenStyleEnvironment,,🚫,,3.0,2475
 CompiledFunction,Head for compiled functions,✅,pure,2.0,2477
 MathieuSPrime,gives the derivative of the odd Mathieu function with characteristic value a and parameter q,✅,none,3.0,2477
 Assert,Assert that a condition is True,✅,1,8.0,2483
-CoordinateBounds,Coordinate bounds of a list of points,✅,none,10.1,2483
+CoordinateBounds,Coordinate bounds of a list of points with optional padding,✅,none,10.1,2483
 ImageRecolor,,🚫,,12.0,2483
 MatrixPropertyDistribution,represents the distribution of a matrix property for a matrix distribution,✅,none,10.3,2483
 Regularization,,🚫,,7.0,2483

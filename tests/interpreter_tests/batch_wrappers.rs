@@ -2517,6 +2517,98 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn coordinate_bounds_doc_example() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}]"
+      )
+      .unwrap(),
+      "{{0, 4}, {0, 2}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_scalar_pad() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}, 1]"
+      )
+      .unwrap(),
+      "{{-1, 5}, {-1, 3}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_scalar_pad_zero() {
+    assert_eq!(
+      interpret("CoordinateBounds[{{1, 5}, {3, 2}, {-1, 7}}, 0]").unwrap(),
+      "{{-1, 3}, {2, 7}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_scaled_rational() {
+    assert_eq!(
+      interpret("CoordinateBounds[{{1, 5}, {3, 2}, {-1, 7}}, Scaled[1/2]]")
+        .unwrap(),
+      "{{-3, 5}, {-1/2, 19/2}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_list_pad() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}, {1, 2}]"
+      )
+      .unwrap(),
+      "{{-1, 5}, {-2, 4}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_pair_pad() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}, {{1, 2}, {3, 4}}]"
+      )
+      .unwrap(),
+      "{{-1, 6}, {-3, 6}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_pair_pad_simple() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{1, 5}, {3, 2}, {-1, 7}}, {{0, 1}, {2, 3}}]"
+      )
+      .unwrap(),
+      "{{-1, 4}, {0, 10}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_3d_basic() {
+    assert_eq!(
+      interpret("CoordinateBounds[{{1,2,3}, {4,5,6}, {0,3,9}}]").unwrap(),
+      "{{0, 4}, {2, 5}, {3, 9}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_3d_list_pad() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{1,2,3}, {4,5,6}, {0,3,9}}, {1, 2, 3}]"
+      )
+      .unwrap(),
+      "{{-1, 5}, {0, 7}, {0, 12}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_mixed_scaled_in_list() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}, {Scaled[1/4], 1}]"
+      )
+      .unwrap(),
+      "{{-1, 5}, {-1, 3}}"
+    );
+  }
+  #[test]
   fn glaisher_symbolic() {
     assert_eq!(interpret("Glaisher").unwrap(), "Glaisher");
   }
