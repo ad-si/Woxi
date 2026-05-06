@@ -9403,6 +9403,42 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         format!("Inequality[{}]", parts.join(", "))
       }
     }
+    // Single-operator Comparison (e.g. `a == "A"`): use infix form,
+    // but render operands via expr_to_input_form so strings stay quoted.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1 && operands.len() == 2 => {
+      let op_str = match &operators[0] {
+        ComparisonOp::Equal => "==",
+        ComparisonOp::NotEqual => "!=",
+        ComparisonOp::Less => "<",
+        ComparisonOp::LessEqual => "<=",
+        ComparisonOp::Greater => ">",
+        ComparisonOp::GreaterEqual => ">=",
+        ComparisonOp::SameQ => "===",
+        ComparisonOp::UnsameQ => "=!=",
+      };
+      let fmt_operand = |e: &Expr| -> String {
+        let s = expr_to_input_form(e);
+        if matches!(
+          e,
+          Expr::Pattern { .. }
+            | Expr::PatternOptional { .. }
+            | Expr::PatternTest { .. }
+        ) {
+          format!("({})", s)
+        } else {
+          s
+        }
+      };
+      format!(
+        "{} {} {}",
+        fmt_operand(&operands[0]),
+        op_str,
+        fmt_operand(&operands[1])
+      )
+    }
     // Plus in InputForm: render as infix but use expr_to_input_form for args
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
       let mut result = expr_to_input_form(&args[0]);
