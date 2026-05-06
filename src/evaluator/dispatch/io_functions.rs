@@ -423,25 +423,86 @@ pub fn dispatch_io_functions(
         // Parse ImageResolution option (default 96 DPI to match
         // usvg's default output resolution).
         let mut dpi: f64 = 96.0;
+        // Frame delay in hundredths of a second (GIF's native unit).
+        // Default 1/8 s = 12 (matches Mathematica's 8 fps default for
+        // animated GIF export).
+        let mut frame_delay_hundredths: u16 = 12;
         for opt in &args[2..] {
           if let Expr::Rule {
             pattern,
             replacement,
           } = opt
             && let Expr::Identifier(k) = pattern.as_ref()
-            && k == "ImageResolution"
           {
-            match replacement.as_ref() {
-              Expr::Integer(n) => dpi = *n as f64,
-              Expr::Real(f) => dpi = *f,
-              _ => {
-                return Some(Err(InterpreterError::EvaluationError(
-                  "Export: ImageResolution must be a numeric value".into(),
-                )));
+            match k.as_str() {
+              "ImageResolution" => match replacement.as_ref() {
+                Expr::Integer(n) => dpi = *n as f64,
+                Expr::Real(f) => dpi = *f,
+                _ => {
+                  return Some(Err(InterpreterError::EvaluationError(
+                    "Export: ImageResolution must be a numeric value".into(),
+                  )));
+                }
+              },
+              "AnimationRate" | "FrameRate" => {
+                // Frames per second → hundredths-of-a-second per frame.
+                let fps = match replacement.as_ref() {
+                  Expr::Integer(n) => *n as f64,
+                  Expr::Real(f) => *f,
+                  _ => 30.0,
+                };
+                if fps > 0.0 {
+                  frame_delay_hundredths =
+                    (100.0 / fps).round().clamp(1.0, 65535.0) as u16;
+                }
               }
+              _ => {}
             }
           }
         }
+
+        // Animated GIF path: when exporting a list of graphics to GIF,
+        // rasterize each element as a frame.
+        if fmt == "GIF"
+          && let Expr::List(items) = &args[1]
+          && items.len() >= 2
+          && items.iter().all(is_rasterizable_frame)
+        {
+          let mut frames =
+            Vec::<crate::functions::image_ast::GifFrame>::with_capacity(
+              items.len(),
+            );
+          for item in items {
+            let svg = expr_to_svg(item);
+            match crate::functions::image_ast::rasterize_svg(&svg, dpi) {
+              Ok(Expr::Image {
+                width,
+                height,
+                channels,
+                ref data,
+                ..
+              }) => {
+                let dyn_img =
+                  crate::functions::image_ast::expr_to_dynamic_image(
+                    width, height, channels, data,
+                  );
+                frames.push(crate::functions::image_ast::GifFrame {
+                  image: dyn_img.to_rgba8(),
+                  delay_hundredths: frame_delay_hundredths,
+                });
+              }
+              Ok(_) => unreachable!("rasterize_svg returns Expr::Image"),
+              Err(e) => return Some(Err(e)),
+            }
+          }
+          if let Err(e) =
+            crate::functions::image_ast::export_animated_gif(&filename, frames)
+          {
+            return Some(Err(e));
+          }
+          return Some(Ok(Expr::String(filename)));
+        }
+
         let svg = expr_to_svg(&args[1]);
         match crate::functions::image_ast::rasterize_svg(&svg, dpi) {
           Ok(Expr::Image {
@@ -2406,6 +2467,18 @@ fn boxes_to_text_svg(boxes: &Expr) -> String {
 }
 
 /// Convert an expression to its SVG string representation.
+/// True if `expr` is a graphics-like value that `expr_to_svg` will render
+/// to a non-trivial SVG. Used to decide whether a `List` passed to
+/// `Export[..., "gif"]` should be treated as an animated frame sequence.
+pub(crate) fn is_rasterizable_frame(expr: &Expr) -> bool {
+  matches!(expr, Expr::Graphics { .. } | Expr::Image { .. })
+    || matches!(
+      expr,
+      Expr::FunctionCall { name, args }
+        if (name == "Graphics" || name == "Graphics3D") && !args.is_empty()
+    )
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
@@ -2415,11 +2488,25 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall {
       name: gfx_name,
       args: gfx_args,
-    } if (gfx_name == "Graphics" || gfx_name == "Graphics3D")
-      && !gfx_args.is_empty() =>
-    {
+    } if gfx_name == "Graphics" && !gfx_args.is_empty() => {
       if let Ok(ref rendered) =
         crate::functions::graphics::graphics_ast(gfx_args)
+      {
+        if let Expr::Graphics { svg: svg_data, .. } = rendered {
+          svg_data.clone()
+        } else {
+          String::new()
+        }
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: gfx_name,
+      args: gfx_args,
+    } if gfx_name == "Graphics3D" && !gfx_args.is_empty() => {
+      if let Ok(ref rendered) =
+        crate::functions::plot3d::graphics3d_ast(gfx_args)
       {
         if let Expr::Graphics { svg: svg_data, .. } = rendered {
           svg_data.clone()

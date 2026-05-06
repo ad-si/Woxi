@@ -1511,6 +1511,8 @@ fn parse_point3d_list(expr: &Expr) -> Option<Vec<Point3D>> {
 struct StyleState3D {
   color: Option<(u8, u8, u8)>,
   opacity: f64,
+  /// Stroke width in pixels for Line3D primitives. None means default 1.5.
+  thickness: Option<f64>,
 }
 
 impl Default for StyleState3D {
@@ -1518,6 +1520,7 @@ impl Default for StyleState3D {
     Self {
       color: None, // None means use default blue
       opacity: 1.0,
+      thickness: None,
     }
   }
 }
@@ -1579,22 +1582,72 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     return true;
   }
 
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Opacity"
-    && !args.is_empty()
-  {
-    if let Some(o) = expr_to_f64(&args[0]) {
-      style.opacity = o.clamp(0.0, 1.0);
-      if args.len() >= 2
-        && let Some(color) = parse_color(&args[1])
-      {
-        let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
-        style.color = Some((r, g, b));
+  match expr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Thick" => {
+        style.thickness = Some(2.5);
+        return true;
       }
+      "Thin" => {
+        style.thickness = Some(0.5);
+        return true;
+      }
+      _ => {}
+    },
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Opacity" if !args.is_empty() => {
+        if let Some(o) = expr_to_f64(&args[0]) {
+          style.opacity = o.clamp(0.0, 1.0);
+          if args.len() >= 2
+            && let Some(color) = parse_color(&args[1])
+          {
+            let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
+            style.color = Some((r, g, b));
+          }
+        }
+        return true;
+      }
+      "Directive" => {
+        for a in args {
+          apply_3d_directive(a, style);
+        }
+        return true;
+      }
+      "Thickness" if args.len() == 1 => {
+        if let Expr::Identifier(s) = &args[0] {
+          match s.as_str() {
+            "Large" => style.thickness = Some(3.0),
+            "Tiny" => style.thickness = Some(0.5),
+            _ => {
+              if let Some(t) = expr_to_f64(&args[0]) {
+                // Relative thickness: fraction of plot width (~360 px)
+                style.thickness = Some(t * 360.0);
+              }
+            }
+          }
+        } else if let Some(t) = expr_to_f64(&args[0]) {
+          style.thickness = Some(t * 360.0);
+        }
+        return true;
+      }
+      "AbsoluteThickness" if args.len() == 1 => {
+        if let Some(t) = expr_to_f64(&args[0]) {
+          style.thickness = Some(t);
+        }
+        return true;
+      }
+      _ => {}
+    },
+    Expr::List(items) => {
+      // {Red, Thick, …} – apply each element as a sub-directive
+      for it in items {
+        apply_3d_directive(it, style);
+      }
+      return true;
     }
-    return true;
+    _ => {}
   }
 
   false
@@ -2255,6 +2308,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &StyleState3D {
             color: None,
             opacity: 1.0,
+            thickness: None,
           },
         ),
       };
@@ -2713,6 +2767,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           String::new()
         };
+        let stroke_width = style.thickness.unwrap_or(1.5);
         for seg in segments {
           let pts: Vec<String> = seg
             .iter()
@@ -2723,8 +2778,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             })
             .collect();
           svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
-            pts.join(" "), stroke_color, opacity_attr
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\"{}/>\n",
+            pts.join(" "), stroke_color, stroke_width, opacity_attr
           ));
         }
       }
@@ -4734,6 +4789,174 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result(svg))
 }
 
+/// 1-iterator (curve) form of ParametricPlot3D.
+/// Returns an unevaluated `Graphics3D[{<directives>, Line[points]}, opts]`
+/// so that downstream consumers like `Show[]` can merge it with other
+/// 3D primitives. Only `PlotStyle` is interpreted from `opts`; remaining
+/// options are forwarded to `Graphics3D` verbatim.
+fn parametric_plot3d_curve_ast(
+  body: &Expr,
+  tvar: &str,
+  t_min: f64,
+  t_max: f64,
+  opts: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Body may be a single triple {fx, fy, fz} or a list of triples.
+  struct Curve<'a> {
+    fx: &'a Expr,
+    fy: &'a Expr,
+    fz: &'a Expr,
+  }
+  let curves: Vec<Curve> = match body {
+    Expr::List(items)
+      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) =>
+    {
+      vec![Curve {
+        fx: &items[0],
+        fy: &items[1],
+        fz: &items[2],
+      }]
+    }
+    Expr::List(items)
+      if !items.is_empty()
+        && items
+          .iter()
+          .all(|it| matches!(it, Expr::List(sub) if sub.len() == 3)) =>
+    {
+      items
+        .iter()
+        .map(|item| {
+          if let Expr::List(sub) = item {
+            Curve {
+              fx: &sub[0],
+              fy: &sub[1],
+              fz: &sub[2],
+            }
+          } else {
+            unreachable!()
+          }
+        })
+        .collect()
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
+      ));
+    }
+  };
+
+  // Sample each curve at SAMPLE_N+1 points uniformly in [t_min, t_max].
+  const SAMPLE_N: usize = 200;
+  let dt = (t_max - t_min) / SAMPLE_N as f64;
+
+  // Extract PlotStyle option (if any). Other options are kept verbatim.
+  let mut plot_style: Option<&Expr> = None;
+  let mut forwarded_opts: Vec<Expr> = Vec::new();
+  for opt in opts {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "PlotStyle"
+    {
+      plot_style = Some(replacement.as_ref());
+    } else {
+      forwarded_opts.push(opt.clone());
+    }
+  }
+
+  // Build a primitives list: [<style directives>, Line[pts1], Line[pts2], …]
+  let mut prim_items: Vec<Expr> = Vec::new();
+  if let Some(ps) = plot_style {
+    // Wrap whatever PlotStyle holds into a Directive[…] so that
+    // collect_3d_primitives picks up nested colors/Thickness/etc.
+    prim_items.push(Expr::FunctionCall {
+      name: "Directive".to_string(),
+      args: vec![ps.clone()],
+    });
+  }
+
+  let mut produced_any = false;
+  for curve in &curves {
+    let mut current_segment: Vec<Expr> = Vec::new();
+    let flush = |seg: &mut Vec<Expr>, sink: &mut Vec<Expr>| {
+      if seg.len() >= 2 {
+        sink.push(Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(std::mem::take(seg))],
+        });
+      } else {
+        seg.clear();
+      }
+    };
+    for i in 0..=SAMPLE_N {
+      let t = t_min + i as f64 * dt;
+      if let Some((x, y, z)) =
+        evaluate_parametric_at_t(curve.fx, curve.fy, curve.fz, tvar, t)
+      {
+        current_segment.push(Expr::List(vec![
+          Expr::Real(x),
+          Expr::Real(y),
+          Expr::Real(z),
+        ]));
+      } else {
+        flush(&mut current_segment, &mut prim_items);
+      }
+    }
+    if current_segment.len() >= 2 {
+      produced_any = true;
+    }
+    flush(&mut current_segment, &mut prim_items);
+  }
+
+  if !produced_any
+    && prim_items
+      .iter()
+      .all(|e| !matches!(e, Expr::FunctionCall { name, .. } if name == "Line"))
+  {
+    return Err(InterpreterError::EvaluationError(
+      "ParametricPlot3D: parametric function produced no finite values".into(),
+    ));
+  }
+
+  // Build Graphics3D[{...}, opts...] as an unevaluated FunctionCall so
+  // that `Show[]` can merge it with other 3D primitives. When this
+  // expression is the top-level result, `render_graphics_fc_if_needed`
+  // dispatches it to `graphics3d_ast`.
+  let content = Expr::List(prim_items);
+  let mut g3d_args = vec![content];
+  g3d_args.extend(forwarded_opts);
+
+  Ok(Expr::FunctionCall {
+    name: "Graphics3D".to_string(),
+    args: g3d_args,
+  })
+}
+
+/// Evaluate a parametric triple {fx(t), fy(t), fz(t)} at a given t value.
+fn evaluate_parametric_at_t(
+  fx: &Expr,
+  fy: &Expr,
+  fz: &Expr,
+  tvar: &str,
+  tval: f64,
+) -> Option<(f64, f64, f64)> {
+  let eval_one = |body: &Expr| -> Option<f64> {
+    let sub = substitute_var(body, tvar, &Expr::Real(tval));
+    let result = evaluate_expr_to_expr(&sub).ok()?;
+    try_eval_to_f64(&result)
+  };
+  let x = eval_one(fx)?;
+  let y = eval_one(fy)?;
+  let z = eval_one(fz)?;
+  if x.is_finite() && y.is_finite() && z.is_finite() {
+    Some((x, y, z))
+  } else {
+    None
+  }
+}
+
 /// Evaluate a parametric triple {fx(u,v), fy(u,v), fz(u,v)} at given u, v values.
 fn evaluate_parametric_at_uv(
   fx: &Expr,
@@ -4760,19 +4983,35 @@ fn evaluate_parametric_at_uv(
   }
 }
 
-/// Implementation of ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}]
+/// Implementation of ParametricPlot3D.
+///
+/// Two forms are supported:
+/// - Curve: `ParametricPlot3D[{fx, fy, fz}, {t, tmin, tmax}, opts...]`
+///   Samples the curve and returns an unevaluated
+///   `Graphics3D[{<directives>, Line[{...}]}, opts]` so that `Show[]` can
+///   merge it with other 3D primitives.
+/// - Surface: `ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}, opts...]`
+///   Triangulates the surface and returns a fully rendered Graphics3D SVG.
 pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 3 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "ParametricPlot3D requires at least 3 arguments: ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}]".into(),
+      "ParametricPlot3D requires at least 2 arguments: ParametricPlot3D[{fx, fy, fz}, {t, tmin, tmax}]".into(),
     ));
   }
 
   let body = &args[0];
 
-  // Parse iterators
+  // Parse the first iterator. If the second argument also parses as an
+  // iterator, fall through to the surface (2-iterator) implementation.
+  // Otherwise treat as a curve and return early.
   let (uvar, u_min, u_max) = parse_iterator(&args[1], "first")?;
-  let (vvar, v_min, v_max) = parse_iterator(&args[2], "second")?;
+  let surface_iter = args.get(2).and_then(|a| parse_iterator(a, "second").ok());
+
+  if surface_iter.is_none() {
+    return parametric_plot3d_curve_ast(body, &uvar, u_min, u_max, &args[2..]);
+  }
+
+  let (vvar, v_min, v_max) = surface_iter.unwrap();
 
   // Parse options
   let mut svg_width = DEFAULT_SIZE;

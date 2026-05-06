@@ -8786,7 +8786,24 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Manipulate options like `Initialization :> …`, `TrackedSymbols :> {a}`,
       // `SaveDefinitions -> True` are passed through unchanged. They are not
       // variable specifications and must not trigger `Manipulate::vsform`.
-      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        // `Initialization :> …` defines helper symbols that should be
+        // visible to subsequent expressions in the same session, matching
+        // Mathematica's behavior of running Initialization at notebook
+        // evaluation time. Evaluate its body in the current (global)
+        // scope so SetDelayed definitions register before the Manipulate
+        // expression itself is returned.
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+        {
+          let _ = evaluate_expr_to_expr(replacement);
+        }
         out_args.push(spec.clone());
       }
       _ => {

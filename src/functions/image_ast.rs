@@ -3038,6 +3038,83 @@ pub fn export_image(
   })
 }
 
+/// One frame of an animated GIF: an Expr::Image plus a per-frame delay
+/// in hundredths of a second (GIF's native unit).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct GifFrame {
+  pub image: image::RgbaImage,
+  pub delay_hundredths: u16,
+}
+
+/// Encode a list of frames as an animated GIF and write it to `path`.
+/// Frames must all have the same dimensions; if they don't, all frames
+/// are resized to the dimensions of the first frame (canvas-pasted to
+/// preserve aspect, smaller frames padded with white).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn export_animated_gif(
+  path: &str,
+  frames: Vec<GifFrame>,
+) -> Result<(), InterpreterError> {
+  use image::Delay;
+  use image::Frame;
+  use image::codecs::gif::{GifEncoder, Repeat};
+  use std::fs::File;
+  use std::time::Duration;
+
+  if frames.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Export: animated GIF requires at least one frame".into(),
+    ));
+  }
+
+  let (canvas_w, canvas_h) = frames[0].image.dimensions();
+
+  let file = File::create(path).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Export: cannot save \"{}\": {}",
+      path, e
+    ))
+  })?;
+  let mut encoder = GifEncoder::new(file);
+  encoder.set_repeat(Repeat::Infinite).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Export: GIF encode error: {e}"))
+  })?;
+
+  for f in frames {
+    let img = if f.image.dimensions() == (canvas_w, canvas_h) {
+      f.image
+    } else {
+      // Pad/crop onto a white canvas of the target size, top-left aligned.
+      let mut canvas = image::RgbaImage::from_pixel(
+        canvas_w,
+        canvas_h,
+        image::Rgba([255, 255, 255, 255]),
+      );
+      let (fw, fh) = f.image.dimensions();
+      let copy_w = fw.min(canvas_w);
+      let copy_h = fh.min(canvas_h);
+      for y in 0..copy_h {
+        for x in 0..copy_w {
+          canvas.put_pixel(x, y, *f.image.get_pixel(x, y));
+        }
+      }
+      canvas
+    };
+
+    let delay = Delay::from_saturating_duration(Duration::from_millis(
+      (f.delay_hundredths as u64) * 10,
+    ));
+    let frame = Frame::from_parts(img, 0, 0, delay);
+    encoder.encode_frame(frame).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Export: GIF encode error: {e}"
+      ))
+    })?;
+  }
+
+  Ok(())
+}
+
 /// ConstantImage[val, {w, h}] - Create a constant image
 /// val can be a number (grayscale) or a color (Red, RGBColor[r,g,b], etc.)
 pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

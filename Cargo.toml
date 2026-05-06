@@ -88,7 +88,7 @@ rust_xlsxwriter = { version = "0.94", default-features = false }
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }
 proptest = "1"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }
 
 [profile.release]
 codegen-units = 1

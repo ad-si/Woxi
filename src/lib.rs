@@ -1948,9 +1948,18 @@ fn render_treeform_if_needed(expr: syntax::Expr) -> syntax::Expr {
 fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
-      if (name == "Graphics" || name == "Graphics3D") && !args.is_empty() =>
+      if name == "Graphics" && !args.is_empty() =>
     {
       if let Ok(rendered) = functions::graphics::graphics_ast(args) {
+        rendered
+      } else {
+        expr
+      }
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Graphics3D" && !args.is_empty() =>
+    {
+      if let Ok(rendered) = functions::plot3d::graphics3d_ast(args) {
         rendered
       } else {
         expr

@@ -52,7 +52,7 @@ pub fn dispatch_plotting(
     "Plot3D" if args.len() >= 3 => {
       Some(quiet_plot(|| crate::functions::plot3d::plot3d_ast(args)))
     }
-    "ParametricPlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
+    "ParametricPlot3D" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::plot3d::parametric_plot3d_ast(args)
     })),
     "Graphics" if !args.is_empty() => {

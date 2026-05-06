@@ -973,6 +973,45 @@ mod plot3d {
       );
       std::fs::remove_file(path).ok();
     }
+
+    /// Regression: `Export["foo.gif", Table[graphics, …]]` must produce
+    /// a multi-frame animated GIF. Previously the list of graphics fell
+    /// through to the text rasterizer and produced a tiny single-frame
+    /// GIF (1504×15 px) of the textual list representation.
+    #[test]
+    fn export_animated_gif_from_graphics_list() {
+      let path = "/tmp/test_animated.gif";
+      let result = interpret(&format!(
+        "Export[\"{path}\", \
+         Table[Graphics[{{Disk[{{0, 0}}, r/10]}}, \
+                        PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}], \
+               {{r, 1, 5}}]]"
+      ));
+      assert!(result.is_ok(), "Export returned error: {result:?}");
+
+      let bytes = std::fs::read(path).unwrap();
+      // GIF magic: "GIF89a"
+      assert_eq!(&bytes[..6], b"GIF89a", "file at {path} is not a GIF");
+
+      // Decode and verify it's actually multi-frame.
+      let file = std::io::BufReader::new(std::fs::File::open(path).unwrap());
+      let decoder = ::image::codecs::gif::GifDecoder::new(file).unwrap();
+      use ::image::AnimationDecoder;
+      let frames: Vec<_> = decoder
+        .into_frames()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+      assert_eq!(frames.len(), 5, "expected 5 frames, got {}", frames.len());
+
+      // Sanity: dimensions are not the broken 1504×15 from the regression.
+      let (w, h) = frames[0].buffer().dimensions();
+      assert!(
+        w >= 100 && h >= 100,
+        "frame dimensions {w}×{h} look like the text-rasterizer regression"
+      );
+
+      std::fs::remove_file(path).ok();
+    }
   }
 
   mod region_plot3d {
@@ -1323,6 +1362,59 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         "Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]"
       ));
+    }
+  }
+
+  mod parametric_plot3d_curve {
+    use super::*;
+
+    /// 1-iterator form should sample the curve and render it as a polyline.
+    #[test]
+    fn curve_renders_polyline() {
+      let svg =
+        export_svg("ParametricPlot3D[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi}]");
+      assert!(
+        svg.contains("<polyline"),
+        "expected a <polyline> for the sampled curve, got: {}",
+        &svg[..200.min(svg.len())]
+      );
+    }
+
+    /// PlotStyle -> Red must propagate through Graphics3D so the curve
+    /// is drawn in red.
+    #[test]
+    fn curve_plotstyle_color() {
+      let svg = export_svg(
+        "ParametricPlot3D[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi}, \
+         PlotStyle -> Red]",
+      );
+      assert!(
+        svg.contains("stroke=\"rgb(255,0,0)\""),
+        "expected red stroke for PlotStyle -> Red"
+      );
+    }
+
+    /// Show[] must merge Graphics3D primitives with the line emitted
+    /// by ParametricPlot3D's curve form (regression test: previously
+    /// the ParametricPlot3D evaluation failed silently and the ring
+    /// was lost).
+    #[test]
+    fn show_merges_sphere_with_curve() {
+      let svg = export_svg(
+        "Show[Graphics3D[Sphere[], Boxed -> False], \
+         ParametricPlot3D[\
+           {Sin[95 Degree] Cos[t], Sin[95 Degree] Sin[t], Cos[95 Degree]}, \
+           {t, -20, 20}, \
+           PlotStyle -> Directive[{Thick, Red}]]]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "expected polyline from the parametric ring inside Show"
+      );
+      assert!(
+        svg.contains("rgb(255,0,0)"),
+        "expected the merged ring to keep its red PlotStyle"
+      );
     }
   }
 
@@ -6606,6 +6698,26 @@ mod manipulate {
       .unwrap(),
       "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> (d[t_] := 1/(2*-9.8*t^2) + 50)]"
     );
+  }
+
+  /// Regression: `Manipulate[..., Initialization :> {f[x_] := ...}]` must
+  /// register the helper definitions in the global symbol table so that
+  /// subsequent expressions in the same session can use them. Previously
+  /// the Initialization body was only evaluated inside the per-slider
+  /// Block scope (Studio path), leaving `f` undefined for follow-up
+  /// `Export[..., Table[f[a], …]]` cells.
+  #[test]
+  fn initialization_runs_at_evaluation_time() {
+    // First evaluate the Manipulate; then call the symbol it should have
+    // defined. If the second call still echoes `myhelper[3]` the
+    // initialization didn't run globally.
+    let result = interpret(
+      "Manipulate[myhelper[a], {a, 0, 10}, \
+       Initialization :> (myhelper[x_] := x^2 + 1)]; \
+       myhelper[3]",
+    )
+    .unwrap();
+    assert_eq!(result, "10");
   }
 
   #[test]
