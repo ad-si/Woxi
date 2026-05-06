@@ -1219,10 +1219,13 @@ pub fn dispatch_io_functions(
             }
           };
           match crate::close_stream(id) {
-            // Wolframscript's `Close[stream]` returns the underlying file
-            // name as a `String` (so `OpenRead[Close[stream]]` round-trips
-            // through a binary write/read cycle).
-            Some(name) => return Some(Ok(Expr::String(name))),
+            // Close[FileStream] returns the file path as a String;
+            // Close[StringToStream[…]] returns the symbol `String`.
+            Some((name, crate::StreamKind::StringStream(_))) => {
+              let _ = name;
+              return Some(Ok(Expr::Identifier("String".to_string())));
+            }
+            Some((name, _)) => return Some(Ok(Expr::String(name))),
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!("{} is not open.", stream_str));

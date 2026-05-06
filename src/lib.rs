@@ -312,9 +312,10 @@ pub fn register_stream(name: String, kind: StreamKind) -> usize {
   id
 }
 
-/// Close a stream by ID, returning the stream name if it was open
-pub fn close_stream(id: usize) -> Option<String> {
-  STREAM_REGISTRY.with(|reg| reg.borrow_mut().remove(&id).map(|s| s.name))
+/// Close a stream by ID, returning the stream name and kind if it was open
+pub fn close_stream(id: usize) -> Option<(String, StreamKind)> {
+  STREAM_REGISTRY
+    .with(|reg| reg.borrow_mut().remove(&id).map(|s| (s.name, s.kind)))
 }
 
 /// Check if a stream is open
