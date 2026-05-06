@@ -381,11 +381,11 @@ mod element_data_tests {
       interpret(r#"ElementData["Tc", "SpecificHeat"]"#).unwrap(),
       "Missing[NotAvailable]"
     );
-    // `IonizationEnergies` is now tabulated for Carbon (case 237).
+    // `IonizationEnergies` is now tabulated for Hydrogen and Carbon.
     // Use a still-unimplemented element/property combo for the
     // not-available assertion.
     assert_eq!(
-      interpret(r#"ElementData["Hydrogen", "IonizationEnergies"]"#).unwrap(),
+      interpret(r#"ElementData["Helium", "IonizationEnergies"]"#).unwrap(),
       "Missing[NotAvailable]"
     );
   }

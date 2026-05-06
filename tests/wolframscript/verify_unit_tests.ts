@@ -698,9 +698,13 @@ function main() {
     "ElementData[1, \"ElectronConfigurationString\"]",
     "ElementData[\"He\", \"ElectronConfigurationString\"]",
     "ElementData[\"Tc\", \"SpecificHeat\"]",
-    "ElementData[\"Tc\", \"SpecificHeat\"]; ElementData[\"Carbon\", \"IonizationEnergies\"]",
     // IonizationEnergies requires Quantity wrapping (same reason as above)
     "ElementData[\"Carbon\", \"IonizationEnergies\"]",
+    // Same: Wolfram has Helium IonizationEnergies data wrapped as Quantity[];
+    // Woxi only tabulates Hydrogen and Carbon, so Helium correctly returns
+    // Missing[NotAvailable]. The unit test exercises that "NotAvailable" path
+    // intentionally, so the wolframscript divergence is by design.
+    "ElementData[\"Helium\", \"IonizationEnergies\"]",
     // Properties list differs — Woxi exposes the subset it implements,
     // Wolfram exposes its full superset.
     "ElementData[\"Properties\"]",

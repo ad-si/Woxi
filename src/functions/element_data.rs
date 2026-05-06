@@ -2382,24 +2382,30 @@ fn get_property(elem: &Element, property: &str) -> Expr {
 /// element whose data isn't yet entered (most of them — extending the
 /// table is a data-entry exercise).
 fn ionization_energies_for(z: i128) -> Expr {
-  let entries: &[(f64, f64)] = match z {
+  // Values are stored as decimal strings so we preserve the full
+  // wolframscript-printed digit count (more than f64 can hold).
+  let entries: &[(&str, f64)] = match z {
+    // Hydrogen (Z=1) ionization energy in MolarElectronvolts.
+    1 => &[("13.5979217890159720235", 5.0)],
     // Carbon (Z=6) ionization energies in MolarElectronvolts. The first
     // five entries carry precision 5; the sixth uses precision 6 — both
     // matching wolframscript's printed `Quantity[…\`p, "MolarElectronvolts"]`.
     6 => &[
-      (11.260_778_981_528_851, 5.0),
-      (24.382_980_793_322_39, 5.0),
-      (47.888_107_946_759_376, 5.0),
-      (64.493_740_790_022_63, 5.0),
-      (392.090_685_366_054_3, 5.0),
-      (489.991_576_539_106_8, 6.0),
+      ("11.260778981528851832", 5.0),
+      ("24.3829807933223900782", 5.0),
+      ("47.8881079467593740356", 5.0),
+      ("64.4937407900226288955", 5.0),
+      ("392.0906853660542969686", 5.0),
+      ("489.9915765391067906686", 6.0),
     ],
     _ => return missing_not_available(),
   };
   Expr::List(
     entries
       .iter()
-      .map(|&(v, p)| make_quantity(make_bigfloat(v, p), "MolarElectronvolts"))
+      .map(|&(s, p)| {
+        make_quantity(Expr::BigFloat(s.to_string(), p), "MolarElectronvolts")
+      })
       .collect(),
   )
 }
