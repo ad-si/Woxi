@@ -1242,6 +1242,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               return_short_circuit = true;
               *val
             }
+            Ok(syntax::Expr::FunctionCall { ref name, ref args })
+              if name == "Return" && args.len() == 1 =>
+            {
+              return_short_circuit = true;
+              args[0].clone()
+            }
             Err(InterpreterError::Abort) => {
               return Ok("$Aborted".to_string());
             }
@@ -1329,6 +1335,18 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           render_graphics_list_if_needed(result_expr)
         } else {
           result_expr
+        };
+        // Top-level `Return[val]` (from Block/Module/While/For catching
+        // an internal Return) displays as the bare value `val`, matching
+        // wolframscript's REPL. The symbolic form is preserved when the
+        // Return wrapper is held (e.g. inside ToString[…, InputForm]).
+        let result_expr = match &result_expr {
+          syntax::Expr::FunctionCall { name, args }
+            if name == "Return" && args.len() == 1 =>
+          {
+            args[0].clone()
+          }
+          _ => result_expr,
         };
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);

@@ -97,8 +97,17 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prev.push((var_name.clone(), pv));
   }
 
-  // Evaluate the body expression (Return propagates through Module, not caught here)
-  let result = evaluate_expr_to_expr(body_expr);
+  // Evaluate body. Wolfram leaves Return[val] symbolic at Module's
+  // boundary — wrap any ReturnValue exception into a literal `Return[val]`
+  // so e.g. `Module[{}, Return[1]]` evaluates to `Return[1]`. The top-level
+  // display path in interpret() unwraps it back to `1` for the REPL.
+  let result = match evaluate_expr_to_expr(body_expr) {
+    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
+      name: "Return".to_string(),
+      args: vec![*val],
+    }),
+    other => other,
+  };
 
   // Handle Condition in body: evaluate test while locals are still in scope
   let result = match &result {
@@ -217,8 +226,17 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prev.push((var_name.clone(), pv));
   }
 
-  // Evaluate the body expression (Return propagates through Block, not caught here)
-  let result = evaluate_expr_to_expr(body_expr);
+  // Evaluate body. Block, like Module, wraps any escaping Return[val]
+  // into a literal `Return[val]` Expr so the symbolic value matches
+  // wolframscript: `Block[{}, Return[42]]` ⇒ `Return[42]`. The top-level
+  // display path unwraps it for the REPL.
+  let result = match evaluate_expr_to_expr(body_expr) {
+    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
+      name: "Return".to_string(),
+      args: vec![*val],
+    }),
+    other => other,
+  };
 
   // Handle Condition in body: evaluate test while locals are still in scope
   let result = match &result {
@@ -709,12 +727,21 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => break,
     }
 
-    // Evaluate the body (if provided)
+    // Evaluate the body (if provided). Return[val] inside the body
+    // exits the loop and yields the literal `Return[val]` symbolic
+    // expression — wolframscript renders it as `Return[val]` in
+    // InputForm; interpret()'s top-level display unwraps it.
     if let Some(body) = body {
       match evaluate_expr_to_expr(body) {
         Ok(_) => {}
         Err(InterpreterError::BreakSignal) => break,
         Err(InterpreterError::ContinueSignal) => {}
+        Err(InterpreterError::ReturnValue(val)) => {
+          return Ok(Expr::FunctionCall {
+            name: "Return".to_string(),
+            args: vec![*val],
+          });
+        }
         Err(e) => return Err(e),
       }
     }

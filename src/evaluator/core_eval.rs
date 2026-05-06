@@ -326,7 +326,18 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       'goto_loop: loop {
         for i in start_index..args.len() {
           match evaluate_expr_to_expr(&args[i]) {
-            Ok(val) => result = val,
+            Ok(val) => {
+              // A `Return[val]` produced by Block/Module/While/For
+              // short-circuits the remaining statements — matching
+              // wolframscript's CompoundExpression behavior.
+              if let Expr::FunctionCall { name: n, args: a } = &val
+                && n == "Return"
+                && a.len() == 1
+              {
+                return Ok(Some(val));
+              }
+              result = val;
+            }
             Err(InterpreterError::GotoSignal(tag)) => {
               if let Some(label_idx) = find_label_index(args, &tag) {
                 start_index = label_idx + 1;

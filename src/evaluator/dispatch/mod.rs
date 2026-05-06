@@ -930,6 +930,17 @@ pub fn evaluate_function_call_ast_inner(
             result => break result,
           }
         };
+        // Block/Module/While/For inside the body wrap an internal
+        // Return[val] as a literal `Return[val]` Expr; unwrap that here
+        // so user-defined functions still short-circuit to `val`,
+        // matching wolframscript's `f[] := Block[{}, Return[42]]; f[]`.
+        let result = match result {
+          Ok(Expr::FunctionCall {
+            name: ref n,
+            args: ref a,
+          }) if n == "Return" && a.len() == 1 => Ok(a[0].clone()),
+          other => other,
+        };
         // Pop option context
         if opt_bindings.is_some() {
           crate::OPTION_VALUE_CONTEXT.with(|ctx| {
@@ -1200,6 +1211,16 @@ pub fn evaluate_function_call_ast_inner(
             Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
             result => break result,
           }
+        };
+        // Unwrap a Block/Module/While/For-produced literal `Return[val]`
+        // when it surfaces as the body's result of a user-defined function,
+        // matching wolframscript: `f[] := Block[{}, Return[42]]; f[]` ⇒ 42.
+        let result = match result {
+          Ok(Expr::FunctionCall {
+            name: ref n,
+            args: ref a,
+          }) if n == "Return" && a.len() == 1 => Ok(a[0].clone()),
+          other => other,
         };
         // Pop option context
         if opt_bindings.is_some() {

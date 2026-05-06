@@ -310,6 +310,12 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
+            Err(InterpreterError::ReturnValue(val)) => {
+              return Ok(Expr::FunctionCall {
+                name: "Return".to_string(),
+                args: vec![*val],
+              });
+            }
             Err(e) => return Err(e),
           }
         }
