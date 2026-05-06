@@ -2519,10 +2519,8 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn coordinate_bounds_doc_example() {
     assert_eq!(
-      interpret(
-        "CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}]"
-      )
-      .unwrap(),
+      interpret("CoordinateBounds[{{0, 1}, {1, 2}, {2, 1}, {3, 2}, {4, 0}}]")
+        .unwrap(),
       "{{0, 4}, {0, 2}}"
     );
   }
@@ -2591,10 +2589,8 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn coordinate_bounds_3d_list_pad() {
     assert_eq!(
-      interpret(
-        "CoordinateBounds[{{1,2,3}, {4,5,6}, {0,3,9}}, {1, 2, 3}]"
-      )
-      .unwrap(),
+      interpret("CoordinateBounds[{{1,2,3}, {4,5,6}, {0,3,9}}, {1, 2, 3}]")
+        .unwrap(),
       "{{-1, 5}, {0, 7}, {0, 12}}"
     );
   }
