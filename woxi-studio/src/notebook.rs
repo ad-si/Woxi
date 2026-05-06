@@ -323,7 +323,7 @@ fn extract_rowbox_content(s: &str) -> String {
   for part in parts {
     let part = part.trim();
     if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
-      result.push_str(&unescape_string(&part[1..part.len() - 1]));
+      result.push_str(&unescape_code_string(&part[1..part.len() - 1]));
     } else if part.starts_with("RowBox[") {
       result.push_str(&extract_rowbox_content(
         &part[7..part.len().saturating_sub(1)],
@@ -336,6 +336,22 @@ fn extract_rowbox_content(s: &str) -> String {
     }
   }
   result
+}
+
+/// Map Wolfram named operator characters to their InputForm ASCII
+/// equivalents for display in code cells. The Wolfram FrontEnd encodes
+/// operators like `->` as `\[Rule]` (private-use U+F522), which has no
+/// glyph in normal fonts. Returning ASCII keeps the cell editable.
+fn named_char_to_code_op(name: &str) -> Option<&'static str> {
+  match name {
+    "Rule" => Some("->"),
+    "RuleDelayed" => Some(":>"),
+    "DirectedEdge" => Some("\\[DirectedEdge]"),
+    "UndirectedEdge" => Some("\\[UndirectedEdge]"),
+    "Distributed" => Some("\\[Distributed]"),
+    "Cross" => Some("\\[Cross]"),
+    _ => None,
+  }
 }
 
 /// Extract a plain string value, handling escaped quotes.
@@ -359,6 +375,16 @@ fn extract_string_content(s: &str) -> String {
 
 /// Unescape Wolfram-style string escapes.
 fn unescape_string(s: &str) -> String {
+  unescape_string_inner(s, false)
+}
+
+/// Unescape a string from a code cell (BoxData/RowBox), preferring
+/// ASCII operator forms (e.g. `\[Rule]` → `->`) for editability.
+fn unescape_code_string(s: &str) -> String {
+  unescape_string_inner(s, true)
+}
+
+fn unescape_string_inner(s: &str, code: bool) -> String {
   let mut result = String::with_capacity(s.len());
   let mut chars = s.chars();
   while let Some(c) = chars.next() {
@@ -383,6 +409,12 @@ fn unescape_string(s: &str) -> String {
               break;
             }
             name.push(ch);
+          }
+          if code {
+            if let Some(op) = named_char_to_code_op(&name) {
+              result.push_str(op);
+              continue;
+            }
           }
           match woxi::syntax::named_char_to_unicode(&name) {
             Some(uni) => result.push_str(uni),
@@ -1565,6 +1597,34 @@ Cell["Chapter 2", "Chapter"]
  RowBox[{"b", "=", "2"}]
 }]"#;
     assert_eq!(extract_cell_content(s), "a=1\nb=2");
+  }
+
+  #[test]
+  fn test_extract_cell_content_rule_operator() {
+    // \[Rule] inside BoxData/RowBox should render as ASCII `->` so the
+    // cell stays editable. The Wolfram private-use codepoint (U+F522)
+    // has no glyph in normal fonts and would appear blank.
+    let s = r#"BoxData[RowBox[{"ImageSize", "\[Rule]", "350"}]]"#;
+    assert_eq!(extract_cell_content(s), "ImageSize->350");
+  }
+
+  #[test]
+  fn test_extract_cell_content_rule_delayed_operator() {
+    let s = r#"BoxData[RowBox[{"x", "\[RuleDelayed]", "y"}]]"#;
+    assert_eq!(extract_cell_content(s), "x:>y");
+  }
+
+  #[test]
+  fn test_extract_cell_content_rule_with_nested_part() {
+    // Regression: from polfosol primeturn.nb — `ImageSize -> Part[…] 35`.
+    // Without the ASCII mapping the `\[Rule]` displayed as a missing
+    // glyph and the user saw `ImageSizePart` instead of `ImageSize->Part`.
+    let s = r#"BoxData[RowBox[{"ImageSize", "\[Rule]",
+       RowBox[{
+        RowBox[{"Part", "[",
+         RowBox[{"r", ",", "1", ",", "1"}], "]"}],
+        "35"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "ImageSize->Part[r,1,1]35");
   }
 
   #[test]
