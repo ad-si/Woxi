@@ -1905,8 +1905,8 @@ impl WoxiStudio {
           let label = label.trim();
           let label = if label.is_empty() {
             format!("(empty {})", editor.style)
-          } else if label.len() > 60 {
-            format!("{}…", &label[..59])
+          } else if label.chars().count() > 60 {
+            format!("{}…", label.chars().take(59).collect::<String>())
           } else {
             label.to_string()
           };

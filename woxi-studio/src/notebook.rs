@@ -286,7 +286,7 @@ fn is_cell_open_false(s: &str) -> bool {
 fn extract_cell_content(s: &str) -> String {
   let s = s.trim();
 
-  // Handle BoxData[RowBox[{...}]]  or BoxData["..."]
+  // Handle BoxData[RowBox[{...}]], BoxData["..."], or BoxData[{...}]
   if s.starts_with("BoxData[") {
     let inner = &s[8..];
     let inner = inner.strip_suffix(']').unwrap_or(inner);
@@ -298,6 +298,13 @@ fn extract_cell_content(s: &str) -> String {
     let inner = &s[7..];
     let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_rowbox_content(inner);
+  }
+
+  // Handle a bare list `{...}` (e.g. multi-statement Input cells written as
+  // `BoxData[{ RowBox[...], "\n", RowBox[...], ... }]`). The list's items
+  // follow the same conventions as a RowBox, so reuse that extractor.
+  if s.starts_with('{') && s.ends_with('}') {
+    return extract_rowbox_content(s);
   }
 
   // Handle quoted strings
@@ -368,7 +375,8 @@ fn unescape_string(s: &str) -> String {
           // \> is a Wolfram string delimiter in box expressions – skip
         }
         Some('[') => {
-          // Wolfram special character like \[Alpha]
+          // Wolfram named character like \[Alpha] / \[CloseCurlyQuote].
+          // Translate to Unicode when known; otherwise keep \[Name].
           let mut name = String::new();
           for ch in chars.by_ref() {
             if ch == ']' {
@@ -376,13 +384,14 @@ fn unescape_string(s: &str) -> String {
             }
             name.push(ch);
           }
-          // Keep as \[Name] for now
-          result.push_str(&format!("\\[{name}]"));
+          match woxi::syntax::named_char_to_unicode(&name) {
+            Some(uni) => result.push_str(uni),
+            None => result.push_str(&format!("\\[{name}]")),
+          }
         }
         Some('\n') => {
-          // \<newline> is a Wolfram line continuation – keep the
-          // newline but drop the backslash.
-          result.push('\n');
+          // `\` at end of line is a Wolfram line continuation: drop the
+          // backslash AND the newline, joining the lines into one.
         }
         Some(other) => {
           result.push('\\');
@@ -1526,13 +1535,49 @@ Cell["Chapter 2", "Chapter"]
 
   #[test]
   fn test_unescape_line_continuation() {
-    // \ at end of line is a Wolfram line continuation:
-    // the newline is kept but the backslash is dropped.
-    assert_eq!(unescape_string("hello\\\nworld"), "hello\nworld");
+    // `\` at end of line is a Wolfram line continuation: both the
+    // backslash and the newline are dropped, joining the lines.
+    assert_eq!(unescape_string("hello\\\nworld"), "helloworld");
     // Combined with \< and \>
+    assert_eq!(unescape_string("\\<\\\nSome text.\\\n\\>"), "Some text.");
+  }
+
+  #[test]
+  fn test_unescape_named_curly_quote() {
+    // \[CloseCurlyQuote] should render as the typographic apostrophe.
     assert_eq!(
-      unescape_string("\\<\\\nSome text.\\\n\\>"),
-      "\nSome text.\n"
+      unescape_string("doesn\\[CloseCurlyQuote]t"),
+      "doesn\u{2019}t"
+    );
+  }
+
+  #[test]
+  fn test_unescape_named_indenting_newline() {
+    // \[IndentingNewLine] should render as a real newline.
+    assert_eq!(unescape_string("a\\[IndentingNewLine]b"), "a\nb");
+  }
+
+  #[test]
+  fn test_extract_cell_content_boxdata_list() {
+    // Multi-statement Input cells use BoxData[{ RowBox, "\n", RowBox, ... }].
+    let s = r#"BoxData[{
+ RowBox[{"a", "=", "1"}], "\n",
+ RowBox[{"b", "=", "2"}]
+}]"#;
+    assert_eq!(extract_cell_content(s), "a=1\nb=2");
+  }
+
+  #[test]
+  fn test_extract_section_with_curly_quote() {
+    // Section cell from a real .nb file with \<…\> wrapping, line
+    // continuations, and \[CloseCurlyQuote] for the apostrophe.
+    let s = r#""\<\
+This code doesn\[CloseCurlyQuote]t work anymore due to changes in twitter\
+\[CloseCurlyQuote]s API\
+\>""#;
+    assert_eq!(
+      extract_cell_content(s),
+      "This code doesn\u{2019}t work anymore due to changes in twitter\u{2019}s API"
     );
   }
 
