@@ -4679,6 +4679,49 @@ mod join_non_list {
     // Different heads (Plus vs Times) can't be joined — wolframscript emits
     // Join::heads and returns the original call unchanged.
     assert_eq!(interpret("Join[a + b, c * d]").unwrap(), "Join[a + b, c*d]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Join::heads: Heads Plus and Times at positions 1 and 2 are expected to be the same."
+      )),
+      "expected Join::heads message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn join_heads_position_reported() {
+    // Mismatched head at the third argument should be reported as
+    // "positions 1 and 3", matching wolframscript.
+    assert_eq!(
+      interpret("Join[a + b, c + d, e * f]").unwrap(),
+      "Join[a + b, c + d, e*f]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Join::heads: Heads Plus and Times at positions 1 and 3 are expected to be the same."
+      )),
+      "expected position 3 in Join::heads message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn join_list_vs_plus_emits_heads() {
+    // Joining a Plus with a List must report the symbolic heads.
+    assert_eq!(
+      interpret("Join[a + b, {1, 2}]").unwrap(),
+      "Join[a + b, {1, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Join::heads: Heads Plus and List at positions 1 and 2 are expected to be the same."
+      )),
+      "expected Plus/List heads message, got {:?}",
+      msgs
+    );
   }
 
   #[test]

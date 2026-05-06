@@ -1545,14 +1545,32 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  let head_label_first = head.unwrap_or("List");
+
   let mut result = Vec::new();
-  for list in lists {
+  for (i, list) in lists.iter().enumerate() {
     match (list, head) {
       (Expr::List(items), None) => result.extend(items.iter().cloned()),
       (Expr::FunctionCall { name, args }, Some(h)) if name == h => {
         result.extend(args.iter().cloned());
       }
       _ => {
+        // Emit Join::heads error if the mismatched argument has an
+        // explicit head (List or FunctionCall). Bare symbols/atoms don't
+        // trigger the error in wolframscript.
+        let other_head: Option<&str> = match list {
+          Expr::List(_) => Some("List"),
+          Expr::FunctionCall { name, .. } => Some(name.as_str()),
+          _ => None,
+        };
+        if let Some(other) = other_head {
+          crate::emit_message(&format!(
+            "Join::heads: Heads {} and {} at positions 1 and {} are expected to be the same.",
+            head_label_first,
+            other,
+            i + 1,
+          ));
+        }
         return Ok(Expr::FunctionCall {
           name: "Join".to_string(),
           args: lists.to_vec(),
