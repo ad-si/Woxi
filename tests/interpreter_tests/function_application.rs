@@ -964,3 +964,41 @@ mod sub_value_assignments {
     assert_eq!(interpret("freshSubB[a][b][c] := whatever").unwrap(), "\0");
   }
 }
+
+mod dynamic_head_apply {
+  use super::*;
+
+  // Regression: `If[cond, A, B] @ x` must evaluate the head before
+  // applying it, so the result is `B[x]` (or `A[x]`), not the 4-arg form
+  // `If[cond, A, B, x]` which would silently drop x. Same for `// f`.
+  // Surfaced via primeTurn[80] in the Spiral of Prime Numbers notebook,
+  // where `If[dot, AbsolutePointSize, AbsoluteThickness]@Large` lost
+  // its argument and the blue line never rendered.
+
+  #[test]
+  fn prefix_apply_with_if_head() {
+    assert_eq!(
+      interpret(
+        "FullForm[If[False, AbsolutePointSize, AbsoluteThickness]@Large]"
+      )
+      .unwrap(),
+      "FullForm[AbsoluteThickness[Large]]"
+    );
+  }
+
+  #[test]
+  fn prefix_apply_with_if_head_true_branch() {
+    assert_eq!(
+      interpret("FullForm[If[True, Point, Line]@{{1, 2}, {3, 4}}]").unwrap(),
+      "FullForm[Point[{{1, 2}, {3, 4}}]]"
+    );
+  }
+
+  #[test]
+  fn postfix_with_if_head() {
+    assert_eq!(
+      interpret("FullForm[{1, 2, 3} // If[False, Reverse, Length]]").unwrap(),
+      "FullForm[3]"
+    );
+  }
+}

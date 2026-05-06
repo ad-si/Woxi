@@ -2441,9 +2441,18 @@ pub fn evaluate_expr_to_expr_inner(
       apply_map_apply_ast(func, &evaluated_list)
     }
     Expr::PrefixApply { func, arg } => {
-      // f @ x is equivalent to f[x]
+      // f @ x is equivalent to f[x]. Per Wolfram semantics the head is
+      // evaluated first, so a dynamic head like `If[cond, A, B]@x` reduces
+      // to `B[x]` rather than being treated as a curried call
+      // `If[cond, A, B, x]`.
       let evaluated_arg = evaluate_expr_to_expr(arg)?;
-      apply_function_to_arg(func, &evaluated_arg)
+      let evaluated_func = if matches!(func.as_ref(), Expr::FunctionCall { .. })
+      {
+        evaluate_expr_to_expr(func)?
+      } else {
+        (**func).clone()
+      };
+      apply_function_to_arg(&evaluated_func, &evaluated_arg)
     }
     Expr::Postfix { expr: e, func } => {
       // `expr // f` is `f[expr]`. If `f` is a head with HoldAll/
@@ -2486,7 +2495,16 @@ pub fn evaluate_expr_to_expr_inner(
         });
       }
       let evaluated_expr = evaluate_expr_to_expr(e)?;
-      apply_postfix_ast(&evaluated_expr, func)
+      // `expr // f` is `f[expr]`. Like PrefixApply, the head must be
+      // evaluated first so a dynamic head like `expr // If[cond, A, B]`
+      // reduces before application.
+      let evaluated_func = if matches!(func.as_ref(), Expr::FunctionCall { .. })
+      {
+        evaluate_expr_to_expr(func)?
+      } else {
+        (**func).clone()
+      };
+      apply_postfix_ast(&evaluated_expr, &evaluated_func)
     }
     Expr::Part { expr: e, index } => {
       // Track Part nesting depth for Part::partd warnings
