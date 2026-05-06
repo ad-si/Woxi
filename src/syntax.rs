@@ -8966,6 +8966,19 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         expr_to_input_form(&args[1])
       )
     }
+    // `Out[-k]` for k > 0 renders as `%` shorthand (`%`, `%%`, `%%%`, …)
+    // when held; matches expr_to_string/format_expr behavior.
+    Expr::FunctionCall { name, args }
+      if name == "Out"
+        && args.len() == 1
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        let count = (-*n) as usize;
+        return "%".repeat(count);
+      }
+      unreachable!()
+    }
     Expr::FunctionCall { name, args }
       if name == "SetDelayed" && args.len() == 2 =>
     {
