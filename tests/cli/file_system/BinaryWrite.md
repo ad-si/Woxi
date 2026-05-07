@@ -1,0 +1,3 @@
+# `BinaryWrite`
+
+Write binary data.

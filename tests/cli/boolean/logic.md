@@ -27,3 +27,5 @@ Boolean combinators and the `If` conditional.
 - [`VectorLess`](logic/VectorLess.md)
 - [`VectorLessEqual`](logic/VectorLessEqual.md)
 - [`Xnor`](logic/Xnor.md)
+- [`Equivalent`](logic/Equivalent.md)
+- [`True`](logic/True.md)

@@ -29,3 +29,8 @@ False
 - [`GreaterEqual`](comparison/GreaterEqual.md)
 - [`Less`](comparison/Less.md)
 - [`LessEqual`](comparison/LessEqual.md)
+
+## Additional Functions
+
+- [`Inequality`](comparison/Inequality.md)
+- [`NotEqual`](comparison/NotEqual.md)

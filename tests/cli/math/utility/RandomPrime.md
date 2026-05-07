@@ -1,0 +1,3 @@
+# `RandomPrime`
+
+Random prime number.

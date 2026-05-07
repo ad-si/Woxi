@@ -15,3 +15,7 @@ Union, intersection, containment, and related relational queries.
 - [`Subsequences`](sets/Subsequences.md)
 - [`Subsets`](sets/Subsets.md)
 - [`Union`](sets/Union.md)
+
+## Additional Functions
+
+- [`SymmetricDifference`](sets/SymmetricDifference.md)

@@ -1,0 +1,3 @@
+# `ColorDistance`
+
+Distance between colors.

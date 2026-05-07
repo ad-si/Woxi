@@ -1,0 +1,3 @@
+# `Undefined`
+
+Undefined mathematical result.

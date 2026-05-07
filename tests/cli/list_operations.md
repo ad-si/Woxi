@@ -53,3 +53,7 @@ functions. The material has been split into topical sub-pages:
 - [`TensorProduct`](list_operations/TensorProduct.md)
 - [`TensorRank`](list_operations/TensorRank.md)
 - [`FoldWhileList`](list_operations/FoldWhileList.md)
+- [`CountBy`](list_operations/CountBy.md)
+- [`Heads`](list_operations/Heads.md)
+- [`List`](list_operations/List.md)
+- [`Nearest`](list_operations/Nearest.md)

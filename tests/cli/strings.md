@@ -14,3 +14,6 @@ The documentation is split into four topical pages:
 
 - [`ByteArrayToString`](strings/ByteArrayToString.md)
 - [`Compress`](strings/Compress.md)
+- [`Character`](strings/Character.md)
+- [`StringExpression`](strings/StringExpression.md)
+- [`Word`](strings/Word.md)

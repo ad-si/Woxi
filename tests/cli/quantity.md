@@ -220,3 +220,5 @@ Quantity[0.008680555555555556, Kilometers/Seconds^2]
 - [`QuantityMagnitude`](quantity/QuantityMagnitude.md)
 - [`QuantityQ`](quantity/QuantityQ.md)
 - [`QuantityUnit`](quantity/QuantityUnit.md)
+- [`KnownUnitQ`](quantity/KnownUnitQ.md)
+- [`UnitConvert`](quantity/UnitConvert.md)

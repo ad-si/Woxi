@@ -76,3 +76,9 @@
 - [`Which`](functions/Which.md)
 - [`While`](functions/While.md)
 - [`With`](functions/With.md)
+
+## Additional Functions
+
+- [`BinomialDistribution`](functions/BinomialDistribution.md)
+- [`TimeConstrained`](functions/TimeConstrained.md)
+- [`TimeRemaining`](functions/TimeRemaining.md)

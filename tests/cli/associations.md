@@ -70,3 +70,6 @@ $ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Puce"]] = 3.5; myHash'
 - [`KeyUnion`](associations/KeyUnion.md)
 - [`KeySortBy`](associations/KeySortBy.md)
 - [`JoinAcross`](associations/JoinAcross.md)
+- [`Dataset`](associations/Dataset.md)
+- [`Tabular`](associations/Tabular.md)
+- [`ToTabular`](associations/ToTabular.md)

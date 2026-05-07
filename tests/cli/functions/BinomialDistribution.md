@@ -1,0 +1,3 @@
+# `BinomialDistribution`
+
+Binomial probability distribution.

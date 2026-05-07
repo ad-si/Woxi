@@ -47,3 +47,6 @@ Prime numbers, integer decompositions, and combinatorial sequences.
 - [`PowerModList`](number_theory/PowerModList.md)
 - [`PrimeNu`](number_theory/PrimeNu.md)
 - [`PrimeOmega`](number_theory/PrimeOmega.md)
+- [`NumberDigit`](number_theory/NumberDigit.md)
+- [`StirlingS1`](number_theory/StirlingS1.md)
+- [`StirlingS2`](number_theory/StirlingS2.md)

@@ -52,3 +52,6 @@ Trigonometric, hyperbolic, exponential, and logarithmic functions.
 - [`Tan`](elementary/Tan.md)
 - [`TanDegrees`](elementary/TanDegrees.md)
 - [`Tanh`](elementary/Tanh.md)
+- [`ArcCsc`](elementary/ArcCsc.md)
+- [`ArcCsch`](elementary/ArcCsch.md)
+- [`ArcSec`](elementary/ArcSec.md)

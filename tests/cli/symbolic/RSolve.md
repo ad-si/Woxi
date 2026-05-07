@@ -1,0 +1,3 @@
+# `RSolve`
+
+Solve recurrence equations.

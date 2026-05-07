@@ -18,3 +18,8 @@ Pattern matching, substring search, case-folded predicates, and distance metrics
 - [`UpperCaseQ`](matching/UpperCaseQ.md)
 - [`DictionaryWordQ`](matching/DictionaryWordQ.md)
 - [`SyntaxQ`](matching/SyntaxQ.md)
+
+## Additional Functions
+
+- [`DamerauLevenshteinDistance`](matching/DamerauLevenshteinDistance.md)
+- [`RegularExpression`](matching/RegularExpression.md)
