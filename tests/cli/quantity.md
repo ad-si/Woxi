@@ -210,3 +210,13 @@ Same-dimension units are simplified during arithmetic:
 $ wo 'Quantity[100, "Kilometers"/"Hours"] / Quantity[3.2, "Seconds"]'
 Quantity[0.008680555555555556, Kilometers/Seconds^2]
 ```
+
+
+
+# Additional Functions
+
+- [`CompatibleUnitQ`](quantity/CompatibleUnitQ.md)
+- [`Quantity`](quantity/Quantity.md)
+- [`QuantityMagnitude`](quantity/QuantityMagnitude.md)
+- [`QuantityQ`](quantity/QuantityQ.md)
+- [`QuantityUnit`](quantity/QuantityUnit.md)

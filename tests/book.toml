@@ -15,5 +15,9 @@ additional-css = ["cli/custom.css"]
 git-repository-url = "https://github.com/ad-si/Woxi"
 edit-url-template = "https://github.com/ad-si/Woxi/edit/main/tests/{path}"
 
+[output.html.fold]
+enable = true
+level = 2
+
 [output.html.print]
 enable = false

@@ -2,166 +2,53 @@
 
 Trigonometric, hyperbolic, exponential, and logarithmic functions.
 
-## `Sin`
+- [`Sin`](elementary/Sin.md)
+- [`Log`](elementary/Log.md)
+- [`Log2`](elementary/Log2.md)
+- [`Log10`](elementary/Log10.md)
+- [`Exp`](elementary/Exp.md)
 
-Returns the sine of an angle in radians.
+## Additional Functions
 
-```scrut
-$ wo 'Sin[Pi/2]'
-1
-```
-
-
-
-## `Log`
-
-Natural logarithm — `Log[b, x]` gives the logarithm of `x` in base `b`.
-
-```scrut
-$ wo 'Log[E]'
-1
-```
-
-```scrut
-$ wo 'Log[10, 100]'
-2
-```
-
-
-## `Log2`
-
-Logarithm base 2.
-
-```scrut
-$ wo 'Log2[8]'
-3
-```
-
-
-## `Log10`
-
-Logarithm base 10.
-
-```scrut
-$ wo 'Log10[1000]'
-3
-```
-
-
-## `Exp`
-
-The exponential function — `Exp[x] == E^x`.
-
-```scrut
-$ wo 'Exp[0]'
-1
-```
-
-```scrut
-$ wo 'N[Exp[1]]'
-2.718281828459045
-```
-
-
-## `Cos` / `Tan` / `Cot` / `Sec` / `Csc`
-
-The six trigonometric functions.
-See [`Sin`](#sin) for related examples.
-
-```scrut
-$ wo 'Cos[0]'
-1
-```
-
-```scrut
-$ wo 'Tan[0]'
-0
-```
-
-```scrut
-$ wo 'Cot[Pi/4]'
-1
-```
-
-```scrut
-$ wo 'Sec[0]'
-1
-```
-
-```scrut
-$ wo 'Csc[Pi/2]'
-1
-```
-
-
-## `Sinh` / `Cosh` / `Tanh`
-
-Hyperbolic sine, cosine, and tangent.
-
-```scrut
-$ wo 'Sinh[0]'
-0
-```
-
-```scrut
-$ wo 'Cosh[0]'
-1
-```
-
-```scrut
-$ wo 'Tanh[0]'
-0
-```
-
-
-## `ArcSin` / `ArcCos` / `ArcTan`
-
-Inverse trigonometric functions.
-`ArcTan[y, x]` gives the two-argument arctangent.
-
-```scrut
-$ wo 'ArcSin[0]'
-0
-```
-
-```scrut
-$ wo 'ArcSin[1]'
-Pi/2
-```
-
-```scrut
-$ wo 'ArcCos[1]'
-0
-```
-
-```scrut
-$ wo 'ArcTan[1]'
-Pi/4
-```
-
-```scrut
-$ wo 'ArcTan[1, 1]'
-Pi/4
-```
-
-
-## `ArcSinh` / `ArcCosh` / `ArcTanh`
-
-Inverse hyperbolic functions.
-
-```scrut
-$ wo 'ArcSinh[0]'
-0
-```
-
-```scrut
-$ wo 'ArcCosh[1]'
-0
-```
-
-```scrut
-$ wo 'ArcTanh[0]'
-0
-```
-
-
+- [`ArcCos`](elementary/ArcCos.md)
+- [`ArcCosDegrees`](elementary/ArcCosDegrees.md)
+- [`ArcCosh`](elementary/ArcCosh.md)
+- [`ArcCot`](elementary/ArcCot.md)
+- [`ArcCotDegrees`](elementary/ArcCotDegrees.md)
+- [`ArcCoth`](elementary/ArcCoth.md)
+- [`ArcCscDegrees`](elementary/ArcCscDegrees.md)
+- [`ArcSecDegrees`](elementary/ArcSecDegrees.md)
+- [`ArcSech`](elementary/ArcSech.md)
+- [`ArcSin`](elementary/ArcSin.md)
+- [`ArcSinh`](elementary/ArcSinh.md)
+- [`ArcTan`](elementary/ArcTan.md)
+- [`ArcTanDegrees`](elementary/ArcTanDegrees.md)
+- [`ArcTanh`](elementary/ArcTanh.md)
+- [`ComplexExpand`](elementary/ComplexExpand.md)
+- [`ConditionalExpression`](elementary/ConditionalExpression.md)
+- [`Cos`](elementary/Cos.md)
+- [`CosDegrees`](elementary/CosDegrees.md)
+- [`Cosh`](elementary/Cosh.md)
+- [`CoshIntegral`](elementary/CoshIntegral.md)
+- [`CosineDistance`](elementary/CosineDistance.md)
+- [`Cot`](elementary/Cot.md)
+- [`CotDegrees`](elementary/CotDegrees.md)
+- [`Coth`](elementary/Coth.md)
+- [`Csc`](elementary/Csc.md)
+- [`CscDegrees`](elementary/CscDegrees.md)
+- [`Csch`](elementary/Csch.md)
+- [`ExponentialMovingAverage`](elementary/ExponentialMovingAverage.md)
+- [`FactorialPower`](elementary/FactorialPower.md)
+- [`Haversine`](elementary/Haversine.md)
+- [`InverseHaversine`](elementary/InverseHaversine.md)
+- [`MantissaExponent`](elementary/MantissaExponent.md)
+- [`PowerExpand`](elementary/PowerExpand.md)
+- [`PowersRepresentations`](elementary/PowersRepresentations.md)
+- [`ProductLog`](elementary/ProductLog.md)
+- [`Sec`](elementary/Sec.md)
+- [`SecDegrees`](elementary/SecDegrees.md)
+- [`Sech`](elementary/Sech.md)
+- [`Sinh`](elementary/Sinh.md)
+- [`Tan`](elementary/Tan.md)
+- [`TanDegrees`](elementary/TanDegrees.md)
+- [`Tanh`](elementary/Tanh.md)

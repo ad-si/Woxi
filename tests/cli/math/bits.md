@@ -1,62 +1,15 @@
 # Bit Operations
 
-## `BitAnd`
+- [`BitAnd`](bits/BitAnd.md)
+- [`BitOr`](bits/BitOr.md)
+- [`BitXor`](bits/BitXor.md)
+- [`BitNot`](bits/BitNot.md)
+- [`BitShiftLeft`](bits/BitShiftLeft.md)
+- [`BitShiftRight`](bits/BitShiftRight.md)
 
-Bitwise AND.
+## Additional Functions
 
-```scrut
-$ wo 'BitAnd[12, 10]'
-8
-```
-
-
-## `BitOr`
-
-Bitwise OR.
-
-```scrut
-$ wo 'BitOr[12, 10]'
-14
-```
-
-
-## `BitXor`
-
-Bitwise XOR.
-
-```scrut
-$ wo 'BitXor[12, 10]'
-6
-```
-
-
-## `BitNot`
-
-Bitwise NOT — `BitNot[x] == -x - 1` for integers.
-
-```scrut
-$ wo 'BitNot[5]'
--6
-```
-
-
-## `BitShiftLeft`
-
-Shift an integer left by `n` bits.
-
-```scrut
-$ wo 'BitShiftLeft[1, 4]'
-16
-```
-
-
-## `BitShiftRight`
-
-Shift an integer right by `n` bits (arithmetic shift).
-
-```scrut
-$ wo 'BitShiftRight[16, 2]'
-4
-```
-
-
+- [`BitClear`](bits/BitClear.md)
+- [`BitFlip`](bits/BitFlip.md)
+- [`BitLength`](bits/BitLength.md)
+- [`BitSet`](bits/BitSet.md)

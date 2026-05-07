@@ -3,153 +3,81 @@
 Matrix and vector operations. Sub-heading levels are
 normalised to `##` in this file.
 
-## `Dot`
+- [`Dot`](linear_algebra/Dot.md)
+- [`Det`](linear_algebra/Det.md)
+- [`Inverse`](linear_algebra/Inverse.md)
+- [`Tr`](linear_algebra/Tr.md)
+- [`IdentityMatrix`](linear_algebra/IdentityMatrix.md)
+- [`DiagonalMatrix`](linear_algebra/DiagonalMatrix.md)
+- [`Cross`](linear_algebra/Cross.md)
+- [`Norm`](linear_algebra/Norm.md)
+- [`Eigenvalues`](linear_algebra/Eigenvalues.md)
+- [`Eigenvectors`](linear_algebra/Eigenvectors.md)
+- [`CharacteristicPolynomial`](linear_algebra/CharacteristicPolynomial.md)
+- [`MatrixRank`](linear_algebra/MatrixRank.md)
+- [`MatrixPower`](linear_algebra/MatrixPower.md)
+- [`RowReduce`](linear_algebra/RowReduce.md)
+- [`LinearSolve`](linear_algebra/LinearSolve.md)
+- [`Adjugate`](linear_algebra/Adjugate.md)
 
-```scrut
-$ wo 'Dot[{1, 2, 3}, {4, 5, 6}]'
-32
-```
+## Additional Functions
 
-```scrut
-$ wo 'Dot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}]'
-{{19, 22}, {43, 50}}
-```
-
-## `Det`
-
-```scrut
-$ wo 'Det[{{1, 2}, {3, 4}}]'
--2
-```
-
-## `Inverse`
-
-```scrut
-$ wo 'Inverse[{{1, 2}, {3, 4}}]'
-{{-2, 1}, {3/2, -1/2}}
-```
-
-## `Tr`
-
-```scrut
-$ wo 'Tr[{{1, 2}, {3, 4}}]'
-5
-```
-
-## `IdentityMatrix`
-
-```scrut
-$ wo 'IdentityMatrix[3]'
-{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}
-```
-
-## `DiagonalMatrix`
-
-```scrut
-$ wo 'DiagonalMatrix[{1, 2, 3}]'
-{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}
-```
-
-## `Cross`
-
-```scrut
-$ wo 'Cross[{1, 2, 3}, {4, 5, 6}]'
-{-3, 6, -3}
-```
-
-
-## `Norm`
-
-Vector or matrix norm (Euclidean by default).
-
-```scrut
-$ wo 'Norm[{3, 4}]'
-5
-```
-
-```scrut
-$ wo 'Norm[{1, 2, 2}]'
-3
-```
-
-
-## `Eigenvalues`
-
-Eigenvalues of a square matrix.
-
-```scrut
-$ wo 'Eigenvalues[{{1, 0}, {0, 2}}]'
-{2, 1}
-```
-
-
-## `Eigenvectors`
-
-Eigenvectors of a square matrix.
-
-```scrut
-$ wo 'Eigenvectors[{{2, 0}, {0, 3}}]'
-{{0, 1}, {1, 0}}
-```
-
-
-## `CharacteristicPolynomial`
-
-Characteristic polynomial of a square matrix in a given variable.
-
-```scrut
-$ wo 'CharacteristicPolynomial[{{1, 2}, {3, 4}}, x]'
--2 - 5*x + x^2
-```
-
-
-## `MatrixRank`
-
-Rank of a matrix.
-
-```scrut
-$ wo 'MatrixRank[{{1, 2}, {2, 4}}]'
-1
-```
-
-
-## `MatrixPower`
-
-Integer power of a square matrix.
-
-```scrut
-$ wo 'MatrixPower[{{1, 1}, {0, 1}}, 3]'
-{{1, 3}, {0, 1}}
-```
-
-
-## `RowReduce`
-
-Gauss–Jordan reduced row-echelon form.
-
-```scrut
-$ wo 'RowReduce[{{1, 2}, {3, 4}}]'
-{{1, 0}, {0, 1}}
-```
-
-
-## `LinearSolve`
-
-Solves the linear system `m . x == b`.
-
-```scrut
-$ wo 'LinearSolve[{{1, 2}, {3, 4}}, {5, 11}]'
-{1, 2}
-```
-
-
-## `Adjugate`
-
-Adjugate (classical adjoint) matrix.
-
-```scrut
-$ wo 'Adjugate[{{1, 2}, {3, 4}}]'
-{{4, -2}, {-3, 1}}
-```
-
-
+- [`AntisymmetricMatrixQ`](linear_algebra/AntisymmetricMatrixQ.md)
+- [`BoxMatrix`](linear_algebra/BoxMatrix.md)
+- [`CellularAutomaton`](linear_algebra/CellularAutomaton.md)
+- [`ConjugateTranspose`](linear_algebra/ConjugateTranspose.md)
+- [`Coordinates`](linear_algebra/Coordinates.md)
+- [`CoordinatesFromCartesian`](linear_algebra/CoordinatesFromCartesian.md)
+- [`CoordinatesToCartesian`](linear_algebra/CoordinatesToCartesian.md)
+- [`CrossMatrix`](linear_algebra/CrossMatrix.md)
+- [`CrossProduct`](linear_algebra/CrossProduct.md)
+- [`DesignMatrix`](linear_algebra/DesignMatrix.md)
+- [`DiagonalMatrixQ`](linear_algebra/DiagonalMatrixQ.md)
+- [`DiagonalizableMatrixQ`](linear_algebra/DiagonalizableMatrixQ.md)
+- [`DiamondMatrix`](linear_algebra/DiamondMatrix.md)
+- [`DiskMatrix`](linear_algebra/DiskMatrix.md)
+- [`DotProduct`](linear_algebra/DotProduct.md)
+- [`Eigensystem`](linear_algebra/Eigensystem.md)
+- [`FindIntegerNullVector`](linear_algebra/FindIntegerNullVector.md)
+- [`Fit`](linear_algebra/Fit.md)
+- [`FourierMatrix`](linear_algebra/FourierMatrix.md)
+- [`HadamardMatrix`](linear_algebra/HadamardMatrix.md)
+- [`HankelMatrix`](linear_algebra/HankelMatrix.md)
+- [`HermitianMatrixQ`](linear_algebra/HermitianMatrixQ.md)
+- [`HilbertMatrix`](linear_algebra/HilbertMatrix.md)
+- [`KroneckerProduct`](linear_algebra/KroneckerProduct.md)
+- [`LUDecomposition`](linear_algebra/LUDecomposition.md)
+- [`LatticeReduce`](linear_algebra/LatticeReduce.md)
+- [`LeastSquares`](linear_algebra/LeastSquares.md)
+- [`LeviCivitaTensor`](linear_algebra/LeviCivitaTensor.md)
+- [`LowerTriangularMatrixQ`](linear_algebra/LowerTriangularMatrixQ.md)
+- [`LowerTriangularize`](linear_algebra/LowerTriangularize.md)
+- [`Minors`](linear_algebra/Minors.md)
+- [`NegativeDefiniteMatrixQ`](linear_algebra/NegativeDefiniteMatrixQ.md)
+- [`NegativeSemidefiniteMatrixQ`](linear_algebra/NegativeSemidefiniteMatrixQ.md)
+- [`NormalMatrixQ`](linear_algebra/NormalMatrixQ.md)
+- [`NullSpace`](linear_algebra/NullSpace.md)
+- [`PositiveDefiniteMatrixQ`](linear_algebra/PositiveDefiniteMatrixQ.md)
+- [`PositiveSemidefiniteMatrixQ`](linear_algebra/PositiveSemidefiniteMatrixQ.md)
+- [`PrincipalComponents`](linear_algebra/PrincipalComponents.md)
+- [`Projection`](linear_algebra/Projection.md)
+- [`PseudoInverse`](linear_algebra/PseudoInverse.md)
+- [`QRDecomposition`](linear_algebra/QRDecomposition.md)
+- [`ReflectionMatrix`](linear_algebra/ReflectionMatrix.md)
+- [`RotationMatrix`](linear_algebra/RotationMatrix.md)
+- [`RotationTransform`](linear_algebra/RotationTransform.md)
+- [`ScalarTripleProduct`](linear_algebra/ScalarTripleProduct.md)
+- [`ScalingMatrix`](linear_algebra/ScalingMatrix.md)
+- [`ScalingTransform`](linear_algebra/ScalingTransform.md)
+- [`SetCoordinates`](linear_algebra/SetCoordinates.md)
+- [`SmithDecomposition`](linear_algebra/SmithDecomposition.md)
+- [`SymmetricMatrixQ`](linear_algebra/SymmetricMatrixQ.md)
+- [`Symmetrize`](linear_algebra/Symmetrize.md)
+- [`ToeplitzMatrix`](linear_algebra/ToeplitzMatrix.md)
+- [`TranslationTransform`](linear_algebra/TranslationTransform.md)
+- [`TuringMachine`](linear_algebra/TuringMachine.md)
+- [`UnitVector`](linear_algebra/UnitVector.md)
+- [`UnitaryMatrixQ`](linear_algebra/UnitaryMatrixQ.md)
+- [`UpperTriangularMatrixQ`](linear_algebra/UpperTriangularMatrixQ.md)
+- [`UpperTriangularize`](linear_algebra/UpperTriangularize.md)
+- [`VectorAngle`](linear_algebra/VectorAngle.md)

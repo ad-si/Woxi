@@ -2,168 +2,117 @@
 
 Gamma, Beta, Zeta, Bessel, orthogonal polynomials, and elliptic integrals.
 
-## `Gamma`
+- [`Gamma`](special/Gamma.md)
+- [`LogGamma`](special/LogGamma.md)
+- [`Zeta`](special/Zeta.md)
+- [`PolyLog`](special/PolyLog.md)
+- [`Erf`](special/Erf.md)
+- [`Erfc`](special/Erfc.md)
+- [`BesselJ`](special/BesselJ.md)
+- [`BesselI`](special/BesselI.md)
+- [`LegendreP`](special/LegendreP.md)
+- [`ChebyshevT`](special/ChebyshevT.md)
+- [`HermiteH`](special/HermiteH.md)
+- [`LaguerreL`](special/LaguerreL.md)
+- [`EllipticK`](special/EllipticK.md)
+- [`EllipticE`](special/EllipticE.md)
 
-Gamma function. For positive integers, Gamma[n] = (n-1)!.
+## Additional Functions
 
-```scrut
-$ wo 'Gamma[1]'
-1
-```
-
-```scrut
-$ wo 'Gamma[5]'
-24
-```
-
-```scrut
-$ wo 'Gamma[6]'
-120
-```
-
-```scrut
-$ wo 'Gamma[0]'
-ComplexInfinity
-```
-
-```scrut
-$ wo 'Gamma[-1]'
-ComplexInfinity
-```
-
-```scrut
-$ wo 'Gamma[x]'
-Gamma[x]
-```
-
-
-## `LogGamma`
-
-Natural logarithm of `Gamma`.
-
-```scrut
-$ wo 'LogGamma[5]'
-Log[24]
-```
-
-
-## `Zeta`
-
-Riemann zeta function.
-
-```scrut
-$ wo 'Zeta[2]'
-Pi^2/6
-```
-
-
-## `PolyLog`
-
-Polylogarithm.
-
-```scrut
-$ wo 'PolyLog[2, 0]'
-0
-```
-
-
-## `Erf`
-
-The error function.
-
-```scrut
-$ wo 'Erf[0]'
-0
-```
-
-
-## `Erfc`
-
-The complementary error function, `Erfc[x] == 1 - Erf[x]`.
-
-```scrut
-$ wo 'Erfc[0]'
-1
-```
-
-
-## `BesselJ`
-
-Bessel function of the first kind.
-
-```scrut
-$ wo 'BesselJ[0, 0]'
-1
-```
-
-
-## `BesselI`
-
-Modified Bessel function of the first kind.
-
-```scrut
-$ wo 'BesselI[0, 0]'
-1
-```
-
-
-## `LegendreP`
-
-Legendre polynomial.
-
-```scrut
-$ wo 'LegendreP[2, x]'
-(-1 + 3*x^2)/2
-```
-
-
-## `ChebyshevT`
-
-Chebyshev polynomial of the first kind.
-
-```scrut
-$ wo 'ChebyshevT[3, x]'
--3*x + 4*x^3
-```
-
-
-## `HermiteH`
-
-Hermite polynomial.
-
-```scrut
-$ wo 'HermiteH[3, x]'
--12*x + 8*x^3
-```
-
-
-## `LaguerreL`
-
-Laguerre polynomial.
-
-```scrut
-$ wo 'LaguerreL[2, x]'
-(2 - 4*x + x^2)/2
-```
-
-
-## `EllipticK`
-
-Complete elliptic integral of the first kind.
-
-```scrut
-$ wo 'EllipticK[0]'
-Pi/2
-```
-
-
-## `EllipticE`
-
-Complete elliptic integral of the second kind.
-
-```scrut
-$ wo 'EllipticE[0]'
-Pi/2
-```
-
-
+- [`AddSides`](special/AddSides.md)
+- [`AiryAi`](special/AiryAi.md)
+- [`AiryAiPrime`](special/AiryAiPrime.md)
+- [`AiryBi`](special/AiryBi.md)
+- [`AiryBiPrime`](special/AiryBiPrime.md)
+- [`AppellF1`](special/AppellF1.md)
+- [`AppellF2`](special/AppellF2.md)
+- [`AppellF3`](special/AppellF3.md)
+- [`AppellF4`](special/AppellF4.md)
+- [`ApplySides`](special/ApplySides.md)
+- [`ArcSinDegrees`](special/ArcSinDegrees.md)
+- [`BarnesG`](special/BarnesG.md)
+- [`BellB`](special/BellB.md)
+- [`BellY`](special/BellY.md)
+- [`BernsteinBasis`](special/BernsteinBasis.md)
+- [`BesselJZero`](special/BesselJZero.md)
+- [`BesselK`](special/BesselK.md)
+- [`BesselY`](special/BesselY.md)
+- [`Beta`](special/Beta.md)
+- [`BetaRegularized`](special/BetaRegularized.md)
+- [`ChebyshevU`](special/ChebyshevU.md)
+- [`ChineseRemainder`](special/ChineseRemainder.md)
+- [`Circle`](special/Circle.md)
+- [`CircleThrough`](special/CircleThrough.md)
+- [`ClebschGordan`](special/ClebschGordan.md)
+- [`CosIntegral`](special/CosIntegral.md)
+- [`DivideSides`](special/DivideSides.md)
+- [`EllipticF`](special/EllipticF.md)
+- [`EllipticNomeQ`](special/EllipticNomeQ.md)
+- [`EllipticPi`](special/EllipticPi.md)
+- [`EllipticTheta`](special/EllipticTheta.md)
+- [`EllipticThetaPrime`](special/EllipticThetaPrime.md)
+- [`Erfi`](special/Erfi.md)
+- [`EulerE`](special/EulerE.md)
+- [`ExpIntegralE`](special/ExpIntegralE.md)
+- [`ExpIntegralEi`](special/ExpIntegralEi.md)
+- [`FresnelC`](special/FresnelC.md)
+- [`FresnelS`](special/FresnelS.md)
+- [`GammaRegularized`](special/GammaRegularized.md)
+- [`GegenbauerC`](special/GegenbauerC.md)
+- [`HankelH1`](special/HankelH1.md)
+- [`Hypergeometric1F1Regularized`](special/Hypergeometric1F1Regularized.md)
+- [`HypergeometricPFQ`](special/HypergeometricPFQ.md)
+- [`HypergeometricPFQRegularized`](special/HypergeometricPFQRegularized.md)
+- [`HypergeometricU`](special/HypergeometricU.md)
+- [`InverseErf`](special/InverseErf.md)
+- [`InverseErfc`](special/InverseErfc.md)
+- [`InverseJacobiCD`](special/InverseJacobiCD.md)
+- [`InverseJacobiCN`](special/InverseJacobiCN.md)
+- [`InverseJacobiCS`](special/InverseJacobiCS.md)
+- [`InverseJacobiDC`](special/InverseJacobiDC.md)
+- [`InverseJacobiDN`](special/InverseJacobiDN.md)
+- [`InverseJacobiDS`](special/InverseJacobiDS.md)
+- [`InverseJacobiNC`](special/InverseJacobiNC.md)
+- [`InverseJacobiND`](special/InverseJacobiND.md)
+- [`InverseJacobiNS`](special/InverseJacobiNS.md)
+- [`InverseJacobiSC`](special/InverseJacobiSC.md)
+- [`InverseJacobiSD`](special/InverseJacobiSD.md)
+- [`InverseJacobiSN`](special/InverseJacobiSN.md)
+- [`JacobiAmplitude`](special/JacobiAmplitude.md)
+- [`JacobiCD`](special/JacobiCD.md)
+- [`JacobiCN`](special/JacobiCN.md)
+- [`JacobiCS`](special/JacobiCS.md)
+- [`JacobiDC`](special/JacobiDC.md)
+- [`JacobiDN`](special/JacobiDN.md)
+- [`JacobiDS`](special/JacobiDS.md)
+- [`JacobiNC`](special/JacobiNC.md)
+- [`JacobiND`](special/JacobiND.md)
+- [`JacobiNS`](special/JacobiNS.md)
+- [`JacobiP`](special/JacobiP.md)
+- [`JacobiSC`](special/JacobiSC.md)
+- [`JacobiSD`](special/JacobiSD.md)
+- [`JacobiSN`](special/JacobiSN.md)
+- [`JacobiSymbol`](special/JacobiSymbol.md)
+- [`JacobiZeta`](special/JacobiZeta.md)
+- [`LegendreQ`](special/LegendreQ.md)
+- [`LerchPhi`](special/LerchPhi.md)
+- [`LogIntegral`](special/LogIntegral.md)
+- [`LogisticSigmoid`](special/LogisticSigmoid.md)
+- [`MeijerG`](special/MeijerG.md)
+- [`MultiplySides`](special/MultiplySides.md)
+- [`Pochhammer`](special/Pochhammer.md)
+- [`PolyGamma`](special/PolyGamma.md)
+- [`PrimeZetaP`](special/PrimeZetaP.md)
+- [`QPochhammer`](special/QPochhammer.md)
+- [`RealSign`](special/RealSign.md)
+- [`RiemannR`](special/RiemannR.md)
+- [`SinDegrees`](special/SinDegrees.md)
+- [`SinIntegral`](special/SinIntegral.md)
+- [`Sinc`](special/Sinc.md)
+- [`SinhIntegral`](special/SinhIntegral.md)
+- [`SixJSymbol`](special/SixJSymbol.md)
+- [`StruveH`](special/StruveH.md)
+- [`StruveL`](special/StruveL.md)
+- [`SubtractSides`](special/SubtractSides.md)
+- [`WeierstrassP`](special/WeierstrassP.md)
+- [`WeierstrassPPrime`](special/WeierstrassPPrime.md)

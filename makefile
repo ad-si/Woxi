@@ -137,8 +137,13 @@ jupyterlite-build: wasm-build jupyterlite-kernel-build
 	cp -r tests/playground/pkg tests/jupyterlite/wasm
 
 
+.PHONY: docs/summary
+docs/summary:
+	uv run --no-project scripts/build_summary.py
+
+
 .PHONY: docs/mdbook
-docs/mdbook: wasm-build
+docs/mdbook: wasm-build docs/summary
 	mdbook build ./tests
 
 

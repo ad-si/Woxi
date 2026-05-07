@@ -7,3 +7,10 @@ The documentation is split into four topical pages:
 - [Manipulation](strings/manipulation.md) — `StringInsert`, `StringDelete`, `StringReplace`, `StringPartition`, `StringRiffle`, `StringRotate*`, `StringPad*`, `Capitalize`, `Decapitalize`, `ToLowerCase`, `ToUpperCase`, `RemoveDiacritics`, …
 - [Matching & Searching](strings/matching.md) — `StringMatchQ`, `StringStartsQ`, `StringContainsQ`, `StringPosition`, `StringCases`, `StringCount`, `EditDistance`, `HammingDistance`, `LongestCommonSubsequence`, `SequenceAlignment`, `LowerCaseQ`, `UpperCaseQ`, `DictionaryWordQ`, `SyntaxQ`, …
 - [Conversion & Encoding](strings/conversion.md) — `ToString`, `ToExpression`, `TextString`, `TextWords`, `IntegerString`, `NumericalSort`, `ToCharacterCode`, `FromCharacterCode`, `Alphabet`, `LetterNumber`, `Hash`, `Uncompress`, `URLDecode`, `URLEncode`, …
+
+
+
+# Additional Functions
+
+- [`ByteArrayToString`](strings/ByteArrayToString.md)
+- [`Compress`](strings/Compress.md)

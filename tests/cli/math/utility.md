@@ -3,97 +3,163 @@
 Indicator functions, sampling (`RandomInteger`), `Reap`/`Sow`,
 and the membership predicate `MemberQ`.
 
-## `Unitize`
+- [`Unitize`](utility/Unitize.md)
+- [`Ramp`](utility/Ramp.md)
+- [`KroneckerDelta`](utility/KroneckerDelta.md)
+- [`UnitStep`](utility/UnitStep.md)
+- [`Reap`](utility/Reap.md)
+- [`Sow`](utility/Sow.md)
+- [`MemberQ`](utility/MemberQ.md)
+- [`RandomInteger`](utility/RandomInteger.md)
 
-```scrut
-$ wo 'Unitize[{0, 1, -3, 0, 5}]'
-{0, 1, 1, 0, 1}
-```
+## Additional Functions
 
-## `Ramp`
-
-```scrut
-$ wo 'Ramp[{-2, -1, 0, 1, 2}]'
-{0, 0, 0, 1, 2}
-```
-
-## `KroneckerDelta`
-
-```scrut
-$ wo 'KroneckerDelta[1, 1]'
-1
-```
-
-```scrut
-$ wo 'KroneckerDelta[1, 2]'
-0
-```
-
-## `UnitStep`
-
-```scrut
-$ wo 'UnitStep[{-1, 0, 1}]'
-{0, 1, 1}
-```
-
-## `Reap` / `Sow`
-
-```scrut
-$ wo 'Reap[Sow[1]; Sow[2]; 42]'
-{42, {{1, 2}}}
-```
-
-```scrut
-$ wo 'Reap[42]'
-{42, {}}
-```
-
-
-
-## `MemberQ`
-
-Checks if an element is in a list.
-
-```scrut
-$ wo 'MemberQ[{1, 2}, 2]'
-True
-```
-
-```scrut
-$ wo 'MemberQ[{1, 2}, 3]'
-False
-```
-
-
-## `RandomInteger`
-
-### `RandomInteger[]`
-
-Randomly gives 0 or 1.
-
-```scrut
-$ wo 'MemberQ[{0, 1}, RandomInteger[]]'
-True
-```
-
-
-### `RandomInteger[{1, 6}]`
-
-Randomly gives a number between 1 and 6.
-
-```scrut
-$ wo 'MemberQ[{1, 2, 3, 4, 5, 6}, RandomInteger[{1, 6}]]'
-True
-```
-
-
-### `RandomInteger[{1, 6}, 50]`
-
-Randomly gives 50 numbers between 1 and 6.
-
-```scrut
-$ wo 'AllTrue[RandomInteger[{1, 6}, 50], 1 <= # <= 6 &]'
-True
-```
-
-
+- [`Activate`](utility/Activate.md)
+- [`AlphabeticOrder`](utility/AlphabeticOrder.md)
+- [`ArcLength`](utility/ArcLength.md)
+- [`Area`](utility/Area.md)
+- [`ArithmeticGeometricMean`](utility/ArithmeticGeometricMean.md)
+- [`Around`](utility/Around.md)
+- [`ArrayResample`](utility/ArrayResample.md)
+- [`Ball`](utility/Ball.md)
+- [`BandpassFilter`](utility/BandpassFilter.md)
+- [`BandstopFilter`](utility/BandstopFilter.md)
+- [`BinaryDistance`](utility/BinaryDistance.md)
+- [`BrayCurtisDistance`](utility/BrayCurtisDistance.md)
+- [`CDF`](utility/CDF.md)
+- [`CanberraDistance`](utility/CanberraDistance.md)
+- [`CantorStaircase`](utility/CantorStaircase.md)
+- [`CentralMoment`](utility/CentralMoment.md)
+- [`ChessboardDistance`](utility/ChessboardDistance.md)
+- [`Chop`](utility/Chop.md)
+- [`Clip`](utility/Clip.md)
+- [`Complex`](utility/Complex.md)
+- [`CoordinateBounds`](utility/CoordinateBounds.md)
+- [`CoordinateBoundsArray`](utility/CoordinateBoundsArray.md)
+- [`Correlation`](utility/Correlation.md)
+- [`CorrelationDistance`](utility/CorrelationDistance.md)
+- [`Covariance`](utility/Covariance.md)
+- [`CubeRoot`](utility/CubeRoot.md)
+- [`DMSList`](utility/DMSList.md)
+- [`DeBruijnSequence`](utility/DeBruijnSequence.md)
+- [`Denominator`](utility/Denominator.md)
+- [`DirectedInfinity`](utility/DirectedInfinity.md)
+- [`DirichletEta`](utility/DirichletEta.md)
+- [`DiscreteAsymptotic`](utility/DiscreteAsymptotic.md)
+- [`DiscreteDelta`](utility/DiscreteDelta.md)
+- [`Disk`](utility/Disk.md)
+- [`EuclideanDistance`](utility/EuclideanDistance.md)
+- [`EulerAngles`](utility/EulerAngles.md)
+- [`Factorial2`](utility/Factorial2.md)
+- [`FindLinearRecurrence`](utility/FindLinearRecurrence.md)
+- [`FindSequenceFunction`](utility/FindSequenceFunction.md)
+- [`FiniteAbelianGroupCount`](utility/FiniteAbelianGroupCount.md)
+- [`FiniteGroupCount`](utility/FiniteGroupCount.md)
+- [`FromDMS`](utility/FromDMS.md)
+- [`FromPolarCoordinates`](utility/FromPolarCoordinates.md)
+- [`FromSphericalCoordinates`](utility/FromSphericalCoordinates.md)
+- [`GeometricMean`](utility/GeometricMean.md)
+- [`GroupGenerators`](utility/GroupGenerators.md)
+- [`Gudermannian`](utility/Gudermannian.md)
+- [`HarmonicMean`](utility/HarmonicMean.md)
+- [`HeavisideLambda`](utility/HeavisideLambda.md)
+- [`HeavisidePi`](utility/HeavisidePi.md)
+- [`HighpassFilter`](utility/HighpassFilter.md)
+- [`Hyperfactorial`](utility/Hyperfactorial.md)
+- [`Insphere`](utility/Insphere.md)
+- [`IntegerName`](utility/IntegerName.md)
+- [`IntegerPartitions`](utility/IntegerPartitions.md)
+- [`IntegerReverse`](utility/IntegerReverse.md)
+- [`InterquartileRange`](utility/InterquartileRange.md)
+- [`Interval`](utility/Interval.md)
+- [`IntervalUnion`](utility/IntervalUnion.md)
+- [`InverseGudermannian`](utility/InverseGudermannian.md)
+- [`Kurtosis`](utility/Kurtosis.md)
+- [`LCM`](utility/LCM.md)
+- [`LambertW`](utility/LambertW.md)
+- [`Latitude`](utility/Latitude.md)
+- [`LatitudeLongitude`](utility/LatitudeLongitude.md)
+- [`Likelihood`](utility/Likelihood.md)
+- [`Line`](utility/Line.md)
+- [`LinearRecurrence`](utility/LinearRecurrence.md)
+- [`LiouvilleLambda`](utility/LiouvilleLambda.md)
+- [`Longitude`](utility/Longitude.md)
+- [`LowpassFilter`](utility/LowpassFilter.md)
+- [`MangoldtLambda`](utility/MangoldtLambda.md)
+- [`ManhattanDistance`](utility/ManhattanDistance.md)
+- [`MathMLForm`](utility/MathMLForm.md)
+- [`MaxFilter`](utility/MaxFilter.md)
+- [`MeanDeviation`](utility/MeanDeviation.md)
+- [`MedianDeviation`](utility/MedianDeviation.md)
+- [`Midpoint`](utility/Midpoint.md)
+- [`MinFilter`](utility/MinFilter.md)
+- [`MixedFractionParts`](utility/MixedFractionParts.md)
+- [`ModularInverse`](utility/ModularInverse.md)
+- [`Moment`](utility/Moment.md)
+- [`MultiplicativeOrder`](utility/MultiplicativeOrder.md)
+- [`NArgMax`](utility/NArgMax.md)
+- [`NArgMin`](utility/NArgMin.md)
+- [`NorlundB`](utility/NorlundB.md)
+- [`Normalize`](utility/Normalize.md)
+- [`Numerator`](utility/Numerator.md)
+- [`OutputForm`](utility/OutputForm.md)
+- [`PDF`](utility/PDF.md)
+- [`ParabolicCylinderD`](utility/ParabolicCylinderD.md)
+- [`PartitionsP`](utility/PartitionsP.md)
+- [`PauliMatrix`](utility/PauliMatrix.md)
+- [`PerfectNumber`](utility/PerfectNumber.md)
+- [`Perimeter`](utility/Perimeter.md)
+- [`PlanarAngle`](utility/PlanarAngle.md)
+- [`Point`](utility/Point.md)
+- [`Polygon`](utility/Polygon.md)
+- [`PolygonalNumber`](utility/PolygonalNumber.md)
+- [`PrimitiveRoot`](utility/PrimitiveRoot.md)
+- [`PrimitiveRootList`](utility/PrimitiveRootList.md)
+- [`QBinomial`](utility/QBinomial.md)
+- [`QFactorial`](utility/QFactorial.md)
+- [`Quantile`](utility/Quantile.md)
+- [`Quartiles`](utility/Quartiles.md)
+- [`RamanujanTau`](utility/RamanujanTau.md)
+- [`Random`](utility/Random.md)
+- [`RandomChoice`](utility/RandomChoice.md)
+- [`RandomComplex`](utility/RandomComplex.md)
+- [`RandomReal`](utility/RandomReal.md)
+- [`RandomSample`](utility/RandomSample.md)
+- [`RandomVariate`](utility/RandomVariate.md)
+- [`RankedMax`](utility/RankedMax.md)
+- [`RankedMin`](utility/RankedMin.md)
+- [`RealAbs`](utility/RealAbs.md)
+- [`Rectangle`](utility/Rectangle.md)
+- [`RegionCentroid`](utility/RegionCentroid.md)
+- [`RegionEqual`](utility/RegionEqual.md)
+- [`RegionWithin`](utility/RegionWithin.md)
+- [`ReplaceList`](utility/ReplaceList.md)
+- [`Rescale`](utility/Rescale.md)
+- [`RomanNumeral`](utility/RomanNumeral.md)
+- [`RootMeanSquare`](utility/RootMeanSquare.md)
+- [`SSSTriangle`](utility/SSSTriangle.md)
+- [`SawtoothWave`](utility/SawtoothWave.md)
+- [`SequenceForm`](utility/SequenceForm.md)
+- [`ShearingMatrix`](utility/ShearingMatrix.md)
+- [`Skewness`](utility/Skewness.md)
+- [`SphericalHarmonicY`](utility/SphericalHarmonicY.md)
+- [`SquareWave`](utility/SquareWave.md)
+- [`SquaredEuclideanDistance`](utility/SquaredEuclideanDistance.md)
+- [`SquaresR`](utility/SquaresR.md)
+- [`StandardDeviation`](utility/StandardDeviation.md)
+- [`Standardize`](utility/Standardize.md)
+- [`Subdivide`](utility/Subdivide.md)
+- [`Subfactorial`](utility/Subfactorial.md)
+- [`Tetrahedron`](utility/Tetrahedron.md)
+- [`ToBoxes`](utility/ToBoxes.md)
+- [`ToPolarCoordinates`](utility/ToPolarCoordinates.md)
+- [`ToSphericalCoordinates`](utility/ToSphericalCoordinates.md)
+- [`TraditionalForm`](utility/TraditionalForm.md)
+- [`Triangle`](utility/Triangle.md)
+- [`TriangleWave`](utility/TriangleWave.md)
+- [`TrimmedMean`](utility/TrimmedMean.md)
+- [`UnitBox`](utility/UnitBox.md)
+- [`UnitTriangle`](utility/UnitTriangle.md)
+- [`Upsample`](utility/Upsample.md)
+- [`Variables`](utility/Variables.md)
+- [`Variance`](utility/Variance.md)
