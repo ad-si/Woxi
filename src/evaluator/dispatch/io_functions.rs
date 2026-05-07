@@ -2470,6 +2470,7 @@ fn boxes_to_text_svg(boxes: &Expr) -> String {
 /// True if `expr` is a graphics-like value that `expr_to_svg` will render
 /// to a non-trivial SVG. Used to decide whether a `List` passed to
 /// `Export[..., "gif"]` should be treated as an animated frame sequence.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn is_rasterizable_frame(expr: &Expr) -> bool {
   matches!(expr, Expr::Graphics { .. } | Expr::Image { .. })
     || matches!(
