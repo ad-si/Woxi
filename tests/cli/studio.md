@@ -1,3 +1,7 @@
+---
+icon: lucide/book-text
+---
+
 # Woxi Studio
 
 **Woxi Studio** is a native notebook editor for Wolfram Language
@@ -152,14 +156,12 @@ to the following formats:
 - **LaTeX** (`.tex`)
 - **Typst** (`.typ`)
 - **PDF** (`.pdf`) — rendered via the SVG→PDF pipeline powered by
-  [`svg2pdf`][svg2pdf], with headings, text, code blocks, output
-  text, and graphics embedded as vector content.
+  [`svg2pdf`](https://crates.io/crates/svg2pdf), with headings, text,
+  code blocks, output text, and graphics embedded as vector content.
 
 The save dialog pre-fills the current notebook path with the
 appropriate extension and does not change the file currently being
 edited.
-
-[svg2pdf]: https://crates.io/crates/svg2pdf
 
 
 ## File management
@@ -187,9 +189,10 @@ edited.
   a thin rule.
 
 
-> [!TIP]
-> Woxi Studio is the native counterpart to the in-browser
-> [Playground](/) and
-> [JupyterLite](/jupyterlite/lab/index.html?path=showcase.ipynb) environments — the same
-> interpreter powers all three, so expressions that work in one
-> work in the others.
+!!! tip
+
+    Woxi Studio is the native counterpart to the in-browser
+    [Playground](/) and
+    [JupyterLite](/jupyterlite/lab/index.html?path=showcase.ipynb) environments — the same
+    interpreter powers all three, so expressions that work in one
+    work in the others.

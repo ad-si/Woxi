@@ -1,3 +1,7 @@
+---
+icon: lucide/package
+---
+
 # Module
 
 `Module` creates a local scope for variables, ensuring they don't interfere

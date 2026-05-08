@@ -1,3 +1,7 @@
+---
+icon: lucide/folder
+---
+
 # File System & I/O
 
 This page documents Woxi's file-system and I/O functions.

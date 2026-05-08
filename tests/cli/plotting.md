@@ -1,3 +1,7 @@
+---
+icon: lucide/chart-line
+---
+
 # Plotting
 
 Woxi implements the most common 2D and 3D plotting functions from

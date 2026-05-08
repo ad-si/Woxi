@@ -1,6 +1,6 @@
 # `Gamma`
 
-Gamma function. For positive integers, Gamma[n] = (n-1)!.
+Gamma function. For positive integers, `Gamma[n] = (n-1)!`.
 
 ```scrut
 $ wo 'Gamma[1]'

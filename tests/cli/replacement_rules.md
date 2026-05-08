@@ -1,3 +1,7 @@
+---
+icon: lucide/replace
+---
+
 # Replacement rules tests
 
 - [`Replace`](replacement_rules/Replace.md)

@@ -1,3 +1,7 @@
+---
+icon: lucide/sigma
+---
+
 # Math
 
 Woxi implements a large subset of the Wolfram Language's numeric,

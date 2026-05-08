@@ -1,3 +1,7 @@
+---
+icon: lucide/list
+---
+
 # List Operations
 
 Woxi implements a comprehensive subset of the Wolfram Language's list

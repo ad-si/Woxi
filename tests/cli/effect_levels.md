@@ -1,3 +1,7 @@
+---
+icon: lucide/zap
+---
+
 # Effect Levels
 
 Each implemented function is classified by its effect level

@@ -1,6 +1,7 @@
 # `If`
 
-Conditional expression — covered in [boolean.md](boolean.md#if) as well.
+Conditional expression — see also the dedicated
+[boolean `If`](../boolean/logic/If.md) page.
 
 ```scrut
 $ wo 'If[1 > 0, "yes", "no"]'

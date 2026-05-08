@@ -1,3 +1,7 @@
+---
+icon: lucide/link
+---
+
 # Related
 
 ## Alternative implementations of Wolfram Language / Mathematica

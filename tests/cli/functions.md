@@ -1,3 +1,7 @@
+---
+icon: lucide/square-function
+---
+
 # Functions
 
 - [`AddTo`](functions/AddTo.md)

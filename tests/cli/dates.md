@@ -1,3 +1,7 @@
+---
+icon: lucide/calendar
+---
+
 # Dates & Time
 
 Woxi implements the most common date/time functions from the

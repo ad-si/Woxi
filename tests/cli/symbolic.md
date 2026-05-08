@@ -1,3 +1,7 @@
+---
+icon: lucide/variable
+---
+
 # Symbolic Computing
 
 ```scrut

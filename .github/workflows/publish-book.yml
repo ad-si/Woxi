@@ -89,11 +89,11 @@ jobs:
             jupyter lite build --output-dir tests/jupyterlite
           cp -r tests/playground/pkg tests/jupyterlite/wasm
 
-      - name: Setup Nix
-        uses: cachix/install-nix-action@v31
-
       - name: Build documentation
-        run: nix develop -c mdbook build ./tests
+        run: |
+          wolframscript -file scripts/build_summary.wls
+          uvx --python 3.12 --from zensical==0.0.40 \
+            zensical build --clean -f tests/zensical.toml
 
       - name: Assemble deployment tree
         run: |

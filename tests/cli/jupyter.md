@@ -1,3 +1,7 @@
+---
+icon: lucide/notebook
+---
+
 # Jupyter
 
 You can also use Woxi in Jupyter notebooks.
@@ -20,6 +24,7 @@ uv tool install jupyter-console
 jupyter console --kernel=woxi
 ```
 
-> [!TIP]
-> **Try it out yourself in our
-> [JupyterLite instance](/jupyterlite/lab/index.html?path=showcase.ipynb)!**
+!!! tip
+
+    **Try it out yourself in our
+    [JupyterLite instance](/jupyterlite/lab/index.html?path=showcase.ipynb)!**

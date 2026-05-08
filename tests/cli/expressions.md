@@ -1,3 +1,7 @@
+---
+icon: lucide/parentheses
+---
+
 # Expressions
 
 In the Wolfram Language everything is an expression

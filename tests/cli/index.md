@@ -1,3 +1,7 @@
+---
+icon: lucide/rocket
+---
+
 ![Woxi Logo](images/logo.png)
 
 # Woxi
@@ -6,9 +10,10 @@ An interpreter for the
 [Wolfram Language](https://en.wikipedia.org/wiki/Wolfram_Language)
 powered by Rust.
 
-> [!TIP]
-> **Try it instantly in the
-> [browser-based playground](/) — no install required.**
+!!! tip
+
+    **Try it instantly in the
+    [browser-based playground](/) — no install required.**
 
 
 ## Features
@@ -26,8 +31,9 @@ RandomInteger[{1, 9}, 5] // Map[#^2&] // Map[Print]
 
 It has full support for Jupyter Notebooks including graphical output:
 
-<img alt="Screenshot of Jupyter Notebook" src="images/2026-02-12t1501_jupyter.png" style="max-width: 50rem;">
+![Screenshot of Jupyter Notebook](images/2026-02-12t1501_jupyter.png)
 
-> [!TIP]
-> **Try it out yourself in our
-> [JupyterLite instance](/jupyterlite/lab/index.html?path=showcase.ipynb)!**
+!!! tip
+
+    **Try it out yourself in our
+    [JupyterLite instance](/jupyterlite/lab/index.html?path=showcase.ipynb)!**

@@ -1,3 +1,7 @@
+---
+icon: lucide/type
+---
+
 # Strings
 
 Woxi implements a large subset of the Wolfram Language string API.

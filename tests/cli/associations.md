@@ -1,3 +1,7 @@
+---
+icon: lucide/curly-braces
+---
+
 # Associations
 
 ```scrut

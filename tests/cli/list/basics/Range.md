@@ -2,7 +2,7 @@
 
 Generates a sequence of numbers.
 
-### Range[n]
+### `Range[n]`
 
 Generates {1, 2, ..., n}.
 
@@ -26,7 +26,7 @@ $ wo 'Range[10]'
 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 ```
 
-### Range[min, max]
+### `Range[min, max]`
 
 Generates {min, min+1, ..., max}.
 
@@ -50,7 +50,7 @@ $ wo 'Range[5, 5]'
 {5}
 ```
 
-### Range[min, max, step]
+### `Range[min, max, step]`
 
 Generates {min, min+step, ..., max}.
 

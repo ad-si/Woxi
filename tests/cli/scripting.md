@@ -1,3 +1,7 @@
+---
+icon: lucide/terminal
+---
+
 # Scripting & CLI
 
 Woxi can run Wolfram Language source files (`.wls`) directly from the

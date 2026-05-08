@@ -139,24 +139,25 @@ jupyterlite-build: wasm-build jupyterlite-kernel-build
 
 .PHONY: docs/summary
 docs/summary:
-	uv run --no-project scripts/build_summary.py
+	wolframscript -file scripts/build_summary.wls
 
 
-.PHONY: docs/mdbook
-docs/mdbook: wasm-build docs/summary
-	mdbook build ./tests
+.PHONY: docs/site
+docs/site: wasm-build docs/summary
+	uvx --python 3.12 --from zensical==0.0.40 \
+		zensical build --clean -f tests/zensical.toml
 
 
 # Assemble the deployment tree:
-#   - tests/landing/   → tests/book/             (minimal landing page at /)
-#   - tests/playground/→ tests/book/playground/  (full playground at /playground/)
-#   - mdbook output    → tests/book/docs/        (via build-dir in book.toml)
+#   - tests/landing/    → tests/book/             (minimal landing page at /)
+#   - tests/playground/ → tests/book/playground/  (full playground at /playground/)
+#   - zensical output   → tests/book/docs/        (via site_dir in zensical.toml)
 #   - tests/jupyterlite/→ tests/book/jupyterlite/
 # Both the landing page and the /playground/ copy share the same WASM
 # bundle (built once by wasm-build into tests/playground/pkg/), copied
 # into each location so worker.js can find ./pkg/woxi.js.
 .PHONY: docs/build
-docs/build: jupyterlite-build docs/mdbook
+docs/build: jupyterlite-build docs/site
 	cp -R tests/landing/. tests/book/
 	cp -R tests/playground/pkg tests/book/pkg
 	rm -rf tests/book/playground

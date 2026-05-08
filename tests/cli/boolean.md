@@ -1,3 +1,7 @@
+---
+icon: lucide/binary
+---
+
 # Boolean Logic
 
 Woxi implements the standard Wolfram Language boolean, comparison,

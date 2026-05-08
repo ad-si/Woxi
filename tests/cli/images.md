@@ -1,3 +1,7 @@
+---
+icon: lucide/image
+---
+
 # Images
 
 Woxi provides a minimal set of image-construction and -introspection

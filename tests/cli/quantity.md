@@ -1,3 +1,7 @@
+---
+icon: lucide/gauge
+---
+
 # Quantity
 
 ## Construction

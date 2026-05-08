@@ -2,7 +2,7 @@
 
 Generates a list by evaluating an expression for different values of a variable.
 
-### Table[expr, n]
+### `Table[expr, n]`
 
 Generates a list of n copies of expr.
 
@@ -16,7 +16,7 @@ $ wo 'Table[1, 5]'
 {1, 1, 1, 1, 1}
 ```
 
-### Table[expr, {i, max}]
+### `Table[expr, {i, max}]`
 
 Generates a list where i goes from 1 to max.
 
@@ -35,7 +35,7 @@ $ wo 'Table[2*i, {i, 3}]'
 {2, 4, 6}
 ```
 
-### Table[expr, {i, min, max}]
+### `Table[expr, {i, min, max}]`
 
 Generates a list where i goes from min to max.
 
@@ -54,7 +54,7 @@ $ wo 'Table[i, {i, -2, 2}]'
 {-2, -1, 0, 1, 2}
 ```
 
-### Table[expr, {i, min, max, step}]
+### `Table[expr, {i, min, max, step}]`
 
 Generates a list where i goes from min to max in steps.
 

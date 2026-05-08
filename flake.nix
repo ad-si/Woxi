@@ -28,7 +28,6 @@
             gnumake
             gnused
             lld
-            mdbook
             nodejs
             prek
             rustc

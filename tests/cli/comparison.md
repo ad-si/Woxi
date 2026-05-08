@@ -1,3 +1,7 @@
+---
+icon: lucide/scale
+---
+
 # Comparison
 
 ## WolframScript & Mathematica

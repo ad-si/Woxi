@@ -1,6 +1,6 @@
 # `NestList`
 
-Like [`Nest`](#nest), but returns a list of intermediate results.
+Like [`Nest`](Nest.md), but returns a list of intermediate results.
 
 ```scrut
 $ wo 'NestList[f, x, 3]'

@@ -1,3 +1,7 @@
+---
+icon: lucide/book-open
+---
+
 # Basics
 
 ## Comments

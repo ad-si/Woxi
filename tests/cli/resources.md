@@ -1,3 +1,7 @@
+---
+icon: lucide/library
+---
+
 # Resources
 
 - [awesome-wolfram-language] list
