@@ -1609,7 +1609,7 @@ pub fn join_at_level_ast(
   let outer_len = first_items.len();
 
   // Verify all lists are Lists and collect their items
-  let mut all_items: Vec<&Vec<Expr>> = Vec::new();
+  let mut all_items: Vec<&crate::ExprList> = Vec::new();
   for list in lists {
     match list {
       Expr::List(items) => all_items.push(items),
@@ -1697,17 +1697,21 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
         })
       }
     }
+    // O(log N) per call once the list has upgraded to its tree-backed
+    // representation (after the first push_front). Recursive prepend
+    // chains like `parseLevel` in build_summary.wls run in O(N log N)
+    // rather than O(N²).
     Expr::List(items) => {
-      let mut result = vec![elem.clone()];
-      result.extend(items.iter().cloned());
-      Ok(Expr::List(result.into()))
+      let mut new_items = items.clone();
+      new_items.push_front(elem.clone());
+      Ok(Expr::List(new_items))
     }
     Expr::FunctionCall { name, args } => {
-      let mut new_args = vec![elem.clone()];
-      new_args.extend(args.iter().cloned());
+      let mut new_args = args.clone();
+      new_args.push_front(elem.clone());
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: new_args.into(),
+        args: new_args,
       })
     }
     _ => Ok(Expr::FunctionCall {

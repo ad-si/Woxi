@@ -1544,7 +1544,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut items = items_ref.clone();
       items.push(matrix[2][2].clone());
-      *items = sort_with_canonical(items.to_vec());
+      items = sort_with_canonical(items.to_vec()).into();
       return Ok(Expr::List(items));
     }
   }

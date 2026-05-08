@@ -4830,7 +4830,7 @@ pub fn evaluate_function_call_ast_inner(
               next.push(elem.clone());
             }
           }
-          *current = next;
+          current = next.into();
           history.push(Expr::List(current.clone()));
         }
         return Ok(Expr::List(history.into()));

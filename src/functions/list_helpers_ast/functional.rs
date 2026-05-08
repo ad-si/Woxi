@@ -192,7 +192,7 @@ pub fn differences_n_ast(
       )?;
       next.push(diff);
     }
-    *current = next;
+    current = next.into();
   }
 
   Ok(Expr::List(current))

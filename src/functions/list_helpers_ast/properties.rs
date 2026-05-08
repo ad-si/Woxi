@@ -258,7 +258,7 @@ pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("False".to_string()));
       }
       // All rows must be lists of length n (square matrix)
-      let mut grid: Vec<&Vec<Expr>> = Vec::with_capacity(n);
+      let mut grid: Vec<&crate::ExprList> = Vec::with_capacity(n);
       for row in rows {
         match row {
           Expr::List(cols) => {

@@ -1370,7 +1370,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
             ..
           } = converted
           {
-            result.append(oargs);
+            result.extend(oargs.drain(..));
           }
         } else {
           result.push(converted);
@@ -1557,7 +1557,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
             ..
           } = converted
           {
-            result.append(aargs);
+            result.extend(aargs.drain(..));
           }
         } else {
           result.push(converted);

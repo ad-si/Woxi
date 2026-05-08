@@ -491,7 +491,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
           } => {
             new_pairs.push((*pattern.clone(), *replacement.clone()));
           }
-          _ => return Ok(result),
+          _ => return Ok(result.clone()),
         }
       }
       return Ok(Expr::Association(new_pairs));
@@ -649,7 +649,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
           } => {
             new_pairs.push((*pattern.clone(), *replacement.clone()));
           }
-          _ => return Ok(result),
+          _ => return Ok(result.clone()),
         }
       }
       return Ok(Expr::Association(new_pairs));

@@ -1030,7 +1030,7 @@ pub fn thread_ast(
       let mut list_len: Option<usize> = None;
 
       for (i, arg) in args.iter().enumerate() {
-        let matching_items: Option<&Vec<Expr>> = match thread_head {
+        let matching_items: Option<&crate::ExprList> = match thread_head {
           None => {
             // Default: thread over List
             if let Expr::List(items) = arg {

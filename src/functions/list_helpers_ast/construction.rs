@@ -1666,7 +1666,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Normal".to_string(),
-              args: vec![normalized].into(),
+              args: vec![normalized.clone()].into(),
             });
           }
         }

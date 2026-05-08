@@ -9621,8 +9621,8 @@ pub fn frenet_serret_system_ast(
   }
 
   // If the first argument is a scalar function f[t], treat it as the 2D curve {t, f[t]}
-  let owned_components;
-  let components = match &args[0] {
+  let owned_components: Vec<Expr>;
+  let components: &[Expr] = match &args[0] {
     Expr::List(items) => items,
     _ => {
       owned_components = vec![args[1].clone(), args[0].clone()];

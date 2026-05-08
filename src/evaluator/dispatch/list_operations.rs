@@ -1319,7 +1319,7 @@ pub fn dispatch_list_operations(
             };
             next.push(ratio);
           }
-          *current = next;
+          current = next.into();
         }
         return Some(Ok(Expr::List(current)));
       }
@@ -3150,15 +3150,15 @@ fn pad_array(
         let mut result = items.clone();
 
         if left >= 0 {
-          let mut prefix = vec![pad_val.clone(); left as usize];
-          prefix.append(&mut result);
-          *result = prefix;
+          let mut prefix: Vec<Expr> = vec![pad_val.clone(); left as usize];
+          prefix.extend(result.iter().cloned());
+          result = prefix.into();
         } else {
           let trim = (-left) as usize;
           if trim < result.len() {
-            result = result[trim..].to_vec().into();
+            result = result.slice(trim..);
           } else {
-            *result = vec![];
+            result = crate::ExprList::new();
           }
         }
 
@@ -3172,7 +3172,7 @@ fn pad_array(
           if trim < cur_len {
             result.truncate(cur_len - trim);
           } else {
-            *result = vec![];
+            result = crate::ExprList::new();
           }
         }
 
