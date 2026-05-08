@@ -1665,6 +1665,20 @@ fn maybe_named_group(
   }
 }
 
+/// True if `re` is a regex body that matches exactly one character — either
+/// a single non-metacharacter, or a backslash escape of one character. Used
+/// by `Except[c]` to lift the inner pattern into a negated character class
+/// (`[^c]`), which composes with `..` quantifiers in the Rust `regex` crate
+/// without requiring look-around.
+fn is_single_char_atom(re: &str) -> bool {
+  let mut chars = re.chars();
+  match (chars.next(), chars.next(), chars.next()) {
+    (Some(c), None, _) => !"\\^$.|?*+()[]{}".contains(c),
+    (Some('\\'), Some(_), None) => true,
+    _ => false,
+  }
+}
+
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
 fn string_pattern_to_regex_inner(
@@ -1922,6 +1936,14 @@ fn string_pattern_to_regex_inner(
           return Some(format!("[{}]", neg_body));
         }
         return Some(format!("[^{}]", body));
+      }
+      // Single-character literal (e.g. `]` → `\]`, `a` → `a`): lift into
+      // a negated character class so that `Except[c]..` quantifies as
+      // `[^c]+` instead of `(?:(?!c).)+`. The Rust `regex` crate has no
+      // look-around, so this is the only shape that composes with `..`
+      // / `...` quantifiers without errors.
+      if is_single_char_atom(&inner) {
+        return Some(format!("[^{}]", inner));
       }
       // Otherwise fall back to a regex negative lookahead + any char.
       Some(format!("(?:(?!{}).)", inner))

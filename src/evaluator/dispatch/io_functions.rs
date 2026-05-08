@@ -1191,6 +1191,57 @@ pub fn dispatch_io_functions(
         }
       }
     }
+    // BinaryReadList[file]            — read all bytes from `file`
+    // BinaryReadList[file, "Byte"]    — same
+    // BinaryReadList[stream]          — read remaining bytes from stream
+    // BinaryReadList[stream, "Byte"]  — same
+    //
+    // Returns a List of Integers in 0..255. Returns {} on EOF.
+    #[cfg(not(target_arch = "wasm32"))]
+    "BinaryReadList" if (1..=2).contains(&args.len()) => {
+      let path = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => match io_stream_path(&args[0]) {
+          Some(p) => p,
+          None => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "BinaryReadList".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        },
+      };
+      let form = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::String("Byte".to_string())
+      };
+      // Only "Byte" is supported; other forms fall through unevaluated so
+      // callers see the same behaviour as for BinaryRead.
+      match &form {
+        Expr::String(s) if s == "Byte" => {}
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "BinaryReadList".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      }
+      let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "BinaryReadList: cannot read {}: {}",
+            path, e
+          ))));
+        }
+      };
+      let out: Vec<Expr> = bytes
+        .into_iter()
+        .map(|b| Expr::Integer(b as i128))
+        .collect();
+      return Some(Ok(Expr::List(out)));
+    }
     // OpenAppend[file] — open a file for appending, return OutputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
     "OpenAppend" if args.len() <= 1 => {

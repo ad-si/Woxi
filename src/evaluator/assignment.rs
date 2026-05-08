@@ -680,6 +680,39 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // Single-bracket Part assignment on an existing Association:
+  //   a[k] = v   when `a` is bound to an Association
+  // Wolfram allows this as an alias for `a[[k]] = v` (mutate-by-key).
+  // We match only when `a` already holds an Association so that
+  // SubValue / DownValue definitions like `f[k_] := ...` still work.
+  if let Expr::FunctionCall {
+    name: head_name,
+    args: head_args,
+  } = lhs
+    && head_args.len() == 1
+  {
+    let is_assoc = crate::ENV.with(|e| {
+      let env = e.borrow();
+      matches!(env.get(head_name), Some(StoredValue::Association(_)))
+    });
+    if is_assoc {
+      let key_expr = evaluate_expr_to_expr(&head_args[0])?;
+      let rhs_value = evaluate_expr_to_expr(rhs)?;
+      let key = expr_to_string(&key_expr);
+      crate::ENV.with(|e| {
+        let mut env = e.borrow_mut();
+        if let Some(StoredValue::Association(pairs)) = env.get_mut(head_name) {
+          if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
+            pair.1 = expr_to_string(&rhs_value);
+          } else {
+            pairs.push((key, expr_to_string(&rhs_value)));
+          }
+        }
+      });
+      return Ok(rhs_value);
+    }
+  }
+
   // Handle Part assignment: var[[indices]] = value
   if let Expr::Part { .. } = lhs {
     // Flatten nested Part to get base variable and list of indices

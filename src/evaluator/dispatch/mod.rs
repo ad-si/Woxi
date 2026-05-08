@@ -5679,7 +5679,6 @@ pub fn evaluate_function_call_ast_inner(
       | "ReflectionTransform"
       | "BSplineBasis"
       | "ParameterMixtureDistribution"
-      | "BinaryReadList"
       | "FindDistributionParameters"
       | "FindPath"
       | "FindPeaks"

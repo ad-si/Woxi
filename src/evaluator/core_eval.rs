@@ -1318,11 +1318,15 @@ pub fn evaluate_expr_to_expr_inner(
               )));
             }
           };
+          // Store as ExprVal rather than re-serializing to a Raw string.
+          // The Raw form forces the next AppendTo/PrependTo on the same
+          // variable to re-parse the entire list, which makes a tight
+          // `Do[AppendTo[xs, …], …]` loop quadratic. ExprVal keeps the
+          // updated list as an Expr in place, so the loop is amortized
+          // O(n).
           ENV.with(|e| {
-            e.borrow_mut().insert(
-              var_name.clone(),
-              StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
-            );
+            e.borrow_mut()
+              .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
           });
           // Register the appended/prepended symbol in $PrintForms /
           // $OutputForms when the target is `$BoxForms`. wolframscript
