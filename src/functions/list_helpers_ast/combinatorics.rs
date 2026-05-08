@@ -13,7 +13,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Permutations".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -26,7 +26,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(spec) if spec.len() == 1 => {
         let k = expr_to_i128(&spec[0]).unwrap_or(n as i128) as usize;
         if k > n {
-          return Ok(Expr::List(vec![]));
+          return Ok(Expr::List(vec![].into()));
         }
         let mut result = Vec::new();
         let indices: Vec<usize> = (0..n).collect();
@@ -38,7 +38,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &items,
           &mut result,
         );
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
       // {kmin, kmax} means permutations of lengths kmin..=kmax
       Expr::List(spec) if spec.len() == 2 => {
@@ -59,7 +59,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             );
           }
         }
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
       // Plain integer k means all permutations of length 0 through k
       _ => {
@@ -77,7 +77,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &mut result,
           );
         }
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
     }
   }
@@ -93,7 +93,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &items,
     &mut result,
   );
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Helper to generate k-permutations.
@@ -112,7 +112,7 @@ fn generate_k_permutations(
 ) {
   if current.len() == k {
     let perm: Vec<Expr> = current.iter().map(|&i| items[i].clone()).collect();
-    result.push(Expr::List(perm));
+    result.push(Expr::List(perm.into()));
     return;
   }
   // Track which item "values" we've already used at this recursion level
@@ -145,7 +145,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Subsets".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -173,7 +173,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Subsets".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -192,7 +192,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Subsets".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -216,7 +216,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Subsets".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -232,7 +232,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Subsets".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -265,7 +265,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Apply a Part specification to select elements from a list of subsets.
@@ -394,7 +394,7 @@ fn generate_combinations(
   result: &mut Vec<Expr>,
 ) {
   if current.len() == k {
-    result.push(Expr::List(current.clone()));
+    result.push(Expr::List(current.clone().into()));
     return;
   }
   for i in start..items.len() {
@@ -419,7 +419,7 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Subsequences".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -438,7 +438,7 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Subsequences".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         } else if spec.len() == 2 {
@@ -448,13 +448,13 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Subsequences".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         } else {
           return Ok(Expr::FunctionCall {
             name: "Subsequences".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -465,7 +465,7 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Subsequences".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -476,14 +476,14 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut result = Vec::new();
   for len in min_len..=max_len.min(n) {
     if len == 0 {
-      result.push(Expr::List(vec![]));
+      result.push(Expr::List(vec![].into()));
     } else {
       for start in 0..=(n - len) {
-        result.push(Expr::List(items[start..start + len].to_vec()));
+        result.push(Expr::List(items[start..start + len].to_vec().into()));
       }
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 // ─── Groupings ──────────────────────────────────────────────────────
@@ -502,18 +502,18 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Groupings".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   let elements: Vec<Expr> = match &args[0] {
     Expr::Integer(n) if *n >= 1 => (1..=*n).map(Expr::Integer).collect(),
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Groupings".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -555,7 +555,7 @@ fn groupings_binary(elements: &[Expr]) -> Vec<Expr> {
     return vec![elements[0].clone()];
   }
   if n == 2 {
-    return vec![Expr::List(elements.to_vec())];
+    return vec![Expr::List(elements.to_vec().into())];
   }
 
   let mut results = Vec::new();
@@ -600,13 +600,13 @@ fn groupings_binary(elements: &[Expr]) -> Vec<Expr> {
       let mut results_1 = Vec::new();
       for lg in &left_groupings_1 {
         for rg in &right_groupings_1 {
-          results_1.push(Expr::List(vec![lg.clone(), rg.clone()]));
+          results_1.push(Expr::List(vec![lg.clone(), rg.clone()].into()));
         }
       }
       let mut results_2 = Vec::new();
       for lg in &left_groupings_2 {
         for rg in &right_groupings_2 {
-          results_2.push(Expr::List(vec![lg.clone(), rg.clone()]));
+          results_2.push(Expr::List(vec![lg.clone(), rg.clone()].into()));
         }
       }
 
@@ -624,7 +624,7 @@ fn groupings_binary(elements: &[Expr]) -> Vec<Expr> {
       // Self-symmetric split (l1 == r1) or no complement
       for lg in &left_groupings_1 {
         for rg in &right_groupings_1 {
-          results.push(Expr::List(vec![lg.clone(), rg.clone()]));
+          results.push(Expr::List(vec![lg.clone(), rg.clone()].into()));
         }
       }
     }
@@ -647,7 +647,7 @@ fn groupings_recursive(elements: &[Expr], k: usize) -> Vec<Expr> {
     return vec![];
   }
   if n == k {
-    return vec![Expr::List(elements.to_vec())];
+    return vec![Expr::List(elements.to_vec().into())];
   }
 
   // For k > 2: split into k groups
@@ -685,7 +685,7 @@ fn generate_splits(
         product = new_product;
       }
       for combo in product {
-        results.push(Expr::List(combo));
+        results.push(Expr::List(combo.into()));
       }
     }
     return;

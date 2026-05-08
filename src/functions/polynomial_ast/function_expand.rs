@@ -30,7 +30,7 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
 
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: expanded_args,
+        args: expanded_args.into(),
       })
     }
     Expr::List(items) => {
@@ -38,7 +38,7 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(function_expand_inner)
         .collect::<Result<Vec<_>, _>>()?;
-      Ok(Expr::List(expanded))
+      Ok(Expr::List(expanded.into()))
     }
     Expr::BinaryOp { op, left, right } => {
       let l = function_expand_inner(left)?;
@@ -64,7 +64,7 @@ fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
 fn mk_call(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
-    args,
+    args: args.into(),
   }
 }
 
@@ -95,7 +95,7 @@ fn mk_div(a: Expr, b: Expr) -> Expr {
 fn mk_ratio(n: i128, d: i128) -> Expr {
   Expr::FunctionCall {
     name: "Rational".to_string(),
-    args: vec![Expr::Integer(n), Expr::Integer(d)],
+    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
   }
 }
 

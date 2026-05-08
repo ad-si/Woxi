@@ -26,7 +26,7 @@ pub fn horner_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "HornerForm".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -175,7 +175,7 @@ fn extract_fraction(expr: &Expr) -> Option<(Expr, Expr)> {
         } else {
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: num_args,
+            args: num_args.into(),
           }
         };
         Some((num, denom))

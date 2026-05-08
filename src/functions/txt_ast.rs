@@ -73,7 +73,7 @@ pub fn import_element(content: &str, element: &str) -> Option<Expr> {
         .split_whitespace()
         .map(|w| Expr::String(w.to_string()))
         .collect();
-      Some(Expr::List(words))
+      Some(Expr::List(words.into()))
     }
     "Data" => {
       let lines = split_lines(content);
@@ -94,7 +94,7 @@ pub fn import_element(content: &str, element: &str) -> Option<Expr> {
             Expr::List(row.iter().map(|tok| token_to_expr(tok)).collect())
           })
           .collect();
-        Some(Expr::List(rows))
+        Some(Expr::List(rows.into()))
       } else {
         Some(Expr::List(
           lines

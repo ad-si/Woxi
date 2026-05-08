@@ -151,7 +151,7 @@ pub fn apply_part_indices(
           .iter()
           .map(|item| apply_part_indices(item, rest))
           .collect();
-        Ok(Expr::List(mapped?))
+        Ok(Expr::List(mapped?.into()))
       }
       Expr::FunctionCall { name, args } => {
         let mapped: Result<Vec<Expr>, InterpreterError> = args
@@ -160,7 +160,7 @@ pub fn apply_part_indices(
           .collect();
         Ok(Expr::FunctionCall {
           name: name.clone(),
-          args: mapped?,
+          args: mapped?.into(),
         })
       }
       _ => apply_part_indices(expr, rest),
@@ -177,7 +177,7 @@ pub fn apply_part_indices(
       let extracted = extract_part_ast(expr, sub_idx)?;
       results.push(apply_part_indices(&extracted, rest)?);
     }
-    Ok(Expr::List(results))
+    Ok(Expr::List(results.into()))
   } else if let Expr::FunctionCall { name, .. } = idx
     && name == "Span"
     && !rest.is_empty()
@@ -191,7 +191,7 @@ pub fn apply_part_indices(
           .iter()
           .map(|item| apply_part_indices(item, rest))
           .collect();
-        Ok(Expr::List(mapped?))
+        Ok(Expr::List(mapped?.into()))
       }
       Expr::FunctionCall {
         name: head,
@@ -203,7 +203,7 @@ pub fn apply_part_indices(
           .collect();
         Ok(Expr::FunctionCall {
           name: head.clone(),
-          args: mapped?,
+          args: mapped?.into(),
         })
       }
       _ => apply_part_indices(&extracted, rest),
@@ -289,7 +289,7 @@ pub fn extract_part_ast(
           &args[0],
           &args[1],
           args.get(2),
-          Expr::List,
+          |v: Vec<Expr>| Expr::List(v.into()),
         );
       }
       Expr::FunctionCall {
@@ -305,7 +305,7 @@ pub fn extract_part_ast(
           args.get(2),
           |selected| Expr::FunctionCall {
             name: name.clone(),
-            args: selected,
+            args: selected.into(),
           },
         );
       }
@@ -329,7 +329,7 @@ pub fn extract_part_ast(
       for idx_expr in indices {
         results.push(extract_part_ast(expr, idx_expr)?);
       }
-      return Ok(Expr::List(results));
+      return Ok(Expr::List(results.into()));
     }
     _ => return Ok(part_take_unevaluated(expr, index)),
   };
@@ -437,7 +437,7 @@ pub fn extract_part_ast(
           // a - b = Plus[a, Times[-1, b]]
           let neg_right = Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), *right.clone()],
+            args: vec![Expr::Integer(-1), *right.clone()].into(),
           };
           ("Plus", vec![*left.clone(), neg_right])
         }
@@ -450,7 +450,7 @@ pub fn extract_part_ast(
             // a/b = Times[a, Power[b, -1]]
             let inv_right = Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![*right.clone(), Expr::Integer(-1)],
+              args: vec![*right.clone(), Expr::Integer(-1)].into(),
             };
             ("Times", vec![*left.clone(), inv_right])
           }

@@ -107,23 +107,23 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
           .map(|s| Expr::String(s.to_string()))
           .collect(),
       ),
-      "Data" | "RawData" => Expr::List(vec![]),
-      "ColumnLabels" => Expr::List(vec![]),
+      "Data" | "RawData" => Expr::List(vec![].into()),
+      "ColumnLabels" => Expr::List(vec![].into()),
       "ColumnCount" => Expr::Integer(0),
       "RowCount" => Expr::Integer(0),
-      "Dimensions" => Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
-      "ColumnTypes" => Expr::List(vec![]),
+      "Dimensions" => Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+      "ColumnTypes" => Expr::List(vec![].into()),
       "Schema" => super::tabular_ast::build_schema(&[], &[], 0),
       "Summary" => Expr::Association(vec![
         (Expr::String("Columns".to_string()), Expr::Integer(0)),
         (Expr::String("Rows".to_string()), Expr::Integer(0)),
-        (Expr::String("ColumnLabels".to_string()), Expr::List(vec![])),
+        (Expr::String("ColumnLabels".to_string()), Expr::List(vec![].into())),
       ]),
-      "Dataset" => super::dataset_ast::dataset_ast(&[Expr::List(vec![])]),
-      "Tabular" => super::tabular_ast::tabular_ast(&[Expr::List(vec![])]),
+      "Dataset" => super::dataset_ast::dataset_ast(&[Expr::List(vec![].into())]),
+      "Tabular" => super::tabular_ast::tabular_ast(&[Expr::List(vec![].into())]),
       _ => Expr::FunctionCall {
         name: "$Failed".to_string(),
-        args: vec![],
+        args: vec![].into(),
       },
     };
   }
@@ -150,7 +150,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
         all_rows
           .push(Expr::List(row.iter().map(|s| auto_convert(s)).collect()));
       }
-      Expr::List(all_rows)
+      Expr::List(all_rows.into())
     }
 
     "RawData" => {
@@ -160,7 +160,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
           Expr::List(row.iter().map(|s| Expr::String(s.clone())).collect())
         })
         .collect();
-      Expr::List(all_rows)
+      Expr::List(all_rows.into())
     }
 
     "ColumnLabels" => {
@@ -174,7 +174,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
     "Dimensions" => Expr::List(vec![
       Expr::Integer(num_data_rows as i128),
       Expr::Integer(num_cols as i128),
-    ]),
+    ].into()),
 
     "ColumnTypes" => {
       let types: Vec<Expr> = (0..num_cols)
@@ -188,7 +188,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
           Expr::Identifier(t)
         })
         .collect();
-      Expr::List(types)
+      Expr::List(types.into())
     }
 
     "Dataset" => {
@@ -204,7 +204,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
           Expr::Association(pairs)
         })
         .collect();
-      super::dataset_ast::dataset_ast(&[Expr::List(assocs)])
+      super::dataset_ast::dataset_ast(&[Expr::List(assocs.into())])
     }
 
     "Tabular" => {
@@ -216,8 +216,8 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       let col_names: Vec<Expr> =
         header.iter().map(|s| Expr::String(s.clone())).collect();
       super::tabular_ast::tabular_ast(&[
-        Expr::List(data_lists),
-        Expr::List(col_names),
+        Expr::List(data_lists.into()),
+        Expr::List(col_names.into()),
       ])
     }
 
@@ -254,7 +254,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
 
     _ => Expr::FunctionCall {
       name: "$Failed".to_string(),
-      args: vec![],
+      args: vec![].into(),
     },
   }
 }

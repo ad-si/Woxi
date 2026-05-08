@@ -147,7 +147,7 @@ pub fn dispatch_polynomial_functions(
           );
           return Some(Ok(Expr::FunctionCall {
             name: "FindRoot".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
         other => return Some(other),
@@ -182,7 +182,7 @@ pub fn dispatch_polynomial_functions(
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
-          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into()),
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
@@ -201,7 +201,7 @@ pub fn dispatch_polynomial_functions(
                 }
               })
               .collect();
-            return Some(Ok(Expr::List(args_list)));
+            return Some(Ok(Expr::List(args_list.into())));
           }
         }
       }
@@ -210,7 +210,7 @@ pub fn dispatch_polynomial_functions(
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
-          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into()),
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
@@ -227,7 +227,7 @@ pub fn dispatch_polynomial_functions(
               }
             })
             .collect();
-          return Some(Ok(Expr::List(args_list)));
+          return Some(Ok(Expr::List(args_list.into())));
         }
       }
     }
@@ -236,7 +236,7 @@ pub fn dispatch_polynomial_functions(
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
-          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into()),
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
@@ -250,7 +250,7 @@ pub fn dispatch_polynomial_functions(
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
-          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into()),
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)

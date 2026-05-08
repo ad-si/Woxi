@@ -7,7 +7,7 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "PolynomialMod".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -60,7 +60,7 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Build a Plus expression
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: new_terms,
+      args: new_terms.into(),
     }
   };
 
@@ -140,7 +140,7 @@ fn extract_coefficient(expr: &Expr) -> (i128, Option<Expr>) {
           } else {
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: remaining,
+              args: remaining.into(),
             }
           };
           return (*n, Some(monomial));

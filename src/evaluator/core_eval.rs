@@ -145,7 +145,7 @@ fn unwrap_top_level_evaluate(arg: &Expr) -> Result<Expr, InterpreterError> {
       args.iter().map(evaluate_expr_to_expr).collect();
     return Ok(Expr::FunctionCall {
       name: "Sequence".to_string(),
-      args: evaluated?,
+      args: evaluated?.into(),
     });
   }
   Ok(arg.clone())
@@ -182,7 +182,7 @@ fn rgb_color_expr(r: f64, g: f64, b: f64) -> Expr {
   }
   Expr::FunctionCall {
     name: "RGBColor".to_string(),
-    args: vec![num(r), num(g), num(b)],
+    args: vec![num(r), num(g), num(b)].into(),
   }
 }
 
@@ -199,7 +199,7 @@ fn gray_level_expr(g: f64) -> Expr {
   }
   Expr::FunctionCall {
     name: "GrayLevel".to_string(),
-    args: vec![num(g)],
+    args: vec![num(g)].into(),
   }
 }
 
@@ -288,7 +288,7 @@ pub fn prepare_iterating_function_args(
       for item in &items[1..] {
         new_items.push(evaluate_expr_to_expr(item)?);
       }
-      result.push(Expr::List(new_items));
+      result.push(Expr::List(new_items.into()));
     } else {
       result.push(evaluate_expr_to_expr(arg)?);
     }
@@ -378,7 +378,7 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       let start = std::time::Instant::now();
       let result = evaluate_expr_to_expr(&args[0])?;
       let elapsed = start.elapsed().as_secs_f64();
-      return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result])));
+      return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result].into())));
     }
     "RepeatedTiming" if args.len() == 1 => {
       let mut times = Vec::new();
@@ -394,7 +394,7 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       }
       times.sort_by(|a, b| a.partial_cmp(b).unwrap());
       let median = times[times.len() / 2];
-      return Ok(Some(Expr::List(vec![Expr::Real(median), last_result])));
+      return Ok(Some(Expr::List(vec![Expr::Real(median), last_result].into())));
     }
     "Sum" | "ParallelSum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
@@ -601,11 +601,11 @@ pub fn evaluate_expr_to_expr_inner(
                   now.format("%M").to_string().parse::<i128>().unwrap(),
                 ),
                 Expr::Real(seconds),
-              ]),
+              ].into()),
               Expr::String("Instant".to_string()),
               Expr::String("Gregorian".to_string()),
               Expr::Real(tz_offset_hours),
-            ],
+            ].into(),
           });
         }
         #[cfg(target_arch = "wasm32")]
@@ -624,11 +624,11 @@ pub fn evaluate_expr_to_expr_inner(
                 Expr::Integer(now.get_hours() as i128),
                 Expr::Integer(now.get_minutes() as i128),
                 Expr::Real(seconds),
-              ]),
+              ].into()),
               Expr::String("Instant".to_string()),
               Expr::String("Gregorian".to_string()),
               Expr::Real(tz_offset_hours),
-            ],
+            ].into(),
           });
         }
         // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
@@ -654,9 +654,9 @@ pub fn evaluate_expr_to_expr_inner(
                 Expr::Integer(
                   date.format("%d").to_string().parse::<i128>().unwrap(),
                 ),
-              ]),
+              ].into()),
               Expr::String("Day".to_string()),
-            ],
+            ].into(),
           });
         }
         #[cfg(target_arch = "wasm32")]
@@ -676,9 +676,9 @@ pub fn evaluate_expr_to_expr_inner(
                 Expr::Integer(d.get_full_year() as i128),
                 Expr::Integer((d.get_month() + 1) as i128),
                 Expr::Integer(d.get_date() as i128),
-              ]),
+              ].into()),
               Expr::String("Day".to_string()),
-            ],
+            ].into(),
           });
         }
         // Handle system $ variables
@@ -695,14 +695,14 @@ pub fn evaluate_expr_to_expr_inner(
         if name == "Thick" {
           return Ok(Expr::FunctionCall {
             name: "Thickness".to_string(),
-            args: vec![Expr::Identifier("Large".to_string())],
+            args: vec![Expr::Identifier("Large".to_string())].into(),
           });
         }
         // Thin → Thickness[Tiny]
         if name == "Thin" {
           return Ok(Expr::FunctionCall {
             name: "Thickness".to_string(),
-            args: vec![Expr::Identifier("Tiny".to_string())],
+            args: vec![Expr::Identifier("Tiny".to_string())].into(),
           });
         }
         // Dashed → Dashing[{Small, Small}]
@@ -712,7 +712,7 @@ pub fn evaluate_expr_to_expr_inner(
             args: vec![Expr::List(vec![
               Expr::Identifier("Small".to_string()),
               Expr::Identifier("Small".to_string()),
-            ])],
+            ].into())].into(),
           });
         }
         // Dotted → Dashing[{0, Small}]
@@ -722,7 +722,7 @@ pub fn evaluate_expr_to_expr_inner(
             args: vec![Expr::List(vec![
               Expr::Integer(0),
               Expr::Identifier("Small".to_string()),
-            ])],
+            ].into())].into(),
           });
         }
         // DotDashed → Dashing[{0, Small, Small, Small}]
@@ -734,7 +734,7 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::Identifier("Small".to_string()),
               Expr::Identifier("Small".to_string()),
               Expr::Identifier("Small".to_string()),
-            ])],
+            ].into())].into(),
           });
         }
         // Return as symbolic identifier
@@ -808,9 +808,9 @@ pub fn evaluate_expr_to_expr_inner(
         for item in &evaluated {
           re_eval.push(evaluate_expr_to_expr(item)?);
         }
-        return Ok(Expr::List(re_eval));
+        return Ok(Expr::List(re_eval.into()));
       }
-      Ok(Expr::List(evaluated))
+      Ok(Expr::List(evaluated.into()))
     }
     Expr::FunctionCall { name, args } => {
       // Track function calls on the evaluation stack for stack traces.
@@ -837,7 +837,7 @@ pub fn evaluate_expr_to_expr_inner(
             }
             return Ok(Expr::FunctionCall {
               name: name.clone(),
-              args: new_args,
+              args: new_args.into(),
             });
           }
         }
@@ -877,7 +877,7 @@ pub fn evaluate_expr_to_expr_inner(
             // compare via the canonical InputForm rendering.
             let original = Expr::FunctionCall {
               name: "SetDelayed".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             };
             let unchanged = crate::syntax::expr_to_string(&result)
               == crate::syntax::expr_to_string(&original);
@@ -1001,11 +1001,11 @@ pub fn evaluate_expr_to_expr_inner(
             for it in items {
               let r = evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: "Unset".to_string(),
-                args: vec![it.clone()],
+                args: vec![it.clone()].into(),
               })?;
               results.push(r);
             }
-            return Ok(Expr::List(results));
+            return Ok(Expr::List(results.into()));
           }
           if let Expr::Identifier(var_name) = &args[0] {
             let had_value = ENV.with(|e| e.borrow_mut().remove(var_name));
@@ -1164,7 +1164,7 @@ pub fn evaluate_expr_to_expr_inner(
                       .collect();
                     let entry_lhs = Expr::FunctionCall {
                       name: head.clone(),
-                      args: pattern_args,
+                      args: pattern_args.into(),
                     };
                     let entry_lhs_str =
                       crate::syntax::expr_to_string(&entry_lhs);
@@ -1268,7 +1268,7 @@ pub fn evaluate_expr_to_expr_inner(
           let mut current_val = match current {
             Some(StoredValue::ExprVal(e)) => e,
             Some(StoredValue::Raw(s)) => {
-              crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![]))
+              crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![].into()))
             }
             // System variables like `$BoxForms` aren't in ENV until written —
             // first AppendTo seeds the env from the built-in default.
@@ -1356,7 +1356,7 @@ pub fn evaluate_expr_to_expr_inner(
               eval_args.push(rule);
               return Ok(Expr::FunctionCall {
                 name: "AssociateTo".to_string(),
-                args: eval_args,
+                args: eval_args.into(),
               });
             }
           };
@@ -1386,7 +1386,7 @@ pub fn evaluate_expr_to_expr_inner(
                   });
                   return Ok(Expr::FunctionCall {
                     name: "AssociateTo".to_string(),
-                    args: eval_args,
+                    args: eval_args.into(),
                   });
                 }
               }
@@ -1399,7 +1399,7 @@ pub fn evaluate_expr_to_expr_inner(
               });
               return Ok(Expr::FunctionCall {
                 name: "AssociateTo".to_string(),
-                args: eval_args,
+                args: eval_args.into(),
               });
             }
           };
@@ -1456,7 +1456,7 @@ pub fn evaluate_expr_to_expr_inner(
                 _ => {
                   return Ok(Expr::FunctionCall {
                     name: "KeyDropFrom".to_string(),
-                    args: vec![args[0].clone(), key],
+                    args: vec![args[0].clone(), key].into(),
                   });
                 }
               }
@@ -1464,7 +1464,7 @@ pub fn evaluate_expr_to_expr_inner(
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "KeyDropFrom".to_string(),
-                args: vec![args[0].clone(), key],
+                args: vec![args[0].clone(), key].into(),
               });
             }
           };
@@ -1664,7 +1664,7 @@ pub fn evaluate_expr_to_expr_inner(
           if !args.iter().all(is_normalizable_assoc_arg) {
             return Ok(Expr::FunctionCall {
               name: name.to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -1784,7 +1784,7 @@ pub fn evaluate_expr_to_expr_inner(
           return Err(InterpreterError::TailCall(Box::new(
             Expr::FunctionCall {
               name: resolved_name,
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             },
           )));
         }
@@ -2034,7 +2034,7 @@ pub fn evaluate_expr_to_expr_inner(
         }
         let and_expr = Expr::FunctionCall {
           name: "And".to_string(),
-          args: terms,
+          args: terms.into(),
         };
         return evaluate_expr_to_expr(&and_expr);
       }
@@ -2486,7 +2486,7 @@ pub fn evaluate_expr_to_expr_inner(
           {
             Expr::FunctionCall {
               name: inner_name.clone(),
-              args: vec![normalize_postfix(inner_e)],
+              args: vec![normalize_postfix(inner_e)].into(),
             }
           } else {
             e.clone()
@@ -2495,7 +2495,7 @@ pub fn evaluate_expr_to_expr_inner(
         let arg = normalize_postfix(e);
         return evaluate_expr_to_expr(&Expr::FunctionCall {
           name: name.clone(),
-          args: vec![arg],
+          args: vec![arg].into(),
         });
       }
       let evaluated_expr = evaluate_expr_to_expr(e)?;
@@ -2545,7 +2545,7 @@ pub fn evaluate_expr_to_expr_inner(
           }
           indices.push(Expr::FunctionCall {
             name: "Span".to_string(),
-            args: evaluated_args,
+            args: evaluated_args.into(),
           });
         } else {
           indices.push(evaluate_expr_to_expr(idx)?);
@@ -2749,7 +2749,7 @@ fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<_, _>>()?;
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       })
     }
     Expr::List(items) => {
@@ -2757,7 +2757,7 @@ fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(unwrap_evaluate_in_body)
         .collect::<Result<_, _>>()?;
-      Ok(Expr::List(new_items))
+      Ok(Expr::List(new_items.into()))
     }
     Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
       op: *op,

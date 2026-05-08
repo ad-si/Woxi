@@ -476,7 +476,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "AbsoluteTime".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -544,7 +544,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(Expr::FunctionCall {
           name: "AbsoluteTime".to_string(),
-          args: vec![arg],
+          args: vec![arg].into(),
         })
       }
     }
@@ -555,7 +555,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "AbsoluteTime".to_string(),
-          args: vec![arg],
+          args: vec![arg].into(),
         })
       }
     }
@@ -565,7 +565,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "AbsoluteTime".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
   }
 }
@@ -582,7 +582,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "DateList".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -624,7 +624,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(Expr::FunctionCall {
           name: "DateList".to_string(),
-          args: vec![arg],
+          args: vec![arg].into(),
         })
       }
     }
@@ -634,7 +634,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "DateList".to_string(),
-          args: vec![arg],
+          args: vec![arg].into(),
         })
       }
     }
@@ -647,13 +647,13 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "DateList".to_string(),
-          args: vec![arg],
+          args: vec![arg].into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "DateList".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
   }
 }
@@ -669,7 +669,7 @@ fn make_date_list(y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64) -> Expr {
     Expr::Integer(h as i128),
     Expr::Integer(min as i128),
     Expr::Real(sec),
-  ])
+  ].into())
 }
 
 /// DatePlus[date, n] — add n days to a date
@@ -678,7 +678,7 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "DatePlus".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -693,7 +693,7 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "DatePlus".to_string(),
-        args: vec![date_arg, delta_arg],
+        args: vec![date_arg, delta_arg].into(),
       });
     }
   };
@@ -828,7 +828,7 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DatePlus".to_string(),
-        args: vec![date_arg, delta_arg],
+        args: vec![date_arg, delta_arg].into(),
       });
     }
   };
@@ -859,16 +859,16 @@ fn make_date_result(
           Expr::Integer(y as i128),
           Expr::Integer(m as i128),
           Expr::Integer(d as i128),
-        ]),
+        ].into()),
         Expr::String("Day".to_string()),
-      ],
+      ].into(),
     }
   } else if input_len <= 3 {
     Expr::List(vec![
       Expr::Integer(y as i128),
       Expr::Integer(m as i128),
       Expr::Integer(d as i128),
-    ])
+    ].into())
   } else {
     make_date_list(y, m, d, 0, 0, 0.0)
   }
@@ -880,7 +880,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "DateDifference".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -892,7 +892,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "DateDifference".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -901,7 +901,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "DateDifference".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -935,7 +935,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(Expr::FunctionCall {
       name: "Quantity".to_string(),
-      args: vec![n, Expr::String("Days".to_string())],
+      args: vec![n, Expr::String("Days".to_string())].into(),
     });
   }
 
@@ -951,7 +951,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DateDifference".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -995,7 +995,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   Ok(Expr::FunctionCall {
     name: "Quantity".to_string(),
-    args: vec![n, Expr::String(unit_name.to_string())],
+    args: vec![n, Expr::String(unit_name.to_string())].into(),
   })
 }
 
@@ -1089,13 +1089,13 @@ fn date_difference_multi_unit(
     args: vec![
       Expr::FunctionCall {
         name: "MixedMagnitude".to_string(),
-        args: vec![Expr::List(magnitudes)],
+        args: vec![Expr::List(magnitudes.into())].into(),
       },
       Expr::FunctionCall {
         name: "MixedUnit".to_string(),
-        args: vec![Expr::List(plurals)],
+        args: vec![Expr::List(plurals.into())].into(),
       },
-    ],
+    ].into(),
   })
 }
 
@@ -1115,7 +1115,7 @@ fn unevaluated(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
   };
   Expr::FunctionCall {
     name: "DateDifference".to_string(),
-    args: vec![to_list(c1), to_list(c2), units.clone()],
+    args: vec![to_list(c1), to_list(c2), units.clone()].into(),
   }
 }
 
@@ -1205,13 +1205,13 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "DateString".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       } else {
         return Ok(Expr::FunctionCall {
           name: "DateString".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1320,12 +1320,12 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // Single format element as a string (e.g. DateString[Now, "Year"])
         _ => vec![Expr::String(s.clone())],
-      }
+      }.into()
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DateString".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1345,7 +1345,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Hour" => result.push_str(&format!("{:02}", h)),
         "Minute" => result.push_str(&format!("{:02}", min)),
         "Second" => result.push_str(&format!("{:02}", sec as i64)),
-        _ => result.push_str(s), // literal separator
+        _ => result.push_str(&s), // literal separator
       }
     }
   }
@@ -1359,7 +1359,7 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "DayName".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1387,7 +1387,7 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "DayName".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1424,7 +1424,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "DayPlus".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1436,7 +1436,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "DayPlus".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1459,7 +1459,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DayPlus".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1499,8 +1499,8 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(ny as i128),
         Expr::Integer(nm as i128),
         Expr::Integer(nd as i128),
-      ]),
+      ].into()),
       Expr::String("Day".to_string()),
-    ],
+    ].into(),
   })
 }

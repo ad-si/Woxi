@@ -1144,6 +1144,6 @@ pub fn check_arg_count(
 
   Some(Ok(Expr::FunctionCall {
     name: name.to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   }))
 }

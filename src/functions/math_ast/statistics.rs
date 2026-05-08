@@ -32,7 +32,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "Total".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -45,7 +45,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "Total".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -60,7 +60,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "Total".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -73,7 +73,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(_) => total_with_level(&args[0], &level_spec),
     Expr::Association(pairs) => {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
-      total_with_level(&Expr::List(values), &level_spec)
+      total_with_level(&Expr::List(values.into()), &level_spec)
     }
     // Total[x] for non-list returns x
     other => Ok(other.clone()),
@@ -111,7 +111,7 @@ pub fn add_exprs_recursive(
         .zip(lb.iter())
         .map(|(x, y)| add_exprs_recursive(x, y))
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => plus_ast(&[a.clone(), b.clone()]),
   }
@@ -150,7 +150,7 @@ pub fn total_range_levels(
         .iter()
         .map(|item| total_range_levels(item, n1 - 1, n2 - 1))
         .collect::<Result<Vec<_>, _>>()?;
-      Ok(Expr::List(processed))
+      Ok(Expr::List(processed.into()))
     }
     _ => Ok(expr.clone()),
   }
@@ -202,7 +202,7 @@ pub fn total_at_exact_level(
           .iter()
           .map(|item| total_at_exact_level(item, n - 1))
           .collect::<Result<Vec<_>, _>>()?;
-        Ok(Expr::List(processed))
+        Ok(Expr::List(processed.into()))
       }
       _ => Ok(expr.clone()),
     }
@@ -221,7 +221,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if items.is_empty() {
         return Ok(Expr::FunctionCall {
           name: "Mean".to_string(),
-          args: vec![Expr::List(vec![])],
+          args: vec![Expr::List(vec![].into())].into(),
         });
       }
       // Try to compute exact integer sum first
@@ -256,7 +256,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let denom = count / g;
           Ok(Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(num), Expr::Integer(denom)],
+            args: vec![Expr::Integer(num), Expr::Integer(denom)].into(),
           })
         }
       } else if has_real {
@@ -268,7 +268,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "Mean".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -341,7 +341,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![Expr::FunctionCall {
             name: dist_name.clone(),
             args: dargs.clone(),
-          }],
+          }].into(),
         }),
       }
     }
@@ -368,23 +368,23 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let inner_mean = mean_ast(&[dargs[0].clone()])?;
       Ok(Expr::FunctionCall {
         name: "Quantity".to_string(),
-        args: vec![inner_mean, dargs[1].clone()],
+        args: vec![inner_mean, dargs[1].clone()].into(),
       })
     }
     Expr::Association(pairs) => {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
-      mean_ast(&[Expr::List(values)])
+      mean_ast(&[Expr::List(values.into())])
     }
     _ => Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
 
 /// Mean of columns in a list-of-lists (matrix)
 pub fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
-  let row_vecs: Vec<&Vec<Expr>> = rows
+  let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {
       if let Expr::List(items) = r {
@@ -397,7 +397,7 @@ pub fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   if row_vecs.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
-      args: vec![Expr::List(rows.to_vec())],
+      args: vec![Expr::List(rows.to_vec().into())].into(),
     });
   }
   let ncols = row_vecs[0].len();
@@ -414,11 +414,11 @@ pub fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       })
       .collect();
-    let mean_result = mean_ast(&[Expr::List(col_items)])?;
+    let mean_result = mean_ast(&[Expr::List(col_items.into())])?;
     col_means.push(mean_result);
   }
   let _ = nrows; // used indirectly through mean_ast
-  Ok(Expr::List(col_means))
+  Ok(Expr::List(col_means.into()))
 }
 
 /// Variance[list] - Sample variance (unbiased, divides by n-1)
@@ -435,7 +435,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if items.len() < 2 {
         return Ok(Expr::FunctionCall {
           name: "Variance".to_string(),
-          args: vec![args[0].clone()],
+          args: vec![args[0].clone()].into(),
         });
       }
       // Try all-integer exact path
@@ -494,7 +494,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Variance".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     Expr::FunctionCall {
@@ -544,7 +544,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![Expr::FunctionCall {
             name: dist_name.clone(),
             args: dargs.clone(),
-          }],
+          }].into(),
         }),
       }
     }
@@ -577,12 +577,12 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       Ok(Expr::FunctionCall {
         name: "Quantity".to_string(),
-        args: vec![inner_var, unit_sq],
+        args: vec![inner_var, unit_sq].into(),
       })
     }
     _ => Ok(Expr::FunctionCall {
       name: "Variance".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -596,7 +596,7 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // Compute mean symbolically
-  let mean = mean_ast(&[Expr::List(items.to_vec())])?;
+  let mean = mean_ast(&[Expr::List(items.to_vec().into())])?;
   // Compute Sum[Abs[xi - mean]^2] / (n-1)
   let mut sum_sq_terms = Vec::new();
   for item in items {
@@ -607,9 +607,9 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
         item.clone(),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), mean.clone()],
+          args: vec![Expr::Integer(-1), mean.clone()].into(),
         },
-      ],
+      ].into(),
     };
     // Abs[xi - mean]^2
     let abs_sq = Expr::FunctionCall {
@@ -617,16 +617,16 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![
         Expr::FunctionCall {
           name: "Abs".to_string(),
-          args: vec![diff],
+          args: vec![diff].into(),
         },
         Expr::Integer(2),
-      ],
+      ].into(),
     };
     sum_sq_terms.push(abs_sq);
   }
   let sum_sq = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: sum_sq_terms,
+    args: sum_sq_terms.into(),
   };
   let result = Expr::FunctionCall {
     name: "Times".to_string(),
@@ -634,16 +634,16 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
       sum_sq,
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![Expr::Integer((n - 1) as i128), Expr::Integer(-1)],
+        args: vec![Expr::Integer((n - 1) as i128), Expr::Integer(-1)].into(),
       },
-    ],
+    ].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Variance of columns in a list-of-lists (matrix)
 pub fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
-  let row_vecs: Vec<&Vec<Expr>> = rows
+  let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {
       if let Expr::List(items) = r {
@@ -656,7 +656,7 @@ pub fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   if row_vecs.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Variance".to_string(),
-      args: vec![Expr::List(rows.to_vec())],
+      args: vec![Expr::List(rows.to_vec().into())].into(),
     });
   }
   let ncols = row_vecs[0].len();
@@ -672,10 +672,10 @@ pub fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       })
       .collect();
-    let var_result = variance_ast(&[Expr::List(col_items)])?;
+    let var_result = variance_ast(&[Expr::List(col_items.into())])?;
     col_vars.push(var_result);
   }
-  Ok(Expr::List(col_vars))
+  Ok(Expr::List(col_vars.into()))
 }
 
 /// StandardDeviation[list] - Sample standard deviation (Sqrt of Variance)
@@ -695,7 +695,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   match &var {
@@ -705,7 +705,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for item in items {
         results.push(sqrt_ast(&[item.clone()])?);
       }
-      Ok(Expr::List(results))
+      Ok(Expr::List(results.into()))
     }
     Expr::Integer(_)
     | Expr::Real(_)
@@ -724,7 +724,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -884,7 +884,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "GeometricMean".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -896,7 +896,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "GeometricMean".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -979,7 +979,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "HarmonicMean".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -989,12 +989,12 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "HarmonicMean".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Ok(Expr::FunctionCall {
       name: "HarmonicMean".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1004,7 +1004,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Covariance".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let (xs, ys) = match (&args[0], &args[1]) {
@@ -1016,7 +1016,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Covariance".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1026,7 +1026,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !all_numeric {
     return Ok(Expr::FunctionCall {
       name: "Covariance".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1060,7 +1060,7 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sum and divide by (n-1)
   let sum_expr = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: terms,
+    args: terms.into(),
   };
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = Expr::BinaryOp {
@@ -1076,7 +1076,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let (xs, ys) = match (&args[0], &args[1]) {
@@ -1088,7 +1088,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Correlation".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1098,7 +1098,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !all_numeric {
     return Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // If any input is a machine-precision Real, fall through to a direct
@@ -1126,7 +1126,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Wolfram emits Correlation::zerosd and leaves the expression unevaluated.
       return Ok(Expr::FunctionCall {
         name: "Correlation".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     return Ok(num_to_expr(cov / denom));
@@ -1146,7 +1146,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let var_product = Expr::BinaryOp {
@@ -1156,7 +1156,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let denom = Expr::FunctionCall {
     name: "Sqrt".to_string(),
-    args: vec![var_product],
+    args: vec![var_product].into(),
   };
   let result = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
@@ -1171,7 +1171,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "CentralMoment".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let items = match &args[0] {
@@ -1179,7 +1179,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CentralMoment".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1189,7 +1189,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "CentralMoment".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1199,7 +1199,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !all_numeric {
     return Ok(Expr::FunctionCall {
       name: "CentralMoment".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1228,7 +1228,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sum and divide by n
   let sum_expr = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: terms,
+    args: terms.into(),
   };
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = Expr::BinaryOp {
@@ -1244,7 +1244,7 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "Kurtosis".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let m4 = central_moment_ast(&[args[0].clone(), Expr::Integer(4)])?;
@@ -1268,7 +1268,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "Skewness".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
@@ -1351,7 +1351,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             return Ok(Expr::FunctionCall {
               name: "RootMeanSquare".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -1361,12 +1361,12 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "RootMeanSquare".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Ok(Expr::FunctionCall {
       name: "RootMeanSquare".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1457,7 +1457,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Quantile".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1474,7 +1474,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(qs) = &args[1] {
     let results: Result<Vec<Expr>, _> =
       qs.iter().map(|q| quantile_single(&sorted, q)).collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   quantile_single(&sorted, &args[1])
@@ -1501,7 +1501,7 @@ pub fn quantile_single(
           args: vec![
             Expr::List(sorted.iter().cloned().cloned().collect()),
             q.clone(),
-          ],
+          ].into(),
         });
       }
     }
@@ -1511,7 +1511,7 @@ pub fn quantile_single(
         args: vec![
           Expr::List(sorted.iter().cloned().cloned().collect()),
           q.clone(),
-        ],
+        ].into(),
       });
     }
   };
@@ -1528,7 +1528,7 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Moment".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1537,7 +1537,7 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Moment".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1549,12 +1549,12 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for x in items {
     let p = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![x.clone(), r.clone()],
+      args: vec![x.clone(), r.clone()].into(),
     })?;
     powered.push(p);
   }
 
-  let powered_list = Expr::List(powered);
+  let powered_list = Expr::List(powered.into());
   mean_ast(&[powered_list])
 }
 
@@ -1579,13 +1579,13 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let abs_diff = Expr::FunctionCall {
         name: "Abs".to_string(),
-        args: vec![diff],
+        args: vec![diff].into(),
       };
       abs_devs.push(abs_diff);
     }
     let sum = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: abs_devs,
+      args: abs_devs.into(),
     };
     let result = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -1596,7 +1596,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(Expr::FunctionCall {
       name: "MeanDeviation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -1621,17 +1621,17 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let abs_diff = Expr::FunctionCall {
         name: "Abs".to_string(),
-        args: vec![diff],
+        args: vec![diff].into(),
       };
       abs_devs.push(crate::evaluator::evaluate_expr_to_expr(&abs_diff)?);
     }
     // Return median of the absolute deviations
-    let devs_list = Expr::List(abs_devs);
+    let devs_list = Expr::List(abs_devs.into());
     crate::functions::list_helpers_ast::median_ast(&devs_list)
   } else {
     Ok(Expr::FunctionCall {
       name: "MedianDeviation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -1661,7 +1661,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "LocationTest".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -1677,7 +1677,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "LocationTest".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1717,7 +1717,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "LocationTest".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1812,16 +1812,16 @@ fn format_location_test_result(
         Expr::String(String::new()),
         Expr::String("Statistic".to_string()),
         Expr::String("P\u{2010}Value".to_string()),
-      ]);
+      ].into());
       let row = Expr::List(vec![
         Expr::String(test_name.to_string()),
         num_to_expr(t_stat),
         num_to_expr(p),
-      ]);
+      ].into());
       Ok(Expr::FunctionCall {
         name: "Grid".to_string(),
         args: vec![
-          Expr::List(vec![header, row]),
+          Expr::List(vec![header, row].into()),
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
@@ -1829,8 +1829,8 @@ fn format_location_test_result(
               Expr::List(vec![
                 Expr::Identifier("Left".to_string()),
                 Expr::Identifier("Automatic".to_string()),
-              ]),
-            ],
+              ].into()),
+            ].into(),
           },
           Expr::FunctionCall {
             name: "Rule".to_string(),
@@ -1843,9 +1843,9 @@ fn format_location_test_result(
                     Expr::Integer(2),
                     Expr::FunctionCall {
                       name: "GrayLevel".to_string(),
-                      args: vec![Expr::Real(0.7)],
+                      args: vec![Expr::Real(0.7)].into(),
                     },
-                  ],
+                  ].into(),
                 },
                 Expr::FunctionCall {
                   name: "Rule".to_string(),
@@ -1853,21 +1853,21 @@ fn format_location_test_result(
                     Expr::Integer(2),
                     Expr::FunctionCall {
                       name: "GrayLevel".to_string(),
-                      args: vec![Expr::Real(0.7)],
+                      args: vec![Expr::Real(0.7)].into(),
                     },
-                  ],
+                  ].into(),
                 },
-              ]),
-            ],
+              ].into()),
+            ].into(),
           },
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
               Expr::Identifier("Spacings".to_string()),
               Expr::Identifier("Automatic".to_string()),
-            ],
+            ].into(),
           },
-        ],
+        ].into(),
       })
     }
     _ => {
@@ -1894,7 +1894,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Likelihood".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1904,7 +1904,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Likelihood".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1921,7 +1921,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for xi in data {
     let pdf_expr = Expr::FunctionCall {
       name: "PDF".to_string(),
-      args: vec![dist.clone(), xi.clone()],
+      args: vec![dist.clone(), xi.clone()].into(),
     };
     let pdf_val = crate::evaluator::evaluate_expr_to_expr(&pdf_expr)?;
     pdf_values.push(pdf_val);
@@ -1933,7 +1933,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     let product_expr = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: pdf_values,
+      args: pdf_values.into(),
     };
     crate::evaluator::evaluate_expr_to_expr(&product_expr)?
   };
@@ -1946,7 +1946,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Try N[product]
     let n_expr = Expr::FunctionCall {
       name: "N".to_string(),
-      args: vec![product.clone()],
+      args: vec![product.clone()].into(),
     };
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&n_expr)
       && try_eval_to_f64(&result).is_some()
@@ -1969,7 +1969,7 @@ pub fn pearson_chi_square_test_ast(
   if args.is_empty() || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "PearsonChiSquareTest".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1982,7 +1982,7 @@ pub fn pearson_chi_square_test_ast(
         } else {
           return Ok(Expr::FunctionCall {
             name: "PearsonChiSquareTest".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -1991,7 +1991,7 @@ pub fn pearson_chi_square_test_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PearsonChiSquareTest".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2038,14 +2038,14 @@ pub fn pearson_chi_square_test_ast(
         _ => {
           return Ok(Expr::FunctionCall {
             name: "PearsonChiSquareTest".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       },
       _ => {
         return Ok(Expr::FunctionCall {
           name: "PearsonChiSquareTest".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2174,18 +2174,18 @@ pub fn longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "Longitude".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
     Some((_, lon)) => Ok(Expr::FunctionCall {
       name: "Quantity".to_string(),
-      args: vec![lon, Expr::String("AngularDegrees".to_string())],
+      args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
     }),
     None => Ok(Expr::FunctionCall {
       name: "Longitude".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2195,18 +2195,18 @@ pub fn latitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "Latitude".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
     Some((lat, _)) => Ok(Expr::FunctionCall {
       name: "Quantity".to_string(),
-      args: vec![lat, Expr::String("AngularDegrees".to_string())],
+      args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
     }),
     None => Ok(Expr::FunctionCall {
       name: "Latitude".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2236,23 +2236,23 @@ pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "LatitudeLongitude".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   match extract_geo_coords(&args[0]) {
     Some((lat, lon)) => Ok(Expr::List(vec![
       Expr::FunctionCall {
         name: "Quantity".to_string(),
-        args: vec![lat, Expr::String("AngularDegrees".to_string())],
+        args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
       },
       Expr::FunctionCall {
         name: "Quantity".to_string(),
-        args: vec![lon, Expr::String("AngularDegrees".to_string())],
+        args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
       },
-    ])),
+    ].into())),
     None => Ok(Expr::FunctionCall {
       name: "LatitudeLongitude".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2264,7 +2264,7 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "GroupGenerators".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2275,7 +2275,7 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "GroupGenerators".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -2286,13 +2286,13 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "AlternatingGroup" => Ok(alternating_group_generators(n)),
         _ => Ok(Expr::FunctionCall {
           name: "GroupGenerators".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }),
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "GroupGenerators".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2302,7 +2302,7 @@ fn make_cycles(cycle: Vec<i128>) -> Expr {
     name: "Cycles".to_string(),
     args: vec![Expr::List(vec![Expr::List(
       cycle.into_iter().map(Expr::Integer).collect(),
-    )])],
+    )].into())].into(),
   }
 }
 
@@ -2314,34 +2314,34 @@ fn make_cycles_multi(cycles: Vec<Vec<i128>>) -> Expr {
         .into_iter()
         .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
         .collect(),
-    )],
+    )].into(),
   }
 }
 
 fn symmetric_group_generators(n: usize) -> Expr {
   if n <= 1 {
-    return Expr::List(vec![make_cycles_multi(vec![])]);
+    return Expr::List(vec![make_cycles_multi(vec![])].into());
   }
   let transposition = make_cycles(vec![1, 2]);
   let n_cycle: Vec<i128> = (1..=n as i128).collect();
   let rotation = make_cycles(n_cycle);
-  Expr::List(vec![transposition, rotation])
+  Expr::List(vec![transposition, rotation].into())
 }
 
 fn cyclic_group_generators(n: usize) -> Expr {
   if n <= 1 {
-    return Expr::List(vec![make_cycles_multi(vec![])]);
+    return Expr::List(vec![make_cycles_multi(vec![])].into());
   }
   let n_cycle: Vec<i128> = (1..=n as i128).collect();
-  Expr::List(vec![make_cycles(n_cycle)])
+  Expr::List(vec![make_cycles(n_cycle)].into())
 }
 
 fn dihedral_group_generators(n: usize) -> Expr {
   if n <= 1 {
-    return Expr::List(vec![make_cycles_multi(vec![])]);
+    return Expr::List(vec![make_cycles_multi(vec![])].into());
   }
   if n == 2 {
-    return Expr::List(vec![make_cycles(vec![1, 2]), make_cycles(vec![3, 4])]);
+    return Expr::List(vec![make_cycles(vec![1, 2]), make_cycles(vec![3, 4])].into());
   }
 
   // Reflection: for even n pairs (i, n+1-i); for odd n pairs (i, n+2-i) for i>=2
@@ -2359,15 +2359,15 @@ fn dihedral_group_generators(n: usize) -> Expr {
   let reflection = make_cycles_multi(reflection_cycles);
   let n_cycle: Vec<i128> = (1..=n as i128).collect();
   let rotation = make_cycles(n_cycle);
-  Expr::List(vec![reflection, rotation])
+  Expr::List(vec![reflection, rotation].into())
 }
 
 fn alternating_group_generators(n: usize) -> Expr {
   if n <= 2 {
-    return Expr::List(vec![make_cycles_multi(vec![])]);
+    return Expr::List(vec![make_cycles_multi(vec![])].into());
   }
   if n == 3 {
-    return Expr::List(vec![make_cycles(vec![1, 2, 3])]);
+    return Expr::List(vec![make_cycles(vec![1, 2, 3])].into());
   }
   let three_cycle = make_cycles(vec![1, 2, 3]);
   let second_gen = if n % 2 == 1 {
@@ -2375,7 +2375,7 @@ fn alternating_group_generators(n: usize) -> Expr {
   } else {
     make_cycles((2..=n as i128).collect())
   };
-  Expr::List(vec![three_cycle, second_gen])
+  Expr::List(vec![three_cycle, second_gen].into())
 }
 
 // ─── DiscreteAsymptotic ───────────────────────────────────────────────
@@ -2387,7 +2387,7 @@ pub fn discrete_asymptotic_ast(
   if args.len() < 2 || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "DiscreteAsymptotic".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2403,7 +2403,7 @@ pub fn discrete_asymptotic_ast(
         _ => {
           return Ok(Expr::FunctionCall {
             name: "DiscreteAsymptotic".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -2418,14 +2418,14 @@ pub fn discrete_asymptotic_ast(
       _ => {
         return Ok(Expr::FunctionCall {
           name: "DiscreteAsymptotic".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     },
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DiscreteAsymptotic".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2435,7 +2435,7 @@ pub fn discrete_asymptotic_ast(
     Some(result) => crate::evaluator::evaluate_expr_to_expr(&result),
     None => Ok(Expr::FunctionCall {
       name: "DiscreteAsymptotic".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2479,16 +2479,16 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
                   n.clone(),
                   Expr::FunctionCall {
                     name: "Rational".to_string(),
-                    args: vec![Expr::Integer(-1), Expr::Integer(2)],
+                    args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
                   },
-                ],
+                ].into(),
               },
-            ],
+            ].into(),
           },
           // Sqrt[2*Pi]
           make_sqrt(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())].into(),
           }),
           // E^(-n)
           Expr::FunctionCall {
@@ -2497,11 +2497,11 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
               Expr::Constant("E".to_string()),
               Expr::FunctionCall {
                 name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), n],
+                args: vec![Expr::Integer(-1), n].into(),
               },
-            ],
+            ].into(),
           },
-        ],
+        ].into(),
       })
     }
 
@@ -2513,7 +2513,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     {
       Some(Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![Expr::Identifier(var.to_string())],
+        args: vec![Expr::Identifier(var.to_string())].into(),
       })
     }
 
@@ -2553,7 +2553,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     } => {
       let neg_right = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), *right.clone()],
+        args: vec![Expr::Integer(-1), *right.clone()].into(),
       };
       asymptotic_sum(&[*left.clone(), neg_right], var)
     }
@@ -2574,7 +2574,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       } else {
         Some(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: result_factors,
+          args: result_factors.into(),
         })
       }
     }
@@ -2589,7 +2589,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       let r = discrete_asymptotic_leading(right, var)?;
       Some(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![l, r],
+        args: vec![l, r].into(),
       })
     }
 
@@ -2678,16 +2678,16 @@ fn stirling_approx(var: &str) -> Expr {
               n.clone(),
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
-            ],
+            ].into(),
           },
-        ],
+        ].into(),
       },
       // Sqrt[2*Pi]
       make_sqrt(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+        args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())].into(),
       }),
       // E^(-n)
       Expr::FunctionCall {
@@ -2696,11 +2696,11 @@ fn stirling_approx(var: &str) -> Expr {
           Expr::Constant("E".to_string()),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), n],
+            args: vec![Expr::Integer(-1), n].into(),
           },
-        ],
+        ].into(),
       },
-    ],
+    ].into(),
   }
 }
 
@@ -2808,7 +2808,7 @@ fn asymptotic_sum(terms: &[Expr], var: &str) -> Option<Expr> {
       // For simplicity, if they have the same growth order, keep as sum
       best_expr = Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: vec![best_expr, asym],
+        args: vec![best_expr, asym].into(),
       };
     }
   }
@@ -2859,12 +2859,12 @@ fn asymptotic_binomial(
             args: vec![
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
               n.clone(),
-            ],
+            ].into(),
           },
-        ],
+        ].into(),
       },
       // 1 / (Sqrt[n] * Sqrt[Pi])
       Expr::FunctionCall {
@@ -2875,12 +2875,12 @@ fn asymptotic_binomial(
             args: vec![
               make_sqrt(n),
               make_sqrt(Expr::Constant("Pi".to_string())),
-            ],
+            ].into(),
           },
           Expr::Integer(-1),
-        ],
+        ].into(),
       },
-    ],
+    ].into(),
   })
 }
 

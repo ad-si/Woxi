@@ -124,9 +124,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           Expr::Identifier(s) if s == "Bold" => bold = true,
           Expr::Identifier(s) if s == "Italic" => italic = true,
           _ => {
-            if let Some(c) = parse_color(arg) {
+            if let Some(c) = parse_color(&arg) {
               color = Some(c);
-            } else if let Some(f) = try_eval_to_f64(arg) {
+            } else if let Some(f) = try_eval_to_f64(&arg) {
               font_size = Some(f);
             }
           }
@@ -593,7 +593,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Return unevaluated for invalid (non-list) input, matching wolframscript.
       return Ok(Expr::FunctionCall {
         name: "BarChart3D".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -743,7 +743,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Err(_) => {
       return Ok(Expr::FunctionCall {
         name: "PieChart3D".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1853,7 +1853,7 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Return unevaluated (like Wolfram does for invalid data)
     return Ok(Expr::FunctionCall {
       name: "DateListPlot".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 

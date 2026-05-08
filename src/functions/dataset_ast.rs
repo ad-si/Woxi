@@ -10,7 +10,7 @@ fn infer_type(expr: &Expr) -> Expr {
       // TypeSystem`Atom[TypeSystem`Boolean]
       Expr::FunctionCall {
         name: "TypeSystem`Atom".to_string(),
-        args: vec![Expr::Identifier("TypeSystem`Boolean".to_string())],
+        args: vec![Expr::Identifier("TypeSystem`Boolean".to_string())].into(),
       }
     }
     Expr::Identifier(name) if name == "Null" => ts_atom("Null"),
@@ -26,7 +26,7 @@ fn infer_type(expr: &Expr) -> Expr {
 fn ts_atom(name: &str) -> Expr {
   Expr::FunctionCall {
     name: "TypeSystem`Atom".to_string(),
-    args: vec![Expr::Identifier(name.to_string())],
+    args: vec![Expr::Identifier(name.to_string())].into(),
   }
 }
 
@@ -36,7 +36,7 @@ fn infer_list_type(items: &[Expr]) -> Expr {
     // Empty list: Vector[Atom[Expression], 0]
     return Expr::FunctionCall {
       name: "TypeSystem`Vector".to_string(),
-      args: vec![ts_atom("Expression"), Expr::Integer(0)],
+      args: vec![ts_atom("Expression"), Expr::Integer(0)].into(),
     };
   }
 
@@ -52,13 +52,13 @@ fn infer_list_type(items: &[Expr]) -> Expr {
     // Vector[type, count]
     Expr::FunctionCall {
       name: "TypeSystem`Vector".to_string(),
-      args: vec![types[0].clone(), Expr::Integer(items.len() as i128)],
+      args: vec![types[0].clone(), Expr::Integer(items.len() as i128)].into(),
     }
   } else {
     // Tuple[{type1, type2, ...}]
     Expr::FunctionCall {
       name: "TypeSystem`Tuple".to_string(),
-      args: vec![Expr::List(types)],
+      args: vec![Expr::List(types.into())].into(),
     }
   }
 }
@@ -70,7 +70,7 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
   if pairs.is_empty() {
     return Expr::FunctionCall {
       name: "TypeSystem`Struct".to_string(),
-      args: vec![Expr::List(vec![]), Expr::List(vec![])],
+      args: vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
     };
   }
 
@@ -124,8 +124,8 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
           name: "TypeSystem`Atom".to_string(),
           args: vec![Expr::FunctionCall {
             name: "TypeSystem`Enumeration".to_string(),
-            args: key_names,
-          }],
+            args: key_names.into(),
+          }].into(),
         }
       }
     };
@@ -136,7 +136,7 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
         key_type,
         value_types[0].clone(),
         Expr::Integer(pairs.len() as i128),
-      ],
+      ].into(),
     }
   } else {
     // Struct[{key1, key2, ...}, {type1, type2, ...}]
@@ -151,7 +151,7 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
 
     Expr::FunctionCall {
       name: "TypeSystem`Struct".to_string(),
-      args: vec![Expr::List(key_names), Expr::List(value_types)],
+      args: vec![Expr::List(key_names.into()), Expr::List(value_types.into())].into(),
     }
   }
 }
@@ -183,18 +183,18 @@ pub fn dataset_query(
         }
         Expr::FunctionCall {
           name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), col_key.clone()],
+          args: vec![Expr::String("KeyAbsent".to_string()), col_key.clone()].into(),
         }
       })
       .collect();
-    return Ok(dataset_ast(&[Expr::List(values)]));
+    return Ok(dataset_ast(&[Expr::List(values.into())]));
   }
 
   // Fallback: return unevaluated
   Ok(Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
       name: "Dataset".to_string(),
-      args: func_args.to_vec(),
+      args: func_args.to_vec().into(),
     }),
     args: args.to_vec(),
   })
@@ -210,13 +210,13 @@ pub fn dataset_ast(args: &[Expr]) -> Expr {
 
     Expr::FunctionCall {
       name: "Dataset".to_string(),
-      args: vec![data.clone(), type_expr, metadata],
+      args: vec![data.clone(), type_expr, metadata].into(),
     }
   } else {
     // Already has type info or other args — return as-is
     Expr::FunctionCall {
       name: "Dataset".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }
   }
 }

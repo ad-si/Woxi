@@ -9,7 +9,7 @@ pub fn evaluate_pattern_function_ast(
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Pattern".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let pattern_name = match &args[0] {
@@ -17,7 +17,7 @@ pub fn evaluate_pattern_function_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Pattern".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -35,7 +35,7 @@ pub fn evaluate_pattern_function_ast(
     }),
     _ => Ok(Expr::FunctionCall {
       name: "Pattern".to_string(),
-      args: vec![args[0].clone(), blank],
+      args: vec![args[0].clone(), blank].into(),
     }),
   }
 }
@@ -59,7 +59,7 @@ pub fn evaluate_pattern_test_ast(
 ) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: "PatternTest".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -87,13 +87,13 @@ pub fn evaluate_blank_sequence_ast(
       } else {
         Ok(Expr::FunctionCall {
           name: name.to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -117,13 +117,13 @@ pub fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "Blank".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "Blank".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }

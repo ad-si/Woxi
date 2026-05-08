@@ -19,7 +19,7 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "DigitCount".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -29,7 +29,7 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "DigitCount".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -60,7 +60,7 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "DigitCount".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -79,7 +79,7 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result.push(Expr::Integer(counts[d]));
     }
     result.push(Expr::Integer(counts[0]));
-    Ok(Expr::List(result))
+    Ok(Expr::List(result.into()))
   }
 }
 
@@ -96,7 +96,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "DigitSum".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -106,7 +106,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "DigitSum".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -692,7 +692,7 @@ fn extract_quadratic_irrational(
         1 => remaining.into_iter().next().unwrap(),
         _ => Expr::FunctionCall {
           name: "Times".to_string(),
-          args: remaining,
+          args: remaining.into(),
         },
       };
       (inner, scale_n, scale_d)
@@ -937,7 +937,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle Rational[p, q] or Integer
   match &args[0] {
     Expr::Integer(n) => {
-      return Ok(Expr::List(vec![Expr::Integer(*n)]));
+      return Ok(Expr::List(vec![Expr::Integer(*n)].into()));
     }
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
@@ -957,7 +957,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           a = b;
           b = rem;
         }
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
     }
     _ => {}
@@ -976,11 +976,11 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some((a0, period)) = continued_fraction_of_sqrt(d)
   {
     if period.is_empty() {
-      return Ok(Expr::List(vec![Expr::Integer(a0)]));
+      return Ok(Expr::List(vec![Expr::Integer(a0)].into()));
     }
     let period_list =
       Expr::List(period.into_iter().map(Expr::Integer).collect());
-    return Ok(Expr::List(vec![Expr::Integer(a0), period_list]));
+    return Ok(Expr::List(vec![Expr::Integer(a0), period_list].into()));
   }
 
   // ContinuedFraction[(p + q √d) / r] — periodic CF for quadratic irrationals.
@@ -997,7 +997,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !period.is_empty() {
       result.push(Expr::List(period.into_iter().map(Expr::Integer).collect()));
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   // For expressions with n terms
@@ -1007,7 +1007,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "ContinuedFraction".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1031,13 +1031,13 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         val = 1.0 / frac;
       }
-      return Ok(Expr::List(result));
+      return Ok(Expr::List(result.into()));
     }
   }
 
   Ok(Expr::FunctionCall {
     name: "ContinuedFraction".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1056,7 +1056,7 @@ pub fn from_continued_fraction_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FromContinuedFraction".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1073,7 +1073,7 @@ pub fn from_continued_fraction_ast(
       _ => {
         return Ok(Expr::FunctionCall {
           name: "FromContinuedFraction".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1119,7 +1119,7 @@ pub fn from_continued_fraction_ast(
   } else {
     Ok(Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(num), Expr::Integer(den)],
+      args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
     })
   }
 }
@@ -1137,7 +1137,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerDigits".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1192,7 +1192,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(digits))
+  Ok(Expr::List(digits.into()))
 }
 
 /// Extract digits of a positive BigFloat in an arbitrary integer `base >= 2`,
@@ -1510,7 +1510,7 @@ fn real_digits_rational_base(
       .collect();
 
     let mut result = non_repeating;
-    result.push(Expr::List(repeating));
+    result.push(Expr::List(repeating.into()));
     (result, exponent)
   } else {
     let digit_exprs: Vec<Expr> =
@@ -1598,7 +1598,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let abs_expr = if is_negative {
     Expr::FunctionCall {
       name: "Abs".to_string(),
-      args: vec![expr.clone()],
+      args: vec![expr.clone()].into(),
     }
   } else {
     expr.clone()
@@ -1612,7 +1612,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let count = if explicit_num_digits { num_digits } else { 1 };
     let exp = if explicit_num_digits { 0 } else { 1 };
     let digits = vec![Expr::Integer(0); count];
-    return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(exp)]));
+    return Ok(Expr::List(vec![Expr::List(digits.into()), Expr::Integer(exp)].into()));
   }
 
   // For Real inputs, promote the Real to an exact rational via its decimal
@@ -1640,9 +1640,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (digit_list, exponent) =
         real_digits_rational_base(numer, denom, base);
       return Ok(Expr::List(vec![
-        Expr::List(digit_list),
+        Expr::List(digit_list.into()),
         Expr::Integer(exponent),
-      ]));
+      ].into()));
     } else {
       // With explicit num_digits: use long division and produce exactly
       // num_digits significant digits starting from the first nonzero.
@@ -1717,9 +1717,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         digit_exprs.push(Expr::Identifier("Indeterminate".to_string()));
       }
       return Ok(Expr::List(vec![
-        Expr::List(digit_exprs),
+        Expr::List(digit_exprs.into()),
         Expr::Integer(exponent),
-      ]));
+      ].into()));
     }
   }
 
@@ -1745,7 +1745,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Non-numeric expression (e.g. bare symbol): return unevaluated.
       return Ok(Expr::FunctionCall {
         name: "RealDigits".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1784,9 +1784,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let digit_exprs: Vec<Expr> =
         digits.iter().map(|&d| Expr::Integer(d)).collect();
       return Ok(Expr::List(vec![
-        Expr::List(digit_exprs),
+        Expr::List(digit_exprs.into()),
         Expr::Integer(p + 1),
-      ]));
+      ].into()));
     }
     while digits.len() < num_digits {
       digits.push(0);
@@ -1795,9 +1795,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let digit_exprs: Vec<Expr> =
       digits.iter().map(|&d| Expr::Integer(d)).collect();
     return Ok(Expr::List(vec![
-      Expr::List(digit_exprs),
+      Expr::List(digit_exprs.into()),
       Expr::Integer(base_exp as i128),
-    ]));
+    ].into()));
   }
 
   let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf, rm, &mut cc)?;
@@ -1836,9 +1836,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let digit_exprs: Vec<Expr> =
       digits.iter().map(|&d| Expr::Integer(d)).collect();
     return Ok(Expr::List(vec![
-      Expr::List(digit_exprs),
+      Expr::List(digit_exprs.into()),
       Expr::Integer(p + 1),
-    ]));
+    ].into()));
   }
 
   // Pad with zeros if we don't have enough digits
@@ -1853,9 +1853,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     digits.iter().map(|&d| Expr::Integer(d)).collect();
 
   Ok(Expr::List(vec![
-    Expr::List(digit_exprs),
+    Expr::List(digit_exprs.into()),
     Expr::Integer(decimal_exp as i128),
-  ]))
+  ].into()))
 }
 
 /// FromDigits[list
@@ -1891,7 +1891,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "FromDigits".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1911,19 +1911,19 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           Expr::FunctionCall {
             name: "Power".to_string(),
-            args: vec![base_expr.clone(), Expr::Integer(power)],
+            args: vec![base_expr.clone(), Expr::Integer(power)].into(),
           }
         };
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![item.clone(), base_pow],
+          args: vec![item.clone(), base_pow].into(),
         }
       };
       terms.push(term);
     }
     let sum = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     };
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
@@ -1944,7 +1944,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "FromDigits".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       };
       // Wolfram allows digit values >= base (overflow digits)
@@ -1959,7 +1959,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FromDigits".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2005,7 +2005,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![bigint_to_expr(num), bigint_to_expr(den)],
+          args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
         });
       }
     }
@@ -2033,10 +2033,10 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![base_expr.clone(), result],
+            args: vec![base_expr.clone(), result].into(),
           },
           item.clone(),
-        ],
+        ].into(),
       };
       result = crate::evaluator::evaluate_expr_to_expr(&result)?;
     }
@@ -2066,13 +2066,13 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(Expr::FunctionCall {
           name: "IntegerLength".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       None => {
         return Ok(Expr::FunctionCall {
           name: "IntegerLength".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2098,7 +2098,7 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "IntegerLength".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2122,7 +2122,7 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "IntegerReverse".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2145,7 +2145,7 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "IntegerReverse".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2229,7 +2229,7 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| integer_name_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let n = match expr_to_i128(&args[0]) {
@@ -2237,7 +2237,7 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerName".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2287,7 +2287,7 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "IntegerName".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       };
       parts.push(format!("{} {}", group, scale));
@@ -2315,7 +2315,7 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "RomanNumeral".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2331,7 +2331,7 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if abs_n >= 5000 {
     return Ok(Expr::FunctionCall {
       name: "RomanNumeral".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2377,13 +2377,13 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Convergents".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   if elements.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Collect all integers
@@ -2394,7 +2394,7 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Convergents".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2424,7 +2424,7 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     k_prev1 = k;
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 fn make_rational_expr(num: i128, den: i128) -> Expr {
@@ -2477,7 +2477,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NumberDigit".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };

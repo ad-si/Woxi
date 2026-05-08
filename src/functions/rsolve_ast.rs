@@ -32,8 +32,8 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (Comparison or Equal[...]) by wrapping it in a one-element list.
   let equations = match &args[0] {
     Expr::List(eqs) => eqs.clone(),
-    Expr::Comparison { .. } => vec![args[0].clone()],
-    Expr::FunctionCall { name, .. } if name == "Equal" => vec![args[0].clone()],
+    Expr::Comparison { .. } => vec![args[0].clone()].into(),
+    Expr::FunctionCall { name, .. } if name == "Equal" => vec![args[0].clone()].into(),
     _ => return Ok(unevaluated(args)),
   };
 
@@ -106,7 +106,7 @@ fn wrap_rsolve_result(
   let pattern = if return_as_func_call {
     Expr::FunctionCall {
       name: func_name.to_string(),
-      args: vec![Expr::Identifier(var_name.to_string())],
+      args: vec![Expr::Identifier(var_name.to_string())].into(),
     }
   } else {
     Expr::Identifier(func_name.to_string())
@@ -117,22 +117,22 @@ fn wrap_rsolve_result(
     Expr::FunctionCall {
       name: "Function".to_string(),
       args: vec![
-        Expr::List(vec![Expr::Identifier(var_name.to_string())]),
+        Expr::List(vec![Expr::Identifier(var_name.to_string())].into()),
         solution,
-      ],
+      ].into(),
     }
   };
   let rule = Expr::Rule {
     pattern: Box::new(pattern),
     replacement: Box::new(replacement),
   };
-  Expr::List(vec![Expr::List(vec![rule])])
+  Expr::List(vec![Expr::List(vec![rule].into())].into())
 }
 
 fn unevaluated(args: &[Expr]) -> Expr {
   Expr::FunctionCall {
     name: "RSolve".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   }
 }
 
@@ -305,7 +305,7 @@ fn build_partial_solution(
   let n_var = Expr::Identifier(var_name.to_string());
   let c1 = Expr::FunctionCall {
     name: "C".to_string(),
-    args: vec![Expr::Integer(1)],
+    args: vec![Expr::Integer(1)].into(),
   };
 
   fn root_pow(r: i128, n_var: &Expr) -> Expr {
@@ -380,7 +380,7 @@ fn build_general_solution(
   for (i, &(rn, rd)) in roots.iter().enumerate() {
     let const_expr = Expr::FunctionCall {
       name: "C".to_string(),
-      args: vec![Expr::Integer((i + 1) as i128)],
+      args: vec![Expr::Integer((i + 1) as i128)].into(),
     };
     let term = if rn == 1 && rd == 1 {
       const_expr
@@ -1000,7 +1000,7 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     results.push(val);
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Extract the offset from an expression like a[n+k] or a[n] or a[n-1]
@@ -1076,6 +1076,6 @@ fn substitute_func_values(
 fn recurrence_table_unevaluated(args: &[Expr]) -> Expr {
   Expr::FunctionCall {
     name: "RecurrenceTable".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   }
 }

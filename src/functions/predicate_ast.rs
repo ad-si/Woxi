@@ -539,7 +539,7 @@ pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Positive".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -562,7 +562,7 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Negative".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -581,7 +581,7 @@ pub fn non_positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(val) => Ok(bool_expr(val)),
     None => Ok(Expr::FunctionCall {
       name: "NonPositive".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -601,7 +601,7 @@ pub fn non_negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(val) => Ok(bool_expr(val)),
     None => Ok(Expr::FunctionCall {
       name: "NonNegative".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1100,7 +1100,7 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "SquareFreeQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1136,7 +1136,7 @@ pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "PalindromeQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1159,13 +1159,13 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Non-exact number - return unevaluated
       return Ok(Expr::FunctionCall {
         name: "Divisible".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Divisible".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1179,13 +1179,13 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Non-exact number - return unevaluated
       return Ok(Expr::FunctionCall {
         name: "Divisible".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Divisible".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1580,7 +1580,7 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
 pub fn full_form_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: "FullForm".to_string(),
-    args: vec![arg.clone()],
+    args: vec![arg.clone()].into(),
   })
 }
 
@@ -1617,7 +1617,7 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Construct[f, a, b, c] => f[a, b, c]
   Ok(Expr::FunctionCall {
     name: head_name,
-    args: func_args.to_vec(),
+    args: func_args.to_vec().into(),
   })
 }
 
@@ -1703,7 +1703,7 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "SubsetQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1715,7 +1715,7 @@ pub fn possible_zero_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "PossibleZeroQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let expr = &args[0];
@@ -1775,7 +1775,7 @@ pub fn possible_zero_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 8. For complex-valued expressions, evaluate via N[] and check magnitude.
   let n_call = Expr::FunctionCall {
     name: "N".to_string(),
-    args: vec![expr.clone()],
+    args: vec![expr.clone()].into(),
   };
   if let Ok(num) = crate::evaluator::evaluate_expr_to_expr(&n_call)
     && let Some((re, im)) =

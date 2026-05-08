@@ -15,7 +15,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "DSolve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -73,7 +73,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -88,13 +88,13 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "DSolve".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       } else {
         return Ok(Expr::FunctionCall {
           name: "DSolve".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -103,7 +103,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -115,7 +115,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if items.is_empty() {
         return Ok(Expr::FunctionCall {
           name: "DSolve".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       let mut ics = Vec::new();
@@ -128,7 +128,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // Multiple ODEs not supported
             return Ok(Expr::FunctionCall {
               name: "DSolve".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
           ode = Some(item.clone());
@@ -139,7 +139,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "DSolve".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -160,7 +160,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Not actually an ODE
     return Ok(Expr::FunctionCall {
       name: "DSolve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -188,7 +188,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Unsupported
     return Ok(Expr::FunctionCall {
       name: "DSolve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   };
 
@@ -223,13 +223,13 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Rule {
       pattern: Box::new(Expr::FunctionCall {
         name: y_name,
-        args: vec![Expr::Identifier(x_name)],
+        args: vec![Expr::Identifier(x_name)].into(),
       }),
       replacement: Box::new(solution),
     }
   };
 
-  Ok(Expr::List(vec![Expr::List(vec![rule])]))
+  Ok(Expr::List(vec![Expr::List(vec![rule].into())].into()))
 }
 
 // ─── NDSolve ───────────────────────────────────────────────────────────
@@ -240,7 +240,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "NDSolve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -256,7 +256,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "NDSolve".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -269,7 +269,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NDSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -283,13 +283,13 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "NDSolve".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       } else {
         return Ok(Expr::FunctionCall {
           name: "NDSolve".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -297,7 +297,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NDSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -305,7 +305,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract equations and initial conditions from list
   let items = match eqns_arg {
     Expr::List(items) => items.clone(),
-    _ => vec![eqns_arg.clone()],
+    _ => vec![eqns_arg.clone()].into(),
   };
 
   // Separate ODE from initial conditions
@@ -321,7 +321,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if ode_expr.is_some() {
         return Ok(Expr::FunctionCall {
           name: "NDSolve".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       ode_expr = Some(item.clone());
@@ -333,7 +333,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "NDSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -346,7 +346,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if max_order == 0 || initial_conditions.len() != max_order {
     return Ok(Expr::FunctionCall {
       name: "NDSolve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -369,7 +369,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "NDSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -381,7 +381,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "NDSolve".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -401,7 +401,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if (x0 - x_min).abs() > 1e-10 {
     return Ok(Expr::FunctionCall {
       name: "NDSolve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -417,19 +417,19 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build InterpolatingFunction
   let domain =
-    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)])]);
+    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)].into())].into());
 
   // Store data as a list of {x, y} pairs
   let data_expr = Expr::List(
     data_points
       .iter()
-      .map(|(xv, yv)| Expr::List(vec![Expr::Real(*xv), Expr::Real(*yv)]))
+      .map(|(xv, yv)| Expr::List(vec![Expr::Real(*xv), Expr::Real(*yv)].into()))
       .collect(),
   );
 
   let interp_func = Expr::FunctionCall {
     name: "InterpolatingFunction".to_string(),
-    args: vec![domain, data_expr],
+    args: vec![domain, data_expr].into(),
   };
 
   // Build result: {{y -> InterpolatingFunction[...]}} or {{y[x] -> InterpolatingFunction[...][x]}}
@@ -445,7 +445,7 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  Ok(Expr::List(vec![Expr::List(vec![rule])]))
+  Ok(Expr::List(vec![Expr::List(vec![rule].into())].into()))
 }
 
 // ─── ODE Term Structures ───────────────────────────────────────────────
@@ -828,7 +828,7 @@ fn classify_product_term(
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: factors.to_vec(),
+        args: factors.to_vec().into(),
       }
     };
   }
@@ -1330,7 +1330,7 @@ fn build_homogeneous_solution(
 fn make_c(n: usize) -> Expr {
   Expr::FunctionCall {
     name: "C".to_string(),
-    args: vec![Expr::Integer(n as i128)],
+    args: vec![Expr::Integer(n as i128)].into(),
   }
 }
 
@@ -1369,7 +1369,7 @@ fn make_trig_term(func: &str, beta: f64, x_name: &str) -> Expr {
   };
   Expr::FunctionCall {
     name: func.to_string(),
-    args: vec![arg],
+    args: vec![arg].into(),
   }
 }
 
@@ -1733,8 +1733,8 @@ fn apply_initial_conditions(
     .map(|name| Expr::Identifier(name.clone()))
     .collect();
 
-  let eqs_list = Expr::List(equations);
-  let vars_list = Expr::List(c_id_exprs);
+  let eqs_list = Expr::List(equations.into());
+  let vars_list = Expr::List(c_id_exprs.into());
 
   let solve_result = crate::functions::solve_ast(&[eqs_list, vars_list])?;
 
@@ -2058,7 +2058,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Interpolation".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2103,7 +2103,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Interpolation".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2161,7 +2161,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_max = points[n - 1].0;
 
   let domain =
-    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)])]);
+    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)].into())].into());
 
   // Store data as list of {x, y} pairs, preserving original y-value types
   // (e.g. Integer for integer inputs) so that evaluation at exact grid points
@@ -2195,7 +2195,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Real(*_y)
           }
         };
-        Expr::List(vec![Expr::Real(*x), y_expr])
+        Expr::List(vec![Expr::Real(*x), y_expr].into())
       })
       .collect(),
   );
@@ -2203,7 +2203,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Store the interpolation order as a third argument
   let interp_func = Expr::FunctionCall {
     name: "InterpolatingFunction".to_string(),
-    args: vec![domain, data_expr, Expr::Integer(order as i128)],
+    args: vec![domain, data_expr, Expr::Integer(order as i128)].into(),
   };
 
   Ok(interp_func)
@@ -2248,7 +2248,7 @@ pub fn evaluate_interpolating_function(
       return Ok(Expr::CurriedCall {
         func: Box::new(Expr::FunctionCall {
           name: "InterpolatingFunction".to_string(),
-          args: func_args.to_vec(),
+          args: func_args.to_vec().into(),
         }),
         args: call_args.to_vec(),
       });
@@ -2540,9 +2540,9 @@ fn try_linear_first_order_pde_body(
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
       name: "C".to_string(),
-      args: vec![Expr::Integer(1)],
+      args: vec![Expr::Integer(1)].into(),
     }),
-    args: vec![c1_arg],
+    args: vec![c1_arg].into(),
   };
   let body = if matches!(&exp_part, Expr::Integer(1)) {
     c1_applied
@@ -2623,9 +2623,9 @@ fn try_direct_linear_pde_body(
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
       name: "C".to_string(),
-      args: vec![Expr::Integer(1)],
+      args: vec![Expr::Integer(1)].into(),
     }),
-    args: vec![c1_arg],
+    args: vec![c1_arg].into(),
   };
   // Inhomogeneous head term: (c/a)*x.
   if c == 0 {
@@ -2790,7 +2790,7 @@ fn try_euler_pde_body(
   // Build c*Log[x] + C[1][y/x].
   let log_x = Expr::FunctionCall {
     name: "Log".to_string(),
-    args: vec![n_var(xn)],
+    args: vec![n_var(xn)].into(),
   };
   let log_term = if c == 1 {
     log_x
@@ -2809,9 +2809,9 @@ fn try_euler_pde_body(
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
       name: "C".to_string(),
-      args: vec![Expr::Integer(1)],
+      args: vec![Expr::Integer(1)].into(),
     }),
-    args: vec![y_over_x],
+    args: vec![y_over_x].into(),
   };
   let body = Expr::BinaryOp {
     op: BinaryOperator::Plus,
@@ -2906,7 +2906,7 @@ fn wrap_pde_solution(
     Expr::Rule {
       pattern: Box::new(Expr::FunctionCall {
         name: fname.to_string(),
-        args: vec![n_var(xn), n_var(yn)],
+        args: vec![n_var(xn), n_var(yn)].into(),
       }),
       replacement: Box::new(body),
     }
@@ -2915,11 +2915,11 @@ fn wrap_pde_solution(
       pattern: Box::new(Expr::Identifier(fname.to_string())),
       replacement: Box::new(Expr::FunctionCall {
         name: "Function".to_string(),
-        args: vec![Expr::List(vec![n_var(xn), n_var(yn)]), body],
+        args: vec![Expr::List(vec![n_var(xn), n_var(yn)].into()), body].into(),
       }),
     }
   };
-  Expr::List(vec![Expr::List(vec![rule])])
+  Expr::List(vec![Expr::List(vec![rule].into())].into())
 }
 
 /// Pull `(lhs, rhs)` out of an `Equal` expression, accepting either the

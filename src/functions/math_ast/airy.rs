@@ -42,7 +42,7 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "AiryAi".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -190,7 +190,7 @@ pub fn airy_bi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "AiryBi".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -305,7 +305,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "AiryAiPrime".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -387,16 +387,16 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(3),
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(6)],
+          args: vec![Expr::Integer(1), Expr::Integer(6)].into(),
         },
-      ],
+      ].into(),
     };
     let gamma = Expr::FunctionCall {
       name: "Gamma".to_string(),
       args: vec![Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(3)],
-      }],
+        args: vec![Expr::Integer(1), Expr::Integer(3)].into(),
+      }].into(),
     };
     let result = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -414,7 +414,7 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "AiryBiPrime".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -488,21 +488,21 @@ fn airy_build_value(
       Expr::Integer(3),
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)],
+        args: vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)].into(),
       },
-    ],
+    ].into(),
   };
   let gamma = Expr::FunctionCall {
     name: "Gamma".to_string(),
     args: vec![Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)],
-    }],
+      args: vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)].into(),
+    }].into(),
   };
   let denom = if with_extra_3 {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(3), gamma],
+      args: vec![Expr::Integer(3), gamma].into(),
     }
   } else {
     gamma
@@ -573,7 +573,7 @@ pub fn airy_ai_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "AiryAiZero".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -586,7 +586,7 @@ pub fn airy_bi_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "AiryBiZero".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 

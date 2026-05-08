@@ -32,7 +32,7 @@ pub fn partition_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Partition".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
+        args: vec![list.clone(), Expr::Integer(n)].into(),
       });
     }
   };
@@ -83,10 +83,10 @@ pub fn partition_ast(
     let mut results = Vec::new();
     let mut i = 0;
     while i + n_usize <= len {
-      results.push(Expr::List(items[i..i + n_usize].to_vec()));
+      results.push(Expr::List(items[i..i + n_usize].to_vec().into()));
       i += d_usize;
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   if is_cyclic && len > 0 {
@@ -123,17 +123,17 @@ pub fn partition_ast(
           ((offset + j as isize) % len as isize + len as isize) as usize % len;
         chunk.push(items[idx].clone());
       }
-      results.push(Expr::List(chunk));
+      results.push(Expr::List(chunk.into()));
       offset += d_usize as isize;
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   // Overhang with padding (5-arg form with explicit pad)
   let mut results = Vec::new();
   let mut i = 0;
   while i + n_usize <= len {
-    results.push(Expr::List(items[i..i + n_usize].to_vec()));
+    results.push(Expr::List(items[i..i + n_usize].to_vec().into()));
     i += d_usize;
   }
 
@@ -144,13 +144,13 @@ pub fn partition_ast(
     match pad_expr {
       Expr::List(pad_elems) if pad_elems.is_empty() => {
         // {} means allow short sublists (no padding)
-        results.push(Expr::List(remaining.to_vec()));
+        results.push(Expr::List(remaining.to_vec().into()));
       }
       _ => {
         // Pad with the given element(s) to fill to size n
         let mut chunk = remaining.to_vec();
         let pad_items: Vec<Expr> = match pad_expr {
-          Expr::List(items) => items.clone(),
+          Expr::List(items) => items.to_vec(),
           other => vec![other.clone()],
         };
         if !pad_items.is_empty() {
@@ -160,12 +160,12 @@ pub fn partition_ast(
             pad_idx += 1;
           }
         }
-        results.push(Expr::List(chunk));
+        results.push(Expr::List(chunk.into()));
       }
     }
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Multi-dimensional Partition: `Partition[tensor, {n_1, …, n_k}, {d_1, …, d_k}]`.
@@ -184,7 +184,7 @@ pub fn partition_multi_dim_ast(
     let mut chunks: Vec<Expr> = Vec::new();
     let mut i = 0;
     while i + n <= items.len() {
-      chunks.push(Expr::List(items[i..i + n].to_vec()));
+      chunks.push(Expr::List(items[i..i + n].to_vec().into()));
       i += d;
     }
     Some(chunks)
@@ -198,7 +198,7 @@ pub fn partition_multi_dim_ast(
     let rest_sizes = &sizes[1..];
     let rest_offsets = &offsets[1..];
     if rest_sizes.is_empty() {
-      return Some(Expr::List(outer));
+      return Some(Expr::List(outer.into()));
     }
     // Each outer chunk is a List whose elements we must partition along the
     // remaining axes and then transpose so the next-axis partitioning
@@ -251,11 +251,11 @@ pub fn partition_multi_dim_ast(
             return None;
           }
         }
-        inner_blocks.push(Expr::List(gathered));
+        inner_blocks.push(Expr::List(gathered.into()));
       }
-      result_outer.push(Expr::List(inner_blocks));
+      result_outer.push(Expr::List(inner_blocks.into()));
     }
-    Some(Expr::List(result_outer))
+    Some(Expr::List(result_outer.into()))
   }
 
   let sizes_u: Vec<usize> = sizes.iter().map(|&x| x as usize).collect();
@@ -272,7 +272,7 @@ pub fn partition_multi_dim_ast(
       ));
       Ok(Expr::FunctionCall {
         name: "Partition".to_string(),
-        args: call_args,
+        args: call_args.into(),
       })
     }
   }
@@ -295,7 +295,7 @@ pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
           _ => result.push(expr.clone()),
         }
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     Expr::FunctionCall { name, args } => {
       // Flatten[f[f[a, b], f[c, d]]] -> f[a, b, c, d]
@@ -304,7 +304,7 @@ pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       flatten_same_head(name, args, &mut result);
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: result,
+        args: result.into(),
       })
     }
     _ => Ok(list.clone()),
@@ -372,7 +372,7 @@ pub fn flatten_level_ast(
       for item in items {
         flatten_to_depth(item, depth, &mut result);
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     Expr::FunctionCall { name, args } => {
       let mut result = Vec::new();
@@ -381,7 +381,7 @@ pub fn flatten_level_ast(
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: result,
+        args: result.into(),
       })
     }
     _ => Ok(list.clone()),
@@ -430,7 +430,7 @@ pub fn flatten_head_ast(
       }
       Ok(Expr::FunctionCall {
         name: head.to_string(),
-        args: result,
+        args: result.into(),
       })
     }
     Expr::List(items) if head == "List" => {
@@ -438,7 +438,7 @@ pub fn flatten_head_ast(
       for item in items {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     Expr::FunctionCall { name, args } => {
       // Outer head doesn't match: flatten matching children into parent
@@ -448,7 +448,7 @@ pub fn flatten_head_ast(
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: result,
+        args: result.into(),
       })
     }
     Expr::List(items) => {
@@ -457,7 +457,7 @@ pub fn flatten_head_ast(
       for item in items {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     _ => Ok(list.clone()),
   }
@@ -585,7 +585,7 @@ pub fn flatten_dims_ast(
         if items.is_empty() {
           None
         } else {
-          Some(Expr::List(items))
+          Some(Expr::List(items.into()))
         }
       } else {
         // Multiple levels merged: iterate over all combinations
@@ -621,7 +621,7 @@ pub fn flatten_dims_ast(
         if items.is_empty() {
           None
         } else {
-          Some(Expr::List(items))
+          Some(Expr::List(items.into()))
         }
       }
     }
@@ -663,7 +663,7 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }),
     _ => Ok(Expr::FunctionCall {
       name: "Reverse".to_string(),
-      args: vec![list.clone()],
+      args: vec![list.clone()].into(),
     }),
   }
 }
@@ -708,9 +708,9 @@ pub fn reverse_level_ast(
         if current_level >= min_level && current_level <= max_level {
           let mut reversed = children;
           reversed.reverse();
-          Expr::List(reversed)
+          Expr::List(reversed.into())
         } else {
-          Expr::List(children)
+          Expr::List(children.into())
         }
       }
       _ => expr.clone(),
@@ -780,7 +780,7 @@ fn tensor_build_recursive(
     idx[level] = i;
     items.push(tensor_build_recursive(shape, level + 1, idx, f));
   }
-  Expr::List(items)
+  Expr::List(items.into())
 }
 
 /// Transpose[list, {n1, n2, ..., nk}] — permute the levels of a
@@ -855,13 +855,13 @@ pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Transpose".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
 
   if rows.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // If it's a 1D list (no sub-lists), return it unchanged
@@ -904,10 +904,10 @@ pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         new_row.push(items[j].clone());
       }
     }
-    result.push(Expr::List(new_row));
+    result.push(Expr::List(new_row.into()));
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based Riffle: interleave elements with separator.
@@ -918,13 +918,13 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Riffle".to_string(),
-        args: vec![list.clone(), sep.clone()],
+        args: vec![list.clone(), sep.clone()].into(),
       });
     }
   };
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // If sep is a list, interleave with cycling
@@ -950,7 +950,7 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   let mut result = Vec::new();
@@ -961,7 +961,7 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based Riffle with step spec.
@@ -983,7 +983,7 @@ pub fn riffle_extended_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Riffle".to_string(),
-        args: vec![list.clone(), sep.clone(), spec.clone()],
+        args: vec![list.clone(), sep.clone(), spec.clone()].into(),
       });
     }
   };
@@ -998,7 +998,7 @@ pub fn riffle_extended_ast(
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Riffle".to_string(),
-            args: vec![list.clone(), sep.clone(), spec.clone()],
+            args: vec![list.clone(), sep.clone(), spec.clone()].into(),
           });
         }
       };
@@ -1007,7 +1007,7 @@ pub fn riffle_extended_ast(
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Riffle".to_string(),
-            args: vec![list.clone(), sep.clone(), spec.clone()],
+            args: vec![list.clone(), sep.clone(), spec.clone()].into(),
           });
         }
       };
@@ -1016,7 +1016,7 @@ pub fn riffle_extended_ast(
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Riffle".to_string(),
-            args: vec![list.clone(), sep.clone(), spec.clone()],
+            args: vec![list.clone(), sep.clone(), spec.clone()].into(),
           });
         }
       };
@@ -1025,7 +1025,7 @@ pub fn riffle_extended_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Riffle".to_string(),
-        args: vec![list.clone(), sep.clone(), spec.clone()],
+        args: vec![list.clone(), sep.clone(), spec.clone()].into(),
       });
     }
   };
@@ -1038,13 +1038,13 @@ pub fn riffle_extended_ast(
 
   // Collect separators: either a list (to cycle through) or a single value.
   let sep_values: Vec<Expr> = match sep {
-    Expr::List(xs) if !xs.is_empty() => xs.clone(),
+    Expr::List(xs) if !xs.is_empty() => xs.to_vec(),
     Expr::List(_) => return Ok(Expr::List(items)),
     other => vec![other.clone()],
   };
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let mut result: Vec<Expr> = Vec::new();
@@ -1096,7 +1096,7 @@ pub fn riffle_extended_ast(
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based RotateLeft: rotate list left by n positions.
@@ -1107,7 +1107,7 @@ pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "RotateLeft".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
+        args: vec![list.clone(), Expr::Integer(n)].into(),
       });
     }
   };
@@ -1116,9 +1116,9 @@ pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
     return match head_name {
       Some(name) => Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: vec![],
+        args: vec![].into(),
       }),
-      None => Ok(Expr::List(vec![])),
+      None => Ok(Expr::List(vec![].into())),
     };
   }
 
@@ -1132,9 +1132,9 @@ pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   match head_name {
     Some(name) => Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: result,
+      args: result.into(),
     }),
-    None => Ok(Expr::List(result)),
+    None => Ok(Expr::List(result.into())),
   }
 }
 
@@ -1169,7 +1169,7 @@ pub fn rotate_multi_ast(
       let fn_name = if left { "RotateLeft" } else { "RotateRight" };
       return Ok(Expr::FunctionCall {
         name: fn_name.to_string(),
-        args: vec![list.clone(), Expr::List(shifts.to_vec())],
+        args: vec![list.clone(), Expr::List(shifts.to_vec().into())].into(),
       });
     }
   };
@@ -1186,7 +1186,7 @@ pub fn rotate_multi_ast(
         for item in items {
           new_items.push(rotate_multi_ast(item, rest_shifts, left)?);
         }
-        Ok(Expr::List(new_items))
+        Ok(Expr::List(new_items.into()))
       }
       _ => Ok(rotated),
     }
@@ -1203,7 +1203,7 @@ fn build_pad_shape(pad: &Expr, ns: &[i128]) -> Expr {
   }
   let n = ns[0].max(0) as usize;
   let inner = build_pad_shape(pad, &ns[1..]);
-  Expr::List(vec![inner; n])
+  Expr::List(vec![inner; n].into())
 }
 
 /// Multi-dimensional PadLeft with a scalar pad value. Recursively pads
@@ -1240,7 +1240,7 @@ pub fn pad_left_multidim_with_margin(
   };
 
   let items: Vec<Expr> = match list {
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     _ => vec![],
   };
 
@@ -1257,20 +1257,20 @@ pub fn pad_left_multidim_with_margin(
   let len = padded_children.len() as i128;
 
   if n <= 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   if margin == 0 {
     if len >= n {
       // Truncate from the left (mirror single-dim PadLeft behavior).
       let skip = (len - n) as usize;
-      return Ok(Expr::List(padded_children[skip..].to_vec()));
+      return Ok(Expr::List(padded_children[skip..].to_vec().into()));
     }
     let filler = build_pad_shape(pad, rest);
     let needed = (n - len) as usize;
     let mut result: Vec<Expr> = vec![filler; needed];
     result.extend(padded_children);
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   // Non-zero margin: position the source so the last element ends at
@@ -1287,7 +1287,7 @@ pub fn pad_left_multidim_with_margin(
       result.push(filler.clone());
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Multi-dimensional PadRight with a scalar pad value.
@@ -1323,7 +1323,7 @@ pub fn pad_right_multidim_with_margin(
   };
 
   let items: Vec<Expr> = match list {
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     _ => vec![],
   };
 
@@ -1340,17 +1340,17 @@ pub fn pad_right_multidim_with_margin(
   let len = padded_children.len() as i128;
 
   if n <= 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   if margin == 0 {
     if len >= n {
-      return Ok(Expr::List(padded_children[..n as usize].to_vec()));
+      return Ok(Expr::List(padded_children[..n as usize].to_vec().into()));
     }
     let filler = build_pad_shape(pad, rest);
     let needed = (n - len) as usize;
     padded_children.extend(vec![filler; needed]);
-    return Ok(Expr::List(padded_children));
+    return Ok(Expr::List(padded_children.into()));
   }
 
   // Non-zero margin: position the source children at index `margin`
@@ -1367,7 +1367,7 @@ pub fn pad_right_multidim_with_margin(
       result.push(filler.clone());
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based PadLeft: pad list on the left to length n.
@@ -1398,7 +1398,7 @@ pub fn pad_left_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PadLeft".to_string(),
-        args: vec![list.clone(), Expr::Integer(n), pad.clone()],
+        args: vec![list.clone(), Expr::Integer(n), pad.clone()].into(),
       });
     }
   };
@@ -1407,9 +1407,9 @@ pub fn pad_left_ast(
     return match head_name {
       Some(h) => Ok(Expr::FunctionCall {
         name: h.to_string(),
-        args: vec![],
+        args: vec![].into(),
       }),
-      None => Ok(Expr::List(vec![])),
+      None => Ok(Expr::List(vec![].into())),
     };
   }
 
@@ -1441,7 +1441,7 @@ pub fn pad_left_ast(
 
   match head_name {
     Some(h) => crate::evaluator::evaluate_function_call_ast(h, &result_items),
-    None => Ok(Expr::List(result_items)),
+    None => Ok(Expr::List(result_items.into())),
   }
 }
 
@@ -1459,7 +1459,7 @@ pub fn pad_right_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PadRight".to_string(),
-        args: vec![list.clone(), Expr::Integer(n), pad.clone()],
+        args: vec![list.clone(), Expr::Integer(n), pad.clone()].into(),
       });
     }
   };
@@ -1468,9 +1468,9 @@ pub fn pad_right_ast(
     return match head_name {
       Some(h) => Ok(Expr::FunctionCall {
         name: h.to_string(),
-        args: vec![],
+        args: vec![].into(),
       }),
-      None => Ok(Expr::List(vec![])),
+      None => Ok(Expr::List(vec![].into())),
     };
   }
 
@@ -1501,14 +1501,14 @@ pub fn pad_right_ast(
 
   match head_name {
     Some(h) => crate::evaluator::evaluate_function_call_ast(h, &result_items),
-    None => Ok(Expr::List(result_items)),
+    None => Ok(Expr::List(result_items.into())),
   }
 }
 
 /// AST-based Join: join multiple lists.
 pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if lists.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Check if all arguments are associations
@@ -1540,7 +1540,7 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Join".to_string(),
-        args: lists.to_vec(),
+        args: lists.to_vec().into(),
       });
     }
   };
@@ -1573,14 +1573,14 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(Expr::FunctionCall {
           name: "Join".to_string(),
-          args: lists.to_vec(),
+          args: lists.to_vec().into(),
         });
       }
     }
   }
 
   match head {
-    None => Ok(Expr::List(result)),
+    None => Ok(Expr::List(result.into())),
     Some(h) => {
       // Re-evaluate to allow simplification (e.g., Plus combines terms)
       crate::evaluator::evaluate_function_call_ast(h, &result)
@@ -1629,7 +1629,7 @@ pub fn join_at_level_ast(
     result.push(join_at_level_ast(&sublists, level - 1)?);
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based Append: append element to list.
@@ -1650,7 +1650,7 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "Append".to_string(),
-          args: vec![list.clone(), elem.clone()],
+          args: vec![list.clone(), elem.clone()].into(),
         })
       }
     }
@@ -1669,7 +1669,7 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "Append".to_string(),
-      args: vec![list.clone(), elem.clone()],
+      args: vec![list.clone(), elem.clone()].into(),
     }),
   }
 }
@@ -1693,26 +1693,26 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "Prepend".to_string(),
-          args: vec![list.clone(), elem.clone()],
+          args: vec![list.clone(), elem.clone()].into(),
         })
       }
     }
     Expr::List(items) => {
       let mut result = vec![elem.clone()];
       result.extend(items.iter().cloned());
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     Expr::FunctionCall { name, args } => {
       let mut new_args = vec![elem.clone()];
       new_args.extend(args.iter().cloned());
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       })
     }
     _ => Ok(Expr::FunctionCall {
       name: "Prepend".to_string(),
-      args: vec![list.clone(), elem.clone()],
+      args: vec![list.clone(), elem.clone()].into(),
     }),
   }
 }
@@ -1741,5 +1741,5 @@ pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }

@@ -26,22 +26,22 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "AnglePath".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
-    (Some(pos), Some(theta), step_items)
+    (Some(pos), Some(theta), step_items.to_vec())
   } else {
     let step_items = match &args[0] {
       Expr::List(items) => items.clone(),
       _ => {
         return Ok(Expr::FunctionCall {
           name: "AnglePath".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
-    (None, None, step_items)
+    (None, None, step_items.to_vec())
   };
   let items = &items_vec;
 
@@ -105,7 +105,7 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let start_x_expr = start_x.clone();
     let start_y_expr = start_y.clone();
-    points.push(Expr::List(vec![start_x.clone(), start_y.clone()]));
+    points.push(Expr::List(vec![start_x.clone(), start_y.clone()].into()));
     if !matches!(start_x, Expr::Integer(0)) {
       cum_terms_x.push(start_x_expr);
     }
@@ -169,7 +169,7 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_function_call_ast("Plus", &cum_terms_y)?
       };
 
-      points.push(Expr::List(vec![px, py]));
+      points.push(Expr::List(vec![px, py].into()));
     }
   } else {
     // Numeric mode
@@ -194,7 +194,7 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )
       })?;
     }
-    points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)]));
+    points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
 
     for item in items {
       let (step, theta) = if is_pair_form {
@@ -236,11 +236,11 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       angle += theta;
       x += step * angle.cos();
       y += step * angle.sin();
-      points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)]));
+      points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
     }
   }
 
-  Ok(Expr::List(points))
+  Ok(Expr::List(points.into()))
 }
 
 /// Parse the 2-argument form's first argument: `{{x0, y0}, θ0}`.
@@ -346,7 +346,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Product".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -358,7 +358,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "Product".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -377,7 +377,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Product".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -398,7 +398,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               } else {
                 return Ok(Expr::FunctionCall {
                   name: "Product".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 });
               }
             }
@@ -447,7 +447,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 // = max! / (min-1)!
                 let n_factorial = Expr::FunctionCall {
                   name: "Factorial".to_string(),
-                  args: vec![max_expr.clone()],
+                  args: vec![max_expr.clone()].into(),
                 };
                 if min_val == 1 {
                   return Ok(n_factorial);
@@ -480,7 +480,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     }),
                     right: Box::new(max_expr.clone()),
                   },
-                ],
+                ].into(),
               });
             }
           }
@@ -525,7 +525,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 op: crate::syntax::BinaryOperator::Power,
                 left: Box::new(Expr::FunctionCall {
                   name: "Factorial".to_string(),
-                  args: vec![max_expr.clone()],
+                  args: vec![max_expr.clone()].into(),
                 }),
                 right: exp.clone(),
               });
@@ -546,7 +546,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               op: crate::syntax::BinaryOperator::Divide,
               left: Box::new(Expr::FunctionCall {
                 name: "Sinh".to_string(),
-                args: vec![Expr::Constant("Pi".to_string())],
+                args: vec![Expr::Constant("Pi".to_string())].into(),
               }),
               right: Box::new(Expr::Constant("Pi".to_string())),
             });
@@ -555,7 +555,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // For other symbolic cases, return unevaluated
           return Ok(Expr::FunctionCall {
             name: "Product".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
 
@@ -621,7 +621,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Product".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -631,7 +631,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Sum requires at least 2 arguments
     return Ok(Expr::FunctionCall {
       name: "Sum".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -661,7 +661,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Sum".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -695,7 +695,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Could not evaluate symbolically — return unevaluated
         return Ok(Expr::FunctionCall {
           name: "Sum".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
 
@@ -786,7 +786,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           return Ok(Expr::FunctionCall {
             name: "Sum".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -868,7 +868,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Sum".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1039,7 +1039,7 @@ fn try_symbolic_sum(
       };
       let numerator = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![n, n_plus_1, one_plus_2n, neg1_plus_3n_plus_3n2],
+        args: vec![n, n_plus_1, one_plus_2n, neg1_plus_3n_plus_3n2].into(),
       };
       return Ok(Some(Expr::BinaryOp {
         op: BinaryOperator::Divide,
@@ -1096,7 +1096,7 @@ fn try_symbolic_sum(
       };
       let numerator = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![n_sq, n_plus_1_sq, neg1_plus_2n_plus_2n2],
+        args: vec![n_sq, n_plus_1_sq, neg1_plus_2n_plus_2n2].into(),
       };
       return Ok(Some(Expr::BinaryOp {
         op: BinaryOperator::Divide,
@@ -1112,9 +1112,9 @@ fn try_symbolic_sum(
       return Ok(Some(Expr::FunctionCall {
         name: "HarmonicNumber".to_string(),
         args: if s == 1 {
-          vec![max_expr.clone()]
+          vec![max_expr.clone()].into()
         } else {
-          vec![max_expr.clone(), Expr::Integer(s as i128)]
+          vec![max_expr.clone(), Expr::Integer(s as i128)].into()
         },
       }));
     }
@@ -1349,7 +1349,7 @@ fn try_infinite_sum(
     if s >= 3 && s % 2 == 1 {
       return Ok(Some(Expr::FunctionCall {
         name: "Zeta".to_string(),
-        args: vec![Expr::Integer(s as i128)],
+        args: vec![Expr::Integer(s as i128)].into(),
       }));
     }
   }
@@ -1540,7 +1540,7 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "Sum".to_string(),
-            args: vec![],
+            args: vec![].into(),
           });
         }
       }
@@ -1553,7 +1553,7 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Sum".to_string(),
-            args: vec![],
+            args: vec![].into(),
           });
         }
       }
@@ -1561,7 +1561,7 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Sum".to_string(),
-        args: vec![],
+        args: vec![].into(),
       });
     }
   };

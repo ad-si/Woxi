@@ -17,7 +17,7 @@ pub fn fold_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Fold".to_string(),
-        args: vec![func.clone(), init.clone(), list.clone()],
+        args: vec![func.clone(), init.clone(), list.clone()].into(),
       });
     }
   };
@@ -71,7 +71,7 @@ pub fn nest_list_ast(
     results.push(current.clone());
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// AST-based FixedPoint: apply function until result stops changing.
@@ -108,7 +108,7 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Accumulate".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
@@ -117,9 +117,9 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     match &head {
       Some(name) => Expr::FunctionCall {
         name: name.clone(),
-        args: elems,
+        args: elems.into(),
       },
-      None => Expr::List(elems),
+      None => Expr::List(elems.into()),
     }
   };
 
@@ -174,7 +174,7 @@ pub fn differences_n_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Differences".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
@@ -182,7 +182,7 @@ pub fn differences_n_ast(
   let mut current = items;
   for _ in 0..n {
     if current.len() <= 1 {
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     }
     let mut next = Vec::new();
     for i in 1..current.len() {
@@ -192,7 +192,7 @@ pub fn differences_n_ast(
       )?;
       next.push(diff);
     }
-    current = next;
+    *current = next;
   }
 
   Ok(Expr::List(current))
@@ -219,14 +219,14 @@ pub fn differences_spec_ast(
   }
   let rest = &spec[1..];
   let items: Vec<Expr> = match &outer {
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     _ => return Ok(outer),
   };
   let mut result = Vec::with_capacity(items.len());
   for item in items {
     result.push(differences_spec_ast(&item, rest)?);
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based Scan: apply function to each element for side effects.
@@ -274,7 +274,7 @@ pub fn fold_list_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FoldList".to_string(),
-        args: vec![func.clone(), init.clone(), list.clone()],
+        args: vec![func.clone(), init.clone(), list.clone()].into(),
       });
     }
   };
@@ -289,9 +289,9 @@ pub fn fold_list_ast(
   match head {
     Some(name) => Ok(Expr::FunctionCall {
       name,
-      args: results,
+      args: results.into(),
     }),
-    None => Ok(Expr::List(results)),
+    None => Ok(Expr::List(results.into())),
   }
 }
 
@@ -316,7 +316,7 @@ pub fn fixed_point_list_ast(
     current = next;
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// AST-based NestWhile: nest while condition is true.
@@ -387,7 +387,7 @@ pub fn nest_while_list_ast(
     let new_len = history.len().saturating_sub(drop).max(1);
     history.truncate(new_len);
   }
-  Ok(Expr::List(history))
+  Ok(Expr::List(history.into()))
 }
 
 /// Iterate `func` from `init` while `test` is True, returning the entire
@@ -424,8 +424,8 @@ fn nest_while_history(
 /// Returns None for atomic expressions (Integer, Real, String, Symbol).
 fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
   match expr {
-    Expr::List(items) => Some(items.clone()),
-    Expr::FunctionCall { args, .. } => Some(args.clone()),
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::FunctionCall { args, .. } => Some(args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
       use crate::syntax::BinaryOperator;
       match op {
@@ -434,7 +434,7 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
           left.as_ref().clone(),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), right.as_ref().clone()],
+            args: vec![Expr::Integer(-1), right.as_ref().clone()].into(),
           },
         ]),
         // 1/b → Power[b, -1]; a/b → Times[a, Power[b, -1]]
@@ -446,7 +446,7 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
               left.as_ref().clone(),
               Expr::FunctionCall {
                 name: "Power".to_string(),
-                args: vec![right.as_ref().clone(), Expr::Integer(-1)],
+                args: vec![right.as_ref().clone(), Expr::Integer(-1)].into(),
               },
             ])
           }
@@ -601,11 +601,11 @@ fn apply_at_level_recursive(
   let normalized: Expr = match expr {
     Expr::BinaryOp { op, left, right } => Expr::FunctionCall {
       name: binary_op_to_name(*op).to_string(),
-      args: vec![(**left).clone(), (**right).clone()],
+      args: vec![(**left).clone(), (**right).clone()].into(),
     },
     Expr::UnaryOp { op, operand } => Expr::FunctionCall {
       name: unary_op_to_name(*op).to_string(),
-      args: vec![(**operand).clone()],
+      args: vec![(**operand).clone()].into(),
     },
     other => other.clone(),
   };
@@ -632,14 +632,14 @@ fn apply_at_level_recursive(
       })
       .collect::<Result<Vec<_>, _>>()?
   } else {
-    items
+    items.to_vec()
   };
 
   // Replace head at this level if in range
   if current_level >= min_level && current_level <= max_level {
     apply_func_as_head(func, &new_items)
   } else if is_list {
-    Ok(Expr::List(new_items))
+    Ok(Expr::List(new_items.into()))
   } else if let Some(name) = head_name {
     crate::evaluator::evaluate_function_call_ast(&name, &new_items)
   } else {
@@ -734,7 +734,7 @@ pub fn outer_ast_with_levels(
         call_args.extend(lists.iter().cloned());
         return Ok(Expr::FunctionCall {
           name: "Outer".to_string(),
-          args: call_args,
+          args: call_args.into(),
         });
       }
     }
@@ -780,11 +780,11 @@ fn expr_items(expr: &Expr) -> Option<&[Expr]> {
 /// Wrap items in the given head.
 fn wrap_in_head(head: &str, items: Vec<Expr>) -> Expr {
   if head == "List" {
-    Expr::List(items)
+    Expr::List(items.into())
   } else {
     Expr::FunctionCall {
       name: head.to_string(),
-      args: items,
+      args: items.into(),
     }
   }
 }
@@ -905,7 +905,7 @@ pub fn inner_ast(
       ));
       Ok(Expr::FunctionCall {
         name: "Inner".to_string(),
-        args: vec![f.clone(), list1.clone(), list2.clone(), g.clone()],
+        args: vec![f.clone(), list1.clone(), list2.clone(), g.clone()].into(),
       })
     }
     other => other,
@@ -964,7 +964,7 @@ fn inner_recursive(
     for row in items_a {
       results.push(inner_recursive(f, row, b, g)?);
     }
-    Ok(Expr::List(results))
+    Ok(Expr::List(results.into()))
   } else {
     // a_depth == 1, b_depth > 1
     // Contract a (vector) with first dimension of b
@@ -1015,9 +1015,9 @@ fn inner_recursive(
           }
         }
       }
-      let col_expr = Expr::List(col);
+      let col_expr = Expr::List(col.into());
       results.push(inner_recursive(f, a, &col_expr, g)?);
     }
-    Ok(Expr::List(results))
+    Ok(Expr::List(results.into()))
   }
 }

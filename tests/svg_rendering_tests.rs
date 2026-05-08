@@ -21,10 +21,10 @@ mod svg_rendering_tests {
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
         Expr::Integer(2),
-      ],
+      ].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     assert!(
@@ -102,7 +102,7 @@ mod svg_rendering_tests {
     // Times[10, x] → "10 x" (space separator, matching Wolfram Language)
     let expr = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())],
+      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
@@ -120,7 +120,7 @@ mod svg_rendering_tests {
       args: vec![
         Expr::Identifier("x".to_string()),
         Expr::Identifier("y".to_string()),
-      ],
+      ].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
@@ -139,16 +139,16 @@ mod svg_rendering_tests {
         Expr::Integer(9),
         Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())],
+          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())].into(),
         },
         Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
@@ -204,9 +204,9 @@ mod svg_rendering_tests {
           args: vec![
             Expr::Identifier("a".to_string()),
             Expr::Identifier("b".to_string()),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
@@ -227,13 +227,13 @@ mod svg_rendering_tests {
       args: vec![
         Expr::Identifier("x".to_string()),
         Expr::Identifier("y".to_string()),
-      ],
+      ].into(),
     };
     let base_w = estimate_display_width(&base);
 
     let expr = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![base, Expr::Integer(2)],
+      args: vec![base, Expr::Integer(2)].into(),
     };
     let total_w = estimate_display_width(&expr);
     // Total should be base_w + 2.0 (parens) + 1.0 * 0.7 (exponent)
@@ -277,16 +277,16 @@ mod svg_rendering_tests {
         Expr::Integer(9),
         Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())],
+          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())].into(),
         },
         Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let w = estimate_display_width(&expr);
     // "9(2 + x)(x + y)" = 15 chars
@@ -336,9 +336,9 @@ mod svg_rendering_tests {
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let w = estimate_display_width(&expr);
     // -(x + y): '-' = 1, '(' = 1, 'x + y' = 5, ')' = 1 → total = 8
@@ -354,7 +354,7 @@ mod svg_rendering_tests {
     // Times[10, x] → "10 x" (space separator)
     let expr = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())],
+      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
     };
     let w = estimate_display_width(&expr);
     // "10 x" = 4 chars: factors = 2+1 = 3, sep = 1
@@ -382,10 +382,10 @@ mod svg_rendering_tests {
               args: vec![
                 Expr::Identifier("x".to_string()),
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
             Expr::Integer(2),
-          ],
+          ].into(),
         },
         Expr::FunctionCall {
           name: "Times".to_string(),
@@ -393,18 +393,18 @@ mod svg_rendering_tests {
             Expr::Integer(9),
             Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())],
+              args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())].into(),
             },
             Expr::FunctionCall {
               name: "Plus".to_string(),
               args: vec![
                 Expr::Identifier("x".to_string()),
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     // Should contain parens around Power base and no * anywhere
@@ -435,10 +435,10 @@ mod svg_rendering_tests {
               args: vec![
                 Expr::Identifier("x".to_string()),
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
             Expr::Integer(3),
-          ],
+          ].into(),
         },
         Expr::FunctionCall {
           name: "Power".to_string(),
@@ -452,15 +452,15 @@ mod svg_rendering_tests {
                   args: vec![
                     Expr::Integer(10),
                     Expr::Identifier("x".to_string()),
-                  ],
+                  ].into(),
                 },
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
             Expr::Integer(3),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let markup = expr_to_svg_markup(&expr);
     // Both Power bases should have parentheses, no * anywhere
@@ -578,10 +578,10 @@ mod box_representation_tests {
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
         Expr::Integer(2),
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert!(
@@ -646,7 +646,7 @@ mod box_representation_tests {
   fn box_times_number_identifier() {
     let expr = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())],
+      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "RowBox[{10,  , x}]");
@@ -661,7 +661,7 @@ mod box_representation_tests {
       args: vec![
         Expr::Identifier("x".to_string()),
         Expr::Identifier("y".to_string()),
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     let svg = boxes_to_svg(&boxes);
@@ -676,16 +676,16 @@ mod box_representation_tests {
         Expr::Integer(9),
         Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())],
+          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())].into(),
         },
         Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert!(
@@ -731,9 +731,9 @@ mod box_representation_tests {
           args: vec![
             Expr::Identifier("a".to_string()),
             Expr::Identifier("b".to_string()),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert!(
@@ -749,7 +749,7 @@ mod box_representation_tests {
   fn box_rational() {
     let expr = Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(2), Expr::Integer(3)],
+      args: vec![Expr::Integer(2), Expr::Integer(3)].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "FractionBox[2, 3]");
@@ -770,7 +770,7 @@ mod box_representation_tests {
   fn box_has_fraction_true() {
     let expr = Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(2), Expr::Integer(3)],
+      args: vec![Expr::Integer(2), Expr::Integer(3)].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert!(
@@ -799,9 +799,9 @@ mod box_representation_tests {
         Expr::Identifier("x".to_string()),
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)],
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
         },
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "SqrtBox[x]");
@@ -813,7 +813,7 @@ mod box_representation_tests {
   fn box_subscript() {
     let expr = Expr::FunctionCall {
       name: "Subscript".to_string(),
-      args: vec![Expr::Identifier("x".to_string()), Expr::Integer(0)],
+      args: vec![Expr::Identifier("x".to_string()), Expr::Integer(0)].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "SubscriptBox[x, 0]");
@@ -829,10 +829,10 @@ mod box_representation_tests {
           args: vec![
             Expr::Identifier("a".to_string()),
             Expr::Identifier("b".to_string()),
-          ],
+          ].into(),
         },
         Expr::Identifier("c".to_string()),
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "SubsuperscriptBox[a, b, c]");
@@ -843,7 +843,7 @@ mod box_representation_tests {
   #[test]
   fn box_list() {
     let expr =
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(2), Expr::Integer(3)]);
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(2), Expr::Integer(3)].into());
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "RowBox[{{, RowBox[{1, ,, 2, ,, 3}], }}]");
   }
@@ -855,7 +855,7 @@ mod box_representation_tests {
       args: vec![
         Expr::Identifier("x".to_string()),
         Expr::Identifier("y".to_string()),
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     assert_eq!(box_str(&boxes), "RowBox[{f, [, RowBox[{x, ,, y}], ]}]");
@@ -988,10 +988,10 @@ mod box_representation_tests {
               args: vec![
                 Expr::Identifier("x".to_string()),
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
             Expr::Integer(2),
-          ],
+          ].into(),
         },
         Expr::FunctionCall {
           name: "Times".to_string(),
@@ -999,18 +999,18 @@ mod box_representation_tests {
             Expr::Integer(9),
             Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())],
+              args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())].into(),
             },
             Expr::FunctionCall {
               name: "Plus".to_string(),
               args: vec![
                 Expr::Identifier("x".to_string()),
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     // Top level should be RowBox (Plus)
@@ -1048,10 +1048,10 @@ mod box_representation_tests {
               args: vec![
                 Expr::Identifier("x".to_string()),
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
             Expr::Integer(3),
-          ],
+          ].into(),
         },
         Expr::FunctionCall {
           name: "Power".to_string(),
@@ -1065,15 +1065,15 @@ mod box_representation_tests {
                   args: vec![
                     Expr::Integer(10),
                     Expr::Identifier("x".to_string()),
-                  ],
+                  ].into(),
                 },
                 Expr::Identifier("y".to_string()),
-              ],
+              ].into(),
             },
             Expr::Integer(3),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     let boxes = expr_to_box_form(&expr);
     // Should be a RowBox containing SuperscriptBox elements
@@ -1103,10 +1103,10 @@ mod box_representation_tests {
           args: vec![
             Expr::Identifier("x".to_string()),
             Expr::Identifier("y".to_string()),
-          ],
+          ].into(),
         },
         Expr::Integer(2),
-      ],
+      ].into(),
     };
     assert_width_reasonable(&expr);
   }
@@ -1125,7 +1125,7 @@ mod box_representation_tests {
   fn box_width_times_number_identifier() {
     let expr = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())],
+      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
     };
     assert_width_reasonable(&expr);
   }
@@ -1134,7 +1134,7 @@ mod box_representation_tests {
   fn box_width_rational() {
     let expr = Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(2), Expr::Integer(3)],
+      args: vec![Expr::Integer(2), Expr::Integer(3)].into(),
     };
     assert_width_reasonable(&expr);
   }
@@ -1142,7 +1142,7 @@ mod box_representation_tests {
   #[test]
   fn box_width_list() {
     let expr =
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(2), Expr::Integer(3)]);
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(2), Expr::Integer(3)].into());
     assert_width_reasonable(&expr);
   }
 
@@ -1153,7 +1153,7 @@ mod box_representation_tests {
       args: vec![
         Expr::Identifier("x".to_string()),
         Expr::Identifier("y".to_string()),
-      ],
+      ].into(),
     };
     assert_width_reasonable(&expr);
   }
@@ -1176,8 +1176,8 @@ mod box_representation_tests {
         args: vec![
           Expr::String("x".to_string()),
           Expr::String("2".to_string()),
-        ],
-      }],
+        ].into(),
+      }].into(),
     };
     // In the box pipeline, DisplayForm passes its content directly as boxes
     // (handled in generate_output_svg). Here we test the box extraction directly.
@@ -1196,7 +1196,7 @@ mod box_representation_tests {
   fn box_display_form_subscript_renders() {
     let inner = Expr::FunctionCall {
       name: "SubscriptBox".to_string(),
-      args: vec![Expr::String("a".to_string()), Expr::String("i".to_string())],
+      args: vec![Expr::String("a".to_string()), Expr::String("i".to_string())].into(),
     };
     let svg = boxes_to_svg(&inner);
     assert!(
@@ -1216,16 +1216,16 @@ mod box_representation_tests {
           args: vec![
             Expr::String("a".to_string()),
             Expr::String("1".to_string()),
-          ],
+          ].into(),
         },
         Expr::FunctionCall {
           name: "SubscriptBox".to_string(),
           args: vec![
             Expr::String("b".to_string()),
             Expr::String("2".to_string()),
-          ],
+          ].into(),
         },
-      ])],
+      ].into())].into(),
     };
     let svg = boxes_to_svg(&inner);
     assert!(
@@ -1248,10 +1248,10 @@ mod box_representation_tests {
           pattern: Box::new(Expr::Identifier("FontColor".to_string())),
           replacement: Box::new(Expr::FunctionCall {
             name: "RGBColor".to_string(),
-            args: vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)],
+            args: vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
           }),
         },
-      ],
+      ].into(),
     };
     let layout = layout_box(&inner, 14.0);
     let svg = layout_to_svg(&layout, "currentColor");
@@ -1272,7 +1272,7 @@ mod box_representation_tests {
           pattern: Box::new(Expr::Identifier("FontSize".to_string())),
           replacement: Box::new(Expr::Integer(24)),
         },
-      ],
+      ].into(),
     };
     let layout = layout_box(&inner, 14.0);
     let svg = layout_to_svg(&layout, "currentColor");
@@ -1293,10 +1293,10 @@ mod box_representation_tests {
           pattern: Box::new(Expr::Identifier("FontColor".to_string())),
           replacement: Box::new(Expr::FunctionCall {
             name: "RGBColor".to_string(),
-            args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(1.0)],
+            args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(1.0)].into(),
           }),
         },
-      ],
+      ].into(),
     };
     let svg = boxes_to_svg(&inner);
     assert!(

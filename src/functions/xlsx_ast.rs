@@ -33,7 +33,7 @@ fn sheet_to_expr(range: &calamine::Range<Data>) -> Expr {
   let mut rows: Vec<Expr> = Vec::new();
   for row in range.rows() {
     let cells: Vec<Expr> = row.iter().map(cell_to_expr).collect();
-    rows.push(Expr::List(cells));
+    rows.push(Expr::List(cells.into()));
   }
   // Drop trailing all-empty rows.
   while let Some(Expr::List(cells)) = rows.last() {
@@ -46,7 +46,7 @@ fn sheet_to_expr(range: &calamine::Range<Data>) -> Expr {
       break;
     }
   }
-  Expr::List(rows)
+  Expr::List(rows.into())
 }
 
 /// Open an xls / xlsx / xlsb / ods workbook and return every sheet as a list
@@ -259,11 +259,11 @@ fn select_element(
 ) -> Result<Expr, InterpreterError> {
   // Default: entire workbook as list of sheets.
   let Some(elem) = element else {
-    return Ok(Expr::List(sheets));
+    return Ok(Expr::List(sheets.into()));
   };
 
   match elem {
-    Expr::String(s) if s == "Data" => Ok(Expr::List(sheets)),
+    Expr::String(s) if s == "Data" => Ok(Expr::List(sheets.into())),
     Expr::String(s) if s == "Sheets" => {
       Ok(Expr::List(names.into_iter().map(Expr::String).collect()))
     }

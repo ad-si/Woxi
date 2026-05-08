@@ -50,11 +50,11 @@ pub fn table_ast(
           results.push(val);
         }
       }
-      Ok(Expr::List(results))
+      Ok(Expr::List(results.into()))
     }
     Expr::List(items) => {
       if items.is_empty() {
-        return Ok(Expr::List(vec![]));
+        return Ok(Expr::List(vec![].into()));
       }
 
       // Handle {n} form (single element = just repeat count, no variable)
@@ -72,7 +72,7 @@ pub fn table_ast(
             results.push(val);
           }
         }
-        return Ok(Expr::List(results));
+        return Ok(Expr::List(results.into()));
       }
 
       // Extract iterator variable
@@ -100,7 +100,7 @@ pub fn table_ast(
                 results.push(val);
               }
             }
-            return Ok(Expr::List(results));
+            return Ok(Expr::List(results.into()));
           }
           _ => {
             // {i, max} form - iterate from 1 to max
@@ -121,7 +121,7 @@ pub fn table_ast(
                 results.push(val);
               }
             }
-            return Ok(Expr::List(results));
+            return Ok(Expr::List(results.into()));
           }
         }
       } else if items.len() >= 3 {
@@ -178,7 +178,7 @@ pub fn table_ast(
               i += step_val;
             }
           }
-          return Ok(Expr::List(results));
+          return Ok(Expr::List(results.into()));
         }
 
         // Symbolic path: if (max - min) / step simplifies to a non-negative
@@ -220,7 +220,7 @@ pub fn table_ast(
               results.push(val);
             }
           }
-          return Ok(Expr::List(results));
+          return Ok(Expr::List(results.into()));
         }
 
         // Fallback: numeric iteration for symbolic numeric bounds/step (e.g. Pi/4).
@@ -280,7 +280,7 @@ pub fn table_ast(
             current_expr =
               crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: "Plus".to_string(),
-                args: vec![current_expr, step_expr.clone()],
+                args: vec![current_expr, step_expr.clone()].into(),
               })?;
             safety_counter += 1;
             if safety_counter > 1_000_000 {
@@ -315,7 +315,7 @@ pub fn table_ast(
             current_expr =
               crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: "Plus".to_string(),
-                args: vec![current_expr, step_expr.clone()],
+                args: vec![current_expr, step_expr.clone()].into(),
               })?;
             safety_counter += 1;
             if safety_counter > 1_000_000 {
@@ -325,7 +325,7 @@ pub fn table_ast(
             }
           }
         }
-        return Ok(Expr::List(results));
+        return Ok(Expr::List(results.into()));
       }
 
       Err(InterpreterError::EvaluationError(
@@ -364,7 +364,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "Range".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -443,7 +443,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   // Try symbolic range when arguments contain symbolic constants (e.g. Pi)
@@ -454,7 +454,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Try evaluating N[expr] to get a float
     let n_expr = Expr::FunctionCall {
       name: "N".to_string(),
-      args: vec![e.clone()],
+      args: vec![e.clone()].into(),
     };
     if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&n_expr) {
       return expr_to_f64(&evaled);
@@ -499,16 +499,16 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             max_expr.clone(),
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), min_expr.clone()],
+              args: vec![Expr::Integer(-1), min_expr.clone()].into(),
             },
-          ],
+          ].into(),
         };
         if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&diff_expr)
           && let Some(diff_val) = expr_to_f64(&evaled)
         {
           let count = (diff_val / step_val).floor() as i128 + 1;
           if count <= 0 {
-            return Ok(Expr::List(vec![]));
+            return Ok(Expr::List(vec![].into()));
           }
           if count > 1_000_000 {
             return Err(InterpreterError::EvaluationError(
@@ -522,24 +522,24 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               let k_times_step = Expr::FunctionCall {
                 name: "Times".to_string(),
-                args: vec![Expr::Integer(k), step_expr.clone()],
+                args: vec![Expr::Integer(k), step_expr.clone()].into(),
               };
               let sum = Expr::FunctionCall {
                 name: "Plus".to_string(),
-                args: vec![min_expr.clone(), k_times_step],
+                args: vec![min_expr.clone(), k_times_step].into(),
               };
               crate::evaluator::evaluate_expr_to_expr(&sum)?
             };
             results.push(elem);
           }
-          return Ok(Expr::List(results));
+          return Ok(Expr::List(results.into()));
         }
       }
       // Fully symbolic with no way to determine length — leave
       // unevaluated like Mathematica.
       return Ok(Expr::FunctionCall {
         name: "Range".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
 
@@ -553,7 +553,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let count = ((max_val - min_val) / step_val).floor() as i128 + 1;
       if count <= 0 {
-        return Ok(Expr::List(vec![]));
+        return Ok(Expr::List(vec![].into()));
       }
       if count > 1_000_000 {
         return Err(InterpreterError::EvaluationError(
@@ -580,7 +580,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         results.push(elem);
       }
-      return Ok(Expr::List(results));
+      return Ok(Expr::List(results.into()));
     }
 
     return Err(InterpreterError::EvaluationError(
@@ -626,7 +626,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// PowerRange[min, max] generates {min, min*10, min*100, ...} up to max.
@@ -635,7 +635,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "PowerRange".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -717,12 +717,12 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   Ok(Expr::FunctionCall {
     name: "PowerRange".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -745,7 +745,7 @@ pub fn constant_array_ast(
           "ConstantArray: dimension must be non-negative".into(),
         ));
       }
-      Ok(Expr::List(vec![elem.clone(); n as usize]))
+      Ok(Expr::List(vec![elem.clone(); n as usize].into()))
     }
     Expr::List(dim_list) => {
       if dim_list.is_empty() {
@@ -757,16 +757,16 @@ pub fn constant_array_ast(
         )
       })?;
       if dim_list.len() == 1 {
-        Ok(Expr::List(vec![elem.clone(); first_dim as usize]))
+        Ok(Expr::List(vec![elem.clone(); first_dim as usize].into()))
       } else {
-        let rest_dims = Expr::List(dim_list[1..].to_vec());
+        let rest_dims = Expr::List(dim_list[1..].to_vec().into());
         let inner = constant_array_ast(elem, &rest_dims)?;
-        Ok(Expr::List(vec![inner; first_dim as usize]))
+        Ok(Expr::List(vec![inner; first_dim as usize].into()))
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "ConstantArray".to_string(),
-      args: vec![elem.clone(), dims.clone()],
+      args: vec![elem.clone(), dims.clone()].into(),
     }),
   }
 }
@@ -934,7 +934,7 @@ pub fn array_ast(func: &Expr, n: i128) -> Result<Expr, InterpreterError> {
       result.push(val);
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Build the sequence of index values for a dimension given an integer
@@ -948,7 +948,7 @@ fn build_offset_indices(
   for i in 0..n {
     let val = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: vec![start.clone(), Expr::Integer(i)],
+      args: vec![start.clone(), Expr::Integer(i)].into(),
     };
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
@@ -971,7 +971,7 @@ fn build_range_indices(
     // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
     let half = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![Expr::Integer(2), Expr::Integer(-1)],
+      args: vec![Expr::Integer(2), Expr::Integer(-1)].into(),
     };
     let mid = Expr::FunctionCall {
       name: "Times".to_string(),
@@ -979,9 +979,9 @@ fn build_range_indices(
         half,
         Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![a.clone(), b.clone()],
+          args: vec![a.clone(), b.clone()].into(),
         },
-      ],
+      ].into(),
     };
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
@@ -993,22 +993,22 @@ fn build_range_indices(
       b.clone(),
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), a.clone()],
+        args: vec![Expr::Integer(-1), a.clone()].into(),
       },
-    ],
+    ].into(),
   };
   let inv_denom = Expr::FunctionCall {
     name: "Power".to_string(),
-    args: vec![Expr::Integer(n - 1), Expr::Integer(-1)],
+    args: vec![Expr::Integer(n - 1), Expr::Integer(-1)].into(),
   };
   for i in 0..n {
     let term = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(i), diff.clone(), inv_denom.clone()],
+      args: vec![Expr::Integer(i), diff.clone(), inv_denom.clone()].into(),
     };
     let val = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: vec![a.clone(), term],
+      args: vec![a.clone(), term].into(),
     };
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
@@ -1031,7 +1031,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "Array".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -1043,7 +1043,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "Array".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1151,7 +1151,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         items.push(build_array(func, dim_indices, depth + 1, indices)?);
         indices.pop();
       }
-      Ok(Expr::List(items))
+      Ok(Expr::List(items.into()))
     }
   }
 
@@ -1364,14 +1364,14 @@ pub fn sparse_array_normalize_ast(
   {
     return Ok(Expr::FunctionCall {
       name: "SparseArray".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
   if args.is_empty() || args.len() > 3 {
     return Ok(Expr::FunctionCall {
       name: "SparseArray".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1387,7 +1387,7 @@ pub fn sparse_array_normalize_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "SparseArray".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1400,7 +1400,7 @@ pub fn sparse_array_normalize_ast(
         if !parsed_rules.is_empty() && d.len() != parsed_rules[0].0.len() {
           return Ok(Expr::FunctionCall {
             name: "SparseArray".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
         d
@@ -1408,7 +1408,7 @@ pub fn sparse_array_normalize_ast(
       None => {
         return Ok(Expr::FunctionCall {
           name: "SparseArray".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1416,7 +1416,7 @@ pub fn sparse_array_normalize_ast(
     if inferred_dims.is_empty() {
       return Ok(Expr::FunctionCall {
         name: "SparseArray".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     inferred_dims
@@ -1481,7 +1481,7 @@ pub fn sparse_array_normalize_ast(
       } else {
         pos[1..].iter().cloned().map(Expr::Integer).collect()
       };
-      Expr::List(tail)
+      Expr::List(tail.into())
     })
     .collect();
   let values_list: Vec<Expr> = sorted.into_iter().map(|(_, v)| v).collect();
@@ -1490,9 +1490,9 @@ pub fn sparse_array_normalize_ast(
     Expr::List(row_ptr.into_iter().map(Expr::Integer).collect());
   let structure = Expr::List(vec![
     Expr::Integer(1),
-    Expr::List(vec![row_ptr_expr, Expr::List(inner_positions)]),
-    Expr::List(values_list),
-  ]);
+    Expr::List(vec![row_ptr_expr, Expr::List(inner_positions.into())].into()),
+    Expr::List(values_list.into()),
+  ].into());
 
   Ok(Expr::FunctionCall {
     name: "SparseArray".to_string(),
@@ -1501,7 +1501,7 @@ pub fn sparse_array_normalize_ast(
       dims_expr,
       default,
       structure,
-    ],
+    ].into(),
   })
 }
 
@@ -1613,7 +1613,7 @@ fn build_dense_from_rules(
         arr[(pos[0] - 1) as usize] = val.clone();
       }
     }
-    return Expr::List(arr);
+    return Expr::List(arr.into());
   }
   let d0 = dims[0];
   let rest_dims = &dims[1..];
@@ -1631,7 +1631,7 @@ fn build_dense_from_rules(
       .collect();
     result.push(build_dense_from_rules(rest_dims, default, &sub_rules));
   }
-  Expr::List(result)
+  Expr::List(result.into())
 }
 
 /// Expand a SparseArray (any recognized form) into a dense nested list.
@@ -1643,7 +1643,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Normal".to_string(),
-        args: vec![normalized],
+        args: vec![normalized].into(),
       });
     }
   };
@@ -1654,7 +1654,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::FunctionCall {
       name: "Normal".to_string(),
-      args: vec![normalized],
+      args: vec![normalized].into(),
     });
   }
   let dims: Vec<usize> = match &sa_args[1] {
@@ -1666,7 +1666,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Normal".to_string(),
-              args: vec![normalized],
+              args: vec![normalized].into(),
             });
           }
         }
@@ -1676,7 +1676,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Normal".to_string(),
-        args: vec![normalized],
+        args: vec![normalized].into(),
       });
     }
   };
@@ -1695,7 +1695,7 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Tuples".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1704,14 +1704,14 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut lists: Vec<Vec<Expr>> = Vec::new();
     for item in outer_items {
       match item {
-        Expr::List(items) => lists.push(items.clone()),
+        Expr::List(items) => lists.push(items.to_vec()),
         Expr::FunctionCall { args: fc_args, .. } => {
-          lists.push(fc_args.clone());
+          lists.push(fc_args.to_vec());
         }
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Tuples".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -1731,7 +1731,7 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result = new_result;
     }
 
-    return Ok(Expr::List(result.into_iter().map(Expr::List).collect()));
+    return Ok(Expr::List(result.into_iter().map(|v| Expr::List(v.into())).collect()));
   }
 
   if args.len() != 2 {
@@ -1742,15 +1742,15 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Tuples[list, n] or Tuples[f[a,b,...], n]
   let (items, head_name): (Vec<Expr>, Option<String>) = match &args[0] {
-    Expr::List(items) => (items.clone(), None),
+    Expr::List(items) => (items.to_vec(), None),
     Expr::FunctionCall {
       name,
       args: fc_args,
-    } => (fc_args.clone(), Some(name.clone())),
+    } => (fc_args.to_vec(), Some(name.clone())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Tuples".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1760,7 +1760,7 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Tuples".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1769,12 +1769,12 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let empty = if let Some(ref h) = head_name {
       Expr::FunctionCall {
         name: h.clone(),
-        args: vec![],
+        args: vec![].into(),
       }
     } else {
-      Expr::List(vec![])
+      Expr::List(vec![].into())
     };
-    return Ok(Expr::List(vec![empty]));
+    return Ok(Expr::List(vec![empty].into()));
   }
 
   // Iterative Cartesian product
@@ -1796,10 +1796,10 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(ref h) = head_name {
       Expr::FunctionCall {
         name: h.clone(),
-        args: elems,
+        args: elems.into(),
       }
     } else {
-      Expr::List(elems)
+      Expr::List(elems.into())
     }
   };
 

@@ -55,7 +55,7 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
         args.iter().map(|a| strip_sqrt_square(a.clone())).collect();
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr,
@@ -161,7 +161,7 @@ fn try_nsolve_quadratic(
     Expr::List(vec![Expr::Rule {
       pattern: Box::new(Expr::Identifier(var.clone())),
       replacement: Box::new(val),
-    }])
+    }].into())
   };
 
   if disc >= 0.0 {
@@ -181,7 +181,7 @@ fn try_nsolve_quadratic(
     Some(Ok(Expr::List(vec![
       make_rule(Expr::Real(roots[0])),
       make_rule(Expr::Real(roots[1])),
-    ])))
+    ].into())))
   } else {
     let sqrt_neg_disc = (-disc).sqrt();
     let re = -b / (2.0 * a);
@@ -196,7 +196,7 @@ fn try_nsolve_quadratic(
       &[Expr::Real(re), Expr::Real(im.abs())],
     )
     .unwrap_or(Expr::Real(re));
-    Some(Ok(Expr::List(vec![make_rule(c1), make_rule(c2)])))
+    Some(Ok(Expr::List(vec![make_rule(c1), make_rule(c2)].into())))
   }
 }
 
@@ -207,7 +207,7 @@ fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> =
         items.iter().map(nsolve_numerize).collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     Expr::Rule {
       pattern,
@@ -259,7 +259,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Roots".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -317,14 +317,14 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "Or".to_string(),
-          args: conditions,
+          args: conditions.into(),
         })
       }
     }
     // Solve returned unevaluated
     _ => Ok(Expr::FunctionCall {
       name: "Roots".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -416,7 +416,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args } if name == "Or" => {
       let result: Vec<Expr> = args
         .iter()
-        .map(|arg| Expr::List(collect_and_rules(arg)))
+        .map(|arg| Expr::List(collect_and_rules(arg).into()))
         .filter(|list| {
           if let Expr::List(items) = list {
             !items.is_empty()
@@ -427,7 +427,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::FunctionCall {
         name: "Sequence".to_string(),
-        args: result,
+        args: result.into(),
       })
     }
     // BinaryOp::Or tree (used by reduce_multi_var_and for multiple solutions)
@@ -438,7 +438,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let or_terms = collect_or_terms(input);
       let result: Vec<Expr> = or_terms
         .iter()
-        .map(|arg| Expr::List(collect_and_rules(arg)))
+        .map(|arg| Expr::List(collect_and_rules(arg).into()))
         .filter(|list| {
           if let Expr::List(items) = list {
             !items.is_empty()
@@ -449,13 +449,13 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::FunctionCall {
         name: "Sequence".to_string(),
-        args: result,
+        args: result.into(),
       })
     }
     // And[x == a, y == b] → {x -> a, y -> b}
     Expr::FunctionCall { name, .. } if name == "And" => {
       let rules = collect_and_rules(input);
-      Ok(Expr::List(rules))
+      Ok(Expr::List(rules.into()))
     }
     // BinaryOp::And tree (used by reduce_multi_var_and for single solution)
     Expr::BinaryOp {
@@ -463,24 +463,24 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ..
     } => {
       let rules = collect_and_rules(input);
-      Ok(Expr::List(rules))
+      Ok(Expr::List(rules.into()))
     }
     // Single equation: x == a → {x -> a}
     Expr::Comparison { .. } => {
       let rules = collect_and_rules(input);
-      Ok(Expr::List(rules))
+      Ok(Expr::List(rules.into()))
     }
     // True → {} (trivially satisfied, no constraints)
-    Expr::Identifier(s) if s == "True" => Ok(Expr::List(vec![])),
+    Expr::Identifier(s) if s == "True" => Ok(Expr::List(vec![].into())),
     // False → Sequence[] (no solutions, matches Wolfram: splices to nothing in context)
     Expr::Identifier(s) if s == "False" => Ok(Expr::FunctionCall {
       name: "Sequence".to_string(),
-      args: vec![],
+      args: vec![].into(),
     }),
     // Anything else: return unevaluated
     _ => Ok(Expr::FunctionCall {
       name: "ToRules".to_string(),
-      args: vec![input.clone()],
+      args: vec![input.clone()].into(),
     }),
   }
 }
@@ -518,7 +518,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .filter(|sol| !contains_complex(sol))
           .cloned()
           .collect();
-        return Ok(Expr::List(filtered));
+        return Ok(Expr::List(filtered.into()));
       }
     }
     if dom == "Integers" {
@@ -541,7 +541,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .cloned()
           .collect();
-        return Ok(Expr::List(filtered));
+        return Ok(Expr::List(filtered.into()));
       }
     }
     // For other domains, just return the base solutions
@@ -590,7 +590,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::List(items)
           if items.iter().all(|i| matches!(i, Expr::Rule { .. })) =>
         {
-          Expr::List(vec![rules])
+          Expr::List(vec![rules].into())
         }
         _ => rules,
       };
@@ -679,7 +679,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // None succeeded — return unevaluated
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   }
@@ -727,7 +727,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .cloned()
           .collect();
-        return Ok(Expr::List(filtered));
+        return Ok(Expr::List(filtered.into()));
       }
       return Ok(eq_solutions);
     }
@@ -743,7 +743,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     target_expr => {
@@ -776,18 +776,18 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
             pattern: Box::new(target_expr.clone()),
             replacement: Box::new(rhs),
-          }])]));
+          }].into())].into()));
         }
         if rhs_str == target_str {
           return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
             pattern: Box::new(target_expr.clone()),
             replacement: Box::new(lhs),
-          }])]));
+          }].into())].into()));
         }
       }
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -805,7 +805,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(Expr::FunctionCall {
       name: "Solve".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -836,11 +836,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(s) if s == "True" => {
       // x == x → True → all solutions
-      return Ok(Expr::List(vec![Expr::List(vec![])]));
+      return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
     }
     Expr::Identifier(s) if s == "False" => {
       // contradiction → no solutions
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     }
     _ => {
       // Solve::naqs: expr is not a quantified system of equations and inequalities.
@@ -851,7 +851,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -901,7 +901,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -936,7 +936,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(vec![Expr::Rule {
       pattern: Box::new(Expr::Identifier(var.to_string())),
       replacement: Box::new(solution),
-    }])
+    }].into())
   };
 
   // Factor out x^k when the k lowest-degree coefficients are zero.
@@ -955,7 +955,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut all_solutions = vec![x_zero];
         all_solutions.extend(reduced_sols.iter().cloned());
         sort_solutions(&mut all_solutions);
-        return Ok(Expr::List(all_solutions));
+        return Ok(Expr::List(all_solutions.into()));
       }
     }
   }
@@ -965,9 +965,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // No variable present — check if constant is zero
       let c0 = &coeffs[0];
       if matches!(c0, Expr::Integer(0)) {
-        Ok(Expr::List(vec![Expr::List(vec![])]))
+        Ok(Expr::List(vec![Expr::List(vec![].into())].into()))
       } else {
-        Ok(Expr::List(vec![]))
+        Ok(Expr::List(vec![].into()))
       }
     }
     1 => {
@@ -981,7 +981,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let solution =
         crate::functions::polynomial_ast::simplify_ast(&[solution.clone()])
           .unwrap_or(solution);
-      Ok(Expr::List(vec![make_rule(solution)]))
+      Ok(Expr::List(vec![make_rule(solution)].into()))
     }
     2 => {
       // Quadratic: a*x^2 + b*x + c = 0
@@ -1023,7 +1023,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               &Expr::Integer(-bi + sqrt_out),
               &Expr::Integer(2 * ai),
             );
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
           } else {
             // Irrational roots: (-bi ± sqrt_out*Sqrt[sqrt_in]) / (2*ai)
             // Simplify by dividing common factors
@@ -1092,7 +1092,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             let sol1 = make_sol(true);
             let sol2 = make_sol(false);
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
           }
         } else {
           // Check for cyclotomic polynomials before using quadratic formula
@@ -1109,7 +1109,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![
                   Expr::Integer(-1),
                   crate::functions::math_ast::make_rational_pub(p, q),
-                ],
+                ].into(),
               }
             };
             // After multiplying by -1, the b/a sign flips along with a's
@@ -1119,12 +1119,12 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               // Φ₃: x^2 + x + 1 → roots: -(-1)^(1/3), (-1)^(2/3)
               let sol1 = negate_expr(&make_neg1_pow(1, 3));
               let sol2 = make_neg1_pow(2, 3);
-              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
             } else {
               // Φ₆: x^2 - x + 1 → roots: (-1)^(1/3), -(-1)^(2/3)
               let sol1 = make_neg1_pow(1, 3);
               let sol2 = negate_expr(&make_neg1_pow(2, 3));
-              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
             }
           }
 
@@ -1152,7 +1152,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             let sol1 = make_sol(true);
             let sol2 = make_sol(false);
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
           } else {
             // Complex roots with irrational imaginary part
             let g =
@@ -1206,7 +1206,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             let sol1 = make_sol(true);
             let sol2 = make_sol(false);
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
           }
         }
       }
@@ -1248,7 +1248,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
         let sol_neg = negate_expr(&sol_pos);
-        return Ok(Expr::List(vec![make_rule(sol_neg), make_rule(sol_pos)]));
+        return Ok(Expr::List(vec![make_rule(sol_neg), make_rule(sol_pos)].into()));
       }
 
       // First evaluate the discriminant to simplify complex arithmetic (e.g., (3+I)^2 - 4*(2+2I) → -2I)
@@ -1297,9 +1297,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => false,
       };
       if leading_negative {
-        Ok(Expr::List(vec![make_rule(sol2), make_rule(sol1)]))
+        Ok(Expr::List(vec![make_rule(sol2), make_rule(sol1)].into()))
       } else {
-        Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]))
+        Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()))
       }
     }
     _ => {
@@ -1331,9 +1331,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 val.clone(),
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![Expr::Integer(1), Expr::Integer(n)],
+                  args: vec![Expr::Integer(1), Expr::Integer(n)].into(),
                 },
-              ],
+              ].into(),
             };
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
           };
@@ -1356,9 +1356,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     Expr::Integer(-1),
                     Expr::FunctionCall {
                       name: "Rational".to_string(),
-                      args: vec![Expr::Integer(p), Expr::Integer(q)],
+                      args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
                     },
-                  ],
+                  ].into(),
                 };
                 let product = Expr::BinaryOp {
                   op: BinaryOperator::Times,
@@ -1399,9 +1399,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       Expr::Integer(-1),
                       Expr::FunctionCall {
                         name: "Rational".to_string(),
-                        args: vec![Expr::Integer(p), Expr::Integer(q)],
+                        args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
                       },
-                    ],
+                    ].into(),
                   }
                 };
                 let product = Expr::BinaryOp {
@@ -1416,7 +1416,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
 
           sort_solutions(&mut roots);
-          return Ok(Expr::List(roots));
+          return Ok(Expr::List(roots.into()));
         }
       }
 
@@ -1444,14 +1444,14 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           if !all_solutions.is_empty() {
             sort_solutions(&mut all_solutions);
-            return Ok(Expr::List(all_solutions));
+            return Ok(Expr::List(all_solutions.into()));
           }
         }
       }
       // Fall back: return unevaluated
       Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -1509,7 +1509,7 @@ fn contains_complex(expr: &Expr) -> bool {
 /// Extract multiplicative factors from a Times expression (FunctionCall or BinaryOp).
 fn extract_times_factors(expr: &Expr) -> Vec<Expr> {
   match expr {
-    Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -1721,11 +1721,11 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   let pi = Expr::Constant("Pi".to_string());
   let c1 = Expr::FunctionCall {
     name: "C".to_string(),
-    args: vec![Expr::Integer(1)],
+    args: vec![Expr::Integer(1)].into(),
   };
   let element_c1_integers = Expr::FunctionCall {
     name: "Element".to_string(),
-    args: vec![c1.clone(), Expr::Identifier("Integers".to_string())],
+    args: vec![c1.clone(), Expr::Identifier("Integers".to_string())].into(),
   };
   let two_pi_c1 = Expr::BinaryOp {
     op: BinaryOperator::Times,
@@ -1754,7 +1754,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   // Helper: build `ConditionalExpression[expr, Element[C[1], Integers]]`.
   let cond = |body: Expr| Expr::FunctionCall {
     name: "ConditionalExpression".to_string(),
-    args: vec![body, element_c1_integers.clone()],
+    args: vec![body, element_c1_integers.clone()].into(),
   };
   let make_rule_list = |bodies: Vec<Expr>| -> Expr {
     Expr::List(
@@ -1764,7 +1764,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
           Expr::List(vec![Expr::Rule {
             pattern: Box::new(var_expr.clone()),
             replacement: Box::new(cond(body)),
-          }])
+          }].into())
         })
         .collect(),
     )
@@ -1910,13 +1910,13 @@ fn try_solve_inverse_function(
         let log_val =
           crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
             name: "Log".to_string(),
-            args: vec![val.clone()],
+            args: vec![val.clone()].into(),
           })
           .ok()?;
         // Periodic part: 2*Pi*I*C[1]
         let c1 = Expr::FunctionCall {
           name: "C".to_string(),
-          args: vec![Expr::Integer(1)],
+          args: vec![Expr::Integer(1)].into(),
         };
         let two_pi_i_c1 =
           crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -1926,13 +1926,13 @@ fn try_solve_inverse_function(
               Expr::Identifier("I".to_string()),
               Expr::Identifier("Pi".to_string()),
               c1.clone(),
-            ],
+            ].into(),
           })
           .ok()?;
         let general =
           crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
             name: "Plus".to_string(),
-            args: vec![log_val, two_pi_i_c1],
+            args: vec![log_val, two_pi_i_c1].into(),
           })
           .ok()?;
         let cond = Expr::FunctionCall {
@@ -1941,14 +1941,14 @@ fn try_solve_inverse_function(
             general,
             Expr::FunctionCall {
               name: "Element".to_string(),
-              args: vec![c1, Expr::Identifier("Integers".to_string())],
+              args: vec![c1, Expr::Identifier("Integers".to_string())].into(),
             },
-          ],
+          ].into(),
         };
         return Some(Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
           pattern: Box::new(Expr::Identifier(var.to_string())),
           replacement: Box::new(cond),
-        }])])));
+        }].into())].into())));
       }
       // base^exp == val where base is constant, exp contains var
       // → exp == Log[val] / Log[base]
@@ -1956,11 +1956,11 @@ fn try_solve_inverse_function(
         op: BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![val.clone()],
+          args: vec![val.clone()].into(),
         }),
         right: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![base],
+          args: vec![base].into(),
         }),
       };
       let simplified_rhs =
@@ -2000,28 +2000,28 @@ fn try_solve_inverse_function(
         // Exp[inner] == val → inner == Log[val]
         Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![val.clone()],
+          args: vec![val.clone()].into(),
         }
       }
       "ArcSin" => {
         // ArcSin[inner] == val → inner == Sin[val]
         Expr::FunctionCall {
           name: "Sin".to_string(),
-          args: vec![val.clone()],
+          args: vec![val.clone()].into(),
         }
       }
       "ArcCos" => {
         // ArcCos[inner] == val → inner == Cos[val]
         Expr::FunctionCall {
           name: "Cos".to_string(),
-          args: vec![val.clone()],
+          args: vec![val.clone()].into(),
         }
       }
       "ArcTan" => {
         // ArcTan[inner] == val → inner == Tan[val]
         Expr::FunctionCall {
           name: "Tan".to_string(),
-          args: vec![val.clone()],
+          args: vec![val.clone()].into(),
         }
       }
       "Log10" => {
@@ -2250,7 +2250,7 @@ fn try_solve_factoring_powers(
                 } else {
                   Expr::FunctionCall {
                     name: "Rational".to_string(),
-                    args: vec![Expr::Integer(new_num), Expr::Integer(new_den)],
+                    args: vec![Expr::Integer(new_num), Expr::Integer(new_den)].into(),
                   }
                 };
                 remaining_factors[idx] = Expr::BinaryOp {
@@ -2313,7 +2313,7 @@ pub fn solve_divide(num: &Expr, den: &Expr) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(rn), Expr::Integer(rd)],
+          args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
         }
       }
     }
@@ -2408,7 +2408,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Root".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2417,7 +2417,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Root".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2434,7 +2434,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Root".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2482,7 +2482,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(Expr::FunctionCall {
       name: "Root".to_string(),
-      args: vec![canonical_body, args[1].clone(), Expr::Integer(0)],
+      args: vec![canonical_body, args[1].clone(), Expr::Integer(0)].into(),
     });
   }
 
@@ -2692,7 +2692,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![Expr::Rule {
       pattern: Box::new(Expr::Identifier(var)),
       replacement: Box::new(result_val),
-    }]));
+    }].into()));
   }
 
   // Try symbolic derivative; fall back to numerical if unavailable
@@ -2764,7 +2764,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![Expr::Rule {
     pattern: Box::new(lhs),
     replacement: Box::new(result_val),
-  }]))
+  }].into()))
 }
 
 /// Evaluate an expression numerically at a specific value of var.
@@ -2823,7 +2823,7 @@ pub fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
           // Try N[] to convert symbolic expressions (e.g. Pi/4) to numeric
           let n_expr = Expr::FunctionCall {
             name: "N".to_string(),
-            args: vec![evaled.clone()],
+            args: vec![evaled.clone()].into(),
           };
           let n_result = crate::evaluator::evaluate_expr_to_expr(&n_expr)?;
           match &n_result {
@@ -2930,7 +2930,7 @@ pub fn minimize_ast(
           args: vec![
             Expr::Identifier(var.clone()),
             Expr::Identifier("Integers".to_string()),
-          ],
+          ].into(),
         });
       }
     }
@@ -3116,7 +3116,7 @@ fn minimize_recognize_exact(v: f64) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(rn), Expr::Integer(rd)],
+          args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
         }
       };
     }
@@ -3210,7 +3210,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
         } else {
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(num), Expr::Integer(den)],
+            args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
           }
         };
         roots.push(root);
@@ -3234,7 +3234,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
             } else {
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(n1), Expr::Integer(d1)],
+                args: vec![Expr::Integer(n1), Expr::Integer(d1)].into(),
               }
             });
             if n1 != n2 || d1 != d2 {
@@ -3243,7 +3243,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               } else {
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![Expr::Integer(n2), Expr::Integer(d2)],
+                  args: vec![Expr::Integer(n2), Expr::Integer(d2)].into(),
                 }
               });
             }
@@ -3373,7 +3373,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               } else {
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![Expr::Integer(rn), Expr::Integer(rd)],
+                  args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
                 }
               };
               roots.push(root);
@@ -3546,7 +3546,7 @@ fn minimize_neg_infinity_result(vars: &[String], maximize: bool) -> Expr {
       replacement: Box::new(x_val.clone()),
     })
     .collect();
-  Expr::List(vec![inf_val, Expr::List(rules)])
+  Expr::List(vec![inf_val, Expr::List(rules.into())].into())
 }
 
 /// Single-variable unconstrained minimize.
@@ -3587,7 +3587,7 @@ fn minimize_single_var(
     // Bounded function with no critical points: return unevaluated
     return Ok(Expr::FunctionCall {
       name: func_name.to_string(),
-      args: vec![f.clone(), Expr::Identifier(var.to_string())],
+      args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
     });
   }
 
@@ -3618,7 +3618,7 @@ fn minimize_single_var(
     _ => {
       return Ok(Expr::FunctionCall {
         name: func_name.to_string(),
-        args: vec![f.clone(), Expr::Identifier(var.to_string())],
+        args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
       });
     }
   };
@@ -3634,7 +3634,7 @@ fn minimize_single_var(
     pattern: Box::new(Expr::Identifier(var.to_string())),
     replacement: Box::new(min_x),
   };
-  Ok(Expr::List(vec![result_val, Expr::List(vec![rule])]))
+  Ok(Expr::List(vec![result_val, Expr::List(vec![rule].into())].into()))
 }
 
 /// Find critical points of f' = 0 in one variable.
@@ -3820,7 +3820,7 @@ fn minimize_multi_var(
           replacement: Box::new(val.clone()),
         })
         .collect();
-      return Ok(Expr::List(vec![result_val, Expr::List(rules)]));
+      return Ok(Expr::List(vec![result_val, Expr::List(rules.into())].into()));
     }
   }
 
@@ -3874,7 +3874,7 @@ fn minimize_multi_var(
       args: vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-      ],
+      ].into(),
     });
   }
 
@@ -3891,7 +3891,7 @@ fn minimize_multi_var(
       replacement: Box::new(Expr::Real(val)),
     })
     .collect();
-  Ok(Expr::List(vec![result_val, Expr::List(rules)]))
+  Ok(Expr::List(vec![result_val, Expr::List(rules.into())].into()))
 }
 
 /// Flatten And[a, b, c, ...] recursively into a flat list of constraints.
@@ -4204,7 +4204,7 @@ fn minimize_try_ilp(
       args: vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-      ],
+      ].into(),
     }));
   }
 
@@ -4236,7 +4236,7 @@ fn minimize_try_ilp(
       replacement: Box::new(Expr::Integer(val as i128)),
     })
     .collect();
-  Ok(Some(Expr::List(vec![result_val, Expr::List(rules)])))
+  Ok(Some(Expr::List(vec![result_val, Expr::List(rules.into())].into())))
 }
 
 /// Find a scale factor that makes all values close to integers.
@@ -4401,7 +4401,7 @@ fn minimize_constrained_1d(
     );
     return Ok(Expr::FunctionCall {
       name: func_name.to_string(),
-      args: vec![obj_with_cons, Expr::Identifier(var.to_string())],
+      args: vec![obj_with_cons, Expr::Identifier(var.to_string())].into(),
     });
   }
 
@@ -4438,7 +4438,7 @@ fn minimize_constrained_1d(
     );
     return Ok(Expr::FunctionCall {
       name: func_name.to_string(),
-      args: vec![obj_with_cons, Expr::Identifier(var.to_string())],
+      args: vec![obj_with_cons, Expr::Identifier(var.to_string())].into(),
     });
   }
 
@@ -4487,7 +4487,7 @@ fn minimize_constrained_1d(
     pattern: Box::new(Expr::Identifier(var.to_string())),
     replacement: Box::new(result_x),
   };
-  Ok(Expr::List(vec![result_val, Expr::List(vec![rule])]))
+  Ok(Expr::List(vec![result_val, Expr::List(vec![rule].into())].into()))
 }
 
 /// Multi-variable constrained minimize.
@@ -4525,7 +4525,7 @@ fn minimize_constrained_nd(
     args: vec![
       obj_with_cons,
       Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-    ],
+    ].into(),
   })
 }
 
@@ -4830,7 +4830,7 @@ fn minimize_constrained_boundary(
     })
     .collect();
 
-  Ok(Some(Expr::List(vec![result_fval, Expr::List(rules)])))
+  Ok(Some(Expr::List(vec![result_fval, Expr::List(rules.into())].into())))
 }
 
 /// Try to solve a 2D linear program by enumerating vertices.
@@ -4985,7 +4985,7 @@ fn minimize_lp_2d(
           } else {
             Expr::FunctionCall {
               name: "Rational".to_string(),
-              args: vec![Expr::Integer(rn), Expr::Integer(rd)],
+              args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
             }
           };
         }
@@ -5010,7 +5010,7 @@ fn minimize_lp_2d(
           } else {
             Expr::FunctionCall {
               name: "Rational".to_string(),
-              args: vec![Expr::Integer(rn), Expr::Integer(rd)],
+              args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
             }
           };
           return Some(Expr::List(vec![
@@ -5024,8 +5024,8 @@ fn minimize_lp_2d(
                 pattern: Box::new(Expr::Identifier(y_name.clone())),
                 replacement: Box::new(make_exact(best_vertex.1)),
               },
-            ]),
-          ]));
+            ].into()),
+          ].into()));
         }
       }
       Expr::Real(v)
@@ -5043,8 +5043,8 @@ fn minimize_lp_2d(
         pattern: Box::new(Expr::Identifier(y_name.clone())),
         replacement: Box::new(make_exact(best_vertex.1)),
       },
-    ]),
-  ]))
+    ].into()),
+  ].into()))
 }
 
 // ─── FindMinimum / FindMaximum ───────────────────────────────────────
@@ -5257,7 +5257,7 @@ pub fn find_minimum_ast(
     })
     .collect();
 
-  Ok(Expr::List(vec![min_val_expr, Expr::List(rules)]))
+  Ok(Expr::List(vec![min_val_expr, Expr::List(rules.into())].into()))
 }
 
 /// Split an And expression into its equality part and inequality parts.
@@ -5422,7 +5422,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
     if (0..n).all(|j| is_expr_zero(&matrix[row][j]))
       && !is_expr_zero(&matrix[row][n])
     {
-      return Some(Expr::List(vec![])); // no solution
+      return Some(Expr::List(vec![].into())); // no solution
     }
   }
 
@@ -5604,7 +5604,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
     best_rules
   };
 
-  Some(Expr::List(vec![Expr::List(rules)]))
+  Some(Expr::List(vec![Expr::List(rules.into())].into()))
 }
 
 /// Convert an evaluated expression to f64
@@ -5949,7 +5949,7 @@ pub fn nminimize_ast(
     })
     .collect();
 
-  Ok(Expr::List(vec![Expr::Real(opt_val), Expr::List(rules)]))
+  Ok(Expr::List(vec![Expr::Real(opt_val), Expr::List(rules.into())].into()))
 }
 
 /// Extract variable bounds from constraints.
@@ -6051,7 +6051,7 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       // Try evaluating via N[]
       let n_expr = Expr::FunctionCall {
         name: "N".to_string(),
-        args: vec![expr.clone()],
+        args: vec![expr.clone()].into(),
       };
       let evaled = crate::evaluator::evaluate_expr_to_expr(&n_expr)?;
       match &evaled {
@@ -6177,7 +6177,7 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if solutions.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Filter by domain if specified
@@ -6198,7 +6198,7 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if filtered.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Take at most n solutions from the end (Wolfram picks the largest solutions first)
@@ -6208,7 +6208,7 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     filtered.into_iter().skip(len - n).collect()
   };
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Try to find instances numerically by evaluating the condition at sample points.
@@ -6250,7 +6250,7 @@ fn find_instance_numerical(
         results.push(Expr::List(vec![Expr::Rule {
           pattern: Box::new(Expr::Identifier(var.clone())),
           replacement: Box::new(test_val),
-        }]));
+        }].into()));
       }
       val += step;
     }
@@ -6279,7 +6279,7 @@ fn find_instance_numerical(
               pattern: Box::new(Expr::Identifier(var2.clone())),
               replacement: Box::new(test2),
             },
-          ]));
+          ].into()));
           if results.len() >= n {
             break 'outer;
           }

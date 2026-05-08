@@ -194,7 +194,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -203,7 +203,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -213,7 +213,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -222,7 +222,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n == 0 {
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -332,7 +332,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   primitives.push(default_applied_edge_color.to_expr());
   primitives.push(Expr::FunctionCall {
     name: "AbsoluteThickness".to_string(),
-    args: vec![Expr::Real(1.5)],
+    args: vec![Expr::Real(1.5)].into(),
   });
 
   // Group parallel (including antiparallel) non-loop edges by unordered
@@ -403,22 +403,22 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if k == 0 || k == segments {
           // Snap first/last point exactly onto vertex boundary
           let (px, py) = attach(angle);
-          pts.push(Expr::List(vec![Expr::Real(px), Expr::Real(py)]));
+          pts.push(Expr::List(vec![Expr::Real(px), Expr::Real(py)].into()));
         } else {
           let px = cx + loop_r * angle.cos();
           let py = cy + loop_r * angle.sin();
-          pts.push(Expr::List(vec![Expr::Real(px), Expr::Real(py)]));
+          pts.push(Expr::List(vec![Expr::Real(px), Expr::Real(py)].into()));
         }
       }
       if edge_data.directed {
         primitives.push(Expr::FunctionCall {
           name: "Arrow".to_string(),
-          args: vec![Expr::List(pts)],
+          args: vec![Expr::List(pts.into())].into(),
         });
       } else {
         primitives.push(Expr::FunctionCall {
           name: "Line".to_string(),
-          args: vec![Expr::List(pts)],
+          args: vec![Expr::List(pts.into())].into(),
         });
       }
     } else {
@@ -468,17 +468,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           primitives.push(Expr::FunctionCall {
             name: "Arrow".to_string(),
             args: vec![Expr::List(vec![
-              Expr::List(vec![Expr::Real(sx), Expr::Real(sy)]),
-              Expr::List(vec![Expr::Real(ex), Expr::Real(ey)]),
-            ])],
+              Expr::List(vec![Expr::Real(sx), Expr::Real(sy)].into()),
+              Expr::List(vec![Expr::Real(ex), Expr::Real(ey)].into()),
+            ].into())].into(),
           });
         } else {
           primitives.push(Expr::FunctionCall {
             name: "Line".to_string(),
             args: vec![Expr::List(vec![
-              Expr::List(vec![Expr::Real(x1), Expr::Real(y1)]),
-              Expr::List(vec![Expr::Real(x2), Expr::Real(y2)]),
-            ])],
+              Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
+              Expr::List(vec![Expr::Real(x2), Expr::Real(y2)].into()),
+            ].into())].into(),
           });
         }
       } else {
@@ -509,18 +509,18 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let omt = 1.0 - t;
           let bx = omt * omt * sx + 2.0 * omt * t * ctrl_x + t * t * ex;
           let by = omt * omt * sy + 2.0 * omt * t * ctrl_y + t * t * ey;
-          pts.push(Expr::List(vec![Expr::Real(bx), Expr::Real(by)]));
+          pts.push(Expr::List(vec![Expr::Real(bx), Expr::Real(by)].into()));
         }
 
         if edge_data.directed {
           primitives.push(Expr::FunctionCall {
             name: "Arrow".to_string(),
-            args: vec![Expr::List(pts)],
+            args: vec![Expr::List(pts.into())].into(),
           });
         } else {
           primitives.push(Expr::FunctionCall {
             name: "Line".to_string(),
-            args: vec![Expr::List(pts)],
+            args: vec![Expr::List(pts.into())].into(),
           });
         }
       }
@@ -537,17 +537,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Force labels to black so they don't inherit the edge color.
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
       });
       primitives.push(Expr::FunctionCall {
         name: "Text".to_string(),
         args: vec![
           Expr::FunctionCall {
             name: "Style".to_string(),
-            args: vec![Expr::String(lbl.clone()), Expr::Integer(10)],
+            args: vec![Expr::String(lbl.clone()), Expr::Integer(10)].into(),
           },
-          Expr::List(vec![Expr::Real(mx), Expr::Real(my)]),
-        ],
+          Expr::List(vec![Expr::Real(mx), Expr::Real(my)].into()),
+        ].into(),
       });
     }
   }
@@ -565,13 +565,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![Expr::List(vec![
         Expr::FunctionCall {
           name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)],
+          args: vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)].into(),
         },
         Expr::FunctionCall {
           name: "AbsoluteThickness".to_string(),
-          args: vec![Expr::Real(1.0)],
+          args: vec![Expr::Real(1.0)].into(),
         },
-      ])],
+      ].into())].into(),
     });
   }
 
@@ -600,11 +600,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         primitives.push(Expr::FunctionCall {
           name: "Polygon".to_string(),
           args: vec![Expr::List(vec![
-            Expr::List(vec![Expr::Real(x), Expr::Real(y + r)]),
-            Expr::List(vec![Expr::Real(x + r), Expr::Real(y)]),
-            Expr::List(vec![Expr::Real(x), Expr::Real(y - r)]),
-            Expr::List(vec![Expr::Real(x - r), Expr::Real(y)]),
-          ])],
+            Expr::List(vec![Expr::Real(x), Expr::Real(y + r)].into()),
+            Expr::List(vec![Expr::Real(x + r), Expr::Real(y)].into()),
+            Expr::List(vec![Expr::Real(x), Expr::Real(y - r)].into()),
+            Expr::List(vec![Expr::Real(x - r), Expr::Real(y)].into()),
+          ].into())].into(),
         });
       }
       Some("Square") => {
@@ -612,18 +612,18 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         primitives.push(Expr::FunctionCall {
           name: "Rectangle".to_string(),
           args: vec![
-            Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)]),
-            Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)]),
-          ],
+            Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)].into()),
+            Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)].into()),
+          ].into(),
         });
       }
       _ => {
         primitives.push(Expr::FunctionCall {
           name: "Disk".to_string(),
           args: vec![
-            Expr::List(vec![Expr::Real(x), Expr::Real(y)]),
+            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
             Expr::Real(vertex_radius),
-          ],
+          ].into(),
         });
       }
     }
@@ -634,17 +634,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let label_text = expr_to_output(unwrap_vertex_style(&vertices[i]).0);
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
       });
       primitives.push(Expr::FunctionCall {
         name: "Text".to_string(),
         args: vec![
           Expr::FunctionCall {
             name: "Style".to_string(),
-            args: vec![Expr::String(label_text), Expr::Integer(10)],
+            args: vec![Expr::String(label_text), Expr::Integer(10)].into(),
           },
-          Expr::List(vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)]),
-        ],
+          Expr::List(vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into()),
+        ].into(),
       });
     }
   }
@@ -677,7 +677,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::String(expr_to_output(&label_expr)),
           Expr::Integer(16),
           Expr::Identifier("Bold".to_string()),
-        ],
+        ].into(),
       },
     };
 
@@ -685,18 +685,18 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // have set a different color last).
     primitives.push(Expr::FunctionCall {
       name: "RGBColor".to_string(),
-      args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
     });
     primitives.push(Expr::FunctionCall {
       name: "Text".to_string(),
       args: vec![
         styled,
-        Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)]),
-      ],
+        Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)].into()),
+      ].into(),
     });
   }
 
-  let content = Expr::List(primitives);
+  let content = Expr::List(primitives.into());
   let image_size_opt = Expr::Rule {
     pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
     replacement: Box::new(Expr::Integer(360)),
@@ -1053,7 +1053,7 @@ fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
 
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
   match expr {
-    Expr::FunctionCall { name, args } if name == "Directive" => args.clone(),
+    Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
     _ => vec![expr.clone()],
   }
 }

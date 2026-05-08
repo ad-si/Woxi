@@ -13,7 +13,7 @@ fn make_tabular_failure(
     args: vec![
       Expr::Identifier(func_name.to_string()),
       Expr::String(msg_tag.to_string()),
-    ],
+    ].into(),
   };
   // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
   // using the Association formatter convention: a value of
@@ -29,11 +29,11 @@ fn make_tabular_failure(
       Expr::Association(vec![
         (
           Expr::String("MessageParameters".to_string()),
-          Expr::List(vec![data.clone()]),
+          Expr::List(vec![data.clone()].into()),
         ),
         (msg_template_key, msg_template_value),
       ]),
-    ],
+    ].into(),
   }
 }
 
@@ -82,7 +82,7 @@ pub(crate) fn build_schema(
   // Build ColumnKeys -> {key1, key2, ...}
   let column_keys_rule = (
     Expr::String("ColumnKeys".to_string()),
-    Expr::List(col_keys.to_vec()),
+    Expr::List(col_keys.to_vec().into()),
   );
 
   // Build ColumnTypes -> <|key1 -> type1, key2 -> type2, ...|>
@@ -108,7 +108,7 @@ pub(crate) fn build_schema(
       column_keys_rule,
       column_types_rule,
       row_count_rule,
-    ])],
+    ])].into(),
   }
 }
 
@@ -119,7 +119,7 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
   if args.is_empty() {
     return Expr::FunctionCall {
       name: "Tabular".to_string(),
-      args: vec![],
+      args: vec![].into(),
     };
   }
 
@@ -130,7 +130,7 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
   {
     return Expr::FunctionCall {
       name: "Tabular".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     };
   }
 
@@ -162,7 +162,7 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
       // Return unevaluated for unsupported forms
       Expr::FunctionCall {
         name: "Tabular".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }
     }
   }
@@ -192,7 +192,7 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
   if args.len() >= 2
     && let Expr::List(names) = &args[1]
   {
-    col_keys = names.clone();
+    col_keys = names.to_vec();
     col_key_strs = names.iter().map(crate::syntax::expr_to_string).collect();
   }
 
@@ -221,7 +221,7 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
 
   Expr::FunctionCall {
     name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema],
+    args: vec![args[0].clone(), schema].into(),
   }
 }
 
@@ -244,7 +244,7 @@ fn tabular_from_list_of_lists(rows: &[Expr], args: &[Expr]) -> Expr {
   // Column keys: from second argument or generate as integers 1..n
   let col_keys: Vec<Expr> = if args.len() >= 2 {
     if let Expr::List(names) = &args[1] {
-      names.clone()
+      names.to_vec()
     } else {
       (1..=num_cols).map(|i| Expr::Integer(i as i128)).collect()
     }
@@ -272,7 +272,7 @@ fn tabular_from_list_of_lists(rows: &[Expr], args: &[Expr]) -> Expr {
 
   Expr::FunctionCall {
     name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema],
+    args: vec![args[0].clone(), schema].into(),
   }
 }
 
@@ -280,7 +280,7 @@ fn tabular_from_list_of_lists(rows: &[Expr], args: &[Expr]) -> Expr {
 fn tabular_from_flat_list(items: &[Expr], args: &[Expr]) -> Expr {
   let col_keys: Vec<Expr> = if args.len() >= 2 {
     if let Expr::List(names) = &args[1] {
-      names.clone()
+      names.to_vec()
     } else {
       vec![Expr::Integer(1)]
     }
@@ -295,7 +295,7 @@ fn tabular_from_flat_list(items: &[Expr], args: &[Expr]) -> Expr {
 
   Expr::FunctionCall {
     name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema],
+    args: vec![args[0].clone(), schema].into(),
   }
 }
 
@@ -305,7 +305,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
   if args.is_empty() {
     return Expr::FunctionCall {
       name: "ToTabular".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     };
   }
   if args.len() < 2 {
@@ -323,7 +323,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
     }
     return Expr::FunctionCall {
       name: "ToTabular".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     };
   }
 
@@ -335,7 +335,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
   if !is_columns {
     return Expr::FunctionCall {
       name: "ToTabular".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     };
   }
 
@@ -368,7 +368,7 @@ pub fn to_tabular_ast(args: &[Expr]) -> Expr {
     }
     _ => Expr::FunctionCall {
       name: "ToTabular".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     },
   }
 }
@@ -409,6 +409,6 @@ fn tabular_from_column_association(
 
   Expr::FunctionCall {
     name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema],
+    args: vec![args[0].clone(), schema].into(),
   }
 }

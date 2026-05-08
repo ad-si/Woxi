@@ -74,7 +74,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Coefficient".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -268,7 +268,7 @@ fn zero_array(shape: &[i128]) -> Expr {
     Expr::Integer(0)
   } else {
     let inner = zero_array(&shape[1..]);
-    Expr::List(vec![inner; shape[0] as usize])
+    Expr::List(vec![inner; shape[0] as usize].into())
   }
 }
 
@@ -302,7 +302,7 @@ fn coefficient_list_multi(
     };
     items.push(sub);
   }
-  Ok(Expr::List(items))
+  Ok(Expr::List(items.into()))
 }
 
 /// CoefficientList[poly, var] - list of coefficients from power 0 to degree.
@@ -336,7 +336,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "CoefficientList".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -349,7 +349,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "CoefficientList".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -362,7 +362,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CoefficientList".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -376,7 +376,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "CoefficientList".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -395,7 +395,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     coeffs.push(simplified);
   }
 
-  Ok(Expr::List(coeffs))
+  Ok(Expr::List(coeffs.into()))
 }
 
 /// Collect all additive terms from an expression (flattening Plus).
@@ -611,7 +611,7 @@ pub fn monomial_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MonomialList".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -718,7 +718,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CoefficientRules".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -726,7 +726,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if vars.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "CoefficientRules".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -804,7 +804,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   // Return empty list for zero polynomial
-  Ok(Expr::List(rules))
+  Ok(Expr::List(rules.into()))
 }
 
 // ─── CoefficientArrays ─────────────────────────────────────────────────
@@ -829,7 +829,7 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "CoefficientArrays".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -840,14 +840,14 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CoefficientArrays".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
   if vars.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "CoefficientArrays".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // Multi-polynomial form: `CoefficientArrays[{p1, p2, …}, vars]` returns
@@ -919,7 +919,7 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     output.push(build_sparse_array_for_coefficients(n, k, &non_zero));
   }
-  Ok(Expr::List(output))
+  Ok(Expr::List(output.into()))
 }
 
 /// Build a `SparseArray[Automatic, [n; k], 0, …]` expression from a list
@@ -929,20 +929,20 @@ fn build_sparse_array_for_coefficients(
   k: usize,
   entries: &[(Vec<usize>, Expr)],
 ) -> Expr {
-  let dims_list = Expr::List(vec![Expr::Integer(n as i128); k]);
+  let dims_list = Expr::List(vec![Expr::Integer(n as i128); k].into());
   // Empty payload — shape varies between 1D (rowPtr length 2) and ≥2D
   // (rowPtr length n+1) to match wolframscript's CSR-like layout.
   if entries.is_empty() {
     let row_ptr = if k == 1 {
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
     } else {
-      Expr::List(vec![Expr::Integer(0); n + 1])
+      Expr::List(vec![Expr::Integer(0); n + 1].into())
     };
     let inner = Expr::List(vec![
       Expr::Integer(1),
-      Expr::List(vec![row_ptr, Expr::List(vec![])]),
-      Expr::List(vec![]),
-    ]);
+      Expr::List(vec![row_ptr, Expr::List(vec![].into())].into()),
+      Expr::List(vec![].into()),
+    ].into());
     return Expr::FunctionCall {
       name: "SparseArray".to_string(),
       args: vec![
@@ -950,7 +950,7 @@ fn build_sparse_array_for_coefficients(
         dims_list,
         Expr::Integer(0),
         inner,
-      ],
+      ].into(),
     };
   }
   // Sort entries by index for deterministic CSR layout.
@@ -961,20 +961,20 @@ fn build_sparse_array_for_coefficients(
     let row_ptr = Expr::List(vec![
       Expr::Integer(0),
       Expr::Integer(sorted_entries.len() as i128),
-    ]);
+    ].into());
     let col_indices = Expr::List(
       sorted_entries
         .iter()
-        .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)]))
+        .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)].into()))
         .collect(),
     );
     let values =
       Expr::List(sorted_entries.iter().map(|(_, c)| c.clone()).collect());
     let inner = Expr::List(vec![
       Expr::Integer(1),
-      Expr::List(vec![row_ptr, col_indices]),
+      Expr::List(vec![row_ptr, col_indices].into()),
       values,
-    ]);
+    ].into());
     return Expr::FunctionCall {
       name: "SparseArray".to_string(),
       args: vec![
@@ -982,7 +982,7 @@ fn build_sparse_array_for_coefficients(
         dims_list,
         Expr::Integer(0),
         inner,
-      ],
+      ].into(),
     };
   }
   // k ≥ 2: rowPtr length n+1, colIndices are (k-1)-tuples.
@@ -995,7 +995,7 @@ fn build_sparse_array_for_coefficients(
     row_counts[row] += 1;
     let col_idx: Vec<Expr> =
       idx[1..].iter().map(|&i| Expr::Integer(i as i128)).collect();
-    col_indices_list.push(Expr::List(col_idx));
+    col_indices_list.push(Expr::List(col_idx.into()));
     values_list.push(c.clone());
   }
   let mut row_ptr = vec![Expr::Integer(0)];
@@ -1006,9 +1006,9 @@ fn build_sparse_array_for_coefficients(
   }
   let inner = Expr::List(vec![
     Expr::Integer(1),
-    Expr::List(vec![Expr::List(row_ptr), Expr::List(col_indices_list)]),
-    Expr::List(values_list),
-  ]);
+    Expr::List(vec![Expr::List(row_ptr.into()), Expr::List(col_indices_list.into())].into()),
+    Expr::List(values_list.into()),
+  ].into());
   Expr::FunctionCall {
     name: "SparseArray".to_string(),
     args: vec![
@@ -1016,7 +1016,7 @@ fn build_sparse_array_for_coefficients(
       dims_list,
       Expr::Integer(0),
       inner,
-    ],
+    ].into(),
   }
 }
 
@@ -1087,7 +1087,7 @@ fn coefficient_arrays_multi(
   for d in 0..=max_degree {
     output.push(build_sparse_array_multi(d, m, n, &per_poly));
   }
-  Ok(Expr::List(output))
+  Ok(Expr::List(output.into()))
 }
 
 /// Build the degree-`d` SparseArray for the multi-polynomial form. The
@@ -1105,7 +1105,7 @@ fn build_sparse_array_multi(
   for _ in 0..d {
     dims_vec.push(Expr::Integer(n as i128));
   }
-  let dims_list = Expr::List(dims_vec);
+  let dims_list = Expr::List(dims_vec.into());
   let make_outer = |inner: Expr| Expr::FunctionCall {
     name: "SparseArray".to_string(),
     args: vec![
@@ -1113,7 +1113,7 @@ fn build_sparse_array_multi(
       dims_list.clone(),
       Expr::Integer(0),
       inner,
-    ],
+    ].into(),
   };
   // Collect this degree's entries from each poly, in poly order.
   let mut row_counts = vec![0i128; m];
@@ -1133,13 +1133,13 @@ fn build_sparse_array_multi(
       } else {
         idx.iter().map(|&j| Expr::Integer(j as i128)).collect()
       };
-      col_indices_list.push(Expr::List(col));
+      col_indices_list.push(Expr::List(col.into()));
       // c_0's stored value is `Plus[0, coef]` — wolframscript's quirk
       // surfaces this accumulator as `0 + value` in the printed form.
       let value = if d == 0 {
         Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![Expr::Integer(0), coef.clone()],
+          args: vec![Expr::Integer(0), coef.clone()].into(),
         }
       } else {
         coef.clone()
@@ -1150,7 +1150,7 @@ fn build_sparse_array_multi(
   // rowPtr length: `2` for d == 0 (single-row CSR), `m + 1` otherwise.
   let row_ptr = if d == 0 {
     let total: i128 = row_counts.iter().sum();
-    Expr::List(vec![Expr::Integer(0), Expr::Integer(total)])
+    Expr::List(vec![Expr::Integer(0), Expr::Integer(total)].into())
   } else {
     let mut v = vec![Expr::Integer(0)];
     let mut acc = 0i128;
@@ -1158,12 +1158,12 @@ fn build_sparse_array_multi(
       acc += c;
       v.push(Expr::Integer(acc));
     }
-    Expr::List(v)
+    Expr::List(v.into())
   };
   let inner = Expr::List(vec![
     Expr::Integer(1),
-    Expr::List(vec![row_ptr, Expr::List(col_indices_list)]),
-    Expr::List(values_list),
-  ]);
+    Expr::List(vec![row_ptr, Expr::List(col_indices_list.into())].into()),
+    Expr::List(values_list.into()),
+  ].into());
   make_outer(inner)
 }

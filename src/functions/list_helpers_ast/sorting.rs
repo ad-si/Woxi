@@ -337,7 +337,7 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "SortBy".to_string(),
-      args: vec![list.clone(), func.clone()],
+      args: vec![list.clone(), func.clone()].into(),
     }),
   }
 }
@@ -355,7 +355,7 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Ordering".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -426,7 +426,7 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Comparator for *By key expressions: numeric when possible, lexicographic fallback.
@@ -449,7 +449,7 @@ pub fn minimal_by_ast(
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) if !items.is_empty() => items,
-    Expr::List(_) => return Ok(Expr::List(vec![])),
+    Expr::List(_) => return Ok(Expr::List(vec![].into())),
     _ => {
       let mut args = vec![list.clone(), func.clone()];
       if let Some(nv) = n {
@@ -457,7 +457,7 @@ pub fn minimal_by_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "MinimalBy".to_string(),
-        args,
+        args: args.into(),
       });
     }
   };
@@ -482,7 +482,7 @@ pub fn minimal_by_ast(
         .take(take)
         .map(|(i, _)| keyed[i].0.clone())
         .collect();
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     None => {
       let min_key = keyed
@@ -498,9 +498,9 @@ pub fn minimal_by_ast(
           .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
           .map(|(item, _)| item)
           .collect();
-        Ok(Expr::List(result))
+        Ok(Expr::List(result.into()))
       } else {
-        Ok(Expr::List(vec![]))
+        Ok(Expr::List(vec![].into()))
       }
     }
   }
@@ -515,7 +515,7 @@ pub fn maximal_by_ast(
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) if !items.is_empty() => items,
-    Expr::List(_) => return Ok(Expr::List(vec![])),
+    Expr::List(_) => return Ok(Expr::List(vec![].into())),
     _ => {
       let mut args = vec![list.clone(), func.clone()];
       if let Some(nv) = n {
@@ -523,7 +523,7 @@ pub fn maximal_by_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "MaximalBy".to_string(),
-        args,
+        args: args.into(),
       });
     }
   };
@@ -548,7 +548,7 @@ pub fn maximal_by_ast(
         .take(take)
         .map(|(i, _)| keyed[i].0.clone())
         .collect();
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     None => {
       let max_key = keyed
@@ -564,9 +564,9 @@ pub fn maximal_by_ast(
           .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
           .map(|(item, _)| item)
           .collect();
-        Ok(Expr::List(result))
+        Ok(Expr::List(result.into()))
       } else {
-        Ok(Expr::List(vec![]))
+        Ok(Expr::List(vec![].into()))
       }
     }
   }
@@ -595,7 +595,7 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "Sort".to_string(),
-      args: vec![list.clone()],
+      args: vec![list.clone()].into(),
     }),
   }
 }
@@ -621,7 +621,7 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(Expr::FunctionCall {
       name: "OrderedQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }

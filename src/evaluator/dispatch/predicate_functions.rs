@@ -277,7 +277,7 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(name) if name == "False" => Expr::Integer(0),
         _ => Expr::FunctionCall {
           name: "Boole".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         },
       }));
     }
@@ -328,11 +328,11 @@ pub fn dispatch_predicate_functions(
         args: vec![
           var,
           center,
-          Expr::List(vec![]),
+          Expr::List(vec![].into()),
           Expr::Integer(1),
           Expr::Integer(1),
           Expr::Integer(1),
-        ],
+        ].into(),
       }));
     }
     "EvenQ" if args.len() == 1 => {
@@ -377,7 +377,7 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "PerfectNumberQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ListQ" if args.len() == 1 => {
@@ -393,7 +393,7 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Symbol".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // SymbolName[sym] - Get the name of a symbol as a string.
@@ -407,7 +407,7 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "SymbolName".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // Unique[] - generate a unique symbol $nnn
@@ -447,17 +447,17 @@ pub fn dispatch_predicate_functions(
               _ => {
                 return Some(Ok(Expr::FunctionCall {
                   name: "Unique".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 }));
               }
             }
           }
-          return Some(Ok(Expr::List(result)));
+          return Some(Ok(Expr::List(result.into())));
         }
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Unique".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -561,7 +561,7 @@ pub fn dispatch_predicate_functions(
       {
         return Some(Ok(Expr::FunctionCall {
           name: "Between".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       }
     }
@@ -625,13 +625,13 @@ pub fn dispatch_predicate_functions(
           return Some(Ok(Expr::List(vec![Expr::RuleDelayed {
             pattern: Box::new(Expr::FunctionCall {
               name: "HoldPattern".to_string(),
-              args: vec![Expr::Identifier(name.clone())],
+              args: vec![Expr::Identifier(name.clone())].into(),
             }),
             replacement: Box::new(v),
-          }])));
+          }].into())));
         }
       }
-      return Some(Ok(Expr::List(vec![])));
+      return Some(Ok(Expr::List(vec![].into())));
     }
     // Messages[sym] — return all stored MessageName DownValues that
     // target this symbol. `sym::tag = "text"` is stored as a DownValue
@@ -640,7 +640,7 @@ pub fn dispatch_predicate_functions(
     "Messages" if args.len() == 1 => {
       let sym = match &args[0] {
         Expr::Identifier(s) => s.clone(),
-        _ => return Some(Ok(Expr::List(vec![]))),
+        _ => return Some(Ok(Expr::List(vec![].into()))),
       };
       let func_defs = crate::FUNC_DEFS
         .with(|m| m.borrow().get("MessageName").cloned().unwrap_or_default());
@@ -697,22 +697,22 @@ pub fn dispatch_predicate_functions(
                 name: "HoldPattern".to_string(),
                 args: vec![Expr::FunctionCall {
                   name: "MessageName".to_string(),
-                  args: vec![slot0_literal, slot1_literal],
-                }],
+                  args: vec![slot0_literal, slot1_literal].into(),
+                }].into(),
               }),
               replacement: Box::new(body.clone()),
             })
           },
         )
         .collect();
-      return Some(Ok(Expr::List(rules)));
+      return Some(Ok(Expr::List(rules.into())));
     }
     // NValues[sym] — read the rules registered via `N[sym, …] = value`
     // (stored in N_VALUES under sym), formatted with HoldPattern wrappers.
     "NValues" if args.len() == 1 => {
       let head = match &args[0] {
         Expr::Identifier(s) => s.clone(),
-        _ => return Some(Ok(Expr::List(vec![]))),
+        _ => return Some(Ok(Expr::List(vec![].into()))),
       };
       let rules: Vec<Expr> = crate::evaluator::assignment::N_VALUES.with(|m| {
         m.borrow()
@@ -723,7 +723,7 @@ pub fn dispatch_predicate_functions(
               .map(|(lhs, rhs)| Expr::RuleDelayed {
                 pattern: Box::new(Expr::FunctionCall {
                   name: "HoldPattern".to_string(),
-                  args: vec![lhs.clone()],
+                  args: vec![lhs.clone()].into(),
                 }),
                 replacement: Box::new(rhs.clone()),
               })
@@ -731,12 +731,12 @@ pub fn dispatch_predicate_functions(
           })
           .unwrap_or_default()
       });
-      return Some(Ok(Expr::List(rules)));
+      return Some(Ok(Expr::List(rules.into())));
     }
     "SubValues" if args.len() == 1 => {
       let head = match &args[0] {
         Expr::Identifier(s) => s.clone(),
-        _ => return Some(Ok(Expr::List(vec![]))),
+        _ => return Some(Ok(Expr::List(vec![].into()))),
       };
       let rules: Vec<Expr> =
         crate::evaluator::assignment::SUB_VALUES.with(|m| {
@@ -748,7 +748,7 @@ pub fn dispatch_predicate_functions(
                 .map(|(lhs, rhs)| Expr::RuleDelayed {
                   pattern: Box::new(Expr::FunctionCall {
                     name: "HoldPattern".to_string(),
-                    args: vec![lhs.clone()],
+                    args: vec![lhs.clone()].into(),
                   }),
                   replacement: Box::new(rhs.clone()),
                 })
@@ -756,12 +756,12 @@ pub fn dispatch_predicate_functions(
             })
             .unwrap_or_default()
         });
-      return Some(Ok(Expr::List(rules)));
+      return Some(Ok(Expr::List(rules.into())));
     }
     "FormatValues" if args.len() == 1 => {
       let head = match &args[0] {
         Expr::Identifier(s) => s.clone(),
-        _ => return Some(Ok(Expr::List(vec![]))),
+        _ => return Some(Ok(Expr::List(vec![].into()))),
       };
       let rules: Vec<Expr> =
         crate::evaluator::assignment::FORMAT_VALUES.with(|m| {
@@ -779,13 +779,13 @@ pub fn dispatch_predicate_functions(
                   } else {
                     Expr::FunctionCall {
                       name: "MakeBoxes".to_string(),
-                      args: vec![lhs.clone(), Expr::Identifier(form.clone())],
+                      args: vec![lhs.clone(), Expr::Identifier(form.clone())].into(),
                     }
                   };
                   Expr::RuleDelayed {
                     pattern: Box::new(Expr::FunctionCall {
                       name: "HoldPattern".to_string(),
-                      args: vec![pattern_inner],
+                      args: vec![pattern_inner].into(),
                     }),
                     replacement: Box::new(rhs.clone()),
                   }
@@ -794,7 +794,7 @@ pub fn dispatch_predicate_functions(
             })
             .unwrap_or_default()
         });
-      return Some(Ok(Expr::List(rules)));
+      return Some(Ok(Expr::List(rules.into())));
     }
     // DefaultValues exposes the built-in identity elements used by
     // Optional/OneIdentity pattern matching: Plus → 0, Times → 1, and
@@ -804,7 +804,7 @@ pub fn dispatch_predicate_functions(
       let rule = |pat: Expr, val: Expr| Expr::RuleDelayed {
         pattern: Box::new(Expr::FunctionCall {
           name: "HoldPattern".to_string(),
-          args: vec![pat],
+          args: vec![pat].into(),
         }),
         replacement: Box::new(val),
       };
@@ -813,7 +813,7 @@ pub fn dispatch_predicate_functions(
         default_args.extend(extra);
         Expr::FunctionCall {
           name: "Default".to_string(),
-          args: default_args,
+          args: default_args.into(),
         }
       };
       if let Expr::Identifier(sym) = &args[0] {
@@ -870,20 +870,20 @@ pub fn dispatch_predicate_functions(
           }
           let pattern = Expr::FunctionCall {
             name: "Default".to_string(),
-            args: pat_args,
+            args: pat_args.into(),
           };
           values.push(rule(pattern, body.clone()));
         }
-        return Some(Ok(Expr::List(values)));
+        return Some(Ok(Expr::List(values.into())));
       }
-      return Some(Ok(Expr::List(vec![])));
+      return Some(Ok(Expr::List(vec![].into())));
     }
     "DownValues" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
         let func_defs = crate::FUNC_DEFS
           .with(|m| m.borrow().get(sym).cloned().unwrap_or_default());
         if func_defs.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+          return Some(Ok(Expr::List(vec![].into())));
         }
         // TagSet/TagSetDelayed definitions are also stored in FUNC_DEFS so
         // the usual dispatch picks them up, but they belong to UpValues,
@@ -939,23 +939,23 @@ pub fn dispatch_predicate_functions(
                 name: "HoldPattern".to_string(),
                 args: vec![Expr::FunctionCall {
                   name: sym.clone(),
-                  args: pattern_args,
-                }],
+                  args: pattern_args.into(),
+                }].into(),
               }),
               replacement: Box::new(body.clone()),
             }
           })
           .collect();
-        return Some(Ok(Expr::List(rules)));
+        return Some(Ok(Expr::List(rules.into())));
       }
-      return Some(Ok(Expr::List(vec![])));
+      return Some(Ok(Expr::List(vec![].into())));
     }
     "UpValues" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
         let up_defs = crate::UPVALUES
           .with(|m| m.borrow().get(sym).cloned().unwrap_or_default());
         if up_defs.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+          return Some(Ok(Expr::List(vec![].into())));
         }
         // Return a list of RuleDelayed expressions using the original LHS and body
         let rules: Vec<Expr> = up_defs
@@ -974,16 +974,16 @@ pub fn dispatch_predicate_functions(
               Expr::RuleDelayed {
                 pattern: Box::new(Expr::FunctionCall {
                   name: "HoldPattern".to_string(),
-                  args: vec![orig_lhs.clone()],
+                  args: vec![orig_lhs.clone()].into(),
                 }),
                 replacement: Box::new(orig_body.clone()),
               }
             },
           )
           .collect();
-        return Some(Ok(Expr::List(rules)));
+        return Some(Ok(Expr::List(rules.into())));
       }
-      return Some(Ok(Expr::List(vec![])));
+      return Some(Ok(Expr::List(vec![].into())));
     }
     // FullForm - returns full form representation (unevaluated)
     "FullForm" if args.len() == 1 => {
@@ -992,19 +992,19 @@ pub fn dispatch_predicate_functions(
     "CForm" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "CForm".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "TeXForm" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "TeXForm".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "FortranForm" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "FortranForm".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // Attributes[symbol] - returns the attributes of a built-in symbol
@@ -1016,7 +1016,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Attributes".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1059,7 +1059,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Context".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1082,7 +1082,7 @@ pub fn dispatch_predicate_functions(
         if !exists {
           return Some(Ok(Expr::FunctionCall {
             name: "Context".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -1096,7 +1096,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::List(vec![
         Expr::String("System`".to_string()),
         Expr::String("Global`".to_string()),
-      ])));
+      ].into())));
     }
     "Contexts" if args.len() == 1 => {
       let pattern = match &args[0] {
@@ -1104,7 +1104,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Contexts".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1152,7 +1152,7 @@ pub fn dispatch_predicate_functions(
         .filter(|n| glob_match(n))
         .map(|n| Expr::String(n.to_string()))
         .collect();
-      return Some(Ok(Expr::List(matches)));
+      return Some(Ok(Expr::List(matches.into())));
     }
     // Options[f] - return stored options for function f
     // Options[f, opt] - return specific option for function f
@@ -1166,7 +1166,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Options".to_string(),
-            args: vec![func_arg],
+            args: vec![func_arg].into(),
           }));
         }
       };
@@ -1174,7 +1174,7 @@ pub fn dispatch_predicate_functions(
         crate::FUNC_OPTIONS.with(|m| m.borrow().get(&func_name).cloned());
       let opts = stored.unwrap_or_else(|| builtin_default_options(&func_name));
       if args.len() == 1 {
-        return Some(Ok(Expr::List(opts)));
+        return Some(Ok(Expr::List(opts.into())));
       } else {
         // Options[f, opt] - find the matching option
         let opt_arg = match evaluate_expr_to_expr(&args[1]) {
@@ -1184,7 +1184,7 @@ pub fn dispatch_predicate_functions(
         let opt_name = match &opt_arg {
           Expr::Identifier(name) => name.clone(),
           _ => {
-            return Some(Ok(Expr::List(vec![])));
+            return Some(Ok(Expr::List(vec![].into())));
           }
         };
         let matching: Vec<Expr> = opts
@@ -1196,7 +1196,7 @@ pub fn dispatch_predicate_functions(
             _ => false,
           })
           .collect();
-        return Some(Ok(Expr::List(matching)));
+        return Some(Ok(Expr::List(matching.into())));
       }
     }
     // OptionValue[name] - look up option value from current OptionsPattern context.
@@ -1214,7 +1214,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),
-            args: vec![opt_arg],
+            args: vec![opt_arg].into(),
           }));
         }
       };
@@ -1238,7 +1238,7 @@ pub fn dispatch_predicate_functions(
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),
-            args: vec![opt_arg],
+            args: vec![opt_arg].into(),
           }));
         }
       }
@@ -1261,7 +1261,7 @@ pub fn dispatch_predicate_functions(
           Err(e) => return Some(Err(e)),
         };
         if let Expr::List(items) = &ev {
-          items.clone()
+          items.to_vec()
         } else {
           vec![ev]
         }
@@ -1281,7 +1281,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1355,7 +1355,7 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "NameQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // Share[expr] - memory optimization, returns 0 (no-op in Woxi)
@@ -1508,7 +1508,7 @@ fn make_rule_delayed(name: &str, value: Expr) -> Expr {
 pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
   let id = |s: &str| Expr::Identifier(s.to_string());
   let real = |f: f64| Expr::Real(f);
-  let list = |v: Vec<Expr>| Expr::List(v);
+  let list = |v: Vec<Expr>| Expr::List(v.into());
   let func_slot1 = |body: Expr| Expr::Function {
     body: Box::new(body),
   };
@@ -1519,7 +1519,7 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
         "AspectRatio",
         Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![id("GoldenRatio"), Expr::Integer(-1)],
+          args: vec![id("GoldenRatio"), Expr::Integer(-1)].into(),
         },
       ),
       make_rule("Axes", id("True")),

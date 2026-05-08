@@ -21,7 +21,7 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| factor_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // Thread over Comparison / Equal / Inequality: factor each operand.
@@ -932,10 +932,10 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   decompose_product(&factored, &mut pairs, &mut numeric_coeff);
 
   // Build result: {{numeric_coeff, 1}, {factor1, exp1}, ...}
-  let mut result = vec![Expr::List(vec![numeric_coeff, Expr::Integer(1)])];
+  let mut result = vec![Expr::List(vec![numeric_coeff, Expr::Integer(1)].into())];
   result.extend(pairs);
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Decompose a factored expression into {factor, exponent} pairs.
@@ -977,7 +977,7 @@ pub fn decompose_product(
         ])
         .unwrap_or(expr.clone());
       } else {
-        pairs.push(Expr::List(vec![*left.clone(), *right.clone()]));
+        pairs.push(Expr::List(vec![*left.clone(), *right.clone()].into()));
       }
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -988,7 +988,7 @@ pub fn decompose_product(
         ])
         .unwrap_or(expr.clone());
       } else {
-        pairs.push(Expr::List(vec![args[0].clone(), args[1].clone()]));
+        pairs.push(Expr::List(vec![args[0].clone(), args[1].clone()].into()));
       }
     }
     Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => {
@@ -1021,7 +1021,7 @@ pub fn decompose_product(
     }
     _ => {
       // Any other expression is a factor with exponent 1
-      pairs.push(Expr::List(vec![expr.clone(), Expr::Integer(1)]));
+      pairs.push(Expr::List(vec![expr.clone(), Expr::Integer(1)].into()));
     }
   }
 }
@@ -1058,7 +1058,7 @@ pub fn factor_terms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         factor_terms_ast(&new_args)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // Expand to canonical form
@@ -1308,7 +1308,7 @@ fn factor_terms_numeric(
   } else {
     Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)],
+      args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
     }
   };
 
@@ -1539,7 +1539,7 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| factor_square_free_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let expanded = expand_and_combine(&args[0]);
@@ -1761,7 +1761,7 @@ pub fn factor_square_free_list_ast(
     return Ok(Expr::List(vec![Expr::List(vec![
       Expr::Integer(0),
       Expr::Integer(1),
-    ])]));
+    ].into())].into()));
   }
 
   // Handle pure numeric
@@ -1769,7 +1769,7 @@ pub fn factor_square_free_list_ast(
     return Ok(Expr::List(vec![Expr::List(vec![
       Expr::Integer(*n),
       Expr::Integer(1),
-    ])]));
+    ].into())].into()));
   }
 
   let var = match find_single_variable(&expanded) {
@@ -1779,7 +1779,7 @@ pub fn factor_square_free_list_ast(
       return Ok(Expr::List(vec![Expr::List(vec![
         expanded,
         Expr::Integer(1),
-      ])]));
+      ].into())].into()));
     }
   };
 
@@ -1789,7 +1789,7 @@ pub fn factor_square_free_list_ast(
       return Ok(Expr::List(vec![Expr::List(vec![
         expanded,
         Expr::Integer(1),
-      ])]));
+      ].into())].into()));
     }
   };
 
@@ -1803,7 +1803,7 @@ pub fn factor_square_free_list_ast(
     return Ok(Expr::List(vec![Expr::List(vec![
       Expr::Integer(0),
       Expr::Integer(1),
-    ])]));
+    ].into())].into()));
   }
 
   let pp: Vec<i128> = coeffs.iter().map(|c| c / content).collect();
@@ -1821,7 +1821,7 @@ pub fn factor_square_free_list_ast(
 
   // Build result list: {overall, 1}, then {factor, mult} pairs
   let mut result =
-    vec![Expr::List(vec![Expr::Integer(overall), Expr::Integer(1)])];
+    vec![Expr::List(vec![Expr::Integer(overall), Expr::Integer(1)].into())];
 
   // Split out x factors from each square-free component
   let mut pairs: Vec<(Vec<i128>, i128)> = Vec::new();
@@ -1842,10 +1842,10 @@ pub fn factor_square_free_list_ast(
 
   for (factor_coeffs, mult) in &pairs {
     let factor_expr = int_coeffs_to_canonical_expr(factor_coeffs, &var);
-    result.push(Expr::List(vec![factor_expr, Expr::Integer(*mult)]));
+    result.push(Expr::List(vec![factor_expr, Expr::Integer(*mult)].into()));
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Extract the integer GCD content from a multi-variable expanded
@@ -1855,7 +1855,7 @@ pub fn factor_square_free_list_ast(
 fn extract_multi_var_content(expanded: &Expr) -> Expr {
   // Collect Plus summands.
   let summands: Vec<Expr> = match expanded {
-    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Plus,
       left,
@@ -1908,7 +1908,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
 
   let coeffs: Vec<i128> = summands.iter().filter_map(term_coeff).collect();
   if coeffs.is_empty() {
-    return Expr::List(vec![Expr::Integer(1), expanded.clone()]);
+    return Expr::List(vec![Expr::Integer(1), expanded.clone()].into());
   }
   let abs_gcd = coeffs
     .iter()
@@ -1916,7 +1916,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     .filter(|&c| c != 0)
     .fold(0i128, |a, b| gcd_i128(a, b.abs()));
   if abs_gcd == 0 {
-    return Expr::List(vec![Expr::Integer(1), expanded.clone()]);
+    return Expr::List(vec![Expr::Integer(1), expanded.clone()].into());
   }
   // Sign: take the sign of the first non-constant non-zero coefficient.
   // In Wolfram canonical Plus order, a bare constant (e.g. `3`) is the
@@ -2033,7 +2033,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     Ok(p) => p,
     Err(_) => expanded.clone(),
   };
-  Expr::List(vec![Expr::Integer(signed_content), primitive])
+  Expr::List(vec![Expr::Integer(signed_content), primitive].into())
 }
 
 fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
@@ -2083,12 +2083,12 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle zero
   if matches!(&expanded, Expr::Integer(0)) {
-    return Ok(Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]));
+    return Ok(Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()));
   }
 
   // Handle pure integer
   if let Expr::Integer(n) = &expanded {
-    return Ok(Expr::List(vec![Expr::Integer(*n), Expr::Integer(1)]));
+    return Ok(Expr::List(vec![Expr::Integer(*n), Expr::Integer(1)].into()));
   }
 
   let var = if args.len() == 2 {
@@ -2159,7 +2159,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(*num_content),
           non_var_expanded,
           var_part,
-        ]));
+        ].into()));
       }
     }
   }
@@ -2177,7 +2177,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Integer(1),
             Expr::Integer(1),
             expanded,
-          ]));
+          ].into()));
         }
         let (num_coeff, _key, var_factors) = decompose_term(&expanded);
         let non_var = if var_factors.is_empty() {
@@ -2187,12 +2187,12 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: var_factors,
+            args: var_factors.into(),
           }
         };
-        return Ok(Expr::List(vec![num_coeff, non_var, Expr::Integer(1)]));
+        return Ok(Expr::List(vec![num_coeff, non_var, Expr::Integer(1)].into()));
       }
-      return Ok(Expr::List(vec![Expr::Integer(1), expanded]));
+      return Ok(Expr::List(vec![Expr::Integer(1), expanded].into()));
     }
   };
 
@@ -2203,7 +2203,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter(|&c| c != 0)
     .fold(0i128, gcd_i128);
   if content == 0 {
-    return Ok(Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]));
+    return Ok(Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()));
   }
 
   // Include sign of leading (highest degree) coefficient in content
@@ -2229,10 +2229,10 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(signed_content),
       Expr::Integer(1),
       pp_expr,
-    ]));
+    ].into()));
   }
 
-  Ok(Expr::List(vec![Expr::Integer(signed_content), pp_expr]))
+  Ok(Expr::List(vec![Expr::Integer(signed_content), pp_expr].into()))
 }
 
 /// Convert integer coefficient array to canonical Expr representation

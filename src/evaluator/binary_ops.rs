@@ -144,7 +144,7 @@ pub fn thread_binary_op(
         .zip(right_items.iter())
         .map(|(l, r)| apply_op(l, r, op))
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     (Expr::List(items), scalar) => {
       // List op scalar - broadcast scalar
@@ -152,7 +152,7 @@ pub fn thread_binary_op(
         .iter()
         .map(|item| apply_op(item, scalar, op))
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     (scalar, Expr::List(items)) => {
       // Scalar op list - broadcast scalar
@@ -160,7 +160,7 @@ pub fn thread_binary_op(
         .iter()
         .map(|item| apply_op(scalar, item, op))
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => apply_op(left, right, op),
   }

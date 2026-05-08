@@ -96,11 +96,11 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     // --- Simple composites ---
     Expr::List(items) => ExprForm::Composite {
       head: "List".to_string(),
-      children: items.clone(),
+      children: items.to_vec(),
     },
     Expr::FunctionCall { name, args } => ExprForm::Composite {
       head: name.clone(),
-      children: args.clone(),
+      children: args.to_vec(),
     },
     Expr::Rule {
       pattern,
@@ -332,12 +332,12 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       let blank = if let Some(h) = head {
         Expr::FunctionCall {
           name: blank_func_name.to_string(),
-          args: vec![Expr::Identifier(h.clone())],
+          args: vec![Expr::Identifier(h.clone())].into(),
         }
       } else {
         Expr::FunctionCall {
           name: blank_func_name.to_string(),
-          args: vec![],
+          args: vec![].into(),
         }
       };
       ExprForm::Composite {
@@ -353,17 +353,17 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       let blank = if let Some(h) = head {
         Expr::FunctionCall {
           name: "Blank".to_string(),
-          args: vec![Expr::Identifier(h.clone())],
+          args: vec![Expr::Identifier(h.clone())].into(),
         }
       } else {
         Expr::FunctionCall {
           name: "Blank".to_string(),
-          args: vec![],
+          args: vec![].into(),
         }
       };
       let pattern = Expr::FunctionCall {
         name: "Pattern".to_string(),
-        args: vec![Expr::Identifier(name.clone()), blank],
+        args: vec![Expr::Identifier(name.clone()), blank].into(),
       };
       let mut children = vec![pattern];
       if let Some(d) = default {
@@ -392,7 +392,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       let blank_part = if name.is_empty() {
         Expr::FunctionCall {
           name: blank_name.to_string(),
-          args: blank_args,
+          args: blank_args.into(),
         }
       } else {
         Expr::FunctionCall {
@@ -401,9 +401,9 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
             Expr::Identifier(name.clone()),
             Expr::FunctionCall {
               name: blank_name.to_string(),
-              args: blank_args,
+              args: blank_args.into(),
             },
-          ],
+          ].into(),
         }
       };
       ExprForm::Composite {

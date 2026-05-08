@@ -38,7 +38,7 @@ fn keys_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::Association(items) => {
       let keys: Vec<Expr> = items.iter().map(|(k, _)| k.clone()).collect();
-      Expr::List(keys)
+      Expr::List(keys.into())
     }
     Expr::List(items) => {
       let results: Vec<Expr> = items
@@ -52,7 +52,7 @@ fn keys_recursive(expr: &Expr) -> Expr {
           }
         })
         .collect();
-      Expr::List(results)
+      Expr::List(results.into())
     }
     _ => expr.clone(),
   }
@@ -63,7 +63,7 @@ fn values_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::Association(items) => {
       let values: Vec<Expr> = items.iter().map(|(_, v)| v.clone()).collect();
-      Expr::List(values)
+      Expr::List(values.into())
     }
     Expr::List(items) => {
       let results: Vec<Expr> = items
@@ -77,7 +77,7 @@ fn values_recursive(expr: &Expr) -> Expr {
           }
         })
         .collect();
-      Expr::List(results)
+      Expr::List(results.into())
     }
     _ => expr.clone(),
   }
@@ -93,7 +93,7 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       let keys: Vec<Expr> = items.iter().map(|(k, _)| k.clone()).collect();
-      Ok(Expr::List(keys))
+      Ok(Expr::List(keys.into()))
     }
     Expr::List(_) => Ok(keys_recursive(&args[0])),
     // Keys[k -> v] = k, Keys[k :> v] = k
@@ -121,7 +121,7 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       let values: Vec<Expr> = items.iter().map(|(_, v)| v.clone()).collect();
-      Ok(Expr::List(values))
+      Ok(Expr::List(values.into()))
     }
     Expr::List(_) => Ok(values_recursive(&args[0])),
     Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
@@ -216,7 +216,7 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         lookup_ast(&new_args)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let key_str = crate::syntax::expr_to_string(&args[1]);
@@ -238,7 +238,7 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Return Missing["KeyAbsent", key]
       Ok(Expr::FunctionCall {
         name: "Missing".to_string(),
-        args: vec![Expr::String("KeyAbsent".to_string()), args[1].clone()],
+        args: vec![Expr::String("KeyAbsent".to_string()), args[1].clone()].into(),
       })
     }
     Expr::List(items) => {
@@ -251,7 +251,7 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           lookup_ast(&new_args)
         })
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "Lookup expects an association as first argument".into(),
@@ -449,7 +449,7 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .collect();
             return Ok(Expr::FunctionCall {
               name: "Association".to_string(),
-              args: results?,
+              args: results?.into(),
             });
           }
         }
@@ -566,7 +566,7 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut result = Vec::new();
   for (_, key_expr, values) in key_values {
     let merged_value =
-      crate::evaluator::apply_function_to_arg(func, &Expr::List(values))?;
+      crate::evaluator::apply_function_to_arg(func, &Expr::List(values.into()))?;
     result.push((key_expr, merged_value));
   }
 
@@ -730,7 +730,7 @@ pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|(key, value)| match func {
           Expr::Identifier(name) if name == "List" => {
-            Ok(Expr::List(vec![key.clone(), value.clone()]))
+            Ok(Expr::List(vec![key.clone(), value.clone()].into()))
           }
           Expr::Identifier(name) => {
             crate::evaluator::evaluate_function_call_ast(
@@ -762,11 +762,11 @@ pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           _ => Ok(Expr::FunctionCall {
             name: "KeyValueMap".to_string(),
-            args: vec![func.clone(), Expr::Association(items.clone())],
+            args: vec![func.clone(), Expr::Association(items.clone())].into(),
           }),
         })
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "KeyValueMap expects an association as second argument".into(),
@@ -846,13 +846,13 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Some(func) => {
               let call = Expr::FunctionCall {
                 name: crate::syntax::expr_to_string(func),
-                args: vec![key.clone()],
+                args: vec![key.clone()].into(),
               };
               crate::evaluator::evaluate_expr_to_expr(&call)?
             }
             None => Expr::FunctionCall {
               name: "Missing".to_string(),
-              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
             },
           };
           new_items.push((key.clone(), missing));
@@ -862,5 +862,5 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result.push(Expr::Association(new_items));
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }

@@ -28,7 +28,7 @@ pub fn dispatch_image_functions(
         Ok(expr) => Ok(expr),
         Err(_) => Ok(Expr::FunctionCall {
           name: "Image".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }),
       });
     }
@@ -118,7 +118,7 @@ pub fn dispatch_image_functions(
         Expr::String("Indexed".to_string()),
         Expr::String("Named".to_string()),
         Expr::String("Physical".to_string()),
-      ])));
+      ].into())));
     }
     // ColorData["Gradients"]: list of named built-in color gradients.
     "ColorData" if args.len() == 1 => {
@@ -220,7 +220,7 @@ pub fn dispatch_image_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Import".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -323,7 +323,7 @@ pub fn dispatch_image_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Import".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -336,7 +336,7 @@ pub fn dispatch_image_functions(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Import".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         };
@@ -394,7 +394,7 @@ pub fn dispatch_image_functions(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Import".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         };
@@ -438,7 +438,7 @@ pub fn dispatch_image_functions(
       // Fall through for unsupported formats
       return Some(Ok(Expr::FunctionCall {
         name: "Import".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ImportString" if !args.is_empty() && args.len() <= 2 => {
@@ -453,7 +453,7 @@ pub fn dispatch_image_functions(
           ));
           return Some(Ok(Expr::FunctionCall {
             name: "ImportString".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -466,7 +466,7 @@ pub fn dispatch_image_functions(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "ImportString".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -500,7 +500,7 @@ pub fn dispatch_image_functions(
             .map(|s| Expr::String(s.to_string()))
             .collect()
         };
-        return Some(Ok(Expr::List(items)));
+        return Some(Ok(Expr::List(items.into())));
       }
       // `String` / `Plaintext` return the input verbatim.
       if format == "String" || format == "Plaintext" {
@@ -512,13 +512,13 @@ pub fn dispatch_image_functions(
           .split_whitespace()
           .map(|s| Expr::String(s.to_string()))
           .collect();
-        return Some(Ok(Expr::List(items)));
+        return Some(Ok(Expr::List(items.into())));
       }
 
       if format != "CSV" {
         return Some(Ok(Expr::FunctionCall {
           name: "ImportString".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       }
 

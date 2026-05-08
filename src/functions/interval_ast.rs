@@ -110,11 +110,11 @@ fn normalize_intervals(mut spans: Vec<(Expr, Expr)>) -> Vec<(Expr, Expr)> {
 fn make_interval(spans: Vec<(Expr, Expr)>) -> Expr {
   let args: Vec<Expr> = spans
     .into_iter()
-    .map(|(lo, hi)| Expr::List(vec![lo, hi]))
+    .map(|(lo, hi)| Expr::List(vec![lo, hi].into()))
     .collect();
   Expr::FunctionCall {
     name: "Interval".to_string(),
-    args,
+    args: args.into(),
   }
 }
 
@@ -146,7 +146,7 @@ pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Interval".to_string(),
-      args: vec![],
+      args: vec![].into(),
     });
   }
 
@@ -160,7 +160,7 @@ pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Invalid argument — return unevaluated
       return Ok(Expr::FunctionCall {
         name: "Interval".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   }
@@ -183,7 +183,7 @@ pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Non-interval arg: return unevaluated
       return Ok(Expr::FunctionCall {
         name: "IntervalUnion".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   }
@@ -198,7 +198,7 @@ pub fn interval_intersection_ast(
   if args.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Interval".to_string(),
-      args: vec![],
+      args: vec![].into(),
     });
   }
 
@@ -211,7 +211,7 @@ pub fn interval_intersection_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "IntervalIntersection".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -227,7 +227,7 @@ pub fn interval_intersection_ast(
       None => {
         return Ok(Expr::FunctionCall {
           name: "IntervalIntersection".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -265,7 +265,7 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "IntervalMemberQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -699,7 +699,7 @@ pub fn try_interval_compare(
       // Overlapping: return unevaluated
       Some(Ok(Expr::FunctionCall {
         name: "Less".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }))
     }
     "Greater" => {
@@ -715,7 +715,7 @@ pub fn try_interval_compare(
       }
       Some(Ok(Expr::FunctionCall {
         name: "Greater".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }))
     }
     "LessEqual" => {
@@ -731,7 +731,7 @@ pub fn try_interval_compare(
       }
       Some(Ok(Expr::FunctionCall {
         name: "LessEqual".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }))
     }
     "GreaterEqual" => {
@@ -747,7 +747,7 @@ pub fn try_interval_compare(
       }
       Some(Ok(Expr::FunctionCall {
         name: "GreaterEqual".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }))
     }
     _ => None,

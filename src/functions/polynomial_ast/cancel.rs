@@ -496,7 +496,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
         left: Box::new(base.clone()),
         right: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(n), Expr::Integer(d)],
+          args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
         }),
       })
     }

@@ -66,7 +66,7 @@ fn delete_missing_type(type_expr: &Expr) -> Expr {
       args: vec![
         args[0].clone(),
         Expr::Identifier("TypeSystem`AnyLength".to_string()),
-      ],
+      ].into(),
     };
   }
   type_expr.clone()
@@ -124,7 +124,7 @@ pub fn evaluate_function_call_ast(
   if depth > RECURSION_LIMIT {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -499,7 +499,7 @@ pub fn evaluate_function_call_ast_inner(
             for inner in inner_args {
               flat_args.push(Expr::FunctionCall {
                 name: "Unevaluated".to_string(),
-                args: vec![inner.clone()],
+                args: vec![inner.clone()].into(),
               });
             }
           }
@@ -592,7 +592,7 @@ pub fn evaluate_function_call_ast_inner(
       }
       let format_call = Expr::FunctionCall {
         name: "Format".to_string(),
-        args: format_args,
+        args: format_args.into(),
       };
       if let Ok(formatted) = evaluate_expr_to_expr(&format_call) {
         // The Format dispatcher returns `args[0].clone()` (or
@@ -773,7 +773,7 @@ pub fn evaluate_function_call_ast_inner(
                 } else {
                   eff.push(Expr::FunctionCall {
                     name: "Sequence".to_string(),
-                    args: param_args.clone(),
+                    args: param_args.clone().into(),
                   });
                 }
               } else if param_args.is_empty() {
@@ -1512,19 +1512,19 @@ pub fn evaluate_function_call_ast_inner(
     if args.len() == 1 {
       return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Options".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     return Ok(Expr::FunctionCall {
       name: "SetOptions".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
   // Circle[] defaults to Circle[{0, 0}]
   if name == "Circle" {
     let center = if args.is_empty() {
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
     } else {
       args[0].clone()
     };
@@ -1534,7 +1534,7 @@ pub fn evaluate_function_call_ast_inner(
     }
     return Ok(Expr::FunctionCall {
       name: "Circle".to_string(),
-      args: new_args,
+      args: new_args.into(),
     });
   }
 
@@ -1577,7 +1577,7 @@ pub fn evaluate_function_call_ast_inner(
   if name == "Disk" && args.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Disk".to_string(),
-      args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])],
+      args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())].into(),
     });
   }
 
@@ -1585,7 +1585,7 @@ pub fn evaluate_function_call_ast_inner(
   if name == "Rectangle" && args.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Rectangle".to_string(),
-      args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])],
+      args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())].into(),
     });
   }
 
@@ -1627,13 +1627,13 @@ pub fn evaluate_function_call_ast_inner(
       name: "BezierFunction".to_string(),
       args: vec![
         Expr::Integer(1),
-        Expr::List(vec![Expr::List(vec![Expr::Real(0.0), Expr::Real(1.0)])]),
-        Expr::List(vec![Expr::Integer((points.len() as i128) - 1)]),
-        Expr::List(vec![Expr::List(points_real), Expr::List(vec![])]),
-        Expr::List(vec![Expr::Integer(0)]),
+        Expr::List(vec![Expr::List(vec![Expr::Real(0.0), Expr::Real(1.0)].into())].into()),
+        Expr::List(vec![Expr::Integer((points.len() as i128) - 1)].into()),
+        Expr::List(vec![Expr::List(points_real.into()), Expr::List(vec![].into())].into()),
+        Expr::List(vec![Expr::Integer(0)].into()),
         Expr::Identifier("MachinePrecision".to_string()),
         Expr::String("Unevaluated".to_string()),
-      ],
+      ].into(),
     });
   }
 
@@ -1735,7 +1735,7 @@ pub fn evaluate_function_call_ast_inner(
     | "LegendLabel" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     _ => {}
@@ -1750,7 +1750,7 @@ pub fn evaluate_function_call_ast_inner(
         if perm.len() != list.len() {
           return Ok(Expr::FunctionCall {
             name: name.to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
         let mut result = vec![Expr::Integer(0); list.len()];
@@ -1761,17 +1761,17 @@ pub fn evaluate_function_call_ast_inner(
             } else {
               return Ok(Expr::FunctionCall {
                 name: name.to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           } else {
             return Ok(Expr::FunctionCall {
               name: name.to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
       // Permute[list, Cycles[{...}]] — cycle notation
       if let Expr::FunctionCall {
@@ -1810,7 +1810,7 @@ pub fn evaluate_function_call_ast_inner(
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1871,11 +1871,11 @@ pub fn evaluate_function_call_ast_inner(
       let result: Vec<Expr> = (1..=max_elem)
         .map(|i| Expr::Integer(perm[i] as i128))
         .collect();
-      return Ok(Expr::List(result));
+      return Ok(Expr::List(result.into()));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1914,7 +1914,7 @@ pub fn evaluate_function_call_ast_inner(
               j = perm_vals[j - 1];
             }
             if cycle.len() >= 2 {
-              cycles.push(Expr::List(cycle));
+              cycles.push(Expr::List(cycle.into()));
             }
           } else {
             visited[i] = true;
@@ -1922,13 +1922,13 @@ pub fn evaluate_function_call_ast_inner(
         }
         return Ok(Expr::FunctionCall {
           name: "Cycles".to_string(),
-          args: vec![Expr::List(cycles)],
+          args: vec![Expr::List(cycles.into())].into(),
         });
       }
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1943,18 +1943,18 @@ pub fn evaluate_function_call_ast_inner(
         for j in (i + 1)..=n {
           edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(i as i128), Expr::Integer(j as i128)],
+            args: vec![Expr::Integer(i as i128), Expr::Integer(j as i128)].into(),
           });
         }
       }
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(vertices), Expr::List(edges)],
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
       });
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1970,17 +1970,17 @@ pub fn evaluate_function_call_ast_inner(
       let edges: Vec<Expr> = (2..=n)
         .map(|i| Expr::FunctionCall {
           name: "UndirectedEdge".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(i as i128)],
+          args: vec![Expr::Integer(1), Expr::Integer(i as i128)].into(),
         })
         .collect();
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(vertices), Expr::List(edges)],
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
       });
     } else if n == 1 {
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(vec![Expr::Integer(1)]), Expr::List(vec![])],
+        args: vec![Expr::List(vec![Expr::Integer(1)].into()), Expr::List(vec![].into())].into(),
       });
     }
   }
@@ -2010,14 +2010,14 @@ pub fn evaluate_function_call_ast_inner(
         if i < target {
           edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(i as i128), Expr::Integer(target as i128)],
+            args: vec![Expr::Integer(i as i128), Expr::Integer(target as i128)].into(),
           });
         }
       }
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -2049,14 +2049,14 @@ pub fn evaluate_function_call_ast_inner(
               args: vec![
                 Expr::Integer(i as i128),
                 Expr::Integer(child as i128),
-              ],
+              ].into(),
             });
           }
         }
       }
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(vertices), Expr::List(edges)],
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
       });
     }
   }
@@ -2081,14 +2081,14 @@ pub fn evaluate_function_call_ast_inner(
             args: vec![
               Expr::Integer((i + 1) as i128),
               Expr::Integer((j + 1) as i128),
-            ],
+            ].into(),
           });
         }
       }
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -2129,7 +2129,7 @@ pub fn evaluate_function_call_ast_inner(
             args: vec![
               Expr::Integer((i + 1) as i128),
               Expr::Integer((j + 1) as i128),
-            ],
+            ].into(),
           });
         }
       }
@@ -2137,7 +2137,7 @@ pub fn evaluate_function_call_ast_inner(
 
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -2166,14 +2166,14 @@ pub fn evaluate_function_call_ast_inner(
           args: vec![
             Expr::Integer((v + 1) as i128),
             Expr::Integer((w + 1) as i128),
-          ],
+          ].into(),
         });
       }
     }
 
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -2232,7 +2232,7 @@ pub fn evaluate_function_call_ast_inner(
         Err(e) => return Err(e),
       }
     }
-    return Ok(Expr::List(output));
+    return Ok(Expr::List(output.into()));
   }
 
   // CantorMesh[n] → Cantor set at level n as a MeshRegion
@@ -2258,25 +2258,25 @@ pub fn evaluate_function_call_ast_inner(
     }
     let vertex_exprs: Vec<Expr> = points
       .iter()
-      .map(|x| Expr::List(vec![Expr::Real(*x)]))
+      .map(|x| Expr::List(vec![Expr::Real(*x)].into()))
       .collect();
     let line_pairs: Vec<Expr> = (0..segments.len())
       .map(|i| {
         Expr::List(vec![
           Expr::Integer((2 * i + 1) as i128),
           Expr::Integer((2 * i + 2) as i128),
-        ])
+        ].into())
       })
       .collect();
     return Ok(Expr::FunctionCall {
       name: "MeshRegion".to_string(),
       args: vec![
-        Expr::List(vertex_exprs),
+        Expr::List(vertex_exprs.into()),
         Expr::List(vec![Expr::FunctionCall {
           name: "Line".to_string(),
-          args: vec![Expr::List(line_pairs)],
-        }]),
-      ],
+          args: vec![Expr::List(line_pairs.into())].into(),
+        }].into()),
+      ].into(),
     });
   }
 
@@ -2289,7 +2289,7 @@ pub fn evaluate_function_call_ast_inner(
     if nrows == 0 {
       return Ok(Expr::FunctionCall {
         name: "ArrayMesh".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     // Parse the matrix
@@ -2308,7 +2308,7 @@ pub fn evaluate_function_call_ast_inner(
       } else {
         return Ok(Expr::FunctionCall {
           name: "ArrayMesh".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2371,7 +2371,7 @@ pub fn evaluate_function_call_ast_inner(
             Expr::Integer(tr as i128),
             Expr::Integer(tl as i128),
             Expr::Integer(bl as i128),
-          ]));
+          ].into()));
         }
       }
     }
@@ -2379,18 +2379,18 @@ pub fn evaluate_function_call_ast_inner(
     // Build MeshRegion[vertices, {Polygon[polygons]}]
     let vertex_exprs: Vec<Expr> = vertices
       .iter()
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
       .collect();
 
     return Ok(Expr::FunctionCall {
       name: "MeshRegion".to_string(),
       args: vec![
-        Expr::List(vertex_exprs),
+        Expr::List(vertex_exprs.into()),
         Expr::List(vec![Expr::FunctionCall {
           name: "Polygon".to_string(),
-          args: vec![Expr::List(polygons)],
-        }]),
-      ],
+          args: vec![Expr::List(polygons.into())].into(),
+        }].into()),
+      ].into(),
     });
   }
 
@@ -2431,7 +2431,7 @@ pub fn evaluate_function_call_ast_inner(
             args: vec![
               Expr::Integer(my_id as i128),
               Expr::Integer(child_id as i128),
-            ],
+            ].into(),
           });
           walk_expr(child, counter, vertices, edges);
         }
@@ -2442,7 +2442,7 @@ pub fn evaluate_function_call_ast_inner(
           args: vec![
             Expr::Integer(my_id as i128),
             Expr::Integer(left_id as i128),
-          ],
+          ].into(),
         });
         walk_expr(left, counter, vertices, edges);
         let right_id = *counter + 1;
@@ -2451,7 +2451,7 @@ pub fn evaluate_function_call_ast_inner(
           args: vec![
             Expr::Integer(my_id as i128),
             Expr::Integer(right_id as i128),
-          ],
+          ].into(),
         });
         walk_expr(right, counter, vertices, edges);
       }
@@ -2464,7 +2464,7 @@ pub fn evaluate_function_call_ast_inner(
 
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -2481,7 +2481,7 @@ pub fn evaluate_function_call_ast_inner(
       ga.push(Expr::List(vec![Expr::Rule {
         pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
         replacement: Box::new(Expr::String("TutteEmbedding".to_string())),
-      }]));
+      }].into()));
     }
     return Ok(graph);
   }
@@ -2506,7 +2506,7 @@ pub fn evaluate_function_call_ast_inner(
         {
           Expr::FunctionCall {
             name: "Labeled".to_string(),
-            args: vec![rewrite_two_way_rules(&args[0]), args[1].clone()],
+            args: vec![rewrite_two_way_rules(&args[0]), args[1].clone()].into(),
           }
         }
         Expr::List(items) => {
@@ -2599,7 +2599,7 @@ pub fn evaluate_function_call_ast_inner(
               push_vertex(&dst, &mut vertex_set);
               out_edges.push(Expr::FunctionCall {
                 name: "DirectedEdge".to_string(),
-                args: vec![src, dst],
+                args: vec![src, dst].into(),
               });
             }
             _ => {
@@ -2613,11 +2613,11 @@ pub fn evaluate_function_call_ast_inner(
         }
         vertex_set.sort_by(crate::functions::canonical_cmp);
         let mut result_args =
-          vec![Expr::List(vertex_set), Expr::List(out_edges)];
+          vec![Expr::List(vertex_set.into()), Expr::List(out_edges.into())];
         result_args.extend(trailing_options);
         return Ok(Expr::FunctionCall {
           name: "Graph".to_string(),
-          args: result_args,
+          args: result_args.into(),
         });
       }
     }
@@ -2630,14 +2630,14 @@ pub fn evaluate_function_call_ast_inner(
     {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
 
     // Fall through: return as inert
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2656,7 +2656,7 @@ pub fn evaluate_function_call_ast_inner(
     // Return unevaluated for non-graph input
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2674,7 +2674,7 @@ pub fn evaluate_function_call_ast_inner(
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2696,7 +2696,7 @@ pub fn evaluate_function_call_ast_inner(
         _ => {
           return Ok(Expr::FunctionCall {
             name: name.to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -2734,7 +2734,7 @@ pub fn evaluate_function_call_ast_inner(
             .collect();
           Expr::FunctionCall {
             name: ename.clone(),
-            args: new_args,
+            args: new_args.into(),
           }
         } else {
           e.clone()
@@ -2744,7 +2744,7 @@ pub fn evaluate_function_call_ast_inner(
 
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(new_vertices), Expr::List(new_edges)],
+      args: vec![Expr::List(new_vertices.into()), Expr::List(new_edges.into())].into(),
     });
   }
 
@@ -2766,7 +2766,7 @@ pub fn evaluate_function_call_ast_inner(
 
     let to_add = match &args[1] {
       Expr::List(vs) => vs.clone(),
-      other => vec![other.clone()],
+      other => vec![other.clone()].into(),
     };
 
     for v in to_add {
@@ -2777,7 +2777,7 @@ pub fn evaluate_function_call_ast_inner(
 
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(new_vertices), Expr::List(edges.clone())],
+      args: vec![Expr::List(new_vertices), Expr::List(edges.clone())].into(),
     });
   }
 
@@ -2796,7 +2796,7 @@ pub fn evaluate_function_call_ast_inner(
         // Not a graph, return unevaluated
         return Ok(Expr::FunctionCall {
           name: name.to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2831,7 +2831,7 @@ pub fn evaluate_function_call_ast_inner(
 
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(all_vertices), Expr::List(common_edges)],
+      args: vec![Expr::List(all_vertices.into()), Expr::List(common_edges.into())].into(),
     });
   }
 
@@ -3071,7 +3071,7 @@ pub fn evaluate_function_call_ast_inner(
             .filter(|(i, _)| eccentricities[*i] == min_ecc)
             .map(|(_, v)| v.clone())
             .collect();
-          return Ok(Expr::List(center));
+          return Ok(Expr::List(center.into()));
         }
         "GraphPeriphery" => {
           let max_ecc = eccentricities.iter().copied().max().unwrap_or(0);
@@ -3081,7 +3081,7 @@ pub fn evaluate_function_call_ast_inner(
             .filter(|(i, _)| eccentricities[*i] == max_ecc)
             .map(|(_, v)| v.clone())
             .collect();
-          return Ok(Expr::List(periphery));
+          return Ok(Expr::List(periphery.into()));
         }
         _ => {}
       }
@@ -3105,7 +3105,7 @@ pub fn evaluate_function_call_ast_inner(
       .node_indices()
       .map(|ni| Expr::Integer(pg_graph.neighbors(ni).count() as i128))
       .collect();
-    return Ok(Expr::List(centralities));
+    return Ok(Expr::List(centralities.into()));
   }
 
   // GraphComplement[graph] — complement of a graph
@@ -3142,14 +3142,14 @@ pub fn evaluate_function_call_ast_inner(
         {
           comp_edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![vertices[i].clone(), vertices[j].clone()],
+            args: vec![vertices[i].clone(), vertices[j].clone()].into(),
           });
         }
       }
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices.clone()), Expr::List(comp_edges)],
+      args: vec![Expr::List(vertices.clone()), Expr::List(comp_edges.into())].into(),
     });
   }
 
@@ -3190,7 +3190,7 @@ pub fn evaluate_function_call_ast_inner(
           }
         }
       }
-      return Ok(Expr::List(component));
+      return Ok(Expr::List(component.into()));
     }
   }
 
@@ -3225,7 +3225,7 @@ pub fn evaluate_function_call_ast_inner(
         }
       })
       .collect();
-    return Ok(Expr::List(centralities));
+    return Ok(Expr::List(centralities.into()));
   }
 
   // BetweennessCentrality[graph] — betweenness centrality for each vertex
@@ -3287,7 +3287,7 @@ pub fn evaluate_function_call_ast_inner(
     // Normalize: divide by 2 for undirected graphs
     let centralities: Vec<Expr> =
       betweenness.iter().map(|&b| Expr::Real(b / 2.0)).collect();
-    return Ok(Expr::List(centralities));
+    return Ok(Expr::List(centralities.into()));
   }
 
   // LocalClusteringCoefficient[graph] — local clustering coefficient for each vertex
@@ -3345,12 +3345,12 @@ pub fn evaluate_function_call_ast_inner(
             args: vec![
               Expr::Integer(triangles / g),
               Expr::Integer(possible / g),
-            ],
+            ].into(),
           }
         }
       })
       .collect();
-    return Ok(Expr::List(coefficients));
+    return Ok(Expr::List(coefficients.into()));
   }
 
   // ChromaticPolynomial[graph, k] — chromatic polynomial of a graph
@@ -3425,7 +3425,7 @@ pub fn evaluate_function_call_ast_inner(
         if seen.insert((a, b)) {
           edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+            args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
           });
         }
         // Cross edge: (level, idx) -- (level+1, idx XOR 2^level)
@@ -3435,14 +3435,14 @@ pub fn evaluate_function_call_ast_inner(
         if seen.insert((a, b)) {
           edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+            args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
           });
         }
       }
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -3482,7 +3482,7 @@ pub fn evaluate_function_call_ast_inner(
                 args: vec![
                   Expr::Integer(from as i128),
                   Expr::Integer(to as i128),
-                ],
+                ].into(),
               });
             }
           }
@@ -3491,7 +3491,7 @@ pub fn evaluate_function_call_ast_inner(
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices), Expr::List(edges)],
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -3533,11 +3533,11 @@ pub fn evaluate_function_call_ast_inner(
           }
         }
       }
-      return Ok(Expr::List(matrix.into_iter().map(Expr::List).collect()));
+      return Ok(Expr::List(matrix.into_iter().map(|v| Expr::List(v.into())).collect()));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3612,11 +3612,11 @@ pub fn evaluate_function_call_ast_inner(
         components
       };
 
-      return Ok(Expr::List(comp_list.into_iter().map(Expr::List).collect()));
+      return Ok(Expr::List(comp_list.into_iter().map(|v| Expr::List(v.into())).collect()));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3657,16 +3657,16 @@ pub fn evaluate_function_call_ast_inner(
               .collect();
             subgraphs.push(Expr::FunctionCall {
               name: "Graph".to_string(),
-              args: vec![Expr::List(comp_verts.clone()), Expr::List(sub_edges)],
+              args: vec![Expr::List(comp_verts.clone()), Expr::List(sub_edges.into())].into(),
             });
           }
         }
-        return Ok(Expr::List(subgraphs));
+        return Ok(Expr::List(subgraphs.into()));
       }
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3716,7 +3716,7 @@ pub fn evaluate_function_call_ast_inner(
       comp.reverse();
     }
     components.sort_by(|a, b| b.len().cmp(&a.len()));
-    return Ok(Expr::List(components.into_iter().map(Expr::List).collect()));
+    return Ok(Expr::List(components.into_iter().map(|v| Expr::List(v.into())).collect()));
   }
 
   // StringExpression[...]: when all args are string literals, concatenate them
@@ -3736,7 +3736,7 @@ pub fn evaluate_function_call_ast_inner(
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3746,15 +3746,15 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(Expr::FunctionCall {
         name: "Triangle".to_string(),
         args: vec![Expr::List(vec![
-          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
-          Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]),
-          Expr::List(vec![Expr::Integer(0), Expr::Integer(1)]),
-        ])],
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+        ].into())].into(),
       });
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3768,12 +3768,12 @@ pub fn evaluate_function_call_ast_inner(
     for i in 0..verts.len() - 1 {
       edges.push(Expr::FunctionCall {
         name: "UndirectedEdge".to_string(),
-        args: vec![verts[i].clone(), verts[i + 1].clone()],
+        args: vec![verts[i].clone(), verts[i + 1].clone()].into(),
       });
     }
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(verts.clone()), Expr::List(edges)],
+      args: vec![Expr::List(verts.clone()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -3941,22 +3941,22 @@ pub fn evaluate_function_call_ast_inner(
             // Build ((-1 + n)*n)/2 — flatten Times to get correct parenthesization
             let n_minus_1 = Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: vec![Expr::Integer(-1), n.clone()],
+              args: vec![Expr::Integer(-1), n.clone()].into(),
             };
             let half = Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
                 },
                 n_minus_1,
                 n.clone(),
-              ],
+              ].into(),
             };
             return Ok(Expr::FunctionCall {
               name: "BinomialDistribution".to_string(),
-              args: vec![half, p.clone()],
+              args: vec![half, p.clone()].into(),
             });
           }
 
@@ -3970,7 +3970,7 @@ pub fn evaluate_function_call_ast_inner(
             let n = &dist_args[0];
             return Ok(Expr::FunctionCall {
               name: "DiscreteUniformDistribution".to_string(),
-              args: vec![Expr::List(vec![n.clone(), n.clone()])],
+              args: vec![Expr::List(vec![n.clone(), n.clone()].into())].into(),
             });
           }
 
@@ -3985,11 +3985,11 @@ pub fn evaluate_function_call_ast_inner(
             let p = &dist_args[1];
             let n_minus_1 = Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: vec![Expr::Integer(-1), n.clone()],
+              args: vec![Expr::Integer(-1), n.clone()].into(),
             };
             return Ok(Expr::FunctionCall {
               name: "BinomialDistribution".to_string(),
-              args: vec![n_minus_1, p.clone()],
+              args: vec![n_minus_1, p.clone()].into(),
             });
           }
 
@@ -4003,7 +4003,7 @@ pub fn evaluate_function_call_ast_inner(
             let m = &dist_args[1];
             return Ok(Expr::FunctionCall {
               name: "DiscreteUniformDistribution".to_string(),
-              args: vec![Expr::List(vec![m.clone(), m.clone()])],
+              args: vec![Expr::List(vec![m.clone(), m.clone()].into())].into(),
             });
           }
 
@@ -4017,7 +4017,7 @@ pub fn evaluate_function_call_ast_inner(
             let n = &dist_args[0];
             return Ok(Expr::FunctionCall {
               name: "DiscreteUniformDistribution".to_string(),
-              args: vec![Expr::List(vec![n.clone(), n.clone()])],
+              args: vec![Expr::List(vec![n.clone(), n.clone()].into())].into(),
             });
           }
 
@@ -4032,7 +4032,7 @@ pub fn evaluate_function_call_ast_inner(
             let m = &dist_args[1];
             let n_minus_1 = Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: vec![Expr::Integer(-1), n.clone()],
+              args: vec![Expr::Integer(-1), n.clone()].into(),
             };
             // Flatten Times to get correct parenthesization: ((-1 + n)*n)/2
             let half = Expr::FunctionCall {
@@ -4040,15 +4040,15 @@ pub fn evaluate_function_call_ast_inner(
               args: vec![
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
                 },
                 n_minus_1.clone(),
                 n.clone(),
-              ],
+              ].into(),
             };
             return Ok(Expr::FunctionCall {
               name: "HypergeometricDistribution".to_string(),
-              args: vec![m.clone(), n_minus_1, half],
+              args: vec![m.clone(), n_minus_1, half].into(),
             });
           }
 
@@ -4092,11 +4092,11 @@ pub fn evaluate_function_call_ast_inner(
                 let new_property = replace_var(property, var_name, &formal_var);
                 let new_distributed = Expr::FunctionCall {
                   name: "Distributed".to_string(),
-                  args: vec![formal_var, graph_dist.clone()],
+                  args: vec![formal_var, graph_dist.clone()].into(),
                 };
                 return Ok(Expr::FunctionCall {
                   name: "GraphPropertyDistribution".to_string(),
-                  args: vec![new_property, new_distributed],
+                  args: vec![new_property, new_distributed].into(),
                 });
               }
             }
@@ -4287,7 +4287,7 @@ pub fn evaluate_function_call_ast_inner(
       } else if xp > 1 {
         factors.push(Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![slot_x.clone(), Expr::Integer(xp as i128)],
+          args: vec![slot_x.clone(), Expr::Integer(xp as i128)].into(),
         });
       }
       if yp == 1 {
@@ -4295,7 +4295,7 @@ pub fn evaluate_function_call_ast_inner(
       } else if yp > 1 {
         factors.push(Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![slot_y.clone(), Expr::Integer(yp as i128)],
+          args: vec![slot_y.clone(), Expr::Integer(yp as i128)].into(),
         });
       }
       let term = if factors.len() == 1 {
@@ -4303,7 +4303,7 @@ pub fn evaluate_function_call_ast_inner(
       } else {
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: factors,
+          args: factors.into(),
         }
       };
       term_exprs.push(term);
@@ -4314,7 +4314,7 @@ pub fn evaluate_function_call_ast_inner(
     } else {
       Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: term_exprs,
+        args: term_exprs.into(),
       }
     };
 
@@ -4716,7 +4716,7 @@ pub fn evaluate_function_call_ast_inner(
     {
       let n = verts.len();
       if n == 0 {
-        return Ok(Expr::List(vec![]));
+        return Ok(Expr::List(vec![].into()));
       }
       // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
       // Snap coordinates near simple rational values (0, ±0.5, ±1) to
@@ -4736,15 +4736,15 @@ pub fn evaluate_function_call_ast_inner(
           Expr::List(vec![
             Expr::Real(snap_coord(angle.cos())),
             Expr::Real(snap_coord(angle.sin())),
-          ])
+          ].into())
         })
         .collect();
-      return Ok(Expr::List(coords));
+      return Ok(Expr::List(coords.into()));
     }
     // Return unevaluated for non-graph input
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4804,7 +4804,7 @@ pub fn evaluate_function_call_ast_inner(
           current = next;
           history.push(Expr::String(current.clone()));
         }
-        return Ok(Expr::List(history));
+        return Ok(Expr::List(history.into()));
       }
     } else if let Expr::List(init_list) = &args[1] {
       // List mode: rules map elements to lists
@@ -4813,7 +4813,7 @@ pub fn evaluate_function_call_ast_inner(
         let mut rules: Vec<(String, Vec<Expr>)> = Vec::new();
         for (from, to) in &raw_rules {
           if let Expr::List(to_list) = to {
-            rules.push((expr_to_string(from), to_list.clone()));
+            rules.push((expr_to_string(from), to_list.to_vec()));
           }
         }
         let mut history: Vec<Expr> = vec![Expr::List(init_list.clone())];
@@ -4830,10 +4830,10 @@ pub fn evaluate_function_call_ast_inner(
               next.push(elem.clone());
             }
           }
-          current = next;
+          *current = next;
           history.push(Expr::List(current.clone()));
         }
-        return Ok(Expr::List(history));
+        return Ok(Expr::List(history.into()));
       }
     }
   }
@@ -4883,7 +4883,7 @@ pub fn evaluate_function_call_ast_inner(
     && let Expr::String(path) = &args[0]
     && !std::path::Path::new(path).exists()
   {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // DeleteFile[path] or DeleteFile[{path1, path2, …}] — delete files.
@@ -4924,7 +4924,7 @@ pub fn evaluate_function_call_ast_inner(
     ));
     return Ok(Expr::FunctionCall {
       name: "DeleteFile".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4971,7 +4971,7 @@ pub fn evaluate_function_call_ast_inner(
         ));
         return Ok(Expr::FunctionCall {
           name: "DeleteDirectory".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -5084,7 +5084,7 @@ pub fn evaluate_function_call_ast_inner(
             })
             .cloned()
             .collect();
-        return Ok(Expr::List(filtered));
+        return Ok(Expr::List(filtered.into()));
       }
       Expr::FunctionCall {
         name: ds_name,
@@ -5103,7 +5103,7 @@ pub fn evaluate_function_call_ast_inner(
           let type_expr = delete_missing_type(&ds_args[1]);
           return Ok(Expr::FunctionCall {
             name: "Dataset".to_string(),
-            args: vec![Expr::List(filtered), type_expr, ds_args[2].clone()],
+            args: vec![Expr::List(filtered.into()), type_expr, ds_args[2].clone()].into(),
           });
         }
         // Non-list data in Dataset: pass through
@@ -5145,7 +5145,7 @@ pub fn evaluate_function_call_ast_inner(
             } else {
               Expr::FunctionCall {
                 name: "And".to_string(),
-                args: conds,
+                args: conds.into(),
               }
             };
             cases.push((fargs[i].clone(), cond));
@@ -5154,12 +5154,12 @@ pub fn evaluate_function_call_ast_inner(
           let pw_cases = Expr::List(
             cases
               .into_iter()
-              .map(|(val, cond)| Expr::List(vec![val, cond]))
+              .map(|(val, cond)| Expr::List(vec![val, cond].into()))
               .collect(),
           );
           let pw = Expr::FunctionCall {
             name: "Piecewise".to_string(),
-            args: vec![pw_cases, default],
+            args: vec![pw_cases, default].into(),
           };
           return evaluate_expr_to_expr(&pw);
         }
@@ -5188,7 +5188,7 @@ pub fn evaluate_function_call_ast_inner(
             } else {
               Expr::FunctionCall {
                 name: "And".to_string(),
-                args: conds,
+                args: conds.into(),
               }
             };
             cases.push((fargs[i].clone(), cond));
@@ -5197,12 +5197,12 @@ pub fn evaluate_function_call_ast_inner(
           let pw_cases = Expr::List(
             cases
               .into_iter()
-              .map(|(val, cond)| Expr::List(vec![val, cond]))
+              .map(|(val, cond)| Expr::List(vec![val, cond].into()))
               .collect(),
           );
           let pw = Expr::FunctionCall {
             name: "Piecewise".to_string(),
-            args: vec![pw_cases, default],
+            args: vec![pw_cases, default].into(),
           };
           return evaluate_expr_to_expr(&pw);
         }
@@ -5214,9 +5214,9 @@ pub fn evaluate_function_call_ast_inner(
           let pw = Expr::FunctionCall {
             name: "Piecewise".to_string(),
             args: vec![
-              Expr::List(vec![Expr::List(vec![Expr::Integer(1), cond])]),
+              Expr::List(vec![Expr::List(vec![Expr::Integer(1), cond].into())].into()),
               Expr::Integer(0),
-            ],
+            ].into(),
           };
           return evaluate_expr_to_expr(&pw);
         }
@@ -5247,11 +5247,11 @@ pub fn evaluate_function_call_ast_inner(
             name: "Piecewise".to_string(),
             args: vec![
               Expr::List(vec![
-                Expr::List(vec![lo, cond_lo]),
-                Expr::List(vec![hi, cond_hi]),
-              ]),
+                Expr::List(vec![lo, cond_lo].into()),
+                Expr::List(vec![hi, cond_hi].into()),
+              ].into()),
               x,
-            ],
+            ].into(),
           };
           return evaluate_expr_to_expr(&pw);
         }
@@ -5271,7 +5271,7 @@ pub fn evaluate_function_call_ast_inner(
       } else {
         return Ok(Expr::FunctionCall {
           name: name.to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     } else {
@@ -5281,7 +5281,7 @@ pub fn evaluate_function_call_ast_inner(
     if let Expr::List(rows) = matrix {
       let n = rows.len();
       let verts: Vec<Expr> = vertices
-        .unwrap_or_else(|| (1..=n).map(|i| Expr::Integer(i as i128)).collect());
+        .unwrap_or_else(|| (1..=n).map(|i| Expr::Integer(i as i128)).collect()).to_vec();
 
       // Check if symmetric (undirected)
       let mut is_symmetric = true;
@@ -5326,7 +5326,7 @@ pub fn evaluate_function_call_ast_inner(
           {
             edges.push(Expr::FunctionCall {
               name: edge_name.to_string(),
-              args: vec![verts[i].clone(), verts[j].clone()],
+              args: vec![verts[i].clone(), verts[j].clone()].into(),
             });
           }
         }
@@ -5334,7 +5334,7 @@ pub fn evaluate_function_call_ast_inner(
 
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(verts), Expr::List(edges)],
+        args: vec![Expr::List(verts.into()), Expr::List(edges.into())].into(),
       });
     }
   }
@@ -5358,7 +5358,7 @@ pub fn evaluate_function_call_ast_inner(
       ));
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     let mut result = Vec::with_capacity(n - r + 1);
@@ -5366,7 +5366,7 @@ pub fn evaluate_function_call_ast_inner(
       let window: Vec<Expr> = items[i..i + r].to_vec();
       let sum = Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: window,
+        args: window.into(),
       };
       let avg = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
@@ -5375,7 +5375,7 @@ pub fn evaluate_function_call_ast_inner(
       };
       result.push(evaluate_expr_to_expr(&avg)?);
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   // CirclePoints[n] — n equally spaced points on the unit circle
@@ -5404,7 +5404,7 @@ pub fn evaluate_function_call_ast_inner(
         _ => {
           return Ok(Expr::FunctionCall {
             name: name.to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -5419,11 +5419,11 @@ pub fn evaluate_function_call_ast_inner(
 
     let cos_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: vec![theta.clone()],
+      args: vec![theta.clone()].into(),
     })?;
     let sin_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: vec![theta],
+      args: vec![theta].into(),
     })?;
 
     // Apply radius if present
@@ -5460,7 +5460,7 @@ pub fn evaluate_function_call_ast_inner(
       (x_comp, y_comp)
     };
 
-    return Ok(Expr::List(vec![final_x, final_y]));
+    return Ok(Expr::List(vec![final_x, final_y].into()));
   }
 
   if name == "CirclePoints" && args.len() == 1 {
@@ -5502,21 +5502,21 @@ pub fn evaluate_function_call_ast_inner(
         };
         let cos_expr = Expr::FunctionCall {
           name: "Cos".to_string(),
-          args: vec![angle.clone()],
+          args: vec![angle.clone()].into(),
         };
         let sin_expr = Expr::FunctionCall {
           name: "Sin".to_string(),
-          args: vec![angle],
+          args: vec![angle].into(),
         };
         let cos_val = evaluate_expr_to_expr(&cos_expr)?;
         let sin_val = evaluate_expr_to_expr(&sin_expr)?;
-        points.push(Expr::List(vec![cos_val, sin_val]));
+        points.push(Expr::List(vec![cos_val, sin_val].into()));
       }
-      return Ok(Expr::List(points));
+      return Ok(Expr::List(points.into()));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -5524,7 +5524,7 @@ pub fn evaluate_function_call_ast_inner(
   if name == "Key" {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -5532,7 +5532,7 @@ pub fn evaluate_function_call_ast_inner(
   if name == "Darker" || name == "Lighter" {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -5548,7 +5548,7 @@ pub fn evaluate_function_call_ast_inner(
 
   // Functions that return empty list
   if matches!(name, "SyntaxInformation" | "LaunchKernels") {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // FilePrint[path] — print the contents of a file
@@ -5568,7 +5568,7 @@ pub fn evaluate_function_call_ast_inner(
         crate::emit_message(&format!("General::noopen: Cannot open {}.", path));
         return Ok(Expr::FunctionCall {
           name: "FilePrint".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -5610,7 +5610,7 @@ pub fn evaluate_function_call_ast_inner(
   {
     return Ok(Expr::FunctionCall {
       name: "Missing".to_string(),
-      args: vec![Expr::String("NotFound".to_string())],
+      args: vec![Expr::String("NotFound".to_string())].into(),
     });
   }
 
@@ -5733,7 +5733,7 @@ pub fn evaluate_function_call_ast_inner(
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -5750,9 +5750,9 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::CurriedCall {
       func: Box::new(Expr::FunctionCall {
         name: "XMLObject".to_string(),
-        args: vec![Expr::String("Document".to_string())],
+        args: vec![Expr::String("Document".to_string())].into(),
       }),
-      args: vec![Expr::List(vec![]), args[0].clone()],
+      args: vec![Expr::List(vec![].into()), args[0].clone()].into(),
     });
   }
 
@@ -5770,7 +5770,7 @@ pub fn evaluate_function_call_ast_inner(
   // Unknown function - return as symbolic function call
   Ok(Expr::FunctionCall {
     name: name.to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -5890,7 +5890,7 @@ fn rational_to_expr(num: i128, den: i128) -> Expr {
     } else {
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(n), Expr::Integer(d)],
+        args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
       }
     }
   }
@@ -5973,7 +5973,7 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       result_rgb[0].clone(),
       result_rgb[1].clone(),
       result_rgb[2].clone(),
-    ],
+    ].into(),
   })
 }
 
@@ -6017,7 +6017,7 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       let (num, den) = sum[0];
       Some(Expr::FunctionCall {
         name: "GrayLevel".to_string(),
-        args: vec![rational_to_expr(num, den * n_i128)],
+        args: vec![rational_to_expr(num, den * n_i128)].into(),
       })
     } else {
       Some(Expr::FunctionCall {
@@ -6114,7 +6114,7 @@ fn blend_two_float(
   if as_graylevel {
     Expr::FunctionCall {
       name: "GrayLevel".to_string(),
-      args: vec![build_channel(0)],
+      args: vec![build_channel(0)].into(),
     }
   } else {
     Expr::FunctionCall {
@@ -6148,7 +6148,7 @@ fn blend_two_rational(
   if as_graylevel {
     Some(Expr::FunctionCall {
       name: "GrayLevel".to_string(),
-      args: vec![build_channel(0)],
+      args: vec![build_channel(0)].into(),
     })
   } else {
     Some(Expr::FunctionCall {
@@ -6168,11 +6168,11 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Force numeric evaluation of bounds
     let xmin_n = Expr::FunctionCall {
       name: "N".to_string(),
-      args: vec![spec[1].clone()],
+      args: vec![spec[1].clone()].into(),
     };
     let xmax_n = Expr::FunctionCall {
       name: "N".to_string(),
-      args: vec![spec[2].clone()],
+      args: vec![spec[2].clone()].into(),
     };
     let xmin_expr = crate::evaluator::evaluate_expr_to_expr(&xmin_n);
     let xmax_expr = crate::evaluator::evaluate_expr_to_expr(&xmax_n);
@@ -6208,7 +6208,7 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             if let Some(y) = y_val {
               data_points
-                .push(Expr::List(vec![Expr::Real(x_val), Expr::Real(y)]));
+                .push(Expr::List(vec![Expr::Real(x_val), Expr::Real(y)].into()));
             }
           }
         }
@@ -6217,10 +6217,10 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let domain = Expr::List(vec![Expr::List(vec![
             Expr::Real(xmin),
             Expr::Real(xmax),
-          ])]);
+          ].into())].into());
           return Ok(Expr::FunctionCall {
             name: "InterpolatingFunction".to_string(),
-            args: vec![domain, Expr::List(data_points), Expr::Integer(3)],
+            args: vec![domain, Expr::List(data_points.into()), Expr::Integer(3)].into(),
           });
         }
       }
@@ -6228,7 +6228,7 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "FunctionInterpolation".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -6354,7 +6354,7 @@ fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   };
 
@@ -6567,7 +6567,7 @@ fn find_maximum_flow_impl(
     None => {
       return Ok(Expr::FunctionCall {
         name: "FindMaximumFlow".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -6576,7 +6576,7 @@ fn find_maximum_flow_impl(
     None => {
       return Ok(Expr::FunctionCall {
         name: "FindMaximumFlow".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -6604,7 +6604,7 @@ fn find_graph_isomorphism_impl(
   let n2 = verts2.len();
 
   if n1 != n2 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let n = n1;
 
@@ -6762,17 +6762,17 @@ fn find_graph_isomorphism_impl(
       let rules: Vec<Expr> = (0..n)
         .map(|i| Expr::FunctionCall {
           name: "Rule".to_string(),
-          args: vec![verts1[i].clone(), verts2[m[i]].clone()],
+          args: vec![verts1[i].clone(), verts2[m[i]].clone()].into(),
         })
         .collect();
       Expr::FunctionCall {
         name: "Association".to_string(),
-        args: rules,
+        args: rules.into(),
       }
     })
     .collect();
 
-  let result = Expr::List(assocs);
+  let result = Expr::List(assocs.into());
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -6784,7 +6784,7 @@ fn find_spanning_tree_impl(
   if verts.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vec![]), Expr::List(vec![])],
+      args: vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
     });
   }
 
@@ -6824,14 +6824,14 @@ fn find_spanning_tree_impl(
       // Fallback: create UndirectedEdge
       tree_edges.push(Expr::FunctionCall {
         name: "UndirectedEdge".to_string(),
-        args: vec![verts[si].clone(), verts[di].clone()],
+        args: vec![verts[si].clone(), verts[di].clone()].into(),
       });
     }
   }
 
   Ok(Expr::FunctionCall {
     name: "Graph".to_string(),
-    args: vec![Expr::List(verts.to_vec()), Expr::List(tree_edges)],
+    args: vec![Expr::List(verts.to_vec().into()), Expr::List(tree_edges.into())].into(),
   })
 }
 

@@ -67,7 +67,7 @@ impl Rat {
     } else {
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(self.n), Expr::Integer(self.d)],
+        args: vec![Expr::Integer(self.n), Expr::Integer(self.d)].into(),
       }
     }
   }
@@ -160,11 +160,11 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         sorted.dedup_by(|a, b| a.n * b.d == b.n * a.d);
         let elems: Vec<Expr> =
           sorted.into_iter().map(|r| r.to_expr()).collect();
-        Ok(Expr::List(elems))
+        Ok(Expr::List(elems.into()))
       }
       None => Ok(Expr::FunctionCall {
         name: "Exponent".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }),
     }
   } else if use_min {
@@ -172,7 +172,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(r) => Ok(r.to_expr()),
       None => Ok(Expr::FunctionCall {
         name: "Exponent".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }),
     }
   } else {
@@ -186,7 +186,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(Expr::FunctionCall {
           name: "Exponent".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -274,7 +274,7 @@ fn add_exponents(a: Expr, b: Expr) -> Expr {
   // Defer to the evaluator so numeric exponents collapse.
   let sum = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![a.clone(), b.clone()],
+    args: vec![a.clone(), b.clone()].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
 }
@@ -292,7 +292,7 @@ fn build_max_expr(mut exprs: Vec<Expr>) -> Expr {
   // comparable numerically, and stay as `Max[…]` otherwise.
   let call = Expr::FunctionCall {
     name: "Max".to_string(),
-    args: exprs,
+    args: exprs.into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
 }

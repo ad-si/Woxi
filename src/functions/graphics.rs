@@ -82,12 +82,12 @@ impl Color {
     if (self.r - self.g).abs() < 1e-14 && (self.g - self.b).abs() < 1e-14 {
       Expr::FunctionCall {
         name: "GrayLevel".to_string(),
-        args: vec![Expr::Real(self.r)],
+        args: vec![Expr::Real(self.r)].into(),
       }
     } else {
       Expr::FunctionCall {
         name: "RGBColor".to_string(),
-        args: vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)],
+        args: vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)].into(),
       }
     }
   }
@@ -956,7 +956,7 @@ fn resolve_graphics_complex_indices(
           }
           Expr::FunctionCall {
             name: name.clone(),
-            args: new_args,
+            args: new_args.into(),
           }
         }
         "Text" | "Inset" => {
@@ -1030,7 +1030,7 @@ fn index_to_coord(idx: i128, coords: &[(f64, f64)]) -> Expr {
   let i = (idx as usize).wrapping_sub(1);
   if i < coords.len() {
     let (x, y) = coords[i];
-    Expr::List(vec![Expr::Real(x), Expr::Real(y)])
+    Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
   } else {
     // Out of bounds — return as-is
     Expr::Integer(idx)
@@ -4025,7 +4025,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             } = arg
             {
               result.push_str(" - ");
-              result.push_str(&expr_to_svg_markup(operand));
+              result.push_str(&expr_to_svg_markup(&operand));
             } else if let Expr::BinaryOp {
               op: BinaryOperator::Times,
               left,
@@ -4034,7 +4034,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               && matches!(left.as_ref(), Expr::Integer(-1))
             {
               result.push_str(" - ");
-              result.push_str(&expr_to_svg_markup(right));
+              result.push_str(&expr_to_svg_markup(&right));
             } else if let Expr::FunctionCall {
               name: fn_name,
               args: fn_args,
@@ -4049,7 +4049,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               } else {
                 result.push_str(&expr_to_svg_markup(&Expr::FunctionCall {
                   name: "Times".to_string(),
-                  args: fn_args[1..].to_vec(),
+                  args: fn_args[1..].to_vec().into(),
                 }));
               }
             } else if let Expr::Integer(n) = arg
@@ -4059,7 +4059,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               result.push_str(&expr_to_svg_markup(&Expr::Integer(-n)));
             } else {
               result.push_str(" + ");
-              result.push_str(&expr_to_svg_markup(arg));
+              result.push_str(&expr_to_svg_markup(&arg));
             }
           }
           result
@@ -4865,12 +4865,12 @@ fn merge_plot_ranges(a: &Expr, b: &Expr) -> Option<Expr> {
 
   let range_to_expr = |r: Option<(f64, f64)>| -> Expr {
     match r {
-      Some((lo, hi)) => Expr::List(vec![Expr::Real(lo), Expr::Real(hi)]),
+      Some((lo, hi)) => Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into()),
       None => Expr::Identifier("All".to_string()),
     }
   };
 
-  Some(Expr::List(vec![range_to_expr(mx), range_to_expr(my)]))
+  Some(Expr::List(vec![range_to_expr(mx), range_to_expr(my)].into()))
 }
 
 /// Implementation of Show[g1, g2, ..., opts...].
@@ -4907,11 +4907,11 @@ fn mesh_region_to_graphics_prims(
   // Add default styling
   result.push(Expr::FunctionCall {
     name: "EdgeForm".to_string(),
-    args: vec![Color::gray(0.4).to_expr()],
+    args: vec![Color::gray(0.4).to_expr()].into(),
   });
   result.push(Expr::FunctionCall {
     name: "FaceForm".to_string(),
-    args: vec![Color::new(0.626, 0.836, 0.919).to_expr()],
+    args: vec![Color::new(0.626, 0.836, 0.919).to_expr()].into(),
   });
 
   for prim in prims {
@@ -4929,7 +4929,7 @@ fn mesh_region_to_graphics_prims(
                 let i = i as usize;
                 if i >= 1 && i <= vertices.len() {
                   let (x, y) = vertices[i - 1];
-                  Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+                  Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
                 } else {
                   None
                 }
@@ -4939,7 +4939,7 @@ fn mesh_region_to_graphics_prims(
           if points.len() >= 3 {
             result.push(Expr::FunctionCall {
               name: "Polygon".to_string(),
-              args: vec![Expr::List(points)],
+              args: vec![Expr::List(points.into())].into(),
             });
           }
         }
@@ -5008,7 +5008,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(graphics_prims) =
           mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
         {
-          merged_primitives.push(Expr::List(graphics_prims));
+          merged_primitives.push(Expr::List(graphics_prims.into()));
         }
       }
       Expr::FunctionCall { name, args: gargs } if name == "Graphics3D" => {
@@ -5092,55 +5092,55 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Real(sd.color.0 as f64 / 255.0),
             Expr::Real(sd.color.1 as f64 / 255.0),
             Expr::Real(sd.color.2 as f64 / 255.0),
-          ],
+          ].into(),
         });
         if sd.is_scatter {
           series_prims.push(Expr::FunctionCall {
             name: "PointSize".to_string(),
-            args: vec![Expr::Real(0.012)],
+            args: vec![Expr::Real(0.012)].into(),
           });
           let coords: Vec<Expr> = sd
             .points
             .iter()
             .filter(|(_, y)| y.is_finite())
-            .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+            .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
             .collect();
           if !coords.is_empty() {
             series_prims.push(Expr::FunctionCall {
               name: "Point".to_string(),
-              args: vec![Expr::List(coords)],
+              args: vec![Expr::List(coords.into())].into(),
             });
           }
         } else {
           series_prims.push(Expr::FunctionCall {
             name: "AbsoluteThickness".to_string(),
-            args: vec![Expr::Real(1.5)],
+            args: vec![Expr::Real(1.5)].into(),
           });
           let segments =
             crate::functions::plot::split_into_segments(&sd.points);
           for seg in &segments {
             let coords: Vec<Expr> = seg
               .iter()
-              .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+              .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
               .collect();
             if coords.len() >= 2 {
               series_prims.push(Expr::FunctionCall {
                 name: "Line".to_string(),
-                args: vec![Expr::List(coords)],
+                args: vec![Expr::List(coords.into())].into(),
               });
             }
           }
         }
       }
-      merged_primitives.push(Expr::List(series_prims));
+      merged_primitives.push(Expr::List(series_prims.into()));
 
       // Merge range as PlotRange option
       let range_rule = Expr::Rule {
         pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
         replacement: Box::new(Expr::List(vec![
-          Expr::List(vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)]),
-          Expr::List(vec![Expr::Real(ps.y_range.0), Expr::Real(ps.y_range.1)]),
-        ])),
+          Expr::List(vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)].into()),
+          Expr::List(vec![Expr::Real(ps.y_range.0), Expr::Real(ps.y_range.1)].into()),
+        ].into())),
       };
       merge_option(&mut merged_options, &range_rule);
 
@@ -5169,11 +5169,11 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if merged_primitives.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Show".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
-  let content = Expr::List(merged_primitives);
+  let content = Expr::List(merged_primitives.into());
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
 
@@ -5277,7 +5277,7 @@ fn extract_cell_style(
           }
         }
         _ => {
-          if let Some(c) = parse_color(directive) {
+          if let Some(c) = parse_color(&directive) {
             color = Some(c);
           }
         }
@@ -5397,7 +5397,7 @@ fn grid_svg_styled_internal(
           .iter()
           .map(|row| {
             if let Expr::List(cells) = row {
-              cells.clone()
+              cells.to_vec()
             } else {
               vec![row.clone()]
             }
@@ -5405,7 +5405,7 @@ fn grid_svg_styled_internal(
           .collect()
       } else {
         // 1D list → single row
-        vec![items.clone()]
+        vec![items.to_vec()]
       }
     }
     _ => {
@@ -5673,12 +5673,12 @@ fn grid_svg_styled_internal(
             if !lists.is_empty()
               && let Expr::List(rh) = &lists[0]
             {
-              row_headings = rh.clone();
+              row_headings = rh.to_vec();
             }
             if lists.len() >= 2
               && let Expr::List(ch) = &lists[1]
             {
-              col_headings = ch.clone();
+              col_headings = ch.to_vec();
             }
           }
         }
@@ -5694,7 +5694,7 @@ fn grid_svg_styled_internal(
       .into_iter()
       .map(|h| Expr::FunctionCall {
         name: "Style".to_string(),
-        args: vec![h, Expr::Identifier("Bold".to_string())],
+        args: vec![h, Expr::Identifier("Bold".to_string())].into(),
       })
       .collect();
     if !row_headings.is_empty() {
@@ -5721,7 +5721,7 @@ fn grid_svg_styled_internal(
             0,
             Expr::FunctionCall {
               name: "Style".to_string(),
-              args: vec![h.clone(), Expr::Identifier("Bold".to_string())],
+              args: vec![h.clone(), Expr::Identifier("Bold".to_string())].into(),
             },
           );
         } else {
@@ -6662,7 +6662,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
               .map(|(_, v)| v.clone())
               .unwrap_or(Expr::FunctionCall {
                 name: "Missing".to_string(),
-                args: vec![],
+                args: vec![].into(),
               })
           })
           .collect()
@@ -7558,7 +7558,7 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
         }
       })
       .collect();
-    return Some(Expr::List(new_rows));
+    return Some(Expr::List(new_rows.into()));
   }
 
   // 1-D list
@@ -7577,7 +7577,7 @@ pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
       .iter()
       .map(|it| with_default_image_size(it, per_cell_w))
       .collect();
-    return Some(Expr::List(new_items));
+    return Some(Expr::List(new_items.into()));
   }
 
   None
@@ -7839,7 +7839,7 @@ fn tabular_list_of_assocs_to_svg(
               .map(|(_, v)| v.clone())
               .unwrap_or(Expr::FunctionCall {
                 name: "Missing".to_string(),
-                args: vec![],
+                args: vec![].into(),
               })
           })
           .collect()
@@ -7861,7 +7861,7 @@ fn tabular_list_of_lists_to_svg(
     .iter()
     .map(|r| {
       if let Expr::List(items) = r {
-        items.clone()
+        items.to_vec()
       } else {
         vec![]
       }
@@ -7919,14 +7919,14 @@ fn tabular_column_assoc_to_svg(
         if let Expr::List(items) = v {
           items.get(i).cloned().unwrap_or(Expr::FunctionCall {
             name: "Missing".to_string(),
-            args: vec![],
+            args: vec![].into(),
           })
         } else if i == 0 {
           v.clone()
         } else {
           Expr::FunctionCall {
             name: "Missing".to_string(),
-            args: vec![],
+            args: vec![].into(),
           }
         }
       })
@@ -8577,7 +8577,7 @@ pub fn koch_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "KochCurve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -8616,12 +8616,12 @@ pub fn koch_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build Line[{{x1, y1}, {x2, y2}, ...}]
   let point_exprs: Vec<Expr> = points
     .iter()
-    .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+    .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
     .collect();
 
   Ok(Expr::FunctionCall {
     name: "Line".to_string(),
-    args: vec![Expr::List(point_exprs)],
+    args: vec![Expr::List(point_exprs.into())].into(),
   })
 }
 
@@ -8659,11 +8659,11 @@ pub fn linear_gradient_filling_ast(
     let colors = vec![
       Expr::FunctionCall {
         name: "GrayLevel".to_string(),
-        args: vec![Expr::Integer(0)],
+        args: vec![Expr::Integer(0)].into(),
       },
       Expr::FunctionCall {
         name: "GrayLevel".to_string(),
-        args: vec![Expr::Integer(1)],
+        args: vec![Expr::Integer(1)].into(),
       },
     ];
     (
@@ -8711,7 +8711,7 @@ pub fn linear_gradient_filling_ast(
         } else {
           // Plain list of colors
           let stops = evenly_spaced_stops(items.len());
-          let colors = items.clone();
+          let colors = items.to_vec();
           (stops, colors, angle, space)
         }
       }
@@ -8719,7 +8719,7 @@ pub fn linear_gradient_filling_ast(
       other => {
         return Ok(Expr::FunctionCall {
           name: "LinearGradientFilling".to_string(),
-          args: vec![other.clone(), angle, space],
+          args: vec![other.clone(), angle, space].into(),
         });
       }
     }
@@ -8727,13 +8727,13 @@ pub fn linear_gradient_filling_ast(
 
   // Build: LinearGradientFilling[{stops} -> {colors}, angle, space]
   let rule = Expr::Rule {
-    pattern: Box::new(Expr::List(stops)),
-    replacement: Box::new(Expr::List(colors)),
+    pattern: Box::new(Expr::List(stops.into())),
+    replacement: Box::new(Expr::List(colors.into())),
   };
 
   Ok(Expr::FunctionCall {
     name: "LinearGradientFilling".to_string(),
-    args: vec![rule, angle, space],
+    args: vec![rule, angle, space].into(),
   })
 }
 
@@ -8777,7 +8777,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
           new_items.push(evaluated);
         }
-        out_args.push(Expr::List(new_items));
+        out_args.push(Expr::List(new_items.into()));
       }
       Expr::List(_) => {
         // Empty list — echo as-is.
@@ -8821,7 +8821,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Manipulate".to_string(),
-    args: out_args,
+    args: out_args.into(),
   })
 }
 
@@ -8903,11 +8903,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     {
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
       {
-        initialization = Some(crate::syntax::expr_to_input_form(replacement));
+        initialization = Some(crate::syntax::expr_to_input_form(&replacement));
       }
       continue;
     }
-    controls.push(parse_manipulate_control(spec)?);
+    controls.push(parse_manipulate_control(&spec)?);
   }
 
   Some(ManipulateSpec {

@@ -6,7 +6,7 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "VoronoiMesh".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -15,7 +15,7 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "VoronoiMesh".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -24,7 +24,7 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if pts_expr.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "VoronoiMesh".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -44,7 +44,7 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Non-numeric or malformed points: return EmptyRegion[2]
     return Ok(Expr::FunctionCall {
       name: "EmptyRegion".to_string(),
-      args: vec![Expr::Integer(2)],
+      args: vec![Expr::Integer(2)].into(),
     });
   }
 
@@ -52,7 +52,7 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n < 2 {
     return Ok(Expr::FunctionCall {
       name: "EmptyRegion".to_string(),
-      args: vec![Expr::Integer(2)],
+      args: vec![Expr::Integer(2)].into(),
     });
   }
 
@@ -534,7 +534,7 @@ fn build_mesh_region(
   // Vertices list (1-indexed coordinates)
   let verts_expr: Vec<Expr> = all_verts
     .iter()
-    .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+    .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
     .collect();
 
   // Group polygon cells into a single Polygon with multiple faces
@@ -548,12 +548,12 @@ fn build_mesh_region(
 
   let polygon = Expr::FunctionCall {
     name: "Polygon".to_string(),
-    args: vec![Expr::List(faces)],
+    args: vec![Expr::List(faces.into())].into(),
   };
 
   Ok(Expr::FunctionCall {
     name: "MeshRegion".to_string(),
-    args: vec![Expr::List(verts_expr), Expr::List(vec![polygon])],
+    args: vec![Expr::List(verts_expr.into()), Expr::List(vec![polygon].into())].into(),
   })
 }
 

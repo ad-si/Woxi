@@ -31,7 +31,7 @@ pub fn dispatch_structural(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Function".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         };
@@ -44,7 +44,7 @@ pub fn dispatch_structural(
       _ => {
         return Some(Ok(Expr::FunctionCall {
           name: "Function".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       }
     },
@@ -69,7 +69,7 @@ pub fn dispatch_structural(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Compile".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -77,7 +77,7 @@ pub fn dispatch_structural(
         vars.iter().map(|v| Expr::Identifier(v.clone())).collect();
       return Some(Ok(Expr::FunctionCall {
         name: "CompiledFunction".to_string(),
-        args: vec![Expr::List(var_exprs), args[1].clone()],
+        args: vec![Expr::List(var_exprs.into()), args[1].clone()].into(),
       }));
     }
     "Rational" if args.len() == 2 => {
@@ -91,7 +91,7 @@ pub fn dispatch_structural(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "Module" => return Some(module_ast(args)),

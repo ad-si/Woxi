@@ -91,7 +91,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Pochhammer".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   } else {
@@ -114,7 +114,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Ok(Expr::FunctionCall {
       name: "Pochhammer".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -141,7 +141,7 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if k < 0 {
       return Ok(Expr::FunctionCall {
         name: "FactorialPower".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     let mut result = BigInt::from(1);
@@ -152,7 +152,7 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(Expr::FunctionCall {
       name: "FactorialPower".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -242,9 +242,9 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Identifier("Pi".to_string()),
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
-            ],
+            ].into(),
           };
           if den_simplified == BigInt::from(1) {
             if num_simplified == BigInt::from(1) {
@@ -252,7 +252,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             return Ok(Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![bigint_to_expr(num_simplified), sqrt_pi],
+              args: vec![bigint_to_expr(num_simplified), sqrt_pi].into(),
             });
           }
           let coeff = Expr::FunctionCall {
@@ -260,11 +260,11 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               bigint_to_expr(num_simplified),
               bigint_to_expr(den_simplified),
-            ],
+            ].into(),
           };
           return Ok(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![coeff, sqrt_pi],
+            args: vec![coeff, sqrt_pi].into(),
           });
         } else if num < 0 {
           // Negative half-integers: Gamma[(1-2n)/2] = Gamma[1/2 - n]
@@ -297,9 +297,9 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Identifier("Pi".to_string()),
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
-            ],
+            ].into(),
           };
           let coeff_num = if is_neg {
             -num_simplified.clone()
@@ -312,7 +312,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             return Ok(Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![bigint_to_expr(coeff_num), sqrt_pi],
+              args: vec![bigint_to_expr(coeff_num), sqrt_pi].into(),
             });
           }
           let coeff = Expr::FunctionCall {
@@ -320,17 +320,17 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               bigint_to_expr(coeff_num),
               bigint_to_expr(den_simplified),
-            ],
+            ].into(),
           };
           return Ok(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![coeff, sqrt_pi],
+            args: vec![coeff, sqrt_pi].into(),
           });
         }
       }
       Ok(Expr::FunctionCall {
         name: "Gamma".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => {
@@ -351,7 +351,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Gamma".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -386,9 +386,9 @@ fn gamma_incomplete_upper(
         Expr::Identifier("E".to_string()),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), z.clone()],
+          args: vec![Expr::Integer(-1), z.clone()].into(),
         },
-      ],
+      ].into(),
     });
   }
 
@@ -422,7 +422,7 @@ fn gamma_incomplete_upper(
   // Default: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Gamma".to_string(),
-    args: vec![a.clone(), z.clone()],
+    args: vec![a.clone(), z.clone()].into(),
   })
 }
 
@@ -446,7 +446,7 @@ fn gamma_incomplete_upper_int_a(
     } else {
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![z.clone(), Expr::Integer(k as i128)],
+        args: vec![z.clone(), Expr::Integer(k as i128)].into(),
       }
     };
     let term = if factorial == 1 {
@@ -457,10 +457,10 @@ fn gamma_incomplete_upper_int_a(
         args: vec![
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(factorial)],
+            args: vec![Expr::Integer(1), Expr::Integer(factorial)].into(),
           },
           z_power,
-        ],
+        ].into(),
       }
     };
     terms.push(term);
@@ -470,7 +470,7 @@ fn gamma_incomplete_upper_int_a(
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   };
   let mut n_minus_1_factorial: i128 = 1;
@@ -483,19 +483,19 @@ fn gamma_incomplete_upper_int_a(
       Expr::Identifier("E".to_string()),
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), z.clone()],
+        args: vec![Expr::Integer(-1), z.clone()].into(),
       },
-    ],
+    ].into(),
   };
   let result = if n_minus_1_factorial == 1 {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![exp_neg_z, sum],
+      args: vec![exp_neg_z, sum].into(),
     }
   } else {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(n_minus_1_factorial), exp_neg_z, sum],
+      args: vec![Expr::Integer(n_minus_1_factorial), exp_neg_z, sum].into(),
     }
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -790,7 +790,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "Beta".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -863,7 +863,7 @@ fn incomplete_beta_ast(
   // or non-integer b that doesn't hit our closed-form path.
   Ok(Expr::FunctionCall {
     name: "Beta".to_string(),
-    args: vec![z.clone(), a.clone(), b.clone()],
+    args: vec![z.clone(), a.clone(), b.clone()].into(),
   })
 }
 
@@ -901,7 +901,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "LogGamma".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -920,7 +920,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let gamma_result = gamma_ast(&[z.clone()])?;
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Log".to_string(),
-      args: vec![gamma_result],
+      args: vec![gamma_result].into(),
     });
   }
 
@@ -935,7 +935,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let gamma_result = gamma_ast(&[z.clone()])?;
       return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![gamma_result],
+        args: vec![gamma_result].into(),
       });
     }
     if *n <= 0 && *d > 0 && *n % *d == 0 {
@@ -982,7 +982,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated for symbolic case
   Ok(Expr::FunctionCall {
     name: "LogGamma".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1048,7 +1048,7 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "BetaRegularized".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1218,7 +1218,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "GammaRegularized".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1324,12 +1324,12 @@ pub fn barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // For N[BarnesG[rational]], return unevaluated; N[] will handle conversion
       Ok(Expr::FunctionCall {
         name: "BarnesG".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Ok(Expr::FunctionCall {
       name: "BarnesG".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }

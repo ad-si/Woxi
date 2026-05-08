@@ -313,10 +313,10 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Image { width, height, .. } => Ok(Expr::List(vec![
       Expr::Integer(*width as i128),
       Expr::Integer(*height as i128),
-    ])),
+    ].into())),
     _ => Ok(Expr::FunctionCall {
       name: "ImageDimensions".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -335,7 +335,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if w == 0 {
         return Ok(Expr::FunctionCall {
           name: "ImageAspectRatio".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       // Reduce gcd
@@ -349,13 +349,13 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(num), Expr::Integer(den)],
+          args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "ImageAspectRatio".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -473,7 +473,7 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Grayscale: {{v, v, ...}, ...}
           let row: Vec<Expr> =
             (0..w).map(|x| to_expr(data[y * w + x])).collect();
-          rows.push(Expr::List(row));
+          rows.push(Expr::List(row.into()));
         } else {
           // Color: {{{r, g, b}, ...}, ...}
           let row: Vec<Expr> = (0..w)
@@ -482,11 +482,11 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::List((0..ch).map(|c| to_expr(data[base + c])).collect())
             })
             .collect();
-          rows.push(Expr::List(row));
+          rows.push(Expr::List(row.into()));
         }
       }
 
-      Ok(Expr::List(rows))
+      Ok(Expr::List(rows.into()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "ImageData: argument is not an Image".into(),
@@ -517,7 +517,7 @@ pub fn pixel_value_positions_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "PixelValuePositions".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -527,7 +527,7 @@ pub fn pixel_value_positions_ast(
       None => {
         return Ok(Expr::FunctionCall {
           name: "PixelValuePositions".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -550,7 +550,7 @@ pub fn pixel_value_positions_ast(
       if ch != 1 {
         return Ok(Expr::FunctionCall {
           name: "PixelValuePositions".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       let mut positions: Vec<Expr> = Vec::new();
@@ -562,11 +562,11 @@ pub fn pixel_value_positions_ast(
             positions.push(Expr::List(vec![
               Expr::Integer((x + 1) as i128),
               Expr::Integer((h - y) as i128),
-            ]));
+            ].into()));
           }
         }
       }
-      Ok(Expr::List(positions))
+      Ok(Expr::List(positions.into()))
     }
     _ => {
       crate::emit_message(
@@ -576,7 +576,7 @@ pub fn pixel_value_positions_ast(
       );
       Ok(Expr::FunctionCall {
         name: "PixelValuePositions".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -603,7 +603,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
       Ok(Expr::FunctionCall {
         name: "ImageColorSpace".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -672,7 +672,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             negate_component(&cargs[0])?,
             negate_component(&cargs[1])?,
             negate_component(&cargs[2])?,
-          ],
+          ].into(),
         }),
         4 => Ok(Expr::FunctionCall {
           name: "RGBColor".to_string(),
@@ -681,7 +681,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             negate_component(&cargs[1])?,
             negate_component(&cargs[2])?,
             cargs[3].clone(),
-          ],
+          ].into(),
         }),
         _ => Err(InterpreterError::EvaluationError(
           "ColorNegate: RGBColor must have 3 or 4 arguments".into(),
@@ -703,11 +703,11 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match cargs.len() {
         1 => Ok(Expr::FunctionCall {
           name: "GrayLevel".to_string(),
-          args: vec![negate_component(&cargs[0])?],
+          args: vec![negate_component(&cargs[0])?].into(),
         }),
         2 => Ok(Expr::FunctionCall {
           name: "GrayLevel".to_string(),
-          args: vec![negate_component(&cargs[0])?, cargs[1].clone()],
+          args: vec![negate_component(&cargs[0])?, cargs[1].clone()].into(),
         }),
         _ => Err(InterpreterError::EvaluationError(
           "ColorNegate: GrayLevel must have 1 or 2 arguments".into(),
@@ -1000,7 +1000,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Return unevaluated for now
         return Ok(Expr::FunctionCall {
           name: "ImageRotate".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       };
       Ok(dynamic_image_to_expr(&rotated))
@@ -1052,7 +1052,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "ImageResize".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1078,7 +1078,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Nested lists like {{x1,y1},{x2,y2}} are not valid — return unevaluated.
         return Ok(Expr::FunctionCall {
           name: "ImageCrop".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       // Auto-crop: trim uniform border
@@ -1120,7 +1120,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "ImageTrim".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           };
@@ -1131,7 +1131,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "ImageTrim".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           };
@@ -1140,7 +1140,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "ImageTrim".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -1174,7 +1174,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "ImageTrim".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1564,11 +1564,11 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|c| Expr::FunctionCall {
           name: "RGBColor".to_string(),
-          args: vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])],
+          args: vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])].into(),
         })
         .collect();
 
-      Ok(Expr::List(colors))
+      Ok(Expr::List(colors.into()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "DominantColors: first argument is not an Image".into(),
@@ -1676,7 +1676,7 @@ pub fn image_apply_ast(
           let pixel_expr = Expr::Real(data[i]);
           let call = Expr::FunctionCall {
             name: crate::syntax::expr_to_string(func),
-            args: vec![pixel_expr],
+            args: vec![pixel_expr].into(),
           };
           let result = eval_fn(&call)?;
           new_data.push(expr_to_f64(&result)?);
@@ -1685,10 +1685,10 @@ pub fn image_apply_ast(
           let base = i * ch;
           let pixel_list: Vec<Expr> =
             (0..ch).map(|c| Expr::Real(data[base + c])).collect();
-          let pixel_expr = Expr::List(pixel_list);
+          let pixel_expr = Expr::List(pixel_list.into());
           let call = Expr::FunctionCall {
             name: crate::syntax::expr_to_string(func),
-            args: vec![pixel_expr],
+            args: vec![pixel_expr].into(),
           };
           let mut result = eval_fn(&call)?;
           match &mut result {
@@ -2716,7 +2716,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
           return Ok(Expr::FunctionCall {
             name: "ImageAssemble".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -2733,7 +2733,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
           return Ok(Expr::FunctionCall {
             name: "ImageAssemble".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -3329,7 +3329,7 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sub_args.extend(args[2..].iter().cloned());
       results.push(color_distance_ast(&sub_args)?);
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   let lab1 = color_to_lab(&args[0]).ok_or_else(|| {
@@ -3346,7 +3346,7 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })?;
 
   let to_list = |t: (f64, f64, f64)| {
-    Expr::List(vec![Expr::Real(t.0), Expr::Real(t.1), Expr::Real(t.2)])
+    Expr::List(vec![Expr::Real(t.0), Expr::Real(t.1), Expr::Real(t.2)].into())
   };
 
   // Decode `{name, qualifier}` distance specs (e.g. `{"CMC",
@@ -3395,7 +3395,7 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result =
         crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
           func: Box::new(func),
-          args: vec![to_list(lab1), to_list(lab2)],
+          args: vec![to_list(lab1), to_list(lab2)].into(),
         })?;
       Ok(result)
     }

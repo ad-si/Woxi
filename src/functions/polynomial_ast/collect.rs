@@ -41,7 +41,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // For multi-variable collect with head, apply head at the innermost level
     let first_call = vec![args[0].clone(), vars[0].clone()];
     let first_collected = collect_ast(&first_call)?;
-    let remaining = Expr::List(vars[1..].to_vec());
+    let remaining = Expr::List(vars[1..].to_vec().into());
     // Pass head to the inner collect via collect_in_coefficients
     if let Some(h) = head {
       return collect_in_coefficients_with_head(
@@ -72,7 +72,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Collect".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -122,7 +122,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: coeffs,
+          args: coeffs.into(),
         }
       };
       // Build the var^power part.
@@ -155,7 +155,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         times_ast(&factors).unwrap_or_else(|_| Expr::FunctionCall {
           name: "Times".to_string(),
-          args: factors,
+          args: factors.into(),
         })
       };
       result_terms.push(term);
@@ -207,7 +207,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           crate::syntax::expr_to_string(h)
         },
-        args: vec![combined_coeff],
+        args: vec![combined_coeff].into(),
       };
       crate::evaluator::evaluate_expr_to_expr(&wrapped).unwrap_or(wrapped)
     } else {
@@ -278,7 +278,7 @@ fn extract_var_free_outer_factors(
 ) -> Option<(Vec<Expr>, Expr)> {
   use crate::functions::calculus_ast::is_constant_wrt;
   let factors: Vec<Expr> = match expr {
-    Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -303,7 +303,7 @@ fn extract_var_free_outer_factors(
   } else {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: inner,
+      args: inner.into(),
     }
   };
   Some((outer, inner_expr))
@@ -314,7 +314,7 @@ fn extract_var_free_outer_factors(
 /// Times[..., Plus] structure is itself a Plus that we can recurse on.
 fn as_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
   match expr {
-    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.clone()),
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.to_vec()),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,

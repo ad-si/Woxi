@@ -588,14 +588,14 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       if let Expr::Integer(n) = &args[0] {
         return Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(-n), args[1].clone()],
+          args: vec![Expr::Integer(-n), args[1].clone()].into(),
         };
       }
       let name = std::mem::take(name);
       let args = std::mem::take(args);
       return Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }],
+        args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }].into(),
       };
     }
     // -(a/b) => Times[-1, a/b] to match Wolfram output style
@@ -621,7 +621,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
   // Default: wrap in Times[-1, expr]
   Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), expr],
+    args: vec![Expr::Integer(-1), expr].into(),
   }
 }
 
@@ -679,7 +679,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = crate::functions::math_ast::n_eval_arbitrary(
       &Expr::FunctionCall {
         name: "Sin".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       },
       p_usize,
     )?;
@@ -754,7 +754,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Non-Pi-fraction real part: leave unevaluated (matches Wolfram)
     return Ok(Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // General complex with non-float components: try splitting into
@@ -804,7 +804,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Non-Pi-fraction real part: leave unevaluated
     return Ok(Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // Complex float: sin(a+bi) = sin(a)cosh(b) + i*cos(a)sinh(b)
@@ -826,7 +826,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "Sin".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -862,7 +862,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = crate::functions::math_ast::n_eval_arbitrary(
       &Expr::FunctionCall {
         name: "Cos".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       },
       p_usize,
     )?;
@@ -926,7 +926,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Non-Pi-fraction real part: leave unevaluated
     return Ok(Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // General complex with non-float components: try splitting into
@@ -968,7 +968,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // Complex float: cos(a+bi) = cos(a)cosh(b) - i*sin(a)sinh(b)
@@ -987,7 +987,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Cos".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1035,7 +1035,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Non-zero real part: leave unevaluated (matches Wolfram)
     return Ok(Expr::FunctionCall {
       name: "Tan".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // Complex float: tan(z) = sin(z)/cos(z)
@@ -1062,7 +1062,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Tan".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1093,7 +1093,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Sec".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1125,7 +1125,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Csc".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1157,7 +1157,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Cot".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1219,7 +1219,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       op: crate::syntax::UnaryOperator::Minus,
       operand: Box::new(Expr::FunctionCall {
         name: "Erf".to_string(),
-        args: vec![inner],
+        args: vec![inner].into(),
       }),
     }
   };
@@ -1236,7 +1236,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(-1) => Ok(Expr::Integer(-1)),
         _ => Ok(Expr::FunctionCall {
           name: "Erf".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }),
       }
     }
@@ -1268,13 +1268,13 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let pos_arg = Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-*n), fargs[1].clone()],
+          args: vec![Expr::Integer(-*n), fargs[1].clone()].into(),
         };
         return Ok(negate_erf(pos_arg));
       }
       Ok(Expr::FunctionCall {
         name: "Erf".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     // BinaryOp::Times form: -1 * x
@@ -1301,7 +1301,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Erf".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     // Erf[-n] for negative integer
@@ -1311,7 +1311,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Otherwise symbolic
     _ => Ok(Expr::FunctionCall {
       name: "Erf".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1341,7 +1341,7 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(-1) => Ok(Expr::Integer(2)),
         _ => Ok(Expr::FunctionCall {
           name: "Erfc".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }),
       }
     }
@@ -1352,7 +1352,7 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Otherwise symbolic
     _ => Ok(Expr::FunctionCall {
       name: "Erfc".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1399,13 +1399,13 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let pos_arg = Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-*n), fargs[1].clone()],
+          args: vec![Expr::Integer(-*n), fargs[1].clone()].into(),
         };
         return negate_erfi(pos_arg);
       }
       Ok(Expr::FunctionCall {
         name: "Erfi".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     // BinaryOp::Times form: -1 * x
@@ -1432,7 +1432,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Erfi".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     // Erfi[-n] for negative integer
@@ -1442,7 +1442,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Otherwise symbolic
     _ => Ok(Expr::FunctionCall {
       name: "Erfi".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1479,14 +1479,14 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "InverseErf".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
     // Otherwise symbolic — return unevaluated
     _ => Ok(Expr::FunctionCall {
       name: "InverseErf".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1526,13 +1526,13 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "InverseErfc".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "InverseErfc".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -1666,7 +1666,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // I*Pi + Log[abs_n]
         let log_n = Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![Expr::Integer(abs_n)],
+          args: vec![Expr::Integer(abs_n)].into(),
         };
         return crate::evaluator::evaluate_function_call_ast(
           "Plus",
@@ -1732,7 +1732,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let inverted = make_rational(*q, *p);
         let log_inv = Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![inverted],
+          args: vec![inverted].into(),
         };
         return Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Times,
@@ -1770,7 +1770,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Log".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     2 => {
@@ -1795,11 +1795,11 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(Expr::FunctionCall {
             name: "Log".to_string(),
-            args: vec![args[1].clone()],
+            args: vec![args[1].clone()].into(),
           }),
           right: Box::new(Expr::FunctionCall {
             name: "Log".to_string(),
-            args: vec![args[0].clone()],
+            args: vec![args[0].clone()].into(),
           }),
         });
       }
@@ -1816,11 +1816,11 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![args[1].clone()],
+          args: vec![args[1].clone()].into(),
         }),
         right: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![args[0].clone()],
+          args: vec![args[0].clone()].into(),
         }),
       })
     }
@@ -1860,11 +1860,11 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
     right: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
-      args: vec![Expr::Integer(10)],
+      args: vec![Expr::Integer(10)].into(),
     }),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
@@ -1895,11 +1895,11 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
     right: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
-      args: vec![Expr::Integer(2)],
+      args: vec![Expr::Integer(2)].into(),
     }),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
@@ -1950,7 +1950,7 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         op: crate::syntax::BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Integer(2)],
+          args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
         }),
         right: Box::new(Expr::Constant("Pi".to_string())),
       });
@@ -1968,7 +1968,7 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcSin".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2093,7 +2093,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(Expr::FunctionCall {
       name: "DirectedInfinity".to_string(),
-      args: vec![direction],
+      args: vec![direction].into(),
     });
   }
   // Check for special rational/irrational values via numeric comparison
@@ -2104,7 +2104,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcCos".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2181,7 +2181,7 @@ pub fn arcsin_special_value(v: f64) -> Option<Expr> {
           op: crate::syntax::BinaryOperator::Times,
           left: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(den)],
+            args: vec![Expr::Integer(-1), Expr::Integer(den)].into(),
           }),
           right: Box::new(Expr::Constant("Pi".to_string())),
         });
@@ -2247,7 +2247,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         op: crate::syntax::BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Integer(4)],
+          args: vec![Expr::Integer(-1), Expr::Integer(4)].into(),
         }),
         right: Box::new(Expr::Constant("Pi".to_string())),
       });
@@ -2270,10 +2270,10 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Integer(2)],
+          args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
         },
         Expr::Constant("Pi".to_string()),
-      ],
+      ].into(),
     });
   }
 
@@ -2297,10 +2297,10 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(3)],
+            args: vec![Expr::Integer(-1), Expr::Integer(3)].into(),
           },
           Expr::Constant("Pi".to_string()),
-        ],
+        ].into(),
       });
     }
     let inv_sqrt3 = 1.0 / sqrt3;
@@ -2319,17 +2319,17 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(6)],
+            args: vec![Expr::Integer(-1), Expr::Integer(6)].into(),
           },
           Expr::Constant("Pi".to_string()),
-        ],
+        ].into(),
       });
     }
   }
 
   Ok(Expr::FunctionCall {
     name: "ArcTan".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2372,7 +2372,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         op: crate::syntax::BinaryOperator::Times,
         left: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(num), Expr::Integer(den)],
+          args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
         }),
         right: Box::new(Expr::Constant("Pi".to_string())),
       }
@@ -2392,7 +2392,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ if xn < 0 && yn == xn => rational_pi(-3, 4), // ArcTan[-a, -a] = -3*Pi/4
       _ => Expr::FunctionCall {
         name: "ArcTan".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       },
     });
   }
@@ -2420,7 +2420,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated for symbolic args
   Ok(Expr::FunctionCall {
     name: "ArcTan".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2567,7 +2567,7 @@ fn try_split_real_imag(expr: &Expr) -> Option<(Expr, (i128, i128))> {
           } else {
             Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: remaining,
+              args: remaining.into(),
             }
           };
           return Some((real_part, im));
@@ -2638,14 +2638,14 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
           }
           return Some(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: args[1..].to_vec(),
+            args: args[1..].to_vec().into(),
           });
         }
         let mut new_args = vec![negated_first];
         new_args.extend_from_slice(&args[1..]);
         Some(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: new_args,
+          args: new_args.into(),
         })
       } else {
         None
@@ -2684,7 +2684,7 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Sinh".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2716,7 +2716,7 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Cosh".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2749,7 +2749,7 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Tanh".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2783,7 +2783,7 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Coth".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2808,7 +2808,7 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Sech".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2838,7 +2838,7 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Csch".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2856,7 +2856,7 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcSinh".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2875,7 +2875,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)],
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
           },
           Expr::Identifier("I".to_string()),
           Expr::Constant("Pi".to_string()),
@@ -2906,10 +2906,10 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
               Expr::Constant("Pi".to_string()),
-            ],
+            ].into(),
           },
           Expr::Real(*prec),
         ],
@@ -2923,7 +2923,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcCosh".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2982,14 +2982,14 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(result_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
+          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())].into(),
         },
-      ],
+      ].into(),
     });
   }
   Ok(Expr::FunctionCall {
     name: "ArcTanh".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3008,7 +3008,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)],
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
           },
           Expr::Identifier("I".to_string()),
           Expr::Constant("Pi".to_string()),
@@ -3061,10 +3061,10 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               Expr::FunctionCall {
                 name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
               Expr::Constant("Pi".to_string()),
-            ],
+            ].into(),
           },
           Expr::Real(*prec),
         ],
@@ -3078,7 +3078,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcCoth".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3103,7 +3103,7 @@ pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcSech".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3131,7 +3131,7 @@ pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcCot".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3166,7 +3166,7 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcCsc".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3201,7 +3201,7 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcSec".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3221,7 +3221,7 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcCsch".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3275,7 +3275,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Gudermannian[ComplexInfinity] is unevaluated in Wolfram
       return Ok(Expr::FunctionCall {
         name: "Gudermannian".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     Expr::Identifier(name) if name == "Undefined" => {
@@ -3315,7 +3315,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic: return unevaluated (matching wolframscript behavior)
   Ok(Expr::FunctionCall {
     name: "Gudermannian".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3346,7 +3346,7 @@ pub fn inverse_gudermannian_ast(
   }
   Ok(Expr::FunctionCall {
     name: "InverseGudermannian".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3362,7 +3362,7 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // LogisticSigmoid[0] = 1/2
       return Ok(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)],
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
       });
     }
     Expr::Real(f) => {
@@ -3399,14 +3399,14 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(result_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
+          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())].into(),
         },
-      ],
+      ].into(),
     });
   }
   Ok(Expr::FunctionCall {
     name: "LogisticSigmoid".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -3437,7 +3437,7 @@ fn trig_degrees_ast(
   {
     return Ok(Expr::FunctionCall {
       name: degrees_name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   Ok(result)
@@ -3465,7 +3465,7 @@ fn arc_trig_degrees_ast(
   {
     return Ok(Expr::FunctionCall {
       name: degrees_name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // For numeric results, convert radians to degrees (keep as Real)
@@ -3479,11 +3479,11 @@ fn arc_trig_degrees_ast(
       radians,
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(180), Expr::Integer(1)],
+        args: vec![Expr::Integer(180), Expr::Integer(1)].into(),
       },
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)].into(),
       },
     ],
   )
@@ -3544,7 +3544,7 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "TrigExpand".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let result = trig_expand_recursive(&args[0]);
@@ -3938,21 +3938,21 @@ fn expand_cosh_multiple(n: usize, x: &Expr) -> Expr {
 fn make_fn(name: &str, args: &[Expr]) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   }
 }
 
 fn make_times(a: &Expr, b: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![a.clone(), b.clone()],
+    args: vec![a.clone(), b.clone()].into(),
   }
 }
 
 fn make_plus(a: &Expr, b: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![a.clone(), b.clone()],
+    args: vec![a.clone(), b.clone()].into(),
   }
 }
 
@@ -3963,9 +3963,9 @@ fn make_minus(a: &Expr, b: &Expr) -> Expr {
       a.clone(),
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), b.clone()],
+        args: vec![Expr::Integer(-1), b.clone()].into(),
       },
-    ],
+    ].into(),
   }
 }
 
@@ -3976,9 +3976,9 @@ fn make_divide(a: &Expr, b: &Expr) -> Expr {
       a.clone(),
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![b.clone(), Expr::Integer(-1)],
+        args: vec![b.clone(), Expr::Integer(-1)].into(),
       },
-    ],
+    ].into(),
   }
 }
 
@@ -3988,7 +3988,7 @@ fn make_power(base: &Expr, exp: i128) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![base.clone(), Expr::Integer(exp)],
+      args: vec![base.clone(), Expr::Integer(exp)].into(),
     }
   }
 }
@@ -4002,7 +4002,7 @@ fn build_sum(terms: &[Expr]) -> Expr {
   }
   Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: terms.to_vec(),
+    args: terms.to_vec().into(),
   }
 }
 
@@ -4027,7 +4027,7 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "TrigReduce".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let result = trig_reduce_recursive(&args[0]);
@@ -4128,7 +4128,7 @@ fn trig_reduce_product(factors: &[Expr]) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: reduced,
+      args: reduced.into(),
     }
   }
 }
@@ -4179,13 +4179,13 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   let sin = |e: Expr| -> Expr {
     Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: vec![e],
+      args: vec![e].into(),
     }
   };
   let cos = |e: Expr| -> Expr {
     Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: vec![e],
+      args: vec![e].into(),
     }
   };
 
@@ -4292,7 +4292,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
       let trig_arg = make_int_times_arg(m, m);
       let trig_call = Expr::FunctionCall {
         name: "Cos".to_string(),
-        args: vec![trig_arg],
+        args: vec![trig_arg].into(),
       };
       num_terms.push((sign * coeff, Some(trig_call)));
     }
@@ -4314,7 +4314,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
       let trig_arg = make_int_times_arg(m, m);
       let trig_call = Expr::FunctionCall {
         name: trig_fn.to_string(),
-        args: vec![trig_arg],
+        args: vec![trig_arg].into(),
       };
       num_terms.push((sign * coeff, Some(trig_call)));
     }
@@ -4372,7 +4372,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   };
 

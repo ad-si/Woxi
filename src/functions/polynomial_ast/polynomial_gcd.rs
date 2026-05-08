@@ -125,7 +125,7 @@ fn poly_gcd_pair(
 
   let result = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![content_gcd, a_prim],
+    args: vec![content_gcd, a_prim].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(
     &crate::evaluator::evaluate_expr_to_expr(&result)?,
@@ -156,7 +156,7 @@ fn poly_integer_content(
         Expr::Integer(_) | Expr::BigInteger(_) => {
           let abs = Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![c],
+            args: vec![c].into(),
           };
           int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
         }
@@ -167,7 +167,7 @@ fn poly_integer_content(
           // Rational number - include it
           let abs = Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![c],
+            args: vec![c].into(),
           };
           int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
         }
@@ -208,10 +208,10 @@ fn poly_divide_by_constant(
     args: vec![
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![constant.clone(), Expr::Integer(-1)],
+        args: vec![constant.clone(), Expr::Integer(-1)].into(),
       },
       poly.clone(),
-    ],
+    ].into(),
   };
   let result = crate::evaluator::evaluate_expr_to_expr(&div)?;
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))
@@ -260,7 +260,7 @@ fn normalize_poly_sign(
   if is_negative {
     let neg = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), poly.clone()],
+      args: vec![Expr::Integer(-1), poly.clone()].into(),
     };
     crate::evaluator::evaluate_expr_to_expr(&neg)
   } else {
@@ -301,7 +301,7 @@ fn integer_gcd_multi(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn integer_gcd_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   let gcd_expr = Expr::FunctionCall {
     name: "GCD".to_string(),
-    args: vec![a.clone(), b.clone()],
+    args: vec![a.clone(), b.clone()].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&gcd_expr)
 }

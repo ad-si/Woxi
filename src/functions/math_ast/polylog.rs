@@ -42,7 +42,7 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "PolyLog".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -85,7 +85,7 @@ pub fn polylog_integer_s(
 
   Ok(Expr::FunctionCall {
     name: "PolyLog".to_string(),
-    args: orig_args.to_vec(),
+    args: orig_args.to_vec().into(),
   })
 }
 
@@ -102,7 +102,7 @@ pub fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
         left: Box::new(Expr::Integer(-1)),
         right: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![one_minus_z],
+          args: vec![one_minus_z].into(),
         }),
       })
     }
@@ -155,7 +155,7 @@ pub fn polylog_s1_symbolic(z_expr: &Expr) -> Result<Expr, InterpreterError> {
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
-      args: vec![one_minus_z],
+      args: vec![one_minus_z].into(),
     }),
   })
 }
@@ -239,7 +239,7 @@ pub fn polylog_negative_s(
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   };
 
@@ -387,7 +387,7 @@ pub fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
 
     let zeta_expr = Expr::FunctionCall {
       name: "Zeta".to_string(),
-      args: vec![Expr::Integer(s)],
+      args: vec![Expr::Integer(s)].into(),
     };
 
     if cd == 1 {
@@ -415,7 +415,7 @@ pub fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
 pub fn unevaluated_polylog(s: i128, z: i128) -> Expr {
   Expr::FunctionCall {
     name: "PolyLog".to_string(),
-    args: vec![Expr::Integer(s), Expr::Integer(z)],
+    args: vec![Expr::Integer(s), Expr::Integer(z)].into(),
   }
 }
 

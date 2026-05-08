@@ -33,7 +33,7 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Resultant".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -42,7 +42,7 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Resultant".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };

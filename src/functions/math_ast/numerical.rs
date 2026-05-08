@@ -59,7 +59,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     Expr::BigInteger(n) => Ok(Expr::Real(
       n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
@@ -117,7 +117,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       let hold_first = attrs.iter().any(|a| a == "NHoldFirst");
       let hold_rest = attrs.iter().any(|a| a == "NHoldRest");
       let new_args: Vec<Expr> = if hold_all {
-        args.clone()
+        args.to_vec()
       } else {
         let mut out = Vec::with_capacity(args.len());
         for (i, a) in args.iter().enumerate() {
@@ -133,7 +133,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Re-evaluate the function with numeric arguments
       let new_expr = Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       };
       match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
         Ok(result) => Ok(result),
@@ -551,7 +551,7 @@ pub fn n_eval_arbitrary(
       .iter()
       .map(|e| n_eval_arbitrary(e, precision))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // Machine-precision Reals already live at MachinePrecision and cannot be
@@ -707,7 +707,7 @@ fn n_eval_arbitrary_partial(
         .collect();
       let new_expr = Expr::FunctionCall {
         name: name.clone(),
-        args: new_args?,
+        args: new_args?.into(),
       };
       // Try to re-evaluate after converting numeric args
       match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
@@ -1502,7 +1502,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     if let Expr::List(items) = &args[0] {
       if items.is_empty() {
-        return Ok(Expr::List(vec![]));
+        return Ok(Expr::List(vec![].into()));
       }
       // Find min and max
       let mut vals = Vec::new();
@@ -1521,7 +1521,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Rescale".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -1530,30 +1530,30 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let min_val = *int_vals.iter().min().unwrap();
         let max_val = *int_vals.iter().max().unwrap();
         if min_val == max_val {
-          return Ok(Expr::List(vec![Expr::Integer(0); items.len()]));
+          return Ok(Expr::List(vec![Expr::Integer(0); items.len()].into()));
         }
         let range = max_val - min_val;
         let result: Vec<Expr> = int_vals
           .iter()
           .map(|x| make_rational(x - min_val, range))
           .collect();
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
       let min_val = vals.iter().cloned().fold(f64::INFINITY, f64::min);
       let max_val = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
       if (max_val - min_val).abs() < f64::EPSILON {
-        return Ok(Expr::List(vec![Expr::Integer(0); items.len()]));
+        return Ok(Expr::List(vec![Expr::Integer(0); items.len()].into()));
       }
       let result: Vec<Expr> = vals
         .iter()
         .map(|x| num_to_expr((x - min_val) / (max_val - min_val)))
         .collect();
-      return Ok(Expr::List(result));
+      return Ok(Expr::List(result.into()));
     }
     // Single non-list value needs {xmin, xmax}
     return Ok(Expr::FunctionCall {
       name: "Rescale".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1567,7 +1567,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         rescale_ast(&new_args)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // Rescale[x, {xmin, xmax}] or Rescale[x, {xmin, xmax}, {ymin, ymax}]
@@ -1576,7 +1576,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Rescale".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1587,7 +1587,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Rescale".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1638,7 +1638,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Rescale".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1703,7 +1703,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         flat.extend(cells.iter().cloned());
       }
     }
-    return norm_ast(&[Expr::List(flat)]);
+    return norm_ast(&[Expr::List(flat.into())]);
   }
 
   match &args[0] {
@@ -1724,7 +1724,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             None => {
               return Ok(Expr::FunctionCall {
                 name: "Norm".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           }
@@ -1758,12 +1758,12 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|item| Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![item.clone()],
+            args: vec![item.clone()].into(),
           })
           .collect();
         return evaluate_expr_to_expr(&Expr::FunctionCall {
           name: "Max".to_string(),
-          args: abs_items,
+          args: abs_items.into(),
         });
       }
 
@@ -1773,7 +1773,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|item| Expr::FunctionCall {
             name: "Abs".to_string(),
-            args: vec![item.clone()],
+            args: vec![item.clone()].into(),
           })
           .collect();
         let sum = if terms.len() == 1 {
@@ -1781,7 +1781,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           Expr::FunctionCall {
             name: "Plus".to_string(),
-            args: terms,
+            args: terms.into(),
           }
         };
         return evaluate_expr_to_expr(&sum);
@@ -1797,12 +1797,12 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               Expr::FunctionCall {
                 name: "Abs".to_string(),
-                args: vec![item.clone()],
+                args: vec![item.clone()].into(),
               }
             };
             Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![base, Expr::Integer(2)],
+              args: vec![base, Expr::Integer(2)].into(),
             }
           })
           .collect();
@@ -1811,7 +1811,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           Expr::FunctionCall {
             name: "Plus".to_string(),
-            args: sq_items,
+            args: sq_items.into(),
           }
         };
         let sum_eval = evaluate_expr_to_expr(&sum)?;
@@ -1821,7 +1821,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Fallback: leave unevaluated for other p values
       Ok(Expr::FunctionCall {
         name: "Norm".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     // Norm of a scalar: Abs[x]
@@ -1857,7 +1857,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::List(items) => {
       if items.is_empty() {
-        return Ok(Expr::List(vec![]));
+        return Ok(Expr::List(vec![].into()));
       }
       // Compute the Euclidean norm
       let mut vals = Vec::new();
@@ -1882,7 +1882,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 op: crate::syntax::BinaryOperator::Power,
                 left: Box::new(Expr::FunctionCall {
                   name: "Abs".to_string(),
-                  args: vec![e.clone()],
+                  args: vec![e.clone()].into(),
                 }),
                 right: Box::new(Expr::Integer(2)),
               })
@@ -1892,7 +1892,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               Expr::FunctionCall {
                 name: "Plus".to_string(),
-                args: squared_terms,
+                args: squared_terms.into(),
               }
             };
             let norm_expr = make_sqrt(sum_of_squares);
@@ -1904,7 +1904,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 right: Box::new(norm_expr.clone()),
               })
               .collect();
-            return Ok(Expr::List(result));
+            return Ok(Expr::List(result.into()));
           }
         }
       }
@@ -1923,7 +1923,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Exact: each element / root
           let result: Vec<Expr> =
             int_vals.iter().map(|x| make_rational(*x, root)).collect();
-          return Ok(Expr::List(result));
+          return Ok(Expr::List(result.into()));
         }
         // Return as xi / Sqrt[sum_sq]
         let result: Vec<Expr> = int_vals
@@ -1941,13 +1941,13 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           })
           .collect();
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
 
       // Float path
       let result: Vec<Expr> =
         vals.iter().map(|x| num_to_expr(x / norm)).collect();
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     _ => {
       // Scalar: Normalize[x] = x / Norm[x]
@@ -1987,7 +1987,7 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|x| unitize_ast(&[x.clone(), args[1].clone()]))
         .collect();
-      return Ok(Expr::List(results?));
+      return Ok(Expr::List(results?.into()));
     }
 
     let x_val =
@@ -2004,7 +2004,7 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Non-numeric arguments remain unevaluated.
     return Ok(Expr::FunctionCall {
       name: "Unitize".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2016,11 +2016,11 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, InterpreterError> =
         items.iter().map(|x| unitize_ast(&[x.clone()])).collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "Unitize".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2248,7 +2248,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Accuracy".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -2278,7 +2278,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // call symbolic rather than guess.
             return Ok(Expr::FunctionCall {
               name: "Accuracy".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -2303,7 +2303,7 @@ fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
   use crate::syntax::BinaryOperator;
   let plus_args: Vec<Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
-      args.clone()
+      args.to_vec()
     }
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
@@ -2351,7 +2351,7 @@ fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: others,
+        args: others.into(),
       }
     };
     Some((true, coeff))
@@ -2410,7 +2410,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
           sqrt_arg.clone(),
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)],
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
           },
         ))
       }
@@ -2528,7 +2528,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
           Ok(r) => r,
           Err(_) => Expr::FunctionCall {
             name: "Times".to_string(),
-            args: expanded,
+            args: expanded.into(),
           },
         };
       }
@@ -2611,7 +2611,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
               left: right.clone(),
               right: Box::new(Expr::Integer(-1)),
             },
-          ],
+          ].into(),
         },
         _ => expanded_arg,
       };
@@ -2623,7 +2623,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
           .map(|f| {
             power_expand_recursive(&Expr::FunctionCall {
               name: "Log".to_string(),
-              args: vec![f.clone()],
+              args: vec![f.clone()].into(),
             })
           })
           .collect();
@@ -2631,7 +2631,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
           Ok(r) => r,
           Err(_) => Expr::FunctionCall {
             name: "Plus".to_string(),
-            args: log_terms,
+            args: log_terms.into(),
           },
         };
       }
@@ -2640,7 +2640,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
       if let Some((base, exp)) = extract_power(&expanded_arg) {
         let log_expr = Expr::FunctionCall {
           name: "Log".to_string(),
-          args: vec![base],
+          args: vec![base].into(),
         };
         // Evaluate Log[base] to simplify cases like Log[E] -> 1
         let log_base = crate::evaluator::evaluate_expr_to_expr(&log_expr)
@@ -2650,7 +2650,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
           Ok(r) => r,
           Err(_) => Expr::FunctionCall {
             name: "Log".to_string(),
-            args: vec![expanded_arg],
+            args: vec![expanded_arg].into(),
           },
         };
       }
@@ -2658,7 +2658,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
       // Evaluate Log to simplify cases like Log[E] -> 1, Log[1] -> 0
       let log_expr = Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![expanded_arg.clone()],
+        args: vec![expanded_arg.clone()].into(),
       };
       crate::evaluator::evaluate_expr_to_expr(&log_expr).unwrap_or(log_expr)
     }
@@ -2667,7 +2667,7 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         args.iter().map(power_expand_recursive).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
@@ -2707,7 +2707,7 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
     });
   }
-  Ok(Expr::List(vars))
+  Ok(Expr::List(vars.into()))
 }
 
 pub fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
@@ -2784,7 +2784,7 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "LinearRecurrence".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2793,7 +2793,7 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LinearRecurrence".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2803,7 +2803,7 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LinearRecurrence".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2817,7 +2817,7 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "LinearRecurrence".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2829,14 +2829,14 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "LinearRecurrence".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LinearRecurrence".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2865,8 +2865,8 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match range {
-    None => Ok(Expr::List(seq[..total_n].to_vec())),
-    Some((nmin, nmax)) => Ok(Expr::List(seq[nmin - 1..nmax].to_vec())),
+    None => Ok(Expr::List(seq[..total_n].to_vec().into())),
+    Some((nmin, nmax)) => Ok(Expr::List(seq[nmin - 1..nmax].to_vec().into())),
   }
 }
 
@@ -3099,7 +3099,7 @@ pub fn fourier_impl(
       ));
       return Ok(Expr::FunctionCall {
         name: func_name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3117,7 +3117,7 @@ pub fn fourier_impl(
       ));
       return Ok(Expr::FunctionCall {
         name: func_name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   }
@@ -3136,7 +3136,7 @@ pub fn fourier_impl(
     .map(|&(re, im)| fourier_result_to_expr(re, im, any_complex))
     .collect();
 
-  Ok(Expr::List(exprs))
+  Ok(Expr::List(exprs.into()))
 }
 
 /// Fourier[list] or Fourier[list, opts] - Discrete Fourier transform
@@ -3183,7 +3183,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Ok(Expr::FunctionCall {
       name: "NSum".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3195,7 +3195,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NSum".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3205,7 +3205,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NSum".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3213,7 +3213,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.len() < 3 {
     return Ok(Expr::FunctionCall {
       name: "NSum".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3222,7 +3222,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "NSum".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3251,7 +3251,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "NSum".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -3285,7 +3285,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "NSum".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3301,7 +3301,7 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "NSum".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -3316,7 +3316,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Ok(Expr::FunctionCall {
       name: "NProduct".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3328,7 +3328,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NProduct".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3338,7 +3338,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NProduct".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3346,7 +3346,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if items.len() < 3 {
     return Ok(Expr::FunctionCall {
       name: "NProduct".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3355,7 +3355,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "NProduct".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3365,7 +3365,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "NProduct".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3381,7 +3381,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "NProduct".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -3900,7 +3900,7 @@ pub fn list_fourier_sequence_transform_ast(
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "ListFourierSequenceTransform".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3909,13 +3909,13 @@ pub fn list_fourier_sequence_transform_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ListFourierSequenceTransform".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   if list.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let omega = &args[1];
@@ -3944,7 +3944,7 @@ pub fn list_fourier_sequence_transform_ast(
           Expr::Identifier("I".to_string()),
           omega.clone(),
           k_expr,
-        ],
+        ].into(),
       };
       let exp_term = Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -3969,7 +3969,7 @@ pub fn list_fourier_sequence_transform_ast(
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   };
 
@@ -3985,7 +3985,7 @@ pub fn window_function_ast(
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4010,7 +4010,7 @@ pub fn window_function_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4054,7 +4054,7 @@ pub fn window_function_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4101,7 +4101,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
     return Ok(Expr::FunctionCall {
       name: "BandpassFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4111,7 +4111,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BandpassFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4124,7 +4124,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "BandpassFilter".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -4133,7 +4133,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "BandpassFilter".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -4142,7 +4142,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BandpassFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4193,7 +4193,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Symbolic path: convolve symbolically
   let result = convolve_edge_padded_symbolic(items, &kernel);
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Compute the bandpass FIR kernel of length n using windowed-sinc with exact Hamming window.
@@ -4279,7 +4279,7 @@ fn convolve_edge_padded_symbolic(data: &[Expr], kernel: &[f64]) -> Vec<Expr> {
       }
       terms.push(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Real(coeff), data[i].clone()],
+        args: vec![Expr::Real(coeff), data[i].clone()].into(),
       });
     }
     let expr = if terms.is_empty() {
@@ -4289,7 +4289,7 @@ fn convolve_edge_padded_symbolic(data: &[Expr], kernel: &[f64]) -> Vec<Expr> {
     } else {
       Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: terms,
+        args: terms.into(),
       }
     };
     // Evaluate the symbolic expression to simplify
@@ -4307,7 +4307,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
     return Ok(Expr::FunctionCall {
       name: "LowpassFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4316,7 +4316,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LowpassFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4326,7 +4326,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "LowpassFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4364,7 +4364,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if data.len() != items.len() {
     return Ok(Expr::FunctionCall {
       name: "LowpassFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4409,7 +4409,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
     return Ok(Expr::FunctionCall {
       name: "HighpassFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4418,7 +4418,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "HighpassFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4428,7 +4428,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "HighpassFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4466,7 +4466,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if data.len() != items.len() {
     return Ok(Expr::FunctionCall {
       name: "HighpassFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4506,7 +4506,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
     return Ok(Expr::FunctionCall {
       name: "BandstopFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4515,7 +4515,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BandstopFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4527,7 +4527,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "BandstopFilter".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -4536,7 +4536,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "BandstopFilter".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -4545,7 +4545,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BandstopFilter".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4584,7 +4584,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if data.len() != items.len() {
     return Ok(Expr::FunctionCall {
       name: "BandstopFilter".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -4672,9 +4672,9 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
         Expr::Real(sum_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())],
+          args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())].into(),
         },
-      ],
+      ].into(),
     })
   }
 }
@@ -4841,7 +4841,7 @@ fn apply_fn_to_complex(fnexpr: &Expr, zr: f64, zi: f64) -> Option<(f64, f64)> {
       } else {
         Expr::FunctionCall {
           name: "Complex".to_string(),
-          args: vec![Expr::Real(zr), Expr::Real(zi)],
+          args: vec![Expr::Real(zr), Expr::Real(zi)].into(),
         }
       };
       let substituted = crate::syntax::substitute_slots(body, &[value]);

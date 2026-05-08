@@ -159,7 +159,7 @@ pub fn dispatch_attributes(
           protected_syms.push(Expr::String(sym.clone()));
         }
       }
-      return Some(Ok(Expr::List(protected_syms)));
+      return Some(Ok(Expr::List(protected_syms.into())));
     }
     "Unprotect" => {
       let mut unprotected_syms = Vec::new();
@@ -213,7 +213,7 @@ pub fn dispatch_attributes(
           }
         }
       }
-      return Some(Ok(Expr::List(unprotected_syms)));
+      return Some(Ok(Expr::List(unprotected_syms.into())));
     }
     "Clear" => {
       for arg in args {

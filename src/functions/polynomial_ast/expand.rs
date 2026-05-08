@@ -56,7 +56,7 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   // Thread over Rules
   if let Expr::Rule {
@@ -100,7 +100,7 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// sit *after* the expanded contributions inside the y^0 group.
 fn expand_with_pattern_top(expr: &Expr, pat: &Expr, var: Option<&str>) -> Expr {
   let plus_args: Option<Vec<Expr>> = match expr {
-    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.clone()),
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.to_vec()),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,
@@ -163,7 +163,7 @@ fn expand_with_pattern_top(expr: &Expr, pat: &Expr, var: Option<&str>) -> Expr {
   }
   Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: final_terms,
+    args: final_terms.into(),
   }
 }
 
@@ -213,7 +213,7 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
     return expr.clone();
   }
   let plus_args: Option<Vec<Expr>> = match expr {
-    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.clone()),
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.to_vec()),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,
@@ -240,11 +240,11 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
     }
     return Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: flat,
+      args: flat.into(),
     };
   }
   let times_args: Option<Vec<Expr>> = match expr {
-    Expr::FunctionCall { name, args } if name == "Times" => Some(args.clone()),
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -273,7 +273,7 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
         .map(|(_, e)| e.clone())
         .collect();
       let plus_terms: Vec<Expr> = match &plus_factor {
-        Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+        Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
         Expr::BinaryOp {
           op: BinaryOperator::Plus,
           left,
@@ -298,7 +298,7 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
         new_factors.push(t.clone());
         let times = Expr::FunctionCall {
           name: "Times".to_string(),
-          args: new_factors,
+          args: new_factors.into(),
         };
         let evaluated =
           crate::evaluator::evaluate_expr_to_expr(&times).unwrap_or(times);
@@ -307,7 +307,7 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
       }
       return Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: new_terms,
+        args: new_terms.into(),
       };
     }
     return expr.clone();
@@ -488,7 +488,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       }
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: reduced,
+        args: reduced.into(),
       }
     }
     // Power: only reduce the base (the exponent is a structural integer).
@@ -504,7 +504,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![reduce_coefficients_mod(&args[0], m), args[1].clone()],
+        args: vec![reduce_coefficients_mod(&args[0], m), args[1].clone()].into(),
       }
     }
     _ => reduce_term_mod(expr, m),
@@ -575,13 +575,13 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
           }
           return Expr::FunctionCall {
             name: "Times".to_string(),
-            args: new_args,
+            args: new_args.into(),
           };
         }
         new_args.insert(0, Expr::Integer(r));
         return Expr::FunctionCall {
           name: "Times".to_string(),
-          args: new_args,
+          args: new_args.into(),
         };
       }
       // Non-Integer leading factor: recurse into each arg.
@@ -592,7 +592,7 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
       }
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: reduced,
+        args: reduced.into(),
       }
     }
     // Plus or Power (which can contain integer coefficients in a subtree)
@@ -859,7 +859,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
         }
         Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![base, exp],
+          args: vec![base, exp].into(),
         }
       }
       _ => expr.clone(),
@@ -1408,7 +1408,7 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
         let expanded = expand_power(&left_exp, pos_exp);
         return Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![expanded, Expr::Integer(-1)],
+          args: vec![expanded, Expr::Integer(-1)].into(),
         };
       }
       // After recursively expanding sub-expressions, expand at this level
@@ -1481,16 +1481,16 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
           let expanded = expand_power(&expanded_args[0], pos_exp);
           Expr::FunctionCall {
             name: "Power".to_string(),
-            args: vec![expanded, Expr::Integer(-1)],
+            args: vec![expanded, Expr::Integer(-1)].into(),
           }
         }
         "Plus" | "Times" | "Power" => expand_and_combine(&Expr::FunctionCall {
           name: name.clone(),
-          args: expanded_args,
+          args: expanded_args.into(),
         }),
         _ => Expr::FunctionCall {
           name: name.clone(),
-          args: expanded_args,
+          args: expanded_args.into(),
         },
       }
     }
@@ -1515,7 +1515,7 @@ pub fn expand_numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| expand_numerator_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   Ok(expand_numerator_recursive(&args[0]))
@@ -1582,7 +1582,7 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
         args.iter().map(expand_numerator_in_product).collect();
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
 
@@ -1661,7 +1661,7 @@ pub fn expand_denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| expand_denominator_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   Ok(expand_denominator_recursive(&args[0]))
@@ -1735,7 +1735,7 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       // The expansion absorbs the positive exponent, so always use -1
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![expanded, Expr::Integer(-1)],
+        args: vec![expanded, Expr::Integer(-1)].into(),
       }
     }
 
@@ -1747,12 +1747,12 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       let pos_exp = negate_expr(&args[1]);
       let expanded = expand_and_combine(&Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![args[0].clone(), pos_exp],
+        args: vec![args[0].clone(), pos_exp].into(),
       });
       // The expansion absorbs the positive exponent, so always use -1
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![expanded, Expr::Integer(-1)],
+        args: vec![expanded, Expr::Integer(-1)].into(),
       }
     }
 

@@ -34,7 +34,7 @@ pub fn minimal_polynomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Return unevaluated
       Ok(Expr::FunctionCall {
         name: "MinimalPolynomial".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -128,7 +128,7 @@ fn compute_minpoly_coeffs(
         left: Box::new(sqrt_arg.clone()),
         right: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)],
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
         }),
       };
       compute_minpoly_coeffs(&power_expr)

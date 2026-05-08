@@ -17,14 +17,14 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Extract equations
   let equations: Vec<Expr> = match &args[0] {
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     // Single equation
     eq @ Expr::Comparison { .. } => vec![eq.clone()],
     eq @ Expr::FunctionCall { name, .. } if name == "Equal" => vec![eq.clone()],
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Eliminate".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -40,7 +40,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           return Ok(Expr::FunctionCall {
             name: "Eliminate".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -49,7 +49,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Eliminate".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -77,7 +77,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Multiple equations: join with And
     Ok(Expr::FunctionCall {
       name: "And".to_string(),
-      args: eqs,
+      args: eqs.into(),
     })
   }
 }
@@ -308,7 +308,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "SolveAlways".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -316,17 +316,17 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if vars.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "SolveAlways".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
   // Handle True/False (e.g. 0 == 0 evaluates to True before reaching us)
   match eqn {
     Expr::Identifier(s) if s == "True" => {
-      return Ok(Expr::List(vec![Expr::List(vec![])]));
+      return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
     }
     Expr::Identifier(s) if s == "False" => {
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     }
     _ => {}
   }
@@ -362,7 +362,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   leaf_coeffs.retain(|s| s != "0");
 
   if leaf_coeffs.is_empty() {
-    return Ok(Expr::List(vec![Expr::List(vec![])]));
+    return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
   }
 
   // Now solve: each leaf coefficient must equal zero.
@@ -418,7 +418,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         continue;
       }
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     } else if free_vars_here.len() == 1 {
       // Single free variable, try Solve
       let fv = free_vars_here.iter().next().unwrap().clone();
@@ -525,7 +525,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     a_name.cmp(b_name)
   });
 
-  Ok(Expr::List(vec![Expr::List(rules)]))
+  Ok(Expr::List(vec![Expr::List(rules.into())].into()))
 }
 
 /// Recursively extract leaf coefficients from a polynomial expression.
@@ -805,7 +805,12 @@ fn collect_free_vars(expr: &Expr, vars: &mut Vec<String>) {
       collect_free_vars(right, vars);
     }
     Expr::UnaryOp { operand, .. } => collect_free_vars(operand, vars),
-    Expr::List(items) | Expr::CompoundExpr(items) => {
+    Expr::List(items) => {
+      for item in items {
+        collect_free_vars(item, vars);
+      }
+    }
+    Expr::CompoundExpr(items) => {
       for item in items {
         collect_free_vars(item, vars);
       }

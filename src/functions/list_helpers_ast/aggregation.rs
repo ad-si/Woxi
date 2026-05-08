@@ -14,7 +14,7 @@ pub fn all_true_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "AllTrue".to_string(),
-        args: vec![list.clone(), pred.clone()],
+        args: vec![list.clone(), pred.clone()].into(),
       });
     }
   };
@@ -40,7 +40,7 @@ pub fn any_true_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "AnyTrue".to_string(),
-        args: vec![list.clone(), pred.clone()],
+        args: vec![list.clone(), pred.clone()].into(),
       });
     }
   };
@@ -66,7 +66,7 @@ pub fn none_true_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NoneTrue".to_string(),
-        args: vec![list.clone(), pred.clone()],
+        args: vec![list.clone(), pred.clone()].into(),
       });
     }
   };
@@ -123,7 +123,7 @@ pub fn all_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "AllMatch".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -156,7 +156,7 @@ pub fn any_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "AnyMatch".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -186,7 +186,7 @@ pub fn count_by_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CountBy".to_string(),
-        args: vec![list.clone(), func.clone()],
+        args: vec![list.clone(), func.clone()].into(),
       });
     }
   };
@@ -230,7 +230,7 @@ pub fn group_by_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "GroupBy".to_string(),
-        args: vec![list.clone(), func.clone()],
+        args: vec![list.clone(), func.clone()].into(),
       });
     }
   };
@@ -256,7 +256,7 @@ pub fn group_by_ast(
     .map(|k| {
       let items = groups.remove(&k).unwrap();
       let key_expr = crate::syntax::string_to_expr(&k).unwrap_or(Expr::Raw(k));
-      (key_expr, Expr::List(items))
+      (key_expr, Expr::List(items.into()))
     })
     .collect();
 
@@ -270,7 +270,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Median".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
@@ -278,13 +278,13 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   if items.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Median".to_string(),
-      args: vec![Expr::List(vec![])],
+      args: vec![Expr::List(vec![].into())].into(),
     });
   }
 
   // Check for list-of-lists (matrix) input → columnwise median
   if items.iter().all(|item| matches!(item, Expr::List(_))) {
-    let rows: Vec<&Vec<Expr>> = items
+    let rows: Vec<&crate::ExprList> = items
       .iter()
       .filter_map(|item| {
         if let Expr::List(row) = item {
@@ -300,10 +300,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         let mut result = Vec::new();
         for col in 0..ncols {
           let column: Vec<Expr> = rows.iter().map(|r| r[col].clone()).collect();
-          let col_median = median_ast(&Expr::List(column))?;
+          let col_median = median_ast(&Expr::List(column.into()))?;
           result.push(col_median);
         }
-        return Ok(Expr::List(result));
+        return Ok(Expr::List(result.into()));
       }
     }
   }
@@ -343,7 +343,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         let g = gcd(sum.abs(), 2);
         Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(sum / g), Expr::Integer(2 / g)],
+          args: vec![Expr::Integer(sum / g), Expr::Integer(2 / g)].into(),
         })
       }
     }
@@ -359,7 +359,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       } else {
         return Ok(Expr::FunctionCall {
           name: "Median".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         });
       }
     }
@@ -414,7 +414,7 @@ pub fn take_largest_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeLargest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
+        args: vec![list.clone(), Expr::Integer(n)].into(),
       });
     }
   };
@@ -431,7 +431,7 @@ pub fn take_largest_ast(
   if n as usize > keyed.len() {
     return Ok(Expr::FunctionCall {
       name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)],
+      args: vec![list.clone(), Expr::Integer(n)].into(),
     });
   }
 
@@ -441,7 +441,7 @@ pub fn take_largest_ast(
   let result: Vec<Expr> =
     keyed.into_iter().take(n as usize).map(|(_, e)| e).collect();
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based TakeLargest with explicit ExcludedForms option.
@@ -459,7 +459,7 @@ pub fn take_largest_excluded_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeLargest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
+        args: vec![list.clone(), Expr::Integer(n)].into(),
       });
     }
   };
@@ -477,14 +477,14 @@ pub fn take_largest_excluded_ast(
   if n as usize > filtered.len() {
     return Ok(Expr::FunctionCall {
       name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)],
+      args: vec![list.clone(), Expr::Integer(n)].into(),
     });
   }
 
   let mut sorted = filtered;
   sorted.sort_by(|a, b| super::sorting::canonical_cmp(b, a));
   sorted.truncate(n as usize);
-  Ok(Expr::List(sorted))
+  Ok(Expr::List(sorted.into()))
 }
 
 /// AST-based TakeSmallest with explicit ExcludedForms option.
@@ -498,7 +498,7 @@ pub fn take_smallest_excluded_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeSmallest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
+        args: vec![list.clone(), Expr::Integer(n)].into(),
       });
     }
   };
@@ -516,14 +516,14 @@ pub fn take_smallest_excluded_ast(
   if n as usize > filtered.len() {
     return Ok(Expr::FunctionCall {
       name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)],
+      args: vec![list.clone(), Expr::Integer(n)].into(),
     });
   }
 
   let mut sorted = filtered;
   sorted.sort_by(super::sorting::canonical_cmp);
   sorted.truncate(n as usize);
-  Ok(Expr::List(sorted))
+  Ok(Expr::List(sorted.into()))
 }
 
 /// AST-based TakeSmallest: take n smallest elements.
@@ -539,7 +539,7 @@ pub fn take_smallest_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeSmallest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
+        args: vec![list.clone(), Expr::Integer(n)].into(),
       });
     }
   };
@@ -555,7 +555,7 @@ pub fn take_smallest_ast(
   if n as usize > keyed.len() {
     return Ok(Expr::FunctionCall {
       name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)],
+      args: vec![list.clone(), Expr::Integer(n)].into(),
     });
   }
 
@@ -565,7 +565,7 @@ pub fn take_smallest_ast(
   let result: Vec<Expr> =
     keyed.into_iter().take(n as usize).map(|(_, e)| e).collect();
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based MinMax: return {min, max} of a list.
@@ -579,7 +579,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Ok(Expr::FunctionCall {
       name: "MinMax".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let list = &args[0];
@@ -588,7 +588,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MinMax".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -600,7 +600,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         op: crate::syntax::UnaryOperator::Minus,
         operand: Box::new(Expr::Identifier("Infinity".to_string())),
       },
-    ]));
+    ].into()));
   }
 
   // Evaluate Min and Max through the normal evaluator so the result keeps
@@ -618,7 +618,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If no expansion argument was provided, return {min, max} directly.
   let Some(expansion) = args.get(1) else {
-    return Ok(Expr::List(vec![min_expr, max_expr]));
+    return Ok(Expr::List(vec![min_expr, max_expr].into()));
   };
 
   // Extract (dMin, dMax) from the expansion argument.
@@ -634,13 +634,13 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           max_expr.clone(),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), min_expr.clone()],
+            args: vec![Expr::Integer(-1), min_expr.clone()].into(),
           },
-        ],
+        ].into(),
       };
       let scaled = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![a[0].clone(), range],
+        args: vec![a[0].clone(), range].into(),
       };
       let scaled = crate::evaluator::evaluate_expr_to_expr(&scaled)?;
       (scaled.clone(), scaled)
@@ -654,16 +654,16 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       min_expr,
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), d_min],
+        args: vec![Expr::Integer(-1), d_min].into(),
       },
-    ],
+    ].into(),
   })?;
   let new_max = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![max_expr, d_max],
+    args: vec![max_expr, d_max].into(),
   })?;
 
-  Ok(Expr::List(vec![new_min, new_max]))
+  Ok(Expr::List(vec![new_min, new_max].into()))
 }
 
 /// Gather[list] - gathers elements into sublists of identical elements
@@ -688,7 +688,7 @@ pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
 }
 
 /// GatherBy[list, f] - gathers elements into sublists by applying f.
@@ -730,7 +730,7 @@ pub fn gather_by_ast(
     }
   }
   Ok(Expr::List(
-    groups.into_iter().map(|(_, v)| Expr::List(v)).collect(),
+    groups.into_iter().map(|(_, v)| Expr::List(v.into())).collect(),
   ))
 }
 
@@ -740,7 +740,7 @@ fn gather_by_nested(
 ) -> Result<Expr, InterpreterError> {
   if funcs.is_empty() {
     // No further grouping: return the items as a flat list unchanged.
-    return Ok(Expr::List(items.to_vec()));
+    return Ok(Expr::List(items.to_vec().into()));
   }
   let func = &funcs[0];
   let rest = &funcs[1..];
@@ -758,12 +758,12 @@ fn gather_by_nested(
   let mut result: Vec<Expr> = Vec::with_capacity(groups.len());
   for (_, group) in groups {
     if rest.is_empty() {
-      result.push(Expr::List(group));
+      result.push(Expr::List(group.into()));
     } else {
       result.push(gather_by_nested(&group, rest)?);
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Split[list] - splits into sublists of identical consecutive elements
@@ -777,7 +777,7 @@ pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
   for item in items.iter().skip(1) {
@@ -790,7 +790,7 @@ pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
 }
 
 /// Split[list, test] - splits list where consecutive elements satisfy test function
@@ -803,12 +803,12 @@ pub fn split_with_test_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Split".to_string(),
-        args: vec![list.clone(), test.clone()],
+        args: vec![list.clone(), test.clone()].into(),
       });
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
   for item in items.iter().skip(1) {
@@ -824,7 +824,7 @@ pub fn split_with_test_ast(
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
 }
 
 /// SplitBy[list, f] - splits into sublists of consecutive elements with same f value
@@ -845,10 +845,10 @@ pub fn split_by_ast(
     // Apply the first function to get a top-level partition, then recurse
     // on each group with the rest of the functions.
     let first = &funcs[0];
-    let rest_funcs = Expr::List(funcs[1..].to_vec());
+    let rest_funcs = Expr::List(funcs[1..].to_vec().into());
     let grouped = split_by_ast(first, list)?;
     let groups: Vec<Expr> = match &grouped {
-      Expr::List(items) => items.clone(),
+      Expr::List(items) => items.to_vec(),
       _ => return Ok(grouped),
     };
     let mut result = Vec::with_capacity(groups.len());
@@ -859,7 +859,7 @@ pub fn split_by_ast(
         result.push(split_by_ast(&rest_funcs, &g)?);
       }
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   let items = match list {
@@ -871,7 +871,7 @@ pub fn split_by_ast(
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let mut prev_key = apply_func_ast(func, &items[0])?;
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
@@ -886,7 +886,7 @@ pub fn split_by_ast(
       prev_key = key;
     }
   }
-  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
 }
 
 /// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
@@ -897,7 +897,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BinCounts".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -908,7 +908,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (min_val, max_val, dx) = if args.len() == 1 {
     // BinCounts[data] - default dx=1, aligned to integer boundaries
     if values.is_empty() {
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     }
     let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -927,7 +927,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // BinCounts[data, dx]
       Expr::Integer(dx_int) => {
         if values.is_empty() {
-          return Ok(Expr::List(vec![]));
+          return Ok(Expr::List(vec![].into()));
         }
         let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
         let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -944,7 +944,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Expr::Real(dx_f) => {
         if values.is_empty() {
-          return Ok(Expr::List(vec![]));
+          return Ok(Expr::List(vec![].into()));
         }
         let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
         let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -966,7 +966,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "BinCounts".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -975,7 +975,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "BinCounts".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -984,7 +984,7 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "BinCounts".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -993,14 +993,14 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "BinCounts".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
   } else {
     return Ok(Expr::FunctionCall {
       name: "BinCounts".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   };
 
@@ -1032,7 +1032,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BinLists".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1045,7 +1045,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (min_val, max_val, dx) = if args.len() == 1 {
     if values.is_empty() {
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     }
     let data_min = values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
     let data_max = values
@@ -1066,7 +1066,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       Expr::Integer(dx_int) => {
         if values.is_empty() {
-          return Ok(Expr::List(vec![]));
+          return Ok(Expr::List(vec![].into()));
         }
         let data_min =
           values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
@@ -1087,7 +1087,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Expr::Real(dx_f) => {
         if values.is_empty() {
-          return Ok(Expr::List(vec![]));
+          return Ok(Expr::List(vec![].into()));
         }
         let data_min =
           values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
@@ -1112,7 +1112,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "BinLists".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1121,7 +1121,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "BinLists".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1130,7 +1130,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "BinLists".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1139,14 +1139,14 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "BinLists".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
   } else {
     return Ok(Expr::FunctionCall {
       name: "BinLists".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   };
 
@@ -1167,7 +1167,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(bins.into_iter().map(Expr::List).collect()))
+  Ok(Expr::List(bins.into_iter().map(|v| Expr::List(v.into())).collect()))
 }
 
 /// Round a positive value to the nearest "nice" number (1, 2, 5, 10, 20, 50, …)
@@ -1235,7 +1235,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "HistogramList".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1243,7 +1243,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values: Vec<f64> = data.iter().filter_map(expr_to_f64).collect();
 
   if values.is_empty() {
-    return Ok(Expr::List(vec![Expr::List(vec![]), Expr::List(vec![])]));
+    return Ok(Expr::List(vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into()));
   }
 
   let (min_val, max_val, dx) = if args.len() == 1 {
@@ -1283,7 +1283,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "HistogramList".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1303,7 +1303,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "HistogramList".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1312,7 +1312,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "HistogramList".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1321,7 +1321,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "HistogramList".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -1330,14 +1330,14 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "HistogramList".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
   } else {
     return Ok(Expr::FunctionCall {
       name: "HistogramList".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   };
 
@@ -1349,7 +1349,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let num_bins = ((max_val - min_val) / dx).round() as usize;
   if num_bins == 0 {
-    return Ok(Expr::List(vec![Expr::List(vec![]), Expr::List(vec![])]));
+    return Ok(Expr::List(vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into()));
   }
 
   let mut counts = vec![0i128; num_bins];
@@ -1368,9 +1368,9 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(vec![
-    Expr::List(edges),
+    Expr::List(edges.into()),
     Expr::List(counts.into_iter().map(Expr::Integer).collect()),
-  ]))
+  ].into()))
 }
 
 /// TakeLargestBy[list, f, n] - take the n largest elements sorted by f
@@ -1385,7 +1385,7 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeLargestBy".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1395,7 +1395,7 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeLargestBy".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1405,7 +1405,7 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for item in list {
     let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Apply".to_string(),
-      args: vec![f.clone(), Expr::List(vec![item.clone()])],
+      args: vec![f.clone(), Expr::List(vec![item.clone()].into())].into(),
     })?;
     with_keys.push((key, item.clone()));
   }
@@ -1424,7 +1424,7 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let result: Vec<Expr> =
     with_keys.into_iter().take(n).map(|(_, v)| v).collect();
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// TakeSmallestBy[list, f, n] - take the n smallest elements sorted by f
@@ -1439,7 +1439,7 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeSmallestBy".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1449,7 +1449,7 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeSmallestBy".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1459,7 +1459,7 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for item in list {
     let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Apply".to_string(),
-      args: vec![f.clone(), Expr::List(vec![item.clone()])],
+      args: vec![f.clone(), Expr::List(vec![item.clone()].into())].into(),
     })?;
     with_keys.push((key, item.clone()));
   }
@@ -1478,7 +1478,7 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let result: Vec<Expr> =
     with_keys.into_iter().take(n).map(|(_, v)| v).collect();
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AllSameBy[list, f] - True if f[x] gives the same value for all elements
@@ -1493,7 +1493,7 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "AllSameBy".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1529,12 +1529,12 @@ pub fn clustering_components_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ClusteringComponents".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let mut values: Vec<f64> = Vec::with_capacity(items.len());
   for item in &items {
@@ -1543,7 +1543,7 @@ pub fn clustering_components_ast(
     } else {
       return Ok(Expr::FunctionCall {
         name: "ClusteringComponents".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   }
@@ -1554,7 +1554,7 @@ pub fn clustering_components_ast(
       (lo.min(*v), hi.max(*v))
     });
   if min == max {
-    return Ok(Expr::List(vec![Expr::Integer(1); values.len()]));
+    return Ok(Expr::List(vec![Expr::Integer(1); values.len()].into()));
   }
   // Find the largest gap between consecutive sorted values.
   let mut sorted = values.clone();
@@ -1575,7 +1575,7 @@ pub fn clustering_components_ast(
     .iter()
     .map(|v| Expr::Integer(if *v <= threshold { 1 } else { 2 }))
     .collect();
-  Ok(Expr::List(labels))
+  Ok(Expr::List(labels.into()))
 }
 
 /// Try to read a `FindClusters` input as `keys -> vals` (single rule
@@ -1592,7 +1592,7 @@ fn extract_rule_style_input(list: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
     && ks.len() == vs.len()
     && !ks.is_empty()
   {
-    return Some((ks.clone(), vs.clone()));
+    return Some((ks.to_vec(), vs.to_vec()));
   }
   // Form: `{k1 -> v1, k2 -> v2, …}` — every list element is a Rule.
   if let Expr::List(items) = list
@@ -1633,16 +1633,16 @@ fn cluster_keys_emit_values(
       None => {
         return Ok(Expr::FunctionCall {
           name: "FindClusters".to_string(),
-          args: vec![raw_input.clone()],
+          args: vec![raw_input.clone()].into(),
         });
       }
     }
   }
   if numeric_keys.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   if numeric_keys.len() == 1 {
-    return Ok(Expr::List(vec![Expr::List(vec![vals[0].clone()])]));
+    return Ok(Expr::List(vec![Expr::List(vec![vals[0].clone()].into())].into()));
   }
   // Locate the largest gap on the *sorted* keys.
   let n = numeric_keys.len();
@@ -1663,7 +1663,7 @@ fn cluster_keys_emit_values(
   }
   // All keys identical — single cluster.
   if max_gap == 0.0 || !max_gap.is_finite() {
-    return Ok(Expr::List(vec![Expr::List(vals.to_vec())]));
+    return Ok(Expr::List(vec![Expr::List(vals.to_vec().into())].into()));
   }
   // Threshold halfway through the largest gap.
   let threshold = numeric_keys[sort_idx[max_gap_pos]] + max_gap / 2.0;
@@ -1678,7 +1678,7 @@ fn cluster_keys_emit_values(
     }
   }
   // wolframscript prints the high-key cluster first.
-  Ok(Expr::List(vec![Expr::List(high), Expr::List(low)]))
+  Ok(Expr::List(vec![Expr::List(high.into()), Expr::List(low.into())].into()))
 }
 
 /// `FindClusters[list]` / `FindClusters[list, k]` — dispatch entry that
@@ -1715,7 +1715,7 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "FindClusters".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1798,12 +1798,12 @@ fn find_clusters_distance_fn(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FindClusters".to_string(),
-        args: raw_args.to_vec(),
+        args: raw_args.to_vec().into(),
       });
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let n = items.len();
   // Union-Find over indices, joining pairs with zero distance.
@@ -1854,8 +1854,8 @@ fn find_clusters_distance_fn(
   // first (later-encountered cluster first).
   groups.sort_by(|a, b| b.0.cmp(&a.0));
   let result: Vec<Expr> =
-    groups.into_iter().map(|(_, g)| Expr::List(g)).collect();
-  Ok(Expr::List(result))
+    groups.into_iter().map(|(_, g)| Expr::List(g.into())).collect();
+  Ok(Expr::List(result.into()))
 }
 
 /// `FindClusters[list, k]` — split a 1-D numeric list into exactly `k`
@@ -1870,14 +1870,14 @@ fn find_clusters_distance_fn(
 fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
   let n = items.len();
   if n == 0 {
-    return Expr::List(vec![]);
+    return Expr::List(vec![].into());
   }
   if k <= 1 {
-    return Expr::List(vec![Expr::List(items.to_vec())]);
+    return Expr::List(vec![Expr::List(items.to_vec().into())].into());
   }
   if k >= n {
     return Expr::List(
-      items.iter().map(|e| Expr::List(vec![e.clone()])).collect(),
+      items.iter().map(|e| Expr::List(vec![e.clone()].into())).collect(),
     );
   }
   let strs: Vec<&str> = items
@@ -1948,10 +1948,10 @@ fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
         .filter(|&i| cluster_of[i] == cid)
         .map(|i| items[i].clone())
         .collect();
-      Expr::List(members)
+      Expr::List(members.into())
     })
     .collect();
-  Expr::List(groups)
+  Expr::List(groups.into())
 }
 
 /// Levenshtein distance between two byte-strings (ASCII fast path).
@@ -1988,20 +1988,20 @@ fn find_clusters_with_k(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FindClusters".to_string(),
-        args: raw_args.to_vec(),
+        args: raw_args.to_vec().into(),
       });
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   if k == 1 {
-    return Ok(Expr::List(vec![Expr::List(items)]));
+    return Ok(Expr::List(vec![Expr::List(items)].into()));
   }
   if k >= items.len() {
     // One element per cluster.
     return Ok(Expr::List(
-      items.into_iter().map(|e| Expr::List(vec![e])).collect(),
+      items.into_iter().map(|e| Expr::List(vec![e].into())).collect(),
     ));
   }
   // Convert items to f64 for gap analysis. If any item isn't numeric,
@@ -2024,7 +2024,7 @@ fn find_clusters_with_k(
     }
     return Ok(Expr::FunctionCall {
       name: "FindClusters".to_string(),
-      args: raw_args.to_vec(),
+      args: raw_args.to_vec().into(),
     });
   }
   // Sort indices by value to find gaps in ascending value order.
@@ -2069,9 +2069,9 @@ fn find_clusters_with_k(
   let result: Vec<Expr> = groups
     .into_iter()
     .filter(|g| !g.is_empty())
-    .map(Expr::List)
+    .map(|v| Expr::List(v.into()))
     .collect();
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// `FindClusters[list]` — partition `list` into clusters, returning each
@@ -2094,12 +2094,12 @@ pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FindClusters".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   // Delegate the labeling step to ClusteringComponents.
   let components = clustering_components_ast(list)?;
@@ -2108,7 +2108,7 @@ pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FindClusters".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
@@ -2123,7 +2123,7 @@ pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       return Ok(Expr::FunctionCall {
         name: "FindClusters".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   }
@@ -2141,7 +2141,7 @@ pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let result: Vec<Expr> = groups
     .into_iter()
     .filter(|g| !g.is_empty())
-    .map(Expr::List)
+    .map(|v| Expr::List(v.into()))
     .collect();
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }

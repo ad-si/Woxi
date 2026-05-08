@@ -19,7 +19,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Decompose".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -34,7 +34,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Not a polynomial, return unevaluated
       return Ok(Expr::FunctionCall {
         name: "Decompose".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -43,7 +43,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n <= 0 {
     // Constant or linear polynomial: return {poly}
     let expr = rational_coeffs_to_expr(&coeffs, &var);
-    return Ok(Expr::List(vec![expr]));
+    return Ok(Expr::List(vec![expr].into()));
   }
 
   // Perform decomposition
@@ -55,7 +55,7 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|c| rational_coeffs_to_expr(c, &var))
     .collect();
 
-  Ok(Expr::List(exprs))
+  Ok(Expr::List(exprs.into()))
 }
 
 // ──── Rational arithmetic helpers ────────────────────────────────────

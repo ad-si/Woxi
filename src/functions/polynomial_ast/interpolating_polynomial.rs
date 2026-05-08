@@ -15,7 +15,7 @@ pub fn interpolating_polynomial_ast(
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "InterpolatingPolynomial".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -24,7 +24,7 @@ pub fn interpolating_polynomial_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "InterpolatingPolynomial".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -50,13 +50,13 @@ pub fn interpolating_polynomial_ast(
             } else {
               return Ok(Expr::FunctionCall {
                 name: "InterpolatingPolynomial".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           } else {
             return Ok(Expr::FunctionCall {
               name: "InterpolatingPolynomial".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -64,13 +64,13 @@ pub fn interpolating_polynomial_ast(
       } else {
         return Ok(Expr::FunctionCall {
           name: "InterpolatingPolynomial".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     } else {
       // {y1,y2,...} — x values are 1,2,3,...
       let xs: Vec<Expr> = (1..=data.len() as i128).map(Expr::Integer).collect();
-      (xs, data)
+      (xs, data.to_vec())
     };
 
   let n = x_vals.len();
@@ -88,9 +88,9 @@ pub fn interpolating_polynomial_ast(
           dd[i].clone(),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), dd[i - 1].clone()],
+            args: vec![Expr::Integer(-1), dd[i - 1].clone()].into(),
           },
-        ],
+        ].into(),
       };
       let denom = Expr::FunctionCall {
         name: "Plus".to_string(),
@@ -98,9 +98,9 @@ pub fn interpolating_polynomial_ast(
           x_vals[i].clone(),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), x_vals[i - j].clone()],
+            args: vec![Expr::Integer(-1), x_vals[i - j].clone()].into(),
           },
-        ],
+        ].into(),
       };
       let divided = Expr::BinaryOp {
         op: BinaryOperator::Divide,
@@ -123,17 +123,17 @@ pub fn interpolating_polynomial_ast(
         var.clone(),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), x_vals[i].clone()],
+          args: vec![Expr::Integer(-1), x_vals[i].clone()].into(),
         },
-      ],
+      ].into(),
     };
     let product = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![x_minus_xi, result],
+      args: vec![x_minus_xi, result].into(),
     };
     result = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: vec![dd[i].clone(), product],
+      args: vec![dd[i].clone(), product].into(),
     };
   }
 

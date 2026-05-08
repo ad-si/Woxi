@@ -13,7 +13,7 @@ pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<Vec<_>, _>>()?;
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     Expr::List(items) => {
@@ -21,7 +21,7 @@ pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|a| map_all_ast(f, a))
         .collect::<Result<Vec<_>, _>>()?;
-      Expr::List(new_items)
+      Expr::List(new_items.into())
     }
     // Atoms: just return as-is (will be wrapped by f below)
     _ => expr.clone(),
@@ -65,7 +65,7 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Distribute".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -100,22 +100,22 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into_iter()
     .map(|combo| {
       if outer_name == "List" {
-        Expr::List(combo)
+        Expr::List(combo.into())
       } else {
         Expr::FunctionCall {
           name: outer_name.clone(),
-          args: combo,
+          args: combo.into(),
         }
       }
     })
     .collect();
 
   let result = if distribute_over == "List" {
-    Expr::List(terms)
+    Expr::List(terms.into())
   } else {
     Expr::FunctionCall {
       name: distribute_over,
-      args: terms,
+      args: terms.into(),
     }
   };
 
@@ -237,8 +237,8 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
 pub fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   match expr {
-    Expr::FunctionCall { name, args } if name == head => args.clone(),
-    Expr::List(items) if head == "List" => items.clone(),
+    Expr::FunctionCall { name, args } if name == head => args.to_vec(),
+    Expr::List(items) if head == "List" => items.to_vec(),
     _ => vec![expr.clone()],
   }
 }
@@ -254,7 +254,7 @@ pub fn apply_map_ast(
         .iter()
         .map(|item| apply_function_to_arg(func, item))
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     Expr::Association(items) => {
       // Map over association applies function to values only
@@ -354,7 +354,7 @@ pub fn apply_map_apply_ast(
     .map(|item| apply_apply_ast(func, item))
     .collect();
 
-  Ok(Expr::List(results?))
+  Ok(Expr::List(results?.into()))
 }
 
 /// Apply Postfix operation on AST (expr // func)
@@ -411,7 +411,7 @@ pub fn apply_function_to_arg(
         ));
         return Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
-          args: vec![arg.clone()],
+          args: vec![arg.clone()].into(),
         });
       }
       let mut substituted = (**body).clone();
@@ -451,7 +451,7 @@ pub fn apply_function_to_arg(
         // ConstantFunction[c][x], not flatten into ConstantFunction[c, x].
         Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
-          args: vec![arg.clone()],
+          args: vec![arg.clone()].into(),
         })
       } else {
         let mut new_args = args.clone();
@@ -724,7 +724,7 @@ pub fn apply_curried_call(
             // Key not found: return Missing["KeyAbsent", k]
             Ok(Expr::FunctionCall {
               name: "Missing".to_string(),
-              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
             })
           }
           _ => {
@@ -961,7 +961,7 @@ pub fn apply_curried_call(
         // Key not found: return Missing["KeyAbsent", key]
         Ok(Expr::FunctionCall {
           name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), args[0].clone()],
+          args: vec![Expr::String("KeyAbsent".to_string()), args[0].clone()].into(),
         })
       } else {
         Ok(Expr::CurriedCall {
@@ -1015,7 +1015,7 @@ fn evaluate_bezier_function(
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "BezierFunction".to_string(),
-      args: func_args.to_vec(),
+      args: func_args.to_vec().into(),
     });
   }
 
@@ -1031,7 +1031,7 @@ fn evaluate_bezier_function(
       } else {
         return Ok(Expr::FunctionCall {
           name: "BezierFunction".to_string(),
-          args: func_args.to_vec(),
+          args: func_args.to_vec().into(),
         });
       }
     }
@@ -1039,7 +1039,7 @@ fn evaluate_bezier_function(
       // Symbolic t: return unevaluated
       return Ok(Expr::FunctionCall {
         name: "BezierFunction".to_string(),
-        args: func_args.to_vec(),
+        args: func_args.to_vec().into(),
       });
     }
   };
@@ -1050,7 +1050,7 @@ fn evaluate_bezier_function(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BezierFunction".to_string(),
-        args: func_args.to_vec(),
+        args: func_args.to_vec().into(),
       });
     }
   };
@@ -1058,7 +1058,7 @@ fn evaluate_bezier_function(
   if points.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "BezierFunction".to_string(),
-      args: func_args.to_vec(),
+      args: func_args.to_vec().into(),
     });
   }
 
@@ -1080,14 +1080,14 @@ fn evaluate_bezier_function(
               } else {
                 return Ok(Expr::FunctionCall {
                   name: "BezierFunction".to_string(),
-                  args: func_args.to_vec(),
+                  args: func_args.to_vec().into(),
                 });
               }
             }
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "BezierFunction".to_string(),
-                args: func_args.to_vec(),
+                args: func_args.to_vec().into(),
               });
             }
           }
@@ -1097,7 +1097,7 @@ fn evaluate_bezier_function(
       _ => {
         return Ok(Expr::FunctionCall {
           name: "BezierFunction".to_string(),
-          args: func_args.to_vec(),
+          args: func_args.to_vec().into(),
         });
       }
     }
@@ -1130,7 +1130,7 @@ fn apply_transformation_function(
     return Ok(Expr::CurriedCall {
       func: Box::new(Expr::FunctionCall {
         name: "TransformationFunction".to_string(),
-        args: vec![matrix.clone()],
+        args: vec![matrix.clone()].into(),
       }),
       args: args.to_vec(),
     });
@@ -1142,7 +1142,7 @@ fn apply_transformation_function(
       return Ok(Expr::CurriedCall {
         func: Box::new(Expr::FunctionCall {
           name: "TransformationFunction".to_string(),
-          args: vec![matrix.clone()],
+          args: vec![matrix.clone()].into(),
         }),
         args: args.to_vec(),
       });
@@ -1155,7 +1155,7 @@ fn apply_transformation_function(
       return Ok(Expr::CurriedCall {
         func: Box::new(Expr::FunctionCall {
           name: "TransformationFunction".to_string(),
-          args: vec![matrix.clone()],
+          args: vec![matrix.clone()].into(),
         }),
         args: args.to_vec(),
       });
@@ -1176,7 +1176,7 @@ fn apply_transformation_function(
         return Ok(Expr::CurriedCall {
           func: Box::new(Expr::FunctionCall {
             name: "TransformationFunction".to_string(),
-            args: vec![matrix.clone()],
+            args: vec![matrix.clone()].into(),
           }),
           args: args.to_vec(),
         });
@@ -1190,12 +1190,12 @@ fn apply_transformation_function(
         .zip(hom.iter())
         .map(|(a, b)| Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![a.clone(), b.clone()],
+          args: vec![a.clone(), b.clone()].into(),
         })
         .collect(),
     };
     result.push(evaluate_expr_to_expr(&dot)?);
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }

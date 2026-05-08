@@ -15,7 +15,7 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         .collect();
       let results: Vec<Expr> =
         results?.into_iter().filter(|e| !is_nothing(e)).collect();
-      Ok(Expr::List(results))
+      Ok(Expr::List(results.into()))
     }
     Expr::Association(items) => {
       // Map over association applies function to values only. When the value
@@ -96,7 +96,7 @@ pub fn map_with_level_ast(
       } else {
         return Ok(Expr::FunctionCall {
           name: "Map".to_string(),
-          args: vec![func.clone(), expr.clone(), level_spec.clone()],
+          args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
         });
       }
     }
@@ -121,7 +121,7 @@ pub fn map_with_level_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "Map".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
       });
     }
     // Also handle FunctionCall("Rule", ...) form
@@ -134,13 +134,13 @@ pub fn map_with_level_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "Map".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
       });
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Map".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
       });
     }
   };
@@ -212,9 +212,9 @@ fn map_at_depth_negative(
     match head_name {
       Some(h) => Expr::FunctionCall {
         name: h.to_string(),
-        args: mapped,
+        args: mapped.into(),
       },
-      None => Expr::List(mapped),
+      None => Expr::List(mapped.into()),
     }
   } else {
     expr.clone()
@@ -260,13 +260,13 @@ fn map_at_depth(
   let result = match expr {
     Expr::List(items) => {
       let mapped: Result<Vec<Expr>, _> = items.iter().map(recurse).collect();
-      Expr::List(mapped?)
+      Expr::List(mapped?.into())
     }
     Expr::FunctionCall { name, args } => {
       let mapped: Result<Vec<Expr>, _> = args.iter().map(recurse).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: mapped?,
+        args: mapped?.into(),
       }
     }
     Expr::Rule {
@@ -409,7 +409,7 @@ pub fn map_at_ast(
     if idx >= pairs.len() {
       return Ok(Expr::FunctionCall {
         name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
       });
     }
     let mut new_pairs = pairs.clone();
@@ -423,7 +423,7 @@ pub fn map_at_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
       });
     }
   };
@@ -459,7 +459,7 @@ pub fn map_at_ast(
       }
       None => Ok(Expr::FunctionCall {
         name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
       }),
     },
     Expr::List(pos_list) => {
@@ -500,7 +500,7 @@ pub fn map_at_ast(
 
       Ok(Expr::FunctionCall {
         name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
       })
     }
     // Span[start, end] or Span[start, end, step]
@@ -550,7 +550,7 @@ pub fn map_at_ast(
     }
     _ => Ok(Expr::FunctionCall {
       name: "MapAt".to_string(),
-      args: vec![func.clone(), list.clone(), pos_spec.clone()],
+      args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
     }),
   }
 }
@@ -566,7 +566,7 @@ pub fn map_indexed_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MapIndexed".to_string(),
-        args: vec![func.clone(), list.clone()],
+        args: vec![func.clone(), list.clone()].into(),
       });
     }
   };
@@ -575,13 +575,13 @@ pub fn map_indexed_ast(
     .iter()
     .enumerate()
     .map(|(i, item)| {
-      let index = Expr::List(vec![Expr::Integer((i + 1) as i128)]);
+      let index = Expr::List(vec![Expr::Integer((i + 1) as i128)].into());
       apply_func_to_two_args(func, item, &index)
     })
     .collect();
   let results: Vec<Expr> =
     results?.into_iter().filter(|e| !is_nothing(e)).collect();
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Detect a Heads -> True option, either as Expr::Rule or Expr::FunctionCall.
@@ -630,7 +630,7 @@ pub fn map_indexed_with_level_ast(
       } else {
         return Ok(Expr::FunctionCall {
           name: "MapIndexed".to_string(),
-          args: vec![func.clone(), expr.clone(), level_spec.clone()],
+          args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
         });
       }
     }
@@ -642,7 +642,7 @@ pub fn map_indexed_with_level_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MapIndexed".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
       });
     }
   };
@@ -689,11 +689,11 @@ fn map_indexed_atoms(
     }
     if !with_heads {
       return Ok(if head_name == "List" {
-        Expr::List(mapped)
+        Expr::List(mapped.into())
       } else {
         Expr::FunctionCall {
           name: head_name,
-          args: mapped,
+          args: mapped.into(),
         }
       });
     }
@@ -711,10 +711,10 @@ fn map_indexed_atoms(
     // the function head; otherwise wrap as `head_expr[mapped...]` so
     // the head expression is still visible in the result.
     return Ok(match &head_expr {
-      Expr::Identifier(n) if n == "List" => Expr::List(mapped),
+      Expr::Identifier(n) if n == "List" => Expr::List(mapped.into()),
       Expr::Identifier(n) => Expr::FunctionCall {
         name: n.clone(),
-        args: mapped,
+        args: mapped.into(),
       },
       _ => Expr::CurriedCall {
         func: Box::new(head_expr),
@@ -742,7 +742,7 @@ pub fn map_indexed_with_level_heads_ast(
         expr.clone(),
         level_spec.clone(),
         heads_opt.clone(),
-      ],
+      ].into(),
     });
   }
   // `{-1}` selects every atomic leaf; with `Heads -> True` each compound
@@ -764,7 +764,7 @@ pub fn map_indexed_with_level_heads_ast(
             expr.clone(),
             level_spec.clone(),
             heads_opt.clone(),
-          ],
+          ].into(),
         });
       }
     }
@@ -781,7 +781,7 @@ pub fn map_indexed_with_level_heads_ast(
           expr.clone(),
           level_spec.clone(),
           heads_opt.clone(),
-        ],
+        ].into(),
       });
     }
   };
@@ -823,11 +823,11 @@ fn map_indexed_at_depth(
       .collect();
     let mapped = mapped?;
     let result = if is_list {
-      Expr::List(mapped)
+      Expr::List(mapped.into())
     } else if let Expr::FunctionCall { name, .. } = expr {
       Expr::FunctionCall {
         name: name.clone(),
-        args: mapped,
+        args: mapped.into(),
       }
     } else {
       unreachable!()
@@ -915,10 +915,10 @@ fn map_indexed_at_depth_heads(
     // If the head is still the original symbol, use List / FunctionCall directly;
     // otherwise produce a CurriedCall so output renders as 'f[List,{0}][...]'.
     let inner_expr = match &head_expr {
-      Expr::Identifier(n) if *n == "List" => Expr::List(mapped),
+      Expr::Identifier(n) if *n == "List" => Expr::List(mapped.into()),
       Expr::Identifier(n) => Expr::FunctionCall {
         name: n.clone(),
-        args: mapped,
+        args: mapped.into(),
       },
       _ => Expr::CurriedCall {
         func: Box::new(head_expr.clone()),
@@ -958,20 +958,20 @@ pub fn map_thread_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MapThread".to_string(),
-        args: vec![func.clone(), lists.clone()],
+        args: vec![func.clone(), lists.clone()].into(),
       });
     }
   };
 
   if outer_items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Get each sublist
   let mut sublists: Vec<Vec<Expr>> = Vec::new();
   for item in outer_items {
     match item {
-      Expr::List(items) => sublists.push(items.clone()),
+      Expr::List(items) => sublists.push(items.to_vec()),
       _ => {
         return Err(InterpreterError::EvaluationError(
           "MapThread: second argument must be a list of lists".into(),
@@ -1002,18 +1002,18 @@ pub fn map_thread_ast(
         results.push(result);
       }
     }
-    Ok(Expr::List(results))
+    Ok(Expr::List(results.into()))
   } else {
     // Recurse: thread at this level, then recurse into sublists
     let mut results = Vec::new();
     for i in 0..len {
       let inner_lists: Vec<Expr> =
         sublists.iter().map(|sl| sl[i].clone()).collect();
-      let inner_arg = Expr::List(inner_lists);
+      let inner_arg = Expr::List(inner_lists.into());
       let result = map_thread_ast(func, &inner_arg, Some(depth - 1))?;
       results.push(result);
     }
-    Ok(Expr::List(results))
+    Ok(Expr::List(results.into()))
   }
 }
 
@@ -1120,10 +1120,10 @@ pub fn thread_ast(
 
       // Wrap result in the thread head
       match thread_head {
-        None => Ok(Expr::List(results)),
+        None => Ok(Expr::List(results.into())),
         Some(head) => {
           if head == "List" {
-            Ok(Expr::List(results))
+            Ok(Expr::List(results.into()))
           } else {
             crate::evaluator::evaluate_function_call_ast(head, &results)
           }
@@ -1174,7 +1174,7 @@ pub fn thread_ast(
               crate::evaluator::evaluate_expr_to_expr(&new_cmp)
             })
             .collect::<Result<_, _>>()?;
-          Ok(Expr::List(results))
+          Ok(Expr::List(results.into()))
         }
         _ => Ok(expr.clone()),
       }
@@ -1221,7 +1221,7 @@ pub fn thread_ast(
               }
             })
             .collect();
-          Ok(Expr::List(results))
+          Ok(Expr::List(results.into()))
         }
         (Some(lhs), None) => {
           // Thread[{a,b} -> c] -> {a -> c, b -> c}
@@ -1241,7 +1241,7 @@ pub fn thread_ast(
               }
             })
             .collect();
-          Ok(Expr::List(results))
+          Ok(Expr::List(results.into()))
         }
         (None, Some(rhs)) => {
           // Thread[a -> {c,d}] -> {a -> c, a -> d}
@@ -1261,7 +1261,7 @@ pub fn thread_ast(
               }
             })
             .collect();
-          Ok(Expr::List(results))
+          Ok(Expr::List(results.into()))
         }
         (None, None) => Ok(expr.clone()),
       }
@@ -1293,7 +1293,7 @@ pub fn through_ast(
           // Not a compound head - return unevaluated
           return Ok(Expr::FunctionCall {
             name: "Through".to_string(),
-            args: vec![expr.clone()],
+            args: vec![expr.clone()].into(),
           });
         }
       };
@@ -1312,7 +1312,7 @@ pub fn through_ast(
         .map(|f| {
           let call = Expr::FunctionCall {
             name: crate::syntax::expr_to_string(f),
-            args: args.clone(),
+            args: args.clone().into(),
           };
           crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
         })
@@ -1320,11 +1320,11 @@ pub fn through_ast(
 
       // Wrap in the head
       if head_name == "List" {
-        Ok(Expr::List(threaded))
+        Ok(Expr::List(threaded.into()))
       } else {
         Ok(Expr::FunctionCall {
           name: head_name.to_string(),
-          args: threaded,
+          args: threaded.into(),
         })
       }
     }
@@ -1336,7 +1336,7 @@ pub fn through_ast(
         // Not a curried call - return unevaluated
         Ok(Expr::FunctionCall {
           name: "Through".to_string(),
-          args: vec![expr.clone()],
+          args: vec![expr.clone()].into(),
         })
       }
     }
@@ -1355,7 +1355,7 @@ pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ComposeList".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1366,5 +1366,5 @@ pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     current = apply_func_ast(func, &current)?;
     result.push(current.clone());
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }

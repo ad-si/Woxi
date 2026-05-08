@@ -191,7 +191,7 @@ pub fn thread_listable(
       .collect();
     results.push(evaluate_function_call_ast(name, &threaded_args)?);
   }
-  Ok(Some(Expr::List(results)))
+  Ok(Some(Expr::List(results.into())))
 }
 
 /// Flatten Sequence[...] arguments into the parent function's argument list.
@@ -362,7 +362,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           Expr::List(vec![
             Expr::Identifier("StandardForm".to_string()),
             Expr::Identifier("TraditionalForm".to_string()),
-          ])
+          ].into())
         });
       if let Expr::List(box_items) = &box_forms {
         items.extend(box_items.iter().cloned());
@@ -378,7 +378,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           }
         }
       });
-      Some(Expr::List(items))
+      Some(Expr::List(items.into()))
     }
     // Fixed list of output forms (superset of $PrintForms that adds
     // Short/Shallow/MatrixForm/…). Matches wolframscript's order.
@@ -427,7 +427,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           Expr::List(vec![
             Expr::Identifier("StandardForm".to_string()),
             Expr::Identifier("TraditionalForm".to_string()),
-          ])
+          ].into())
         });
       if let Expr::List(box_items) = &box_forms {
         items.extend(box_items.iter().cloned());
@@ -443,13 +443,13 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           }
         }
       });
-      Some(Expr::List(items))
+      Some(Expr::List(items.into()))
     }
     // `$BoxForms` — the default box-form list, {StandardForm, TraditionalForm}.
     "$BoxForms" => Some(Expr::List(vec![
       Expr::Identifier("StandardForm".to_string()),
       Expr::Identifier("TraditionalForm".to_string()),
-    ])),
+    ].into())),
     // Fixed list of supported encodings, in wolframscript's exact order.
     // This is a registry-style list, not an alphabetical sort — EUC-JP
     // precedes EUC, ISO8859-10 precedes ISO8859-1, etc.

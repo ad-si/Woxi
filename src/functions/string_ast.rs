@@ -58,7 +58,7 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|e| string_length_ast(&[e.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   if let Expr::String(s) = &args[0] {
     return Ok(Expr::Integer(s.chars().count() as i128));
@@ -68,12 +68,12 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "StringLength::string: String expected at position 1 in {}.",
     crate::syntax::expr_to_string(&Expr::FunctionCall {
       name: "StringLength".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   ));
   Ok(Expr::FunctionCall {
     name: "StringLength".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -92,7 +92,7 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|s| string_take_ast(&[s.clone(), args[1].clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -109,7 +109,7 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|e| string_take_ast(&[args[0].clone(), e.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // StringTake[s, All] - return entire string
@@ -224,7 +224,7 @@ pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| string_drop_ast(&[item.clone(), args[1].clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   let chars: Vec<char> = s.chars().collect();
@@ -346,7 +346,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(Expr::FunctionCall {
       name: "StringJoin".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -455,7 +455,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_split_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
 
@@ -465,7 +465,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .split_whitespace()
       .map(|p| Expr::String(p.to_string()))
       .collect();
-    return Ok(Expr::List(parts));
+    return Ok(Expr::List(parts.into()));
   }
 
   // Extract max parts (3rd arg if integer) and options from remaining args
@@ -507,7 +507,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       re.split(&s).map(|p| Expr::String(p.to_string())).collect()
     };
-    return Ok(Expr::List(trim_empty_strings(parts)));
+    return Ok(Expr::List(trim_empty_strings(parts).into()));
   }
 
   // Collect delimiters: either a single string or a list of strings
@@ -600,7 +600,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result.push(Expr::String(joined));
     parts = result;
   }
-  Ok(Expr::List(parts))
+  Ok(Expr::List(parts.into()))
 }
 
 /// StringStartsQ[s, prefix] - checks if string starts with prefix
@@ -620,7 +620,7 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_starts_q_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
@@ -668,7 +668,7 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_ends_q_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
@@ -717,7 +717,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_contains_q_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
@@ -790,7 +790,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       new_args.extend_from_slice(&args[1..]);
       results.push(string_replace_ast(&new_args)?);
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -1000,7 +1000,7 @@ pub fn to_upper_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| to_upper_case_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::String(s.to_uppercase()))
@@ -1019,7 +1019,7 @@ pub fn to_lower_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| to_lower_case_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::String(s.to_lowercase()))
@@ -1038,12 +1038,12 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| characters_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   let chars: Vec<Expr> =
     s.chars().map(|c| Expr::String(c.to_string())).collect();
-  Ok(Expr::List(chars))
+  Ok(Expr::List(chars.into()))
 }
 
 /// StringRiffle[list] or StringRiffle[list, sep] or StringRiffle[list, {left, sep, right}]
@@ -1154,7 +1154,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_position_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -1238,10 +1238,10 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let s1 = (start + 1) as i128;
     let e1 = (start + len) as i128;
-    positions.push(Expr::List(vec![Expr::Integer(s1), Expr::Integer(e1)]));
+    positions.push(Expr::List(vec![Expr::Integer(s1), Expr::Integer(e1)].into()));
   }
 
-  Ok(Expr::List(positions))
+  Ok(Expr::List(positions.into()))
 }
 
 /// StringMatchQ[s, pattern] - test if string matches pattern
@@ -1263,7 +1263,7 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sub_args.extend(args[1..].iter().cloned());
       result.push(string_match_q_ast(&sub_args)?);
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   let ignore_case = has_ignore_case_option(args);
@@ -1355,7 +1355,7 @@ pub fn string_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| string_reverse_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::String(s.chars().rev().collect()))
@@ -1403,7 +1403,7 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_trim_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
 
@@ -1431,7 +1431,7 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Unrecognized pattern: return unevaluated
     Ok(Expr::FunctionCall {
       name: "StringTrim".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -1454,7 +1454,7 @@ fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
         .collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
@@ -2031,7 +2031,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         i += ch.len_utf8();
       }
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   // Try pattern-based matching first
@@ -2065,7 +2065,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
         .collect()
     };
-    return Ok(Expr::List(matches));
+    return Ok(Expr::List(matches.into()));
   }
 
   // Fall back to literal string matching
@@ -2081,7 +2081,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(matches))
+  Ok(Expr::List(matches.into()))
 }
 
 /// Extract a list of (pattern_regex, back_reference_constraints,
@@ -2246,7 +2246,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // still apply.
         let mb_call = Expr::FunctionCall {
           name: "MakeBoxes".to_string(),
-          args: vec![inner.clone(), Expr::Identifier("TeXForm".to_string())],
+          args: vec![inner.clone(), Expr::Identifier("TeXForm".to_string())].into(),
         };
         if let Ok(box_ast) = crate::evaluator::evaluate_expr_to_expr(&mb_call) {
           return Ok(Expr::String(box_ast_to_tex(&box_ast)));
@@ -2352,7 +2352,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             args[0].clone(),
             Expr::Identifier("StandardForm".to_string()),
-          ],
+          ].into(),
         };
         let box_ast = crate::evaluator::evaluate_expr_to_expr(&make_boxes_call)
           .unwrap_or_else(|_| args[0].clone());
@@ -3730,7 +3730,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       // Check for fraction form: Times[..., Power[den, -1]]
       let full_expr = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       };
       let (num, den) =
         crate::functions::polynomial_ast::together::extract_num_den(&full_expr);
@@ -3866,7 +3866,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if args.len() == 3 {
       let wrapped = crate::syntax::Expr::FunctionCall {
         name: crate::syntax::expr_to_string(&args[2]),
-        args: vec![interpreted],
+        args: vec![interpreted].into(),
       };
       return crate::evaluator::evaluate_expr_to_expr(&wrapped);
     }
@@ -3879,7 +3879,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 3 {
     let wrapped = crate::syntax::Expr::FunctionCall {
       name: crate::syntax::expr_to_string(&args[2]),
-      args: vec![evaluated],
+      args: vec![evaluated].into(),
     };
     return crate::evaluator::evaluate_expr_to_expr(&wrapped);
   }
@@ -3939,7 +3939,7 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_pad_left_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -3997,7 +3997,7 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_pad_right_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -4049,7 +4049,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|s| string_count_ast(&[s.clone(), args[1].clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -4090,7 +4090,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         string_free_q_ast(&call)
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -4166,20 +4166,20 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
          expected at position 1 in {}.",
         crate::syntax::expr_to_string(&Expr::FunctionCall {
           name: "ToCharacterCode".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       ));
       return Ok(Expr::FunctionCall {
         name: "ToCharacterCode".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     let mut results = Vec::new();
     for item in items {
       let s = expr_to_str(item)?;
-      results.push(Expr::List(codes_for(&s)));
+      results.push(Expr::List(codes_for(&s).into()));
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
   // Single-argument form: only accept actual strings; everything else
   // returns unevaluated with the strse warning.
@@ -4189,16 +4189,16 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
        expected at position 1 in {}.",
       crate::syntax::expr_to_string(&Expr::FunctionCall {
         name: "ToCharacterCode".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     ));
     return Ok(Expr::FunctionCall {
       name: "ToCharacterCode".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let s = expr_to_str(&args[0])?;
-  Ok(Expr::List(codes_for(&s)))
+  Ok(Expr::List(codes_for(&s).into()))
 }
 
 /// FromCharacterCode[n] or FromCharacterCode[{n1, n2, ...}] - converts character codes to a string
@@ -4245,7 +4245,7 @@ pub fn from_character_code_ast(
           let sub_result = from_character_code_ast(&[item.clone()])?;
           results.push(sub_result);
         }
-        return Ok(Expr::List(results));
+        return Ok(Expr::List(results.into()));
       }
       let mut result = String::new();
       for item in items {
@@ -4308,14 +4308,14 @@ pub fn character_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let end = c2 as u32;
 
   if start > end {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let chars: Vec<Expr> = (start..=end)
     .filter_map(char::from_u32)
     .map(|c| Expr::String(c.to_string()))
     .collect();
-  Ok(Expr::List(chars))
+  Ok(Expr::List(chars.into()))
 }
 
 /// IntegerString[n] or IntegerString[n, base] or IntegerString[n, base, length] - convert integer to string
@@ -4384,7 +4384,7 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(_) => {
       return Ok(Expr::FunctionCall {
         name: "Alphabet".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4433,11 +4433,11 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(_) => {
       return Ok(Expr::FunctionCall {
         name: "Alphabet".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
-  Ok(Expr::List(letters))
+  Ok(Expr::List(letters.into()))
 }
 
 // ─── FromLetterNumber / LetterNumber ──────────────────────────────
@@ -4470,15 +4470,15 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(n) => Ok(letter_from_int(*n)),
           _ => Ok(Expr::FunctionCall {
             name: "FromLetterNumber".to_string(),
-            args: vec![item.clone()],
+            args: vec![item.clone()].into(),
           }),
         })
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "FromLetterNumber".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -4548,7 +4548,7 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(_) => {
       return Ok(Expr::FunctionCall {
         name: "LetterNumber".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     None => "English".to_string(),
@@ -4564,7 +4564,7 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|ch| Expr::Integer(alphabet_position(*ch, &alphabet)))
           .collect();
-        Ok(Expr::List(results))
+        Ok(Expr::List(results.into()))
       }
     }
     Expr::List(items) => {
@@ -4578,11 +4578,11 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           letter_number_ast(&call)
         })
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "LetterNumber".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -4664,7 +4664,7 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let new_args = vec![s_expr.clone(), args[1].clone(), args[2].clone()];
       results.push(string_insert_ast(&new_args)?);
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -4761,7 +4761,7 @@ pub fn string_replace_part_ast(
     Err(_) => {
       return Ok(Expr::FunctionCall {
         name: "StringReplacePart".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4869,7 +4869,7 @@ pub fn string_replace_part_ast(
     }
     _ => Ok(Expr::FunctionCall {
       name: "StringReplacePart".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -4889,7 +4889,7 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| string_delete_ast(&[item.clone(), args[1].clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   // Handle list of patterns: delete each one
@@ -4919,7 +4919,7 @@ pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| capitalize_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   if s.is_empty() {
@@ -4945,7 +4945,7 @@ pub fn decapitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| decapitalize_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
   if s.is_empty() {
@@ -5153,7 +5153,7 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "SequenceAlignment".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -5269,10 +5269,10 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         if is_string {
           result
-            .push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)]));
+            .push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
         } else {
           result
-            .push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)]));
+            .push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
         }
       }
     } else {
@@ -5289,14 +5289,14 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         k += 1;
       }
       if is_string {
-        result.push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)]));
+        result.push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
       } else {
-        result.push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)]));
+        result.push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
       }
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// StringPart[s, n] - nth character; StringPart[s, {n1,n2,...}] - multiple characters
@@ -5329,7 +5329,7 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let idx = resolve_index(n, len)?;
         result.push(Expr::String(chars[idx].to_string()));
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     _ => {
       let n = expr_to_int(&args[1])?;
@@ -5348,7 +5348,7 @@ pub fn string_take_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let taken = string_take_ast(args)?;
   let dropped = string_drop_ast(args)?;
-  Ok(Expr::List(vec![taken, dropped]))
+  Ok(Expr::List(vec![taken, dropped].into()))
 }
 
 /// HammingDistance[s1, s2] - number of positions where characters differ.
@@ -5601,7 +5601,7 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Hash".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -5665,7 +5665,7 @@ pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Uncompress".to_string(),
-        args: vec![evaluated],
+        args: vec![evaluated].into(),
       });
     }
   };
@@ -5874,7 +5874,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Handle ReadList with record types like {Word, Word}
@@ -5929,10 +5929,10 @@ fn read_list_record(
       }
     }
 
-    results.push(Expr::List(record));
+    results.push(Expr::List(record.into()));
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Convert an expression to C language format
@@ -6218,7 +6218,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "TemplateApply".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -6299,7 +6299,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TemplateApply".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -6377,7 +6377,7 @@ pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parts.push(Expr::String(part));
     i += d;
   }
-  Ok(Expr::List(parts))
+  Ok(Expr::List(parts.into()))
 }
 
 // ─── DictionaryWordQ ──────────────────────────────────────────────
@@ -6415,7 +6415,7 @@ pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "DictionaryWordQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -6438,11 +6438,11 @@ pub fn url_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| url_encode_ast(&[item.clone()]))
         .collect();
-      Ok(Expr::List(encoded?))
+      Ok(Expr::List(encoded?.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "URLEncode".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -6457,11 +6457,11 @@ pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| url_decode_ast(&[item.clone()]))
         .collect();
-      Ok(Expr::List(decoded?))
+      Ok(Expr::List(decoded?.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "URLDecode".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -6517,7 +6517,7 @@ pub fn string_to_byte_array_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "StringToByteArray".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -6528,7 +6528,7 @@ pub fn string_to_byte_array_ast(
   let b64 = engine.encode(bytes);
   Ok(Expr::FunctionCall {
     name: "ByteArray".to_string(),
-    args: vec![Expr::String(b64)],
+    args: vec![Expr::String(b64)].into(),
   })
 }
 
@@ -6569,7 +6569,7 @@ pub fn byte_array_to_string_ast(
       _ => {
         return Ok(Expr::FunctionCall {
           name: "ByteArrayToString".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -6577,6 +6577,6 @@ pub fn byte_array_to_string_ast(
   }
   Ok(Expr::FunctionCall {
     name: "ByteArrayToString".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }

@@ -17,7 +17,7 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "WeierstrassP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -38,7 +38,7 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "WeierstrassP".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -58,7 +58,7 @@ pub fn weierstrass_p_prime_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "WeierstrassPPrime".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -79,7 +79,7 @@ pub fn weierstrass_p_prime_ast(
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "WeierstrassPPrime".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -217,7 +217,7 @@ pub fn inverse_weierstrass_p_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "InverseWeierstrassP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -228,7 +228,7 @@ pub fn inverse_weierstrass_p_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "InverseWeierstrassP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -237,7 +237,7 @@ pub fn inverse_weierstrass_p_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "InverseWeierstrassP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -253,7 +253,7 @@ pub fn inverse_weierstrass_p_ast(
         None => {
           return Ok(Expr::FunctionCall {
             name: "InverseWeierstrassP".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -262,7 +262,7 @@ pub fn inverse_weierstrass_p_ast(
         None => {
           return Ok(Expr::FunctionCall {
             name: "InverseWeierstrassP".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -280,12 +280,12 @@ pub fn inverse_weierstrass_p_ast(
           {
             return Ok(Expr::FunctionCall {
               name: "InverseWeierstrassP".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
           return Ok(Expr::FunctionCall {
             name: "InverseWeierstrassP".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -296,11 +296,11 @@ pub fn inverse_weierstrass_p_ast(
       if !has_real {
         return Ok(Expr::FunctionCall {
           name: "InverseWeierstrassP".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       let (u, pp) = inverse_weierstrass_p_numeric(p_f, g2_f, g3_f);
-      Ok(Expr::List(vec![Expr::Real(u), Expr::Real(pp)]))
+      Ok(Expr::List(vec![Expr::Real(u), Expr::Real(pp)].into()))
     }
   }
 }

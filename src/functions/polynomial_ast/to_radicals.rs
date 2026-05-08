@@ -38,7 +38,7 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<Vec<_>, _>>()?;
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       })
     }
     // Recurse into lists
@@ -47,7 +47,7 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(to_radicals_inner)
         .collect::<Result<Vec<_>, _>>()?;
-      Ok(Expr::List(new_items))
+      Ok(Expr::List(new_items.into()))
     }
     // Recurse into binary ops
     Expr::BinaryOp { op, left, right } => {
@@ -75,7 +75,7 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
 fn mk_call(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
-    args,
+    args: args.into(),
   }
 }
 
@@ -86,7 +86,7 @@ fn mk_int(n: i128) -> Expr {
 fn mk_ratio(n: i128, d: i128) -> Expr {
   Expr::FunctionCall {
     name: "Rational".to_string(),
-    args: vec![Expr::Integer(n), Expr::Integer(d)],
+    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
   }
 }
 
@@ -114,7 +114,7 @@ fn extract_poly_coefficients(body: &Expr) -> Option<Vec<Expr>> {
 
   let terms = match body {
     Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
-    _ => vec![body.clone()],
+    _ => vec![body.clone()].into(),
   };
 
   for term in &terms {

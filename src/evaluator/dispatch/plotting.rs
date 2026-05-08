@@ -77,7 +77,7 @@ pub fn dispatch_plotting(
       // TreeForm stays as a wrapper in OutputForm (matching wolframscript)
       Some(Ok(Expr::FunctionCall {
         name: "TreeForm".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }))
     }
     "TreeGraph" if !args.is_empty() => {

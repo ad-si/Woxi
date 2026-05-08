@@ -9,7 +9,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "CellularAutomaton".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -18,7 +18,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CellularAutomaton".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -28,7 +28,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CellularAutomaton".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -50,7 +50,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 enum InitMode {

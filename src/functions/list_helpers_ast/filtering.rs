@@ -47,7 +47,7 @@ pub fn select_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "Select".to_string(),
-        args,
+        args: args.into(),
       });
     }
   };
@@ -67,8 +67,8 @@ pub fn select_ast(
 
   // Preserve the original head
   match head_name {
-    Some(name) => Ok(Expr::FunctionCall { name, args: kept }),
-    None => Ok(Expr::List(kept)),
+    Some(name) => Ok(Expr::FunctionCall { name, args: kept.into() }),
+    None => Ok(Expr::List(kept.into())),
   }
 }
 
@@ -92,7 +92,7 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "SelectFirst".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -109,7 +109,7 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(d) => Ok(d.clone()),
     None => Ok(Expr::FunctionCall {
       name: "Missing".to_string(),
-      args: vec![Expr::String("NotFound".to_string())],
+      args: vec![Expr::String("NotFound".to_string())].into(),
     }),
   }
 }
@@ -133,7 +133,7 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Non-list: return Missing["NotFound"] or default
       return Ok(default.cloned().unwrap_or_else(|| Expr::FunctionCall {
         name: "Missing".to_string(),
-        args: vec![Expr::String("NotFound".to_string())],
+        args: vec![Expr::String("NotFound".to_string())].into(),
       }));
     }
   };
@@ -159,7 +159,7 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // No match found
   Ok(default.cloned().unwrap_or_else(|| Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::String("NotFound".to_string())],
+    args: vec![Expr::String("NotFound".to_string())].into(),
   }))
 }
 
@@ -207,7 +207,7 @@ fn cases_impl(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Cases".to_string(),
-        args: vec![list.clone(), pattern.clone()],
+        args: vec![list.clone(), pattern.clone()].into(),
       });
     }
   };
@@ -243,7 +243,7 @@ fn cases_impl(
     try_match(item, &mut kept)?;
   }
 
-  Ok(Expr::List(kept))
+  Ok(Expr::List(kept.into()))
 }
 
 /// Extract pattern and optional replacement from a Rule or RuleDelayed expression.
@@ -422,7 +422,7 @@ fn apply_test_bool(test: &Expr, elem: &Expr) -> bool {
     Expr::Identifier(func_name) => {
       let call = Expr::FunctionCall {
         name: func_name.clone(),
-        args: vec![elem.clone()],
+        args: vec![elem.clone()].into(),
       };
       crate::evaluator::evaluate_expr_to_expr(&call).ok()
     }
@@ -542,7 +542,7 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         Expr::Identifier(func_name) => {
           let call = Expr::FunctionCall {
             name: func_name.clone(),
-            args: vec![expr.clone()],
+            args: vec![expr.clone()].into(),
           };
           crate::evaluator::evaluate_expr_to_expr(&call).ok()
         }
@@ -768,7 +768,7 @@ pub fn cases_with_level_ast(
 
   // n = 0 short-circuits to the empty list.
   if limit == Some(0) {
-    return Ok(Expr::List(Vec::new()));
+    return Ok(Expr::List(Vec::new().into()));
   }
 
   // Honor Rule / RuleDelayed patterns by extracting the LHS pattern and an
@@ -786,7 +786,7 @@ pub fn cases_with_level_ast(
     limit,
     &mut results,
   )?;
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Recursively collect elements matching pattern within a level range,
@@ -894,7 +894,7 @@ pub fn position_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "Position".to_string(),
-        args: call_args,
+        args: call_args.into(),
       });
     }
   };
@@ -913,7 +913,7 @@ pub fn position_ast(
 
   // A limit of 0 short-circuits to the empty result.
   if limit == Some(0) {
-    return Ok(Expr::List(Vec::new()));
+    return Ok(Expr::List(Vec::new().into()));
   }
 
   let mut positions = Vec::new();
@@ -929,7 +929,7 @@ pub fn position_ast(
     limit,
   );
 
-  Ok(Expr::List(positions))
+  Ok(Expr::List(positions.into()))
 }
 
 /// Parse the `n` argument of Position[expr, pat, levelspec, n].
@@ -1026,7 +1026,7 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::FunctionCall {
       name: "Missing".to_string(),
-      args: vec![Expr::String("NotFound".to_string())],
+      args: vec![Expr::String("NotFound".to_string())].into(),
     }
   };
 
@@ -1124,7 +1124,7 @@ pub fn count_ast_level(
       }
       return Ok(Expr::FunctionCall {
         name: "Count".to_string(),
-        args,
+        args: args.into(),
       });
     }
   };
@@ -1190,7 +1190,7 @@ pub fn take_while_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TakeWhile".to_string(),
-        args: vec![list.clone(), pred.clone()],
+        args: vec![list.clone(), pred.clone()].into(),
       });
     }
   };
@@ -1205,7 +1205,7 @@ pub fn take_while_ast(
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based DeleteCases: remove elements matching pattern.
@@ -1237,7 +1237,7 @@ pub fn delete_cases_with_count_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DeleteCases".to_string(),
-        args: vec![list.clone(), pattern.clone()],
+        args: vec![list.clone(), pattern.clone()].into(),
       });
     }
   };
@@ -1261,7 +1261,7 @@ pub fn delete_cases_with_count_ast(
     .cloned()
     .collect();
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// DeleteCases[list, pattern, levelspec] - delete matching elements at specified levels
@@ -1314,7 +1314,7 @@ fn delete_at_level_range(
           }
         })
         .collect();
-      Expr::List(filtered)
+      Expr::List(filtered.into())
     }
     Expr::FunctionCall { name, args } => {
       let filtered: Vec<Expr> = args
@@ -1341,7 +1341,7 @@ fn delete_at_level_range(
         .collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: filtered,
+        args: filtered.into(),
       }
     }
     _ => expr.clone(),
@@ -1360,7 +1360,7 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ContainsOnly".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1369,7 +1369,7 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ContainsOnly".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1407,13 +1407,13 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for elem in elems {
         let call = Expr::FunctionCall {
           name: crate::syntax::expr_to_string(&test),
-          args: vec![item.clone(), elem.clone()],
+          args: vec![item.clone(), elem.clone()].into(),
         };
         // Try treating `test` as a callable expression (e.g. Equal).
         let applied = match &test {
           Expr::Identifier(name) => Expr::FunctionCall {
             name: name.clone(),
-            args: vec![item.clone(), elem.clone()],
+            args: vec![item.clone(), elem.clone()].into(),
           },
           _ => call,
         };
@@ -1454,7 +1454,7 @@ pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LengthWhile".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1463,7 +1463,7 @@ pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for item in list {
     let test = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Apply".to_string(),
-      args: vec![crit.clone(), Expr::List(vec![item.clone()])],
+      args: vec![crit.clone(), Expr::List(vec![item.clone()].into())].into(),
     })?;
     match &test {
       Expr::Identifier(s) if s == "True" => count += 1,
@@ -1519,7 +1519,7 @@ fn pick_recursive(
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: result,
+        args: result.into(),
       })
     }
     (Expr::List(list_items), Expr::List(sel_items))
@@ -1537,14 +1537,14 @@ fn pick_recursive(
           result.push(item.clone());
         }
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "Pick".to_string(),
       args: if let Some(p) = pattern {
-        vec![list.clone(), sel.clone(), p.clone()]
+        vec![list.clone(), sel.clone(), p.clone()].into()
       } else {
-        vec![list.clone(), sel.clone()]
+        vec![list.clone(), sel.clone()].into()
       },
     }),
   }
@@ -1565,7 +1565,7 @@ pub fn level_ast(
 
   let mut results = Vec::new();
   level_traverse(expr, 0, min_level, max_level, include_heads, &mut results);
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// Check if a node matches the level spec.
@@ -1784,7 +1784,7 @@ fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {
     Some(pat) => {
       match crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "MatchQ".to_string(),
-        args: vec![sel.clone(), pat.clone()],
+        args: vec![sel.clone(), pat.clone()].into(),
       }) {
         Ok(Expr::Identifier(ref s)) => s == "True",
         _ => false,
@@ -1811,7 +1811,7 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PeakDetect".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1827,7 +1827,7 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = data.len();
   if n == 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Convert to f64 values
@@ -2066,7 +2066,7 @@ pub fn subset_position_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "SubsetPosition".to_string(),
-        args: vec![list.clone(), pattern.clone()],
+        args: vec![list.clone(), pattern.clone()].into(),
       });
     }
   };
@@ -2098,7 +2098,7 @@ pub fn subset_position_ast(
     }
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// SubsetCases[list, pattern] — find non-overlapping subsets matching pattern (greedy).
@@ -2117,7 +2117,7 @@ pub fn subset_cases_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "SubsetCases".to_string(),
-        args: a,
+        args: a.into(),
       });
     }
   };
@@ -2161,7 +2161,7 @@ pub fn subset_cases_ast(
     }
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// SubsetCount[list, pattern] — count non-overlapping subsets matching pattern.

@@ -36,7 +36,7 @@ static ATOMIC_WEIGHT_PRECISIONS: &[f64] = &[
 fn make_quantity(magnitude: Expr, unit: &str) -> Expr {
   Expr::FunctionCall {
     name: "Quantity".to_string(),
-    args: vec![magnitude, Expr::String(unit.to_string())],
+    args: vec![magnitude, Expr::String(unit.to_string())].into(),
   }
 }
 
@@ -66,21 +66,21 @@ fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
 fn missing_not_available() -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::String("NotAvailable".to_string())],
+    args: vec![Expr::String("NotAvailable".to_string())].into(),
   }
 }
 
 fn missing_not_applicable() -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::String("NotApplicable".to_string())],
+    args: vec![Expr::String("NotApplicable".to_string())].into(),
   }
 }
 
 fn missing_not_found() -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::String("NotFound".to_string())],
+    args: vec![Expr::String("NotFound".to_string())].into(),
   }
 }
 
@@ -2273,7 +2273,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
       Some(g) => Expr::Integer(g),
       None => Expr::FunctionCall {
         name: "Missing".to_string(),
-        args: vec![Expr::String("Undefined".to_string())],
+        args: vec![Expr::String("Undefined".to_string())].into(),
       },
     },
     "Period" => Expr::Integer(elem.period),
@@ -2346,7 +2346,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
           Expr::List(shell.iter().map(|&n| Expr::Integer(n as i128)).collect())
         })
         .collect();
-      Expr::List(shells)
+      Expr::List(shells.into())
     }
     "ElectronConfigurationString" => format_electron_configuration_row(elem),
     // Properties we recognise by name but don't yet have tabulated data for —
@@ -2461,15 +2461,15 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
           args: vec![
             Expr::String(letter.to_string()),
             Expr::Identifier("Italic".to_string()),
-          ],
+          ].into(),
         },
         Expr::Integer(count),
-      ],
+      ].into(),
     });
   }
   Expr::FunctionCall {
     name: "Row".to_string(),
-    args: vec![Expr::List(parts)],
+    args: vec![Expr::List(parts.into())].into(),
   }
 }
 
@@ -2635,10 +2635,10 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::String("Element".to_string()),
             Expr::String(elem.standard_name.to_string()),
-          ],
+          ].into(),
         })
         .collect();
-      Ok(Expr::List(entities))
+      Ok(Expr::List(entities.into()))
     }
     1 => {
       // ElementData["Properties"] or ElementData[All] or ElementData[element]
@@ -2648,7 +2648,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .map(|p| Expr::String(p.to_string()))
             .collect();
-          Ok(Expr::List(props))
+          Ok(Expr::List(props.into()))
         }
         Expr::Identifier(s) if s == "All" => {
           let entities: Vec<Expr> = ELEMENTS
@@ -2658,10 +2658,10 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               args: vec![
                 Expr::String("Element".to_string()),
                 Expr::String(elem.standard_name.to_string()),
-              ],
+              ].into(),
             })
             .collect();
-          Ok(Expr::List(entities))
+          Ok(Expr::List(entities.into()))
         }
         identifier => {
           // ElementData[element] returns Entity[Element, name]
@@ -2671,7 +2671,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               args: vec![
                 Expr::String("Element".to_string()),
                 Expr::String(elem.standard_name.to_string()),
-              ],
+              ].into(),
             }),
             None => Ok(missing_not_found()),
           }
@@ -2685,7 +2685,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "ElementData".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -2693,13 +2693,13 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::String(prop) => Ok(get_property(elem, prop)),
         _ => Ok(Expr::FunctionCall {
           name: "ElementData".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }),
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "ElementData".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }

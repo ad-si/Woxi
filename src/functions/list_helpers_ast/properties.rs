@@ -78,7 +78,7 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "TensorRank".to_string(),
-      args: vec![expr.clone()],
+      args: vec![expr.clone()].into(),
     }),
   }
 }
@@ -225,7 +225,7 @@ pub fn matrix_q_with_test_ast(
               // For non-identifier tests, build an application
               "__test__".to_string()
             },
-            args: vec![elem.clone()],
+            args: vec![elem.clone()].into(),
           };
           let result = if let Expr::Identifier(_) = test {
             crate::evaluator::evaluate_expr_to_expr(&test_call)?
@@ -233,7 +233,7 @@ pub fn matrix_q_with_test_ast(
             // Apply test as a function
             let apply = Expr::FunctionCall {
               name: "Apply".to_string(),
-              args: vec![test.clone(), Expr::List(vec![elem.clone()])],
+              args: vec![test.clone(), Expr::List(vec![elem.clone()].into())].into(),
             };
             crate::evaluator::evaluate_expr_to_expr(&apply)?
           };
@@ -377,9 +377,9 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let dims: Vec<Expr> = match max_level {
       Some(n) => dim_items.iter().take(n).cloned().collect(),
-      None => dim_items.clone(),
+      None => dim_items.to_vec(),
     };
-    return Ok(Expr::List(dims));
+    return Ok(Expr::List(dims.into()));
   }
 
   let dims = get_dimensions(&args[0], max_level);

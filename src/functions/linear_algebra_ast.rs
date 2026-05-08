@@ -62,14 +62,14 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "PseudoInverse".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   let nrows = matrix.len();
   if nrows == 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let ncols = matrix[0].len();
 
@@ -114,7 +114,7 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For rank-deficient matrices, return unevaluated
   Ok(Expr::FunctionCall {
     name: "PseudoInverse".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -133,7 +133,7 @@ fn expr_to_matrix(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
         if cols.len() != ncols {
           return None;
         }
-        matrix.push(cols.clone());
+        matrix.push(cols.to_vec());
       } else {
         return None;
       }
@@ -151,7 +151,7 @@ fn expr_to_vector(expr: &Expr) -> Option<Vec<Expr>> {
     if items.iter().any(|i| matches!(i, Expr::List(_))) {
       return None;
     }
-    Some(items.clone())
+    Some(items.to_vec())
   } else {
     None
   }
@@ -159,7 +159,7 @@ fn expr_to_vector(expr: &Expr) -> Option<Vec<Expr>> {
 
 /// Helper: convert matrix back to Expr
 fn matrix_to_expr(matrix: Vec<Vec<Expr>>) -> Expr {
-  Expr::List(matrix.into_iter().map(Expr::List).collect())
+  Expr::List(matrix.into_iter().map(|v| Expr::List(v.into())).collect())
 }
 
 /// Helper: evaluate a simple arithmetic expression on Exprs
@@ -244,7 +244,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let product = dot_ast(&[ma, mb])?;
     return Ok(Expr::FunctionCall {
       name: "TransformationFunction".to_string(),
-      args: vec![product],
+      args: vec![product].into(),
     });
   }
 
@@ -282,7 +282,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       result.push(sum);
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   // Vector . Matrix → vector (treat vector as a row)
@@ -304,7 +304,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       result.push(sum);
     }
-    return Ok(Expr::List(result));
+    return Ok(Expr::List(result.into()));
   }
 
   // Matrix . Matrix → matrix
@@ -337,7 +337,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "Dot".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -353,7 +353,7 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Det".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -416,7 +416,7 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Inverse".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -439,7 +439,7 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(Expr::FunctionCall {
       name: "Inverse".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -539,7 +539,7 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Tr".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -561,7 +561,7 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "Tr".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -593,21 +593,21 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => {
             return Ok(Expr::FunctionCall {
               name: "IdentityMatrix".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
       } else {
         return Ok(Expr::FunctionCall {
           name: "IdentityMatrix".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "IdentityMatrix".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -615,9 +615,9 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..n {
     let mut row = vec![Expr::Integer(0); n];
     row[i] = Expr::Integer(1);
-    matrix.push(Expr::List(row));
+    matrix.push(Expr::List(row.into()));
   }
-  Ok(Expr::List(matrix))
+  Ok(Expr::List(matrix.into()))
 }
 
 /// DiagonalMatrix[list] - diagonal matrix from a list
@@ -632,7 +632,7 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DiagonalMatrix".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -642,7 +642,7 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "DiagonalMatrix".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -666,9 +666,9 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         row[i - k_abs] = diag[i - k_abs].clone();
       }
     }
-    matrix.push(Expr::List(row));
+    matrix.push(Expr::List(row.into()));
   }
-  Ok(Expr::List(matrix))
+  Ok(Expr::List(matrix.into()))
 }
 
 /// DiamondMatrix[n] - creates (2n+1)x(2n+1) matrix where entry (i,j) is 1 if
@@ -679,7 +679,7 @@ pub fn diamond_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DiamondMatrix".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -696,9 +696,9 @@ pub fn diamond_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(0)
       });
     }
-    matrix.push(Expr::List(row));
+    matrix.push(Expr::List(row.into()));
   }
-  Ok(Expr::List(matrix))
+  Ok(Expr::List(matrix.into()))
 }
 
 /// DiskMatrix[n] - creates (2n+1)x(2n+1) matrix where entry (i,j) is 1 if
@@ -709,7 +709,7 @@ pub fn disk_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DiskMatrix".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -728,9 +728,9 @@ pub fn disk_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(0)
       });
     }
-    matrix.push(Expr::List(row));
+    matrix.push(Expr::List(row.into()));
   }
-  Ok(Expr::List(matrix))
+  Ok(Expr::List(matrix.into()))
 }
 
 /// Cross[{x, y}] - 2D cross product (perpendicular vector)
@@ -742,11 +742,11 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && items.len() == 2
     {
       let neg_y = eval_sub(&Expr::Integer(0), &items[1]);
-      return Ok(Expr::List(vec![neg_y, items[0].clone()]));
+      return Ok(Expr::List(vec![neg_y, items[0].clone()].into()));
     }
     return Ok(Expr::FunctionCall {
       name: "Cross".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   if args.len() != 2 {
@@ -759,7 +759,7 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Cross".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -768,7 +768,7 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Cross".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -776,7 +776,7 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     eval_sub(&eval_mul(&va[1], &vb[2]), &eval_mul(&va[2], &vb[1])),
     eval_sub(&eval_mul(&va[2], &vb[0]), &eval_mul(&va[0], &vb[2])),
     eval_sub(&eval_mul(&va[0], &vb[1]), &eval_mul(&va[1], &vb[0])),
-  ]))
+  ].into()))
 }
 
 /// ConjugateTranspose[matrix] - transpose and conjugate each element
@@ -793,7 +793,7 @@ pub fn conjugate_transpose_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ConjugateTranspose".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -801,14 +801,14 @@ pub fn conjugate_transpose_ast(
   // Get dimensions
   let nrows = rows.len();
   if nrows == 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let ncols = match &rows[0] {
     Expr::List(cols) => cols.len(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ConjugateTranspose".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -824,14 +824,14 @@ pub fn conjugate_transpose_ast(
         // Apply Conjugate
         let conj = evaluate_expr_to_expr(&Expr::FunctionCall {
           name: "Conjugate".to_string(),
-          args: vec![cols[j].clone()],
+          args: vec![cols[j].clone()].into(),
         })?;
         row.push(conj);
       }
     }
-    result.push(Expr::List(row));
+    result.push(Expr::List(row.into()));
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Projection[u, v] - project vector u onto vector v.
@@ -848,7 +848,7 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Projection".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -857,7 +857,7 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Projection".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -871,7 +871,7 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|vi| {
       evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Conjugate".to_string(),
-        args: vec![vi.clone()],
+        args: vec![vi.clone()].into(),
       })
     })
     .collect::<Result<_, _>>()?;
@@ -885,7 +885,7 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let scalar = eval_divide(&cvu, &cvv);
   let result: Vec<Expr> = v.iter().map(|vi| eval_mul(&scalar, vi)).collect();
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 // ─── Fit (least-squares) ────────────────────────────────────────────────
@@ -974,7 +974,7 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       terms.push(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![coeff_expr, basis[j].clone()],
+        args: vec![coeff_expr, basis[j].clone()].into(),
       });
     }
   }
@@ -985,7 +985,7 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     })
   }
 }
@@ -1461,7 +1461,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Eigenvalues".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1474,7 +1474,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1x1
   if n == 1 {
-    return Ok(Expr::List(vec![matrix[0][0].clone()]));
+    return Ok(Expr::List(vec![matrix[0][0].clone()].into()));
   }
 
   // Try integer matrix path
@@ -1482,7 +1482,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let coeffs = char_poly_coefficients(&int_matrix);
     let mut eigenvalues = find_polynomial_roots(&coeffs);
     sort_eigenvalues(&mut eigenvalues);
-    return Ok(Expr::List(eigenvalues));
+    return Ok(Expr::List(eigenvalues.into()));
   }
 
   // Floating-point 2×2 path. wolframscript produces real-valued
@@ -1511,7 +1511,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         (l2, l1)
       };
-      return Ok(Expr::List(vec![Expr::Real(e1), Expr::Real(e2)]));
+      return Ok(Expr::List(vec![Expr::Real(e1), Expr::Real(e2)].into()));
     }
   }
 
@@ -1523,7 +1523,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n == 2
     && let Some(eigs) = symbolic_rotation_eigenvalues(&matrix)
   {
-    return Ok(Expr::List(eigs));
+    return Ok(Expr::List(eigs.into()));
   }
 
   // Block-diagonal 3×3: split into a 2×2 top-left block and the
@@ -1544,7 +1544,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut items = items_ref.clone();
       items.push(matrix[2][2].clone());
-      items = sort_with_canonical(items);
+      *items = sort_with_canonical(items.to_vec());
       return Ok(Expr::List(items));
     }
   }
@@ -1553,7 +1553,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // eigenvalues for floats, larger non-integer matrices, etc.).
   Ok(Expr::FunctionCall {
     name: "Eigenvalues".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1576,7 +1576,7 @@ fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
   // bottom-left must equal `-(top-right)`
   let neg_b = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), b.clone()],
+    args: vec![Expr::Integer(-1), b.clone()].into(),
   };
   let neg_b_eval = crate::evaluator::evaluate_expr_to_expr(&neg_b).ok()?;
   if expr_to_string(c) != expr_to_string(&neg_b_eval) {
@@ -1587,19 +1587,19 @@ fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
   let i = Expr::Constant("I".to_string());
   let i_b = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![i, b.clone()],
+    args: vec![i, b.clone()].into(),
   };
   let minus_ib = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), i_b.clone()],
+    args: vec![Expr::Integer(-1), i_b.clone()].into(),
   };
   let lo = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![a.clone(), minus_ib],
+    args: vec![a.clone(), minus_ib].into(),
   };
   let hi = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![a.clone(), i_b],
+    args: vec![a.clone(), i_b].into(),
   };
   let lo = crate::evaluator::evaluate_expr_to_expr(&lo).ok()?;
   let hi = crate::evaluator::evaluate_expr_to_expr(&hi).ok()?;
@@ -1711,7 +1711,7 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Eigenvectors".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1724,7 +1724,7 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1x1
   if n == 1 {
-    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(1)])]));
+    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(1)].into())].into()));
   }
 
   // Check if matrix is numeric (at least one Real entry)
@@ -1748,7 +1748,7 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Eigenvectors".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1818,11 +1818,11 @@ fn integer_eigenvectors(
     // 2x2 with symbolic eigenvalues: build eigenvectors directly
     let vecs = eigenvectors_2x2_symbolic(int_matrix);
     if !vecs.is_empty() {
-      return Ok(Expr::List(vecs.into_iter().map(Expr::List).collect()));
+      return Ok(Expr::List(vecs.into_iter().map(|v| Expr::List(v.into())).collect()));
     }
     return Ok(Expr::FunctionCall {
       name: "Eigenvectors".to_string(),
-      args: vec![matrix_to_expr(matrix.to_vec())],
+      args: vec![matrix_to_expr(matrix.to_vec())].into(),
     });
   }
 
@@ -1830,7 +1830,7 @@ fn integer_eigenvectors(
     // Can't handle symbolic eigenvalues for n > 2
     return Ok(Expr::FunctionCall {
       name: "Eigenvectors".to_string(),
-      args: vec![matrix_to_expr(matrix.to_vec())],
+      args: vec![matrix_to_expr(matrix.to_vec())].into(),
     });
   }
 
@@ -1852,13 +1852,13 @@ fn integer_eigenvectors(
       };
 
     if null_vecs.is_empty() {
-      eigenvectors.push(Expr::List(vec![Expr::Integer(0); n]));
+      eigenvectors.push(Expr::List(vec![Expr::Integer(0); n].into()));
     } else {
-      eigenvectors.push(Expr::List(null_vecs.remove(0)));
+      eigenvectors.push(Expr::List(null_vecs.remove(0).into()));
     }
   }
 
-  Ok(Expr::List(eigenvectors))
+  Ok(Expr::List(eigenvectors.into()))
 }
 
 /// Compute null space vectors for a specific integer eigenvalue.
@@ -2060,13 +2060,13 @@ fn numeric_eigenvectors(
       }
       let normalized_exprs: Vec<Expr> =
         normalized.into_iter().map(Expr::Real).collect();
-      eigenvectors.push(Expr::List(normalized_exprs));
+      eigenvectors.push(Expr::List(normalized_exprs.into()));
     } else {
-      eigenvectors.push(Expr::List(vec![Expr::Real(0.0); n].to_vec()));
+      eigenvectors.push(Expr::List(vec![Expr::Real(0.0); n].into()));
     }
   }
 
-  Ok(Expr::List(eigenvectors))
+  Ok(Expr::List(eigenvectors.into()))
 }
 
 /// Compute eigenvalues of a f64 matrix numerically.
@@ -2337,7 +2337,7 @@ pub fn row_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "RowReduce".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2359,7 +2359,7 @@ fn simplify_expr(e: &Expr) -> Expr {
     _ => {
       match evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Simplify".to_string(),
-        args: vec![evaluated.clone()],
+        args: vec![evaluated.clone()].into(),
       }) {
         Ok(r) => r,
         Err(_) => evaluated,
@@ -2463,7 +2463,7 @@ pub fn matrix_rank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "MatrixRank".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2487,12 +2487,12 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(m) => m,
     None => {
       // Return empty list for non-matrix (symbolic matrix)
-      return Ok(Expr::List(vec![]));
+      return Ok(Expr::List(vec![].into()));
     }
   };
   let nrows = matrix.len();
   if nrows == 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let ncols = matrix[0].len();
 
@@ -2528,9 +2528,9 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec[pivot_col] = eval_sub(&Expr::Integer(0), &rref[row][free_col]);
       }
     }
-    basis.push(Expr::List(vec));
+    basis.push(Expr::List(vec.into()));
   }
-  Ok(Expr::List(basis))
+  Ok(Expr::List(basis.into()))
 }
 
 /// Compute the sign of a permutation (Levi-Civita symbol).
@@ -2567,7 +2567,7 @@ pub fn levi_civita_tensor_sparse_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LeviCivitaTensor".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2584,7 +2584,7 @@ pub fn levi_civita_tensor_sparse_ast(
       perm
         .iter()
         .map(|&i| Expr::Integer(i as i128))
-        .collect::<Vec<_>>(),
+        .collect::<Vec<_>>().into(),
     );
     rules.push(Expr::Rule {
       pattern: Box::new(key),
@@ -2611,10 +2611,10 @@ pub fn levi_civita_tensor_sparse_ast(
 
   // Delegate to SparseArray[rules, {n, n, ..., n}] to get the same internal
   // representation that wolframscript emits.
-  let dims = Expr::List(vec![Expr::Integer(n as i128); n]);
+  let dims = Expr::List(vec![Expr::Integer(n as i128); n].into());
   let sparse_call = Expr::FunctionCall {
     name: "SparseArray".to_string(),
-    args: vec![Expr::List(rules), dims],
+    args: vec![Expr::List(rules.into()), dims].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&sparse_call)
 }
@@ -2626,7 +2626,7 @@ pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LeviCivitaTensor".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2643,7 +2643,7 @@ pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         items.push(build_tensor(n, depth + 1, indices));
         indices.pop();
       }
-      Expr::List(items)
+      Expr::List(items.into())
     }
   }
 
@@ -2665,7 +2665,7 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "LinearSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2675,7 +2675,7 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LinearSolve".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2775,7 +2775,7 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     x[pivot_col] = simplify_expr(&x[pivot_col]);
   }
 
-  Ok(Expr::List(x))
+  Ok(Expr::List(x.into()))
 }
 
 /// Eigensystem[matrix] - returns {eigenvalues, eigenvectors}
@@ -2791,14 +2791,14 @@ pub fn eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::FunctionCall {
       name: "Eigensystem".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
   let eigenvalues = eigenvalues_ast(args)?;
   let eigenvectors = eigenvectors_ast(args)?;
 
-  Ok(Expr::List(vec![eigenvalues, eigenvectors]))
+  Ok(Expr::List(vec![eigenvalues, eigenvectors].into()))
 }
 
 /// Minors[m] - gives the minors of a matrix (determinants of (n-1)×(n-1) submatrices)
@@ -2815,14 +2815,14 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Minors".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   let nrows = matrix.len();
   if nrows == 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let ncols = matrix[0].len();
 
@@ -2833,7 +2833,7 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Minors".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2870,23 +2870,23 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if args.len() == 3 {
         // Minors[m, k, f] - apply f to the submatrix
         let sub_expr =
-          Expr::List(submatrix.into_iter().map(Expr::List).collect());
+          Expr::List(submatrix.into_iter().map(|v| Expr::List(v.into())).collect());
         let f_call = Expr::FunctionCall {
           name: match &args[2] {
             Expr::Identifier(name) => name.clone(),
             _ => "Det".to_string(),
           },
-          args: vec![sub_expr],
+          args: vec![sub_expr].into(),
         };
         result_row.push(crate::evaluator::evaluate_expr_to_expr(&f_call)?);
       } else {
         result_row.push(determinant(&submatrix));
       }
     }
-    result_rows.push(Expr::List(result_row));
+    result_rows.push(Expr::List(result_row.into()));
   }
 
-  Ok(Expr::List(result_rows))
+  Ok(Expr::List(result_rows.into()))
 }
 
 /// Generate all combinations of `k` items from `0..n`
@@ -2921,7 +2921,7 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "LatticeReduce".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2931,13 +2931,13 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LatticeReduce".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   if rows.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Parse into Vec<Vec<i128>>
@@ -2952,7 +2952,7 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "LatticeReduce".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           }
@@ -2962,7 +2962,7 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "LatticeReduce".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -2985,7 +2985,7 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|row| Expr::List(row.iter().map(|&n| Expr::Integer(n)).collect()))
     .collect();
 
-  Ok(Expr::List(result_rows))
+  Ok(Expr::List(result_rows.into()))
 }
 
 fn dot_f64(a: &[f64], b: &[f64]) -> f64 {
@@ -3102,7 +3102,7 @@ pub fn find_integer_null_vector_ast(
   if args.is_empty() || args.len() > 2 {
     return Ok(Expr::FunctionCall {
       name: "FindIntegerNullVector".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3111,7 +3111,7 @@ pub fn find_integer_null_vector_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FindIntegerNullVector".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3120,7 +3120,7 @@ pub fn find_integer_null_vector_ast(
   if n < 2 {
     return Ok(Expr::FunctionCall {
       name: "FindIntegerNullVector".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3160,7 +3160,7 @@ pub fn find_integer_null_vector_ast(
   if reduced.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "FindIntegerNullVector".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3192,7 +3192,7 @@ pub fn find_integer_null_vector_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "FindIntegerNullVector".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3208,7 +3208,7 @@ pub fn find_integer_null_vector_ast(
     // Relation doesn't hold well enough
     return Ok(Expr::FunctionCall {
       name: "FindIntegerNullVector".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3396,7 +3396,7 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  Ok(Expr::List(rules))
+  Ok(Expr::List(rules.into()))
 }
 
 // ─── VectorAngle ────────────────────────────────────────────────────────
@@ -3407,7 +3407,7 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "VectorAngle".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let u = match &args[0] {
@@ -3415,7 +3415,7 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "VectorAngle".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3424,25 +3424,25 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "VectorAngle".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
   if u.len() != v.len() {
     return Ok(Expr::FunctionCall {
       name: "VectorAngle".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
   // Check for zero vectors — Norm[{0,...}] = 0 → Indeterminate
   let norm_u_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
     name: "Norm".to_string(),
-    args: vec![args[0].clone()],
+    args: vec![args[0].clone()].into(),
   })?;
   let norm_v_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
     name: "Norm".to_string(),
-    args: vec![args[1].clone()],
+    args: vec![args[1].clone()].into(),
   })?;
   if matches!(norm_u_expr, Expr::Integer(0))
     || matches!(norm_v_expr, Expr::Integer(0))
@@ -3453,19 +3453,19 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build ArcCos[Dot[u,v] / (Norm[u] * Norm[v])] and evaluate
   let dot_expr = Expr::FunctionCall {
     name: "Dot".to_string(),
-    args: vec![args[0].clone(), args[1].clone()],
+    args: vec![args[0].clone(), args[1].clone()].into(),
   };
   let norm_u = Expr::FunctionCall {
     name: "Norm".to_string(),
-    args: vec![args[0].clone()],
+    args: vec![args[0].clone()].into(),
   };
   let norm_v = Expr::FunctionCall {
     name: "Norm".to_string(),
-    args: vec![args[1].clone()],
+    args: vec![args[1].clone()].into(),
   };
   let denom = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![norm_u, norm_v],
+    args: vec![norm_u, norm_v].into(),
   };
   let ratio = Expr::FunctionCall {
     name: "Times".to_string(),
@@ -3473,13 +3473,13 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       dot_expr,
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![denom, Expr::Integer(-1)],
+        args: vec![denom, Expr::Integer(-1)].into(),
       },
-    ],
+    ].into(),
   };
   let result = Expr::FunctionCall {
     name: "ArcCos".to_string(),
-    args: vec![ratio],
+    args: vec![ratio].into(),
   };
   evaluate_expr_to_expr(&result)
 }
@@ -3515,7 +3515,7 @@ fn triangularize_ast(
   if args.is_empty() || args.len() > 2 {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3524,7 +3524,7 @@ fn triangularize_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3535,7 +3535,7 @@ fn triangularize_ast(
       _ => {
         return Ok(Expr::FunctionCall {
           name: name.to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -3565,18 +3565,18 @@ fn triangularize_ast(
             new_cols.push(Expr::Integer(0));
           }
         }
-        result_rows.push(Expr::List(new_cols));
+        result_rows.push(Expr::List(new_cols.into()));
       }
       _ => {
         return Ok(Expr::FunctionCall {
           name: name.to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
   }
 
-  Ok(Expr::List(result_rows))
+  Ok(Expr::List(result_rows.into()))
 }
 
 // ─── LinearModelFit ────────────────────────────────────────────────────
@@ -3602,7 +3602,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the basis is given as a single expression (`x`) or a list
   // (`{Sin[x], Cos[y]}`).
   let user_basis: Vec<Expr> = match &args[1] {
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
   let mut basis: Vec<Expr> = vec![Expr::Integer(1)];
@@ -3722,7 +3722,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       terms.push(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![coeff_expr, basis[j].clone()],
+        args: vec![coeff_expr, basis[j].clone()].into(),
       });
     }
   }
@@ -3736,7 +3736,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // basis order.
     let raw = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     };
     evaluate_expr_to_expr(&raw).unwrap_or(raw)
   };
@@ -3766,7 +3766,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(xs, y)| {
         let mut row: Vec<Expr> = xs.iter().map(|v| Expr::Real(*v)).collect();
         row.push(Expr::Real(*y));
-        Expr::List(row)
+        Expr::List(row.into())
       })
       .collect(),
   );
@@ -3818,7 +3818,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     (
       Expr::String("BasisFunctions".to_string()),
-      Expr::List(basis),
+      Expr::List(basis.into()),
     ),
     (
       Expr::String("FitResiduals".to_string()),
@@ -3845,7 +3845,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "FittedModel".to_string(),
-    args: vec![assoc],
+    args: vec![assoc].into(),
   })
 }
 
@@ -3980,7 +3980,7 @@ fn linear_model_fit_design_matrix_form(
     .enumerate()
     .map(|(j, c)| Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Real(*c), basis[j].clone()],
+      args: vec![Expr::Real(*c), basis[j].clone()].into(),
     })
     .collect();
   let fitted_expr = if terms.len() == 1 {
@@ -3988,7 +3988,7 @@ fn linear_model_fit_design_matrix_form(
   } else {
     let raw = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     };
     evaluate_expr_to_expr(&raw).unwrap_or(raw)
   };
@@ -4016,7 +4016,7 @@ fn linear_model_fit_design_matrix_form(
       .collect(),
   );
   let input_data =
-    Expr::List(vec![design_matrix.clone(), response_vec.clone()]);
+    Expr::List(vec![design_matrix.clone(), response_vec.clone()].into());
 
   let assoc = Expr::Association(vec![
     (
@@ -4030,11 +4030,11 @@ fn linear_model_fit_design_matrix_form(
     ),
     (
       Expr::String("IndependentVariables".to_string()),
-      Expr::List(basis.clone()),
+      Expr::List(basis.clone().into()),
     ),
     (
       Expr::String("BasisFunctions".to_string()),
-      Expr::List(basis),
+      Expr::List(basis.into()),
     ),
     (
       Expr::String("FitResiduals".to_string()),
@@ -4061,7 +4061,7 @@ fn linear_model_fit_design_matrix_form(
 
   Ok(Expr::FunctionCall {
     name: "FittedModel".to_string(),
-    args: vec![assoc],
+    args: vec![assoc].into(),
   })
 }
 
@@ -4078,7 +4078,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let basis = match &args[1] {
     Expr::List(items) => items.clone(),
-    other => vec![Expr::Integer(1), other.clone()],
+    other => vec![Expr::Integer(1), other.clone()].into(),
   };
 
   let var_name = match &args[2] {
@@ -4202,7 +4202,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       linear_terms.push(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![coeff_expr, basis[j].clone()],
+        args: vec![coeff_expr, basis[j].clone()].into(),
       });
     }
   }
@@ -4211,7 +4211,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: linear_terms,
+      args: linear_terms.into(),
     }
   };
 
@@ -4231,22 +4231,22 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 name: "Exp".to_string(),
                 args: vec![Expr::FunctionCall {
                   name: "Times".to_string(),
-                  args: vec![Expr::Integer(-1), linear_expr],
-                }],
+                  args: vec![Expr::Integer(-1), linear_expr].into(),
+                }].into(),
               },
-            ],
+            ].into(),
           },
           Expr::Integer(-1),
-        ],
+        ].into(),
       },
-    ],
+    ].into(),
   };
 
   let input_data = Expr::List(
     x_vals
       .iter()
       .zip(y_vals.iter())
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
       .collect(),
   );
 
@@ -4262,7 +4262,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     (
       Expr::String("IndependentVariables".to_string()),
-      Expr::List(vec![Expr::Identifier(var_name.clone())]),
+      Expr::List(vec![Expr::Identifier(var_name.clone())].into()),
     ),
     (
       Expr::String("BasisFunctions".to_string()),
@@ -4285,7 +4285,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "FittedModel".to_string(),
-    args: vec![assoc],
+    args: vec![assoc].into(),
   })
 }
 
@@ -4456,14 +4456,14 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "QRDecomposition".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   let n = matrix.len(); // rows
   if n == 0 {
-    return Ok(Expr::List(vec![Expr::List(vec![]), Expr::List(vec![])]));
+    return Ok(Expr::List(vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into()));
   }
   let m = matrix[0].len(); // cols
 
@@ -4534,7 +4534,7 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect(),
   );
 
-  Ok(Expr::List(vec![qt_expr, r_expr]))
+  Ok(Expr::List(vec![qt_expr, r_expr].into()))
 }
 
 /// `SingularValueDecomposition[A]` — closed-form 2×2 SVD for a numeric
@@ -4548,7 +4548,7 @@ pub fn singular_value_decomposition_ast(
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "SingularValueDecomposition".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let matrix = match expr_to_matrix(&args[0]) {
@@ -4556,7 +4556,7 @@ pub fn singular_value_decomposition_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "SingularValueDecomposition".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4566,7 +4566,7 @@ pub fn singular_value_decomposition_ast(
     // to unevaluated for everything else.
     return Ok(Expr::FunctionCall {
       name: "SingularValueDecomposition".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let to_f64 = |e: &Expr| -> Option<f64> {
@@ -4585,7 +4585,7 @@ pub fn singular_value_decomposition_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "SingularValueDecomposition".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -4637,18 +4637,18 @@ pub fn singular_value_decomposition_ast(
   let real = Expr::Real;
   // Build U with rows {U[1,1] U[1,2]} = {u1x, u2x} (columns are u1, u2).
   let u = Expr::List(vec![
-    Expr::List(vec![real(u1x), real(u2x)]),
-    Expr::List(vec![real(u1y), real(u2y)]),
-  ]);
+    Expr::List(vec![real(u1x), real(u2x)].into()),
+    Expr::List(vec![real(u1y), real(u2y)].into()),
+  ].into());
   let sigma = Expr::List(vec![
-    Expr::List(vec![real(sigma1), real(0.0)]),
-    Expr::List(vec![real(0.0), real(sigma2)]),
-  ]);
+    Expr::List(vec![real(sigma1), real(0.0)].into()),
+    Expr::List(vec![real(0.0), real(sigma2)].into()),
+  ].into());
   let v = Expr::List(vec![
-    Expr::List(vec![real(v1x), real(v2x)]),
-    Expr::List(vec![real(v1y), real(v2y)]),
-  ]);
-  Ok(Expr::List(vec![u, sigma, v]))
+    Expr::List(vec![real(v1x), real(v2x)].into()),
+    Expr::List(vec![real(v1y), real(v2y)].into()),
+  ].into());
+  Ok(Expr::List(vec![u, sigma, v].into()))
 }
 
 /// Simplify radical-bearing scalars produced by Gram-Schmidt so they
@@ -4707,7 +4707,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
         flatten(left, out);
         out.push(Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![right.as_ref().clone(), Expr::Integer(-1)],
+          args: vec![right.as_ref().clone(), Expr::Integer(-1)].into(),
         });
       }
       _ => out.push(e.clone()),
@@ -4975,14 +4975,14 @@ pub fn principal_components_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "PrincipalComponents".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   let nrows = data.len();
   if nrows == 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
   let ncols = data[0].len();
   if ncols == 0 || data.iter().any(|r| r.len() != ncols) {
@@ -4993,7 +4993,7 @@ pub fn principal_components_ast(
 
   // Single row: centered data is all zeros
   if nrows == 1 {
-    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(0); ncols])]));
+    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(0); ncols].into())].into()));
   }
 
   // 1. Compute column means
@@ -5036,7 +5036,7 @@ pub fn principal_components_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "PrincipalComponents".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -5092,10 +5092,10 @@ pub fn principal_components_ast(
       let simplified = eval_expr(&entry).unwrap_or(entry);
       simplified_row.push(simplified);
     }
-    result.push(Expr::List(simplified_row));
+    result.push(Expr::List(simplified_row.into()));
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 // ─── SmithDecomposition ────────────────────────────────────────────────
@@ -5116,7 +5116,7 @@ pub fn smith_decomposition_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "SmithDecomposition".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -5126,7 +5126,7 @@ pub fn smith_decomposition_ast(
     None => {
       return Ok(Expr::FunctionCall {
         name: "SmithDecomposition".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -5136,7 +5136,7 @@ pub fn smith_decomposition_ast(
   if nrows == 0 || ncols == 0 {
     return Ok(Expr::FunctionCall {
       name: "SmithDecomposition".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -5265,7 +5265,7 @@ pub fn smith_decomposition_ast(
       .collect(),
   );
 
-  Ok(Expr::List(vec![u_expr, s_expr, v_expr]))
+  Ok(Expr::List(vec![u_expr, s_expr, v_expr].into()))
 }
 
 fn identity_i128(n: usize) -> Vec<Vec<i128>> {
@@ -5300,7 +5300,7 @@ pub fn tensor_wedge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "TensorWedge".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -5349,13 +5349,13 @@ fn build_wedge_tensor(
       }
       let term = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: factors,
+        args: factors.into(),
       };
       terms.push(term);
     }
     let sum_expr = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     };
     return evaluate_expr_to_expr(&sum_expr);
   }
@@ -5367,7 +5367,7 @@ fn build_wedge_tensor(
     new_indices.push(i);
     elements.push(build_wedge_tensor(vectors, n, k, perms, &new_indices)?);
   }
-  Ok(Expr::List(elements))
+  Ok(Expr::List(elements.into()))
 }
 
 /// Build a zero tensor of shape n × n × ... × n (k times).
@@ -5376,7 +5376,7 @@ fn build_zero_tensor(n: usize, k: usize) -> Expr {
     return Expr::Integer(0);
   }
   let inner = build_zero_tensor(n, k - 1);
-  Expr::List(vec![inner; n])
+  Expr::List(vec![inner; n].into())
 }
 
 /// Generate all permutations of {0, 1, ..., n-1} with their signs.
@@ -5437,13 +5437,13 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse basis functions - can be single function or list
   let fns: Vec<Expr> = match &args[1] {
-    Expr::List(fs) => fs.clone(),
+    Expr::List(fs) => fs.to_vec(),
     single => vec![single.clone()],
   };
 
   // Parse variables - can be single variable or list
   let vars: Vec<Expr> = match &args[2] {
-    Expr::List(vs) => vs.clone(),
+    Expr::List(vs) => vs.to_vec(),
     single => vec![single.clone()],
   };
 
@@ -5484,7 +5484,7 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           expr = Expr::FunctionCall {
             name: "ReplaceAll".to_string(),
-            args: vec![expr, rule],
+            args: vec![expr, rule].into(),
           };
         }
       }
@@ -5492,8 +5492,8 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let evaluated = evaluate_expr_to_expr(&substituted)?;
       result_row.push(evaluated);
     }
-    result_rows.push(Expr::List(result_row));
+    result_rows.push(Expr::List(result_row.into()));
   }
 
-  Ok(Expr::List(result_rows))
+  Ok(Expr::List(result_rows.into()))
 }

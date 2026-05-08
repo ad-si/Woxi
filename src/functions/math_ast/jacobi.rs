@@ -83,7 +83,7 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiAmplitude".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -112,7 +112,7 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Sech".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -120,7 +120,7 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(inner) = extract_negated_expr(u) {
     return Ok(Expr::FunctionCall {
       name: "JacobiDN".to_string(),
-      args: vec![inner, m.clone()],
+      args: vec![inner, m.clone()].into(),
     });
   }
 
@@ -133,7 +133,7 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "JacobiDN".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -157,7 +157,7 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -165,7 +165,7 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Tanh".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -176,7 +176,7 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       left: Box::new(Expr::Integer(-1)),
       right: Box::new(Expr::FunctionCall {
         name: "JacobiSN".to_string(),
-        args: vec![inner, m.clone()],
+        args: vec![inner, m.clone()].into(),
       }),
     });
   }
@@ -190,7 +190,7 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "JacobiSN".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -214,7 +214,7 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -222,7 +222,7 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Sech".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -230,7 +230,7 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(inner) = extract_negated_expr(u) {
     return Ok(Expr::FunctionCall {
       name: "JacobiCN".to_string(),
-      args: vec![inner, m.clone()],
+      args: vec![inner, m.clone()].into(),
     });
   }
 
@@ -243,7 +243,7 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "JacobiCN".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -281,7 +281,7 @@ pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(v) && !has_real_arg(v, m) {
     return Ok(Expr::FunctionCall {
       name: "EllipticK".to_string(),
-      args: vec![m.clone()],
+      args: vec![m.clone()].into(),
     });
   }
 
@@ -296,7 +296,7 @@ pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSin".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -304,13 +304,13 @@ pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcTanh".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiSN".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -333,7 +333,7 @@ pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(v) && !has_real_arg(v, m) {
     return Ok(Expr::FunctionCall {
       name: "EllipticK".to_string(),
-      args: vec![m.clone()],
+      args: vec![m.clone()].into(),
     });
   }
 
@@ -348,7 +348,7 @@ pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCos".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -356,13 +356,13 @@ pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSech".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiCN".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -394,13 +394,13 @@ pub fn inverse_jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSech".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiDN".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -423,7 +423,7 @@ pub fn inverse_jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(v) && !has_real_arg(v, m) {
     return Ok(Expr::FunctionCall {
       name: "EllipticK".to_string(),
-      args: vec![m.clone()],
+      args: vec![m.clone()].into(),
     });
   }
 
@@ -439,13 +439,13 @@ pub fn inverse_jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCos".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiCD".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -479,7 +479,7 @@ pub fn inverse_jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcTan".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -487,13 +487,13 @@ pub fn inverse_jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSinh".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiSC".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -519,13 +519,13 @@ pub fn inverse_jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCot".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiCS".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -559,7 +559,7 @@ pub fn inverse_jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSin".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -567,13 +567,13 @@ pub fn inverse_jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSinh".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiSD".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -599,7 +599,7 @@ pub fn inverse_jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCsc".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -607,13 +607,13 @@ pub fn inverse_jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCsch".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiDS".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -639,7 +639,7 @@ pub fn inverse_jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCsc".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -647,13 +647,13 @@ pub fn inverse_jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCoth".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiNS".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -684,7 +684,7 @@ pub fn inverse_jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcSec".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
@@ -692,13 +692,13 @@ pub fn inverse_jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCosh".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiNC".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -730,13 +730,13 @@ pub fn inverse_jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "ArcCosh".to_string(),
-      args: vec![v.clone()],
+      args: vec![v.clone()].into(),
     });
   }
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiND".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -765,7 +765,7 @@ pub fn inverse_jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "InverseJacobiDC".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -824,14 +824,14 @@ pub fn jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Tan".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   // JacobiSC[u, 1] = Sinh[u]
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Sinh".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -843,7 +843,7 @@ pub fn jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiSC".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -868,7 +868,7 @@ pub fn jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Sec".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   // JacobiDC[u, 1] = 1
@@ -884,7 +884,7 @@ pub fn jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiDC".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -909,7 +909,7 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   // JacobiCD[u, 1] = 1
@@ -925,7 +925,7 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiCD".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -949,13 +949,13 @@ pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Sinh".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -966,7 +966,7 @@ pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiSD".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -986,13 +986,13 @@ pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Cot".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Csch".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -1003,7 +1003,7 @@ pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiCS".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1023,13 +1023,13 @@ pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Csc".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Csch".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -1040,7 +1040,7 @@ pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiDS".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1060,13 +1060,13 @@ pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Csc".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Coth".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -1077,7 +1077,7 @@ pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiNS".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1104,7 +1104,7 @@ pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Cosh".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -1115,7 +1115,7 @@ pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiND".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1139,13 +1139,13 @@ pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_expr_zero(m) {
     return Ok(Expr::FunctionCall {
       name: "Sec".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
   if is_expr_one(m) {
     return Ok(Expr::FunctionCall {
       name: "Cosh".to_string(),
-      args: vec![u.clone()],
+      args: vec![u.clone()].into(),
     });
   }
 
@@ -1156,7 +1156,7 @@ pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiNC".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 

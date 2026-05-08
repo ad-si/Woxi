@@ -464,7 +464,7 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
     // Division by zero - shouldn't reach here but be safe
     return Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer), Expr::Integer(denom)],
+      args: vec![Expr::Integer(numer), Expr::Integer(denom)].into(),
     };
   }
 
@@ -484,7 +484,7 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer), Expr::Integer(denom)],
+      args: vec![Expr::Integer(numer), Expr::Integer(denom)].into(),
     }
   }
 }
@@ -607,7 +607,7 @@ pub fn multiply_scalar_by_expr(
     Expr::Integer(1) => Ok(expr.clone()),
     Expr::Integer(-1) => Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), expr.clone()],
+      args: vec![Expr::Integer(-1), expr.clone()].into(),
     }),
     _ => Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Times,

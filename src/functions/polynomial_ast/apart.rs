@@ -25,7 +25,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       })
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // Short-circuit: if the expression has no denominator, Apart is a no-op.
@@ -40,7 +40,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Apart".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -51,7 +51,7 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "Apart".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }

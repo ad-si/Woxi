@@ -55,7 +55,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Positive odd integer >= 3 or overflow: return unevaluated
       Ok(Expr::FunctionCall {
         name: "Zeta".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     Expr::Real(f) => {
@@ -82,7 +82,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Symbolic argument: return unevaluated
       Ok(Expr::FunctionCall {
         name: "Zeta".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -125,7 +125,7 @@ fn hurwitz_zeta_ast(
     };
     let zeta_s = Expr::FunctionCall {
       name: "Zeta".to_string(),
-      args: vec![s_expr.clone()],
+      args: vec![s_expr.clone()].into(),
     };
     // Evaluate the product so integer cases simplify fully
     let product = Expr::BinaryOp {
@@ -168,7 +168,7 @@ fn hurwitz_zeta_ast(
         // Symbolic a: return unevaluated
         return Ok(Expr::FunctionCall {
           name: "Zeta".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
 
@@ -190,7 +190,7 @@ fn hurwitz_zeta_ast(
         }
         return Ok(Expr::FunctionCall {
           name: "Zeta".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
 
@@ -220,13 +220,13 @@ fn hurwitz_zeta_ast(
             } else {
               return Ok(Expr::FunctionCall {
                 name: "Zeta".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           } else {
             return Ok(Expr::FunctionCall {
               name: "Zeta".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -252,7 +252,7 @@ fn hurwitz_zeta_ast(
       // Return unevaluated
       Ok(Expr::FunctionCall {
         name: "Zeta".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     Expr::Real(s_f) => {
@@ -277,7 +277,7 @@ fn hurwitz_zeta_ast(
           }
           Ok(Expr::FunctionCall {
             name: "Zeta".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           })
         }
         _ => {
@@ -290,7 +290,7 @@ fn hurwitz_zeta_ast(
           }
           Ok(Expr::FunctionCall {
             name: "Zeta".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           })
         }
       }
@@ -306,7 +306,7 @@ fn hurwitz_zeta_ast(
       }
       Ok(Expr::FunctionCall {
         name: "Zeta".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   }
@@ -858,13 +858,13 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(Expr::FunctionCall {
           name: "PolyGamma".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       _ => {
         return Ok(Expr::FunctionCall {
           name: "PolyGamma".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     },
@@ -878,7 +878,7 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n_val < 0 {
     return Ok(Expr::FunctionCall {
       name: "PolyGamma".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   let n = n_val as usize;
@@ -906,7 +906,7 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Even n >= 2: return unevaluated (involves odd Zeta values)
       Ok(Expr::FunctionCall {
         name: "PolyGamma".to_string(),
-        args: vec![Expr::Integer(n as i128), Expr::Integer(z as i128)],
+        args: vec![Expr::Integer(n as i128), Expr::Integer(z as i128)].into(),
       })
     }
     Expr::Real(f) => Ok(Expr::Real(polygamma_numeric(n, *f))),
@@ -915,9 +915,9 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::FunctionCall {
         name: "PolyGamma".to_string(),
         args: if args.len() == 1 {
-          vec![Expr::Integer(0), args[0].clone()]
+          vec![Expr::Integer(0), args[0].clone()].into()
         } else {
-          args.to_vec()
+          args.to_vec().into()
         },
       })
     }
@@ -997,7 +997,7 @@ pub fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
   let neg_ps = make_rational(-ps_num, ps_den);
   let inner = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![neg_ps, zeta_expr],
+    args: vec![neg_ps, zeta_expr].into(),
   };
 
   if nfact == 1 {
@@ -1170,7 +1170,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         a.clone(),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), s.clone()],
+          args: vec![Expr::Integer(-1), s.clone()].into(),
         },
       ],
     );
@@ -1190,7 +1190,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "LerchPhi".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1241,7 +1241,7 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "PrimeZetaP".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1251,7 +1251,7 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PrimeZetaP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1273,8 +1273,8 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "N".to_string(),
         args: vec![Expr::FunctionCall {
           name: "Zeta".to_string(),
-          args: vec![Expr::Real(ks)],
-        }],
+          args: vec![Expr::Real(ks)].into(),
+        }].into(),
       });
     let zeta_val = match zeta_expr {
       Ok(ref e) => try_eval_to_f64(e).unwrap_or(1.0),
@@ -1332,7 +1332,7 @@ pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Integer(1)) {
     return Ok(Expr::FunctionCall {
       name: "Log".to_string(),
-      args: vec![Expr::Integer(2)],
+      args: vec![Expr::Integer(2)].into(),
     });
   }
 

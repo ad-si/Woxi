@@ -11,7 +11,7 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Tally".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
@@ -34,11 +34,11 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     .into_iter()
     .map(|k| {
       let (expr, count) = counts.remove(&k).unwrap();
-      Expr::List(vec![expr, Expr::Integer(count)])
+      Expr::List(vec![expr, Expr::Integer(count)].into())
     })
     .collect();
 
-  Ok(Expr::List(pairs))
+  Ok(Expr::List(pairs.into()))
 }
 
 /// AST-based Tally with a custom equivalence test.
@@ -54,7 +54,7 @@ pub fn tally_with_test_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Tally".to_string(),
-        args: vec![list.clone(), test.clone()],
+        args: vec![list.clone(), test.clone()].into(),
       });
     }
   };
@@ -78,10 +78,10 @@ pub fn tally_with_test_ast(
   let pairs: Vec<Expr> = reps
     .into_iter()
     .zip(counts)
-    .map(|(rep, count)| Expr::List(vec![rep, Expr::Integer(count)]))
+    .map(|(rep, count)| Expr::List(vec![rep, Expr::Integer(count)].into()))
     .collect();
 
-  Ok(Expr::List(pairs))
+  Ok(Expr::List(pairs.into()))
 }
 
 ///// Counts[list] - Returns association of distinct elements with their counts
@@ -92,7 +92,7 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Counts".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       });
     }
   };
@@ -139,7 +139,7 @@ pub fn delete_duplicates_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "DeleteDuplicates".to_string(),
-        args: call_args,
+        args: call_args.into(),
       });
     }
   };
@@ -157,7 +157,7 @@ pub fn delete_duplicates_ast(
       }
       reps.push(item.clone());
     }
-    return Ok(Expr::List(reps));
+    return Ok(Expr::List(reps.into()));
   }
 
   use std::collections::HashSet;
@@ -171,7 +171,7 @@ pub fn delete_duplicates_ast(
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based Union: combine lists and remove duplicates.
@@ -264,16 +264,16 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       reps.push(item);
     }
-    return Ok(Expr::List(reps));
+    return Ok(Expr::List(reps.into()));
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based Intersection: find common elements.
 pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if lists.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Strip a trailing `SameTest -> fn` option. When present, two elements
@@ -310,7 +310,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   // Start with elements from first list
   let first_items = match &lists_slice[0] {
     Expr::List(items) => items,
-    _ => return Ok(Expr::List(vec![])),
+    _ => return Ok(Expr::List(vec![].into())),
   };
 
   let mut common: HashSet<String> = first_items
@@ -350,7 +350,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
   });
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Intersection with a custom SameTest function. Two elements `a` and `b`
@@ -363,13 +363,13 @@ fn intersection_with_same_test(
 ) -> Result<Expr, InterpreterError> {
   let first_items = match lists.first() {
     Some(Expr::List(items)) => items.clone(),
-    _ => return Ok(Expr::List(vec![])),
+    _ => return Ok(Expr::List(vec![].into())),
   };
 
   let test_eq = |a: &Expr, b: &Expr| -> bool {
     let call = Expr::FunctionCall {
       name: "Apply".to_string(),
-      args: vec![test.clone(), Expr::List(vec![a.clone(), b.clone()])],
+      args: vec![test.clone(), Expr::List(vec![a.clone(), b.clone()].into())].into(),
     };
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&call).ok(),
@@ -418,13 +418,13 @@ fn intersection_with_same_test(
     }
   }
 
-  Ok(Expr::List(deduped))
+  Ok(Expr::List(deduped.into()))
 }
 
 /// AST-based Complement: elements in first list not in others.
 pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if lists.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   use std::collections::HashSet;
@@ -442,7 +442,7 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (first_items, head_name) = match get_items(&lists[0]) {
     Some(r) => r,
-    None => return Ok(Expr::List(vec![])),
+    None => return Ok(Expr::List(vec![].into())),
   };
 
   // Get elements to exclude from all lists after the first
@@ -506,9 +506,9 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   match head_name {
     Some(name) => Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: result,
+      args: result.into(),
     }),
-    None => Ok(Expr::List(result)),
+    None => Ok(Expr::List(result.into())),
   }
 }
 
@@ -522,7 +522,7 @@ pub fn delete_duplicates_by_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DeleteDuplicatesBy".to_string(),
-        args: vec![list.clone(), func.clone()],
+        args: vec![list.clone(), func.clone()].into(),
       });
     }
   };
@@ -539,7 +539,7 @@ pub fn delete_duplicates_by_ast(
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// DeleteAdjacentDuplicates[list] - removes consecutive duplicate elements
@@ -556,13 +556,13 @@ pub fn delete_adjacent_duplicates_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DeleteAdjacentDuplicates".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let mut result = vec![items[0].clone()];
@@ -573,7 +573,7 @@ pub fn delete_adjacent_duplicates_ast(
       result.push(item.clone());
     }
   }
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// Commonest[list] - returns the most common element(s)
@@ -589,13 +589,13 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Commonest".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let n = if args.len() == 2 {
@@ -604,7 +604,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Commonest".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -641,7 +641,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result.push((*item).clone());
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based SymmetricDifference: elements in an odd number of the input lists.
@@ -652,7 +652,7 @@ pub fn symmetric_difference_ast(
   use std::collections::HashMap;
 
   if lists.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Count how many lists contain each element (dedup within each list)
@@ -664,7 +664,7 @@ pub fn symmetric_difference_ast(
       _ => {
         return Ok(Expr::FunctionCall {
           name: "SymmetricDifference".to_string(),
-          args: lists.to_vec(),
+          args: lists.to_vec().into(),
         });
       }
     };
@@ -694,5 +694,5 @@ pub fn symmetric_difference_ast(
     crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
   });
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }

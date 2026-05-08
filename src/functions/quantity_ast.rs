@@ -1075,7 +1075,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: numer_parts,
+      args: numer_parts.into(),
     }
   };
 
@@ -1087,7 +1087,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: denom_parts,
+        args: denom_parts.into(),
       }
     };
     Expr::BinaryOp {
@@ -1441,7 +1441,7 @@ fn make_quantity(magnitude: Expr, unit: Expr) -> Expr {
   let unit = normalize_unit(unit);
   Expr::FunctionCall {
     name: "Quantity".to_string(),
-    args: vec![magnitude, unit],
+    args: vec![magnitude, unit].into(),
   }
 }
 
@@ -1548,7 +1548,7 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|item| make_quantity(item.clone(), args[1].clone()))
           .collect();
-        return Ok(Expr::List(results));
+        return Ok(Expr::List(results.into()));
       }
       let magnitude = args[0].clone();
       let unit = args[1].clone();
@@ -1557,7 +1557,7 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if is_pure_number(&unit) {
         let product = Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![magnitude, unit],
+          args: vec![magnitude, unit].into(),
         };
         return crate::evaluator::evaluate_expr_to_expr(&product);
       }
@@ -1584,11 +1584,11 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|it| quantity_magnitude_ast(std::slice::from_ref(it)))
           .collect();
-        return Ok(Expr::List(mapped?));
+        return Ok(Expr::List(mapped?.into()));
       }
       Ok(Expr::FunctionCall {
         name: "QuantityMagnitude".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     2 => {
@@ -1602,7 +1602,7 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(Expr::FunctionCall {
           name: "QuantityMagnitude".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       // Thread over a list of quantities; pass the target unit through.
@@ -1611,11 +1611,11 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|it| quantity_magnitude_ast(&[it.clone(), args[1].clone()]))
           .collect();
-        return Ok(Expr::List(mapped?));
+        return Ok(Expr::List(mapped?.into()));
       }
       Ok(Expr::FunctionCall {
         name: "QuantityMagnitude".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -1655,14 +1655,14 @@ pub fn quantity_unit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|item| quantity_unit_ast(&[item.clone()]))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
   if let Some((_mag, unit)) = is_quantity(&args[0]) {
     Ok(unit_idents_to_strings(unit))
   } else {
     Ok(Expr::FunctionCall {
       name: "QuantityUnit".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -1824,7 +1824,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
         } else {
           Expr::FunctionCall {
             name: "Power".to_string(),
-            args: vec![base, Expr::Integer(*e as i128)],
+            args: vec![base, Expr::Integer(*e as i128)].into(),
           }
         }
       })
@@ -1834,7 +1834,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
     } else {
       Some(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: terms,
+        args: terms.into(),
       })
     }
   };
@@ -1844,7 +1844,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
     (Some(n), None) => n,
     (None, Some(d)) => Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![d, Expr::Integer(-1)],
+      args: vec![d, Expr::Integer(-1)].into(),
     },
     (Some(n), Some(d)) => Expr::FunctionCall {
       name: "Times".to_string(),
@@ -1852,9 +1852,9 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
         n,
         Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![d, Expr::Integer(-1)],
+          args: vec![d, Expr::Integer(-1)].into(),
         },
-      ],
+      ].into(),
     },
     (None, None) => Expr::Integer(1),
   }
@@ -1871,7 +1871,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "UnitConvert".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   if args.len() != 2 {
@@ -1888,7 +1888,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_compound_unit_expr(unit) && has_bare_identifier_units(unit) {
       return Ok(Expr::FunctionCall {
         name: "UnitConvert".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
 
@@ -1916,19 +1916,19 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let norm_target = normalize_unit_for_output(target.clone());
       Ok(Expr::FunctionCall {
         name: "Quantity".to_string(),
-        args: vec![new_mag, norm_target],
+        args: vec![new_mag, norm_target].into(),
       })
     } else {
       // Fallback: return unevaluated
       Ok(Expr::FunctionCall {
         name: "UnitConvert".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
   } else {
     Ok(Expr::FunctionCall {
       name: "UnitConvert".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -1983,7 +1983,7 @@ pub fn try_quantity_plus(
         .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
       return Some(Ok(Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: sorted_args,
+        args: sorted_args.into(),
       }));
     }
   }
@@ -2081,7 +2081,7 @@ pub fn try_quantity_plus(
     // Sort: non-quantity first, quantity last (matching Wolfram behavior)
     Some(Ok(Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: other_args,
+      args: other_args.into(),
     }))
   }
 }
@@ -2131,7 +2131,7 @@ pub fn try_quantity_times(
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: unit_parts,
+        args: unit_parts.into(),
       }
     };
 
@@ -2327,7 +2327,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
   } else {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: numer_parts,
+      args: numer_parts.into(),
     }
   };
 
@@ -2339,7 +2339,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: denom_parts,
+        args: denom_parts.into(),
       }
     };
     Some(Expr::BinaryOp {

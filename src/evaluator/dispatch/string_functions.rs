@@ -108,7 +108,7 @@ pub fn dispatch_string_functions(
       // be applied to a string via the outer call (see function_application.rs).
       return Some(Ok(Expr::FunctionCall {
         name: "StringFreeQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "StringFreeQ" if args.len() == 2 || args.len() == 3 => {
@@ -248,7 +248,7 @@ pub fn dispatch_string_functions(
           .filter(|w| !w.is_empty())
           .map(Expr::String)
           .collect();
-        return Some(Ok(Expr::List(words)));
+        return Some(Ok(Expr::List(words.into())));
       }
     }
     "WordCounts" if args.len() == 1 => {
@@ -273,7 +273,7 @@ pub fn dispatch_string_functions(
     }
     "NumericalSort" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {
-        let mut items: Vec<Expr> = elems.clone();
+        let mut items: Vec<Expr> = elems.to_vec();
         items.sort_by(|a, b| {
           // NumericalSort sorts by numerical value for numbers,
           // and lexicographically for strings (not natural sort).
@@ -281,7 +281,7 @@ pub fn dispatch_string_functions(
           let sb = crate::syntax::expr_to_string(b);
           sa.cmp(&sb)
         });
-        return Some(Ok(Expr::List(items)));
+        return Some(Ok(Expr::List(items.into())));
       }
     }
     "StringReplaceList" if args.len() == 2 => {
@@ -310,7 +310,7 @@ pub fn dispatch_string_functions(
             }
           }
         }
-        return Some(Ok(Expr::List(results)));
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     // WordCount["string"] — count words in a string

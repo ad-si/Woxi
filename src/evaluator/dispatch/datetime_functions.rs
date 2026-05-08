@@ -46,11 +46,11 @@ pub fn dispatch_datetime_functions(
           return Some(Ok(Expr::FunctionCall {
             name: "DateInterval".to_string(),
             args: vec![
-              Expr::List(vec![Expr::List(vec![start, end])]),
+              Expr::List(vec![Expr::List(vec![start, end].into())].into()),
               Expr::String("Day".to_string()),
               Expr::String("Gregorian".to_string()),
               Expr::Identifier("None".to_string()),
-            ],
+            ].into(),
           }));
         }
       }
@@ -60,7 +60,7 @@ pub fn dispatch_datetime_functions(
       ));
       return Some(Ok(Expr::FunctionCall {
         name: "DateInterval".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // DateObject is a data container — normalize granularity
@@ -72,12 +72,12 @@ pub fn dispatch_datetime_functions(
       {
         return Some(Ok(Expr::FunctionCall {
           name: "DateObject".to_string(),
-          args: vec![args[0].clone(), Expr::String("Day".to_string())],
+          args: vec![args[0].clone(), Expr::String("Day".to_string())].into(),
         }));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "DateObject".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // DayCount[date1, date2] — number of days between two dates

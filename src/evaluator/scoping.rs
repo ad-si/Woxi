@@ -104,7 +104,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = match evaluate_expr_to_expr(body_expr) {
     Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
       name: "Return".to_string(),
-      args: vec![*val],
+      args: vec![*val].into(),
     }),
     other => other,
   };
@@ -120,7 +120,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(test_val) => Ok(Expr::FunctionCall {
           name: "Condition".to_string(),
-          args: vec![args[0].clone(), test_val],
+          args: vec![args[0].clone(), test_val].into(),
         }),
         Err(e) => Err(e),
       }
@@ -233,7 +233,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = match evaluate_expr_to_expr(body_expr) {
     Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
       name: "Return".to_string(),
-      args: vec![*val],
+      args: vec![*val].into(),
     }),
     other => other,
   };
@@ -249,7 +249,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(test_val) => Ok(Expr::FunctionCall {
           name: "Condition".to_string(),
-          args: vec![args[0].clone(), test_val],
+          args: vec![args[0].clone(), test_val].into(),
         }),
         Err(e) => Err(e),
       }
@@ -498,7 +498,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Element".to_string(),
-        args: vec![x.clone(), domain.clone()],
+        args: vec![x.clone(), domain.clone()].into(),
       });
     }
   };
@@ -511,7 +511,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     ));
     return Ok(Expr::FunctionCall {
       name: "Element".to_string(),
-      args: vec![x.clone(), domain.clone()],
+      args: vec![x.clone(), domain.clone()].into(),
     });
   }
 
@@ -546,7 +546,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       .unwrap();
     return Ok(Expr::FunctionCall {
       name: "Element".to_string(),
-      args: vec![alt_expr, domain.clone()],
+      args: vec![alt_expr, domain.clone()].into(),
     });
   }
 
@@ -574,7 +574,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     Some(false) => Ok(Expr::Identifier("False".to_string())),
     None => Ok(Expr::FunctionCall {
       name: "Element".to_string(),
-      args: vec![x.clone(), domain.clone()],
+      args: vec![x.clone(), domain.clone()].into(),
     }),
   }
 }
@@ -596,7 +596,7 @@ pub fn not_element_ast(
       // Element returned unevaluated, so NotElement stays unevaluated too
       Ok(Expr::FunctionCall {
         name: "NotElement".to_string(),
-        args: vec![x.clone(), domain.clone()],
+        args: vec![x.clone(), domain.clone()].into(),
       })
     }
   }
@@ -666,7 +666,7 @@ pub fn filter_rules_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FilterRules".to_string(),
-        args: vec![rules.clone(), keys.clone()],
+        args: vec![rules.clone(), keys.clone()].into(),
       });
     }
   };
@@ -695,7 +695,7 @@ pub fn filter_rules_ast(
     }
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// AST-based For loop: For[init, test, incr, body]
@@ -739,7 +739,7 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Err(InterpreterError::ReturnValue(val)) => {
           return Ok(Expr::FunctionCall {
             name: "Return".to_string(),
-            args: vec![*val],
+            args: vec![*val].into(),
           });
         }
         Err(e) => return Err(e),

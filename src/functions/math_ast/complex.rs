@@ -62,16 +62,16 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(-1),
         Expr::FunctionCall {
           name: "Im".to_string(),
-          args: vec![factor],
+          args: vec![factor].into(),
         },
-      ],
+      ].into(),
     });
   }
 
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Re".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -127,14 +127,14 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(factor) = extract_i_times_any(&args[0]) {
     return Ok(Expr::FunctionCall {
       name: "Re".to_string(),
-      args: vec![factor],
+      args: vec![factor].into(),
     });
   }
 
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Im".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -166,7 +166,7 @@ fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
       } else {
         Some(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: other_factors,
+          args: other_factors.into(),
         })
       };
     }
@@ -195,7 +195,7 @@ fn extract_i_times_any(expr: &Expr) -> Option<Expr> {
       } else {
         Some(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: other_factors,
+          args: other_factors.into(),
         })
       };
     }
@@ -212,7 +212,7 @@ fn extract_i_times_any(expr: &Expr) -> Option<Expr> {
 fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
   use crate::syntax::BinaryOperator;
   let plus_args: Vec<Expr> = match expr {
-    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,
@@ -267,7 +267,7 @@ fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: others,
+        args: others.into(),
       }
     };
     Some((None, Some(im_part)))
@@ -367,7 +367,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     };
     return Ok(Expr::FunctionCall {
       name: "Complex".to_string(),
-      args: vec![args[0].clone(), neg_imag],
+      args: vec![args[0].clone(), neg_imag].into(),
     });
   }
 
@@ -447,7 +447,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
           // Conjugate[I] = -I
           Some(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
+            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())].into(),
           })
         }
         2 => {
@@ -469,7 +469,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       } else {
         Some(conjugate_one(&Expr::FunctionCall {
           name: "Times".to_string(),
-          args: symbolic_factors,
+          args: symbolic_factors.into(),
         })?)
       };
 
@@ -494,7 +494,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     // Convert to flattened form and handle there
     let flat = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![*left.clone(), *right.clone()],
+      args: vec![*left.clone(), *right.clone()].into(),
     };
     return conjugate_one(&flat);
   }
@@ -503,7 +503,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = expr {
     let conj_items: Vec<Expr> =
       items.iter().map(conjugate_one).collect::<Result<_, _>>()?;
-    return Ok(Expr::List(conj_items));
+    return Ok(Expr::List(conj_items.into()));
   }
   if let Expr::FunctionCall { name, args } = expr
     && name == "List"
@@ -512,7 +512,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       args.iter().map(conjugate_one).collect::<Result<_, _>>()?;
     return Ok(Expr::FunctionCall {
       name: "List".to_string(),
-      args: conj_args,
+      args: conj_args.into(),
     });
   }
 
@@ -528,7 +528,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Default: return unevaluated Conjugate[expr]
   Ok(Expr::FunctionCall {
     name: "Conjugate".to_string(),
-    args: vec![expr.clone()],
+    args: vec![expr.clone()].into(),
   })
 }
 
@@ -595,7 +595,7 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
 /// ComplexExpand substitution has run.
 fn match_re_plus_i_im(expr: &Expr) -> Option<String> {
   let plus_args: Vec<Expr> = match expr {
-    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Plus,
       left,
@@ -691,7 +691,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(v) = match_re_plus_i_im(&args[0]) {
     return Ok(Expr::FunctionCall {
       name: "Arg".to_string(),
-      args: vec![Expr::Identifier(v)],
+      args: vec![Expr::Identifier(v)].into(),
     });
   }
 
@@ -715,7 +715,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: kept,
+        args: kept.into(),
       }
     };
     return arg_ast(&[remaining]);
@@ -821,7 +821,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let ratio_expr = make_rational(ratio_n, ratio_d);
         let arctan_expr = Expr::FunctionCall {
           name: "ArcTan".to_string(),
-          args: vec![ratio_expr],
+          args: vec![ratio_expr].into(),
         };
 
         let re_positive = (rn > 0 && rd > 0) || (rn < 0 && rd < 0);
@@ -864,7 +864,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Arg".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -940,7 +940,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "Rationalize".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       }
@@ -970,7 +970,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
+        args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)].into(),
       })
     }
   } else {
@@ -996,7 +996,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn as i128), Expr::Integer(sd as i128)],
+          args: vec![Expr::Integer(sn as i128), Expr::Integer(sd as i128)].into(),
         }
       });
     }
@@ -1027,7 +1027,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     Ok(Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer as i128), Expr::Integer(denom as i128)],
+      args: vec![Expr::Integer(numer as i128), Expr::Integer(denom as i128)].into(),
     })
   }
 }
@@ -1232,9 +1232,9 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
         Expr::Integer(re_num),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())],
+          args: vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())].into(),
         },
-      ],
+      ].into(),
     }
   };
   let num_evaluated =
@@ -1310,7 +1310,7 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           let product = Expr::FunctionCall {
             name: "Times".to_string(),
-            args: num_factors,
+            args: num_factors.into(),
           };
           crate::evaluator::evaluate_expr_to_expr(&product)
         }
@@ -1389,7 +1389,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           let product = Expr::FunctionCall {
             name: "Times".to_string(),
-            args: denom_factors,
+            args: denom_factors.into(),
           };
           crate::evaluator::evaluate_expr_to_expr(&product)
         }
@@ -1437,31 +1437,31 @@ fn numerator_trig(expr: &Expr) -> Option<Expr> {
   match name.as_str() {
     "Sin" | "Cos" => Some(Expr::FunctionCall {
       name: name.clone(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Sinh" | "Cosh" => Some(Expr::FunctionCall {
       name: name.clone(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     // Tan[x] = Sin[x]/Cos[x]; Sec[x] = 1/Cos[x] -> numerator 1.
     "Tan" => Some(Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Sec" | "Csc" => Some(Expr::Integer(1)),
     "Tanh" => Some(Expr::FunctionCall {
       name: "Sinh".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Sech" | "Csch" => Some(Expr::Integer(1)),
     // Cot[x] = Cos[x]/Sin[x]
     "Cot" => Some(Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Coth" => Some(Expr::FunctionCall {
       name: "Cosh".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     _ => None,
   }
@@ -1482,19 +1482,19 @@ fn denominator_trig(expr: &Expr) -> Option<Expr> {
     "Sin" | "Cos" | "Sinh" | "Cosh" => Some(Expr::Integer(1)),
     "Tan" | "Sec" => Some(Expr::FunctionCall {
       name: "Cos".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Cot" | "Csc" => Some(Expr::FunctionCall {
       name: "Sin".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Tanh" | "Sech" => Some(Expr::FunctionCall {
       name: "Cosh".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     "Coth" | "Csch" => Some(Expr::FunctionCall {
       name: "Sinh".to_string(),
-      args: vec![arg],
+      args: vec![arg].into(),
     }),
     _ => None,
   }
@@ -1538,7 +1538,7 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
         } else {
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: args[1..].to_vec(),
+            args: args[1..].to_vec().into(),
           }
         })
       } else {

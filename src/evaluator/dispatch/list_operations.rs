@@ -74,7 +74,7 @@ fn parse_excluded_forms(arg: &Expr) -> Option<Vec<Expr>> {
     _ => return None,
   }
   match rhs {
-    Expr::List(items) => Some(items.clone()),
+    Expr::List(items) => Some(items.to_vec()),
     other => Some(vec![other.clone()]),
   }
 }
@@ -125,7 +125,7 @@ pub fn dispatch_list_operations(
               valid = false;
               break;
             }
-            result.push(Expr::List(items[pos..pos + n].to_vec()));
+            result.push(Expr::List(items[pos..pos + n].to_vec().into()));
             pos += n;
           } else {
             valid = false;
@@ -133,7 +133,7 @@ pub fn dispatch_list_operations(
           }
         }
         if valid {
-          return Some(Ok(Expr::List(result)));
+          return Some(Ok(Expr::List(result.into())));
         }
       }
     }
@@ -148,7 +148,7 @@ pub fn dispatch_list_operations(
             } else {
               return Some(Ok(Expr::FunctionCall {
                 name: "FlattenAt".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               }));
             }
           }
@@ -180,7 +180,7 @@ pub fn dispatch_list_operations(
             result.push(item.clone());
           }
         }
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(result.into())));
       }
     }
     "InversePermutation" if args.len() == 1 => {
@@ -203,7 +203,7 @@ pub fn dispatch_list_operations(
           }
         }
         if valid {
-          return Some(Ok(Expr::List(inv)));
+          return Some(Ok(Expr::List(inv.into())));
         }
       }
     }
@@ -222,18 +222,18 @@ pub fn dispatch_list_operations(
           ));
           return Some(Ok(Expr::FunctionCall {
             name: "MovingMedian".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
         let mut result = Vec::with_capacity(n - r + 1);
         for i in 0..=(n - r) {
-          let window = Expr::List(items[i..i + r].to_vec());
+          let window = Expr::List(items[i..i + r].to_vec().into());
           match list_helpers_ast::median_ast(&window) {
             Ok(val) => result.push(val),
             Err(e) => return Some(Err(e)),
           }
         }
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(result.into())));
       }
     }
     "MovingMap" if args.len() == 3 => {
@@ -246,23 +246,23 @@ pub fn dispatch_list_operations(
       {
         let window_size = n + 1;
         if window_size > items.len() {
-          return Some(Ok(Expr::List(vec![])));
+          return Some(Ok(Expr::List(vec![].into())));
         }
         let f = &args[0];
         let mut results = Vec::new();
         for i in 0..=(items.len() - window_size) {
-          let sublist = Expr::List(items[i..i + window_size].to_vec());
+          let sublist = Expr::List(items[i..i + window_size].to_vec().into());
           // Construct f[sublist] using Map-like application
           let applied = match f {
             Expr::Identifier(fname) => Expr::FunctionCall {
               name: fname.clone(),
-              args: vec![sublist],
+              args: vec![sublist].into(),
             },
             _ => {
               // For pure functions etc, use general application
               Expr::FunctionCall {
                 name: expr_to_string(f),
-                args: vec![sublist],
+                args: vec![sublist].into(),
               }
             }
           };
@@ -271,7 +271,7 @@ pub fn dispatch_list_operations(
             Err(e) => return Some(Err(e)),
           }
         }
-        return Some(Ok(Expr::List(results)));
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     "Select" if args.len() == 2 => {
@@ -297,7 +297,7 @@ pub fn dispatch_list_operations(
       // Operator form: return unevaluated for currying
       return Some(Ok(Expr::FunctionCall {
         name: "AllMatch".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "AnyTrue" if args.len() == 2 => {
@@ -310,7 +310,7 @@ pub fn dispatch_list_operations(
       // Operator form: return unevaluated for currying
       return Some(Ok(Expr::FunctionCall {
         name: "AnyMatch".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "NoneTrue" if args.len() == 2 => {
@@ -330,7 +330,7 @@ pub fn dispatch_list_operations(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Fold".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -338,16 +338,16 @@ pub fn dispatch_list_operations(
         // Fold[f, {}] is unevaluated in Wolfram Language
         return Some(Ok(Expr::FunctionCall {
           name: "Fold".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       }
       let init = items[0].clone();
       let rest = match head {
         Some(h) => Expr::FunctionCall {
           name: h.to_string(),
-          args: items[1..].to_vec(),
+          args: items[1..].to_vec().into(),
         },
-        None => Expr::List(items[1..].to_vec()),
+        None => Expr::List(items[1..].to_vec().into()),
       };
       return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
     }
@@ -595,7 +595,7 @@ pub fn dispatch_list_operations(
             ));
             Ok(Expr::FunctionCall {
               name: "MapThread".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             })
           }
           other => other,
@@ -616,7 +616,7 @@ pub fn dispatch_list_operations(
         let offset = (offset - 1).max(0) as usize;
         let result: Vec<Expr> =
           items.iter().skip(offset).step_by(n).cloned().collect();
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(result.into())));
       }
     }
     "BlockMap" if args.len() == 3 || args.len() == 4 => {
@@ -719,7 +719,7 @@ pub fn dispatch_list_operations(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Signature".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "Subsets" if !args.is_empty() && args.len() <= 3 => {
@@ -798,7 +798,7 @@ pub fn dispatch_list_operations(
           if let Ok(decoded) = engine.decode(b64) {
             let bytes: Vec<Expr> =
               decoded.iter().map(|b| Expr::Integer(*b as i128)).collect();
-            return Some(Ok(Expr::List(bytes)));
+            return Some(Ok(Expr::List(bytes.into())));
           }
         }
         // Fallback: if it's already a list (shouldn't happen but be safe)
@@ -858,7 +858,7 @@ pub fn dispatch_list_operations(
               let val = if let Expr::List(items) = v {
                 items.get(i).cloned().unwrap_or(Expr::FunctionCall {
                   name: "Missing".to_string(),
-                  args: vec![],
+                  args: vec![].into(),
                 })
               } else {
                 v.clone()
@@ -867,7 +867,7 @@ pub fn dispatch_list_operations(
             }
             rows.push(Expr::Association(row_pairs));
           }
-          return Some(Ok(Expr::List(rows)));
+          return Some(Ok(Expr::List(rows.into())));
         }
         return Some(Ok(tab_args[0].clone()));
       }
@@ -926,7 +926,7 @@ pub fn dispatch_list_operations(
           ) {
             let inner = Expr::FunctionCall {
               name: "Normal".to_string(),
-              args: vec![coeff.clone()],
+              args: vec![coeff.clone()].into(),
             };
             match evaluate_expr_to_expr(&inner) {
               Ok(v) => v,
@@ -1007,7 +1007,7 @@ pub fn dispatch_list_operations(
             },
           })
           .collect();
-        return Some(Ok(Expr::List(rules)));
+        return Some(Ok(Expr::List(rules.into())));
       }
       // Normal[FunctionCall{Association, args}] converts to List
       if let Expr::FunctionCall {
@@ -1061,7 +1061,7 @@ pub fn dispatch_list_operations(
       let taken = list_helpers_ast::take_multi_ast(&args[0], &args[1..]);
       let dropped = list_helpers_ast::drop_ast(&args[0], &args[1]);
       return Some(match (taken, dropped) {
-        (Ok(t), Ok(d)) => Ok(Expr::List(vec![t, d])),
+        (Ok(t), Ok(d)) => Ok(Expr::List(vec![t, d].into())),
         (Err(e), _) | (_, Err(e)) => Err(e),
       });
     }
@@ -1193,10 +1193,10 @@ pub fn dispatch_list_operations(
       if let Some(mut sorted) = items {
         let wrap = |items: Vec<Expr>| -> Expr {
           match &head_name {
-            None => Expr::List(items),
+            None => Expr::List(items.into()),
             Some(name) => Expr::FunctionCall {
               name: name.clone(),
-              args: items,
+              args: items.into(),
             },
           }
         };
@@ -1208,11 +1208,11 @@ pub fn dispatch_list_operations(
               sorted.sort_by(|a, b| {
                 list_helpers_ast::canonical_cmp(a, b).reverse()
               });
-              return Some(Ok(wrap(sorted)));
+              return Some(Ok(wrap(sorted.to_vec())));
             }
             "Less" => {
               sorted.sort_by(list_helpers_ast::canonical_cmp);
-              return Some(Ok(wrap(sorted)));
+              return Some(Ok(wrap(sorted.to_vec())));
             }
             _ => {}
           }
@@ -1235,7 +1235,7 @@ pub fn dispatch_list_operations(
             _ => std::cmp::Ordering::Greater,
           }
         });
-        return Some(Ok(wrap(sorted)));
+        return Some(Ok(wrap(sorted.to_vec())));
       }
     }
     "ReverseSort" if args.len() == 1 || args.len() == 2 => {
@@ -1243,7 +1243,7 @@ pub fn dispatch_list_operations(
       // ReverseSort[list, p] sorts by p then reverses
       let mut sorted = match evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Sort".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
@@ -1256,7 +1256,7 @@ pub fn dispatch_list_operations(
     }
     "List" => {
       // List[a, b, c] is equivalent to {a, b, c}
-      return Some(Ok(Expr::List(args.to_vec())));
+      return Some(Ok(Expr::List(args.to_vec().into())));
     }
     "Range" => {
       return Some(list_helpers_ast::range_ast(args));
@@ -1294,7 +1294,7 @@ pub fn dispatch_list_operations(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Ratios".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -1305,7 +1305,7 @@ pub fn dispatch_list_operations(
         let mut current = items.clone();
         for _ in 0..n {
           if current.len() < 2 {
-            return Some(Ok(Expr::List(vec![])));
+            return Some(Ok(Expr::List(vec![].into())));
           }
           let mut next = Vec::with_capacity(current.len() - 1);
           for i in 1..current.len() {
@@ -1319,13 +1319,13 @@ pub fn dispatch_list_operations(
             };
             next.push(ratio);
           }
-          current = next;
+          *current = next;
         }
         return Some(Ok(Expr::List(current)));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Ratios".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "Scan" if args.len() == 2 => {
@@ -1347,7 +1347,7 @@ pub fn dispatch_list_operations(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "FoldList".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1355,18 +1355,18 @@ pub fn dispatch_list_operations(
         return Some(Ok(match head {
           Some(h) => Expr::FunctionCall {
             name: h.to_string(),
-            args: vec![],
+            args: vec![].into(),
           },
-          None => Expr::List(vec![]),
+          None => Expr::List(vec![].into()),
         }));
       }
       let init = items[0].clone();
       let rest = match head {
         Some(h) => Expr::FunctionCall {
           name: h.to_string(),
-          args: items[1..].to_vec(),
+          args: items[1..].to_vec().into(),
         },
-        None => Expr::List(items[1..].to_vec()),
+        None => Expr::List(items[1..].to_vec().into()),
       };
       return Some(list_helpers_ast::fold_list_ast(&args[0], &init, &rest));
     }
@@ -1391,7 +1391,7 @@ pub fn dispatch_list_operations(
           ));
           Ok(Expr::FunctionCall {
             name: "Transpose".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           })
         }
         other => other,
@@ -1409,7 +1409,7 @@ pub fn dispatch_list_operations(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Diagonal".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -1427,7 +1427,7 @@ pub fn dispatch_list_operations(
             }
           }
         }
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(result.into())));
       }
     }
     "Riffle" if args.len() == 2 => {
@@ -1487,7 +1487,7 @@ pub fn dispatch_list_operations(
             .unwrap_or_else(|_| item.clone())
           })
           .collect();
-        return Some(Ok(Expr::List(padded)));
+        return Some(Ok(Expr::List(padded.into())));
       }
     }
     "PadLeft" if args.len() >= 2 => {
@@ -1555,7 +1555,7 @@ pub fn dispatch_list_operations(
             .unwrap_or_else(|_| item.clone())
           })
           .collect();
-        return Some(Ok(Expr::List(padded)));
+        return Some(Ok(Expr::List(padded.into())));
       }
     }
     "PadRight" if args.len() >= 2 => {
@@ -1741,11 +1741,11 @@ pub fn dispatch_list_operations(
         return Some(
           Ok(Expr::FunctionCall {
             name: "".to_string(),
-            args: vec![expr.clone()],
+            args: vec![expr.clone()].into(),
           })
           .map(|_| Expr::FunctionCall {
             name: crate::syntax::expr_to_string(p),
-            args: vec![expr.clone()],
+            args: vec![expr.clone()].into(),
           }),
         );
       }
@@ -1768,7 +1768,7 @@ pub fn dispatch_list_operations(
         if depth == 0 {
           Expr::FunctionCall {
             name: crate::syntax::expr_to_string(p),
-            args: vec![expr.clone()],
+            args: vec![expr.clone()].into(),
           }
         } else {
           match expr {
@@ -1778,7 +1778,7 @@ pub fn dispatch_list_operations(
               let wrapped_head = wrap_head_at_depth(&head_expr, p, depth - 1);
               Expr::CurriedCall {
                 func: Box::new(wrapped_head),
-                args: args.clone(),
+                args: args.to_vec(),
               }
             }
             Expr::CurriedCall { func, args } => {
@@ -1951,7 +1951,7 @@ pub fn dispatch_list_operations(
       for iter in iters.iter().rev() {
         nested = Expr::FunctionCall {
           name: "Do".to_string(),
-          args: vec![nested, iter.clone()],
+          args: vec![nested, iter.clone()].into(),
         };
       }
       return Some(evaluate_expr_to_expr(&nested));
@@ -2014,7 +2014,7 @@ pub fn dispatch_list_operations(
       let func = if args.len() == 2 {
         args[1].clone()
       } else {
-        Expr::List(args[1..].to_vec())
+        Expr::List(args[1..].to_vec().into())
       };
       return Some(list_helpers_ast::gather_by_ast(&func, &args[0]));
     }
@@ -2078,7 +2078,7 @@ pub fn dispatch_list_operations(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Composition".to_string(),
-        args: flat,
+        args: flat.into(),
       }));
     }
     // RightComposition[] -> Identity
@@ -2103,7 +2103,7 @@ pub fn dispatch_list_operations(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "RightComposition".to_string(),
-        args: flat,
+        args: flat.into(),
       }));
     }
     "Outer" if args.len() >= 3 => {
@@ -2293,11 +2293,11 @@ pub fn dispatch_list_operations(
             ),
             Expr::Identifier(fname) => Expr::FunctionCall {
               name: fname.clone(),
-              args: vec![state.clone(), elem.clone()],
+              args: vec![state.clone(), elem.clone()].into(),
             },
             _ => Expr::FunctionCall {
               name: expr_to_string(f),
-              args: vec![state.clone(), elem.clone()],
+              args: vec![state.clone(), elem.clone()].into(),
             },
           };
           let result = crate::evaluator::evaluate_expr_to_expr(&applied)
@@ -2313,7 +2313,7 @@ pub fn dispatch_list_operations(
             return Some(Ok(result));
           }
         }
-        return Some(Ok(Expr::List(results)));
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     // JoinAcross[list1, list2, key] — join associations on a common key
@@ -2337,7 +2337,7 @@ pub fn dispatch_list_operations(
             }
           }
         }
-        return Some(Ok(Expr::List(results)));
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     // CountDistinct[list] — count unique elements
@@ -2354,7 +2354,7 @@ pub fn dispatch_list_operations(
     "SequencePosition" if args.len() == 2 => {
       if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
         if sub.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+          return Some(Ok(Expr::List(vec![].into())));
         }
         let sub_len = sub.len();
         let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
@@ -2374,10 +2374,10 @@ pub fn dispatch_list_operations(
             results.push(Expr::List(vec![
               Expr::Integer((i + 1) as i128),
               Expr::Integer((i + sub_len) as i128),
-            ]));
+            ].into()));
           }
         }
-        return Some(Ok(Expr::List(results)));
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     // SequenceCases[list, sublist] — find matching subsequences
@@ -2411,11 +2411,11 @@ pub fn dispatch_list_operations(
         // Get the sub-elements for length calculations
         let sub = match list_pat {
           Expr::List(items) => items,
-          _ => return Some(Ok(Expr::List(vec![]))),
+          _ => return Some(Ok(Expr::List(vec![].into()))),
         };
 
         if sub.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+          return Some(Ok(Expr::List(vec![].into())));
         }
 
         let has_patterns = sub.iter().any(has_pattern_element);
@@ -2435,7 +2435,7 @@ pub fn dispatch_list_operations(
             let try_max = try_max.min(remaining);
             let range: Vec<usize> = (min_len..=try_max).rev().collect();
             for len in range {
-              let subseq = Expr::List(list[i..i + len].to_vec());
+              let subseq = Expr::List(list[i..i + len].to_vec().into());
               // Use match_pattern which handles Condition properly
               if let Some(bindings) =
                 crate::evaluator::pattern_matching::match_pattern(
@@ -2462,7 +2462,7 @@ pub fn dispatch_list_operations(
               i += 1;
             }
           }
-          return Some(Ok(Expr::List(results)));
+          return Some(Ok(Expr::List(results.into())));
         } else {
           // Literal subsequence match
           let sub_len = sub.len();
@@ -2478,13 +2478,13 @@ pub fn dispatch_list_operations(
               }
             }
             if matches {
-              results.push(Expr::List(list[i..i + sub_len].to_vec()));
+              results.push(Expr::List(list[i..i + sub_len].to_vec().into()));
               i += sub_len;
             } else {
               i += 1;
             }
           }
-          return Some(Ok(Expr::List(results)));
+          return Some(Ok(Expr::List(results.into())));
         }
       }
     }
@@ -2526,7 +2526,7 @@ pub fn dispatch_list_operations(
           .map(|(i, (k, _))| {
             let applied = evaluate_expr_to_expr(&Expr::FunctionCall {
               name: expr_to_string(func),
-              args: vec![k.clone()],
+              args: vec![k.clone()].into(),
             })
             .unwrap_or(k.clone());
             (i, applied)
@@ -2565,14 +2565,14 @@ pub fn dispatch_list_operations(
         if n <= m {
           // Take n elements centered: use ceiling division for the offset
           let start = (m - n).div_ceil(2);
-          return Some(Ok(Expr::List(items[start..start + n].to_vec())));
+          return Some(Ok(Expr::List(items[start..start + n].to_vec().into())));
         }
         let left_pad = (n - m) / 2;
         let right_pad = n - m - left_pad;
         let mut result = vec![pad.clone(); left_pad];
         result.extend_from_slice(items);
         result.extend(vec![pad; right_pad]);
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(result.into())));
       }
     }
     // ReverseSortBy[list, f] — sort list in reverse order by applying f
@@ -2600,7 +2600,7 @@ pub fn dispatch_list_operations(
         });
         let result: Vec<Expr> =
           indexed.iter().map(|(i, _)| items[*i].clone()).collect();
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(result.into())));
       }
     }
     // IntersectingQ[list1, list2] — True if lists share any element
@@ -2658,12 +2658,12 @@ pub fn dispatch_list_operations(
               curr = perm[curr] - 1;
             }
             if cycle.len() > 1 {
-              cycles.push(Expr::List(cycle));
+              cycles.push(Expr::List(cycle.into()));
             }
           }
           return Some(Ok(Expr::FunctionCall {
             name: "Cycles".to_string(),
-            args: vec![Expr::List(cycles)],
+            args: vec![Expr::List(cycles.into())].into(),
           }));
         }
       }
@@ -2765,7 +2765,7 @@ pub fn dispatch_list_operations(
             .into_iter()
             .map(|v| Expr::Integer(v as i128))
             .collect();
-          return Some(Ok(Expr::List(result_exprs)));
+          return Some(Ok(Expr::List(result_exprs.into())));
         }
       }
     }
@@ -2822,7 +2822,7 @@ pub fn dispatch_list_operations(
           let call = match f {
             Expr::Identifier(name) => Expr::FunctionCall {
               name: name.clone(),
-              args: vec![acc.clone(), item.clone()],
+              args: vec![acc.clone(), item.clone()].into(),
             },
             Expr::Function { body } => crate::syntax::substitute_slots(
               body,
@@ -2830,7 +2830,7 @@ pub fn dispatch_list_operations(
             ),
             _ => Expr::FunctionCall {
               name: expr_to_string(f),
-              args: vec![acc.clone(), item.clone()],
+              args: vec![acc.clone(), item.clone()].into(),
             },
           };
           let new_acc = evaluate_expr_to_expr(&call).unwrap_or(call);
@@ -2846,7 +2846,7 @@ pub fn dispatch_list_operations(
             break;
           }
         }
-        return Some(Ok(Expr::List(results)));
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     // PermutationCyclesQ[Cycles[{...}]] — True if valid Cycles form
@@ -2898,7 +2898,7 @@ pub fn dispatch_list_operations(
             support.push(Expr::Integer((i + 1) as i128));
           }
         }
-        return Some(Ok(Expr::List(support)));
+        return Some(Ok(Expr::List(support.into())));
       }
     }
     // PermutationMax[perm] — largest element moved by the permutation
@@ -2936,7 +2936,7 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(Expr::FunctionCall {
           name: "Infinity".to_string(),
-          args: vec![],
+          args: vec![].into(),
         }));
       }
     }
@@ -2945,7 +2945,7 @@ pub fn dispatch_list_operations(
     "Splice" if args.len() == 1 || args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "Splice".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // SubsetMap[f, list, positions] — apply f to elements at positions, put results back
@@ -2968,8 +2968,8 @@ pub fn dispatch_list_operations(
           .filter_map(|&idx| items.get(idx - 1).cloned())
           .collect();
         // Apply f to the subset
-        let mapped = apply_function_to_arg(f, &Expr::List(subset))
-          .unwrap_or(Expr::List(vec![]));
+        let mapped = apply_function_to_arg(f, &Expr::List(subset.into()))
+          .unwrap_or(Expr::List(vec![].into()));
         // Put results back
         if let Expr::List(mapped_items) = &mapped {
           let mut result = items.clone();
@@ -3063,7 +3063,7 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "ArrayPad".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -3072,7 +3072,7 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "ArrayPad".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -3081,7 +3081,7 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ArrayPad".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -3115,7 +3115,7 @@ fn pad_array(
         };
 
         // Create padding row
-        let pad_row = Expr::List(vec![pad_val.clone(); inner_len]);
+        let pad_row = Expr::List(vec![pad_val.clone(); inner_len].into());
 
         // Add/remove rows at top and bottom
         if left >= 0 {
@@ -3144,7 +3144,7 @@ fn pad_array(
           }
         }
 
-        Ok(Expr::List(padded_items))
+        Ok(Expr::List(padded_items.into()))
       } else {
         // 1D array
         let mut result = items.clone();
@@ -3152,13 +3152,13 @@ fn pad_array(
         if left >= 0 {
           let mut prefix = vec![pad_val.clone(); left as usize];
           prefix.append(&mut result);
-          result = prefix;
+          *result = prefix;
         } else {
           let trim = (-left) as usize;
           if trim < result.len() {
-            result = result[trim..].to_vec();
+            result = result[trim..].to_vec().into();
           } else {
-            result = vec![];
+            *result = vec![];
           }
         }
 
@@ -3168,10 +3168,11 @@ fn pad_array(
           }
         } else {
           let trim = (-right) as usize;
-          if trim < result.len() {
-            result.truncate(result.len() - trim);
+          let cur_len = result.len();
+          if trim < cur_len {
+            result.truncate(cur_len - trim);
           } else {
-            result = vec![];
+            *result = vec![];
           }
         }
 
@@ -3180,7 +3181,7 @@ fn pad_array(
     }
     _ => Ok(Expr::FunctionCall {
       name: "ArrayPad".to_string(),
-      args: vec![arr.clone()],
+      args: vec![arr.clone()].into(),
     }),
   }
 }
@@ -3211,7 +3212,7 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
           },
         })
         .collect();
-      Expr::List(rules)
+      Expr::List(rules.into())
     }
     Expr::FunctionCall { name, args } if name == "Association" => {
       Expr::List(args.clone())
@@ -3244,13 +3245,13 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ArrayFlatten".to_string(),
-        args: vec![arg.clone()],
+        args: vec![arg.clone()].into(),
       });
     }
   };
 
   if block_rows.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // First, determine the grid dimensions (number of block rows and columns)
@@ -3265,7 +3266,7 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "ArrayFlatten".to_string(),
-          args: vec![arg.clone()],
+          args: vec![arg.clone()].into(),
         });
       }
     };
@@ -3327,7 +3328,7 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
           let mut m: Vec<Vec<Expr>> = Vec::new();
           for r in rows {
             match r {
-              Expr::List(cols) => m.push(cols.clone()),
+              Expr::List(cols) => m.push(cols.to_vec()),
               other => m.push(vec![other.clone()]),
             }
           }
@@ -3367,7 +3368,7 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
+  Ok(Expr::List(result.into_iter().map(|v| Expr::List(v.into())).collect()))
 }
 
 /// Distance between two expressions. Falls back to absolute scalar difference
@@ -3437,7 +3438,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Nearest".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -3446,11 +3447,11 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Nearest".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
-      (pts, Some(lbls))
+      (pts.to_vec(), Some(lbls.to_vec()))
     }
     Expr::List(v) => {
       // `{point1 -> label1, point2 -> label2, …}` is the list-of-rules
@@ -3483,20 +3484,20 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         (pts, Some(lbls))
       } else {
-        (v.clone(), None)
+        (v.to_vec(), None)
       }
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Nearest".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
   let items = &items_owned;
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Multi-target form: when `target` is a List and each item in it
@@ -3519,7 +3520,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sub_args[1] = t.clone();
       results.push(nearest_ast(&sub_args)?);
     }
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
 
   let target = &args[1];
@@ -3540,7 +3541,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Nearest".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -3549,7 +3550,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "Nearest".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -3558,7 +3559,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Nearest".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -3576,7 +3577,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if distances.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Nearest".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -3609,19 +3610,19 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
         .map(|(i, _)| pick(*i))
         .collect();
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     // Count limit provided (possibly together with a radius).
     (true, Some(k)) => {
       let result: Vec<Expr> =
         filtered.iter().take(k).map(|(i, _)| pick(*i)).collect();
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     // `All` (possibly together with a radius): keep everything that passed
     // the radius filter.
     (true, None) => {
       let result: Vec<Expr> = filtered.iter().map(|(i, _)| pick(*i)).collect();
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
   }
 }
@@ -3658,7 +3659,7 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             return Ok(Expr::FunctionCall {
               name: "ArrayReshape".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -3668,13 +3669,13 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ArrayReshape".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   if dims.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   // Optional padding: a scalar or a list of elements to cycle through.
@@ -3682,7 +3683,7 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // values, cycling through the list if needed. Defaults to `0`.
   let pad: Vec<Expr> = if args.len() >= 3 {
     match &args[2] {
-      Expr::List(items) if !items.is_empty() => items.clone(),
+      Expr::List(items) if !items.is_empty() => items.to_vec(),
       Expr::List(_) => vec![Expr::Integer(0)],
       other => vec![other.clone()],
     }
@@ -3722,14 +3723,14 @@ fn build_reshaped(
       }
       *idx += 1;
     }
-    Expr::List(row)
+    Expr::List(row.into())
   } else {
     let n = dims[depth];
     let mut result = Vec::with_capacity(n);
     for _ in 0..n {
       result.push(build_reshaped(flat, dims, depth + 1, idx, pad));
     }
-    Expr::List(result)
+    Expr::List(result.into())
   }
 }
 
@@ -3739,7 +3740,7 @@ fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PositionIndex".to_string(),
-        args: vec![expr.clone()],
+        args: vec![expr.clone()].into(),
       });
     }
   };
@@ -3781,7 +3782,7 @@ fn list_convolve_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ListConvolve".to_string(),
-        args: vec![kernel.clone(), list.clone()],
+        args: vec![kernel.clone(), list.clone()].into(),
       });
     }
   };
@@ -3790,7 +3791,7 @@ fn list_convolve_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ListConvolve".to_string(),
-        args: vec![kernel.clone(), list.clone()],
+        args: vec![kernel.clone(), list.clone()].into(),
       });
     }
   };
@@ -3798,7 +3799,7 @@ fn list_convolve_ast(
   let k = ker.len();
   let n = data.len();
   if k == 0 || n == 0 || k > n {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let out_len = n - k + 1;
@@ -3810,19 +3811,19 @@ fn list_convolve_ast(
     for j in 0..k {
       let product = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![ker[k - 1 - j].clone(), data[i + j].clone()],
+        args: vec![ker[k - 1 - j].clone(), data[i + j].clone()].into(),
       };
       terms.push(product);
     }
     let sum = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     };
     let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
     result.push(evaluated);
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 fn list_correlate_ast(
@@ -3834,7 +3835,7 @@ fn list_correlate_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ListCorrelate".to_string(),
-        args: vec![kernel.clone(), list.clone()],
+        args: vec![kernel.clone(), list.clone()].into(),
       });
     }
   };
@@ -3843,7 +3844,7 @@ fn list_correlate_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ListCorrelate".to_string(),
-        args: vec![kernel.clone(), list.clone()],
+        args: vec![kernel.clone(), list.clone()].into(),
       });
     }
   };
@@ -3851,7 +3852,7 @@ fn list_correlate_ast(
   let k = ker.len();
   let n = data.len();
   if k == 0 || n == 0 || k > n {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let out_len = n - k + 1;
@@ -3863,19 +3864,19 @@ fn list_correlate_ast(
     for j in 0..k {
       let product = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![ker[j].clone(), data[i + j].clone()],
+        args: vec![ker[j].clone(), data[i + j].clone()].into(),
       };
       terms.push(product);
     }
     let sum = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     };
     let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
     result.push(evaluated);
   }
 
-  Ok(Expr::List(result))
+  Ok(Expr::List(result.into()))
 }
 
 /// ArrayRules[array] - returns non-default elements as position -> value rules
@@ -3940,10 +3941,10 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
         .collect();
       rules.push(Expr::Rule {
-        pattern: Box::new(Expr::List(blanks)),
+        pattern: Box::new(Expr::List(blanks.into())),
         replacement: Box::new(sa_default),
       });
-      return Ok(Expr::List(rules));
+      return Ok(Expr::List(rules.into()));
     }
     // Normalization failed — fall through to the default-value handling.
   }
@@ -3990,11 +3991,11 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   rules.push(Expr::Rule {
-    pattern: Box::new(Expr::List(blanks)),
+    pattern: Box::new(Expr::List(blanks.into())),
     replacement: Box::new(default_val),
   });
 
-  Ok(Expr::List(rules))
+  Ok(Expr::List(rules.into()))
 }
 
 fn array_depth(expr: &Expr) -> usize {
@@ -4092,38 +4093,38 @@ fn build_sparse_array_csr(
       dims_list.clone(),
       default.clone(),
       inner,
-    ],
+    ].into(),
   };
   if entries.is_empty() {
     let row_ptr = if k == 1 {
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
     } else {
-      Expr::List(vec![Expr::Integer(0); n + 1])
+      Expr::List(vec![Expr::Integer(0); n + 1].into())
     };
     let inner = Expr::List(vec![
       Expr::Integer(1),
-      Expr::List(vec![row_ptr, Expr::List(vec![])]),
-      Expr::List(vec![]),
-    ]);
+      Expr::List(vec![row_ptr, Expr::List(vec![].into())].into()),
+      Expr::List(vec![].into()),
+    ].into());
     return make_outer(inner);
   }
   let mut sorted: Vec<(Vec<usize>, Expr)> = entries.to_vec();
   sorted.sort_by(|a, b| a.0.cmp(&b.0));
   if k == 1 {
     let row_ptr =
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(sorted.len() as i128)]);
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(sorted.len() as i128)].into());
     let col_indices = Expr::List(
       sorted
         .iter()
-        .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)]))
+        .map(|(idx, _)| Expr::List(vec![Expr::Integer(idx[0] as i128)].into()))
         .collect(),
     );
     let values = Expr::List(sorted.iter().map(|(_, v)| v.clone()).collect());
     let inner = Expr::List(vec![
       Expr::Integer(1),
-      Expr::List(vec![row_ptr, col_indices]),
+      Expr::List(vec![row_ptr, col_indices].into()),
       values,
-    ]);
+    ].into());
     return make_outer(inner);
   }
   let mut row_counts = vec![0i128; n];
@@ -4134,7 +4135,7 @@ fn build_sparse_array_csr(
     row_counts[row] += 1;
     let col_idx: Vec<Expr> =
       idx[1..].iter().map(|&i| Expr::Integer(i as i128)).collect();
-    col_indices_list.push(Expr::List(col_idx));
+    col_indices_list.push(Expr::List(col_idx.into()));
     values_list.push(v.clone());
   }
   let mut row_ptr = vec![Expr::Integer(0)];
@@ -4145,9 +4146,9 @@ fn build_sparse_array_csr(
   }
   let inner = Expr::List(vec![
     Expr::Integer(1),
-    Expr::List(vec![Expr::List(row_ptr), Expr::List(col_indices_list)]),
-    Expr::List(values_list),
-  ]);
+    Expr::List(vec![Expr::List(row_ptr.into()), Expr::List(col_indices_list.into())].into()),
+    Expr::List(values_list.into()),
+  ].into());
   make_outer(inner)
 }
 
@@ -4234,7 +4235,7 @@ fn build_outer_with_sparse_last(
         for it in items {
           results.push(walk_arg(func, it, accumulated, rest, sa)?);
         }
-        Some(Expr::List(results))
+        Some(Expr::List(results.into()))
       }
       _ => {
         accumulated.push(arg.clone());
@@ -4276,7 +4277,7 @@ fn build_inner_sparse(
     call_args.push(trailing);
     let call = Expr::FunctionCall {
       name: func_name.clone(),
-      args: call_args,
+      args: call_args.into(),
     };
     crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
   };

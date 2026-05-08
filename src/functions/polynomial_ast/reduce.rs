@@ -34,7 +34,7 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if vars.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Reduce".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -191,7 +191,7 @@ pub fn reduce_single_var(
   // If expression is already a simple passthrough (like x > 0)
   Ok(Expr::FunctionCall {
     name: "Reduce".to_string(),
-    args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+    args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
   })
 }
 
@@ -354,9 +354,9 @@ pub fn reduce_equation(
         make_equality(lhs, rhs),
         Expr::Identifier(var.to_string()),
         Expr::Identifier(dom.to_string()),
-      ]
+      ].into()
     } else {
-      vec![make_equality(lhs, rhs), Expr::Identifier(var.to_string())]
+      vec![make_equality(lhs, rhs), Expr::Identifier(var.to_string())].into()
     },
   })
 }
@@ -434,7 +434,7 @@ pub fn reduce_inequality(
         args: vec![
           make_comparison(lhs, rhs, op),
           Expr::Identifier(var.to_string()),
-        ],
+        ].into(),
       })
     }
   }
@@ -537,7 +537,7 @@ pub fn reduce_linear_inequality(
         op,
       ),
       Expr::Identifier(var.to_string()),
-    ],
+    ].into(),
   })
 }
 
@@ -593,7 +593,7 @@ pub fn reduce_quadratic_inequality(
             args: vec![
               Expr::Identifier(var.to_string()),
               Expr::Identifier("Reals".to_string()),
-            ],
+            ].into(),
           }
         }
       } else {
@@ -619,7 +619,7 @@ pub fn reduce_quadratic_inequality(
               args: vec![
                 Expr::Identifier(var.to_string()),
                 Expr::Identifier("Reals".to_string()),
-              ],
+              ].into(),
             })
           }
         }
@@ -640,7 +640,7 @@ pub fn reduce_quadratic_inequality(
               args: vec![
                 Expr::Identifier(var.to_string()),
                 Expr::Identifier("Reals".to_string()),
-              ],
+              ].into(),
             })
           }
         }
@@ -742,7 +742,7 @@ pub fn reduce_quadratic_inequality(
           right: Box::new(Expr::Integer(0)),
         },
         Expr::Identifier(var.to_string()),
-      ],
+      ].into(),
     })
   }
 }
@@ -1610,9 +1610,9 @@ pub fn reduce_multi_var_and(
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect())
       };
       if let Some(dom) = domain {
-        vec![combined, vars_expr, Expr::Identifier(dom.to_string())]
+        vec![combined, vars_expr, Expr::Identifier(dom.to_string())].into()
       } else {
-        vec![combined, vars_expr]
+        vec![combined, vars_expr].into()
       }
     },
   })

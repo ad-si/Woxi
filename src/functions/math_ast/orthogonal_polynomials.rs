@@ -41,7 +41,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "JacobiP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -77,7 +77,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let numer = crate::functions::math_ast::plus_ast(&[a, neg_b, coeff_x])?;
     let half = Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)],
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
     };
     return crate::functions::math_ast::times_ast(&[half, numer]);
   }
@@ -86,7 +86,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For now, return unevaluated for symbolic args
   Ok(Expr::FunctionCall {
     name: "JacobiP".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -161,7 +161,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "LegendreP".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -183,7 +183,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "LegendreP".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -198,7 +198,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "LegendreP".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -241,7 +241,7 @@ fn associated_legendre_p_ast(
     }
     return Ok(Expr::FunctionCall {
       name: "LegendreP".to_string(),
-      args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+      args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()].into(),
     });
   }
 
@@ -287,7 +287,7 @@ fn associated_legendre_p_ast(
   for _ in 0..m {
     let d_expr = Expr::FunctionCall {
       name: "D".to_string(),
-      args: vec![deriv, Expr::Identifier(var_name.clone())],
+      args: vec![deriv, Expr::Identifier(var_name.clone())].into(),
     };
     deriv = crate::evaluator::evaluate_expr_to_expr(&d_expr)?;
   }
@@ -315,7 +315,7 @@ fn associated_legendre_p_ast(
           }),
         },
         Expr::Integer(half_m as i128),
-      ],
+      ].into(),
     }
   } else {
     // (1 - x^2)^(m/2) with m odd → (1 - x^2)^((m-1)/2) * Sqrt[1 - x^2]
@@ -334,9 +334,9 @@ fn associated_legendre_p_ast(
         },
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)],
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
         },
-      ],
+      ].into(),
     };
     if half_m == 0 {
       sqrt_part
@@ -356,7 +356,7 @@ fn associated_legendre_p_ast(
               }),
             },
             Expr::Integer(half_m as i128),
-          ],
+          ].into(),
         }),
         right: Box::new(sqrt_part),
       }
@@ -545,32 +545,32 @@ pub fn spherical_harmonic_y_ast(
         let cos_theta = theta.cos();
         let leg_call = Expr::FunctionCall {
           name: "LegendreP".to_string(),
-          args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)],
+          args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)].into(),
         };
         let leg_val = match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
           Ok(Expr::Real(v)) => v,
           _ => {
             return Ok(Expr::FunctionCall {
               name: "SphericalHarmonicY".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
         // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
         let g_num_call = Expr::FunctionCall {
           name: "Gamma".to_string(),
-          args: vec![Expr::Real(lf - mf + 1.0)],
+          args: vec![Expr::Real(lf - mf + 1.0)].into(),
         };
         let g_den_call = Expr::FunctionCall {
           name: "Gamma".to_string(),
-          args: vec![Expr::Real(lf + mf + 1.0)],
+          args: vec![Expr::Real(lf + mf + 1.0)].into(),
         };
         let g_num = match crate::evaluator::evaluate_expr_to_expr(&g_num_call) {
           Ok(Expr::Real(v)) => v,
           _ => {
             return Ok(Expr::FunctionCall {
               name: "SphericalHarmonicY".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -579,7 +579,7 @@ pub fn spherical_harmonic_y_ast(
           _ => {
             return Ok(Expr::FunctionCall {
               name: "SphericalHarmonicY".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -598,7 +598,7 @@ pub fn spherical_harmonic_y_ast(
       }
       return Ok(Expr::FunctionCall {
         name: "SphericalHarmonicY".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -612,7 +612,7 @@ pub fn spherical_harmonic_y_ast(
   if l < 0 {
     return Ok(Expr::FunctionCall {
       name: "SphericalHarmonicY".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -667,7 +667,7 @@ pub fn spherical_harmonic_y_ast(
   let two_l_plus_1 = 2 * l_u + 1;
   let norm_inner = Expr::FunctionCall {
     name: "Rational".to_string(),
-    args: vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)],
+    args: vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)].into(),
   };
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
   let sqrt_arg = Expr::FunctionCall {
@@ -676,9 +676,9 @@ pub fn spherical_harmonic_y_ast(
       norm_inner,
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)].into(),
       },
-    ],
+    ].into(),
   };
   let sqrt_part = Expr::FunctionCall {
     name: "Power".to_string(),
@@ -686,23 +686,23 @@ pub fn spherical_harmonic_y_ast(
       sqrt_arg,
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)],
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
       },
-    ],
+    ].into(),
   };
   let norm_expr = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)],
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
       },
       sqrt_part,
-    ],
+    ].into(),
   };
   let cos_theta = Expr::FunctionCall {
     name: "Cos".to_string(),
-    args: vec![args[2].clone()],
+    args: vec![args[2].clone()].into(),
   };
   let plm_raw = associated_legendre_p_ast(
     &Expr::Integer(l as i128),
@@ -726,14 +726,14 @@ pub fn spherical_harmonic_y_ast(
             Expr::Identifier("I".to_string()),
             Expr::Integer(m as i128),
             args[3].clone(),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     }
   };
   let result = Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![norm_expr, plm, imp],
+    args: vec![norm_expr, plm, imp].into(),
   };
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
   Ok(simplify_spherical_harmonic_form(&evaluated))
@@ -877,7 +877,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     } else {
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(coeff_n), Expr::Integer(coeff_d)],
+        args: vec![Expr::Integer(coeff_n), Expr::Integer(coeff_d)].into(),
       }
     };
     let new_radicand_rat = if residual_d == 1 {
@@ -885,7 +885,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     } else {
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(residual_n), Expr::Integer(residual_d)],
+        args: vec![Expr::Integer(residual_n), Expr::Integer(residual_d)].into(),
       }
     };
     let new_sqrt_arg = Expr::FunctionCall {
@@ -894,9 +894,9 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
         new_radicand_rat,
         Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)].into(),
         },
-      ],
+      ].into(),
     };
     let new_sqrt = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -904,9 +904,9 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
         new_sqrt_arg,
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)],
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
         },
-      ],
+      ].into(),
     };
     (Some(new_coeff), Some(new_sqrt))
   } else {
@@ -998,7 +998,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
   new_args.extend(others);
   Expr::FunctionCall {
     name: "Times".to_string(),
-    args: new_args,
+    args: new_args.into(),
   }
 }
 
@@ -1098,7 +1098,7 @@ pub fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   };
 
@@ -1233,7 +1233,7 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "LegendreQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1248,7 +1248,7 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated for symbolic
   Ok(Expr::FunctionCall {
     name: "LegendreQ".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1323,7 +1323,7 @@ fn legendre_q_associated_ast(
   use crate::syntax::Expr;
   let unevaluated = || Expr::FunctionCall {
     name: "LegendreQ".to_string(),
-    args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()],
+    args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()].into(),
   };
   let any_inexact = [n_expr, m_expr, z_expr].iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
@@ -1505,7 +1505,7 @@ fn chebyshev_general_numeric(
   }
   let acos_x = Expr::FunctionCall {
     name: "ArcCos".to_string(),
-    args: vec![x_expr.clone()],
+    args: vec![x_expr.clone()].into(),
   };
   let order = match kind {
     "T" => n_expr.clone(),
@@ -1527,7 +1527,7 @@ fn chebyshev_general_numeric(
       "U" => "Sin".to_string(),
       _ => return None,
     },
-    args: vec![arg],
+    args: vec![arg].into(),
   };
   let final_expr = match kind {
     "T" => trig,
@@ -1543,7 +1543,7 @@ fn chebyshev_general_numeric(
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(2)),
           }),
-        }],
+        }].into(),
       };
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
@@ -1584,7 +1584,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "ChebyshevT".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1605,7 +1605,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevT".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -1617,7 +1617,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevT".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -1714,7 +1714,7 @@ pub fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
       ((1, 1), Some(xp)) => xp,
       ((-1, 1), Some(xp)) => Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp],
+        args: vec![Expr::Integer(-1), xp].into(),
       },
       ((c, 1), Some(xp)) => Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -1795,7 +1795,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "ChebyshevU".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1816,7 +1816,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevU".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -1827,7 +1827,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "ChebyshevU".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -1919,7 +1919,7 @@ pub fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
       ((1, 1), Some(xp)) => xp,
       ((-1, 1), Some(xp)) => Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp],
+        args: vec![Expr::Integer(-1), xp].into(),
       },
       ((c, 1), Some(xp)) => Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -2014,7 +2014,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "GegenbauerC".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2047,7 +2047,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "GegenbauerC".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2069,7 +2069,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "GegenbauerC".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -2084,7 +2084,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "GegenbauerC".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -2366,7 +2366,7 @@ pub fn gegenbauer_polynomial_symbolic(
         } else if *cn == -1 && *cd == 1 {
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), xp],
+            args: vec![Expr::Integer(-1), xp].into(),
           }
         } else {
           Expr::BinaryOp {
@@ -2504,11 +2504,11 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Hypergeometric1F1 path returns a Real); otherwise stay unevaluated.
       let neg_n = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), args[0].clone()],
+        args: vec![Expr::Integer(-1), args[0].clone()].into(),
       };
       let rewrite = Expr::FunctionCall {
         name: "Hypergeometric1F1".to_string(),
-        args: vec![neg_n, Expr::Integer(1), args[1].clone()],
+        args: vec![neg_n, Expr::Integer(1), args[1].clone()].into(),
       };
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewrite)?;
       if matches!(evaluated, Expr::Real(_) | Expr::BigFloat(_, _)) {
@@ -2516,7 +2516,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "LaguerreL".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2537,7 +2537,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "LaguerreL".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -2548,7 +2548,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "LaguerreL".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -2568,7 +2568,7 @@ fn generalized_laguerre_l_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LaguerreL".to_string(),
-        args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
+        args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
       });
     }
   };
@@ -2730,7 +2730,7 @@ fn generalized_laguerre_l_ast(
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "LaguerreL".to_string(),
-    args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
+    args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
   })
 }
 
@@ -2849,7 +2849,7 @@ pub fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
       Some(xp) if *c == 1 => xp,
       Some(xp) if *c == -1 => Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp],
+        args: vec![Expr::Integer(-1), xp].into(),
       },
       Some(xp) => Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -2932,7 +2932,7 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let h1 = eval_real(Expr::FunctionCall {
           name: "Hypergeometric1F1".to_string(),
-          args: vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)],
+          args: vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)].into(),
         });
         let h2 = eval_real(Expr::FunctionCall {
           name: "Hypergeometric1F1".to_string(),
@@ -2940,15 +2940,15 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Real((1.0 - nu) / 2.0),
             Expr::Real(1.5),
             Expr::Real(x2),
-          ],
+          ].into(),
         });
         let g1 = eval_real(Expr::FunctionCall {
           name: "Gamma".to_string(),
-          args: vec![Expr::Real((1.0 - nu) / 2.0)],
+          args: vec![Expr::Real((1.0 - nu) / 2.0)].into(),
         });
         let g2 = eval_real(Expr::FunctionCall {
           name: "Gamma".to_string(),
-          args: vec![Expr::Real(-nu / 2.0)],
+          args: vec![Expr::Real(-nu / 2.0)].into(),
         });
         if let (Some(h1v), Some(h2v), Some(g1v), Some(g2v)) = (h1, h2, g1, g2) {
           let pi = std::f64::consts::PI;
@@ -2959,13 +2959,13 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "HermiteH".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "HermiteH".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2993,7 +2993,7 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "HermiteH".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -3089,7 +3089,7 @@ pub fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
       Some(xp) if *c == 1 => xp,
       Some(xp) if *c == -1 => Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp],
+        args: vec![Expr::Integer(-1), xp].into(),
       },
       Some(xp) => Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -3216,7 +3216,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
       if is_one_minus_cos_sq(left) && is_one_half(right) {
         return Expr::FunctionCall {
           name: "Sin".to_string(),
-          args: vec![theta.clone()],
+          args: vec![theta.clone()].into(),
         };
       }
       Expr::BinaryOp {
@@ -3229,7 +3229,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
       if is_one_minus_cos_sq(&args[0]) && is_one_half(&args[1]) {
         return Expr::FunctionCall {
           name: "Sin".to_string(),
-          args: vec![theta.clone()],
+          args: vec![theta.clone()].into(),
         };
       }
       Expr::FunctionCall {

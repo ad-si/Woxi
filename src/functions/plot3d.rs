@@ -4873,7 +4873,7 @@ fn parametric_plot3d_curve_ast(
     // collect_3d_primitives picks up nested colors/Thickness/etc.
     prim_items.push(Expr::FunctionCall {
       name: "Directive".to_string(),
-      args: vec![ps.clone()],
+      args: vec![ps.clone()].into(),
     });
   }
 
@@ -4884,7 +4884,7 @@ fn parametric_plot3d_curve_ast(
       if seg.len() >= 2 {
         sink.push(Expr::FunctionCall {
           name: "Line".to_string(),
-          args: vec![Expr::List(std::mem::take(seg))],
+          args: vec![Expr::List(std::mem::take(seg).into())].into(),
         });
       } else {
         seg.clear();
@@ -4899,7 +4899,7 @@ fn parametric_plot3d_curve_ast(
           Expr::Real(x),
           Expr::Real(y),
           Expr::Real(z),
-        ]));
+        ].into()));
       } else {
         flush(&mut current_segment, &mut prim_items);
       }
@@ -4924,13 +4924,13 @@ fn parametric_plot3d_curve_ast(
   // that `Show[]` can merge it with other 3D primitives. When this
   // expression is the top-level result, `render_graphics_fc_if_needed`
   // dispatches it to `graphics3d_ast`.
-  let content = Expr::List(prim_items);
+  let content = Expr::List(prim_items.into());
   let mut g3d_args = vec![content];
   g3d_args.extend(forwarded_opts);
 
   Ok(Expr::FunctionCall {
     name: "Graphics3D".to_string(),
-    args: g3d_args,
+    args: g3d_args.into(),
   })
 }
 

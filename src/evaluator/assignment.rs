@@ -124,7 +124,7 @@ fn wrap_rule_lhs_in_holdpattern(expr: &Expr) -> Expr {
     } else {
       Expr::FunctionCall {
         name: "HoldPattern".to_string(),
-        args: vec![p.clone()],
+        args: vec![p.clone()].into(),
       }
     }
   }
@@ -515,8 +515,8 @@ pub fn set_attributes_from_value(
   // Extract attribute names from the value
   let attr_exprs = match rhs_value {
     Expr::List(items) => items.clone(),
-    Expr::Identifier(_) => vec![rhs_value.clone()],
-    _ => vec![rhs_value.clone()],
+    Expr::Identifier(_) => vec![rhs_value.clone()].into(),
+    _ => vec![rhs_value.clone()].into(),
   };
 
   let mut valid_attrs = Vec::new();
@@ -526,7 +526,7 @@ pub fn set_attributes_from_value(
       valid_attrs.push(attr_name.clone());
     } else {
       // Non-symbol attribute — emit warning
-      let attr_str = expr_to_string(attr_expr);
+      let attr_str = expr_to_string(&attr_expr);
       crate::emit_message(&format!(
         "Attributes::attnf: {} is not a known attribute.",
         attr_str
@@ -554,7 +554,7 @@ pub fn set_attributes_from_value(
 /// Iteration order is preserved (no specificity sorting), matching Wolfram.
 pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   let rules: Vec<Expr> = match rhs {
-    Expr::List(items) => items.clone(),
+    Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
   // Collect the head symbols touched by these rules and clear their existing
@@ -641,11 +641,11 @@ pub fn set_options_from_value(
   // Extract rules from the value
   let rules = match rhs_value {
     Expr::List(items) => items.clone(),
-    _ => vec![rhs_value.clone()],
+    _ => vec![rhs_value.clone()].into(),
   };
 
   crate::FUNC_OPTIONS.with(|m| {
-    m.borrow_mut().insert(sym_name.to_string(), rules);
+    m.borrow_mut().insert(sym_name.to_string(), rules.to_vec());
   });
 
   Ok(rhs_value.clone())
@@ -916,7 +916,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       if let Some(prec_real) = as_real {
-        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())])
+        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())].into())
       } else {
         // Non-numeric precision (`N[a, p_?test] := …` style) — keep
         // the user's spec verbatim, mirroring Wolfram's HoldPattern
@@ -927,11 +927,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       Expr::List(vec![
         Expr::Identifier("MachinePrecision".to_string()),
         Expr::Identifier("MachinePrecision".to_string()),
-      ])
+      ].into())
     };
     let canonical_lhs = Expr::FunctionCall {
       name: "N".to_string(),
-      args: vec![Expr::Identifier(sym_name.clone()), prec_part],
+      args: vec![Expr::Identifier(sym_name.clone()), prec_part].into(),
     };
     N_VALUES.with(|m| {
       let mut map = m.borrow_mut();
@@ -1034,7 +1034,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Replay each rule as an individual SetDelayed/Set so the rule LHS
     // re-installs as a MessageName DownValue.
     let rule_items: Vec<Expr> = match &rhs_value {
-      Expr::List(items) => items.clone(),
+      Expr::List(items) => items.to_vec(),
       _ => vec![],
     };
     for item in &rule_items {
@@ -1082,7 +1082,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     let wrapped_rhs = wrap_rule_lhs_in_holdpattern(rhs);
     let rhs_value = evaluate_expr_to_expr(&wrapped_rhs)?;
     let rule_items: Vec<Expr> = match &rhs_value {
-      Expr::List(items) => items.clone(),
+      Expr::List(items) => items.to_vec(),
       _ => vec![],
     };
     let mut entries: Vec<(Expr, Expr)> = Vec::new();
@@ -1373,7 +1373,7 @@ pub fn set_delayed_ast(
     1 => Some(all_conditions.into_iter().next().unwrap()),
     _ => Some(Expr::FunctionCall {
       name: "And".to_string(),
-      args: all_conditions,
+      args: all_conditions.into(),
     }),
   };
   let body_condition = combined.as_ref();
@@ -1411,7 +1411,7 @@ pub fn set_delayed_ast(
     let wrapped_body = wrap_rule_lhs_in_holdpattern(body);
     let rhs_value = evaluate_expr_to_expr(&wrapped_body)?;
     let rule_items: Vec<Expr> = match &rhs_value {
-      Expr::List(items) => items.clone(),
+      Expr::List(items) => items.to_vec(),
       _ => vec![],
     };
     let mut entries: Vec<(Expr, Expr)> = Vec::new();
@@ -1531,7 +1531,7 @@ pub fn set_delayed_ast(
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
     let rules: Vec<Expr> = match &rhs_value {
-      Expr::List(items) => items.clone(),
+      Expr::List(items) => items.to_vec(),
       other => vec![other.clone()],
     };
     let tag = Expr::Identifier(sym.clone());
@@ -1608,7 +1608,7 @@ pub fn set_delayed_ast(
           if op_args.len() == 1
             && let Expr::List(rules) = &op_args[0]
           {
-            inline_opts_defaults = Some(rules.clone());
+            inline_opts_defaults = Some(rules.to_vec());
           }
         }
         // List pattern: {x_Integer, y_Integer} — destructure a list argument
@@ -1619,7 +1619,7 @@ pub fn set_delayed_ast(
             operands: vec![
               Expr::FunctionCall {
                 name: "Length".to_string(),
-                args: vec![Expr::Identifier(param_name.clone())],
+                args: vec![Expr::Identifier(param_name.clone())].into(),
               },
               Expr::Integer(patterns.len() as i128),
             ],
@@ -1655,7 +1655,7 @@ pub fn set_delayed_ast(
           };
           conditions.push(Some(Expr::FunctionCall {
             name: "__StructuralPattern__".to_string(),
-            args: vec![Expr::Identifier(param_name.clone()), arg.clone()],
+            args: vec![Expr::Identifier(param_name.clone()), arg.clone()].into(),
           }));
           params.push(param_name);
           defaults.push(None);
@@ -1692,7 +1692,7 @@ pub fn set_delayed_ast(
               };
               conditions.push(Some(Expr::FunctionCall {
                 name: "__StructuralPattern__".to_string(),
-                args: vec![Expr::Identifier(pname.clone()), normalized],
+                args: vec![Expr::Identifier(pname.clone()), normalized].into(),
               }));
               params.push(pname);
               defaults.push(None);
@@ -1720,7 +1720,7 @@ pub fn set_delayed_ast(
               if op_args.len() == 1
                 && let Expr::List(rules) = &op_args[0]
               {
-                inline_opts_defaults = Some(rules.clone());
+                inline_opts_defaults = Some(rules.to_vec());
               }
             }
             // `Pattern[name, _]` / `Pattern[name, _Head]` / etc. — treat as
@@ -1755,7 +1755,7 @@ pub fn set_delayed_ast(
               let normalized = normalize_structural_pattern(arg);
               conditions.push(Some(Expr::FunctionCall {
                 name: "__StructuralPattern__".to_string(),
-                args: vec![Expr::Identifier(param_name.clone()), normalized],
+                args: vec![Expr::Identifier(param_name.clone()), normalized].into(),
               }));
               params.push(param_name);
               blank_types.push(1);
@@ -1790,7 +1790,7 @@ pub fn set_delayed_ast(
                 args: vec![
                   Expr::Identifier(func_name.clone()),
                   Expr::Integer((i + 1) as i128),
-                ],
+                ].into(),
               })
             }
             _ => None,
@@ -1814,7 +1814,7 @@ pub fn set_delayed_ast(
             args: vec![
               Expr::Identifier(param_name.clone()),
               Expr::Integer((idx + 1) as i128),
-            ],
+            ].into(),
           };
           final_body = crate::syntax::substitute_variable(
             &final_body,
@@ -1847,7 +1847,7 @@ pub fn set_delayed_ast(
           let existing = conditions[idx].take().unwrap();
           conditions[idx] = Some(Expr::FunctionCall {
             name: "And".to_string(),
-            args: vec![existing, body_cond.clone()],
+            args: vec![existing, body_cond.clone()].into(),
           });
         } else {
           // All conditions are structural patterns — append as extra condition
@@ -1946,7 +1946,7 @@ pub fn set_delayed_ast(
     let stored_body = match body_condition {
       Some(cond) => Expr::FunctionCall {
         name: "Condition".to_string(),
-        args: vec![body.clone(), cond.clone()],
+        args: vec![body.clone(), cond.clone()].into(),
       },
       None => body.clone(),
     };
@@ -1986,7 +1986,7 @@ pub fn set_delayed_ast(
   // Fallback: return symbolic form
   Ok(Expr::FunctionCall {
     name: "SetDelayed".to_string(),
-    args: vec![lhs.clone(), body.clone()],
+    args: vec![lhs.clone(), body.clone()].into(),
   })
 }
 
@@ -2113,8 +2113,8 @@ pub fn tag_set_delayed_ast(
   // Extract outer function name and args from the LHS
   // Handles FunctionCall directly, and converts BinaryOp/UnaryOp/Comparison
   // to their canonical function call form (e.g. Plus[a, b] for a + b).
-  let (outer_func, lhs_args) = match lhs {
-    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+  let (outer_func, lhs_args): (String, Vec<Expr>) = match lhs {
+    Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
       let (name, args) = match op {
         crate::syntax::BinaryOperator::Plus => {
@@ -2213,7 +2213,7 @@ pub fn tag_set_delayed_ast(
             operands: vec![
               Expr::FunctionCall {
                 name: "Length".to_string(),
-                args: vec![Expr::Identifier(param_name.clone())],
+                args: vec![Expr::Identifier(param_name.clone())].into(),
               },
               Expr::Integer(inner_args.len() as i128),
             ],
@@ -2232,7 +2232,7 @@ pub fn tag_set_delayed_ast(
               args: vec![
                 Expr::Identifier(param_name.clone()),
                 Expr::Integer((j + 1) as i128),
-              ],
+              ].into(),
             };
             // If this pattern variable was already seen, add a SameQ
             // condition to ensure both occurrences match the same value.
@@ -2261,10 +2261,10 @@ pub fn tag_set_delayed_ast(
         let is_pattern = match arg {
           Expr::Identifier(name) => name.contains('_'),
           Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
-          _ => crate::evaluator::pattern_matching::contains_pattern(arg),
+          _ => crate::evaluator::pattern_matching::contains_pattern(&arg),
         };
         if is_pattern {
-          let (pat_name, head, _blank_type) = extract_pattern_info(arg);
+          let (pat_name, head, _blank_type) = extract_pattern_info(&arg);
           if pat_name.is_empty() && head.is_none() {
             // Anonymous pattern — use generated name
             let param_name = format!("_up{}", i);
@@ -2277,7 +2277,7 @@ pub fn tag_set_delayed_ast(
         } else {
           // Literal argument — must match exactly via SameQ
           let param_name = format!("_up{}", i);
-          let eval_arg = evaluate_expr_to_expr(arg)?;
+          let eval_arg = evaluate_expr_to_expr(&arg)?;
           conditions.push(Some(Expr::Comparison {
             operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
             operators: vec![crate::syntax::ComparisonOp::SameQ],
@@ -2306,7 +2306,7 @@ pub fn tag_set_delayed_ast(
     } else {
       Expr::FunctionCall {
         name: "And".to_string(),
-        args: all_conds,
+        args: all_conds.into(),
       }
     };
     conditions[last_idx] = Some(combined);
@@ -2334,7 +2334,7 @@ pub fn tag_set_delayed_ast(
       let existing = conditions[combine_idx].take().unwrap();
       conditions[combine_idx] = Some(Expr::FunctionCall {
         name: "And".to_string(),
-        args: vec![existing, extra_cond.clone()],
+        args: vec![existing, extra_cond.clone()].into(),
       });
     } else if !attached {
       // No condition slots at all — add a new one
@@ -2525,17 +2525,17 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
       let right_expr = match op {
         crate::syntax::BinaryOperator::Minus => Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), (**right).clone()],
+          args: vec![Expr::Integer(-1), (**right).clone()].into(),
         },
         crate::syntax::BinaryOperator::Divide => Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![(**right).clone(), Expr::Integer(-1)],
+          args: vec![(**right).clone(), Expr::Integer(-1)].into(),
         },
         _ => (**right).clone(),
       };
       Expr::FunctionCall {
         name: head.to_string(),
-        args: vec![(**left).clone(), right_expr],
+        args: vec![(**left).clone(), right_expr].into(),
       }
     }
     _ => lhs.clone(),
@@ -2561,7 +2561,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       ));
       return Ok(Expr::FunctionCall {
         name: "UpSet".to_string(),
-        args: vec![lhs.clone(), rhs.clone()],
+        args: vec![lhs.clone(), rhs.clone()].into(),
       });
     }
   };
@@ -2593,7 +2593,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       if let Some(prec_real) = as_real {
-        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())])
+        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())].into())
       } else {
         prec_eval
       }
@@ -2601,11 +2601,11 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       Expr::List(vec![
         Expr::Identifier("MachinePrecision".to_string()),
         Expr::Identifier("MachinePrecision".to_string()),
-      ])
+      ].into())
     };
     let canonical_lhs = Expr::FunctionCall {
       name: "N".to_string(),
-      args: vec![Expr::Identifier(sym_name.clone()), prec_part],
+      args: vec![Expr::Identifier(sym_name.clone()), prec_part].into(),
     };
     N_VALUES.with(|m| {
       let mut map = m.borrow_mut();

@@ -102,13 +102,13 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .map(|_| Expr::Integer(rng.gen_range(min..=max)))
               .collect()
           });
-          Expr::List(results)
+          Expr::List(results.into())
         } else {
           let inner_dims = &dims[1..];
           let results: Vec<Expr> = (0..n)
             .map(|_| make_random_int_array(inner_dims, min, max))
             .collect();
-          Expr::List(results)
+          Expr::List(results.into())
         }
       }
 
@@ -206,13 +206,13 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
               .collect()
           });
-          Expr::List(results)
+          Expr::List(results.into())
         } else {
           let inner_dims = &dims[1..];
           let results: Vec<Expr> = (0..n)
             .map(|_| make_random_array(inner_dims, min, max))
             .collect();
-          Expr::List(results)
+          Expr::List(results.into())
         }
       }
 
@@ -446,7 +446,7 @@ pub fn random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Complex" => random_complex_ast(&rest),
     _ => Ok(Expr::FunctionCall {
       name: "Random".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -471,7 +471,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "RandomChoice".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -496,7 +496,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
         .collect()
     });
-    Ok(Expr::List(result))
+    Ok(Expr::List(result.into()))
   }
 }
 
@@ -515,7 +515,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "RandomSample".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -542,7 +542,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let sampled: Vec<Expr> =
       crate::with_rng(|rng| items.choose_multiple(rng, n).cloned().collect());
-    Ok(Expr::List(sampled))
+    Ok(Expr::List(sampled.into()))
   }
 }
 
@@ -594,7 +594,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     .map(|_| Expr::Real(rng.gen_range(lo..hi)))
                     .collect()
                 });
-                Ok(Expr::List(results))
+                Ok(Expr::List(results.into()))
               }
             }
           } else {
@@ -646,13 +646,13 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let results: Vec<Expr> = crate::with_rng(|rng| {
             (0..count).map(|_| Expr::Real(normal.sample(rng))).collect()
           });
-          Ok(Expr::List(results))
+          Ok(Expr::List(results.into()))
         }
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "RandomVariate".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -690,7 +690,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "RandomPrime".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -727,7 +727,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|_| Expr::Integer(primes[rng.gen_range(0..primes.len())]))
           .collect()
       });
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
   } else {
     // Rejection sampling for large ranges
@@ -752,7 +752,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if count == 1 {
       Ok(results.into_iter().next().unwrap())
     } else {
-      Ok(Expr::List(results))
+      Ok(Expr::List(results.into()))
     }
   }
 }

@@ -23,7 +23,7 @@ pub fn cyclotomic_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Cyclotomic".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };

@@ -638,14 +638,14 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
           if reduced == 1 {
             return Expr::FunctionCall {
               name: "Abs".to_string(),
-              args: vec![base.as_ref().clone()],
+              args: vec![base.as_ref().clone()].into(),
             };
           }
           return Expr::BinaryOp {
             op: BinaryOperator::Power,
             left: Box::new(Expr::FunctionCall {
               name: "Abs".to_string(),
-              args: vec![base.as_ref().clone()],
+              args: vec![base.as_ref().clone()].into(),
             }),
             right: Box::new(Expr::Integer(reduced)),
           };
@@ -673,7 +673,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Abs".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -694,7 +694,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "Sign".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -711,7 +711,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "Arg".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -733,7 +733,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Re".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -754,7 +754,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Im".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -775,7 +775,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Floor".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -797,7 +797,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Ceiling".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -809,7 +809,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "Sin".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -823,7 +823,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         } else {
           Expr::FunctionCall {
             name: "Cos".to_string(),
-            args: vec![non_pi_part],
+            args: vec![non_pi_part].into(),
           }
         };
         return Expr::BinaryOp {
@@ -839,7 +839,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "Cos".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -862,7 +862,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "ArcTan".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -875,7 +875,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -892,7 +892,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         .collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: refined_args,
+        args: refined_args.into(),
       }
     }
 
@@ -906,7 +906,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
         name: "FractionalPart".to_string(),
-        args: vec![refined_arg],
+        args: vec![refined_arg].into(),
       }
     }
 
@@ -921,7 +921,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         .collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: refined_args,
+        args: refined_args.into(),
       }
     }
 
@@ -958,7 +958,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: name.clone(),
-        args: refined,
+        args: refined.into(),
       }
     }
 
@@ -1146,7 +1146,7 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
           }
           return Some(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: abs_factors,
+            args: abs_factors.into(),
           });
         }
       }
@@ -1230,7 +1230,7 @@ fn refine_product_root(
       left: Box::new(factor.clone()),
       right: Box::new(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(m)],
+        args: vec![Expr::Integer(1), Expr::Integer(m)].into(),
       }),
     };
     let refined = refine_expr(&root_expr, info, assumption);
@@ -1830,16 +1830,16 @@ fn refine_log(
           args: vec![
             Expr::Identifier("I".to_string()),
             Expr::Constant("Pi".to_string()),
-          ],
+          ].into(),
         },
         Expr::FunctionCall {
           name: "Log".to_string(),
           args: vec![Expr::UnaryOp {
             op: UnaryOperator::Minus,
             operand: Box::new(arg.clone()),
-          }],
+          }].into(),
         },
-      ],
+      ].into(),
     });
   }
 
@@ -1857,7 +1857,7 @@ fn refine_log(
       left: Box::new(*exp.clone()),
       right: Box::new(Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![*base.clone()],
+        args: vec![*base.clone()].into(),
       }),
     });
   }
@@ -3329,14 +3329,14 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pattern: Box::new(Expr::Identifier("Assumptions".to_string())),
           replacement: Box::new(Expr::FunctionCall {
             name: "And".to_string(),
-            args: and_args,
+            args: and_args.into(),
           }),
         }
       }
       (None, 1) => positional.into_iter().next().unwrap(),
       (None, _) => Expr::FunctionCall {
         name: "And".to_string(),
-        args: positional,
+        args: positional.into(),
       },
     };
     return simplify_with_assumptions(&args[0], &combined, false);
@@ -3350,7 +3350,7 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let simplified_items: Vec<Expr> =
       items.iter().map(simplify_expr_with_together).collect();
-    let assumed = apply_active_assumptions(&Expr::List(simplified_items));
+    let assumed = apply_active_assumptions(&Expr::List(simplified_items.into()));
     return Ok(assumed);
   }
   let simplified = simplify_expr_with_together(&args[0]);
@@ -3452,7 +3452,7 @@ fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
     .unwrap_or_else(|| Expr::BigInteger(pow));
   Some(Expr::FunctionCall {
     name: "Log".to_string(),
-    args: vec![pow_expr],
+    args: vec![pow_expr].into(),
   })
 }
 
@@ -3588,7 +3588,7 @@ fn together_subexpressions(expr: &Expr) -> Expr {
         args.iter().map(super::together::together_expr).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr.clone(),
@@ -3611,7 +3611,7 @@ pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|e| apply_active_assumptions(&full_simplify_expr_with_together(e)))
       .collect();
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
   let simplified = full_simplify_expr_with_together(&args[0]);
   Ok(apply_active_assumptions(&simplified))
@@ -3712,7 +3712,7 @@ fn simplify_with_assumptions(
     if !replace_global && let Some(prev_assum) = current_assumptions() {
       Expr::FunctionCall {
         name: "And".to_string(),
-        args: vec![prev_assum, assumption_val.clone()],
+        args: vec![prev_assum, assumption_val.clone()].into(),
       }
     } else {
       assumption_val.clone()
@@ -3761,7 +3761,7 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
   // Thread over Lists
   if let Expr::List(items) = expr {
     let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
-    return Expr::List(results);
+    return Expr::List(results.into());
   }
 
   // Combine Abs quotients/products before other simplification
@@ -4039,7 +4039,12 @@ fn collect_free_vars_simple(
         collect_free_vars_simple(a, out);
       }
     }
-    Expr::List(items) | Expr::CompoundExpr(items) => {
+    Expr::List(items) => {
+      for it in items {
+        collect_free_vars_simple(it, out);
+      }
+    }
+    Expr::CompoundExpr(items) => {
       for it in items {
         collect_free_vars_simple(it, out);
       }
@@ -4260,7 +4265,7 @@ fn simplify_inside_times(expr: &Expr) -> Expr {
       let new_args: Vec<Expr> = args.iter().map(simplify_plus_factor).collect();
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr.clone(),
@@ -4541,7 +4546,7 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
       1 => residual.into_iter().next().unwrap(),
       _ => Expr::FunctionCall {
         name: "And".to_string(),
-        args: residual,
+        args: residual.into(),
       },
     };
     if matches!(&new_cond, Expr::Identifier(s) if s == "True") {
@@ -4549,12 +4554,12 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
     }
     return Expr::FunctionCall {
       name: "ConditionalExpression".to_string(),
-      args: vec![simplify_expr(value), new_cond],
+      args: vec![simplify_expr(value), new_cond].into(),
     };
   }
   Expr::FunctionCall {
     name: "ConditionalExpression".to_string(),
-    args: vec![simplify_expr(value), cond.clone()],
+    args: vec![simplify_expr(value), cond.clone()].into(),
   }
 }
 
@@ -4880,7 +4885,7 @@ fn try_simplify_trig_ratio(num: &Expr, den: &Expr) -> Option<Expr> {
     if let Some(name) = result_name {
       return Some(Expr::FunctionCall {
         name: name.to_string(),
-        args: vec![n_args[0].clone()],
+        args: vec![n_args[0].clone()].into(),
       });
     }
   }
@@ -4899,7 +4904,7 @@ fn try_simplify_trig_ratio(num: &Expr, den: &Expr) -> Option<Expr> {
     if let Some(rname) = result_name {
       return Some(Expr::FunctionCall {
         name: rname.to_string(),
-        args: vec![args[0].clone()],
+        args: vec![args[0].clone()].into(),
       });
     }
   }
@@ -5367,7 +5372,7 @@ fn simplify_abs_products(expr: &Expr) -> Expr {
 
   let combined_abs = Expr::FunctionCall {
     name: "Abs".to_string(),
-    args: vec![inner_expanded],
+    args: vec![inner_expanded].into(),
   };
 
   if other_factors.is_empty() {
@@ -5923,11 +5928,11 @@ pub fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
 
   let cos_expr = Expr::FunctionCall {
     name: "Cos".to_string(),
-    args: vec![trig_arg.clone()],
+    args: vec![trig_arg.clone()].into(),
   };
   let sin_expr = Expr::FunctionCall {
     name: "Sin".to_string(),
-    args: vec![trig_arg.clone()],
+    args: vec![trig_arg.clone()].into(),
   };
 
   let mut best: Option<Expr> = None;
@@ -6183,7 +6188,7 @@ fn build_outer_result(
       };
       let trig_call = Expr::FunctionCall {
         name: multi_angle_fn.to_string(),
-        args: vec![angle_arg],
+        args: vec![angle_arg].into(),
       };
       let term = if coeff == 1 {
         trig_call
@@ -6222,7 +6227,7 @@ fn build_outer_result(
   } else {
     Some(Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(num_factor), Expr::Integer(denom)],
+      args: vec![Expr::Integer(num_factor), Expr::Integer(denom)].into(),
     })
   };
 

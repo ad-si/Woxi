@@ -40,11 +40,11 @@ fn polynomial_term_to_series_data(
       args: vec![
         sd_var.clone(),
         sd_x0.clone(),
-        Expr::List(coeffs),
+        Expr::List(coeffs.into()),
         Expr::Integer(n),
         Expr::Integer(nmax_int),
         Expr::Integer(1),
-      ],
+      ].into(),
     }
   };
   // Constant w.r.t. var → coeff at order 0
@@ -111,11 +111,11 @@ fn polynomial_term_to_series_data(
         args: vec![
           sa[0].clone(),
           sa[1].clone(),
-          Expr::List(negated),
+          Expr::List(negated.into()),
           sa[3].clone(),
           sa[4].clone(),
           sa[5].clone(),
-        ],
+        ].into(),
       });
     }
     return None;
@@ -123,7 +123,7 @@ fn polynomial_term_to_series_data(
   // `c * var^n`, `c * var`, `var * c`, etc. — Times of one var-bearing
   // factor and any number of var-free factors.
   let times_args: Option<Vec<Expr>> = match e {
-    Expr::FunctionCall { name, args } if name == "Times" => Some(args.clone()),
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Times,
       left,
@@ -170,7 +170,7 @@ fn polynomial_term_to_series_data(
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: coeff_factors,
+        args: coeff_factors.into(),
       }
     };
     return Some(make_sd(coeff, n));
@@ -305,7 +305,7 @@ fn try_series_data_plus(
         Expr::List(items) => items.clone(),
         _ => return Ok(None),
       };
-      coeff_lists.push(coeffs);
+      coeff_lists.push(coeffs.to_vec());
     }
   }
   let new_nmin = *nmins.iter().min().unwrap();
@@ -364,11 +364,11 @@ fn try_series_data_plus(
     args: vec![
       var0,
       x0_0,
-      Expr::List(new_coeffs),
+      Expr::List(new_coeffs.into()),
       Expr::Integer(adjusted_nmin),
       Expr::Integer(new_nmax),
       Expr::Integer(common_denom),
-    ],
+    ].into(),
   };
   if other.is_empty() {
     Ok(Some(merged))
@@ -462,7 +462,7 @@ fn try_series_data_times(
       Expr::List(items) => items.clone(),
       _ => return None,
     };
-    Some((nmin * scale, nmax * scale, coeffs))
+    Some((nmin * scale, nmax * scale, coeffs.to_vec()))
   };
 
   let mut acc: Option<(i128, i128, Vec<Expr>, i128)> = None; // (nmin, nmax, coeffs, scale_used)
@@ -517,11 +517,11 @@ fn try_series_data_times(
     args: vec![
       var0,
       x0_0,
-      Expr::List(coeffs_f),
+      Expr::List(coeffs_f.into()),
       Expr::Integer(nmin_f),
       Expr::Integer(nmax_f),
       Expr::Integer(common_denom),
-    ],
+    ].into(),
   };
 
   let series_idx_set: std::collections::HashSet<usize> =
@@ -694,7 +694,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: final_args,
+      args: final_args.into(),
     });
   }
 
@@ -852,7 +852,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: final_args,
+        args: final_args.into(),
       })
     }
   }
@@ -933,7 +933,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   if matches!(&e, Expr::Identifier(s) if s == "I") {
     return Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Real(1.0), Expr::Identifier("I".to_string())],
+      args: vec![Expr::Real(1.0), Expr::Identifier("I".to_string())].into(),
     };
   }
   if let Expr::FunctionCall { name, args } = &e
@@ -949,7 +949,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     }
     return Expr::FunctionCall {
       name: "Times".to_string(),
-      args: new_args,
+      args: new_args.into(),
     };
   }
   if let Expr::BinaryOp {
@@ -962,7 +962,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     let right_new = to_real(right).unwrap_or((**right).clone());
     return Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![left_new, right_new],
+      args: vec![left_new, right_new].into(),
     };
   }
   // Complex[a, b] → Times[Real(b), I] is an oversimplification when a != 0;
@@ -999,7 +999,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     if zero_re {
       return Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![im, Expr::Identifier("I".to_string())],
+        args: vec![im, Expr::Identifier("I".to_string())].into(),
       };
     }
     return Expr::FunctionCall {
@@ -1008,9 +1008,9 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
         re,
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![im, Expr::Identifier("I".to_string())],
+          args: vec![im, Expr::Identifier("I".to_string())].into(),
         },
-      ],
+      ].into(),
     };
   }
   e
@@ -1238,7 +1238,7 @@ impl Coeff {
         } else {
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())],
+            args: vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())].into(),
           }
         }
       }
@@ -1259,7 +1259,7 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
         } else {
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: args[1..].to_vec(),
+            args: args[1..].to_vec().into(),
           }
         }
       };
@@ -1372,7 +1372,7 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
       {
         result.push(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![c.to_expr(), base],
+          args: vec![c.to_expr(), base].into(),
         });
       }
       continue;
@@ -1397,7 +1397,7 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     if matches!(&c, Coeff::Real(_)) && c.is_one() {
       result.push(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![c.to_expr(), base],
+        args: vec![c.to_expr(), base].into(),
       });
       continue;
     }
@@ -1418,7 +1418,7 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
       }
       result.push(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: times_args,
+        args: times_args.into(),
       });
     }
   }
@@ -2385,7 +2385,7 @@ fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: rest.to_vec(),
+        args: rest.to_vec().into(),
       }
     });
   }
@@ -4073,11 +4073,11 @@ fn try_series_data_times_var_power(
     args: vec![
       var,
       x0,
-      Expr::List(new_coeffs),
+      Expr::List(new_coeffs.into()),
       Expr::Integer(new_nmin),
       Expr::Integer(new_nmax),
       Expr::Integer(d),
-    ],
+    ].into(),
   }))
 }
 
@@ -4141,7 +4141,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if all_indep && !other_factors.is_empty() {
         let coeff_list = match &sd_args[2] {
           Expr::List(items) => items.clone(),
-          _ => Vec::new(),
+          _ => Vec::new().into(),
         };
         if !coeff_list.is_empty() {
           let mut product = other_factors[0].clone();
@@ -4158,11 +4158,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               sd_args[0].clone(),
               sd_args[1].clone(),
-              Expr::List(new_coeffs),
+              Expr::List(new_coeffs.into()),
               sd_args[3].clone(),
               sd_args[4].clone(),
               sd_args[5].clone(),
-            ],
+            ].into(),
           });
         }
       }
@@ -4269,14 +4269,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::FunctionCall {
         name: "And".to_string(),
-        args: ce_conds,
+        args: ce_conds.into(),
       }
     };
     let combined_cond =
       crate::evaluator::evaluate_expr_to_expr(&combined_cond)?;
     return Ok(Expr::FunctionCall {
       name: "ConditionalExpression".to_string(),
-      args: vec![combined_value, combined_cond],
+      args: vec![combined_value, combined_cond].into(),
     });
   }
   // ComplexInfinity * 0 = Indeterminate, ComplexInfinity * x = ComplexInfinity
@@ -4380,7 +4380,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       return Ok(Expr::FunctionCall {
         name: tag.to_string(),
-        args: vec![],
+        args: vec![].into(),
       });
     }
   }
@@ -4605,7 +4605,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       final_args.extend(symbolic_args);
       return Ok(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: final_args,
+        args: final_args.into(),
       });
     }
 
@@ -4621,7 +4621,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: final_args,
+      args: final_args.into(),
     });
   }
 
@@ -4763,7 +4763,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: final_args,
+      args: final_args.into(),
     });
   }
 
@@ -4824,7 +4824,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: final_args,
+        args: final_args.into(),
       })
     };
   }
@@ -4852,7 +4852,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![bigint_to_expr(sn), bigint_to_expr(sd)],
+            args: vec![bigint_to_expr(sn), bigint_to_expr(sd)].into(),
           }
         }
       };
@@ -4868,7 +4868,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: final_args,
+        args: final_args.into(),
       });
     }
   };
@@ -5096,7 +5096,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: final_args,
+      args: final_args.into(),
     })
   }
 }
@@ -5112,7 +5112,7 @@ pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Return unevaluated (like Wolfram) — error message emitted by centralized arg_count check
     Ok(Expr::FunctionCall {
       name: "Minus".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   }
 }
@@ -5254,7 +5254,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![bigint_to_expr(rn), bigint_to_expr(rd)],
+        args: vec![bigint_to_expr(rn), bigint_to_expr(rd)].into(),
       });
     }
   }
@@ -5299,7 +5299,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           } else {
             let rest_expr = Expr::FunctionCall {
               name: "Times".to_string(),
-              args: rest,
+              args: rest.into(),
             };
             return multiply_scalar_by_expr(&coeff, &rest_expr);
           }
@@ -5528,7 +5528,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       {
         let num_factors = match a {
           Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
-          _ => vec![a.clone()],
+          _ => vec![a.clone()].into(),
         };
         let den_factors = dargs.clone();
         let has_int_num = num_factors.iter().any(|f| matches!(f, Expr::Integer(_))
@@ -5649,7 +5649,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
   }
   let b_inv = Expr::FunctionCall {
     name: "Power".to_string(),
-    args: vec![b, Expr::Integer(-1)],
+    args: vec![b, Expr::Integer(-1)].into(),
   };
   // 1 / b → Power[b, -1]
   if matches!(&a, Expr::Integer(1)) {
@@ -5668,7 +5668,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
   }
   Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![a, b_inv],
+    args: vec![a, b_inv].into(),
   }
 }
 
@@ -5783,7 +5783,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     };
     let neg_one_pow = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), y_expr],
+      args: vec![Expr::Integer(-1), y_expr].into(),
     };
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -5801,13 +5801,13 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if name == "Underflow" {
       return Ok(Expr::FunctionCall {
         name: "Overflow".to_string(),
-        args: vec![],
+        args: vec![].into(),
       });
     }
     if name == "Overflow" {
       return Ok(Expr::FunctionCall {
         name: "Underflow".to_string(),
-        args: vec![],
+        args: vec![].into(),
       });
     }
   }
@@ -6173,7 +6173,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           } else {
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: rest,
+              args: rest.into(),
             }
           };
           let pow_rest = power_two(&rest_expr, exp)?;
@@ -6504,7 +6504,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![sin_val, i_expr],
+        args: vec![sin_val, i_expr].into(),
       }
     };
     if cos_is_zero {
@@ -6512,7 +6512,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: vec![cos_val, imag_term],
+      args: vec![cos_val, imag_term].into(),
     });
   }
 
@@ -6954,12 +6954,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           } else if im == -1.0 {
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
+              args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())].into(),
             }
           } else {
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+              args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
             }
           };
           if re == 0.0 {
@@ -6967,7 +6967,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           } else {
             Ok(Expr::FunctionCall {
               name: "Plus".to_string(),
-              args: vec![Expr::Real(re), im_part],
+              args: vec![Expr::Real(re), im_part].into(),
             })
           }
         }
@@ -7190,7 +7190,7 @@ fn simplify_neg1_rational_power(
     let rq = q / g2;
     let inner = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), make_rational_pub(rp, rq)],
+      args: vec![Expr::Integer(-1), make_rational_pub(rp, rq)].into(),
     };
     return Ok(negate_expr(inner));
   }
@@ -7201,7 +7201,7 @@ fn simplify_neg1_rational_power(
   // 0 < p < q: return (-1)^(p/q)
   Ok(Expr::FunctionCall {
     name: "Power".to_string(),
-    args: vec![Expr::Integer(-1), make_rational_pub(p, q)],
+    args: vec![Expr::Integer(-1), make_rational_pub(p, q)].into(),
   })
 }
 
@@ -7232,19 +7232,19 @@ where
         .zip(right.iter())
         .map(|(l, r)| op(l, r))
         .collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     (Expr::List(items), scalar) => {
       // List + scalar: broadcast scalar
       let results: Result<Vec<Expr>, _> =
         items.iter().map(|item| op(item, scalar)).collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     (scalar, Expr::List(items)) => {
       // scalar + List: broadcast scalar
       let results: Result<Vec<Expr>, _> =
         items.iter().map(|item| op(scalar, item)).collect();
-      Ok(Expr::List(results?))
+      Ok(Expr::List(results?.into()))
     }
     _ => op(&args[0], &args[1]),
   }
@@ -7255,7 +7255,7 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "Subtract".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   // Subtract[a, b] = a + (-1 * b)
@@ -7350,7 +7350,7 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Max".to_string(),
-        args: result_args,
+        args: result_args.into(),
       })
     }
   }
@@ -7413,7 +7413,7 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Min".to_string(),
-        args: result_args,
+        args: result_args.into(),
       })
     }
   }

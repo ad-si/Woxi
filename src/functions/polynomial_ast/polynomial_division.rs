@@ -17,7 +17,7 @@ pub fn polynomial_remainder_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PolynomialRemainder".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -40,7 +40,7 @@ pub fn polynomial_quotient_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PolynomialQuotient".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -63,7 +63,7 @@ pub fn polynomial_quotient_remainder_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PolynomialQuotientRemainder".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -71,7 +71,7 @@ pub fn polynomial_quotient_remainder_ast(
   let (quotient, remainder) = poly_divide_symbolic(&args[0], &args[1], var)?;
   let q = crate::evaluator::evaluate_expr_to_expr(&quotient)?;
   let r = crate::evaluator::evaluate_expr_to_expr(&remainder)?;
-  Ok(Expr::List(vec![q, r]))
+  Ok(Expr::List(vec![q, r].into()))
 }
 
 /// Perform polynomial long division p / q in variable var.
@@ -181,7 +181,7 @@ pub fn build_div(a: &Expr, b: &Expr) -> Expr {
 pub fn build_mul(a: &Expr, b: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "Times".to_string(),
-    args: vec![a.clone(), b.clone()],
+    args: vec![a.clone(), b.clone()].into(),
   }
 }
 
@@ -193,9 +193,9 @@ pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
       a.clone(),
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), b.clone()],
+        args: vec![Expr::Integer(-1), b.clone()].into(),
       },
-    ],
+    ].into(),
   }
 }
 
@@ -215,20 +215,20 @@ pub fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![coeff.clone(), Expr::Identifier(var.to_string())],
+          args: vec![coeff.clone(), Expr::Identifier(var.to_string())].into(),
         }
       }
     } else {
       let var_power = Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)],
+        args: vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)].into(),
       };
       if c_str == "1" {
         var_power
       } else {
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![coeff.clone(), var_power],
+          args: vec![coeff.clone(), var_power].into(),
         }
       }
     };
@@ -242,7 +242,7 @@ pub fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: terms,
+      args: terms.into(),
     }
   }
 }

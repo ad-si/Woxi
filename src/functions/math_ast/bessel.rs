@@ -68,14 +68,14 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let parity = pos_n.unsigned_abs() & 1;
     let positive_call = Expr::FunctionCall {
       name: "BesselJ".to_string(),
-      args: vec![Expr::Integer(pos_n), z_expr.clone()],
+      args: vec![Expr::Integer(pos_n), z_expr.clone()].into(),
     };
     return if parity == 0 {
       Ok(positive_call)
     } else {
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), positive_call],
+        args: vec![Expr::Integer(-1), positive_call].into(),
       })
     };
   }
@@ -83,7 +83,7 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "BesselJ".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -147,11 +147,11 @@ fn wrap_with_sqrt_factor_rationalised(
   // Build Distribute[2*p, Plus] / (Sqrt[2*Pi] * Sqrt[z]).
   let two_p = FunctionCall {
     name: "Times".to_string(),
-    args: vec![Integer(2), p.clone()],
+    args: vec![Integer(2), p.clone()].into(),
   };
   let distributed = FunctionCall {
     name: "Distribute".to_string(),
-    args: vec![two_p, Identifier("Plus".to_string())],
+    args: vec![two_p, Identifier("Plus".to_string())].into(),
   };
   let denom = FunctionCall {
     name: "Times".to_string(),
@@ -160,14 +160,14 @@ fn wrap_with_sqrt_factor_rationalised(
         name: "Sqrt".to_string(),
         args: vec![FunctionCall {
           name: "Times".to_string(),
-          args: vec![Integer(2), Identifier("Pi".to_string())],
-        }],
+          args: vec![Integer(2), Identifier("Pi".to_string())].into(),
+        }].into(),
       },
       FunctionCall {
         name: "Sqrt".to_string(),
-        args: vec![z_expr.clone()],
+        args: vec![z_expr.clone()].into(),
       },
-    ],
+    ].into(),
   };
   let expr = FunctionCall {
     name: "Times".to_string(),
@@ -175,9 +175,9 @@ fn wrap_with_sqrt_factor_rationalised(
       distributed,
       FunctionCall {
         name: "Power".to_string(),
-        args: vec![denom, Integer(-1)],
+        args: vec![denom, Integer(-1)].into(),
       },
-    ],
+    ].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -236,7 +236,7 @@ fn half_int_bessel_polynomial(
 fn trig_call(name: &str, z_expr: &Expr) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
-    args: vec![z_expr.clone()],
+    args: vec![z_expr.clone()].into(),
   }
 }
 
@@ -270,16 +270,16 @@ fn bessel_poly_recurrence(
           Integer(a_coef),
           FunctionCall {
             name: "Power".to_string(),
-            args: vec![z_expr.clone(), Integer(-1)],
+            args: vec![z_expr.clone(), Integer(-1)].into(),
           },
           p_n.clone(),
-        ],
+        ].into(),
       },
       FunctionCall {
         name: "Times".to_string(),
-        args: vec![Integer(b_coef), p_other.clone()],
+        args: vec![Integer(b_coef), p_other.clone()].into(),
       },
-    ],
+    ].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -301,10 +301,10 @@ fn wrap_with_sqrt_factor(
             Integer(2),
             FunctionCall {
               name: "Power".to_string(),
-              args: vec![Identifier("Pi".to_string()), Integer(-1)],
+              args: vec![Identifier("Pi".to_string()), Integer(-1)].into(),
             },
-          ],
-        }],
+          ].into(),
+        }].into(),
       },
       p.clone(),
       FunctionCall {
@@ -312,12 +312,12 @@ fn wrap_with_sqrt_factor(
         args: vec![
           FunctionCall {
             name: "Sqrt".to_string(),
-            args: vec![z_expr.clone()],
+            args: vec![z_expr.clone()].into(),
           },
           Integer(-1),
-        ],
+        ].into(),
       },
-    ],
+    ].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -356,7 +356,7 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated (symbolic)
   Ok(Expr::FunctionCall {
     name: "BesselJZero".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -388,7 +388,7 @@ pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "BesselYZero".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -595,7 +595,7 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "BesselI".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -672,7 +672,7 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "BesselK".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -717,13 +717,13 @@ fn bessel_k_polynomial(
             Integer(m_cur),
             FunctionCall {
               name: "Power".to_string(),
-              args: vec![z_expr.clone(), Integer(-1)],
+              args: vec![z_expr.clone(), Integer(-1)].into(),
             },
             curr.clone(),
-          ],
+          ].into(),
         },
         prev.clone(),
-      ],
+      ].into(),
     };
     let next = crate::evaluator::evaluate_expr_to_expr(&next_expr)?;
     prev = curr;
@@ -751,10 +751,10 @@ fn wrap_bessel_k_factor(
             Identifier("Pi".to_string()),
             FunctionCall {
               name: "Power".to_string(),
-              args: vec![Integer(2), Integer(-1)],
+              args: vec![Integer(2), Integer(-1)].into(),
             },
-          ],
-        }],
+          ].into(),
+        }].into(),
       },
       p.clone(),
       // 1 / E^z = E^(-z)
@@ -764,9 +764,9 @@ fn wrap_bessel_k_factor(
           Constant("E".to_string()),
           FunctionCall {
             name: "Times".to_string(),
-            args: vec![Integer(-1), z_expr.clone()],
+            args: vec![Integer(-1), z_expr.clone()].into(),
           },
-        ],
+        ].into(),
       },
       // 1 / Sqrt[z]
       FunctionCall {
@@ -774,12 +774,12 @@ fn wrap_bessel_k_factor(
         args: vec![
           FunctionCall {
             name: "Sqrt".to_string(),
-            args: vec![z_expr.clone()],
+            args: vec![z_expr.clone()].into(),
           },
           Integer(-1),
-        ],
+        ].into(),
       },
-    ],
+    ].into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -912,7 +912,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if *n == 0 {
       Ok(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+        args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())].into(),
       })
     } else {
       Ok(Expr::Identifier("ComplexInfinity".to_string()))
@@ -950,7 +950,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let p_signed = if sign < 0 {
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), p],
+        args: vec![Expr::Integer(-1), p].into(),
       })?
     } else {
       p
@@ -960,7 +960,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "BesselY".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1066,7 +1066,7 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "SphericalBesselJ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1094,7 +1094,7 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let bessel_result =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "BesselJ".to_string(),
-        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)].into(),
       })?;
     if let Some(bj) = try_eval_to_f64(&bessel_result) {
       let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * bj;
@@ -1105,7 +1105,7 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated for symbolic case
   Ok(Expr::FunctionCall {
     name: "SphericalBesselJ".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1127,12 +1127,12 @@ fn build_hankel(
   let j_result =
     crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: j_name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })?;
   let y_result =
     crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: y_name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })?;
   // Only proceed if both evaluated to numbers
   let j_val = try_eval_to_f64(&j_result);
@@ -1150,18 +1150,18 @@ fn build_hankel(
           args: vec![
             Expr::FunctionCall {
               name: "Complex".to_string(),
-              args: vec![Expr::Integer(0), Expr::Integer(sign)],
+              args: vec![Expr::Integer(0), Expr::Integer(sign)].into(),
             },
             Expr::Real(y),
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
   Ok(Expr::FunctionCall {
     name: name.to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1175,7 +1175,7 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "SphericalBesselY".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1220,7 +1220,7 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let bessel_result =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "BesselY".to_string(),
-        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)].into(),
       })?;
     if let Some(by) = try_eval_to_f64(&bessel_result) {
       let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * by;
@@ -1231,7 +1231,7 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated for symbolic case
   Ok(Expr::FunctionCall {
     name: "SphericalBesselY".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1449,7 +1449,7 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "KelvinBer".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   if let Some(x) = match &args[0] {
@@ -1466,7 +1466,7 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "KelvinBer".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1494,7 +1494,7 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "KelvinBei".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   if let Some(x) = match &args[0] {
@@ -1511,7 +1511,7 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "KelvinBei".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1732,7 +1732,7 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "KelvinKer".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   if let Some(x) = match &args[0] {
@@ -1749,7 +1749,7 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "KelvinKer".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1778,7 +1778,7 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "KelvinKei".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
   if let Some(x) = match &args[0] {
@@ -1795,6 +1795,6 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "KelvinKei".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }

@@ -9,25 +9,25 @@ pub fn dispatch_evaluation_control(
     "HoldForm" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "HoldForm".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "Hold" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
         name: "Hold".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "HoldComplete" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
         name: "HoldComplete".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "Unevaluated" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
         name: "Unevaluated".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ReleaseHold" if args.len() == 1 => match &args[0] {
@@ -55,7 +55,7 @@ pub fn dispatch_evaluation_control(
           Ok(evaled) => {
             return Some(Ok(Expr::FunctionCall {
               name: "Sequence".to_string(),
-              args: evaled,
+              args: evaled.into(),
             }));
           }
           Err(e) => return Some(Err(e)),
@@ -83,7 +83,7 @@ pub fn dispatch_evaluation_control(
         let normalized = if k <= 0 { 0 } else { k };
         return Some(Ok(Expr::FunctionCall {
           name: "Out".to_string(),
-          args: vec![Expr::Integer(normalized)],
+          args: vec![Expr::Integer(normalized)].into(),
         }));
       }
     }
@@ -96,24 +96,24 @@ pub fn dispatch_evaluation_control(
     "Evaluate" => {
       return Some(Ok(Expr::FunctionCall {
         name: "Sequence".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "RegularExpression" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "RegularExpression".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "UniformDistribution" if args.len() <= 1 => {
       let uni_args = if args.is_empty() {
-        vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)])]
+        vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())]
       } else {
         args.to_vec()
       };
       return Some(Ok(Expr::FunctionCall {
         name: "UniformDistribution".to_string(),
-        args: uni_args,
+        args: uni_args.into(),
       }));
     }
     "NormalDistribution" => {
@@ -124,55 +124,55 @@ pub fn dispatch_evaluation_control(
       };
       return Some(Ok(Expr::FunctionCall {
         name: "NormalDistribution".to_string(),
-        args: norm_args,
+        args: norm_args.into(),
       }));
     }
     "ExponentialDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ExponentialDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "PoissonDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "PoissonDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "BernoulliDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "BernoulliDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "InverseGammaDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "InverseGammaDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "GammaDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "GammaDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "BetaDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "BetaDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "StudentTDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "StudentTDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "LogNormalDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "LogNormalDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "LogisticDistribution" => {
@@ -183,61 +183,61 @@ pub fn dispatch_evaluation_control(
       };
       return Some(Ok(Expr::FunctionCall {
         name: "LogisticDistribution".to_string(),
-        args: logistic_args,
+        args: logistic_args.into(),
       }));
     }
     "GompertzMakehamDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "GompertzMakehamDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "InverseGaussianDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "InverseGaussianDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "FrechetDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "FrechetDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ExtremeValueDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ExtremeValueDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "InverseChiSquareDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "InverseChiSquareDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ChiSquareDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ChiSquareDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ParetoDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ParetoDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "WeibullDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "WeibullDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "GeometricDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "GeometricDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "CauchyDistribution" => {
@@ -248,68 +248,68 @@ pub fn dispatch_evaluation_control(
       };
       return Some(Ok(Expr::FunctionCall {
         name: "CauchyDistribution".to_string(),
-        args: cauchy_args,
+        args: cauchy_args.into(),
       }));
     }
     "DiscreteUniformDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "DiscreteUniformDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "LaplaceDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "LaplaceDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "RayleighDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "RayleighDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "NegativeBinomialDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "NegativeBinomialDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "MultinomialDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "MultinomialDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "MultivariatePoissonDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "MultivariatePoissonDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ArcSinDistribution" if args.is_empty() => {
       // Default: ArcSinDistribution[{0, 1}]
       return Some(Ok(Expr::FunctionCall {
         name: "ArcSinDistribution".to_string(),
-        args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)])],
+        args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
       }));
     }
     "ArcSinDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ArcSinDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "HalfNormalDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "HalfNormalDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ChiDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ChiDistribution".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "StableDistribution"
@@ -338,7 +338,7 @@ pub fn dispatch_evaluation_control(
       };
       return Some(Ok(Expr::FunctionCall {
         name: "StableDistribution".to_string(),
-        args: canonical_args,
+        args: canonical_args.into(),
       }));
     }
     // DistributionParameterQ[dist] — test if a distribution's parameters are valid
@@ -356,7 +356,7 @@ pub fn dispatch_evaluation_control(
       // Not a recognized distribution — return unevaluated
       return Some(Ok(Expr::FunctionCall {
         name: "DistributionParameterQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // ByteArray[{b1, b2, ...}] — create a byte array from a list of unsigned bytes
@@ -379,7 +379,7 @@ pub fn dispatch_evaluation_control(
                 );
                 return Some(Ok(Expr::FunctionCall {
                   name: "ByteArray".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 }));
               }
             }
@@ -387,7 +387,7 @@ pub fn dispatch_evaluation_control(
           let b64 = engine.encode(&raw_bytes);
           return Some(Ok(Expr::FunctionCall {
             name: "ByteArray".to_string(),
-            args: vec![Expr::String(b64)],
+            args: vec![Expr::String(b64)].into(),
           }));
         }
         Expr::String(s) => {
@@ -398,7 +398,7 @@ pub fn dispatch_evaluation_control(
             Ok(_) => {
               return Some(Ok(Expr::FunctionCall {
                 name: "ByteArray".to_string(),
-                args: vec![Expr::String(s.clone())],
+                args: vec![Expr::String(s.clone())].into(),
               }));
             }
             Err(_) => {
@@ -407,7 +407,7 @@ pub fn dispatch_evaluation_control(
               );
               return Some(Ok(Expr::FunctionCall {
                 name: "ByteArray".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               }));
             }
           }
@@ -419,7 +419,7 @@ pub fn dispatch_evaluation_control(
           ));
           return Some(Ok(Expr::FunctionCall {
             name: "ByteArray".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -445,13 +445,13 @@ pub fn dispatch_evaluation_control(
         Some(t) => {
           return Some(Ok(Expr::FunctionCall {
             name: "NumericArray".to_string(),
-            args: vec![payload.clone(), Expr::String(t)],
+            args: vec![payload.clone(), Expr::String(t)].into(),
           }));
         }
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "NumericArray".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -465,7 +465,7 @@ pub fn dispatch_evaluation_control(
         .unwrap_or_else(|_| args[0].clone());
       return Some(Ok(Expr::FunctionCall {
         name: "CensoredDistribution".to_string(),
-        args: vec![bounds, dist],
+        args: vec![bounds, dist].into(),
       }));
     }
     "Names" if args.len() <= 1 => {
@@ -491,7 +491,7 @@ pub fn dispatch_evaluation_control(
       if args.is_empty() {
         let items: Vec<Expr> =
           all_names.into_iter().map(Expr::String).collect();
-        return Some(Ok(Expr::List(items)));
+        return Some(Ok(Expr::List(items.into())));
       }
       if let Expr::String(pattern) = &args[0] {
         // Strip a leading `Global`` context — Woxi stores user symbols
@@ -530,10 +530,10 @@ pub fn dispatch_evaluation_control(
             })
             .map(Expr::String)
             .collect();
-          return Some(Ok(Expr::List(items)));
+          return Some(Ok(Expr::List(items.into())));
         }
       }
-      return Some(Ok(Expr::List(vec![])));
+      return Some(Ok(Expr::List(vec![].into())));
     }
     "ValueQ" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
@@ -583,13 +583,13 @@ pub fn dispatch_evaluation_control(
       let orig_str = crate::syntax::expr_to_string(&original);
       let eval_str = crate::syntax::expr_to_string(&evaluated);
       if orig_str == eval_str {
-        return Some(Ok(Expr::List(vec![])));
+        return Some(Ok(Expr::List(vec![].into())));
       }
       let wrap = |e: Expr| Expr::FunctionCall {
         name: "HoldForm".into(),
-        args: vec![e],
+        args: vec![e].into(),
       };
-      return Some(Ok(Expr::List(vec![wrap(original), wrap(evaluated)])));
+      return Some(Ok(Expr::List(vec![wrap(original), wrap(evaluated)].into())));
     }
     // Stack[] - return the current evaluation stack as a list of strings.
     // Exclude the outermost entry (which is the 'Stack' call itself) so that
@@ -601,7 +601,7 @@ pub fn dispatch_evaluation_control(
         stack.pop();
       }
       let items: Vec<Expr> = stack.into_iter().map(Expr::String).collect();
-      return Some(Ok(Expr::List(items)));
+      return Some(Ok(Expr::List(items.into())));
     }
     _ => {}
   }

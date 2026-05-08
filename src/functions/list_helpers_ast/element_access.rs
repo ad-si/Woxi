@@ -49,7 +49,7 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
           // a - b  =  Plus[a, Times[-1, b]]
           let neg_right = Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), *right.clone()],
+            args: vec![Expr::Integer(-1), *right.clone()].into(),
           };
           // Still flatten any further chained Plus on the left.
           let mut args = flatten_assoc_one(BinaryOperator::Plus, left.as_ref());
@@ -64,7 +64,7 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
           // a / b  =  Times[a, Power[b, -1]]
           let inv_right = Expr::FunctionCall {
             name: "Power".to_string(),
-            args: vec![*right.clone(), Expr::Integer(-1)],
+            args: vec![*right.clone(), Expr::Integer(-1)].into(),
           };
           let mut args =
             flatten_assoc_one(BinaryOperator::Times, left.as_ref());
@@ -128,7 +128,7 @@ pub fn first_ast(
         }
         return Ok(Expr::FunctionCall {
           name: "First".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         });
       }
       Ok(pairs[0].1.clone())
@@ -145,7 +145,7 @@ pub fn first_ast(
           ));
           Ok(Expr::FunctionCall {
             name: "First".to_string(),
-            args: vec![list.clone()],
+            args: vec![list.clone()].into(),
           })
         }
       } else {
@@ -174,7 +174,7 @@ pub fn first_ast(
           {
             return Ok(Expr::FunctionCall {
               name: "NumericArray".to_string(),
-              args: vec![elem, args[1].clone()],
+              args: vec![elem, args[1].clone()].into(),
             });
           }
           return Ok(elem);
@@ -191,7 +191,7 @@ pub fn first_ast(
           ));
           Ok(Expr::FunctionCall {
             name: "First".to_string(),
-            args: vec![list.clone()],
+            args: vec![list.clone()].into(),
           })
         }
       } else {
@@ -214,7 +214,7 @@ pub fn first_ast(
       } else {
         Ok(Expr::FunctionCall {
           name: "First".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         })
       }
     }
@@ -235,7 +235,7 @@ pub fn last_ast(
         }
         return Ok(Expr::FunctionCall {
           name: "Last".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         });
       }
       Ok(pairs[pairs.len() - 1].1.clone())
@@ -252,7 +252,7 @@ pub fn last_ast(
           ));
           Ok(Expr::FunctionCall {
             name: "Last".to_string(),
-            args: vec![list.clone()],
+            args: vec![list.clone()].into(),
           })
         }
       } else {
@@ -281,7 +281,7 @@ pub fn last_ast(
           {
             return Ok(Expr::FunctionCall {
               name: "NumericArray".to_string(),
-              args: vec![elem, args[1].clone()],
+              args: vec![elem, args[1].clone()].into(),
             });
           }
           return Ok(elem);
@@ -298,7 +298,7 @@ pub fn last_ast(
           ));
           Ok(Expr::FunctionCall {
             name: "Last".to_string(),
-            args: vec![list.clone()],
+            args: vec![list.clone()].into(),
           })
         }
       } else {
@@ -317,7 +317,7 @@ pub fn last_ast(
       } else {
         Ok(Expr::FunctionCall {
           name: "Last".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         })
       }
     }
@@ -336,10 +336,10 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         ));
         Ok(Expr::FunctionCall {
           name: "Rest".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         })
       } else {
-        Ok(Expr::List(items[1..].to_vec()))
+        Ok(Expr::List(items[1..].to_vec().into()))
       }
     }
     Expr::FunctionCall { name, args } => {
@@ -351,7 +351,7 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         ));
         Ok(Expr::FunctionCall {
           name: "Rest".to_string(),
-          args: vec![list.clone()],
+          args: vec![list.clone()].into(),
         })
       } else {
         // Evaluate so e.g. Times[x] reduces to x
@@ -369,7 +369,7 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
           ));
           return Ok(Expr::FunctionCall {
             name: "Rest".to_string(),
-            args: vec![list.clone()],
+            args: vec![list.clone()].into(),
           });
         }
         // Evaluate so e.g. Times[x] reduces to x
@@ -392,7 +392,7 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
           "Most: list is empty".into(),
         ))
       } else {
-        Ok(Expr::List(items[..items.len() - 1].to_vec()))
+        Ok(Expr::List(items[..items.len() - 1].to_vec().into()))
       }
     }
     Expr::FunctionCall { name, args } => {
@@ -423,7 +423,7 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Most".to_string(),
-        args: vec![list.clone()],
+        args: vec![list.clone()].into(),
       })
     }
   }
@@ -454,7 +454,7 @@ pub fn take_multi_ast(
       for item in items {
         new_items.push(take_multi_ast(item, &specs[1..])?);
       }
-      Ok(Expr::List(new_items))
+      Ok(Expr::List(new_items.into()))
     }
     _ => Ok(result),
   }
@@ -475,7 +475,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         replacement: Box::new(v.clone()),
       })
       .collect();
-    let result = take_ast(&Expr::List(rules), n)?;
+    let result = take_ast(&Expr::List(rules.into()), n)?;
     // Convert result back to association
     if let Expr::List(items) = &result {
       let mut new_pairs = Vec::new();
@@ -505,7 +505,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()],
+        args: vec![list.clone(), n.clone()].into(),
       });
     }
   };
@@ -515,9 +515,9 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     match head {
       Some(h) => Expr::FunctionCall {
         name: h.to_string(),
-        args: v,
+        args: v.into(),
       },
-      None => Expr::List(v),
+      None => Expr::List(v.into()),
     }
   };
 
@@ -561,7 +561,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Take".to_string(),
-      args: vec![list.clone(), n.clone()],
+      args: vec![list.clone(), n.clone()].into(),
     });
   }
 
@@ -586,7 +586,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()],
+        args: vec![list.clone(), n.clone()].into(),
       });
     }
   };
@@ -602,7 +602,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       ));
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()],
+        args: vec![list.clone(), n.clone()].into(),
       });
     }
     Ok(wrap(items[..count as usize].to_vec()))
@@ -616,7 +616,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       ));
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()],
+        args: vec![list.clone(), n.clone()].into(),
       });
     }
     Ok(wrap(items[items.len() - (-count) as usize..].to_vec()))
@@ -634,7 +634,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         replacement: Box::new(v.clone()),
       })
       .collect();
-    let result = drop_ast(&Expr::List(rules), n)?;
+    let result = drop_ast(&Expr::List(rules.into()), n)?;
     if let Expr::List(items) = &result {
       let mut new_pairs = Vec::new();
       for item in items {
@@ -663,7 +663,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Drop".to_string(),
-        args: vec![list.clone(), n.clone()],
+        args: vec![list.clone(), n.clone()].into(),
       });
     }
   };
@@ -672,9 +672,9 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     match drop_head {
       Some(h) => Expr::FunctionCall {
         name: h.to_string(),
-        args: v,
+        args: v.into(),
       },
-      None => Expr::List(v),
+      None => Expr::List(v.into()),
     }
   };
 
@@ -770,7 +770,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "Drop".to_string(),
-      args: vec![list.clone(), n.clone()],
+      args: vec![list.clone(), n.clone()].into(),
     });
   }
 
@@ -779,7 +779,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Drop".to_string(),
-        args: vec![list.clone(), n.clone()],
+        args: vec![list.clone(), n.clone()].into(),
       });
     }
   };
@@ -818,11 +818,11 @@ pub fn drop_multi_ast(
       for item in items {
         result.push(drop_ast(item, cols)?);
       }
-      Ok(Expr::List(result))
+      Ok(Expr::List(result.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "Drop".to_string(),
-      args: vec![list.clone(), rows.clone(), cols.clone()],
+      args: vec![list.clone(), rows.clone(), cols.clone()].into(),
     }),
   }
 }
@@ -833,7 +833,7 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
   if let Some((head_name, ha_args)) = expr_to_head_args(list) {
     let canonical = Expr::FunctionCall {
       name: head_name,
-      args: ha_args,
+      args: ha_args.into(),
     };
     return part_ast(&canonical, index);
   }
@@ -874,7 +874,7 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Part".to_string(),
-        args: vec![list.clone(), index.clone()],
+        args: vec![list.clone(), index.clone()].into(),
       });
     }
   };
@@ -930,11 +930,11 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
           ));
         }
       }
-      Ok(Expr::List(results))
+      Ok(Expr::List(results.into()))
     }
     _ => Ok(Expr::FunctionCall {
       name: "Part".to_string(),
-      args: vec![list.clone(), index.clone()],
+      args: vec![list.clone(), index.clone()].into(),
     }),
   }
 }
@@ -948,12 +948,12 @@ pub fn insert_ast(
   pos: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let (items, head): (Vec<Expr>, Option<String>) = match list {
-    Expr::List(items) => (items.clone(), None),
-    Expr::FunctionCall { name, args } => (args.clone(), Some(name.clone())),
+    Expr::List(items) => (items.to_vec(), None),
+    Expr::FunctionCall { name, args } => (args.to_vec(), Some(name.clone())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Insert".to_string(),
-        args: vec![list.clone(), elem.clone(), pos.clone()],
+        args: vec![list.clone(), elem.clone(), pos.clone()].into(),
       });
     }
   };
@@ -1049,8 +1049,8 @@ pub fn insert_ast(
     result.insert(idx, elem.clone());
   }
   match head {
-    Some(name) => Ok(Expr::FunctionCall { name, args: result }),
-    None => Ok(Expr::List(result)),
+    Some(name) => Ok(Expr::FunctionCall { name, args: result.into() }),
+    None => Ok(Expr::List(result.into())),
   }
 }
 
@@ -1080,11 +1080,11 @@ fn wrap_with_head(head: &Expr, val: Expr) -> Expr {
   match head {
     Expr::Identifier(name) => Expr::FunctionCall {
       name: name.clone(),
-      args: vec![val],
+      args: vec![val].into(),
     },
     _ => Expr::FunctionCall {
       name: "Apply".to_string(),
-      args: vec![head.clone(), val],
+      args: vec![head.clone(), val].into(),
     },
   }
 }
@@ -1111,7 +1111,7 @@ fn extract_ast_inner(
             results.push(val);
           }
         }
-        return Ok(Expr::List(results));
+        return Ok(Expr::List(results.into()));
       }
       // Nested extraction: Extract[expr, {i, j, ...}]
       let mut current = list.clone();
@@ -1162,7 +1162,7 @@ pub fn replace_part_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ReplacePart".to_string(),
-        args: vec![expr.clone(), rule.clone()],
+        args: vec![expr.clone(), rule.clone()].into(),
       });
     }
   };
@@ -1201,7 +1201,7 @@ pub fn replace_part_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "ReplacePart".to_string(),
-        args: vec![expr.clone(), rule.clone()],
+        args: vec![expr.clone(), rule.clone()].into(),
       });
     }
   };
@@ -1240,7 +1240,7 @@ fn replace_at_position(
             pattern: Box::new(Expr::Integer(pos)),
             replacement: Box::new(val.clone()),
           },
-        ],
+        ].into(),
       });
     }
   };
@@ -1254,7 +1254,7 @@ fn replace_at_position(
     };
     return Ok(Expr::FunctionCall {
       name: new_head,
-      args: items.to_vec(),
+      args: items.to_vec().into(),
     });
   }
 
@@ -1274,9 +1274,9 @@ fn replace_at_position(
   match head_name {
     Some(h) => Ok(Expr::FunctionCall {
       name: h.to_string(),
-      args: result,
+      args: result.into(),
     }),
-    None => Ok(Expr::List(result)),
+    None => Ok(Expr::List(result.into())),
   }
 }
 
@@ -1316,9 +1316,9 @@ fn replace_at_deep_pos(
   match head_name {
     Some(h) => Ok(Expr::FunctionCall {
       name: h.to_string(),
-      args: result,
+      args: result.into(),
     }),
-    None => Ok(Expr::List(result)),
+    None => Ok(Expr::List(result.into())),
   }
 }
 
@@ -1339,7 +1339,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Delete".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1362,7 +1362,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(Expr::FunctionCall {
           name: "Delete".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
       return delete_at_position_general(items, pos, head_name);
@@ -1404,7 +1404,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ));
                 return Ok(Expr::FunctionCall {
                   name: "Delete".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 });
               }
             }
@@ -1428,7 +1428,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ));
                 return Ok(Expr::FunctionCall {
                   name: "Delete".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 });
               }
             }
@@ -1441,7 +1441,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "Delete".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1455,9 +1455,9 @@ fn delete_at_position_general(
     match head_name {
       Some(h) => Expr::FunctionCall {
         name: h.to_string(),
-        args: result_items,
+        args: result_items.into(),
       },
-      None => Expr::List(result_items),
+      None => Expr::List(result_items.into()),
     }
   };
   let len = items.len() as i128;
@@ -1469,7 +1469,7 @@ fn delete_at_position_general(
     // Position 0 = delete the head, return Sequence[args...]
     return Ok(Expr::FunctionCall {
       name: "Sequence".to_string(),
-      args: items.to_vec(),
+      args: items.to_vec().into(),
     });
   };
   if idx >= items.len() {
@@ -1497,8 +1497,8 @@ fn delete_at_deep_position(
     return Ok(Ok(expr.clone()));
   }
   let (items, head): (Vec<Expr>, Option<String>) = match expr {
-    Expr::List(items) => (items.clone(), None),
-    Expr::FunctionCall { name, args } => (args.clone(), Some(name.clone())),
+    Expr::List(items) => (items.to_vec(), None),
+    Expr::FunctionCall { name, args } => (args.to_vec(), Some(name.clone())),
     _ => {
       return Ok(Err(DeepDeleteFailure {
         index: pos[0],
@@ -1513,7 +1513,7 @@ fn delete_at_deep_position(
   if pos[0] == 0 {
     let unheaded = Expr::FunctionCall {
       name: "Sequence".to_string(),
-      args: items,
+      args: items.into(),
     };
     if pos.len() == 1 {
       return Ok(Ok(unheaded));
@@ -1540,9 +1540,9 @@ fn delete_at_deep_position(
     match &head {
       Some(h) => flatten_sequences(Expr::FunctionCall {
         name: h.clone(),
-        args: new_items,
+        args: new_items.into(),
       }),
-      None => flatten_sequences(Expr::List(new_items)),
+      None => flatten_sequences(Expr::List(new_items.into())),
     }
   };
 
@@ -1582,10 +1582,10 @@ fn flatten_sequences(expr: Expr) -> Expr {
     out
   };
   match &expr {
-    Expr::List(items) => Expr::List(splice(items)),
+    Expr::List(items) => Expr::List(splice(items).into()),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: splice(args),
+      args: splice(args).into(),
     },
     _ => expr,
   }

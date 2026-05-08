@@ -143,7 +143,7 @@ pub fn association_nested_access(
           // Missing["KeyAbsent", key].
           return Ok(Expr::FunctionCall {
             name: "Missing".to_string(),
-            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
           });
         }
       }
@@ -313,7 +313,7 @@ fn try_ast_pattern_replace_impl(
         }
       }
       if any_matched {
-        Ok(Some(Expr::List(results)))
+        Ok(Some(Expr::List(results.into())))
       } else {
         Ok(None)
       }
@@ -334,7 +334,7 @@ fn try_ast_pattern_replace_impl(
       if any_matched {
         Ok(Some(Expr::FunctionCall {
           name: name.clone(),
-          args: new_args,
+          args: new_args.into(),
         }))
       } else {
         Ok(None)
@@ -436,7 +436,7 @@ fn lookup_user_default(
   ] {
     let call = Expr::FunctionCall {
       name: "Default".to_string(),
-      args: default_args,
+      args: default_args.into(),
     };
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&call) {
       // If evaluation produced something other than the unevaluated form,
@@ -716,7 +716,7 @@ pub fn apply_replace_ast(
       .iter()
       .map(|rule_set| apply_replace_ast(expr, rule_set))
       .collect();
-    return Ok(Expr::List(results?));
+    return Ok(Expr::List(results?.into()));
   }
 
   // Try to apply single rule or list of rules at top level only
@@ -832,7 +832,7 @@ pub fn apply_replace_with_level_ast(
       } else {
         return Ok(Expr::FunctionCall {
           name: "Replace".to_string(),
-          args: vec![expr.clone(), rules.clone(), level_spec.clone()],
+          args: vec![expr.clone(), rules.clone(), level_spec.clone()].into(),
         });
       }
     }
@@ -846,7 +846,7 @@ pub fn apply_replace_with_level_ast(
       None => {
         return Ok(Expr::FunctionCall {
           name: "Replace".to_string(),
-          args: vec![expr.clone(), rules.clone(), level_spec.clone()],
+          args: vec![expr.clone(), rules.clone(), level_spec.clone()].into(),
         });
       }
     },
@@ -887,7 +887,7 @@ fn replace_at_depth(
         max_depth = max_depth.max(d);
         mapped.push(e);
       }
-      (Expr::List(mapped), max_depth)
+      (Expr::List(mapped.into()), max_depth)
     }
     Expr::FunctionCall { name, args } => {
       // With Heads -> True, also apply replace to the head symbol. The head
@@ -930,7 +930,7 @@ fn replace_at_depth(
       (
         Expr::FunctionCall {
           name: new_name,
-          args: mapped,
+          args: mapped.into(),
         },
         max_depth,
       )
@@ -1157,7 +1157,7 @@ fn try_align_groups(
         for e in &elements {
           let test_call = Expr::FunctionCall {
             name: crate::syntax::expr_to_string(test),
-            args: vec![e.clone()],
+            args: vec![e.clone()].into(),
           };
           let result =
             crate::evaluator::evaluate_expr_to_expr(&test_call).ok()?;
@@ -1169,12 +1169,12 @@ fn try_align_groups(
       let value = if elements.len() == 1 {
         Expr::FunctionCall {
           name: "Sequence".to_string(),
-          args: elements,
+          args: elements.into(),
         }
       } else {
         Expr::FunctionCall {
           name: "Sequence".to_string(),
-          args: elements,
+          args: elements.into(),
         }
       };
       if !seq_info.name.is_empty()
@@ -1310,13 +1310,13 @@ pub fn find_orderless_subset_match(
     for perm in perms {
       let sub_expr = Expr::FunctionCall {
         name: func_name.to_string(),
-        args: perm,
+        args: perm.into(),
       };
       if let Some(bindings) = match_pattern(
         &sub_expr,
         &Expr::FunctionCall {
           name: func_name.to_string(),
-          args: pat_args.to_vec(),
+          args: pat_args.to_vec().into(),
         },
       ) {
         return Some((combo, bindings));
@@ -1459,14 +1459,14 @@ fn try_symbol_replace_all(
       match replacement {
         Expr::Identifier(new_head) => Some(Expr::FunctionCall {
           name: new_head.clone(),
-          args: new_items,
+          args: new_items.into(),
         }),
         _ => {
           // For non-symbol replacements, convert to FullForm-style
           let head_str = expr_to_string(replacement);
           Some(Expr::FunctionCall {
             name: head_str,
-            args: new_items,
+            args: new_items.into(),
           })
         }
       }
@@ -1487,7 +1487,7 @@ fn try_symbol_replace_all(
         }
       }
       if any_changed {
-        Some(Expr::List(new_items))
+        Some(Expr::List(new_items.into()))
       } else {
         None
       }
@@ -1513,7 +1513,7 @@ fn try_symbol_replace_all(
         match replacement {
           Expr::Identifier(new_head) => Some(Expr::FunctionCall {
             name: new_head.clone(),
-            args: new_args,
+            args: new_args.into(),
           }),
           // Non-symbol replacement: create CurriedCall (f -> expr turns f[a,b] into expr[a,b])
           _ => Some(Expr::CurriedCall {
@@ -1524,7 +1524,7 @@ fn try_symbol_replace_all(
       } else if any_arg_changed {
         Some(Expr::FunctionCall {
           name: name.clone(),
-          args: new_args,
+          args: new_args.into(),
         })
       } else {
         None
@@ -1736,7 +1736,7 @@ pub fn try_flat_replace_all(
             }
             return Ok(Some(Expr::FunctionCall {
               name: name.clone(),
-              args: new_args,
+              args: new_args.into(),
             }));
           }
         } else {
@@ -1760,7 +1760,7 @@ pub fn try_flat_replace_all(
               |sub_args: Vec<Expr>| -> Option<Vec<(String, Expr)>> {
                 let sub_expr = Expr::FunctionCall {
                   name: name.clone(),
-                  args: sub_args,
+                  args: sub_args.into(),
                 };
                 match_pattern(&sub_expr, pattern)
               };
@@ -1771,7 +1771,7 @@ pub fn try_flat_replace_all(
                 .iter()
                 .map(|a| Expr::FunctionCall {
                   name: name.clone(),
-                  args: vec![a.clone()],
+                  args: vec![a.clone()].into(),
                 })
                 .collect();
               bindings_opt = try_match(wrapped);
@@ -1789,7 +1789,7 @@ pub fn try_flat_replace_all(
               }
               return Ok(Some(Expr::FunctionCall {
                 name: name.clone(),
-                args: new_args,
+                args: new_args.into(),
               }));
             }
           }
@@ -1810,7 +1810,7 @@ pub fn try_flat_replace_all(
       if changed {
         Ok(Some(Expr::FunctionCall {
           name: name.clone(),
-          args: new_args,
+          args: new_args.into(),
         }))
       } else {
         Ok(None)
@@ -1830,7 +1830,7 @@ pub fn try_flat_replace_all(
         }
       }
       if changed {
-        Ok(Some(Expr::List(new_items)))
+        Ok(Some(Expr::List(new_items.into())))
       } else {
         Ok(None)
       }
@@ -1947,7 +1947,7 @@ pub fn apply_replace_all_ast(
           .iter()
           .map(|sub_rules| apply_replace_all_ast(expr, sub_rules))
           .collect();
-        return results.map(Expr::List);
+        return results.map(|v| Expr::List(v.into()));
       }
       // Multiple rules - apply at AST level for correctness and performance.
       // Collect (pattern_expr, replacement_expr) pairs.
@@ -2043,7 +2043,7 @@ pub fn apply_rules_once(
         .iter()
         .map(|item| apply_rules_once(item, rules))
         .collect();
-      Ok(Expr::List(new_items?))
+      Ok(Expr::List(new_items?.into()))
     }
     Expr::FunctionCall { name, args } => {
       // For Flat functions, try subsequence matching before recursing
@@ -2067,7 +2067,7 @@ pub fn apply_rules_once(
             for start in 0..=(args.len() - sub_len) {
               let sub_expr = Expr::FunctionCall {
                 name: name.clone(),
-                args: args[start..start + sub_len].to_vec(),
+                args: args[start..start + sub_len].to_vec().into(),
               };
               if let Some(bindings) = match_pattern(&sub_expr, pattern) {
                 let replaced = apply_bindings(replacement, &bindings)?;
@@ -2079,7 +2079,7 @@ pub fn apply_rules_once(
                 }
                 return Ok(Expr::FunctionCall {
                   name: name.clone(),
-                  args: new_args,
+                  args: new_args.into(),
                 });
               }
             }
@@ -2093,7 +2093,7 @@ pub fn apply_rules_once(
         .collect();
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: new_args?,
+        args: new_args?.into(),
       })
     }
     Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
@@ -2130,7 +2130,7 @@ fn match_options_pattern(pat: &Expr) -> Option<Vec<Expr>> {
     }
     let inner = &args[0];
     return Some(match inner {
-      Expr::List(items) => items.clone(),
+      Expr::List(items) => items.to_vec(),
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => vec![inner.clone()],
       _ => vec![],
     });
@@ -2312,7 +2312,7 @@ fn apply_pattern_test(test: &Expr, elem: &Expr) -> bool {
     Expr::Identifier(func_name) => {
       let call = Expr::FunctionCall {
         name: func_name.clone(),
-        args: vec![elem.clone()],
+        args: vec![elem.clone()].into(),
       };
       evaluate_expr_to_expr(&call).ok()
     }
@@ -2387,7 +2387,7 @@ fn match_args_with_sequences(
       }
     }
     let merged = merge_option_rules(&opt_defaults, &explicit_rules);
-    return Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged))]);
+    return Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged.into()))]);
   }
 
   if let Some(seq) = get_sequence_info(pat) {
@@ -2455,14 +2455,14 @@ fn match_args_with_sequences(
             let bound_value = if count == 0 {
               Expr::FunctionCall {
                 name: "Sequence".to_string(),
-                args: vec![],
+                args: vec![].into(),
               }
             } else if count == 1 {
               seq_args[0].clone()
             } else {
               Expr::FunctionCall {
                 name: "Sequence".to_string(),
-                args: seq_args.to_vec(),
+                args: seq_args.to_vec().into(),
               }
             };
             elem_bindings.insert(0, (seq.name.clone(), bound_value));
@@ -2490,14 +2490,14 @@ fn match_args_with_sequences(
           let bound_value = if count == 0 {
             Expr::FunctionCall {
               name: "Sequence".to_string(),
-              args: vec![],
+              args: vec![].into(),
             }
           } else if count == 1 {
             seq_args[0].clone()
           } else {
             Expr::FunctionCall {
               name: "Sequence".to_string(),
-              args: seq_args.to_vec(),
+              args: seq_args.to_vec().into(),
             }
           };
           rest_bindings.insert(0, (seq.name.clone(), bound_value));
@@ -2671,7 +2671,7 @@ fn match_pattern_impl(
         Expr::Identifier(func_name) => {
           let call = Expr::FunctionCall {
             name: func_name.clone(),
-            args: vec![expr.clone()],
+            args: vec![expr.clone()].into(),
           };
           evaluate_expr_to_expr(&call).ok()
         }
@@ -2849,7 +2849,7 @@ fn match_pattern_impl(
       match expr {
         Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
           let merged = merge_option_rules(&opt_defaults, &[expr.clone()]);
-          Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged))])
+          Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged.into()))])
         }
         _ => None,
       }
@@ -3195,7 +3195,7 @@ fn match_pattern_impl(
           {
             let pat_as_call = Expr::FunctionCall {
               name: func_name.to_string(),
-              args: vec![(**pat_left).clone(), (**pat_right).clone()],
+              args: vec![(**pat_left).clone(), (**pat_right).clone()].into(),
             };
             if let Some(b) = match_pattern(expr, &pat_as_call) {
               return Some(b);
@@ -3510,11 +3510,11 @@ fn apply_replace_all_multi_ast_impl(
           };
           return Ok(Expr::FunctionCall {
             name: new_head,
-            args: new_items,
+            args: new_items.into(),
           });
         }
       }
-      Ok(Expr::List(new_items))
+      Ok(Expr::List(new_items.into()))
     }
     Expr::FunctionCall { name, args } => {
       let child_held = held || is_hold_head(name);
@@ -3532,12 +3532,12 @@ fn apply_replace_all_multi_ast_impl(
             Expr::Identifier(h) if !held => {
               evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: h.clone(),
-                args: new_args,
+                args: new_args.into(),
               })
             }
             Expr::Identifier(h) => Ok(Expr::FunctionCall {
               name: h.clone(),
-              args: new_args,
+              args: new_args.into(),
             }),
             // Non-symbol replacement: create CurriedCall
             _ => Ok(Expr::CurriedCall {
@@ -3549,7 +3549,7 @@ fn apply_replace_all_multi_ast_impl(
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       })
     }
     Expr::BinaryOp { op, left, right } => {

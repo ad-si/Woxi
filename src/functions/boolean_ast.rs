@@ -33,7 +33,7 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => Ok(remaining.into_iter().next().unwrap()),
     _ => Ok(Expr::FunctionCall {
       name: "And".to_string(),
-      args: remaining,
+      args: remaining.into(),
     }),
   }
 }
@@ -54,7 +54,7 @@ pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => Ok(remaining.into_iter().next().unwrap()),
     _ => Ok(Expr::FunctionCall {
       name: "Or".to_string(),
-      args: remaining,
+      args: remaining.into(),
     }),
   }
 }
@@ -65,7 +65,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Return unevaluated for wrong number of arguments
     return Ok(Expr::FunctionCall {
       name: "Not".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -111,7 +111,7 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       1 => Ok(remaining.into_iter().next().unwrap()),
       _ => Ok(Expr::FunctionCall {
         name: "Xor".to_string(),
-        args: remaining,
+        args: remaining.into(),
       }),
     };
   }
@@ -145,7 +145,7 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     all_args.extend(remaining);
     return Ok(Expr::FunctionCall {
       name: "Xnor".to_string(),
-      args: all_args,
+      args: all_args.into(),
     });
   }
   // All boolean: True when even number of True values
@@ -280,7 +280,7 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(Expr::FunctionCall {
           name: "Which".to_string(),
-          args: remaining,
+          args: remaining.into(),
         });
       }
     }
@@ -313,7 +313,7 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Err(InterpreterError::ReturnValue(val)) => {
               return Ok(Expr::FunctionCall {
                 name: "Return".to_string(),
-                args: vec![*val],
+                args: vec![*val].into(),
               });
             }
             Err(e) => return Err(e),
@@ -468,7 +468,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.iter().any(crate::evaluator::has_free_symbols) {
     Ok(Expr::FunctionCall {
       name: "Equal".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   } else {
     // No free symbols, not identical → False
@@ -523,7 +523,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_free {
     Ok(Expr::FunctionCall {
       name: "Unequal".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     })
   } else {
     // No free symbols, pairwise different → True
@@ -605,7 +605,7 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "Less".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -614,7 +614,7 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "Less".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -645,7 +645,7 @@ pub fn greater_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Greater".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -656,7 +656,7 @@ pub fn greater_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "Greater".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -688,7 +688,7 @@ pub fn less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "LessEqual".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -699,7 +699,7 @@ pub fn less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "LessEqual".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -731,7 +731,7 @@ pub fn greater_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "GreaterEqual".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -742,7 +742,7 @@ pub fn greater_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "GreaterEqual".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -768,7 +768,7 @@ pub fn boole_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(false) => Ok(Expr::Integer(0)),
     None => Ok(Expr::FunctionCall {
       name: "Boole".to_string(),
-      args: vec![evaluated],
+      args: vec![evaluated].into(),
     }),
   }
 }
@@ -814,7 +814,7 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     None => Ok(Expr::FunctionCall {
       name: "Implies".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -847,7 +847,7 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Some symbolic: Nand[remaining...]
     Ok(Expr::FunctionCall {
       name: "Nand".to_string(),
-      args: remaining,
+      args: remaining.into(),
     })
   }
 }
@@ -880,7 +880,7 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Some symbolic: Nor[remaining...]
     Ok(Expr::FunctionCall {
       name: "Nor".to_string(),
-      args: remaining,
+      args: remaining.into(),
     })
   }
 }
@@ -926,7 +926,7 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "And".to_string(),
-      args: remaining,
+      args: remaining.into(),
     });
   }
   if has_false {
@@ -934,7 +934,7 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into_iter()
       .map(|e| Expr::FunctionCall {
         name: "Not".to_string(),
-        args: vec![e],
+        args: vec![e].into(),
       })
       .collect();
     if negated.len() == 1 {
@@ -942,12 +942,12 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::FunctionCall {
       name: "And".to_string(),
-      args: negated,
+      args: negated.into(),
     });
   }
   Ok(Expr::FunctionCall {
     name: "Equivalent".to_string(),
-    args: remaining,
+    args: remaining.into(),
   })
 }
 
@@ -1001,7 +1001,7 @@ pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     results.push(result);
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(results.into()))
 }
 
 /// LogicalExpand[expr] - expand logical expression to disjunctive normal form
@@ -1029,7 +1029,7 @@ fn normalize_not(expr: &Expr) -> Expr {
       let new_args: Vec<Expr> = args.iter().map(normalize_not).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr.clone(),
@@ -1059,9 +1059,9 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
               b,
               Expr::FunctionCall {
                 name: "Not".to_string(),
-                args: vec![a],
+                args: vec![a].into(),
               },
-            ],
+            ].into(),
           }
         }
         "Equivalent" if args.len() >= 2 => {
@@ -1078,22 +1078,22 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
               args: vec![
                 Expr::FunctionCall {
                   name: "And".to_string(),
-                  args: vec![a.clone(), b.clone()],
+                  args: vec![a.clone(), b.clone()].into(),
                 },
                 Expr::FunctionCall {
                   name: "And".to_string(),
                   args: vec![
                     Expr::FunctionCall {
                       name: "Not".to_string(),
-                      args: vec![a.clone()],
+                      args: vec![a.clone()].into(),
                     },
                     Expr::FunctionCall {
                       name: "Not".to_string(),
-                      args: vec![b.clone()],
+                      args: vec![b.clone()].into(),
                     },
-                  ],
+                  ].into(),
                 },
-              ],
+              ].into(),
             }
           } else {
             // Pairwise: And[Equivalent[a1,a2], Equivalent[a2,a3], ...]
@@ -1101,12 +1101,12 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             for i in 0..elim_args.len() - 1 {
               pairs.push(eliminate_connectives(&Expr::FunctionCall {
                 name: "Equivalent".to_string(),
-                args: vec![elim_args[i].clone(), elim_args[i + 1].clone()],
+                args: vec![elim_args[i].clone(), elim_args[i + 1].clone()].into(),
               }));
             }
             Expr::FunctionCall {
               name: "And".to_string(),
-              args: pairs,
+              args: pairs.into(),
             }
           }
         }
@@ -1126,9 +1126,9 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                     a.clone(),
                     Expr::FunctionCall {
                       name: "Not".to_string(),
-                      args: vec![b.clone()],
+                      args: vec![b.clone()].into(),
                     },
-                  ],
+                  ].into(),
                 },
                 Expr::FunctionCall {
                   name: "And".to_string(),
@@ -1136,11 +1136,11 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                     b.clone(),
                     Expr::FunctionCall {
                       name: "Not".to_string(),
-                      args: vec![a.clone()],
+                      args: vec![a.clone()].into(),
                     },
-                  ],
+                  ].into(),
                 },
-              ],
+              ].into(),
             }
           } else {
             // Reduce: Xor[a, b, c, ...] → Xor[Xor[a, b], c, ...]
@@ -1148,7 +1148,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             for arg in &elim_args[1..] {
               result = eliminate_connectives(&Expr::FunctionCall {
                 name: "Xor".to_string(),
-                args: vec![result, arg.clone()],
+                args: vec![result, arg.clone()].into(),
               });
             }
             result
@@ -1162,8 +1162,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             name: "Not".to_string(),
             args: vec![Expr::FunctionCall {
               name: "And".to_string(),
-              args: elim_args,
-            }],
+              args: elim_args.into(),
+            }].into(),
           }
         }
         "Nor" if args.len() >= 2 => {
@@ -1174,8 +1174,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             name: "Not".to_string(),
             args: vec![Expr::FunctionCall {
               name: "Or".to_string(),
-              args: elim_args,
-            }],
+              args: elim_args.into(),
+            }].into(),
           }
         }
         "And" | "Or" | "Not" => {
@@ -1183,7 +1183,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             args.iter().map(eliminate_connectives).collect();
           Expr::FunctionCall {
             name: name.clone(),
-            args: new_args,
+            args: new_args.into(),
           }
         }
         _ => expr.clone(),
@@ -1197,7 +1197,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
       let inner = eliminate_connectives(operand);
       Expr::FunctionCall {
         name: "Not".to_string(),
-        args: vec![inner],
+        args: vec![inner].into(),
       }
     }
     _ => expr.clone(),
@@ -1228,7 +1228,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
         inner_args.iter().map(apply_not_inward).collect();
       Expr::FunctionCall {
         name: "Or".to_string(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     // Not[Or[a, b, ...]] → And[Not[a], Not[b], ...]
@@ -1240,7 +1240,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
         inner_args.iter().map(apply_not_inward).collect();
       Expr::FunctionCall {
         name: "And".to_string(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     // Not[True] → False, Not[False] → True
@@ -1251,7 +1251,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
       let recurse = push_not_inward(other);
       Expr::FunctionCall {
         name: "Not".to_string(),
-        args: vec![recurse],
+        args: vec![recurse].into(),
       }
     }
   }
@@ -1273,7 +1273,7 @@ fn push_not_inward(expr: &Expr) -> Expr {
       let new_args: Vec<Expr> = args.iter().map(push_not_inward).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr.clone(),
@@ -1307,7 +1307,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
                     name: an,
                     args: aargs,
                   } if an == "And" => aargs.clone(),
-                  _ => vec![alt.clone()],
+                  _ => vec![alt.clone()].into(),
                 };
                 let mut group = existing.clone();
                 group.extend(alt_literals.clone());
@@ -1342,7 +1342,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
           } else {
             Expr::FunctionCall {
               name: "And".to_string(),
-              args: group,
+              args: group.into(),
             }
           }
         })
@@ -1353,7 +1353,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Or".to_string(),
-          args: or_terms,
+          args: or_terms.into(),
         }
       }
     }
@@ -1381,7 +1381,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Or".to_string(),
-          args: result,
+          args: result.into(),
         }
       }
     }
@@ -1391,7 +1391,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
         args.iter().map(distribute_and_over_or).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr.clone(),
@@ -1423,7 +1423,7 @@ fn simplify_cnf(expr: &Expr) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "And".to_string(),
-          args: simplified,
+          args: simplified.into(),
         }
       }
     }
@@ -1497,7 +1497,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
                     name: on,
                     args: oargs,
                   } if on == "Or" => oargs.clone(),
-                  _ => vec![alt.clone()],
+                  _ => vec![alt.clone()].into(),
                 };
                 let mut group = existing.clone();
                 group.extend(alt_literals);
@@ -1531,7 +1531,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
           } else {
             Expr::FunctionCall {
               name: "Or".to_string(),
-              args: group,
+              args: group.into(),
             }
           }
         })
@@ -1542,7 +1542,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "And".to_string(),
-          args: and_terms,
+          args: and_terms.into(),
         }
       }
     }
@@ -1568,7 +1568,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "And".to_string(),
-          args: result,
+          args: result.into(),
         }
       }
     }
@@ -1577,7 +1577,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
         args.iter().map(distribute_or_over_and).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr.clone(),
@@ -1623,7 +1623,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
         Expr::FunctionCall {
           name: name.clone(),
-          args: sorted_args,
+          args: sorted_args.into(),
         }
       }
       _ => expr.clone(),
@@ -1636,7 +1636,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         return Ok(Expr::FunctionCall {
           name: "BooleanConvert".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -1665,7 +1665,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BooleanConvert".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1712,7 +1712,7 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "TautologyQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1728,7 +1728,7 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n > 20 {
     return Ok(Expr::FunctionCall {
       name: "TautologyQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1757,7 +1757,7 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "BooleanMinimize".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1781,7 +1781,7 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n > 20 {
     return Ok(Expr::FunctionCall {
       name: "BooleanMinimize".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1974,7 +1974,7 @@ fn implicants_to_expr(
     } else {
       Expr::FunctionCall {
         name: "And".to_string(),
-        args: literals,
+        args: literals.into(),
       }
     };
     terms.push(term);
@@ -1985,7 +1985,7 @@ fn implicants_to_expr(
   } else {
     Ok(Expr::FunctionCall {
       name: "Or".to_string(),
-      args: terms,
+      args: terms.into(),
     })
   }
 }
@@ -2011,7 +2011,7 @@ fn vector_compare_ast(
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2020,7 +2020,7 @@ fn vector_compare_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2028,7 +2028,7 @@ fn vector_compare_ast(
   if items.len() < 2 {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2051,7 +2051,7 @@ fn vector_compare_ast(
             None => {
               return Ok(Expr::FunctionCall {
                 name: name.to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           };
@@ -2060,7 +2060,7 @@ fn vector_compare_ast(
             None => {
               return Ok(Expr::FunctionCall {
                 name: name.to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               });
             }
           };
@@ -2080,7 +2080,7 @@ fn vector_compare_ast(
           None => {
             return Ok(Expr::FunctionCall {
               name: name.to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };
@@ -2089,7 +2089,7 @@ fn vector_compare_ast(
           None => {
             return Ok(Expr::FunctionCall {
               name: name.to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         };

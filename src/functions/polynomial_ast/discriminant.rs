@@ -20,7 +20,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Discriminant".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -39,7 +39,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => {
       return Ok(Expr::FunctionCall {
         name: "Discriminant".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -58,7 +58,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let signed_res = if sign == -1 {
     Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), res],
+      args: vec![Expr::Integer(-1), res].into(),
     }
   } else {
     res
@@ -70,9 +70,9 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       signed_res,
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![leading_coeff, Expr::Integer(-1)],
+        args: vec![leading_coeff, Expr::Integer(-1)].into(),
       },
-    ],
+    ].into(),
   };
 
   // Simplify the result

@@ -10,7 +10,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "QPochhammer".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -24,7 +24,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "QPochhammer".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -44,13 +44,13 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![q.clone(), Expr::Integer(k as i128)],
+        args: vec![q.clone(), Expr::Integer(k as i128)].into(),
       })?
     };
     // Compute a * q^k
     let aqk = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![a.clone(), qk],
+      args: vec![a.clone(), qk].into(),
     })?;
     // Compute 1 - a*q^k
     let factor =
@@ -60,14 +60,14 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(1),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), aqk],
+            args: vec![Expr::Integer(-1), aqk].into(),
           },
-        ],
+        ].into(),
       })?;
     // Multiply into result
     result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![result, factor],
+      args: vec![result, factor].into(),
     })?;
   }
 
@@ -91,7 +91,7 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Otherwise return unevaluated
     return Ok(Expr::FunctionCall {
       name: "ProductLog".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -187,7 +187,7 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ProductLog".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -218,7 +218,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "MeijerG".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -230,7 +230,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "MeijerG".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -239,7 +239,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "MeijerG".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -248,7 +248,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MeijerG".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -261,7 +261,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "MeijerG".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -270,7 +270,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           return Ok(Expr::FunctionCall {
             name: "MeijerG".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -279,7 +279,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MeijerG".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -296,7 +296,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // No poles to sum over - function doesn't exist
     return Ok(Expr::FunctionCall {
       name: "MeijerG".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -345,11 +345,11 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Identifier("E".to_string()),
             Expr::FunctionCall {
               name: "ExpIntegralEi".to_string(),
-              args: vec![Expr::Integer(-1)],
+              args: vec![Expr::Integer(-1)].into(),
             },
-          ],
+          ].into(),
         },
-      ],
+      ].into(),
     };
     return crate::evaluator::evaluate_function_call_ast("N", &[exact]);
   }
@@ -397,7 +397,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // hdiv: function does not exist
             return Ok(Expr::FunctionCall {
               name: "MeijerG".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             });
           }
         }
@@ -419,7 +419,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Return unevaluated for pure integer/rational input
         return Ok(Expr::FunctionCall {
           name: "MeijerG".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     }
@@ -427,7 +427,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "MeijerG".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -728,7 +728,7 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "StruveH".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -816,7 +816,7 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "StruveL".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -891,7 +891,7 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "SquareWave".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     2 => {
@@ -910,7 +910,7 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "SquareWave".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -962,7 +962,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn), Expr::Integer(sd)],
+          args: vec![Expr::Integer(sn), Expr::Integer(sd)].into(),
         });
       }
       // Float input
@@ -974,7 +974,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "TriangleWave".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     2 => {
@@ -996,7 +996,7 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "TriangleWave".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -1036,7 +1036,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         return Ok(Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn), Expr::Integer(sd)],
+          args: vec![Expr::Integer(sn), Expr::Integer(sd)].into(),
         });
       }
       // Float input
@@ -1046,7 +1046,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "SawtoothWave".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     2 => {
@@ -1067,7 +1067,7 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "SawtoothWave".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -1095,7 +1095,7 @@ pub fn parabolic_cylinder_d_ast(
 
   Ok(Expr::FunctionCall {
     name: "ParabolicCylinderD".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1184,7 +1184,7 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "AngerJ".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1269,7 +1269,7 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "WeberE".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1311,7 +1311,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 4 {
     return Ok(Expr::FunctionCall {
       name: "WignerD".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1322,7 +1322,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "WignerD".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -1331,7 +1331,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "WignerD".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -1340,7 +1340,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => {
           return Ok(Expr::FunctionCall {
             name: "WignerD".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
       };
@@ -1349,7 +1349,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "WignerD".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1363,12 +1363,12 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if !matches!(&args[1], Expr::Real(_)) {
           return Ok(Expr::FunctionCall {
             name: "WignerD".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           });
         }
         return Ok(Expr::FunctionCall {
           name: "WignerD".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1381,7 +1381,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "WignerD".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1390,7 +1390,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "WignerD".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1399,7 +1399,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => {
         return Ok(Expr::FunctionCall {
           name: "WignerD".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         });
       }
     };
@@ -1420,9 +1420,9 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(re),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
           },
-        ],
+        ].into(),
       })
     }
   }
@@ -1562,7 +1562,7 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "NorlundB".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -1571,7 +1571,7 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "NorlundB".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -1649,12 +1649,12 @@ fn evaluate_norlund_symbolic(
       } else {
         Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![a.clone(), Expr::Integer(k as i128)],
+          args: vec![a.clone(), Expr::Integer(k as i128)].into(),
         }
       };
       Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![coeff, a_pow],
+        args: vec![coeff, a_pow].into(),
       }
     };
     terms.push(term);
@@ -1667,7 +1667,7 @@ fn evaluate_norlund_symbolic(
   }
   let sum = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: terms,
+    args: terms.into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
@@ -1831,7 +1831,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "AppellF1".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -1955,7 +1955,7 @@ pub fn appell_f2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "AppellF2".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2074,7 +2074,7 @@ pub fn appell_f3_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "AppellF3".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2192,7 +2192,7 @@ pub fn appell_f4_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "AppellF4".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -2287,13 +2287,13 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(_) | Expr::Real(_) => {
       return Ok(Expr::FunctionCall {
         name: "PerfectNumber".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PerfectNumber".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2310,7 +2310,7 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n > mersenne_exponents.len() {
     return Ok(Expr::FunctionCall {
       name: "PerfectNumber".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -2353,7 +2353,7 @@ pub fn ramanujan_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "RamanujanTau".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -2420,18 +2420,18 @@ pub fn powers_representations_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PowersRepresentations".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   let k = match &args[1] {
     Expr::Integer(v) if *v >= 0 => *v as usize,
-    Expr::Integer(_) => return Ok(Expr::List(vec![])),
+    Expr::Integer(_) => return Ok(Expr::List(vec![].into())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PowersRepresentations".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -2441,20 +2441,20 @@ pub fn powers_representations_ast(
     Expr::Integer(_) => {
       return Ok(Expr::FunctionCall {
         name: "PowersRepresentations".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PowersRepresentations".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
 
   // Negative numbers have no representations as sums of powers
   if n < 0 {
-    return Ok(Expr::List(vec![]));
+    return Ok(Expr::List(vec![].into()));
   }
 
   let n = n as u128;
@@ -2471,7 +2471,7 @@ pub fn powers_representations_ast(
     })
     .collect();
 
-  Ok(Expr::List(expr_results))
+  Ok(Expr::List(expr_results.into()))
 }
 
 /// Recursive search for power representations.

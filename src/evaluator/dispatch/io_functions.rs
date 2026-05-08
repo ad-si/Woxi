@@ -86,7 +86,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Environment".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // GetEnvironment["name"] — return "name" -> "value" rule
@@ -111,13 +111,13 @@ pub fn dispatch_io_functions(
               _ => item.clone(),
             })
             .collect();
-          return Some(Ok(Expr::List(rules)));
+          return Some(Ok(Expr::List(rules.into())));
         }
         _ => {}
       }
       return Some(Ok(Expr::FunctionCall {
         name: "GetEnvironment".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // SetEnvironment["name" -> "value"]   — set an environment variable
@@ -184,13 +184,13 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::List(vec![
         Expr::FunctionCall {
           name: "OutputStream".to_string(),
-          args: vec![Expr::String("stdout".to_string()), Expr::Integer(1)],
+          args: vec![Expr::String("stdout".to_string()), Expr::Integer(1)].into(),
         },
         Expr::FunctionCall {
           name: "OutputStream".to_string(),
-          args: vec![Expr::String("stderr".to_string()), Expr::Integer(2)],
+          args: vec![Expr::String("stderr".to_string()), Expr::Integer(2)].into(),
         },
-      ])));
+      ].into())));
     }
     // Streams["name"] — filter streams by name
     "Streams" if args.len() == 1 => {
@@ -201,12 +201,12 @@ pub fn dispatch_io_functions(
           .filter(|(n, _)| *n == name_filter.as_str())
           .map(|(n, id)| Expr::FunctionCall {
             name: "OutputStream".to_string(),
-            args: vec![Expr::String(n.to_string()), Expr::Integer(*id)],
+            args: vec![Expr::String(n.to_string()), Expr::Integer(*id)].into(),
           })
           .collect();
-        return Some(Ok(Expr::List(matching)));
+        return Some(Ok(Expr::List(matching.into())));
       }
-      return Some(Ok(Expr::List(vec![])));
+      return Some(Ok(Expr::List(vec![].into())));
     }
     // ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
     "ReadList" if !args.is_empty() && args.len() <= 3 => {
@@ -220,7 +220,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "ReadString".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -245,7 +245,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Get".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -277,7 +277,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Put".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -311,7 +311,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "PutAppend".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -555,7 +555,7 @@ pub fn dispatch_io_functions(
           // Return unevaluated for non-string format
           return Some(Ok(Expr::FunctionCall {
             name: "ExportString".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -591,7 +591,7 @@ pub fn dispatch_io_functions(
       // Return unevaluated for unsupported formats
       return Some(Ok(Expr::FunctionCall {
         name: "ExportString".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -682,7 +682,7 @@ pub fn dispatch_io_functions(
       } else {
         return Some(Ok(Expr::FunctionCall {
           name: "ParentDirectory".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       let parent = std::path::Path::new(&base)
@@ -698,7 +698,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "DirectoryName".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -711,13 +711,13 @@ pub fn dispatch_io_functions(
             );
             return Some(Ok(Expr::FunctionCall {
               name: "DirectoryName".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "DirectoryName".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -780,7 +780,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "ToFileName".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "FileNameJoin" if args.len() == 1 || args.len() == 2 => {
@@ -819,13 +819,13 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "FileNameJoin".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "FileNameSplit" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
         if s.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+          return Some(Ok(Expr::List(vec![].into())));
         }
         let parts: Vec<Expr> = s
           .split('/')
@@ -835,11 +835,11 @@ pub fn dispatch_io_functions(
           .filter(|(i, part)| !(*i > 0 && part.is_empty()))
           .map(|(_, part)| Expr::String(part.to_string()))
           .collect();
-        return Some(Ok(Expr::List(parts)));
+        return Some(Ok(Expr::List(parts.into())));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "FileNameSplit".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "FileNameDepth" if args.len() == 1 => {
@@ -856,7 +856,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "FileNameDepth".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "ExpandFileName" if args.len() == 1 => {
@@ -898,7 +898,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "ExpandFileName".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     "URLBuild" if args.len() == 1 || args.len() == 2 => {
@@ -920,7 +920,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "URLBuild".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -999,13 +999,13 @@ pub fn dispatch_io_functions(
         Some(other) => {
           return Some(Ok(Expr::FunctionCall {
             name: "OpenRead".to_string(),
-            args: vec![other.clone()],
+            args: vec![other.clone()].into(),
           }));
         }
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "OpenRead".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1022,7 +1022,7 @@ pub fn dispatch_io_functions(
       );
       return Some(Ok(Expr::FunctionCall {
         name: "InputStream".to_string(),
-        args: vec![Expr::String(filename), Expr::Integer(id as i128)],
+        args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
       }));
     }
     // OpenWrite[file] — open a file for writing, return OutputStream[name, id]
@@ -1035,7 +1035,7 @@ pub fn dispatch_io_functions(
         Some(other) => {
           return Some(Ok(Expr::FunctionCall {
             name: "OpenWrite".to_string(),
-            args: vec![other.clone()],
+            args: vec![other.clone()].into(),
           }));
         }
         None => {
@@ -1063,7 +1063,7 @@ pub fn dispatch_io_functions(
       );
       return Some(Ok(Expr::FunctionCall {
         name: "OutputStream".to_string(),
-        args: vec![Expr::String(filename), Expr::Integer(id as i128)],
+        args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
       }));
     }
     // BinaryWrite[stream, bytes] — write bytes (Integers in 0..255) to the
@@ -1076,7 +1076,7 @@ pub fn dispatch_io_functions(
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "BinaryWrite".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1090,7 +1090,7 @@ pub fn dispatch_io_functions(
               _ => {
                 return Some(Ok(Expr::FunctionCall {
                   name: "BinaryWrite".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 }));
               }
             }
@@ -1100,7 +1100,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "BinaryWrite".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1136,7 +1136,7 @@ pub fn dispatch_io_functions(
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "BinaryRead".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1176,17 +1176,17 @@ pub fn dispatch_io_functions(
                 // Unsupported form spec — fall back to unevaluated.
                 return Some(Ok(Expr::FunctionCall {
                   name: "BinaryRead".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 }));
               }
             }
           }
-          return Some(Ok(Expr::List(out)));
+          return Some(Ok(Expr::List(out.into())));
         }
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "BinaryRead".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -1206,7 +1206,7 @@ pub fn dispatch_io_functions(
           None => {
             return Some(Ok(Expr::FunctionCall {
               name: "BinaryReadList".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         },
@@ -1223,7 +1223,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "BinaryReadList".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -1240,7 +1240,7 @@ pub fn dispatch_io_functions(
         .into_iter()
         .map(|b| Expr::Integer(b as i128))
         .collect();
-      return Some(Ok(Expr::List(out)));
+      return Some(Ok(Expr::List(out.into())));
     }
     // OpenAppend[file] — open a file for appending, return OutputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
@@ -1259,7 +1259,7 @@ pub fn dispatch_io_functions(
           other => {
             return Some(Ok(Expr::FunctionCall {
               name: "OpenAppend".to_string(),
-              args: vec![other.clone()],
+              args: vec![other.clone()].into(),
             }));
           }
         }
@@ -1284,7 +1284,7 @@ pub fn dispatch_io_functions(
       );
       return Some(Ok(Expr::FunctionCall {
         name: "OutputStream".to_string(),
-        args: vec![Expr::String(filename), Expr::Integer(id as i128)],
+        args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
       }));
     }
     // StringToStream["text"] — create an input stream from a string
@@ -1307,7 +1307,7 @@ pub fn dispatch_io_functions(
         args: vec![
           Expr::String("String".to_string()),
           Expr::Integer(id as i128),
-        ],
+        ].into(),
       }));
     }
     // Close[stream] — close an open stream
@@ -1326,7 +1326,7 @@ pub fn dispatch_io_functions(
             _ => {
               return Some(Ok(Expr::FunctionCall {
                 name: "Close".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               }));
             }
           };
@@ -1343,7 +1343,7 @@ pub fn dispatch_io_functions(
               crate::emit_message(&format!("{} is not open.", stream_str));
               return Some(Ok(Expr::FunctionCall {
                 name: "Close".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               }));
             }
           }
@@ -1352,7 +1352,7 @@ pub fn dispatch_io_functions(
           crate::emit_message(&format!("{} is not open.", s));
           return Some(Ok(Expr::FunctionCall {
             name: "Close".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
         _ => {
@@ -1364,7 +1364,7 @@ pub fn dispatch_io_functions(
           ));
           return Some(Ok(Expr::FunctionCall {
             name: "Close".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -1391,14 +1391,14 @@ pub fn dispatch_io_functions(
                 ));
                 return Some(Ok(Expr::FunctionCall {
                   name: "StreamPosition".to_string(),
-                  args: args.to_vec(),
+                  args: args.to_vec().into(),
                 }));
               }
             }
           } else {
             return Some(Ok(Expr::FunctionCall {
               name: "StreamPosition".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -1409,13 +1409,13 @@ pub fn dispatch_io_functions(
           ));
           return Some(Ok(Expr::FunctionCall {
             name: "StreamPosition".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "StreamPosition".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -1433,7 +1433,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "SetStreamPosition".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1467,20 +1467,20 @@ pub fn dispatch_io_functions(
               ));
               return Some(Ok(Expr::FunctionCall {
                 name: "SetStreamPosition".to_string(),
-                args: args.to_vec(),
+                args: args.to_vec().into(),
               }));
             }
           } else {
             return Some(Ok(Expr::FunctionCall {
               name: "SetStreamPosition".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "SetStreamPosition".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       }
@@ -1518,14 +1518,14 @@ pub fn dispatch_io_functions(
           } else {
             return Some(Ok(Expr::FunctionCall {
               name: "ReadLine".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "ReadLine".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1578,7 +1578,7 @@ pub fn dispatch_io_functions(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Skip".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -1612,7 +1612,7 @@ pub fn dispatch_io_functions(
 
       return Some(Ok(Expr::FunctionCall {
         name: "Skip".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // Read[stream] or Read[stream, type] — read from a stream
@@ -1658,7 +1658,7 @@ pub fn dispatch_io_functions(
             results.push(val);
           }
           crate::advance_stream_position(id, current_pos);
-          return Some(Ok(Expr::List(results)));
+          return Some(Ok(Expr::List(results.into())));
         }
 
         let (result, advance) = read_single_type(remaining, read_type);
@@ -1668,7 +1668,7 @@ pub fn dispatch_io_functions(
 
       return Some(Ok(Expr::FunctionCall {
         name: "Read".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
@@ -1733,7 +1733,7 @@ pub fn dispatch_io_functions(
 
       return Some(Ok(Expr::FunctionCall {
         name: "Write".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // WriteString[stream, "text1", "text2", ...] — write strings to a stream
@@ -1821,7 +1821,7 @@ pub fn dispatch_io_functions(
 
       return Some(Ok(Expr::FunctionCall {
         name: "WriteString".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // Save["filename", symbol] or Save["filename", {sym1, sym2, ...}]
@@ -1833,7 +1833,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Save".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -1853,7 +1853,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Save".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -2028,7 +2028,7 @@ pub fn dispatch_io_functions(
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "FileNames".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -2102,7 +2102,7 @@ pub fn dispatch_io_functions(
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "SetDirectory".to_string(),
-            args: args.to_vec(),
+            args: args.to_vec().into(),
           }));
         }
       };
@@ -2169,7 +2169,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(Expr::FunctionCall {
           name: "FileFormat".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       if !std::path::Path::new(name).exists() {
@@ -2181,7 +2181,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "FileFormat".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // FileDate["name"] / FileDate["name", "type"] — file timestamps.
@@ -2193,7 +2193,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(Expr::FunctionCall {
           name: "FileDate".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       if !std::path::Path::new(name).exists() {
@@ -2204,7 +2204,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "FileDate".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // FileHash["name"] / FileHash["name", "Algorithm"] — return the
@@ -2215,7 +2215,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(Expr::FunctionCall {
           name: "FileHash".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       // Only emit the matching error message — actual hashing isn't
@@ -2235,7 +2235,7 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::FunctionCall {
         name: "FileHash".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       }));
     }
     // FileByteCount["name"] — size in bytes, or emit `fdnfnd` and
@@ -2245,7 +2245,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(Expr::FunctionCall {
           name: "FileByteCount".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       match std::fs::metadata(name) {
@@ -2269,7 +2269,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(Expr::FunctionCall {
           name: "AbsoluteFileName".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       match std::fs::canonicalize(name) {
@@ -2293,7 +2293,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(Expr::FunctionCall {
           name: "FindFile".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         }));
       };
       // Context names end with a backtick and can't be resolved to a file

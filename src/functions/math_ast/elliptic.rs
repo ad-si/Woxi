@@ -34,13 +34,13 @@ pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // m > 1 requires complex numbers, return unevaluated
         Ok(Expr::FunctionCall {
           name: "EllipticK".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "EllipticK".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -86,7 +86,7 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Outside [0, 1], return unevaluated
         Ok(Expr::FunctionCall {
           name: "EllipticNomeQ".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
@@ -103,9 +103,9 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Constant("E".to_string()),
               Expr::FunctionCall {
                 name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())],
+                args: vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())].into(),
               },
-            ],
+            ].into(),
           });
         }
         // For other rationals, compute numerically
@@ -119,12 +119,12 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "EllipticNomeQ".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       })
     }
     _ => Ok(Expr::FunctionCall {
       name: "EllipticNomeQ".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -165,7 +165,7 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     return Ok(Expr::FunctionCall {
       name: "EllipticE".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -193,13 +193,13 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Ok(Expr::FunctionCall {
           name: "EllipticE".to_string(),
-          args: args.to_vec(),
+          args: args.to_vec().into(),
         })
       }
     }
     _ => Ok(Expr::FunctionCall {
       name: "EllipticE".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     }),
   }
 }
@@ -280,7 +280,7 @@ pub fn jacobi_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "JacobiZeta".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -340,7 +340,7 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "EllipticF".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -439,7 +439,7 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::FunctionCall {
     name: "EllipticPi".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -480,7 +480,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "EllipticTheta".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -505,7 +505,7 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "EllipticTheta".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -587,7 +587,7 @@ pub fn elliptic_theta_prime_ast(
     _ => {
       return Ok(Expr::FunctionCall {
         name: "EllipticThetaPrime".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -601,7 +601,7 @@ pub fn elliptic_theta_prime_ast(
 
   Ok(Expr::FunctionCall {
     name: "EllipticThetaPrime".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 

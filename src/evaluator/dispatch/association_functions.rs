@@ -69,7 +69,7 @@ pub fn dispatch_association_functions(
             ));
             Ok(Expr::FunctionCall {
               name: "AssociationThread".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             })
           }
           other => other,
@@ -169,7 +169,7 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !ingest(&mut pairs, arg)? {
       return Ok(Expr::FunctionCall {
         name: "Association".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   }

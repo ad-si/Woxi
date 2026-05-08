@@ -44,7 +44,7 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // No match, no default — return unevaluated
   Ok(Expr::FunctionCall {
     name: "Switch".to_string(),
-    args: args.to_vec(),
+    args: args.to_vec().into(),
   })
 }
 
@@ -112,7 +112,7 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Return unevaluated
     return Ok(Expr::FunctionCall {
       name: "Piecewise".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -280,7 +280,7 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn hold_form(expr: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "HoldForm".to_string(),
-    args: vec![expr.clone()],
+    args: vec![expr.clone()].into(),
   }
 }
 
@@ -311,7 +311,7 @@ fn maybe_trace(
 fn rebuild_from_head(head: &str, children: &[Expr]) -> Expr {
   Expr::FunctionCall {
     name: head.to_string(),
-    args: children.to_vec(),
+    args: children.to_vec().into(),
   }
 }
 

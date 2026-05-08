@@ -8,11 +8,14 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 pub mod evaluator;
+pub mod expr_list;
 pub mod functions;
 pub mod syntax;
 pub mod utils;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
+
+pub use expr_list::ExprList;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
@@ -1016,11 +1019,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               now.format("%M").to_string().parse::<i128>().unwrap(),
             ),
             syntax::Expr::Real(seconds),
-          ]),
+          ].into()),
           syntax::Expr::String("Instant".to_string()),
           syntax::Expr::String("Gregorian".to_string()),
           syntax::Expr::Real(tz_offset_hours),
-        ],
+        ].into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1040,11 +1043,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             syntax::Expr::Integer(now.get_hours() as i128),
             syntax::Expr::Integer(now.get_minutes() as i128),
             syntax::Expr::Real(seconds),
-          ]),
+          ].into()),
           syntax::Expr::String("Instant".to_string()),
           syntax::Expr::String("Gregorian".to_string()),
           syntax::Expr::Real(tz_offset_hours),
-        ],
+        ].into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1071,9 +1074,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             syntax::Expr::Integer(
               date.format("%d").to_string().parse::<i128>().unwrap(),
             ),
-          ]),
+          ].into()),
           syntax::Expr::String("Day".to_string()),
-        ],
+        ].into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1094,9 +1097,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             syntax::Expr::Integer(d.get_full_year() as i128),
             syntax::Expr::Integer((d.get_month() + 1) as i128),
             syntax::Expr::Integer(d.get_date() as i128),
-          ]),
+          ].into()),
           syntax::Expr::String("Day".to_string()),
-        ],
+        ].into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1503,7 +1506,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::List(items) => {
       let new_items: Vec<syntax::Expr> =
         items.iter().cloned().map(render_grid_if_needed).collect();
-      syntax::Expr::List(new_items)
+      syntax::Expr::List(new_items.into())
     }
     _ => expr,
   }
@@ -1575,7 +1578,7 @@ fn render_color_if_needed(mut expr: syntax::Expr) -> syntax::Expr {
       .into_iter()
       .map(render_color_if_needed)
       .collect();
-    return syntax::Expr::List(new_items);
+    return syntax::Expr::List(new_items.into());
   }
   expr
 }
@@ -1694,11 +1697,11 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
                     }
                   })
                   .collect();
-                rows.push(syntax::Expr::List(row));
+                rows.push(syntax::Expr::List(row.into()));
               }
             }
           }
-          (syntax::Expr::List(rows), gaps)
+          (syntax::Expr::List(rows.into()), gaps)
         }
         syntax::Expr::List(items)
           if items
@@ -1713,7 +1716,7 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
             syntax::Expr::List(
               items
                 .iter()
-                .map(|e| syntax::Expr::List(vec![e.clone()]))
+                .map(|e| syntax::Expr::List(vec![e.clone()].into()))
                 .collect(),
             ),
             vec![],
@@ -1770,7 +1773,7 @@ fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
             .iter()
             .map(|row| {
               if let syntax::Expr::List(cells) = row {
-                cells.clone()
+                cells.to_vec()
               } else {
                 vec![row.clone()]
               }
@@ -1797,7 +1800,7 @@ fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
           let grid_data = syntax::Expr::List(
             items
               .iter()
-              .map(|e| syntax::Expr::List(vec![e.clone()]))
+              .map(|e| syntax::Expr::List(vec![e.clone()].into()))
               .collect(),
           );
           match functions::graphics::grid_ast_with_parens(&[grid_data]) {
@@ -1842,7 +1845,7 @@ fn render_traditionalform_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           let grid_data = syntax::Expr::List(
             items
               .iter()
-              .map(|e| syntax::Expr::List(vec![e.clone()]))
+              .map(|e| syntax::Expr::List(vec![e.clone()].into()))
               .collect(),
           );
           match functions::graphics::grid_ast_with_parens(&[grid_data]) {
@@ -1997,7 +2000,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         .cloned()
         .map(render_graphics_fc_if_needed)
         .collect();
-      syntax::Expr::List(new_items)
+      syntax::Expr::List(new_items.into())
     }
     syntax::Expr::FunctionCall { name, args }
       if matches!(
@@ -2019,7 +2022,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         .collect();
       syntax::Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
     _ => expr,
@@ -3153,7 +3156,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
           args: vec![
             syntax::Expr::Identifier(func_name.clone()),
             syntax::Expr::Integer(position as i128),
-          ],
+          ].into(),
         }));
         heads.push(None);
         blank_types.push(1);
@@ -3212,7 +3215,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         // Build condition: testFunc[paramName]
         let cond_expr = syntax::Expr::FunctionCall {
           name: syntax::expr_to_string(&test_expr),
-          args: vec![syntax::Expr::Identifier(param_name.clone())],
+          args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
         };
         params.push(param_name);
         conditions.push(Some(cond_expr));
@@ -3334,8 +3337,8 @@ fn store_tag_set_delayed(
   };
 
   // Extract outer function name and args from the LHS
-  let (outer_func, lhs_args) = match &func_call_expr {
-    syntax::Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+  let (outer_func, lhs_args): (String, Vec<syntax::Expr>) = match &func_call_expr {
+    syntax::Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
     syntax::Expr::CurriedCall { func, args } => {
       // Chained calls like f[g[x_]][y_] - use the full expression
       // For now, handle simple case only
@@ -3378,7 +3381,7 @@ fn store_tag_set_delayed(
             operands: vec![
               syntax::Expr::FunctionCall {
                 name: "Length".to_string(),
-                args: vec![syntax::Expr::Identifier(param_name.clone())],
+                args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
               },
               syntax::Expr::Integer(inner_args.len() as i128),
             ],
@@ -3397,7 +3400,7 @@ fn store_tag_set_delayed(
               args: vec![
                 syntax::Expr::Identifier(param_name.clone()),
                 syntax::Expr::Integer((j + 1) as i128),
-              ],
+              ].into(),
             };
             final_body =
               syntax::substitute_variable(&final_body, &pat_name, &part_expr);
@@ -3409,11 +3412,11 @@ fn store_tag_set_delayed(
       }
       // Simple pattern like x_ or x_Head
       _ => {
-        let (pat_name, head) = extract_pattern_info_from_expr(arg);
+        let (pat_name, head) = extract_pattern_info_from_expr(&arg);
         if pat_name.is_empty() && head.is_none() {
           // Literal value — create SameQ condition
           let param_name = format!("_up{}", i);
-          let eval_arg = evaluator::evaluate_expr_to_expr(arg)?;
+          let eval_arg = evaluator::evaluate_expr_to_expr(&arg)?;
           conditions.push(Some(syntax::Expr::Comparison {
             operands: vec![
               syntax::Expr::Identifier(param_name.clone()),

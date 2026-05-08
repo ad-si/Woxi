@@ -13,7 +13,7 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "TuringMachine".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   }
 
@@ -29,7 +29,7 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       return Ok(Expr::FunctionCall {
         name: "TuringMachine".to_string(),
-        args: args.to_vec(),
+        args: args.to_vec().into(),
       });
     }
   };
@@ -56,15 +56,15 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(state as i128),
         Expr::Integer(pos as i128),
         Expr::Integer(shift as i128),
-      ]);
+      ].into());
       let tape_expr = Expr::List(
         tape.into_iter().map(|c| Expr::Integer(c as i128)).collect(),
       );
-      Expr::List(vec![state_info, tape_expr])
+      Expr::List(vec![state_info, tape_expr].into())
     })
     .collect();
 
-  Ok(Expr::List(result_exprs))
+  Ok(Expr::List(result_exprs.into()))
 }
 
 /// Parse rule: integer n or {n, s, k}

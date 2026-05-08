@@ -16,7 +16,7 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Thread over List
   if let Expr::List(items) = &args[0] {
     let results: Vec<Expr> = items.iter().map(together_expr).collect();
-    return Ok(Expr::List(results));
+    return Ok(Expr::List(results.into()));
   }
   Ok(together_expr(&args[0]))
 }
@@ -46,7 +46,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             Expr::Integer(1),
             Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![args[0].clone(), pos_exp],
+              args: vec![args[0].clone(), pos_exp].into(),
             },
           )
         }
@@ -72,7 +72,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               } else {
                 den_factors.push(Expr::FunctionCall {
                   name: "Power".to_string(),
-                  args: vec![pargs[0].clone(), pos_exp],
+                  args: vec![pargs[0].clone(), pos_exp].into(),
                 });
               }
             } else {
@@ -81,11 +81,11 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               if !matches!(&base_den, Expr::Integer(1)) {
                 num_factors.push(Expr::FunctionCall {
                   name: "Power".to_string(),
-                  args: vec![base_num, pargs[1].clone()],
+                  args: vec![base_num, pargs[1].clone()].into(),
                 });
                 den_factors.push(Expr::FunctionCall {
                   name: "Power".to_string(),
-                  args: vec![base_den, pargs[1].clone()],
+                  args: vec![base_den, pargs[1].clone()].into(),
                 });
               } else {
                 num_factors.push(arg.clone());
@@ -103,7 +103,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               } else {
                 den_factors.push(Expr::FunctionCall {
                   name: "Power".to_string(),
-                  args: vec![*left.clone(), pos_exp],
+                  args: vec![*left.clone(), pos_exp].into(),
                 });
               }
             } else {
@@ -202,7 +202,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       // Flatten into a Times FunctionCall and recurse
       let flat = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![*left.clone(), *right.clone()],
+        args: vec![*left.clone(), *right.clone()].into(),
       };
       extract_num_den(&flat)
     }
@@ -270,7 +270,7 @@ pub fn get_negative_exponent(expr: &Expr) -> Option<Expr> {
   {
     return Some(Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(-*n), args[1].clone()],
+      args: vec![Expr::Integer(-*n), args[1].clone()].into(),
     });
   }
   // Try Times[-1, Rational[p, q]] → negative rational
@@ -286,7 +286,7 @@ pub fn get_negative_exponent(expr: &Expr) -> Option<Expr> {
   {
     return Some(Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(*n), ra[1].clone()],
+      args: vec![Expr::Integer(*n), ra[1].clone()].into(),
     });
   }
   None
@@ -306,7 +306,7 @@ pub(super) fn negate_expr(expr: &Expr) -> Expr {
       if let Expr::Integer(num) = &args[0] {
         return Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(-num), args[1].clone()],
+          args: vec![Expr::Integer(-num), args[1].clone()].into(),
         };
       }
       Expr::UnaryOp {
@@ -395,7 +395,7 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![base, exp],
+        args: vec![base, exp].into(),
       }
     }
 
@@ -418,7 +418,7 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
         args.iter().map(together_expr_preprocess).collect();
       Expr::FunctionCall {
         name: name.clone(),
-        args: new_args,
+        args: new_args.into(),
       }
     }
 
@@ -771,7 +771,7 @@ fn rat_exp_to_expr((n, d): RatExp) -> Expr {
   } else {
     Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(n), Expr::Integer(d)],
+      args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
     }
   }
 }
