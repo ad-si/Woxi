@@ -843,6 +843,33 @@ fn body_uses_var_as_function_head(body: &Expr, var_name: &str) -> bool {
   }
 }
 
+/// Bind a Do-loop iterator variable in ENV. Reuses the existing slot when
+/// possible to avoid cloning `var_name` into a fresh HashMap key on every
+/// iteration.
+fn bind_loop_var(var_name: &str, value: Expr) {
+  crate::ENV.with(|e| {
+    let mut env = e.borrow_mut();
+    if let Some(slot) = env.get_mut(var_name) {
+      *slot = crate::StoredValue::ExprVal(value);
+    } else {
+      env.insert(var_name.to_string(), crate::StoredValue::ExprVal(value));
+    }
+  });
+}
+
+/// Restore the previous binding of a loop iterator variable (or remove
+/// the slot if the variable was previously unbound).
+fn restore_loop_var(var_name: &str, prev: Option<crate::StoredValue>) {
+  crate::ENV.with(|e| {
+    let mut env = e.borrow_mut();
+    if let Some(v) = prev {
+      env.insert(var_name.to_string(), v);
+    } else {
+      env.remove(var_name);
+    }
+  });
+}
+
 /// AST-based Do: execute expression multiple times.
 /// Do[expr, n] -> execute expr n times
 /// Do[expr, {i, max}] -> execute with i from 1 to max
@@ -893,28 +920,28 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
 
       // Handle list iterator: Do[body, {i, {a, b, c}}]
       if items.len() == 2 {
-        let val_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        if let Expr::List(list_items) = &val_expr {
-          // Bind the iterator in ENV instead of cloning + substituting
-          // the body on every iteration. The substitute path used to
-          // walk the entire body AST per step, which made tight loops
-          // (e.g. `Do[…, {c, Characters[s]}]` over 75 KB inputs) pay
-          // O(body_size) work per iteration. ENV binding makes that
-          // cost O(1) by resolving `var_name` through the normal
-          // identifier-lookup path.
-          let needs_substitute =
-            body_uses_var_as_function_head(body, &var_name);
-          if !needs_substitute {
+        let needs_substitute = body_uses_var_as_function_head(body, &var_name);
+
+        // Fast path: `Do[body, {c, Characters[s]}]` — iterate the
+        // string's chars directly instead of allocating an N-element
+        // Expr::List of single-char Expr::Strings. The accumulating
+        // splitLines loop pays one such call per ~75 KB input.
+        if !needs_substitute
+          && let Expr::FunctionCall {
+            name: head, args: head_args,
+          } = &items[1]
+          && head == "Characters"
+          && head_args.len() == 1
+        {
+          let s_expr = crate::evaluator::evaluate_expr_to_expr(&head_args[0])?;
+          if let Expr::String(ref s) = s_expr {
             let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
             let mut early_return: Option<Expr> = None;
             let mut error: Option<InterpreterError> = None;
-            for item in list_items {
-              crate::ENV.with(|e| {
-                e.borrow_mut().insert(
-                  var_name.clone(),
-                  crate::StoredValue::ExprVal(item.clone()),
-                );
-              });
+            let mut buf = [0u8; 4];
+            for ch in s.chars() {
+              let cs = ch.encode_utf8(&mut buf).to_string();
+              bind_loop_var(&var_name, Expr::String(cs));
               match crate::evaluator::evaluate_expr_to_expr(body) {
                 Ok(_) => {}
                 Err(InterpreterError::BreakSignal) => break,
@@ -929,15 +956,49 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
                 }
               }
             }
-            // Restore previous binding (or remove if there was none).
-            crate::ENV.with(|e| {
-              let mut env = e.borrow_mut();
-              if let Some(v) = prev {
-                env.insert(var_name.clone(), v);
-              } else {
-                env.remove(&var_name);
+            restore_loop_var(&var_name, prev);
+            if let Some(e) = error {
+              return Err(e);
+            }
+            if let Some(v) = early_return {
+              return Ok(v);
+            }
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+          // Fall through to the generic path if Characters[s] didn't
+          // produce a String (e.g. threaded over a list).
+        }
+
+        let val_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        if let Expr::List(list_items) = &val_expr {
+          // Bind the iterator in ENV instead of cloning + substituting
+          // the body on every iteration. The substitute path used to
+          // walk the entire body AST per step, which made tight loops
+          // (e.g. `Do[…, {c, Characters[s]}]` over 75 KB inputs) pay
+          // O(body_size) work per iteration. ENV binding makes that
+          // cost O(1) by resolving `var_name` through the normal
+          // identifier-lookup path.
+          if !needs_substitute {
+            let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+            let mut early_return: Option<Expr> = None;
+            let mut error: Option<InterpreterError> = None;
+            for item in list_items {
+              bind_loop_var(&var_name, item.clone());
+              match crate::evaluator::evaluate_expr_to_expr(body) {
+                Ok(_) => {}
+                Err(InterpreterError::BreakSignal) => break,
+                Err(InterpreterError::ContinueSignal) => continue,
+                Err(InterpreterError::ReturnValue(val)) => {
+                  early_return = Some(*val);
+                  break;
+                }
+                Err(e) => {
+                  error = Some(e);
+                  break;
+                }
               }
-            });
+            }
+            restore_loop_var(&var_name, prev);
             if let Some(e) = error {
               return Err(e);
             }
