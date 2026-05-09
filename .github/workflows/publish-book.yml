@@ -33,22 +33,21 @@ jobs:
           key: wasm-pkg-${{ hashFiles('src/**', 'Cargo.lock', 'Cargo.toml') }}
 
       - name: Setup Rust
-        if: steps.wasm-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
       - name: Cache Cargo registry and build artifacts
-        if: steps.wasm-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin
             target
-          key: wasm-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            wasm-cargo-
+            cargo-
 
       - name: Install wasm-pack
         if: steps.wasm-cache.outputs.cache-hit != 'true'
@@ -57,6 +56,9 @@ jobs:
       - name: Build WASM playground
         if: steps.wasm-cache.outputs.cache-hit != 'true'
         run: make wasm-build-production
+
+      - name: Install woxi (for build_summary.wls)
+        run: make install
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -91,7 +93,7 @@ jobs:
 
       - name: Build documentation
         run: |
-          wolframscript -file scripts/build_summary.wls
+          make docs/summary
           uvx --python 3.12 --from zensical==0.0.40 \
             zensical build --clean -f tests/zensical.toml
 
