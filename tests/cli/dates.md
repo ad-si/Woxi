@@ -16,6 +16,7 @@ Wolfram Language. Dates can be specified either as 3-element lists
 - [`LeapYearQ`](dates/LeapYearQ.md)
 - [`AbsoluteTiming`](dates/AbsoluteTiming.md)
 - [`Timing`](dates/Timing.md)
+- [`Pause`](dates/Pause.md)
 
 ## Additional Functions
 

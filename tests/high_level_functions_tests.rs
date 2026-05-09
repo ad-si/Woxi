@@ -3190,4 +3190,64 @@ mod high_level_functions_tests {
       std::fs::remove_file(&tmp).ok();
     }
   }
+
+  mod pause_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn test_pause_zero_returns_null() {
+      assert_eq!(interpret("Pause[0]").unwrap(), "\0");
+    }
+
+    #[test]
+    fn test_pause_integer_returns_null() {
+      assert_eq!(interpret("Pause[0]; 42").unwrap(), "42");
+    }
+
+    #[test]
+    fn test_pause_real_returns_null() {
+      assert_eq!(interpret("Pause[0.05]").unwrap(), "\0");
+    }
+
+    #[test]
+    fn test_pause_actually_waits() {
+      let start = Instant::now();
+      interpret("Pause[0.3]").unwrap();
+      let elapsed = start.elapsed().as_secs_f64();
+      assert!(
+        elapsed >= 0.3,
+        "Pause[0.3] should wait at least 0.3s, waited {elapsed}s"
+      );
+    }
+
+    #[test]
+    fn test_pause_uses_wall_clock_time() {
+      let result = interpret("AbsoluteTiming[Pause[0.2]]").unwrap();
+      assert!(result.starts_with('{') && result.ends_with('}'));
+      assert!(result.contains(", Null}"));
+      let inner = &result[1..result.len() - 1];
+      let comma = inner.find(',').unwrap();
+      let elapsed: f64 = inner[..comma].trim().parse().unwrap();
+      assert!(
+        elapsed >= 0.2,
+        "AbsoluteTiming[Pause[0.2]] should report >= 0.2s, got {elapsed}"
+      );
+    }
+
+    #[test]
+    fn test_pause_negative_returns_null() {
+      assert_eq!(interpret("Pause[-1]").unwrap(), "\0");
+    }
+
+    #[test]
+    fn test_pause_in_compound_expression() {
+      assert_eq!(interpret("(Pause[0]; 1 + 2)").unwrap(), "3");
+    }
+
+    #[test]
+    fn test_pause_symbolic_arg_returns_null() {
+      assert_eq!(interpret("Pause[Sqrt[0]]").unwrap(), "\0");
+    }
+  }
 }
