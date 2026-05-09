@@ -240,6 +240,29 @@ pub fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
   }
 }
 
+/// Promote any large `Expr::List` value in `values` from the Vec-backed
+/// representation to the Tree-backed (imbl::Vector) representation.
+///
+/// Used before substituting function-call args into a user-defined body:
+/// `substitute_variables` clones the bound value at every position the
+/// parameter is referenced, so a 1500-element Vec list referenced twice
+/// would otherwise cost two full O(N) clones. The Tree variant clones
+/// in O(1) (Arc::clone of the imbl backbone), turning the substitution
+/// cost from O(N × occurrences) into O(N + occurrences) for that arg.
+///
+/// Threshold of 16 keeps the Vec path for small argument lists where the
+/// one-time conversion would dominate.
+fn promote_lists_for_substitution(values: &mut [Expr]) {
+  for v in values {
+    if let Expr::List(items) = v
+      && items.len() > 16
+      && !items.is_tree()
+    {
+      items.upgrade_to_tree();
+    }
+  }
+}
+
 /// Distribute function call args to params using backtracking,
 /// handling BlankSequence/BlankNullSequence params that consume variable numbers of args.
 fn distribute_args_to_params(
@@ -734,7 +757,7 @@ pub fn evaluate_function_call_ast_inner(
           param_defaults,
           0,
         );
-        let effective_args = match distribution {
+        let mut effective_args = match distribution {
           Some(dist) => {
             // Validate OptionsPattern slots: every arg landing in an
             // `__opts<i>` parameter must be a `Rule` / `RuleDelayed`, or
@@ -901,6 +924,7 @@ pub fn evaluate_function_call_ast_inner(
         }
         // Substitute and evaluate body — use simultaneous substitution
         // to prevent parameter values from leaking into other arguments
+        promote_lists_for_substitution(&mut effective_args);
         let substituted = {
           let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
           for (param, arg) in params.iter().zip(effective_args.iter()) {
@@ -999,7 +1023,7 @@ pub fn evaluate_function_call_ast_inner(
         // Build the effective argument list by matching provided args to params.
         // Optional params are filled left-to-right; when there are fewer args than params,
         // optional params use their defaults starting from the leftmost optional param.
-        let effective_args = if perm_args.len() == total_count {
+        let mut effective_args = if perm_args.len() == total_count {
           // All params provided - check head constraints
           let mut head_ok = true;
           for (i, arg) in perm_args.iter().enumerate() {
@@ -1181,6 +1205,7 @@ pub fn evaluate_function_call_ast_inner(
         overload_matched = true;
         // All conditions met - substitute parameters with arguments and evaluate body
         // Use simultaneous substitution to prevent variable name leakage
+        promote_lists_for_substitution(&mut effective_args);
         let substituted = {
           let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
           for (param, arg) in params.iter().zip(effective_args.iter()) {

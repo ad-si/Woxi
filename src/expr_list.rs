@@ -136,7 +136,7 @@ impl ExprList {
 
   /// If currently in `Vec` mode, upgrade to `Tree`. After this call the
   /// inner is guaranteed to be `Tree`. Used by `push_front`.
-  fn upgrade_to_tree(&mut self) {
+  pub fn upgrade_to_tree(&mut self) {
     if let Inner::Vec(v) = &mut self.inner {
       let v = std::mem::take(v);
       self.inner = Inner::Tree(Box::new(TreeData {
@@ -144,6 +144,12 @@ impl ExprList {
         cache: OnceLock::new(),
       }));
     }
+  }
+
+  /// True if the list is backed by the Tree variant (cheap clone via
+  /// shared imbl::Vector backbone).
+  pub fn is_tree(&self) -> bool {
+    matches!(self.inner, Inner::Tree(_))
   }
 
   pub fn iter(&self) -> ExprListIter<'_> {
