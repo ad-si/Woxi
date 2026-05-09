@@ -772,6 +772,77 @@ pub fn constant_array_ast(
   }
 }
 
+/// True when `body` references `var_name` as the head of a `FunctionCall`
+/// anywhere in the tree. The substitute-variable path turns such a call
+/// into `CurriedCall { func: <value>, args }`, so it works when `var` is
+/// bound to a value that isn't a function (e.g. an Association). The
+/// ENV-binding fast path can't reproduce that — it would dispatch the
+/// call by literal name. When this returns true we have to fall back to
+/// the substitute path to preserve semantics.
+fn body_uses_var_as_function_head(body: &Expr, var_name: &str) -> bool {
+  match body {
+    Expr::FunctionCall { name, args } => {
+      name == var_name
+        || args
+          .iter()
+          .any(|a| body_uses_var_as_function_head(a, var_name))
+    }
+    Expr::List(items) => items
+      .iter()
+      .any(|a| body_uses_var_as_function_head(a, var_name)),
+    Expr::BinaryOp { left, right, .. } => {
+      body_uses_var_as_function_head(left, var_name)
+        || body_uses_var_as_function_head(right, var_name)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      body_uses_var_as_function_head(operand, var_name)
+    }
+    Expr::Comparison { operands, .. } => operands
+      .iter()
+      .any(|a| body_uses_var_as_function_head(a, var_name)),
+    Expr::CompoundExpr(exprs) => exprs
+      .iter()
+      .any(|a| body_uses_var_as_function_head(a, var_name)),
+    Expr::CurriedCall { func, args } => {
+      body_uses_var_as_function_head(func, var_name)
+        || args
+          .iter()
+          .any(|a| body_uses_var_as_function_head(a, var_name))
+    }
+    Expr::Part { expr, index } => {
+      body_uses_var_as_function_head(expr, var_name)
+        || body_uses_var_as_function_head(index, var_name)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      body_uses_var_as_function_head(pattern, var_name)
+        || body_uses_var_as_function_head(replacement, var_name)
+    }
+    Expr::ReplaceAll { expr: e, rules }
+    | Expr::ReplaceRepeated { expr: e, rules } => {
+      body_uses_var_as_function_head(e, var_name)
+        || body_uses_var_as_function_head(rules, var_name)
+    }
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => {
+      body_uses_var_as_function_head(func, var_name)
+        || body_uses_var_as_function_head(list, var_name)
+    }
+    Expr::Association(items) => items.iter().any(|(k, v)| {
+      body_uses_var_as_function_head(k, var_name)
+        || body_uses_var_as_function_head(v, var_name)
+    }),
+    _ => false,
+  }
+}
+
 /// AST-based Do: execute expression multiple times.
 /// Do[expr, n] -> execute expr n times
 /// Do[expr, {i, max}] -> execute with i from 1 to max
@@ -824,6 +895,58 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
       if items.len() == 2 {
         let val_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         if let Expr::List(list_items) = &val_expr {
+          // Bind the iterator in ENV instead of cloning + substituting
+          // the body on every iteration. The substitute path used to
+          // walk the entire body AST per step, which made tight loops
+          // (e.g. `Do[…, {c, Characters[s]}]` over 75 KB inputs) pay
+          // O(body_size) work per iteration. ENV binding makes that
+          // cost O(1) by resolving `var_name` through the normal
+          // identifier-lookup path.
+          let needs_substitute =
+            body_uses_var_as_function_head(body, &var_name);
+          if !needs_substitute {
+            let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+            let mut early_return: Option<Expr> = None;
+            let mut error: Option<InterpreterError> = None;
+            for item in list_items {
+              crate::ENV.with(|e| {
+                e.borrow_mut().insert(
+                  var_name.clone(),
+                  crate::StoredValue::ExprVal(item.clone()),
+                );
+              });
+              match crate::evaluator::evaluate_expr_to_expr(body) {
+                Ok(_) => {}
+                Err(InterpreterError::BreakSignal) => break,
+                Err(InterpreterError::ContinueSignal) => continue,
+                Err(InterpreterError::ReturnValue(val)) => {
+                  early_return = Some(*val);
+                  break;
+                }
+                Err(e) => {
+                  error = Some(e);
+                  break;
+                }
+              }
+            }
+            // Restore previous binding (or remove if there was none).
+            crate::ENV.with(|e| {
+              let mut env = e.borrow_mut();
+              if let Some(v) = prev {
+                env.insert(var_name.clone(), v);
+              } else {
+                env.remove(&var_name);
+              }
+            });
+            if let Some(e) = error {
+              return Err(e);
+            }
+            if let Some(v) = early_return {
+              return Ok(v);
+            }
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+          // Fall back to substitute when body uses var as a function head.
           for item in list_items {
             let substituted =
               crate::syntax::substitute_variable(body, &var_name, item);
@@ -883,39 +1006,109 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         ));
       }
 
+      let needs_substitute = body_uses_var_as_function_head(body, &var_name);
+      if needs_substitute {
+        let mut i = min;
+        if step > 0 {
+          while i <= max {
+            let substituted = crate::syntax::substitute_variable(
+              body,
+              &var_name,
+              &Expr::Integer(i),
+            );
+            match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+              Ok(_) => {}
+              Err(InterpreterError::BreakSignal) => break,
+              Err(InterpreterError::ContinueSignal) => {}
+              Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
+              Err(e) => return Err(e),
+            }
+            i += step;
+          }
+        } else {
+          while i >= max {
+            let substituted = crate::syntax::substitute_variable(
+              body,
+              &var_name,
+              &Expr::Integer(i),
+            );
+            match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+              Ok(_) => {}
+              Err(InterpreterError::BreakSignal) => break,
+              Err(InterpreterError::ContinueSignal) => {}
+              Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
+              Err(e) => return Err(e),
+            }
+            i += step;
+          }
+        }
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+      // ENV-binding fast path.
+      let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+      let mut early_return: Option<Expr> = None;
+      let mut error: Option<InterpreterError> = None;
       let mut i = min;
       if step > 0 {
         while i <= max {
-          let substituted = crate::syntax::substitute_variable(
-            body,
-            &var_name,
-            &Expr::Integer(i),
-          );
-          match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+          crate::ENV.with(|e| {
+            e.borrow_mut().insert(
+              var_name.clone(),
+              crate::StoredValue::ExprVal(Expr::Integer(i)),
+            );
+          });
+          match crate::evaluator::evaluate_expr_to_expr(body) {
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
-            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
-            Err(e) => return Err(e),
+            Err(InterpreterError::ReturnValue(val)) => {
+              early_return = Some(*val);
+              break;
+            }
+            Err(e) => {
+              error = Some(e);
+              break;
+            }
           }
           i += step;
         }
       } else {
         while i >= max {
-          let substituted = crate::syntax::substitute_variable(
-            body,
-            &var_name,
-            &Expr::Integer(i),
-          );
-          match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+          crate::ENV.with(|e| {
+            e.borrow_mut().insert(
+              var_name.clone(),
+              crate::StoredValue::ExprVal(Expr::Integer(i)),
+            );
+          });
+          match crate::evaluator::evaluate_expr_to_expr(body) {
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
-            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
-            Err(e) => return Err(e),
+            Err(InterpreterError::ReturnValue(val)) => {
+              early_return = Some(*val);
+              break;
+            }
+            Err(e) => {
+              error = Some(e);
+              break;
+            }
           }
           i += step;
         }
+      }
+      crate::ENV.with(|e| {
+        let mut env = e.borrow_mut();
+        if let Some(v) = prev {
+          env.insert(var_name.clone(), v);
+        } else {
+          env.remove(&var_name);
+        }
+      });
+      if let Some(e) = error {
+        return Err(e);
+      }
+      if let Some(v) = early_return {
+        return Ok(v);
       }
       Ok(Expr::Identifier("Null".to_string()))
     }

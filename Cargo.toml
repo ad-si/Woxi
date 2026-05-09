@@ -93,6 +93,11 @@ rust_xlsxwriter = { version = "0.94", default-features = false }
 insta = { version = "1", features = ["glob"] }
 proptest = "1"
 image = { version = "0.25", default-features = false, features = ["png", "gif"] }
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+
+[[bench]]
+name = "interpreter"
+harness = false
 
 [profile.release]
 codegen-units = 1

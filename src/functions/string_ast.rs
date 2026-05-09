@@ -5,6 +5,41 @@
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+thread_local! {
+  // Compiled-regex cache so tight loops calling `StringCases` /
+  // `StringSplit` / `StringReplace` etc. with the same pattern don't pay
+  // regex compilation cost on every iteration. `regex::Regex` clones are
+  // cheap (the compiled state is Arc'd internally) so the cache value type
+  // is just `Regex`. Capped to bound memory; on overflow we drop the
+  // entire cache rather than maintain an LRU — the workloads we care
+  // about reuse a handful of patterns at a time.
+  static REGEX_CACHE: RefCell<HashMap<String, regex::Regex>> =
+    RefCell::new(HashMap::new());
+}
+
+/// Return a compiled regex for `pat`, reusing a cached copy when one
+/// exists. Identical pattern strings always produce identical compiled
+/// regexes, so caching is observationally indistinguishable from
+/// recompiling — only faster.
+pub(crate) fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
+  use regex::Regex;
+  REGEX_CACHE.with(|c| {
+    if let Some(re) = c.borrow().get(pat) {
+      return Ok(re.clone());
+    }
+    let re = Regex::new(pat)?;
+    let mut cache = c.borrow_mut();
+    if cache.len() >= 256 {
+      cache.clear();
+    }
+    cache.insert(pat.to_string(), re.clone());
+    Ok(re)
+  })
+}
+
 /// Helper to extract a string from an Expr
 fn expr_to_str(expr: &Expr) -> Result<String, InterpreterError> {
   match expr {
@@ -494,7 +529,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       pat
     };
-    let re = regex::Regex::new(&regex_pat).map_err(|e| {
+    let re = compile_regex(&regex_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Invalid regular expression: {}",
         e
@@ -632,7 +667,7 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       format!("^(?:{})", regex_pat)
     };
-    let re = regex::Regex::new(&full_pat).map_err(|e| {
+    let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
@@ -680,7 +715,7 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       format!("(?:{})$", regex_pat)
     };
-    let re = regex::Regex::new(&full_pat).map_err(|e| {
+    let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
@@ -729,7 +764,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       regex_pat
     };
-    let re = regex::Regex::new(&full_pat).map_err(|e| {
+    let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
@@ -843,7 +878,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // For complex patterns (Alternatives, StringExpression, etc.), use regex
     if let Some(regex_str) = string_pattern_to_regex(pattern_expr) {
-      let re = regex::Regex::new(&regex_str).map_err(|e| {
+      let re = compile_regex(&regex_str).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "StringReplace: invalid pattern regex: {}",
           e
@@ -1173,7 +1208,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Some(pat) = regex_pat.as_ref() {
     // Regex-based matching: find all overlapping matches
-    if let Ok(re) = regex::Regex::new(pat) {
+    if let Ok(re) = compile_regex(pat) {
       for start_char in 0..s_chars.len() {
         // Get byte offset for this character position
         let byte_offset: usize =
@@ -1279,7 +1314,7 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
     let case_flag = if ignore_case { "(?i)" } else { "" };
     let full_regex = format!("{}^(?:{})$", case_flag, regex_str);
-    let re = regex::Regex::new(&full_regex).map_err(|e| {
+    let re = compile_regex(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Invalid string pattern: {}",
         e
@@ -1294,7 +1329,7 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(pat) = extract_regex_pattern(&args[1]) {
     let case_flag = if ignore_case { "(?i)" } else { "" };
     let full_regex = format!("{}^(?:{})$", case_flag, pat);
-    let re = regex::Regex::new(&full_regex).map_err(|e| {
+    let re = compile_regex(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid regex: {}", e))
     })?;
     return Ok(Expr::Identifier(
@@ -1419,11 +1454,11 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
     // String pattern (Repeated, Whitespace, etc.): use regex
     let start_re =
-      regex::Regex::new(&format!("^(?:{})", regex_pat)).map_err(|e| {
+      compile_regex(&format!("^(?:{})", regex_pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
       })?;
     let end_re =
-      regex::Regex::new(&format!("(?:{})$", regex_pat)).map_err(|e| {
+      compile_regex(&format!("(?:{})$", regex_pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
       })?;
     let trimmed = start_re.replace(&s, "");
@@ -1994,7 +2029,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut compiled: Vec<(regex::Regex, Vec<(String, String)>, Expr)> =
       Vec::with_capacity(rules.len());
     for (pat, constraints, rhs) in &rules {
-      let re = regex::Regex::new(pat).map_err(|e| {
+      let re = compile_regex(pat).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "Invalid string pattern: {}",
           e
@@ -2040,7 +2075,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((regex_str, constraints)) =
     string_pattern_to_regex_with_state(&args[1])
   {
-    let re = regex::Regex::new(&regex_str).map_err(|e| {
+    let re = compile_regex(&regex_str).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Invalid string pattern: {}",
         e
@@ -4061,7 +4096,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try regex-based pattern first (handles RegularExpression, string patterns,
   // lists-of-patterns as alternatives, etc.)
   if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let re = regex::Regex::new(&regex_pat).map_err(|e| {
+    let re = compile_regex(&regex_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Integer(re.find_iter(&s).count() as i128));
@@ -4107,7 +4142,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       regex_pat
     };
-    let re = regex::Regex::new(&full_pat).map_err(|e| {
+    let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(

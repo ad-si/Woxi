@@ -651,6 +651,36 @@ pub fn set_options_from_value(
   Ok(rhs_value.clone())
 }
 
+/// Returns true if `expr` mentions the symbol `name` anywhere in its tree.
+/// Used by the `var = var <> rhs` fast path to refuse in-place mutation
+/// when the right-hand side reads the variable being assigned (which
+/// would otherwise observe the half-mutated state).
+fn expr_references_identifier(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) => s == name,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| expr_references_identifier(a, name))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_references_identifier(left, name)
+        || expr_references_identifier(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => expr_references_identifier(operand, name),
+    Expr::List(items) => {
+      items.iter().any(|a| expr_references_identifier(a, name))
+    }
+    Expr::CurriedCall { func, args } => {
+      expr_references_identifier(func, name)
+        || args.iter().any(|a| expr_references_identifier(a, name))
+    }
+    Expr::Part { expr, index } => {
+      expr_references_identifier(expr, name)
+        || expr_references_identifier(index, name)
+    }
+    _ => false,
+  }
+}
+
 /// AST-based Set implementation to handle Part assignment on associations and lists
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
@@ -823,6 +853,41 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // they should still be assignable (subject to the Protected check),
   // matching wolframscript's `Pi = 4` → emits Set::wrsym and returns 4.
   if let Expr::Identifier(var_name) | Expr::Constant(var_name) = lhs {
+    // Fast path for `var = var <> rhs` when the RHS evaluates to a string
+    // and `var` already holds a string. Mutates the stored String in
+    // place so a tight `Do[s = s <> c, …]` accumulator stays linear in
+    // total work instead of paying an O(N) copy on every iteration.
+    if let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::StringJoin,
+      left,
+      right,
+    } = rhs
+      && let Expr::Identifier(left_name) = left.as_ref()
+      && left_name == var_name
+      && !expr_references_identifier(right, var_name)
+    {
+      let evaluated_right = evaluate_expr_to_expr(right)?;
+      if let Expr::String(rhs_str) = &evaluated_right {
+        let mutated = ENV.with(|e| -> Option<Expr> {
+          let mut env = e.borrow_mut();
+          if let Some(StoredValue::ExprVal(Expr::String(current))) =
+            env.get_mut(var_name)
+          {
+            current.push_str(rhs_str);
+            Some(Expr::String(current.clone()))
+          } else {
+            None
+          }
+        });
+        if let Some(result) = mutated {
+          return Ok(result);
+        }
+        // Variable wasn't yet bound to a String — fall through to the
+        // generic path so the right-hand side is computed normally and
+        // assigned (e.g. first-time assignment from "" <> "x").
+      }
+    }
+
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
     // Check Protected attribute
