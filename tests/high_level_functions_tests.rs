@@ -2498,6 +2498,168 @@ mod high_level_functions_tests {
     }
   }
 
+  mod graphics_text_style_tests {
+    use super::*;
+
+    #[test]
+    fn test_text_style_font_size_rule() {
+      // Style[..., FontSize -> 24] should set font-size="24" on the text
+      let svg = interpret(
+        "ExportString[Graphics[Text[Style[42, FontSize -> 24]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-size=\"24\""),
+        "Expected font-size=\"24\" in SVG: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_text_style_font_family_rule() {
+      // Style[..., FontFamily -> "Consolas"] should set font-family="Consolas"
+      let svg = interpret(
+        "ExportString[Graphics[Text[Style[7, FontFamily -> \"Consolas\"]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-family=\"Consolas\""),
+        "Expected font-family=\"Consolas\" in SVG: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_text_style_font_weight_medium() {
+      // Style[..., FontWeight -> "Medium"] should set font-weight="medium"
+      let svg = interpret(
+        "ExportString[Graphics[Text[Style[7, FontWeight -> \"Medium\"]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-weight=\"medium\""),
+        "Expected font-weight=\"medium\" in SVG: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_text_style_font_weight_bold_rule() {
+      // Style[..., FontWeight -> "Bold"] should map to font-weight="bold"
+      let svg = interpret(
+        "ExportString[Graphics[Text[Style[7, FontWeight -> \"Bold\"]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-weight=\"bold\""),
+        "Expected font-weight=\"bold\" in SVG: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_text_style_combined_font_options() {
+      // FontSize/FontFamily/FontWeight should all apply together
+      let svg = interpret(
+        "ExportString[Graphics[Text[Style[1, FontSize -> 30, FontFamily -> \"Consolas\", FontWeight -> \"Medium\"]]], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-size=\"30\""),
+        "missing font-size: {}",
+        svg
+      );
+      assert!(
+        svg.contains("font-family=\"Consolas\""),
+        "missing font-family: {}",
+        svg
+      );
+      assert!(
+        svg.contains("font-weight=\"medium\""),
+        "missing font-weight: {}",
+        svg
+      );
+    }
+  }
+
+  mod graphics_grid_frame_tests {
+    use super::*;
+
+    #[test]
+    fn test_graphics_grid_frame_all_draws_lines() {
+      // GraphicsGrid[..., Frame -> All] should draw inner column and row
+      // dividers as well as an outer border.
+      let svg = interpret(
+        "ExportString[GraphicsGrid[Table[Graphics@Text[i j],{i,3},{j,3}],Frame->All],\"SVG\"]",
+      )
+      .unwrap();
+      // 4 outer borders + 2 inner row + 2 inner column = 8 line elements
+      let line_count = svg.matches("<line ").count();
+      assert_eq!(
+        line_count, 8,
+        "Frame -> All on a 3x3 grid should produce 8 lines (4 outer + 2 inner-row + 2 inner-col): {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_grid_frame_none_draws_nothing() {
+      let svg = interpret(
+        "ExportString[GraphicsGrid[Table[Graphics@Text[i],{i,3},{j,3}]],\"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        !svg.contains("<line "),
+        "No Frame option should produce no frame lines: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_grid_frame_all_zero_default_spacing() {
+      // With Frame -> All and no explicit Spacings, cells should touch
+      // (zero gap) so frame lines align with cell boundaries.
+      let svg = interpret(
+        "ExportString[GraphicsGrid[Table[Graphics@Text[i j],{i,3},{j,3}],Frame->All],\"SVG\"]",
+      )
+      .unwrap();
+      // Total grid width should be exactly 3 * 360 = 1080 (no gaps)
+      assert!(
+        svg.contains("width=\"1080\""),
+        "Frame -> All should yield zero default spacing: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_grid_table_cells_use_per_cell_imagesize() {
+      // GraphicsGrid is held by the dispatcher, so a Table[...] arg
+      // is unevaluated when graphics_grid_ast runs. The implementation
+      // must still inject a per-cell ImageSize (1080/n) so each cell
+      // renders at a size proportional to the column count. Otherwise
+      // a 10-column grid balloons to ~3600 wide and inline pixel font
+      // sizes (e.g. FontSize -> 24) become illegible after viewport
+      // scaling.
+      let svg = interpret(
+        "ExportString[GraphicsGrid[Table[Graphics@Text@Style[i j,FontSize->24],{i,10},{j,10}],Frame->All],\"SVG\"]",
+      )
+      .unwrap();
+      // Outer SVG should be 1080-wide (10 * 108, no gaps because Frame->All).
+      let header_end = svg.find('\n').unwrap_or(svg.len()).min(200);
+      assert!(
+        svg.contains("width=\"1080\""),
+        "10-col grid should use per-cell width 108, not natural 360: {}",
+        &svg[..header_end]
+      );
+      // Each cell svg should be at the per-cell width (108), not 360.
+      assert!(
+        svg.contains("width=\"108\""),
+        "Cell SVGs should be 108px wide for 10-col grid: {}",
+        &svg[..svg.find("</svg>").unwrap_or(svg.len()).min(400)]
+      );
+    }
+  }
+
   mod graphics_frame_tests {
     use super::*;
 

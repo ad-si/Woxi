@@ -218,8 +218,9 @@ struct StyleState {
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
   font_size: f64,
-  font_weight: &'static str,
-  font_style: &'static str,
+  font_weight: String,
+  font_style: String,
+  font_family: String, // empty string means SVG default
 }
 
 #[derive(Debug, Clone)]
@@ -238,8 +239,9 @@ impl Default for StyleState {
       dashing: None,
       edge_form: None,
       font_size: 14.0,
-      font_weight: "normal",
-      font_style: "normal",
+      font_weight: "normal".to_string(),
+      font_style: "normal".to_string(),
+      font_family: String::new(),
     }
   }
 }
@@ -761,6 +763,112 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
   }
 }
 
+/// Apply a single Style directive that affects text (font size, weight,
+/// family, style). Handles bare `Bold`/`Italic` identifiers, plain
+/// numeric font sizes, and Rule forms like `FontSize -> 24`,
+/// `FontFamily -> "Consolas"`, `FontWeight -> "Medium"`,
+/// `FontSlant -> "Italic"`. Returns `true` if the directive was
+/// recognised so callers can avoid double-applying via other paths.
+fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
+  match d {
+    Expr::Identifier(s) if s == "Bold" => {
+      style.font_weight = "bold".to_string();
+      true
+    }
+    Expr::Identifier(s) if s == "Italic" => {
+      style.font_style = "italic".to_string();
+      true
+    }
+    Expr::Identifier(s) if s == "Plain" => {
+      style.font_weight = "normal".to_string();
+      style.font_style = "normal".to_string();
+      true
+    }
+    Expr::Integer(n) => {
+      style.font_size = *n as f64;
+      true
+    }
+    Expr::Real(f) => {
+      style.font_size = *f;
+      true
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => apply_text_style_rule(pattern, replacement, style),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      apply_text_style_rule(&args[0], &args[1], style)
+    }
+    _ => false,
+  }
+}
+
+fn apply_text_style_rule(
+  pattern: &Expr,
+  replacement: &Expr,
+  style: &mut StyleState,
+) -> bool {
+  let key = match pattern {
+    Expr::Identifier(s) => s.as_str(),
+    _ => return false,
+  };
+  match key {
+    "FontSize" => {
+      if let Some(sz) = expr_to_f64(replacement) {
+        style.font_size = sz;
+        return true;
+      }
+      false
+    }
+    "FontFamily" => match replacement {
+      Expr::String(s) => {
+        style.font_family = s.clone();
+        true
+      }
+      Expr::Identifier(s) => {
+        style.font_family = s.clone();
+        true
+      }
+      _ => false,
+    },
+    "FontWeight" => {
+      let v = match replacement {
+        Expr::String(s) => Some(s.as_str()),
+        Expr::Identifier(s) => Some(s.as_str()),
+        _ => None,
+      };
+      if let Some(s) = v {
+        style.font_weight = match s {
+          "Bold" | "bold" => "bold".to_string(),
+          "Plain" | "Normal" | "normal" => "normal".to_string(),
+          // Pass through SVG-recognised names/numbers (Light, Medium, ...)
+          other => other.to_lowercase(),
+        };
+        return true;
+      }
+      false
+    }
+    "FontSlant" | "FontStyle" => {
+      let v = match replacement {
+        Expr::String(s) => Some(s.as_str()),
+        Expr::Identifier(s) => Some(s.as_str()),
+        _ => None,
+      };
+      if let Some(s) = v {
+        style.font_style = match s {
+          "Italic" | "italic" => "italic".to_string(),
+          "Oblique" | "oblique" => "oblique".to_string(),
+          "Plain" | "Normal" | "normal" => "normal".to_string(),
+          other => other.to_lowercase(),
+        };
+        return true;
+      }
+      false
+    }
+    _ => false,
+  }
+}
+
 // ── AST walker ───────────────────────────────────────────────────────────
 
 fn collect_primitives(
@@ -786,16 +894,7 @@ fn collect_primitives(
           // Apply directives (everything after first arg)
           for directive in &args[1..] {
             apply_directive(directive, style);
-            // Handle Style[expr, Bold], Style[expr, Italic], Style[expr, fontSize]
-            match directive {
-              Expr::Identifier(s) if s == "Bold" => style.font_weight = "bold",
-              Expr::Identifier(s) if s == "Italic" => {
-                style.font_style = "italic"
-              }
-              Expr::Integer(n) => style.font_size = *n as f64,
-              Expr::Real(f) => style.font_size = *f,
-              _ => {}
-            }
+            apply_text_style_directive(directive, style);
           }
           collect_primitives(&args[0], style, prims, errors);
           *style = saved;
@@ -1257,20 +1356,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       // Apply style directives
       for d in &sargs[1..] {
         apply_directive(d, &mut local_style);
-        match d {
-          Expr::Identifier(s) if s == "Bold" => {
-            local_style.font_weight = "bold"
-          }
-          Expr::Identifier(s) if s == "Italic" => {
-            local_style.font_style = "italic"
-          }
-          Expr::Integer(n) => local_style.font_size = *n as f64,
-          Expr::Real(f) => local_style.font_size = *f,
-          _ => {}
-        }
+        apply_text_style_directive(d, &mut local_style);
       }
       match &sargs[0] {
         Expr::String(s) => s.clone(),
+        Expr::Integer(n) => n.to_string(),
+        Expr::Real(f) => crate::syntax::expr_to_string(&Expr::Real(*f)),
         other => crate::syntax::expr_to_string(other),
       }
     }
@@ -2462,12 +2553,17 @@ fn render_primitive(
       let sy = coord_y(*y, bb, svg_h);
       let color = style.effective_color();
       let fs = style.font_size;
+      let ff_attr = if style.font_family.is_empty() {
+        String::new()
+      } else {
+        format!(" font-family=\"{}\"", svg_escape(&style.font_family))
+      };
 
       if text.contains('\n') {
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\" text-anchor=\"middle\" dominant-baseline=\"central\"{}>",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -2489,7 +2585,7 @@ fn render_primitive(
         out.push_str("</text>\n");
       } else {
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\" text-anchor=\"middle\" dominant-baseline=\"central\"{}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -7050,6 +7146,17 @@ fn parse_spacing_expr(expr: &Expr) -> Option<SpacingSpec> {
   None
 }
 
+/// Frame setting for GraphicsRow/Column/Grid.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrameSetting {
+  /// No frame
+  None,
+  /// Outer frame only (Frame -> True)
+  Outer,
+  /// All cell boundaries (Frame -> All)
+  All,
+}
+
 /// Parsed layout options for GraphicsRow/Column/Grid.
 struct LayoutOptions {
   h_spacing: SpacingSpec,
@@ -7058,6 +7165,11 @@ struct LayoutOptions {
   target_width: Option<f64>,
   /// Total height constraint (only from ImageSize -> {w, h})
   target_height: Option<f64>,
+  /// Frame setting (Frame -> None | True | All)
+  frame: FrameSetting,
+  /// True if Spacings was explicitly given (so Frame -> All shouldn't
+  /// override the user's choice).
+  spacings_explicit: bool,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
@@ -7067,6 +7179,8 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
     v_spacing: SpacingSpec::default_val(),
     target_width: None,
     target_height: None,
+    frame: FrameSetting::None,
+    spacings_explicit: false,
   };
 
   for arg in args {
@@ -7077,6 +7191,7 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "Spacings" => {
+          opts.spacings_explicit = true;
           match replacement.as_ref() {
             // {h, v} pair
             Expr::List(pair) if pair.len() == 2 => {
@@ -7095,6 +7210,16 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
               }
             }
           }
+        }
+        Expr::Identifier(name) if name == "Frame" => {
+          opts.frame = match replacement.as_ref() {
+            Expr::Identifier(s) if s == "All" => FrameSetting::All,
+            Expr::Identifier(s) if s == "True" => FrameSetting::Outer,
+            Expr::Identifier(s) if s == "None" || s == "False" => {
+              FrameSetting::None
+            }
+            _ => opts.frame,
+          };
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           match replacement.as_ref() {
@@ -7173,6 +7298,24 @@ fn compute_grid_layout(
   if rows.iter().all(|r| r.is_empty()) {
     return None;
   }
+
+  // When Frame is set and the user didn't pick a spacing, default to 0
+  // so cells abut the frame lines (matching wolframscript's behaviour).
+  let opts_owned;
+  let opts: &LayoutOptions =
+    if opts.frame != FrameSetting::None && !opts.spacings_explicit {
+      opts_owned = LayoutOptions {
+        h_spacing: SpacingSpec::Points(0.0),
+        v_spacing: SpacingSpec::Points(0.0),
+        target_width: opts.target_width,
+        target_height: opts.target_height,
+        frame: opts.frame,
+        spacings_explicit: opts.spacings_explicit,
+      };
+      &opts_owned
+    } else {
+      opts
+    };
 
   // Parse all SVGs: (viewBox, inner_content, nat_w, nat_h).
   let parsed_rows: Vec<Vec<(String, String, f64, f64)>> = rows
@@ -7347,19 +7490,91 @@ fn combine_svgs_grid(
     layout.total_height.ceil() as u32,
   ));
 
+  // Track per-row vertical positions so frame lines can be drawn at
+  // the correct y boundaries even when rows have different heights.
+  let mut row_y_starts: Vec<f64> = Vec::with_capacity(layout.rows.len());
   let mut y = 0.0_f64;
   for row in &layout.rows {
     if row.row_h <= 0.0 {
+      row_y_starts.push(y);
       continue;
     }
+    row_y_starts.push(y);
     for cell in &row.cells {
       write_cell_svg(&mut svg, cell, y);
     }
     y += row.row_h + layout.v_gap;
   }
 
+  if opts.frame != FrameSetting::None {
+    draw_frame_lines(
+      &mut svg,
+      &layout,
+      &row_y_starts,
+      opts.frame == FrameSetting::All,
+    );
+  }
+
   svg.push_str("</svg>");
   Some(svg)
+}
+
+/// Draw frame lines for a GraphicsRow/Column/Grid. When `all` is true,
+/// draw lines on every cell boundary (Frame -> All); otherwise only the
+/// outer rectangle (Frame -> True).
+fn draw_frame_lines(
+  out: &mut String,
+  layout: &GridLayout,
+  row_y_starts: &[f64],
+  all: bool,
+) {
+  let total_w = layout.total_width;
+  let total_h = layout.total_height;
+  let stroke = "rgb(0,0,0)";
+  let sw = 1.0_f64;
+
+  let line = |out: &mut String, x1: f64, y1: f64, x2: f64, y2: f64| {
+    out.push_str(&format!(
+      "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" \
+       stroke=\"{stroke}\" stroke-width=\"{sw}\" stroke-linecap=\"square\"/>\n"
+    ));
+  };
+
+  // Outer border
+  line(out, 0.0, 0.0, total_w, 0.0);
+  line(out, 0.0, total_h, total_w, total_h);
+  line(out, 0.0, 0.0, 0.0, total_h);
+  line(out, total_w, 0.0, total_w, total_h);
+
+  if !all {
+    return;
+  }
+
+  // Inner row dividers: draw at the top of each row after the first
+  for (i, row) in layout.rows.iter().enumerate() {
+    if i == 0 || row.row_h <= 0.0 {
+      continue;
+    }
+    let y = row_y_starts[i];
+    line(out, 0.0, y, total_w, y);
+  }
+
+  // Inner column dividers: use the widest row to place vertical lines
+  // at every cell boundary. Cells share an x-coordinate scheme inside
+  // a row, so taking max-cells row gives the most granular boundaries.
+  let widest_row = layout
+    .rows
+    .iter()
+    .max_by_key(|r| r.cells.len())
+    .map(|r| &r.cells[..])
+    .unwrap_or(&[]);
+  for (i, cell) in widest_row.iter().enumerate() {
+    if i == 0 {
+      continue;
+    }
+    let x = cell.x;
+    line(out, x, 0.0, x, total_h);
+  }
 }
 
 /// Default layout options (Scaled[0.1] spacing, natural sizing).
@@ -7369,6 +7584,8 @@ fn default_layout_options() -> LayoutOptions {
     v_spacing: SpacingSpec::default_val(),
     target_width: None,
     target_height: None,
+    frame: FrameSetting::None,
+    spacings_explicit: false,
   }
 }
 
@@ -7717,48 +7934,49 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let opts = parse_layout_options(&args[1..]);
 
-  let rows: Vec<Vec<String>> = if let Expr::List(outer_items) = &args[0] {
-    // Determine the widest row so every cell in the grid is re-rendered
-    // at the same per-cell width (grids typically expect uniform cells).
-    let max_cols = outer_items
-      .iter()
-      .map(|item| match item {
-        Expr::List(row_items) => row_items.len(),
-        _ => 1,
-      })
-      .max()
-      .unwrap_or(0);
-    if max_cols == 0 {
-      return Ok(crate::graphics_result(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+  // GraphicsGrid is held by the dispatcher, so args[0] arrives
+  // unevaluated. Resolve it to a list-of-lists before laying out the
+  // grid so that built-up forms like Table[...] expand into individual
+  // cells we can re-render at per-cell size.
+  let grid_expr_owned;
+  let grid_list_ref: &Expr = if let Expr::List(_) = &args[0] {
+    &args[0]
+  } else {
+    grid_expr_owned = evaluate_expr_to_expr(&args[0])?;
+    &grid_expr_owned
+  };
+  let outer_items = match grid_list_ref {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "GraphicsGrid expects a list of lists as its first argument".into(),
       ));
     }
-    let per_cell_w = compute_per_cell_width(max_cols, opts.target_width);
-    outer_items
-      .iter()
-      .map(|item| match item {
-        Expr::List(row_items) => render_items_at_size(row_items, per_cell_w),
-        other => render_items_at_size(std::slice::from_ref(other), per_cell_w),
-      })
-      .collect()
-  } else {
-    let grid_expr = evaluate_expr_to_expr(&args[0])?;
-    let outer_items = match &grid_expr {
-      Expr::List(items) => items.clone(),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "GraphicsGrid expects a list of lists as its first argument".into(),
-        ));
-      }
-    };
-    outer_items
-      .iter()
-      .map(|item| match item {
-        Expr::List(row_items) => extract_svgs_from_list(row_items),
-        _ => extract_svgs_from_list(std::slice::from_ref(item)),
-      })
-      .collect()
   };
+
+  // Determine the widest row so every cell in the grid is re-rendered
+  // at the same per-cell width (grids typically expect uniform cells).
+  let max_cols = outer_items
+    .iter()
+    .map(|item| match item {
+      Expr::List(row_items) => row_items.len(),
+      _ => 1,
+    })
+    .max()
+    .unwrap_or(0);
+  if max_cols == 0 {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+  let per_cell_w = compute_per_cell_width(max_cols, opts.target_width);
+  let rows: Vec<Vec<String>> = outer_items
+    .iter()
+    .map(|item| match item {
+      Expr::List(row_items) => render_items_at_size(row_items, per_cell_w),
+      other => render_items_at_size(std::slice::from_ref(other), per_cell_w),
+    })
+    .collect();
 
   // Check if we have any SVGs at all
   if rows.iter().all(|r| r.is_empty()) {
