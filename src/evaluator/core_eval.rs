@@ -2593,6 +2593,51 @@ pub fn evaluate_expr_to_expr_inner(
       apply_postfix_ast(&evaluated_expr, &evaluated_func)
     }
     Expr::Part { expr: e, index } => {
+      // Fast path: `var[[k]]` where `var` is an Identifier bound to a
+      // List in ENV and `k` is an Integer literal (or evaluates to one
+      // without needing the surrounding Part machinery). Clone only the
+      // indexed element instead of the whole stored list.
+      //
+      // The general path below cleans `eval_part_base` -> `stored.clone()`
+      // -> `extract_part_ast` and pays the full O(N) list copy on every
+      // invocation. asciiLess in build_summary.wls hits this path on
+      // every comparison (`a[[i]]`, `b[[i]]` over ~30 chars × thousands
+      // of compares).
+      if let Expr::Identifier(var_name) = e.as_ref() {
+        let idx_expr = match index.as_ref() {
+          Expr::Integer(n) => Some(*n),
+          other => match evaluate_expr_to_expr(other) {
+            Ok(Expr::Integer(n)) => Some(n),
+            _ => None,
+          },
+        };
+        if let Some(i) = idx_expr {
+          let elem = ENV.with(|env| -> Option<Expr> {
+            let env = env.borrow();
+            match env.get(var_name) {
+              Some(StoredValue::ExprVal(Expr::List(items))) => {
+                let len = items.len() as i128;
+                let pos = if i > 0 {
+                  if i as i128 > len { return None; }
+                  (i as usize) - 1
+                } else if i < 0 {
+                  let p = len + i as i128;
+                  if p < 0 { return None; }
+                  p as usize
+                } else {
+                  return None;
+                };
+                items.get(pos).cloned()
+              }
+              _ => None,
+            }
+          });
+          if let Some(v) = elem {
+            return Ok(v);
+          }
+        }
+      }
+
       // Track Part nesting depth for Part::partd warnings
       PART_DEPTH.with(|d| *d.borrow_mut() += 1);
 
