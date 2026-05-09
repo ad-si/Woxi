@@ -43,7 +43,6 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin
             target
           key: cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -57,7 +56,15 @@ jobs:
         if: steps.wasm-cache.outputs.cache-hit != 'true'
         run: make wasm-build-production
 
+      - name: Cache woxi binary
+        id: woxi-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/woxi
+          key: woxi-bin-${{ hashFiles('src/**', 'Cargo.lock', 'Cargo.toml') }}
+
       - name: Install woxi (for build_summary.wls)
+        if: steps.woxi-cache.outputs.cache-hit != 'true'
         run: make install
 
       - name: Setup Python
