@@ -806,8 +806,7 @@ pub fn evaluate_expr_to_expr_inner(
       // the full re-evaluation pass. Length-equal-but-different (a
       // remove + insert of the same name) doesn't happen via normal
       // element evaluation, so the cheap check is sufficient.
-      let len_before =
-        crate::FUNC_DEFS.with(|m| m.borrow().len());
+      let len_before = crate::FUNC_DEFS.with(|m| m.borrow().len());
       for item in items {
         let val = evaluate_expr_to_expr(item)?;
         if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
@@ -1322,7 +1321,8 @@ pub fn evaluate_expr_to_expr_inner(
                   Some(stored.clone())
                 }
                 Expr::FunctionCall {
-                  name: _, args: fn_args,
+                  name: _,
+                  args: fn_args,
                 } => {
                   if is_append {
                     fn_args.push_back(elem.clone());
@@ -2618,11 +2618,15 @@ pub fn evaluate_expr_to_expr_inner(
               Some(StoredValue::ExprVal(Expr::List(items))) => {
                 let len = items.len() as i128;
                 let pos = if i > 0 {
-                  if i as i128 > len { return None; }
+                  if i > len {
+                    return None;
+                  }
                   (i as usize) - 1
                 } else if i < 0 {
-                  let p = len + i as i128;
-                  if p < 0 { return None; }
+                  let p = len + i;
+                  if p < 0 {
+                    return None;
+                  }
                   p as usize
                 } else {
                   return None;

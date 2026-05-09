@@ -928,7 +928,8 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         // splitLines loop pays one such call per ~75 KB input.
         if !needs_substitute
           && let Expr::FunctionCall {
-            name: head, args: head_args,
+            name: head,
+            args: head_args,
           } = &items[1]
           && head == "Characters"
           && head_args.len() == 1

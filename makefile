@@ -91,6 +91,11 @@ format:
 
 .PHONY: install
 install:
+	cargo install --path .
+
+
+.PHONY: install-debug
+install-debug:
 	cargo install --debug --path .
 
 
