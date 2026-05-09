@@ -1297,6 +1297,54 @@ pub fn evaluate_expr_to_expr_inner(
           && let Expr::Identifier(var_name) = &args[0]
         {
           let elem = evaluate_expr_to_expr(&args[1])?;
+          let is_append = name == "AppendTo";
+          // Fast path: stored value is already an ExprVal(List) or
+          // ExprVal(FunctionCall). Mutate the stored ExprList in place
+          // and clone the result once for the return value. Avoids the
+          // O(N) clone-on-read that the previous get(...).cloned() path
+          // paid on every iteration of a `Do[AppendTo[xs, …], …]` loop.
+          let mutated = ENV.with(|e| -> Option<Expr> {
+            let mut env = e.borrow_mut();
+            match env.get_mut(var_name) {
+              Some(StoredValue::ExprVal(stored)) => match stored {
+                Expr::List(items) => {
+                  if is_append {
+                    items.push_back(elem.clone());
+                  } else {
+                    items.push_front(elem.clone());
+                  }
+                  Some(stored.clone())
+                }
+                Expr::FunctionCall {
+                  name: _, args: fn_args,
+                } => {
+                  if is_append {
+                    fn_args.push_back(elem.clone());
+                  } else {
+                    fn_args.push_front(elem.clone());
+                  }
+                  Some(stored.clone())
+                }
+                _ => None,
+              },
+              _ => None,
+            }
+          });
+          if let Some(new_val) = mutated {
+            // Register the appended/prepended symbol in $PrintForms /
+            // $OutputForms when the target is `$BoxForms`. wolframscript
+            // exposes user-added box forms in those lists even after a
+            // subsequent `$BoxForms=.` clears the OwnValue.
+            if var_name == "$BoxForms"
+              && let Expr::Identifier(form_name) = &args[1]
+            {
+              crate::evaluator::assignment::register_user_print_form(form_name);
+            }
+            return Ok(new_val);
+          }
+
+          // Slow path: stored value is Raw / Association / not yet bound /
+          // a non-list ExprVal. Read, decode, mutate, store back.
           let current = ENV.with(|e| e.borrow().get(var_name).cloned());
           let mut current_val = match current {
             Some(StoredValue::ExprVal(e)) => e,
@@ -1319,7 +1367,7 @@ pub fn evaluate_expr_to_expr_inner(
           let new_val = match &mut current_val {
             Expr::List(items) => {
               let mut items = std::mem::take(items);
-              if name == "AppendTo" {
+              if is_append {
                 items.push(elem);
               } else {
                 items.insert(0, elem);
@@ -1333,7 +1381,7 @@ pub fn evaluate_expr_to_expr_inner(
               args: fn_args,
             } => {
               let mut new_args = std::mem::take(fn_args);
-              if name == "AppendTo" {
+              if is_append {
                 new_args.push(elem);
               } else {
                 new_args.insert(0, elem);
@@ -1360,10 +1408,6 @@ pub fn evaluate_expr_to_expr_inner(
             e.borrow_mut()
               .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
           });
-          // Register the appended/prepended symbol in $PrintForms /
-          // $OutputForms when the target is `$BoxForms`. wolframscript
-          // exposes user-added box forms in those lists even after a
-          // subsequent `$BoxForms=.` clears the OwnValue.
           if var_name == "$BoxForms"
             && let Expr::Identifier(form_name) = &args[1]
           {
