@@ -466,14 +466,20 @@ fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
 
   // Trampoline loop: tail-recursive calls return TailCall instead of
   // recursing, so the call stack stays flat regardless of recursion depth.
-  let mut current = expr.clone();
-  loop {
-    match evaluate_expr_to_expr_inner(&current) {
-      Err(InterpreterError::TailCall(next)) => {
-        current = *next;
+  // The vast majority of evaluations don't return TailCall, so avoid the
+  // up-front Expr::clone() and only allocate the owned `current` once a
+  // TailCall is actually observed.
+  match evaluate_expr_to_expr_inner(expr) {
+    Err(InterpreterError::TailCall(next)) => {
+      let mut current = *next;
+      loop {
+        match evaluate_expr_to_expr_inner(&current) {
+          Err(InterpreterError::TailCall(next)) => current = *next,
+          result => return result,
+        }
       }
-      result => return result,
     }
+    result => result,
   }
 }
 
