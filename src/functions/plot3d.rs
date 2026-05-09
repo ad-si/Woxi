@@ -4895,11 +4895,9 @@ fn parametric_plot3d_curve_ast(
       if let Some((x, y, z)) =
         evaluate_parametric_at_t(curve.fx, curve.fy, curve.fz, tvar, t)
       {
-        current_segment.push(Expr::List(vec![
-          Expr::Real(x),
-          Expr::Real(y),
-          Expr::Real(z),
-        ].into()));
+        current_segment.push(Expr::List(
+          vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+        ));
       } else {
         flush(&mut current_segment, &mut prim_items);
       }

@@ -13,7 +13,8 @@ fn make_tabular_failure(
     args: vec![
       Expr::Identifier(func_name.to_string()),
       Expr::String(msg_tag.to_string()),
-    ].into(),
+    ]
+    .into(),
   };
   // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
   // using the Association formatter convention: a value of
@@ -33,7 +34,8 @@ fn make_tabular_failure(
         ),
         (msg_template_key, msg_template_value),
       ]),
-    ].into(),
+    ]
+    .into(),
   }
 }
 
@@ -108,7 +110,8 @@ pub(crate) fn build_schema(
       column_keys_rule,
       column_types_rule,
       row_count_rule,
-    ])].into(),
+    ])]
+    .into(),
   }
 }
 

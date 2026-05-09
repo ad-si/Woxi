@@ -1370,7 +1370,9 @@ pub fn dispatch_math_functions(
         }
       };
       if val_num == 0.0 {
-        return Some(Ok(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())));
+        return Some(Ok(Expr::List(
+          vec![Expr::Integer(0), Expr::Integer(0)].into(),
+        )));
       }
       let e = (val_num.abs().ln() / base_num.ln()).floor() as i128 + 1;
       // Whether the result should be a numeric Real or stay symbolic:
@@ -1385,7 +1387,9 @@ pub fn dispatch_math_functions(
       }
       if is_inexact(&args[0]) || (args.len() == 2 && is_inexact(&args[1])) {
         let m = val_num / base_num.powi(e as i32);
-        return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)].into())));
+        return Some(Ok(Expr::List(
+          vec![Expr::Real(m), Expr::Integer(e)].into(),
+        )));
       }
       // Special-case integer base 10 with integer value: keep mantissa
       // exact as a rational (existing behavior).
@@ -1406,7 +1410,9 @@ pub fn dispatch_math_functions(
           if denom > 0 {
             let mantissa =
               crate::functions::math_ast::make_rational_pub(*n, denom);
-            return Some(Ok(Expr::List(vec![mantissa, Expr::Integer(e)].into())));
+            return Some(Ok(Expr::List(
+              vec![mantissa, Expr::Integer(e)].into(),
+            )));
           }
         }
       }
@@ -1424,11 +1430,14 @@ pub fn dispatch_math_functions(
             name: "Power".to_string(),
             args: vec![base_expr, Expr::Integer(-e)].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       let mantissa_eval =
         crate::evaluator::evaluate_expr_to_expr(&mantissa).unwrap_or(mantissa);
-      return Some(Ok(Expr::List(vec![mantissa_eval, Expr::Integer(e)].into())));
+      return Some(Ok(Expr::List(
+        vec![mantissa_eval, Expr::Integer(e)].into(),
+      )));
     }
     "IntegerPartitions" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
@@ -2142,11 +2151,15 @@ pub fn dispatch_math_functions(
         .unwrap_or_else(|_| c.clone());
       let triangle = Expr::FunctionCall {
         name: "Triangle".to_string(),
-        args: vec![Expr::List(vec![
-          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-          Expr::List(vec![c_eval, Expr::Integer(0)].into()),
-          Expr::List(vec![cx_eval, cy_eval].into()),
-        ].into())].into(),
+        args: vec![Expr::List(
+          vec![
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+            Expr::List(vec![c_eval, Expr::Integer(0)].into()),
+            Expr::List(vec![cx_eval, cy_eval].into()),
+          ]
+          .into(),
+        )]
+        .into(),
       };
       return Some(Ok(triangle));
     }
@@ -2521,7 +2534,8 @@ pub fn dispatch_math_functions(
                 left: Box::new(Expr::Integer(-1)),
                 right: Box::new(bi.clone()),
               }),
-            }].into(),
+            }]
+            .into(),
           })
           .collect();
         let max_expr = Expr::FunctionCall {
@@ -2544,7 +2558,8 @@ pub fn dispatch_math_functions(
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(args[1].clone()),
             }),
-          }].into(),
+          }]
+          .into(),
         };
         return Some(evaluate_expr_to_expr(&abs_expr));
       }
@@ -2565,7 +2580,8 @@ pub fn dispatch_math_functions(
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(args[1].clone()),
             }),
-          }].into(),
+          }]
+          .into(),
         };
         let den = Expr::FunctionCall {
           name: "Abs".to_string(),
@@ -2573,7 +2589,8 @@ pub fn dispatch_math_functions(
             op: crate::syntax::BinaryOperator::Plus,
             left: Box::new(args[0].clone()),
             right: Box::new(args[1].clone()),
-          }].into(),
+          }]
+          .into(),
         };
         let result = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
@@ -2599,7 +2616,8 @@ pub fn dispatch_math_functions(
                 left: Box::new(Expr::Integer(-1)),
                 right: Box::new(bi.clone()),
               }),
-            }].into(),
+            }]
+            .into(),
           });
           den_terms.push(Expr::FunctionCall {
             name: "Abs".to_string(),
@@ -2607,7 +2625,8 @@ pub fn dispatch_math_functions(
               op: crate::syntax::BinaryOperator::Plus,
               left: Box::new(ai.clone()),
               right: Box::new(bi.clone()),
-            }].into(),
+            }]
+            .into(),
           });
         }
         let num = Expr::FunctionCall {
@@ -2642,7 +2661,8 @@ pub fn dispatch_math_functions(
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(args[1].clone()),
             }),
-          }].into(),
+          }]
+          .into(),
         };
         let den = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Plus,
@@ -2678,7 +2698,8 @@ pub fn dispatch_math_functions(
                 left: Box::new(Expr::Integer(-1)),
                 right: Box::new(bi.clone()),
               }),
-            }].into(),
+            }]
+            .into(),
           };
           let den = Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Plus,
@@ -2967,11 +2988,9 @@ pub fn dispatch_math_functions(
               Expr::Real(v)
             }
           };
-          return Some(Ok(Expr::List(vec![
-            to_expr(alpha),
-            to_expr(beta),
-            to_expr(gamma),
-          ].into())));
+          return Some(Ok(Expr::List(
+            vec![to_expr(alpha), to_expr(beta), to_expr(gamma)].into(),
+          )));
         }
       }
     }
@@ -3006,10 +3025,12 @@ pub fn dispatch_math_functions(
                     name: "Times".to_string(),
                     args: vec![Expr::Integer(-1), vi.clone()].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               },
               Expr::Integer(2),
-            ].into(),
+            ]
+            .into(),
           })
           .collect();
         let numerator = Expr::FunctionCall {
@@ -3038,10 +3059,12 @@ pub fn dispatch_math_functions(
                     name: "Times".to_string(),
                     args: vec![Expr::Integer(-1), mean_u.clone()].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               },
               Expr::Integer(2),
-            ].into(),
+            ]
+            .into(),
           })
           .collect();
         let var_v: Vec<Expr> = v
@@ -3057,10 +3080,12 @@ pub fn dispatch_math_functions(
                     name: "Times".to_string(),
                     args: vec![Expr::Integer(-1), mean_v.clone()].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               },
               Expr::Integer(2),
-            ].into(),
+            ]
+            .into(),
           })
           .collect();
         let denominator = Expr::FunctionCall {
@@ -3074,7 +3099,8 @@ pub fn dispatch_math_functions(
               name: "Total".to_string(),
               args: vec![Expr::List(var_v.into())].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         let result = Expr::FunctionCall {
           name: "Times".to_string(),
@@ -3091,9 +3117,11 @@ pub fn dispatch_math_functions(
                   name: "Power".to_string(),
                   args: vec![denominator, Expr::Integer(-1)].into(),
                 },
-              ].into(),
+              ]
+              .into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -3113,7 +3141,8 @@ pub fn dispatch_math_functions(
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), corr_expr].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       return Some(evaluate_expr_to_expr(&result_expr));
     }
@@ -3253,21 +3282,23 @@ pub fn dispatch_math_functions(
         let s = sec_num / den;
         let sec_rem = sec_num - s * den;
         if sec_rem == 0 {
-          return Some(Ok(Expr::List(vec![
-            Expr::Integer(d),
-            Expr::Integer(m),
-            Expr::Integer(s),
-          ].into())));
+          return Some(Ok(Expr::List(
+            vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)].into(),
+          )));
         } else {
           let g = gcd_i128(sec_num.abs(), den.abs());
-          return Some(Ok(Expr::List(vec![
-            Expr::Integer(d),
-            Expr::Integer(m),
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(sec_num / g), Expr::Integer(den / g)].into(),
-            },
-          ].into())));
+          return Some(Ok(Expr::List(
+            vec![
+              Expr::Integer(d),
+              Expr::Integer(m),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(sec_num / g), Expr::Integer(den / g)]
+                  .into(),
+              },
+            ]
+            .into(),
+          )));
         }
       }
     }
@@ -3415,7 +3446,8 @@ pub fn dispatch_math_functions(
                     name: "Rational".to_string(),
                     args: vec![Expr::Integer(1), Expr::Integer(60)].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               },
               Expr::FunctionCall {
                 name: "Times".to_string(),
@@ -3425,9 +3457,11 @@ pub fn dispatch_math_functions(
                     name: "Rational".to_string(),
                     args: vec![Expr::Integer(1), Expr::Integer(3600)].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               },
-            ].into(),
+            ]
+            .into(),
           };
           return Some(evaluate_expr_to_expr(&result));
         }
@@ -3443,7 +3477,9 @@ pub fn dispatch_math_functions(
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
-          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into()),
+          Expr::List(
+            vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into(),
+          ),
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
@@ -3480,7 +3516,9 @@ pub fn dispatch_math_functions(
       if let Expr::Identifier(var) = &args[1] {
         let find_args = vec![
           args[0].clone(),
-          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into()),
+          Expr::List(
+            vec![Expr::Identifier(var.clone()), Expr::Integer(0)].into(),
+          ),
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
@@ -3559,13 +3597,17 @@ pub fn dispatch_math_functions(
                         elems[idx + 1].clone(),
                         Expr::FunctionCall {
                           name: "Times".to_string(),
-                          args: vec![Expr::Integer(-1), elems[idx].clone()].into(),
+                          args: vec![Expr::Integer(-1), elems[idx].clone()]
+                            .into(),
                         },
-                      ].into(),
+                      ]
+                      .into(),
                     },
-                  ].into(),
+                  ]
+                  .into(),
                 },
-              ].into(),
+              ]
+              .into(),
             };
             result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
           }
@@ -3597,8 +3639,10 @@ pub fn dispatch_math_functions(
                 name: "Power".to_string(),
                 args: vec![gcd, Expr::Integer(-1)].into(),
               },
-            ].into(),
-          }].into(),
+            ]
+            .into(),
+          }]
+          .into(),
         };
         result = evaluate_expr_to_expr(&lcm).unwrap_or(lcm);
       }
@@ -5051,7 +5095,8 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
         op: BinaryOperator::Plus,
         left: Box::new(log_sq),
         right: Box::new(arg_sq),
-      }].into(),
+      }]
+      .into(),
     });
   }
   None
@@ -5327,7 +5372,8 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                     left: Box::new(im),
                     right: Box::new(Expr::Integer(2)),
                   }),
-                }].into(),
+                }]
+                .into(),
               });
             }
             // Re[a + I*b] = a
@@ -5520,9 +5566,11 @@ fn exp_to_trig_expand(z: &Expr) -> Expr {
               name: "Sin".to_string(),
               args: vec![x.clone()].into(),
             },
-          ].into(),
+          ]
+          .into(),
         },
-      ].into(),
+      ]
+      .into(),
     }
   } else {
     // Cosh[z] + Sinh[z]
@@ -5537,7 +5585,8 @@ fn exp_to_trig_expand(z: &Expr) -> Expr {
           name: "Sinh".to_string(),
           args: vec![z.clone()].into(),
         },
-      ].into(),
+      ]
+      .into(),
     }
   }
 }

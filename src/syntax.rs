@@ -266,10 +266,7 @@ pub enum Expr {
   /// List: {e1, e2, ...}
   List(crate::ExprList),
   /// Function call: f[e1, e2, ...]
-  FunctionCall {
-    name: String,
-    args: crate::ExprList,
-  },
+  FunctionCall { name: String, args: crate::ExprList },
   /// Binary operator: e1 op e2
   BinaryOp {
     op: BinaryOperator,
@@ -1472,11 +1469,14 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
         // Build the parenthesised group as its own RowBox of `(`, inner, `)`.
         let group = box_call(
           "RowBox",
-          vec![Expr::List(vec![
-            Expr::String("(".to_string()),
-            inner_expr,
-            Expr::String(")".to_string()),
-          ].into())],
+          vec![Expr::List(
+            vec![
+              Expr::String("(".to_string()),
+              inner_expr,
+              Expr::String(")".to_string()),
+            ]
+            .into(),
+          )],
         );
         parts.push(group);
         i = j + 1;
@@ -2035,7 +2035,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           args: vec![Expr::FunctionCall {
             name: "Unevaluated".to_string(),
             args: vec![Expr::Identifier(symbol_name)].into(),
-          }].into(),
+          }]
+          .into(),
         }
       }
     }
@@ -2061,7 +2062,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               args: vec![Expr::Identifier(symbol_name)].into(),
             },
             long_form_rule,
-          ].into(),
+          ]
+          .into(),
         }
       }
     }
@@ -2187,7 +2189,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           name: "Derivative".to_string(),
           args: vec![Expr::Integer(order as i128)].into(),
         }),
-        args: vec![Expr::Identifier(name)].into(),
+        args: vec![Expr::Identifier(name)],
       }
     }
     Rule::DerivativeNumeric => {
@@ -2218,7 +2220,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           name: "Derivative".to_string(),
           args: vec![Expr::Integer(order as i128)].into(),
         }),
-        args: vec![positive_value].into(),
+        args: vec![positive_value],
       };
       if negative {
         Expr::UnaryOp {
@@ -2461,7 +2463,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               name: "Derivative".to_string(),
               args: vec![Expr::Integer(order as i128)].into(),
             }),
-            args: vec![Expr::Identifier(name)].into(),
+            args: vec![Expr::Identifier(name)],
           };
           // Apply bracket args: Derivative[n][f][x], then any further chained calls
           for args in fc_bracket_args.iter() {
@@ -2501,7 +2503,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
             name: "Derivative".to_string(),
             args: vec![Expr::Integer(order as i128)].into(),
           }),
-          args: vec![base_func].into(),
+          args: vec![base_func],
         }
       } else {
         base_func
@@ -2692,7 +2694,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
             name: "Derivative".to_string(),
             args: vec![Expr::Integer(order as i128)].into(),
           }),
-          args: vec![Expr::Identifier(name)].into(),
+          args: vec![Expr::Identifier(name)],
         };
         for args in bracket_sequences.iter() {
           result = Expr::CurriedCall {
@@ -2733,7 +2735,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               name: "Derivative".to_string(),
               args: vec![Expr::Integer(order as i128)].into(),
             }),
-            args: vec![result].into(),
+            args: vec![result],
           }
         } else {
           result
@@ -2764,7 +2766,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               name: "Derivative".to_string(),
               args: vec![Expr::Integer(order as i128)].into(),
             }),
-            args: vec![Expr::Identifier(name)].into(),
+            args: vec![Expr::Identifier(name)],
           }),
           args,
         }
@@ -3153,7 +3155,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               args: vec![Expr::Identifier(name), bargs[0].clone()].into(),
             },
             bargs[1].clone(),
-          ].into(),
+          ]
+          .into(),
         };
       }
       Expr::FunctionCall {
@@ -3334,7 +3337,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         };
         let derivative_call = Expr::CurriedCall {
           func: Box::new(derivative_head),
-          args: vec![base_expr].into(),
+          args: vec![base_expr],
         };
         // Optional bracket call: (expr)'[args]
         let call_suffix = inner_pairs
@@ -3526,7 +3529,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         },
         Expr::FunctionCall { .. } => Expr::CurriedCall {
           func: Box::new(func_expr),
-          args: vec![arg_expr].into(),
+          args: vec![arg_expr],
         },
         _ => Expr::PrefixApply {
           func: Box::new(func_expr),
@@ -4798,7 +4801,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         };
         Expr::CurriedCall {
           func: Box::new(func_call),
-          args: vec![left.clone(), right.clone()].into(),
+          args: vec![left.clone(), right.clone()],
         }
       } else {
         Expr::FunctionCall {
@@ -6823,7 +6826,8 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                 name: "Power".to_string(),
                 args: vec![*right.clone(), Expr::Integer(-1)].into(),
               },
-            ].into(),
+            ]
+            .into(),
             other => vec![other.clone()].into(),
           })
           .collect();
@@ -7192,12 +7196,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           let mut symbolic_factors: Vec<&Expr> = Vec::new();
           for arg in args.iter() {
             match arg {
-              Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(&arg),
-              _ if is_i_unit(&arg) => {}
+              Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(arg),
+              _ if is_i_unit(arg) => {}
               Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
-                numeric_factors.push(&arg);
+                numeric_factors.push(arg);
               }
-              _ => symbolic_factors.push(&arg),
+              _ => symbolic_factors.push(arg),
             }
           }
           // When a BigFloat is present alongside the imaginary unit,
@@ -10054,7 +10058,9 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
         }
       }
     }
-    Expr::List(items) => Expr::List(substitute_slots_expand(items, values).into()),
+    Expr::List(items) => {
+      Expr::List(substitute_slots_expand(items, values).into())
+    }
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         let index = if *n <= 0 { 0 } else { (*n as usize) - 1 };

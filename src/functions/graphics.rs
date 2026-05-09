@@ -87,7 +87,8 @@ impl Color {
     } else {
       Expr::FunctionCall {
         name: "RGBColor".to_string(),
-        args: vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)].into(),
+        args: vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)]
+          .into(),
       }
     }
   }
@@ -4025,7 +4026,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             } = arg
             {
               result.push_str(" - ");
-              result.push_str(&expr_to_svg_markup(&operand));
+              result.push_str(&expr_to_svg_markup(operand));
             } else if let Expr::BinaryOp {
               op: BinaryOperator::Times,
               left,
@@ -4034,7 +4035,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               && matches!(left.as_ref(), Expr::Integer(-1))
             {
               result.push_str(" - ");
-              result.push_str(&expr_to_svg_markup(&right));
+              result.push_str(&expr_to_svg_markup(right));
             } else if let Expr::FunctionCall {
               name: fn_name,
               args: fn_args,
@@ -4059,7 +4060,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               result.push_str(&expr_to_svg_markup(&Expr::Integer(-n)));
             } else {
               result.push_str(" + ");
-              result.push_str(&expr_to_svg_markup(&arg));
+              result.push_str(&expr_to_svg_markup(arg));
             }
           }
           result
@@ -4870,7 +4871,9 @@ fn merge_plot_ranges(a: &Expr, b: &Expr) -> Option<Expr> {
     }
   };
 
-  Some(Expr::List(vec![range_to_expr(mx), range_to_expr(my)].into()))
+  Some(Expr::List(
+    vec![range_to_expr(mx), range_to_expr(my)].into(),
+  ))
 }
 
 /// Implementation of Show[g1, g2, ..., opts...].
@@ -5092,7 +5095,8 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Real(sd.color.0 as f64 / 255.0),
             Expr::Real(sd.color.1 as f64 / 255.0),
             Expr::Real(sd.color.2 as f64 / 255.0),
-          ].into(),
+          ]
+          .into(),
         });
         if sd.is_scatter {
           series_prims.push(Expr::FunctionCall {
@@ -5103,7 +5107,9 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .points
             .iter()
             .filter(|(_, y)| y.is_finite())
-            .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
             .collect();
           if !coords.is_empty() {
             series_prims.push(Expr::FunctionCall {
@@ -5121,7 +5127,9 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for seg in &segments {
             let coords: Vec<Expr> = seg
               .iter()
-              .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+              .map(|&(x, y)| {
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+              })
               .collect();
             if coords.len() >= 2 {
               series_prims.push(Expr::FunctionCall {
@@ -5137,10 +5145,17 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Merge range as PlotRange option
       let range_rule = Expr::Rule {
         pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
-        replacement: Box::new(Expr::List(vec![
-          Expr::List(vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)].into()),
-          Expr::List(vec![Expr::Real(ps.y_range.0), Expr::Real(ps.y_range.1)].into()),
-        ].into())),
+        replacement: Box::new(Expr::List(
+          vec![
+            Expr::List(
+              vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)].into(),
+            ),
+            Expr::List(
+              vec![Expr::Real(ps.y_range.0), Expr::Real(ps.y_range.1)].into(),
+            ),
+          ]
+          .into(),
+        )),
       };
       merge_option(&mut merged_options, &range_rule);
 
@@ -5277,7 +5292,7 @@ fn extract_cell_style(
           }
         }
         _ => {
-          if let Some(c) = parse_color(&directive) {
+          if let Some(c) = parse_color(directive) {
             color = Some(c);
           }
         }
@@ -5614,10 +5629,8 @@ fn grid_svg_styled_internal(
                     for spec in col_specs {
                       if let Expr::List(rep_items) = spec {
                         before_repeat = false;
-                        col_align_repeating = rep_items
-                          .iter()
-                          .map(|e| alignment_to_anchor(e))
-                          .collect();
+                        col_align_repeating =
+                          rep_items.iter().map(alignment_to_anchor).collect();
                       } else if before_repeat {
                         col_align_explicit_start
                           .push(alignment_to_anchor(spec));
@@ -5625,10 +5638,8 @@ fn grid_svg_styled_internal(
                       // Note: trailing explicit not common for alignment
                     }
                   } else {
-                    col_alignments = col_specs
-                      .iter()
-                      .map(|e| alignment_to_anchor(e))
-                      .collect();
+                    col_alignments =
+                      col_specs.iter().map(alignment_to_anchor).collect();
                   }
                 }
                 _ => {}
@@ -5721,7 +5732,8 @@ fn grid_svg_styled_internal(
             0,
             Expr::FunctionCall {
               name: "Style".to_string(),
-              args: vec![h.clone(), Expr::Identifier("Bold".to_string())].into(),
+              args: vec![h.clone(), Expr::Identifier("Bold".to_string())]
+                .into(),
             },
           );
         } else {
@@ -8903,11 +8915,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     {
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
       {
-        initialization = Some(crate::syntax::expr_to_input_form(&replacement));
+        initialization = Some(crate::syntax::expr_to_input_form(replacement));
       }
       continue;
     }
-    controls.push(parse_manipulate_control(&spec)?);
+    controls.push(parse_manipulate_control(spec)?);
   }
 
   Some(ManipulateSpec {

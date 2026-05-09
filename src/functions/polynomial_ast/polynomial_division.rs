@@ -195,7 +195,8 @@ pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), b.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   }
 }
 
@@ -221,7 +222,8 @@ pub fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
     } else {
       let var_power = Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)].into(),
+        args: vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)]
+          .into(),
       };
       if c_str == "1" {
         var_power

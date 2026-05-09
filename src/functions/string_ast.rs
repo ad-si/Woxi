@@ -1238,7 +1238,9 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let s1 = (start + 1) as i128;
     let e1 = (start + len) as i128;
-    positions.push(Expr::List(vec![Expr::Integer(s1), Expr::Integer(e1)].into()));
+    positions.push(Expr::List(
+      vec![Expr::Integer(s1), Expr::Integer(e1)].into(),
+    ));
   }
 
   Ok(Expr::List(positions.into()))
@@ -2246,7 +2248,8 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // still apply.
         let mb_call = Expr::FunctionCall {
           name: "MakeBoxes".to_string(),
-          args: vec![inner.clone(), Expr::Identifier("TeXForm".to_string())].into(),
+          args: vec![inner.clone(), Expr::Identifier("TeXForm".to_string())]
+            .into(),
         };
         if let Ok(box_ast) = crate::evaluator::evaluate_expr_to_expr(&mb_call) {
           return Ok(Expr::String(box_ast_to_tex(&box_ast)));
@@ -2352,7 +2355,8 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             args[0].clone(),
             Expr::Identifier("StandardForm".to_string()),
-          ].into(),
+          ]
+          .into(),
         };
         let box_ast = crate::evaluator::evaluate_expr_to_expr(&make_boxes_call)
           .unwrap_or_else(|_| args[0].clone());
@@ -5268,11 +5272,13 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           k += 1;
         }
         if is_string {
-          result
-            .push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
+          result.push(Expr::List(
+            vec![Expr::String(diff1), Expr::String(diff2)].into(),
+          ));
         } else {
-          result
-            .push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
+          result.push(Expr::List(
+            vec![Expr::String(diff1), Expr::String(diff2)].into(),
+          ));
         }
       }
     } else {
@@ -5289,9 +5295,13 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         k += 1;
       }
       if is_string {
-        result.push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
+        result.push(Expr::List(
+          vec![Expr::String(diff1), Expr::String(diff2)].into(),
+        ));
       } else {
-        result.push(Expr::List(vec![Expr::String(diff1), Expr::String(diff2)].into()));
+        result.push(Expr::List(
+          vec![Expr::String(diff1), Expr::String(diff2)].into(),
+        ));
       }
     }
   }

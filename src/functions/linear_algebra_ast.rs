@@ -772,11 +772,14 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  Ok(Expr::List(vec![
-    eval_sub(&eval_mul(&va[1], &vb[2]), &eval_mul(&va[2], &vb[1])),
-    eval_sub(&eval_mul(&va[2], &vb[0]), &eval_mul(&va[0], &vb[2])),
-    eval_sub(&eval_mul(&va[0], &vb[1]), &eval_mul(&va[1], &vb[0])),
-  ].into()))
+  Ok(Expr::List(
+    vec![
+      eval_sub(&eval_mul(&va[1], &vb[2]), &eval_mul(&va[2], &vb[1])),
+      eval_sub(&eval_mul(&va[2], &vb[0]), &eval_mul(&va[0], &vb[2])),
+      eval_sub(&eval_mul(&va[0], &vb[1]), &eval_mul(&va[1], &vb[0])),
+    ]
+    .into(),
+  ))
 }
 
 /// ConjugateTranspose[matrix] - transpose and conjugate each element
@@ -1724,7 +1727,9 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1x1
   if n == 1 {
-    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(1)].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(1)].into())].into(),
+    ));
   }
 
   // Check if matrix is numeric (at least one Real entry)
@@ -1818,7 +1823,9 @@ fn integer_eigenvectors(
     // 2x2 with symbolic eigenvalues: build eigenvectors directly
     let vecs = eigenvectors_2x2_symbolic(int_matrix);
     if !vecs.is_empty() {
-      return Ok(Expr::List(vecs.into_iter().map(|v| Expr::List(v.into())).collect()));
+      return Ok(Expr::List(
+        vecs.into_iter().map(|v| Expr::List(v.into())).collect(),
+      ));
     }
     return Ok(Expr::FunctionCall {
       name: "Eigenvectors".to_string(),
@@ -2584,7 +2591,8 @@ pub fn levi_civita_tensor_sparse_ast(
       perm
         .iter()
         .map(|&i| Expr::Integer(i as i128))
-        .collect::<Vec<_>>().into(),
+        .collect::<Vec<_>>()
+        .into(),
     );
     rules.push(Expr::Rule {
       pattern: Box::new(key),
@@ -2869,8 +2877,12 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Apply function (default is Det)
       if args.len() == 3 {
         // Minors[m, k, f] - apply f to the submatrix
-        let sub_expr =
-          Expr::List(submatrix.into_iter().map(|v| Expr::List(v.into())).collect());
+        let sub_expr = Expr::List(
+          submatrix
+            .into_iter()
+            .map(|v| Expr::List(v.into()))
+            .collect(),
+        );
         let f_call = Expr::FunctionCall {
           name: match &args[2] {
             Expr::Identifier(name) => name.clone(),
@@ -3475,7 +3487,8 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Power".to_string(),
         args: vec![denom, Expr::Integer(-1)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let result = Expr::FunctionCall {
     name: "ArcCos".to_string(),
@@ -4232,14 +4245,18 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![Expr::FunctionCall {
                   name: "Times".to_string(),
                   args: vec![Expr::Integer(-1), linear_expr].into(),
-                }].into(),
+                }]
+                .into(),
               },
-            ].into(),
+            ]
+            .into(),
           },
           Expr::Integer(-1),
-        ].into(),
+        ]
+        .into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
 
   let input_data = Expr::List(
@@ -4463,7 +4480,9 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = matrix.len(); // rows
   if n == 0 {
-    return Ok(Expr::List(vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
+    ));
   }
   let m = matrix[0].len(); // cols
 
@@ -4636,18 +4655,27 @@ pub fn singular_value_decomposition_ast(
   let u2y = (c * v2x + d * v2y) / sigma2;
   let real = Expr::Real;
   // Build U with rows {U[1,1] U[1,2]} = {u1x, u2x} (columns are u1, u2).
-  let u = Expr::List(vec![
-    Expr::List(vec![real(u1x), real(u2x)].into()),
-    Expr::List(vec![real(u1y), real(u2y)].into()),
-  ].into());
-  let sigma = Expr::List(vec![
-    Expr::List(vec![real(sigma1), real(0.0)].into()),
-    Expr::List(vec![real(0.0), real(sigma2)].into()),
-  ].into());
-  let v = Expr::List(vec![
-    Expr::List(vec![real(v1x), real(v2x)].into()),
-    Expr::List(vec![real(v1y), real(v2y)].into()),
-  ].into());
+  let u = Expr::List(
+    vec![
+      Expr::List(vec![real(u1x), real(u2x)].into()),
+      Expr::List(vec![real(u1y), real(u2y)].into()),
+    ]
+    .into(),
+  );
+  let sigma = Expr::List(
+    vec![
+      Expr::List(vec![real(sigma1), real(0.0)].into()),
+      Expr::List(vec![real(0.0), real(sigma2)].into()),
+    ]
+    .into(),
+  );
+  let v = Expr::List(
+    vec![
+      Expr::List(vec![real(v1x), real(v2x)].into()),
+      Expr::List(vec![real(v1y), real(v2y)].into()),
+    ]
+    .into(),
+  );
   Ok(Expr::List(vec![u, sigma, v].into()))
 }
 
@@ -4993,7 +5021,9 @@ pub fn principal_components_ast(
 
   // Single row: centered data is all zeros
   if nrows == 1 {
-    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(0); ncols].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(0); ncols].into())].into(),
+    ));
   }
 
   // 1. Compute column means

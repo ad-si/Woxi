@@ -90,7 +90,8 @@ pub fn interpolating_polynomial_ast(
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), dd[i - 1].clone()].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       let denom = Expr::FunctionCall {
         name: "Plus".to_string(),
@@ -100,7 +101,8 @@ pub fn interpolating_polynomial_ast(
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), x_vals[i - j].clone()].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       let divided = Expr::BinaryOp {
         op: BinaryOperator::Divide,
@@ -125,7 +127,8 @@ pub fn interpolating_polynomial_ast(
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), x_vals[i].clone()].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     let product = Expr::FunctionCall {
       name: "Times".to_string(),

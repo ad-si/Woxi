@@ -504,7 +504,8 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![reduce_coefficients_mod(&args[0], m), args[1].clone()].into(),
+        args: vec![reduce_coefficients_mod(&args[0], m), args[1].clone()]
+          .into(),
       }
     }
     _ => reduce_term_mod(expr, m),

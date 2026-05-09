@@ -2371,10 +2371,13 @@ pub fn dispatch_list_operations(
             }
           }
           if matches {
-            results.push(Expr::List(vec![
-              Expr::Integer((i + 1) as i128),
-              Expr::Integer((i + sub_len) as i128),
-            ].into()));
+            results.push(Expr::List(
+              vec![
+                Expr::Integer((i + 1) as i128),
+                Expr::Integer((i + sub_len) as i128),
+              ]
+              .into(),
+            ));
           }
         }
         return Some(Ok(Expr::List(results.into())));
@@ -3368,7 +3371,9 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(result.into_iter().map(|v| Expr::List(v.into())).collect()))
+  Ok(Expr::List(
+    result.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
 }
 
 /// Distance between two expressions. Falls back to absolute scalar difference
@@ -4093,7 +4098,8 @@ fn build_sparse_array_csr(
       dims_list.clone(),
       default.clone(),
       inner,
-    ].into(),
+    ]
+    .into(),
   };
   if entries.is_empty() {
     let row_ptr = if k == 1 {
@@ -4101,18 +4107,22 @@ fn build_sparse_array_csr(
     } else {
       Expr::List(vec![Expr::Integer(0); n + 1].into())
     };
-    let inner = Expr::List(vec![
-      Expr::Integer(1),
-      Expr::List(vec![row_ptr, Expr::List(vec![].into())].into()),
-      Expr::List(vec![].into()),
-    ].into());
+    let inner = Expr::List(
+      vec![
+        Expr::Integer(1),
+        Expr::List(vec![row_ptr, Expr::List(vec![].into())].into()),
+        Expr::List(vec![].into()),
+      ]
+      .into(),
+    );
     return make_outer(inner);
   }
   let mut sorted: Vec<(Vec<usize>, Expr)> = entries.to_vec();
   sorted.sort_by(|a, b| a.0.cmp(&b.0));
   if k == 1 {
-    let row_ptr =
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(sorted.len() as i128)].into());
+    let row_ptr = Expr::List(
+      vec![Expr::Integer(0), Expr::Integer(sorted.len() as i128)].into(),
+    );
     let col_indices = Expr::List(
       sorted
         .iter()
@@ -4120,11 +4130,14 @@ fn build_sparse_array_csr(
         .collect(),
     );
     let values = Expr::List(sorted.iter().map(|(_, v)| v.clone()).collect());
-    let inner = Expr::List(vec![
-      Expr::Integer(1),
-      Expr::List(vec![row_ptr, col_indices].into()),
-      values,
-    ].into());
+    let inner = Expr::List(
+      vec![
+        Expr::Integer(1),
+        Expr::List(vec![row_ptr, col_indices].into()),
+        values,
+      ]
+      .into(),
+    );
     return make_outer(inner);
   }
   let mut row_counts = vec![0i128; n];
@@ -4144,11 +4157,20 @@ fn build_sparse_array_csr(
     acc += c;
     row_ptr.push(Expr::Integer(acc));
   }
-  let inner = Expr::List(vec![
-    Expr::Integer(1),
-    Expr::List(vec![Expr::List(row_ptr.into()), Expr::List(col_indices_list.into())].into()),
-    Expr::List(values_list.into()),
-  ].into());
+  let inner = Expr::List(
+    vec![
+      Expr::Integer(1),
+      Expr::List(
+        vec![
+          Expr::List(row_ptr.into()),
+          Expr::List(col_indices_list.into()),
+        ]
+        .into(),
+      ),
+      Expr::List(values_list.into()),
+    ]
+    .into(),
+  );
   make_outer(inner)
 }
 

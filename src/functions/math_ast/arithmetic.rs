@@ -44,7 +44,8 @@ fn polynomial_term_to_series_data(
         Expr::Integer(n),
         Expr::Integer(nmax_int),
         Expr::Integer(1),
-      ].into(),
+      ]
+      .into(),
     }
   };
   // Constant w.r.t. var → coeff at order 0
@@ -115,7 +116,8 @@ fn polynomial_term_to_series_data(
           sa[3].clone(),
           sa[4].clone(),
           sa[5].clone(),
-        ].into(),
+        ]
+        .into(),
       });
     }
     return None;
@@ -368,7 +370,8 @@ fn try_series_data_plus(
       Expr::Integer(adjusted_nmin),
       Expr::Integer(new_nmax),
       Expr::Integer(common_denom),
-    ].into(),
+    ]
+    .into(),
   };
   if other.is_empty() {
     Ok(Some(merged))
@@ -521,7 +524,8 @@ fn try_series_data_times(
       Expr::Integer(nmin_f),
       Expr::Integer(nmax_f),
       Expr::Integer(common_denom),
-    ].into(),
+    ]
+    .into(),
   };
 
   let series_idx_set: std::collections::HashSet<usize> =
@@ -1010,7 +1014,8 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
           name: "Times".to_string(),
           args: vec![im, Expr::Identifier("I".to_string())].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
   }
   e
@@ -1238,7 +1243,8 @@ impl Coeff {
         } else {
           Expr::FunctionCall {
             name: "Rational".to_string(),
-            args: vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())].into(),
+            args: vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())]
+              .into(),
           }
         }
       }
@@ -4077,7 +4083,8 @@ fn try_series_data_times_var_power(
       Expr::Integer(new_nmin),
       Expr::Integer(new_nmax),
       Expr::Integer(d),
-    ].into(),
+    ]
+    .into(),
   }))
 }
 
@@ -4162,7 +4169,8 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               sd_args[3].clone(),
               sd_args[4].clone(),
               sd_args[5].clone(),
-            ].into(),
+            ]
+            .into(),
           });
         }
       }
@@ -6954,12 +6962,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           } else if im == -1.0 {
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())].into(),
+              args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())]
+                .into(),
             }
           } else {
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
+              args: vec![Expr::Real(im), Expr::Identifier("I".to_string())]
+                .into(),
             }
           };
           if re == 0.0 {

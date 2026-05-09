@@ -341,7 +341,8 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![Expr::FunctionCall {
             name: dist_name.clone(),
             args: dargs.clone(),
-          }].into(),
+          }]
+          .into(),
         }),
       }
     }
@@ -544,7 +545,8 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![Expr::FunctionCall {
             name: dist_name.clone(),
             args: dargs.clone(),
-          }].into(),
+          }]
+          .into(),
         }),
       }
     }
@@ -609,7 +611,8 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), mean.clone()].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     // Abs[xi - mean]^2
     let abs_sq = Expr::FunctionCall {
@@ -620,7 +623,8 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![diff].into(),
         },
         Expr::Integer(2),
-      ].into(),
+      ]
+      .into(),
     };
     sum_sq_terms.push(abs_sq);
   }
@@ -636,7 +640,8 @@ pub fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Power".to_string(),
         args: vec![Expr::Integer((n - 1) as i128), Expr::Integer(-1)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -1501,7 +1506,8 @@ pub fn quantile_single(
           args: vec![
             Expr::List(sorted.iter().cloned().cloned().collect()),
             q.clone(),
-          ].into(),
+          ]
+          .into(),
         });
       }
     }
@@ -1511,7 +1517,8 @@ pub fn quantile_single(
         args: vec![
           Expr::List(sorted.iter().cloned().cloned().collect()),
           q.clone(),
-        ].into(),
+        ]
+        .into(),
       });
     }
   };
@@ -1808,16 +1815,22 @@ fn format_location_test_result(
     "TestDataTable" => {
       let p = t_test_p_value(t_stat, df);
       // Build Grid[{{, Statistic, P-Value}, {T, t_stat, p}}, ...]
-      let header = Expr::List(vec![
-        Expr::String(String::new()),
-        Expr::String("Statistic".to_string()),
-        Expr::String("P\u{2010}Value".to_string()),
-      ].into());
-      let row = Expr::List(vec![
-        Expr::String(test_name.to_string()),
-        num_to_expr(t_stat),
-        num_to_expr(p),
-      ].into());
+      let header = Expr::List(
+        vec![
+          Expr::String(String::new()),
+          Expr::String("Statistic".to_string()),
+          Expr::String("P\u{2010}Value".to_string()),
+        ]
+        .into(),
+      );
+      let row = Expr::List(
+        vec![
+          Expr::String(test_name.to_string()),
+          num_to_expr(t_stat),
+          num_to_expr(p),
+        ]
+        .into(),
+      );
       Ok(Expr::FunctionCall {
         name: "Grid".to_string(),
         args: vec![
@@ -1826,48 +1839,60 @@ fn format_location_test_result(
             name: "Rule".to_string(),
             args: vec![
               Expr::Identifier("Alignment".to_string()),
-              Expr::List(vec![
-                Expr::Identifier("Left".to_string()),
-                Expr::Identifier("Automatic".to_string()),
-              ].into()),
-            ].into(),
+              Expr::List(
+                vec![
+                  Expr::Identifier("Left".to_string()),
+                  Expr::Identifier("Automatic".to_string()),
+                ]
+                .into(),
+              ),
+            ]
+            .into(),
           },
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
               Expr::Identifier("Dividers".to_string()),
-              Expr::List(vec![
-                Expr::FunctionCall {
-                  name: "Rule".to_string(),
-                  args: vec![
-                    Expr::Integer(2),
-                    Expr::FunctionCall {
-                      name: "GrayLevel".to_string(),
-                      args: vec![Expr::Real(0.7)].into(),
-                    },
-                  ].into(),
-                },
-                Expr::FunctionCall {
-                  name: "Rule".to_string(),
-                  args: vec![
-                    Expr::Integer(2),
-                    Expr::FunctionCall {
-                      name: "GrayLevel".to_string(),
-                      args: vec![Expr::Real(0.7)].into(),
-                    },
-                  ].into(),
-                },
-              ].into()),
-            ].into(),
+              Expr::List(
+                vec![
+                  Expr::FunctionCall {
+                    name: "Rule".to_string(),
+                    args: vec![
+                      Expr::Integer(2),
+                      Expr::FunctionCall {
+                        name: "GrayLevel".to_string(),
+                        args: vec![Expr::Real(0.7)].into(),
+                      },
+                    ]
+                    .into(),
+                  },
+                  Expr::FunctionCall {
+                    name: "Rule".to_string(),
+                    args: vec![
+                      Expr::Integer(2),
+                      Expr::FunctionCall {
+                        name: "GrayLevel".to_string(),
+                        args: vec![Expr::Real(0.7)].into(),
+                      },
+                    ]
+                    .into(),
+                  },
+                ]
+                .into(),
+              ),
+            ]
+            .into(),
           },
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
               Expr::Identifier("Spacings".to_string()),
               Expr::Identifier("Automatic".to_string()),
-            ].into(),
+            ]
+            .into(),
           },
-        ].into(),
+        ]
+        .into(),
       })
     }
     _ => {
@@ -2240,16 +2265,19 @@ pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   match extract_geo_coords(&args[0]) {
-    Some((lat, lon)) => Ok(Expr::List(vec![
-      Expr::FunctionCall {
-        name: "Quantity".to_string(),
-        args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
-      },
-      Expr::FunctionCall {
-        name: "Quantity".to_string(),
-        args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
-      },
-    ].into())),
+    Some((lat, lon)) => Ok(Expr::List(
+      vec![
+        Expr::FunctionCall {
+          name: "Quantity".to_string(),
+          args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
+        },
+        Expr::FunctionCall {
+          name: "Quantity".to_string(),
+          args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
+        },
+      ]
+      .into(),
+    )),
     None => Ok(Expr::FunctionCall {
       name: "LatitudeLongitude".to_string(),
       args: args.to_vec().into(),
@@ -2300,9 +2328,10 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn make_cycles(cycle: Vec<i128>) -> Expr {
   Expr::FunctionCall {
     name: "Cycles".to_string(),
-    args: vec![Expr::List(vec![Expr::List(
-      cycle.into_iter().map(Expr::Integer).collect(),
-    )].into())].into(),
+    args: vec![Expr::List(
+      vec![Expr::List(cycle.into_iter().map(Expr::Integer).collect())].into(),
+    )]
+    .into(),
   }
 }
 
@@ -2314,7 +2343,8 @@ fn make_cycles_multi(cycles: Vec<Vec<i128>>) -> Expr {
         .into_iter()
         .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
         .collect(),
-    )].into(),
+    )]
+    .into(),
   }
 }
 
@@ -2341,7 +2371,9 @@ fn dihedral_group_generators(n: usize) -> Expr {
     return Expr::List(vec![make_cycles_multi(vec![])].into());
   }
   if n == 2 {
-    return Expr::List(vec![make_cycles(vec![1, 2]), make_cycles(vec![3, 4])].into());
+    return Expr::List(
+      vec![make_cycles(vec![1, 2]), make_cycles(vec![3, 4])].into(),
+    );
   }
 
   // Reflection: for even n pairs (i, n+1-i); for odd n pairs (i, n+2-i) for i>=2
@@ -2481,14 +2513,17 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
                     name: "Rational".to_string(),
                     args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               },
-            ].into(),
+            ]
+            .into(),
           },
           // Sqrt[2*Pi]
           make_sqrt(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())].into(),
+            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]
+              .into(),
           }),
           // E^(-n)
           Expr::FunctionCall {
@@ -2499,9 +2534,11 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
                 name: "Times".to_string(),
                 args: vec![Expr::Integer(-1), n].into(),
               },
-            ].into(),
+            ]
+            .into(),
           },
-        ].into(),
+        ]
+        .into(),
       })
     }
 
@@ -2680,9 +2717,11 @@ fn stirling_approx(var: &str) -> Expr {
                 name: "Rational".to_string(),
                 args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
-            ].into(),
+            ]
+            .into(),
           },
-        ].into(),
+        ]
+        .into(),
       },
       // Sqrt[2*Pi]
       make_sqrt(Expr::FunctionCall {
@@ -2698,9 +2737,11 @@ fn stirling_approx(var: &str) -> Expr {
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), n].into(),
           },
-        ].into(),
+        ]
+        .into(),
       },
-    ].into(),
+    ]
+    .into(),
   }
 }
 
@@ -2862,9 +2903,11 @@ fn asymptotic_binomial(
                 args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
               n.clone(),
-            ].into(),
+            ]
+            .into(),
           },
-        ].into(),
+        ]
+        .into(),
       },
       // 1 / (Sqrt[n] * Sqrt[Pi])
       Expr::FunctionCall {
@@ -2875,12 +2918,15 @@ fn asymptotic_binomial(
             args: vec![
               make_sqrt(n),
               make_sqrt(Expr::Constant("Pi".to_string())),
-            ].into(),
+            ]
+            .into(),
           },
           Expr::Integer(-1),
-        ].into(),
+        ]
+        .into(),
       },
-    ].into(),
+    ]
+    .into(),
   })
 }
 

@@ -211,7 +211,8 @@ fn poly_divide_by_constant(
         args: vec![constant.clone(), Expr::Integer(-1)].into(),
       },
       poly.clone(),
-    ].into(),
+    ]
+    .into(),
   };
   let result = crate::evaluator::evaluate_expr_to_expr(&div)?;
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))

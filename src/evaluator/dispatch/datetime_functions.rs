@@ -50,7 +50,8 @@ pub fn dispatch_datetime_functions(
               Expr::String("Day".to_string()),
               Expr::String("Gregorian".to_string()),
               Expr::Identifier("None".to_string()),
-            ].into(),
+            ]
+            .into(),
           }));
         }
       }

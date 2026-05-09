@@ -113,12 +113,15 @@ pub fn dispatch_image_functions(
     }
     // ColorData[]: list of available data categories.
     "ColorData" if args.is_empty() => {
-      return Some(Ok(Expr::List(vec![
-        Expr::String("Gradients".to_string()),
-        Expr::String("Indexed".to_string()),
-        Expr::String("Named".to_string()),
-        Expr::String("Physical".to_string()),
-      ].into())));
+      return Some(Ok(Expr::List(
+        vec![
+          Expr::String("Gradients".to_string()),
+          Expr::String("Indexed".to_string()),
+          Expr::String("Named".to_string()),
+          Expr::String("Physical".to_string()),
+        ]
+        .into(),
+      )));
     }
     // ColorData["Gradients"]: list of named built-in color gradients.
     "ColorData" if args.len() == 1 => {

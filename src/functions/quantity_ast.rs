@@ -1854,7 +1854,8 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
           name: "Power".to_string(),
           args: vec![d, Expr::Integer(-1)].into(),
         },
-      ].into(),
+      ]
+      .into(),
     },
     (None, None) => Expr::Integer(1),
   }

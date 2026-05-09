@@ -291,7 +291,8 @@ pub fn dispatch_evaluation_control(
       // Default: ArcSinDistribution[{0, 1}]
       return Some(Ok(Expr::FunctionCall {
         name: "ArcSinDistribution".to_string(),
-        args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
+        args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())]
+          .into(),
       }));
     }
     "ArcSinDistribution" if args.len() == 1 => {
@@ -589,7 +590,9 @@ pub fn dispatch_evaluation_control(
         name: "HoldForm".into(),
         args: vec![e].into(),
       };
-      return Some(Ok(Expr::List(vec![wrap(original), wrap(evaluated)].into())));
+      return Some(Ok(Expr::List(
+        vec![wrap(original), wrap(evaluated)].into(),
+      )));
     }
     // Stack[] - return the current evaluation stack as a list of strings.
     // Exclude the outermost entry (which is the 'Stack' call itself) so that

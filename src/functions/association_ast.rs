@@ -238,7 +238,8 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Return Missing["KeyAbsent", key]
       Ok(Expr::FunctionCall {
         name: "Missing".to_string(),
-        args: vec![Expr::String("KeyAbsent".to_string()), args[1].clone()].into(),
+        args: vec![Expr::String("KeyAbsent".to_string()), args[1].clone()]
+          .into(),
       })
     }
     Expr::List(items) => {
@@ -565,8 +566,10 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Apply the merge function to each group of values
   let mut result = Vec::new();
   for (_, key_expr, values) in key_values {
-    let merged_value =
-      crate::evaluator::apply_function_to_arg(func, &Expr::List(values.into()))?;
+    let merged_value = crate::evaluator::apply_function_to_arg(
+      func,
+      &Expr::List(values.into()),
+    )?;
     result.push((key_expr, merged_value));
   }
 
@@ -852,7 +855,8 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             None => Expr::FunctionCall {
               name: "Missing".to_string(),
-              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
+              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
+                .into(),
             },
           };
           new_items.push((key.clone(), missing));

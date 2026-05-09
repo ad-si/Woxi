@@ -99,7 +99,8 @@ pub fn make_compound_inequality(
       Expr::Identifier(var.to_string()),
       Expr::Identifier(op2_name.to_string()),
       high.clone(),
-    ].into(),
+    ]
+    .into(),
   }
 }
 

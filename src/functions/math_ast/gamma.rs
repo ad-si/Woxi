@@ -244,7 +244,8 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 name: "Rational".to_string(),
                 args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
-            ].into(),
+            ]
+            .into(),
           };
           if den_simplified == BigInt::from(1) {
             if num_simplified == BigInt::from(1) {
@@ -260,7 +261,8 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               bigint_to_expr(num_simplified),
               bigint_to_expr(den_simplified),
-            ].into(),
+            ]
+            .into(),
           };
           return Ok(Expr::FunctionCall {
             name: "Times".to_string(),
@@ -299,7 +301,8 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 name: "Rational".to_string(),
                 args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
-            ].into(),
+            ]
+            .into(),
           };
           let coeff_num = if is_neg {
             -num_simplified.clone()
@@ -320,7 +323,8 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               bigint_to_expr(coeff_num),
               bigint_to_expr(den_simplified),
-            ].into(),
+            ]
+            .into(),
           };
           return Ok(Expr::FunctionCall {
             name: "Times".to_string(),
@@ -388,7 +392,8 @@ fn gamma_incomplete_upper(
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), z.clone()].into(),
         },
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -460,7 +465,8 @@ fn gamma_incomplete_upper_int_a(
             args: vec![Expr::Integer(1), Expr::Integer(factorial)].into(),
           },
           z_power,
-        ].into(),
+        ]
+        .into(),
       }
     };
     terms.push(term);
@@ -485,7 +491,8 @@ fn gamma_incomplete_upper_int_a(
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), z.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let result = if n_minus_1_factorial == 1 {
     Expr::FunctionCall {

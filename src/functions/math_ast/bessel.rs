@@ -161,13 +161,15 @@ fn wrap_with_sqrt_factor_rationalised(
         args: vec![FunctionCall {
           name: "Times".to_string(),
           args: vec![Integer(2), Identifier("Pi".to_string())].into(),
-        }].into(),
+        }]
+        .into(),
       },
       FunctionCall {
         name: "Sqrt".to_string(),
         args: vec![z_expr.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let expr = FunctionCall {
     name: "Times".to_string(),
@@ -177,7 +179,8 @@ fn wrap_with_sqrt_factor_rationalised(
         name: "Power".to_string(),
         args: vec![denom, Integer(-1)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -273,13 +276,15 @@ fn bessel_poly_recurrence(
             args: vec![z_expr.clone(), Integer(-1)].into(),
           },
           p_n.clone(),
-        ].into(),
+        ]
+        .into(),
       },
       FunctionCall {
         name: "Times".to_string(),
         args: vec![Integer(b_coef), p_other.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -303,8 +308,10 @@ fn wrap_with_sqrt_factor(
               name: "Power".to_string(),
               args: vec![Identifier("Pi".to_string()), Integer(-1)].into(),
             },
-          ].into(),
-        }].into(),
+          ]
+          .into(),
+        }]
+        .into(),
       },
       p.clone(),
       FunctionCall {
@@ -315,9 +322,11 @@ fn wrap_with_sqrt_factor(
             args: vec![z_expr.clone()].into(),
           },
           Integer(-1),
-        ].into(),
+        ]
+        .into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -720,10 +729,12 @@ fn bessel_k_polynomial(
               args: vec![z_expr.clone(), Integer(-1)].into(),
             },
             curr.clone(),
-          ].into(),
+          ]
+          .into(),
         },
         prev.clone(),
-      ].into(),
+      ]
+      .into(),
     };
     let next = crate::evaluator::evaluate_expr_to_expr(&next_expr)?;
     prev = curr;
@@ -753,8 +764,10 @@ fn wrap_bessel_k_factor(
               name: "Power".to_string(),
               args: vec![Integer(2), Integer(-1)].into(),
             },
-          ].into(),
-        }].into(),
+          ]
+          .into(),
+        }]
+        .into(),
       },
       p.clone(),
       // 1 / E^z = E^(-z)
@@ -766,7 +779,8 @@ fn wrap_bessel_k_factor(
             name: "Times".to_string(),
             args: vec![Integer(-1), z_expr.clone()].into(),
           },
-        ].into(),
+        ]
+        .into(),
       },
       // 1 / Sqrt[z]
       FunctionCall {
@@ -777,9 +791,11 @@ fn wrap_bessel_k_factor(
             args: vec![z_expr.clone()].into(),
           },
           Integer(-1),
-        ].into(),
+        ]
+        .into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -912,7 +928,8 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if *n == 0 {
       Ok(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())].into(),
+        args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
+          .into(),
       })
     } else {
       Ok(Expr::Identifier("ComplexInfinity".to_string()))
@@ -1153,9 +1170,11 @@ fn build_hankel(
               args: vec![Expr::Integer(0), Expr::Integer(sign)].into(),
             },
             Expr::Real(y),
-          ].into(),
+          ]
+          .into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }

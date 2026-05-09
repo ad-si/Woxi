@@ -62,7 +62,8 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), aqk].into(),
           },
-        ].into(),
+        ]
+        .into(),
       })?;
     // Multiply into result
     result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -347,9 +348,11 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               name: "ExpIntegralEi".to_string(),
               args: vec![Expr::Integer(-1)].into(),
             },
-          ].into(),
+          ]
+          .into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     return crate::evaluator::evaluate_function_call_ast("N", &[exact]);
   }
@@ -1420,9 +1423,11 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(re),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
+            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())]
+              .into(),
           },
-        ].into(),
+        ]
+        .into(),
       })
     }
   }

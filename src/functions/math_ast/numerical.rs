@@ -2611,7 +2611,8 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
               left: right.clone(),
               right: Box::new(Expr::Integer(-1)),
             },
-          ].into(),
+          ]
+          .into(),
         },
         _ => expanded_arg,
       };
@@ -3944,7 +3945,8 @@ pub fn list_fourier_sequence_transform_ast(
           Expr::Identifier("I".to_string()),
           omega.clone(),
           k_expr,
-        ].into(),
+        ]
+        .into(),
       };
       let exp_term = Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -4672,9 +4674,11 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
         Expr::Real(sum_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())].into(),
+          args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())]
+            .into(),
         },
-      ].into(),
+      ]
+      .into(),
     })
   }
 }

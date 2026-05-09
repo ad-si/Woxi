@@ -480,7 +480,8 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     }),
                     right: Box::new(max_expr.clone()),
                   },
-                ].into(),
+                ]
+                .into(),
               });
             }
           }

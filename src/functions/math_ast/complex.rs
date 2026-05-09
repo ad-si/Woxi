@@ -64,7 +64,8 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Im".to_string(),
           args: vec![factor].into(),
         },
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -447,7 +448,8 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
           // Conjugate[I] = -I
           Some(Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())].into(),
+            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())]
+              .into(),
           })
         }
         2 => {
@@ -970,7 +972,8 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)].into(),
+        args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)]
+          .into(),
       })
     }
   } else {
@@ -996,7 +999,8 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Expr::FunctionCall {
           name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn as i128), Expr::Integer(sd as i128)].into(),
+          args: vec![Expr::Integer(sn as i128), Expr::Integer(sd as i128)]
+            .into(),
         }
       });
     }
@@ -1027,7 +1031,8 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     Ok(Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer as i128), Expr::Integer(denom as i128)].into(),
+      args: vec![Expr::Integer(numer as i128), Expr::Integer(denom as i128)]
+        .into(),
     })
   }
 }
@@ -1232,9 +1237,11 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
         Expr::Integer(re_num),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())].into(),
+          args: vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())]
+            .into(),
         },
-      ].into(),
+      ]
+      .into(),
     }
   };
   let num_evaluated =

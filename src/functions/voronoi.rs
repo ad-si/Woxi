@@ -553,7 +553,11 @@ fn build_mesh_region(
 
   Ok(Expr::FunctionCall {
     name: "MeshRegion".to_string(),
-    args: vec![Expr::List(verts_expr.into()), Expr::List(vec![polygon].into())].into(),
+    args: vec![
+      Expr::List(verts_expr.into()),
+      Expr::List(vec![polygon].into()),
+    ]
+    .into(),
   })
 }
 

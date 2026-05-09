@@ -125,7 +125,8 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
           args: vec![Expr::FunctionCall {
             name: "TypeSystem`Enumeration".to_string(),
             args: key_names.into(),
-          }].into(),
+          }]
+          .into(),
         }
       }
     };
@@ -136,7 +137,8 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
         key_type,
         value_types[0].clone(),
         Expr::Integer(pairs.len() as i128),
-      ].into(),
+      ]
+      .into(),
     }
   } else {
     // Struct[{key1, key2, ...}, {type1, type2, ...}]
@@ -151,7 +153,8 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
 
     Expr::FunctionCall {
       name: "TypeSystem`Struct".to_string(),
-      args: vec![Expr::List(key_names.into()), Expr::List(value_types.into())].into(),
+      args: vec![Expr::List(key_names.into()), Expr::List(value_types.into())]
+        .into(),
     }
   }
 }
@@ -183,7 +186,8 @@ pub fn dataset_query(
         }
         Expr::FunctionCall {
           name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), col_key.clone()].into(),
+          args: vec![Expr::String("KeyAbsent".to_string()), col_key.clone()]
+            .into(),
         }
       })
       .collect();

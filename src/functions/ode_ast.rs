@@ -416,8 +416,12 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Build InterpolatingFunction
-  let domain =
-    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)].into())].into());
+  let domain = Expr::List(
+    vec![Expr::List(
+      vec![Expr::Real(x_min), Expr::Real(x_max)].into(),
+    )]
+    .into(),
+  );
 
   // Store data as a list of {x, y} pairs
   let data_expr = Expr::List(
@@ -2160,8 +2164,12 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_min = points[0].0;
   let x_max = points[n - 1].0;
 
-  let domain =
-    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)].into())].into());
+  let domain = Expr::List(
+    vec![Expr::List(
+      vec![Expr::Real(x_min), Expr::Real(x_max)].into(),
+    )]
+    .into(),
+  );
 
   // Store data as list of {x, y} pairs, preserving original y-value types
   // (e.g. Integer for integer inputs) so that evaluation at exact grid points
@@ -2542,7 +2550,7 @@ fn try_linear_first_order_pde_body(
       name: "C".to_string(),
       args: vec![Expr::Integer(1)].into(),
     }),
-    args: vec![c1_arg].into(),
+    args: vec![c1_arg],
   };
   let body = if matches!(&exp_part, Expr::Integer(1)) {
     c1_applied
@@ -2625,7 +2633,7 @@ fn try_direct_linear_pde_body(
       name: "C".to_string(),
       args: vec![Expr::Integer(1)].into(),
     }),
-    args: vec![c1_arg].into(),
+    args: vec![c1_arg],
   };
   // Inhomogeneous head term: (c/a)*x.
   if c == 0 {
@@ -2811,7 +2819,7 @@ fn try_euler_pde_body(
       name: "C".to_string(),
       args: vec![Expr::Integer(1)].into(),
     }),
-    args: vec![y_over_x].into(),
+    args: vec![y_over_x],
   };
   let body = Expr::BinaryOp {
     op: BinaryOperator::Plus,

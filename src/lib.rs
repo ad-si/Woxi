@@ -1002,28 +1002,32 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       let expr = syntax::Expr::FunctionCall {
         name: "DateObject".to_string(),
         args: vec![
-          syntax::Expr::List(vec![
-            syntax::Expr::Integer(
-              now.format("%Y").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Integer(
-              now.format("%m").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Integer(
-              now.format("%d").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Integer(
-              now.format("%H").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Integer(
-              now.format("%M").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Real(seconds),
-          ].into()),
+          syntax::Expr::List(
+            vec![
+              syntax::Expr::Integer(
+                now.format("%Y").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Integer(
+                now.format("%m").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Integer(
+                now.format("%d").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Integer(
+                now.format("%H").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Integer(
+                now.format("%M").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Real(seconds),
+            ]
+            .into(),
+          ),
           syntax::Expr::String("Instant".to_string()),
           syntax::Expr::String("Gregorian".to_string()),
           syntax::Expr::Real(tz_offset_hours),
-        ].into(),
+        ]
+        .into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1036,18 +1040,22 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       let expr = syntax::Expr::FunctionCall {
         name: "DateObject".to_string(),
         args: vec![
-          syntax::Expr::List(vec![
-            syntax::Expr::Integer(now.get_full_year() as i128),
-            syntax::Expr::Integer((now.get_month() + 1) as i128),
-            syntax::Expr::Integer(now.get_date() as i128),
-            syntax::Expr::Integer(now.get_hours() as i128),
-            syntax::Expr::Integer(now.get_minutes() as i128),
-            syntax::Expr::Real(seconds),
-          ].into()),
+          syntax::Expr::List(
+            vec![
+              syntax::Expr::Integer(now.get_full_year() as i128),
+              syntax::Expr::Integer((now.get_month() + 1) as i128),
+              syntax::Expr::Integer(now.get_date() as i128),
+              syntax::Expr::Integer(now.get_hours() as i128),
+              syntax::Expr::Integer(now.get_minutes() as i128),
+              syntax::Expr::Real(seconds),
+            ]
+            .into(),
+          ),
           syntax::Expr::String("Instant".to_string()),
           syntax::Expr::String("Gregorian".to_string()),
           syntax::Expr::Real(tz_offset_hours),
-        ].into(),
+        ]
+        .into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1064,19 +1072,23 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       let expr = syntax::Expr::FunctionCall {
         name: "DateObject".to_string(),
         args: vec![
-          syntax::Expr::List(vec![
-            syntax::Expr::Integer(
-              date.format("%Y").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Integer(
-              date.format("%m").to_string().parse::<i128>().unwrap(),
-            ),
-            syntax::Expr::Integer(
-              date.format("%d").to_string().parse::<i128>().unwrap(),
-            ),
-          ].into()),
+          syntax::Expr::List(
+            vec![
+              syntax::Expr::Integer(
+                date.format("%Y").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Integer(
+                date.format("%m").to_string().parse::<i128>().unwrap(),
+              ),
+              syntax::Expr::Integer(
+                date.format("%d").to_string().parse::<i128>().unwrap(),
+              ),
+            ]
+            .into(),
+          ),
           syntax::Expr::String("Day".to_string()),
-        ].into(),
+        ]
+        .into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -1093,13 +1105,17 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       let expr = syntax::Expr::FunctionCall {
         name: "DateObject".to_string(),
         args: vec![
-          syntax::Expr::List(vec![
-            syntax::Expr::Integer(d.get_full_year() as i128),
-            syntax::Expr::Integer((d.get_month() + 1) as i128),
-            syntax::Expr::Integer(d.get_date() as i128),
-          ].into()),
+          syntax::Expr::List(
+            vec![
+              syntax::Expr::Integer(d.get_full_year() as i128),
+              syntax::Expr::Integer((d.get_month() + 1) as i128),
+              syntax::Expr::Integer(d.get_date() as i128),
+            ]
+            .into(),
+          ),
           syntax::Expr::String("Day".to_string()),
-        ].into(),
+        ]
+        .into(),
       };
       return Ok(syntax::expr_to_output(&expr));
     }
@@ -3156,7 +3172,8 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
           args: vec![
             syntax::Expr::Identifier(func_name.clone()),
             syntax::Expr::Integer(position as i128),
-          ].into(),
+          ]
+          .into(),
         }));
         heads.push(None);
         blank_types.push(1);
@@ -3337,25 +3354,28 @@ fn store_tag_set_delayed(
   };
 
   // Extract outer function name and args from the LHS
-  let (outer_func, lhs_args): (String, Vec<syntax::Expr>) = match &func_call_expr {
-    syntax::Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
-    syntax::Expr::CurriedCall { func, args } => {
-      // Chained calls like f[g[x_]][y_] - use the full expression
-      // For now, handle simple case only
-      if let syntax::Expr::FunctionCall { name, .. } = func.as_ref() {
-        (name.clone(), args.clone())
-      } else {
+  let (outer_func, lhs_args): (String, Vec<syntax::Expr>) =
+    match &func_call_expr {
+      syntax::Expr::FunctionCall { name, args } => {
+        (name.clone(), args.to_vec())
+      }
+      syntax::Expr::CurriedCall { func, args } => {
+        // Chained calls like f[g[x_]][y_] - use the full expression
+        // For now, handle simple case only
+        if let syntax::Expr::FunctionCall { name, .. } = func.as_ref() {
+          (name.clone(), args.clone())
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "TagSetDelayed: LHS must be a function call".into(),
+          ));
+        }
+      }
+      _ => {
         return Err(InterpreterError::EvaluationError(
           "TagSetDelayed: LHS must be a function call".into(),
         ));
       }
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "TagSetDelayed: LHS must be a function call".into(),
-      ));
-    }
-  };
+    };
 
   // Process each argument in the LHS to extract patterns
   // Arguments that are function calls with head == tag get destructured
@@ -3400,7 +3420,8 @@ fn store_tag_set_delayed(
               args: vec![
                 syntax::Expr::Identifier(param_name.clone()),
                 syntax::Expr::Integer((j + 1) as i128),
-              ].into(),
+              ]
+              .into(),
             };
             final_body =
               syntax::substitute_variable(&final_body, &pat_name, &part_expr);
@@ -3412,11 +3433,11 @@ fn store_tag_set_delayed(
       }
       // Simple pattern like x_ or x_Head
       _ => {
-        let (pat_name, head) = extract_pattern_info_from_expr(&arg);
+        let (pat_name, head) = extract_pattern_info_from_expr(arg);
         if pat_name.is_empty() && head.is_none() {
           // Literal value — create SameQ condition
           let param_name = format!("_up{}", i);
-          let eval_arg = evaluator::evaluate_expr_to_expr(&arg)?;
+          let eval_arg = evaluator::evaluate_expr_to_expr(arg)?;
           conditions.push(Some(syntax::Expr::Comparison {
             operands: vec![
               syntax::Expr::Identifier(param_name.clone()),

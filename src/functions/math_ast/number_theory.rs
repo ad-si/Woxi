@@ -116,10 +116,13 @@ pub fn extended_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if vals.len() == 2 {
     let (g, s, t) = extended_gcd_bigint(&vals[0], &vals[1]);
-    return Ok(Expr::List(vec![
-      bigint_to_expr(g),
-      Expr::List(vec![bigint_to_expr(s), bigint_to_expr(t)].into()),
-    ].into()));
+    return Ok(Expr::List(
+      vec![
+        bigint_to_expr(g),
+        Expr::List(vec![bigint_to_expr(s), bigint_to_expr(t)].into()),
+      ]
+      .into(),
+    ));
   }
 
   // Multi-argument: iteratively compute
@@ -141,10 +144,13 @@ pub fn extended_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     g = new_g;
   }
 
-  Ok(Expr::List(vec![
-    bigint_to_expr(g),
-    Expr::List(coeffs.into_iter().map(bigint_to_expr).collect()),
-  ].into()))
+  Ok(Expr::List(
+    vec![
+      bigint_to_expr(g),
+      Expr::List(coeffs.into_iter().map(bigint_to_expr).collect()),
+    ]
+    .into(),
+  ))
 }
 
 /// LCM[a, b, ...] - Least common multiple.
@@ -548,7 +554,8 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![x.clone(), curr.clone()].into(),
           },
           prev,
-        ].into(),
+        ]
+        .into(),
       };
       let expanded =
         crate::evaluator::evaluate_function_call_ast("Expand", &[next])?;
@@ -1284,25 +1291,37 @@ pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     right: Box::new(i_expr.clone()),
   };
   match k {
-    0 => Ok(Expr::List(vec![
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
-    ].into())),
-    1 => Ok(Expr::List(vec![
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
-    ].into())),
+    0 => Ok(Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+      ]
+      .into(),
+    )),
+    1 => Ok(Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+        Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+      ]
+      .into(),
+    )),
     2 => {
       let neg_i_eval = crate::evaluator::evaluate_expr_to_expr(&neg_i)?;
-      Ok(Expr::List(vec![
-        Expr::List(vec![Expr::Integer(0), neg_i_eval].into()),
-        Expr::List(vec![i_expr, Expr::Integer(0)].into()),
-      ].into()))
+      Ok(Expr::List(
+        vec![
+          Expr::List(vec![Expr::Integer(0), neg_i_eval].into()),
+          Expr::List(vec![i_expr, Expr::Integer(0)].into()),
+        ]
+        .into(),
+      ))
     }
-    3 => Ok(Expr::List(vec![
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
-      Expr::List(vec![Expr::Integer(0), Expr::Integer(-1)].into()),
-    ].into())),
+    3 => Ok(Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(-1)].into()),
+      ]
+      .into(),
+    )),
     _ => Ok(Expr::FunctionCall {
       name: "PauliMatrix".to_string(),
       args: args.to_vec().into(),
@@ -1817,7 +1836,9 @@ fn factor_integer_rational(
 
   for (prime, exp) in &factor_map {
     if *exp != 0 {
-      result.push(Expr::List(vec![Expr::Integer(*prime), Expr::Integer(*exp)].into()));
+      result.push(Expr::List(
+        vec![Expr::Integer(*prime), Expr::Integer(*exp)].into(),
+      ));
     }
   }
 
@@ -1859,7 +1880,9 @@ pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
     num /= 2;
   }
   if count > 0 {
-    factors.push(Expr::List(vec![Expr::Integer(2), Expr::Integer(count)].into()));
+    factors.push(Expr::List(
+      vec![Expr::Integer(2), Expr::Integer(count)].into(),
+    ));
   }
 
   // Handle odd factors (safe for small n where trial division is fast)
@@ -1871,19 +1894,17 @@ pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
       num /= i;
     }
     if count > 0 {
-      factors.push(Expr::List(vec![
-        Expr::Integer(i as i128),
-        Expr::Integer(count),
-      ].into()));
+      factors.push(Expr::List(
+        vec![Expr::Integer(i as i128), Expr::Integer(count)].into(),
+      ));
     }
     i += 2;
   }
 
   if num > 1 {
-    factors.push(Expr::List(vec![
-      Expr::Integer(num as i128),
-      Expr::Integer(1),
-    ].into()));
+    factors.push(Expr::List(
+      vec![Expr::Integer(num as i128), Expr::Integer(1)].into(),
+    ));
   }
 
   Ok(Expr::List(factors.into()))
@@ -1919,7 +1940,9 @@ pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
     remaining /= &two;
   }
   if count > 0 {
-    factors.push(Expr::List(vec![Expr::Integer(2), Expr::Integer(count)].into()));
+    factors.push(Expr::List(
+      vec![Expr::Integer(2), Expr::Integer(count)].into(),
+    ));
   }
 
   let trial_limit = 1_000_000u64;
@@ -1935,10 +1958,9 @@ pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
       remaining /= &bi;
     }
     if count > 0 {
-      factors.push(Expr::List(vec![
-        Expr::Integer(i as i128),
-        Expr::Integer(count),
-      ].into()));
+      factors.push(Expr::List(
+        vec![Expr::Integer(i as i128), Expr::Integer(count)].into(),
+      ));
     }
     i += 2;
   }
@@ -1968,10 +1990,13 @@ pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
         }
       }
       if !merged {
-        factors.push(Expr::List(vec![
-          bigint_to_expr(factor_bigint),
-          Expr::Integer(exponent as i128),
-        ].into()));
+        factors.push(Expr::List(
+          vec![
+            bigint_to_expr(factor_bigint),
+            Expr::Integer(exponent as i128),
+          ]
+          .into(),
+        ));
       }
     }
   }
@@ -7058,18 +7083,27 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let neg_m3 =
     bigint_to_expr(num_bigint::BigInt::from(-m3)).pipe_through_rational(2);
   let three_j_args = vec![
-    Expr::List(vec![
-      bigint_to_expr(num_bigint::BigInt::from(j1)).pipe_through_rational(2),
-      bigint_to_expr(num_bigint::BigInt::from(m1)).pipe_through_rational(2),
-    ].into()),
-    Expr::List(vec![
-      bigint_to_expr(num_bigint::BigInt::from(j2)).pipe_through_rational(2),
-      bigint_to_expr(num_bigint::BigInt::from(m2)).pipe_through_rational(2),
-    ].into()),
-    Expr::List(vec![
-      bigint_to_expr(num_bigint::BigInt::from(j3)).pipe_through_rational(2),
-      neg_m3,
-    ].into()),
+    Expr::List(
+      vec![
+        bigint_to_expr(num_bigint::BigInt::from(j1)).pipe_through_rational(2),
+        bigint_to_expr(num_bigint::BigInt::from(m1)).pipe_through_rational(2),
+      ]
+      .into(),
+    ),
+    Expr::List(
+      vec![
+        bigint_to_expr(num_bigint::BigInt::from(j2)).pipe_through_rational(2),
+        bigint_to_expr(num_bigint::BigInt::from(m2)).pipe_through_rational(2),
+      ]
+      .into(),
+    ),
+    Expr::List(
+      vec![
+        bigint_to_expr(num_bigint::BigInt::from(j3)).pipe_through_rational(2),
+        neg_m3,
+      ]
+      .into(),
+    ),
   ];
   let three_j = three_j_symbol_ast(&three_j_args)?;
   // (-1)^(j1 - j2 + m3): the parity check above guarantees this exponent

@@ -52,11 +52,14 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result_exprs: Vec<Expr> = results
     .into_iter()
     .map(|(state, pos, shift, tape)| {
-      let state_info = Expr::List(vec![
-        Expr::Integer(state as i128),
-        Expr::Integer(pos as i128),
-        Expr::Integer(shift as i128),
-      ].into());
+      let state_info = Expr::List(
+        vec![
+          Expr::Integer(state as i128),
+          Expr::Integer(pos as i128),
+          Expr::Integer(shift as i128),
+        ]
+        .into(),
+      );
       let tape_expr = Expr::List(
         tape.into_iter().map(|c| Expr::Integer(c as i128)).collect(),
       );

@@ -315,7 +315,8 @@ fn associated_legendre_p_ast(
           }),
         },
         Expr::Integer(half_m as i128),
-      ].into(),
+      ]
+      .into(),
     }
   } else {
     // (1 - x^2)^(m/2) with m odd → (1 - x^2)^((m-1)/2) * Sqrt[1 - x^2]
@@ -336,7 +337,8 @@ fn associated_legendre_p_ast(
           name: "Rational".to_string(),
           args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     if half_m == 0 {
       sqrt_part
@@ -356,7 +358,8 @@ fn associated_legendre_p_ast(
               }),
             },
             Expr::Integer(half_m as i128),
-          ].into(),
+          ]
+          .into(),
         }),
         right: Box::new(sqrt_part),
       }
@@ -545,7 +548,8 @@ pub fn spherical_harmonic_y_ast(
         let cos_theta = theta.cos();
         let leg_call = Expr::FunctionCall {
           name: "LegendreP".to_string(),
-          args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)].into(),
+          args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)]
+            .into(),
         };
         let leg_val = match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
           Ok(Expr::Real(v)) => v,
@@ -667,7 +671,8 @@ pub fn spherical_harmonic_y_ast(
   let two_l_plus_1 = 2 * l_u + 1;
   let norm_inner = Expr::FunctionCall {
     name: "Rational".to_string(),
-    args: vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)].into(),
+    args: vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)]
+      .into(),
   };
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
   let sqrt_arg = Expr::FunctionCall {
@@ -678,7 +683,8 @@ pub fn spherical_harmonic_y_ast(
         name: "Power".to_string(),
         args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let sqrt_part = Expr::FunctionCall {
     name: "Power".to_string(),
@@ -688,7 +694,8 @@ pub fn spherical_harmonic_y_ast(
         name: "Rational".to_string(),
         args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let norm_expr = Expr::FunctionCall {
     name: "Times".to_string(),
@@ -698,7 +705,8 @@ pub fn spherical_harmonic_y_ast(
         args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
       },
       sqrt_part,
-    ].into(),
+    ]
+    .into(),
   };
   let cos_theta = Expr::FunctionCall {
     name: "Cos".to_string(),
@@ -726,9 +734,11 @@ pub fn spherical_harmonic_y_ast(
             Expr::Identifier("I".to_string()),
             Expr::Integer(m as i128),
             args[3].clone(),
-          ].into(),
+          ]
+          .into(),
         },
-      ].into(),
+      ]
+      .into(),
     }
   };
   let result = Expr::FunctionCall {
@@ -894,9 +904,11 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
         new_radicand_rat,
         Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)].into(),
+          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)]
+            .into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     let new_sqrt = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -906,7 +918,8 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     (Some(new_coeff), Some(new_sqrt))
   } else {
@@ -1543,7 +1556,8 @@ fn chebyshev_general_numeric(
             left: Box::new(x_expr.clone()),
             right: Box::new(Expr::Integer(2)),
           }),
-        }].into(),
+        }]
+        .into(),
       };
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
@@ -2932,7 +2946,8 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let h1 = eval_real(Expr::FunctionCall {
           name: "Hypergeometric1F1".to_string(),
-          args: vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)].into(),
+          args: vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)]
+            .into(),
         });
         let h2 = eval_real(Expr::FunctionCall {
           name: "Hypergeometric1F1".to_string(),
@@ -2940,7 +2955,8 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Real((1.0 - nu) / 2.0),
             Expr::Real(1.5),
             Expr::Real(x2),
-          ].into(),
+          ]
+          .into(),
         });
         let g1 = eval_real(Expr::FunctionCall {
           name: "Gamma".to_string(),

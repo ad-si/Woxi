@@ -389,14 +389,16 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(1), Expr::Integer(6)].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     let gamma = Expr::FunctionCall {
       name: "Gamma".to_string(),
       args: vec![Expr::FunctionCall {
         name: "Rational".to_string(),
         args: vec![Expr::Integer(1), Expr::Integer(3)].into(),
-      }].into(),
+      }]
+      .into(),
     };
     let result = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -488,16 +490,20 @@ fn airy_build_value(
       Expr::Integer(3),
       Expr::FunctionCall {
         name: "Rational".to_string(),
-        args: vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)].into(),
+        args: vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)]
+          .into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let gamma = Expr::FunctionCall {
     name: "Gamma".to_string(),
     args: vec![Expr::FunctionCall {
       name: "Rational".to_string(),
-      args: vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)].into(),
-    }].into(),
+      args: vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)]
+        .into(),
+    }]
+    .into(),
   };
   let denom = if with_extra_3 {
     Expr::FunctionCall {

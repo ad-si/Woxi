@@ -181,16 +181,21 @@ pub fn dispatch_io_functions(
     }
     // Streams[] — return list of open streams (stdout and stderr)
     "Streams" if args.is_empty() => {
-      return Some(Ok(Expr::List(vec![
-        Expr::FunctionCall {
-          name: "OutputStream".to_string(),
-          args: vec![Expr::String("stdout".to_string()), Expr::Integer(1)].into(),
-        },
-        Expr::FunctionCall {
-          name: "OutputStream".to_string(),
-          args: vec![Expr::String("stderr".to_string()), Expr::Integer(2)].into(),
-        },
-      ].into())));
+      return Some(Ok(Expr::List(
+        vec![
+          Expr::FunctionCall {
+            name: "OutputStream".to_string(),
+            args: vec![Expr::String("stdout".to_string()), Expr::Integer(1)]
+              .into(),
+          },
+          Expr::FunctionCall {
+            name: "OutputStream".to_string(),
+            args: vec![Expr::String("stderr".to_string()), Expr::Integer(2)]
+              .into(),
+          },
+        ]
+        .into(),
+      )));
     }
     // Streams["name"] — filter streams by name
     "Streams" if args.len() == 1 => {
@@ -578,7 +583,7 @@ pub fn dispatch_io_functions(
           {
             return Some(Ok(Expr::FunctionCall {
               name: "ExportString".to_string(),
-              args: args.to_vec(),
+              args: args.to_vec().into(),
             }));
           }
         }
@@ -1307,7 +1312,8 @@ pub fn dispatch_io_functions(
         args: vec![
           Expr::String("String".to_string()),
           Expr::Integer(id as i128),
-        ].into(),
+        ]
+        .into(),
       }));
     }
     // Close[stream] — close an open stream

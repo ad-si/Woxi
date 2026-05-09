@@ -33,7 +33,9 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let equations = match &args[0] {
     Expr::List(eqs) => eqs.clone(),
     Expr::Comparison { .. } => vec![args[0].clone()].into(),
-    Expr::FunctionCall { name, .. } if name == "Equal" => vec![args[0].clone()].into(),
+    Expr::FunctionCall { name, .. } if name == "Equal" => {
+      vec![args[0].clone()].into()
+    }
     _ => return Ok(unevaluated(args)),
   };
 
@@ -119,7 +121,8 @@ fn wrap_rsolve_result(
       args: vec![
         Expr::List(vec![Expr::Identifier(var_name.to_string())].into()),
         solution,
-      ].into(),
+      ]
+      .into(),
     }
   };
   let rule = Expr::Rule {

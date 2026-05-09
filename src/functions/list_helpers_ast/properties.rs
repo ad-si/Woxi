@@ -233,7 +233,8 @@ pub fn matrix_q_with_test_ast(
             // Apply test as a function
             let apply = Expr::FunctionCall {
               name: "Apply".to_string(),
-              args: vec![test.clone(), Expr::List(vec![elem.clone()].into())].into(),
+              args: vec![test.clone(), Expr::List(vec![elem.clone()].into())]
+                .into(),
             };
             crate::evaluator::evaluate_expr_to_expr(&apply)?
           };

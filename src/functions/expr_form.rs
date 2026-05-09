@@ -403,7 +403,8 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
               name: blank_name.to_string(),
               args: blank_args.into(),
             },
-          ].into(),
+          ]
+          .into(),
         }
       };
       ExprForm::Composite {

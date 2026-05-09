@@ -394,7 +394,9 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       }
       times.sort_by(|a, b| a.partial_cmp(b).unwrap());
       let median = times[times.len() / 2];
-      return Ok(Some(Expr::List(vec![Expr::Real(median), last_result].into())));
+      return Ok(Some(Expr::List(
+        vec![Expr::Real(median), last_result].into(),
+      )));
     }
     "Sum" | "ParallelSum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
@@ -584,28 +586,32 @@ pub fn evaluate_expr_to_expr_inner(
           return Ok(Expr::FunctionCall {
             name: "DateObject".to_string(),
             args: vec![
-              Expr::List(vec![
-                Expr::Integer(
-                  now.format("%Y").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Integer(
-                  now.format("%m").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Integer(
-                  now.format("%d").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Integer(
-                  now.format("%H").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Integer(
-                  now.format("%M").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Real(seconds),
-              ].into()),
+              Expr::List(
+                vec![
+                  Expr::Integer(
+                    now.format("%Y").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Integer(
+                    now.format("%m").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Integer(
+                    now.format("%d").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Integer(
+                    now.format("%H").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Integer(
+                    now.format("%M").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Real(seconds),
+                ]
+                .into(),
+              ),
               Expr::String("Instant".to_string()),
               Expr::String("Gregorian".to_string()),
               Expr::Real(tz_offset_hours),
-            ].into(),
+            ]
+            .into(),
           });
         }
         #[cfg(target_arch = "wasm32")]
@@ -617,18 +623,22 @@ pub fn evaluate_expr_to_expr_inner(
           return Ok(Expr::FunctionCall {
             name: "DateObject".to_string(),
             args: vec![
-              Expr::List(vec![
-                Expr::Integer(now.get_full_year() as i128),
-                Expr::Integer((now.get_month() + 1) as i128),
-                Expr::Integer(now.get_date() as i128),
-                Expr::Integer(now.get_hours() as i128),
-                Expr::Integer(now.get_minutes() as i128),
-                Expr::Real(seconds),
-              ].into()),
+              Expr::List(
+                vec![
+                  Expr::Integer(now.get_full_year() as i128),
+                  Expr::Integer((now.get_month() + 1) as i128),
+                  Expr::Integer(now.get_date() as i128),
+                  Expr::Integer(now.get_hours() as i128),
+                  Expr::Integer(now.get_minutes() as i128),
+                  Expr::Real(seconds),
+                ]
+                .into(),
+              ),
               Expr::String("Instant".to_string()),
               Expr::String("Gregorian".to_string()),
               Expr::Real(tz_offset_hours),
-            ].into(),
+            ]
+            .into(),
           });
         }
         // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
@@ -644,19 +654,23 @@ pub fn evaluate_expr_to_expr_inner(
           return Ok(Expr::FunctionCall {
             name: "DateObject".to_string(),
             args: vec![
-              Expr::List(vec![
-                Expr::Integer(
-                  date.format("%Y").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Integer(
-                  date.format("%m").to_string().parse::<i128>().unwrap(),
-                ),
-                Expr::Integer(
-                  date.format("%d").to_string().parse::<i128>().unwrap(),
-                ),
-              ].into()),
+              Expr::List(
+                vec![
+                  Expr::Integer(
+                    date.format("%Y").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Integer(
+                    date.format("%m").to_string().parse::<i128>().unwrap(),
+                  ),
+                  Expr::Integer(
+                    date.format("%d").to_string().parse::<i128>().unwrap(),
+                  ),
+                ]
+                .into(),
+              ),
               Expr::String("Day".to_string()),
-            ].into(),
+            ]
+            .into(),
           });
         }
         #[cfg(target_arch = "wasm32")]
@@ -672,13 +686,17 @@ pub fn evaluate_expr_to_expr_inner(
           return Ok(Expr::FunctionCall {
             name: "DateObject".to_string(),
             args: vec![
-              Expr::List(vec![
-                Expr::Integer(d.get_full_year() as i128),
-                Expr::Integer((d.get_month() + 1) as i128),
-                Expr::Integer(d.get_date() as i128),
-              ].into()),
+              Expr::List(
+                vec![
+                  Expr::Integer(d.get_full_year() as i128),
+                  Expr::Integer((d.get_month() + 1) as i128),
+                  Expr::Integer(d.get_date() as i128),
+                ]
+                .into(),
+              ),
               Expr::String("Day".to_string()),
-            ].into(),
+            ]
+            .into(),
           });
         }
         // Handle system $ variables
@@ -709,32 +727,41 @@ pub fn evaluate_expr_to_expr_inner(
         if name == "Dashed" {
           return Ok(Expr::FunctionCall {
             name: "Dashing".to_string(),
-            args: vec![Expr::List(vec![
-              Expr::Identifier("Small".to_string()),
-              Expr::Identifier("Small".to_string()),
-            ].into())].into(),
+            args: vec![Expr::List(
+              vec![
+                Expr::Identifier("Small".to_string()),
+                Expr::Identifier("Small".to_string()),
+              ]
+              .into(),
+            )]
+            .into(),
           });
         }
         // Dotted → Dashing[{0, Small}]
         if name == "Dotted" {
           return Ok(Expr::FunctionCall {
             name: "Dashing".to_string(),
-            args: vec![Expr::List(vec![
-              Expr::Integer(0),
-              Expr::Identifier("Small".to_string()),
-            ].into())].into(),
+            args: vec![Expr::List(
+              vec![Expr::Integer(0), Expr::Identifier("Small".to_string())]
+                .into(),
+            )]
+            .into(),
           });
         }
         // DotDashed → Dashing[{0, Small, Small, Small}]
         if name == "DotDashed" {
           return Ok(Expr::FunctionCall {
             name: "Dashing".to_string(),
-            args: vec![Expr::List(vec![
-              Expr::Integer(0),
-              Expr::Identifier("Small".to_string()),
-              Expr::Identifier("Small".to_string()),
-              Expr::Identifier("Small".to_string()),
-            ].into())].into(),
+            args: vec![Expr::List(
+              vec![
+                Expr::Integer(0),
+                Expr::Identifier("Small".to_string()),
+                Expr::Identifier("Small".to_string()),
+                Expr::Identifier("Small".to_string()),
+              ]
+              .into(),
+            )]
+            .into(),
           });
         }
         // Return as symbolic identifier
@@ -1267,9 +1294,8 @@ pub fn evaluate_expr_to_expr_inner(
           let current = ENV.with(|e| e.borrow().get(var_name).cloned());
           let mut current_val = match current {
             Some(StoredValue::ExprVal(e)) => e,
-            Some(StoredValue::Raw(s)) => {
-              crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![].into()))
-            }
+            Some(StoredValue::Raw(s)) => crate::syntax::string_to_expr(&s)
+              .unwrap_or(Expr::List(vec![].into())),
             // System variables like `$BoxForms` aren't in ENV until written —
             // first AppendTo seeds the env from the built-in default.
             _ => {

@@ -1830,16 +1830,19 @@ fn refine_log(
           args: vec![
             Expr::Identifier("I".to_string()),
             Expr::Constant("Pi".to_string()),
-          ].into(),
+          ]
+          .into(),
         },
         Expr::FunctionCall {
           name: "Log".to_string(),
           args: vec![Expr::UnaryOp {
             op: UnaryOperator::Minus,
             operand: Box::new(arg.clone()),
-          }].into(),
+          }]
+          .into(),
         },
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -3350,7 +3353,8 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let simplified_items: Vec<Expr> =
       items.iter().map(simplify_expr_with_together).collect();
-    let assumed = apply_active_assumptions(&Expr::List(simplified_items.into()));
+    let assumed =
+      apply_active_assumptions(&Expr::List(simplified_items.into()));
     return Ok(assumed);
   }
   let simplified = simplify_expr_with_together(&args[0]);

@@ -742,7 +742,8 @@ pub fn map_indexed_with_level_heads_ast(
         expr.clone(),
         level_spec.clone(),
         heads_opt.clone(),
-      ].into(),
+      ]
+      .into(),
     });
   }
   // `{-1}` selects every atomic leaf; with `Heads -> True` each compound
@@ -764,7 +765,8 @@ pub fn map_indexed_with_level_heads_ast(
             expr.clone(),
             level_spec.clone(),
             heads_opt.clone(),
-          ].into(),
+          ]
+          .into(),
         });
       }
     }
@@ -781,7 +783,8 @@ pub fn map_indexed_with_level_heads_ast(
           expr.clone(),
           level_spec.clone(),
           heads_opt.clone(),
-        ].into(),
+        ]
+        .into(),
       });
     }
   };

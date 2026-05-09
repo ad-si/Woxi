@@ -467,18 +467,26 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let ey = y2 - uy * vertex_radius;
           primitives.push(Expr::FunctionCall {
             name: "Arrow".to_string(),
-            args: vec![Expr::List(vec![
-              Expr::List(vec![Expr::Real(sx), Expr::Real(sy)].into()),
-              Expr::List(vec![Expr::Real(ex), Expr::Real(ey)].into()),
-            ].into())].into(),
+            args: vec![Expr::List(
+              vec![
+                Expr::List(vec![Expr::Real(sx), Expr::Real(sy)].into()),
+                Expr::List(vec![Expr::Real(ex), Expr::Real(ey)].into()),
+              ]
+              .into(),
+            )]
+            .into(),
           });
         } else {
           primitives.push(Expr::FunctionCall {
             name: "Line".to_string(),
-            args: vec![Expr::List(vec![
-              Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
-              Expr::List(vec![Expr::Real(x2), Expr::Real(y2)].into()),
-            ].into())].into(),
+            args: vec![Expr::List(
+              vec![
+                Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
+                Expr::List(vec![Expr::Real(x2), Expr::Real(y2)].into()),
+              ]
+              .into(),
+            )]
+            .into(),
           });
         }
       } else {
@@ -547,7 +555,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![Expr::String(lbl.clone()), Expr::Integer(10)].into(),
           },
           Expr::List(vec![Expr::Real(mx), Expr::Real(my)].into()),
-        ].into(),
+        ]
+        .into(),
       });
     }
   }
@@ -562,16 +571,21 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // clearly visible and distinguishable from the background.
     primitives.push(Expr::FunctionCall {
       name: "EdgeForm".to_string(),
-      args: vec![Expr::List(vec![
-        Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)].into(),
-        },
-        Expr::FunctionCall {
-          name: "AbsoluteThickness".to_string(),
-          args: vec![Expr::Real(1.0)].into(),
-        },
-      ].into())].into(),
+      args: vec![Expr::List(
+        vec![
+          Expr::FunctionCall {
+            name: "RGBColor".to_string(),
+            args: vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)]
+              .into(),
+          },
+          Expr::FunctionCall {
+            name: "AbsoluteThickness".to_string(),
+            args: vec![Expr::Real(1.0)].into(),
+          },
+        ]
+        .into(),
+      )]
+      .into(),
     });
   }
 
@@ -599,12 +613,16 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let r = vertex_radius * 1.3;
         primitives.push(Expr::FunctionCall {
           name: "Polygon".to_string(),
-          args: vec![Expr::List(vec![
-            Expr::List(vec![Expr::Real(x), Expr::Real(y + r)].into()),
-            Expr::List(vec![Expr::Real(x + r), Expr::Real(y)].into()),
-            Expr::List(vec![Expr::Real(x), Expr::Real(y - r)].into()),
-            Expr::List(vec![Expr::Real(x - r), Expr::Real(y)].into()),
-          ].into())].into(),
+          args: vec![Expr::List(
+            vec![
+              Expr::List(vec![Expr::Real(x), Expr::Real(y + r)].into()),
+              Expr::List(vec![Expr::Real(x + r), Expr::Real(y)].into()),
+              Expr::List(vec![Expr::Real(x), Expr::Real(y - r)].into()),
+              Expr::List(vec![Expr::Real(x - r), Expr::Real(y)].into()),
+            ]
+            .into(),
+          )]
+          .into(),
         });
       }
       Some("Square") => {
@@ -614,7 +632,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)].into()),
             Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)].into()),
-          ].into(),
+          ]
+          .into(),
         });
       }
       _ => {
@@ -623,7 +642,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
             Expr::Real(vertex_radius),
-          ].into(),
+          ]
+          .into(),
         });
       }
     }
@@ -643,8 +663,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Style".to_string(),
             args: vec![Expr::String(label_text), Expr::Integer(10)].into(),
           },
-          Expr::List(vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into()),
-        ].into(),
+          Expr::List(
+            vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
+          ),
+        ]
+        .into(),
       });
     }
   }
@@ -677,7 +700,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::String(expr_to_output(&label_expr)),
           Expr::Integer(16),
           Expr::Identifier("Bold".to_string()),
-        ].into(),
+        ]
+        .into(),
       },
     };
 
@@ -692,7 +716,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![
         styled,
         Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)].into()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 

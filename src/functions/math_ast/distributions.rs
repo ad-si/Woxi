@@ -789,7 +789,8 @@ fn cdf_inverse_chi_square(
 
   let value = Expr::FunctionCall {
     name: "GammaRegularized".to_string(),
-    args: vec![divide(n, int(2)), divide(int(1), times(int(2), x.clone()))].into(),
+    args: vec![divide(n, int(2)), divide(int(1), times(int(2), x.clone()))]
+      .into(),
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -1240,7 +1241,8 @@ fn probability_from_event(
         name: "Distributed".to_string(),
         args: vec![Expr::Identifier(var.to_string()), dist.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -2305,9 +2307,11 @@ fn expectation_numerical(
                 name: dist_name.to_string(),
                 args: dargs.to_vec().into(),
               },
-            ].into(),
+            ]
+            .into(),
           },
-        ].into(),
+        ]
+        .into(),
       });
     }
   };
@@ -2950,7 +2954,10 @@ pub fn multivariate_poisson_mean_variance(
   }
 
   // Variance equals Mean for Poisson marginals
-  Ok((Expr::List(components.clone().into()), Expr::List(components.into())))
+  Ok((
+    Expr::List(components.clone().into()),
+    Expr::List(components.into()),
+  ))
 }
 
 /// PDF[NegativeBinomialDistribution[n, p], k]
@@ -3055,7 +3062,8 @@ fn cdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       divide(n, int(2)),
       int(0),
       divide(power(x.clone(), int(2)), int(2)),
-    ].into(),
+    ]
+    .into(),
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(gamma_reg, cond)], int(0)))
@@ -3090,7 +3098,8 @@ fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             args: dargs.to_vec().into(),
           },
           x,
-        ].into(),
+        ]
+        .into(),
       });
     }
   };
@@ -3127,7 +3136,8 @@ fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         args: dargs.to_vec().into(),
       },
       x,
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -3157,7 +3167,8 @@ fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             args: dargs.to_vec().into(),
           },
           x,
-        ].into(),
+        ]
+        .into(),
       });
     }
   };
@@ -3189,7 +3200,8 @@ fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         args: dargs.to_vec().into(),
       },
       x,
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -3414,7 +3426,8 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             args: dargs.to_vec().into(),
           },
           x,
-        ].into(),
+        ]
+        .into(),
       });
     }
   };
@@ -3553,7 +3566,8 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
             args: dargs.to_vec().into(),
           },
           x,
-        ].into(),
+        ]
+        .into(),
       });
     }
   };

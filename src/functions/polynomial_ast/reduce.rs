@@ -354,7 +354,8 @@ pub fn reduce_equation(
         make_equality(lhs, rhs),
         Expr::Identifier(var.to_string()),
         Expr::Identifier(dom.to_string()),
-      ].into()
+      ]
+      .into()
     } else {
       vec![make_equality(lhs, rhs), Expr::Identifier(var.to_string())].into()
     },
@@ -434,7 +435,8 @@ pub fn reduce_inequality(
         args: vec![
           make_comparison(lhs, rhs, op),
           Expr::Identifier(var.to_string()),
-        ].into(),
+        ]
+        .into(),
       })
     }
   }
@@ -537,7 +539,8 @@ pub fn reduce_linear_inequality(
         op,
       ),
       Expr::Identifier(var.to_string()),
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -593,7 +596,8 @@ pub fn reduce_quadratic_inequality(
             args: vec![
               Expr::Identifier(var.to_string()),
               Expr::Identifier("Reals".to_string()),
-            ].into(),
+            ]
+            .into(),
           }
         }
       } else {
@@ -619,7 +623,8 @@ pub fn reduce_quadratic_inequality(
               args: vec![
                 Expr::Identifier(var.to_string()),
                 Expr::Identifier("Reals".to_string()),
-              ].into(),
+              ]
+              .into(),
             })
           }
         }
@@ -640,7 +645,8 @@ pub fn reduce_quadratic_inequality(
               args: vec![
                 Expr::Identifier(var.to_string()),
                 Expr::Identifier("Reals".to_string()),
-              ].into(),
+              ]
+              .into(),
             })
           }
         }
@@ -742,7 +748,8 @@ pub fn reduce_quadratic_inequality(
           right: Box::new(Expr::Integer(0)),
         },
         Expr::Identifier(var.to_string()),
-      ].into(),
+      ]
+      .into(),
     })
   }
 }

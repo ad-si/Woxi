@@ -2273,7 +2273,8 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
         },
         Expr::Constant("Pi".to_string()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -2300,7 +2301,8 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![Expr::Integer(-1), Expr::Integer(3)].into(),
           },
           Expr::Constant("Pi".to_string()),
-        ].into(),
+        ]
+        .into(),
       });
     }
     let inv_sqrt3 = 1.0 / sqrt3;
@@ -2322,7 +2324,8 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![Expr::Integer(-1), Expr::Integer(6)].into(),
           },
           Expr::Constant("Pi".to_string()),
-        ].into(),
+        ]
+        .into(),
       });
     }
   }
@@ -2909,7 +2912,8 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
               Expr::Constant("Pi".to_string()),
-            ].into(),
+            ]
+            .into(),
           },
           Expr::Real(*prec),
         ],
@@ -2982,9 +2986,11 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(result_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())].into(),
+          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())]
+            .into(),
         },
-      ].into(),
+      ]
+      .into(),
     });
   }
   Ok(Expr::FunctionCall {
@@ -3064,7 +3070,8 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
               },
               Expr::Constant("Pi".to_string()),
-            ].into(),
+            ]
+            .into(),
           },
           Expr::Real(*prec),
         ],
@@ -3399,9 +3406,11 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(result_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())].into(),
+          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())]
+            .into(),
         },
-      ].into(),
+      ]
+      .into(),
     });
   }
   Ok(Expr::FunctionCall {
@@ -3965,7 +3974,8 @@ fn make_minus(a: &Expr, b: &Expr) -> Expr {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), b.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   }
 }
 
@@ -3978,7 +3988,8 @@ fn make_divide(a: &Expr, b: &Expr) -> Expr {
         name: "Power".to_string(),
         args: vec![b.clone(), Expr::Integer(-1)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   }
 }
 

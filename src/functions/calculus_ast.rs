@@ -78,10 +78,9 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(args[0].clone());
     }
     let mut rows = Vec::with_capacity(vars.len());
-    let inner_spec = Expr::List(vec![
-      Expr::List(vars.clone()),
-      Expr::Integer((n - 1) as i128),
-    ].into());
+    let inner_spec = Expr::List(
+      vec![Expr::List(vars.clone()), Expr::Integer((n - 1) as i128)].into(),
+    );
     for v in vars {
       let first = d_ast(&[args[0].clone(), v.clone()])?;
       let nested = d_ast(&[first, inner_spec.clone()])?;
@@ -498,7 +497,8 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               name: "Rule".to_string(),
               args: vec![Expr::Identifier(var_name.clone()), hi.clone()].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         crate::evaluator::evaluate_expr_to_expr(&limit_expr)?
       } else {
@@ -514,7 +514,8 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               name: "Rule".to_string(),
               args: vec![Expr::Identifier(var_name.clone()), lo.clone()].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         crate::evaluator::evaluate_expr_to_expr(&limit_expr)?
       } else {
@@ -1513,7 +1514,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "D".to_string(),
-                args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
+                args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                  .into(),
               });
             }
           };
@@ -1555,7 +1557,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 } else {
                   Expr::FunctionCall {
                     name: "Rational".to_string(),
-                    args: vec![Expr::Integer(pow_num), Expr::Integer(den_val)].into(),
+                    args: vec![Expr::Integer(pow_num), Expr::Integer(den_val)]
+                      .into(),
                   }
                 };
                 let next_coeff = coeffs[i + den_step].clone();
@@ -1628,7 +1631,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                   Expr::Integer(new_nmax),
                   Expr::Integer(new_nmax),
                   Expr::Integer(den_val),
-                ].into(),
+                ]
+                .into(),
               });
             }
             return Ok(Expr::Integer(0));
@@ -1642,7 +1646,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               Expr::Integer(new_nmin),
               Expr::Integer(new_nmax),
               Expr::Integer(den_val),
-            ].into(),
+            ]
+            .into(),
           })
         }
         "Sin" if args.len() == 1 => {
@@ -2193,7 +2198,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 name: "Derivative".to_string(),
                 args: vec![Expr::Integer(2)].into(),
               }),
-              args: vec![Expr::Identifier("Abs".to_string())].into(),
+              args: vec![Expr::Identifier("Abs".to_string())],
             }),
             args: args.to_vec(),
           };
@@ -2218,7 +2223,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             // Derivative w.r.t. order: leave unevaluated
             return Ok(Expr::FunctionCall {
               name: "D".to_string(),
-              args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                .into(),
             });
           }
           // D[BesselJ[n,z], z] = (BesselJ[n-1,z] - BesselJ[n+1,z]) / 2
@@ -2336,15 +2342,22 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let result = Expr::FunctionCall {
             name: "Piecewise".to_string(),
             args: vec![
-              Expr::List(vec![Expr::List(vec![
-                Expr::Integer(0),
-                Expr::Comparison {
-                  operands: vec![args[0].clone(), Expr::Integer(0)],
-                  operators: vec![crate::syntax::ComparisonOp::NotEqual],
-                },
-              ].into())].into()),
+              Expr::List(
+                vec![Expr::List(
+                  vec![
+                    Expr::Integer(0),
+                    Expr::Comparison {
+                      operands: vec![args[0].clone(), Expr::Integer(0)],
+                      operators: vec![crate::syntax::ComparisonOp::NotEqual],
+                    },
+                  ]
+                  .into(),
+                )]
+                .into(),
+              ),
               Expr::Identifier("Indeterminate".to_string()),
-            ].into(),
+            ]
+            .into(),
           };
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
@@ -2365,15 +2378,22 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let result = Expr::FunctionCall {
             name: "Piecewise".to_string(),
             args: vec![
-              Expr::List(vec![Expr::List(vec![
-                Expr::Identifier("Indeterminate".to_string()),
-                Expr::Comparison {
-                  operands: vec![args[0].clone(), Expr::Integer(0)],
-                  operators: vec![crate::syntax::ComparisonOp::Equal],
-                },
-              ].into())].into()),
+              Expr::List(
+                vec![Expr::List(
+                  vec![
+                    Expr::Identifier("Indeterminate".to_string()),
+                    Expr::Comparison {
+                      operands: vec![args[0].clone(), Expr::Integer(0)],
+                      operators: vec![crate::syntax::ComparisonOp::Equal],
+                    },
+                  ]
+                  .into(),
+                )]
+                .into(),
+              ),
               Expr::Integer(0),
-            ].into(),
+            ]
+            .into(),
           };
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
@@ -2550,8 +2570,11 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                   name: "Integrate".to_string(),
                   args: vec![
                     inner_deriv,
-                    Expr::List(vec![int_var.clone(), lo.clone(), hi.clone()].into()),
-                  ].into(),
+                    Expr::List(
+                      vec![int_var.clone(), lo.clone(), hi.clone()].into(),
+                    ),
+                  ]
+                  .into(),
                 });
               }
             }
@@ -2605,7 +2628,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             // Indefinite integral: return unevaluated
             Ok(Expr::FunctionCall {
               name: "D".to_string(),
-              args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())]
+                .into(),
             })
           }
         }
@@ -2640,9 +2664,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 name: "Derivative".to_string(),
                 args: vec![new_order].into(),
               }),
-              args: vec![func.clone()].into(),
+              args: vec![func.clone()],
             }),
-            args: vec![inner.clone()].into(),
+            args: vec![inner.clone()],
           };
           if matches!(&d_inner, Expr::Integer(1)) {
             Ok(simplify(deriv_expr))
@@ -2716,7 +2740,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                     name: "Derivative".to_string(),
                     args: combined.into(),
                   }),
-                  args: vec![Expr::Identifier(inner_fn_name)].into(),
+                  args: vec![Expr::Identifier(inner_fn_name)],
                 }),
                 args: args.to_vec(),
               }
@@ -2727,7 +2751,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                     name: "Derivative".to_string(),
                     args: deriv_indices.into(),
                   }),
-                  args: vec![Expr::Identifier(name.clone())].into(),
+                  args: vec![Expr::Identifier(name.clone())],
                 }),
                 args: args.to_vec(),
               }
@@ -2789,7 +2813,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }),
             args: inv_args.to_vec(),
           }),
-          args: vec![expr.clone()].into(),
+          args: vec![expr.clone()],
         };
         let result = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Power,
@@ -5932,7 +5956,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               (
                 Expr::FunctionCall {
                   name: "Rational".to_string(),
-                  args: vec![Expr::Integer(two_n_plus_2), Expr::Integer(2)].into(),
+                  args: vec![Expr::Integer(two_n_plus_2), Expr::Integer(2)]
+                    .into(),
                 },
                 Expr::Real(f + 1.0),
               )
@@ -6171,7 +6196,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               && pair.len() == 2
             {
               let antideriv = simplify(integrate(&pair[0], var)?);
-              new_pieces.push(Expr::List(vec![antideriv, pair[1].clone()].into()));
+              new_pieces
+                .push(Expr::List(vec![antideriv, pair[1].clone()].into()));
             } else {
               return None;
             }
@@ -6200,7 +6226,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               args: vec![
                 Expr::List(vec![new_pieces[0].clone()].into()),
                 pair_b[0].clone(),
-              ].into(),
+              ]
+              .into(),
             });
           }
           Some(Expr::FunctionCall {
@@ -7026,7 +7053,8 @@ fn limit_at_infinity(
                 args: vec![Expr::Integer(numer), Expr::Integer(denom)].into(),
               },
               Expr::Constant("Pi".to_string()),
-            ].into(),
+            ]
+            .into(),
           });
         }
       }
@@ -7042,7 +7070,8 @@ fn limit_at_infinity(
         pattern: Box::new(Expr::Identifier(var_name.to_string())),
         replacement: Box::new(point.clone()),
       },
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -7990,15 +8019,20 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                         name: "Power".to_string(),
                         args: vec![x_expr, Expr::Integer(2)].into(),
                       },
-                    ].into(),
-                  }].into(),
+                    ]
+                    .into(),
+                  }]
+                  .into(),
                 },
-              ].into(),
+              ]
+              .into(),
             },
-          ].into(),
+          ]
+          .into(),
         },
         n_expr,
-      ].into(),
+      ]
+      .into(),
     };
     let mut new_args = vec![rewritten, args[1].clone()];
     new_args.extend(option_args.clone());
@@ -8041,7 +8075,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(actual_nmin),
         Expr::Integer(order + 1),
         Expr::Integer(1),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -8088,7 +8123,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Log[-x]
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())].into(),
+          args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())]
+            .into(),
         }
       } else {
         // Log[x]
@@ -8102,7 +8138,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Log".to_string(),
             args: vec![log_arg].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       let mut coefficients = vec![c0];
       let mut factorial: i128 = 1;
@@ -8121,7 +8158,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(0),
           Expr::Integer(order + 1),
           Expr::Integer(1),
-        ].into(),
+        ]
+        .into(),
       });
     }
 
@@ -8158,7 +8196,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::Identifier(var_name.clone()),
             Expr::Integer(-(k + 1)),
-          ].into(),
+          ]
+          .into(),
         };
         if fact == 1 {
           exp_terms.push(power);
@@ -8178,7 +8217,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![
           Expr::Constant("E".to_string()),
           Expr::Identifier(var_name.clone()),
-        ].into(),
+        ]
+        .into(),
       };
       let exp_part = Expr::FunctionCall {
         name: "Times".to_string(),
@@ -8205,17 +8245,22 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Integer(-1),
             Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![Expr::Identifier(var_name.clone()), Expr::Integer(-1)].into(),
+              args: vec![Expr::Identifier(var_name.clone()), Expr::Integer(-1)]
+                .into(),
             },
-          ].into(),
-        }].into(),
+          ]
+          .into(),
+        }]
+        .into(),
       };
       let log_neg_x = Expr::FunctionCall {
         name: "Log".to_string(),
         args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())].into(),
-        }].into(),
+          args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())]
+            .into(),
+        }]
+        .into(),
       };
       let two_log_x = Expr::FunctionCall {
         name: "Times".to_string(),
@@ -8225,7 +8270,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Log".to_string(),
             args: vec![Expr::Identifier(var_name.clone())].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       let log_sum = Expr::FunctionCall {
         name: "Plus".to_string(),
@@ -8236,7 +8282,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![Expr::Integer(-1), log_neg_x].into(),
           },
           two_log_x,
-        ].into(),
+        ]
+        .into(),
       };
       let reg_term = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
@@ -8371,7 +8418,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(nmin),
       Expr::Integer(order + 1),
       Expr::Integer(1),
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -8402,7 +8450,8 @@ fn expand_series_data_coefficients(
         args[3].clone(), // nmin
         args[4].clone(), // nmax
         args[5].clone(), // den
-      ].into(),
+      ]
+      .into(),
     });
   }
   // If not a SeriesData, just expand the expression
@@ -9356,11 +9405,14 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute the series expansion of f around x0
   let series_result = series_ast(&[
     f_expr.clone(),
-    Expr::List(vec![
-      Expr::Identifier(var_name.clone()),
-      x0.clone(),
-      Expr::Integer(order),
-    ].into()),
+    Expr::List(
+      vec![
+        Expr::Identifier(var_name.clone()),
+        x0.clone(),
+        Expr::Integer(order),
+      ]
+      .into(),
+    ),
   ])?;
 
   // Extract SeriesData coefficients
@@ -9420,10 +9472,16 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if poly_terms.is_empty() {
     // f is identically zero to this order — any x works
-    return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var_name)),
-      replacement: Box::new(x0),
-    }].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(
+        vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier(var_name)),
+          replacement: Box::new(x0),
+        }]
+        .into(),
+      )]
+      .into(),
+    ));
   }
 
   let poly_expr = if poly_terms.len() == 1 {
@@ -9446,7 +9504,8 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         operators: vec![crate::syntax::ComparisonOp::Equal],
       },
       Expr::Identifier("AsymptoticSolve$t".to_string()),
-    ].into(),
+    ]
+    .into(),
   };
 
   let solutions = evaluate_expr_to_expr(&solve_expr)?;
@@ -9516,7 +9575,11 @@ fn extract_series_coefficients(expr: &Expr) -> Option<(Vec<Expr>, i128)> {
         };
         // The actual power of the i-th coefficient is (nmin + i) / den
         // For simplicity, handle den == 1
-        if den == 1 { Some((coeffs.to_vec(), nmin)) } else { None }
+        if den == 1 {
+          Some((coeffs.to_vec(), nmin))
+        } else {
+          None
+        }
       } else {
         None
       }
@@ -9590,18 +9653,23 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Sum".to_string(),
     args: vec![
       product,
-      Expr::List(vec![
-        k_expr,
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Integer(-1),
-            Expr::Identifier("Infinity".to_string()),
-          ].into(),
-        },
-        Expr::Identifier("Infinity".to_string()),
-      ].into()),
-    ].into(),
+      Expr::List(
+        vec![
+          k_expr,
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              Expr::Identifier("Infinity".to_string()),
+            ]
+            .into(),
+          },
+          Expr::Identifier("Infinity".to_string()),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
   };
 
   crate::evaluator::evaluate_expr_to_expr(&sum_expr)
@@ -9723,10 +9791,15 @@ pub fn frenet_serret_system_ast(
       tangent[0].clone(),
     ];
 
-    Ok(Expr::List(vec![
-      Expr::List(vec![kappa].into()),
-      Expr::List(vec![Expr::List(tangent.into()), Expr::List(normal.into())].into()),
-    ].into()))
+    Ok(Expr::List(
+      vec![
+        Expr::List(vec![kappa].into()),
+        Expr::List(
+          vec![Expr::List(tangent.into()), Expr::List(normal.into())].into(),
+        ),
+      ]
+      .into(),
+    ))
   } else {
     // 3D case
     // r''' for torsion
@@ -9750,12 +9823,18 @@ pub fn frenet_serret_system_ast(
     // Check if curvature is zero (straight line case)
     let is_zero_curvature = matches!(&norm_cross_sq, Expr::Integer(0));
     if is_zero_curvature {
-      let zero_vec =
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into());
-      return Ok(Expr::List(vec![
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-        Expr::List(vec![Expr::List(tangent.into()), zero_vec.clone(), zero_vec].into()),
-      ].into()));
+      let zero_vec = Expr::List(
+        vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),
+      );
+      return Ok(Expr::List(
+        vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(
+            vec![Expr::List(tangent.into()), zero_vec.clone(), zero_vec].into(),
+          ),
+        ]
+        .into(),
+      ));
     }
 
     // norm_cross = ||cross||
@@ -9805,14 +9884,20 @@ pub fn frenet_serret_system_ast(
       .map(|c| eval(&c))
       .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Expr::List(vec![
-      Expr::List(vec![kappa, tau].into()),
-      Expr::List(vec![
-        Expr::List(tangent.into()),
-        Expr::List(normal.into()),
-        Expr::List(binormal.into()),
-      ].into()),
-    ].into()))
+    Ok(Expr::List(
+      vec![
+        Expr::List(vec![kappa, tau].into()),
+        Expr::List(
+          vec![
+            Expr::List(tangent.into()),
+            Expr::List(normal.into()),
+            Expr::List(binormal.into()),
+          ]
+          .into(),
+        ),
+      ]
+      .into(),
+    ))
   }
 }
 
@@ -10119,7 +10204,8 @@ fn try_exponential_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
       op: crate::syntax::BinaryOperator::Minus,
       left: Box::new(shifted_exp),
       right: Box::new(exponent.clone()),
-    }].into(),
+    }]
+    .into(),
   };
 
   // Result: base^exponent * (base^delta_exp - 1)
@@ -10175,7 +10261,8 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
         op: crate::syntax::BinaryOperator::Minus,
         left: Box::new(shifted_arg.clone()),
         right: Box::new(arg.clone()),
-      }].into(),
+      }]
+      .into(),
     }),
     right: Box::new(Expr::Integer(2)),
   };
@@ -10234,7 +10321,8 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
         name: "Sin".to_string(),
         args: vec![second_arg_expr].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
 
   Some(result)
@@ -10415,11 +10503,14 @@ pub fn difference_quotient_ast(
   // Build DifferenceDelta args
   let delta_args = vec![
     expr.clone(),
-    Expr::List(vec![
-      Expr::Identifier(var_name.clone()),
-      Expr::Integer(order as i128),
-      step.clone(),
-    ].into()),
+    Expr::List(
+      vec![
+        Expr::Identifier(var_name.clone()),
+        Expr::Integer(order as i128),
+        step.clone(),
+      ]
+      .into(),
+    ),
   ];
   let delta_result = difference_delta_ast(&delta_args)?;
 

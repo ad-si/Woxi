@@ -310,10 +310,13 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
-    Expr::Image { width, height, .. } => Ok(Expr::List(vec![
-      Expr::Integer(*width as i128),
-      Expr::Integer(*height as i128),
-    ].into())),
+    Expr::Image { width, height, .. } => Ok(Expr::List(
+      vec![
+        Expr::Integer(*width as i128),
+        Expr::Integer(*height as i128),
+      ]
+      .into(),
+    )),
     _ => Ok(Expr::FunctionCall {
       name: "ImageDimensions".to_string(),
       args: args.to_vec().into(),
@@ -559,10 +562,13 @@ pub fn pixel_value_positions_ast(
           let v = data[y * w + x];
           if (v - target).abs() <= tol {
             // Wolfram coords: x' = x+1, y' = h - y (bottom-left origin).
-            positions.push(Expr::List(vec![
-              Expr::Integer((x + 1) as i128),
-              Expr::Integer((h - y) as i128),
-            ].into()));
+            positions.push(Expr::List(
+              vec![
+                Expr::Integer((x + 1) as i128),
+                Expr::Integer((h - y) as i128),
+              ]
+              .into(),
+            ));
           }
         }
       }
@@ -672,7 +678,8 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             negate_component(&cargs[0])?,
             negate_component(&cargs[1])?,
             negate_component(&cargs[2])?,
-          ].into(),
+          ]
+          .into(),
         }),
         4 => Ok(Expr::FunctionCall {
           name: "RGBColor".to_string(),
@@ -681,7 +688,8 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             negate_component(&cargs[1])?,
             negate_component(&cargs[2])?,
             cargs[3].clone(),
-          ].into(),
+          ]
+          .into(),
         }),
         _ => Err(InterpreterError::EvaluationError(
           "ColorNegate: RGBColor must have 3 or 4 arguments".into(),
@@ -1564,7 +1572,8 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|c| Expr::FunctionCall {
           name: "RGBColor".to_string(),
-          args: vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])].into(),
+          args: vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])]
+            .into(),
         })
         .collect();
 
@@ -3395,7 +3404,7 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result =
         crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
           func: Box::new(func),
-          args: vec![to_list(lab1), to_list(lab2)].into(),
+          args: vec![to_list(lab1), to_list(lab2)],
         })?;
       Ok(result)
     }

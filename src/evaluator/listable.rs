@@ -359,10 +359,13 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           _ => None,
         })
         .unwrap_or_else(|| {
-          Expr::List(vec![
-            Expr::Identifier("StandardForm".to_string()),
-            Expr::Identifier("TraditionalForm".to_string()),
-          ].into())
+          Expr::List(
+            vec![
+              Expr::Identifier("StandardForm".to_string()),
+              Expr::Identifier("TraditionalForm".to_string()),
+            ]
+            .into(),
+          )
         });
       if let Expr::List(box_items) = &box_forms {
         items.extend(box_items.iter().cloned());
@@ -424,10 +427,13 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           _ => None,
         })
         .unwrap_or_else(|| {
-          Expr::List(vec![
-            Expr::Identifier("StandardForm".to_string()),
-            Expr::Identifier("TraditionalForm".to_string()),
-          ].into())
+          Expr::List(
+            vec![
+              Expr::Identifier("StandardForm".to_string()),
+              Expr::Identifier("TraditionalForm".to_string()),
+            ]
+            .into(),
+          )
         });
       if let Expr::List(box_items) = &box_forms {
         items.extend(box_items.iter().cloned());
@@ -446,10 +452,13 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       Some(Expr::List(items.into()))
     }
     // `$BoxForms` — the default box-form list, {StandardForm, TraditionalForm}.
-    "$BoxForms" => Some(Expr::List(vec![
-      Expr::Identifier("StandardForm".to_string()),
-      Expr::Identifier("TraditionalForm".to_string()),
-    ].into())),
+    "$BoxForms" => Some(Expr::List(
+      vec![
+        Expr::Identifier("StandardForm".to_string()),
+        Expr::Identifier("TraditionalForm".to_string()),
+      ]
+      .into(),
+    )),
     // Fixed list of supported encodings, in wolframscript's exact order.
     // This is a registry-style list, not an alphabetical sort — EUC-JP
     // precedes EUC, ISO8859-10 precedes ISO8859-1, etc.

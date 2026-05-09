@@ -594,13 +594,16 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![
-      Expr::Identifier("Infinity".to_string()),
-      Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      },
-    ].into()));
+    return Ok(Expr::List(
+      vec![
+        Expr::Identifier("Infinity".to_string()),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        },
+      ]
+      .into(),
+    ));
   }
 
   // Evaluate Min and Max through the normal evaluator so the result keeps
@@ -636,7 +639,8 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), min_expr.clone()].into(),
           },
-        ].into(),
+        ]
+        .into(),
       };
       let scaled = Expr::FunctionCall {
         name: "Times".to_string(),
@@ -656,7 +660,8 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), d_min].into(),
       },
-    ].into(),
+    ]
+    .into(),
   })?;
   let new_max = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
     name: "Plus".to_string(),
@@ -688,7 +693,9 @@ pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
+  Ok(Expr::List(
+    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
 }
 
 /// GatherBy[list, f] - gathers elements into sublists by applying f.
@@ -730,7 +737,10 @@ pub fn gather_by_ast(
     }
   }
   Ok(Expr::List(
-    groups.into_iter().map(|(_, v)| Expr::List(v.into())).collect(),
+    groups
+      .into_iter()
+      .map(|(_, v)| Expr::List(v.into()))
+      .collect(),
   ))
 }
 
@@ -790,7 +800,9 @@ pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
+  Ok(Expr::List(
+    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
 }
 
 /// Split[list, test] - splits list where consecutive elements satisfy test function
@@ -824,7 +836,9 @@ pub fn split_with_test_ast(
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
+  Ok(Expr::List(
+    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
 }
 
 /// SplitBy[list, f] - splits into sublists of consecutive elements with same f value
@@ -886,7 +900,9 @@ pub fn split_by_ast(
       prev_key = key;
     }
   }
-  Ok(Expr::List(groups.into_iter().map(|v| Expr::List(v.into())).collect()))
+  Ok(Expr::List(
+    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
 }
 
 /// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
@@ -1167,7 +1183,9 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(bins.into_iter().map(|v| Expr::List(v.into())).collect()))
+  Ok(Expr::List(
+    bins.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
 }
 
 /// Round a positive value to the nearest "nice" number (1, 2, 5, 10, 20, 50, …)
@@ -1243,7 +1261,9 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values: Vec<f64> = data.iter().filter_map(expr_to_f64).collect();
 
   if values.is_empty() {
-    return Ok(Expr::List(vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
+    ));
   }
 
   let (min_val, max_val, dx) = if args.len() == 1 {
@@ -1349,7 +1369,9 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let num_bins = ((max_val - min_val) / dx).round() as usize;
   if num_bins == 0 {
-    return Ok(Expr::List(vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
+    ));
   }
 
   let mut counts = vec![0i128; num_bins];
@@ -1367,10 +1389,13 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     edges.push(f64_to_expr(min_val + i as f64 * dx));
   }
 
-  Ok(Expr::List(vec![
-    Expr::List(edges.into()),
-    Expr::List(counts.into_iter().map(Expr::Integer).collect()),
-  ].into()))
+  Ok(Expr::List(
+    vec![
+      Expr::List(edges.into()),
+      Expr::List(counts.into_iter().map(Expr::Integer).collect()),
+    ]
+    .into(),
+  ))
 }
 
 /// TakeLargestBy[list, f, n] - take the n largest elements sorted by f
@@ -1642,7 +1667,9 @@ fn cluster_keys_emit_values(
     return Ok(Expr::List(vec![].into()));
   }
   if numeric_keys.len() == 1 {
-    return Ok(Expr::List(vec![Expr::List(vec![vals[0].clone()].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![vals[0].clone()].into())].into(),
+    ));
   }
   // Locate the largest gap on the *sorted* keys.
   let n = numeric_keys.len();
@@ -1678,7 +1705,9 @@ fn cluster_keys_emit_values(
     }
   }
   // wolframscript prints the high-key cluster first.
-  Ok(Expr::List(vec![Expr::List(high.into()), Expr::List(low.into())].into()))
+  Ok(Expr::List(
+    vec![Expr::List(high.into()), Expr::List(low.into())].into(),
+  ))
 }
 
 /// `FindClusters[list]` / `FindClusters[list, k]` — dispatch entry that
@@ -1853,8 +1882,10 @@ fn find_clusters_distance_fn(
   // Wolframscript orders the clusters with the highest first-input-index
   // first (later-encountered cluster first).
   groups.sort_by(|a, b| b.0.cmp(&a.0));
-  let result: Vec<Expr> =
-    groups.into_iter().map(|(_, g)| Expr::List(g.into())).collect();
+  let result: Vec<Expr> = groups
+    .into_iter()
+    .map(|(_, g)| Expr::List(g.into()))
+    .collect();
   Ok(Expr::List(result.into()))
 }
 
@@ -1877,7 +1908,10 @@ fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
   }
   if k >= n {
     return Expr::List(
-      items.iter().map(|e| Expr::List(vec![e.clone()].into())).collect(),
+      items
+        .iter()
+        .map(|e| Expr::List(vec![e.clone()].into()))
+        .collect(),
     );
   }
   let strs: Vec<&str> = items
@@ -2001,7 +2035,10 @@ fn find_clusters_with_k(
   if k >= items.len() {
     // One element per cluster.
     return Ok(Expr::List(
-      items.into_iter().map(|e| Expr::List(vec![e].into())).collect(),
+      items
+        .into_iter()
+        .map(|e| Expr::List(vec![e].into()))
+        .collect(),
     ));
   }
   // Convert items to f64 for gap analysis. If any item isn't numeric,

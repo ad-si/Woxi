@@ -1274,7 +1274,8 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::FunctionCall {
           name: "Zeta".to_string(),
           args: vec![Expr::Real(ks)].into(),
-        }].into(),
+        }]
+        .into(),
       });
     let zeta_val = match zeta_expr {
       Ok(ref e) => try_eval_to_f64(e).unwrap_or(1.0),

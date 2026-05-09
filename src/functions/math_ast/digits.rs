@@ -1612,7 +1612,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let count = if explicit_num_digits { num_digits } else { 1 };
     let exp = if explicit_num_digits { 0 } else { 1 };
     let digits = vec![Expr::Integer(0); count];
-    return Ok(Expr::List(vec![Expr::List(digits.into()), Expr::Integer(exp)].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(digits.into()), Expr::Integer(exp)].into(),
+    ));
   }
 
   // For Real inputs, promote the Real to an exact rational via its decimal
@@ -1639,10 +1641,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !treat_as_explicit {
       let (digit_list, exponent) =
         real_digits_rational_base(numer, denom, base);
-      return Ok(Expr::List(vec![
-        Expr::List(digit_list.into()),
-        Expr::Integer(exponent),
-      ].into()));
+      return Ok(Expr::List(
+        vec![Expr::List(digit_list.into()), Expr::Integer(exponent)].into(),
+      ));
     } else {
       // With explicit num_digits: use long division and produce exactly
       // num_digits significant digits starting from the first nonzero.
@@ -1716,10 +1717,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       while digit_exprs.len() < num_digits {
         digit_exprs.push(Expr::Identifier("Indeterminate".to_string()));
       }
-      return Ok(Expr::List(vec![
-        Expr::List(digit_exprs.into()),
-        Expr::Integer(exponent),
-      ].into()));
+      return Ok(Expr::List(
+        vec![Expr::List(digit_exprs.into()), Expr::Integer(exponent)].into(),
+      ));
     }
   }
 
@@ -1783,10 +1783,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       digits.truncate(num_digits);
       let digit_exprs: Vec<Expr> =
         digits.iter().map(|&d| Expr::Integer(d)).collect();
-      return Ok(Expr::List(vec![
-        Expr::List(digit_exprs.into()),
-        Expr::Integer(p + 1),
-      ].into()));
+      return Ok(Expr::List(
+        vec![Expr::List(digit_exprs.into()), Expr::Integer(p + 1)].into(),
+      ));
     }
     while digits.len() < num_digits {
       digits.push(0);
@@ -1794,10 +1793,13 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     digits.truncate(num_digits);
     let digit_exprs: Vec<Expr> =
       digits.iter().map(|&d| Expr::Integer(d)).collect();
-    return Ok(Expr::List(vec![
-      Expr::List(digit_exprs.into()),
-      Expr::Integer(base_exp as i128),
-    ].into()));
+    return Ok(Expr::List(
+      vec![
+        Expr::List(digit_exprs.into()),
+        Expr::Integer(base_exp as i128),
+      ]
+      .into(),
+    ));
   }
 
   let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf, rm, &mut cc)?;
@@ -1835,10 +1837,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     digits.truncate(num_digits);
     let digit_exprs: Vec<Expr> =
       digits.iter().map(|&d| Expr::Integer(d)).collect();
-    return Ok(Expr::List(vec![
-      Expr::List(digit_exprs.into()),
-      Expr::Integer(p + 1),
-    ].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(digit_exprs.into()), Expr::Integer(p + 1)].into(),
+    ));
   }
 
   // Pad with zeros if we don't have enough digits
@@ -1852,10 +1853,13 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let digit_exprs: Vec<Expr> =
     digits.iter().map(|&d| Expr::Integer(d)).collect();
 
-  Ok(Expr::List(vec![
-    Expr::List(digit_exprs.into()),
-    Expr::Integer(decimal_exp as i128),
-  ].into()))
+  Ok(Expr::List(
+    vec![
+      Expr::List(digit_exprs.into()),
+      Expr::Integer(decimal_exp as i128),
+    ]
+    .into(),
+  ))
 }
 
 /// FromDigits[list
@@ -2036,7 +2040,8 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![base_expr.clone(), result].into(),
           },
           item.clone(),
-        ].into(),
+        ]
+        .into(),
       };
       result = crate::evaluator::evaluate_expr_to_expr(&result)?;
     }

@@ -1061,7 +1061,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                 name: "Not".to_string(),
                 args: vec![a].into(),
               },
-            ].into(),
+            ]
+            .into(),
           }
         }
         "Equivalent" if args.len() >= 2 => {
@@ -1091,9 +1092,11 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                       name: "Not".to_string(),
                       args: vec![b.clone()].into(),
                     },
-                  ].into(),
+                  ]
+                  .into(),
                 },
-              ].into(),
+              ]
+              .into(),
             }
           } else {
             // Pairwise: And[Equivalent[a1,a2], Equivalent[a2,a3], ...]
@@ -1101,7 +1104,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             for i in 0..elim_args.len() - 1 {
               pairs.push(eliminate_connectives(&Expr::FunctionCall {
                 name: "Equivalent".to_string(),
-                args: vec![elim_args[i].clone(), elim_args[i + 1].clone()].into(),
+                args: vec![elim_args[i].clone(), elim_args[i + 1].clone()]
+                  .into(),
               }));
             }
             Expr::FunctionCall {
@@ -1128,7 +1132,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                       name: "Not".to_string(),
                       args: vec![b.clone()].into(),
                     },
-                  ].into(),
+                  ]
+                  .into(),
                 },
                 Expr::FunctionCall {
                   name: "And".to_string(),
@@ -1138,9 +1143,11 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                       name: "Not".to_string(),
                       args: vec![a.clone()].into(),
                     },
-                  ].into(),
+                  ]
+                  .into(),
                 },
-              ].into(),
+              ]
+              .into(),
             }
           } else {
             // Reduce: Xor[a, b, c, ...] → Xor[Xor[a, b], c, ...]
@@ -1163,7 +1170,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             args: vec![Expr::FunctionCall {
               name: "And".to_string(),
               args: elim_args.into(),
-            }].into(),
+            }]
+            .into(),
           }
         }
         "Nor" if args.len() >= 2 => {
@@ -1175,7 +1183,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             args: vec![Expr::FunctionCall {
               name: "Or".to_string(),
               args: elim_args.into(),
-            }].into(),
+            }]
+            .into(),
           }
         }
         "And" | "Or" | "Not" => {

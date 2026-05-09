@@ -526,7 +526,7 @@ pub fn set_attributes_from_value(
       valid_attrs.push(attr_name.clone());
     } else {
       // Non-symbol attribute — emit warning
-      let attr_str = expr_to_string(&attr_expr);
+      let attr_str = expr_to_string(attr_expr);
       crate::emit_message(&format!(
         "Attributes::attnf: {} is not a known attribute.",
         attr_str
@@ -916,7 +916,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       if let Some(prec_real) = as_real {
-        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())].into())
+        Expr::List(
+          vec![prec_real, Expr::Identifier("Infinity".to_string())].into(),
+        )
       } else {
         // Non-numeric precision (`N[a, p_?test] := …` style) — keep
         // the user's spec verbatim, mirroring Wolfram's HoldPattern
@@ -924,10 +926,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         prec_eval
       }
     } else {
-      Expr::List(vec![
-        Expr::Identifier("MachinePrecision".to_string()),
-        Expr::Identifier("MachinePrecision".to_string()),
-      ].into())
+      Expr::List(
+        vec![
+          Expr::Identifier("MachinePrecision".to_string()),
+          Expr::Identifier("MachinePrecision".to_string()),
+        ]
+        .into(),
+      )
     };
     let canonical_lhs = Expr::FunctionCall {
       name: "N".to_string(),
@@ -1655,7 +1660,8 @@ pub fn set_delayed_ast(
           };
           conditions.push(Some(Expr::FunctionCall {
             name: "__StructuralPattern__".to_string(),
-            args: vec![Expr::Identifier(param_name.clone()), arg.clone()].into(),
+            args: vec![Expr::Identifier(param_name.clone()), arg.clone()]
+              .into(),
           }));
           params.push(param_name);
           defaults.push(None);
@@ -1755,7 +1761,8 @@ pub fn set_delayed_ast(
               let normalized = normalize_structural_pattern(arg);
               conditions.push(Some(Expr::FunctionCall {
                 name: "__StructuralPattern__".to_string(),
-                args: vec![Expr::Identifier(param_name.clone()), normalized].into(),
+                args: vec![Expr::Identifier(param_name.clone()), normalized]
+                  .into(),
               }));
               params.push(param_name);
               blank_types.push(1);
@@ -1790,7 +1797,8 @@ pub fn set_delayed_ast(
                 args: vec![
                   Expr::Identifier(func_name.clone()),
                   Expr::Integer((i + 1) as i128),
-                ].into(),
+                ]
+                .into(),
               })
             }
             _ => None,
@@ -1814,7 +1822,8 @@ pub fn set_delayed_ast(
             args: vec![
               Expr::Identifier(param_name.clone()),
               Expr::Integer((idx + 1) as i128),
-            ].into(),
+            ]
+            .into(),
           };
           final_body = crate::syntax::substitute_variable(
             &final_body,
@@ -2232,7 +2241,8 @@ pub fn tag_set_delayed_ast(
               args: vec![
                 Expr::Identifier(param_name.clone()),
                 Expr::Integer((j + 1) as i128),
-              ].into(),
+              ]
+              .into(),
             };
             // If this pattern variable was already seen, add a SameQ
             // condition to ensure both occurrences match the same value.
@@ -2261,10 +2271,10 @@ pub fn tag_set_delayed_ast(
         let is_pattern = match arg {
           Expr::Identifier(name) => name.contains('_'),
           Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
-          _ => crate::evaluator::pattern_matching::contains_pattern(&arg),
+          _ => crate::evaluator::pattern_matching::contains_pattern(arg),
         };
         if is_pattern {
-          let (pat_name, head, _blank_type) = extract_pattern_info(&arg);
+          let (pat_name, head, _blank_type) = extract_pattern_info(arg);
           if pat_name.is_empty() && head.is_none() {
             // Anonymous pattern — use generated name
             let param_name = format!("_up{}", i);
@@ -2277,7 +2287,7 @@ pub fn tag_set_delayed_ast(
         } else {
           // Literal argument — must match exactly via SameQ
           let param_name = format!("_up{}", i);
-          let eval_arg = evaluate_expr_to_expr(&arg)?;
+          let eval_arg = evaluate_expr_to_expr(arg)?;
           conditions.push(Some(Expr::Comparison {
             operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
             operators: vec![crate::syntax::ComparisonOp::SameQ],
@@ -2593,15 +2603,20 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       if let Some(prec_real) = as_real {
-        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())].into())
+        Expr::List(
+          vec![prec_real, Expr::Identifier("Infinity".to_string())].into(),
+        )
       } else {
         prec_eval
       }
     } else {
-      Expr::List(vec![
-        Expr::Identifier("MachinePrecision".to_string()),
-        Expr::Identifier("MachinePrecision".to_string()),
-      ].into())
+      Expr::List(
+        vec![
+          Expr::Identifier("MachinePrecision".to_string()),
+          Expr::Identifier("MachinePrecision".to_string()),
+        ]
+        .into(),
+      )
     };
     let canonical_lhs = Expr::FunctionCall {
       name: "N".to_string(),

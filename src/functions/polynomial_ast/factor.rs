@@ -932,7 +932,8 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   decompose_product(&factored, &mut pairs, &mut numeric_coeff);
 
   // Build result: {{numeric_coeff, 1}, {factor1, exp1}, ...}
-  let mut result = vec![Expr::List(vec![numeric_coeff, Expr::Integer(1)].into())];
+  let mut result =
+    vec![Expr::List(vec![numeric_coeff, Expr::Integer(1)].into())];
   result.extend(pairs);
 
   Ok(Expr::List(result.into()))
@@ -1758,38 +1759,34 @@ pub fn factor_square_free_list_ast(
 
   // Handle zero
   if matches!(&expanded, Expr::Integer(0)) {
-    return Ok(Expr::List(vec![Expr::List(vec![
-      Expr::Integer(0),
-      Expr::Integer(1),
-    ].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
+    ));
   }
 
   // Handle pure numeric
   if let Expr::Integer(n) = &expanded {
-    return Ok(Expr::List(vec![Expr::List(vec![
-      Expr::Integer(*n),
-      Expr::Integer(1),
-    ].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(*n), Expr::Integer(1)].into())].into(),
+    ));
   }
 
   let var = match find_single_variable(&expanded) {
     Some(v) => v,
     None => {
       // Constant expression
-      return Ok(Expr::List(vec![Expr::List(vec![
-        expanded,
-        Expr::Integer(1),
-      ].into())].into()));
+      return Ok(Expr::List(
+        vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
+      ));
     }
   };
 
   let coeffs = match extract_poly_coeffs(&expanded, &var) {
     Some(c) => c,
     None => {
-      return Ok(Expr::List(vec![Expr::List(vec![
-        expanded,
-        Expr::Integer(1),
-      ].into())].into()));
+      return Ok(Expr::List(
+        vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
+      ));
     }
   };
 
@@ -1800,10 +1797,9 @@ pub fn factor_square_free_list_ast(
     .filter(|&c| c != 0)
     .fold(0i128, gcd_i128);
   if content == 0 {
-    return Ok(Expr::List(vec![Expr::List(vec![
-      Expr::Integer(0),
-      Expr::Integer(1),
-    ].into())].into()));
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
+    ));
   }
 
   let pp: Vec<i128> = coeffs.iter().map(|c| c / content).collect();
@@ -1820,8 +1816,9 @@ pub fn factor_square_free_list_ast(
   let sff = yun_square_free(&pp);
 
   // Build result list: {overall, 1}, then {factor, mult} pairs
-  let mut result =
-    vec![Expr::List(vec![Expr::Integer(overall), Expr::Integer(1)].into())];
+  let mut result = vec![Expr::List(
+    vec![Expr::Integer(overall), Expr::Integer(1)].into(),
+  )];
 
   // Split out x factors from each square-free component
   let mut pairs: Vec<(Vec<i128>, i128)> = Vec::new();
@@ -2155,11 +2152,9 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Expand the non-var part so its display matches the test
         // expectation `1 - a - y + a*y` (not `(-1+a)*(-1+y)`).
         let non_var_expanded = expand_and_combine(&non_var_part);
-        return Ok(Expr::List(vec![
-          Expr::Integer(*num_content),
-          non_var_expanded,
-          var_part,
-        ].into()));
+        return Ok(Expr::List(
+          vec![Expr::Integer(*num_content), non_var_expanded, var_part].into(),
+        ));
       }
     }
   }
@@ -2173,11 +2168,9 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // depends on the chosen variable.
       if args.len() == 2 {
         if contains_var(&expanded, &var) {
-          return Ok(Expr::List(vec![
-            Expr::Integer(1),
-            Expr::Integer(1),
-            expanded,
-          ].into()));
+          return Ok(Expr::List(
+            vec![Expr::Integer(1), Expr::Integer(1), expanded].into(),
+          ));
         }
         let (num_coeff, _key, var_factors) = decompose_term(&expanded);
         let non_var = if var_factors.is_empty() {
@@ -2190,7 +2183,9 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: var_factors.into(),
           }
         };
-        return Ok(Expr::List(vec![num_coeff, non_var, Expr::Integer(1)].into()));
+        return Ok(Expr::List(
+          vec![num_coeff, non_var, Expr::Integer(1)].into(),
+        ));
       }
       return Ok(Expr::List(vec![Expr::Integer(1), expanded].into()));
     }
@@ -2225,14 +2220,14 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 2 {
     // Two-arg form: {numerical_content, 1, primitive_part}
-    return Ok(Expr::List(vec![
-      Expr::Integer(signed_content),
-      Expr::Integer(1),
-      pp_expr,
-    ].into()));
+    return Ok(Expr::List(
+      vec![Expr::Integer(signed_content), Expr::Integer(1), pp_expr].into(),
+    ));
   }
 
-  Ok(Expr::List(vec![Expr::Integer(signed_content), pp_expr].into()))
+  Ok(Expr::List(
+    vec![Expr::Integer(signed_content), pp_expr].into(),
+  ))
 }
 
 /// Convert integer coefficient array to canonical Expr representation

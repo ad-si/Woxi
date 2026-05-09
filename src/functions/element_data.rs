@@ -2461,10 +2461,12 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
           args: vec![
             Expr::String(letter.to_string()),
             Expr::Identifier("Italic".to_string()),
-          ].into(),
+          ]
+          .into(),
         },
         Expr::Integer(count),
-      ].into(),
+      ]
+      .into(),
     });
   }
   Expr::FunctionCall {
@@ -2635,7 +2637,8 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::String("Element".to_string()),
             Expr::String(elem.standard_name.to_string()),
-          ].into(),
+          ]
+          .into(),
         })
         .collect();
       Ok(Expr::List(entities.into()))
@@ -2658,7 +2661,8 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               args: vec![
                 Expr::String("Element".to_string()),
                 Expr::String(elem.standard_name.to_string()),
-              ].into(),
+              ]
+              .into(),
             })
             .collect();
           Ok(Expr::List(entities.into()))
@@ -2671,7 +2675,8 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               args: vec![
                 Expr::String("Element".to_string()),
                 Expr::String(elem.standard_name.to_string()),
-              ].into(),
+              ]
+              .into(),
             }),
             None => Ok(missing_not_found()),
           }

@@ -158,10 +158,13 @@ fn try_nsolve_quadratic(
   let disc = b * b - 4.0 * a * c;
 
   let make_rule = |val: Expr| -> Expr {
-    Expr::List(vec![Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(val),
-    }].into())
+    Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var.clone())),
+        replacement: Box::new(val),
+      }]
+      .into(),
+    )
   };
 
   if disc >= 0.0 {
@@ -178,10 +181,13 @@ fn try_nsolve_quadratic(
     let r2 = if q.abs() > 0.0 { c / q } else { r1 };
     let mut roots = [r1, r2];
     roots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    Some(Ok(Expr::List(vec![
-      make_rule(Expr::Real(roots[0])),
-      make_rule(Expr::Real(roots[1])),
-    ].into())))
+    Some(Ok(Expr::List(
+      vec![
+        make_rule(Expr::Real(roots[0])),
+        make_rule(Expr::Real(roots[1])),
+      ]
+      .into(),
+    )))
   } else {
     let sqrt_neg_disc = (-disc).sqrt();
     let re = -b / (2.0 * a);
@@ -773,16 +779,28 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let lhs_str = crate::syntax::expr_to_string(&lhs);
         let rhs_str = crate::syntax::expr_to_string(&rhs);
         if lhs_str == target_str {
-          return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
-            pattern: Box::new(target_expr.clone()),
-            replacement: Box::new(rhs),
-          }].into())].into()));
+          return Ok(Expr::List(
+            vec![Expr::List(
+              vec![Expr::Rule {
+                pattern: Box::new(target_expr.clone()),
+                replacement: Box::new(rhs),
+              }]
+              .into(),
+            )]
+            .into(),
+          ));
         }
         if rhs_str == target_str {
-          return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
-            pattern: Box::new(target_expr.clone()),
-            replacement: Box::new(lhs),
-          }].into())].into()));
+          return Ok(Expr::List(
+            vec![Expr::List(
+              vec![Expr::Rule {
+                pattern: Box::new(target_expr.clone()),
+                replacement: Box::new(lhs),
+              }]
+              .into(),
+            )]
+            .into(),
+          ));
         }
       }
       return Ok(Expr::FunctionCall {
@@ -933,10 +951,13 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let make_rule = |solution: Expr| -> Expr {
-    Expr::List(vec![Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.to_string())),
-      replacement: Box::new(solution),
-    }].into())
+    Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var.to_string())),
+        replacement: Box::new(solution),
+      }]
+      .into(),
+    )
   };
 
   // Factor out x^k when the k lowest-degree coefficients are zero.
@@ -1023,7 +1044,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               &Expr::Integer(-bi + sqrt_out),
               &Expr::Integer(2 * ai),
             );
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+            return Ok(Expr::List(
+              vec![make_rule(sol1), make_rule(sol2)].into(),
+            ));
           } else {
             // Irrational roots: (-bi ± sqrt_out*Sqrt[sqrt_in]) / (2*ai)
             // Simplify by dividing common factors
@@ -1092,7 +1115,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             let sol1 = make_sol(true);
             let sol2 = make_sol(false);
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+            return Ok(Expr::List(
+              vec![make_rule(sol1), make_rule(sol2)].into(),
+            ));
           }
         } else {
           // Check for cyclotomic polynomials before using quadratic formula
@@ -1109,7 +1134,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![
                   Expr::Integer(-1),
                   crate::functions::math_ast::make_rational_pub(p, q),
-                ].into(),
+                ]
+                .into(),
               }
             };
             // After multiplying by -1, the b/a sign flips along with a's
@@ -1119,12 +1145,16 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               // Φ₃: x^2 + x + 1 → roots: -(-1)^(1/3), (-1)^(2/3)
               let sol1 = negate_expr(&make_neg1_pow(1, 3));
               let sol2 = make_neg1_pow(2, 3);
-              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+              return Ok(Expr::List(
+                vec![make_rule(sol1), make_rule(sol2)].into(),
+              ));
             } else {
               // Φ₆: x^2 - x + 1 → roots: (-1)^(1/3), -(-1)^(2/3)
               let sol1 = make_neg1_pow(1, 3);
               let sol2 = negate_expr(&make_neg1_pow(2, 3));
-              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+              return Ok(Expr::List(
+                vec![make_rule(sol1), make_rule(sol2)].into(),
+              ));
             }
           }
 
@@ -1152,7 +1182,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             let sol1 = make_sol(true);
             let sol2 = make_sol(false);
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+            return Ok(Expr::List(
+              vec![make_rule(sol1), make_rule(sol2)].into(),
+            ));
           } else {
             // Complex roots with irrational imaginary part
             let g =
@@ -1206,7 +1238,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             let sol1 = make_sol(true);
             let sol2 = make_sol(false);
-            return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+            return Ok(Expr::List(
+              vec![make_rule(sol1), make_rule(sol2)].into(),
+            ));
           }
         }
       }
@@ -1248,7 +1282,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
         let sol_neg = negate_expr(&sol_pos);
-        return Ok(Expr::List(vec![make_rule(sol_neg), make_rule(sol_pos)].into()));
+        return Ok(Expr::List(
+          vec![make_rule(sol_neg), make_rule(sol_pos)].into(),
+        ));
       }
 
       // First evaluate the discriminant to simplify complex arithmetic (e.g., (3+I)^2 - 4*(2+2I) → -2I)
@@ -1333,7 +1369,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   name: "Rational".to_string(),
                   args: vec![Expr::Integer(1), Expr::Integer(n)].into(),
                 },
-              ].into(),
+              ]
+              .into(),
             };
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
           };
@@ -1358,7 +1395,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       name: "Rational".to_string(),
                       args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
                     },
-                  ].into(),
+                  ]
+                  .into(),
                 };
                 let product = Expr::BinaryOp {
                   op: BinaryOperator::Times,
@@ -1401,7 +1439,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                         name: "Rational".to_string(),
                         args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
                       },
-                    ].into(),
+                    ]
+                    .into(),
                   }
                 };
                 let product = Expr::BinaryOp {
@@ -1761,10 +1800,13 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
       bodies
         .into_iter()
         .map(|body| {
-          Expr::List(vec![Expr::Rule {
-            pattern: Box::new(var_expr.clone()),
-            replacement: Box::new(cond(body)),
-          }].into())
+          Expr::List(
+            vec![Expr::Rule {
+              pattern: Box::new(var_expr.clone()),
+              replacement: Box::new(cond(body)),
+            }]
+            .into(),
+          )
         })
         .collect(),
     )
@@ -1926,7 +1968,8 @@ fn try_solve_inverse_function(
               Expr::Identifier("I".to_string()),
               Expr::Identifier("Pi".to_string()),
               c1.clone(),
-            ].into(),
+            ]
+            .into(),
           })
           .ok()?;
         let general =
@@ -1943,12 +1986,19 @@ fn try_solve_inverse_function(
               name: "Element".to_string(),
               args: vec![c1, Expr::Identifier("Integers".to_string())].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
-        return Some(Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier(var.to_string())),
-          replacement: Box::new(cond),
-        }].into())].into())));
+        return Some(Ok(Expr::List(
+          vec![Expr::List(
+            vec![Expr::Rule {
+              pattern: Box::new(Expr::Identifier(var.to_string())),
+              replacement: Box::new(cond),
+            }]
+            .into(),
+          )]
+          .into(),
+        )));
       }
       // base^exp == val where base is constant, exp contains var
       // → exp == Log[val] / Log[base]
@@ -2250,7 +2300,8 @@ fn try_solve_factoring_powers(
                 } else {
                   Expr::FunctionCall {
                     name: "Rational".to_string(),
-                    args: vec![Expr::Integer(new_num), Expr::Integer(new_den)].into(),
+                    args: vec![Expr::Integer(new_num), Expr::Integer(new_den)]
+                      .into(),
                   }
                 };
                 remaining_factors[idx] = Expr::BinaryOp {
@@ -2689,10 +2740,13 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Expr::Real(x_curr)
       };
-    return Ok(Expr::List(vec![Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var)),
-      replacement: Box::new(result_val),
-    }].into()));
+    return Ok(Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var)),
+        replacement: Box::new(result_val),
+      }]
+      .into(),
+    ));
   }
 
   // Try symbolic derivative; fall back to numerical if unavailable
@@ -2761,10 +2815,13 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let lhs_ident = Expr::Identifier(var);
   let lhs =
     crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
-  Ok(Expr::List(vec![Expr::Rule {
-    pattern: Box::new(lhs),
-    replacement: Box::new(result_val),
-  }].into()))
+  Ok(Expr::List(
+    vec![Expr::Rule {
+      pattern: Box::new(lhs),
+      replacement: Box::new(result_val),
+    }]
+    .into(),
+  ))
 }
 
 /// Evaluate an expression numerically at a specific value of var.
@@ -2930,7 +2987,8 @@ pub fn minimize_ast(
           args: vec![
             Expr::Identifier(var.clone()),
             Expr::Identifier("Integers".to_string()),
-          ].into(),
+          ]
+          .into(),
         });
       }
     }
@@ -3634,7 +3692,9 @@ fn minimize_single_var(
     pattern: Box::new(Expr::Identifier(var.to_string())),
     replacement: Box::new(min_x),
   };
-  Ok(Expr::List(vec![result_val, Expr::List(vec![rule].into())].into()))
+  Ok(Expr::List(
+    vec![result_val, Expr::List(vec![rule].into())].into(),
+  ))
 }
 
 /// Find critical points of f' = 0 in one variable.
@@ -3820,7 +3880,9 @@ fn minimize_multi_var(
           replacement: Box::new(val.clone()),
         })
         .collect();
-      return Ok(Expr::List(vec![result_val, Expr::List(rules.into())].into()));
+      return Ok(Expr::List(
+        vec![result_val, Expr::List(rules.into())].into(),
+      ));
     }
   }
 
@@ -3874,7 +3936,8 @@ fn minimize_multi_var(
       args: vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -3891,7 +3954,9 @@ fn minimize_multi_var(
       replacement: Box::new(Expr::Real(val)),
     })
     .collect();
-  Ok(Expr::List(vec![result_val, Expr::List(rules.into())].into()))
+  Ok(Expr::List(
+    vec![result_val, Expr::List(rules.into())].into(),
+  ))
 }
 
 /// Flatten And[a, b, c, ...] recursively into a flat list of constraints.
@@ -4204,7 +4269,8 @@ fn minimize_try_ilp(
       args: vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-      ].into(),
+      ]
+      .into(),
     }));
   }
 
@@ -4236,7 +4302,9 @@ fn minimize_try_ilp(
       replacement: Box::new(Expr::Integer(val as i128)),
     })
     .collect();
-  Ok(Some(Expr::List(vec![result_val, Expr::List(rules.into())].into())))
+  Ok(Some(Expr::List(
+    vec![result_val, Expr::List(rules.into())].into(),
+  )))
 }
 
 /// Find a scale factor that makes all values close to integers.
@@ -4487,7 +4555,9 @@ fn minimize_constrained_1d(
     pattern: Box::new(Expr::Identifier(var.to_string())),
     replacement: Box::new(result_x),
   };
-  Ok(Expr::List(vec![result_val, Expr::List(vec![rule].into())].into()))
+  Ok(Expr::List(
+    vec![result_val, Expr::List(vec![rule].into())].into(),
+  ))
 }
 
 /// Multi-variable constrained minimize.
@@ -4525,7 +4595,8 @@ fn minimize_constrained_nd(
     args: vec![
       obj_with_cons,
       Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -4830,7 +4901,9 @@ fn minimize_constrained_boundary(
     })
     .collect();
 
-  Ok(Some(Expr::List(vec![result_fval, Expr::List(rules.into())].into())))
+  Ok(Some(Expr::List(
+    vec![result_fval, Expr::List(rules.into())].into(),
+  )))
 }
 
 /// Try to solve a 2D linear program by enumerating vertices.
@@ -5013,38 +5086,50 @@ fn minimize_lp_2d(
               args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
             }
           };
-          return Some(Expr::List(vec![
-            e,
-            Expr::List(vec![
-              Expr::Rule {
-                pattern: Box::new(Expr::Identifier(x_name.clone())),
-                replacement: Box::new(make_exact(best_vertex.0)),
-              },
-              Expr::Rule {
-                pattern: Box::new(Expr::Identifier(y_name.clone())),
-                replacement: Box::new(make_exact(best_vertex.1)),
-              },
-            ].into()),
-          ].into()));
+          return Some(Expr::List(
+            vec![
+              e,
+              Expr::List(
+                vec![
+                  Expr::Rule {
+                    pattern: Box::new(Expr::Identifier(x_name.clone())),
+                    replacement: Box::new(make_exact(best_vertex.0)),
+                  },
+                  Expr::Rule {
+                    pattern: Box::new(Expr::Identifier(y_name.clone())),
+                    replacement: Box::new(make_exact(best_vertex.1)),
+                  },
+                ]
+                .into(),
+              ),
+            ]
+            .into(),
+          ));
         }
       }
       Expr::Real(v)
     }
   };
 
-  Some(Expr::List(vec![
-    result_val,
-    Expr::List(vec![
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(x_name.clone())),
-        replacement: Box::new(make_exact(best_vertex.0)),
-      },
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(y_name.clone())),
-        replacement: Box::new(make_exact(best_vertex.1)),
-      },
-    ].into()),
-  ].into()))
+  Some(Expr::List(
+    vec![
+      result_val,
+      Expr::List(
+        vec![
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier(x_name.clone())),
+            replacement: Box::new(make_exact(best_vertex.0)),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier(y_name.clone())),
+            replacement: Box::new(make_exact(best_vertex.1)),
+          },
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
+  ))
 }
 
 // ─── FindMinimum / FindMaximum ───────────────────────────────────────
@@ -5257,7 +5342,9 @@ pub fn find_minimum_ast(
     })
     .collect();
 
-  Ok(Expr::List(vec![min_val_expr, Expr::List(rules.into())].into()))
+  Ok(Expr::List(
+    vec![min_val_expr, Expr::List(rules.into())].into(),
+  ))
 }
 
 /// Split an And expression into its equality part and inequality parts.
@@ -5949,7 +6036,9 @@ pub fn nminimize_ast(
     })
     .collect();
 
-  Ok(Expr::List(vec![Expr::Real(opt_val), Expr::List(rules.into())].into()))
+  Ok(Expr::List(
+    vec![Expr::Real(opt_val), Expr::List(rules.into())].into(),
+  ))
 }
 
 /// Extract variable bounds from constraints.
@@ -6247,10 +6336,13 @@ fn find_instance_numerical(
       if let Ok(evaled) = evaluate_expr_to_expr(&subst)
         && matches!(evaled, Expr::Identifier(ref s) if s == "True")
       {
-        results.push(Expr::List(vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier(var.clone())),
-          replacement: Box::new(test_val),
-        }].into()));
+        results.push(Expr::List(
+          vec![Expr::Rule {
+            pattern: Box::new(Expr::Identifier(var.clone())),
+            replacement: Box::new(test_val),
+          }]
+          .into(),
+        ));
       }
       val += step;
     }
@@ -6270,16 +6362,19 @@ fn find_instance_numerical(
         if let Ok(evaled) = evaluate_expr_to_expr(&subst)
           && matches!(evaled, Expr::Identifier(ref s) if s == "True")
         {
-          results.push(Expr::List(vec![
-            Expr::Rule {
-              pattern: Box::new(Expr::Identifier(var1.clone())),
-              replacement: Box::new(test1.clone()),
-            },
-            Expr::Rule {
-              pattern: Box::new(Expr::Identifier(var2.clone())),
-              replacement: Box::new(test2),
-            },
-          ].into()));
+          results.push(Expr::List(
+            vec![
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(var1.clone())),
+                replacement: Box::new(test1.clone()),
+              },
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(var2.clone())),
+                replacement: Box::new(test2),
+              },
+            ]
+            .into(),
+          ));
           if results.len() >= n {
             break 'outer;
           }

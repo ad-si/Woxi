@@ -241,10 +241,14 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let child = &layout[child_idx];
       primitives.push(Expr::FunctionCall {
         name: "Line".to_string(),
-        args: vec![Expr::List(vec![
-          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-          Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
-        ].into())].into(),
+        args: vec![Expr::List(
+          vec![
+            Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
+            Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
+          ]
+          .into(),
+        )]
+        .into(),
       });
     }
   }
@@ -262,7 +266,8 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::FunctionCall {
           name: "RGBColor".to_string(),
           args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-        }].into(),
+        }]
+        .into(),
       });
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
@@ -274,8 +279,10 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "EdgeForm".to_string(),
         args: vec![Expr::FunctionCall {
           name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)].into(),
-        }].into(),
+          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)]
+            .into(),
+        }]
+        .into(),
       });
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
@@ -286,9 +293,14 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     primitives.push(Expr::FunctionCall {
       name: "Rectangle".to_string(),
       args: vec![
-        Expr::List(vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into()),
-        Expr::List(vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into()),
-      ].into(),
+        Expr::List(
+          vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into(),
+        ),
+        Expr::List(
+          vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into(),
+        ),
+      ]
+      .into(),
     });
   }
 
@@ -323,10 +335,12 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::String(node.label.clone()),
             Expr::Integer(font_size_int),
-          ].into(),
+          ]
+          .into(),
         },
         Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -531,10 +545,14 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
       let child = &layout[child_idx];
       primitives.push(Expr::FunctionCall {
         name: "Line".to_string(),
-        args: vec![Expr::List(vec![
-          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-          Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
-        ].into())].into(),
+        args: vec![Expr::List(
+          vec![
+            Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
+            Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
+          ]
+          .into(),
+        )]
+        .into(),
       });
     }
   }
@@ -551,7 +569,8 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
         args: vec![Expr::FunctionCall {
           name: "RGBColor".to_string(),
           args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-        }].into(),
+        }]
+        .into(),
       });
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
@@ -562,8 +581,10 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
         name: "EdgeForm".to_string(),
         args: vec![Expr::FunctionCall {
           name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)].into(),
-        }].into(),
+          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)]
+            .into(),
+        }]
+        .into(),
       });
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
@@ -574,9 +595,14 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
     primitives.push(Expr::FunctionCall {
       name: "Rectangle".to_string(),
       args: vec![
-        Expr::List(vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into()),
-        Expr::List(vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into()),
-      ].into(),
+        Expr::List(
+          vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into(),
+        ),
+        Expr::List(
+          vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into(),
+        ),
+      ]
+      .into(),
     });
   }
 
@@ -608,10 +634,12 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::String(node.label.clone()),
             Expr::Integer(font_size_int),
-          ].into(),
+          ]
+          .into(),
         },
         Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 

@@ -496,9 +496,11 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(re / abs),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![Expr::Real(im / abs), Expr::Identifier("I".to_string())].into(),
+            args: vec![Expr::Real(im / abs), Expr::Identifier("I".to_string())]
+              .into(),
           },
-        ].into(),
+        ]
+        .into(),
       });
     }
   }
@@ -568,7 +570,8 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::Integer(outside as i128),
             make_sqrt(Expr::Integer(inside as i128)),
-          ].into(),
+          ]
+          .into(),
         });
       }
       // Not a perfect square, return symbolic
@@ -621,7 +624,8 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               args: vec![
                 Expr::Integer(d_out as i128),
                 make_sqrt(Expr::Integer(d_in as i128)),
-              ].into(),
+              ]
+              .into(),
             }
           };
           return Ok(Expr::BinaryOp {
@@ -1162,7 +1166,8 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               Expr::Integer(floor_im),
               Expr::Identifier("I".to_string()),
-            ].into(),
+            ]
+            .into(),
           },
         ],
       )
@@ -1211,7 +1216,8 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             args: vec![
               Expr::Integer(ceil_im),
               Expr::Identifier("I".to_string()),
-            ].into(),
+            ]
+            .into(),
           },
         ],
       )
@@ -1984,7 +1990,8 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             build(im_frac.0, im_frac.1),
             Expr::Identifier("I".to_string()),
-          ].into(),
+          ]
+          .into(),
         },
       ],
     );

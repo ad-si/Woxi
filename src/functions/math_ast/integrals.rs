@@ -15,7 +15,8 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // ExpIntegralEi[0] = -Infinity
     Expr::Integer(0) => Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())].into(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
+        .into(),
     }),
     // ExpIntegralEi[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => {
@@ -94,7 +95,8 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // CosIntegral[0] = -Infinity
     Expr::Integer(0) => Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())].into(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
+        .into(),
     }),
     // CosIntegral[Infinity] = 0
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
@@ -109,7 +111,8 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::Identifier("I".to_string()),
             Expr::Constant("Pi".to_string()),
-          ].into(),
+          ]
+          .into(),
         });
       }
       // Unevaluated
@@ -624,7 +627,8 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![
         crate::functions::math_ast::make_rational(1, 2),
         Expr::Constant("Pi".to_string()),
-      ].into(),
+      ]
+      .into(),
     }),
     // Numeric evaluation
     Expr::Real(x) => Ok(Expr::Real(sin_integral_numeric(*x))),
@@ -637,7 +641,8 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             crate::functions::math_ast::make_rational(-1, 2),
             Expr::Constant("Pi".to_string()),
-          ].into(),
+          ]
+          .into(),
         });
       }
       // Unevaluated
@@ -829,7 +834,8 @@ pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // LogIntegral[1] = -Infinity (pole at x=1 since ln(1)=0)
     Expr::Integer(1) => Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())].into(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
+        .into(),
     }),
     // Numeric evaluation: Li(x) = Ei(ln(x))
     Expr::Real(x) => {
@@ -917,7 +923,8 @@ pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::Integer(-1),
             Expr::Identifier("Infinity".to_string()),
-          ].into(),
+          ]
+          .into(),
         });
       }
       // Unevaluated
@@ -1007,7 +1014,8 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // CoshIntegral[0] = -Infinity
     Expr::Integer(0) => Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())].into(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
+        .into(),
     }),
     // CoshIntegral[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => {

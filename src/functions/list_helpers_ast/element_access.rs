@@ -1049,7 +1049,10 @@ pub fn insert_ast(
     result.insert(idx, elem.clone());
   }
   match head {
-    Some(name) => Ok(Expr::FunctionCall { name, args: result.into() }),
+    Some(name) => Ok(Expr::FunctionCall {
+      name,
+      args: result.into(),
+    }),
     None => Ok(Expr::List(result.into())),
   }
 }
@@ -1240,7 +1243,8 @@ fn replace_at_position(
             pattern: Box::new(Expr::Integer(pos)),
             replacement: Box::new(val.clone()),
           },
-        ].into(),
+        ]
+        .into(),
       });
     }
   };

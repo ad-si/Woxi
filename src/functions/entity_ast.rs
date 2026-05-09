@@ -603,7 +603,7 @@ fn resolve_entity_lookup(
       // Evaluate the computed property: apply func to entity association
       let func_expr = Expr::CurriedCall {
         func: Box::new(comp_args[0].clone()),
-        args: vec![comp_args[1].clone()].into(),
+        args: vec![comp_args[1].clone()],
       };
       crate::evaluator::evaluate_expr_to_expr(&func_expr)
     }
@@ -613,7 +613,8 @@ fn resolve_entity_lookup(
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
-      ].into(),
+      ]
+      .into(),
     }),
   }
 }
@@ -669,7 +670,8 @@ fn entity_list_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -685,7 +687,8 @@ fn entity_list_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
               args: vec![
                 Expr::String(type_name.to_string()),
                 Expr::String(ename.clone()),
-              ].into(),
+              ]
+              .into(),
             });
           }
         }
@@ -707,7 +710,8 @@ fn entity_list_for_class(
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -725,7 +729,8 @@ fn entity_list_for_class(
                   args: vec![
                     Expr::String(type_name.to_string()),
                     Expr::String(member.clone()),
-                  ].into(),
+                  ]
+                  .into(),
                 });
               }
             }
@@ -746,7 +751,8 @@ fn entity_count_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -791,7 +797,8 @@ pub fn entity_class_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -847,7 +854,8 @@ fn entity_properties_for_type(
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
-      ].into(),
+      ]
+      .into(),
     });
   }
 
@@ -870,7 +878,8 @@ fn entity_properties_for_type(
         args: vec![
           Expr::String(type_name.to_string()),
           Expr::String(prop_name),
-        ].into(),
+        ]
+        .into(),
       })
       .collect::<Vec<_>>()
   });
@@ -1018,7 +1027,8 @@ pub fn entity_store_property_access(
     args: vec![
       Expr::String("UnknownType".to_string()),
       Expr::String(type_name),
-    ].into(),
+    ]
+    .into(),
   })
 }
 

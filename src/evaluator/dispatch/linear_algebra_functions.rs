@@ -535,7 +535,8 @@ pub fn dispatch_linear_algebra_functions(
                         name: "Times".to_string(),
                         args: vec![Expr::Integer(-1), x.clone()].into(),
                       },
-                    ].into(),
+                    ]
+                    .into(),
                   };
                   new_cols.push(entry);
                 } else {
@@ -870,10 +871,13 @@ pub fn dispatch_linear_algebra_functions(
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), sin.clone()].into(),
       };
-      let mat = Expr::List(vec![
-        Expr::List(vec![cos.clone(), neg_sin].into()),
-        Expr::List(vec![sin, cos].into()),
-      ].into());
+      let mat = Expr::List(
+        vec![
+          Expr::List(vec![cos.clone(), neg_sin].into()),
+          Expr::List(vec![sin, cos].into()),
+        ]
+        .into(),
+      );
       return Some(evaluate_expr_to_expr(&mat));
     }
     "RotationMatrix" if args.len() == 2 => {
@@ -899,7 +903,8 @@ pub fn dispatch_linear_algebra_functions(
               name: "Times".to_string(),
               args: vec![Expr::Integer(-1), c.clone()].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         let ux = &axis[0];
         let uy = &axis[1];
@@ -932,7 +937,8 @@ pub fn dispatch_linear_algebra_functions(
             },
             Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![one_minus_c.clone(), u[i].clone(), u[j].clone()].into(),
+              args: vec![one_minus_c.clone(), u[i].clone(), u[j].clone()]
+                .into(),
             },
           ];
           if let Some((sign, uk)) = cross_term {
@@ -947,23 +953,20 @@ pub fn dispatch_linear_algebra_functions(
           }
         };
 
-        let mat = Expr::List(vec![
-          Expr::List(vec![
-            make_entry(0, 0),
-            make_entry(0, 1),
-            make_entry(0, 2),
-          ].into()),
-          Expr::List(vec![
-            make_entry(1, 0),
-            make_entry(1, 1),
-            make_entry(1, 2),
-          ].into()),
-          Expr::List(vec![
-            make_entry(2, 0),
-            make_entry(2, 1),
-            make_entry(2, 2),
-          ].into()),
-        ].into());
+        let mat = Expr::List(
+          vec![
+            Expr::List(
+              vec![make_entry(0, 0), make_entry(0, 1), make_entry(0, 2)].into(),
+            ),
+            Expr::List(
+              vec![make_entry(1, 0), make_entry(1, 1), make_entry(1, 2)].into(),
+            ),
+            Expr::List(
+              vec![make_entry(2, 0), make_entry(2, 1), make_entry(2, 2)].into(),
+            ),
+          ]
+          .into(),
+        );
         return Some(evaluate_expr_to_expr(&mat));
       }
       return Some(Ok(Expr::FunctionCall {
@@ -1020,11 +1023,16 @@ pub fn dispatch_linear_algebra_functions(
       };
       // Build the 3x3 homogeneous rotation matrix:
       // {{Cos[x], -Sin[x], 0}, {Sin[x], Cos[x], 0}, {0, 0, 1}}
-      let matrix = Expr::List(vec![
-        Expr::List(vec![cos_t.clone(), neg_sin_t, Expr::Integer(0)].into()),
-        Expr::List(vec![sin_t, cos_t, Expr::Integer(0)].into()),
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)].into()),
-      ].into());
+      let matrix = Expr::List(
+        vec![
+          Expr::List(vec![cos_t.clone(), neg_sin_t, Expr::Integer(0)].into()),
+          Expr::List(vec![sin_t, cos_t, Expr::Integer(0)].into()),
+          Expr::List(
+            vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)].into(),
+          ),
+        ]
+        .into(),
+      );
       // Evaluate the matrix to simplify trig functions (e.g. Cos[Pi/4] → 1/Sqrt[2])
       let evaluated =
         crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -1474,8 +1482,9 @@ pub fn dispatch_linear_algebra_functions(
             }
           }
           // Compute M.M^H and M^H.M
-          let ct_list =
-            Expr::List(ct.iter().map(|r| Expr::List(r.clone().into())).collect());
+          let ct_list = Expr::List(
+            ct.iter().map(|r| Expr::List(r.clone().into())).collect(),
+          );
           let m_list = args[0].clone();
           let mmh = crate::functions::linear_algebra_ast::dot_ast(&[
             m_list.clone(),
@@ -1695,7 +1704,8 @@ pub fn dispatch_linear_algebra_functions(
                       // Use Times[-1, inv_sqrt_n] so display matches -(1/Sqrt[n])
                       let entry = Expr::FunctionCall {
                         name: "Times".to_string(),
-                        args: vec![Expr::Integer(-1), inv_sqrt_n.clone()].into(),
+                        args: vec![Expr::Integer(-1), inv_sqrt_n.clone()]
+                          .into(),
                       };
                       evaluate_expr_to_expr(&entry).unwrap_or(entry)
                     } else {
@@ -1775,7 +1785,8 @@ pub fn dispatch_linear_algebra_functions(
               name: "Rational".to_string(),
               args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         let mut rows = Vec::with_capacity(n);
         for j in 0..n {
@@ -1799,7 +1810,8 @@ pub fn dispatch_linear_algebra_functions(
                   args: vec![
                     Expr::Integer(snum),
                     Expr::Identifier("Pi".to_string()),
-                  ].into(),
+                  ]
+                  .into(),
                 }
               } else {
                 Expr::FunctionCall {
@@ -1807,10 +1819,12 @@ pub fn dispatch_linear_algebra_functions(
                   args: vec![
                     Expr::FunctionCall {
                       name: "Rational".to_string(),
-                      args: vec![Expr::Integer(snum), Expr::Integer(sden)].into(),
+                      args: vec![Expr::Integer(snum), Expr::Integer(sden)]
+                        .into(),
                     },
                     Expr::Identifier("Pi".to_string()),
-                  ].into(),
+                  ]
+                  .into(),
                 }
               };
               // Build (Cos[angle] + I*Sin[angle]) / Sqrt[n]
@@ -1826,7 +1840,8 @@ pub fn dispatch_linear_algebra_functions(
                     name: "Sin".to_string(),
                     args: vec![angle].into(),
                   },
-                ].into(),
+                ]
+                .into(),
               };
               let omega = Expr::FunctionCall {
                 name: "Plus".to_string(),
@@ -1883,7 +1898,8 @@ pub fn dispatch_linear_algebra_functions(
                     args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
                   },
                   sum,
-                ].into(),
+                ]
+                .into(),
               };
               match evaluate_expr_to_expr(&half) {
                 Ok(val) => result_cols.push(val),
@@ -1947,11 +1963,14 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
   let n = rows.len();
   if n == 0 {
-    return Ok(Expr::List(vec![
-      Expr::List(vec![].into()),
-      Expr::List(vec![].into()),
-      Expr::Integer(0),
-    ].into()));
+    return Ok(Expr::List(
+      vec![
+        Expr::List(vec![].into()),
+        Expr::List(vec![].into()),
+        Expr::Integer(0),
+      ]
+      .into(),
+    ));
   }
 
   // Extract matrix elements
@@ -2008,7 +2027,8 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
             name: "Power".to_string(),
             args: vec![pivot_val.clone(), Expr::Integer(-1)].into(),
           },
-        ].into(),
+        ]
+        .into(),
       })
       .unwrap_or(matrix[i][k].clone());
 
@@ -2031,7 +2051,8 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
               name: "Times".to_string(),
               args: vec![Expr::Integer(-1), product].into(),
             },
-          ].into(),
+          ]
+          .into(),
         })
         .unwrap_or(matrix[i][j].clone());
 
@@ -2044,7 +2065,8 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Build result
-  let lu_matrix = Expr::List(matrix.into_iter().map(|v| Expr::List(v.into())).collect());
+  let lu_matrix =
+    Expr::List(matrix.into_iter().map(|v| Expr::List(v.into())).collect());
 
   let pivot_list = Expr::List(
     pivots
@@ -2053,7 +2075,9 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
       .collect(),
   );
 
-  Ok(Expr::List(vec![lu_matrix, pivot_list, Expr::Integer(0)].into()))
+  Ok(Expr::List(
+    vec![lu_matrix, pivot_list, Expr::Integer(0)].into(),
+  ))
 }
 
 fn is_zero_expr(expr: &Expr) -> bool {
@@ -2259,7 +2283,9 @@ fn coordinates_to_cartesian(
   system: &str,
 ) -> Result<Expr, InterpreterError> {
   match system {
-    "Cartesian" => Ok(Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into())),
+    "Cartesian" => {
+      Ok(Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()))
+    }
     "Spherical" => {
       // x = r Sin[θ] Cos[φ], y = r Sin[θ] Sin[φ], z = r Cos[θ].
       let r = c0.clone();
@@ -2298,7 +2324,8 @@ fn coordinates_to_cartesian(
       args: vec![
         Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()),
         Expr::Identifier(system.to_string()),
-      ].into(),
+      ]
+      .into(),
     }),
   }
 }
@@ -2313,7 +2340,9 @@ fn coordinates_from_cartesian(
   system: &str,
 ) -> Result<Expr, InterpreterError> {
   match system {
-    "Cartesian" => Ok(Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into())),
+    "Cartesian" => {
+      Ok(Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()))
+    }
     "Spherical" => {
       let x = c0.clone();
       let y = c1.clone();
@@ -2373,7 +2402,8 @@ fn coordinates_from_cartesian(
       args: vec![
         Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()),
         Expr::Identifier(system.to_string()),
-      ].into(),
+      ]
+      .into(),
     }),
   }
 }

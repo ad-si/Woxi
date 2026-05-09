@@ -72,7 +72,8 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Power".to_string(),
         args: vec![leading_coeff, Expr::Integer(-1)].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
 
   // Simplify the result

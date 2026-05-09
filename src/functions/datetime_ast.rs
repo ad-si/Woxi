@@ -662,14 +662,17 @@ fn make_date_list(y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64) -> Expr {
   // Keep the raw f64 seconds: wolframscript exposes the floating-point
   // residual from converting the date to absolute seconds and back (e.g.
   // `46.019999980926514` for `{2003, 5, 0.5, 0.1, 0.767}`).
-  Expr::List(vec![
-    Expr::Integer(y as i128),
-    Expr::Integer(m as i128),
-    Expr::Integer(d as i128),
-    Expr::Integer(h as i128),
-    Expr::Integer(min as i128),
-    Expr::Real(sec),
-  ].into())
+  Expr::List(
+    vec![
+      Expr::Integer(y as i128),
+      Expr::Integer(m as i128),
+      Expr::Integer(d as i128),
+      Expr::Integer(h as i128),
+      Expr::Integer(min as i128),
+      Expr::Real(sec),
+    ]
+    .into(),
+  )
 }
 
 /// DatePlus[date, n] — add n days to a date
@@ -855,20 +858,27 @@ fn make_date_result(
     Expr::FunctionCall {
       name: "DateObject".to_string(),
       args: vec![
-        Expr::List(vec![
-          Expr::Integer(y as i128),
-          Expr::Integer(m as i128),
-          Expr::Integer(d as i128),
-        ].into()),
+        Expr::List(
+          vec![
+            Expr::Integer(y as i128),
+            Expr::Integer(m as i128),
+            Expr::Integer(d as i128),
+          ]
+          .into(),
+        ),
         Expr::String("Day".to_string()),
-      ].into(),
+      ]
+      .into(),
     }
   } else if input_len <= 3 {
-    Expr::List(vec![
-      Expr::Integer(y as i128),
-      Expr::Integer(m as i128),
-      Expr::Integer(d as i128),
-    ].into())
+    Expr::List(
+      vec![
+        Expr::Integer(y as i128),
+        Expr::Integer(m as i128),
+        Expr::Integer(d as i128),
+      ]
+      .into(),
+    )
   } else {
     make_date_list(y, m, d, 0, 0, 0.0)
   }
@@ -1095,7 +1105,8 @@ fn date_difference_multi_unit(
         name: "MixedUnit".to_string(),
         args: vec![Expr::List(plurals.into())].into(),
       },
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -1320,7 +1331,8 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // Single format element as a string (e.g. DateString[Now, "Year"])
         _ => vec![Expr::String(s.clone())],
-      }.into()
+      }
+      .into()
     }
     _ => {
       return Ok(Expr::FunctionCall {
@@ -1345,7 +1357,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Hour" => result.push_str(&format!("{:02}", h)),
         "Minute" => result.push_str(&format!("{:02}", min)),
         "Second" => result.push_str(&format!("{:02}", sec as i64)),
-        _ => result.push_str(&s), // literal separator
+        _ => result.push_str(s), // literal separator
       }
     }
   }
@@ -1495,12 +1507,16 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: "DateObject".to_string(),
     args: vec![
-      Expr::List(vec![
-        Expr::Integer(ny as i128),
-        Expr::Integer(nm as i128),
-        Expr::Integer(nd as i128),
-      ].into()),
+      Expr::List(
+        vec![
+          Expr::Integer(ny as i128),
+          Expr::Integer(nm as i128),
+          Expr::Integer(nd as i128),
+        ]
+        .into(),
+      ),
       Expr::String("Day".to_string()),
-    ].into(),
+    ]
+    .into(),
   })
 }

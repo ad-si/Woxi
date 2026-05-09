@@ -332,7 +332,8 @@ pub fn dispatch_predicate_functions(
           Expr::Integer(1),
           Expr::Integer(1),
           Expr::Integer(1),
-        ].into(),
+        ]
+        .into(),
       }));
     }
     "EvenQ" if args.len() == 1 => {
@@ -622,13 +623,16 @@ pub fn dispatch_predicate_functions(
       if let Expr::Identifier(name) = &args[0] {
         let value_expr = crate::lookup_env_as_expr(name);
         if let Some(v) = value_expr {
-          return Some(Ok(Expr::List(vec![Expr::RuleDelayed {
-            pattern: Box::new(Expr::FunctionCall {
-              name: "HoldPattern".to_string(),
-              args: vec![Expr::Identifier(name.clone())].into(),
-            }),
-            replacement: Box::new(v),
-          }].into())));
+          return Some(Ok(Expr::List(
+            vec![Expr::RuleDelayed {
+              pattern: Box::new(Expr::FunctionCall {
+                name: "HoldPattern".to_string(),
+                args: vec![Expr::Identifier(name.clone())].into(),
+              }),
+              replacement: Box::new(v),
+            }]
+            .into(),
+          )));
         }
       }
       return Some(Ok(Expr::List(vec![].into())));
@@ -698,7 +702,8 @@ pub fn dispatch_predicate_functions(
                 args: vec![Expr::FunctionCall {
                   name: "MessageName".to_string(),
                   args: vec![slot0_literal, slot1_literal].into(),
-                }].into(),
+                }]
+                .into(),
               }),
               replacement: Box::new(body.clone()),
             })
@@ -779,7 +784,8 @@ pub fn dispatch_predicate_functions(
                   } else {
                     Expr::FunctionCall {
                       name: "MakeBoxes".to_string(),
-                      args: vec![lhs.clone(), Expr::Identifier(form.clone())].into(),
+                      args: vec![lhs.clone(), Expr::Identifier(form.clone())]
+                        .into(),
                     }
                   };
                   Expr::RuleDelayed {
@@ -940,7 +946,8 @@ pub fn dispatch_predicate_functions(
                 args: vec![Expr::FunctionCall {
                   name: sym.clone(),
                   args: pattern_args.into(),
-                }].into(),
+                }]
+                .into(),
               }),
               replacement: Box::new(body.clone()),
             }
@@ -1093,10 +1100,13 @@ pub fn dispatch_predicate_functions(
     // glob pattern. Woxi only tracks System` and Global` contexts; any other
     // pattern matches none.
     "Contexts" if args.is_empty() => {
-      return Some(Ok(Expr::List(vec![
-        Expr::String("System`".to_string()),
-        Expr::String("Global`".to_string()),
-      ].into())));
+      return Some(Ok(Expr::List(
+        vec![
+          Expr::String("System`".to_string()),
+          Expr::String("Global`".to_string()),
+        ]
+        .into(),
+      )));
     }
     "Contexts" if args.len() == 1 => {
       let pattern = match &args[0] {

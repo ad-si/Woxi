@@ -938,11 +938,14 @@ fn build_sparse_array_for_coefficients(
     } else {
       Expr::List(vec![Expr::Integer(0); n + 1].into())
     };
-    let inner = Expr::List(vec![
-      Expr::Integer(1),
-      Expr::List(vec![row_ptr, Expr::List(vec![].into())].into()),
-      Expr::List(vec![].into()),
-    ].into());
+    let inner = Expr::List(
+      vec![
+        Expr::Integer(1),
+        Expr::List(vec![row_ptr, Expr::List(vec![].into())].into()),
+        Expr::List(vec![].into()),
+      ]
+      .into(),
+    );
     return Expr::FunctionCall {
       name: "SparseArray".to_string(),
       args: vec![
@@ -950,7 +953,8 @@ fn build_sparse_array_for_coefficients(
         dims_list,
         Expr::Integer(0),
         inner,
-      ].into(),
+      ]
+      .into(),
     };
   }
   // Sort entries by index for deterministic CSR layout.
@@ -958,10 +962,13 @@ fn build_sparse_array_for_coefficients(
   sorted_entries.sort_by(|a, b| a.0.cmp(&b.0));
   if k == 1 {
     // 1D: rowPtr is `{0, count}`. Each colIndex is a 1-tuple `{idx}`.
-    let row_ptr = Expr::List(vec![
-      Expr::Integer(0),
-      Expr::Integer(sorted_entries.len() as i128),
-    ].into());
+    let row_ptr = Expr::List(
+      vec![
+        Expr::Integer(0),
+        Expr::Integer(sorted_entries.len() as i128),
+      ]
+      .into(),
+    );
     let col_indices = Expr::List(
       sorted_entries
         .iter()
@@ -970,11 +977,14 @@ fn build_sparse_array_for_coefficients(
     );
     let values =
       Expr::List(sorted_entries.iter().map(|(_, c)| c.clone()).collect());
-    let inner = Expr::List(vec![
-      Expr::Integer(1),
-      Expr::List(vec![row_ptr, col_indices].into()),
-      values,
-    ].into());
+    let inner = Expr::List(
+      vec![
+        Expr::Integer(1),
+        Expr::List(vec![row_ptr, col_indices].into()),
+        values,
+      ]
+      .into(),
+    );
     return Expr::FunctionCall {
       name: "SparseArray".to_string(),
       args: vec![
@@ -982,7 +992,8 @@ fn build_sparse_array_for_coefficients(
         dims_list,
         Expr::Integer(0),
         inner,
-      ].into(),
+      ]
+      .into(),
     };
   }
   // k ≥ 2: rowPtr length n+1, colIndices are (k-1)-tuples.
@@ -1004,11 +1015,20 @@ fn build_sparse_array_for_coefficients(
     acc += c;
     row_ptr.push(Expr::Integer(acc));
   }
-  let inner = Expr::List(vec![
-    Expr::Integer(1),
-    Expr::List(vec![Expr::List(row_ptr.into()), Expr::List(col_indices_list.into())].into()),
-    Expr::List(values_list.into()),
-  ].into());
+  let inner = Expr::List(
+    vec![
+      Expr::Integer(1),
+      Expr::List(
+        vec![
+          Expr::List(row_ptr.into()),
+          Expr::List(col_indices_list.into()),
+        ]
+        .into(),
+      ),
+      Expr::List(values_list.into()),
+    ]
+    .into(),
+  );
   Expr::FunctionCall {
     name: "SparseArray".to_string(),
     args: vec![
@@ -1016,7 +1036,8 @@ fn build_sparse_array_for_coefficients(
       dims_list,
       Expr::Integer(0),
       inner,
-    ].into(),
+    ]
+    .into(),
   }
 }
 
@@ -1113,7 +1134,8 @@ fn build_sparse_array_multi(
       dims_list.clone(),
       Expr::Integer(0),
       inner,
-    ].into(),
+    ]
+    .into(),
   };
   // Collect this degree's entries from each poly, in poly order.
   let mut row_counts = vec![0i128; m];
@@ -1160,10 +1182,13 @@ fn build_sparse_array_multi(
     }
     Expr::List(v.into())
   };
-  let inner = Expr::List(vec![
-    Expr::Integer(1),
-    Expr::List(vec![row_ptr, Expr::List(col_indices_list.into())].into()),
-    Expr::List(values_list.into()),
-  ].into());
+  let inner = Expr::List(
+    vec![
+      Expr::Integer(1),
+      Expr::List(vec![row_ptr, Expr::List(col_indices_list.into())].into()),
+      Expr::List(values_list.into()),
+    ]
+    .into(),
+  );
   make_outer(inner)
 }

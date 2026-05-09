@@ -103,9 +103,11 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Constant("E".to_string()),
               Expr::FunctionCall {
                 name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())].into(),
+                args: vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())]
+                  .into(),
               },
-            ].into(),
+            ]
+            .into(),
           });
         }
         // For other rationals, compute numerically

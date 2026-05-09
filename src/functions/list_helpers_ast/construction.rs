@@ -501,7 +501,8 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               name: "Times".to_string(),
               args: vec![Expr::Integer(-1), min_expr.clone()].into(),
             },
-          ].into(),
+          ]
+          .into(),
         };
         if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&diff_expr)
           && let Some(diff_val) = expr_to_f64(&evaled)
@@ -981,7 +982,8 @@ fn build_range_indices(
           name: "Plus".to_string(),
           args: vec![a.clone(), b.clone()].into(),
         },
-      ].into(),
+      ]
+      .into(),
     };
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
@@ -995,7 +997,8 @@ fn build_range_indices(
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), a.clone()].into(),
       },
-    ].into(),
+    ]
+    .into(),
   };
   let inv_denom = Expr::FunctionCall {
     name: "Power".to_string(),
@@ -1488,11 +1491,14 @@ pub fn sparse_array_normalize_ast(
 
   let row_ptr_expr =
     Expr::List(row_ptr.into_iter().map(Expr::Integer).collect());
-  let structure = Expr::List(vec![
-    Expr::Integer(1),
-    Expr::List(vec![row_ptr_expr, Expr::List(inner_positions.into())].into()),
-    Expr::List(values_list.into()),
-  ].into());
+  let structure = Expr::List(
+    vec![
+      Expr::Integer(1),
+      Expr::List(vec![row_ptr_expr, Expr::List(inner_positions.into())].into()),
+      Expr::List(values_list.into()),
+    ]
+    .into(),
+  );
 
   Ok(Expr::FunctionCall {
     name: "SparseArray".to_string(),
@@ -1501,7 +1507,8 @@ pub fn sparse_array_normalize_ast(
       dims_expr,
       default,
       structure,
-    ].into(),
+    ]
+    .into(),
   })
 }
 
@@ -1731,7 +1738,9 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result = new_result;
     }
 
-    return Ok(Expr::List(result.into_iter().map(|v| Expr::List(v.into())).collect()));
+    return Ok(Expr::List(
+      result.into_iter().map(|v| Expr::List(v.into())).collect(),
+    ));
   }
 
   if args.len() != 2 {

@@ -143,7 +143,8 @@ pub fn association_nested_access(
           // Missing["KeyAbsent", key].
           return Ok(Expr::FunctionCall {
             name: "Missing".to_string(),
-            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
+            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
+              .into(),
           });
         }
       }
@@ -2387,7 +2388,10 @@ fn match_args_with_sequences(
       }
     }
     let merged = merge_option_rules(&opt_defaults, &explicit_rules);
-    return Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged.into()))]);
+    return Some(vec![(
+      "__OptionsPattern__".to_string(),
+      Expr::List(merged.into()),
+    )]);
   }
 
   if let Some(seq) = get_sequence_info(pat) {
@@ -2849,7 +2853,10 @@ fn match_pattern_impl(
       match expr {
         Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
           let merged = merge_option_rules(&opt_defaults, &[expr.clone()]);
-          Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged.into()))])
+          Some(vec![(
+            "__OptionsPattern__".to_string(),
+            Expr::List(merged.into()),
+          )])
         }
         _ => None,
       }

@@ -67,7 +67,10 @@ pub fn select_ast(
 
   // Preserve the original head
   match head_name {
-    Some(name) => Ok(Expr::FunctionCall { name, args: kept.into() }),
+    Some(name) => Ok(Expr::FunctionCall {
+      name,
+      args: kept.into(),
+    }),
     None => Ok(Expr::List(kept.into())),
   }
 }

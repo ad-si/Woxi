@@ -411,7 +411,7 @@ pub fn apply_function_to_arg(
         ));
         return Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
-          args: vec![arg.clone()].into(),
+          args: vec![arg.clone()],
         });
       }
       let mut substituted = (**body).clone();
@@ -451,7 +451,7 @@ pub fn apply_function_to_arg(
         // ConstantFunction[c][x], not flatten into ConstantFunction[c, x].
         Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
-          args: vec![arg.clone()].into(),
+          args: vec![arg.clone()],
         })
       } else {
         let mut new_args = args.clone();
@@ -724,7 +724,8 @@ pub fn apply_curried_call(
             // Key not found: return Missing["KeyAbsent", k]
             Ok(Expr::FunctionCall {
               name: "Missing".to_string(),
-              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
+              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
+                .into(),
             })
           }
           _ => {
@@ -961,7 +962,8 @@ pub fn apply_curried_call(
         // Key not found: return Missing["KeyAbsent", key]
         Ok(Expr::FunctionCall {
           name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), args[0].clone()].into(),
+          args: vec![Expr::String("KeyAbsent".to_string()), args[0].clone()]
+            .into(),
         })
       } else {
         Ok(Expr::CurriedCall {

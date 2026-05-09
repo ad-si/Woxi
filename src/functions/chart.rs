@@ -124,9 +124,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           Expr::Identifier(s) if s == "Bold" => bold = true,
           Expr::Identifier(s) if s == "Italic" => italic = true,
           _ => {
-            if let Some(c) = parse_color(&arg) {
+            if let Some(c) = parse_color(arg) {
               color = Some(c);
-            } else if let Some(f) = try_eval_to_f64(&arg) {
+            } else if let Some(f) = try_eval_to_f64(arg) {
               font_size = Some(f);
             }
           }

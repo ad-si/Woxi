@@ -160,7 +160,11 @@ impl ExprList {
       Inner::Vec(v) => v.iter_mut(),
       Inner::Tree(t) => {
         let _ = t.cache.get_or_init(|| {
-          t.data.iter().cloned().collect::<Vec<_>>().into_boxed_slice()
+          t.data
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
         });
         t.cache.get_mut().unwrap().iter_mut()
       }
@@ -344,7 +348,10 @@ impl ExprList {
     self.inner = Inner::Vec(v);
   }
 
-  pub fn drain<R: RangeBounds<usize>>(&mut self, range: R) -> std::vec::IntoIter<Expr> {
+  pub fn drain<R: RangeBounds<usize>>(
+    &mut self,
+    range: R,
+  ) -> std::vec::IntoIter<Expr> {
     self.invalidate_tree_cache();
     match &mut self.inner {
       Inner::Vec(v) => v.drain(range).collect::<Vec<_>>().into_iter(),
@@ -427,7 +434,11 @@ impl ExprList {
     match &self.inner {
       Inner::Vec(v) => v,
       Inner::Tree(t) => t.cache.get_or_init(|| {
-        t.data.iter().cloned().collect::<Vec<_>>().into_boxed_slice()
+        t.data
+          .iter()
+          .cloned()
+          .collect::<Vec<_>>()
+          .into_boxed_slice()
       }),
     }
   }
@@ -591,7 +602,11 @@ impl DerefMut for ExprList {
       Inner::Vec(v) => v,
       Inner::Tree(t) => {
         let _ = t.cache.get_or_init(|| {
-          t.data.iter().cloned().collect::<Vec<_>>().into_boxed_slice()
+          t.data
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
         });
         t.cache.get_mut().unwrap()
       }
