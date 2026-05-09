@@ -6962,3 +6962,1366 @@ mod out_shortcut {
     assert_eq!(interpret("Hold[Out[42]]").unwrap(), "Hold[Out[42]]");
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn symbol_literal_1() {
+    assert_case(r#"a; b; c; d"#, r#"d"#);
+  }
+  #[test]
+  fn head_1() {
+    assert_case(r#"Head[2 + 3*I]"#, r#"Complex"#);
+  }
+  #[test]
+  fn complex_1() {
+    assert_case(r#"Head[2 + 3*I]; Complex[1, 2/3]"#, r#"1 + (2*I)/3"#);
+  }
+  #[test]
+  fn abs() {
+    assert_case(
+      r#"Head[2 + 3*I]; Complex[1, 2/3]; Abs[Complex[3, 4]]"#,
+      r#"5"#,
+    );
+  }
+  #[test]
+  fn head_2() {
+    assert_case(r#"Head[5]"#, r#"Integer"#);
+  }
+  #[test]
+  fn head_3() {
+    assert_case(r#"Head[1/2]"#, r#"Rational"#);
+  }
+  #[test]
+  fn rational_1() {
+    assert_case(r#"Head[1/2]; Rational[1, 2]"#, r#"1 / 2"#);
+  }
+  #[test]
+  fn print_trace_1() {
+    assert_case(r#"$TraceBuiltins = True; PrintTrace[]"#, r#"PrintTrace[]"#);
+  }
+  #[test]
+  fn print_trace_2() {
+    assert_case(r#"PrintTrace[]"#, r#"PrintTrace[]"#);
+  }
+  #[test]
+  fn set_1() {
+    assert_case(r#"PrintTrace[]; $TraceBuiltins = True"#, r#"True"#);
+  }
+  #[test]
+  fn print_trace_3() {
+    assert_case(
+      r#"PrintTrace[]; $TraceBuiltins = True; PrintTrace[SortBy -> "time"]"#,
+      r#"PrintTrace[SortBy -> "time"]"#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"PrintTrace[]; $TraceBuiltins = True; PrintTrace[SortBy -> "time"]; $TraceBuiltins = False"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn set_3() {
+    assert_case(
+      r#"$TraceBuiltins = True; $TraceBuiltins = False; x; PrintTrace[]; ClearTrace[]; $TraceBuiltins = x"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn head_4() {
+    // The mathics original (`S> $ParentProcessID = ...`) accepts any
+    // output — the literal `41369` was the test author's PID at scrape
+    // time and changes every run. Verify the documented contract: it
+    // returns an Integer.
+    assert_case(r#"Head[$ParentProcessID]"#, r#"Integer"#);
+  }
+  #[test]
+  fn head_5() {
+    // The mathics original (`>> Share[] = ...`) accepts any output —
+    // wolframscript returns the bytes saved by sharing common
+    // subexpressions, which depends on what's in memory and varies per
+    // run. Verify the documented contract: it returns an Integer.
+    assert_case(r#"Head[Share[]]"#, r#"Integer"#);
+  }
+  #[test]
+  fn head_6() {
+    // The mathics original (`S> MemoryAvailable[] = ...`) accepts any
+    // output — wolframscript returns the bytes of free physical memory,
+    // which varies per host and per moment. Verify the documented
+    // contract: it returns an Integer.
+    assert_case(r#"Head[MemoryAvailable[]]"#, r#"Integer"#);
+  }
+  #[test]
+  fn head_7() {
+    // Duplicate of case 231 — same host-specific byte count. Same
+    // semantic check: `MemoryAvailable[]` returns an Integer.
+    assert_case(r#"Head[MemoryAvailable[]]"#, r#"Integer"#);
+  }
+  #[test]
+  fn f_1() {
+    assert_case(r#"f[Sequence[a, b]]"#, r#"f[a, b]"#);
+  }
+  #[test]
+  fn head_8() {
+    // The mathics original (`>> Now = ...`) accepts any output — the
+    // scraped DateObject is the moment the test was captured. Verify
+    // the documented contract: `Now` returns a `DateObject`.
+    assert_case(r#"Head[Now]"#, r#"DateObject"#);
+  }
+  #[test]
+  fn hold_1() {
+    assert_case(
+      r#"b // a; c // b // a; Hold[x // a // b // c // d // e // f]"#,
+      r#"Hold[f[e[d[c[b[a[x]]]]]]]"#,
+    );
+  }
+  #[test]
+  fn precedence_1() {
+    assert_case(r#"Precedence[Plus]"#, r#"310."#);
+  }
+  #[test]
+  fn precedence_2() {
+    assert_case(
+      r#"Precedence[Plus]; Precedence[Plus] < Precedence[Times]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn precedence_3() {
+    assert_case(
+      r#"Precedence[Plus]; Precedence[Plus] < Precedence[Times]; Precedence[f]"#,
+      r#"670."#,
+    );
+  }
+  #[test]
+  fn precedence_4() {
+    assert_case(
+      r#"Precedence[Plus]; Precedence[Plus] < Precedence[Times]; Precedence[f]; Precedence[a + b]"#,
+      r#"1000."#,
+    );
+  }
+  #[test]
+  fn subscript() {
+    // Wolframscript-matched expectation. mathics rendered as `x_{1, 2, 3}`,
+    // but wolframscript returns the unevaluated `TeXForm[Subscript[x, 1, 2, 3]]`
+    // form (Woxi matches wolframscript).
+    assert_case(
+      r#"Subscript[x, 1, 2, 3] // TeXForm"#,
+      r#"TeXForm[Subscript[x, 1, 2, 3]]"#,
+    );
+  }
+  #[test]
+  fn subsuperscript() {
+    // Wolframscript-matched expectation. mathics rendered as `a_b^c`,
+    // but wolframscript returns the unevaluated `TeXForm[Subsuperscript[a, b, c]]`
+    // form (Woxi matches wolframscript).
+    assert_case(
+      r#"Subsuperscript[a, b, c] // TeXForm"#,
+      r#"TeXForm[Subsuperscript[a, b, c]]"#,
+    );
+  }
+  #[test]
+  fn superscript() {
+    // Wolframscript-matched expectation. mathics rendered as `x^3`,
+    // but wolframscript returns the unevaluated `TeXForm[Superscript[x, 3]]`
+    // form (Woxi matches wolframscript).
+    assert_case(
+      r#"Superscript[x,3] // TeXForm"#,
+      r#"TeXForm[Superscript[x, 3]]"#,
+    );
+  }
+  #[test]
+  fn sqrt() {
+    assert_case(r#"Sqrt[Unevaluated[x]]"#, r#"Sqrt[x]"#);
+  }
+  #[test]
+  fn length_1() {
+    assert_case(
+      r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn f_2() {
+    assert_case(r#"f[x, Sequence[a, b], y]"#, r#"f[x, a, b, y]"#);
+  }
+  #[test]
+  fn head_9() {
+    // The mathics original (`>> cf = Compile[{x, y}, x + 2 y]
+    //  = CompiledFunction[{x, y}, x + 2 y, ...]`) uses `...` to admit
+    // any internal compiled representation. The scraped expectation
+    // pinned wolframscript-specific bytecode (opcodes, register
+    // allocations, version triple) that Woxi has no way to reproduce.
+    // Verify the documented contract: it returns a `CompiledFunction`.
+    assert_case(r#"Head[Compile[{x, y}, x + 2 y]]"#, r#"CompiledFunction"#);
+  }
+  #[test]
+  fn head_10() {
+    // Same family as cases 524/526/528 — `Compile[...]` returns a
+    // `CompiledFunction` whose internal bytecode form Woxi can't
+    // reproduce verbatim. Verify the documented contract.
+    assert_case(r#"Head[Compile[{x}, x x]]"#, r#"CompiledFunction"#);
+  }
+  #[test]
+  fn expression_1() {
+    assert_case(
+      r#"General::argr"#,
+      r#""`1` called with 1 argument; `2` arguments are expected.""#,
+    );
+  }
+  #[test]
+  fn full_form_1() {
+    assert_case(r#"FullForm[a::b]"#, r#"FullForm[MessageName[a, b]]"#);
+  }
+  #[test]
+  fn full_form_2() {
+    assert_case(
+      r#"FullForm[a::b]; FullForm[a::"b"]"#,
+      r#"FullForm[MessageName[a, b]]"#,
+    );
+  }
+  #[test]
+  fn expression_2() {
+    assert_case(r#"42; %"#, r#"Out[0]"#);
+  }
+  #[test]
+  fn expression_3() {
+    assert_case(r#"42; %; 43; %"#, r#"Out[0]"#);
+  }
+  #[test]
+  fn integer_literal_1() {
+    assert_case(r#"42; %; 43; %; 44"#, r#"44"#);
+  }
+  #[test]
+  fn expression_4() {
+    assert_case(r#"42; %; 43; %; 44; %1"#, r#"Out[1]"#);
+  }
+  #[test]
+  fn expression_5() {
+    assert_case(r#"42; %; 43; %; 44; %1; %%"#, r#"Out[0]"#);
+  }
+  #[test]
+  fn hold_2() {
+    assert_case(r#"42; %; 43; %; 44; %1; %%; Hold[Out[-1]]"#, r#"Hold[%]"#);
+  }
+  #[test]
+  fn hold_3() {
+    assert_case(
+      r#"42; %; 43; %; 44; %1; %%; Hold[Out[-1]]; Hold[%4]"#,
+      r#"Hold[Out[4]]"#,
+    );
+  }
+  #[test]
+  fn out_1() {
+    assert_case(
+      r#"42; %; 43; %; 44; %1; %%; Hold[Out[-1]]; Hold[%4]; Out[0]"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn integer_literal_2() {
+    assert_case(
+      r#"42; %; 43; %; 44; %1; %%; Hold[Out[-1]]; Hold[%4]; Out[0]; 10"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn out_2() {
+    assert_case(
+      r#"42; %; 43; %; 44; %1; %%; Hold[Out[-1]]; Hold[%4]; Out[0]; 10; Out[-1] + 1"#,
+      r#"1 + Out[0]"#,
+    );
+  }
+  #[test]
+  fn out_3() {
+    assert_case(
+      r#"42; %; 43; %; 44; %1; %%; Hold[Out[-1]]; Hold[%4]; Out[0]; 10; Out[-1] + 1; Out[] + 1"#,
+      r#"1 + Out[0]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_1() {
+    assert_case(r#"ToBoxes[a + a]"#, r#"RowBox[{"2", " ", "a"}]"#);
+  }
+  #[test]
+  fn to_boxes_2() {
+    assert_case(
+      r#"ToBoxes[a + a]; ToBoxes[a + b]"#,
+      r#"RowBox[{"a", "+", "b"}]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_3() {
+    assert_case(
+      r#"ToBoxes[a + a]; ToBoxes[a + b]; ToBoxes[a ^ b] // FullForm"#,
+      r#"FullForm[SuperscriptBox[a, b]]"#,
+    );
+  }
+  #[test]
+  fn take_largest_1() {
+    assert_case(
+      r#"TakeLargest[{100, -1, 50, 10}, 2]; TakeLargest[{-8, 150, Missing[abc]}, 2]"#,
+      r#"{150, -8}"#,
+    );
+  }
+  #[test]
+  fn take_largest_2() {
+    assert_case(
+      r#"TakeLargest[{100, -1, 50, 10}, 2]; TakeLargest[{-8, 150, Missing[abc]}, 2]; TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]"#,
+      r#"{Missing[abc], 150}"#,
+    );
+  }
+  #[test]
+  fn head_11() {
+    // Wolframscript-matched expectation. mathics quoted the inner
+    // `"Document"` String, but `wolframscript -code` prints the head
+    // expression `XMLObject["Document"]` with the String unquoted, so
+    // Head's result renders as `XMLObject[Document]`.
+    assert_case(
+      r#"Head[XML`Parser`XMLGetString["<a></a>"]]"#,
+      r#"XMLObject[Document]"#,
+    );
+  }
+  #[test]
+  fn head_12() {
+    assert_case(
+      r#"Head[HTML`Parser`HTMLGetString["<a></a>"]]"#,
+      r#"HTML`Parser`HTMLGetString"#,
+    );
+  }
+  #[test]
+  fn head_13() {
+    assert_case(
+      r#"Head[HTML`Parser`HTMLGetString["<a></a>"]]; Head[HTML`Parser`HTMLGetString["<a><b></a>"]]"#,
+      r#"HTML`Parser`HTMLGetString"#,
+    );
+  }
+  #[test]
+  fn full_form_3() {
+    assert_case(r#"FullForm[a + b * c]"#, r#"FullForm[a + b*c]"#);
+  }
+  #[test]
+  fn full_form_4() {
+    assert_case(r#"FullForm[a + b * c]; FullForm[2/3]"#, r#"FullForm[2/3]"#);
+  }
+  #[test]
+  fn full_form_5() {
+    assert_case(
+      r#"FullForm[a + b * c]; FullForm[2/3]; FullForm["A string"]"#,
+      r#"FullForm["A string"]"#,
+    );
+  }
+  #[test]
+  fn input_form_1() {
+    assert_case(r#"InputForm["A string"]"#, r#"InputForm["A string"]"#);
+  }
+  #[test]
+  fn input_form_2() {
+    assert_case(
+      r#"InputForm["A string"]; InputForm[f'[x]]"#,
+      r#"InputForm[Derivative[1][f][x]]"#,
+    );
+  }
+  #[test]
+  fn output_form_1() {
+    // wolframscript -code keeps the OutputForm wrapper and renders the
+    // derivative as `Derivative[1][f][x]` (no prime shorthand at top
+    // level). Matches Woxi.
+    assert_case(r#"OutputForm[f'[x]]"#, r#"OutputForm[Derivative[1][f][x]]"#);
+  }
+  #[test]
+  fn sequence_form() {
+    assert_case(r#"SequenceForm["[", "x = ", 56, "]"]"#, r#""[""x = "56"]""#);
+  }
+  #[test]
+  fn full_form_6() {
+    assert_case(r#"FullForm[a_b]"#, r#"FullForm[a_b]"#);
+  }
+  #[test]
+  fn full_form_7() {
+    assert_case(r#"FullForm[a_b]; FullForm[a:_:b]"#, r#"FullForm[a_:b]"#);
+  }
+  #[test]
+  fn set_4() {
+    assert_case(r#"FullForm[a_b]; FullForm[a:_:b]; x = 2"#, r#"2"#);
+  }
+  #[test]
+  fn expression_6() {
+    assert_case(r#"FullForm[a_b]; FullForm[a:_:b]; x = 2; x_"#, r#"x_"#);
+  }
+  #[test]
+  fn f_3() {
+    assert_case(
+      r#"FullForm[a_b]; FullForm[a:_:b]; x = 2; x_; f[y] /. f[a:b,_:d] -> {a, b}"#,
+      r#"f[y]"#,
+    );
+  }
+  #[test]
+  fn f_4() {
+    assert_case(
+      r#"FullForm[a_b]; FullForm[a:_:b]; x = 2; x_; f[y] /. f[a:b,_:d] -> {a, b}; f[a] /. f[a:_:b] -> {a, b}"#,
+      r#"{a, b}"#,
+    );
+  }
+  #[test]
+  fn full_form_8() {
+    assert_case(
+      r#"FullForm[a_b]; FullForm[a:_:b]; x = 2; x_; f[y] /. f[a:b,_:d] -> {a, b}; f[a] /. f[a:_:b] -> {a, b}; FullForm[a:b:c:d:e]"#,
+      r#"FullForm[a:b:(c:d:e)]"#,
+    );
+  }
+  #[test]
+  fn f_5() {
+    assert_case(
+      r#"FullForm[a_b]; FullForm[a:_:b]; x = 2; x_; f[y] /. f[a:b,_:d] -> {a, b}; f[a] /. f[a:_:b] -> {a, b}; FullForm[a:b:c:d:e]; f[] /. f[a:_:b] -> {a, b}"#,
+      r#"{b, b}"#,
+    );
+  }
+  #[test]
+  fn f_6() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]"#,
+      r#"{a, 2}"#,
+    );
+  }
+  #[test]
+  fn f_7() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]"#,
+      r#"{a, 1}"#,
+    );
+  }
+  #[test]
+  fn full_form_9() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]; y : 1 // FullForm; y_ : 1 // FullForm; FullForm[y_.]"#,
+      r#"FullForm[y_.]"#,
+    );
+  }
+  #[test]
+  fn order_1() {
+    assert_case(r#"Order[7, 11]"#, r#"1"#);
+  }
+  #[test]
+  fn order_2() {
+    assert_case(r#"Order[7, 11]; Order[100, 10]"#, r#"-1"#);
+  }
+  #[test]
+  fn order_3() {
+    assert_case(r#"Order[7, 11]; Order[100, 10]; Order[x, z]"#, r#"1"#);
+  }
+  #[test]
+  fn order_4() {
+    assert_case(
+      r#"Order[7, 11]; Order[100, 10]; Order[x, z]; Order[x, x]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn boolean_q_1() {
+    assert_case(r#"BooleanQ[True]"#, r#"True"#);
+  }
+  #[test]
+  fn boolean_q_2() {
+    assert_case(r#"BooleanQ[True]; BooleanQ[False]"#, r#"True"#);
+  }
+  #[test]
+  fn boolean_q_3() {
+    assert_case(
+      r#"BooleanQ[True]; BooleanQ[False]; BooleanQ[a]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn boolean_q_4() {
+    assert_case(
+      r#"BooleanQ[True]; BooleanQ[False]; BooleanQ[a]; BooleanQ[1 < 2]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn less() {
+    assert_case(r#"1 < 0"#, r#"False"#);
+  }
+  #[test]
+  fn string_q_1() {
+    assert_case(r#"StringQ["abc"]"#, r#"True"#);
+  }
+  #[test]
+  fn string_q_2() {
+    assert_case(r#"StringQ["abc"]; StringQ[1.5]"#, r#"False"#);
+  }
+  #[test]
+  fn select() {
+    assert_case(
+      r#"StringQ["abc"]; StringQ[1.5]; Select[{"12", 1, 3, 5, "yz", x, y}, StringQ]"#,
+      r#"{"12", "yz"}"#,
+    );
+  }
+  #[test]
+  fn syntax_q_1() {
+    assert_case(r#"SyntaxQ["a[b"]"#, r#"False"#);
+  }
+  #[test]
+  fn syntax_q_2() {
+    assert_case(r#"SyntaxQ["a[b"]; SyntaxQ["a[b]"]"#, r#"True"#);
+  }
+  #[test]
+  fn head_14() {
+    assert_case(r#"Head[x]"#, r#"Symbol"#);
+  }
+  #[test]
+  fn symbol_1() {
+    assert_case(r#"Head[x]; Symbol["x"] + Symbol["x"]"#, r#"2*x"#);
+  }
+  #[test]
+  fn symbol_q_1() {
+    assert_case(r#"SymbolQ[a]"#, r#"SymbolQ[a]"#);
+  }
+  #[test]
+  fn symbol_q_2() {
+    assert_case(r#"SymbolQ[a]; SymbolQ[1]"#, r#"SymbolQ[1]"#);
+  }
+  #[test]
+  fn symbol_q_3() {
+    assert_case(
+      r#"SymbolQ[a]; SymbolQ[1]; SymbolQ[a + b]"#,
+      r#"SymbolQ[a + b]"#,
+    );
+  }
+  #[test]
+  fn value_q_1() {
+    assert_case(r#"ValueQ[x]"#, r#"False"#);
+  }
+  #[test]
+  fn value_q_2() {
+    assert_case(r#"ValueQ[x]; x = 1; ValueQ[x]"#, r#"True"#);
+  }
+  #[test]
+  fn head_15() {
+    assert_case(r#"Head[a * b]"#, r#"Times"#);
+  }
+  #[test]
+  fn head_16() {
+    assert_case(r#"Head[a * b]; Head[6]"#, r#"Integer"#);
+  }
+  #[test]
+  fn head_17() {
+    assert_case(r#"Head[a * b]; Head[6]; Head[x]"#, r#"Symbol"#);
+  }
+  #[test]
+  fn head_18() {
+    assert_case(r#"Head["abc"]"#, r#"String"#);
+  }
+  #[test]
+  fn string_literal_1() {
+    assert_case(r#"Head["abc"]; "abc""#, r#""abc""#);
+  }
+  #[test]
+  fn input_form_3() {
+    assert_case(
+      r#"Head["abc"]; "abc"; InputForm["abc"]"#,
+      r#"InputForm["abc"]"#,
+    );
+  }
+  #[test]
+  fn full_form_10() {
+    assert_case(
+      r#"Head["abc"]; "abc"; InputForm["abc"]; FullForm["abc" + 2]"#,
+      r#"FullForm[2 + "abc"]"#,
+    );
+  }
+  #[test]
+  fn full_form_11() {
+    assert_case(r#"FullForm[a:=b]"#, r#"FullForm[Null]"#);
+  }
+  #[test]
+  fn string_literal_2() {
+    assert_case(r#"FullForm[a:=b]; a:=b; """#, r#""""#);
+  }
+  #[test]
+  fn head_19() {
+    assert_case(r#"Head[<|a -> x, b -> y, c -> z|>]"#, r#"Association"#);
+  }
+  #[test]
+  fn association_literal() {
+    assert_case(
+      r#"Head[<|a -> x, b -> y, c -> z|>]; <|a -> x, b -> y|>"#,
+      r#"<|a -> x, b -> y|>"#,
+    );
+  }
+  #[test]
+  fn head_20() {
+    assert_case(r#"Head[{1, 2, 3}]"#, r#"List"#);
+  }
+  #[test]
+  fn list_literal_1() {
+    assert_case(
+      r#"Head[{1, 2, 3}]; {{a, b, {c, d}}}"#,
+      r#"{{a, b, {c, d}}}"#,
+    );
+  }
+  #[test]
+  fn full_form_12() {
+    assert_case(
+      r#"Length[{1, 2, 3}]; Length[Exp[x]]; FullForm[Exp[x]]"#,
+      r#"FullForm[E^x]"#,
+    );
+  }
+  #[test]
+  fn length_2() {
+    assert_case(
+      r#"Length[{1, 2, 3}]; Length[Exp[x]]; FullForm[Exp[x]]; Length[a]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn length_3() {
+    assert_case(
+      r#"Length[{1, 2, 3}]; Length[Exp[x]]; FullForm[Exp[x]]; Length[a]; Length[1/3]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn full_form_13() {
+    assert_case(
+      r#"Length[{1, 2, 3}]; Length[Exp[x]]; FullForm[Exp[x]]; Length[a]; Length[1/3]; FullForm[1/3]"#,
+      r#"FullForm[1/3]"#,
+    );
+  }
+  #[test]
+  fn head_21() {
+    // The scraped expectation \`"/Applications/Wolfram.app/Contents"\`
+    // is wolframscript-specific. Woxi reports the directory of its
+    // own binary (\`.../target/debug\` here). Verify the documented
+    // contract: \`\$InstallationDirectory\` returns a String.
+    assert_case(r#"Head[$InstallationDirectory]"#, r#"String"#);
+  }
+  #[test]
+  fn full_form_14() {
+    assert_case(
+      r#"Plus[##]& [1, 2, 3]; Plus[##2]& [1, 2, 3]; FullForm[##]"#,
+      r#"FullForm[##1]"#,
+    );
+  }
+  #[test]
+  fn nest() {
+    assert_case(
+      r#"Nest[f, x, 3]; Nest[(1+#) ^ 2 &, x, 2]; Nest[Subsuperscript[#,#,#]&,0,5]"#,
+      r#"Subsuperscript[Subsuperscript[Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]], Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]], Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]]], Subsuperscript[Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]], Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]], Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]]], Subsuperscript[Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]], Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]], Subsuperscript[Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]], Subsuperscript[Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0], Subsuperscript[0, 0, 0]]]]]"#,
+    );
+  }
+  #[test]
+  fn list_literal_2() {
+    assert_case(r#"1; {1, 1.}"#, r#"{1, 1.}"#);
+  }
+  #[test]
+  fn head_22() {
+    assert_case(r#"Head[$UserName]"#, r#"String"#);
+  }
+  #[test]
+  fn integer1() {
+    assert_case(r#"Integer1"#, r#"Integer1"#);
+  }
+  #[test]
+  fn a_1() {
+    assert_case(r#"A"#, r#"A"#);
+  }
+  #[test]
+  fn a_2() {
+    assert_case(r#"A; A"#, r#"A"#);
+  }
+  #[test]
+  fn a_3() {
+    assert_case(r#"A; A; A"#, r#"A"#);
+  }
+  #[test]
+  fn a_4() {
+    assert_case(r#"A; A; A; A"#, r#"A"#);
+  }
+  #[test]
+  fn f_8() {
+    assert_case(r#"A; A; A; A; f[x]"#, r#"f[x]"#);
+  }
+  #[test]
+  fn a_5() {
+    assert_case(r#"A; A; A; A; f[x]; A"#, r#"A"#);
+  }
+  #[test]
+  fn f_9() {
+    assert_case(r#"A; A; A; A; f[x]; A; f[_]"#, r#"f[_]"#);
+  }
+  #[test]
+  fn f_10() {
+    assert_case(r#"A; A; A; A; f[x]; A; f[_]; f[_]"#, r#"f[_]"#);
+  }
+  #[test]
+  fn a_6() {
+    assert_case(r#"A"#, r#"A"#);
+  }
+  #[test]
+  fn expression_7() {
+    assert_case(r#"A; A_"#, r#"A_"#);
+  }
+  #[test]
+  fn a_7() {
+    assert_case(r#"A"#, r#"A"#);
+  }
+  #[test]
+  fn a_8() {
+    assert_case(r#"A"#, r#"A"#);
+  }
+  #[test]
+  fn full_form_15() {
+    assert_case(
+      r#"\(c (1 + x)\); \!\(x \^ 2\); FullForm[%]"#,
+      r#"FullForm[Out[0]]"#,
+    );
+  }
+  #[test]
+  fn make_boxes() {
+    assert_case(
+      r#"\(c (1 + x)\); \!\(x \^ 2\); FullForm[%]; MakeBoxes[1 + 1]"#,
+      r#"RowBox[{"1", "+", "1"}]"#,
+    );
+  }
+  #[test]
+  fn expression_8() {
+    // mathics's expected encoded the `é` as `\[CapitalATilde]\[Copyright]`
+    // (UTF-8 mojibake) and replaced the embedded newline with a
+    // space. Wolframscript's stdout on macOS exhibits the same UTF-8
+    // mojibake bug (printing `quÃ© tal?` instead of `qué tal?`), but
+    // the underlying string is well-formed UTF-8 — `StringLength`
+    // returns 13. Woxi reads/prints the bytes correctly: `qué` stays
+    // `qué` and the newline is preserved in OutputForm.
+    assert_case("\"Hola\"; \"Hola\nqué tal?\"", "Hola\nqué tal?");
+  }
+  #[test]
+  fn output_form_2() {
+    // mathics rendered the result as 2D ASCII art with `1.09951 10^12`;
+    // wolframscript -code returns the literal wrapper
+    // `OutputForm[1.099511627776*^12 + 3.*I]`. Woxi matches.
+    assert_case(
+      r#"OutputForm[Complex[2.0 ^ 40, 3]]"#,
+      r#"OutputForm[1.099511627776*^12 + 3.*I]"#,
+    );
+  }
+  #[test]
+  fn input_form_4() {
+    assert_case(
+      r#"OutputForm[Complex[2.0 ^ 40, 3]]; InputForm[Complex[2.0 ^ 40, 3]]"#,
+      r#"InputForm[1.099511627776*^12 + 3.*I]"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_2() {
+    assert_case(r#"1; x"#, r#"x"#);
+  }
+  #[test]
+  fn symbol_literal_3() {
+    assert_case(r#"x"#, r#"x"#);
+  }
+  #[test]
+  fn symbol_literal_4() {
+    assert_case(r#"x; x"#, r#"x"#);
+  }
+  #[test]
+  fn symbol_literal_5() {
+    assert_case(r#"x; x; x"#, r#"x"#);
+  }
+  #[test]
+  fn symbol_literal_6() {
+    assert_case(r#"x; x; x; x"#, r#"x"#);
+  }
+  #[test]
+  fn symbol_literal_7() {
+    assert_case(r#"x; x; x; x; x"#, r#"x"#);
+  }
+  #[test]
+  fn input_form_5() {
+    // Wolframscript-matched expectation. mathics expected the
+    // \`InputForm["MyPackage`Private`"]\` form (a package context),
+    // but a fresh wolframscript -code session is in \`Global`\` and
+    // outputs \`InputForm[Global`]\`. Woxi already matches that.
+    assert_case(r#"InputForm[$Context]"#, r#"InputForm[Global`]"#);
+  }
+  #[test]
+  fn byte_ordering() {
+    assert_case(r#"ByteOrdering"#, r#"ByteOrdering"#);
+  }
+  #[test]
+  fn head_23() {
+    assert_case(
+      r#"MemberQ[$Packages, "System`"]; Head[$ParentProcessID] == Integer"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn between() {
+    assert_case(r#"Between"#, r#"Between"#);
+  }
+  #[test]
+  fn boolean_q_5() {
+    assert_case(r#"Between; BooleanQ"#, r#"BooleanQ"#);
+  }
+  #[test]
+  fn true_q() {
+    assert_case(r#"Between; BooleanQ; TrueQ"#, r#"TrueQ"#);
+  }
+  #[test]
+  fn boolean_q_6() {
+    assert_case(r#"BooleanQ["string"]"#, r#"False"#);
+  }
+  #[test]
+  fn order_5() {
+    assert_case(r#"Order["c", "d"]"#, r#"1"#);
+  }
+  #[test]
+  fn order_6() {
+    assert_case(r#"Order["c", "d"]; Order["d", "c"]"#, r#"-1"#);
+  }
+  #[test]
+  fn digit_q() {
+    assert_case(r#"DigitQ"#, r#"DigitQ"#);
+  }
+  #[test]
+  fn letter_q() {
+    assert_case(r#"DigitQ; LetterQ"#, r#"LetterQ"#);
+  }
+  #[test]
+  fn string_match_q() {
+    assert_case(r#"DigitQ; LetterQ; StringMatchQ"#, r#"StringMatchQ"#);
+  }
+  #[test]
+  fn string_q_3() {
+    assert_case(r#"DigitQ; LetterQ; StringMatchQ; StringQ"#, r#"StringQ"#);
+  }
+  #[test]
+  fn subset_q() {
+    assert_case(
+      r#"DigitQ; LetterQ; StringMatchQ; StringQ; SubsetQ"#,
+      r#"SubsetQ"#,
+    );
+  }
+  #[test]
+  fn syntax_q_3() {
+    assert_case(
+      r#"DigitQ; LetterQ; StringMatchQ; StringQ; SubsetQ; SyntaxQ"#,
+      r#"SyntaxQ"#,
+    );
+  }
+  #[test]
+  fn expression_9() {
+    assert_case(r#"\.78\.79\.7A"#, r#"xyz"#);
+  }
+  #[test]
+  fn expression_10() {
+    assert_case(r#"\.78\.79\.7A; \:0078\:0079\:007A"#, r#"xyz"#);
+  }
+  #[test]
+  fn expression_11() {
+    assert_case(
+      r#"\.78\.79\.7A; \:0078\:0079\:007A; \101\102\103\061\062\063"#,
+      r#"ABC123"#,
+    );
+  }
+  #[test]
+  fn arg() {
+    assert_case(r#"Arg"#, r#"Arg"#);
+  }
+  #[test]
+  fn conjugate() {
+    assert_case(r#"Arg; Conjugate"#, r#"Conjugate"#);
+  }
+  #[test]
+  fn im() {
+    assert_case(r#"Arg; Conjugate; Im"#, r#"Im"#);
+  }
+  #[test]
+  fn re() {
+    assert_case(r#"Arg; Conjugate; Im; Re"#, r#"Re"#);
+  }
+  #[test]
+  fn product() {
+    assert_case(r#"Arg; Conjugate; Im; Re; Product"#, r#"Product"#);
+  }
+  #[test]
+  fn sum() {
+    assert_case(r#"Arg; Conjugate; Im; Re; Product; Sum"#, r#"Sum"#);
+  }
+  #[test]
+  fn assuming() {
+    assert_case(
+      r#"Arg; Conjugate; Im; Re; Product; Sum; Assuming"#,
+      r#"Assuming"#,
+    );
+  }
+  #[test]
+  fn boole() {
+    assert_case(
+      r#"Arg; Conjugate; Im; Re; Product; Sum; Assuming; Boole"#,
+      r#"Boole"#,
+    );
+  }
+  #[test]
+  fn complex_2() {
+    assert_case(
+      r#"Arg; Conjugate; Im; Re; Product; Sum; Assuming; Boole; Complex"#,
+      r#"Complex"#,
+    );
+  }
+  #[test]
+  fn element() {
+    assert_case(
+      r#"Arg; Conjugate; Im; Re; Product; Sum; Assuming; Boole; Complex; Element"#,
+      r#"Element"#,
+    );
+  }
+  #[test]
+  fn rational_2() {
+    assert_case(
+      r#"Arg; Conjugate; Im; Re; Product; Sum; Assuming; Boole; Complex; Element; Rational"#,
+      r#"Rational"#,
+    );
+  }
+  #[test]
+  fn conditional_expression() {
+    assert_case(
+      r#"Arg; Conjugate; Im; Re; Product; Sum; Assuming; Boole; Complex; Element; Rational; ConditionalExpression"#,
+      r#"ConditionalExpression"#,
+    );
+  }
+  #[test]
+  fn apart() {
+    assert_case(r#"Apart"#, r#"Apart"#);
+  }
+  #[test]
+  fn collect() {
+    assert_case(r#"Apart; Collect"#, r#"Collect"#);
+  }
+  #[test]
+  fn expand_denominator() {
+    assert_case(
+      r#"Apart; Collect; ExpandDenominator"#,
+      r#"ExpandDenominator"#,
+    );
+  }
+  #[test]
+  fn exponent() {
+    assert_case(
+      r#"Apart; Collect; ExpandDenominator; Exponent"#,
+      r#"Exponent"#,
+    );
+  }
+  #[test]
+  fn real_literal_1() {
+    assert_case(r#"0; 0."#, r#"0."#);
+  }
+  #[test]
+  fn real_literal_2() {
+    assert_case(r#"0; 0.; 0.00"#, r#"0."#);
+  }
+  #[test]
+  fn expression_12() {
+    assert_case(r#"0; 0.; 0.00; 0.00`"#, r#"0."#);
+  }
+  #[test]
+  fn expression_13() {
+    assert_case(r#"0; 0.; 0.00; 0.00`; 0.00`2"#, r#"0."#);
+  }
+  #[test]
+  fn expression_14() {
+    assert_case(r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20"#, r#"0."#);
+  }
+  #[test]
+  fn real_literal_3() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000"#,
+      r#"0``20."#,
+    );
+  }
+  #[test]
+  fn expression_15() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2"#,
+      r#"0``2."#,
+    );
+  }
+  #[test]
+  fn expression_16() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20"#,
+      r#"0``20."#,
+    );
+  }
+  #[test]
+  fn real_literal_4() {
+    assert_case(r#"0; 0."#, r#"0."#);
+  }
+  #[test]
+  fn real_literal_5() {
+    assert_case(r#"0; 0.; 0.00"#, r#"0."#);
+  }
+  #[test]
+  fn expression_17() {
+    assert_case(r#"0; 0.; 0.00; 0.00`"#, r#"0."#);
+  }
+  #[test]
+  fn expression_18() {
+    assert_case(r#"0; 0.; 0.00; 0.00`; 0.00`2"#, r#"0."#);
+  }
+  #[test]
+  fn expression_19() {
+    assert_case(r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20"#, r#"0."#);
+  }
+  #[test]
+  fn real_literal_6() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000"#,
+      r#"0``20."#,
+    );
+  }
+  #[test]
+  fn expression_20() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2"#,
+      r#"0``2."#,
+    );
+  }
+  #[test]
+  fn expression_21() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20"#,
+      r#"0``20."#,
+    );
+  }
+  #[test]
+  fn full_form_16() {
+    assert_case(
+      r#"x === Global`x; `x === Global`x; a`x === Global`x; a`x === a`x; a`x === b`x; FullForm[a`b_]"#,
+      r#"FullForm[a`b_]"#,
+    );
+  }
+  #[test]
+  fn set_5() {
+    assert_case(
+      r#"x === Global`x; `x === Global`x; a`x === Global`x; a`x === a`x; a`x === b`x; FullForm[a`b_]; a = 2"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn information() {
+    assert_case(r#"Information"#, r#"Information"#);
+  }
+  #[test]
+  fn symbol_2() {
+    assert_case(r#"Information; Symbol"#, r#"Symbol"#);
+  }
+  #[test]
+  fn symbol_name() {
+    assert_case(r#"Information; Symbol; SymbolName"#, r#"SymbolName"#);
+  }
+  #[test]
+  fn value_q_3() {
+    assert_case(r#"Information; Symbol; SymbolName; ValueQ"#, r#"ValueQ"#);
+  }
+  #[test]
+  fn expression_22() {
+    assert_case(r#"1.  2.  3."#, r#"6."#);
+  }
+  #[test]
+  fn head_24() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]"#,
+      r#"Complex"#,
+    );
+  }
+  #[test]
+  fn times_1() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm"#,
+      r#"FullForm[1]"#,
+    );
+  }
+  #[test]
+  fn times_2() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm"#,
+      r#"FullForm[-1]"#,
+    );
+  }
+  #[test]
+  fn times_3() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm"#,
+      r#"FullForm[-5]"#,
+    );
+  }
+  #[test]
+  fn times_4() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm"#,
+      r#"FullForm[-5*a]"#,
+    );
+  }
+  #[test]
+  fn minus_1() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm"#,
+      r#"FullForm[-(a*b)]"#,
+    );
+  }
+  #[test]
+  fn minus_2() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3)"#,
+      r#"2 / 3 - x"#,
+    );
+  }
+  #[test]
+  fn minus_3() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2"#,
+      r#"-2*x"#,
+    );
+  }
+  #[test]
+  fn minus_4() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm"#,
+      r#"FullForm[-1/2*h]"#,
+    );
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn expression_23() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi"#,
+      r#"9.42477796076938"#,
+    );
+  }
+  #[test]
+  fn head_25() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]"#,
+      r#"Complex"#,
+    );
+  }
+  #[test]
+  fn head_26() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]"#,
+      r#"Complex"#,
+    );
+  }
+  #[test]
+  fn head_27() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]"#,
+      r#"Times"#,
+    );
+  }
+  #[test]
+  fn times_5() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm"#,
+      r#"InputForm[3*a]"#,
+    );
+  }
+  #[test]
+  fn times_6() {
+    // OutputForm wrapper now stays — `3 * a // OutputForm` prints as
+    // `OutputForm[3*a]`, matching wolframscript.
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm"#,
+      r#"OutputForm[3*a]"#,
+    );
+  }
+  #[test]
+  fn minus_5() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x"#,
+      r#"-2.123456789*x"#,
+    );
+  }
+  #[test]
+  fn minus_6() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I"#,
+      r#"0. - 2.123456789*I"#,
+    );
+  }
+  #[test]
+  fn n_1() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I"#,
+      r#"3.1415926535897932384626433832795028841971693993751058209749`30.*I"#,
+    );
+  }
+  #[test]
+  fn n_2() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I; N[I Pi, 30]"#,
+      r#"3.1415926535897932384626433832795028841971693993751058209749`30.*I"#,
+    );
+  }
+  #[test]
+  fn n_3() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I; N[I Pi, 30]; N[Pi * E, 30]"#,
+      r#"8.5397342226735670654635508695465744827154188073938928927837`30."#,
+    );
+  }
+  #[test]
+  fn n_4() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I; N[I Pi, 30]; N[Pi * E, 30]; N[Pi, 30] * N[E, 30]"#,
+      r#"8.53973422267356706546355086954657448272`29.69897000433602"#,
+    );
+  }
+  #[test]
+  fn n_5() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I; N[I Pi, 30]; N[Pi * E, 30]; N[Pi, 30] * N[E, 30]; N[Pi, 30] * E//{#1, Precision[#1]}&"#,
+      r#"{8.5397342226735670654635508695465744950348885357651126726713`30., 30.}"#,
+    );
+  }
+  #[test]
+  fn n_6() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I; N[I Pi, 30]; N[Pi * E, 30]; N[Pi, 30] * N[E, 30]; N[Pi, 30] * E//{#1, Precision[#1]}&; N[Pi, 30] + N[E, 30]//{#1, Precision[#1]}&"#,
+      r#"{5.8598744820488384738229308546321653819544164930750646672643`30., 30.}"#,
+    );
+  }
+  #[test]
+  fn n_7() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]; Head[3 + 2 I]; Times[]// FullForm; Times[-1]// FullForm; Times[-5]// FullForm; Times[-5, a]// FullForm; -a*b // FullForm; -(x - 2/3); -x*2; -(h/2) // FullForm; x / x; 2x^2 / x^2; 3. Pi; Head[3 * I]; Head[Times[I, 1/2]]; Head[Pi * I]; 3 * a //InputForm; 3 * a //OutputForm; -2.123456789 x; -2.123456789 I; N[Pi, 30] * I; N[I Pi, 30]; N[Pi * E, 30]; N[Pi, 30] * N[E, 30]; N[Pi, 30] * E//{#1, Precision[#1]}&; N[Pi, 30] + N[E, 30]//{#1, Precision[#1]}&; N[Sqrt[2], 50]"#,
+      r#"1.41421356237309504880168872420969807856967187537694807317667973799073247846211`50."#,
+    );
+  }
+  #[test]
+  fn i_1() {
+    assert_case(r#"I"#, r#"I"#);
+  }
+  #[test]
+  fn integer_literal_3() {
+    assert_case(r#"I; 0"#, r#"0"#);
+  }
+  #[test]
+  fn integer_literal_4() {
+    assert_case(r#"I; 0; 1"#, r#"1"#);
+  }
+  #[test]
+  fn i_2() {
+    assert_case(r#"I"#, r#"I"#);
+  }
+  #[test]
+  fn integer_literal_5() {
+    assert_case(r#"I; 0"#, r#"0"#);
+  }
+  #[test]
+  fn integer_literal_6() {
+    assert_case(r#"I; 0; 1"#, r#"1"#);
+  }
+  #[test]
+  fn composite_q() {
+    assert_case(r#"CompositeQ"#, r#"CompositeQ"#);
+  }
+  #[test]
+  fn divisible() {
+    assert_case(r#"CompositeQ; Divisible"#, r#"Divisible"#);
+  }
+  #[test]
+  fn lcm() {
+    assert_case(r#"CompositeQ; Divisible; LCM"#, r#"LCM"#);
+  }
+  #[test]
+  fn modular_inverse() {
+    assert_case(
+      r#"CompositeQ; Divisible; LCM; ModularInverse"#,
+      r#"ModularInverse"#,
+    );
+  }
+  #[test]
+  fn power_mod() {
+    assert_case(
+      r#"CompositeQ; Divisible; LCM; ModularInverse; PowerMod"#,
+      r#"PowerMod"#,
+    );
+  }
+  #[test]
+  fn quotient() {
+    assert_case(
+      r#"CompositeQ; Divisible; LCM; ModularInverse; PowerMod; Quotient"#,
+      r#"Quotient"#,
+    );
+  }
+  #[test]
+  fn limit() {
+    assert_case(r#"Limit"#, r#"Limit"#);
+  }
+  #[test]
+  fn hold_4() {
+    assert_case(
+      r#"Hold[<< ~/some_example/dir/] // FullForm"#,
+      r#"FullForm[Hold[Get["~/some_example/dir/"]]]"#,
+    );
+  }
+  #[test]
+  fn integer_literal_7() {
+    assert_case(r#"1234567890; 1234567890"#, r#"1234567890"#);
+  }
+  #[test]
+  fn integer_literal_8() {
+    assert_case(r#"1234567890; 1234567890; 1234567890"#, r#"1234567890"#);
+  }
+  #[test]
+  fn integer_literal_9() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890"#,
+      r#"1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_10() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890"#,
+      r#"9934567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_11() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890"#,
+      r#"1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_12() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890"#,
+      r#"1234567890"#,
+    );
+  }
+  #[test]
+  fn expression_24() {
+    assert_case(r#"Symbol_x"#, r#"Symbol_x"#);
+  }
+}

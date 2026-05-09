@@ -398,3 +398,57 @@ mod element_data_tests {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn element_data_1() {
+    assert_case(r#"ElementData[74]"#, r#"Entity["Element", "Tungsten"]"#);
+  }
+  #[test]
+  fn element_data_2() {
+    assert_case(
+      r#"ElementData[74]; ElementData["He", "AbsoluteBoilingPoint"]"#,
+      r#"Quantity[4.22`3.195673199100121, "Kelvins"]"#,
+    );
+  }
+  #[test]
+  fn element_data_3() {
+    assert_case(
+      r#"ElementData[74]; ElementData["He", "AbsoluteBoilingPoint"]; ElementData["Carbon", "IonizationEnergies"]"#,
+      r#"{Quantity[11.260778981528851832`5., "MolarElectronvolts"], Quantity[24.3829807933223900782`5., "MolarElectronvolts"], Quantity[47.8881079467593740356`5., "MolarElectronvolts"], Quantity[64.4937407900226288955`5., "MolarElectronvolts"], Quantity[392.0906853660542969686`5., "MolarElectronvolts"], Quantity[489.9915765391067906686`6., "MolarElectronvolts"]}"#,
+    );
+  }
+  #[test]
+  fn element_data_4() {
+    // The mathics-derived expected was the literal Row[…] InputForm, but
+    // `wolframscript -code` displays Row's elements concatenated and
+    // strips Style[…, Italic] wrappers — Woxi's printer matches.
+    assert_case(
+      r#"ElementData[74]; ElementData["He", "AbsoluteBoilingPoint"]; ElementData["Carbon", "IonizationEnergies"]; ElementData[16, "ElectronConfigurationString"]"#,
+      r#"[Ne]3Superscript[s, 2]3Superscript[p, 4]"#,
+    );
+  }
+  #[test]
+  fn element_data_5() {
+    assert_case(
+      r#"ElementData[74]; ElementData["He", "AbsoluteBoilingPoint"]; ElementData["Carbon", "IonizationEnergies"]; ElementData[16, "ElectronConfigurationString"]; ElementData[73, "ElectronConfiguration"]"#,
+      r#"{{2}, {2, 6}, {2, 6, 10}, {2, 6, 10, 14}, {2, 6, 3}, {2}}"#,
+    );
+  }
+  #[test]
+  fn length() {
+    assert_case(
+      r#"ElementData[74]; ElementData["He", "AbsoluteBoilingPoint"]; ElementData["Carbon", "IonizationEnergies"]; ElementData[16, "ElectronConfigurationString"]; ElementData[73, "ElectronConfiguration"]; Length[ElementData[All]]"#,
+      r#"118"#,
+    );
+  }
+  #[test]
+  fn element_data_6() {
+    assert_case(
+      r#"ElementData["Meitnerium","MeltingPoint"]"#,
+      r#"Missing["NotAvailable"]"#,
+    );
+  }
+}

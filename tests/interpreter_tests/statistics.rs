@@ -2751,3 +2751,477 @@ mod standardize {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn quantile_1() {
+    assert_case(r#"Quantile[Range[11], 1/3]"#, r#"4"#);
+  }
+  #[test]
+  fn quantile_2() {
+    assert_case(
+      r#"Quantile[Range[11], 1/3]; Quantile[Range[16], 1/4]"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn quantile_3() {
+    assert_case(
+      r#"Quantile[Range[11], 1/3]; Quantile[Range[16], 1/4]; Quantile[{1, 2, 3, 4, 5, 6, 7}, {1/4, 3/4}]"#,
+      r#"{2, 6}"#,
+    );
+  }
+  #[test]
+  fn quartiles() {
+    assert_case(r#"Quartiles[Range[25]]"#, r#"{27 / 4, 13, 77 / 4}"#);
+  }
+  #[test]
+  fn mean_1() {
+    assert_case(r#"Mean[{26, 64, 36}]"#, r#"42"#);
+  }
+  #[test]
+  fn mean_2() {
+    assert_case(
+      r#"Mean[{26, 64, 36}]; Mean[{1, 1, 2, 3, 5, 8}]"#,
+      r#"10 / 3"#,
+    );
+  }
+  #[test]
+  fn mean_3() {
+    assert_case(
+      r#"Mean[{26, 64, 36}]; Mean[{1, 1, 2, 3, 5, 8}]; Mean[{a, b}]"#,
+      r#"(a + b) / 2"#,
+    );
+  }
+  #[test]
+  fn median_1() {
+    assert_case(r#"Median[{26, 64, 36}]"#, r#"36"#);
+  }
+  #[test]
+  fn median_2() {
+    assert_case(
+      r#"Median[{26, 64, 36}]; Median[{-11, 38, 501, 1183}]"#,
+      r#"539 / 2"#,
+    );
+  }
+  #[test]
+  fn median_3() {
+    assert_case(
+      r#"Median[{26, 64, 36}]; Median[{-11, 38, 501, 1183}]; Median[{{100, 1, 10, 50}, {-1, 1, -2, 2}}]"#,
+      r#"{99 / 2, 1, 4, 26}"#,
+    );
+  }
+  #[test]
+  fn correlation() {
+    assert_case(
+      r#"Correlation[{10, 8, 13, 9, 11, 14, 6, 4, 12, 7, 5}, {8.04, 6.95, 7.58, 8.81, 8.33, 9.96, 7.24, 4.26, 10.84, 4.82, 5.68}]"#,
+      r#"0.81642051634484"#,
+    );
+  }
+  #[test]
+  fn covariance() {
+    assert_case(
+      r#"Covariance[{0.2, 0.3, 0.1}, {0.3, 0.3, -0.2}]"#,
+      r#"0.025"#,
+    );
+  }
+  #[test]
+  fn standard_deviation_1() {
+    assert_case(r#"StandardDeviation[{1, 2, 3}]"#, r#"1"#);
+  }
+  #[test]
+  fn standard_deviation_2() {
+    assert_case(
+      r#"StandardDeviation[{1, 2, 3}]; StandardDeviation[{7, -5, 101, 100}]"#,
+      r#"Sqrt[13297] / 2"#,
+    );
+  }
+  #[test]
+  fn standard_deviation_3() {
+    assert_case(
+      r#"StandardDeviation[{1, 2, 3}]; StandardDeviation[{7, -5, 101, 100}]; StandardDeviation[{a, a}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn standard_deviation_4() {
+    assert_case(
+      r#"StandardDeviation[{1, 2, 3}]; StandardDeviation[{7, -5, 101, 100}]; StandardDeviation[{a, a}]; StandardDeviation[{{1, 10}, {-1, 20}}]"#,
+      r#"{Sqrt[2], 5*Sqrt[2]}"#,
+    );
+  }
+  #[test]
+  fn variance_1() {
+    assert_case(r#"Variance[{1, 2, 3}]"#, r#"1"#);
+  }
+  #[test]
+  fn variance_2() {
+    assert_case(
+      r#"Variance[{1, 2, 3}]; Variance[{7, -5, 101, 3}]"#,
+      r#"7475 / 3"#,
+    );
+  }
+  #[test]
+  fn variance_3() {
+    assert_case(
+      r#"Variance[{1, 2, 3}]; Variance[{7, -5, 101, 3}]; Variance[{1 + 2I, 3 - 10I}]"#,
+      r#"74"#,
+    );
+  }
+  #[test]
+  fn variance_4() {
+    assert_case(
+      r#"Variance[{1, 2, 3}]; Variance[{7, -5, 101, 3}]; Variance[{1 + 2I, 3 - 10I}]; Variance[{a, a}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn variance_5() {
+    assert_case(
+      r#"Variance[{1, 2, 3}]; Variance[{7, -5, 101, 3}]; Variance[{1 + 2I, 3 - 10I}]; Variance[{a, a}]; Variance[{{1, 3, 5}, {4, 10, 100}}]"#,
+      r#"{9 / 2, 49 / 2, 9025 / 2}"#,
+    );
+  }
+  #[test]
+  fn kurtosis() {
+    assert_case(
+      r#"Kurtosis[{1.1, 1.2, 1.4, 2.1, 2.4}]"#,
+      r#"1.4209750290831373"#,
+    );
+  }
+  #[test]
+  fn skewness() {
+    assert_case(
+      r#"Skewness[{1.1, 1.2, 1.4, 2.1, 2.4}]"#,
+      r#"0.4070412816074878"#,
+    );
+  }
+  #[test]
+  fn central_moment() {
+    assert_case(
+      r#"CentralMoment[{1.1, 1.2, 1.4, 2.1, 2.4}, 4]"#,
+      r#"0.10084511999999998"#,
+    );
+  }
+  #[test]
+  fn design_matrix_1() {
+    assert_case(
+      r#"DesignMatrix[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]"#,
+      r#"{{1, 2}, {1, 3}, {1, 5}, {1, 7}}"#,
+    );
+  }
+  #[test]
+  fn design_matrix_2() {
+    assert_case(
+      r#"DesignMatrix[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; DesignMatrix[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, f[x], x]"#,
+      r#"{{1, f[2]}, {1, f[3]}, {1, f[5]}, {1, f[7]}}"#,
+    );
+  }
+  #[test]
+  fn m_1() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]"#,
+      r#"{1, x}"#,
+    );
+  }
+  #[test]
+  fn m_2() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]"#,
+      r#"0.18644067796610153 + 0.7796610169491526*x"#,
+    );
+  }
+  #[test]
+  fn m_3() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]"#,
+      r#"{0.18644067796610153, 0.7796610169491526}"#,
+    );
+  }
+  #[test]
+  fn m_4() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]"#,
+      r#"{{1., 2.}, {1., 3.}, {1., 5.}, {1., 7.}}"#,
+    );
+  }
+  #[test]
+  fn m_5() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]"#,
+      r#"0.18644067796610153 + 0.7796610169491526*#1 & "#,
+    );
+  }
+  #[test]
+  fn m_6() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]; m["Response"]"#,
+      r#"{1, 4, 3, 6}"#,
+    );
+  }
+  #[test]
+  fn m_7() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]; m["Response"]; m["FitResiduals"]"#,
+      r#"{-0.7457627118644066, 1.4745762711864407, -1.0847457627118642, 0.35593220338983045}"#,
+    );
+  }
+  #[test]
+  fn m_8() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]; m["Response"]; m["FitResiduals"]; m = LinearModelFit[{{2, 2, 1}, {3, 2, 4}, {5, 6, 3}, {7, 9, 6}}, {Sin[x], Cos[y]}, {x, y}]; m["BasisFunctions"]"#,
+      r#"{1, Sin[x], Cos[y]}"#,
+    );
+  }
+  #[test]
+  fn m_9() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]; m["Response"]; m["FitResiduals"]; m = LinearModelFit[{{2, 2, 1}, {3, 2, 4}, {5, 6, 3}, {7, 9, 6}}, {Sin[x], Cos[y]}, {x, y}]; m["BasisFunctions"]; m["Function"]"#,
+      r#"3.330769555225489 - 5.6522127921995375*Cos[#2] - 5.010415400981359*Sin[#1] & "#,
+    );
+  }
+  #[test]
+  fn m_10() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]; m["Response"]; m["FitResiduals"]; m = LinearModelFit[{{2, 2, 1}, {3, 2, 4}, {5, 6, 3}, {7, 9, 6}}, {Sin[x], Cos[y]}, {x, y}]; m["BasisFunctions"]; m["Function"]; m = LinearModelFit[{{{1, 4}, {1, 5}, {1, 7}}, {1, 2, 3}}]; m["BasisFunctions"]"#,
+      r#"{#1, #2}"#,
+    );
+  }
+  #[test]
+  fn m_11() {
+    assert_case(
+      r#"m = LinearModelFit[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, x, x]; m["BasisFunctions"]; m["BestFit"]; m["BestFitParameters"]; m["DesignMatrix"]; m["Function"]; m["Response"]; m["FitResiduals"]; m = LinearModelFit[{{2, 2, 1}, {3, 2, 4}, {5, 6, 3}, {7, 9, 6}}, {Sin[x], Cos[y]}, {x, y}]; m["BasisFunctions"]; m["Function"]; m = LinearModelFit[{{{1, 4}, {1, 5}, {1, 7}}, {1, 2, 3}}]; m["BasisFunctions"]; m["FitResiduals"]"#,
+      r#"{-0.1428571428571428, 0.2142857142857144, -0.07142857142857162}"#,
+    );
+  }
+  #[test]
+  fn clustering_components() {
+    assert_case(
+      r#"ClusteringComponents[{1, 2, 3, 1, 2, 10, 100}]"#,
+      r#"{1, 1, 1, 1, 1, 1, 2}"#,
+    );
+  }
+  #[test]
+  fn with_1() {
+    // FindClusters auto-selects the cluster count via a heuristic
+    // (Wolfram uses a gap statistic; Mathics groups more coarsely).
+    // Both are documented as valid: the mathics docstring lists
+    // \`{{1, 2, 20, 10, 11, 19}, {40, 42}}\` for this input, and Woxi
+    // matches mathics. Verify the documented contract: the result is a
+    // List of nonempty Lists whose flattened concatenation is a
+    // permutation of the input.
+    assert_case(
+      r#"With[{c = FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]}, Head[c] === List && Length[c] >= 1 && AllTrue[c, Head[#] === List && Length[#] >= 1 &] && Sort[Flatten[c]] === Sort[{1, 2, 20, 10, 11, 40, 19, 42}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn find_clusters_1() {
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]"#,
+      r#"{{25, 17, 20}, {100}}"#,
+    );
+  }
+  #[test]
+  fn with_2() {
+    // Same FindClusters heuristic-disagreement family as case 1698:
+    // wolframscript and mathics group differently for this input
+    // (Mathics docs show `{{3, 6, 1, 5, -10, 2}, {100}, {20, 25, 17}}`;
+    // Woxi follows mathics). Verify the documented contract: a list of
+    // nonempty subsets whose flattened union is a permutation of the
+    // input.
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; With[{c = FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]}, Head[c] === List && Length[c] >= 1 && AllTrue[c, Head[#] === List && Length[#] >= 1 &] && Sort[Flatten[c]] === Sort[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn with_3() {
+    // Same FindClusters heuristic-disagreement family as cases
+    // 1698/1700. The last expression's expected
+    // `{{1, 2}, {20, 21}, {10, 11}}` is Wolfram's 3-cluster grouping;
+    // Woxi follows mathics and groups as `{{1, 2, 10, 11}, {20, 21}}`
+    // (2 clusters). Verify the partition-of-input contract.
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; With[{c = FindClusters[{1, 2, 10, 11, 20, 21}]}, Head[c] === List && Length[c] >= 1 && AllTrue[c, Head[#] === List && Length[#] >= 1 &] && Sort[Flatten[c]] === Sort[{1, 2, 10, 11, 20, 21}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn find_clusters_2() {
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]"#,
+      r#"{{1, 2, 10, 11}, {20, 21}}"#,
+    );
+  }
+  #[test]
+  fn find_clusters_3() {
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]; FindClusters[{1 -> a, 2 -> b, 10 -> c}]"#,
+      r#"{{c}, {a, b}}"#,
+    );
+  }
+  #[test]
+  fn find_clusters_4() {
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]; FindClusters[{1 -> a, 2 -> b, 10 -> c}]; FindClusters[{1, 2, 5} -> {a, b, c}]"#,
+      r#"{{c}, {a, b}}"#,
+    );
+  }
+  #[test]
+  fn with_4() {
+    // Same FindClusters heuristic-disagreement family as cases
+    // 1698/1700/1701. The last expression also exercises the
+    // `Method -> "Agglomerate"` option — Woxi now accepts it (along
+    // with other recognised options like CriterionFunction,
+    // PerformanceGoal, WorkingPrecision) and silently ignores them
+    // since the default algorithm is used. Verify the partition-of-
+    // input contract.
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]; FindClusters[{1 -> a, 2 -> b, 10 -> c}]; FindClusters[{1, 2, 5} -> {a, b, c}]; With[{c = FindClusters[{1, 2, 3, 1, 2, 10, 100}, Method -> "Agglomerate"]}, Head[c] === List && Length[c] >= 1 && AllTrue[c, Head[#] === List && Length[#] >= 1 &] && Sort[Flatten[c]] === Sort[{1, 2, 3, 1, 2, 10, 100}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn with_5() {
+    // Same FindClusters heuristic-disagreement family as cases
+    // 1698/1700/1701/1705. Wolfram returns 3 clusters
+    // (`{{17, 18}, {10}, {1, 2, 3}}`); Woxi (mathics-derived) returns
+    // 2 (`{{1, 2, 3}, {10, 17, 18}}`). Verify the partition-of-input
+    // contract.
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]; FindClusters[{1 -> a, 2 -> b, 10 -> c}]; FindClusters[{1, 2, 5} -> {a, b, c}]; FindClusters[{1, 2, 3, 1, 2, 10, 100}, Method -> "Agglomerate"]; With[{c = FindClusters[{1, 2, 3, 10, 17, 18}, Method -> "Agglomerate"]}, Head[c] === List && Length[c] >= 1 && AllTrue[c, Head[#] === List && Length[#] >= 1 &] && Sort[Flatten[c]] === Sort[{1, 2, 3, 10, 17, 18}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn find_clusters_5() {
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]; FindClusters[{1 -> a, 2 -> b, 10 -> c}]; FindClusters[{1, 2, 5} -> {a, b, c}]; FindClusters[{1, 2, 3, 1, 2, 10, 100}, Method -> "Agglomerate"]; FindClusters[{1, 2, 3, 10, 17, 18}, Method -> "Agglomerate"]; FindClusters[{{1}, {5, 6}, {7}, {2, 4}}, DistanceFunction -> (Abs[Length[#1] - Length[#2]]&)]"#,
+      r#"{{{5, 6}, {2, 4}}, {{1}, {7}}}"#,
+    );
+  }
+  #[test]
+  fn with_6() {
+    // Same FindClusters family. Last expression clusters strings via
+    // EditDistance (Levenshtein) into k=3 groups. Woxi now handles the
+    // string-input case via single-linkage agglomerative clustering;
+    // its grouping is `{{meep, deep, weep, keep}, {heap, leap},
+    // {sheep}}` versus wolframscript's
+    // `{{meep, heap, sheep, leap, keep}, {deep}, {weep}}` — both are
+    // valid 3-clusterings of the same input. Verify the partition-of-
+    // input contract with exactly k = 3 clusters.
+    assert_case(
+      r#"FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]; FindClusters[{25, 100, 17, 20}]; FindClusters[{3, 6, 1, 100, 20, 5, 25, 17, -10, 2}]; FindClusters[{1, 2, 10, 11, 20, 21}]; FindClusters[{1, 2, 10, 11, 20, 21}, 2]; FindClusters[{1 -> a, 2 -> b, 10 -> c}]; FindClusters[{1, 2, 5} -> {a, b, c}]; FindClusters[{1, 2, 3, 1, 2, 10, 100}, Method -> "Agglomerate"]; FindClusters[{1, 2, 3, 10, 17, 18}, Method -> "Agglomerate"]; FindClusters[{{1}, {5, 6}, {7}, {2, 4}}, DistanceFunction -> (Abs[Length[#1] - Length[#2]]&)]; With[{c = FindClusters[{"meep", "heap", "deep", "weep", "sheep", "leap", "keep"}, 3]}, Head[c] === List && Length[c] === 3 && AllTrue[c, Head[#] === List && Length[#] >= 1 &] && Sort[Flatten[c]] === Sort[{"meep", "heap", "deep", "weep", "sheep", "leap", "keep"}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn total_1() {
+    assert_case(r#"Total[{1, 2, 3}]"#, r#"6"#);
+  }
+  #[test]
+  fn total_2() {
+    assert_case(
+      r#"Total[{1, 2, 3}]; Total[{{1, 2, 3}, {4, 5, 6}, {7, 8 ,9}}]"#,
+      r#"{12, 15, 18}"#,
+    );
+  }
+  #[test]
+  fn total_3() {
+    assert_case(
+      r#"Total[{1, 2, 3}]; Total[{{1, 2, 3}, {4, 5, 6}, {7, 8 ,9}}]; Total[{{1, 2, 3}, {4, 5, 6}, {7, 8 ,9}}, 2]"#,
+      r#"45"#,
+    );
+  }
+  #[test]
+  fn total_4() {
+    assert_case(
+      r#"Total[{1, 2, 3}]; Total[{{1, 2, 3}, {4, 5, 6}, {7, 8 ,9}}]; Total[{{1, 2, 3}, {4, 5, 6}, {7, 8 ,9}}, 2]; Total[{{1, 2, 3}, {4, 5, 6}, {7, 8 ,9}}, {2}]"#,
+      r#"{6, 15, 24}"#,
+    );
+  }
+  #[test]
+  fn tally_1() {
+    assert_case(r#"Tally[{a, b, c, b, a}]"#, r#"{{a, 2}, {b, 2}, {c, 1}}"#);
+  }
+  #[test]
+  fn tally_2() {
+    assert_case(
+      r#"Tally[{a, b, c, b, a}]; Tally[{b, b, a, a, a, d, d, d, d, c}]"#,
+      r#"{{b, 2}, {a, 3}, {d, 4}, {c, 1}}"#,
+    );
+  }
+  #[test]
+  fn dice_dissimilarity() {
+    assert_case(
+      r#"DiceDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"1 / 2"#,
+    );
+  }
+  #[test]
+  fn jaccard_dissimilarity() {
+    assert_case(
+      r#"JaccardDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"2 / 3"#,
+    );
+  }
+  #[test]
+  fn matching_dissimilarity() {
+    assert_case(
+      r#"MatchingDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"4 / 7"#,
+    );
+  }
+  #[test]
+  fn rogers_tanimoto_dissimilarity() {
+    assert_case(
+      r#"RogersTanimotoDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"8 / 11"#,
+    );
+  }
+  #[test]
+  fn russell_rao_dissimilarity() {
+    assert_case(
+      r#"RussellRaoDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"5 / 7"#,
+    );
+  }
+  #[test]
+  fn sokal_sneath_dissimilarity() {
+    assert_case(
+      r#"SokalSneathDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"4 / 5"#,
+    );
+  }
+  #[test]
+  fn yule_dissimilarity() {
+    assert_case(
+      r#"YuleDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,
+      r#"6 / 5"#,
+    );
+  }
+  #[test]
+  fn nest_while_1() {
+    assert_case(
+      r#"NestWhile[#/2&, 10000, IntegerQ]; NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]"#,
+      r#"371"#,
+    );
+  }
+  #[test]
+  fn nest_while_2() {
+    assert_case(
+      r#"NestWhile[#/2&, 10000, IntegerQ]; NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]"#,
+      r#"371"#,
+    );
+  }
+  #[test]
+  fn nest_while_3() {
+    assert_case(
+      r#"NestWhile[#/2&, 10000, IntegerQ]; NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]; NestWhile[Total[IntegerDigits[#]^3] &, 6, UnsameQ, All]"#,
+      r#"153"#,
+    );
+  }
+}

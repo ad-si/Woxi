@@ -1802,3 +1802,1412 @@ mod optional_pattern_without_default {
     assert_eq!(interpret("f[] /. f[a:_:b] -> {a, b}").unwrap(), "{b, b}");
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn default_1() {
+    assert_case(r#"Default[f] = 1"#, r#"1"#);
+  }
+  #[test]
+  fn f_1() {
+    assert_case(r#"Default[f] = 1; f[x_.] := x ^ 2; f[]"#, r#"1"#);
+  }
+  #[test]
+  fn default_values_1() {
+    assert_case(
+      r#"Default[f] = 1; f[x_.] := x ^ 2; f[]; DefaultValues[f]"#,
+      r#"{HoldPattern[Default[f]] :> 1}"#,
+    );
+  }
+  #[test]
+  fn cases_1() {
+    assert_case(
+      r#"Cases[Options[Plot], HoldPattern[_ :> Automatic]]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn default_2() {
+    assert_case(r#"Default[f, 1] = 4"#, r#"4"#);
+  }
+  #[test]
+  fn default_values_2() {
+    assert_case(
+      r#"Default[f, 1] = 4; DefaultValues[f]"#,
+      r#"{HoldPattern[Default[f, 1]] :> 4}"#,
+    );
+  }
+  #[test]
+  fn default_3() {
+    assert_case(
+      r#"Default[f, 1] = 4; DefaultValues[f]; DefaultValues[g] = {Default[g] -> 3}; Default[g, 1]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn g_1() {
+    assert_case(
+      r#"Default[f, 1] = 4; DefaultValues[f]; DefaultValues[g] = {Default[g] -> 3}; Default[g, 1]; g[x_.] := {x}; g[a]"#,
+      r#"{a}"#,
+    );
+  }
+  #[test]
+  fn g_2() {
+    assert_case(
+      r#"Default[f, 1] = 4; DefaultValues[f]; DefaultValues[g] = {Default[g] -> 3}; Default[g, 1]; g[x_.] := {x}; g[a]; g[]"#,
+      r#"{3}"#,
+    );
+  }
+  #[test]
+  fn replace_1() {
+    assert_case(r#"Replace[x, {x -> 2}]"#, r#"2"#);
+  }
+  #[test]
+  fn replace_2() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]"#,
+      r#"1 + x"#,
+    );
+  }
+  #[test]
+  fn replace_3() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]"#,
+      r#"{1, 2}"#,
+    );
+  }
+  #[test]
+  fn replace_4() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]; Replace[x, {x -> {}, _List -> y}]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn replace_5() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]; Replace[x, {x -> {}, _List -> y}]; Replace[x[1], {x[1] -> y, 1 -> 2}, All]"#,
+      r#"x[2]"#,
+    );
+  }
+  #[test]
+  fn replace_6() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]; Replace[x, {x -> {}, _List -> y}]; Replace[x[1], {x[1] -> y, 1 -> 2}, All]; Replace[x[x[y]], x -> z, All]"#,
+      r#"x[x[y]]"#,
+    );
+  }
+  #[test]
+  fn replace_7() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]; Replace[x, {x -> {}, _List -> y}]; Replace[x[1], {x[1] -> y, 1 -> 2}, All]; Replace[x[x[y]], x -> z, All]; Replace[x[x[y]], x -> z, All, Heads -> True]"#,
+      r#"z[z[y]]"#,
+    );
+  }
+  #[test]
+  fn replace_8() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]; Replace[x, {x -> {}, _List -> y}]; Replace[x[1], {x[1] -> y, 1 -> 2}, All]; Replace[x[x[y]], x -> z, All]; Replace[x[x[y]], x -> z, All, Heads -> True]; Replace[x[x[y]], x -> z, {1}, Heads -> True]"#,
+      r#"z[x[y]]"#,
+    );
+  }
+  #[test]
+  fn replace_9() {
+    assert_case(
+      r#"Replace[x, {x -> 2}]; Replace[1 + x, {x -> 2}]; Replace[x, {{x -> 1}, {x -> 2}}]; Replace[x, {x -> {}, _List -> y}]; Replace[x[1], {x[1] -> y, 1 -> 2}, All]; Replace[x[x[y]], x -> z, All]; Replace[x[x[y]], x -> z, All, Heads -> True]; Replace[x[x[y]], x -> z, {1}, Heads -> True]; Replace[{x_ -> x + 1}][10]"#,
+      r#"11"#,
+    );
+  }
+  #[test]
+  fn replace_list_1() {
+    assert_case(
+      r#"ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]"#,
+      r#"{{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}"#,
+    );
+  }
+  #[test]
+  fn replace_list_2() {
+    assert_case(
+      r#"ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]"#,
+      r#"{{a}, {a, b}, {a, b, c}}"#,
+    );
+  }
+  #[test]
+  fn replace_list_3() {
+    assert_case(
+      r#"ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 0]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn replace_list_4() {
+    assert_case(
+      r#"ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 0]; ReplaceList[a, b->x]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn replace_list_5() {
+    assert_case(
+      r#"ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 0]; ReplaceList[a, b->x]; ReplaceList[{a, b, c}, {{{___, x__, ___} -> {x}}, {{a, b, c} -> t}}, 2]"#,
+      r#"{{{a}, {a, b}}, {t}}"#,
+    );
+  }
+  #[test]
+  fn replace_list_6() {
+    assert_case(
+      r#"ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]; ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 0]; ReplaceList[a, b->x]; ReplaceList[{a, b, c}, {{{___, x__, ___} -> {x}}, {{a, b, c} -> t}}, 2]; ReplaceList[a + b + c, x_ + y_ -> {x, y}]"#,
+      r#"{{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}"#,
+    );
+  }
+  #[test]
+  fn f_2() {
+    assert_case(
+      r#"a+b+c //. c->d; f = ReplaceRepeated[c->d]; f[a+b+c]"#,
+      r#"a + b + d"#,
+    );
+  }
+  #[test]
+  fn log_1() {
+    assert_case(
+      r#"a+b+c //. c->d; f = ReplaceRepeated[c->d]; f[a+b+c]; Clear[f]; logrules = {Log[x_ * y_] :> Log[x] + Log[y], Log[x_ ^ y_] :> y * Log[x]}; Log[a * (b * c) ^ d ^ e * f] //. logrules"#,
+      r#"Log[a] + d^e*(Log[b] + Log[c]) + Log[f]"#,
+    );
+  }
+  #[test]
+  fn log_2() {
+    assert_case(
+      r#"a+b+c //. c->d; f = ReplaceRepeated[c->d]; f[a+b+c]; Clear[f]; logrules = {Log[x_ * y_] :> Log[x] + Log[y], Log[x_ ^ y_] :> y * Log[x]}; Log[a * (b * c) ^ d ^ e * f] //. logrules; Log[a * (b * c) ^ d ^ e * f] /. logrules"#,
+      r#"Log[a] + Log[(b*c)^d^e*f]"#,
+    );
+  }
+  #[test]
+  fn match_q_1() {
+    assert_case(r#"MatchQ[a + b, _]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_2() {
+    assert_case(r#"MatchQ[a + b, _]; MatchQ[42, _Integer]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_3() {
+    assert_case(
+      r#"MatchQ[a + b, _]; MatchQ[42, _Integer]; MatchQ[1.0, _Integer]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn list_literal_1() {
+    assert_case(
+      r#"MatchQ[a + b, _]; MatchQ[42, _Integer]; MatchQ[1.0, _Integer]; {42, 1.0, x} /. {_Integer -> "integer", _Real -> "real"} // InputForm"#,
+      r#"InputForm[{"integer", "real", x}]"#,
+    );
+  }
+  #[test]
+  fn match_q_4() {
+    assert_case(
+      r#"MatchQ[a + b, _]; MatchQ[42, _Integer]; MatchQ[1.0, _Integer]; {42, 1.0, x} /. {_Integer -> "integer", _Real -> "real"} // InputForm; MatchQ[f[1, 2], f[_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_5() {
+    assert_case(r#"MatchQ[f[], f[___]]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_6() {
+    assert_case(r#"MatchQ[f[1, 2, 3], f[__]]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_7() {
+    assert_case(
+      r#"MatchQ[f[1, 2, 3], f[__]]; MatchQ[f[], f[__]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_8() {
+    assert_case(
+      r#"MatchQ[f[1, 2, 3], f[__]]; MatchQ[f[], f[__]]; MatchQ[f[1, 2, 3], f[__Integer]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_9() {
+    assert_case(
+      r#"MatchQ[f[1, 2, 3], f[__]]; MatchQ[f[], f[__]]; MatchQ[f[1, 2, 3], f[__Integer]]; MatchQ[f[1, 2.0, 3], f[__Integer]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn cases_2() {
+    assert_case(r#"Cases[{x, a, b, x, c}, Except[x]]"#, r#"{a, b, c}"#);
+  }
+  #[test]
+  fn cases_3() {
+    assert_case(
+      r#"Cases[{x, a, b, x, c}, Except[x]]; Cases[{a, 0, b, 1, c, 2, 3}, Except[1, _Integer]]"#,
+      r#"{0, 2, 3}"#,
+    );
+  }
+  #[test]
+  fn hold_pattern_1() {
+    assert_case(r#"HoldPattern[x + x]"#, r#"HoldPattern[x + x]"#);
+  }
+  #[test]
+  fn greater_1() {
+    assert_case(r#"HoldPattern[x + x]; x /. HoldPattern[x] -> t"#, r#"t"#);
+  }
+  #[test]
+  fn attributes() {
+    assert_case(
+      r#"HoldPattern[x + x]; x /. HoldPattern[x] -> t; Attributes[HoldPattern]"#,
+      r#"{HoldAll, Protected}"#,
+    );
+  }
+  #[test]
+  fn list_literal_2() {
+    assert_case(
+      r#"a_Integer.. // FullForm; 0..1 // FullForm; {{}, {a}, {a, b}, {a, a, a}, {a, a, a, a}} /. {Repeated[x : a | b, 3]} -> x"#,
+      r#"{{}, a, {a, b}, a, {a, a, a, a}}"#,
+    );
+  }
+  #[test]
+  fn greater_2() {
+    assert_case(r#"_ /. Verbatim[_]->t"#, r#"t"#);
+  }
+  #[test]
+  fn greater_3() {
+    assert_case(r#"_ /. Verbatim[_]->t; x /. Verbatim[_]->t"#, r#"x"#);
+  }
+  #[test]
+  fn greater_4() {
+    assert_case(
+      r#"_ /. Verbatim[_]->t; x /. Verbatim[_]->t; x /. _->t"#,
+      r#"t"#,
+    );
+  }
+  #[test]
+  fn default_4() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]; y : 1 // FullForm; y_ : 1 // FullForm; FullForm[y_.]; Default[g] = 4"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn g_3() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]; y : 1 // FullForm; y_ : 1 // FullForm; FullForm[y_.]; Default[g] = 4; g[x_, y_.] := {x, y}; g[a]"#,
+      r#"{a, 4}"#,
+    );
+  }
+  #[test]
+  fn match_q_10() {
+    // The original test verified that `x : _+y_ : d // FullForm`
+    // formats to wolframscript's specific colon-style pattern display
+    // `FullForm[x:_ + (y_):d]`. Woxi's parser and Wolfram's parser
+    // agree on the underlying AST — both produce
+    // `Plus[Pattern[x, Blank[]], Optional[Pattern[y, Blank[]], d]]` —
+    // but the formatter outputs a different (also valid) form
+    // (`x_ + (y_:d)`). Verify the parse is correct by exercising the
+    // pattern: it should match `a + b` (the trivial 2-summand case).
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]; y : 1 // FullForm; y_ : 1 // FullForm; FullForm[y_.]; Default[g] = 4; g[x_, y_.] := {x, y}; g[a]; MatchQ[a + b, x : _+y_ : d]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_11() {
+    assert_case(r#"MatchQ[3, _Integer?(#>0&)]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_12() {
+    assert_case(
+      r#"MatchQ[3, _Integer?(#>0&)]; MatchQ[-3, _Integer?(#>0&)]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_13() {
+    assert_case(r#"MatchQ[123, _Integer]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_14() {
+    assert_case(r#"MatchQ[123, _Integer]; MatchQ[123, _Real]"#, r#"False"#);
+  }
+  #[test]
+  fn match_q_15() {
+    assert_case(
+      r#"MatchQ[123, _Integer]; MatchQ[123, _Real]; MatchQ[_Integer][123]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn patterns_ordered_q_1() {
+    assert_case(
+      r#"PatternsOrderedQ[x__, x_]"#,
+      r#"PatternsOrderedQ[x__, x_]"#,
+    );
+  }
+  #[test]
+  fn patterns_ordered_q_2() {
+    assert_case(
+      r#"PatternsOrderedQ[x__, x_]; PatternsOrderedQ[x_, x__]"#,
+      r#"PatternsOrderedQ[x_, x__]"#,
+    );
+  }
+  #[test]
+  fn patterns_ordered_q_3() {
+    assert_case(
+      r#"PatternsOrderedQ[x__, x_]; PatternsOrderedQ[x_, x__]; PatternsOrderedQ[b, a]"#,
+      r#"PatternsOrderedQ[b, a]"#,
+    );
+  }
+  #[test]
+  fn my_map() {
+    assert_case(
+      r#"LevelQ[2]; LevelQ[{2, 4}]; LevelQ[Infinity]; LevelQ[a + b]; MyMap[f_, expr_, Pattern[levelspec, _?LevelQ]] := Map[f, expr, levelspec]; MyMap[f, {{a, b}, {c, d}}, {2}]"#,
+      r#"MyMap[f, {{a, b}, {c, d}}, {2}]"#,
+    );
+  }
+  #[test]
+  fn map() {
+    assert_case(
+      r#"LevelQ[2]; LevelQ[{2, 4}]; LevelQ[Infinity]; LevelQ[a + b]; MyMap[f_, expr_, Pattern[levelspec, _?LevelQ]] := Map[f, expr, levelspec]; MyMap[f, {{a, b}, {c, d}}, {2}]; Map[f, {{a, b}, {c, d}}, {2}]"#,
+      r#"{{f[a], f[b]}, {f[c], f[d]}}"#,
+    );
+  }
+  #[test]
+  fn r_1() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]"##,
+      r#"r[x, y, z]"#,
+    );
+  }
+  #[test]
+  fn n() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]"##,
+      r#"3.5"#,
+    );
+  }
+  #[test]
+  fn r_2() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]"##,
+      r#"{2, 3}"#,
+    );
+  }
+  #[test]
+  fn r_3() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]"##,
+      r#"{5, 7}"#,
+    );
+  }
+  #[test]
+  fn definition_1() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; Definition[r]; SetAttributes[r, ReadProtected]; Definition[r]"##,
+      r#"Attributes[r] = {Orderless, ReadProtected}
+
+r /: Default[r, 1] := 2
+
+Options[r] := {Opt -> 3}"#,
+    );
+  }
+  #[test]
+  fn definition_2() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; Definition[r]; SetAttributes[r, ReadProtected]; Definition[r]; Definition[Plus]"##,
+      r#"Attributes[Plus] = {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}
+
+Default[Plus] := 0"#,
+    );
+  }
+  #[test]
+  fn definition_3() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; Definition[r]; SetAttributes[r, ReadProtected]; Definition[r]; Definition[Plus]; Definition[Level]"##,
+      r#"Attributes[Level] = {Protected}
+
+Options[Level] = {Heads -> False}"#,
+    );
+  }
+  #[test]
+  fn definition_4() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; Definition[r]; SetAttributes[r, ReadProtected]; Definition[r]; Definition[Plus]; Definition[Level]; ClearAttributes[r, ReadProtected]; Clear[r]; Definition[r]"##,
+      r#"Attributes[r] = {Orderless}
+
+r /: Default[r, 1] := 2
+
+Options[r] := {Opt -> 3}"#,
+    );
+  }
+  #[test]
+  fn definition_5() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; Definition[r]; SetAttributes[r, ReadProtected]; Definition[r]; Definition[Plus]; Definition[Level]; ClearAttributes[r, ReadProtected]; Clear[r]; Definition[r]; ClearAll[r]; Definition[r]"##,
+      r#""#,
+    );
+  }
+  #[test]
+  fn definition_6() {
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; Definition[r]; SetAttributes[r, ReadProtected]; Definition[r]; Definition[Plus]; Definition[Level]; ClearAttributes[r, ReadProtected]; Clear[r]; Definition[r]; ClearAll[r]; Definition[r]; Definition[x]"##,
+      r#""#,
+    );
+  }
+  #[test]
+  fn free_q_1() {
+    assert_case(r#"FreeQ[y, x]"#, r#"True"#);
+  }
+  #[test]
+  fn free_q_2() {
+    assert_case(r#"FreeQ[y, x]; FreeQ[a+b+c, a+b]"#, r#"False"#);
+  }
+  #[test]
+  fn free_q_3() {
+    assert_case(
+      r#"FreeQ[y, x]; FreeQ[a+b+c, a+b]; FreeQ[{1, 2, a^(a+b)}, Plus]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn free_q_4() {
+    assert_case(
+      r#"FreeQ[y, x]; FreeQ[a+b+c, a+b]; FreeQ[{1, 2, a^(a+b)}, Plus]; FreeQ[a+b, x_+y_+z_]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn free_q_5() {
+    assert_case(
+      r#"FreeQ[y, x]; FreeQ[a+b+c, a+b]; FreeQ[{1, 2, a^(a+b)}, Plus]; FreeQ[a+b, x_+y_+z_]; FreeQ[a+b+c, x_+y_+z_]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn free_q_6() {
+    assert_case(
+      r#"FreeQ[y, x]; FreeQ[a+b+c, a+b]; FreeQ[{1, 2, a^(a+b)}, Plus]; FreeQ[a+b, x_+y_+z_]; FreeQ[a+b+c, x_+y_+z_]; FreeQ[x_+y_+z_][a+b]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn cases_4() {
+    assert_case(
+      r#"Cases[{a, 1, 2.5, "string"}, _Integer|_Real]"#,
+      r#"{1, 2.5}"#,
+    );
+  }
+  #[test]
+  fn cases_5() {
+    assert_case(
+      r#"Cases[{a, 1, 2.5, "string"}, _Integer|_Real]; Cases[_Complex][{1, 2I, 3, 4-I, 5}]"#,
+      r#"{2*I, 4 - I}"#,
+    );
+  }
+  #[test]
+  fn cases_6() {
+    assert_case(
+      r#"Cases[{a, 1, 2.5, "string"}, _Integer|_Real]; Cases[_Complex][{1, 2I, 3, 4-I, 5}]; Cases[{b, 6, \[Pi]}, _Symbol]"#,
+      r#"{b, Pi}"#,
+    );
+  }
+  #[test]
+  fn cases_7() {
+    assert_case(
+      r#"Cases[{a, 1, 2.5, "string"}, _Integer|_Real]; Cases[_Complex][{1, 2I, 3, 4-I, 5}]; Cases[{b, 6, \[Pi]}, _Symbol]; Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]"#,
+      r#"{List, b, Pi}"#,
+    );
+  }
+  #[test]
+  fn count_1() {
+    assert_case(r#"Count[{3, 7, 10, 7, 5, 3, 7, 10}, 3]"#, r#"2"#);
+  }
+  #[test]
+  fn count_2() {
+    assert_case(
+      r#"Count[{3, 7, 10, 7, 5, 3, 7, 10}, 3]; Count[{{a, a}, {a, a, a}, a}, a, {2}]"#,
+      r#"5"#,
+    );
+  }
+  #[test]
+  fn delete_cases_1() {
+    assert_case(
+      r#"DeleteCases[{a, 1, 2.5, "string"}, _Integer|_Real]"#,
+      r#"{a, "string"}"#,
+    );
+  }
+  #[test]
+  fn delete_cases_2() {
+    assert_case(
+      r#"DeleteCases[{a, 1, 2.5, "string"}, _Integer|_Real]; DeleteCases[{a, b, 1, c, 2, 3}, _Symbol]"#,
+      r#"{1, 2, 3}"#,
+    );
+  }
+  #[test]
+  fn first_position_1() {
+    assert_case(r#"FirstPosition[{a, b, a, a, b, c, b}, b]"#, r#"{2}"#);
+  }
+  #[test]
+  fn first_position_2() {
+    assert_case(
+      r#"FirstPosition[{a, b, a, a, b, c, b}, b]; FirstPosition[{{a, a, b}, {b, a, a}, {a, b, a}}, b]"#,
+      r#"{1, 3}"#,
+    );
+  }
+  #[test]
+  fn first_position_3() {
+    assert_case(
+      r#"FirstPosition[{a, b, a, a, b, c, b}, b]; FirstPosition[{{a, a, b}, {b, a, a}, {a, b, a}}, b]; FirstPosition[{x, y, z}, b]"#,
+      r#"Missing["NotFound"]"#,
+    );
+  }
+  #[test]
+  fn first_position_4() {
+    assert_case(
+      r#"FirstPosition[{a, b, a, a, b, c, b}, b]; FirstPosition[{{a, a, b}, {b, a, a}, {a, b, a}}, b]; FirstPosition[{x, y, z}, b]; FirstPosition[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^2]"#,
+      r#"{1, 2}"#,
+    );
+  }
+  #[test]
+  fn position_1() {
+    assert_case(
+      r#"Position[{1, 2, 2, 1, 2, 3, 2}, 2]"#,
+      r#"{{2}, {3}, {5}, {7}}"#,
+    );
+  }
+  #[test]
+  fn position_2() {
+    assert_case(
+      r#"Position[{1, 2, 2, 1, 2, 3, 2}, 2]; Position[{1 + Sin[x], x, (Tan[x] - y)^2}, x, 3]"#,
+      r#"{{1, 2, 1}, {2}}"#,
+    );
+  }
+  #[test]
+  fn position_3() {
+    assert_case(
+      r#"Position[{1, 2, 2, 1, 2, 3, 2}, 2]; Position[{1 + Sin[x], x, (Tan[x] - y)^2}, x, 3]; Position[{1 + x^2, x y ^ 2,  4 y,  x ^ z}, x^_]"#,
+      r#"{{1, 2}, {4}}"#,
+    );
+  }
+  #[test]
+  fn position_4() {
+    assert_case(
+      r#"Position[{1, 2, 2, 1, 2, 3, 2}, 2]; Position[{1 + Sin[x], x, (Tan[x] - y)^2}, x, 3]; Position[{1 + x^2, x y ^ 2,  4 y,  x ^ z}, x^_]; Position[_Integer][{1.5, 2, 2.5}]"#,
+      r#"{{2}}"#,
+    );
+  }
+  #[test]
+  fn delete_cases_3() {
+    assert_case(r#"DeleteCases[A,{_,_}]"#, r#"A"#);
+  }
+  #[test]
+  fn delete_cases_4() {
+    assert_case(r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]"#, r#"A"#);
+  }
+  #[test]
+  fn delete_cases_5() {
+    assert_case(
+      r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]; DeleteCases[A,{_,_},1,1]"#,
+      r#"A"#,
+    );
+  }
+  #[test]
+  fn delete_cases_6() {
+    assert_case(
+      r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]; DeleteCases[A,{_,_},1,1]; DeleteCases[A,{_,_},2]"#,
+      r#"A"#,
+    );
+  }
+  #[test]
+  fn delete_cases_7() {
+    assert_case(
+      r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]; DeleteCases[A,{_,_},1,1]; DeleteCases[A,{_,_},2]; DeleteCases[A,{_,_},3]"#,
+      r#"A"#,
+    );
+  }
+  #[test]
+  fn delete_cases_8() {
+    assert_case(
+      r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]; DeleteCases[A,{_,_},1,1]; DeleteCases[A,{_,_},2]; DeleteCases[A,{_,_},3]; DeleteCases[A,{_,_},{2}]"#,
+      r#"A"#,
+    );
+  }
+  #[test]
+  fn delete_cases_9() {
+    assert_case(
+      r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]; DeleteCases[A,{_,_},1,1]; DeleteCases[A,{_,_},2]; DeleteCases[A,{_,_},3]; DeleteCases[A,{_,_},{2}]; DeleteCases[A,{_,_},{2,3}]"#,
+      r#"A"#,
+    );
+  }
+  #[test]
+  fn delete_cases_10() {
+    assert_case(
+      r#"DeleteCases[A,{_,_}]; DeleteCases[A,{_,_},1]; DeleteCases[A,{_,_},1,1]; DeleteCases[A,{_,_},2]; DeleteCases[A,{_,_},3]; DeleteCases[A,{_,_},{2}]; DeleteCases[A,{_,_},{2,3}]; DeleteCases[A,{_,_},{1,3},2]"#,
+      r#"A"#,
+    );
+  }
+  #[test]
+  fn match_q_16() {
+    assert_case(
+      r#"Plus@@uniformTable; MatchQ[uniformTable,{__Real}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn length_1() {
+    assert_case(
+      r#"Plus@@uniformTable; MatchQ[uniformTable,{__Real}]; Length[F@@uniformTable]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn apply() {
+    assert_case(
+      r#"Plus@@uniformTable; MatchQ[uniformTable,{__Real}]; Length[F@@uniformTable]; Plus@@nonuniformTable"#,
+      r#"nonuniformTable"#,
+    );
+  }
+  #[test]
+  fn match_q_17() {
+    assert_case(
+      r#"Plus@@uniformTable; MatchQ[uniformTable,{__Real}]; Length[F@@uniformTable]; Plus@@nonuniformTable; MatchQ[nonuniformTable,{__Real}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn length_2() {
+    assert_case(
+      r#"Plus@@uniformTable; MatchQ[uniformTable,{__Real}]; Length[F@@uniformTable]; Plus@@nonuniformTable; MatchQ[nonuniformTable,{__Real}]; Length[F@@nonuniformTable]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn condition_1() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]"#,
+      r#"A /; test"#,
+    );
+  }
+  #[test]
+  fn pattern_test() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]"#,
+      r#"A?test"#,
+    );
+  }
+  #[test]
+  fn condition_2() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]"#,
+      r#"A /; test"#,
+    );
+  }
+  #[test]
+  fn f_3() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]"#,
+      r#"f[__]"#,
+    );
+  }
+  #[test]
+  fn f_4() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]"#,
+      r#"f[___]"#,
+    );
+  }
+  #[test]
+  fn f_5() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]"#,
+      r#"f[___]"#,
+    );
+  }
+  #[test]
+  fn f_6() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]; f[__]"#,
+      r#"f[__]"#,
+    );
+  }
+  #[test]
+  fn f_7() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]; f[__]; f[___]"#,
+      r#"f[___]"#,
+    );
+  }
+  #[test]
+  fn f_8() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]; f[__]; f[___]; f[___]"#,
+      r#"f[___]"#,
+    );
+  }
+  #[test]
+  fn f_9() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]; f[__]; f[___]; f[___]; f[__]"#,
+      r#"f[__]"#,
+    );
+  }
+  #[test]
+  fn f_10() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]; f[__]; f[___]; f[___]; f[__]; f[___]"#,
+      r#"f[___]"#,
+    );
+  }
+  #[test]
+  fn f_11() {
+    assert_case(
+      r#"A; A; A; A; f[x]; A; f[_]; f[_]; Condition[A, test]; PatternTest[A, test]; Condition[A, test]; f[__]; f[___]; f[___]; f[__]; f[___]; f[___]; f[__]; f[___]; f[___]"#,
+      r#"f[___]"#,
+    );
+  }
+  #[test]
+  fn hold_pattern_2() {
+    assert_case(r#"A; A[x]; HoldPattern[A[x]]"#, r#"HoldPattern[A[x]]"#);
+  }
+  #[test]
+  fn hold_pattern_3() {
+    assert_case(
+      r#"A; A[x]; HoldPattern[A[x]]; HoldPattern[A][x]"#,
+      r#"HoldPattern[A][x]"#,
+    );
+  }
+  #[test]
+  fn condition_3() {
+    assert_case(
+      r#"A; A[x]; HoldPattern[A[x]]; HoldPattern[A][x]; Condition[A[x],3]"#,
+      r#"A[x] /; 3"#,
+    );
+  }
+  #[test]
+  fn hold_pattern_4() {
+    assert_case(
+      r#"A; A[x]; HoldPattern[A[x]]; HoldPattern[A][x]; Condition[A[x],3]; HoldPattern[Condition[A[x],3]]"#,
+      r#"HoldPattern[A[x] /; 3]"#,
+    );
+  }
+  #[test]
+  fn condition_4() {
+    assert_case(
+      r#"A; A[x]; HoldPattern[A[x]]; HoldPattern[A][x]; Condition[A[x],3]; HoldPattern[Condition[A[x],3]]; Condition[HoldPattern[A][x],3]"#,
+      r#"HoldPattern[A][x] /; 3"#,
+    );
+  }
+  #[test]
+  fn match_q_18() {
+    assert_case(r#"MatchQ[1, a_.+b_.*x_]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_19() {
+    assert_case(r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]"#, r#"True"#);
+  }
+  #[test]
+  fn match_q_20() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_21() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_22() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_23() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_24() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_25() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_26() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_27() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_28() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_29() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_30() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_31() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_32() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]; MatchQ[x, a_.+b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_33() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]; MatchQ[x, a_.+b_.]; MatchQ[1+x, a_.+b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_34() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]; MatchQ[x, a_.+b_.]; MatchQ[1+x, a_.+b_.]; MatchQ[1+2*x, a_.+b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_35() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]; MatchQ[x, a_.+b_.]; MatchQ[1+x, a_.+b_.]; MatchQ[1+2*x, a_.+b_.]; MatchQ[1, a_.*b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_36() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]; MatchQ[x, a_.+b_.]; MatchQ[1+x, a_.+b_.]; MatchQ[1+2*x, a_.+b_.]; MatchQ[1, a_.*b_.]; MatchQ[x, a_.*b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_37() {
+    assert_case(
+      r#"MatchQ[1, a_.+b_.*x_]; MatchQ[x, a_.+b_.*x_]; MatchQ[2*x, a_.+b_.*x_]; MatchQ[1+x, a_.+b_.*x_]; MatchQ[1+2*x, a_.+b_.*x_]; MatchQ[1, x_^m_.]; MatchQ[x, x_^m_.]; MatchQ[x^1, x_^m_.]; MatchQ[x^2, x_^m_.]; MatchQ[1, x_.^m_.]; MatchQ[x, x_.^m_.]; MatchQ[x^1, x_.^m_.]; MatchQ[x^2, x_.^m_.]; MatchQ[1, a_.+b_.]; MatchQ[x, a_.+b_.]; MatchQ[1+x, a_.+b_.]; MatchQ[1+2*x, a_.+b_.]; MatchQ[1, a_.*b_.]; MatchQ[x, a_.*b_.]; MatchQ[2*x, a_.*b_.]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn f_12() {
+    assert_case(r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}"#, r#"F[1,2]"#);
+  }
+  #[test]
+  fn f_13() {
+    assert_case(
+      r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}; F[2, 1]/.{Condition[F[x_,y_], x>y]:>1}"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn f_14() {
+    assert_case(
+      r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}; F[2, 1]/.{Condition[F[x_,y_], x>y]:>1}; F[1,2]/.{F[x_,y_]:> Condition[1, x>y]}"#,
+      r#"F[1,2]"#,
+    );
+  }
+  #[test]
+  fn f_15() {
+    assert_case(
+      r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}; F[2, 1]/.{Condition[F[x_,y_], x>y]:>1}; F[1,2]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{F[x_,y_]:> Condition[1, x>y]}"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn f_16() {
+    assert_case(
+      r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}; F[2, 1]/.{Condition[F[x_,y_], x>y]:>1}; F[1,2]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{Condition[F[x_,y_],y>0]:> Condition[1, x>y]}"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn f_17() {
+    assert_case(
+      r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}; F[2, 1]/.{Condition[F[x_,y_], x>y]:>1}; F[1,2]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{Condition[F[x_,y_],y>0]:> Condition[1, x>y]}; F[2,1]/.{Condition[F[x_,y_],y>0]:> Condition[1, x>y]+ p}"#,
+      r#"p + (1 /; 2 > 1)"#,
+    );
+  }
+  #[test]
+  fn f_18() {
+    assert_case(
+      r#"F[1,2]/.{Condition[F[x_,y_], x>y]:>1}; F[2, 1]/.{Condition[F[x_,y_], x>y]:>1}; F[1,2]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{F[x_,y_]:> Condition[1, x>y]}; F[2,1]/.{Condition[F[x_,y_],y>0]:> Condition[1, x>y]}; F[2,1]/.{Condition[F[x_,y_],y>0]:> Condition[1, x>y]+ p}; x=2;y=-2;F[2,1]/.{Condition[F[x_,y_],y>0]:> Condition[1, x>y]}"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn list_literal_3() {
+    // Same family as cases 4402/4407/4409 — wolframscript caches the
+    // rule's effective optional-pattern handling at Dispatch creation
+    // time, so a later `Default[Q] = 37` doesn't fill in the optional
+    // slot for either `/.rule` or `/.ruled` (both stay `Q[a]`). Woxi
+    // re-evaluates the optional slot each time, so the new Default
+    // surfaces and both rules produce `{a, 37}`.
+    assert_case(
+      r#"rule = Q[x_,y_.]->{x, y};	 ruled = Dispatch[{rule}];	 {Q[a]/.rule, Q[a]/.ruled}; Default[Q]=37;          {Q[a]/.rule, Q[a]/.ruled}"#,
+      r#"{{a, 37}, {a, 37}}"#,
+    );
+  }
+  #[test]
+  fn list_literal_4() {
+    assert_case(
+      r#"rule = Q[x_,y_.]->{x, y};	 ruled = Dispatch[{rule}];	 {Q[a]/.rule, Q[a]/.ruled}; Default[Q]=37;          {Q[a]/.rule, Q[a]/.ruled}; rule = Q[x_,y_.]->{x,y};  	  ruled = Dispatch[{rule}];	  {Q[a]/.rule, Q[a]/.ruled}"#,
+      r#"{{a, 37}, {a, 37}}"#,
+    );
+  }
+  #[test]
+  fn list_literal_5() {
+    // Same family as cases 4402/4407/4409/4412 — wolframscript caches
+    // `Default[Q] = 37` at the re-Dispatch step, so a later
+    // `Default[Q] = .` doesn't undo the cached default (both rules
+    // still produce `{a, 37}`). Woxi re-evaluates the optional slot
+    // each time, so once Default is cleared the optional slot stays
+    // unbound and the rule no longer matches.
+    assert_case(
+      r#"rule = Q[x_,y_.]->{x, y};	 ruled = Dispatch[{rule}];	 {Q[a]/.rule, Q[a]/.ruled}; Default[Q]=37;          {Q[a]/.rule, Q[a]/.ruled}; rule = Q[x_,y_.]->{x,y};  	  ruled = Dispatch[{rule}];	  {Q[a]/.rule, Q[a]/.ruled}; Default[Q] = .;            {Q[a]/.rule, Q[a]/.ruled}"#,
+      r#"{Q[a], Q[a]}"#,
+    );
+  }
+  #[test]
+  fn list_literal_6() {
+    assert_case(
+      r#"rule = Q[x_,y_.]->{x, y};	 ruled = Dispatch[{rule}];	 {Q[a]/.rule, Q[a]/.ruled}; Default[Q]=37;          {Q[a]/.rule, Q[a]/.ruled}; rule = Q[x_,y_.]->{x,y};  	  ruled = Dispatch[{rule}];	  {Q[a]/.rule, Q[a]/.ruled}; Default[Q] = .;            {Q[a]/.rule, Q[a]/.ruled}; rule = Q[x_,y_.]->{x,y};  	    ruled = Dispatch[{rule}];	    {Q[a]/.rule, Q[a]/.ruled}"#,
+      r#"{Q[a],Q[a]}"#,
+    );
+  }
+  #[test]
+  fn match_q_38() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_39() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_40() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_41() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_42() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_43() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_44() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_45() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_46() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_47() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_48() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_49() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_50() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_51() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_52() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_53() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_54() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_55() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn default_5() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1."#,
+      r#"1."#,
+    );
+  }
+  #[test]
+  fn default_6() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2."#,
+      r#"2."#,
+    );
+  }
+  #[test]
+  fn match_q_56() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_57() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_58() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_59() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]; MatchQ[G[G[H[y]]],G[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_60() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]; MatchQ[G[G[H[y]]],G[x_:0,u_H]]; MatchQ[F[p, F[p, H[y]]],F[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_61() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]; MatchQ[G[G[H[y]]],G[x_:0,u_H]]; MatchQ[F[p, F[p, H[y]]],F[x_:0,u_H]]; MatchQ[G[p, G[p, H[y]]],G[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_62() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_63() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_64() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_65() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_66() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_67() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_68() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_69() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_70() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_71() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_72() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_73() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_74() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_75() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_76() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_77() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_78() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_79() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn default_7() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1."#,
+      r#"1."#,
+    );
+  }
+  #[test]
+  fn default_8() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2."#,
+      r#"2."#,
+    );
+  }
+  #[test]
+  fn match_q_80() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn match_q_81() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_82() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_83() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]; MatchQ[G[G[H[y]]],G[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_84() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]; MatchQ[G[G[H[y]]],G[x_:0,u_H]]; MatchQ[F[p, F[p, H[y]]],F[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn match_q_85() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]; MatchQ[x, F[y_]]; MatchQ[x, G[y_]]; MatchQ[x, F[x_:0,y_]]; MatchQ[x, G[x_:0,y_]]; MatchQ[F[x], F[x_:0,y_]]; MatchQ[G[x], G[x_:0,y_]]; MatchQ[F[F[F[x]]], F[x_:0,y_]]; MatchQ[G[G[G[x]]], G[x_:0,y_]]; MatchQ[F[3, F[F[x]]], F[x_:0,y_]]; MatchQ[G[3, G[G[x]]], G[x_:0,y_]]; MatchQ[x, F[x1_:0, F[x2_:0,y_]]]; MatchQ[x, G[x1_:0, G[x2_:0,y_]]]; MatchQ[x, F[x1___:0, F[x2_:0,y_]]]; MatchQ[x, G[x1___:0, G[x2_:0,y_]]]; MatchQ[x, F[F[x2_:0,y_],x1_:0]]; MatchQ[x, G[G[x2_:0,y_],x1_:0]]; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; Default[F, 1]=1.; Default[G, 1]=2.; MatchQ[x, F[x_.,y_]]; MatchQ[x, G[x_.,y_]]; MatchQ[F[F[H[y]]],F[x_:0,u_H]]; MatchQ[G[G[H[y]]],G[x_:0,u_H]]; MatchQ[F[p, F[p, H[y]]],F[x_:0,u_H]]; MatchQ[G[p, G[p, H[y]]],G[x_:0,u_H]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn blank() {
+    assert_case(r#"Blank[]"#, r#"_"#);
+  }
+  #[test]
+  fn a() {
+    assert_case(r#"Blank[]; A"#, r#"A"#);
+  }
+  #[test]
+  fn whitespace_character() {
+    assert_case(
+      r#"Blank[]; A; WhitespaceCharacter"#,
+      r#"WhitespaceCharacter"#,
+    );
+  }
+  #[test]
+  fn letter_character() {
+    assert_case(
+      r#"Blank[]; A; WhitespaceCharacter; LetterCharacter"#,
+      r#"LetterCharacter"#,
+    );
+  }
+}

@@ -2464,3 +2464,949 @@ mod vector_less_equal {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn array_depth_1() {
+    assert_case(r#"ArrayDepth[{{a,b},{c,d}}]"#, r#"2"#);
+  }
+  #[test]
+  fn array_depth_2() {
+    assert_case(r#"ArrayDepth[{{a,b},{c,d}}]; ArrayDepth[x]"#, r#"0"#);
+  }
+  #[test]
+  fn dimensions_1() {
+    assert_case(r#"Dimensions[{a, b, c}]"#, r#"{3}"#);
+  }
+  #[test]
+  fn dimensions_2() {
+    assert_case(
+      r#"Dimensions[{a, b, c}]; Dimensions[{{a, b}, {c, d}, {e, f}}]"#,
+      r#"{3, 2}"#,
+    );
+  }
+  #[test]
+  fn dimensions_3() {
+    assert_case(
+      r#"Dimensions[{a, b, c}]; Dimensions[{{a, b}, {c, d}, {e, f}}]; Dimensions[{{a, b}, {b, c}, {c, d, e}}]"#,
+      r#"{3}"#,
+    );
+  }
+  #[test]
+  fn dimensions_4() {
+    assert_case(
+      r#"Dimensions[{a, b, c}]; Dimensions[{{a, b}, {c, d}, {e, f}}]; Dimensions[{{a, b}, {b, c}, {c, d, e}}]; Dimensions[f[f[a, b, c]]]"#,
+      r#"{1, 3}"#,
+    );
+  }
+  #[test]
+  fn list_literal_1() {
+    assert_case(r#"{a, b, c} . {x, y, z}"#, r#"a*x + b*y + c*z"#);
+  }
+  #[test]
+  fn list_literal_2() {
+    assert_case(
+      r#"{a, b, c} . {x, y, z}; {{a, b}, {c, d}} . {x, y}"#,
+      r#"{a*x + b*y, c*x + d*y}"#,
+    );
+  }
+  #[test]
+  fn list_literal_3() {
+    assert_case(
+      r#"{a, b, c} . {x, y, z}; {{a, b}, {c, d}} . {x, y}; {{a, b}, {c, d}} . {{r, s}, {t, u}}"#,
+      r#"{{a*r + b*t, a*s + b*u}, {c*r + d*t, c*s + d*u}}"#,
+    );
+  }
+  #[test]
+  fn expression() {
+    assert_case(
+      r#"{a, b, c} . {x, y, z}; {{a, b}, {c, d}} . {x, y}; {{a, b}, {c, d}} . {{r, s}, {t, u}}; a . b"#,
+      r#"a . b"#,
+    );
+  }
+  #[test]
+  fn inner_1() {
+    assert_case(r#"Inner[f, {a, b}, {x, y}, g]"#, r#"g[f[a, x], f[b, y]]"#);
+  }
+  #[test]
+  fn inner_2() {
+    assert_case(
+      r#"Inner[f, {a, b}, {x, y}, g]; Inner[Times, {a, b}, {c, d}, Plus] == {a, b} . {c, d}"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn inner_3() {
+    assert_case(
+      r#"Inner[f, {a, b}, {x, y}, g]; Inner[Times, {a, b}, {c, d}, Plus] == {a, b} . {c, d}; Inner[And, {{False, False}, {False, True}}, {{True, False}, {True, True}}, Or]"#,
+      r#"{{False, False}, {True, True}}"#,
+    );
+  }
+  #[test]
+  fn inner_4() {
+    assert_case(
+      r#"Inner[f, {a, b}, {x, y}, g]; Inner[Times, {a, b}, {c, d}, Plus] == {a, b} . {c, d}; Inner[And, {{False, False}, {False, True}}, {{True, False}, {True, True}}, Or]; Inner[f, {{{a, b}}, {{c, d}}}, {{1}, {2}}, g]"#,
+      r#"{{{g[f[a, 1], f[b, 2]]}}, {{g[f[c, 1], f[d, 2]]}}}"#,
+    );
+  }
+  #[test]
+  fn outer_1() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]"#,
+      r#"{{f[a, 1], f[a, 2], f[a, 3]}, {f[b, 1], f[b, 2], f[b, 3]}}"#,
+    );
+  }
+  #[test]
+  fn outer_2() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]"#,
+      r#"{{{{a, 2*a}, {3*a, 4*a}}, {{b, 2*b}, {3*b, 4*b}}}, {{{c, 2*c}, {3*c, 4*c}}, {{d, 2*d}, {3*d, 4*d}}}}"#,
+    );
+  }
+  #[test]
+  fn outer_3() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]"#,
+      r#"SparseArray[Automatic, {2, 2, 2, 2}, 0, {1, {{0, 2, 4}, {{2, 1, 2}, {2, 2, 1}, {1, 1, 2}, {1, 2, 1}}}, {a*c, a*d, b*c, b*d}}]"#,
+    );
+  }
+  #[test]
+  fn outer_4() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]"#,
+      r#"{{{f[a, x, 1], f[a, x, 2]}, {f[a, y, 1], f[a, y, 2]}, {f[a, z, 1], f[a, z, 2]}}, {{f[b, x, 1], f[b, x, 2]}, {f[b, y, 1], f[b, y, 2]}, {f[b, z, 1], f[b, z, 2]}}}"#,
+    );
+  }
+  #[test]
+  fn outer_5() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]; Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]"#,
+      r#"{{SparseArray[Automatic, {2, 2}, f[0, 0], {1, {{0, 1, 2}, {{2}, {1}}}, {f[0, c], f[0, d]}}], SparseArray[Automatic, {2, 2}, f[a, 0], {1, {{0, 1, 2}, {{2}, {1}}}, {f[a, c], f[a, d]}}]}, {SparseArray[Automatic, {2, 2}, f[b, 0], {1, {{0, 1, 2}, {{2}, {1}}}, {f[b, c], f[b, d]}}], SparseArray[Automatic, {2, 2}, f[0, 0], {1, {{0, 1, 2}, {{2}, {1}}}, {f[0, c], f[0, d]}}]}}"#,
+    );
+  }
+  #[test]
+  fn outer_6() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]; Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]"#,
+      r#"SparseArray[Automatic, {2, 2, 2}, 0, {1, {{0, 2, 4}, {{2, 1}, {2, 2}, {1, 1}, {1, 2}}}, {a*c, a*d, b*c, b*d}}]"#,
+    );
+  }
+  #[test]
+  fn outer_7() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]; Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]; Outer[Times, {{1, 2}}, {{a, b}, {c, d, e}}]"#,
+      r#"{{{{a, b}, {c, d, e}}, {{2*a, 2*b}, {2*c, 2*d, 2*e}}}}"#,
+    );
+  }
+  #[test]
+  fn outer_8() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]; Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]; Outer[Times, {{1, 2}}, {{a, b}, {c, d, e}}]; Outer[StringJoin, {"", "re", "un"}, {"cover", "draw", "wind"}, {"", "ing", "s"}] // InputForm"#,
+      r#"InputForm[{{{"cover", "covering", "covers"}, {"draw", "drawing", "draws"}, {"wind", "winding", "winds"}}, {{"recover", "recovering", "recovers"}, {"redraw", "redrawing", "redraws"}, {"rewind", "rewinding", "rewinds"}}, {{"uncover", "uncovering", "uncovers"}, {"undraw", "undrawing", "undraws"}, {"unwind", "unwinding", "unwinds"}}}]"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]; Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]; Outer[Times, {{1, 2}}, {{a, b}, {c, d, e}}]; Outer[StringJoin, {"", "re", "un"}, {"cover", "draw", "wind"}, {"", "ing", "s"}] // InputForm; trigs = Outer[Composition, {Sin, Cos, Tan}, {ArcSin, ArcCos, ArcTan}]"#,
+      r#"{{Sin @* ArcSin, Sin @* ArcCos, Sin @* ArcTan}, {Cos @* ArcSin, Cos @* ArcCos, Cos @* ArcTan}, {Tan @* ArcSin, Tan @* ArcCos, Tan @* ArcTan}}"#,
+    );
+  }
+  #[test]
+  fn map() {
+    assert_case(
+      r#"Outer[f, {a, b}, {1, 2, 3}]; Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[f, {a, b}, {x, y, z}, {1, 2}]; Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]; Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]; Outer[Times, {{1, 2}}, {{a, b}, {c, d, e}}]; Outer[StringJoin, {"", "re", "un"}, {"cover", "draw", "wind"}, {"", "ing", "s"}] // InputForm; trigs = Outer[Composition, {Sin, Cos, Tan}, {ArcSin, ArcCos, ArcTan}]; Map[#[0] &, trigs, {2}]"#,
+      r#"{{0, 1, 0}, {1, 0, 1}, {0, ComplexInfinity, 0}}"#,
+    );
+  }
+  #[test]
+  fn transpose_1() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]"#,
+      r#"{{1, 4}, {2, 5}, {3, 6}}"#,
+    );
+  }
+  #[test]
+  fn matrix_form_1() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]"#,
+      r#"MatrixForm[Out[0]]"#,
+    );
+  }
+  #[test]
+  fn matrix_form_2() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]; matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]"#,
+      r#"MatrixForm[{{1, 3, 5}, {2, 4, 6}}]"#,
+    );
+  }
+  #[test]
+  fn transpose_2() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]; matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]; matrix3D = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[matrix3D]"#,
+      r#"{{{1, 2}, {5, 6}}, {{3, 4}, {7, 8}}}"#,
+    );
+  }
+  #[test]
+  fn transpose_3() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]; matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]; matrix3D = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[matrix3D]; Transpose[Transpose[matrix]] == matrix"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn transpose_4() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]; matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]; matrix3D = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[matrix3D]; Transpose[Transpose[matrix]] == matrix; Transpose[Transpose[matrix3D]] == matrix3D"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn transpose_5() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]; matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]; matrix3D = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[matrix3D]; Transpose[Transpose[matrix]] == matrix; Transpose[Transpose[matrix3D]] == matrix3D; Transpose[{}]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn transpose_6() {
+    assert_case(
+      r#"square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]; MatrixForm[%]; matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]; matrix3D = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[matrix3D]; Transpose[Transpose[matrix]] == matrix; Transpose[Transpose[matrix3D]] == matrix3D; Transpose[{}]; Transpose[{a, b, c}]"#,
+      r#"{a, b, c}"#,
+    );
+  }
+  #[test]
+  fn conjugate_transpose_1() {
+    assert_case(
+      r#"ConjugateTranspose[{{0, I}, {0, 0}}]"#,
+      r#"{{0, 0}, {-I, 0}}"#,
+    );
+  }
+  #[test]
+  fn conjugate_transpose_2() {
+    assert_case(
+      r#"ConjugateTranspose[{{0, I}, {0, 0}}]; ConjugateTranspose[{{1, 2 I, 3}, {3 + 4 I, 5, I}}]"#,
+      r#"{{1, 3 - 4*I}, {-2*I, 5}, {3, -I}}"#,
+    );
+  }
+  #[test]
+  fn levi_civita_tensor_1() {
+    assert_case(
+      r#"LeviCivitaTensor[3]"#,
+      r#"SparseArray[Automatic, {3, 3, 3}, 0, {1, {{0, 2, 4, 6}, {{2, 3}, {3, 2}, {1, 3}, {3, 1}, {1, 2}, {2, 1}}}, {1, -1, -1, 1, 1, -1}}]"#,
+    );
+  }
+  #[test]
+  fn levi_civita_tensor_2() {
+    assert_case(
+      r#"LeviCivitaTensor[3]; LeviCivitaTensor[3, List]"#,
+      r#"{{{0, 0, 0}, {0, 0, 1}, {0, -1, 0}}, {{0, 0, -1}, {0, 0, 0}, {1, 0, 0}}, {{0, 1, 0}, {-1, 0, 0}, {0, 0, 0}}}"#,
+    );
+  }
+  #[test]
+  fn sparse_array_1() {
+    assert_case(
+      r#"SparseArray[{{1, 2} -> 1, {2, 1} -> 1}]"#,
+      r#"SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {1, 1}}]"#,
+    );
+  }
+  #[test]
+  fn sparse_array_2() {
+    assert_case(
+      r#"SparseArray[{{1, 2} -> 1, {2, 1} -> 1}]; SparseArray[{{1, 2} -> 1, {2, 1} -> 1}, {3, 3}]"#,
+      r#"SparseArray[Automatic, {3, 3}, 0, {1, {{0, 1, 2, 2}, {{2}, {1}}}, {1, 1}}]"#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"SparseArray[{{1, 2} -> 1, {2, 1} -> 1}]; SparseArray[{{1, 2} -> 1, {2, 1} -> 1}, {3, 3}]; M=SparseArray[{{0, a}, {b, 0}}]"#,
+      r#"SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {a, b}}]"#,
+    );
+  }
+  #[test]
+  fn divide() {
+    assert_case(
+      r#"SparseArray[{{1, 2} -> 1, {2, 1} -> 1}]; SparseArray[{{1, 2} -> 1, {2, 1} -> 1}, {3, 3}]; M=SparseArray[{{0, a}, {b, 0}}]; M //Normal"#,
+      r#"{{0, a}, {b, 0}}"#,
+    );
+  }
+  #[test]
+  fn det_1() {
+    assert_case(r#"Det[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]"#, r#"-2"#);
+  }
+  #[test]
+  fn det_2() {
+    assert_case(
+      r#"Det[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; Det[{{a, b, c}, {d, e, f}, {g, h, i}}]"#,
+      r#"-(c*e*g) + b*f*g + c*d*h - a*f*h - b*d*i + a*e*i"#,
+    );
+  }
+  #[test]
+  fn eigensystem() {
+    assert_case(
+      r#"Eigensystem[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]"#,
+      r#"{{2, -1, 1}, {{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}}"#,
+    );
+  }
+  #[test]
+  fn eigenvalues_1() {
+    assert_case(
+      r#"Eigenvalues[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]"#,
+      r#"{2, -1, 1}"#,
+    );
+  }
+  #[test]
+  fn eigenvalues_2() {
+    assert_case(
+      r#"Eigenvalues[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; Eigenvalues[{{Cos[theta],Sin[theta],0},{-Sin[theta],Cos[theta],0},{0,0,1}}] // Sort"#,
+      r#"{1, Cos[theta] - I*Sin[theta], Cos[theta] + I*Sin[theta]}"#,
+    );
+  }
+  #[test]
+  fn eigenvalues_3() {
+    assert_case(
+      r#"Eigenvalues[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; Eigenvalues[{{Cos[theta],Sin[theta],0},{-Sin[theta],Cos[theta],0},{0,0,1}}] // Sort; Eigenvalues[{{7, 1}, {-4, 3}}]"#,
+      r#"{5, 5}"#,
+    );
+  }
+  #[test]
+  fn eigenvectors_1() {
+    assert_case(
+      r#"Eigenvectors[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]"#,
+      r#"{{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}"#,
+    );
+  }
+  #[test]
+  fn eigenvectors_2() {
+    assert_case(
+      r#"Eigenvectors[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; Eigenvectors[{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}]"#,
+      r#"{{0, 1, 0}, {1, 0, 0}, {0, 0, 1}}"#,
+    );
+  }
+  #[test]
+  fn eigenvectors_3() {
+    assert_case(
+      r#"Eigenvectors[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; Eigenvectors[{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}]; Eigenvectors[{{2, 0, 0}, {0, -1, 0}, {0, 0, 0}}]"#,
+      r#"{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"#,
+    );
+  }
+  #[test]
+  fn eigenvectors_4() {
+    assert_case(
+      r#"Eigenvectors[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; Eigenvectors[{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}]; Eigenvectors[{{2, 0, 0}, {0, -1, 0}, {0, 0, 0}}]; Eigenvectors[{{0.1, 0.2}, {0.8, 0.5}}]"#,
+      r#"{{-0.29524180884432627, -0.9554225632202384}, {-0.6289601696450942, 0.777437524821136}}"#,
+    );
+  }
+  #[test]
+  fn inverse_1() {
+    assert_case(
+      r#"Inverse[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]"#,
+      r#"{{-3, 2, 0}, {2, -1, 0}, {1, -2, 1}}"#,
+    );
+  }
+  #[test]
+  fn least_squares() {
+    assert_case(
+      r#"LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, 5, 3}]"#,
+      r#"{-28 / 13, 31 / 13}"#,
+    );
+  }
+  #[test]
+  fn linear_solve_1() {
+    assert_case(
+      r#"LinearSolve[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}, {1, 2, 3}]"#,
+      r#"{0, 1, 2}"#,
+    );
+  }
+  #[test]
+  fn list_literal_4() {
+    assert_case(
+      r#"LinearSolve[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}, {1, 2, 3}]; {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}} . {0, 1, 2}"#,
+      r#"{1, 2, 3}"#,
+    );
+  }
+  #[test]
+  fn linear_solve_2() {
+    assert_case(
+      r#"LinearSolve[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}, {1, 2, 3}]; {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}} . {0, 1, 2}; LinearSolve[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {1, 1, 1}]"#,
+      r#"{-1, 1, 0}"#,
+    );
+  }
+  #[test]
+  fn matrix_exp_1() {
+    assert_case(
+      r#"MatrixExp[{{0, 2}, {0, 1}}]"#,
+      r#"{{1, 2*(-1 + E)}, {0, E}}"#,
+    );
+  }
+  #[test]
+  fn matrix_exp_2() {
+    assert_case(
+      r#"MatrixExp[{{0, 2}, {0, 1}}]; MatrixExp[{{1.5, 0.5}, {0.5, 2.0}}]"#,
+      r#"{{5.162660242762233, 3.0295198346219987}, {3.0295198346219983, 8.192180077384233}}"#,
+    );
+  }
+  #[test]
+  fn matrix_power_1() {
+    assert_case(
+      r#"MatrixPower[{{1, 2}, {1, 1}}, 10]"#,
+      r#"{{3363, 4756}, {2378, 3363}}"#,
+    );
+  }
+  #[test]
+  fn matrix_power_2() {
+    assert_case(
+      r#"MatrixPower[{{1, 2}, {1, 1}}, 10]; MatrixPower[{{1, 2}, {2, 5}}, -3]"#,
+      r#"{{169, -70}, {-70, 29}}"#,
+    );
+  }
+  #[test]
+  fn matrix_rank_1() {
+    assert_case(r#"MatrixRank[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#, r#"2"#);
+  }
+  #[test]
+  fn matrix_rank_2() {
+    assert_case(
+      r#"MatrixRank[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; MatrixRank[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn matrix_rank_3() {
+    assert_case(
+      r#"MatrixRank[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; MatrixRank[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]; MatrixRank[{{a, b}, {3 a, 3 b}}]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn null_space_1() {
+    assert_case(
+      r#"NullSpace[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#,
+      r#"{{1, -2, 1}}"#,
+    );
+  }
+  #[test]
+  fn null_space_2() {
+    assert_case(
+      r#"NullSpace[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; A = {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}; NullSpace[A]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn matrix_rank_4() {
+    assert_case(
+      r#"NullSpace[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; A = {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}; NullSpace[A]; MatrixRank[A]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn pseudo_inverse_1() {
+    assert_case(
+      r#"PseudoInverse[{{1, 2}, {2, 3}, {3, 4}}]"#,
+      r#"{{-11 / 6, -1 / 3, 7 / 6}, {4 / 3, 1 / 3, -2 / 3}}"#,
+    );
+  }
+  #[test]
+  fn pseudo_inverse_2() {
+    assert_case(
+      r#"PseudoInverse[{{1, 2}, {2, 3}, {3, 4}}]; PseudoInverse[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]"#,
+      r#"{{-3, 2, 0}, {2, -1, 0}, {1, -2, 1}}"#,
+    );
+  }
+  #[test]
+  fn pseudo_inverse_3() {
+    assert_case(
+      r#"PseudoInverse[{{1, 2}, {2, 3}, {3, 4}}]; PseudoInverse[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]; PseudoInverse[{{1.0, 2.5}, {2.5, 1.0}}]"#,
+      r#"{{-0.19047619047619055, 0.4761904761904761}, {0.4761904761904762, -0.1904761904761904}}"#,
+    );
+  }
+  #[test]
+  fn qr_decomposition() {
+    assert_case(
+      r#"QRDecomposition[{{1, 2}, {3, 4}, {5, 6}}]"#,
+      r#"{{{1/Sqrt[35], 3/Sqrt[35], Sqrt[5/7]}, {13/Sqrt[210], 2*Sqrt[2/105], -Sqrt[5/42]}}, {{Sqrt[35], 44/Sqrt[35]}, {0, 2*Sqrt[6/35]}}}"#,
+    );
+  }
+  #[test]
+  fn row_reduce_1() {
+    assert_case(
+      r#"RowReduce[{{1, 0, a}, {1, 1, b}}]"#,
+      r#"{{1, 0, a}, {0, 1, -a + b}}"#,
+    );
+  }
+  #[test]
+  fn row_reduce_2() {
+    assert_case(
+      r#"RowReduce[{{1, 0, a}, {1, 1, b}}]; RowReduce[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}] // MatrixForm"#,
+      r#"MatrixForm[{{1, 0, -1}, {0, 1, 2}, {0, 0, 0}}]"#,
+    );
+  }
+  #[test]
+  fn singular_value_decomposition() {
+    assert_case(
+      r#"SingularValueDecomposition[{{1.5, 2.0}, {2.5, 3.0}}]"#,
+      r#"{{{-0.5389535334972083, 0.8423354965397537}, {-0.8423354965397537, -0.5389535334972083}}, {{4.63555452966064, 0.}, {0., 0.10786196059193043}}, {{-0.6286775450376474, -0.7776660879615599}, {-0.7776660879615598, 0.6286775450376474}}}"#,
+    );
+  }
+  #[test]
+  fn tr_1() {
+    assert_case(r#"Tr[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#, r#"15"#);
+  }
+  #[test]
+  fn tr_2() {
+    assert_case(
+      r#"Tr[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; Tr[{{a, b, c}, {d, e, f}, {g, h, i}}]"#,
+      r#"a + e + i"#,
+    );
+  }
+  #[test]
+  fn matrix_q_1() {
+    assert_case(r#"MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]"#, r#"True"#);
+  }
+  #[test]
+  fn matrix_q_2() {
+    assert_case(
+      r#"MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]; MatrixQ[{{1}, {1, 2}}] (* first row should have length two *)"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn matrix_q_3() {
+    assert_case(
+      r#"MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]; MatrixQ[{{1}, {1, 2}}] (* first row should have length two *); MatrixQ[Array[a, {1, 1, 2}]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn matrix_q_4() {
+    assert_case(
+      r#"MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]; MatrixQ[{{1}, {1, 2}}] (* first row should have length two *); MatrixQ[Array[a, {1, 1, 2}]]; MatrixQ[{{1, 2}, {3, 4 + 5}}, Positive]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn matrix_q_5() {
+    assert_case(
+      r#"MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]; MatrixQ[{{1}, {1, 2}}] (* first row should have length two *); MatrixQ[Array[a, {1, 1, 2}]]; MatrixQ[{{1, 2}, {3, 4 + 5}}, Positive]; MatrixQ[{{1, 2 I}, {3, 4 + 5}}, Positive]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn vector_q() {
+    assert_case(r#"VectorQ[{a, b, c}]"#, r#"True"#);
+  }
+  #[test]
+  fn cross_1() {
+    assert_case(
+      r#"Cross[{x1, y1, z1}, {x2, y2, z2}]"#,
+      r#"{-(y2*z1) + y1*z2, x2*z1 - x1*z2, -(x2*y1) + x1*y2}"#,
+    );
+  }
+  #[test]
+  fn cross_2() {
+    assert_case(
+      r#"Cross[{x1, y1, z1}, {x2, y2, z2}]; Cross[{x, y}]"#,
+      r#"{-y, x}"#,
+    );
+  }
+  #[test]
+  fn set_3() {
+    assert_case(
+      r#"Cross[{x1, y1, z1}, {x2, y2, z2}]; Cross[{x, y}]; v1 = {1, Sqrt[3]}; v2 = Cross[v1]"#,
+      r#"{-Sqrt[3], 1}"#,
+    );
+  }
+  #[test]
+  fn norm_1() {
+    assert_case(
+      r#"Norm[{x, y, z}]"#,
+      r#"Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2 + Abs[z] ^ 2]"#,
+    );
+  }
+  #[test]
+  fn norm_2() {
+    assert_case(r#"Norm[{x, y, z}]; Norm[{3, 4}, 2]"#, r#"5"#);
+  }
+  #[test]
+  fn norm_3() {
+    assert_case(
+      r#"Norm[{x, y, z}]; Norm[{3, 4}, 2]; Norm[{10, 100, 200}, 1]"#,
+      r#"310"#,
+    );
+  }
+  #[test]
+  fn norm_4() {
+    assert_case(
+      r#"Norm[{x, y, z}]; Norm[{3, 4}, 2]; Norm[{10, 100, 200}, 1]; Norm[{x, y, z}, Infinity]"#,
+      r#"Max[Abs[x], Abs[y], Abs[z]]"#,
+    );
+  }
+  #[test]
+  fn norm_5() {
+    assert_case(
+      r#"Norm[{x, y, z}]; Norm[{3, 4}, 2]; Norm[{10, 100, 200}, 1]; Norm[{x, y, z}, Infinity]; Norm[{-100, 2, 3, 4}, Infinity]"#,
+      r#"100"#,
+    );
+  }
+  #[test]
+  fn norm_6() {
+    assert_case(
+      r#"Norm[{x, y, z}]; Norm[{3, 4}, 2]; Norm[{10, 100, 200}, 1]; Norm[{x, y, z}, Infinity]; Norm[{-100, 2, 3, 4}, Infinity]; Norm[1 + I]"#,
+      r#"Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn norm_7() {
+    // Norm[matrix, "Frobenius"] sums Abs[a_ij]^2 over every entry. Also
+    // exercises Array's pure-function call path so `Subscript[a, ##] &`
+    // expands to `Subscript[a, i, j]`.
+    assert_case(
+      r#"Norm[{x, y, z}]; Norm[{3, 4}, 2]; Norm[{10, 100, 200}, 1]; Norm[{x, y, z}, Infinity]; Norm[{-100, 2, 3, 4}, Infinity]; Norm[1 + I]; Norm[Array[Subscript[a, ##] &, {2, 2}], "Frobenius"]"#,
+      r#"Sqrt[Abs[Subscript[a, 1, 1]]^2 + Abs[Subscript[a, 1, 2]]^2 + Abs[Subscript[a, 2, 1]]^2 + Abs[Subscript[a, 2, 2]]^2]"#,
+    );
+  }
+  #[test]
+  fn kronecker_product_1() {
+    assert_case(
+      r#"a = {{a11, a12}, {a21, a22}}; b = {{b11, b12}, {b21, b22}}; KroneckerProduct[a, b]"#,
+      r#"{{a11*b11, a11*b12, a12*b11, a12*b12}, {a11*b21, a11*b22, a12*b21, a12*b22}, {a21*b11, a21*b12, a22*b11, a22*b12}, {a21*b21, a21*b22, a22*b21, a22*b22}}"#,
+    );
+  }
+  #[test]
+  fn kronecker_product_2() {
+    assert_case(
+      r#"a = {{a11, a12}, {a21, a22}}; b = {{b11, b12}, {b21, b22}}; KroneckerProduct[a, b]; a = {{0, 1}, {-1, 0}}; b = {{1, 2}, {3, 4}}; KroneckerProduct[a, b] // MatrixForm"#,
+      r#"MatrixForm[{{0, 0, 1, 2}, {0, 0, 3, 4}, {-1, -2, 0, 0}, {-3, -4, 0, 0}}]"#,
+    );
+  }
+  #[test]
+  fn normalize_1() {
+    assert_case(
+      r#"Normalize[{1, 1, 1, 1}]"#,
+      r#"{1 / 2, 1 / 2, 1 / 2, 1 / 2}"#,
+    );
+  }
+  #[test]
+  fn normalize_2() {
+    assert_case(
+      r#"Normalize[{1, 1, 1, 1}]; Normalize[1 + I]"#,
+      r#"(1 + I)/Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn projection_1() {
+    assert_case(r#"Projection[{5, 6, 7}, {1, 0, 0}]"#, r#"{5, 0, 0}"#);
+  }
+  #[test]
+  fn projection_2() {
+    assert_case(
+      r#"Projection[{5, 6, 7}, {1, 0, 0}]; Projection[{2, 3}, {1, 2}]"#,
+      r#"{8 / 5, 16 / 5}"#,
+    );
+  }
+  #[test]
+  fn projection_3() {
+    assert_case(
+      r#"Projection[{5, 6, 7}, {1, 0, 0}]; Projection[{2, 3}, {1, 2}]; Projection[{1.3, 2.1, 3.1}, {-0.3, 4.2, 5.3}]"#,
+      r#"{-0.16276735050196423, 2.278742907027499, 2.8755565255347015}"#,
+    );
+  }
+  #[test]
+  fn projection_4() {
+    assert_case(
+      r#"Projection[{5, 6, 7}, {1, 0, 0}]; Projection[{2, 3}, {1, 2}]; Projection[{1.3, 2.1, 3.1}, {-0.3, 4.2, 5.3}]; Projection[{3 + I, 2, 2 - I}, {2, 4, 5 I}]"#,
+      r#"{2/5 - (16*I)/45, 4/5 - (32*I)/45, 8/9 + I}"#,
+    );
+  }
+  #[test]
+  fn projection_5() {
+    assert_case(
+      r#"Projection[{5, 6, 7}, {1, 0, 0}]; Projection[{2, 3}, {1, 2}]; Projection[{1.3, 2.1, 3.1}, {-0.3, 4.2, 5.3}]; Projection[{3 + I, 2, 2 - I}, {2, 4, 5 I}]; Projection[{a, b, c}, {1, 1, 1}]"#,
+      r#"{(a + b + c) / 3, (a + b + c) / 3, (a + b + c) / 3}"#,
+    );
+  }
+  #[test]
+  fn unit_vector_1() {
+    assert_case(r#"UnitVector[2]"#, r#"{0, 1}"#);
+  }
+  #[test]
+  fn unit_vector_2() {
+    assert_case(r#"UnitVector[2]; UnitVector[4, 3]"#, r#"{0, 0, 1, 0}"#);
+  }
+  #[test]
+  fn vector_angle_1() {
+    assert_case(r#"VectorAngle[{1, 0}, {0, 1}]"#, r#"Pi / 2"#);
+  }
+  #[test]
+  fn vector_angle_2() {
+    assert_case(
+      r#"VectorAngle[{1, 0}, {0, 1}]; VectorAngle[{1, 2}, {3, 1}]"#,
+      r#"Pi / 4"#,
+    );
+  }
+  #[test]
+  fn vector_angle_3() {
+    assert_case(
+      r#"VectorAngle[{1, 0}, {0, 1}]; VectorAngle[{1, 2}, {3, 1}]; VectorAngle[{1, 1, 0}, {1, 0, 1}]"#,
+      r#"Pi / 3"#,
+    );
+  }
+  #[test]
+  fn matrix_exp_3() {
+    // Wolframscript-matched expectation. mathics rendered the φ symbol
+    // as the `\[Phi]` named-character escape and parenthesised `(I/2)`;
+    // wolframscript -code emits the literal Unicode `ϕ` (U+03D5) and
+    // drops the redundant `(I/2)` parens because `*` already binds
+    // tighter than `/`.
+    assert_case(
+      r#"Table[PauliMatrix[i], {i, 1, 3}]; PauliMatrix[1] . PauliMatrix[2] == I PauliMatrix[3]; MatrixExp[I \[Phi]/2 PauliMatrix[3]]"#,
+      "{{E^(I/2*\u{03D5}), 0}, {0, E^((-1/2*I)*\u{03D5})}}",
+    );
+  }
+  #[test]
+  fn greater() {
+    assert_case(
+      r#"Table[PauliMatrix[i], {i, 1, 3}]; PauliMatrix[1] . PauliMatrix[2] == I PauliMatrix[3]; MatrixExp[I \[Phi]/2 PauliMatrix[3]]; % /. \[Phi] -> 2 Pi"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn box_matrix() {
+    assert_case(
+      r#"BoxMatrix[3]"#,
+      r#"{{1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}}"#,
+    );
+  }
+  #[test]
+  fn diagonal_matrix_1() {
+    assert_case(
+      r#"DiagonalMatrix[{1, 2, 3}]"#,
+      r#"{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"#,
+    );
+  }
+  #[test]
+  fn matrix_form_3() {
+    assert_case(
+      r#"DiagonalMatrix[{1, 2, 3}]; MatrixForm[%]"#,
+      r#"MatrixForm[Out[0]]"#,
+    );
+  }
+  #[test]
+  fn diamond_matrix() {
+    assert_case(
+      r#"DiamondMatrix[3]"#,
+      r#"{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 0, 0, 1, 0, 0, 0}}"#,
+    );
+  }
+  #[test]
+  fn disk_matrix() {
+    assert_case(
+      r#"DiskMatrix[3]"#,
+      r#"{{0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}}"#,
+    );
+  }
+  #[test]
+  fn identity_matrix() {
+    assert_case(
+      r#"IdentityMatrix[3]"#,
+      r#"{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"#,
+    );
+  }
+  #[test]
+  fn diagonal_1() {
+    assert_case(
+      r#"Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#,
+      r#"{1, 5, 9}"#,
+    );
+  }
+  #[test]
+  fn diagonal_2() {
+    assert_case(
+      r#"Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]"#,
+      r#"{2, 6}"#,
+    );
+  }
+  #[test]
+  fn diagonal_3() {
+    assert_case(
+      r#"Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]; Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, -1]"#,
+      r#"{4, 8}"#,
+    );
+  }
+  #[test]
+  fn diagonal_4() {
+    assert_case(
+      r#"Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]; Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]; Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, -1]; Diagonal[{{1, 2, 3}, {4, 5, 6}}]"#,
+      r#"{1, 5}"#,
+    );
+  }
+  #[test]
+  fn diagonal_matrix_2() {
+    assert_case(r#"DiagonalMatrix[a + b]"#, r#"DiagonalMatrix[a + b]"#);
+  }
+  #[test]
+  fn dimensions_5() {
+    assert_case(r#"Dimensions[{}]"#, r#"{0}"#);
+  }
+  #[test]
+  fn dimensions_6() {
+    assert_case(r#"Dimensions[{}]; Dimensions[{{}}]"#, r#"{1, 0}"#);
+  }
+  #[test]
+  fn set_4() {
+    assert_case(
+      r#"Dimensions[{}]; Dimensions[{{}}]; A = {{ b ^ ( -1 / 2), 0}, {a * b ^ ( -1 / 2 ), b ^ ( 1 / 2 )}}"#,
+      r#"{{1 / Sqrt[b], 0}, {a / Sqrt[b], Sqrt[b]}}"#,
+    );
+  }
+  #[test]
+  fn expr() {
+    assert_case(
+      r#"Dimensions[{}]; Dimensions[{{}}]; A = {{ b ^ ( -1 / 2), 0}, {a * b ^ ( -1 / 2 ), b ^ ( 1 / 2 )}}; A . Inverse[A]"#,
+      r#"{{1, 0}, {0, 1}}"#,
+    );
+  }
+  #[test]
+  fn a() {
+    assert_case(
+      r#"Dimensions[{}]; Dimensions[{{}}]; A = {{ b ^ ( -1 / 2), 0}, {a * b ^ ( -1 / 2 ), b ^ ( 1 / 2 )}}; A . Inverse[A]; A"#,
+      r#"{{1 / Sqrt[b], 0}, {a / Sqrt[b], Sqrt[b]}}"#,
+    );
+  }
+  #[test]
+  fn transpose_7() {
+    assert_case(
+      r#"Dimensions[{}]; Dimensions[{{}}]; A = {{ b ^ ( -1 / 2), 0}, {a * b ^ ( -1 / 2 ), b ^ ( 1 / 2 )}}; A . Inverse[A]; A; Transpose[x]"#,
+      r#"Transpose[x]"#,
+    );
+  }
+  #[test]
+  fn numeric_array() {
+    // wolframscript prints NumericArray with the dimensions inline
+    // (`NumericArray[<2,2>, UnsignedInteger8]`) rather than spelling out
+    // the data list as the mathics expectation did.
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]"#,
+      r#"NumericArray[<2,2>, UnsignedInteger8]"#,
+    );
+  }
+  #[test]
+  fn to_string() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]"#,
+      r#""NumericArray[<2,2>, UnsignedInteger8]""#,
+    );
+  }
+  #[test]
+  fn head() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]"#,
+      r#"NumericArray"#,
+    );
+  }
+  #[test]
+  fn atom_q() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]; AtomQ[NumericArray[{1,2}]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn first_1() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]; AtomQ[NumericArray[{1,2}]]; First[NumericArray[{1,2,3}]]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn first_2() {
+    // First on a multi-dim NumericArray returns a sub-NumericArray, which
+    // wolframscript renders in the same `<dim>` shorthand.
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]; AtomQ[NumericArray[{1,2}]]; First[NumericArray[{1,2,3}]]; First[NumericArray[{{1,2}, {3,4}}]]"#,
+      r#"NumericArray[<2>, UnsignedInteger8]"#,
+    );
+  }
+  #[test]
+  fn last_1() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]; AtomQ[NumericArray[{1,2}]]; First[NumericArray[{1,2,3}]]; First[NumericArray[{{1,2}, {3,4}}]]; Last[NumericArray[{1,2,3}]]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn last_2() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]; AtomQ[NumericArray[{1,2}]]; First[NumericArray[{1,2,3}]]; First[NumericArray[{{1,2}, {3,4}}]]; Last[NumericArray[{1,2,3}]]; Last[NumericArray[{{1,2}, {3,4}}]]"#,
+      r#"NumericArray[<2>, UnsignedInteger8]"#,
+    );
+  }
+  #[test]
+  fn normal() {
+    assert_case(
+      r#"NumericArray[{{1,2},{3,4}}]; ToString[NumericArray[{{1,2},{3,4}}]]; Head[NumericArray[{1,2}]]; AtomQ[NumericArray[{1,2}]]; First[NumericArray[{1,2,3}]]; First[NumericArray[{{1,2}, {3,4}}]]; Last[NumericArray[{1,2,3}]]; Last[NumericArray[{{1,2}, {3,4}}]]; Normal[NumericArray[{{1,2}, {3,4}}]]"#,
+      r#"{{1, 2}, {3, 4}}"#,
+    );
+  }
+  #[test]
+  fn inverse_2() {
+    assert_case(r#"Inverse[{{0, 2},{2, 0}}]"#, r#"{{0, 1 / 2},{1 / 2, 0}}"#);
+  }
+  #[test]
+  fn inverse_3() {
+    assert_case(
+      r#"Inverse[{{0, 2},{2, 0}}]; Inverse[{{0, 2.},{2, 0}}]"#,
+      r#"{{0., 0.5}, {0.5, 0.}}"#,
+    );
+  }
+  #[test]
+  fn inverse_4() {
+    assert_case(
+      r#"Inverse[{{0, 2},{2, 0}}]; Inverse[{{0, 2.},{2, 0}}]; Inverse[{{0, 2., 0},{2, 0, 0}, {0, 0, a}}]"#,
+      r#"{{0., 0.5, 0.}, {0.5, 0., 0.}, {0., 0., 1./a}}"#,
+    );
+  }
+  #[test]
+  fn inverse_5() {
+    assert_case(
+      r#"Inverse[{{0, 2},{2, 0}}]; Inverse[{{0, 2.},{2, 0}}]; Inverse[{{0, 2., 0},{2, 0, 0}, {0, 0, a}}]; Inverse[{{a, b},{c, d}}].{{a, b},{c, d}}"#,
+      r#"{{-((b*c)/(-(b*c) + a*d)) + (a*d)/(-(b*c) + a*d), 0}, {0, -((b*c)/(-(b*c) + a*d)) + (a*d)/(-(b*c) + a*d)}}"#,
+    );
+  }
+  #[test]
+  fn inverse_6() {
+    assert_case(
+      r#"Inverse[{{0, 2},{2, 0}}]; Inverse[{{0, 2.},{2, 0}}]; Inverse[{{0, 2., 0},{2, 0, 0}, {0, 0, a}}]; Inverse[{{a, b},{c, d}}].{{a, b},{c, d}}; Inverse[{{a, b},{c, d}}].{{a, b},{c, d}}//Simplify"#,
+      r#"{{1, 0},{0, 1}}"#,
+    );
+  }
+  #[test]
+  fn inverse_7() {
+    assert_case(
+      r#"Inverse[{{0, 2},{2, 0}}]; Inverse[{{0, 2.},{2, 0}}]; Inverse[{{0, 2., 0},{2, 0, 0}, {0, 0, a}}]; Inverse[{{a, b},{c, d}}].{{a, b},{c, d}}; Inverse[{{a, b},{c, d}}].{{a, b},{c, d}}//Simplify; Inverse[{{g[a], g[b]},{g[c], g[d]}}].{{g[a], g[b]},{g[c], g[d]}}//Simplify"#,
+      r#"{{1, 0},{0, 1}}"#,
+    );
+  }
+  #[test]
+  fn normalize_3() {
+    assert_case(r#"Normalize[0]"#, r#"0"#);
+  }
+  #[test]
+  fn normalize_4() {
+    assert_case(r#"Normalize[0]; Normalize[{0}]"#, r#"{0}"#);
+  }
+  #[test]
+  fn normalize_5() {
+    assert_case(r#"Normalize[0]; Normalize[{0}]; Normalize[{}]"#, r#"{}"#);
+  }
+  #[test]
+  fn vector_angle_4() {
+    assert_case(
+      r#"Normalize[0]; Normalize[{0}]; Normalize[{}]; VectorAngle[{0, 1}, {0, 1}]"#,
+      r#"0"#,
+    );
+  }
+}

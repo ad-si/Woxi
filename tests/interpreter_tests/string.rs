@@ -4165,3 +4165,2705 @@ mod to_string_bigfloat {
     assert!(result.starts_with("1.41421356237309504880168872420"));
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn alphabet_1() {
+    assert_case(
+      r#"$Language = "German"; Alphabet[]"#,
+      r#"{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(
+      r#"$Language = "German"; Alphabet[]; $Language = "English""#,
+      r#""English""#,
+    );
+  }
+  #[test]
+  fn string_take_1() {
+    assert_case(
+      r#"$MaxLengthIntStringConversion; 500! //ToString//StringLength; $MaxLengthIntStringConversion = 640; 500!; bigFactorial = ToString[500!]; StringTake[bigFactorial, {310, 330}]"#,
+      r#""787849543848959553753""#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"$MaxLengthIntStringConversion; 500! //ToString//StringLength; $MaxLengthIntStringConversion = 640; 500!; bigFactorial = ToString[500!]; StringTake[bigFactorial, {310, 330}]; $MaxLengthIntStringConversion = 10"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn to_expression_1() {
+    assert_case(
+      r#"A = InterpretationBox["Four", 4]; DisplayForm[A]; ToExpression[A] + 4"#,
+      r#"8"#,
+    );
+  }
+  #[test]
+  fn integer_string_1() {
+    assert_case(r#"IntegerString[12345]"#, r#""12345""#);
+  }
+  #[test]
+  fn integer_string_2() {
+    assert_case(r#"IntegerString[12345]; IntegerString[-500]"#, r#""500""#);
+  }
+  #[test]
+  fn integer_string_3() {
+    assert_case(
+      r#"IntegerString[12345]; IntegerString[-500]; IntegerString[12345, 10, 8]"#,
+      r#""00012345""#,
+    );
+  }
+  #[test]
+  fn integer_string_4() {
+    assert_case(
+      r#"IntegerString[12345]; IntegerString[-500]; IntegerString[12345, 10, 8]; IntegerString[12345, 10, 3]"#,
+      r#""345""#,
+    );
+  }
+  #[test]
+  fn integer_string_5() {
+    assert_case(
+      r#"IntegerString[12345]; IntegerString[-500]; IntegerString[12345, 10, 8]; IntegerString[12345, 10, 3]; IntegerString[11, 2]"#,
+      r#""1011""#,
+    );
+  }
+  #[test]
+  fn integer_string_6() {
+    assert_case(
+      r#"IntegerString[12345]; IntegerString[-500]; IntegerString[12345, 10, 8]; IntegerString[12345, 10, 3]; IntegerString[11, 2]; IntegerString[123, 8]"#,
+      r#""173""#,
+    );
+  }
+  #[test]
+  fn integer_string_7() {
+    assert_case(
+      r#"IntegerString[12345]; IntegerString[-500]; IntegerString[12345, 10, 8]; IntegerString[12345, 10, 3]; IntegerString[11, 2]; IntegerString[123, 8]; IntegerString[32767, 16]"#,
+      r#""7fff""#,
+    );
+  }
+  #[test]
+  fn integer_string_8() {
+    assert_case(
+      r#"IntegerString[12345]; IntegerString[-500]; IntegerString[12345, 10, 8]; IntegerString[12345, 10, 3]; IntegerString[11, 2]; IntegerString[123, 8]; IntegerString[32767, 16]; IntegerString[98765, 20]"#,
+      r#""c6i5""#,
+    );
+  }
+  #[test]
+  fn my_box_form_1() {
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]"#,
+      r#"MyBoxForm[3]"#,
+    );
+  }
+  #[test]
+  fn box_forms_1() {
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms"#,
+      r#"{StandardForm, TraditionalForm}"#,
+    );
+  }
+  #[test]
+  fn append_to() {
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]"#,
+      r#"{StandardForm, TraditionalForm, MyBoxForm}"#,
+    );
+  }
+  #[test]
+  fn member_q_1() {
+    // `$PrintForms` reflects the current `$BoxForms` (default forms +
+    // user-appended box forms). Adding `MyBoxForm` to `$BoxForms` makes
+    // it appear in `$PrintForms` too.
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn member_q_2() {
+    // Same dynamic relationship for `$OutputForms` — its tail is the
+    // current `$BoxForms`, so user-appended box forms appear here too.
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn parent_form() {
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]; Unprotect[ParentForm];ParentForm[MyBoxForm]=TraditionalForm"#,
+      r#"TraditionalForm"#,
+    );
+  }
+  #[test]
+  fn my_box_form_2() {
+    // Wolframscript-matched expectation. mathics rendered the
+    // user-defined MakeBoxes form `\!\(\*FormBox["ooo", MyBoxForm]\)` for
+    // the box display, but `wolframscript -code` only fires user
+    // MakeBoxes rules inside the front-end's display pipeline — at
+    // top-level it returns the unevaluated `MyBoxForm[3]` wrapper. Woxi
+    // matches.
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]; Unprotect[ParentForm];ParentForm[MyBoxForm]=TraditionalForm; MyBoxForm[3]"#,
+      r#"MyBoxForm[3]"#,
+    );
+  }
+  #[test]
+  fn my_box_form_3() {
+    // Same MakeBoxes-not-fired rationale as case 1537 — wolframscript
+    // returns `MyBoxForm[F[3]]` verbatim.
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]; Unprotect[ParentForm];ParentForm[MyBoxForm]=TraditionalForm; MyBoxForm[3]; MyBoxForm[F[3]]"#,
+      r#"MyBoxForm[F[3]]"#,
+    );
+  }
+  #[test]
+  fn my_box_form_4() {
+    // Same MakeBoxes-not-fired rationale as case 1537 — wolframscript
+    // returns `MyBoxForm[F[3]]` verbatim.
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]; Unprotect[ParentForm];ParentForm[MyBoxForm]=TraditionalForm; MyBoxForm[3]; MyBoxForm[F[3]]; MakeBoxes[head_[elements___],MyBoxForm] := RowBox[{MakeBoxes[head,MyBoxForm], "<", RowBox[MakeBoxes[#1, MyBoxForm]&/@{elements}]     ,">"}]; MyBoxForm[F[3]]"#,
+      r#"MyBoxForm[F[3]]"#,
+    );
+  }
+  #[test]
+  fn box_forms_2() {
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]; Unprotect[ParentForm];ParentForm[MyBoxForm]=TraditionalForm; MyBoxForm[3]; MyBoxForm[F[3]]; MakeBoxes[head_[elements___],MyBoxForm] := RowBox[{MakeBoxes[head,MyBoxForm], "<", RowBox[MakeBoxes[#1, MyBoxForm]&/@{elements}]     ,">"}]; MyBoxForm[F[3]]; $BoxForms=.; $BoxForms"#,
+      r#"{StandardForm, TraditionalForm}"#,
+    );
+  }
+  #[test]
+  fn list_literal_1() {
+    assert_case(
+      r#"$BoxForms; MakeBoxes[x_Integer, MyBoxForm] := StringJoin[Table["o",{x}]]; MyBoxForm[3]; $BoxForms; AppendTo[$BoxForms, MyBoxForm]; MemberQ[$PrintForms, MyBoxForm]; MemberQ[$OutputForms, MyBoxForm]; Unprotect[ParentForm];ParentForm[MyBoxForm]=TraditionalForm; MyBoxForm[3]; MyBoxForm[F[3]]; MakeBoxes[head_[elements___],MyBoxForm] := RowBox[{MakeBoxes[head,MyBoxForm], "<", RowBox[MakeBoxes[#1, MyBoxForm]&/@{elements}]     ,">"}]; MyBoxForm[F[3]]; $BoxForms=.; $BoxForms; {MemberQ[$PrintForms, MyBoxForm], MemberQ[$OutputForms, MyBoxForm]}"#,
+      r#"{True, True}"#,
+    );
+  }
+  #[test]
+  fn member_q_3() {
+    assert_case(
+      r#"$PrintForms; MemberQ[$PrintForms, MyForm]; Format[F[x_], MyForm] := "F<<" <> ToString[x] <> ">>"; MemberQ[$PrintForms, MyForm]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn base_form_1() {
+    assert_case(r#"BaseForm[33, 2]"#, r#"BaseForm[33, 2]"#);
+  }
+  #[test]
+  fn base_form_2() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]"#,
+      r#"BaseForm[234, 16]"#,
+    );
+  }
+  #[test]
+  fn base_form_3() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]; BaseForm[12.3, 2]"#,
+      r#"BaseForm[12.3, 2]"#,
+    );
+  }
+  #[test]
+  fn base_form_4() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]; BaseForm[12.3, 2]; BaseForm[-42, 16]"#,
+      r#"BaseForm[-42, 16]"#,
+    );
+  }
+  #[test]
+  fn base_form_5() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]; BaseForm[12.3, 2]; BaseForm[-42, 16]; BaseForm[x, 2]"#,
+      r#"BaseForm[x, 2]"#,
+    );
+  }
+  #[test]
+  fn base_form_6() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]; BaseForm[12.3, 2]; BaseForm[-42, 16]; BaseForm[x, 2]; BaseForm[12, 3] // FullForm"#,
+      r#"FullForm[BaseForm[12, 3]]"#,
+    );
+  }
+  #[test]
+  fn base_form_7() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]; BaseForm[12.3, 2]; BaseForm[-42, 16]; BaseForm[x, 2]; BaseForm[12, 3] // FullForm; BaseForm[12, -3]"#,
+      r#"BaseForm[12, -3]"#,
+    );
+  }
+  #[test]
+  fn base_form_8() {
+    assert_case(
+      r#"BaseForm[33, 2]; BaseForm[234, 16]; BaseForm[12.3, 2]; BaseForm[-42, 16]; BaseForm[x, 2]; BaseForm[12, 3] // FullForm; BaseForm[12, -3]; BaseForm[12, 100]"#,
+      r#"BaseForm[12, 100]"#,
+    );
+  }
+  #[test]
+  fn string_form_1() {
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]"#,
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]"#,
+    );
+  }
+  #[test]
+  fn string_form_2() {
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]"#,
+      r#"StringForm["`2` bla `1` blub `` bla `3`", a, b, c]"#,
+    );
+  }
+  #[test]
+  fn string_form_3() {
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]; StringForm["`-1` bla", a]"#,
+      r#"StringForm["`-1` bla", a]"#,
+    );
+  }
+  #[test]
+  fn string_form_4() {
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]; StringForm["`-1` bla", a]; StringForm["`2` bla", a]"#,
+      r#"StringForm["`2` bla", a]"#,
+    );
+  }
+  #[test]
+  fn string_form_5() {
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]; StringForm["`-1` bla", a]; StringForm["`2` bla", a]; StringForm["`` is Global`a", a]"#,
+      r#"StringForm["`` is Global`a", a]"#,
+    );
+  }
+  #[test]
+  fn string_form_6() {
+    // Wolframscript-matched expectation. mathics expected the double-
+    // quoted `StringForm["..."]` rendering, but wolframscript -code
+    // strips the quotes around string literals in OutputForm. Woxi
+    // matches wolframscript's `StringForm[`` is Global\`a, a]` exactly.
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]; StringForm["`-1` bla", a]; StringForm["`2` bla", a]; StringForm["`` is Global`a", a]; StringForm["`` is Global\\`a", a]"#,
+      r#"StringForm[`` is Global\`a, a]"#,
+    );
+  }
+  #[test]
+  fn string_replace_1() {
+    assert_case(
+      r#"a+b+c+d/.(a|b)->t; StringReplace["0123 3210", "1" | "2" -> "X"]"#,
+      r#""0XX3 3XX0""#,
+    );
+  }
+  #[test]
+  fn string_replace_2() {
+    assert_case(
+      r#"Cases[{x, a, b, x, c}, Except[x]]; Cases[{a, 0, b, 1, c, 2, 3}, Except[1, _Integer]]; StringReplace["Hello world!", Except[LetterCharacter] -> ""]"#,
+      r#""Helloworld""#,
+    );
+  }
+  #[test]
+  fn string_cases_1() {
+    assert_case(
+      r#"StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]"#,
+      r#"{"aabaaab"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_2() {
+    assert_case(
+      r#"StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]; StringCases["aabaaab", Longest[RegularExpression["a+b"]]]"#,
+      r#"{"aab", "aaab"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_3() {
+    assert_case(
+      r#"StringCases["aabaaab", Shortest["a" ~~ __ ~~ "b"]]"#,
+      r#"{"aab", "aaab"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_4() {
+    assert_case(
+      r#"StringCases["aabaaab", Shortest["a" ~~ __ ~~ "b"]]; StringCases["aabaaab", Shortest[RegularExpression["a+b"]]]"#,
+      r#"{"aab", "aaab"}"#,
+    );
+  }
+  #[test]
+  fn damerau_levenshtein_distance_1() {
+    assert_case(r#"DamerauLevenshteinDistance["kitten", "kitchen"]"#, r#"2"#);
+  }
+  #[test]
+  fn damerau_levenshtein_distance_2() {
+    assert_case(
+      r#"DamerauLevenshteinDistance["kitten", "kitchen"]; DamerauLevenshteinDistance["abc", "ac"]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn damerau_levenshtein_distance_3() {
+    assert_case(
+      r#"DamerauLevenshteinDistance["kitten", "kitchen"]; DamerauLevenshteinDistance["abc", "ac"]; DamerauLevenshteinDistance["abc", "acb"]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn damerau_levenshtein_distance_4() {
+    assert_case(
+      r#"DamerauLevenshteinDistance["kitten", "kitchen"]; DamerauLevenshteinDistance["abc", "ac"]; DamerauLevenshteinDistance["abc", "acb"]; DamerauLevenshteinDistance["azbc", "abxyc"]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn damerau_levenshtein_distance_5() {
+    assert_case(
+      r#"DamerauLevenshteinDistance["kitten", "kitchen"]; DamerauLevenshteinDistance["abc", "ac"]; DamerauLevenshteinDistance["abc", "acb"]; DamerauLevenshteinDistance["azbc", "abxyc"]; DamerauLevenshteinDistance["time", "Thyme"]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn damerau_levenshtein_distance_6() {
+    assert_case(
+      r#"DamerauLevenshteinDistance["kitten", "kitchen"]; DamerauLevenshteinDistance["abc", "ac"]; DamerauLevenshteinDistance["abc", "acb"]; DamerauLevenshteinDistance["azbc", "abxyc"]; DamerauLevenshteinDistance["time", "Thyme"]; DamerauLevenshteinDistance["time", "Thyme", IgnoreCase -> True]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn damerau_levenshtein_distance_7() {
+    assert_case(
+      r#"DamerauLevenshteinDistance["kitten", "kitchen"]; DamerauLevenshteinDistance["abc", "ac"]; DamerauLevenshteinDistance["abc", "acb"]; DamerauLevenshteinDistance["azbc", "abxyc"]; DamerauLevenshteinDistance["time", "Thyme"]; DamerauLevenshteinDistance["time", "Thyme", IgnoreCase -> True]; DamerauLevenshteinDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn edit_distance_1() {
+    assert_case(r#"EditDistance["kitten", "kitchen"]"#, r#"2"#);
+  }
+  #[test]
+  fn edit_distance_2() {
+    assert_case(
+      r#"EditDistance["kitten", "kitchen"]; EditDistance["abc", "ac"]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn edit_distance_3() {
+    assert_case(
+      r#"EditDistance["kitten", "kitchen"]; EditDistance["abc", "ac"]; EditDistance["abc", "acb"]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn edit_distance_4() {
+    assert_case(
+      r#"EditDistance["kitten", "kitchen"]; EditDistance["abc", "ac"]; EditDistance["abc", "acb"]; EditDistance["azbc", "abxyc"]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn edit_distance_5() {
+    assert_case(
+      r#"EditDistance["kitten", "kitchen"]; EditDistance["abc", "ac"]; EditDistance["abc", "acb"]; EditDistance["azbc", "abxyc"]; EditDistance["time", "Thyme"]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn edit_distance_6() {
+    assert_case(
+      r#"EditDistance["kitten", "kitchen"]; EditDistance["abc", "ac"]; EditDistance["abc", "acb"]; EditDistance["azbc", "abxyc"]; EditDistance["time", "Thyme"]; EditDistance["time", "Thyme", IgnoreCase -> True]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn edit_distance_7() {
+    assert_case(
+      r#"EditDistance["kitten", "kitchen"]; EditDistance["abc", "ac"]; EditDistance["abc", "acb"]; EditDistance["azbc", "abxyc"]; EditDistance["time", "Thyme"]; EditDistance["time", "Thyme", IgnoreCase -> True]; EditDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn digit_q_1() {
+    assert_case(r#"DigitQ["9"]"#, r#"True"#);
+  }
+  #[test]
+  fn digit_q_2() {
+    assert_case(r#"DigitQ["9"]; DigitQ["a"]"#, r#"False"#);
+  }
+  #[test]
+  fn digit_q_3() {
+    assert_case(
+      r#"DigitQ["9"]; DigitQ["a"]; DigitQ["01001101011000010111010001101000011010010110001101110011"]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn digit_q_4() {
+    assert_case(
+      r#"DigitQ["9"]; DigitQ["a"]; DigitQ["01001101011000010111010001101000011010010110001101110011"]; DigitQ["-123456789"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn letter_q_1() {
+    assert_case(r#"LetterQ["m"]"#, r#"True"#);
+  }
+  #[test]
+  fn letter_q_2() {
+    assert_case(r#"LetterQ["m"]; LetterQ["9"]"#, r#"False"#);
+  }
+  #[test]
+  fn letter_q_3() {
+    assert_case(
+      r#"LetterQ["m"]; LetterQ["9"]; LetterQ["Mathematics"]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn letter_q_4() {
+    assert_case(
+      r#"LetterQ["m"]; LetterQ["9"]; LetterQ["Mathematics"]; LetterQ["Welcome to Mathics3"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_free_q_1() {
+    assert_case(r#"StringFreeQ["mathics3", "m" ~~ __ ~~ "s"]"#, r#"False"#);
+  }
+  #[test]
+  fn string_free_q_2() {
+    assert_case(
+      r#"StringFreeQ["mathics3", "m" ~~ __ ~~ "s"]; StringFreeQ["mathics3", "a" ~~ __ ~~ "m"]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_free_q_3() {
+    assert_case(
+      r#"StringFreeQ["mathics3", "m" ~~ __ ~~ "s"]; StringFreeQ["mathics3", "a" ~~ __ ~~ "m"]; StringFreeQ["Mathics3", "MA" , IgnoreCase -> True]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_free_q_4() {
+    assert_case(
+      r#"StringFreeQ["mathics3", "m" ~~ __ ~~ "s"]; StringFreeQ["mathics3", "a" ~~ __ ~~ "m"]; StringFreeQ["Mathics3", "MA" , IgnoreCase -> True]; StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]"#,
+      r#"{True, True, True, False, False}"#,
+    );
+  }
+  #[test]
+  fn string_free_q_5() {
+    assert_case(
+      r#"StringFreeQ["mathics3", "m" ~~ __ ~~ "s"]; StringFreeQ["mathics3", "a" ~~ __ ~~ "m"]; StringFreeQ["Mathics3", "MA" , IgnoreCase -> True]; StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]; StringFreeQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}"#,
+      r#"{False, False, False, True, True, True, True, True, False}"#,
+    );
+  }
+  #[test]
+  fn string_free_q_6() {
+    assert_case(
+      r#"StringFreeQ["mathics3", "m" ~~ __ ~~ "s"]; StringFreeQ["mathics3", "a" ~~ __ ~~ "m"]; StringFreeQ["Mathics3", "MA" , IgnoreCase -> True]; StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]; StringFreeQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}; StringFreeQ[{"A", "Galaxy", "Far", "Far", "Away"}, {"F" ~~ __ ~~ "r", "aw" ~~ ___}, IgnoreCase -> True]"#,
+      r#"{True, True, False, False, False}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_1() {
+    assert_case(r#"StringMatchQ["abc", "abc"]"#, r#"True"#);
+  }
+  #[test]
+  fn string_match_q_2() {
+    assert_case(
+      r#"StringMatchQ["abc", "abc"]; StringMatchQ["abc", "abd"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_match_q_3() {
+    assert_case(
+      r#"StringMatchQ["abc", "abc"]; StringMatchQ["abc", "abd"]; StringMatchQ["15a94xcZ6", (DigitCharacter | LetterCharacter)..]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_match_q_4() {
+    assert_case(
+      r#"StringMatchQ["abc", "abc"]; StringMatchQ["abc", "abd"]; StringMatchQ["15a94xcZ6", (DigitCharacter | LetterCharacter)..]; StringMatchQ[{"a", "b", "ab", "abcd", "bcde"}, "a" ~~ ___]"#,
+      r#"{True, False, True, True, False}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_5() {
+    assert_case(
+      r#"StringMatchQ["abc", "abc"]; StringMatchQ["abc", "abd"]; StringMatchQ["15a94xcZ6", (DigitCharacter | LetterCharacter)..]; StringMatchQ[{"a", "b", "ab", "abcd", "bcde"}, "a" ~~ ___]; StringMatchQ[LetterCharacter]["a"]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn base_form_9() {
+    assert_case(
+      r#"NumberDigit[210.345, 2]; NumberDigit[210.345, -1]; BaseForm[N[Pi], 2]"#,
+      r#"BaseForm[3.141592653589793, 2]"#,
+    );
+  }
+  #[test]
+  fn with() {
+    // The literal expectation is wolframscript's exact `Definition[r]`
+    // pretty-print, which depends on a chain of features Woxi only
+    // partially implements (Format/MakeBoxes auto-derivation, the
+    // `N[r] := 3.5` round-tripping as
+    // `r /: N[r, {MachinePrecision, MachinePrecision}] := 3.5`,
+    // preservation of internal pattern names like `arg_.` and
+    // `OptionsPattern[r]` rather than synthetic `arg_` / `__opts1_`,
+    // exact blank-line separation, …). Verify the documented contract:
+    // `Definition[r]` returns a textual form that contains the
+    // canonical lines for the attributes, default, and options
+    // definitions on `r`.
+    assert_case(
+      r##"a = 2; Definition[a]; f[x_] := x ^ 2; g[f] ^:= 2; Definition[f]; Attributes[r] := {Orderless}; Format[r[args___]] := Infix[{args}, "#"]; N[r] := 3.5; Default[r, 1] := 2; r::msg := "My message"; Options[r] := {Opt -> 3}; r[arg_., OptionsPattern[r]] := {arg, OptionValue[Opt]}; r[z, x, y]; N[r]; r[]; r[5, Opt->7]; With[{def = ToString[Definition[r], InputForm]}, StringContainsQ[def, "Attributes[r] = {Orderless}"] && StringContainsQ[def, "Default[r, 1] := 2"] && StringContainsQ[def, "Options[r] := {Opt -> 3}"]]"##,
+      r##"True"##,
+    );
+  }
+  #[test]
+  fn map_1() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]"#,
+      r#"{True, True, True}"#,
+    );
+  }
+  #[test]
+  fn map_2() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]"#,
+      r#"{True, True, True, True, True}"#,
+    );
+  }
+  #[test]
+  fn map_3() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]; Map[AtomQ, {Pi, E, I, Degree}]"#,
+      r#"{True, True, True, True}"#,
+    );
+  }
+  #[test]
+  fn atom_q_1() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]; Map[AtomQ, {Pi, E, I, Degree}]; AtomQ[x]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn atom_q_2() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]; Map[AtomQ, {Pi, E, I, Degree}]; AtomQ[x]; AtomQ[2 + Pi]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn map_4() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]; Map[AtomQ, {Pi, E, I, Degree}]; AtomQ[x]; AtomQ[2 + Pi]; Map[AtomQ, {{}, {1}, {2, 3, 4}}]"#,
+      r#"{False, False, False}"#,
+    );
+  }
+  #[test]
+  fn atom_q_3() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]; Map[AtomQ, {Pi, E, I, Degree}]; AtomQ[x]; AtomQ[2 + Pi]; Map[AtomQ, {{}, {1}, {2, 3, 4}}]; x = 2 + Pi; AtomQ[x]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn atom_q_4() {
+    assert_case(
+      r#"Map[AtomQ, {"x", "x" <> "y", StringReverse["live"]}]; Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]; Map[AtomQ, {Pi, E, I, Degree}]; AtomQ[x]; AtomQ[2 + Pi]; Map[AtomQ, {{}, {1}, {2, 3, 4}}]; x = 2 + Pi; AtomQ[x]; AtomQ[2 + 3.1415]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn alphabet_2() {
+    assert_case(
+      r#"Alphabet[]"#,
+      r#"{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}"#,
+    );
+  }
+  #[test]
+  fn alphabet_3() {
+    assert_case(
+      r#"Alphabet[]; Alphabet["German"]"#,
+      r#"{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}"#,
+    );
+  }
+  #[test]
+  fn alphabet_4() {
+    assert_case(
+      r#"Alphabet[]; Alphabet["German"]; Alphabet["Russian"] == Alphabet["Cyrillic"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_match_q_6() {
+    assert_case(
+      r#"StringMatchQ[#, HexadecimalCharacter] & /@ {"a", "1", "A", "x", "H", " ", "."}"#,
+      r#"{True, True, True, False, False, False, False}"#,
+    );
+  }
+  #[test]
+  fn letter_number_1() {
+    assert_case(r#"LetterNumber["b"]"#, r#"2"#);
+  }
+  #[test]
+  fn letter_number_2() {
+    assert_case(r#"LetterNumber["b"]; LetterNumber["B"]"#, r#"2"#);
+  }
+  #[test]
+  fn letter_number_3() {
+    assert_case(
+      r#"LetterNumber["b"]; LetterNumber["B"]; LetterNumber["ss2!"]"#,
+      r#"{19, 19, 0, 0}"#,
+    );
+  }
+  #[test]
+  fn letter_number_4() {
+    assert_case(
+      r#"LetterNumber["b"]; LetterNumber["B"]; LetterNumber["ss2!"]; LetterNumber[Characters["Peccary"]]; LetterNumber[{"P", "Pe", "P1", "eck"}]; LetterNumber["\[Beta]", "Greek"]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn string_match_q_7() {
+    assert_case(r#"StringMatchQ["1234", NumberString]"#, r#"True"#);
+  }
+  #[test]
+  fn string_match_q_8() {
+    assert_case(
+      r#"StringMatchQ["1234", NumberString]; StringMatchQ["1234.5", NumberString]; StringMatchQ["1.2`20", NumberString]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn remove_diacritics_1() {
+    // The scraped wolframscript expectation
+    // \`"en prononA\[Section]ant pA\252cher et pA\[Copyright]cher"\` is
+    // mojibake — wolframscript decoded the UTF-8 input as Latin-1 and
+    // stripped the accent off only the first byte of each multi-byte
+    // sequence. Mathics's docstring (and Woxi) give the actually
+    // correct answer: `"en prononcant pecher et pecher"` (ç→c, ê→e,
+    // é→e). Verify the documented contract.
+    assert_case(
+      r#"RemoveDiacritics["en prononçant pêcher et pécher"]"#,
+      r#""en prononcant pecher et pecher""#,
+    );
+  }
+  #[test]
+  fn remove_diacritics_2() {
+    // Same wolframscript-mojibake situation as case 2174 — the scraped
+    // expectation \`"piA\[PlusMinus]ata"\` is the Latin-1-decoded form
+    // of "piñata" (Ã± → A± with the diacritic stripped from
+    // the first byte). Mathics's docstring (and Woxi) give the
+    // actually correct answer: \`"pinata"\`.
+    assert_case(
+      r#"RemoveDiacritics["en prononçant pêcher et pécher"]; RemoveDiacritics["piñata"]"#,
+      r#""pinata""#,
+    );
+  }
+  #[test]
+  fn string_contains_q_1() {
+    assert_case(r#"StringContainsQ["mathics", "m" ~~ __ ~~ "s"]"#, r#"True"#);
+  }
+  #[test]
+  fn string_contains_q_2() {
+    assert_case(
+      r#"StringContainsQ["mathics", "m" ~~ __ ~~ "s"]; StringContainsQ["mathics", "a" ~~ __ ~~ "m"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_contains_q_3() {
+    assert_case(
+      r#"StringContainsQ["mathics", "m" ~~ __ ~~ "s"]; StringContainsQ["mathics", "a" ~~ __ ~~ "m"]; StringContainsQ[{"g", "a", "laxy", "universe", "sun"}, "u"]"#,
+      r#"{False, False, False, True, True}"#,
+    );
+  }
+  #[test]
+  fn string_contains_q_4() {
+    assert_case(
+      r#"StringContainsQ["mathics", "m" ~~ __ ~~ "s"]; StringContainsQ["mathics", "a" ~~ __ ~~ "m"]; StringContainsQ[{"g", "a", "laxy", "universe", "sun"}, "u"]; StringContainsQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}"#,
+      r#"{True, True, True, False, False, False, False, False, True}"#,
+    );
+  }
+  #[test]
+  fn string_repeat_1() {
+    assert_case(r#"StringRepeat["abc", 3]"#, r#""abcabcabc""#);
+  }
+  #[test]
+  fn string_repeat_2() {
+    assert_case(
+      r#"StringRepeat["abc", 3]; StringRepeat["abc", 10, 7]"#,
+      r#""abcabca""#,
+    );
+  }
+  #[test]
+  fn to_expression_2() {
+    assert_case(r#"ToExpression["1 + 2"]"#, r#"3"#);
+  }
+  #[test]
+  fn to_expression_3() {
+    assert_case(
+      r#"ToExpression["1 + 2"]; ToExpression["{2, 3, 1}", InputForm, Max]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn to_expression_4() {
+    assert_case(
+      r#"ToExpression["1 + 2"]; ToExpression["{2, 3, 1}", InputForm, Max]; ToExpression["2 3", InputForm]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn to_expression_5() {
+    assert_case(
+      r#"ToExpression["1 + 2"]; ToExpression["{2, 3, 1}", InputForm, Max]; ToExpression["2 3", InputForm]; ToExpression["2\[NewLine]3"]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn to_string_1() {
+    assert_case(r#"ToString[2]"#, r#""2""#);
+  }
+  #[test]
+  fn to_string_2() {
+    assert_case(
+      r#"ToString[2]; ToString[2] // InputForm"#,
+      r#"InputForm["2"]"#,
+    );
+  }
+  #[test]
+  fn to_string_3() {
+    assert_case(
+      r#"ToString[2]; ToString[2] // InputForm; ToString[a+b]"#,
+      r#""a + b""#,
+    );
+  }
+  #[test]
+  fn string_match_q_9() {
+    assert_case(r#"StringMatchQ["\r \n", Whitespace]"#, r#"True"#);
+  }
+  #[test]
+  fn string_split_1() {
+    assert_case(
+      r#"StringMatchQ["\r \n", Whitespace]; StringSplit["a  \n b \r\n c d", Whitespace]"#,
+      r#"{"a", "b", "c", "d"}"#,
+    );
+  }
+  #[test]
+  fn string_replace_3() {
+    assert_case(
+      r#"StringMatchQ["\r \n", Whitespace]; StringSplit["a  \n b \r\n c d", Whitespace]; StringReplace[" this has leading and trailing whitespace \n ", (StartOfString ~~ Whitespace) | (Whitespace ~~ EndOfString) -> ""] <> " removed" // FullForm"#,
+      r#"FullForm["this has leading and trailing whitespace removed"]"#,
+    );
+  }
+  #[test]
+  fn set_3() {
+    // Wolframscript-matched expectation. mathics expected the InputForm
+    // `ByteArray["ARkD"]` (base64 payload), but wolframscript -code shows
+    // the compact `ByteArray[<n>]` length notation, which is what Woxi
+    // also produces. Use ToString or InputForm to recover the base64
+    // serialization.
+    assert_case(r#"A=ByteArray[{1, 25, 3}]"#, r#"ByteArray[<3>]"#);
+  }
+  #[test]
+  fn a() {
+    assert_case(r#"A=ByteArray[{1, 25, 3}]; A[[2]]"#, r#"25"#);
+  }
+  #[test]
+  fn normal() {
+    assert_case(
+      r#"A=ByteArray[{1, 25, 3}]; A[[2]]; Normal[A]"#,
+      r#"{1, 25, 3}"#,
+    );
+  }
+  #[test]
+  fn to_string_4() {
+    assert_case(
+      r#"A=ByteArray[{1, 25, 3}]; A[[2]]; Normal[A]; ToString[A]"#,
+      r#""ByteArray[<3>]""#,
+    );
+  }
+  #[test]
+  fn byte_array() {
+    assert_case(
+      r#"A=ByteArray[{1, 25, 3}]; A[[2]]; Normal[A]; ToString[A]; ByteArray["ARkD"]"#,
+      r#"ByteArray[<3>]"#,
+    );
+  }
+  #[test]
+  fn string_match_q_10() {
+    assert_case(r#"StringMatchQ["1", DigitCharacter]"#, r#"True"#);
+  }
+  #[test]
+  fn string_match_q_11() {
+    assert_case(
+      r#"StringMatchQ["1", DigitCharacter]; StringMatchQ["a", DigitCharacter]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_match_q_12() {
+    assert_case(
+      r#"StringMatchQ["1", DigitCharacter]; StringMatchQ["a", DigitCharacter]; StringMatchQ["12", DigitCharacter]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_match_q_13() {
+    assert_case(
+      r#"StringMatchQ["1", DigitCharacter]; StringMatchQ["a", DigitCharacter]; StringMatchQ["12", DigitCharacter]; StringMatchQ["123245", DigitCharacter..]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_replace_4() {
+    assert_case(
+      r#"StringReplace["aba\nbba\na\nab", "a" ~~ EndOfLine -> "c"]"#,
+      r#""abc
+bbc
+c
+ab""#,
+    );
+  }
+  #[test]
+  fn string_split_2() {
+    assert_case(
+      r#"StringReplace["aba\nbba\na\nab", "a" ~~ EndOfLine -> "c"]; StringSplit["abc\ndef\nhij", EndOfLine]"#,
+      r#"{"abc", "
+def", "
+hij"}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_14() {
+    assert_case(
+      r#"StringMatchQ[#, __ ~~ "e" ~~ EndOfString] &/@ {"apple", "banana", "artichoke"}"#,
+      r#"{True, False, True}"#,
+    );
+  }
+  #[test]
+  fn string_replace_5() {
+    assert_case(
+      r#"StringMatchQ[#, __ ~~ "e" ~~ EndOfString] &/@ {"apple", "banana", "artichoke"}; StringReplace["aab\nabb", "b" ~~ EndOfString -> "c"]"#,
+      r#""aab
+abc""#,
+    );
+  }
+  #[test]
+  fn string_match_q_15() {
+    assert_case(
+      r#"StringMatchQ[#, LetterCharacter] & /@ {"a", "1", "A", " ", "."}"#,
+      r#"{True, False, True, False, False}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_16() {
+    assert_case(
+      r#"StringMatchQ[#, LetterCharacter] & /@ {"a", "1", "A", " ", "."}; StringMatchQ["\[Lambda]", LetterCharacter]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_replace_6() {
+    assert_case(
+      r#"StringReplace["aba\nbba\na\nab", StartOfLine ~~ "a" -> "c"]"#,
+      r#""cba
+bba
+c
+cb""#,
+    );
+  }
+  #[test]
+  fn string_split_3() {
+    assert_case(
+      r#"StringReplace["aba\nbba\na\nab", StartOfLine ~~ "a" -> "c"]; StringSplit["abc\ndef\nhij", StartOfLine]"#,
+      r#"{"abc
+", "def
+", "hij"}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_17() {
+    assert_case(
+      r#"StringMatchQ[#, StartOfString ~~ "a" ~~ __] &/@ {"apple", "banana", "artichoke"}"#,
+      r#"{True, False, True}"#,
+    );
+  }
+  #[test]
+  fn string_replace_7() {
+    assert_case(
+      r#"StringMatchQ[#, StartOfString ~~ "a" ~~ __] &/@ {"apple", "banana", "artichoke"}; StringReplace["aba\nabb", StartOfString ~~ "a" -> "c"]"#,
+      r#""cba
+abb""#,
+    );
+  }
+  #[test]
+  fn string_cases_5() {
+    assert_case(r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]"#, r#"{"axb"}"#);
+  }
+  #[test]
+  fn string_cases_6() {
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]"#,
+      r#"{"axbaxxb"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_7() {
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]"#,
+      r#"{"axb", "axxb"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_8() {
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]; StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]"#,
+      r#"{"abc", "uvw"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_9() {
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]; StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]; StringCases["-öhi- -abc- -.-", "-" ~~ x : WordCharacter .. ~~ "-" -> x]"#,
+      r#"{"abc"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_10() {
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]; StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]; StringCases["-öhi- -abc- -.-", "-" ~~ x : WordCharacter .. ~~ "-" -> x]; StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_] -> x]"#,
+      r#"{"abc"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_11() {
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]; StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]; StringCases["-öhi- -abc- -.-", "-" ~~ x : WordCharacter .. ~~ "-" -> x]; StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_] -> x]; StringCases["abba", {"a" -> 10, "b" -> 20}, 2]"#,
+      r#"{10, 20}"#,
+    );
+  }
+  #[test]
+  fn string_cases_12() {
+    // The scraped expectation \`{"a", "\[CapitalATilde]", "1", "2",
+    // "3"}\` — the \`\\[CapitalATilde]\` (\`Ã\`) — is more
+    // wolframscript UTF-8-as-Latin-1 mojibake (cf. cases 2174/2175):
+    // the bytes for \`ä\` (\`0xC3 0xB1\` interpreted as \`Ã ¤\`)
+    // produce a stray \`Ã\` that Wolfram's ASCII-only \`WordCharacter\`
+    // matches. Wolfram itself documents \`WordCharacter\` as ASCII-
+    // only (\`StringMatchQ["ä", WordCharacter]\` → False). With proper
+    // UTF-8, \`StringCases["a#ä_123", WordCharacter]\` gives
+    // \`{a, 1, 2, 3}\`.
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]; StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]; StringCases["-öhi- -abc- -.-", "-" ~~ x : WordCharacter .. ~~ "-" -> x]; StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_] -> x]; StringCases["abba", {"a" -> 10, "b" -> 20}, 2]; StringCases["a#ä_123", WordCharacter]"#,
+      r#"{"a", "1", "2", "3"}"#,
+    );
+  }
+  #[test]
+  fn string_cases_13() {
+    // Same wolframscript-mojibake situation as case 2779. The scraped
+    // \`{"a", "\\[CapitalATilde]"}\` is the Latin-1 leftover of \`ä\`
+    // — Wolfram's \`LetterCharacter\` does match Unicode letters
+    // (unlike \`WordCharacter\`), but the input got mis-decoded as
+    // Latin-1 first. Mathics's docstring (and Woxi) give the actually
+    // correct \`{"a", "ä"}\`.
+    assert_case(
+      r#"StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]; StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]; StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]; StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]; StringCases["-öhi- -abc- -.-", "-" ~~ x : WordCharacter .. ~~ "-" -> x]; StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_] -> x]; StringCases["abba", {"a" -> 10, "b" -> 20}, 2]; StringCases["a#ä_123", WordCharacter]; StringCases["a#ä_123", LetterCharacter]"#,
+      r#"{"a", "ä"}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_18() {
+    assert_case(r#"StringMatchQ["\n", WhitespaceCharacter]"#, r#"True"#);
+  }
+  #[test]
+  fn string_split_4() {
+    assert_case(
+      r#"StringMatchQ["\n", WhitespaceCharacter]; StringSplit["a\nb\r\nc\rd", WhitespaceCharacter]"#,
+      r#"{"a", "b", "", "c", "d"}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_19() {
+    assert_case(
+      r#"StringMatchQ["\n", WhitespaceCharacter]; StringSplit["a\nb\r\nc\rd", WhitespaceCharacter]; StringMatchQ[" \n", WhitespaceCharacter]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_match_q_20() {
+    assert_case(
+      r#"StringMatchQ["\n", WhitespaceCharacter]; StringSplit["a\nb\r\nc\rd", WhitespaceCharacter]; StringMatchQ[" \n", WhitespaceCharacter]; StringMatchQ[" \n", Whitespace]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_replace_8() {
+    assert_case(
+      r#"StringReplace["apple banana orange artichoke", "e" ~~ WordBoundary -> "E"]"#,
+      r#""applE banana orangE artichokE""#,
+    );
+  }
+  #[test]
+  fn string_match_q_21() {
+    assert_case(
+      r#"StringMatchQ[#, WordCharacter] &/@ {"1", "a", "A", ",", " "}"#,
+      r#"{True, True, True, False, False}"#,
+    );
+  }
+  #[test]
+  fn string_match_q_22() {
+    assert_case(
+      r#"StringMatchQ[#, WordCharacter] &/@ {"1", "a", "A", ",", " "}; StringMatchQ["abc123DEF", WordCharacter..]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_match_q_23() {
+    assert_case(
+      r#"StringMatchQ[#, WordCharacter] &/@ {"1", "a", "A", ",", " "}; StringMatchQ["abc123DEF", WordCharacter..]; StringMatchQ["$b;123", WordCharacter..]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_insert_1() {
+    assert_case(r#"StringInsert["noting", "h", 4]"#, r#""nothing""#);
+  }
+  #[test]
+  fn string_insert_2() {
+    assert_case(
+      r#"StringInsert["noting", "h", 4]; StringInsert["note", "d", -1]"#,
+      r#""noted""#,
+    );
+  }
+  #[test]
+  fn string_insert_3() {
+    assert_case(
+      r#"StringInsert["noting", "h", 4]; StringInsert["note", "d", -1]; StringInsert["here", "t", -5]"#,
+      r#""there""#,
+    );
+  }
+  #[test]
+  fn string_insert_4() {
+    assert_case(
+      r#"StringInsert["noting", "h", 4]; StringInsert["note", "d", -1]; StringInsert["here", "t", -5]; StringInsert["adac", "he", {1, 5}]"#,
+      r#""headache""#,
+    );
+  }
+  #[test]
+  fn string_insert_5() {
+    assert_case(
+      r#"StringInsert["noting", "h", 4]; StringInsert["note", "d", -1]; StringInsert["here", "t", -5]; StringInsert["adac", "he", {1, 5}]; StringInsert[{"something", "sometimes"}, " ", 5]"#,
+      r#"{"some thing", "some times"}"#,
+    );
+  }
+  #[test]
+  fn string_insert_6() {
+    assert_case(
+      r#"StringInsert["noting", "h", 4]; StringInsert["note", "d", -1]; StringInsert["here", "t", -5]; StringInsert["adac", "he", {1, 5}]; StringInsert[{"something", "sometimes"}, " ", 5]; StringInsert["1234567890123456", ".", Range[-16, -4, 3]]"#,
+      r#""1.234.567.890.123.456""#,
+    );
+  }
+  #[test]
+  fn string_join_1() {
+    assert_case(r#"StringJoin["a", "b", "c"]"#, r#""abc""#);
+  }
+  #[test]
+  fn string_literal_1() {
+    assert_case(
+      r#"StringJoin["a", "b", "c"]; "a" <> "b" <> "c" // InputForm"#,
+      r#"InputForm["abc"]"#,
+    );
+  }
+  #[test]
+  fn string_join_2() {
+    assert_case(
+      r#"StringJoin["a", "b", "c"]; "a" <> "b" <> "c" // InputForm; StringJoin[{"a", "b"}] // InputForm"#,
+      r#"InputForm["ab"]"#,
+    );
+  }
+  #[test]
+  fn string_length_1() {
+    assert_case(r#"StringLength["abc"]"#, r#"3"#);
+  }
+  #[test]
+  fn string_length_2() {
+    assert_case(
+      r#"StringLength["abc"]; StringLength[{"a", "bc"}]"#,
+      r#"{1, 2}"#,
+    );
+  }
+  #[test]
+  fn string_position_1() {
+    assert_case(
+      r#"StringPosition["123ABCxyABCzzzABCABC", "ABC"]"#,
+      r#"{{4, 6}, {9, 11}, {15, 17}, {18, 20}}"#,
+    );
+  }
+  #[test]
+  fn string_position_2() {
+    assert_case(
+      r#"StringPosition["123ABCxyABCzzzABCABC", "ABC"]; StringPosition["123ABCxyABCzzzABCABC", "ABC", 2]"#,
+      r#"{{4, 6}, {9, 11}}"#,
+    );
+  }
+  #[test]
+  fn string_replace_9() {
+    assert_case(
+      r#"StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A"]"#,
+      r#""AAAyyxxAyA""#,
+    );
+  }
+  #[test]
+  fn string_replace_10() {
+    assert_case(
+      r#"StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A"]; StringReplace["xyzwxyzwxxyzxyzw", {"xyz" -> "A", "w" -> "BCD"}]"#,
+      r#""ABCDABCDxAABCD""#,
+    );
+  }
+  #[test]
+  fn string_replace_11() {
+    assert_case(
+      r#"StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A"]; StringReplace["xyzwxyzwxxyzxyzw", {"xyz" -> "A", "w" -> "BCD"}]; StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A", 2]"#,
+      r#""AAxyyyxxxyyxy""#,
+    );
+  }
+  #[test]
+  fn string_replace_12() {
+    assert_case(
+      r#"StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A"]; StringReplace["xyzwxyzwxxyzxyzw", {"xyz" -> "A", "w" -> "BCD"}]; StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A", 2]; StringReplace["abba", {"a" -> "A", "b" -> "B"}, 2]"#,
+      r#""ABba""#,
+    );
+  }
+  #[test]
+  fn string_replace_13() {
+    assert_case(
+      r#"StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A"]; StringReplace["xyzwxyzwxxyzxyzw", {"xyz" -> "A", "w" -> "BCD"}]; StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A", 2]; StringReplace["abba", {"a" -> "A", "b" -> "B"}, 2]; StringReplace[{"xyxyxxy", "yxyxyxxxyyxy"}, "xy" -> "A"]"#,
+      r#"{"AAxA", "yAAxxAyA"}"#,
+    );
+  }
+  #[test]
+  fn string_replace_14() {
+    assert_case(
+      r#"StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A"]; StringReplace["xyzwxyzwxxyzxyzw", {"xyz" -> "A", "w" -> "BCD"}]; StringReplace["xyxyxyyyxxxyyxy", "xy" -> "A", 2]; StringReplace["abba", {"a" -> "A", "b" -> "B"}, 2]; StringReplace[{"xyxyxxy", "yxyxyxxxyyxy"}, "xy" -> "A"]; StringReplace["y" -> "ies"]["city"]"#,
+      r#""cities""#,
+    );
+  }
+  #[test]
+  fn string_reverse() {
+    assert_case(r#"StringReverse["live"]"#, r#""evil""#);
+  }
+  #[test]
+  fn string_riffle_1() {
+    assert_case(
+      r#"StringRiffle[{"a", "b", "c", "d", "e"}]"#,
+      r#""a b c d e""#,
+    );
+  }
+  #[test]
+  fn string_riffle_2() {
+    assert_case(
+      r#"StringRiffle[{"a", "b", "c", "d", "e"}]; StringRiffle[{"a", "b", "c", "d", "e"}, ", "]"#,
+      r#""a, b, c, d, e""#,
+    );
+  }
+  #[test]
+  fn string_riffle_3() {
+    assert_case(
+      r#"StringRiffle[{"a", "b", "c", "d", "e"}]; StringRiffle[{"a", "b", "c", "d", "e"}, ", "]; StringRiffle[{"a", "b", "c", "d", "e"}, {"(", " ", ")"}]"#,
+      r#""(a b c d e)""#,
+    );
+  }
+  #[test]
+  fn string_split_5() {
+    assert_case(r#"StringSplit["abc,123", ","]"#, r#"{"abc", "123"}"#);
+  }
+  #[test]
+  fn string_split_6() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]"#,
+      r#"{"abc", "123"}"#,
+    );
+  }
+  #[test]
+  fn string_split_7() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]"#,
+      r#"{"abc", "", "", "", "123"}"#,
+    );
+  }
+  #[test]
+  fn string_split_8() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]; StringSplit["abc,123.456", {",", "."}]"#,
+      r#"{"abc", "123", "456"}"#,
+    );
+  }
+  #[test]
+  fn string_split_9() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]; StringSplit["abc,123.456", {",", "."}]; StringSplit["a  b    c", RegularExpression[" +"]]"#,
+      r#"{"a", "b", "c"}"#,
+    );
+  }
+  #[test]
+  fn string_split_10() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]; StringSplit["abc,123.456", {",", "."}]; StringSplit["a  b    c", RegularExpression[" +"]]; StringSplit[{"a  b", "c  d"}, RegularExpression[" +"]]"#,
+      r#"{{"a", "b"}, {"c", "d"}}"#,
+    );
+  }
+  #[test]
+  fn string_split_11() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]; StringSplit["abc,123.456", {",", "."}]; StringSplit["a  b    c", RegularExpression[" +"]]; StringSplit[{"a  b", "c  d"}, RegularExpression[" +"]]; StringSplit["x", "x"]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn string_split_12() {
+    assert_case(
+      r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]; StringSplit["abc,123.456", {",", "."}]; StringSplit["a  b    c", RegularExpression[" +"]]; StringSplit[{"a  b", "c  d"}, RegularExpression[" +"]]; StringSplit["x", "x"]; StringSplit["12312123", "12"..]"#,
+      r#"{"3", "3"}"#,
+    );
+  }
+  #[test]
+  fn string_take_2() {
+    assert_case(r#"StringTake["abcde", 2]"#, r#""ab""#);
+  }
+  #[test]
+  fn string_take_3() {
+    assert_case(r#"StringTake["abcde", 2]; StringTake["abcde", 0]"#, r#""""#);
+  }
+  #[test]
+  fn string_take_4() {
+    assert_case(
+      r#"StringTake["abcde", 2]; StringTake["abcde", 0]; StringTake["abcde", -2]"#,
+      r#""de""#,
+    );
+  }
+  #[test]
+  fn string_take_5() {
+    assert_case(
+      r#"StringTake["abcde", 2]; StringTake["abcde", 0]; StringTake["abcde", -2]; StringTake["abcde", {2}]"#,
+      r#""b""#,
+    );
+  }
+  #[test]
+  fn string_take_6() {
+    assert_case(
+      r#"StringTake["abcde", 2]; StringTake["abcde", 0]; StringTake["abcde", -2]; StringTake["abcde", {2}]; StringTake["abcd", {2,3}]"#,
+      r#""bc""#,
+    );
+  }
+  #[test]
+  fn string_take_7() {
+    assert_case(
+      r#"StringTake["abcde", 2]; StringTake["abcde", 0]; StringTake["abcde", -2]; StringTake["abcde", {2}]; StringTake["abcd", {2,3}]; StringTake["abcdefgh", {1, 5, 2}]"#,
+      r#""ace""#,
+    );
+  }
+  #[test]
+  fn string_take_8() {
+    assert_case(
+      r#"StringTake["abcde", 2]; StringTake["abcde", 0]; StringTake["abcde", -2]; StringTake["abcde", {2}]; StringTake["abcd", {2,3}]; StringTake["abcdefgh", {1, 5, 2}]; StringTake[{"abcdef", "stuv", "xyzw"}, -2]"#,
+      r#"{"ef", "uv", "zw"}"#,
+    );
+  }
+  #[test]
+  fn string_take_9() {
+    assert_case(
+      r#"StringTake["abcde", 2]; StringTake["abcde", 0]; StringTake["abcde", -2]; StringTake["abcde", {2}]; StringTake["abcd", {2,3}]; StringTake["abcdefgh", {1, 5, 2}]; StringTake[{"abcdef", "stuv", "xyzw"}, -2]; StringTake["abcdef", All]"#,
+      r#""abcdef""#,
+    );
+  }
+  #[test]
+  fn string_join_3() {
+    assert_case(
+      r#"StringJoin["a", StringTrim["  \tb\n "], "c"]"#,
+      r#""abc""#,
+    );
+  }
+  #[test]
+  fn string_trim() {
+    assert_case(
+      r#"StringJoin["a", StringTrim["  \tb\n "], "c"]; StringTrim["ababaxababyaabab", RegularExpression["(ab)+"]]"#,
+      r#""axababya""#,
+    );
+  }
+  #[test]
+  fn string_split_13() {
+    assert_case(
+      r#"StringSplit["1.23, 4.56  7.89", RegularExpression["(\\s|,)+"]]"#,
+      r#"{"1.23", "4.56", "7.89"}"#,
+    );
+  }
+  #[test]
+  fn regular_expression() {
+    assert_case(
+      r#"StringSplit["1.23, 4.56  7.89", RegularExpression["(\\s|,)+"]]; RegularExpression["[abc]"]"#,
+      r#"RegularExpression["[abc]"]"#,
+    );
+  }
+  #[test]
+  fn characters_1() {
+    assert_case(r#"Characters["abc"]"#, r#"{"a", "b", "c"}"#);
+  }
+  #[test]
+  fn character_range_1() {
+    assert_case(
+      r#"CharacterRange["a", "e"]"#,
+      r#"{"a", "b", "c", "d", "e"}"#,
+    );
+  }
+  #[test]
+  fn character_range_2() {
+    assert_case(
+      r#"CharacterRange["a", "e"]; CharacterRange["b", "a"]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn lower_case_q_1() {
+    assert_case(r#"LowerCaseQ["abc"]"#, r#"True"#);
+  }
+  #[test]
+  fn lower_case_q_2() {
+    assert_case(r#"LowerCaseQ["abc"]; LowerCaseQ[""]"#, r#"True"#);
+  }
+  #[test]
+  fn to_lower_case() {
+    assert_case(r#"ToLowerCase["New York"]"#, r#""new york""#);
+  }
+  #[test]
+  fn to_upper_case() {
+    assert_case(r#"ToUpperCase["New York"]"#, r#""NEW YORK""#);
+  }
+  #[test]
+  fn upper_case_q_1() {
+    assert_case(r#"UpperCaseQ["ABC"]"#, r#"True"#);
+  }
+  #[test]
+  fn upper_case_q_2() {
+    assert_case(r#"UpperCaseQ["ABC"]; UpperCaseQ[""]"#, r#"True"#);
+  }
+  #[test]
+  fn to_character_code_1() {
+    assert_case(r#"ToCharacterCode["abc"]"#, r#"{97, 98, 99}"#);
+  }
+  #[test]
+  fn from_character_code_1() {
+    assert_case(r#"FromCharacterCode[100]"#, r#""d""#);
+  }
+  #[test]
+  fn from_character_code_2() {
+    // Wolframscript-matched expectation. The mathics original used the
+    // named-character notation `"\[ADoubleDot]"`, but wolframscript and
+    // Woxi both emit the actual UTF-8 codepoint `ä` for character 228.
+    assert_case(
+      r#"FromCharacterCode[100]; FromCharacterCode[228, "ISO8859-1"]"#,
+      "\u{e4}",
+    );
+  }
+  #[test]
+  fn from_character_code_3() {
+    assert_case(
+      r#"FromCharacterCode[100]; FromCharacterCode[228, "ISO8859-1"]; FromCharacterCode[{100, 101, 102}]"#,
+      r#""def""#,
+    );
+  }
+  #[test]
+  fn unequal() {
+    assert_case(
+      r#"System`Convert`B64Dump`B64Decode["R!="]"#,
+      r#"System`Convert`B64Dump`B64Decode["R!="]"#,
+    );
+  }
+  #[test]
+  fn expr_1() {
+    assert_case(
+      r#"System`Convert`B64Dump`B64Encode["Hello world"]"#,
+      r#"System`Convert`B64Dump`B64Encode["Hello world"]"#,
+    );
+  }
+  #[test]
+  fn expr_2() {
+    assert_case(
+      r#"System`Convert`B64Dump`B64Encode["Hello world"]; System`Convert`B64Dump`B64Decode[%]"#,
+      r#"System`Convert`B64Dump`B64Decode[Out[0]]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_1() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]"#,
+      r#"RowBox[{"G","[","F[3.002]","]"}]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_2() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]"#,
+      r#"InterpretationBox[PaneBox["\"G[F[3.002]]\"", BaselinePosition -> Baseline], G[F[3.002]], Editable -> False]"#,
+    );
+  }
+  #[test]
+  fn format_1() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn make_boxes_3() {
+    // mathics's expected output uses InputForm-style box rendering
+    // (every box element wrapped in quotes, inner quotes escaped);
+    // wolframscript's REPL uses unquoted box-element strings, with
+    // user-supplied strings retaining their original quotes. Match
+    // wolframscript here — `Format[F[x_]] := {…}` causes the inner
+    // F[3.002] to render via the formatted list of strings.
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]"#,
+      r#"RowBox[{G, [, RowBox[{{, RowBox[{"Formatted f", ,, RowBox[{{, 3.002`, }}], ,, "Standard"}], }}], ]}]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_4() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]"#,
+      r#"InterpretationBox[PaneBox["\"G[{Formatted f, {3.002}, Standard}]\"", BaselinePosition -> Baseline], G[{Formatted f, {3.002}, Standard}], Editable -> False]"#,
+    );
+  }
+  #[test]
+  fn format_2() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_], StandardForm] :=  {"Formatted f", {x}, "Standard"};Format[F[x_], OutputForm] :=  {"Formatted f", {x}, "Output"}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn make_boxes_5() {
+    // Same family as case 3674. After also defining the form-specific
+    // `Format[F[x_], StandardForm]` and `Format[F[x_], OutputForm]`
+    // rules, the StandardForm box rendering of `G[F[3.002]]` should
+    // still apply the StandardForm-tagged rule (or fall through to the
+    // 1-arg rule, which has the same body). Match wolframscript's
+    // unquoted box-element style.
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_], StandardForm] :=  {"Formatted f", {x}, "Standard"};Format[F[x_], OutputForm] :=  {"Formatted f", {x}, "Output"}; MakeBoxes[G[F[3.002]], StandardForm]"#,
+      r#"RowBox[{G, [, RowBox[{{, RowBox[{"Formatted f", ,, RowBox[{{, 3.002`, }}], ,, "Standard"}], }}], ]}]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_6() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_], StandardForm] :=  {"Formatted f", {x}, "Standard"};Format[F[x_], OutputForm] :=  {"Formatted f", {x}, "Output"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]"#,
+      r#"InterpretationBox[PaneBox["\"G[{Formatted f, {3.002}, Output}]\"", BaselinePosition -> Baseline], G[{Formatted f, {3.002}, Output}], Editable -> False]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_7() {
+    // Same family as case 3674. After ClearAll[F] removes the Format
+    // rules but the user `MakeBoxes[F[x_], fmt_] := …` rule is still
+    // in effect, so `G[F[2.]]` boxes via the user's MakeBoxes for F
+    // (returning the literal string `"F[2.]"`). Match wolframscript's
+    // unquoted box-element style.
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_], StandardForm] :=  {"Formatted f", {x}, "Standard"};Format[F[x_], OutputForm] :=  {"Formatted f", {x}, "Output"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; ClearAll[F]; MakeBoxes[G[F[2.]], StandardForm]"#,
+      r#"RowBox[{G, [, F[2.], ]}]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_8() {
+    assert_case(
+      r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_], StandardForm] :=  {"Formatted f", {x}, "Standard"};Format[F[x_], OutputForm] :=  {"Formatted f", {x}, "Output"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; ClearAll[F]; MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_]=.; MakeBoxes[G[F[2.]], StandardForm]"#,
+      r#"RowBox[{"G", "[", RowBox[{"F", "[", "2.`", "]"}], "]"}]"#,
+    );
+  }
+  #[test]
+  fn to_string_5() {
+    // mathics's expected output is the InputForm rendering of the
+    // resulting String (literal `\!\(\*RowBox[…]\)` escape syntax).
+    // wolframscript's REPL prints the same String in OutputForm, where
+    // the box-escape characters render as `DisplayForm[RowBox[…]]`.
+    // Match wolframscript: Format[G[x___], StandardForm] applies first
+    // (yielding `{"Standard", GG[F[1., "l"], .2]}`), then the inner
+    // GG / F sub-expressions box via the user MakeBoxes rules; the
+    // Format[F[x_, y_], StandardForm] rule rewrites `F[1., "l"]` into
+    // `{F[1.], "Standard"}` before user MakeBoxes for F runs on F[1.].
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]"#,
+      r#"DisplayForm[RowBox[{{, RowBox[{"Standard", ,, RowBox[{GG, <<, RowBox[{RowBox[{{, RowBox[{RowBox[{F, <~, RowBox[{1.`}], ~>}], ,, "Standard"}], }}], 0.2`}], >>}]}], }}]]"#,
+    );
+  }
+  #[test]
+  fn to_string_6() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
+      r#""G[F[1.`, \"l\"], 0.2`]""#,
+    );
+  }
+  #[test]
+  fn to_string_7() {
+    // Wolframscript-matched expectation. mathics quoted the returned
+    // String as `"G[F[1., \"l\"], 0.2]"`, but `wolframscript -code`
+    // prints `ToString[…, InputForm]`'s String result without surrounding
+    // quotes. Woxi matches.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]"#,
+      r#"G[F[1., "l"], 0.2]"#,
+    );
+  }
+  #[test]
+  fn to_string_8() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]"#,
+      r#""G[F[1., l], 0.2]""#,
+    );
+  }
+  #[test]
+  fn format_3() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn format_4() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn format_5() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn format_6() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn format_7() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn to_string_9() {
+    // Same family as case 3686. After also defining InputForm /
+    // OutputForm / FullForm Format rules, the StandardForm ToString
+    // call still picks the StandardForm-tagged Format rule (and falls
+    // back to the same `DisplayForm[RowBox[...]]` shape that case 3686
+    // produces). Match wolframscript's display.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]"#,
+      r#"DisplayForm[RowBox[{{, RowBox[{"Standard", ,, RowBox[{GG, <<, RowBox[{RowBox[{{, RowBox[{RowBox[{F, <~, RowBox[{1.`}], ~>}], ,, "Standard"}], }}], 0.2`}], >>}]}], }}]]"#,
+    );
+  }
+  #[test]
+  fn to_string_10() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
+      r#""G[F[1.`, \"l\"], 0.2`]""#,
+    );
+  }
+  #[test]
+  fn to_string_11() {
+    // mathics's expected wraps the resulting String's InputForm with
+    // outer quotes; wolframscript's REPL prints the unquoted contents
+    // (since OutputForm strips outer string quotes). Match
+    // wolframscript: ToString[…, InputForm] applies the user
+    // `Format[…, InputForm]` rules and produces the formatted list.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]"#,
+      r#"{"In", GG[{F[1.], "In"}, 0.2]}"#,
+    );
+  }
+  #[test]
+  fn to_string_12() {
+    // Same family as case 3697 — `ToString[…, OutputForm]` applies the
+    // user `Format[…, OutputForm]` rules. Match wolframscript's REPL
+    // display (no outer string quotes).
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]"#,
+      r#"{Out, GG[{F[1.], Out}, 0.2]}"#,
+    );
+  }
+  #[test]
+  fn make_boxes_9() {
+    // Same family as case 3686 — direct `MakeBoxes[…, StandardForm]`
+    // (no ToString wrapper) yields the box AST that wolframscript
+    // prints with unquoted box-element strings (only the user
+    // `"Standard"` strings keep their quotes).
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]"#,
+      r#"RowBox[{{, RowBox[{"Standard", ,, RowBox[{GG, <<, RowBox[{RowBox[{{, RowBox[{RowBox[{F, <~, RowBox[{1.`}], ~>}], ,, "Standard"}], }}], 0.2`}], >>}]}], }}]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_10() {
+    // mathics's expectation wraps the formatted text in extra
+    // InputForm-quoting and replaces the InputForm's interpretation
+    // arg with the formatted shape; wolframscript keeps the original
+    // expression `G[F[1., l], 0.2]` as the interpretation arg and
+    // shows the formatted text unquoted. Match wolframscript.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]"#,
+      r#"InterpretationBox[StyleBox[{"In", GG[{F[1.], "In"}, 0.2]}, ShowStringCharacters -> True, NumberMarks -> True], InputForm[G[F[1., l], 0.2]], Editable -> True, AutoDelete -> True]"#,
+    );
+  }
+  #[test]
+  fn make_boxes_11() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]"#,
+      r#"InterpretationBox[PaneBox["\"{Out, GG[{F[1.], Out}, 0.2]}\"", BaselinePosition -> Baseline], {Out, GG[{F[1.], Out}, 0.2]}, Editable -> False]"#,
+    );
+  }
+  #[test]
+  fn to_string_13() {
+    // mathics's expected was a typo-ridden raw string ("\	ext" is
+    // backslash-tab-ext). wolframscript's actual TeX rendering of the
+    // box AST keeps the user MakeBoxes delimiters and translates `~`
+    // to TeX's `\sim ` macro. Match wolframscript.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]"#,
+      r#"G<F<\sim 1.\text{l}\sim >0.2>"#,
+    );
+  }
+  #[test]
+  fn to_string_14() {
+    // mathics's expected used a literal tab (`\	ext`) in place of
+    // `\text` due to a Python escaping bug. wolframscript renders
+    // `TeXForm[InputForm[expr]]` as `\text{<input-form-text>}` with
+    // the formatted shape inside and `{`/`}` escaped using `$\{$` /
+    // `$\}$`. Match wolframscript.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]"#,
+      r#"\text{$\{$In, GG[$\{$F[1.], In$\}$, 0.2]$\}$}"#,
+    );
+  }
+  #[test]
+  fn clear_all() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn to_string_15() {
+    // After `ClearAll[F, G, GG]` the Format rules (stored under
+    // FORMAT_VALUES[F/G/GG]) are removed, but the user MakeBoxes
+    // rules (stored under FUNC_DEFS[MakeBoxes]) survive — wolframscript
+    // does the same. The resulting StandardForm box AST therefore
+    // still uses the user delimiters (`<`, `>`, `<~`, `~>`) but
+    // skips the Format substitution.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]"#,
+      r#"DisplayForm[RowBox[{G, <, RowBox[{RowBox[{F, <~, RowBox[{1.`, "l"}], ~>}], 0.2`}], >}]]"#,
+    );
+  }
+  #[test]
+  fn to_string_16() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
+      r#""G[F[1.`, \"l\"], 0.2`]""#,
+    );
+  }
+  #[test]
+  fn to_string_17() {
+    // Wolframscript-matched expectation. The mathics original quoted the
+    // returned string as `"G[F[1., \"l\"], 0.2]"`, but `wolframscript -code`
+    // prints `ToString[…, InputForm]`'s String result without surrounding
+    // quotes. Woxi matches.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]"#,
+      r#"G[F[1., "l"], 0.2]"#,
+    );
+  }
+  #[test]
+  fn to_string_18() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]"#,
+      r#""G[F[1., l], 0.2]""#,
+    );
+  }
+  #[test]
+  fn make_boxes_12() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=."#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn make_boxes_13() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=."#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn make_boxes_14() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=.; MakeBoxes[GG[x___], fmt_]=."#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn to_string_19() {
+    // After also unsetting the user MakeBoxes definitions
+    // (`MakeBoxes[F[x__], fmt_]=.` etc.), the StandardForm rendering
+    // falls back to the default `head[args]` boxing. Match
+    // wolframscript's REPL display.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=.; MakeBoxes[GG[x___], fmt_]=.; ToString[G[F[1., "l"], .2], StandardForm]"#,
+      r#"DisplayForm[RowBox[{G, [, RowBox[{RowBox[{F, [, RowBox[{1.`, ,, "l"}], ]}], ,, 0.2`}], ]}]]"#,
+    );
+  }
+  #[test]
+  fn to_string_20() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=.; MakeBoxes[GG[x___], fmt_]=.; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]"#,
+      r#""G[F[1.`, \"l\"], 0.2`]""#,
+    );
+  }
+  #[test]
+  fn to_string_21() {
+    // Wolframscript-matched expectation. mathics quoted the returned
+    // String as `"G[F[1., \"l\"], 0.2]"`, but `wolframscript -code`
+    // prints `ToString[…, InputForm]`'s String result without surrounding
+    // quotes. Woxi matches.
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=.; MakeBoxes[GG[x___], fmt_]=.; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]"#,
+      r#"G[F[1., "l"], 0.2]"#,
+    );
+  }
+  #[test]
+  fn to_string_22() {
+    assert_case(
+      r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]; ToString[TeXForm[G[F[1., "l"], .2]]]; ToString[TeXForm[InputForm[G[F[1., "l"], .2]]]]; ClearAll[F, G, GG]; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[F[x__], fmt_]=.; MakeBoxes[G[x___], fmt_]=.; MakeBoxes[GG[x___], fmt_]=.; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]"#,
+      r#""G[F[1., l], 0.2]""#,
+    );
+  }
+  #[test]
+  fn string_literal_2() {
+    assert_case(r#""Hola""#, r#""Hola""#);
+  }
+  #[test]
+  fn base_form_10() {
+    assert_case(r#"BaseForm[0, 2]"#, r#"BaseForm[0, 2]"#);
+  }
+  #[test]
+  fn base_form_11() {
+    assert_case(r#"BaseForm[0, 2]; BaseForm[0.0, 2]"#, r#"BaseForm[0., 2]"#);
+  }
+  #[test]
+  fn base_form_12() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]"#,
+      r#"BaseForm[3.1415926535897932384626433832795028841971693993751058209749`30., 16]"#,
+    );
+  }
+  #[test]
+  fn input_form_1() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]"#,
+      r#"InputForm[2*x^2 + 4*z!]"#,
+    );
+  }
+  #[test]
+  fn input_form_2() {
+    // mathics quoted the embedded string and double-escaped the backslash;
+    // wolframscript -code (OutputForm) emits the literal escape `\$` with
+    // no surrounding quotes since string contents render verbatim inside
+    // the InputForm wrapper. Woxi matches.
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]"#,
+      r#"InputForm[\$]"#,
+    );
+  }
+  #[test]
+  fn number_form_1() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]"#,
+      r#"NumberForm[Pi, 20]"#,
+    );
+  }
+  #[test]
+  fn number_form_2() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]"#,
+      r#"NumberForm[2/3, 10]"#,
+    );
+  }
+  #[test]
+  fn number_form_3() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]"#,
+      r#"NumberForm[3.141592653589793]"#,
+    );
+  }
+  #[test]
+  fn number_form_4() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]"#,
+      r#"NumberForm[3.1415926535897932384626433832795028842`20.]"#,
+    );
+  }
+  #[test]
+  fn number_form_5() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]"#,
+      r#"NumberForm[14310983091809]"#,
+    );
+  }
+  #[test]
+  fn set_4() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000"#,
+      r#"0``28."#,
+    );
+  }
+  #[test]
+  fn number_form_6() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]"#,
+      r#"NumberForm[{0., 0``28.}, 10]"#,
+    );
+  }
+  #[test]
+  fn number_form_7() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]"#,
+      r#"NumberForm[{0., 0``28.}, {10, 4}]"#,
+    );
+  }
+  #[test]
+  fn unset() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=."#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn number_form_8() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]"#,
+      r#"NumberForm[1., 10]"#,
+    );
+  }
+  #[test]
+  fn number_form_9() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]"#,
+      r#"NumberForm[1.`24., 10]"#,
+    );
+  }
+  #[test]
+  fn number_form_10() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]"#,
+      r#"NumberForm[1., {10, 8}]"#,
+    );
+  }
+  #[test]
+  fn number_form_11() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]"#,
+      r#"NumberForm[3.1415926535897932384626433832795028841971693993751058209749`33., 33]"#,
+    );
+  }
+  #[test]
+  fn number_form_12() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]"#,
+      r#"NumberForm[0.645658509, 6]"#,
+    );
+  }
+  #[test]
+  fn number_form_13() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]"#,
+      r#"NumberForm[0.14285714285714285, 30]"#,
+    );
+  }
+  #[test]
+  fn number_form_14() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]"#,
+      r#"NumberForm[{0, 2, -415, 83515161451}, 5]"#,
+    );
+  }
+  #[test]
+  fn number_form_15() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]"#,
+      r#"NumberForm[{10633823966279326983230456482242756608, 1.0633823966279327*^37}, 4, ExponentFunction -> (#1 & )]"#,
+    );
+  }
+  #[test]
+  fn number_form_16() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]"#,
+      r#"NumberForm[{0, 10, -512}, {10, 3}]"#,
+    );
+  }
+  #[test]
+  fn number_form_17() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]"#,
+      r#"NumberForm[1.5, -4]"#,
+    );
+  }
+  #[test]
+  fn number_form_18() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]"#,
+      r#"NumberForm[1.5, {1.5, 2}]"#,
+    );
+  }
+  #[test]
+  fn number_form_19() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]"#,
+      r#"NumberForm[1.5, {1, 2.5}]"#,
+    );
+  }
+  #[test]
+  fn number_form_20() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]"#,
+      r#"NumberForm[153., 2]"#,
+    );
+  }
+  #[test]
+  fn number_form_21() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]"#,
+      r#"NumberForm[0.00125, 1]"#,
+    );
+  }
+  #[test]
+  fn number_form_22() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]"#,
+      r#"NumberForm[314159.2653589793, {5, 3}]"#,
+    );
+  }
+  #[test]
+  fn number_form_23() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]"#,
+      r#"NumberForm[314159.2653589793, {6, 3}]"#,
+    );
+  }
+  #[test]
+  fn number_form_24() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]"#,
+      r#"NumberForm[314159.2653589793, {6, 10}]"#,
+    );
+  }
+  #[test]
+  fn number_form_25() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[1.`19., 10, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_26() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]"#,
+      r#"NumberForm[12345.123456789, 14, DigitBlock -> 3]"#,
+    );
+  }
+  #[test]
+  fn number_form_27() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]"#,
+      r#"NumberForm[12345.12345678, 14, DigitBlock -> 3]"#,
+    );
+  }
+  #[test]
+  fn number_form_28() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]"#,
+      r#"NumberForm[314159.2653589793, 15, DigitBlock -> {4, 2}]"#,
+    );
+  }
+  #[test]
+  fn number_form_29() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]"#,
+      r#"NumberForm[1.2345, 3, DigitBlock -> -4]"#,
+    );
+  }
+  #[test]
+  fn number_form_30() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]"#,
+      r#"NumberForm[1.2345, 3, DigitBlock -> x]"#,
+    );
+  }
+  #[test]
+  fn number_form_31() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]"#,
+      r#"NumberForm[1.2345, 3, DigitBlock -> {x, 3}]"#,
+    );
+  }
+  #[test]
+  fn number_form_32() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]"#,
+      r#"NumberForm[1.2345, 3, DigitBlock -> {5, -3}]"#,
+    );
+  }
+  #[test]
+  fn number_form_33() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]"#,
+      r#"NumberForm[12345.123456789, 14, ExponentFunction -> (#1 & )]"#,
+    );
+  }
+  #[test]
+  fn number_form_34() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]"#,
+      r#"NumberForm[12345.123456789, 14, ExponentFunction -> (Null & )]"#,
+    );
+  }
+  #[test]
+  fn set_5() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]"#,
+      r#"{1.1402564724682261*^-10, 0.003267763643053386, 93648.047476083, 2.683779414317762*^12, 7.691214220515705*^19}"#,
+    );
+  }
+  #[test]
+  fn number_form_35() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]"#,
+      r#"NumberForm[{1.1402564724682261*^-10, 0.003267763643053386, 93648.047476083, 2.683779414317762*^12, 7.691214220515705*^19}, 10, ExponentFunction -> (3*Quotient[#1, 3] & )]"#,
+    );
+  }
+  #[test]
+  fn number_form_36() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]"#,
+      r#"NumberForm[{1.1402564724682261*^-10, 0.003267763643053386, 93648.047476083, 2.683779414317762*^12, 7.691214220515705*^19}, 10, ExponentFunction -> (Null & )]"#,
+    );
+  }
+  #[test]
+  fn number_form_37() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]"#,
+      r#"NumberForm[3.141592653589793*^8, 10, ExponentStep -> 3]"#,
+    );
+  }
+  #[test]
+  fn number_form_38() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]"#,
+      r#"NumberForm[1.2345, 3, ExponentStep -> x]"#,
+    );
+  }
+  #[test]
+  fn number_form_39() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]"#,
+      r#"NumberForm[1.2345, 3, ExponentStep -> 0]"#,
+    );
+  }
+  #[test]
+  fn number_form_40() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]"#,
+      r#"NumberForm[{1.1402564724682261*^-10, 0.003267763643053386, 93648.047476083, 2.683779414317762*^12, 7.691214220515705*^19}, 10, ExponentStep -> 6]"#,
+    );
+  }
+  #[test]
+  fn number_form_41() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]"#,
+      r#"NumberForm[{1.1402564724682261*^-10, 0.003267763643053386, 93648.047476083, 2.683779414317762*^12, 7.691214220515705*^19}, 10, NumberFormat -> (#1 & )]"#,
+    );
+  }
+  #[test]
+  fn number_form_42() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]"#,
+      r#"NumberForm[1.2345, 3, NumberMultiplier -> 0]"#,
+    );
+  }
+  #[test]
+  fn number_form_43() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]"#,
+      r#"NumberForm[3.1415926535897933*^7, 15, NumberMultiplier -> "*"]"#,
+    );
+  }
+  #[test]
+  fn number_form_44() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]"#,
+      r#"NumberForm[1.2345, 5, NumberPoint -> ","]"#,
+    );
+  }
+  #[test]
+  fn number_form_45() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]"#,
+      r#"NumberForm[1.2345, 3, NumberPoint -> 0]"#,
+    );
+  }
+  #[test]
+  fn number_form_46() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]"#,
+      r#"NumberForm[1.41, {10, 5}]"#,
+    );
+  }
+  #[test]
+  fn number_form_47() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]"#,
+      r#"NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_48() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_49() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_50() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]"#,
+      r#"NumberForm[1.2345, 3, NumberPadding -> 0]"#,
+    );
+  }
+  #[test]
+  fn number_form_51() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]"#,
+      r#"NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]"#,
+    );
+  }
+  #[test]
+  fn number_form_52() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]"#,
+      r#"NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_53() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]"#,
+      r#"NumberForm[314159.2653589793, 15, DigitBlock -> 3, NumberSeparator -> " "]"#,
+    );
+  }
+  #[test]
+  fn number_form_54() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]"#,
+      r#"NumberForm[314159.2653589793, 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]"#,
+    );
+  }
+  #[test]
+  fn number_form_55() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]"#,
+      r#"NumberForm[314159.2653589793, 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]"#,
+    );
+  }
+  #[test]
+  fn number_form_56() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]"#,
+      r#"NumberForm[3.1415926535897933*^7, 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]"#,
+    );
+  }
+  #[test]
+  fn number_form_57() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]"#,
+      r#"NumberForm[1.2345, 3, NumberSeparator -> 0]"#,
+    );
+  }
+  #[test]
+  fn number_form_58() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]"#,
+      r#"NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_59() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]"#,
+      r#"NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]"#,
+    );
+  }
+  #[test]
+  fn number_form_60() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]"#,
+      r#"NumberForm[1.2345, 3, NumberSigns -> 0]"#,
+    );
+  }
+  #[test]
+  fn number_form_61() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_62() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_63() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_64() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]"#,
+      r#"NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]"#,
+    );
+  }
+  #[test]
+  fn number_form_65() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]"#,
+      r#"NumberForm[34, ExponentFunction -> (Null & )]"#,
+    );
+  }
+  #[test]
+  fn number_form_66() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]"#,
+      r#"NumberForm[50., {5, 1}]"#,
+    );
+  }
+  #[test]
+  fn number_form_67() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]"#,
+      r#"NumberForm[50, {5, 1}]"#,
+    );
+  }
+  #[test]
+  fn number_form_68() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]"#,
+      r#"NumberForm[43.157, {10, 1}]"#,
+    );
+  }
+  #[test]
+  fn number_form_69() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]"#,
+      r#"NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]"#,
+    );
+  }
+  #[test]
+  fn number_form_70() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]"#,
+      r#"NumberForm[80.96, {16, 1}]"#,
+    );
+  }
+  #[test]
+  fn number_form_71() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]"#,
+      r#"NumberForm[142.25, {10, 1}]"#,
+    );
+  }
+  #[test]
+  fn list_literal_2() {
+    // Same family as case 3837 — mathics rendered the contents to LaTeX
+    // `\text{$\{$hi, you$\}$}` (with another `\	ext` typo from a Python
+    // string-escape bug). wolframscript -code returns the unevaluated
+    // wrapper `TeXForm[InputForm[{hi, you}]]` verbatim. Woxi matches.
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]; {"hi","you"} //InputForm //TeXForm"#,
+      r#"TeXForm[InputForm[{hi, you}]]"#,
+    );
+  }
+  #[test]
+  fn te_x_form_1() {
+    // mathics rendered the contents to LaTeX `a+b c`; wolframscript -code
+    // returns the unevaluated wrapper `TeXForm[a + b*c]` verbatim. Woxi
+    // matches.
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]; {"hi","you"} //InputForm //TeXForm; a=.;b=.;c=.;TeXForm[a+b*c]"#,
+      r#"TeXForm[a + b*c]"#,
+    );
+  }
+  #[test]
+  fn te_x_form_2() {
+    // Same family as cases 3836/3837 — mathics rendered the contents
+    // to LaTeX `\text{a + b*c}` (with a `\	ext` typo from a Python
+    // string-escape bug). wolframscript -code returns the unevaluated
+    // wrapper `TeXForm[InputForm[a + b*c]]` verbatim. Woxi matches.
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]; {"hi","you"} //InputForm //TeXForm; a=.;b=.;c=.;TeXForm[a+b*c]; TeXForm[InputForm[a+b*c]]"#,
+      r#"TeXForm[InputForm[a + b*c]]"#,
+    );
+  }
+  #[test]
+  fn table_form() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]; {"hi","you"} //InputForm //TeXForm; a=.;b=.;c=.;TeXForm[a+b*c]; TeXForm[InputForm[a+b*c]]; TableForm[{}]"#,
+      r#"TableForm[{}]"#,
+    );
+  }
+  #[test]
+  fn list_literal_3() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]; {"hi","you"} //InputForm //TeXForm; a=.;b=.;c=.;TeXForm[a+b*c]; TeXForm[InputForm[a+b*c]]; TableForm[{}]; {{2*a, 0},{0,0}}//MatrixForm"#,
+      r#"MatrixForm[{{2*a, 0}, {0, 0}}]"#,
+    );
+  }
+  #[test]
+  fn number_form_72() {
+    assert_case(
+      r#"BaseForm[0, 2]; BaseForm[0.0, 2]; BaseForm[N[Pi, 30], 16]; InputForm[2 x ^ 2 + 4z!]; InputForm["\$"]; NumberForm[Pi, 20]; NumberForm[2/3, 10]; NumberForm[N[Pi]]; NumberForm[N[Pi, 20]]; NumberForm[14310983091809]; z0 = 0.0;z1 = 0.0000000000000000000000000000; NumberForm[{z0, z1}, 10]; NumberForm[{z0, z1}, {10, 4}]; z0=.;z1=.; NumberForm[1.0, 10]; NumberForm[1.000000000000000000000000, 10]; NumberForm[1.0, {10, 8}]; NumberForm[N[Pi, 33], 33]; NumberForm[0.645658509, 6]; NumberForm[N[1/7], 30]; NumberForm[{0, 2, -415, 83515161451}, 5]; NumberForm[{2^123, 2^123.}, 4, ExponentFunction -> ((#1) &)]; NumberForm[{0, 10, -512}, {10, 3}]; NumberForm[1.5, -4]; NumberForm[1.5, {1.5, 2}]; NumberForm[1.5, {1, 2.5}]; NumberForm[153., 2]; NumberForm[0.00125, 1]; NumberForm[10^5 N[Pi], {5, 3}]; NumberForm[10^5 N[Pi], {6, 3}]; NumberForm[10^5 N[Pi], {6, 10}]; NumberForm[1.0000000000000000000, 10, NumberPadding -> {"X", "Y"}]; NumberForm[12345.123456789, 14, DigitBlock -> 3]; NumberForm[12345.12345678, 14, DigitBlock -> 3]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}]; NumberForm[1.2345, 3, DigitBlock -> -4]; NumberForm[1.2345, 3, DigitBlock -> x]; NumberForm[1.2345, 3, DigitBlock -> {x, 3}]; NumberForm[1.2345, 3, DigitBlock -> {5, -3}]; NumberForm[12345.123456789, 14, ExponentFunction -> ((#) &)]; NumberForm[12345.123456789, 14, ExponentFunction -> (Null&)]; y = N[Pi^Range[-20, 40, 15]]; NumberForm[y, 10, ExponentFunction -> (3 Quotient[#, 3] &)]; NumberForm[y, 10, ExponentFunction -> (Null &)]; NumberForm[10^8 N[Pi], 10, ExponentStep -> 3]; NumberForm[1.2345, 3, ExponentStep -> x]; NumberForm[1.2345, 3, ExponentStep -> 0]; NumberForm[y, 10, ExponentStep -> 6]; NumberForm[y, 10, NumberFormat -> (#1 &)]; NumberForm[1.2345, 3, NumberMultiplier -> 0]; NumberForm[N[10^ 7 Pi], 15, NumberMultiplier -> "*"]; NumberForm[1.2345, 5, NumberPoint -> ","]; NumberForm[1.2345, 3, NumberPoint -> 0]; NumberForm[1.41, {10, 5}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"", "X"}]; NumberForm[1.41, {10, 5}, NumberPadding -> {"X", "Y"}]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}]; NumberForm[1.2345, 3, NumberPadding -> 0]; NumberForm[1.41, 10, NumberPadding -> {"X", "Y"}, NumberSigns -> {"-------------", ""}]; NumberForm[{1., -1., 2.5, -2.5}, {4, 6}, NumberPadding->{"X", "Y"}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> " "]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {" ", ","}]; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[N[10^ 7 Pi], 15, DigitBlock -> 3, NumberSeparator -> {",", " "}]; NumberForm[1.2345, 3, NumberSeparator -> 0]; NumberForm[1.2345, 5, NumberSigns -> {"-", "+"}]; NumberForm[-1.2345, 5, NumberSigns -> {"- ", ""}]; NumberForm[1.2345, 3, NumberSigns -> 0]; NumberForm[1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> True, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, 6, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[-1.234, {6, 4}, SignPadding -> False, NumberPadding -> {"X", "Y"}]; NumberForm[34, ExponentFunction->(Null&)]; NumberForm[50.0, {5, 1}]; NumberForm[50, {5, 1}]; NumberForm[43.157, {10, 1}]; NumberForm[43.15752525, {10, 5}, NumberSeparator -> ",", DigitBlock -> 1]; NumberForm[80.96, {16, 1}]; NumberForm[142.25, {10, 1}]; {"hi","you"} //InputForm //TeXForm; a=.;b=.;c=.;TeXForm[a+b*c]; TeXForm[InputForm[a+b*c]]; TableForm[{}]; {{2*a, 0},{0,0}}//MatrixForm; NumberForm[N[10^ 5 Pi], 15, DigitBlock -> {4, 2}, ExponentStep->x]"#,
+      r#"NumberForm[314159.2653589793, 15, DigitBlock -> {4, 2}, ExponentStep -> x]"#,
+    );
+  }
+  #[test]
+  fn string_form_7() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]"#,
+      r#"StringForm["This is symbol ``.", A]"#,
+    );
+  }
+  #[test]
+  fn string_form_8() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]"#,
+      r#"StringForm["This is symbol `1`.", A]"#,
+    );
+  }
+  #[test]
+  fn string_form_9() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]"#,
+      r#"StringForm["This is symbol `0`.", A]"#,
+    );
+  }
+  #[test]
+  fn string_form_10() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]"#,
+      r#"StringForm["This is symbol `symbol`.", A]"#,
+    );
+  }
+  #[test]
+  fn string_form_11() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]; StringForm["This is symbol `5`.", A]"#,
+      r#"StringForm["This is symbol `5`.", A]"#,
+    );
+  }
+  #[test]
+  fn string_form_12() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]; StringForm["This is symbol `5`.", A]; StringForm["This is symbol `2`, then `1`.", A, B]"#,
+      r#"StringForm["This is symbol `2`, then `1`.", A, B]"#,
+    );
+  }
+  #[test]
+  fn string_form_13() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]; StringForm["This is symbol `5`.", A]; StringForm["This is symbol `2`, then `1`.", A, B]; StringForm["This is symbol `1`, then ``.", A, B]"#,
+      r#"StringForm["This is symbol `1`, then ``.", A, B]"#,
+    );
+  }
+  #[test]
+  fn string_form_14() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]; StringForm["This is symbol `5`.", A]; StringForm["This is symbol `2`, then `1`.", A, B]; StringForm["This is symbol `1`, then ``.", A, B]; StringForm["This is symbol `2`, then ``.", A, B]"#,
+      r#"StringForm["This is symbol `2`, then ``.", A, B]"#,
+    );
+  }
+  #[test]
+  fn string_form_15() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]; StringForm["This is symbol `5`.", A]; StringForm["This is symbol `2`, then `1`.", A, B]; StringForm["This is symbol `1`, then ``.", A, B]; StringForm["This is symbol `2`, then ``.", A, B]; StringForm["This is symbol `.", A]"#,
+      r#"StringForm["This is symbol `.", A]"#,
+    );
+  }
+  #[test]
+  fn string_form_16() {
+    assert_case(
+      r#"StringForm["This is symbol ``.", A]; StringForm["This is symbol `1`.", A]; StringForm["This is symbol `0`.", A]; StringForm["This is symbol `symbol`.", A]; StringForm["This is symbol `5`.", A]; StringForm["This is symbol `2`, then `1`.", A, B]; StringForm["This is symbol `1`, then ``.", A, B]; StringForm["This is symbol `2`, then ``.", A, B]; StringForm["This is symbol `.", A]; StringForm["This is symbol \`.", A]"#,
+      r#"StringForm["This is symbol \`.", A]"#,
+    );
+  }
+  #[test]
+  fn string_replace_15() {
+    assert_case(
+      r#"a + b /. x_ + y_ -> {x, y}; StringReplace["h1d9a f483", DigitCharacter | WhitespaceCharacter -> ""]"#,
+      r#""hdaf""#,
+    );
+  }
+  #[test]
+  fn string_replace_16() {
+    assert_case(
+      r#"a + b /. x_ + y_ -> {x, y}; StringReplace["h1d9a f483", DigitCharacter | WhitespaceCharacter -> ""]; StringReplace["abc DEF 123!", Except[LetterCharacter, WordCharacter] -> "0"]"#,
+      r#""abc DEF 000!""#,
+    );
+  }
+  #[test]
+  fn expression() {
+    // mathics rendered `a:b:c` with surrounding spaces (`a : b : c`).
+    // wolframscript prints it tightly as `a:b:c`, which is what Woxi
+    // also produces.
+    assert_case(
+      r#"a + b /. x_ + y_ -> {x, y}; StringReplace["h1d9a f483", DigitCharacter | WhitespaceCharacter -> ""]; StringReplace["abc DEF 123!", Except[LetterCharacter, WordCharacter] -> "0"]; a:b:c"#,
+      r#"a:b:c"#,
+    );
+  }
+  #[test]
+  fn full_form() {
+    assert_case(
+      r#"a + b /. x_ + y_ -> {x, y}; StringReplace["h1d9a f483", DigitCharacter | WhitespaceCharacter -> ""]; StringReplace["abc DEF 123!", Except[LetterCharacter, WordCharacter] -> "0"]; a:b:c; FullForm[a:b:c]"#,
+      r#"FullForm[a:b:c]"#,
+    );
+  }
+  #[test]
+  fn to_string_23() {
+    assert_case(
+      r#"N[3^200]; N[2^1023]; N[2^1024]; p=N[Pi,100]; ToString[p]"#,
+      r#""3.141592653589793238462643383279502884197169399375105820974944592307816406286208998628034825342117068""#,
+    );
+  }
+  #[test]
+  fn n_1() {
+    assert_case(
+      r#"N[3^200]; N[2^1023]; N[2^1024]; p=N[Pi,100]; ToString[p]; N[1.012345678901234567890123, 20]"#,
+      r#"1.012345678901234567890123`20."#,
+    );
+  }
+  #[test]
+  fn n_2() {
+    assert_case(
+      r#"N[3^200]; N[2^1023]; N[2^1024]; p=N[Pi,100]; ToString[p]; N[1.012345678901234567890123, 20]; N[I, 30]"#,
+      r#"1.`30.*I"#,
+    );
+  }
+  #[test]
+  fn n_3() {
+    assert_case(
+      r#"N[3^200]; N[2^1023]; N[2^1024]; p=N[Pi,100]; ToString[p]; N[1.012345678901234567890123, 20]; N[I, 30]; N[1.012345678901234567890123, 50] //{#1, #1//Precision}&"#,
+      r#"{1.012345678901234567890123`24.0053288334574, 24.0053288334574}"#,
+    );
+  }
+  #[test]
+  fn head() {
+    assert_case(r#"Head[ByteArray[{1}]]"#, r#"ByteArray"#);
+  }
+  #[test]
+  fn order_1() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn order_2() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn order_3() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn order_4() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn order_5() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]; Order["a", 1000]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn order_6() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]; Order["a", 1000]; Order[0.9, 1]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn order_7() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]; Order["a", 1000]; Order[0.9, 1]; Order[1.2, 1]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn order_8() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]; Order["a", 1000]; Order[0.9, 1]; Order[1.2, 1]; Order[F[2], A[2]]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn order_9() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]; Order["a", 1000]; Order[0.9, 1]; Order[1.2, 1]; Order[F[2], A[2]]; Order[F[2], F[3]]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn order_10() {
+    assert_case(
+      r#"Order["c", "d"]; Order["d", "c"]; Order["c", ByteArray[{99}]]; Order[ByteArray[{1, 99}], "ZZZZZ"]; Order["xyzzy", "xyzzy"]; Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]; Order["a", 1000]; Order[0.9, 1]; Order[1.2, 1]; Order[F[2], A[2]]; Order[F[2], F[3]]; Order[F[2, 3], F[2]]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn string_match_q_24() {
+    assert_case(r#"StringMatchQ["123245a6", DigitCharacter..]"#, r#"False"#);
+  }
+  #[test]
+  fn complement() {
+    assert_case(
+      r#"Complement[Alphabet["Swedish"], Alphabet["English"]]"#,
+      r#"{å, ä, ö}"#,
+    );
+  }
+  #[test]
+  fn to_expression_6() {
+    assert_case(r#"ToExpression["log(x)", StandardForm]"#, r#"log*x"#);
+  }
+  #[test]
+  fn characters_2() {
+    assert_case(r#"Characters["\\\` "]"#, r#"{\, \`,  }"#);
+  }
+  #[test]
+  fn string_take_10() {
+    assert_case(r#"StringTake["abcd", 0] // InputForm"#, r#"InputForm[""]"#);
+  }
+  #[test]
+  fn string_take_11() {
+    assert_case(
+      r#"StringTake["abcd", 0] // InputForm; StringTake["abcd", {3, 2}] // InputForm"#,
+      r#"InputForm[""]"#,
+    );
+  }
+  #[test]
+  fn string_take_12() {
+    assert_case(
+      r#"StringTake["abcd", 0] // InputForm; StringTake["abcd", {3, 2}] // InputForm; StringTake["", {1, 0}] // InputForm"#,
+      r#"InputForm[""]"#,
+    );
+  }
+  #[test]
+  fn to_character_code_2() {
+    assert_case(r#"ToCharacterCode[{"ab"}]"#, r#"{{97, 98}}"#);
+  }
+  #[test]
+  fn to_character_code_3() {
+    assert_case(
+      r#"ToCharacterCode[{"ab"}]; ToCharacterCode[{"\(A\)"}]"#,
+      r#"{{63433, 65, 63424}}"#,
+    );
+  }
+  #[test]
+  fn from_character_code_4() {
+    assert_case(r#"FromCharacterCode[{}] // InputForm"#, r#"InputForm[""]"#);
+  }
+  #[test]
+  fn from_character_code_5() {
+    // mathics rendered the result via the box-syntax escape `"\|010000"`;
+    // wolframscript -code emits the literal U+10000 character (the
+    // 4-byte UTF-8 sequence `f0 90 80 80`). Woxi matches wolframscript.
+    assert_case(
+      r#"FromCharacterCode[{}] // InputForm; FromCharacterCode[65536]"#,
+      "\u{10000}",
+    );
+  }
+  #[test]
+  fn expr_3() {
+    // Same family as case 3717 — `System`Convert`B64Dump`B64Encode`
+    // is an internal wolframscript package function neither side
+    // implements, so both return the unevaluated wrapper. The
+    // mathics-scraped expectation re-encodes the `∫` (and the
+    // following Wolfram private-use char) as Wolfram named characters
+    // of UTF-8 bytes interpreted as Latin-1 (mojibake). Woxi preserves
+    // the original UTF-8 string verbatim.
+    assert_case(
+      "System`Convert`B64Dump`B64Encode[\"∫ f  x\"]",
+      "System`Convert`B64Dump`B64Encode[∫ f  x]",
+    );
+  }
+  #[test]
+  fn set_6() {
+    assert_case(
+      r#"System`Convert`B64Dump`B64Encode["∫ f  x"]; System`Convert`B64Dump`B64Decode["4oirIGYg752MIHg="]"#,
+      r#"System`Convert`B64Dump`B64Decode["4oirIGYg752MIHg="]"#,
+    );
+  }
+  #[test]
+  fn string_cases_14() {
+    // Single-character `Except[c]..` lifts to a `[^c]+` regex so that
+    // `StringCases` no longer trips over the `regex` crate's lack of
+    // look-around. Mirrors the parseEntry pattern in build_summary.wls.
+    assert_case(
+      r#"StringCases["- [Title](path/to.md)", "- [" ~~ lbl:(Except["]"]..) ~~ "](" ~~ tgt:(Except[")"]..) ~~ ")" :> {lbl, tgt}, 1]"#,
+      r#"{{Title, path/to.md}}"#,
+    );
+  }
+}

@@ -4989,3 +4989,1012 @@ mod differentiate_integrate_leibniz {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn integrate_1() {
+    assert_case(
+      r#"Piecewise[{{0, x <= 0}}, 1]; Integrate[Piecewise[{{1, x <= 0}, {-1, x > 0}}], x]"#,
+      r#"Piecewise[{{x, x <= 0}}, -x]"#,
+    );
+  }
+  #[test]
+  fn integrate_2() {
+    assert_case(
+      r#"Piecewise[{{0, x <= 0}}, 1]; Integrate[Piecewise[{{1, x <= 0}, {-1, x > 0}}], x]; Integrate[Piecewise[{{1, x <= 0}, {-1, x > 0}}], {x, -1, 2}]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn piecewise() {
+    assert_case(
+      r#"Piecewise[{{0, x <= 0}}, 1]; Integrate[Piecewise[{{1, x <= 0}, {-1, x > 0}}], x]; Integrate[Piecewise[{{1, x <= 0}, {-1, x > 0}}], {x, -1, 2}]; Piecewise[{{1, False}}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn d_1() {
+    assert_case(
+      r#"RealAbs[-3.]; RealAbs[2. + 3. I]; D[RealAbs[x ^ 2], x]"#,
+      r#"(2*x^3)/RealAbs[x^2]"#,
+    );
+  }
+  #[test]
+  fn d_2() {
+    assert_case(
+      r#"RealSign[-3.]; RealSign[2. + 3. I]; D[RealSign[x^2],x]"#,
+      r#"2*x*Piecewise[{{0, x^2 != 0}}, Indeterminate]"#,
+    );
+  }
+  #[test]
+  fn integrate_3() {
+    assert_case(
+      r#"RealSign[-3.]; RealSign[2. + 3. I]; D[RealSign[x^2],x]; Integrate[RealSign[u],{u,0,x}]"#,
+      r#"Abs[x]"#,
+    );
+  }
+  #[test]
+  fn integrate_4() {
+    assert_case(
+      r#"ArcCos[1]; ArcCos[0]; Integrate[ArcCos[x], {x, -1, 1}]"#,
+      r#"Pi"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_1() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]; CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]; CoefficientList[(x + y)^3, z]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]; CoefficientList[(x - 2 y + 3 z)^3, {x, y, z}]; CoefficientList[Series[Log[1-x], {x, 0, 9}], x]"#,
+      r#"{0, -1, -1 / 2, -1 / 3, -1 / 4, -1 / 5, -1 / 6, -1 / 7, -1 / 8, -1 / 9}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_2() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]; CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]; CoefficientList[(x + y)^3, z]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]; CoefficientList[(x - 2 y + 3 z)^3, {x, y, z}]; CoefficientList[Series[Log[1-x], {x, 0, 9}], x]; CoefficientList[Series[2x, {x, 0, 9}], x]"#,
+      r#"{0, 2}"#,
+    );
+  }
+  #[test]
+  fn limit_1() {
+    assert_case(
+      r#"Precision[1]; 1 / Infinity; Infinity + 100; Sum[1/x^2, {x, 1, Infinity}]; Limit[1/x, x->0]"#,
+      r#"Indeterminate"#,
+    );
+  }
+  #[test]
+  fn full_form() {
+    assert_case(
+      r#"Precision[1]; 1 / Infinity; Infinity + 100; Sum[1/x^2, {x, 1, Infinity}]; Limit[1/x, x->0]; FullForm[Infinity]"#,
+      r#"FullForm[Infinity]"#,
+    );
+  }
+  #[test]
+  fn d_3() {
+    assert_case(r#"D[x^3 + x^2, x]"#, r#"2*x + 3*x^2"#);
+  }
+  #[test]
+  fn d_4() {
+    assert_case(r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]"#, r#"2 + 6*x"#);
+  }
+  #[test]
+  fn d_5() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]"#,
+      r#"-(Cos[Cos[x]]*Sin[x])"#,
+    );
+  }
+  #[test]
+  fn d_6() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]"#,
+      r#"-Sin[x]"#,
+    );
+  }
+  #[test]
+  fn d_7() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]"#,
+      r#"-Cos[t]"#,
+    );
+  }
+  #[test]
+  fn d_8() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn d_9() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn d_10() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn d_11() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]"#,
+      r#"Derivative[1][f][x]"#,
+    );
+  }
+  #[test]
+  fn d_12() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]; D[f[x, x], x]"#,
+      r#"Derivative[0, 1][f][x, x] + Derivative[1, 0][f][x, x]"#,
+    );
+  }
+  #[test]
+  fn d_13() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]; D[f[x, x], x]; D[f[x, x], x] // InputForm"#,
+      r#"InputForm[Derivative[0, 1][f][x, x] + Derivative[1, 0][f][x, x]]"#,
+    );
+  }
+  #[test]
+  fn d_14() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]; D[f[x, x], x]; D[f[x, x], x] // InputForm; D[f[2x+1, 2y, x+y], x]"#,
+      r#"Derivative[0, 0, 1][f][1 + 2*x, 2*y, x + y] + 2*Derivative[1, 0, 0][f][1 + 2*x, 2*y, x + y]"#,
+    );
+  }
+  #[test]
+  fn d_15() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]; D[f[x, x], x]; D[f[x, x], x] // InputForm; D[f[2x+1, 2y, x+y], x]; D[f[x^2, x, 2y], {x,2}, y] // Expand"#,
+      r#"2*Derivative[0, 2, 1][f][x^2, x, 2*y] + 4*Derivative[1, 0, 1][f][x^2, x, 2*y] + 8*x*Derivative[1, 1, 1][f][x^2, x, 2*y] + 8*x^2*Derivative[2, 0, 1][f][x^2, x, 2*y]"#,
+    );
+  }
+  #[test]
+  fn d_16() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]; D[f[x, x], x]; D[f[x, x], x] // InputForm; D[f[2x+1, 2y, x+y], x]; D[f[x^2, x, 2y], {x,2}, y] // Expand; D[x ^ 3 * Cos[y], {{x, y}}]"#,
+      r#"{3*x^2*Cos[y], -(x^3*Sin[y])}"#,
+    );
+  }
+  #[test]
+  fn d_17() {
+    assert_case(
+      r#"D[x^3 + x^2, x]; D[x^3 + x^2, {x, 2}]; D[Sin[Cos[x]], x]; D[Sin[x], {x, 2}]; D[Cos[t], {t, 2}]; D[y, x]; D[x, x]; D[x + y, x]; D[f[x], x]; D[f[x, x], x]; D[f[x, x], x] // InputForm; D[f[2x+1, 2y, x+y], x]; D[f[x^2, x, 2y], {x,2}, y] // Expand; D[x ^ 3 * Cos[y], {{x, y}}]; D[Sin[x] * Cos[y], {{x,y}, 2}]"#,
+      r#"{{-(Cos[y]*Sin[x]), -(Cos[x]*Sin[y])}, {-(Cos[x]*Sin[y]), -(Cos[y]*Sin[x])}}"#,
+    );
+  }
+  #[test]
+  fn derivative_1() {
+    assert_case(r#"Derivative[1][Sin]"#, r#"Cos[#1]&"#);
+  }
+  #[test]
+  fn derivative_2() {
+    assert_case(r#"Derivative[1][Sin]; Derivative[3][Sin]"#, r#"-Cos[#1]&"#);
+  }
+  #[test]
+  fn derivative_3() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]"#,
+      r#"3*(2*#1) & "#,
+    );
+  }
+  #[test]
+  fn expr_1() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]"#,
+      r#"Cos[x]"#,
+    );
+  }
+  #[test]
+  fn anonymous_function() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''"#,
+      r#"4*(3*#1^2) & "#,
+    );
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm"#,
+      r#"InputForm[Derivative[1][f][x]]"#,
+    );
+  }
+  #[test]
+  fn derivative_4() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]"#,
+      r#"#2*Cos[#1] & "#,
+    );
+  }
+  #[test]
+  fn derivative_5() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]"#,
+      r#"Cos[#1]*(3*(2*#2)) & "#,
+    );
+  }
+  #[test]
+  fn derivative_6() {
+    // `Derivative[m1, …, mk][body &]` returns `0 &` whenever any
+    // non-zero `mi` corresponds to a slot beyond the maximum slot index
+    // referenced by the body. Here the body uses `#1` and `#2`; the
+    // third index `1` differentiates with respect to the absent `#3`,
+    // collapsing the whole derivative to `0 &`.
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]; Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]"#,
+      r#"0&"#,
+    );
+  }
+  #[test]
+  fn derivative_7() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]; Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]; Derivative[0,0,0][a+b+c]"#,
+      r#"a + b + c"#,
+    );
+  }
+  #[test]
+  fn expr_2() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]; Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]; Derivative[0,0,0][a+b+c]; f[x_] := x ^ 2; f'[x]"#,
+      r#"2*x"#,
+    );
+  }
+  #[test]
+  fn derivative_8() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]; Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]; Derivative[0,0,0][a+b+c]; f[x_] := x ^ 2; f'[x]; Derivative[2, 1][h]"#,
+      r#"Derivative[2, 1][h]"#,
+    );
+  }
+  #[test]
+  fn derivative_9() {
+    assert_case(
+      r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]; Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]; Derivative[0,0,0][a+b+c]; f[x_] := x ^ 2; f'[x]; Derivative[2, 1][h]; Derivative[2, 0, 1, 0][h[g]]"#,
+      r#"Derivative[2, 0, 1, 0][h[g]]"#,
+    );
+  }
+  #[test]
+  fn integrate_5() {
+    assert_case(
+      r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]"#,
+      r#"10*x - 2*x^2 + 3*x^3"#,
+    );
+  }
+  #[test]
+  fn integrate_6() {
+    assert_case(
+      r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]; Integrate[Sin[x] ^ 5, x]"#,
+      r#"(-5*Cos[x])/8 + (5*Cos[3*x])/48 - Cos[5*x]/80"#,
+    );
+  }
+  #[test]
+  fn integrate_7() {
+    assert_case(
+      r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]; Integrate[Sin[x] ^ 5, x]; Integrate[x ^ 2 + x, {x, 1, 3}]"#,
+      r#"38 / 3"#,
+    );
+  }
+  #[test]
+  fn integrate_8() {
+    assert_case(
+      r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]; Integrate[Sin[x] ^ 5, x]; Integrate[x ^ 2 + x, {x, 1, 3}]; Integrate[Sin[x], {x, 0, Pi/2}]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn integrate_9() {
+    assert_case(
+      r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]; Integrate[Sin[x] ^ 5, x]; Integrate[x ^ 2 + x, {x, 1, 3}]; Integrate[Sin[x], {x, 0, Pi/2}]; Integrate[1 / (1 - 4 x + x^2), x]"#,
+      r#"(Log[2 + Sqrt[3] - x] - Log[-2 + Sqrt[3] + x])/(2*Sqrt[3])"#,
+    );
+  }
+  #[test]
+  fn integrate_10() {
+    assert_case(
+      r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]; Integrate[Sin[x] ^ 5, x]; Integrate[x ^ 2 + x, {x, 1, 3}]; Integrate[Sin[x], {x, 0, Pi/2}]; Integrate[1 / (1 - 4 x + x^2), x]; Integrate[4 Sin[x] Cos[x], x]"#,
+      r#"-2*Cos[x]^2"#,
+    );
+  }
+  #[test]
+  fn limit_2() {
+    assert_case(r#"Limit[x, x->2]"#, r#"2"#);
+  }
+  #[test]
+  fn limit_3() {
+    assert_case(r#"Limit[x, x->2]; Limit[Sin[x] / x, x->0]"#, r#"1"#);
+  }
+  #[test]
+  fn series_1() {
+    assert_case(
+      r#"Series[1/(1-x),{x,0,2}]"#,
+      r#"SeriesData[x, 0, {1, 1, 1}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn o() {
+    assert_case(
+      r#"Series[1/(1-x),{x,0,2}]; O[x] // FullForm"#,
+      r#"FullForm[SeriesData[x, 0, {}, 1, 1, 1]]"#,
+    );
+  }
+  #[test]
+  fn integrate_11() {
+    assert_case(
+      r#"Integrate[1/(x^5 + 11 x + 1), {x, 1, 3}]"#,
+      r#"-RootSum[1 + 11*#1 + #1^5 & , Log[1 - #1]/(11 + 5*#1^4) & ] + RootSum[1 + 11*#1 + #1^5 & , Log[3 - #1]/(11 + 5*#1^4) & ]"#,
+    );
+  }
+  #[test]
+  fn n() {
+    assert_case(
+      r#"Integrate[1/(x^5 + 11 x + 1), {x, 1, 3}]; N[%, 50]"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn root_sum_1() {
+    assert_case(
+      r#"Integrate[1/(x^5 + 11 x + 1), {x, 1, 3}]; N[%, 50]; RootSum[#^5 - 11 # + 1 &, (#^2 - 1)/(#^3 - 2 # + c) &]; RootSum[#^5 - 3 # - 7 &, Sin] //N//Chop"#,
+      r#"0.2921876302209532"#,
+    );
+  }
+  #[test]
+  fn root_sum_2() {
+    assert_case(
+      r#"Integrate[1/(x^5 + 11 x + 1), {x, 1, 3}]; N[%, 50]; RootSum[#^5 - 11 # + 1 &, (#^2 - 1)/(#^3 - 2 # + c) &]; RootSum[#^5 - 3 # - 7 &, Sin] //N//Chop; RootSum[1+#+#^2+#^3+#^4 &, Log[x + #] &]"#,
+      r#"RootSum[1 + #1 + #1^2 + #1^3 + #1^4 & , Log[x + #1] & ]"#,
+    );
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(
+      r#"Integrate[1/(x^5 + 11 x + 1), {x, 1, 3}]; N[%, 50]; RootSum[#^5 - 11 # + 1 &, (#^2 - 1)/(#^3 - 2 # + c) &]; RootSum[#^5 - 3 # - 7 &, Sin] //N//Chop; RootSum[1+#+#^2+#^3+#^4 &, Log[x + #] &]; %//Normal"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(
+      r#"series = Series[Exp[x^2], {x,0,2}]"#,
+      r#"SeriesData[x, 0, {1, 0, 1}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn divide_3() {
+    assert_case(
+      r#"series = Series[Exp[x^2], {x,0,2}]; series // FullForm"#,
+      r#"FullForm[SeriesData[x, 0, {1, 0, 1}, 0, 3, 1]]"#,
+    );
+  }
+  #[test]
+  fn series_2() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]"#,
+      r#"SeriesData[x, 0, {1, 1, 1/2, 0, -1/8, -1/15}, 0, 6, 1]"#,
+    );
+  }
+  #[test]
+  fn series_coefficient_1() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]; SeriesCoefficient[%, 4]"#,
+      r#"SeriesCoefficient[Out[0], 4]"#,
+    );
+  }
+  #[test]
+  fn series_coefficient_2() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]; SeriesCoefficient[%, 4]; SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]"#,
+      r#"-1 / 8"#,
+    );
+  }
+  #[test]
+  fn series_coefficient_3() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]; SeriesCoefficient[%, 4]; SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]; SeriesCoefficient[2x, {x, 0, 2}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn series_coefficient_4() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]; SeriesCoefficient[%, 4]; SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]; SeriesCoefficient[2x, {x, 0, 2}]; SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 14/3]"#,
+      r#"64"#,
+    );
+  }
+  #[test]
+  fn series_coefficient_5() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]; SeriesCoefficient[%, 4]; SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]; SeriesCoefficient[2x, {x, 0, 2}]; SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 14/3]; SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 6/3]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn series_coefficient_6() {
+    assert_case(
+      r#"Series[Exp[Sin[x]], {x, 0, 5}]; SeriesCoefficient[%, 4]; SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]; SeriesCoefficient[2x, {x, 0, 2}]; SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 14/3]; SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 6/3]; SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 17/3]"#,
+      r#"Indeterminate"#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]"#,
+      r#"SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn head_1() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]; Head[series]"#,
+      r#"SeriesData"#,
+    );
+  }
+  #[test]
+  fn divide_4() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]; Head[series]; series // FullForm"#,
+      r#"FullForm[SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]]"#,
+    );
+  }
+  #[test]
+  fn plus_1() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]; Head[series]; series // FullForm; series + Series[Sinh[x],{x, 0, 3}]"#,
+      r#"SeriesData[x, 0, {1, 1, 1/2}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn series_3() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]; Head[series]; series // FullForm; series + Series[Sinh[x],{x, 0, 3}]; Series[f[x],{x,0,2}] * g[w]"#,
+      r#"SeriesData[x, 0, {f[0]*g[w], g[w]*Derivative[1][f][0], (g[w]*Derivative[2][f][0])/2}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn series_4() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]; Head[series]; series // FullForm; series + Series[Sinh[x],{x, 0, 3}]; Series[f[x],{x,0,2}] * g[w]; Series[Exp[-a x],{x,0,2}] * Series[Exp[-b x],{x,0,2}]"#,
+      r#"SeriesData[x, 0, {1, -a - b, a^2/2 + a*b + b^2/2}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn d_18() {
+    assert_case(
+      r#"series = Series[Cosh[x],{x,0,2}]; Head[series]; series // FullForm; series + Series[Sinh[x],{x, 0, 3}]; Series[f[x],{x,0,2}] * g[w]; Series[Exp[-a x],{x,0,2}] * Series[Exp[-b x],{x,0,2}]; D[Series[Exp[-a x],{x,0,2}],a]"#,
+      r#"SeriesData[x, 0, {-1, a}, 1, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn d_solve_1() {
+    assert_case(
+      r#"DSolve[y''[x] == 0, y[x], x]"#,
+      r#"{{y[x] -> C[1] + x*C[2]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_2() {
+    assert_case(
+      r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]"#,
+      r#"{{y[x] -> E^x*C[1] + C[2]/E^x}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_3() {
+    assert_case(
+      r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]; DSolve[y''[x] == y[x], y, x]"#,
+      r#"{{y -> Function[{x}, E^x*C[1] + C[2]/E^x]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_4() {
+    assert_case(
+      r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]; DSolve[y''[x] == y[x], y, x]; DSolve[D[f[x, y], x] / f[x, y] + 3 D[f[x, y], y] / f[x, y] == 2, f, {x, y}]"#,
+      r#"{{f -> Function[{x, y}, E^(2*x)*C[1][-3*x + y]]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_5() {
+    assert_case(
+      r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]; DSolve[y''[x] == y[x], y, x]; DSolve[D[f[x, y], x] / f[x, y] + 3 D[f[x, y], y] / f[x, y] == 2, f, {x, y}]; DSolve[D[f[x, y], x] x + D[f[x, y], y] y == 2, f[x, y], {x, y}]"#,
+      r#"{{f[x, y] -> 2*Log[x] + C[1][y/x]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_6() {
+    assert_case(
+      r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]; DSolve[y''[x] == y[x], y, x]; DSolve[D[f[x, y], x] / f[x, y] + 3 D[f[x, y], y] / f[x, y] == 2, f, {x, y}]; DSolve[D[f[x, y], x] x + D[f[x, y], y] y == 2, f[x, y], {x, y}]; DSolve[D[y[x, t], t] + 2 D[y[x, t], x] == 0, y[x, t], {x, t}]"#,
+      r#"{{y[x, t] -> C[1][t - x/2]}}"#,
+    );
+  }
+  #[test]
+  fn input_form() {
+    assert_case(
+      r#"InputForm["A string"]; InputForm[f'[x]]; InputForm[Derivative[1, 0][f][x]]"#,
+      r#"InputForm[Derivative[1, 0][f][x]]"#,
+    );
+  }
+  #[test]
+  fn plus_2() {
+    assert_case(
+      r#"InputForm["A string"]; InputForm[f'[x]]; InputForm[Derivative[1, 0][f][x]]; 2+F[x] // InputForm"#,
+      r#"InputForm[2 + F[x]]"#,
+    );
+  }
+  #[test]
+  fn plus_3() {
+    assert_case(
+      r#"InputForm["A string"]; InputForm[f'[x]]; InputForm[Derivative[1, 0][f][x]]; 2+F[x] // InputForm; 2+F[x] // FullForm"#,
+      r#"FullForm[2 + F[x]]"#,
+    );
+  }
+  #[test]
+  fn foo_1() {
+    // Wolframscript-matched expectation. mathics expected
+    // \`InputForm[Bar]\` — the user-defined Format rule rewriting
+    // Foo[x] to Bar — but wolframscript -code (and Woxi) keep
+    // \`InputForm[Foo[x]]\` because the Format rule only fires inside
+    // the front-end's display pipeline, not at top-level OutputForm.
+    assert_case(
+      r#"InputForm["A string"]; InputForm[f'[x]]; InputForm[Derivative[1, 0][f][x]]; 2+F[x] // InputForm; 2+F[x] // FullForm; Format[Foo[x], InputForm] := Bar; Foo[x] // InputForm"#,
+      r#"InputForm[Foo[x]]"#,
+    );
+  }
+  #[test]
+  fn foo_2() {
+    // mathics applied the user `Format` rule and printed `Baz`, but
+    // wolframscript only fires `Format` rules in the front-end display
+    // pipeline — at top-level it keeps the bare `Foo[x]` inside the
+    // FullForm wrapper. Woxi matches wolframscript.
+    assert_case(
+      r#"InputForm["A string"]; InputForm[f'[x]]; InputForm[Derivative[1, 0][f][x]]; 2+F[x] // InputForm; 2+F[x] // FullForm; Format[Foo[x], InputForm] := Bar; Foo[x] // InputForm; Format[Foo[x], InputForm] := Baz; Foo[x] // FullForm"#,
+      r#"FullForm[Foo[x]]"#,
+    );
+  }
+  #[test]
+  fn output_form_1() {
+    // mathics rendered the partial-derivative as 2D ASCII art `(1,0)\nf [x]`;
+    // wolframscript -code returns the unevaluated wrapper
+    // `OutputForm[Derivative[1, 0][f][x]]` verbatim. Woxi matches.
+    assert_case(
+      r#"OutputForm[f'[x]]; OutputForm[Derivative[1, 0][f][x]]"#,
+      r#"OutputForm[Derivative[1, 0][f][x]]"#,
+    );
+  }
+  #[test]
+  fn output_form_2() {
+    // OutputForm keeps its wrapper to match wolframscript:
+    // `OutputForm[{"A string", a + b}]` → `OutputForm[{A string, a + b}]`
+    // (strings unquoted inside the OutputForm rendering).
+    assert_case(
+      r#"OutputForm[f'[x]]; OutputForm[Derivative[1, 0][f][x]]; OutputForm[{"A string", a + b}]"#,
+      r#"OutputForm[{A string, a + b}]"#,
+    );
+  }
+  #[test]
+  fn list_literal() {
+    assert_case(
+      r#"OutputForm[f'[x]]; OutputForm[Derivative[1, 0][f][x]]; OutputForm[{"A string", a + b}]; {"A string", a + b}"#,
+      r#"{"A string", a + b}"#,
+    );
+  }
+  #[test]
+  fn output_form_3() {
+    // OutputForm wrapper is now preserved (commit f8941596), so
+    // `OutputForm[StringForm[…]]` round-trips through Woxi to the
+    // wolframscript-matching string.
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]; StringForm["`-1` bla", a]; StringForm["`2` bla", a]; StringForm["`` is Global`a", a]; StringForm["`` is Global\\`a", a]; OutputForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]"#,
+      r#"OutputForm[StringForm[Integral of f: ``, Integrate[F[x], x]]]"#,
+    );
+  }
+  #[test]
+  fn standard_form() {
+    // mathics rendered StandardForm contents to box-syntax markup;
+    // wolframscript -code returns the unevaluated wrapper
+    // `StandardForm[StringForm[Integral of f: \`\`, Integrate[F[x], x]]]`
+    // verbatim. Woxi matches.
+    assert_case(
+      r#"StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]; StringForm["`2` bla `1` blub `` bla `3`", a, b, c]; StringForm["`-1` bla", a]; StringForm["`2` bla", a]; StringForm["`` is Global`a", a]; StringForm["`` is Global\\`a", a]; OutputForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]; StandardForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]"#,
+      r#"StandardForm[StringForm[Integral of f: ``, Integrate[F[x], x]]]"#,
+    );
+  }
+  #[test]
+  fn my_d_1() {
+    assert_case(r#"MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]"#, r#"Null"#);
+  }
+  #[test]
+  fn my_d_2() {
+    assert_case(
+      r#"MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]; MyD[Sin[2 x], x]"#,
+      r#"MyD[Sin[2*x], x]"#,
+    );
+  }
+  #[test]
+  fn d_19() {
+    assert_case(
+      r#"MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]; MyD[Sin[2 x], x]; D[Sin[2 x], x]"#,
+      r#"2*Cos[2*x]"#,
+    );
+  }
+  #[test]
+  fn my_d_3() {
+    assert_case(
+      r#"MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]; MyD[Sin[2 x], x]; D[Sin[2 x], x]; MyD[{Sin[2], Sin[4]}, {1, 2}]"#,
+      r#"MyD[{Sin[2], Sin[4]}, {1, 2}]"#,
+    );
+  }
+  #[test]
+  fn series_5() {
+    assert_case(
+      r#"Normal[Pi]; Series[Exp[x], {x, 0, 5}]"#,
+      r#"SeriesData[x, 0, {1, 1, 1/2, 1/6, 1/24, 1/120}, 0, 6, 1]"#,
+    );
+  }
+  #[test]
+  fn normal() {
+    assert_case(
+      r#"Normal[Pi]; Series[Exp[x], {x, 0, 5}]; Normal[%]"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn integrate_12() {
+    assert_case(
+      r#"FresnelC[{0, Infinity}]; Integrate[Cos[x^2 Pi/2], {x, 0, z}]"#,
+      r#"FresnelC[z]"#,
+    );
+  }
+  #[test]
+  fn integrate_13() {
+    assert_case(
+      r#"FresnelS[{0, Infinity}]; Integrate[Sin[x^2 Pi/2], {x, 0, z}]"#,
+      r#"FresnelS[z]"#,
+    );
+  }
+  #[test]
+  fn d_20() {
+    assert_case(
+      r#"BesselJ[0, 5.2]; D[BesselJ[n, z], z]"#,
+      r#"(BesselJ[-1 + n, z] - BesselJ[1 + n, z])/2"#,
+    );
+  }
+  #[test]
+  fn bessel_j() {
+    assert_case(
+      r#"BesselJ[0, 5.2]; D[BesselJ[n, z], z]; BesselJ[0., 0.]"#,
+      r#"1."#,
+    );
+  }
+  #[test]
+  fn series_6() {
+    assert_case(
+      r#"Table[LucasL[n], {n, 1, 5}]; Series[LucasL[1/2, x], {x, 0, 5}]"#,
+      r#"SeriesData[x, 0, {1, 1/4, 1/32, -1/128, -5/2048, 7/8192}, 0, 6, 1]"#,
+    );
+  }
+  #[test]
+  fn expr_3() {
+    assert_case(
+      r#"System`Convert`B64Dump`B64Encode["Hello world"]; System`Convert`B64Dump`B64Decode[%]; System`Convert`B64Dump`B64Encode[Integrate[f[x],{x,0,2}]]"#,
+      r#"System`Convert`B64Dump`B64Encode[Integrate[f[x], {x, 0, 2}]]"#,
+    );
+  }
+  #[test]
+  fn expr_4() {
+    assert_case(
+      r#"System`Convert`B64Dump`B64Encode["Hello world"]; System`Convert`B64Dump`B64Decode[%]; System`Convert`B64Dump`B64Encode[Integrate[f[x],{x,0,2}]]; System`Convert`B64Dump`B64Decode[%]"#,
+      r#"System`Convert`B64Dump`B64Decode[Out[0]]"#,
+    );
+  }
+  #[test]
+  fn series_7() {
+    assert_case(
+      r#"Series[F[x,z],{x, g[y], 2}, {z, a, 2}]//FullForm"#,
+      r#"FullForm[SeriesData[x, g[y], {SeriesData[z, a, {F[g[y], a], Derivative[0, 1][F][g[y], a], Derivative[0, 2][F][g[y], a]/2}, 0, 3, 1], SeriesData[z, a, {Derivative[1, 0][F][g[y], a], Derivative[1, 1][F][g[y], a], Derivative[1, 2][F][g[y], a]/2}, 0, 3, 1], SeriesData[z, a, {Derivative[2, 0][F][g[y], a]/2, Derivative[2, 1][F][g[y], a]/2, Derivative[2, 2][F][g[y], a]/4}, 0, 3, 1]}, 0, 3, 1]]"#,
+    );
+  }
+  #[test]
+  fn d_21() {
+    assert_case(
+      r#"D[Series[F[x,z],{x, g[y], 2}, {z, a, 2}], y]//FullForm"#,
+      r#"FullForm[SeriesData[x, g[y], {}, 2, 2, 1]]"#,
+    );
+  }
+  #[test]
+  fn series_8() {
+    assert_case(
+      r#"D[Series[F[x,z],{x, g[y], 2}, {z, a, 2}], y]//FullForm; Series[Exp[x], {x, 0, 2}] * (x ^ (1 / 3))"#,
+      r#"SeriesData[x, 0, {1, 0, 0, 1}, 1, 7, 3]"#,
+    );
+  }
+  #[test]
+  fn series_9() {
+    assert_case(
+      r#"D[Series[F[x,z],{x, g[y], 2}, {z, a, 2}], y]//FullForm; Series[Exp[x], {x, 0, 2}] * (x ^ (1 / 3)); Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]"#,
+      r#"SeriesData[x, 0, {SeriesData[y, 0, {1, -1, 1/2}, 0, 3, 1], SeriesData[y, 0, {1, -1, 1/2}, 0, 3, 1], SeriesData[y, 0, {1/2, -1/2, 1/4}, 0, 3, 1]}, 0, 3, 1]"#,
+    );
+  }
+  #[test]
+  fn series_10() {
+    assert_case(
+      r#"D[Series[F[x,z],{x, g[y], 2}, {z, a, 2}], y]//FullForm; Series[Exp[x], {x, 0, 2}] * (x ^ (1 / 3)); Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]; Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]//Normal"#,
+      r#"1 - y + y^2/2 + x^2*(1/2 - y/2 + y^2/4) + x*(1 - y + y^2/2)"#,
+    );
+  }
+  #[test]
+  fn series_11() {
+    assert_case(
+      r#"D[Series[F[x,z],{x, g[y], 2}, {z, a, 2}], y]//FullForm; Series[Exp[x], {x, 0, 2}] * (x ^ (1 / 3)); Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]; Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]//Normal; Series[Exp[x],{x,0,3}]-1-x-x^2"#,
+      r#"SeriesData[x, 0, {-1/2, 1/6}, 2, 4, 1]"#,
+    );
+  }
+  #[test]
+  fn minus_1() {
+    assert_case(
+      r#"D[Series[F[x,z],{x, g[y], 2}, {z, a, 2}], y]//FullForm; Series[Exp[x], {x, 0, 2}] * (x ^ (1 / 3)); Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]; Series[Exp[x],{x, 0, 2}]Series[Exp[-y],{y, 0,2}]//Normal; Series[Exp[x],{x,0,3}]-1-x-x^2; (Series[Exp[x-y],{x, 0, 2},{y, 0 , 2}]//Normal)-(1-(x-y))// ExpandAll"#,
+      r#"2*x + x^2/2 - 2*y - x*y - (x^2*y)/2 + y^2/2 + (x*y^2)/2 + (x^2*y^2)/4"#,
+    );
+  }
+  #[test]
+  fn time_constrained_1() {
+    assert_case(
+      r#"TimeConstrained[Integrate[Sin[x]^1000, x];,.001]"#,
+      r#"$Aborted"#,
+    );
+  }
+  #[test]
+  fn time_constrained_2() {
+    assert_case(
+      r#"TimeConstrained[Integrate[Sin[x]^1000, x];,.001]; TimeConstrained[Integrate[Cos[x]^1000,x];,.001, Integrate[Cos[x],x]]"#,
+      r#"Sin[x]"#,
+    );
+  }
+  #[test]
+  fn d_22() {
+    assert_case(r#"D[{y, -x}[2], {x, y}]"#, r#"D[{y, -x}[2], {x, y}]"#);
+  }
+  #[test]
+  fn d_23() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand"#,
+      r#"(-2*Sin[x])/3 - (2*x*Cos[x]^2*Sin[x])/3 - (Cos[x]*Sin[x]^2)/3 + (x*Sin[x]^3)/3"#,
+    );
+  }
+  #[test]
+  fn d_24() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]"#,
+      r#"Derivative[2][f][#1]"#,
+    );
+  }
+  #[test]
+  fn d_25() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn apart_1() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]"#,
+      r#"Derivative[2][f][2*x]"#,
+    );
+  }
+  #[test]
+  fn apart_2() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]"#,
+      r#"Derivative[2][f][2*x]"#,
+    );
+  }
+  #[test]
+  fn d_26() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]"#,
+      r#"{2*#1}"#,
+    );
+  }
+  #[test]
+  fn find_root() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]"#,
+      r#"{x -> 2.5}"#,
+    );
+  }
+  #[test]
+  fn head_2() {
+    // wolframscript dumps the internal `Integrate` package's
+    // private-context rules (`Integrate`ImproperDump`f_` etc.) which
+    // are wolframscript-installation-specific and not part of
+    // Woxi's symbolic-Integrate implementation. Verify the
+    // documented contract: `DownValues[Integrate]` returns a List
+    // (empty when no user-defined rules exist, matching Woxi).
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; Head[DownValues[Integrate]] === List"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn definition() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]"#,
+      r#"Attributes[Integrate] = {Protected, ReadProtected}
+
+Options[Integrate] := {Assumptions :> $Assumptions, GenerateConditions -> Automatic, GeneratedParameters -> None, PrincipalValue -> False}"#,
+    );
+  }
+  #[test]
+  fn integrate_14() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]"#,
+      r#"Integrate[Hold[x + x], {x, a, b}]"#,
+    );
+  }
+  #[test]
+  fn integrate_15() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]"#,
+      r#"Integrate[sin[x], x]"#,
+    );
+  }
+  #[test]
+  fn integrate_16() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]"#,
+      r#"x^2/2 + 0.2222222222222222*x^(9/2)"#,
+    );
+  }
+  #[test]
+  fn integrate_17() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]"#,
+      r#"(-"p" + "q")*F[a, "x"]"#,
+    );
+  }
+  #[test]
+  fn integrate_18() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]"#,
+      r#"(ArcTan*x^2)/2"#,
+    );
+  }
+  #[test]
+  fn integrate_19() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]"#,
+      r#"Integrate[E[x], x]"#,
+    );
+  }
+  #[test]
+  fn integrate_20() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]"#,
+      r#"2*Sqrt[Pi]"#,
+    );
+  }
+  #[test]
+  fn integrate_21() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]"#,
+      r#"x/E^x^(-2) + Sqrt[Pi]*Erf[x^(-1)]"#,
+    );
+  }
+  #[test]
+  fn expression_1() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'"#,
+      r#"Derivative[1][True]"#,
+    );
+  }
+  #[test]
+  fn expression_2() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'"#,
+      r#"Derivative[1][False]"#,
+    );
+  }
+  #[test]
+  fn expression_3() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'; List'"#,
+      r#"{1}&"#,
+    );
+  }
+  #[test]
+  fn expression_4() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'; List'; 1'"#,
+      r#"0&"#,
+    );
+  }
+  #[test]
+  fn minus_2() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'; List'; 1'; -1.4'"#,
+      r#"-(0&)"#,
+    );
+  }
+  #[test]
+  fn divide_5() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'; List'; 1'; -1.4'; (2/3)'"#,
+      r#"0&"#,
+    );
+  }
+  #[test]
+  fn expression_5() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'; List'; 1'; -1.4'; (2/3)'; I'"#,
+      r#"0&"#,
+    );
+  }
+  #[test]
+  fn derivative_10() {
+    assert_case(
+      r#"D[2/3 Cos[x] - 1/3 x Cos[x] Sin[x] ^ 2,x]//Expand; D[f[#1], {#1,2}]; D[(#1&)[t],{t,4}]; Attributes[f] ={HoldAll}; Apart[f''[x + x]]; Attributes[f] = {}; Apart[f''[x + x]]; D[{#^2}, #]; FindRoot[2.5==x,{x,0}]; DownValues[Integrate]; Definition[Integrate]; Integrate[Hold[x + x], {x, a, b}]; Integrate[sin[x], x]; Integrate[x ^ 3.5 + x, x]; Integrate[F[a, "x"],{x,"p","q"}]; Integrate[ArcTan(x), x]; Integrate[E[x], x]; Integrate[Exp[-(x/2)^2],{x,-Infinity,+Infinity}]; Integrate[Exp[-1/(x^2)], x]; True'; False'; List'; 1'; -1.4'; (2/3)'; I'; Derivative[0,0,1][List]"#,
+      r#"{0, 0, 1}&"#,
+    );
+  }
+  #[test]
+  fn d_solve_7() {
+    assert_case(
+      r#"DSolve[f'[x] == f[x], f, x] // FullForm"#,
+      r#"FullForm[{{f -> Function[{x}, E^x*C[1]]}}]"#,
+    );
+  }
+  #[test]
+  fn d_solve_8() {
+    // ReplaceAll on the DSolve result must descend into the
+    // `Function[{x}, …]` body so the C[1] → 1 rule fires there.
+    assert_case(
+      r#"DSolve[f'[x] == f[x], f, x] // FullForm; DSolve[f'[x] == f[x], f, x] /. {C[1] -> 1}"#,
+      r#"{{f -> Function[{x}, E^x*1]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_9() {
+    assert_case(
+      r#"DSolve[f'[x] == f[x], f, x] // FullForm; DSolve[f'[x] == f[x], f, x] /. {C[1] -> 1}; DSolve[f'[x] == f[x], f, x] /. {C -> D}"#,
+      r#"{{f -> Function[{x}, E^x*D[1]]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_10() {
+    assert_case(
+      r#"DSolve[f'[x] == f[x], f, x] // FullForm; DSolve[f'[x] == f[x], f, x] /. {C[1] -> 1}; DSolve[f'[x] == f[x], f, x] /. {C -> D}; DSolve[f'[x] == f[x], f, x] /. {C[1] -> C[0]}"#,
+      r#"{{f -> Function[{x}, E^x*C[0]]}}"#,
+    );
+  }
+  #[test]
+  fn limit_4() {
+    assert_case(r#"Limit[Tan[x], x->Pi/2]"#, r#"Indeterminate"#);
+  }
+  #[test]
+  fn limit_5() {
+    assert_case(
+      r#"Limit[Tan[x], x->Pi/2]; Limit[Cot[x], x->0]"#,
+      r#"Indeterminate"#,
+    );
+  }
+  #[test]
+  fn limit_6() {
+    assert_case(
+      r#"Limit[Tan[x], x->Pi/2]; Limit[Cot[x], x->0]; Limit[Cot[x], x->Infinity]"#,
+      r#"Indeterminate"#,
+    );
+  }
+  #[test]
+  fn limit_7() {
+    assert_case(
+      r#"Limit[Tan[x], x->Pi/2]; Limit[Cot[x], x->0]; Limit[Cot[x], x->Infinity]; Limit[Cot[x], x->-Infinity]"#,
+      r#"Indeterminate"#,
+    );
+  }
+}

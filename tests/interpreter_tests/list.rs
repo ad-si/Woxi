@@ -7561,3 +7561,1871 @@ mod option_value_string_key {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn list_literal() {
+    assert_case(r#"{{1, 3}, {5, 7}}[[All, 1]]"#, r#"{1, 5}"#);
+  }
+  #[test]
+  fn take_1() {
+    assert_case(
+      r#"{{1, 3}, {5, 7}}[[All, 1]]; Take[{{1, 3}, {5, 7}}, All, {1}]"#,
+      r#"{{1}, {5}}"#,
+    );
+  }
+  #[test]
+  fn nest_list_1() {
+    assert_case(
+      r#"NestList[#^2 + 1 &, 1, 7]"#,
+      r#"{1, 2, 5, 26, 677, 458330, 210066388901, 44127887745906175987802}"#,
+    );
+  }
+  #[test]
+  fn table_1() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]"#,
+      r#"{0, 1, 9, 36, 100}"#,
+    );
+  }
+  #[test]
+  fn sum_1() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]"#,
+      r#"HarmonicNumber[n, 2]"#,
+    );
+  }
+  #[test]
+  fn sum_2() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]"#,
+      r#"(3*n*(1 + n))/2"#,
+    );
+  }
+  #[test]
+  fn sum_3() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]"#,
+      r#"1 + 2*I"#,
+    );
+  }
+  #[test]
+  fn sum_4() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]; Sum[k, {k, Range[5]}]"#,
+      r#"15"#,
+    );
+  }
+  #[test]
+  fn sum_5() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]; Sum[k, {k, Range[5]}]; Sum[f[i], {i, 1, 7}]"#,
+      r#"f[1] + f[2] + f[3] + f[4] + f[5] + f[6] + f[7]"#,
+    );
+  }
+  #[test]
+  fn sum_6() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]; Sum[k, {k, Range[5]}]; Sum[f[i], {i, 1, 7}]; Sum[x ^ 2, {x, 1, y}] - y * (y + 1) * (2 * y + 1) / 6"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn sum_7() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]; Sum[k, {k, Range[5]}]; Sum[f[i], {i, 1, 7}]; Sum[x ^ 2, {x, 1, y}] - y * (y + 1) * (2 * y + 1) / 6; Sum[i, {i, 1, 2.5}]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn sum_8() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]; Sum[k, {k, Range[5]}]; Sum[f[i], {i, 1, 7}]; Sum[x ^ 2, {x, 1, y}] - y * (y + 1) * (2 * y + 1) / 6; Sum[i, {i, 1, 2.5}]; Sum[i, {i, 1.1, 2.5}]"#,
+      r#"3.2"#,
+    );
+  }
+  #[test]
+  fn sum_9() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]; Table[ Sum[i * j, {i, 0, n}, {j, 0, n}], {n, 0, 4} ]; Sum[1 / k ^ 2, {k, 1, n}]; Sum[k, {k, n, 2 n}]; Sum[k, {k, I, I + 1}]; Sum[k, {k, Range[5]}]; Sum[f[i], {i, 1, 7}]; Sum[x ^ 2, {x, 1, y}] - y * (y + 1) * (2 * y + 1) / 6; Sum[i, {i, 1, 2.5}]; Sum[i, {i, 1.1, 2.5}]; Sum[k, {k, I, I + 1.5}]"#,
+      r#"1 + 2*I"#,
+    );
+  }
+  #[test]
+  fn reverse_sort_1() {
+    assert_case(r#"ReverseSort[{c, b, d, a}]"#, r#"{d, c, b, a}"#);
+  }
+  #[test]
+  fn reverse_sort_2() {
+    assert_case(
+      r#"ReverseSort[{c, b, d, a}]; ReverseSort[{1, 2, 0, 3}, Less]"#,
+      r#"{3, 2, 1, 0}"#,
+    );
+  }
+  #[test]
+  fn reverse_sort_3() {
+    assert_case(
+      r#"ReverseSort[{c, b, d, a}]; ReverseSort[{1, 2, 0, 3}, Less]; ReverseSort[{1, 2, 0, 3}, Greater]"#,
+      r#"{0, 1, 2, 3}"#,
+    );
+  }
+  #[test]
+  fn sort_1() {
+    assert_case(r#"Sort[{4, 1.0, a, 3+I}]"#, r#"{1., 3 + I, 4, a}"#);
+  }
+  #[test]
+  fn list_log_plot_1() {
+    assert_case(
+      r#"ListLogPlot[Table[Fibonacci[n], {n, 10}]]"#,
+      r#"Graphics[{{}, Annotation[{{Annotation[{Directive[PointSize[0.012833333333333334], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]], Point[{{1., 0.}, {2., 0.}, {3., 0.6931471805599453}, {4., 1.0986122886681098}, {5., 1.6094379124341003}, {6., 2.0794415416798357}, {7., 2.5649493574615367}, {8., 3.044522437723423}, {9., 3.5263605246161616}, {10., 4.007333185232471}}]}, "Charting`Private`Tag#1"]}}, <|"HighlightElements" -> <|"Label" -> {"XYLabel"}, "Ball" -> {"IndicatedBall"}|>, "LayoutOptions" -> <|"PanelPlotLayout" -> <||>, "PlotRange" -> {{0., 10.}, {-0.31359656347995973, 4.007333185232471}}, "Frame" -> {{False, False}, {False, False}}, "AxesOrigin" -> {0., -0.31359656347995973}, "ImageSize" -> {360, 360/GoldenRatio}, "Axes" -> {True, True}, "LabelStyle" -> {}, "AspectRatio" -> GoldenRatio^(-1), "DefaultStyle" -> {Directive[PointSize[0.012833333333333334], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]]}, "HighlightLabelingFunctions" -> <|"CoordinatesToolOptions" -> ({(Identity[#1] & )[#1[[1]]], (Exp[#1] & )[#1[[2]]]} & ), "ScalingFunctions" -> {{Identity, Identity}, {Log, Exp}}|>, "Primitives" -> {}, "GCFlag" -> False|>, "Meta" -> <|"DefaultHighlight" -> {"Dynamic", None}, "Index" -> {}, "Function" -> ListLogPlot, "GroupHighlight" -> False|>|>, "DynamicHighlight"], {{}, {}}}, {DisplayFunction -> Identity, GridLines -> {None, None}, DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {"PlotGraphics", "Graphics"}, DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {"PlotGraphics", "Graphics"}, DisplayFunction -> Identity, DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {"PlotGraphics", "Graphics"}, AspectRatio -> GoldenRatio^(-1), Axes -> {True, True}, AxesLabel -> {None, None}, AxesOrigin -> {0., -0.31359656347995973}, DisplayFunction :> Identity, Frame -> {{False, False}, {False, False}}, FrameLabel -> {{None, None}, {None, None}}, FrameTicks -> {{Charting`ScaledTicks[{Log, Exp}, {Log, Exp}, "Nice", WorkingPrecision -> 15.954589770191003, RotateLabel -> 0], Charting`ScaledFrameTicks[{Log, Exp}]}, {Automatic, Automatic}}, GridLines -> {None, None}, GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]], Method -> {"AxisPadding" -> Scaled[0.02], "DefaultBoundaryStyle" -> Automatic, "DefaultGraphicsInteraction" -> {"Version" -> 1.2, "TrackMousePosition" -> {True, False}, "Effects" -> {"Highlight" -> {"ratio" -> 2}, "HighlightPoint" -> {"ratio" -> 2}, "Droplines" -> {"freeformCursorMode" -> True, "placement" -> {"x" -> "All", "y" -> "None"}}}}, "DefaultMeshStyle" -> AbsolutePointSize[6], "DefaultPlotStyle" -> {Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]], Directive[RGBColor[0.95, 0.627, 0.1425], AbsoluteThickness[2]], Directive[RGBColor[0.455, 0.7, 0.21], AbsoluteThickness[2]], Directive[RGBColor[0.922526, 0.385626, 0.209179], AbsoluteThickness[2]], Directive[RGBColor[0.578, 0.51, 0.85], AbsoluteThickness[2]], Directive[RGBColor[0.772079, 0.431554, 0.102387], AbsoluteThickness[2]], Directive[RGBColor[0.4, 0.64, 1.], AbsoluteThickness[2]], Directive[RGBColor[1., 0.75, 0.], AbsoluteThickness[2]], Directive[RGBColor[0.8, 0.4, 0.76], AbsoluteThickness[2]], Directive[RGBColor[0.637, 0.65, 0.], AbsoluteThickness[2]], Directive[RGBColor[0.915, 0.3325, 0.2125], AbsoluteThickness[2]], Directive[RGBColor[0.40082222609352647, 0.5220066643438841, 0.85], AbsoluteThickness[2]], Directive[RGBColor[0.9728288904374106, 0.621644452187053, 0.07336199581899142], AbsoluteThickness[2]], Directive[RGBColor[0.736782672705901, 0.358, 0.5030266573755369], AbsoluteThickness[2]], Directive[RGBColor[0.28026441037696703, 0.715, 0.4292089322474965], AbsoluteThickness[2]]}, "DomainPadding" -> Scaled[0.02], "PointSizeFunction" -> "SmallPointSize", "RangePadding" -> Scaled[0.05], "OptimizePlotMarkers" -> True, "IncludeHighlighting" -> Automatic, "HighlightStyle" -> Automatic, "OptimizePlotMarkers" -> True, "IncludeHighlighting" -> "CurrentPoint", "HighlightStyle" -> Automatic, "OptimizePlotMarkers" -> True, "CoordinatesToolOptions" -> {"DisplayFunction" -> ({(Identity[#1] & )[#1[[1]]], (Exp[#1] & )[#1[[2]]]} & ), "CopiedValueFunction" -> ({(Identity[#1] & )[#1[[1]]], (Exp[#1] & )[#1[[2]]]} & )}}, PlotInteractivity :> <|"SystemLimits" -> 3000, "UserLimits" -> 10000, "UserInteractivity" -> True|>, PlotRange -> {{0., 10.}, {-0.31359656347995973, 4.007333185232471}}, PlotRangeClipping -> True, PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, {Scaled[0.02], Scaled[0.05]}}, Ticks -> {Automatic, Charting`ScaledTicks[{Log, Exp}, {Log, Exp}, "Nice", WorkingPrecision -> 15.954589770191003, RotateLabel -> 0]}, PlotInteractivity :> $PlotInteractivity}]"#,
+    );
+  }
+  #[test]
+  fn list_log_plot_2() {
+    assert_case(
+      r#"ListLogPlot[Table[Fibonacci[n], {n, 10}]]; ListLogPlot[Table[n!, {n, 10}], Joined -> True]"#,
+      r#"Graphics[{{}, Annotation[{{{}, {}, Annotation[{Hue[0.67, 0.6, 0.6], Directive[PointSize[0.012833333333333334], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]], Line[{{1., 0.}, {2., 0.6931471805599453}, {3., 1.791759469228055}, {4., 3.1780538303479458}, {5., 4.787491742782046}, {6., 6.579251212010101}, {7., 8.525161361065415}, {8., 10.60460290274525}, {9., 12.801827480081469}, {10., 15.104412573075516}}]}, "Charting`Private`Tag#1"]}}, <|"HighlightElements" -> <|"Label" -> {"XYLabel"}, "Ball" -> {"IndicatedBall"}|>, "LayoutOptions" -> <|"PanelPlotLayout" -> <||>, "PlotRange" -> {{0., 10.}, {-1.1820060018356562, 15.104412573075516}}, "Frame" -> {{False, False}, {False, False}}, "AxesOrigin" -> {0., -1.1820060018356562}, "ImageSize" -> {360, 360/GoldenRatio}, "Axes" -> {True, True}, "LabelStyle" -> {}, "AspectRatio" -> GoldenRatio^(-1), "DefaultStyle" -> {Directive[PointSize[0.012833333333333334], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]]}, "HighlightLabelingFunctions" -> <|"CoordinatesToolOptions" -> ({(Identity[#1] & )[#1[[1]]], (Exp[#1] & )[#1[[2]]]} & ), "ScalingFunctions" -> {{Identity, Identity}, {Log, Exp}}|>, "Primitives" -> {}, "GCFlag" -> False|>, "Meta" -> <|"DefaultHighlight" -> {"Dynamic", None}, "Index" -> {}, "Function" -> ListLogPlot, "GroupHighlight" -> False|>|>, "DynamicHighlight"], {{}, {}}}, {DisplayFunction -> Identity, GridLines -> {None, None}, DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {"PlotGraphics", "Graphics"}, DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {"PlotGraphics", "Graphics"}, DisplayFunction -> Identity, DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {"PlotGraphics", "Graphics"}, AspectRatio -> GoldenRatio^(-1), Axes -> {True, True}, AxesLabel -> {None, None}, AxesOrigin -> {0., -1.1820060018356562}, DisplayFunction :> Identity, Frame -> {{False, False}, {False, False}}, FrameLabel -> {{None, None}, {None, None}}, FrameTicks -> {{Charting`ScaledTicks[{Log, Exp}, {Log, Exp}, "Nice", WorkingPrecision -> 15.954589770191003, RotateLabel -> 0], Charting`ScaledFrameTicks[{Log, Exp}]}, {Automatic, Automatic}}, GridLines -> {None, None}, GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]], Method -> {"AxisPadding" -> Scaled[0.02], "DefaultBoundaryStyle" -> Automatic, "DefaultGraphicsInteraction" -> {"Version" -> 1.2, "TrackMousePosition" -> {True, False}, "Effects" -> {"Highlight" -> {"ratio" -> 2}, "HighlightPoint" -> {"ratio" -> 2}, "Droplines" -> {"freeformCursorMode" -> True, "placement" -> {"x" -> "All", "y" -> "None"}}}}, "DefaultMeshStyle" -> AbsolutePointSize[6], "DefaultPlotStyle" -> {Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]], Directive[RGBColor[0.95, 0.627, 0.1425], AbsoluteThickness[2]], Directive[RGBColor[0.455, 0.7, 0.21], AbsoluteThickness[2]], Directive[RGBColor[0.922526, 0.385626, 0.209179], AbsoluteThickness[2]], Directive[RGBColor[0.578, 0.51, 0.85], AbsoluteThickness[2]], Directive[RGBColor[0.772079, 0.431554, 0.102387], AbsoluteThickness[2]], Directive[RGBColor[0.4, 0.64, 1.], AbsoluteThickness[2]], Directive[RGBColor[1., 0.75, 0.], AbsoluteThickness[2]], Directive[RGBColor[0.8, 0.4, 0.76], AbsoluteThickness[2]], Directive[RGBColor[0.637, 0.65, 0.], AbsoluteThickness[2]], Directive[RGBColor[0.915, 0.3325, 0.2125], AbsoluteThickness[2]], Directive[RGBColor[0.40082222609352647, 0.5220066643438841, 0.85], AbsoluteThickness[2]], Directive[RGBColor[0.9728288904374106, 0.621644452187053, 0.07336199581899142], AbsoluteThickness[2]], Directive[RGBColor[0.736782672705901, 0.358, 0.5030266573755369], AbsoluteThickness[2]], Directive[RGBColor[0.28026441037696703, 0.715, 0.4292089322474965], AbsoluteThickness[2]]}, "DomainPadding" -> Scaled[0.02], "PointSizeFunction" -> "SmallPointSize", "RangePadding" -> Scaled[0.05], "OptimizePlotMarkers" -> True, "IncludeHighlighting" -> Automatic, "HighlightStyle" -> Automatic, "OptimizePlotMarkers" -> True, "IncludeHighlighting" -> "CurrentSet", "HighlightStyle" -> Automatic, "OptimizePlotMarkers" -> True, "CoordinatesToolOptions" -> {"DisplayFunction" -> ({(Identity[#1] & )[#1[[1]]], (Exp[#1] & )[#1[[2]]]} & ), "CopiedValueFunction" -> ({(Identity[#1] & )[#1[[1]]], (Exp[#1] & )[#1[[2]]]} & )}}, PlotInteractivity :> <|"SystemLimits" -> 3000, "UserLimits" -> 10000, "UserInteractivity" -> True|>, PlotRange -> {{0., 10.}, {-1.1820060018356562, 15.104412573075516}}, PlotRangeClipping -> True, PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, {Scaled[0.02], Scaled[0.05]}}, Ticks -> {Automatic, Charting`ScaledTicks[{Log, Exp}, {Log, Exp}, "Nice", WorkingPrecision -> 15.954589770191003, RotateLabel -> 0]}, PlotInteractivity :> $PlotInteractivity}]"#,
+    );
+  }
+  #[test]
+  fn number_line_plot_1() {
+    assert_case(
+      r#"NumberLinePlot[Prime[Range[10]]]"#,
+      r#"Graphics[{{RGBColor[0.24720000000000017, 0.24, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{2, 1}]}}, {RGBColor[0.6, 0.24, 0.4428931686004542], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{3, 1}]}}, {RGBColor[0.6, 0.5470136627990908, 0.24], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{5, 1}]}}, {RGBColor[0.24, 0.6, 0.33692049419863584], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{7, 1}]}}, {RGBColor[0.24, 0.35317267440181815, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{11, 1}]}}, {RGBColor[0.6, 0.24, 0.5632658430022722], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{13, 1}]}}, {RGBColor[0.6, 0.4266409883972719, 0.24], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{17, 1}]}}, {RGBColor[0.2634521802031821, 0.6, 0.24], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{19, 1}]}}, {RGBColor[0.24, 0.47354534880363613, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{23, 1}]}}, {RGBColor[0.5163614825959097, 0.24, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{29, 1}]}}}, AxesLabel -> {None}, Ticks -> {Automatic, Automatic}, FrameTicks -> {{Automatic, Automatic}, {Automatic, Automatic}}, PlotRange -> {{2., 29.}, {0, 1}}, PlotRangePadding -> {{Scaled[0.1], Scaled[0.1]}, {0, 1}}, AspectRatio -> 1/(10*GoldenRatio), AxesOrigin -> {Automatic, Automatic}, Axes -> {True, False}, ImagePadding -> All, {}]"#,
+    );
+  }
+  #[test]
+  fn number_line_plot_2() {
+    assert_case(
+      r#"NumberLinePlot[Prime[Range[10]]]; NumberLinePlot[Table[x^2, {x, 10}]]"#,
+      r#"Graphics[{{RGBColor[0.24720000000000017, 0.24, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{1, 1}]}}, {RGBColor[0.6, 0.24, 0.4428931686004542], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{4, 1}]}}, {RGBColor[0.6, 0.5470136627990908, 0.24], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{9, 1}]}}, {RGBColor[0.24, 0.6, 0.33692049419863584], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{16, 1}]}}, {RGBColor[0.24, 0.35317267440181815, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{25, 1}]}}, {RGBColor[0.6, 0.24, 0.5632658430022722], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{36, 1}]}}, {RGBColor[0.6, 0.4266409883972719, 0.24], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{49, 1}]}}, {RGBColor[0.2634521802031821, 0.6, 0.24], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{64, 1}]}}, {RGBColor[0.24, 0.47354534880363613, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{81, 1}]}}, {RGBColor[0.5163614825959097, 0.24, 0.6], PointSize[Medium], Directive[RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[1.6]], {Point[{100, 1}]}}}, AxesLabel -> {None}, Ticks -> {Automatic, Automatic}, FrameTicks -> {{Automatic, Automatic}, {Automatic, Automatic}}, PlotRange -> {{1., 100.}, {0, 1}}, PlotRangePadding -> {{Scaled[0.1], Scaled[0.1]}, {0, 1}}, AspectRatio -> 1/(10*GoldenRatio), AxesOrigin -> {Automatic, Automatic}, Axes -> {True, False}, ImagePadding -> All, {}]"#,
+    );
+  }
+  #[test]
+  fn precision() {
+    assert_case(
+      r#"AnglePath[{90 Degree, 90 Degree, 90 Degree, 90 Degree}]; AnglePath[{{1, 1}, 90 Degree}, {{1, 90 Degree}, {2, 90 Degree}, {1, 90 Degree}, {2, 90 Degree}}]; AnglePath[{a, b}]; Precision[Part[AnglePath[{N[1/3, 100], N[2/3, 100]}], 2, 1]]"#,
+      r#"100.9377270205895"#,
+    );
+  }
+  #[test]
+  fn from_continued_fraction() {
+    assert_case(
+      r#"FromContinuedFraction[{3, 7, 15, 1, 292, 1, 1, 1, 2, 1}]; FromContinuedFraction[Range[5]]"#,
+      r#"225 / 157"#,
+    );
+  }
+  #[test]
+  fn table_2() {
+    assert_case(
+      r#"Table[JacobiSymbol[n, m], {n, 0, 10}, {m, 1, n, 2}]"#,
+      r#"{{}, {1}, {1}, {1, 0}, {1, 1}, {1, -1, 0}, {1, 0, 1}, {1, 1, -1, 0}, {1, -1, -1, 1}, {1, 0, 1, 1, 0}, {1, 1, 0, -1, 1}}"#,
+    );
+  }
+  #[test]
+  fn table_3() {
+    assert_case(
+      r#"Table[KroneckerSymbol[n, m], {n, 5}, {m, 5}]"#,
+      r#"{{1, 1, 1, 1, 1}, {1, 0, -1, 0, -1}, {1, -1, 0, 1, -1}, {1, 0, 1, 0, 1}, {1, -1, -1, 1, 0}}"#,
+    );
+  }
+  #[test]
+  fn table_4() {
+    assert_case(
+      r#"Table[PartitionsP[k], {k, -2, 12}]"#,
+      r#"{0, 0, 1, 1, 2, 3, 5, 7, 11, 15, 22, 30, 42, 56, 77}"#,
+    );
+  }
+  #[test]
+  fn table_5() {
+    assert_case(
+      r#"Table[SquaresR[2, n], {n, 10}]"#,
+      r#"{4, 4, 0, 4, 8, 0, 0, 4, 4, 8}"#,
+    );
+  }
+  #[test]
+  fn table_6() {
+    assert_case(
+      r#"Table[SquaresR[2, n], {n, 10}]; Table[Sum[SquaresR[2, k], {k, 0, n^2}], {n, 5}]"#,
+      r#"{5, 13, 29, 49, 81}"#,
+    );
+  }
+  #[test]
+  fn table_7() {
+    assert_case(
+      r#"Table[SquaresR[2, n], {n, 10}]; Table[Sum[SquaresR[2, k], {k, 0, n^2}], {n, 5}]; Table[SquaresR[4, n], {n, 10}]"#,
+      r#"{8, 24, 32, 24, 48, 96, 64, 24, 104, 144}"#,
+    );
+  }
+  #[test]
+  fn table_8() {
+    assert_case(
+      r#"Table[SquaresR[2, n], {n, 10}]; Table[Sum[SquaresR[2, k], {k, 0, n^2}], {n, 5}]; Table[SquaresR[4, n], {n, 10}]; Table[SquaresR[6, n], {n, 10}]"#,
+      r#"{12, 60, 160, 252, 312, 544, 960, 1020, 876, 1560}"#,
+    );
+  }
+  #[test]
+  fn table_9() {
+    assert_case(
+      r#"Table[SquaresR[2, n], {n, 10}]; Table[Sum[SquaresR[2, k], {k, 0, n^2}], {n, 5}]; Table[SquaresR[4, n], {n, 10}]; Table[SquaresR[6, n], {n, 10}]; Table[SquaresR[8, n], {n, 10}]"#,
+      r#"{16, 112, 448, 1136, 2016, 3136, 5504, 9328, 12112, 14112}"#,
+    );
+  }
+  #[test]
+  fn member_q_1() {
+    assert_case(r#"$PrintForms; MemberQ[$PrintForms, MyForm]"#, r#"False"#);
+  }
+  #[test]
+  fn table_form() {
+    assert_case(
+      r#"TableForm[Array[a, {3,2}],TableDepth->1]"#,
+      r#"TableForm[{{a[1, 1], a[1, 2]}, {a[2, 1], a[2, 2]}, {a[3, 1], a[3, 2]}}, TableDepth -> 1]"#,
+    );
+  }
+  #[test]
+  fn array_1() {
+    assert_case(
+      r#"Array[a,{4,3}]//MatrixForm"#,
+      r#"MatrixForm[{{a[1, 1], a[1, 2], a[1, 3]}, {a[2, 1], a[2, 2], a[2, 3]}, {a[3, 1], a[3, 2], a[3, 3]}, {a[4, 1], a[4, 2], a[4, 3]}}]"#,
+    );
+  }
+  #[test]
+  fn nearest_1() {
+    assert_case(r#"Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12]"#, r#"{11}"#);
+  }
+  #[test]
+  fn nearest_2() {
+    assert_case(
+      r#"Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12]; Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12, {All, 5}]"#,
+      r#"{11, 10, 14, 15, 8.5}"#,
+    );
+  }
+  #[test]
+  fn nearest_3() {
+    assert_case(
+      r#"Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12]; Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12, {All, 5}]; Nearest[{Blue -> "blue", White -> "white", Red -> "red", Green -> "green"}, {Orange, Gray}]; Nearest[{{0, 1}, {1, 2}, {2, 3}} -> {a, b, c}, {1.1, 2}]"#,
+      r#"{b}"#,
+    );
+  }
+  #[test]
+  fn list_q_1() {
+    assert_case(r#"ListQ[{1, 2, 3}]"#, r#"True"#);
+  }
+  #[test]
+  fn list_q_2() {
+    assert_case(r#"ListQ[{1, 2, 3}]; ListQ[{{1, 2}, {3, 4}}]"#, r#"True"#);
+  }
+  #[test]
+  fn list_q_3() {
+    assert_case(
+      r#"ListQ[{1, 2, 3}]; ListQ[{{1, 2}, {3, 4}}]; ListQ[x]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn ordered_q_1() {
+    assert_case(r#"OrderedQ[{a, b}]"#, r#"True"#);
+  }
+  #[test]
+  fn ordered_q_2() {
+    assert_case(r#"OrderedQ[{a, b}]; OrderedQ[{b, a}]"#, r#"False"#);
+  }
+  #[test]
+  fn any_true_1() {
+    assert_case(r#"AnyTrue[{1, 3, 5}, EvenQ]"#, r#"False"#);
+  }
+  #[test]
+  fn any_true_2() {
+    assert_case(
+      r#"AnyTrue[{1, 3, 5}, EvenQ]; AnyTrue[{1, 4, 5}, EvenQ]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn all_true_1() {
+    assert_case(r#"AllTrue[{2, 4, 6}, EvenQ]"#, r#"True"#);
+  }
+  #[test]
+  fn all_true_2() {
+    assert_case(
+      r#"AllTrue[{2, 4, 6}, EvenQ]; AllTrue[{2, 4, 7}, EvenQ]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn none_true_1() {
+    assert_case(r#"NoneTrue[{1, 3, 5}, EvenQ]"#, r#"True"#);
+  }
+  #[test]
+  fn none_true_2() {
+    assert_case(
+      r#"NoneTrue[{1, 3, 5}, EvenQ]; NoneTrue[{1, 4, 5}, EvenQ]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn array_q_1() {
+    assert_case(r#"ArrayQ[a]"#, r#"False"#);
+  }
+  #[test]
+  fn array_q_2() {
+    assert_case(r#"ArrayQ[a]; ArrayQ[{a}]"#, r#"True"#);
+  }
+  #[test]
+  fn array_q_3() {
+    assert_case(
+      r#"ArrayQ[a]; ArrayQ[{a}]; ArrayQ[{{{a}},{{b,c}}}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn array_q_4() {
+    assert_case(
+      r#"ArrayQ[a]; ArrayQ[{a}]; ArrayQ[{{{a}},{{b,c}}}]; ArrayQ[{{a, b}, {c, d}}, 2, SymbolQ]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn level_q_1() {
+    assert_case(r#"LevelQ[2]"#, r#"LevelQ[2]"#);
+  }
+  #[test]
+  fn level_q_2() {
+    assert_case(r#"LevelQ[2]; LevelQ[{2, 4}]"#, r#"LevelQ[{2, 4}]"#);
+  }
+  #[test]
+  fn level_q_3() {
+    assert_case(
+      r#"LevelQ[2]; LevelQ[{2, 4}]; LevelQ[Infinity]"#,
+      r#"LevelQ[Infinity]"#,
+    );
+  }
+  #[test]
+  fn level_q_4() {
+    assert_case(
+      r#"LevelQ[2]; LevelQ[{2, 4}]; LevelQ[Infinity]; LevelQ[a + b]"#,
+      r#"LevelQ[a + b]"#,
+    );
+  }
+  #[test]
+  fn member_q_2() {
+    assert_case(r#"MemberQ[{a, b, c}, b]"#, r#"True"#);
+  }
+  #[test]
+  fn member_q_3() {
+    assert_case(
+      r#"MemberQ[{a, b, c}, b]; MemberQ[{a, b, c}, d]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn member_q_4() {
+    assert_case(
+      r#"MemberQ[{a, b, c}, b]; MemberQ[{a, b, c}, d]; MemberQ[{"a", b, f[x]}, _?NumericQ]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn member_q_5() {
+    assert_case(
+      r#"MemberQ[{a, b, c}, b]; MemberQ[{a, b, c}, d]; MemberQ[{"a", b, f[x]}, _?NumericQ]; MemberQ[_List][{{}}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn subset_q_1() {
+    assert_case(r#"SubsetQ[{1, 2, 3}, {3, 1}]"#, r#"True"#);
+  }
+  #[test]
+  fn subset_q_2() {
+    assert_case(r#"SubsetQ[{1, 2, 3}, {3, 1}]; SubsetQ[{}, {}]"#, r#"True"#);
+  }
+  #[test]
+  fn subset_q_3() {
+    assert_case(
+      r#"SubsetQ[{1, 2, 3}, {3, 1}]; SubsetQ[{}, {}]; SubsetQ[{1, 2, 3}, {}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn subset_q_4() {
+    assert_case(
+      r#"SubsetQ[{1, 2, 3}, {3, 1}]; SubsetQ[{}, {}]; SubsetQ[{1, 2, 3}, {}]; SubsetQ[{1, 2, 3}, {1, 2, 3}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn select_1() {
+    assert_case(
+      r#"PrimeQ[2]; PrimeQ[-3]; PrimeQ[137]; PrimeQ[2 ^ 127 - 1]; Select[Range[100], PrimeQ]"#,
+      r#"{2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97}"#,
+    );
+  }
+  #[test]
+  fn prime_q() {
+    assert_case(
+      r#"PrimeQ[2]; PrimeQ[-3]; PrimeQ[137]; PrimeQ[2 ^ 127 - 1]; Select[Range[100], PrimeQ]; PrimeQ[Range[20]]"#,
+      r#"{False, True, True, False, True, False, True, False, False, False, True, False, True, False, False, False, True, False, True, False}"#,
+    );
+  }
+  #[test]
+  fn table_10() {
+    assert_case(
+      r#"Table[PauliMatrix[i], {i, 1, 3}]"#,
+      r#"{{{0, 1}, {1, 0}}, {{0, -I}, {I, 0}}, {{1, 0}, {0, -1}}}"#,
+    );
+  }
+  #[test]
+  fn pauli_matrix() {
+    assert_case(
+      r#"Table[PauliMatrix[i], {i, 1, 3}]; PauliMatrix[1] . PauliMatrix[2] == I PauliMatrix[3]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn character_encodings() {
+    assert_case(
+      r#"$CharacterEncodings[[;;9]]"#,
+      r#"{"AdobeStandard", "ASCII", "CP936", "CP949", "CP950", "EUC-JP", "EUC", "IBM-850", "ISO8859-10"}"#,
+    );
+  }
+  #[test]
+  fn accumulate() {
+    assert_case(r#"Accumulate[{1, 2, 3}]"#, r#"{1, 3, 6}"#);
+  }
+  #[test]
+  fn depth_1() {
+    assert_case(r#"Depth[x]"#, r#"1"#);
+  }
+  #[test]
+  fn depth_2() {
+    assert_case(r#"Depth[x]; Depth[x + y]"#, r#"2"#);
+  }
+  #[test]
+  fn depth_3() {
+    assert_case(r#"Depth[x]; Depth[x + y]; Depth[{{{{x}}}}]"#, r#"5"#);
+  }
+  #[test]
+  fn depth_4() {
+    assert_case(
+      r#"Depth[x]; Depth[x + y]; Depth[{{{{x}}}}]; Depth[1 + 2 I]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn depth_5() {
+    assert_case(
+      r#"Depth[x]; Depth[x + y]; Depth[{{{{x}}}}]; Depth[1 + 2 I]; Depth[f[a, b][c]]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn contains_only_1() {
+    assert_case(r#"ContainsOnly[{b, a, a}, {a, b, c}]"#, r#"True"#);
+  }
+  #[test]
+  fn contains_only_2() {
+    assert_case(
+      r#"ContainsOnly[{b, a, a}, {a, b, c}]; ContainsOnly[{b, a, d}, {a, b, c}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn contains_only_3() {
+    assert_case(
+      r#"ContainsOnly[{b, a, a}, {a, b, c}]; ContainsOnly[{b, a, d}, {a, b, c}]; ContainsOnly[{}, {a, b, c}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn contains_only_4() {
+    assert_case(
+      r#"ContainsOnly[{b, a, a}, {a, b, c}]; ContainsOnly[{b, a, d}, {a, b, c}]; ContainsOnly[{}, {a, b, c}]; ContainsOnly[{a, 1.0}, {1, a, b}, {SameTest -> Equal}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn catenate() {
+    assert_case(r#"Catenate[{{1, 2, 3}, {4, 5}}]"#, r#"{1, 2, 3, 4, 5}"#);
+  }
+  #[test]
+  fn complement_1() {
+    assert_case(r#"Complement[{a, b, c}, {a, c}]"#, r#"{b}"#);
+  }
+  #[test]
+  fn complement_2() {
+    assert_case(
+      r#"Complement[{a, b, c}, {a, c}]; Complement[{a, b, c}, {a, c}, {b}]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn complement_3() {
+    assert_case(
+      r#"Complement[{a, b, c}, {a, c}]; Complement[{a, b, c}, {a, c}, {b}]; Complement[f[z, y, x, w], f[x], f[x, z]]"#,
+      r#"f[w, y]"#,
+    );
+  }
+  #[test]
+  fn complement_4() {
+    assert_case(
+      r#"Complement[{a, b, c}, {a, c}]; Complement[{a, b, c}, {a, c}, {b}]; Complement[f[z, y, x, w], f[x], f[x, z]]; Complement[{c, b, a}]"#,
+      r#"{a, b, c}"#,
+    );
+  }
+  #[test]
+  fn delete_duplicates_1() {
+    assert_case(
+      r#"DeleteDuplicates[{1, 7, 8, 4, 3, 4, 1, 9, 9, 2, 1}]"#,
+      r#"{1, 7, 8, 4, 3, 9, 2}"#,
+    );
+  }
+  #[test]
+  fn delete_duplicates_2() {
+    assert_case(
+      r#"DeleteDuplicates[{1, 7, 8, 4, 3, 4, 1, 9, 9, 2, 1}]; DeleteDuplicates[{3,2,1,2,3,4}, Less]"#,
+      r#"{3, 2, 1}"#,
+    );
+  }
+  #[test]
+  fn gather_1() {
+    assert_case(
+      r#"Gather[{1, 7, 3, 7, 2, 3, 9}]"#,
+      r#"{{1}, {7, 7}, {3, 3}, {2}, {9}}"#,
+    );
+  }
+  #[test]
+  fn gather_2() {
+    assert_case(
+      r#"Gather[{1, 7, 3, 7, 2, 3, 9}]; Gather[{1/3, 2/6, 1/9}]"#,
+      r#"{{1 / 3, 1 / 3}, {1 / 9}}"#,
+    );
+  }
+  #[test]
+  fn flatten_1() {
+    assert_case(
+      r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]"#,
+      r#"{a, b, c, d, e, f, g, h}"#,
+    );
+  }
+  #[test]
+  fn flatten_2() {
+    assert_case(
+      r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]; Flatten[{{a, b}, {c, {e}, e}, {f, {g, h}}}, 1]"#,
+      r#"{a, b, c, {e}, e, f, {g, h}}"#,
+    );
+  }
+  #[test]
+  fn flatten_3() {
+    assert_case(
+      r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]; Flatten[{{a, b}, {c, {e}, e}, {f, {g, h}}}, 1]; Flatten[f[a, f[b, f[c, d]], e], Infinity, f]"#,
+      r#"f[a, b, c, d, e]"#,
+    );
+  }
+  #[test]
+  fn flatten_4() {
+    assert_case(
+      r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]; Flatten[{{a, b}, {c, {e}, e}, {f, {g, h}}}, 1]; Flatten[f[a, f[b, f[c, d]], e], Infinity, f]; Flatten[{{a, b}, {c, d}}, {{2}, {1}}]"#,
+      r#"{{a, c}, {b, d}}"#,
+    );
+  }
+  #[test]
+  fn flatten_5() {
+    assert_case(
+      r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]; Flatten[{{a, b}, {c, {e}, e}, {f, {g, h}}}, 1]; Flatten[f[a, f[b, f[c, d]], e], Infinity, f]; Flatten[{{a, b}, {c, d}}, {{2}, {1}}]; Flatten[{{a, b}, {c, d}}, {{1, 2}}]"#,
+      r#"{a, b, c, d}"#,
+    );
+  }
+  #[test]
+  fn flatten_6() {
+    assert_case(
+      r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]; Flatten[{{a, b}, {c, {e}, e}, {f, {g, h}}}, 1]; Flatten[f[a, f[b, f[c, d]], e], Infinity, f]; Flatten[{{a, b}, {c, d}}, {{2}, {1}}]; Flatten[{{a, b}, {c, d}}, {{1, 2}}]; Flatten[{{1, 2, 3}, {4}, {6, 7}, {8, 9, 10}}, {{2}, {1}}]"#,
+      r#"{{1, 4, 6, 8}, {2, 7, 9}, {3, 10}}"#,
+    );
+  }
+  #[test]
+  fn gather_by_1() {
+    assert_case(
+      r#"GatherBy[{{1, 3}, {2, 2}, {1, 1}}, Total]"#,
+      r#"{{{1, 3}, {2, 2}}, {{1, 1}}}"#,
+    );
+  }
+  #[test]
+  fn gather_by_2() {
+    assert_case(
+      r#"GatherBy[{{1, 3}, {2, 2}, {1, 1}}, Total]; GatherBy[{"xy", "abc", "ab"}, StringLength]"#,
+      r#"{{"xy", "ab"}, {"abc"}}"#,
+    );
+  }
+  #[test]
+  fn gather_by_3() {
+    assert_case(
+      r#"GatherBy[{{1, 3}, {2, 2}, {1, 1}}, Total]; GatherBy[{"xy", "abc", "ab"}, StringLength]; GatherBy[{{2, 0}, {1, 5}, {1, 0}}, Last]"#,
+      r#"{{{2, 0}, {1, 0}}, {{1, 5}}}"#,
+    );
+  }
+  #[test]
+  fn gather_by_4() {
+    assert_case(
+      r#"GatherBy[{{1, 3}, {2, 2}, {1, 1}}, Total]; GatherBy[{"xy", "abc", "ab"}, StringLength]; GatherBy[{{2, 0}, {1, 5}, {1, 0}}, Last]; GatherBy[{{1, 2}, {2, 1}, {3, 5}, {5, 1}, {2, 2, 2}}, {Total, Length}]"#,
+      r#"{{{{1, 2}, {2, 1}}}, {{{3, 5}}}, {{{5, 1}}, {{2, 2, 2}}}}"#,
+    );
+  }
+  #[test]
+  fn join_1() {
+    assert_case(r#"Join[{a, b}, {c, d, e}]"#, r#"{a, b, c, d, e}"#);
+  }
+  #[test]
+  fn join_2() {
+    assert_case(
+      r#"Join[{a, b}, {c, d, e}]; Join[{{a, b}, {c, d}}, {{1, 2}, {3, 4}}]"#,
+      r#"{{a, b}, {c, d}, {1, 2}, {3, 4}}"#,
+    );
+  }
+  #[test]
+  fn join_3() {
+    assert_case(
+      r#"Join[{a, b}, {c, d, e}]; Join[{{a, b}, {c, d}}, {{1, 2}, {3, 4}}]; Join[a + b, c + d, e + f]"#,
+      r#"a + b + c + d + e + f"#,
+    );
+  }
+  #[test]
+  fn pad_left_1() {
+    assert_case(r#"PadLeft[{1, 2, 3}, 5]"#, r#"{0, 0, 1, 2, 3}"#);
+  }
+  #[test]
+  fn pad_left_2() {
+    assert_case(
+      r#"PadLeft[{1, 2, 3}, 5]; PadLeft[x[a, b, c], 5]"#,
+      r#"x[0, 0, a, b, c]"#,
+    );
+  }
+  #[test]
+  fn pad_left_3() {
+    assert_case(
+      r#"PadLeft[{1, 2, 3}, 5]; PadLeft[x[a, b, c], 5]; PadLeft[{1, 2, 3}, 2]"#,
+      r#"{2, 3}"#,
+    );
+  }
+  #[test]
+  fn pad_left_4() {
+    assert_case(
+      r#"PadLeft[{1, 2, 3}, 5]; PadLeft[x[a, b, c], 5]; PadLeft[{1, 2, 3}, 2]; PadLeft[{{}, {1, 2}, {1, 2, 3}}]"#,
+      r#"{{0, 0, 0}, {0, 1, 2}, {1, 2, 3}}"#,
+    );
+  }
+  #[test]
+  fn pad_left_5() {
+    assert_case(
+      r#"PadLeft[{1, 2, 3}, 5]; PadLeft[x[a, b, c], 5]; PadLeft[{1, 2, 3}, 2]; PadLeft[{{}, {1, 2}, {1, 2, 3}}]; PadLeft[{1, 2, 3}, 10, {a, b, c}, 2]"#,
+      r#"{b, c, a, b, c, 1, 2, 3, a, b}"#,
+    );
+  }
+  #[test]
+  fn pad_left_6() {
+    assert_case(
+      r#"PadLeft[{1, 2, 3}, 5]; PadLeft[x[a, b, c], 5]; PadLeft[{1, 2, 3}, 2]; PadLeft[{{}, {1, 2}, {1, 2, 3}}]; PadLeft[{1, 2, 3}, 10, {a, b, c}, 2]; PadLeft[{{1, 2, 3}}, {5, 2}, x, 1]"#,
+      r#"{{x, x}, {x, x}, {x, x}, {3, x}, {x, x}}"#,
+    );
+  }
+  #[test]
+  fn pad_right_1() {
+    assert_case(r#"PadRight[{1, 2, 3}, 5]"#, r#"{1, 2, 3, 0, 0}"#);
+  }
+  #[test]
+  fn pad_right_2() {
+    assert_case(
+      r#"PadRight[{1, 2, 3}, 5]; PadRight[x[a, b, c], 5]"#,
+      r#"x[a, b, c, 0, 0]"#,
+    );
+  }
+  #[test]
+  fn pad_right_3() {
+    assert_case(
+      r#"PadRight[{1, 2, 3}, 5]; PadRight[x[a, b, c], 5]; PadRight[{1, 2, 3}, 2]"#,
+      r#"{1, 2}"#,
+    );
+  }
+  #[test]
+  fn pad_right_4() {
+    assert_case(
+      r#"PadRight[{1, 2, 3}, 5]; PadRight[x[a, b, c], 5]; PadRight[{1, 2, 3}, 2]; PadRight[{{}, {1, 2}, {1, 2, 3}}]"#,
+      r#"{{0, 0, 0}, {1, 2, 0}, {1, 2, 3}}"#,
+    );
+  }
+  #[test]
+  fn pad_right_5() {
+    assert_case(
+      r#"PadRight[{1, 2, 3}, 5]; PadRight[x[a, b, c], 5]; PadRight[{1, 2, 3}, 2]; PadRight[{{}, {1, 2}, {1, 2, 3}}]; PadRight[{1, 2, 3}, 10, {a, b, c}, 2]"#,
+      r#"{b, c, 1, 2, 3, a, b, c, a, b}"#,
+    );
+  }
+  #[test]
+  fn pad_right_6() {
+    assert_case(
+      r#"PadRight[{1, 2, 3}, 5]; PadRight[x[a, b, c], 5]; PadRight[{1, 2, 3}, 2]; PadRight[{{}, {1, 2}, {1, 2, 3}}]; PadRight[{1, 2, 3}, 10, {a, b, c}, 2]; PadRight[{{1, 2, 3}}, {5, 2}, x, 1]"#,
+      r#"{{x, x}, {x, 1}, {x, x}, {x, x}, {x, x}}"#,
+    );
+  }
+  #[test]
+  fn partition_1() {
+    assert_case(
+      r#"Partition[{a, b, c, d, e, f}, 2]"#,
+      r#"{{a, b}, {c, d}, {e, f}}"#,
+    );
+  }
+  #[test]
+  fn partition_2() {
+    assert_case(
+      r#"Partition[{a, b, c, d, e, f}, 2]; Partition[{a, b, c, d, e, f}, 3, 1]"#,
+      r#"{{a, b, c}, {b, c, d}, {c, d, e}, {d, e, f}}"#,
+    );
+  }
+  #[test]
+  fn reverse_1() {
+    assert_case(r#"Reverse[{1, 2, 3}]"#, r#"{3, 2, 1}"#);
+  }
+  #[test]
+  fn reverse_2() {
+    assert_case(
+      r#"Reverse[{1, 2, 3}]; Reverse[x[a, b, c]]"#,
+      r#"x[c, b, a]"#,
+    );
+  }
+  #[test]
+  fn reverse_3() {
+    assert_case(
+      r#"Reverse[{1, 2, 3}]; Reverse[x[a, b, c]]; Reverse[{{1, 2}, {3, 4}}, 1]"#,
+      r#"{{3, 4}, {1, 2}}"#,
+    );
+  }
+  #[test]
+  fn reverse_4() {
+    assert_case(
+      r#"Reverse[{1, 2, 3}]; Reverse[x[a, b, c]]; Reverse[{{1, 2}, {3, 4}}, 1]; Reverse[{{1, 2}, {3, 4}}, 2]"#,
+      r#"{{2, 1}, {4, 3}}"#,
+    );
+  }
+  #[test]
+  fn reverse_5() {
+    assert_case(
+      r#"Reverse[{1, 2, 3}]; Reverse[x[a, b, c]]; Reverse[{{1, 2}, {3, 4}}, 1]; Reverse[{{1, 2}, {3, 4}}, 2]; Reverse[{{1, 2}, {3, 4}}, {1, 2}]"#,
+      r#"{{4, 3}, {2, 1}}"#,
+    );
+  }
+  #[test]
+  fn riffle_1() {
+    assert_case(r#"Riffle[{a, b, c}, x]"#, r#"{a, x, b, x, c}"#);
+  }
+  #[test]
+  fn riffle_2() {
+    assert_case(
+      r#"Riffle[{a, b, c}, x]; Riffle[{a, b, c}, {x, y, z}]"#,
+      r#"{a, x, b, y, c, z}"#,
+    );
+  }
+  #[test]
+  fn riffle_3() {
+    assert_case(
+      r#"Riffle[{a, b, c}, x]; Riffle[{a, b, c}, {x, y, z}]; Riffle[{a, b, c, d, e, f}, {x, y, z}]"#,
+      r#"{a, x, b, y, c, z, d, x, e, y, f}"#,
+    );
+  }
+  #[test]
+  fn rotate_left_1() {
+    assert_case(r#"RotateLeft[{1, 2, 3}]"#, r#"{2, 3, 1}"#);
+  }
+  #[test]
+  fn rotate_left_2() {
+    assert_case(
+      r#"RotateLeft[{1, 2, 3}]; RotateLeft[Range[10], 3]"#,
+      r#"{4, 5, 6, 7, 8, 9, 10, 1, 2, 3}"#,
+    );
+  }
+  #[test]
+  fn rotate_left_3() {
+    assert_case(
+      r#"RotateLeft[{1, 2, 3}]; RotateLeft[Range[10], 3]; RotateLeft[x[a, b, c], 2]"#,
+      r#"x[c, a, b]"#,
+    );
+  }
+  #[test]
+  fn rotate_left_4() {
+    assert_case(
+      r#"RotateLeft[{1, 2, 3}]; RotateLeft[Range[10], 3]; RotateLeft[x[a, b, c], 2]; RotateLeft[{{a, b, c}, {d, e, f}, {g, h, i}}, {1, 2}]"#,
+      r#"{{f, d, e}, {i, g, h}, {c, a, b}}"#,
+    );
+  }
+  #[test]
+  fn rotate_right_1() {
+    assert_case(r#"RotateRight[{1, 2, 3}]"#, r#"{3, 1, 2}"#);
+  }
+  #[test]
+  fn rotate_right_2() {
+    assert_case(
+      r#"RotateRight[{1, 2, 3}]; RotateRight[Range[10], 3]"#,
+      r#"{8, 9, 10, 1, 2, 3, 4, 5, 6, 7}"#,
+    );
+  }
+  #[test]
+  fn rotate_right_3() {
+    assert_case(
+      r#"RotateRight[{1, 2, 3}]; RotateRight[Range[10], 3]; RotateRight[x[a, b, c], 2]"#,
+      r#"x[b, c, a]"#,
+    );
+  }
+  #[test]
+  fn rotate_right_4() {
+    assert_case(
+      r#"RotateRight[{1, 2, 3}]; RotateRight[Range[10], 3]; RotateRight[x[a, b, c], 2]; RotateRight[{{a, b, c}, {d, e, f}, {g, h, i}}, {1, 2}]"#,
+      r#"{{h, i, g}, {b, c, a}, {e, f, d}}"#,
+    );
+  }
+  #[test]
+  fn split_1() {
+    assert_case(
+      r#"Split[{x, x, x, y, x, y, y, z}]"#,
+      r#"{{x, x, x}, {y}, {x}, {y, y}, {z}}"#,
+    );
+  }
+  #[test]
+  fn split_2() {
+    assert_case(
+      r#"Split[{x, x, x, y, x, y, y, z}]; Split[{1, 5, 6, 3, 6, 1, 6, 3, 4, 5, 4}, Less]"#,
+      r#"{{1, 5, 6}, {3, 6}, {1, 6}, {3, 4, 5}, {4}}"#,
+    );
+  }
+  #[test]
+  fn split_3() {
+    assert_case(
+      r#"Split[{x, x, x, y, x, y, y, z}]; Split[{1, 5, 6, 3, 6, 1, 6, 3, 4, 5, 4}, Less]; Split[{1, 5, 6, 3, 6, 1, 6, 3, 4, 5, 4}, Greater]"#,
+      r#"{{1}, {5}, {6, 3}, {6, 1}, {6, 3}, {4}, {5, 4}}"#,
+    );
+  }
+  #[test]
+  fn split_4() {
+    assert_case(
+      r#"Split[{x, x, x, y, x, y, y, z}]; Split[{1, 5, 6, 3, 6, 1, 6, 3, 4, 5, 4}, Less]; Split[{1, 5, 6, 3, 6, 1, 6, 3, 4, 5, 4}, Greater]; Split[{x -> a, x -> y, 2 -> a, z -> c, z -> a}, First[#1] === First[#2] &]"#,
+      r#"{{x -> a, x -> y}, {2 -> a}, {z -> c, z -> a}}"#,
+    );
+  }
+  #[test]
+  fn split_by_1() {
+    assert_case(
+      r#"SplitBy[Range[1, 3, 1/3], Round]"#,
+      r#"{{1, 4 / 3}, {5 / 3, 2, 7 / 3}, {8 / 3, 3}}"#,
+    );
+  }
+  #[test]
+  fn split_by_2() {
+    assert_case(
+      r#"SplitBy[Range[1, 3, 1/3], Round]; SplitBy[{1, 2, 1, 1.2}, {Round, Identity}]"#,
+      r#"{{{1}}, {{2}}, {{1}, {1.2}}}"#,
+    );
+  }
+  #[test]
+  fn union_1() {
+    assert_case(r#"Union[{a, b, c}, {c, d, e}]"#, r#"{a, b, c, d, e}"#);
+  }
+  #[test]
+  fn union_2() {
+    assert_case(
+      r#"Union[{a, b, c}, {c, d, e}]; Union[{a -> b}, {c -> d}]"#,
+      r#"{a -> b, c -> d}"#,
+    );
+  }
+  #[test]
+  fn union_3() {
+    assert_case(
+      r#"Union[{a, b, c}, {c, d, e}]; Union[{a -> b}, {c -> d}]; Union[{c, b, a}]"#,
+      r#"{a, b, c}"#,
+    );
+  }
+  #[test]
+  fn union_4() {
+    assert_case(
+      r#"Union[{a, b, c}, {c, d, e}]; Union[{a -> b}, {c -> d}]; Union[{c, b, a}]; Union[{5, 1, 3, 7, 1, 8, 3}]"#,
+      r#"{1, 3, 5, 7, 8}"#,
+    );
+  }
+  #[test]
+  fn union_5() {
+    assert_case(
+      r#"Union[{a, b, c}, {c, d, e}]; Union[{a -> b}, {c -> d}]; Union[{c, b, a}]; Union[{5, 1, 3, 7, 1, 8, 3}]; Union[{{a, 1}, {b, 2}}, {{c, 1}, {d, 3}}, SameTest->(SameQ[Last[#1],Last[#2]]&)]"#,
+      r#"{{a, 1}, {b, 2}, {d, 3}}"#,
+    );
+  }
+  #[test]
+  fn union_6() {
+    assert_case(
+      r#"Union[{a, b, c}, {c, d, e}]; Union[{a -> b}, {c -> d}]; Union[{c, b, a}]; Union[{5, 1, 3, 7, 1, 8, 3}]; Union[{{a, 1}, {b, 2}}, {{c, 1}, {d, 3}}, SameTest->(SameQ[Last[#1],Last[#2]]&)]; Union[{1, 2, 3}, {2, 3, 4}, SameTest->Less]"#,
+      r#"{1, 2, 2, 3, 3, 4}"#,
+    );
+  }
+  #[test]
+  fn intersection_1() {
+    assert_case(
+      r#"Intersection[{1000, 100, 10, 1}, {1, 5, 10, 15}]"#,
+      r#"{1, 10}"#,
+    );
+  }
+  #[test]
+  fn intersection_2() {
+    assert_case(
+      r#"Intersection[{1000, 100, 10, 1}, {1, 5, 10, 15}]; Intersection[{{a, b}, {x, y}}, {{x, x}, {x, y}, {x, z}}]"#,
+      r#"{{x, y}}"#,
+    );
+  }
+  #[test]
+  fn intersection_3() {
+    assert_case(
+      r#"Intersection[{1000, 100, 10, 1}, {1, 5, 10, 15}]; Intersection[{{a, b}, {x, y}}, {{x, x}, {x, y}, {x, z}}]; Intersection[{c, b, a}]"#,
+      r#"{a, b, c}"#,
+    );
+  }
+  #[test]
+  fn intersection_4() {
+    assert_case(
+      r#"Intersection[{1000, 100, 10, 1}, {1, 5, 10, 15}]; Intersection[{{a, b}, {x, y}}, {{x, x}, {x, y}, {x, z}}]; Intersection[{c, b, a}]; Intersection[{1, 2, 3}, {2, 3, 4}, SameTest->Less]"#,
+      r#"{3}"#,
+    );
+  }
+  #[test]
+  fn array_2() {
+    assert_case(r#"Array[f, 4]"#, r#"{f[1], f[2], f[3], f[4]}"#);
+  }
+  #[test]
+  fn array_3() {
+    assert_case(
+      r#"Array[f, 4]; Array[f, {2, 3}]"#,
+      r#"{{f[1, 1], f[1, 2], f[1, 3]}, {f[2, 1], f[2, 2], f[2, 3]}}"#,
+    );
+  }
+  #[test]
+  fn array_4() {
+    assert_case(
+      r#"Array[f, 4]; Array[f, {2, 3}]; Array[f, {2, 3}, 3]"#,
+      r#"{{f[3, 3], f[3, 4], f[3, 5]}, {f[4, 3], f[4, 4], f[4, 5]}}"#,
+    );
+  }
+  #[test]
+  fn array_5() {
+    assert_case(
+      r#"Array[f, 4]; Array[f, {2, 3}]; Array[f, {2, 3}, 3]; Array[f, {2, 3}, {4, 6}]"#,
+      r#"{{f[4, 6], f[4, 7], f[4, 8]}, {f[5, 6], f[5, 7], f[5, 8]}}"#,
+    );
+  }
+  #[test]
+  fn array_6() {
+    assert_case(
+      r#"Array[f, 4]; Array[f, {2, 3}]; Array[f, {2, 3}, 3]; Array[f, {2, 3}, {4, 6}]; Array[f, {2, 3}, 1, Plus]"#,
+      r#"f[1, 1] + f[1, 2] + f[1, 3] + f[2, 1] + f[2, 2] + f[2, 3]"#,
+    );
+  }
+  #[test]
+  fn constant_array_1() {
+    assert_case(r#"ConstantArray[a, 3]"#, r#"{a, a, a}"#);
+  }
+  #[test]
+  fn constant_array_2() {
+    assert_case(
+      r#"ConstantArray[a, 3]; ConstantArray[a, {2, 3}]"#,
+      r#"{{a, a, a}, {a, a, a}}"#,
+    );
+  }
+  #[test]
+  fn range_1() {
+    assert_case(r#"Range[5]"#, r#"{1, 2, 3, 4, 5}"#);
+  }
+  #[test]
+  fn range_2() {
+    assert_case(r#"Range[5]; Range[-3, 2]"#, r#"{-3, -2, -1, 0, 1, 2}"#);
+  }
+  #[test]
+  fn range_3() {
+    assert_case(r#"Range[5]; Range[-3, 2]; Range[5, 1, -2]"#, r#"{5, 3, 1}"#);
+  }
+  #[test]
+  fn range_4() {
+    assert_case(
+      r#"Range[5]; Range[-3, 2]; Range[5, 1, -2]; Range[1.0, 2.3]"#,
+      r#"{1., 2.}"#,
+    );
+  }
+  #[test]
+  fn range_5() {
+    assert_case(
+      r#"Range[5]; Range[-3, 2]; Range[5, 1, -2]; Range[1.0, 2.3]; Range[0, 2, 1/3]"#,
+      r#"{0, 1 / 3, 2 / 3, 1, 4 / 3, 5 / 3, 2}"#,
+    );
+  }
+  #[test]
+  fn range_6() {
+    assert_case(
+      r#"Range[5]; Range[-3, 2]; Range[5, 1, -2]; Range[1.0, 2.3]; Range[0, 2, 1/3]; Range[1.0, 2.3, .5]"#,
+      r#"{1., 1.5, 2.}"#,
+    );
+  }
+  #[test]
+  fn permutations_1() {
+    assert_case(
+      r#"Permutations[{y, 1, x}]"#,
+      r#"{{y, 1, x}, {y, x, 1}, {1, y, x}, {1, x, y}, {x, y, 1}, {x, 1, y}}"#,
+    );
+  }
+  #[test]
+  fn permutations_2() {
+    assert_case(
+      r#"Permutations[{y, 1, x}]; Permutations[{a, b, b}]"#,
+      r#"{{a, b, b}, {b, a, b}, {b, b, a}}"#,
+    );
+  }
+  #[test]
+  fn permutations_3() {
+    assert_case(
+      r#"Permutations[{y, 1, x}]; Permutations[{a, b, b}]; Permutations[{1, 2, 3}, 2]"#,
+      r#"{{}, {1}, {2}, {3}, {1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}}"#,
+    );
+  }
+  #[test]
+  fn permutations_4() {
+    assert_case(
+      r#"Permutations[{y, 1, x}]; Permutations[{a, b, b}]; Permutations[{1, 2, 3}, 2]; Permutations[{1, 2, 3}, {2}]"#,
+      r#"{{1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}}"#,
+    );
+  }
+  #[test]
+  fn table_11() {
+    assert_case(r#"Table[x, 3]"#, r#"{x, x, x}"#);
+  }
+  #[test]
+  fn table_12() {
+    assert_case(
+      r#"Table[x, 3]; n = 0; Table[n = n + 1, {5}]"#,
+      r#"{1, 2, 3, 4, 5}"#,
+    );
+  }
+  #[test]
+  fn tuples_1() {
+    assert_case(
+      r#"Tuples[{a, b, c}, 2]"#,
+      r#"{{a, a}, {a, b}, {a, c}, {b, a}, {b, b}, {b, c}, {c, a}, {c, b}, {c, c}}"#,
+    );
+  }
+  #[test]
+  fn tuples_2() {
+    assert_case(r#"Tuples[{a, b, c}, 2]; Tuples[{}, 2]"#, r#"{}"#);
+  }
+  #[test]
+  fn tuples_3() {
+    assert_case(
+      r#"Tuples[{a, b, c}, 2]; Tuples[{}, 2]; Tuples[{a, b, c}, 0]"#,
+      r#"{{}}"#,
+    );
+  }
+  #[test]
+  fn tuples_4() {
+    assert_case(
+      r#"Tuples[{a, b, c}, 2]; Tuples[{}, 2]; Tuples[{a, b, c}, 0]; Tuples[{{a, b}, {1, 2, 3}}]"#,
+      r#"{{a, 1}, {a, 2}, {a, 3}, {b, 1}, {b, 2}, {b, 3}}"#,
+    );
+  }
+  #[test]
+  fn tuples_5() {
+    assert_case(
+      r#"Tuples[{a, b, c}, 2]; Tuples[{}, 2]; Tuples[{a, b, c}, 0]; Tuples[{{a, b}, {1, 2, 3}}]; Tuples[f[a, b, c], 2]"#,
+      r#"{f[a, a], f[a, b], f[a, c], f[b, a], f[b, b], f[b, c], f[c, a], f[c, b], f[c, c]}"#,
+    );
+  }
+  #[test]
+  fn tuples_6() {
+    assert_case(
+      r#"Tuples[{a, b, c}, 2]; Tuples[{}, 2]; Tuples[{a, b, c}, 0]; Tuples[{{a, b}, {1, 2, 3}}]; Tuples[f[a, b, c], 2]; Tuples[{f[a, b], g[c, d]}]"#,
+      r#"{{a, c}, {a, d}, {b, c}, {b, d}}"#,
+    );
+  }
+  #[test]
+  fn append_1() {
+    assert_case(r#"Append[{1, 2, 3}, 4]"#, r#"{1, 2, 3, 4}"#);
+  }
+  #[test]
+  fn append_2() {
+    assert_case(
+      r#"Append[{1, 2, 3}, 4]; Append[f[a, b], c]"#,
+      r#"f[a, b, c]"#,
+    );
+  }
+  #[test]
+  fn append_3() {
+    assert_case(
+      r#"Append[{1, 2, 3}, 4]; Append[f[a, b], c]; Append[{a, b}, {c, d}]"#,
+      r#"{a, b, {c, d}}"#,
+    );
+  }
+  #[test]
+  fn delete_1() {
+    assert_case(r#"Delete[{a, b, c, d}, 3]"#, r#"{a, b, d}"#);
+  }
+  #[test]
+  fn delete_2() {
+    assert_case(
+      r#"Delete[{a, b, c, d}, 3]; Delete[{a, b, c, d}, -2]"#,
+      r#"{a, b, d}"#,
+    );
+  }
+  #[test]
+  fn delete_3() {
+    assert_case(
+      r#"Delete[{a, b, c, d}, 3]; Delete[{a, b, c, d}, -2]; Delete[{a, b, c, d}, {{1}, {3}}]"#,
+      r#"{b, d}"#,
+    );
+  }
+  #[test]
+  fn delete_4() {
+    assert_case(
+      r#"Delete[{a, b, c, d}, 3]; Delete[{a, b, c, d}, -2]; Delete[{a, b, c, d}, {{1}, {3}}]; Delete[{{a, b}, {c, d}}, {2, 1}]"#,
+      r#"{{a, b}, {d}}"#,
+    );
+  }
+  #[test]
+  fn delete_5() {
+    assert_case(
+      r#"Delete[{a, b, c, d}, 3]; Delete[{a, b, c, d}, -2]; Delete[{a, b, c, d}, {{1}, {3}}]; Delete[{{a, b}, {c, d}}, {2, 1}]; Delete[{a, b, c}, 0]; Delete[f[a, b, c, d], 3]"#,
+      r#"f[a, b, d]"#,
+    );
+  }
+  #[test]
+  fn delete_6() {
+    assert_case(
+      r#"Delete[{a, b, c, d}, 3]; Delete[{a, b, c, d}, -2]; Delete[{a, b, c, d}, {{1}, {3}}]; Delete[{{a, b}, {c, d}}, {2, 1}]; Delete[{a, b, c}, 0]; Delete[f[a, b, c, d], 3]; Delete[f[a, b, u + v, c], {3, 0}]"#,
+      r#"f[a, b, u, v, c]"#,
+    );
+  }
+  #[test]
+  fn delete_7() {
+    assert_case(
+      r#"Delete[{a, b, c, d}, 3]; Delete[{a, b, c, d}, -2]; Delete[{a, b, c, d}, {{1}, {3}}]; Delete[{{a, b}, {c, d}}, {2, 1}]; Delete[{a, b, c}, 0]; Delete[f[a, b, c, d], 3]; Delete[f[a, b, u + v, c], {3, 0}]; Delete[{a, b, c}, 0]; Delete[{a, b, c, d}]"#,
+      r#"Delete[{a, b, c, d}]"#,
+    );
+  }
+  #[test]
+  fn drop_1() {
+    assert_case(r#"Drop[{a, b, c, d}, 3]"#, r#"{d}"#);
+  }
+  #[test]
+  fn drop_2() {
+    assert_case(
+      r#"Drop[{a, b, c, d}, 3]; Drop[{a, b, c, d}, -2]"#,
+      r#"{a, b}"#,
+    );
+  }
+  #[test]
+  fn drop_3() {
+    assert_case(
+      r#"Drop[{a, b, c, d}, 3]; Drop[{a, b, c, d}, -2]; Drop[{a, b, c, d, e}, {2, -2}]"#,
+      r#"{a, e}"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(
+      r#"Drop[{a, b, c, d}, 3]; Drop[{a, b, c, d}, -2]; Drop[{a, b, c, d, e}, {2, -2}]; A = Table[i*10 + j, {i, 4}, {j, 4}]"#,
+      r#"{{11, 12, 13, 14}, {21, 22, 23, 24}, {31, 32, 33, 34}, {41, 42, 43, 44}}"#,
+    );
+  }
+  #[test]
+  fn drop_4() {
+    assert_case(
+      r#"Drop[{a, b, c, d}, 3]; Drop[{a, b, c, d}, -2]; Drop[{a, b, c, d, e}, {2, -2}]; A = Table[i*10 + j, {i, 4}, {j, 4}]; Drop[A, {2, 3}, {2, 3}]"#,
+      r#"{{11, 14}, {41, 44}}"#,
+    );
+  }
+  #[test]
+  fn drop_5() {
+    assert_case(
+      r#"Drop[{a, b, c, d}, 3]; Drop[{a, b, c, d}, -2]; Drop[{a, b, c, d, e}, {2, -2}]; A = Table[i*10 + j, {i, 4}, {j, 4}]; Drop[A, {2, 3}, {2, 3}]; Drop[{a, b, c, d}, 0]"#,
+      r#"{a, b, c, d}"#,
+    );
+  }
+  #[test]
+  fn drop_6() {
+    assert_case(
+      r#"Drop[{a, b, c, d}, 3]; Drop[{a, b, c, d}, -2]; Drop[{a, b, c, d, e}, {2, -2}]; A = Table[i*10 + j, {i, 4}, {j, 4}]; Drop[A, {2, 3}, {2, 3}]; Drop[{a, b, c, d}, 0]; Drop[{}, 0]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn first_1() {
+    assert_case(r#"First[{a, b, c}]"#, r#"a"#);
+  }
+  #[test]
+  fn first_2() {
+    assert_case(r#"First[{a, b, c}]; First[a + b + c]"#, r#"a"#);
+  }
+  #[test]
+  fn insert_1() {
+    assert_case(r#"Insert[{a,b,c,d,e}, x, 3]"#, r#"{a, b, x, c, d, e}"#);
+  }
+  #[test]
+  fn insert_2() {
+    assert_case(
+      r#"Insert[{a,b,c,d,e}, x, 3]; Insert[{a,b,c,d,e}, x, -2]"#,
+      r#"{a, b, c, d, x, e}"#,
+    );
+  }
+  #[test]
+  fn last_1() {
+    assert_case(r#"Last[{a, b, c}]"#, r#"c"#);
+  }
+  #[test]
+  fn last_2() {
+    assert_case(r#"Last[{a, b, c}]; Last[a + b + c]"#, r#"c"#);
+  }
+  #[test]
+  fn length_1() {
+    assert_case(r#"Length[{1, 2, 3}]"#, r#"3"#);
+  }
+  #[test]
+  fn length_2() {
+    assert_case(r#"Length[{1, 2, 3}]; Length[Exp[x]]"#, r#"2"#);
+  }
+  #[test]
+  fn most_1() {
+    assert_case(r#"Most[{a, b, c}]"#, r#"{a, b}"#);
+  }
+  #[test]
+  fn most_2() {
+    assert_case(r#"Most[{a, b, c}]; Most[a + b + c]"#, r#"a + b"#);
+  }
+  #[test]
+  fn pick_1() {
+    assert_case(r#"Pick[{a, b, c}, {False, True, False}]"#, r#"{b}"#);
+  }
+  #[test]
+  fn pick_2() {
+    assert_case(
+      r#"Pick[{a, b, c}, {False, True, False}]; Pick[f[g[1, 2], h[3, 4]], {{True, False}, {False, True}}]"#,
+      r#"f[g[1], h[4]]"#,
+    );
+  }
+  #[test]
+  fn pick_3() {
+    assert_case(
+      r#"Pick[{a, b, c}, {False, True, False}]; Pick[f[g[1, 2], h[3, 4]], {{True, False}, {False, True}}]; Pick[{a, b, c, d, e}, {1, 2, 3.5, 4, 5.5}, _Integer]"#,
+      r#"{a, b, d}"#,
+    );
+  }
+  #[test]
+  fn prepend_1() {
+    assert_case(r#"Prepend[{2, 3, 4}, 1]"#, r#"{1, 2, 3, 4}"#);
+  }
+  #[test]
+  fn prepend_2() {
+    assert_case(
+      r#"Prepend[{2, 3, 4}, 1]; Prepend[f[b, c], a]"#,
+      r#"f[a, b, c]"#,
+    );
+  }
+  #[test]
+  fn prepend_3() {
+    assert_case(
+      r#"Prepend[{2, 3, 4}, 1]; Prepend[f[b, c], a]; Prepend[{c, d}, {a, b}]"#,
+      r#"{{a, b}, c, d}"#,
+    );
+  }
+  #[test]
+  fn replace_part_1() {
+    assert_case(r#"ReplacePart[{a, b, c}, 1 -> t]"#, r#"{t, b, c}"#);
+  }
+  #[test]
+  fn replace_part_2() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]"#,
+      r#"{{a, b}, {t, d}}"#,
+    );
+  }
+  #[test]
+  fn replace_part_3() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]; ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]"#,
+      r#"{{t, b}, {t, d}}"#,
+    );
+  }
+  #[test]
+  fn replace_part_4() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]; ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]; ReplacePart[{a, b, c}, {{1}, {2}} -> t]"#,
+      r#"{t, t, c}"#,
+    );
+  }
+  #[test]
+  fn replace_part_5() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]; ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]; ReplacePart[{a, b, c}, {{1}, {2}} -> t]; n = 1; ReplacePart[{a, b, c, d}, {{1}, {3}} :> n++]"#,
+      r#"{1, b, 2, d}"#,
+    );
+  }
+  #[test]
+  fn replace_part_6() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]; ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]; ReplacePart[{a, b, c}, {{1}, {2}} -> t]; n = 1; ReplacePart[{a, b, c, d}, {{1}, {3}} :> n++]; ReplacePart[{a, b, c}, 4 -> t]"#,
+      r#"{a, b, c}"#,
+    );
+  }
+  #[test]
+  fn replace_part_7() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]; ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]; ReplacePart[{a, b, c}, {{1}, {2}} -> t]; n = 1; ReplacePart[{a, b, c, d}, {{1}, {3}} :> n++]; ReplacePart[{a, b, c}, 4 -> t]; ReplacePart[{a, b, c}, 0 -> Times]"#,
+      r#"a*b*c"#,
+    );
+  }
+  #[test]
+  fn replace_part_8() {
+    assert_case(
+      r#"ReplacePart[{a, b, c}, 1 -> t]; ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]; ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]; ReplacePart[{a, b, c}, {{1}, {2}} -> t]; n = 1; ReplacePart[{a, b, c, d}, {{1}, {3}} :> n++]; ReplacePart[{a, b, c}, 4 -> t]; ReplacePart[{a, b, c}, 0 -> Times]; ReplacePart[{a, b, c}, -1 -> t]"#,
+      r#"{a, b, t}"#,
+    );
+  }
+  #[test]
+  fn rest_1() {
+    assert_case(r#"Rest[{a, b, c}]"#, r#"{b, c}"#);
+  }
+  #[test]
+  fn rest_2() {
+    assert_case(r#"Rest[{a, b, c}]; Rest[a + b + c]"#, r#"b + c"#);
+  }
+  #[test]
+  fn select_2() {
+    assert_case(r#"Select[Range[10], EvenQ]"#, r#"{2, 4, 6, 8, 10}"#);
+  }
+  #[test]
+  fn select_3() {
+    assert_case(
+      r#"Select[Range[10], EvenQ]; Select[{-3, 0, 10, 3, a}, #>0&]"#,
+      r#"{10, 3}"#,
+    );
+  }
+  #[test]
+  fn select_4() {
+    assert_case(
+      r#"Select[Range[10], EvenQ]; Select[{-3, 0, 10, 3, a}, #>0&]; Select[{-3, 0, 10, 3, a}, #>0&, 1]"#,
+      r#"{10}"#,
+    );
+  }
+  #[test]
+  fn select_5() {
+    assert_case(
+      r#"Select[Range[10], EvenQ]; Select[{-3, 0, 10, 3, a}, #>0&]; Select[{-3, 0, 10, 3, a}, #>0&, 1]; Select[f[a, 2, 3], NumberQ]"#,
+      r#"f[2, 3]"#,
+    );
+  }
+  #[test]
+  fn take_2() {
+    assert_case(r#"Take[{a, b, c, d}, 3]"#, r#"{a, b, c}"#);
+  }
+  #[test]
+  fn take_3() {
+    assert_case(
+      r#"Take[{a, b, c, d}, 3]; Take[{a, b, c, d}, -2]"#,
+      r#"{c, d}"#,
+    );
+  }
+  #[test]
+  fn take_4() {
+    assert_case(
+      r#"Take[{a, b, c, d}, 3]; Take[{a, b, c, d}, -2]; Take[{a, b, c, d, e}, {2, -2}]"#,
+      r#"{b, c, d}"#,
+    );
+  }
+  #[test]
+  fn take_5() {
+    assert_case(
+      r#"Take[{a, b, c, d}, 3]; Take[{a, b, c, d}, -2]; Take[{a, b, c, d, e}, {2, -2}]; A = {{a, b, c}, {d, e, f}}; Take[A, 2, 2]"#,
+      r#"{{a, b}, {d, e}}"#,
+    );
+  }
+  #[test]
+  fn take_6() {
+    assert_case(
+      r#"Take[{a, b, c, d}, 3]; Take[{a, b, c, d}, -2]; Take[{a, b, c, d, e}, {2, -2}]; A = {{a, b, c}, {d, e, f}}; Take[A, 2, 2]; Take[A, All, {2}]"#,
+      r#"{{b}, {e}}"#,
+    );
+  }
+  #[test]
+  fn take_7() {
+    assert_case(
+      r#"Take[{a, b, c, d}, 3]; Take[{a, b, c, d}, -2]; Take[{a, b, c, d, e}, {2, -2}]; A = {{a, b, c}, {d, e, f}}; Take[A, 2, 2]; Take[A, All, {2}]; Take[{a, b, c, d}, 0]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn table_13() {
+    assert_case(
+      r#"Pochhammer[1, 3]; Pochhammer[1, 3] == Pochhammer[2, 2]; Table[Pochhammer[0, n], {n, 0, -4, -1}]"#,
+      r#"{1, -1, 1 / 2, -1 / 6, 1 / 24}"#,
+    );
+  }
+  #[test]
+  fn pochhammer_1() {
+    assert_case(
+      r#"Pochhammer[1, 3]; Pochhammer[1, 3] == Pochhammer[2, 2]; Table[Pochhammer[0, n], {n, 0, -4, -1}]; Pochhammer[1, 3.001]"#,
+      r#"6.007542293946958"#,
+    );
+  }
+  #[test]
+  fn pochhammer_2() {
+    assert_case(
+      r#"Pochhammer[1, 3]; Pochhammer[1, 3] == Pochhammer[2, 2]; Table[Pochhammer[0, n], {n, 0, -4, -1}]; Pochhammer[1, 3.001]; Pochhammer[1, 3.001] == Pochhammer[2, 2.001]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn pochhammer_3() {
+    assert_case(
+      r#"Pochhammer[1, 3]; Pochhammer[1, 3] == Pochhammer[2, 2]; Table[Pochhammer[0, n], {n, 0, -4, -1}]; Pochhammer[1, 3.001]; Pochhammer[1, 3.001] == Pochhammer[2, 2.001]; Pochhammer[1.001, 3] == 1.001 2.001 3.001"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn table_14() {
+    assert_case(
+      r#"Table[CatalanNumber[n], {n, 1, 5}]"#,
+      r#"{1, 2, 5, 14, 42}"#,
+    );
+  }
+  #[test]
+  fn table_15() {
+    assert_case(r#"Table[EulerE[k], {k, 1, 9, 2}]"#, r#"{0, 0, 0, 0, 0}"#);
+  }
+  #[test]
+  fn table_16() {
+    assert_case(
+      r#"Table[EulerE[k], {k, 1, 9, 2}]; Table[EulerE[k], {k, 0, 8, 2}]"#,
+      r#"{1, -1, 5, -61, 1385}"#,
+    );
+  }
+  #[test]
+  fn euler_e() {
+    assert_case(
+      r#"Table[EulerE[k], {k, 1, 9, 2}]; Table[EulerE[k], {k, 0, 8, 2}]; EulerE[5, z]"#,
+      r#"-1/2 + (5*z^2)/2 - (5*z^4)/2 + z^5"#,
+    );
+  }
+  #[test]
+  fn table_17() {
+    assert_case(r#"Table[LucasL[n], {n, 1, 5}]"#, r#"{1, 3, 4, 7, 11}"#);
+  }
+  #[test]
+  fn table_18() {
+    assert_case(
+      r#"Table[PolygonalNumber[n], {n, 10}]"#,
+      r#"{1, 3, 6, 10, 15, 21, 28, 36, 45, 55}"#,
+    );
+  }
+  #[test]
+  fn table_19() {
+    assert_case(
+      r#"Table[PolygonalNumber[n], {n, 10}]; Table[PolygonalNumber[n-1] + PolygonalNumber[n], {n, 10}]"#,
+      r#"{1, 4, 9, 16, 25, 36, 49, 64, 81, 100}"#,
+    );
+  }
+  #[test]
+  fn table_20() {
+    assert_case(
+      r#"Table[PolygonalNumber[n], {n, 10}]; Table[PolygonalNumber[n-1] + PolygonalNumber[n], {n, 10}]; Table[PolygonalNumber[r, 10], {r, 3, 8}]"#,
+      r#"{55, 100, 145, 190, 235, 280}"#,
+    );
+  }
+  #[test]
+  fn subsets_1() {
+    assert_case(
+      r#"Subsets[{a, b, c}]"#,
+      r#"{{}, {a}, {b}, {c}, {a, b}, {a, c}, {b, c}, {a, b, c}}"#,
+    );
+  }
+  #[test]
+  fn subsets_2() {
+    assert_case(
+      r#"Subsets[{a, b, c}]; Subsets[{a, b, c, d}, 2]"#,
+      r#"{{}, {a}, {b}, {c}, {d}, {a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}}"#,
+    );
+  }
+  #[test]
+  fn subsets_3() {
+    assert_case(
+      r#"Subsets[{a, b, c}]; Subsets[{a, b, c, d}, 2]; Subsets[{a, b, c, d}, {2}]"#,
+      r#"{{a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}}"#,
+    );
+  }
+  #[test]
+  fn subsets_4() {
+    assert_case(
+      r#"Subsets[{a, b, c}]; Subsets[{a, b, c, d}, 2]; Subsets[{a, b, c, d}, {2}]; Subsets[{a, b, c, d, e}, {3}, 5]"#,
+      r#"{{a, b, c}, {a, b, d}, {a, b, e}, {a, c, d}, {a, c, e}}"#,
+    );
+  }
+  #[test]
+  fn subsets_5() {
+    assert_case(
+      r#"Subsets[{a, b, c}]; Subsets[{a, b, c, d}, 2]; Subsets[{a, b, c, d}, {2}]; Subsets[{a, b, c, d, e}, {3}, 5]; Subsets[{a, b, c, d}, {0, 4, 2}]"#,
+      r#"{{}, {a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}, {a, b, c, d}}"#,
+    );
+  }
+  #[test]
+  fn subsets_6() {
+    assert_case(
+      r#"Subsets[{a, b, c}]; Subsets[{a, b, c, d}, 2]; Subsets[{a, b, c, d}, {2}]; Subsets[{a, b, c, d, e}, {3}, 5]; Subsets[{a, b, c, d}, {0, 4, 2}]; Subsets[Range[5], All, {25}]"#,
+      r#"{{2, 4, 5}}"#,
+    );
+  }
+  #[test]
+  fn subsets_7() {
+    assert_case(
+      r#"Subsets[{a, b, c}]; Subsets[{a, b, c, d}, 2]; Subsets[{a, b, c, d}, {2}]; Subsets[{a, b, c, d, e}, {3}, 5]; Subsets[{a, b, c, d}, {0, 4, 2}]; Subsets[Range[5], All, {25}]; Subsets[{a, b, c, d}, All, {15, 1, -2}]"#,
+      r#"{{b, c, d}, {a, b, d}, {c, d}, {b, c}, {a, c}, {d}, {b}, {}}"#,
+    );
+  }
+  #[test]
+  fn table_21() {
+    assert_case(
+      r#"BernoulliB[42]; Table[BernoulliB[k], {k, 0, 5}]"#,
+      r#"{1, -1/2, 1/6, 0, -1/30, 0}"#,
+    );
+  }
+  #[test]
+  fn table_22() {
+    assert_case(
+      r#"BernoulliB[42]; Table[BernoulliB[k], {k, 0, 5}]; Table[BernoulliB[k, z], {k, 0, 3}]"#,
+      r#"{1, -1/2 + z, 1/6 - z + z^2, z/2 - (3*z^2)/2 + z^3}"#,
+    );
+  }
+  #[test]
+  fn table_23() {
+    assert_case(
+      r#"Table[HarmonicNumber[n], {n, 8}]"#,
+      r#"{1, 3 / 2, 11 / 6, 25 / 12, 137 / 60, 49 / 20, 363 / 140, 761 / 280}"#,
+    );
+  }
+  #[test]
+  fn harmonic_number() {
+    assert_case(
+      r#"Table[HarmonicNumber[n], {n, 8}]; HarmonicNumber[3.8]"#,
+      r#"2.0380634056306492"#,
+    );
+  }
+  #[test]
+  fn table_24() {
+    assert_case(
+      r#"Table[CompositeQ[n], {n, 0, 10}]"#,
+      r#"{False, False, False, False, True, False, True, False, True, True, True}"#,
+    );
+  }
+  #[test]
+  fn fixed_point_1() {
+    assert_case(r#"FixedPoint[Cos, 1.0]"#, r#"0.7390851332151607"#);
+  }
+  #[test]
+  fn fixed_point_2() {
+    assert_case(r#"FixedPoint[Cos, 1.0]; FixedPoint[#+1 &, 1, 20]"#, r#"21"#);
+  }
+  #[test]
+  fn fixed_point_list() {
+    assert_case(
+      r#"FixedPointList[Cos, 1.0, 4]"#,
+      r#"{1., 0.5403023058681398, 0.8575532158463933, 0.6542897904977792, 0.7934803587425655}"#,
+    );
+  }
+  #[test]
+  fn newton() {
+    assert_case(
+      r#"FixedPointList[Cos, 1.0, 4]; newton[n_] := FixedPointList[.5(# + n/#) &, 1.]; newton[9]"#,
+      r#"{1., 5., 3.4, 3.023529411764706, 3.00009155413138, 3.000000001396984, 3., 3.}"#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"FixedPointList[Cos, 1.0, 4]; newton[n_] := FixedPointList[.5(# + n/#) &, 1.]; newton[9]; collatz[1] := 1; collatz[x_ ? EvenQ] := x / 2; collatz[x_] := 3 x + 1; list = FixedPointList[collatz, 14]"#,
+      r#"{14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}"#,
+    );
+  }
+  #[test]
+  fn fold_1() {
+    assert_case(r#"Fold[Plus, 5, {1, 1, 1}]"#, r#"8"#);
+  }
+  #[test]
+  fn fold_2() {
+    assert_case(
+      r#"Fold[Plus, 5, {1, 1, 1}]; Fold[f, 5, {1, 2, 3}]"#,
+      r#"f[f[f[5, 1], 2], 3]"#,
+    );
+  }
+  #[test]
+  fn fold_list_1() {
+    assert_case(
+      r#"FoldList[f, x, {1, 2, 3}]"#,
+      r#"{x, f[x, 1], f[f[x, 1], 2], f[f[f[x, 1], 2], 3]}"#,
+    );
+  }
+  #[test]
+  fn fold_list_2() {
+    assert_case(
+      r#"FoldList[f, x, {1, 2, 3}]; FoldList[Times, {1, 2, 3}]"#,
+      r#"{1, 2, 6}"#,
+    );
+  }
+  #[test]
+  fn nest_1() {
+    assert_case(r#"Nest[f, x, 3]"#, r#"f[f[f[x]]]"#);
+  }
+  #[test]
+  fn nest_2() {
+    assert_case(
+      r#"Nest[f, x, 3]; Nest[(1+#) ^ 2 &, x, 2]"#,
+      r#"(1 + (1 + x) ^ 2) ^ 2"#,
+    );
+  }
+  #[test]
+  fn nest_list_2() {
+    assert_case(r#"NestList[f, x, 3]"#, r#"{x, f[x], f[f[x]], f[f[f[x]]]}"#);
+  }
+  #[test]
+  fn nest_list_3() {
+    assert_case(
+      r#"NestList[f, x, 3]; NestList[2 # &, 1, 8]"#,
+      r#"{1, 2, 4, 8, 16, 32, 64, 128, 256}"#,
+    );
+  }
+  #[test]
+  fn nest_while_1() {
+    assert_case(r#"NestWhile[#/2&, 10000, IntegerQ]"#, r#"625 / 2"#);
+  }
+  #[test]
+  fn scan() {
+    assert_case(r#"Scan[Print, {1, 2, 3}]"#, r#"Null"#);
+  }
+  #[test]
+  fn member_q_6() {
+    assert_case(r#"MemberQ[$Packages, "System`"]"#, r#"True"#);
+  }
+  #[test]
+  fn any_true_3() {
+    assert_case(r#"AnyTrue[{}, EvenQ]"#, r#"False"#);
+  }
+  #[test]
+  fn all_true_3() {
+    assert_case(r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]"#, r#"True"#);
+  }
+  #[test]
+  fn equivalent_1() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equivalent_2() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn none_true_3() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]; NoneTrue[{}, EvenQ]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn xor_1() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]; NoneTrue[{}, EvenQ]; Xor[]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn xor_2() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]; NoneTrue[{}, EvenQ]; Xor[]; Xor[a]"#,
+      r#"a"#,
+    );
+  }
+  #[test]
+  fn xor_3() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]; NoneTrue[{}, EvenQ]; Xor[]; Xor[a]; Xor[False]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn xor_4() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]; NoneTrue[{}, EvenQ]; Xor[]; Xor[a]; Xor[False]; Xor[True]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn xor_5() {
+    assert_case(
+      r#"AnyTrue[{}, EvenQ]; AllTrue[{}, EvenQ]; Equivalent[]; Equivalent[a]; NoneTrue[{}, EvenQ]; Xor[]; Xor[a]; Xor[False]; Xor[True]; Xor[a, b]"#,
+      r#"Xor[a, b]"#,
+    );
+  }
+  #[test]
+  fn subset_q_5() {
+    assert_case(r#"SubsetQ[{1, 2, 3}, {0, 1}]"#, r#"False"#);
+  }
+  #[test]
+  fn subset_q_6() {
+    assert_case(
+      r#"SubsetQ[{1, 2, 3}, {0, 1}]; SubsetQ[{1, 2, 3}, {1, 2, 3, 4}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn nest_while_2() {
+    assert_case(r#"NestWhile[#/2&, 10000, IntegerQ]"#, r#"625/2"#);
+  }
+  #[test]
+  fn sort_2() {
+    assert_case(r#"Sort[{x_, y_}, PatternsOrderedQ]"#, r#"{x_, y_}"#);
+  }
+  #[test]
+  fn length_3() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]"#,
+      r#"96"#,
+    );
+  }
+  #[test]
+  fn length_4() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]"#,
+      r#"672"#,
+    );
+  }
+  #[test]
+  fn fractional_part_1() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]"#,
+      r#"FractionalPart[b]"#,
+    );
+  }
+  #[test]
+  fn fractional_part_2() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]"#,
+      r#"{-0.3999999999999999, -0.5, 0.}"#,
+    );
+  }
+  #[test]
+  fn fractional_part_3() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]"#,
+      r#"7 / 16"#,
+    );
+  }
+  #[test]
+  fn fractional_part_4() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]"#,
+      r#"2 / 5 - I / 5"#,
+    );
+  }
+  #[test]
+  fn fractional_part_5() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]"#,
+      r#"-8769956796 + Pi ^ 20"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_1() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]"#,
+      r#"{E / Pi, 1}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_2() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]; MantissaExponent[Pi, Pi]"#,
+      r#"{Pi^(-1), 2}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_3() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]; MantissaExponent[Pi, Pi]; MantissaExponent[5/2 + 3, Pi]"#,
+      r#"{11/(2*Pi^2), 2}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_4() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]; MantissaExponent[Pi, Pi]; MantissaExponent[5/2 + 3, Pi]; MantissaExponent[b]"#,
+      r#"MantissaExponent[b]"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_5() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]; MantissaExponent[Pi, Pi]; MantissaExponent[5/2 + 3, Pi]; MantissaExponent[b]; MantissaExponent[17, E]"#,
+      r#"{17 / E ^ 3, 3}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_6() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]; MantissaExponent[Pi, Pi]; MantissaExponent[5/2 + 3, Pi]; MantissaExponent[b]; MantissaExponent[17, E]; MantissaExponent[17., E]"#,
+      r#"{0.8463801622536871, 3}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_7() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]; Length[Divisors[1000*369]]; Length[Divisors[305*176*369*100]]; FractionalPart[b]; FractionalPart[{-2.4, -2.5, -3.0}]; FractionalPart[14/32]; FractionalPart[4/(1 + 3 I)]; FractionalPart[Pi^20]; MantissaExponent[E, Pi]; MantissaExponent[Pi, Pi]; MantissaExponent[5/2 + 3, Pi]; MantissaExponent[b]; MantissaExponent[17, E]; MantissaExponent[17., E]; MantissaExponent[Exp[Pi], 2]"#,
+      r#"{E ^ Pi / 32, 5}"#,
+    );
+  }
+  #[test]
+  fn table_25() {
+    assert_case(r#"Table[x, {x,0,1/3}]"#, r#"{0}"#);
+  }
+  #[test]
+  fn table_26() {
+    assert_case(
+      r#"Table[x, {x,0,1/3}]; Table[x, {x, -0.2, 3.9}]"#,
+      r#"{-0.2, 0.8, 1.8, 2.8, 3.8}"#,
+    );
+  }
+  #[test]
+  fn table_27() {
+    assert_case(r#"Table[x, {x,0,1/3}]"#, r#"{0}"#);
+  }
+  #[test]
+  fn table_28() {
+    assert_case(
+      r#"Table[x, {x,0,1/3}]; Table[x, {x, -0.2, 3.9}]"#,
+      r#"{-0.2, 0.8, 1.8, 2.8, 3.8}"#,
+    );
+  }
+  #[test]
+  fn delete_8() {
+    // `Delete[{}, 0]` removes the `List` head of an empty list, leaving
+    // `Sequence[]`. At top level wolframscript prints nothing for an
+    // empty sequence — the mathics expectation `InputForm` was a bug.
+    assert_case(r#"Delete[{}, 0]"#, "");
+  }
+  #[test]
+  fn subsets_8() {
+    assert_case(r#"Binomial[-10, -3.5]; Subsets[{}]"#, r#"{{}}"#);
+  }
+  #[test]
+  fn fixed_point_3() {
+    assert_case(r#"FixedPoint[f, x, 0]"#, r#"x"#);
+  }
+}

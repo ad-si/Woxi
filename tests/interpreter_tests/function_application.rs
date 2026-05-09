@@ -1002,3 +1002,735 @@ mod dynamic_head_apply {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn at_1() {
+    assert_case(r#"a @ b"#, r#"a[b]"#);
+  }
+  #[test]
+  fn at_2() {
+    assert_case(r#"a @ b; a @ b @ c"#, r#"a[b[c]]"#);
+  }
+  #[test]
+  fn f_1() {
+    assert_case(
+      r#"f[x, Sequence[a, b], y]; Attributes[Set]; a = Sequence[b, c]; a; list = {1, 2, 3}; f[Sequence @@ list]"#,
+      r#"f[1, 2, 3]"#,
+    );
+  }
+  #[test]
+  fn hold_1() {
+    assert_case(
+      r#"f[x, Sequence[a, b], y]; Attributes[Set]; a = Sequence[b, c]; a; list = {1, 2, 3}; f[Sequence @@ list]; Hold[a, Sequence[b, c], d]"#,
+      r#"Hold[a, b, c, d]"#,
+    );
+  }
+  #[test]
+  fn hold_2() {
+    assert_case(
+      r#"f[x, Sequence[a, b], y]; Attributes[Set]; a = Sequence[b, c]; a; list = {1, 2, 3}; f[Sequence @@ list]; Hold[a, Sequence[b, c], d]; Hold[{a, Sequence[b, c], d}]"#,
+      r#"Hold[{a, Sequence[b, c], d}]"#,
+    );
+  }
+  #[test]
+  fn at_3() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\); \( \@ 5 \)"#,
+      r#"SqrtBox["5"]"#,
+    );
+  }
+  #[test]
+  fn anonymous_function_1() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\); \( \@ 5 \); \(x \& y \)"#,
+      r#"OverscriptBox["x", "y"]"#,
+    );
+  }
+  #[test]
+  fn plus_1() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\); \( \@ 5 \); \(x \& y \); \(x \+ y \)"#,
+      r#"UnderscriptBox["x", "y"]"#,
+    );
+  }
+  #[test]
+  fn power() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\); \( \@ 5 \); \(x \& y \); \(x \+ y \); \( x \^ 2 \_ 4 \)"#,
+      r#"SuperscriptBox["x", SubscriptBox["2", "4"]]"#,
+    );
+  }
+  #[test]
+  fn plus_2() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\); \( \@ 5 \); \(x \& y \); \(x \+ y \); \( x \^ 2 \_ 4 \); (a + b)[x]"#,
+      r#"(a + b)[x]"#,
+    );
+  }
+  #[test]
+  fn expr() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\); \( \@ 5 \); \(x \& y \); \(x \+ y \); \( x \^ 2 \_ 4 \); (a + b)[x]; (a b)[x]"#,
+      r#"(a*b)[x]"#,
+    );
+  }
+  #[test]
+  fn f_2() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}; f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}; f[4] /. f[x_?(# > 0&)] -> x ^ 2"#,
+      r#"16"#,
+    );
+  }
+  #[test]
+  fn greater_1() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}; f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}; f[4] /. f[x_?(# > 0&)] -> x ^ 2; f[4] /. f[x_] /; x > 0 -> x ^ 2"#,
+      r#"16"#,
+    );
+  }
+  #[test]
+  fn f_3() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}; f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}; f[4] /. f[x_?(# > 0&)] -> x ^ 2; f[4] /. f[x_] /; x > 0 -> x ^ 2; f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}"#,
+      r#"{{a}, {b, c, d}}"#,
+    );
+  }
+  #[test]
+  fn f_4() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}; f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}; f[4] /. f[x_?(# > 0&)] -> x ^ 2; f[4] /. f[x_] /; x > 0 -> x ^ 2; f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}; f[a] /. f[x_, y_:3] -> {x, y}"#,
+      r#"{a, 3}"#,
+    );
+  }
+  #[test]
+  fn equal_1() {
+    assert_case(
+      r#"IntegerLength[123456]; IntegerLength[10^10000]; IntegerLength[-10^1000]; IntegerLength[8, 2]; IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn apply_1() {
+    assert_case(
+      r#"1 + 2; a + b + a; a + a + 3 * a; a + b + 4.5 + a + b + a + 2 + 1.5 b; Plus @@ {2, 4, 6}"#,
+      r#"12"#,
+    );
+  }
+  #[test]
+  fn apply_2() {
+    assert_case(
+      r#"1 + 2; a + b + a; a + a + 3 * a; a + b + 4.5 + a + b + a + 2 + 1.5 b; Plus @@ {2, 4, 6}; Plus @@ Range[1000]"#,
+      r#"500500"#,
+    );
+  }
+  #[test]
+  fn default_values_1() {
+    assert_case(
+      r#"1 + 2; a + b + a; a + a + 3 * a; a + b + 4.5 + a + b + a + 2 + 1.5 b; Plus @@ {2, 4, 6}; Plus @@ Range[1000]; DefaultValues[Plus]"#,
+      r#"{HoldPattern[Default[Plus]] :> 0}"#,
+    );
+  }
+  #[test]
+  fn greater_2() {
+    assert_case(
+      r#"1 + 2; a + b + a; a + a + 3 * a; a + b + 4.5 + a + b + a + 2 + 1.5 b; Plus @@ {2, 4, 6}; Plus @@ Range[1000]; DefaultValues[Plus]; a /. n_. + x_ :> {n, x}"#,
+      r#"{0, a}"#,
+    );
+  }
+  #[test]
+  fn apply_3() {
+    assert_case(
+      r#"10 * 2; 10 2; a * a; x ^ 10 * x ^ -2; {1, 2, 3} * 4; Times @@ {1, 2, 3, 4}"#,
+      r#"24"#,
+    );
+  }
+  #[test]
+  fn integer_length() {
+    assert_case(
+      r#"10 * 2; 10 2; a * a; x ^ 10 * x ^ -2; {1, 2, 3} * 4; Times @@ {1, 2, 3, 4}; IntegerLength[Times@@Range[5000]]"#,
+      r#"16326"#,
+    );
+  }
+  #[test]
+  fn default_values_2() {
+    assert_case(
+      r#"10 * 2; 10 2; a * a; x ^ 10 * x ^ -2; {1, 2, 3} * 4; Times @@ {1, 2, 3, 4}; IntegerLength[Times@@Range[5000]]; DefaultValues[Times]"#,
+      r#"{HoldPattern[Default[Times]] :> 1}"#,
+    );
+  }
+  #[test]
+  fn greater_3() {
+    assert_case(
+      r#"10 * 2; 10 2; a * a; x ^ 10 * x ^ -2; {1, 2, 3} * 4; Times @@ {1, 2, 3, 4}; IntegerLength[Times@@Range[5000]]; DefaultValues[Times]; a /. n_. * x_ :> {n, x}"#,
+      r#"{1, a}"#,
+    );
+  }
+  #[test]
+  fn operate_1() {
+    assert_case(r#"Operate[p, f[a, b]]"#, r#"p[f][a, b]"#);
+  }
+  #[test]
+  fn operate_2() {
+    assert_case(
+      r#"Operate[p, f[a, b]]; Operate[p, f[a, b], 1]"#,
+      r#"p[f][a, b]"#,
+    );
+  }
+  #[test]
+  fn operate_3() {
+    assert_case(
+      r#"Operate[p, f[a, b]]; Operate[p, f[a, b], 1]; Operate[p, f[a][b][c], 0]"#,
+      r#"p[f[a][b][c]]"#,
+    );
+  }
+  #[test]
+  fn through_1() {
+    assert_case(r#"Through[f[g][x]]"#, r#"f[g[x]]"#);
+  }
+  #[test]
+  fn through_2() {
+    assert_case(
+      r#"Through[f[g][x]]; Through[p[f, g][x]]"#,
+      r#"p[f[x], g[x]]"#,
+    );
+  }
+  #[test]
+  fn apply_4() {
+    assert_case(r#"f @@@ {{a, b}, {c, d}}"#, r#"{f[a, b], f[c, d]}"#);
+  }
+  #[test]
+  fn minus() {
+    assert_case(r#"InverseErf /@ {-1, 0, 1}"#, r#"{-Infinity, 0, Infinity}"#);
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(r#"InverseErfc /@ {0, 1, 2}"#, r#"{Infinity, 0, -Infinity}"#);
+  }
+  #[test]
+  fn f_5() {
+    assert_case(r#"f := # ^ 2 &; f[3]"#, r#"9"#);
+  }
+  #[test]
+  fn anonymous_function_2() {
+    assert_case(r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}"#, r#"{1, 8, 27}"#);
+  }
+  #[test]
+  fn anonymous_function_3() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]"#,
+      r#"9"#,
+    );
+  }
+  #[test]
+  fn function_1() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn function_2() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]"#,
+      r#"Function[{y$}, f[y, y$]]"#,
+    );
+  }
+  #[test]
+  fn function_3() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]; Function[{y}, f[x, y]] /. x->y"#,
+      r#"Function[{y}, f[y, y]]"#,
+    );
+  }
+  #[test]
+  fn function_4() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]; Function[{y}, f[x, y]] /. x->y; Function[y, Function[x, y^x]][x][y]"#,
+      r#"x ^ y"#,
+    );
+  }
+  #[test]
+  fn function_5() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]; Function[{y}, f[x, y]] /. x->y; Function[y, Function[x, y^x]][x][y]; Function[x, Function[y, x^y]][x][y]"#,
+      r#"x ^ y"#,
+    );
+  }
+  #[test]
+  fn g_1() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]; Function[{y}, f[x, y]] /. x->y; Function[y, Function[x, y^x]][x][y]; Function[x, Function[y, x^y]][x][y]; g[#] & [h[#]] & [5]"#,
+      r#"g[h[5]]"#,
+    );
+  }
+  #[test]
+  fn h_1() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]; Function[{y}, f[x, y]] /. x->y; Function[y, Function[x, y^x]][x][y]; Function[x, Function[y, x^y]][x][y]; g[#] & [h[#]] & [5]; h := Function[{x}, Hold[1+x]]; h[1 + 1]"#,
+      r#"Hold[1 + 2]"#,
+    );
+  }
+  #[test]
+  fn h_2() {
+    assert_case(
+      r#"f := # ^ 2 &; f[3]; #^3& /@ {1, 2, 3}; #1+#2&[4, 5]; Function[{x, y}, x * y][2, 3]; Function[{x}, Function[{y}, f[x, y]]][y]; Function[{y}, f[x, y]] /. x->y; Function[y, Function[x, y^x]][x][y]; Function[x, Function[y, x^y]][x][y]; g[#] & [h[#]] & [5]; h := Function[{x}, Hold[1+x]]; h[1 + 1]; h:= Function[{x}, Hold[1+x], HoldAll]; h[1+1]"#,
+      r#"Hold[1 + (1 + 1)]"#,
+    );
+  }
+  #[test]
+  fn slot() {
+    assert_case(r#"#"#, r#"#1"#);
+  }
+  #[test]
+  fn anonymous_function_4() {
+    assert_case(r#"#; {#1, #2, #3}&[1, 2, 3, 4, 5]"#, r#"{1, 2, 3}"#);
+  }
+  #[test]
+  fn composition_1() {
+    assert_case(r#"Composition[f, g][x]"#, r#"f[g[x]]"#);
+  }
+  #[test]
+  fn composition_2() {
+    assert_case(
+      r#"Composition[f, g][x]; Composition[f, g, h][x, y, z]"#,
+      r#"f[g[h[x, y, z]]]"#,
+    );
+  }
+  #[test]
+  fn composition_3() {
+    assert_case(
+      r#"Composition[f, g][x]; Composition[f, g, h][x, y, z]; Composition[]"#,
+      r#"Identity"#,
+    );
+  }
+  #[test]
+  fn composition_4() {
+    assert_case(
+      r#"Composition[f, g][x]; Composition[f, g, h][x, y, z]; Composition[]; Composition[][x]"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn attributes() {
+    assert_case(
+      r#"Composition[f, g][x]; Composition[f, g, h][x, y, z]; Composition[]; Composition[][x]; Attributes[Composition]"#,
+      r#"{Flat, OneIdentity, Protected}"#,
+    );
+  }
+  #[test]
+  fn composition_5() {
+    assert_case(
+      r#"Composition[f, g][x]; Composition[f, g, h][x, y, z]; Composition[]; Composition[][x]; Attributes[Composition]; Composition[f, Composition[g, h]]"#,
+      r#"f @* g @* h"#,
+    );
+  }
+  #[test]
+  fn identity() {
+    assert_case(r#"Identity[x]"#, r#"x"#);
+  }
+  #[test]
+  fn apply_5() {
+    assert_case(r#"f @@ {1, 2, 3}"#, r#"f[1, 2, 3]"#);
+  }
+  #[test]
+  fn apply_6() {
+    assert_case(r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}"#, r#"6"#);
+  }
+  #[test]
+  fn plus_3() {
+    assert_case(
+      r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}; f @@ (a + b + c)"#,
+      r#"f[a, b, c]"#,
+    );
+  }
+  #[test]
+  fn apply_7() {
+    assert_case(
+      r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}; f @@ (a + b + c); Apply[f][a + b + c]"#,
+      r#"f[a, b, c]"#,
+    );
+  }
+  #[test]
+  fn apply_8() {
+    assert_case(
+      r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}; f @@ (a + b + c); Apply[f][a + b + c]; Apply[f, {a + b, g[c, d, e * f], 3}, {1}]"#,
+      r#"{f[a, b], f[c, d, e*f], 3}"#,
+    );
+  }
+  #[test]
+  fn apply_9() {
+    assert_case(
+      r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}; f @@ (a + b + c); Apply[f][a + b + c]; Apply[f, {a + b, g[c, d, e * f], 3}, {1}]; Apply[f, {a, b, c}, {0}]"#,
+      r#"f[a, b, c]"#,
+    );
+  }
+  #[test]
+  fn apply_10() {
+    assert_case(
+      r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}; f @@ (a + b + c); Apply[f][a + b + c]; Apply[f, {a + b, g[c, d, e * f], 3}, {1}]; Apply[f, {a, b, c}, {0}]; Apply[f, {{{{{a}}}}}, {2, -3}]"#,
+      r#"{{f[f[{a}]]}}"#,
+    );
+  }
+  #[test]
+  fn apply_11() {
+    assert_case(
+      r#"f @@ {1, 2, 3}; Plus @@ {1, 2, 3}; f @@ (a + b + c); Apply[f][a + b + c]; Apply[f, {a + b, g[c, d, e * f], 3}, {1}]; Apply[f, {a, b, c}, {0}]; Apply[f, {{{{{a}}}}}, {2, -3}]; Apply[List, a + b * c ^ e * f[g], {0, Infinity}]"#,
+      r#"{a, {b, {c, e}, {g}}}"#,
+    );
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(r#"f /@ {1, 2, 3}"#, r#"{f[1], f[2], f[3]}"#);
+  }
+  #[test]
+  fn anonymous_function_5() {
+    assert_case(
+      r#"f /@ {1, 2, 3}; #^2& /@ {1, 2, 3, 4}"#,
+      r#"{1, 4, 9, 16}"#,
+    );
+  }
+  #[test]
+  fn map_1() {
+    assert_case(
+      r#"f /@ {1, 2, 3}; #^2& /@ {1, 2, 3, 4}; Map[f, {{a, b}, {c, d, e}}, {2}]"#,
+      r#"{{f[a], f[b]}, {f[c], f[d], f[e]}}"#,
+    );
+  }
+  #[test]
+  fn map_2() {
+    assert_case(
+      r#"f /@ {1, 2, 3}; #^2& /@ {1, 2, 3, 4}; Map[f, {{a, b}, {c, d, e}}, {2}]; Map[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>]"#,
+      r#"<|"a" -> f[1], "b" -> f[2], "c" -> f[3], "d" -> f[4]|>"#,
+    );
+  }
+  #[test]
+  fn map_3() {
+    assert_case(
+      r#"f /@ {1, 2, 3}; #^2& /@ {1, 2, 3, 4}; Map[f, {{a, b}, {c, d, e}}, {2}]; Map[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>]; Map[f, a + b + c, Heads->True]"#,
+      r#"f[Plus][f[a], f[b], f[c]]"#,
+    );
+  }
+  #[test]
+  fn map_4() {
+    assert_case(
+      r#"f /@ {1, 2, 3}; #^2& /@ {1, 2, 3, 4}; Map[f, {{a, b}, {c, d, e}}, {2}]; Map[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>]; Map[f, a + b + c, Heads->True]; Map[f][{a, b, c}]"#,
+      r#"{f[a], f[b], f[c]}"#,
+    );
+  }
+  #[test]
+  fn map_at_1() {
+    assert_case(r#"MapAt[f, {a, b, c}, 2]"#, r#"{a, f[b], c}"#);
+  }
+  #[test]
+  fn map_at_2() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]"#,
+      r#"{{1, 1}, {0, 1}}"#,
+    );
+  }
+  #[test]
+  fn map_at_3() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]; MapAt[0&, {{0, 1}, {1, 0}}, 2]"#,
+      r#"{{0, 1}, 0}"#,
+    );
+  }
+  #[test]
+  fn map_at_4() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]; MapAt[0&, {{0, 1}, {1, 0}}, 2]; MapAt[0&, {{0, 1}, {1, 0}}, {{2}, {1}}]"#,
+      r#"{0, 0}"#,
+    );
+  }
+  #[test]
+  fn map_at_5() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]; MapAt[0&, {{0, 1}, {1, 0}}, 2]; MapAt[0&, {{0, 1}, {1, 0}}, {{2}, {1}}]; MapAt[f, {a, b, c}, -1]"#,
+      r#"{a, b, f[c]}"#,
+    );
+  }
+  #[test]
+  fn map_at_6() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]; MapAt[0&, {{0, 1}, {1, 0}}, 2]; MapAt[0&, {{0, 1}, {1, 0}}, {{2}, {1}}]; MapAt[f, {a, b, c}, -1]; MapAt[f, -1][{a, b, c}]"#,
+      r#"{a, b, f[c]}"#,
+    );
+  }
+  #[test]
+  fn map_at_7() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]; MapAt[0&, {{0, 1}, {1, 0}}, 2]; MapAt[0&, {{0, 1}, {1, 0}}, {{2}, {1}}]; MapAt[f, {a, b, c}, -1]; MapAt[f, -1][{a, b, c}]; MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]"#,
+      r#"<|"a" -> 1, "b" -> f[2], "c" -> 3, "d" -> 4|>"#,
+    );
+  }
+  #[test]
+  fn map_at_8() {
+    assert_case(
+      r#"MapAt[f, {a, b, c}, 2]; MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]; MapAt[0&, {{0, 1}, {1, 0}}, 2]; MapAt[0&, {{0, 1}, {1, 0}}, {{2}, {1}}]; MapAt[f, {a, b, c}, -1]; MapAt[f, -1][{a, b, c}]; MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]; MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, -2]"#,
+      r#"<|"a" -> 1, "b" -> 2, "c" -> f[3], "d" -> 4|>"#,
+    );
+  }
+  #[test]
+  fn map_indexed_1() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]"#,
+      r#"{f[a, {1}], f[b, {2}], f[c, {3}]}"#,
+    );
+  }
+  #[test]
+  fn map_indexed_2() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]; MapIndexed[f][{a, b, c}]"#,
+      r#"{f[a, {1}], f[b, {2}], f[c, {3}]}"#,
+    );
+  }
+  #[test]
+  fn map_indexed_3() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]; MapIndexed[f][{a, b, c}]; MapIndexed[f, {a, b, c}, Heads->True]"#,
+      r#"f[List, {0}][f[a, {1}], f[b, {2}], f[c, {3}]]"#,
+    );
+  }
+  #[test]
+  fn map_indexed_4() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]; MapIndexed[f][{a, b, c}]; MapIndexed[f, {a, b, c}, Heads->True]; MapIndexed[f, a + b + c * d, {0, 1}]"#,
+      r#"f[f[a, {1}] + f[b, {2}] + f[c*d, {3}], {}]"#,
+    );
+  }
+  #[test]
+  fn map_indexed_5() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]; MapIndexed[f][{a, b, c}]; MapIndexed[f, {a, b, c}, Heads->True]; MapIndexed[f, a + b + c * d, {0, 1}]; expr = a + b * f[g] * c ^ e; listified = Apply[List, expr, {0, Infinity}]; MapIndexed[#2 &, listified, {-1}]"#,
+      r#"{{1}, {{2, 1}, {{2, 2, 1}, {2, 2, 2}}, {{2, 3, 1}}}}"#,
+    );
+  }
+  #[test]
+  fn map_indexed_6() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]; MapIndexed[f][{a, b, c}]; MapIndexed[f, {a, b, c}, Heads->True]; MapIndexed[f, a + b + c * d, {0, 1}]; expr = a + b * f[g] * c ^ e; listified = Apply[List, expr, {0, Infinity}]; MapIndexed[#2 &, listified, {-1}]; MapIndexed[#2 &, listified, {-1}, Heads -> True]"#,
+      r#"{0}[{1}, {2, 0}[{2, 1}, {2, 2, 0}[{2, 2, 1}, {2, 2, 2}], {2, 3, 0}[{2, 3, 1}]]]"#,
+    );
+  }
+  #[test]
+  fn map_indexed_7() {
+    assert_case(
+      r#"MapIndexed[f, {a, b, c}]; MapIndexed[f][{a, b, c}]; MapIndexed[f, {a, b, c}, Heads->True]; MapIndexed[f, a + b + c * d, {0, 1}]; expr = a + b * f[g] * c ^ e; listified = Apply[List, expr, {0, Infinity}]; MapIndexed[#2 &, listified, {-1}]; MapIndexed[#2 &, listified, {-1}, Heads -> True]; MapIndexed[Extract[expr, #2] &, listified, {-1}, Heads -> True]"#,
+      r#"a + b*c^e*f[g]"#,
+    );
+  }
+  #[test]
+  fn map_thread_1() {
+    assert_case(
+      r#"MapThread[f, {{a, b, c}, {1, 2, 3}}]"#,
+      r#"{f[a, 1], f[b, 2], f[c, 3]}"#,
+    );
+  }
+  #[test]
+  fn map_thread_2() {
+    assert_case(
+      r#"MapThread[f, {{a, b, c}, {1, 2, 3}}]; MapThread[f, {{{a, b}, {c, d}}, {{e, f}, {g, h}}}, 2]"#,
+      r#"{{f[a, e], f[b, f]}, {f[c, g], f[d, h]}}"#,
+    );
+  }
+  #[test]
+  fn map_thread_3() {
+    assert_case(
+      r#"MapThread[f, {{a, b, c}, {1, 2, 3}}]; MapThread[f, {{{a, b}, {c, d}}, {{e, f}, {g, h}}}, 2]; MapThread[f][{{a, b, c}, {1, 2, 3}}]"#,
+      r#"{f[a, 1], f[b, 2], f[c, 3]}"#,
+    );
+  }
+  #[test]
+  fn thread_1() {
+    assert_case(r#"Thread[f[{a, b, c}]]"#, r#"{f[a], f[b], f[c]}"#);
+  }
+  #[test]
+  fn thread_2() {
+    assert_case(
+      r#"Thread[f[{a, b, c}]]; Thread[f[{a, b, c}, t]]"#,
+      r#"{f[a, t], f[b, t], f[c, t]}"#,
+    );
+  }
+  #[test]
+  fn thread_3() {
+    assert_case(
+      r#"Thread[f[{a, b, c}]]; Thread[f[{a, b, c}, t]]; Thread[f[a + b + c], Plus]"#,
+      r#"f[a] + f[b] + f[c]"#,
+    );
+  }
+  #[test]
+  fn list_literal() {
+    assert_case(
+      r#"Thread[f[{a, b, c}]]; Thread[f[{a, b, c}, t]]; Thread[f[a + b + c], Plus]; {a, b, c} + {d, e, f} + g"#,
+      r#"{a + d + g, b + e + g, c + f + g}"#,
+    );
+  }
+  #[test]
+  fn apply_12() {
+    assert_case(r#"Plus@@uniformTable"#, r#"uniformTable"#);
+  }
+  #[test]
+  fn divide_3() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]"#,
+      r#"{5., 100., MachinePrecision, 20.}"#,
+    );
+  }
+  #[test]
+  fn divide_4() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]"#,
+      r#"{5., 100., MachinePrecision, 20.}"#,
+    );
+  }
+  #[test]
+  fn n_1() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]; N[Sqrt[2], 40]"#,
+      r#"1.4142135623730950488016887242096980785696718753769480731767`40."#,
+    );
+  }
+  #[test]
+  fn n_2() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]; N[Sqrt[2], 40]; N[Sqrt[2], 4]"#,
+      r#"1.4142135623730950488`4."#,
+    );
+  }
+  #[test]
+  fn n_3() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]; N[Sqrt[2], 40]; N[Sqrt[2], 4]; N[Pi, 40]"#,
+      r#"3.1415926535897932384626433832795028841971693993751058209749`40."#,
+    );
+  }
+  #[test]
+  fn n_4() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]; N[Sqrt[2], 40]; N[Sqrt[2], 4]; N[Pi, 40]; N[Pi, 4]"#,
+      r#"3.1415926535897932385`4."#,
+    );
+  }
+  #[test]
+  fn n_5() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]; N[Sqrt[2], 40]; N[Sqrt[2], 4]; N[Pi, 40]; N[Pi, 4]; N[Pi, 41]"#,
+      r#"3.1415926535897932384626433832795028841971693993751058209749`41."#,
+    );
+  }
+  #[test]
+  fn n_6() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]; Precision/@Table[N[Pi,p],{p, {5, 100, MachinePrecision, 20}}]; Precision/@Table[N[Sin[1],p],{p, {5, 100, MachinePrecision, 20}}]; N[Sqrt[2], 40]; N[Sqrt[2], 4]; N[Pi, 40]; N[Pi, 4]; N[Pi, 41]; N[Sqrt[2], 41]"#,
+      r#"1.4142135623730950488016887242096980785696718753769480731767`41."#,
+    );
+  }
+  #[test]
+  fn equal_2() {
+    assert_case(
+      r#"IntegerLength /@ (10 ^ Range[100] - 1) == Range[1, 100]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn map_5() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]"#,
+      r#"Q[F[a->1], F[b:>Association[p->3, q->4]]]"#,
+    );
+  }
+  #[test]
+  fn map_6() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]"#,
+      r#"Q[F[a]->F[1], F[b]:>F[Association[p->3, q->4]]]"#,
+    );
+  }
+  #[test]
+  fn map_7() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]"#,
+      r#"F[<|a -> 1, b :> Association[p -> 3, q -> 4]|>]"#,
+    );
+  }
+  #[test]
+  fn map_8() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]; Map[F, Association[a->1, b:>2]]"#,
+      r#"<|a -> F[1], b :> F[2]|>"#,
+    );
+  }
+  #[test]
+  fn map_9() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]; Map[F, Association[a->1, b:>2]]; Map[F, Association[a->1, b:>Association[p->3,q->4]]]"#,
+      r#"<|a -> F[1], b :> F[Association[p -> 3, q -> 4]]|>"#,
+    );
+  }
+  #[test]
+  fn map_10() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]; Map[F, Association[a->1, b:>2]]; Map[F, Association[a->1, b:>Association[p->3,q->4]]]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {1}]"#,
+      r#"<|a -> F[1], b :> F[Association[p -> 3, q -> 4]]|>"#,
+    );
+  }
+  #[test]
+  fn map_11() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]; Map[F, Association[a->1, b:>2]]; Map[F, Association[a->1, b:>Association[p->3,q->4]]]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {1}]; Map[F, Association[a->1,b:>2,q]]"#,
+      r#"Association[F[a->1], F[b:>2], F[q]]"#,
+    );
+  }
+  #[test]
+  fn map_12() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]; Map[F, Association[a->1, b:>2]]; Map[F, Association[a->1, b:>Association[p->3,q->4]]]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {1}]; Map[F, Association[a->1,b:>2,q]]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {2}]"#,
+      r#"<|a -> 1, b :> Association[F[p -> 3], F[q -> 4]]|>"#,
+    );
+  }
+  #[test]
+  fn map_13() {
+    assert_case(
+      r#"Map[F, Q[a->1, b:>Association[p->3,q->4]]]; Map[F, Q[a->1, b:>Association[p->3,q->4]],{2}]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {0}]; Map[F, Association[a->1, b:>2]]; Map[F, Association[a->1, b:>Association[p->3,q->4]]]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {1}]; Map[F, Association[a->1,b:>2,q]]; Map[F, Association[a->1, b:>Association[p->3,q->4]], {2}]; Map[F, Association[a->1, b:>Q[p->3, q->4]], {2}]"#,
+      r#"<|a -> 1, b :> Q[F[p -> 3], F[q -> 4]]|>"#,
+    );
+  }
+  #[test]
+  fn g_2() {
+    assert_case(
+      r#"g[x_,y_] := x+y;g[Sequence@@Slot/@Range[2]]&[1,2]"#,
+      r#"#1 + #2"#,
+    );
+  }
+  #[test]
+  fn evaluate() {
+    assert_case(
+      r#"g[x_,y_] := x+y;g[Sequence@@Slot/@Range[2]]&[1,2]; Evaluate[g[Sequence@@Slot/@Range[2]]]&[1,2]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn divide_5() {
+    assert_case(
+      r#"g[x_,y_] := x+y;g[Sequence@@Slot/@Range[2]]&[1,2]; Evaluate[g[Sequence@@Slot/@Range[2]]]&[1,2]; # // InputForm"#,
+      r#"InputForm[#1]"#,
+    );
+  }
+  #[test]
+  fn divide_6() {
+    assert_case(
+      r#"g[x_,y_] := x+y;g[Sequence@@Slot/@Range[2]]&[1,2]; Evaluate[g[Sequence@@Slot/@Range[2]]]&[1,2]; # // InputForm; #0 // InputForm"#,
+      r#"InputForm[#0]"#,
+    );
+  }
+  #[test]
+  fn divide_7() {
+    assert_case(
+      r#"g[x_,y_] := x+y;g[Sequence@@Slot/@Range[2]]&[1,2]; Evaluate[g[Sequence@@Slot/@Range[2]]]&[1,2]; # // InputForm; #0 // InputForm; ## // InputForm"#,
+      r#"InputForm[##1]"#,
+    );
+  }
+}

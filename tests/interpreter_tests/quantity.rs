@@ -2006,3 +2006,155 @@ fn known_unit_q_other_numbers_false() {
   assert_eq!(interpret("KnownUnitQ[3.14]").unwrap(), "False");
   assert_eq!(interpret("KnownUnitQ[1/2]").unwrap(), "False");
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn known_unit_q_1() {
+    assert_case(r#"KnownUnitQ["Feet"]"#, r#"True"#);
+  }
+  #[test]
+  fn known_unit_q_2() {
+    assert_case(r#"KnownUnitQ["Feet"]; KnownUnitQ["Foo"]"#, r#"False"#);
+  }
+  #[test]
+  fn known_unit_q_3() {
+    assert_case(
+      r#"KnownUnitQ["Feet"]; KnownUnitQ["Foo"]; KnownUnitQ["meter"^2/"second"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn quantity_1() {
+    assert_case(r#"Quantity["Kilogram"]"#, r#"Quantity[1, "Kilograms"]"#);
+  }
+  #[test]
+  fn quantity_2() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]"#,
+      r#"Quantity[10, "Meters"]"#,
+    );
+  }
+  #[test]
+  fn quantity_3() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]; Quantity[{10, 20}, "Meters"]"#,
+      r#"{Quantity[10, "Meters"], Quantity[20, "Meters"]}"#,
+    );
+  }
+  #[test]
+  fn quantity_4() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]; Quantity[{10, 20}, "Meters"]; Quantity[2, 3/2]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn quantity_q_1() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]; Quantity[{10, 20}, "Meters"]; Quantity[2, 3/2]; QuantityQ[Quantity[2, Second]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn quantity_5() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]; Quantity[{10, 20}, "Meters"]; Quantity[2, 3/2]; QuantityQ[Quantity[2, Second]]; Quantity[3, "centimeter"] / Quantity[2, "second"]^2"#,
+      r#"Quantity[3/4, "Centimeters"/"Seconds"^2]"#,
+    );
+  }
+  #[test]
+  fn quantity_6() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]; Quantity[{10, 20}, "Meters"]; Quantity[2, 3/2]; QuantityQ[Quantity[2, Second]]; Quantity[3, "centimeter"] / Quantity[2, "second"]^2; Quantity[3, "centimeter"] Quantity[2, "meter"]"#,
+      r#"Quantity[3/50, "Meters"^2]"#,
+    );
+  }
+  #[test]
+  fn quantity_7() {
+    assert_case(
+      r#"Quantity["Kilogram"]; Quantity[10, "Meters"]; Quantity[{10, 20}, "Meters"]; Quantity[2, 3/2]; QuantityQ[Quantity[2, Second]]; Quantity[3, "centimeter"] / Quantity[2, "second"]^2; Quantity[3, "centimeter"] Quantity[2, "meter"]; Quantity[6, "meter"] + Quantity[3, "centimeter"]"#,
+      r#"Quantity[603, "Centimeters"]"#,
+    );
+  }
+  #[test]
+  fn quantity_magnitude_1() {
+    assert_case(r#"QuantityMagnitude[Quantity["Kilogram"]]"#, r#"1"#);
+  }
+  #[test]
+  fn quantity_magnitude_2() {
+    assert_case(
+      r#"QuantityMagnitude[Quantity["Kilogram"]]; QuantityMagnitude[Quantity[10, "Meters"]]"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn quantity_magnitude_3() {
+    assert_case(
+      r#"QuantityMagnitude[Quantity["Kilogram"]]; QuantityMagnitude[Quantity[10, "Meters"]]; QuantityMagnitude[Quantity[{10,20}, "Meters"]]"#,
+      r#"{10, 20}"#,
+    );
+  }
+  #[test]
+  fn quantity_q_2() {
+    assert_case(r#"QuantityQ[Quantity[3, "Meters"]]"#, r#"True"#);
+  }
+  #[test]
+  fn quantity_unit_1() {
+    assert_case(r#"QuantityUnit[Quantity["Kilogram"]]"#, r#""Kilograms""#);
+  }
+  #[test]
+  fn quantity_unit_2() {
+    assert_case(
+      r#"QuantityUnit[Quantity["Kilogram"]]; QuantityUnit[Quantity[10, "Meters"]]"#,
+      r#""Meters""#,
+    );
+  }
+  #[test]
+  fn quantity_unit_3() {
+    assert_case(
+      r#"QuantityUnit[Quantity["Kilogram"]]; QuantityUnit[Quantity[10, "Meters"]]; QuantityUnit[Quantity[{10,20}, "Meters"]]"#,
+      r#"{"Meters", "Meters"}"#,
+    );
+  }
+  #[test]
+  fn unit_convert_1() {
+    assert_case(
+      r#"UnitConvert[Quantity[5.2, "miles"], "kilometers"]"#,
+      r#"Quantity[8.368588800000001, "Kilometers"]"#,
+    );
+  }
+  #[test]
+  fn unit_convert_2() {
+    assert_case(
+      r#"UnitConvert[Quantity[5.2, "miles"], "kilometers"]; UnitConvert[Quantity[3.8, "Pounds"]]"#,
+      r#"Quantity[1.723651006, "Kilograms"]"#,
+    );
+  }
+  #[test]
+  fn quantity_8() {
+    assert_case(r#"Quantity[10, Meters]"#, r#"Quantity[10, Meters]"#);
+  }
+  #[test]
+  fn quantity_9() {
+    assert_case(
+      r#"Quantity[4., "watt"]^(1/2)"#,
+      r#"Quantity[2., Sqrt["Watts"]]"#,
+    );
+  }
+  #[test]
+  fn quantity_10() {
+    assert_case(
+      r#"Quantity[4., "watt"]^(1/3)"#,
+      r#"Quantity[1.5874010519681994, "Watts"^(1/3)]"#,
+    );
+  }
+  #[test]
+  fn quantity_11() {
+    assert_case(
+      r#"Quantity[4., "watt"]^(.24)"#,
+      r#"Quantity[1.3947436663504054, "Watts"^0.24]"#,
+    );
+  }
+}

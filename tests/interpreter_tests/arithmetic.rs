@@ -3173,3 +3173,1553 @@ mod number_digit {
     assert_eq!(interpret("NumberDigit[210.345, -3]").unwrap(), "5");
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn filter_rules_1() {
+    assert_case(r#"FilterRules[{x -> 100, y -> 1000}, x]"#, r#"{x -> 100}"#);
+  }
+  #[test]
+  fn filter_rules_2() {
+    assert_case(
+      r#"FilterRules[{x -> 100, y -> 1000}, x]; FilterRules[{x -> 100, y -> 1000, z -> 10000}, {a, b, x, z}]"#,
+      r#"{x -> 100, z -> 10000}"#,
+    );
+  }
+  #[test]
+  fn power_1() {
+    assert_case(r#"I^2"#, r#"-1"#);
+  }
+  #[test]
+  fn plus_1() {
+    assert_case(r#"I^2; (3+I)*(3-I)"#, r#"10"#);
+  }
+  #[test]
+  fn trace_evaluation() {
+    assert_case(r#"TraceEvaluation[(x + x)^2]"#, r#"TraceEvaluation[4*x^2]"#);
+  }
+  #[test]
+  fn get_environment_1() {
+    assert_case(
+      r#"SetEnvironment["FOO" -> "bar"]; GetEnvironment["FOO"]"#,
+      r#""FOO" -> "bar""#,
+    );
+  }
+  #[test]
+  fn get_environment_2() {
+    assert_case(
+      r#"SetEnvironment["FOO" -> "bar"]; GetEnvironment["FOO"]; SetEnvironment[{"FOO" -> "baz", "A" -> "B"}]; GetEnvironment["FOO"]"#,
+      r#""FOO" -> "baz""#,
+    );
+  }
+  #[test]
+  fn greater_1() {
+    assert_case(r#"a /. f[x_:0, u_] -> {u}"#, r#"a"#);
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(r#"b // a"#, r#"a[b]"#);
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(r#"b // a; c // b // a"#, r#"a[b[c]]"#);
+  }
+  #[test]
+  fn precedence_form() {
+    assert_case(
+      r#"PrecedenceForm[x/y, 12] - z"#,
+      r#"-z + PrecedenceForm[x/y, 12]"#,
+    );
+  }
+  #[test]
+  fn contexts() {
+    assert_case(r#"Contexts[]; Contexts["HTML*"]"#, r#"{}"#);
+  }
+  #[test]
+  fn hold_form() {
+    assert_case(r#"HoldForm[1 + 2 + 3]"#, r#"HoldForm[1 + 2 + 3]"#);
+  }
+  #[test]
+  fn real_sign_1() {
+    assert_case(r#"RealSign[-3.]"#, r#"-1"#);
+  }
+  #[test]
+  fn real_sign_2() {
+    assert_case(
+      r#"RealSign[-3.]; RealSign[2. + 3. I]"#,
+      r#"RealSign[2. + 3.*I]"#,
+    );
+  }
+  #[test]
+  fn integer_literal_1() {
+    assert_case(r#"42"#, r#"42"#);
+  }
+  #[test]
+  fn power_2() {
+    assert_case(r#"\(x \^ 2\)"#, r#"SuperscriptBox["x", "2"]"#);
+  }
+  #[test]
+  fn expression_1() {
+    assert_case(r#"\(x \^ 2\); \(x \_ 2\)"#, r#"SubscriptBox["x", "2"]"#);
+  }
+  #[test]
+  fn plus_2() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\)"#,
+      r#"UnderoverscriptBox["a", "b", "c"]"#,
+    );
+  }
+  #[test]
+  fn anonymous_function() {
+    assert_case(
+      r#"\(x \^ 2\); \(x \_ 2\); \( a \+ b \% c\); \( a \& b \% c\)"#,
+      r#"UnderoverscriptBox["a", "c", "b"]"#,
+    );
+  }
+  #[test]
+  fn ranked_max() {
+    assert_case(r#"RankedMax[{482, 17, 181, -12}, 2]"#, r#"181"#);
+  }
+  #[test]
+  fn ranked_min() {
+    assert_case(r#"RankedMin[{482, 17, 181, -12}, 2]"#, r#"17"#);
+  }
+  #[test]
+  fn take_largest() {
+    assert_case(r#"TakeLargest[{100, -1, 50, 10}, 2]"#, r#"{100, 50}"#);
+  }
+  #[test]
+  fn take_smallest() {
+    assert_case(r#"TakeSmallest[{100, -1, 50, 10}, 2]"#, r#"{-1, 10}"#);
+  }
+  #[test]
+  fn a() {
+    assert_case(r#"a[b] ^:= x; x = 2; a[b]"#, r#"2"#);
+  }
+  #[test]
+  fn set_1() {
+    assert_case(r#"a + b ^= 2"#, r#"2"#);
+  }
+  #[test]
+  fn coefficient_arrays_1() {
+    assert_case(
+      r#"CoefficientArrays[1 + x^3, x]"#,
+      r#"{1, SparseArray[Automatic, {1}, 0, {1, {{0, 0}, {}}, {}}], SparseArray[Automatic, {1, 1}, 0, {1, {{0, 0}, {}}, {}}], SparseArray[Automatic, {1, 1, 1}, 0, {1, {{0, 1}, {{1, 1}}}, {1}}]}"#,
+    );
+  }
+  #[test]
+  fn coefficient_arrays_2() {
+    assert_case(
+      r#"CoefficientArrays[1 + x^3, x]; CoefficientArrays[1 + x y+ x^3, {x, y}]"#,
+      r#"{1, SparseArray[Automatic, {2}, 0, {1, {{0, 0}, {}}, {}}], SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{2}}}, {1}}], SparseArray[Automatic, {2, 2, 2}, 0, {1, {{0, 1, 1}, {{1, 1}}}, {1}}]}"#,
+    );
+  }
+  #[test]
+  fn coefficient_arrays_3() {
+    assert_case(
+      r#"CoefficientArrays[1 + x^3, x]; CoefficientArrays[1 + x y+ x^3, {x, y}]; CoefficientArrays[{1 + x^2, x y}, {x, y}]"#,
+      r#"{SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {0 + 1}}], SparseArray[Automatic, {2, 2}, 0, {1, {{0, 0, 0}, {}}, {}}], SparseArray[Automatic, {2, 2, 2}, 0, {1, {{0, 1, 2}, {{1, 1}, {1, 2}}}, {1, 1}}]}"#,
+    );
+  }
+  #[test]
+  fn expand_all() {
+    assert_case(
+      r#"ExpandAll[(a + b) ^ 2 / (c + d)^2]"#,
+      r#"a^2/(c^2 + 2*c*d + d^2) + (2*a*b)/(c^2 + 2*c*d + d^2) + b^2/(c^2 + 2*c*d + d^2)"#,
+    );
+  }
+  #[test]
+  fn expand_denominator() {
+    assert_case(
+      r#"ExpandDenominator[(a + b) ^ 2 / ((c + d)^2 (e + f))]"#,
+      r#"(a + b)^2/(c^2*e + 2*c*d*e + d^2*e + c^2*f + 2*c*d*f + d^2*f)"#,
+    );
+  }
+  #[test]
+  fn factor_terms_list_1() {
+    assert_case(r#"FactorTermsList[2 x^2 - 2]"#, r#"{2, -1 + x ^ 2}"#);
+  }
+  #[test]
+  fn factor_terms_list_2() {
+    assert_case(
+      r#"FactorTermsList[2 x^2 - 2]; FactorTermsList[x^2 - 2 x + 1]"#,
+      r#"{1, 1 - 2*x + x^2}"#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"FactorTermsList[2 x^2 - 2]; FactorTermsList[x^2 - 2 x + 1]; f = 3 (-1 + 2 x) (-1 + y) (1 - a)"#,
+      r#"3*(1 - a)*(-1 + 2*x)*(-1 + y)"#,
+    );
+  }
+  #[test]
+  fn factor_terms_list_3() {
+    assert_case(
+      r#"FactorTermsList[2 x^2 - 2]; FactorTermsList[x^2 - 2 x + 1]; f = 3 (-1 + 2 x) (-1 + y) (1 - a); FactorTermsList[f]"#,
+      r#"{-3, -1 + a + 2*x - 2*a*x + y - a*y - 2*x*y + 2*a*x*y}"#,
+    );
+  }
+  #[test]
+  fn factor_terms_list_4() {
+    assert_case(
+      r#"FactorTermsList[2 x^2 - 2]; FactorTermsList[x^2 - 2 x + 1]; f = 3 (-1 + 2 x) (-1 + y) (1 - a); FactorTermsList[f]; FactorTermsList[f, x]"#,
+      r#"{-3, 1 - a - y + a*y, -1 + 2*x}"#,
+    );
+  }
+  #[test]
+  fn power_expand_1() {
+    assert_case(r#"PowerExpand[(a ^ b) ^ c]"#, r#"a^(b*c)"#);
+  }
+  #[test]
+  fn power_expand_2() {
+    assert_case(
+      r#"PowerExpand[(a ^ b) ^ c]; PowerExpand[(a * b) ^ c]"#,
+      r#"a^c*b^c"#,
+    );
+  }
+  #[test]
+  fn power_expand_3() {
+    assert_case(
+      r#"PowerExpand[(a ^ b) ^ c]; PowerExpand[(a * b) ^ c]; PowerExpand[(x ^ 2) ^ (1/2)]"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn variables_1() {
+    assert_case(r#"Variables[a x^2 + b x + c]"#, r#"{c, b, x, a}"#);
+  }
+  #[test]
+  fn variables_2() {
+    assert_case(
+      r#"Variables[a x^2 + b x + c]; Variables[{a + b x, c y^2 + x/2}]"#,
+      r#"{a, b, c, x, y}"#,
+    );
+  }
+  #[test]
+  fn divide_3() {
+    assert_case(r#"1 / Overflow[]"#, r#"Underflow[]"#);
+  }
+  #[test]
+  fn times_1() {
+    assert_case(r#"1 / Overflow[]; 5 * Underflow[]"#, r#"Underflow[]"#);
+  }
+  #[test]
+  fn divide_4() {
+    assert_case(r#"1 / Overflow[]; 5 * Underflow[]; % // N"#, r#"Out[0]"#);
+  }
+  #[test]
+  fn minus_1() {
+    assert_case(
+      r#"1 / Overflow[]; 5 * Underflow[]; % // N; 1 - Underflow[]"#,
+      r#"Underflow[] + 1"#,
+    );
+  }
+  #[test]
+  fn divide_5() {
+    assert_case(
+      r#"1 / Overflow[]; 5 * Underflow[]; % // N; 1 - Underflow[]; % // N"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn discrete_limit_1() {
+    assert_case(r#"DiscreteLimit[n/(n + 1), n -> Infinity]"#, r#"1"#);
+  }
+  #[test]
+  fn discrete_limit_2() {
+    assert_case(
+      r#"DiscreteLimit[n/(n + 1), n -> Infinity]; DiscreteLimit[f[n], n -> Infinity]"#,
+      r#"DiscreteLimit[f[n], n -> Infinity]"#,
+    );
+  }
+  #[test]
+  fn complex_expand() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]"#,
+      r#"Cos[x*Log[3]] + I*Sin[x*Log[3]]"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_1() {
+    assert_case(r#"MantissaExponent[2.5*10^20]"#, r#"{0.25, 21}"#);
+  }
+  #[test]
+  fn mantissa_exponent_2() {
+    assert_case(
+      r#"MantissaExponent[2.5*10^20]; MantissaExponent[125.24]"#,
+      r#"{0.12524, 3}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_3() {
+    assert_case(
+      r#"MantissaExponent[2.5*10^20]; MantissaExponent[125.24]; MantissaExponent[125., 2]"#,
+      r#"{0.9765625, 7}"#,
+    );
+  }
+  #[test]
+  fn mantissa_exponent_4() {
+    assert_case(
+      r#"MantissaExponent[2.5*10^20]; MantissaExponent[125.24]; MantissaExponent[125., 2]; MantissaExponent[10, b]"#,
+      r#"MantissaExponent[10, b]"#,
+    );
+  }
+  #[test]
+  fn standard_form_1() {
+    // mathics rendered the contents to box-syntax RowBox markup;
+    // wolframscript -code returns the unevaluated wrapper
+    // `StandardForm[a + b*c]` verbatim. Woxi matches wolframscript.
+    assert_case(r#"StandardForm[a + b * c]"#, r#"StandardForm[a + b*c]"#);
+  }
+  #[test]
+  fn standard_form_2() {
+    // mathics rendered the contents to box-syntax markup; wolframscript -code
+    // returns the unevaluated wrapper `StandardForm[A string]` verbatim
+    // (strings print without quotes in OutputForm). Woxi matches.
+    assert_case(
+      r#"StandardForm[a + b * c]; StandardForm["A string"]"#,
+      r#"StandardForm[A string]"#,
+    );
+  }
+  #[test]
+  fn expr() {
+    assert_case(
+      r#"StandardForm[a + b * c]; StandardForm["A string"]; f'[x]"#,
+      r#"Derivative[1][f][x]"#,
+    );
+  }
+  #[test]
+  fn greater_2() {
+    assert_case(r#"a + b + c /. a + b -> t"#, r#"c + t"#);
+  }
+  #[test]
+  fn greater_3() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}"#,
+      r#"{2, a, b, c, x*y}"#,
+    );
+  }
+  #[test]
+  fn f_1() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}; f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}"#,
+      r#"{a, {b, c, d}}"#,
+    );
+  }
+  #[test]
+  fn greater_4() {
+    assert_case(r#"a+b+c /. c->d"#, r#"a + b + d"#);
+  }
+  #[test]
+  fn g() {
+    assert_case(
+      r#"a+b+c /. c->d; g[a+b+c,a]/.g[x_+y_,x_]->{x,y}"#,
+      r#"{a, b + c}"#,
+    );
+  }
+  #[test]
+  fn list_literal_1() {
+    assert_case(
+      r#"a+b+c /. c->d; g[a+b+c,a]/.g[x_+y_,x_]->{x,y}; {a, b} /. {{a->x, b->y}, {a->u, b->v}}"#,
+      r#"{{x, y}, {u, v}}"#,
+    );
+  }
+  #[test]
+  fn list_literal_2() {
+    assert_case(
+      r#"a+b+c /. c->d; g[a+b+c,a]/.g[x_+y_,x_]->{x,y}; {a, b} /. {{a->x, b->y}, {a->u, b->v}}; {a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}"#,
+      r#"{{{x, y}, {w, z}}, {u, v}}"#,
+    );
+  }
+  #[test]
+  fn greater_5() {
+    assert_case(r#"a+b+c //. c->d"#, r#"a + b + d"#);
+  }
+  #[test]
+  fn list_literal_3() {
+    assert_case(r#"a+b+c /. c->d; {x,x^2,y} /. x->3"#, r#"{3, 9, y}"#);
+  }
+  #[test]
+  fn greater_6() {
+    assert_case(r#"a+b+c+d/.(a|b)->t"#, r#"c + d + 2*t"#);
+  }
+  #[test]
+  fn divide_6() {
+    assert_case(r#"a_Integer.. // FullForm"#, r#"FullForm[(a_Integer)..]"#);
+  }
+  #[test]
+  fn divide_7() {
+    assert_case(
+      r#"a_Integer.. // FullForm; 0..1 // FullForm"#,
+      r#"FullForm[(0)..]"#,
+    );
+  }
+  #[test]
+  fn divide_8() {
+    assert_case(
+      r#"a___Integer... // FullForm"#,
+      r#"FullForm[(a___Integer)...]"#,
+    );
+  }
+  #[test]
+  fn f_2() {
+    assert_case(
+      r#"a___Integer... // FullForm; f[x] /. f[x, 0...] -> t"#,
+      r#"t"#,
+    );
+  }
+  #[test]
+  fn divide_9() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]; y : 1 // FullForm"#,
+      r#"FullForm[y:1]"#,
+    );
+  }
+  #[test]
+  fn divide_10() {
+    assert_case(
+      r#"f[x_, y_:1] := {x, y}; f[x_, y_: 1] := {x, y}; f[a, 2]; f[a]; y : 1 // FullForm; y_ : 1 // FullForm"#,
+      r#"FullForm[y_:1]"#,
+    );
+  }
+  #[test]
+  fn greater_7() {
+    assert_case(r#"f[3] /. f[x_] /; x>0 -> t"#, r#"t"#);
+  }
+  #[test]
+  fn greater_8() {
+    assert_case(
+      r#"f[3] /. f[x_] /; x>0 -> t; f[-3] /. f[x_] /; x>0 -> t"#,
+      r#"f[-3]"#,
+    );
+  }
+  #[test]
+  fn f_3() {
+    assert_case(
+      r#"f[3] /. f[x_] /; x>0 -> t; f[-3] /. f[x_] /; x>0 -> t; f[x_] := p[x] /; x>0; f[3]"#,
+      r#"p[3]"#,
+    );
+  }
+  #[test]
+  fn f_4() {
+    assert_case(
+      r#"f[3] /. f[x_] /; x>0 -> t; f[-3] /. f[x_] /; x>0 -> t; f[x_] := p[x] /; x>0; f[3]; f[-3]"#,
+      r#"f[-3]"#,
+    );
+  }
+  #[test]
+  fn bray_curtis_distance_1() {
+    assert_case(r#"BrayCurtisDistance[-7, 5]"#, r#"6"#);
+  }
+  #[test]
+  fn bray_curtis_distance_2() {
+    assert_case(
+      r#"BrayCurtisDistance[-7, 5]; BrayCurtisDistance[{-1, -1}, {10, 10}]"#,
+      r#"11 / 9"#,
+    );
+  }
+  #[test]
+  fn canberra_distance_1() {
+    assert_case(r#"CanberraDistance[-7, 5]"#, r#"1"#);
+  }
+  #[test]
+  fn canberra_distance_2() {
+    assert_case(
+      r#"CanberraDistance[-7, 5]; CanberraDistance[{-1, -1}, {1, 1}]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn chessboard_distance_1() {
+    assert_case(r#"ChessboardDistance[-7, 5]"#, r#"12"#);
+  }
+  #[test]
+  fn chessboard_distance_2() {
+    assert_case(
+      r#"ChessboardDistance[-7, 5]; ChessboardDistance[{-1, -1}, {1, 1}]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn euclidean_distance_1() {
+    assert_case(r#"EuclideanDistance[-7, 5]"#, r#"12"#);
+  }
+  #[test]
+  fn euclidean_distance_2() {
+    assert_case(
+      r#"EuclideanDistance[-7, 5]; EuclideanDistance[{-1, -1}, {1, 1}]"#,
+      r#"2*Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn euclidean_distance_3() {
+    assert_case(
+      r#"EuclideanDistance[-7, 5]; EuclideanDistance[{-1, -1}, {1, 1}]; EuclideanDistance[{a, b}, {c, d}]"#,
+      r#"Sqrt[Abs[a - c] ^ 2 + Abs[b - d] ^ 2]"#,
+    );
+  }
+  #[test]
+  fn manhattan_distance_1() {
+    assert_case(r#"ManhattanDistance[-7, 5]"#, r#"12"#);
+  }
+  #[test]
+  fn manhattan_distance_2() {
+    assert_case(
+      r#"ManhattanDistance[-7, 5]; ManhattanDistance[{-1, -1}, {1, 1}]"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn squared_euclidean_distance_1() {
+    assert_case(r#"SquaredEuclideanDistance[-7, 5]"#, r#"144"#);
+  }
+  #[test]
+  fn squared_euclidean_distance_2() {
+    assert_case(
+      r#"SquaredEuclideanDistance[-7, 5]; SquaredEuclideanDistance[{-1, -1}, {1, 1}]"#,
+      r#"8"#,
+    );
+  }
+  #[test]
+  fn file_type_1() {
+    assert_case(r#"FileType["ExampleData/sunflowers.jpg"]"#, r#"None"#);
+  }
+  #[test]
+  fn file_type_2() {
+    assert_case(
+      r#"FileType["ExampleData/sunflowers.jpg"]; FileType["ExampleData"]"#,
+      r#"None"#,
+    );
+  }
+  #[test]
+  fn file_type_3() {
+    assert_case(
+      r#"FileType["ExampleData/sunflowers.jpg"]; FileType["ExampleData"]; FileType["ExampleData/nonexistent"]"#,
+      r#"None"#,
+    );
+  }
+  #[test]
+  fn curl() {
+    assert_case(r#"Curl[{y, -x}, {x, y}]"#, r#"-2"#);
+  }
+  #[test]
+  fn symbol_name() {
+    assert_case(r#"SymbolName[x] // InputForm"#, r#"InputForm["x"]"#);
+  }
+  #[test]
+  fn divide_11() {
+    assert_case(r#"30 / 5"#, r#"6"#);
+  }
+  #[test]
+  fn divide_12() {
+    assert_case(r#"30 / 5; 1 / 8"#, r#"1 / 8"#);
+  }
+  #[test]
+  fn minus_2() {
+    assert_case(r#"-a // FullForm"#, r#"FullForm[-a]"#);
+  }
+  #[test]
+  fn minus_3() {
+    assert_case(r#"-a // FullForm; -(x - 2/3)"#, r#"2 / 3 - x"#);
+  }
+  #[test]
+  fn plus_3() {
+    assert_case(r#"1 + 2"#, r#"3"#);
+  }
+  #[test]
+  fn plus_4() {
+    assert_case(r#"1 + 2; a + b + a"#, r#"2*a + b"#);
+  }
+  #[test]
+  fn plus_5() {
+    assert_case(r#"1 + 2; a + b + a; a + a + 3 * a"#, r#"5*a"#);
+  }
+  #[test]
+  fn plus_6() {
+    assert_case(
+      r#"1 + 2; a + b + a; a + a + 3 * a; a + b + 4.5 + a + b + a + 2 + 1.5 b"#,
+      r#"6.5 + 3*a + 3.5*b"#,
+    );
+  }
+  #[test]
+  fn divide_13() {
+    assert_case(r#"4 ^ (1/2)"#, r#"2"#);
+  }
+  #[test]
+  fn divide_14() {
+    assert_case(r#"4 ^ (1/2); 4 ^ (1/3)"#, r#"2 ^ (2 / 3)"#);
+  }
+  #[test]
+  fn power_3() {
+    assert_case(
+      r#"4 ^ (1/2); 4 ^ (1/3); 3^123"#,
+      r#"48519278097689642681155855396759336072749841943521979872827"#,
+    );
+  }
+  #[test]
+  fn divide_15() {
+    assert_case(
+      r#"4 ^ (1/2); 4 ^ (1/3); 3^123; (y ^ 2) ^ (1/2)"#,
+      r#"Sqrt[y ^ 2]"#,
+    );
+  }
+  #[test]
+  fn power_4() {
+    assert_case(
+      r#"4 ^ (1/2); 4 ^ (1/3); 3^123; (y ^ 2) ^ (1/2); (y ^ 2) ^ 3"#,
+      r#"y ^ 6"#,
+    );
+  }
+  #[test]
+  fn minus_4() {
+    assert_case(r#"5 - 3"#, r#"2"#);
+  }
+  #[test]
+  fn minus_5() {
+    assert_case(r#"5 - 3; a - b // FullForm"#, r#"FullForm[a - b]"#);
+  }
+  #[test]
+  fn minus_6() {
+    assert_case(r#"5 - 3; a - b // FullForm; a - b - c"#, r#"a - b - c"#);
+  }
+  #[test]
+  fn minus_7() {
+    assert_case(
+      r#"5 - 3; a - b // FullForm; a - b - c; a - (b - c)"#,
+      r#"a - b + c"#,
+    );
+  }
+  #[test]
+  fn times_2() {
+    assert_case(r#"10 * 2"#, r#"20"#);
+  }
+  #[test]
+  fn expression_2() {
+    assert_case(r#"10 * 2; 10 2"#, r#"20"#);
+  }
+  #[test]
+  fn times_3() {
+    assert_case(r#"10 * 2; 10 2; a * a"#, r#"a ^ 2"#);
+  }
+  #[test]
+  fn minus_8() {
+    assert_case(r#"10 * 2; 10 2; a * a; x ^ 10 * x ^ -2"#, r#"x ^ 8"#);
+  }
+  #[test]
+  fn list_literal_4() {
+    assert_case(
+      r#"10 * 2; 10 2; a * a; x ^ 10 * x ^ -2; {1, 2, 3} * 4"#,
+      r#"{4, 8, 12}"#,
+    );
+  }
+  #[test]
+  fn leaf_count_1() {
+    assert_case(r#"LeafCount[1 + x + y^a]"#, r#"6"#);
+  }
+  #[test]
+  fn leaf_count_2() {
+    assert_case(r#"LeafCount[1 + x + y^a]; LeafCount[f[x, y]]"#, r#"3"#);
+  }
+  #[test]
+  fn leaf_count_3() {
+    assert_case(
+      r#"LeafCount[1 + x + y^a]; LeafCount[f[x, y]]; LeafCount[{1 / 3, 1 + I}]"#,
+      r#"7"#,
+    );
+  }
+  #[test]
+  fn level_1() {
+    assert_case(
+      r#"Level[a + b ^ 3 * f[2 x ^ 2], {-1}]"#,
+      r#"{a, b, 3, 2, x, 2}"#,
+    );
+  }
+  #[test]
+  fn level_2() {
+    assert_case(
+      r#"Level[a + b ^ 3 * f[2 x ^ 2], {-1}]; Level[{{{{a}}}}, 3]"#,
+      r#"{{a}, {{a}}, {{{a}}}}"#,
+    );
+  }
+  #[test]
+  fn level_3() {
+    assert_case(
+      r#"Level[a + b ^ 3 * f[2 x ^ 2], {-1}]; Level[{{{{a}}}}, 3]; Level[{{{{a}}}}, -4]"#,
+      r#"{{{{a}}}}"#,
+    );
+  }
+  #[test]
+  fn level_4() {
+    assert_case(
+      r#"Level[a + b ^ 3 * f[2 x ^ 2], {-1}]; Level[{{{{a}}}}, 3]; Level[{{{{a}}}}, -4]; Level[{{{{a}}}}, -5]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn level_5() {
+    assert_case(
+      r#"Level[a + b ^ 3 * f[2 x ^ 2], {-1}]; Level[{{{{a}}}}, 3]; Level[{{{{a}}}}, -4]; Level[{{{{a}}}}, -5]; Level[h0[h1[h2[h3[a]]]], {0, -1}]"#,
+      r#"{a, h3[a], h2[h3[a]], h1[h2[h3[a]]], h0[h1[h2[h3[a]]]]}"#,
+    );
+  }
+  #[test]
+  fn lighter() {
+    assert_case(r#"Lighter[Orange, 1/4]"#, r#"RGBColor[1, 0.625, 1/4]"#);
+  }
+  #[test]
+  fn take_largest_by_1() {
+    assert_case(
+      r#"TakeLargestBy[{{1, -1}, {10, 100}, {23, 7, 8}, {5, 1}}, Total, 2]"#,
+      r#"{{10, 100}, {23, 7, 8}}"#,
+    );
+  }
+  #[test]
+  fn take_largest_by_2() {
+    assert_case(
+      r#"TakeLargestBy[{{1, -1}, {10, 100}, {23, 7, 8}, {5, 1}}, Total, 2]; TakeLargestBy[{"abc", "ab", "x"}, StringLength, 1]"#,
+      r#"{"abc"}"#,
+    );
+  }
+  #[test]
+  fn take_smallest_by_1() {
+    assert_case(
+      r#"TakeSmallestBy[{{1, -1}, {10, 100}, {23, 7, 8}, {5, 1}}, Total, 2]"#,
+      r#"{{1, -1}, {5, 1}}"#,
+    );
+  }
+  #[test]
+  fn take_smallest_by_2() {
+    assert_case(
+      r#"TakeSmallestBy[{{1, -1}, {10, 100}, {23, 7, 8}, {5, 1}}, Total, 2]; TakeSmallestBy[{"abc", "ab", "x"}, StringLength, 1]"#,
+      r#"{"x"}"#,
+    );
+  }
+  #[test]
+  fn extract_1() {
+    assert_case(r#"Extract[a + b + c, {2}]"#, r#"b"#);
+  }
+  #[test]
+  fn extract_2() {
+    assert_case(
+      r#"Extract[a + b + c, {2}]; Extract[{{a, b}, {c, d}}, {{1}, {2, 2}}]"#,
+      r#"{{a, b}, d}"#,
+    );
+  }
+  #[test]
+  fn divide_16() {
+    assert_case(r#";; // FullForm"#, r#"FullForm[Span[1, All]]"#);
+  }
+  #[test]
+  fn divide_17() {
+    assert_case(
+      r#";; // FullForm; 1;;4;;2 // FullForm"#,
+      r#"FullForm[Span[1, 4, 2]]"#,
+    );
+  }
+  #[test]
+  fn minus_9() {
+    assert_case(
+      r#";; // FullForm; 1;;4;;2 // FullForm; 2;;-2 // FullForm"#,
+      r#"FullForm[Span[2, -2]]"#,
+    );
+  }
+  #[test]
+  fn divide_18() {
+    // mathics rendered the FullForm as `1 ;; 3` (using the Span shorthand);
+    // wolframscript -code returns the explicit head `Span[1, 3]`, which is
+    // what Woxi also produces.
+    assert_case(
+      r#";; // FullForm; 1;;4;;2 // FullForm; 2;;-2 // FullForm; ;;3 // FullForm"#,
+      r#"FullForm[Span[1, 3]]"#,
+    );
+  }
+  #[test]
+  fn file_name_depth_1() {
+    assert_case(r#"FileNameDepth["a/b/c"]"#, r#"3"#);
+  }
+  #[test]
+  fn file_name_depth_2() {
+    assert_case(r#"FileNameDepth["a/b/c"]; FileNameDepth["a/b/c/"]"#, r#"3"#);
+  }
+  #[test]
+  fn file_name_split() {
+    assert_case(
+      r#"FileNameSplit["example/path/file.txt"]"#,
+      r#"{"example", "path", "file.txt"}"#,
+    );
+  }
+  #[test]
+  fn string_literal_1() {
+    assert_case(r#""a" ~~ "b" // FullForm"#, r#"FullForm["ab"]"#);
+  }
+  #[test]
+  fn file_information() {
+    assert_case(r#"FileInformation["ExampleData/sunflowers.jpg"]"#, r#"{}"#);
+  }
+  #[test]
+  fn find_file() {
+    assert_case(r#"FindFile["ExampleData/sunflowers.jpg"]"#, r#"$Failed"#);
+  }
+  #[test]
+  fn integer_literal_2() {
+    assert_case(r#"1"#, r#"1"#);
+  }
+  #[test]
+  fn integer_literal_3() {
+    assert_case(r#"1"#, r#"1"#);
+  }
+  #[test]
+  fn divide_19() {
+    assert_case(r#"1; 2/9"#, r#"2/9"#);
+  }
+  #[test]
+  fn integer_literal_4() {
+    assert_case(r#"1"#, r#"1"#);
+  }
+  #[test]
+  fn list_literal_5() {
+    assert_case(
+      r#"1; {1, 1.}; {1.000123`6, 1.0001`4, 2/9}"#,
+      r#"{1.000123`6., 1.0001`4., 2/9}"#,
+    );
+  }
+  #[test]
+  fn integer_literal_5() {
+    assert_case(r#"2"#, r#"2"#);
+  }
+  #[test]
+  fn plus_7() {
+    assert_case(r#"2; 3+2 I"#, r#"3 + 2*I"#);
+  }
+  #[test]
+  fn divide_20() {
+    assert_case(r#"2; 3+2 I; 2/9"#, r#"2/9"#);
+  }
+  #[test]
+  fn string_literal_2() {
+    assert_case(r#"2; 3+2 I; 2/9;  "hi!""#, r#""hi!""#);
+  }
+  #[test]
+  fn infinity() {
+    assert_case(r#"2; 3+2 I; 2/9;  "hi!"; Infinity"#, r#"Infinity"#);
+  }
+  #[test]
+  fn plus_8() {
+    assert_case(
+      r#"\(c (1 + x)\)"#,
+      r#"RowBox[{"c", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
+    );
+  }
+  #[test]
+  fn power_5() {
+    assert_case(r#"\(c (1 + x)\); \!\(x \^ 2\)"#, r#"x ^ 2"#);
+  }
+  #[test]
+  fn divide_21() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes"#,
+      r#"FractionBox["a", "b"]"#,
+    );
+  }
+  #[test]
+  fn integer_literal_6() {
+    assert_case(r#"1"#, r#"1"#);
+  }
+  #[test]
+  fn times_4() {
+    assert_case(r#"1; x; 2*x"#, r#"2*x"#);
+  }
+  #[test]
+  fn plus_9() {
+    assert_case(r#"1; x; 2*x; 1+x"#, r#"1 + x"#);
+  }
+  #[test]
+  fn plus_10() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x"#, r#"1 + 2*x"#);
+  }
+  #[test]
+  fn integer_literal_7() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x; 1"#, r#"1"#);
+  }
+  #[test]
+  fn symbol_literal_1() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x; 1; x"#, r#"x"#);
+  }
+  #[test]
+  fn power_6() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1"#, r#"x"#);
+  }
+  #[test]
+  fn power_7() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2"#, r#"x^2"#);
+  }
+  #[test]
+  fn integer_literal_8() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1"#, r#"1"#);
+  }
+  #[test]
+  fn symbol_literal_2() {
+    assert_case(r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x"#, r#"x"#);
+  }
+  #[test]
+  fn power_8() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn power_9() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2"#,
+      r#"x^2"#,
+    );
+  }
+  #[test]
+  fn integer_literal_9() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_3() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1; x"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn plus_11() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1; x; 1+x"#,
+      r#"1 + x"#,
+    );
+  }
+  #[test]
+  fn plus_12() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1; x; 1+x; 1+2*x"#,
+      r#"1 + 2*x"#,
+    );
+  }
+  #[test]
+  fn integer_literal_10() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1; x; 1+x; 1+2*x; 1"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_4() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1; x; 1+x; 1+2*x; 1; x"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn times_5() {
+    assert_case(
+      r#"1; x; 2*x; 1+x; 1+2*x; 1; x; x^1; x^2; 1; x; x^1; x^2; 1; x; 1+x; 1+2*x; 1; x; 2*x"#,
+      r#"2*x"#,
+    );
+  }
+  #[test]
+  fn greater_9() {
+    assert_case(r#"a + b /. x_ + y_ -> {x, y}"#, r#"{a, b}"#);
+  }
+  #[test]
+  fn integer_literal_11() {
+    assert_case(r#"0"#, r#"0"#);
+  }
+  #[test]
+  fn minus_10() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2"#,
+      r#"0."#,
+    );
+  }
+  #[test]
+  fn minus_11() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20"#,
+      r#"0."#,
+    );
+  }
+  #[test]
+  fn minus_12() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2"#,
+      r#"0``2."#,
+    );
+  }
+  #[test]
+  fn minus_13() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20"#,
+      r#"0``20."#,
+    );
+  }
+  #[test]
+  fn integer_literal_12() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn real_literal_1() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10."#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn real_literal_2() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00"#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn expression_3() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`"#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn expression_4() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2"#,
+      r#"10.`2."#,
+    );
+  }
+  #[test]
+  fn expression_5() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20"#,
+      r#"10.`20."#,
+    );
+  }
+  #[test]
+  fn real_literal_3() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000"#,
+      r#"10.`21."#,
+    );
+  }
+  #[test]
+  fn expression_6() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2"#,
+      r#"10.`3."#,
+    );
+  }
+  #[test]
+  fn expression_7() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20"#,
+      r#"10.`21."#,
+    );
+  }
+  #[test]
+  fn expression_8() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20; 1. I"#,
+      r#"0. + 1.*I"#,
+    );
+  }
+  #[test]
+  fn plus_13() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20; 1. I;  0.4 + 2.4 I"#,
+      r#"0.4 + 2.4*I"#,
+    );
+  }
+  #[test]
+  fn plus_14() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20; 1. I;  0.4 + 2.4 I; 2 + 3 I"#,
+      r#"2 + 3*I"#,
+    );
+  }
+  #[test]
+  fn string_literal_3() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20; 1. I;  0.4 + 2.4 I; 2 + 3 I; "abc""#,
+      r#""abc""#,
+    );
+  }
+  #[test]
+  fn integer_literal_13() {
+    assert_case(r#"0"#, r#"0"#);
+  }
+  #[test]
+  fn minus_14() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2"#,
+      r#"0."#,
+    );
+  }
+  #[test]
+  fn minus_15() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20"#,
+      r#"0."#,
+    );
+  }
+  #[test]
+  fn minus_16() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2"#,
+      r#"0``2."#,
+    );
+  }
+  #[test]
+  fn minus_17() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20"#,
+      r#"0``20."#,
+    );
+  }
+  #[test]
+  fn integer_literal_14() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn real_literal_4() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10."#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn real_literal_5() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00"#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn expression_9() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`"#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn expression_10() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2"#,
+      r#"10.`2."#,
+    );
+  }
+  #[test]
+  fn expression_11() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20"#,
+      r#"10.`20."#,
+    );
+  }
+  #[test]
+  fn real_literal_6() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000"#,
+      r#"10.`21."#,
+    );
+  }
+  #[test]
+  fn expression_12() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2"#,
+      r#"10.`3."#,
+    );
+  }
+  #[test]
+  fn expression_13() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20"#,
+      r#"10.`21."#,
+    );
+  }
+  #[test]
+  fn plus_15() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20;  0.4 + 2.4 I"#,
+      r#"0.4 + 2.4*I"#,
+    );
+  }
+  #[test]
+  fn plus_16() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20;  0.4 + 2.4 I; 2 + 3 I"#,
+      r#"2 + 3*I"#,
+    );
+  }
+  #[test]
+  fn string_literal_4() {
+    assert_case(
+      r#"0; 0.; 0.00; 0.00`; 0.00`2; 0.00`20; 0.00000000000000000000; 0.``2; 0.``20; -0.`2; -0.`20; -0.``2; -0.``20; 10; 10.; 10.00; 10.00`; 10.00`2; 10.00`20; 10.00000000000000000000; 10.``2; 10.``20;  0.4 + 2.4 I; 2 + 3 I; "abc""#,
+      r#""abc""#,
+    );
+  }
+  #[test]
+  fn plus_17() {
+    assert_case(r#"1. + 2. + 3."#, r#"6."#);
+  }
+  #[test]
+  fn plus_18() {
+    assert_case(r#"1. + 2. + 3.; 1 + 2/3 + 3/5"#, r#"34 / 15"#);
+  }
+  #[test]
+  fn plus_19() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5"#,
+      r#"14 / 15"#,
+    );
+  }
+  #[test]
+  fn plus_20() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5"#,
+      r#"0.9333333333333333"#,
+    );
+  }
+  #[test]
+  fn plus_21() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5; 1 - 2/3 + 2 I"#,
+      r#"1/3 + 2*I"#,
+    );
+  }
+  #[test]
+  fn plus_22() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5; 1 - 2/3 + 2 I; 1. - 2/3 + 2 I"#,
+      r#"0.33333333333333337 + 2.*I"#,
+    );
+  }
+  #[test]
+  fn plus_23() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5; 1 - 2/3 + 2 I; 1. - 2/3 + 2 I; a + 2 a + 3 a q"#,
+      r#"3*a + 3*a*q"#,
+    );
+  }
+  #[test]
+  fn plus_24() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5; 1 - 2/3 + 2 I; 1. - 2/3 + 2 I; a + 2 a + 3 a q; a - 2 a + 3 a q"#,
+      r#"-a + 3*a*q"#,
+    );
+  }
+  #[test]
+  fn plus_25() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5; 1 - 2/3 + 2 I; 1. - 2/3 + 2 I; a + 2 a + 3 a q; a - 2 a + 3 a q; a - (5+ a+ 2 b) + 3 a q"#,
+      r#"-5 - 2*b + 3*a*q"#,
+    );
+  }
+  #[test]
+  fn plus_26() {
+    assert_case(
+      r#"1. + 2. + 3.; 1 + 2/3 + 3/5; 1 - 2/3 + 3/5; 1. - 2/3 + 3/5; 1 - 2/3 + 2 I; 1. - 2/3 + 2 I; a + 2 a + 3 a q; a - 2 a + 3 a q; a - (5+ a+ 2 b) + 3 a q; a - 2 (5+ a+ 2 b) + 3 a q"#,
+      r#"a - 2*(5 + a + 2*b) + 3*a*q"#,
+    );
+  }
+  #[test]
+  fn times_6() {
+    assert_case(r#"1.  2.  3.; 1 * 2/3 * 3/5"#, r#"2 / 5"#);
+  }
+  #[test]
+  fn minus_18() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5)"#,
+      r#"-2 / 5"#,
+    );
+  }
+  #[test]
+  fn minus_19() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5)"#,
+      r#"-0.39999999999999997"#,
+    );
+  }
+  #[test]
+  fn minus_20() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I)"#,
+      r#"(-4*I)/3"#,
+    );
+  }
+  #[test]
+  fn minus_21() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I)"#,
+      r#"0. - 1.3333333333333333*I"#,
+    );
+  }
+  #[test]
+  fn expression_14() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q)"#,
+      r#"6*a^3*q"#,
+    );
+  }
+  #[test]
+  fn power_10() {
+    assert_case(r#"2^0"#, r#"1"#);
+  }
+  #[test]
+  fn divide_22() {
+    assert_case(r#"2^0; (2/3)^0"#, r#"1"#);
+  }
+  #[test]
+  fn power_11() {
+    assert_case(r#"2^0; (2/3)^0; 2.^0"#, r#"1."#);
+  }
+  #[test]
+  fn power_12() {
+    assert_case(r#"2^0; (2/3)^0; 2.^0; 2^1"#, r#"2"#);
+  }
+  #[test]
+  fn divide_23() {
+    assert_case(r#"2^0; (2/3)^0; 2.^0; 2^1; (2/3)^1"#, r#"2 / 3"#);
+  }
+  #[test]
+  fn power_13() {
+    assert_case(r#"2^0; (2/3)^0; 2.^0; 2^1; (2/3)^1; 2.^1"#, r#"2."#);
+  }
+  #[test]
+  fn power_14() {
+    assert_case(r#"2^0; (2/3)^0; 2.^0; 2^1; (2/3)^1; 2.^1; 2^(3)"#, r#"8"#);
+  }
+  #[test]
+  fn divide_24() {
+    assert_case(
+      r#"2^0; (2/3)^0; 2.^0; 2^1; (2/3)^1; 2.^1; 2^(3); (1/2)^3"#,
+      r#"1 / 8"#,
+    );
+  }
+  #[test]
+  fn minus_22() {
+    assert_case(
+      r#"2^0; (2/3)^0; 2.^0; 2^1; (2/3)^1; 2.^1; 2^(3); (1/2)^3; 2^(-3)"#,
+      r#"1 / 8"#,
+    );
+  }
+  #[test]
+  fn minus_23() {
+    assert_case(
+      r#"2^0; (2/3)^0; 2.^0; 2^1; (2/3)^1; 2.^1; 2^(3); (1/2)^3; 2^(-3); (1/2)^(-3)"#,
+      r#"8"#,
+    );
+  }
+  #[test]
+  fn minus_24() {
+    assert_case(r#"(-I)^(2/3)"#, r#"-(-1)^(2/3)"#);
+  }
+  #[test]
+  fn power_15() {
+    assert_case(r#"(a^"w")^2"#, r#"a^(2*"w")"#);
+  }
+  #[test]
+  fn divide_25() {
+    assert_case(r#"(a^(1/2))^3."#, r#"a ^ 1.5"#);
+  }
+  #[test]
+  fn power_16() {
+    assert_case(r#"(a^(.3))^3."#, r#"a^0.8999999999999999"#);
+  }
+  #[test]
+  fn harmonic_number() {
+    assert_case(r#"HarmonicNumber[-1.5]"#, r#"0.6137056388801093"#);
+  }
+  #[test]
+  fn integer_literal_15() {
+    assert_case(r#"1234567890"#, r#"1234567890"#);
+  }
+  #[test]
+  fn integer_literal_16() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890"#,
+      r#"-1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_17() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890"#,
+      r#"-1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_18() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890"#,
+      r#"-1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_19() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890"#,
+      r#"-1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_20() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890"#,
+      r#"-1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_21() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890"#,
+      r#"-9934567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_22() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_23() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890"#,
+      r#"-1234567890"#,
+    );
+  }
+  #[test]
+  fn integer_literal_24() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_25() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_26() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329"#,
+      r#"92345678900987654329"#,
+    );
+  }
+  #[test]
+  fn integer_literal_27() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_28() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_29() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_30() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321"#,
+      r#"12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_31() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_32() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_33() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_34() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_35() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_36() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_37() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -99345678900987654321"#,
+      r#"-99345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_38() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -99345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_39() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -99345678900987654321; -12345678900987654321; -99345678900987654321"#,
+      r#"-99345678900987654321"#,
+    );
+  }
+  #[test]
+  fn integer_literal_40() {
+    assert_case(
+      r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -99345678900987654321; -12345678900987654321; -99345678900987654321; -12345678900987654321"#,
+      r#"-12345678900987654321"#,
+    );
+  }
+}

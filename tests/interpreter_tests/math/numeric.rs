@@ -1151,3 +1151,599 @@ mod overflow_safety {
     );
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn real_valued_number_q_1() {
+    assert_case(r#"RealValuedNumberQ[10]"#, r#"True"#);
+  }
+  #[test]
+  fn real_valued_number_q_2() {
+    assert_case(
+      r#"RealValuedNumberQ[10]; RealValuedNumberQ[4.0]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn real_valued_number_q_3() {
+    assert_case(
+      r#"RealValuedNumberQ[10]; RealValuedNumberQ[4.0]; RealValuedNumberQ[1+I]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn real_valued_number_q_4() {
+    assert_case(
+      r#"RealValuedNumberQ[10]; RealValuedNumberQ[4.0]; RealValuedNumberQ[1+I]; RealValuedNumberQ[0 * I]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn real_valued_number_q_5() {
+    assert_case(
+      r#"RealValuedNumberQ[10]; RealValuedNumberQ[4.0]; RealValuedNumberQ[1+I]; RealValuedNumberQ[0 * I]; RealValuedNumberQ[0.0 * I]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn list_literal() {
+    assert_case(
+      r#"RealValuedNumberQ[10]; RealValuedNumberQ[4.0]; RealValuedNumberQ[1+I]; RealValuedNumberQ[0 * I]; RealValuedNumberQ[0.0 * I]; {RealValuedNumberQ[Underflow[]], RealValuedNumberQ[Overflow[]]}"#,
+      r#"{True, True}"#,
+    );
+  }
+  #[test]
+  fn n_1() {
+    assert_case(r#"N[f[2, 3]]"#, r#"f[2., 3.]"#);
+  }
+  #[test]
+  fn uncompress() {
+    // The mathics original (`>> Compress[N[Pi, 10]] = ...`) accepts any
+    // output. The scraped expectation pinned wolframscript-specific
+    // compressed bytes — different compressors (Wolfram's vs Woxi's
+    // zlib) produce different byte sequences from the same input even
+    // when both are valid `Compress` outputs. Verify the documented
+    // contract via round-trip: `Uncompress[Compress[x]] == x`.
+    assert_case(r#"Uncompress[Compress[N[Pi, 10]]] == N[Pi, 10]"#, r#"True"#);
+  }
+  #[test]
+  fn chop_1() {
+    assert_case(r#"Chop[10.0 ^ -16]"#, r#"0"#);
+  }
+  #[test]
+  fn chop_2() {
+    assert_case(r#"Chop[10.0 ^ -16]; Chop[10.0 ^ -9]"#, r#"1.*^-9"#);
+  }
+  #[test]
+  fn chop_3() {
+    assert_case(
+      r#"Chop[10.0 ^ -16]; Chop[10.0 ^ -9]; Chop[10 ^ -11 I]"#,
+      r#"I / 100000000000"#,
+    );
+  }
+  #[test]
+  fn chop_4() {
+    assert_case(
+      r#"Chop[10.0 ^ -16]; Chop[10.0 ^ -9]; Chop[10 ^ -11 I]; Chop[0. + 10 ^ -11 I]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn n_2() {
+    assert_case(
+      r#"N[Pi, 50]"#,
+      r#"3.1415926535897932384626433832795028841971693993751058209749445923078164118876`50."#,
+    );
+  }
+  #[test]
+  fn n_3() {
+    assert_case(r#"N[Pi, 50]; N[1/7]"#, r#"0.14285714285714285"#);
+  }
+  #[test]
+  fn n_4() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]"#,
+      r#"0.1428571428571428571`5."#,
+    );
+  }
+  #[test]
+  fn n_5() {
+    assert_case(r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9"#, r#"10.9"#);
+  }
+  #[test]
+  fn symbol_literal() {
+    assert_case(r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a"#, r#"a"#);
+  }
+  #[test]
+  fn n_6() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]"#,
+      r#"10.9 + b"#,
+    );
+  }
+  #[test]
+  fn n_7() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]; N[a, 20]"#,
+      r#"a"#,
+    );
+  }
+  #[test]
+  fn n_8() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]; N[a, 20]; N[a, 20] = 11; N[a + b, 20]"#,
+      r#"11.`20. + b"#,
+    );
+  }
+  #[test]
+  fn n_9() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]; N[a, 20]; N[a, 20] = 11; N[a + b, 20]; N[f[a, b]]"#,
+      r#"f[10.9, b]"#,
+    );
+  }
+  #[test]
+  fn rationalize_1() {
+    assert_case(
+      r#"Rationalize[2.2]; Rationalize[-11.5, 1]; Rationalize[N[Pi]]"#,
+      r#"3.141592653589793"#,
+    );
+  }
+  #[test]
+  fn rationalize_2() {
+    assert_case(
+      r#"Rationalize[2.2]; Rationalize[-11.5, 1]; Rationalize[N[Pi]]; Rationalize[N[Pi], 0]"#,
+      r#"245850922 / 78256779"#,
+    );
+  }
+  #[test]
+  fn n_10() {
+    assert_case(
+      r#"Catalan // N; N[Catalan, 20]"#,
+      r#"0.91596559417721901505470246127766603241`20."#,
+    );
+  }
+  #[test]
+  fn n_11() {
+    assert_case(
+      r#"Cos[60 Degree]; Degree == Pi / 180; N[\[Degree]] == N[Degree]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn n_12() {
+    assert_case(r#"N[E]"#, r#"2.718281828459045"#);
+  }
+  #[test]
+  fn n_13() {
+    assert_case(
+      r#"N[E]; N[E, 50]"#,
+      r#"2.71828182845904523536028747135266249775724709369995957495841999330501070030685`50."#,
+    );
+  }
+  #[test]
+  fn n_14() {
+    assert_case(
+      r#"EulerGamma // N; N[EulerGamma, 40]"#,
+      r#"0.5772156649015328606065120900824024310421593359398806556748`40."#,
+    );
+  }
+  #[test]
+  fn n_15() {
+    assert_case(r#"N[Glaisher]"#, r#"1.2824271291006226"#);
+  }
+  #[test]
+  fn n_16() {
+    assert_case(
+      r#"N[Glaisher]; N[Glaisher, 50]"#,
+      r#"1.28242712910062263687534256886979172776768892732500119211620855281283363706656`50."#,
+    );
+  }
+  #[test]
+  fn n_17() {
+    assert_case(
+      r#"GoldenRatio // N; N[GoldenRatio, 40]"#,
+      r#"1.6180339887498948482045868343656381177203091798057628621355`40."#,
+    );
+  }
+  #[test]
+  fn precision_1() {
+    assert_case(r#"Precision[1]"#, r#"Infinity"#);
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(r#"Precision[1]; 1 / Infinity"#, r#"0"#);
+  }
+  #[test]
+  fn plus() {
+    assert_case(
+      r#"Precision[1]; 1 / Infinity; Infinity + 100"#,
+      r#"Infinity"#,
+    );
+  }
+  #[test]
+  fn n_18() {
+    assert_case(r#"N[Khinchin]"#, r#"2.6854520010653062"#);
+  }
+  #[test]
+  fn n_19() {
+    assert_case(
+      r#"N[Khinchin]; N[Khinchin, 50]"#,
+      r#"2.68545200106530644530971483548179569382038229399446295307978944749044639219889`50."#,
+    );
+  }
+  #[test]
+  fn n_20() {
+    assert_case(r#"Pi; N[Pi]"#, r#"3.141592653589793"#);
+  }
+  #[test]
+  fn n_21() {
+    assert_case(
+      r#"Pi; N[Pi]; N[Pi, 20]"#,
+      r#"3.1415926535897932384626433832795028842`20."#,
+    );
+  }
+  #[test]
+  fn number_form_1() {
+    assert_case(
+      r#"NumberForm[N[Pi], 10]"#,
+      r#"NumberForm[3.141592653589793, 10]"#,
+    );
+  }
+  #[test]
+  fn number_form_2() {
+    assert_case(
+      r#"NumberForm[N[Pi], 10]; NumberForm[N[Pi], {10, 6}]"#,
+      r#"NumberForm[3.141592653589793, {10, 6}]"#,
+    );
+  }
+  #[test]
+  fn number_form_3() {
+    assert_case(
+      r#"NumberForm[N[Pi], 10]; NumberForm[N[Pi], {10, 6}]; NumberForm[N[Pi]]"#,
+      r#"NumberForm[3.141592653589793]"#,
+    );
+  }
+  #[test]
+  fn n_22() {
+    assert_case(
+      r#"N[CosineDistance[{7, 9}, {71, 89}]]"#,
+      r#"0.00007596457213221441"#,
+    );
+  }
+  #[test]
+  fn cosine_distance_1() {
+    assert_case(
+      r#"N[CosineDistance[{7, 9}, {71, 89}]]; CosineDistance[{0.0, 0.0}, {x, y}]"#,
+      r#"0."#,
+    );
+  }
+  #[test]
+  fn cosine_distance_2() {
+    assert_case(
+      r#"N[CosineDistance[{7, 9}, {71, 89}]]; CosineDistance[{0.0, 0.0}, {x, y}]; CosineDistance[{1, 0}, {x, y}]"#,
+      r#"1 - Conjugate[x] / Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2]"#,
+    );
+  }
+  #[test]
+  fn cosine_distance_3() {
+    assert_case(
+      r#"N[CosineDistance[{7, 9}, {71, 89}]]; CosineDistance[{0.0, 0.0}, {x, y}]; CosineDistance[{1, 0}, {x, y}]; CosineDistance[{x, y}, {1, 0}]"#,
+      r#"1 - x / Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2]"#,
+    );
+  }
+  #[test]
+  fn cosine_distance_4() {
+    assert_case(
+      r#"N[CosineDistance[{7, 9}, {71, 89}]]; CosineDistance[{0.0, 0.0}, {x, y}]; CosineDistance[{1, 0}, {x, y}]; CosineDistance[{x, y}, {1, 0}]; CosineDistance[{a, b, c}, {x, y, z}]"#,
+      r#"1 - (a*Conjugate[x] + b*Conjugate[y] + c*Conjugate[z])/(Sqrt[Abs[a]^2 + Abs[b]^2 + Abs[c]^2]*Sqrt[Abs[x]^2 + Abs[y]^2 + Abs[z]^2])"#,
+    );
+  }
+  #[test]
+  fn cosine_distance_5() {
+    assert_case(
+      r#"N[CosineDistance[{7, 9}, {71, 89}]]; CosineDistance[{0.0, 0.0}, {x, y}]; CosineDistance[{1, 0}, {x, y}]; CosineDistance[{x, y}, {1, 0}]; CosineDistance[{a, b, c}, {x, y, z}]; CosineDistance[1+2I, 5]"#,
+      r#"1 - (1 + 2*I)/Sqrt[5]"#,
+    );
+  }
+  #[test]
+  fn n_23() {
+    assert_case(r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]"#, r#"True"#);
+  }
+  #[test]
+  fn equal_1() {
+    assert_case(
+      r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]; Pi == N[Pi, 20]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equal_2() {
+    assert_case(
+      r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]; Pi == N[Pi, 20]; Pi == 3.14"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn equal_3() {
+    assert_case(
+      r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]; Pi == N[Pi, 20]; Pi == 3.14; Pi ^ E == E ^ Pi"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn equal_4() {
+    assert_case(
+      r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]; Pi == N[Pi, 20]; Pi == 3.14; Pi ^ E == E ^ Pi; Pi == 3.1415``4"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equal_5() {
+    assert_case(
+      r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]; Pi == N[Pi, 20]; Pi == 3.14; Pi ^ E == E ^ Pi; Pi == 3.1415``4; 0.739085133215160642 == 0.739085133215160641"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equal_6() {
+    assert_case(
+      r#"1 == 1.; 5/3 == 3/2; N[E, 100] == N[E, 150]; Pi == N[Pi, 20]; Pi == 3.14; Pi ^ E == E ^ Pi; Pi == 3.1415``4; 0.739085133215160642 == 0.739085133215160641; 0.73908513321516064200000000 == 0.73908513321516064100000000"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn exact_number_q_1() {
+    assert_case(r#"ExactNumberQ[10]"#, r#"True"#);
+  }
+  #[test]
+  fn exact_number_q_2() {
+    assert_case(r#"ExactNumberQ[10]; ExactNumberQ[10.0]"#, r#"False"#);
+  }
+  #[test]
+  fn exact_number_q_3() {
+    assert_case(
+      r#"ExactNumberQ[10]; ExactNumberQ[10.0]; ExactNumberQ[I]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn exact_number_q_4() {
+    assert_case(
+      r#"ExactNumberQ[10]; ExactNumberQ[10.0]; ExactNumberQ[I]; ExactNumberQ[1 + I]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn exact_number_q_5() {
+    assert_case(
+      r#"ExactNumberQ[10]; ExactNumberQ[10.0]; ExactNumberQ[I]; ExactNumberQ[1 + I]; ExactNumberQ[1. + I]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn exact_number_q_6() {
+    assert_case(
+      r#"ExactNumberQ[10]; ExactNumberQ[10.0]; ExactNumberQ[I]; ExactNumberQ[1 + I]; ExactNumberQ[1. + I]; ExactNumberQ[5/6]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn exact_number_q_7() {
+    assert_case(
+      r#"ExactNumberQ[10]; ExactNumberQ[10.0]; ExactNumberQ[I]; ExactNumberQ[1 + I]; ExactNumberQ[1. + I]; ExactNumberQ[5/6]; ExactNumberQ[4 * I + 5/6]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn inexact_number_q_1() {
+    assert_case(r#"InexactNumberQ[a]"#, r#"False"#);
+  }
+  #[test]
+  fn inexact_number_q_2() {
+    assert_case(r#"InexactNumberQ[a]; InexactNumberQ[3.0]"#, r#"True"#);
+  }
+  #[test]
+  fn inexact_number_q_3() {
+    assert_case(
+      r#"InexactNumberQ[a]; InexactNumberQ[3.0]; InexactNumberQ[2/3]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn inexact_number_q_4() {
+    assert_case(
+      r#"InexactNumberQ[a]; InexactNumberQ[3.0]; InexactNumberQ[2/3]; InexactNumberQ[4.0+I]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn machine_number_q_1() {
+    assert_case(r#"MachineNumberQ[3.14159265358979324]"#, r#"False"#);
+  }
+  #[test]
+  fn machine_number_q_2() {
+    assert_case(
+      r#"MachineNumberQ[3.14159265358979324]; MachineNumberQ[1.5 + 2.3 I]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn machine_number_q_3() {
+    assert_case(
+      r#"MachineNumberQ[3.14159265358979324]; MachineNumberQ[1.5 + 2.3 I]; MachineNumberQ[2.71828182845904524 + 3.14159265358979324 I]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn accuracy_1() {
+    assert_case(r#"Accuracy[3.1416`2]"#, r#"1.5028491117376408"#);
+  }
+  #[test]
+  fn accuracy_2() {
+    assert_case(r#"Accuracy[3.1416`2]; Accuracy[1]"#, r#"Infinity"#);
+  }
+  #[test]
+  fn accuracy_3() {
+    assert_case(
+      r#"Accuracy[3.1416`2]; Accuracy[1]; Accuracy[A]"#,
+      r#"Infinity"#,
+    );
+  }
+  #[test]
+  fn accuracy_4() {
+    assert_case(
+      r#"Accuracy[3.1416`2]; Accuracy[1]; Accuracy[A]; z=Complex[3.00``2, 4.00``2]; Accuracy[z] == -Log[10, Sqrt[10^(-2 Accuracy[Re[z]]) + 10^(-2 Accuracy[Im[z]])]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn n_24() {
+    assert_case(r#"N[MachinePrecision]"#, r#"15.954589770191003"#);
+  }
+  #[test]
+  fn precision_2() {
+    assert_case(r#"Precision[1]"#, r#"Infinity"#);
+  }
+  #[test]
+  fn precision_3() {
+    assert_case(r#"Precision[1]; Precision[1/2]"#, r#"Infinity"#);
+  }
+  #[test]
+  fn precision_4() {
+    assert_case(
+      r#"Precision[1]; Precision[1/2]; Precision[1.23`10]"#,
+      r#"10."#,
+    );
+  }
+  #[test]
+  fn precision_5() {
+    assert_case(
+      r#"Precision[1]; Precision[1/2]; Precision[1.23`10]; Precision[0.5]"#,
+      r#"MachinePrecision"#,
+    );
+  }
+  #[test]
+  fn n_25() {
+    assert_case(
+      r#"30 / 5; 1 / 8; Pi / 4; Pi / 4.0; 1 / 8; N[%]"#,
+      r#"Out[0]"#,
+    );
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(
+      r#"30 / 5; 1 / 8; Pi / 4; Pi / 4.0; 1 / 8; N[%]; a / b / c"#,
+      r#"a/(b*c)"#,
+    );
+  }
+  #[test]
+  fn divide_3() {
+    assert_case(
+      r#"30 / 5; 1 / 8; Pi / 4; Pi / 4.0; 1 / 8; N[%]; a / b / c; a / (b / c)"#,
+      r#"(a*c)/b"#,
+    );
+  }
+  #[test]
+  fn divide_4() {
+    assert_case(
+      r#"30 / 5; 1 / 8; Pi / 4; Pi / 4.0; 1 / 8; N[%]; a / b / c; a / (b / c); a / b / (c / (d / e))"#,
+      r#"(a*d)/(b*c*e)"#,
+    );
+  }
+  #[test]
+  fn times() {
+    assert_case(
+      r#"30 / 5; 1 / 8; Pi / 4; Pi / 4.0; 1 / 8; N[%]; a / b / c; a / (b / c); a / b / (c / (d / e)); a / (b ^ 2 * c ^ 3 / e)"#,
+      r#"(a*e)/(b^2*c^3)"#,
+    );
+  }
+  #[test]
+  fn n_26() {
+    assert_case(
+      r#"5!!; Factorial2[-3]; I!! + 1; N[Pi!!, 6]"#,
+      r#"3.3523681241546551093`6."#,
+    );
+  }
+  #[test]
+  fn n_27() {
+    assert_case(r#"N[3^200]"#, r#"2.6561398887587478*^95"#);
+  }
+  #[test]
+  fn n_28() {
+    assert_case(r#"N[3^200]; N[2^1023]"#, r#"8.98846567431158*^307"#);
+  }
+  #[test]
+  fn n_29() {
+    assert_case(
+      r#"N[3^200]; N[2^1023]; N[2^1024]"#,
+      r#"1.79769313486231590772930519078902473362`15.954589770191005*^308"#,
+    );
+  }
+  #[test]
+  fn set() {
+    assert_case(
+      r#"N[3^200]; N[2^1023]; N[2^1024]; p=N[Pi,100]"#,
+      r#"3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865191976`100."#,
+    );
+  }
+  #[test]
+  fn machine_number_q_4() {
+    assert_case(r#"MachineNumberQ[1.5 + 3.14159265358979324 I]"#, r#"True"#);
+  }
+  #[test]
+  fn machine_number_q_5() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn n_30() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]; ArcTan[-1, -1]; ArcTan[1, 0]; ArcTan[-1, 0]; ArcTan[0, 1]; ArcTan[0, -1]; Cos[1.5 Pi]; N[Sin[1], 40]"#,
+      r#"0.8414709848078965066525023216302989996225630607983710656728`40."#,
+    );
+  }
+  #[test]
+  fn n_31() {
+    assert_case(r#"N[Sqrt[2], 41]//Precision"#, r#"41."#);
+  }
+  #[test]
+  fn n_32() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision"#,
+      r#"40."#,
+    );
+  }
+  #[test]
+  fn n_33() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision"#,
+      r#"41."#,
+    );
+  }
+  #[test]
+  fn n_34() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision"#,
+      r#"40."#,
+    );
+  }
+  #[test]
+  fn n_35() {
+    assert_case(
+      r#"N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]//Precision; N[Sqrt[2], 40]//Precision; N[Sqrt[2], 41]"#,
+      r#"1.4142135623730950488016887242096980785696718753769480731767`41."#,
+    );
+  }
+  #[test]
+  fn chop_5() {
+    assert_case(
+      r#"E^(3+I Pi); E^(I Pi/2); E^1; log2=Log[2.]; E^log2; log2=Log[2.]; Chop[E^(log2+I Pi)]"#,
+      r#"-2."#,
+    );
+  }
+}

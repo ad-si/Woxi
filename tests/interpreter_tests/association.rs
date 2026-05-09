@@ -1089,3 +1089,83 @@ mod lookup {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn association() {
+    assert_case(
+      r#"Head[<|a -> x, b -> y, c -> z|>]; <|a -> x, b -> y|>; Association[{a -> x^2, b -> y}]"#,
+      r#"<|a -> x^2, b -> y|>"#,
+    );
+  }
+  #[test]
+  fn association_literal() {
+    assert_case(
+      r#"Head[<|a -> x, b -> y, c -> z|>]; <|a -> x, b -> y|>; Association[{a -> x^2, b -> y}]; <|a -> x, b -> y, <|a -> z, d -> t|>|>"#,
+      r#"<|a -> z, b -> y, d -> t|>"#,
+    );
+  }
+  #[test]
+  fn association_q_1() {
+    assert_case(r#"AssociationQ[<|a -> 1, b :> 2|>]"#, r#"True"#);
+  }
+  #[test]
+  fn association_q_2() {
+    assert_case(
+      r#"AssociationQ[<|a -> 1, b :> 2|>]; AssociationQ[<|a, b|>]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn keys_1() {
+    assert_case(r#"Keys[<|a -> x, b -> y|>]"#, r#"{a, b}"#);
+  }
+  #[test]
+  fn keys_2() {
+    assert_case(
+      r#"Keys[<|a -> x, b -> y|>]; Keys[{a -> x, b -> y}]"#,
+      r#"{a, b}"#,
+    );
+  }
+  #[test]
+  fn keys_3() {
+    assert_case(
+      r#"Keys[<|a -> x, b -> y|>]; Keys[{a -> x, b -> y}]; Keys[{<|a -> x, b -> y|>, {w -> z, {}}}]"#,
+      r#"{{a, b}, {w, {}}}"#,
+    );
+  }
+  #[test]
+  fn keys_4() {
+    assert_case(
+      r#"Keys[<|a -> x, b -> y|>]; Keys[{a -> x, b -> y}]; Keys[{<|a -> x, b -> y|>, {w -> z, {}}}]; Keys[{c -> z, b -> y, a -> x}]"#,
+      r#"{c, b, a}"#,
+    );
+  }
+  #[test]
+  fn values_1() {
+    assert_case(r#"Values[<|a -> x, b -> y|>]"#, r#"{x, y}"#);
+  }
+  #[test]
+  fn values_2() {
+    assert_case(
+      r#"Values[<|a -> x, b -> y|>]; Values[{a -> x, b -> y}]"#,
+      r#"{x, y}"#,
+    );
+  }
+  #[test]
+  fn values_3() {
+    assert_case(
+      r#"Values[<|a -> x, b -> y|>]; Values[{a -> x, b -> y}]; Values[{<|a -> x, b -> y|>, {c -> z, {}}}]"#,
+      r#"{{x, y}, {z, {}}}"#,
+    );
+  }
+  #[test]
+  fn values_4() {
+    assert_case(
+      r#"Values[<|a -> x, b -> y|>]; Values[{a -> x, b -> y}]; Values[{<|a -> x, b -> y|>, {c -> z, {}}}]; Values[{c -> z, b -> y, a -> x}]"#,
+      r#"{z, y, x}"#,
+    );
+  }
+}

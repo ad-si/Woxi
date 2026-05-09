@@ -662,3 +662,82 @@ mod long_right_arrow {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn grid_1() {
+    assert_case(r#"Grid[{{a, b}, {c, d}}]"#, r#"Grid[{{a, b}, {c, d}}]"#);
+  }
+  #[test]
+  fn grid_2() {
+    assert_case(
+      r#"Grid[{{a, b}, {c, d}}]; Grid[{a, b, c}]"#,
+      r#"Grid[{a, b, c}]"#,
+    );
+  }
+  #[test]
+  fn grid_3() {
+    assert_case(
+      r#"Grid[{{a, b}, {c, d}}]; Grid[{a, b, c}]; Grid[{{"first", "second", "third"},{a},{1, 2, 3}}]"#,
+      r#"Grid[{{"first", "second", "third"}, {a}, {1, 2, 3}}]"#,
+    );
+  }
+  #[test]
+  fn grid_4() {
+    assert_case(
+      r#"Grid[{{a, b}, {c, d}}]; Grid[{a, b, c}]; Grid[{{"first", "second", "third"},{a},{1, 2, 3}}]; Grid[{"This is a long title", {"first", "second", "third"},{a},{1, 2, 3}}]"#,
+      r#"Grid[{"This is a long title", {"first", "second", "third"}, {a}, {1, 2, 3}}]"#,
+    );
+  }
+  #[test]
+  fn pane() {
+    assert_case(
+      r#"Pane[37!]"#,
+      r#"Pane[13763753091226345046315979581580902400000000]"#,
+    );
+  }
+  #[test]
+  fn list_literal() {
+    // mathics rendered the contents to LaTeX `\begin{array}…`;
+    // wolframscript -code returns the unevaluated wrapper
+    // `TeXForm[TableForm[{{Pane[a, 3], Pane[expt, 3]}}]]` verbatim.
+    // Woxi matches.
+    assert_case(
+      r#"Pane[37!]; {{Pane[a,3], Pane[expt, 3]}}//TableForm//TeXForm"#,
+      r#"TeXForm[TableForm[{{Pane[a, 3], Pane[expt, 3]}}]]"#,
+    );
+  }
+  #[test]
+  fn grid_5() {
+    // mathics quoted the StringJoin args; wolframscript -code emits the
+    // contents in OutputForm (no quotes around the held strings) — Woxi
+    // matches.
+    assert_case(
+      r#"Grid[{{a,bc},{d,e}}, ColumnAlignments:>Symbol["Rig"<>"ht"]]"#,
+      r#"Grid[{{a, bc}, {d, e}}, ColumnAlignments :> Symbol[StringJoin[Rig, ht]]]"#,
+    );
+  }
+  #[test]
+  fn greater() {
+    // mathics rendered the contents to LaTeX `\begin{array}…`;
+    // wolframscript -code returns the unevaluated wrapper
+    // `TeXForm[Grid[{{a, bc}, {d, e}}, ColumnAlignments -> Left]]`
+    // verbatim. Woxi matches.
+    assert_case(
+      r#"Grid[{{a,bc},{d,e}}, ColumnAlignments:>Symbol["Rig"<>"ht"]]; TeXForm@Grid[{{a,bc},{d,e}}, ColumnAlignments->Left]"#,
+      r#"TeXForm[Grid[{{a, bc}, {d, e}}, ColumnAlignments -> Left]]"#,
+    );
+  }
+  #[test]
+  fn te_x_form() {
+    // mathics rendered the contents to LaTeX `\begin{array}…`;
+    // wolframscript -code returns the unevaluated wrapper
+    // `TeXForm[TableForm[{{a, b}, {c, d}}]]` verbatim. Woxi matches.
+    assert_case(
+      r#"Grid[{{a,bc},{d,e}}, ColumnAlignments:>Symbol["Rig"<>"ht"]]; TeXForm@Grid[{{a,bc},{d,e}}, ColumnAlignments->Left]; TeXForm[TableForm[{{a,b},{c,d}}]]"#,
+      r#"TeXForm[TableForm[{{a, b}, {c, d}}]]"#,
+    );
+  }
+}

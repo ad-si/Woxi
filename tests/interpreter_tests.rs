@@ -319,6 +319,8 @@ mod interpreter_tests {
     assert_eq!(interpret("+x^2").unwrap(), "x^2");
   }
 
+  mod case_helpers;
+
   mod algebra;
   mod arg_count;
   mod arithmetic;
@@ -357,6 +359,5 @@ mod interpreter_tests {
   mod styling;
   mod syntax;
   mod tabular;
-  mod test_cases;
   mod turing_machine;
 }

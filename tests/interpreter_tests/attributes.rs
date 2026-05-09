@@ -602,3 +602,688 @@ mod hold_all_complete_blocks_upvalues {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn not_option_q_1() {
+    assert_case(r#"NotOptionQ[x]"#, r#"NotOptionQ[x]"#);
+  }
+  #[test]
+  fn not_option_q_2() {
+    assert_case(r#"NotOptionQ[x]; NotOptionQ[2]"#, r#"NotOptionQ[2]"#);
+  }
+  #[test]
+  fn not_option_q_3() {
+    assert_case(
+      r#"NotOptionQ[x]; NotOptionQ[2]; NotOptionQ["abc"]"#,
+      r#"NotOptionQ["abc"]"#,
+    );
+  }
+  #[test]
+  fn not_option_q_4() {
+    assert_case(
+      r#"NotOptionQ[x]; NotOptionQ[2]; NotOptionQ["abc"]; NotOptionQ[a -> True]"#,
+      r#"NotOptionQ[a -> True]"#,
+    );
+  }
+  #[test]
+  fn option_q_1() {
+    assert_case(r#"OptionQ[a -> True]"#, r#"True"#);
+  }
+  #[test]
+  fn option_q_2() {
+    assert_case(r#"OptionQ[a -> True]; OptionQ[a :> True]"#, r#"True"#);
+  }
+  #[test]
+  fn option_q_3() {
+    assert_case(
+      r#"OptionQ[a -> True]; OptionQ[a :> True]; OptionQ[{a -> True}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn option_q_4() {
+    assert_case(
+      r#"OptionQ[a -> True]; OptionQ[a :> True]; OptionQ[{a -> True}]; OptionQ[{a :> True}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn option_q_5() {
+    assert_case(
+      r#"OptionQ[a -> True]; OptionQ[a :> True]; OptionQ[{a -> True}]; OptionQ[{a :> True}]; OptionQ[{a -> True, {b->1, "c"->2}}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn option_q_6() {
+    assert_case(
+      r#"OptionQ[a -> True]; OptionQ[a :> True]; OptionQ[{a -> True}]; OptionQ[{a :> True}]; OptionQ[{a -> True, {b->1, "c"->2}}]; OptionQ[{a -> True, {b->1, c}}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn options_1() {
+    assert_case(r#"Options[f] = {n -> 2}"#, r#"{n -> 2}"#);
+  }
+  #[test]
+  fn options_2() {
+    assert_case(r#"Options[f] = {n -> 2}; Options[f]"#, r#"{n -> 2}"#);
+  }
+  #[test]
+  fn f_1() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]"#,
+      r#"x ^ 2"#,
+    );
+  }
+  #[test]
+  fn f_2() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]; f[x, n -> 3]"#,
+      r#"x ^ 3"#,
+    );
+  }
+  #[test]
+  fn options_3() {
+    assert_case(
+      r#"Options[MySetting] = {"foo" -> 5, "bar" -> 6}"#,
+      r#"{"foo" -> 5, "bar" -> 6}"#,
+    );
+  }
+  #[test]
+  fn option_value_1() {
+    assert_case(
+      r#"Options[MySetting] = {"foo" -> 5, "bar" -> 6}; OptionValue[MySetting, "bar"]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn set_options() {
+    assert_case(
+      r#"SetOptions[Plot]"#,
+      r#"{AlignmentPoint -> Center, AspectRatio -> GoldenRatio^(-1), Axes -> True, AxesLabel -> None, AxesOrigin -> Automatic, AxesStyle -> {}, Background -> None, BaselinePosition -> Automatic, BaseStyle -> {}, ClippingStyle -> None, ColorFunction -> Automatic, ColorFunctionScaling -> True, ColorOutput -> Automatic, ContentSelectable -> Automatic, CoordinatesToolOptions -> Automatic, DisplayFunction :> $DisplayFunction, Epilog -> {}, Evaluated -> Automatic, EvaluationMonitor -> None, Exclusions -> Automatic, ExclusionsStyle -> None, Filling -> None, FillingStyle -> Automatic, FormatType :> TraditionalForm, Frame -> False, FrameLabel -> None, FrameStyle -> {}, FrameTicks -> Automatic, FrameTicksStyle -> {}, GridLines -> None, GridLinesStyle -> {}, ImageMargins -> 0., ImagePadding -> All, ImageSize -> Automatic, ImageSizeRaw -> Automatic, IntervalMarkers -> Automatic, IntervalMarkersStyle -> Automatic, LabelingSize -> Automatic, LabelStyle -> {}, MaxRecursion -> Automatic, Mesh -> None, MeshFunctions -> {#1 & }, MeshShading -> None, MeshStyle -> Automatic, Method -> Automatic, PerformanceGoal :> $PerformanceGoal, PlotHighlighting -> Automatic, PlotInteractivity :> $PlotInteractivity, PlotLabel -> None, PlotLabels -> None, PlotLayout -> Automatic, PlotLegends -> None, PlotPoints -> Automatic, PlotRange -> {Full, Automatic}, PlotRangeClipping -> True, PlotRangePadding -> Automatic, PlotRegion -> Automatic, PlotStyle -> Automatic, PlotTheme :> $PlotTheme, PreserveImageOptions -> Automatic, Prolog -> {}, RegionFunction -> (True & ), RotateLabel -> True, ScalingFunctions -> None, TargetUnits -> Automatic, Ticks -> Automatic, TicksStyle -> {}, WorkingPrecision -> MachinePrecision}"#,
+    );
+  }
+  #[test]
+  fn attributes_1() {
+    assert_case(
+      r#"Attributes[Plus]"#,
+      r#"{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"#,
+    );
+  }
+  #[test]
+  fn attributes_2() {
+    assert_case(
+      r#"Attributes[Plus]; Attributes["Plus"]"#,
+      r#"{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"#,
+    );
+  }
+  #[test]
+  fn attributes_3() {
+    assert_case(r#"SetAttributes[f, Flat]; Attributes[f]"#, r#"{Flat}"#);
+  }
+  #[test]
+  fn attributes_4() {
+    assert_case(
+      r#"SetAttributes[f, Flat]; Attributes[f]; ClearAttributes[f, Flat]; Attributes[f]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn attributes_5() {
+    assert_case(
+      r#"SetAttributes[f, Flat]; Attributes[f]; ClearAttributes[f, Flat]; Attributes[f]; ClearAttributes[{f}, {Flat}]; Attributes[f]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn attributes_6() {
+    assert_case(
+      r#"Attributes[E]"#,
+      r#"{Constant, Protected, ReadProtected}"#,
+    );
+  }
+  #[test]
+  fn f_3() {
+    assert_case(r#"SetAttributes[f, Flat]; f[a, f[b, c]]"#, r#"f[a, b, c]"#);
+  }
+  #[test]
+  fn f_4() {
+    assert_case(
+      r#"SetAttributes[f, Flat]; f[a, f[b, c]]; f[a, b, c] /. f[a, b] -> d"#,
+      r#"f[d, c]"#,
+    );
+  }
+  #[test]
+  fn attributes_7() {
+    assert_case(r#"Attributes[Function]"#, r#"{HoldAll, Protected}"#);
+  }
+  #[test]
+  fn f_5() {
+    assert_case(
+      r#"SetAttributes[f, HoldAllComplete]; f[a] ^= 3; f[a]"#,
+      r#"f[a]"#,
+    );
+  }
+  #[test]
+  fn f_6() {
+    assert_case(
+      r#"SetAttributes[f, HoldAllComplete]; f[a] ^= 3; f[a]; f[Sequence[a, b]]"#,
+      r#"f[Sequence[a, b]]"#,
+    );
+  }
+  #[test]
+  fn attributes_8() {
+    assert_case(
+      r#"Attributes[Set]"#,
+      r#"{HoldFirst, Protected, SequenceHold}"#,
+    );
+  }
+  #[test]
+  fn attributes_9() {
+    assert_case(r#"Attributes[If]"#, r#"{HoldRest, Protected}"#);
+  }
+  #[test]
+  fn f_7() {
+    assert_case(
+      r#"SetAttributes[f, Listable]; f[{1, 2, 3}, {4, 5, 6}]"#,
+      r#"{f[1, 4], f[2, 5], f[3, 6]}"#,
+    );
+  }
+  #[test]
+  fn f_8() {
+    assert_case(
+      r#"SetAttributes[f, Listable]; f[{1, 2, 3}, {4, 5, 6}]; f[{1, 2, 3}, 4]"#,
+      r#"{f[1, 4], f[2, 4], f[3, 4]}"#,
+    );
+  }
+  #[test]
+  fn list_literal() {
+    assert_case(
+      r#"SetAttributes[f, Listable]; f[{1, 2, 3}, {4, 5, 6}]; f[{1, 2, 3}, 4]; {{1, 2}, {3, 4}} + {5, 6}"#,
+      r#"{{6, 7}, {9, 10}}"#,
+    );
+  }
+  #[test]
+  fn n_1() {
+    assert_case(
+      r#"N[f[2, 3]]; SetAttributes[f, NHoldAll]; N[f[2, 3]]"#,
+      r#"f[2, 3]"#,
+    );
+  }
+  #[test]
+  fn attributes_10() {
+    assert_case(
+      r#"Attributes[Sqrt]"#,
+      r#"{Listable, NumericFunction, Protected}"#,
+    );
+  }
+  #[test]
+  fn numeric_q_1() {
+    assert_case(r#"Attributes[Sqrt]; NumericQ[Sqrt[1]]"#, r#"True"#);
+  }
+  #[test]
+  fn numeric_q_2() {
+    assert_case(
+      r#"Attributes[Sqrt]; NumericQ[Sqrt[1]]; NumericQ[a]=True; NumericQ[Sqrt[a]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn numeric_q_3() {
+    assert_case(
+      r#"Attributes[Sqrt]; NumericQ[Sqrt[1]]; NumericQ[a]=True; NumericQ[Sqrt[a]]; NumericQ[a]=False; NumericQ[Sqrt[a]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn greater_1() {
+    assert_case(
+      r#"a /. f[x_:0, u_] -> {u}; SetAttributes[f, OneIdentity]; a /. f[x_:0, u_] -> {u}"#,
+      r#"{a}"#,
+    );
+  }
+  #[test]
+  fn greater_2() {
+    assert_case(
+      r#"a /. f[x_:0, u_] -> {u}; SetAttributes[f, OneIdentity]; a /. f[x_:0, u_] -> {u}; a /. f[u_] -> {u}"#,
+      r#"a"#,
+    );
+  }
+  #[test]
+  fn f_9() {
+    assert_case(
+      r#"a /. f[x_:0, u_] -> {u}; SetAttributes[f, OneIdentity]; a /. f[x_:0, u_] -> {u}; a /. f[u_] -> {u}; f[a]"#,
+      r#"f[a]"#,
+    );
+  }
+  #[test]
+  fn f_10() {
+    assert_case(
+      r#"SetAttributes[f, Orderless]; f[c, a, b, a + b, 3, 1.0]"#,
+      r#"f[1., 3, a, b, a + b, c]"#,
+    );
+  }
+  #[test]
+  fn f_11() {
+    assert_case(
+      r#"SetAttributes[f, Orderless]; f[c, a, b, a + b, 3, 1.0]; f[a, b] == f[b, a]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn f_12() {
+    assert_case(
+      r#"SetAttributes[f, Orderless]; f[c, a, b, a + b, 3, 1.0]; f[a, b] == f[b, a]; SetAttributes[f, Flat]; f[a, b, c] /. f[a, c] -> d"#,
+      r#"f[b, d]"#,
+    );
+  }
+  #[test]
+  fn f_13() {
+    assert_case(
+      r#"f[Sequence[a, b]]; SetAttributes[f, SequenceHold]; f[Sequence[a, b]]"#,
+      r#"f[Sequence[a, b]]"#,
+    );
+  }
+  #[test]
+  fn plus() {
+    assert_case(
+      r#"f[Sequence[a, b]]; SetAttributes[f, SequenceHold]; f[Sequence[a, b]]; s = Sequence[a, b]; s; Plus[s]"#,
+      r#"a + b"#,
+    );
+  }
+  #[test]
+  fn attributes_11() {
+    assert_case(r#"SetAttributes[f, Flat]; Attributes[f]"#, r#"{Flat}"#);
+  }
+  #[test]
+  fn attributes_12() {
+    assert_case(
+      r#"SetAttributes[f, Flat]; Attributes[f]; SetAttributes[{f, g}, {Flat, Orderless}]; Attributes[g]"#,
+      r#"{Flat, Orderless}"#,
+    );
+  }
+  #[test]
+  fn attributes_13() {
+    assert_case(r#"Attributes[Hold]"#, r#"{HoldAll, Protected}"#);
+  }
+  #[test]
+  fn attributes_14() {
+    assert_case(
+      r#"Attributes[HoldComplete]"#,
+      r#"{HoldAllComplete, Protected}"#,
+    );
+  }
+  #[test]
+  fn attributes_15() {
+    assert_case(
+      r#"HoldForm[1 + 2 + 3]; Attributes[HoldForm]"#,
+      r#"{HoldAll, Protected}"#,
+    );
+  }
+  #[test]
+  fn f_14() {
+    assert_case(r#"SetAttributes[f, HoldAll]; f[1 + 2]"#, r#"f[1 + 2]"#);
+  }
+  #[test]
+  fn f_15() {
+    assert_case(
+      r#"SetAttributes[f, HoldAll]; f[1 + 2]; f[Evaluate[1 + 2]]"#,
+      r#"f[3]"#,
+    );
+  }
+  #[test]
+  fn hold() {
+    assert_case(
+      r#"SetAttributes[f, HoldAll]; f[1 + 2]; f[Evaluate[1 + 2]]; Hold[Evaluate[1 + 2]]"#,
+      r#"Hold[3]"#,
+    );
+  }
+  #[test]
+  fn hold_complete() {
+    assert_case(
+      r#"SetAttributes[f, HoldAll]; f[1 + 2]; f[Evaluate[1 + 2]]; Hold[Evaluate[1 + 2]]; HoldComplete[Evaluate[1 + 2]]"#,
+      r#"HoldComplete[Evaluate[1 + 2]]"#,
+    );
+  }
+  #[test]
+  fn evaluate() {
+    // Multi-arg `Evaluate[a, b]` returns `Sequence[a, b]`, which splices
+    // into surrounding hold contexts and CompoundExpression. The trailing
+    // `Evaluate[Sequence[1, 2]]` becomes `Sequence[1, 2]` and the
+    // outer `;`-chain (CompoundExpression-style) keeps just the last
+    // spliced element, matching wolframscript's `2`.
+    assert_case(
+      r#"SetAttributes[f, HoldAll]; f[1 + 2]; f[Evaluate[1 + 2]]; Hold[Evaluate[1 + 2]]; HoldComplete[Evaluate[1 + 2]]; Evaluate[Sequence[1, 2]]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn attributes_16() {
+    assert_case(
+      r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]"#,
+      r#"{HoldAllComplete, Protected}"#,
+    );
+  }
+  #[test]
+  fn f_16() {
+    assert_case(
+      r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]; f[Unevaluated[x]]"#,
+      r#"f[Unevaluated[x]]"#,
+    );
+  }
+  #[test]
+  fn f_17() {
+    assert_case(
+      r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]; f[Unevaluated[x]]; Attributes[f] = {Flat}; f[a, Unevaluated[f[b, c]]]"#,
+      r#"f[a, Unevaluated[b], Unevaluated[c]]"#,
+    );
+  }
+  #[test]
+  fn g_1() {
+    assert_case(
+      r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]; f[Unevaluated[x]]; Attributes[f] = {Flat}; f[a, Unevaluated[f[b, c]]]; g[a, Sequence[Unevaluated[b], Unevaluated[c]]]"#,
+      r#"g[a, Unevaluated[b], Unevaluated[c]]"#,
+    );
+  }
+  #[test]
+  fn g_2() {
+    assert_case(
+      r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]; f[Unevaluated[x]]; Attributes[f] = {Flat}; f[a, Unevaluated[f[b, c]]]; g[a, Sequence[Unevaluated[b], Unevaluated[c]]]; g[Unevaluated[Sequence[a, b, c]]]"#,
+      r#"g[Unevaluated[Sequence[a, b, c]]]"#,
+    );
+  }
+  #[test]
+  fn attributes_17() {
+    assert_case(
+      r#"f[x, Sequence[a, b], y]; Attributes[Set]"#,
+      r#"{HoldFirst, Protected, SequenceHold}"#,
+    );
+  }
+  #[test]
+  fn n_2() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]; N[a, 20]; N[a, 20] = 11; N[a + b, 20]; N[f[a, b]]; SetAttributes[f, NHoldAll]; N[f[a, b]]"#,
+      r#"f[a, b]"#,
+    );
+  }
+  #[test]
+  fn n_3() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]; N[a, 20]; N[a, 20] = 11; N[a + b, 20]; N[f[a, b]]; SetAttributes[f, NHoldAll]; N[f[a, b]]; N[c, p_?(#>10&)] := p; N[c, 3]"#,
+      r#"c"#,
+    );
+  }
+  #[test]
+  fn n_4() {
+    assert_case(
+      r#"N[Pi, 50]; N[1/7]; N[1/7, 5]; N[a] = 10.9; a; N[a + b]; N[a, 20]; N[a, 20] = 11; N[a + b, 20]; N[f[a, b]]; SetAttributes[f, NHoldAll]; N[f[a, b]]; N[c, p_?(#>10&)] := p; N[c, 3]; N[c, 11]"#,
+      r#"11."#,
+    );
+  }
+  #[test]
+  fn sort_1() {
+    assert_case(
+      r#"Sort[{4, 1.0, a, 3+I}]; Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, PatternsOrderedQ]"#,
+      r#"{items___, item_, OptionsPattern[], item_symbol, (item_)?test}"#,
+    );
+  }
+  #[test]
+  fn sort_2() {
+    assert_case(
+      r#"Sort[{4, 1.0, a, 3+I}]; Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, PatternsOrderedQ]; Sort[{a, b/;t}, PatternsOrderedQ]"#,
+      r#"{a, b /; t}"#,
+    );
+  }
+  #[test]
+  fn sort_3() {
+    assert_case(
+      r#"Sort[{4, 1.0, a, 3+I}]; Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, PatternsOrderedQ]; Sort[{a, b/;t}, PatternsOrderedQ]; Sort[{2+c_, 1+b__}, PatternsOrderedQ]"#,
+      r#"{2 + (c_), 1 + (b__)}"#,
+    );
+  }
+  #[test]
+  fn sort_4() {
+    assert_case(
+      r#"Sort[{4, 1.0, a, 3+I}]; Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, PatternsOrderedQ]; Sort[{a, b/;t}, PatternsOrderedQ]; Sort[{2+c_, 1+b__}, PatternsOrderedQ]; Sort[{x_ + n_*y_, x_ + y_}, PatternsOrderedQ]"#,
+      r#"{(x_) + (n_)*(y_), (x_) + (y_)}"#,
+    );
+  }
+  #[test]
+  fn attributes_18() {
+    assert_case(
+      r#"Attributes[SetDelayed]"#,
+      r#"{HoldAll, Protected, SequenceHold}"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(r#"Attributes[SetDelayed]; a = 1"#, r#"1"#);
+  }
+  #[test]
+  fn symbol_literal_1() {
+    assert_case(r#"Attributes[SetDelayed]; a = 1; x := a; x"#, r#"1"#);
+  }
+  #[test]
+  fn set_2() {
+    assert_case(r#"Attributes[SetDelayed]; a = 1; x := a; x; a = 2"#, r#"2"#);
+  }
+  #[test]
+  fn symbol_literal_2() {
+    assert_case(
+      r#"Attributes[SetDelayed]; a = 1; x := a; x; a = 2; x"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn f_18() {
+    assert_case(
+      r#"Attributes[SetDelayed]; a = 1; x := a; x; a = 2; x; f[x_] := p[x] /; x>0; f[3]"#,
+      r#"p[3]"#,
+    );
+  }
+  #[test]
+  fn f_19() {
+    assert_case(
+      r#"Attributes[SetDelayed]; a = 1; x := a; x; a = 2; x; f[x_] := p[x] /; x>0; f[3]; f[-3]"#,
+      r#"f[-3]"#,
+    );
+  }
+  #[test]
+  fn attributes_19() {
+    assert_case(
+      r#"ConditionalExpression[a, False]; Attributes[Undefined]"#,
+      r#"{Protected}"#,
+    );
+  }
+  #[test]
+  fn f_20() {
+    assert_case(
+      r#"a + b + c /. a + b -> t; a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}; f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}; f[4] /. f[x_?(# > 0&)] -> x ^ 2; f[4] /. f[x_] /; x > 0 -> x ^ 2; f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}; f[a] /. f[x_, y_:3] -> {x, y}; f[y, a->3] /. f[x_, OptionsPattern[{a->2, b->5}]] -> {x, OptionValue[a], OptionValue[b]}"#,
+      r#"{y, 3, 5}"#,
+    );
+  }
+  #[test]
+  fn attributes_20() {
+    assert_case(
+      r#"Attributes[RuleDelayed]"#,
+      r#"{HoldRest, Protected, SequenceHold}"#,
+    );
+  }
+  #[test]
+  fn f_21() {
+    assert_case(
+      r#"f[x_, OptionsPattern[{n->2}]] := x ^ OptionValue[n]; f[x]"#,
+      r#"x ^ 2"#,
+    );
+  }
+  #[test]
+  fn f_22() {
+    assert_case(
+      r#"f[x_, OptionsPattern[{n->2}]] := x ^ OptionValue[n]; f[x]; f[x, n->3]"#,
+      r#"x ^ 3"#,
+    );
+  }
+  #[test]
+  fn greater_3() {
+    assert_case(
+      r#"f[x_, OptionsPattern[{n->2}]] := x ^ OptionValue[n]; f[x]; f[x, n->3]; e = f[x, n:>a]"#,
+      r#"x ^ a"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_3() {
+    assert_case(
+      r#"f[x_, OptionsPattern[{n->2}]] := x ^ OptionValue[n]; f[x]; f[x, n->3]; e = f[x, n:>a]; a = 5; e"#,
+      r#"x ^ 5"#,
+    );
+  }
+  #[test]
+  fn f_23() {
+    assert_case(
+      r#"f[x_, OptionsPattern[{n->2}]] := x ^ OptionValue[n]; f[x]; f[x, n->3]; e = f[x, n:>a]; a = 5; e; f[x, {{{n->4}}}]"#,
+      r#"x ^ 4"#,
+    );
+  }
+  #[test]
+  fn f2() {
+    assert_case(
+      r#"f1[y]; Options[f2]:={s->12};f2[x_,opt:OptionsPattern[]]:=x^OptionValue[s]; f2[y]"#,
+      r#"y ^ 12"#,
+    );
+  }
+  #[test]
+  fn f3() {
+    assert_case(
+      r#"f1[y]; f2[y]; Options[f3]:={a->12};f3[x_,opt:OptionsPattern[{a:>4}]]:=x^OptionValue[a]; f3[y]"#,
+      r#"y ^ 4"#,
+    );
+  }
+  #[test]
+  fn f4() {
+    assert_case(
+      r#"f1[y]; f2[y]; f3[y]; Options[f4]:={a->12};f4[x_,OptionsPattern[{a:>4}]]:=x^OptionValue[a]; f4[y]"#,
+      r#"y ^ 4"#,
+    );
+  }
+  #[test]
+  fn option_value_2() {
+    assert_case(
+      r#"f1[y]; f2[y]; f3[y]; f4[y]; Options[F]:={a->89,b->37}; OptionValue[F, a]"#,
+      r#"89"#,
+    );
+  }
+  #[test]
+  fn f_24() {
+    assert_case(
+      r#"f[x_, OptionsPattern[f]] := x ^ OptionValue["m"];Options[f] = {"m" -> 7};f[x]"#,
+      r#"x ^ 7"#,
+    );
+  }
+  #[test]
+  fn greater_4() {
+    assert_case(
+      r#"f[x_, OptionsPattern[f]] := x ^ OptionValue["m"];Options[f] = {"m" -> 7};f[x]; f /: Options[f] = {a -> b}"#,
+      r#"{a -> b}"#,
+    );
+  }
+  #[test]
+  fn options_4() {
+    assert_case(
+      r#"f[x_, OptionsPattern[f]] := x ^ OptionValue["m"];Options[f] = {"m" -> 7};f[x]; f /: Options[f] = {a -> b}; Options[f]"#,
+      r#"{a -> b}"#,
+    );
+  }
+  #[test]
+  fn set_attributes_1() {
+    assert_case(r#"SetAttributes[F, OneIdentity]"#, r#"Null"#);
+  }
+  #[test]
+  fn set_attributes_2() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_3() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_4() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_5() {
+    assert_case(r#"SetAttributes[F, OneIdentity]"#, r#"Null"#);
+  }
+  #[test]
+  fn set_attributes_6() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_7() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_8() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_9() {
+    assert_case(r#"SetAttributes[F, OneIdentity]"#, r#"Null"#);
+  }
+  #[test]
+  fn set_attributes_10() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_11() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn set_attributes_12() {
+    assert_case(
+      r#"SetAttributes[F, OneIdentity]; SetAttributes[r, Flat]; SetAttributes[s, Flat]; SetAttributes[s, OneIdentity]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn attributes_21() {
+    assert_case(
+      r#"Attributes[Pi]"#,
+      r#"{Constant, Protected, ReadProtected}"#,
+    );
+  }
+  #[test]
+  fn attributes_22() {
+    assert_case(
+      r#"Attributes[Pi]; Unprotect[Pi]; Pi=.; Attributes[Pi]"#,
+      r#"{Constant, ReadProtected}"#,
+    );
+  }
+}

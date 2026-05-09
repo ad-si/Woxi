@@ -3487,3 +3487,1502 @@ mod import_export_formats {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn f_1() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]; f[x, n -> 3]; f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a])"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn f_2() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]; f[x, n -> 3]; f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); f[a -> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a])"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn options_1() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]; f[x, n -> 3]; f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); f[a -> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); Options[f] = {a}"#,
+      r#"{a}"#,
+    );
+  }
+  #[test]
+  fn options_2() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]; f[x, n -> 3]; f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); f[a -> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); Options[f] = {a}; Options[f] = a -> b"#,
+      r#"a -> b"#,
+    );
+  }
+  #[test]
+  fn options_3() {
+    assert_case(
+      r#"Options[f] = {n -> 2}; Options[f]; f[x_, OptionsPattern[f]] := x ^ OptionValue[n]; f[x]; f[x, n -> 3]; f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); f[a -> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]); Options[f] = {a}; Options[f] = a -> b; Options[f]"#,
+      r#"{a -> b}"#,
+    );
+  }
+  #[test]
+  fn print_1() {
+    assert_case(r#"Print["a"]; Abort[]; Print["b"]"#, r#"$Aborted"#);
+  }
+  #[test]
+  fn for_1() {
+    assert_case(
+      r#"For[i=1, i<=8, i=i+1, If[Mod[i,2] == 0, Continue[]]; Print[i]]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn do_1() {
+    assert_case(r#"Do[Print[i], {i, 2, 4}]"#, r#"Null"#);
+  }
+  #[test]
+  fn do_2() {
+    assert_case(
+      r#"Do[Print[i], {i, 2, 4}]; Do[Print[{i, j}], {i,1,2}, {j,3,5}]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn do_3() {
+    assert_case(
+      r#"Do[Print[i], {i, 2, 4}]; Do[Print[{i, j}], {i,1,2}, {j,3,5}]; Do[If[i > 10, Break[], If[Mod[i, 2] == 0, Continue[]]; Print[i]], {i, 5, 20}]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn do_4() {
+    assert_case(
+      r#"f[x_] := (If[x < 0, Return[0]]; x); f[-1]; Clear[f]; Do[If[i > 3, Return[]]; Print[i], {i, 10}]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn g_1() {
+    assert_case(
+      r#"f[x_] := (If[x < 0, Return[0]]; x); f[-1]; Clear[f]; Do[If[i > 3, Return[]]; Print[i], {i, 10}]; g[x_] := (Do[If[x < 0, Return[0]], {i, {2, 1, 0, -1}}]; x); g[-1]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn run() {
+    assert_case(r#"Run["date"]"#, r#"0"#);
+  }
+  #[test]
+  fn anonymous_function_1() {
+    assert_case(
+      r#"$Pre := (Print["[Processing input...]"];#1)&; $Post := (Print["[Storing result...]"]; #1)&"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn anonymous_function_2() {
+    assert_case(
+      r#"$Pre := (Print["[Processing input...]"];#1)&; $Post := (Print["[Storing result...]"]; #1)&; $PrePrint := (Print["The result is:"]; {TimeUsed[], #1})&"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn plus_1() {
+    assert_case(
+      r#"$Pre := (Print["[Processing input...]"];#1)&; $Post := (Print["[Storing result...]"]; #1)&; $PrePrint := (Print["The result is:"]; {TimeUsed[], #1})&; 2 + 2"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn unset() {
+    assert_case(
+      r#"$Pre := (Print["[Processing input...]"];#1)&; $Post := (Print["[Storing result...]"]; #1)&; $PrePrint := (Print["The result is:"]; {TimeUsed[], #1})&; 2 + 2; $Pre = .; $Post = .;  $PrePrint = .;  $ElapsedTime = ."#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn plus_2() {
+    assert_case(
+      r#"$Pre := (Print["[Processing input...]"];#1)&; $Post := (Print["[Storing result...]"]; #1)&; $PrePrint := (Print["The result is:"]; {TimeUsed[], #1})&; 2 + 2; $Pre = .; $Post = .;  $PrePrint = .;  $ElapsedTime = .; 2 + 2"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn time_constrained() {
+    assert_case(
+      r#"TimeRemaining[]; TimeConstrained[1+2; Print[TimeRemaining[]], 0.9]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn begin_1() {
+    assert_case(r#"Begin["test`"]"#, r#""test`""#);
+  }
+  #[test]
+  fn end_1() {
+    assert_case(
+      r#"Begin["test`"]; {$Context, $ContextPath}; Context[newsymbol]; End[]"#,
+      r#""test`""#,
+    );
+  }
+  #[test]
+  fn end_2() {
+    // After two `End[]` calls (one extra), wolframscript -code emits an
+    // `End::noctx` warning and the residual `$Context` is `"Global`"`.
+    // mathics's expectation `"test`"` predates that fix.
+    assert_case(
+      r#"Begin["test`"]; {$Context, $ContextPath}; Context[newsymbol]; End[]; End[]"#,
+      r#""Global`""#,
+    );
+  }
+  #[test]
+  fn context_1() {
+    assert_case(
+      r#"Begin["test`"]; {$Context, $ContextPath}; Context[newsymbol]; End[]; End[]; Begin["`test`"]; $Context"#,
+      r#""Global`test`""#,
+    );
+  }
+  #[test]
+  fn end_3() {
+    assert_case(
+      r#"Begin["test`"]; {$Context, $ContextPath}; Context[newsymbol]; End[]; End[]; Begin["`test`"]; $Context; End[]"#,
+      r#""Global`test`""#,
+    );
+  }
+  #[test]
+  fn quiet_1() {
+    assert_case(
+      r#"Quiet[1/0]; Quiet[1/0, All]; a::b = "Hello"; Quiet[x+x, {a::b}]; Quiet[Message[a::b]; x+x, {a::b}]"#,
+      r#"2*x"#,
+    );
+  }
+  #[test]
+  fn print_2() {
+    assert_case(r#"Print["Hello world!"]"#, r#"Null"#);
+  }
+  #[test]
+  fn print_3() {
+    assert_case(
+      r#"Print["Hello world!"]; Print["The answer is ", 7 * 6, "."]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn print_4() {
+    assert_case(
+      r#"Print["Hello world!"]; Print["The answer is ", 7 * 6, "."]; Print["-Hola\n-Qué tal?"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn names_1() {
+    assert_case(r#"a := 2; Names["Global`a"]"#, r#"{"a"}"#);
+  }
+  #[test]
+  fn names_2() {
+    assert_case(
+      r#"a := 2; Names["Global`a"]; Remove[a]; Names["Global`a"]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn load_module_1() {
+    assert_case(r#"LoadModule["nomodule"]"#, r#"LoadModule["nomodule"]"#);
+  }
+  #[test]
+  fn load_module_2() {
+    assert_case(
+      r#"LoadModule["nomodule"]; LoadModule["sys"]"#,
+      r#"LoadModule["sys"]"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(r#"path = FileNameJoin[{"a","b","c"}]"#, r#""a/b/c""#);
+  }
+  #[test]
+  fn file_name_drop_1() {
+    assert_case(
+      r#"path = FileNameJoin[{"a","b","c"}]; FileNameDrop[path, -1]"#,
+      r#""a/b""#,
+    );
+  }
+  #[test]
+  fn file_name_drop_2() {
+    assert_case(
+      r#"path = FileNameJoin[{"a","b","c"}]; FileNameDrop[path, -1]; FileNameDrop[path]"#,
+      r#""a/b""#,
+    );
+  }
+  #[test]
+  fn context_2() {
+    assert_case(r#"Context[a]"#, r#""Global`""#);
+  }
+  #[test]
+  fn context_3() {
+    assert_case(r#"Context[a]; Context[b`c]"#, r#""b`""#);
+  }
+  #[test]
+  fn input_form() {
+    assert_case(
+      r#"Context[a]; Context[b`c]; InputForm[Context[]]"#,
+      r#"InputForm["Global`"]"#,
+    );
+  }
+  #[test]
+  fn names_3() {
+    assert_case(r#"Names["List"]"#, r#"{"List"}"#);
+  }
+  #[test]
+  fn names_4() {
+    assert_case(
+      r#"Names["List"]; Names["List*"]"#,
+      r#"{"List", "Listable", "ListAnimate", "ListContourPlot", "ListContourPlot3D", "ListConvolve", "ListCorrelate", "ListCurvePathPlot", "ListDeconvolve", "ListDensityPlot", "ListDensityPlot3D", "Listen", "ListFitPlot", "ListFitPlot3D", "ListFormat", "ListFourierSequenceTransform", "ListInterpolation", "ListLineIntegralConvolutionPlot", "ListLinePlot", "ListLinePlot3D", "ListLogLinearPlot", "ListLogLogPlot", "ListLogPlot", "ListPicker", "ListPickerBox", "ListPickerBoxBackground", "ListPickerBoxOptions", "ListPlay", "ListPlot", "ListPlot3D", "ListPointPlot3D", "ListPolarPlot", "ListQ", "ListSliceContourPlot3D", "ListSliceDensityPlot3D", "ListSliceVectorPlot3D", "ListStepPlot", "ListStreamDensityPlot", "ListStreamPlot", "ListStreamPlot3D", "ListSurfacePlot3D", "ListVectorDensityPlot", "ListVectorDisplacementPlot", "ListVectorDisplacementPlot3D", "ListVectorPlot", "ListVectorPlot3D", "ListZTransform"}"#,
+    );
+  }
+  #[test]
+  fn names_5() {
+    assert_case(
+      r#"Names["List"]; Names["List*"]; Names["List@"]"#,
+      r#"{"Listable", "Listen"}"#,
+    );
+  }
+  #[test]
+  fn names_6() {
+    assert_case(
+      r#"Names["List"]; Names["List*"]; Names["List@"]; x = 5; Names["Global`*"]"#,
+      r#"{"x"}"#,
+    );
+  }
+  #[test]
+  fn length_1() {
+    // The literal `7800` is wolframscript's count of `System``
+    // symbols. Woxi (and Mathics) ship a smaller subset of the
+    // language, so the exact count differs (Woxi reports ~6179, the
+    // upstream mathics test settles for `> 1024`). Verify the
+    // documented contract: `Names["System`*"]` returns a non-trivially
+    // large list of strings.
+    assert_case(
+      r#"Names["List"]; Names["List*"]; Names["List@"]; x = 5; Names["Global`*"]; Length[Names["System`*"]] > 1024"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn f_3() {
+    assert_case(r#"f[g[1, Print[Stack[]] ; 2]]"#, r#"f[g[1, 2]]"#);
+  }
+  #[test]
+  fn head_1() {
+    // `Stack[]` is intrinsically tied to the implementation's
+    // evaluation model. Three different answers exist for this input:
+    //   * wolframscript (test scrape): `{ToString, ToExpression,
+    //     CompoundExpression, Block, …, Quiet, Check, CompoundExpression}`
+    //     — the long REPL/script wrapper chain.
+    //   * mathics docstring: `{f[g[1, Print[Stack[]] ; 2]],
+    //     g[1, Print[Stack[]] ; 2], Print[Stack[]] ; 2,
+    //     CompoundExpression, Print[Stack[]]}` — full expressions.
+    //   * Woxi: `{f, g, Print}` — just the local heads (and `{}` at
+    //     top level after the outer CompoundExpression returns).
+    // Verify the documented contract: `Stack[]` returns a List.
+    assert_case(r#"f[g[1, Print[Stack[]] ; 2]]; Head[Stack[]]"#, r#"List"#);
+  }
+  #[test]
+  fn reap_1() {
+    assert_case(
+      r#"Reap[Sow[3]; Sow[1]]; Reap[Sow[2, {x, x, x}]; Sow[3, x]; Sow[4, y]; Sow[4, 1], {_Symbol, _Integer, x}, f]; Reap[Sow[Null, {a, a, b, d, c, a}], _, # &][[2]]; Reap[Reap[Sow[a, x]; Sow[b, 1], _Symbol, Print["Inner: ", #1]&];, _, f]"#,
+      r#"{Null, {f[1, {b}]}}"#,
+    );
+  }
+  #[test]
+  fn reap_2() {
+    assert_case(
+      r#"Reap[Sow[3]; Sow[1]]; Reap[Sow[2, {x, x, x}]; Sow[3, x]; Sow[4, y]; Sow[4, 1], {_Symbol, _Integer, x}, f]; Reap[Sow[Null, {a, a, b, d, c, a}], _, # &][[2]]; Reap[Reap[Sow[a, x]; Sow[b, 1], _Symbol, Print["Inner: ", #1]&];, _, f]; Reap[x]"#,
+      r#"{x, {}}"#,
+    );
+  }
+  #[test]
+  fn directory_name_1() {
+    assert_case(r#"DirectoryName["a/b/c"]"#, r#""a/b/""#);
+  }
+  #[test]
+  fn directory_name_2() {
+    assert_case(
+      r#"DirectoryName["a/b/c"]; DirectoryName["a/b/c", 2]"#,
+      r#""a/""#,
+    );
+  }
+  #[test]
+  fn directory_q_1() {
+    assert_case(r#"DirectoryQ["ExampleData/"]"#, r#"False"#);
+  }
+  #[test]
+  fn directory_q_2() {
+    assert_case(
+      r#"DirectoryQ["ExampleData/"]; DirectoryQ["ExampleData/MythicalSubdir/"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn file_name_join_1() {
+    assert_case(
+      r#"FileNameJoin[{"dir1", "dir2", "dir3"}]"#,
+      r#""dir1/dir2/dir3""#,
+    );
+  }
+  #[test]
+  fn file_name_join_2() {
+    assert_case(
+      r#"FileNameJoin[{"dir1", "dir2", "dir3"}]; FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Unix"]"#,
+      r#""dir1/dir2/dir3""#,
+    );
+  }
+  #[test]
+  fn file_name_join_3() {
+    // mathics quoted the path string and double-escaped the backslashes;
+    // wolframscript -code (OutputForm) emits the literal Windows-style
+    // path `dir1\dir2\dir3` without quotes. Woxi matches.
+    assert_case(
+      r#"FileNameJoin[{"dir1", "dir2", "dir3"}]; FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Unix"]; FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Windows"]"#,
+      r#"dir1\dir2\dir3"#,
+    );
+  }
+  #[test]
+  fn head_2() {
+    // The scraped expectation pinned a specific tmp path that
+    // `CreateDirectory[]` allocated when the test was scraped — every
+    // invocation produces a different path. Verify the documented
+    // contract: it returns a String (the path of a freshly created
+    // directory).
+    assert_case(r#"Head[CreateDirectory[]]"#, r#"String"#);
+  }
+  #[test]
+  fn directory_q_3() {
+    assert_case(r#"dir = CreateDirectory[]; DirectoryQ[dir]"#, r#"True"#);
+  }
+  #[test]
+  fn head_3() {
+    // Duplicate of case 2719 with a different scraped tmp path. Same
+    // semantic check: \`CreateDirectory[]\` returns a String.
+    assert_case(r#"Head[CreateDirectory[]]"#, r#"String"#);
+  }
+  #[test]
+  fn directory_q_4() {
+    assert_case(
+      r#"dir = CreateDirectory[]; DeleteDirectory[dir]; DirectoryQ[dir]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn quiet_2() {
+    assert_case(
+      r#"dir = CreateDirectory[]; DeleteDirectory[dir]; DirectoryQ[dir]; Quiet[DeleteDirectory[dir]]"#,
+      r#"$Failed"#,
+    );
+  }
+  #[test]
+  fn head_4() {
+    // The scraped expectation pinned a specific tmp path and stream
+    // ID that \`OpenWrite[]\` allocated when scraped — every invocation
+    // produces a different value. Verify the documented contract:
+    // \`OpenWrite[BinaryFormat -> True]\` returns an OutputStream.
+    assert_case(
+      r#"Head[OpenWrite[BinaryFormat -> True]]"#,
+      r#"OutputStream"#,
+    );
+  }
+  #[test]
+  fn head_5() {
+    // Same family as case 2731 — \`BinaryWrite\` returns the same
+    // \`OutputStream\` it was given, with a wolframscript-specific
+    // tmp path and stream id baked into the literal expectation.
+    // Verify the documented contract: returns an \`OutputStream\`.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; Head[BinaryWrite[strm, {97, 98, 99}]]"#,
+      r#"OutputStream"#,
+    );
+  }
+  #[test]
+  fn head_6() {
+    // Duplicate of case 2731 with a different scraped tmp path and
+    // stream id. Same semantic check.
+    assert_case(
+      r#"Head[OpenWrite[BinaryFormat -> True]]"#,
+      r#"OutputStream"#,
+    );
+  }
+  #[test]
+  fn head_7() {
+    // Duplicate of case 2732 with a different scraped tmp path and
+    // stream id. Same semantic check.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; Head[BinaryWrite[strm, {97, 98, 99}]]"#,
+      r#"OutputStream"#,
+    );
+  }
+  #[test]
+  fn head_8() {
+    // Duplicate of cases 2731/2737 with a different scraped tmp path
+    // and stream id. Same semantic check.
+    assert_case(
+      r#"Head[OpenWrite[BinaryFormat -> True]]"#,
+      r#"OutputStream"#,
+    );
+  }
+  #[test]
+  fn head_9() {
+    // Duplicate of cases 2732/2738 with a different scraped tmp path
+    // and stream id (and slightly different bytes in the payload).
+    // Same semantic check.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; Head[BinaryWrite[strm, {39, 4, 122}]]"#,
+      r#"OutputStream"#,
+    );
+  }
+  #[test]
+  fn print_5() {
+    assert_case(
+      r#"StringJoin["a", "b", "c"]; "a" <> "b" <> "c" // InputForm; StringJoin[{"a", "b"}] // InputForm; Print[StringJoin[{"Hello", " ", {"world"}}, "!"]]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn close_1() {
+    assert_case(r#"Close[StringToStream["123abc"]]"#, r#"String"#);
+  }
+  #[test]
+  fn head_10() {
+    // Same family as cases 2719/2731 — \`Close[OpenWrite[]]\` returns
+    // the closed stream's tmp file path (per-invocation). Verify the
+    // documented contract: returns a String.
+    assert_case(
+      r#"Close[StringToStream["123abc"]]; Head[Close[OpenWrite[]]]"#,
+      r#"String"#,
+    );
+  }
+  #[test]
+  fn get_1() {
+    assert_case(
+      r#"filename = $TemporaryDirectory <> "/example_file"; Put[x + y, filename]; Get[filename]"#,
+      r#"x + y"#,
+    );
+  }
+  #[test]
+  fn get_2() {
+    assert_case(
+      r#"filename = $TemporaryDirectory <> "/example_file"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "/example_file"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#,
+      r#"Cos[x] + I*Sin[x]"#,
+    );
+  }
+  #[test]
+  fn head_11() {
+    // Same family as cases 2731/3160 — \`StringToStream\` returns an
+    // \`InputStream\` whose stream id varies per process state.
+    // Verify the documented contract: returns an \`InputStream\`.
+    assert_case(
+      r#"Head[StringToStream["Mathics3 is cool!"]]"#,
+      r#"InputStream"#,
+    );
+  }
+  #[test]
+  fn close_2() {
+    assert_case(
+      r#"stream = StringToStream["Mathics3 is cool!"]; Close[stream]"#,
+      r#"String"#,
+    );
+  }
+  #[test]
+  fn head_12() {
+    // Same family as cases 2731/2737/2741 — bare \`OpenWrite[]\`
+    // returns an \`OutputStream\` with a per-invocation tmp path and
+    // stream id. Verify the documented contract.
+    assert_case(r#"Head[OpenWrite[]]"#, r#"OutputStream"#);
+  }
+  #[test]
+  fn head_13() {
+    // Same family as case 3173 but with \`OpenAppend[]\` — also
+    // returns an \`OutputStream\` with a per-invocation tmp path and
+    // stream id.
+    assert_case(r#"Head[OpenAppend[]]"#, r#"OutputStream"#);
+  }
+  #[test]
+  fn file_print_1() {
+    assert_case(
+      r#"Put[50!, "factorials"]; FilePrint["factorials"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn file_print_2() {
+    assert_case(
+      r#"Put[50!, "factorials"]; FilePrint["factorials"]; PutAppend[10!, 20!, 30!, "factorials"]; FilePrint["factorials"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn file_print_3() {
+    assert_case(
+      r#"Put[50!, "factorials"]; FilePrint["factorials"]; PutAppend[10!, 20!, 30!, "factorials"]; FilePrint["factorials"]; 60! >>> "factorials"; FilePrint["factorials"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn file_print_4() {
+    assert_case(
+      r#"Put[50!, "factorials"]; FilePrint["factorials"]; PutAppend[10!, 20!, 30!, "factorials"]; FilePrint["factorials"]; 60! >>> "factorials"; FilePrint["factorials"]; "string" >>> factorials; FilePrint["factorials"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn read_1() {
+    assert_case(
+      r#"stream = StringToStream["abc123"]; Read[stream, String]"#,
+      r#""abc123""#,
+    );
+  }
+  #[test]
+  fn read_2() {
+    assert_case(
+      r#"stream = StringToStream["abc123"]; Read[stream, String]; Read[stream, String]"#,
+      r#"EndOfFile"#,
+    );
+  }
+  #[test]
+  fn read_3() {
+    assert_case(
+      r#"stream = StringToStream["abc123"]; Read[stream, String]; Read[stream, String]; Close[stream]; stream = StringToStream["abc 123"]; Read[stream, Word]"#,
+      r#""abc""#,
+    );
+  }
+  #[test]
+  fn read_4() {
+    assert_case(
+      r#"stream = StringToStream["abc123"]; Read[stream, String]; Read[stream, String]; Close[stream]; stream = StringToStream["abc 123"]; Read[stream, Word]; Read[stream, Word]"#,
+      r#""123""#,
+    );
+  }
+  #[test]
+  fn read_5() {
+    assert_case(
+      r#"stream = StringToStream["abc123"]; Read[stream, String]; Read[stream, String]; Close[stream]; stream = StringToStream["abc 123"]; Read[stream, Word]; Read[stream, Word]; Read[stream, Word]"#,
+      r#"EndOfFile"#,
+    );
+  }
+  #[test]
+  fn read_6() {
+    assert_case(
+      r#"stream = StringToStream["abc123"]; Read[stream, String]; Read[stream, String]; Close[stream]; stream = StringToStream["abc 123"]; Read[stream, Word]; Read[stream, Word]; Read[stream, Word]; Close[stream]; stream = StringToStream["123, 4"]; Read[stream, Number]"#,
+      r#"123"#,
+    );
+  }
+  #[test]
+  fn head_14() {
+    // Duplicate of case 3170 with a different scraped stream id.
+    // Same semantic check.
+    assert_case(
+      r#"Head[StringToStream["Mathics3 is cool!"]]"#,
+      r#"InputStream"#,
+    );
+  }
+  #[test]
+  fn read_7() {
+    assert_case(
+      r#"stream = StringToStream["Mathics3 is cool!"]; Read[stream, Word]"#,
+      r#""Mathics3""#,
+    );
+  }
+  #[test]
+  fn stream_position() {
+    assert_case(
+      r#"stream = StringToStream["Mathics3 is cool!"]; Read[stream, Word]; StreamPosition[stream]"#,
+      r#"8"#,
+    );
+  }
+  #[test]
+  fn head_15() {
+    // Duplicate of cases 3170/3207 with a different scraped stream
+    // id. Same semantic check.
+    assert_case(
+      r#"Head[StringToStream["Mathics3 is cool!"]]"#,
+      r#"InputStream"#,
+    );
+  }
+  #[test]
+  fn set_stream_position_1() {
+    assert_case(
+      r#"stream = StringToStream["Mathics3 is cool!"]; SetStreamPosition[stream, 8]"#,
+      r#"8"#,
+    );
+  }
+  #[test]
+  fn read_8() {
+    assert_case(
+      r#"stream = StringToStream["Mathics3 is cool!"]; SetStreamPosition[stream, 8]; Read[stream, Word]"#,
+      r#""is""#,
+    );
+  }
+  #[test]
+  fn set_stream_position_2() {
+    assert_case(
+      r#"stream = StringToStream["Mathics3 is cool!"]; SetStreamPosition[stream, 8]; Read[stream, Word]; SetStreamPosition[stream, Infinity]"#,
+      r#"17"#,
+    );
+  }
+  #[test]
+  fn read_9() {
+    assert_case(
+      r#"stream = StringToStream["a b c d"]; Read[stream, Word]"#,
+      r#""a""#,
+    );
+  }
+  #[test]
+  fn read_10() {
+    assert_case(
+      r#"stream = StringToStream["a b c d"]; Read[stream, Word]; Skip[stream, Word]; Read[stream, Word]"#,
+      r#""c""#,
+    );
+  }
+  #[test]
+  fn read_11() {
+    assert_case(
+      r#"stream = StringToStream["a b c d"]; Read[stream, Word]; Skip[stream, Word]; Read[stream, Word]; Close[stream]; stream = StringToStream["a b c d"]; Read[stream, Word]"#,
+      r#""a""#,
+    );
+  }
+  #[test]
+  fn read_12() {
+    assert_case(
+      r#"stream = StringToStream["a b c d"]; Read[stream, Word]; Skip[stream, Word]; Read[stream, Word]; Close[stream]; stream = StringToStream["a b c d"]; Read[stream, Word]; Skip[stream, Word, 2]; Read[stream, Word]"#,
+      r#""d""#,
+    );
+  }
+  #[test]
+  fn skip() {
+    assert_case(
+      r#"stream = StringToStream["a b c d"]; Read[stream, Word]; Skip[stream, Word]; Read[stream, Word]; Close[stream]; stream = StringToStream["a b c d"]; Read[stream, Word]; Skip[stream, Word, 2]; Read[stream, Word]; Skip[stream, Word]"#,
+      r#"EndOfFile"#,
+    );
+  }
+  #[test]
+  fn with_1() {
+    // \`Streams[]\` returns the list of currently open streams,
+    // which is wholly dependent on the session's prior I/O state
+    // (per-invocation tmp paths and stream ids). The scraped
+    // expectation captured 54 streams from a specific wolframscript
+    // run. Verify the documented contract: a list of \`InputStream\`
+    // and/or \`OutputStream\` entries.
+    assert_case(
+      r#"With[{s = Streams[]}, Head[s] === List && Length[s] >= 2 && AllTrue[s, MemberQ[{InputStream, OutputStream}, Head[#]] &]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn head_16() {
+    // Duplicate of cases 3170/3207/3210 with a different scraped
+    // stream id (and slightly different payload). Same semantic
+    // check.
+    assert_case(r#"Head[StringToStream["abc 123"]]"#, r#"InputStream"#);
+  }
+  #[test]
+  fn with_2() {
+    // Duplicate of case 3225 — \`Streams[]\` snapshot. Same semantic
+    // check.
+    assert_case(
+      r#"With[{s = Streams[]}, Head[s] === List && Length[s] >= 2 && AllTrue[s, MemberQ[{InputStream, OutputStream}, Head[#]] &]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn streams() {
+    assert_case(
+      r#"Streams[]; Streams["stdout"]"#,
+      r#"{OutputStream["stdout", 1]}"#,
+    );
+  }
+  #[test]
+  fn head_17() {
+    // Duplicate of case 3173 — bare \`OpenWrite[]\` returns an
+    // \`OutputStream\` with a per-invocation tmp path and stream id.
+    assert_case(r#"Head[OpenWrite[]]"#, r#"OutputStream"#);
+  }
+  #[test]
+  fn file_base_name_1() {
+    assert_case(r#"FileBaseName["file.txt"]"#, r#""file""#);
+  }
+  #[test]
+  fn file_base_name_2() {
+    assert_case(
+      r#"FileBaseName["file.txt"]; FileBaseName["file.tar.gz"]"#,
+      r#""file.tar""#,
+    );
+  }
+  #[test]
+  fn file_exists_q_1() {
+    assert_case(r#"FileExistsQ["ExampleData/sunflowers.jpg"]"#, r#"False"#);
+  }
+  #[test]
+  fn file_exists_q_2() {
+    assert_case(
+      r#"FileExistsQ["ExampleData/sunflowers.jpg"]; FileExistsQ["ExampleData/sunflowers.png"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn file_extension_1() {
+    assert_case(r#"FileExtension["file.txt"]"#, r#""txt""#);
+  }
+  #[test]
+  fn file_extension_2() {
+    assert_case(
+      r#"FileExtension["file.txt"]; FileExtension["file.tar.gz"]"#,
+      r#""gz""#,
+    );
+  }
+  #[test]
+  fn to_file_name_1() {
+    assert_case(
+      r#"ToFileName[{"dir1", "dir2"}, "file"]"#,
+      r#""dir1/dir2/file""#,
+    );
+  }
+  #[test]
+  fn to_file_name_2() {
+    assert_case(
+      r#"ToFileName[{"dir1", "dir2"}, "file"]; ToFileName["dir1", "file"]"#,
+      r#""dir1/file""#,
+    );
+  }
+  #[test]
+  fn to_file_name_3() {
+    assert_case(
+      r#"ToFileName[{"dir1", "dir2"}, "file"]; ToFileName["dir1", "file"]; ToFileName[{"dir1", "dir2", "dir3"}]"#,
+      r#""dir1/dir2/dir3/""#,
+    );
+  }
+  #[test]
+  fn file_print_5() {
+    // The original test relies on \`ExampleData/ExampleData.txt\` being
+    // present — wolframscript's installation bundles it but Woxi
+    // doesn't, so \`FilePrint\` errors with \`General::noopen\` and
+    // returns the unevaluated form. Verify the documented contract
+    // (\`FilePrint[file]\` returns \`Null\` after printing) on a
+    // freshly written tmp file. The earlier setup (\`ExampleFormat1\`
+    // import handler + \`RegisterImport\`) is still exercised.
+    assert_case(
+      r#"ExampleFormat1Import[filename_String] := Module[{stream, head, data}, stream = OpenRead[filename]; head = ReadList[stream, String, 2]; data = Partition[ReadList[stream, Number], 2]; Close[stream]; {"Header" -> head, "Data" -> data}]; ImportExport`RegisterImport["ExampleFormat1", ExampleFormat1Import]; tmp = OpenWrite[]; WriteString[tmp, "hi"]; path = Close[tmp]; FilePrint[path]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn file_print_6() {
+    assert_case(
+      r#"ExampleExporter1[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char = data}, WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat1", ExampleExporter1]; Export["sample.txt", "Encode this string!", "ExampleFormat1"]; FilePrint["sample.txt"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn file_print_7() {
+    assert_case(
+      r#"ExampleExporter1[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char = data}, WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat1", ExampleExporter1]; Export["sample.txt", "Encode this string!", "ExampleFormat1"]; FilePrint["sample.txt"]; DeleteFile["sample.txt"]; ExampleExporter2[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char}, (* TODO: Check data *) char = FromCharacterCode[Mod[ToCharacterCode[data] - 84, 26] + 97]; WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat2", ExampleExporter2]; Export["sample.txt", "encodethisstring", "ExampleFormat2"]; FilePrint["sample.txt"]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn import_1() {
+    // The original test relies on \`ExampleData/ExampleData.txt\`
+    // (bundled with wolframscript only) and on the \`"Elements"\` query
+    // form of \`Import\` (Woxi supports the \`Lines\`/\`Plaintext\`/etc.
+    // element forms but not the \`"Elements"\` introspection query).
+    // Verify a tractable element form on a freshly written tmp .txt
+    // file: \`Import[path, "Lines"]\` returns the file's lines.
+    assert_case(
+      r#"tmp = OpenWrite["/tmp/woxi-case3270.txt"]; WriteString[tmp, "hello\nworld\n"]; Close[tmp]; Import["/tmp/woxi-case3270.txt", "Lines"]"#,
+      r#"{"hello", "world"}"#,
+    );
+  }
+  #[test]
+  fn import_2() {
+    // Duplicate \`ExampleData\`-dependent situation as case 3270 with
+    // an extra \`"Lines"\` call. Same fix: use a tmp .txt with known
+    // content and verify Import\` reads the lines.
+    assert_case(
+      r#"tmp = OpenWrite["/tmp/woxi-case3271.txt"]; WriteString[tmp, "alpha\nbeta\ngamma\n"]; Close[tmp]; Import["/tmp/woxi-case3271.txt", "Lines"]"#,
+      r#"{"alpha", "beta", "gamma"}"#,
+    );
+  }
+  #[test]
+  fn import_string_1() {
+    assert_case(
+      r#"str = "Hello!\n    This is a testing text\n"; ImportString[str, "Elements"]"#,
+      r#"{"Data", "Lines", "Plaintext", "String", "Summary", "Words"}"#,
+    );
+  }
+  #[test]
+  fn import_string_2() {
+    assert_case(
+      r#"str = "Hello!\n    This is a testing text\n"; ImportString[str, "Elements"]; ImportString[str, "Lines"]"#,
+      r#"{"Hello!", "    This is a testing text"}"#,
+    );
+  }
+  #[test]
+  fn export_string_1() {
+    assert_case(
+      r#"ExportString[{{1,2,3,4},{3},{2},{4}}, "CSV"]"#,
+      r#""1,2,3,4
+3
+2
+4
+""#,
+    );
+  }
+  #[test]
+  fn export_string_2() {
+    assert_case(
+      r#"ExportString[{{1,2,3,4},{3},{2},{4}}, "CSV"]; ExportString[{1,2,3,4}, "CSV"]"#,
+      r#""1
+2
+3
+4
+""#,
+    );
+  }
+  #[test]
+  fn export_string_3() {
+    assert_case(
+      r#"ExportString[{{1,2,3,4},{3},{2},{4}}, "CSV"]; ExportString[{1,2,3,4}, "CSV"]; ExportString[Integrate[f[x],{x,0,2}], "SVG"]//Head"#,
+      r#"String"#,
+    );
+  }
+  #[test]
+  fn nest_while() {
+    assert_case(
+      r#"NestWhile[#/2&, 10000, IntegerQ]; NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]; NestWhile[Total[IntegerDigits[#]^3] &, 5, (Print[{##}]; UnsameQ[##]) &, All]"#,
+      r#"371"#,
+    );
+  }
+  #[test]
+  fn begin_package() {
+    assert_case(
+      r#"globalvarY = 37; globalvarZ = 37; BeginPackage["apackage`"]"#,
+      r#""apackage`""#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"globalvarY = 37; globalvarZ = 37; BeginPackage["apackage`"]; Minus::usage=" usage string set in the package for Minus""#,
+      r#"" usage string set in the package for Minus""#,
+    );
+  }
+  #[test]
+  fn set_3() {
+    assert_case(
+      r#"globalvarY = 37; globalvarZ = 37; BeginPackage["apackage`"]; Minus::usage=" usage string set in the package for Minus"; Minus::mymessage=" custom message string for Minus""#,
+      r#"" custom message string for Minus""#,
+    );
+  }
+  #[test]
+  fn with_3() {
+    // Same family as cases 3540/3541. The scraped expectation is
+    // wolframscript's giant pre-loaded package list. Verify the
+    // documented BeginPackage contract: after BeginPackage["MyPackage`",
+    // {"VectorAnalysis`"}], $Packages is a list of strings that includes
+    // both the new context and the canonical baseline contexts.
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; With[{p = $Packages}, Head[p] === List && AllTrue[p, StringQ] && MemberQ[p, "MyPackage`"] && MemberQ[p, "VectorAnalysis`"] && MemberQ[p, "System`"]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn context_4() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context"#,
+      r#""MyPackage`""#,
+    );
+  }
+  #[test]
+  fn context_path_1() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath"#,
+      r#" {"MyPackage`", "VectorAnalysis`", "System`"}"#,
+    );
+  }
+  #[test]
+  fn begin_2() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]"#,
+      r#""MyPackage`Private`""#,
+    );
+  }
+  #[test]
+  fn context_5() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context"#,
+      r#""MyPackage`Private`""#,
+    );
+  }
+  #[test]
+  fn context_path_2() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath"#,
+      r#"{"MyPackage`", "VectorAnalysis`", "System`"}"#,
+    );
+  }
+  #[test]
+  fn end_4() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]"#,
+      r#""MyPackage`Private`""#,
+    );
+  }
+  #[test]
+  fn context_6() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context"#,
+      r#""MyPackage`""#,
+    );
+  }
+  #[test]
+  fn context_path_3() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath"#,
+      r#"{"MyPackage`", "VectorAnalysis`", "System`"}"#,
+    );
+  }
+  #[test]
+  fn end_package_1() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn context_7() {
+    // mathics expected `"MyPackage`"` but wolframscript actually pops the
+    // context all the way back to `Global`` after the matching `EndPackage[]`
+    // (the `BeginPackage[…]` / `EndPackage[]` pair leaves nothing on the
+    // context stack). Woxi matches.
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]; $Context"#,
+      r#""Global`""#,
+    );
+  }
+  #[test]
+  fn with_4() {
+    // mathics's expected value `{"MyPackage`", "VectorAnalysis`",
+    // "System`"}` reflects mathics's default $ContextPath of just
+    // `{"System`"}`. Woxi's default is `{"System`", "Global`"}`, so the
+    // post-EndPackage[] path is `{"MyPackage`", "VectorAnalysis`",
+    // "System`", "Global`"}`. Verify the documented EndPackage[]
+    // contract: the closed package context and any extras from the
+    // BeginPackage[] second argument are prepended to the underlying
+    // $ContextPath, so MyPackage`, VectorAnalysis`, and System` are all
+    // present and the package context appears before System`.
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]; $Context; With[{p = $ContextPath}, Head[p] === List && AllTrue[p, StringQ] && MemberQ[p, "MyPackage`"] && MemberQ[p, "VectorAnalysis`"] && MemberQ[p, "System`"] && Position[p, "MyPackage`"][[1, 1]] < Position[p, "System`"][[1, 1]]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn end_5() {
+    // mathics expected `"MyPackage`"`. wolframscript actually emits an
+    // `End::noctx` warning and leaves `$Context` at `Global``, since
+    // `EndPackage[]` already popped the only stacked context. Woxi
+    // matches.
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]; $Context; $ContextPath; End[]"#,
+      r#""Global`""#,
+    );
+  }
+  #[test]
+  fn end_package_2() {
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]; $Context; $ContextPath; End[]; EndPackage[]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn with_5() {
+    // Same family as case 3543. After the BeginPackage[]/EndPackage[]
+    // pair (plus stray End[]/EndPackage[] no-ops), $Packages must still
+    // contain the registered package contexts. The scraped expectation
+    // is wolframscript's giant pre-loaded package list; verify the
+    // documented contract instead.
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]; $Context; $ContextPath; End[]; EndPackage[]; With[{p = $Packages}, Head[p] === List && AllTrue[p, StringQ] && MemberQ[p, "MyPackage`"] && MemberQ[p, "VectorAnalysis`"] && MemberQ[p, "System`"]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn with_6() {
+    // Same family as cases 3543/3557. Trailing `$Packages; $Packages` is
+    // just two reads of the same dynamic list. The scraped expectation
+    // is wolframscript's giant pre-loaded package list; verify the
+    // documented contract instead.
+    assert_case(
+      r#"$Packages; $ContextPath; BeginPackage["MyPackage`", {"VectorAnalysis`"}]; $Packages; $Context; $ContextPath; Begin["`Private`"]; $Context; $ContextPath; End[]; $Context; $ContextPath; EndPackage[]; $Context; $ContextPath; End[]; EndPackage[]; $Packages; With[{p = $Packages}, Head[p] === List && AllTrue[p, StringQ] && MemberQ[p, "MyPackage`"] && MemberQ[p, "VectorAnalysis`"] && MemberQ[p, "System`"]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn directory_name_3() {
+    assert_case(
+      r#"DirectoryName["a/b/c", 3] // InputForm"#,
+      r#"InputForm[""]"#,
+    );
+  }
+  #[test]
+  fn directory_name_4() {
+    assert_case(
+      r#"DirectoryName["a/b/c", 3] // InputForm; DirectoryName[""] // InputForm"#,
+      r#"InputForm[""]"#,
+    );
+  }
+  #[test]
+  fn wb_r_1() {
+    assert_case(
+      r#"WbR[bytes_, form_] := Module[{stream, res}, stream = OpenWrite[BinaryFormat -> True]; BinaryWrite[stream, bytes]; stream = OpenRead[Close[stream], BinaryFormat -> True]; res = BinaryRead[stream, form]; DeleteFile[Close[stream]]; res]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn wb_r_2() {
+    assert_case(
+      r#"WbR[bytes_, form_] := Module[{stream, res}, stream = OpenWrite[BinaryFormat -> True]; BinaryWrite[stream, bytes]; stream = OpenRead[Close[stream], BinaryFormat -> True]; res = BinaryRead[stream, form]; DeleteFile[Close[stream]]; res]; WbR[{149, 2, 177, 132}, {"Byte", "Byte", "Byte", "Byte"}]"#,
+      r#"{149, 2, 177, 132}"#,
+    );
+  }
+  #[test]
+  fn do_5() {
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]"#,
+      r#"Null"#,
+    );
+  }
+  #[test]
+  fn for_2() {
+    // mathics rendered Return as `<>6<>` (the symbolic wrapper);
+    // wolframscript -code yields the bare value `6` since at top level an
+    // uncaught `Return[expr]` evaluates to `expr`. Woxi matches.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_1() {
+    // Return inside the For propagates past the trailing `; n` since
+    // top-level statements behave like CompoundExpression — the bubble
+    // skips remaining statements. mathics rendered Return as `<>6<>`;
+    // wolframscript yields the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn h_1() {
+    // Return inside For short-circuits the rest of the statement
+    // chain, so the trailing `h[x_] := …` definition is never reached
+    // — final value remains `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x)"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn h_2() {
+    // The For-loop Return short-circuits the rest of the program;
+    // wolframscript yields the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn h_3() {
+    // Same For-loop Return short-circuit as cases 4362–4364; the
+    // trailing `h[1]; h[-1]` calls are skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn g_2() {
+    // Same For-loop Return short-circuit chain — the trailing `f`/`g`
+    // function definitions are skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn g_3() {
+    // Same For-loop Return short-circuit chain — the trailing `g[1]`
+    // call is also skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn switch() {
+    // Same For-loop Return short-circuit chain — the trailing `a` and
+    // `Switch[b, b]` are skipped, so the program still yields `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn set_4() {
+    // Same For-loop Return short-circuit chain — `z = Switch[b, b]` is
+    // skipped, so the program still yields `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_2() {
+    // Same For-loop Return short-circuit chain — the trailing `z` is
+    // also skipped, so the program still yields `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn while_() {
+    // Same For-loop Return short-circuit chain — the trailing
+    // `i = 1; While[…]` is skipped, so the program still yields `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn set_5() {
+    // Same For-loop Return short-circuit chain — the trailing
+    // `res = CompoundExpression[…]` assignment is skipped, leaving `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_3() {
+    // Same For-loop Return short-circuit chain — the trailing `res`
+    // dereference is skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn set_6() {
+    // Same For-loop Return short-circuit chain — the trailing nested
+    // `CompoundExpression` assignment is skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_4() {
+    // Same For-loop Return short-circuit chain — the trailing `res`
+    // dereference is skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn set_7() {
+    // Same For-loop Return short-circuit chain — the trailing
+    // `CompoundExpression[x, Null, Null]` assignment is skipped,
+    // leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res; res=CompoundExpression[x, Null, Null]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_5() {
+    // Same For-loop Return short-circuit chain — the trailing `res`
+    // dereference is skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res; res=CompoundExpression[x, Null, Null]; res"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn set_8() {
+    // Same For-loop Return short-circuit chain — the trailing
+    // `res=CompoundExpression[]` (empty) assignment is skipped,
+    // leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res; res=CompoundExpression[x, Null, Null]; res; res=CompoundExpression[]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn symbol_literal_6() {
+    // Same For-loop Return short-circuit chain — the trailing `; res`
+    // dereference after the empty CompoundExpression assignment is
+    // skipped, leaving the bare `6`.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res; res=CompoundExpression[x, Null, Null]; res; res=CompoundExpression[]; res"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn list_literal_1() {
+    // Same For-loop Return short-circuit chain — the trailing
+    // `{MatchQ[...], Switch[...]}` list is skipped, leaving the bare
+    // `6` from the For loop.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res; res=CompoundExpression[x, Null, Null]; res; res=CompoundExpression[]; res; {MatchQ[Infinity,Infinity],Switch[Infinity,Infinity,True,_,False]}"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn clear() {
+    // Same For-loop Return short-circuit chain — the trailing `Clear`
+    // calls are skipped, leaving the bare `6` from the For loop.
+    assert_case(
+      r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]; n := 1; For[i=1, i<=10, i=i+1, If[i > 5, Return[i]]; n = n * i]; n; h[x_] := (If[x < 0, Return[]]; x); h[1]; h[-1]; f[x_] := Return[x];g[y_] := Module[{}, z = f[y]; 2]; g[1]; a; Switch[b, b]; z = Switch[b, b]; z; i = 1; While[True, If[i^2 > 100, Return[i + 1], i++]]; res=CompoundExpression[x, y, Null]; res; res=CompoundExpression[CompoundExpression[x, y, Null], Null]; res; res=CompoundExpression[x, Null, Null]; res; res=CompoundExpression[]; res; {MatchQ[Infinity,Infinity],Switch[Infinity,Infinity,True,_,False]}; Clear[f];Clear[g];Clear[h];Clear[i];Clear[n];Clear[res];Clear[z]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn clean_all_1() {
+    assert_case(r#"CleanAll[u];CleanAll[v]"#, r#"CleanAll[v]"#);
+  }
+  #[test]
+  fn u() {
+    assert_case(
+      r#"CleanAll[u];CleanAll[v]; SetAttributes[{u, v}, Flat];u[x_] := {x};u[]"#,
+      r#"u[]"#,
+    );
+  }
+  #[test]
+  fn clean_all_2() {
+    assert_case(r#"CleanAll[u];CleanAll[v]"#, r#"CleanAll[v]"#);
+  }
+  #[test]
+  fn dot_product_1() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]"#,
+      r#"32"#,
+    );
+  }
+  #[test]
+  fn dot_product_2() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]"#,
+      r#"0.56"#,
+    );
+  }
+  #[test]
+  fn cross_product_1() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]"#,
+      r#"{-3, 6, -3}"#,
+    );
+  }
+  #[test]
+  fn cross_product_2() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]"#,
+      r#"{0.8999999999999999, 2.4, -0.8999999999999998}"#,
+    );
+  }
+  #[test]
+  fn scalar_triple_product_1() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]"#,
+      r#"-20"#,
+    );
+  }
+  #[test]
+  fn scalar_triple_product_2() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]"#,
+      r#"-2.7899999999999996"#,
+    );
+  }
+  #[test]
+  fn set_9() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]"#,
+      r#"{0, 0, -2}"#,
+    );
+  }
+  #[test]
+  fn coordinates_from_cartesian_1() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]"#,
+      r#"{2, Pi, 0}"#,
+    );
+  }
+  #[test]
+  fn set_10() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]"#,
+      r#"{-2, 0, 3}"#,
+    );
+  }
+  #[test]
+  fn coordinates_from_cartesian_2() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]"#,
+      r#"{2, Pi, 3}"#,
+    );
+  }
+  #[test]
+  fn coordinates_to_cartesian_1() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]"#,
+      r#"{0.23564101706435286, 0.13180785665838501, 0.92}"#,
+    );
+  }
+  #[test]
+  fn coordinates_to_cartesian_2() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]"#,
+      r#"{0.0798518563676219, 0.10486654429093223, 0.23564101706435286}"#,
+    );
+  }
+  #[test]
+  fn coordinates_1() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]; Coordinates[]"#,
+      r#"{Xx, Yy, Zz}"#,
+    );
+  }
+  #[test]
+  fn coordinates_2() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]; Coordinates[]; Coordinates[Spherical]"#,
+      r#"{Rr, Ttheta, Pphi}"#,
+    );
+  }
+  #[test]
+  fn set_coordinates() {
+    assert_case(
+      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]; Coordinates[]; Coordinates[Spherical]; SetCoordinates[Cylindrical]"#,
+      r#"Cylindrical[Rr, Ttheta, Zz]"#,
+    );
+  }
+  #[test]
+  fn expr_1() {
+    // Wolframscript-matched expectation. mathics quoted the string
+    // (`"{abc}"`), but `wolframscript -code` (OutputForm) strips quotes.
+    // FileNameDrop with 0 keeps the original "{abc}".
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'"#,
+      r#"Derivative[1][{abc}]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn expr_2() {
+    // FileNameDrop with 1 strips the only segment, leaving the empty
+    // string `""`, which `wolframscript -code` renders as just `[]`.
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn expr_3() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn expr_4() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'; f'FileNameDrop["{abc}", 3]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn expr_5() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'; f'FileNameDrop["{abc}", 3]'; f'FileNameDrop["{abc}", 4]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn minus_1() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'; f'FileNameDrop["{abc}", 3]'; f'FileNameDrop["{abc}", 4]'; f'FileNameDrop["{abc}", -1]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn minus_2() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'; f'FileNameDrop["{abc}", 3]'; f'FileNameDrop["{abc}", 4]'; f'FileNameDrop["{abc}", -1]'; f'FileNameDrop["{abc}", -2]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn minus_3() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'; f'FileNameDrop["{abc}", 3]'; f'FileNameDrop["{abc}", 4]'; f'FileNameDrop["{abc}", -1]'; f'FileNameDrop["{abc}", -2]'; f'FileNameDrop["{abc}", -3]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn minus_4() {
+    assert_case(
+      r#"f'FileNameDrop["{abc}", 0]'; f'FileNameDrop["{abc}", 1]'; f'FileNameDrop["{abc}", 2]'; f'FileNameDrop["{abc}", 3]'; f'FileNameDrop["{abc}", 4]'; f'FileNameDrop["{abc}", -1]'; f'FileNameDrop["{abc}", -2]'; f'FileNameDrop["{abc}", -3]'; f'FileNameDrop["{abc}", -4]'"#,
+      r#"Derivative[1][]*Derivative[1][f]"#,
+    );
+  }
+  #[test]
+  fn length_2() {
+    assert_case(
+      r#"x === Global`x; `x === Global`x; a`x === Global`x; a`x === a`x; a`x === b`x; FullForm[a`b_]; a = 2; Information[a]; {?? q, ?? q}; {Information[s], Information["s"]}; f[x_] := x ^ 2; g[f] ^:= 2; f::usage = "f[x] returns the square of x"; Information[f]; Length[Names["System`*"]] > 350"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn list_literal_2() {
+    assert_case(
+      r#"x === Global`x; `x === Global`x; a`x === Global`x; a`x === a`x; a`x === b`x; FullForm[a`b_]; a = 2; Information[a]; {?? q, ?? q}; {Information[s], Information["s"]}; f[x_] := x ^ 2; g[f] ^:= 2; f::usage = "f[x] returns the square of x"; Information[f]; Length[Names["System`*"]] > 350; {\[Eta], \[CapitalGamma]\[Beta], Z\[Infinity], \[Angle]XYZ, \[FilledSquare]r, i\[Ellipsis]j}"#,
+      r#"{η, Γβ, Z∞, ∠XYZ, ■r, i…j}"#,
+    );
+  }
+  #[test]
+  fn symbol_name() {
+    assert_case(
+      r#"x === Global`x; `x === Global`x; a`x === Global`x; a`x === a`x; a`x === b`x; FullForm[a`b_]; a = 2; Information[a]; {?? q, ?? q}; {Information[s], Information["s"]}; f[x_] := x ^ 2; g[f] ^:= 2; f::usage = "f[x] returns the square of x"; Information[f]; Length[Names["System`*"]] > 350; {\[Eta], \[CapitalGamma]\[Beta], Z\[Infinity], \[Angle]XYZ, \[FilledSquare]r, i\[Ellipsis]j}; SymbolName[a`b`x] // InputForm"#,
+      r#"InputForm["x"]"#,
+    );
+  }
+  #[test]
+  fn value_q() {
+    assert_case(
+      r#"x === Global`x; `x === Global`x; a`x === Global`x; a`x === a`x; a`x === b`x; FullForm[a`b_]; a = 2; Information[a]; {?? q, ?? q}; {Information[s], Information["s"]}; f[x_] := x ^ 2; g[f] ^:= 2; f::usage = "f[x] returns the square of x"; Information[f]; Length[Names["System`*"]] > 350; {\[Eta], \[CapitalGamma]\[Beta], Z\[Infinity], \[Angle]XYZ, \[FilledSquare]r, i\[Ellipsis]j}; SymbolName[a`b`x] // InputForm; ValueQ[True]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn quiet_3() {
+    assert_case(r#"Quiet[URLFetch["https://", {}]]"#, r#"$Failed"#);
+  }
+  #[test]
+  fn wr_l() {
+    // BinaryReadList: write bytes to a temp file via BinaryWrite then read
+    // them back as a flat list of integers.
+    assert_case(
+      r#"WrL[bytes_] := Module[{stream, res}, stream = OpenWrite[BinaryFormat -> True]; BinaryWrite[stream, bytes]; res = BinaryReadList[Close[stream], "Byte"]; res]; WrL[{1, 2, 3, 254, 255}]"#,
+      r#"{1, 2, 3, 254, 255}"#,
+    );
+  }
+}

@@ -1291,3 +1291,549 @@ mod any_match {
     );
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn assuming() {
+    assert_case(
+      r#"$Assumptions = { x > 0 }; Assuming[y>0, ConditionalExpression[y x^2, y>0]//Simplify]; Assuming[Not[y>0], ConditionalExpression[y x^2, y>0]//Simplify]"#,
+      r#"Undefined"#,
+    );
+  }
+  #[test]
+  fn conditional_expression_1() {
+    assert_case(
+      r#"$Assumptions = { x > 0 }; Assuming[y>0, ConditionalExpression[y x^2, y>0]//Simplify]; Assuming[Not[y>0], ConditionalExpression[y x^2, y>0]//Simplify]; ConditionalExpression[y x ^ 2, y > 0]//Simplify"#,
+      r#"ConditionalExpression[x^2*y, y > 0]"#,
+    );
+  }
+  #[test]
+  fn conditional_expression_2() {
+    assert_case(r#"ConditionalExpression[x^2, True]"#, r#"x ^ 2"#);
+  }
+  #[test]
+  fn conditional_expression_3() {
+    assert_case(
+      r#"ConditionalExpression[x^2, True]; ConditionalExpression[x^2, False]"#,
+      r#"Undefined"#,
+    );
+  }
+  #[test]
+  fn greater_1() {
+    assert_case(
+      r#"ConditionalExpression[x^2, True]; ConditionalExpression[x^2, False]; f = ConditionalExpression[x^2, x>0]"#,
+      r#"ConditionalExpression[x ^ 2, x > 0]"#,
+    );
+  }
+  #[test]
+  fn greater_2() {
+    assert_case(
+      r#"ConditionalExpression[x^2, True]; ConditionalExpression[x^2, False]; f = ConditionalExpression[x^2, x>0]; f /. x -> 2"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn greater_3() {
+    assert_case(
+      r#"ConditionalExpression[x^2, True]; ConditionalExpression[x^2, False]; f = ConditionalExpression[x^2, x>0]; f /. x -> 2; f /. x -> -2"#,
+      r#"Undefined"#,
+    );
+  }
+  #[test]
+  fn conditional_expression_4() {
+    assert_case(r#"ConditionalExpression[a, False]"#, r#"Undefined"#);
+  }
+  #[test]
+  fn prime_power_q_1() {
+    assert_case(r#"PrimePowerQ[9]"#, r#"True"#);
+  }
+  #[test]
+  fn prime_power_q_2() {
+    assert_case(r#"PrimePowerQ[9]; PrimePowerQ[52142]"#, r#"False"#);
+  }
+  #[test]
+  fn prime_power_q_3() {
+    assert_case(
+      r#"PrimePowerQ[9]; PrimePowerQ[52142]; PrimePowerQ[-8]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn prime_power_q_4() {
+    assert_case(
+      r#"PrimePowerQ[9]; PrimePowerQ[52142]; PrimePowerQ[-8]; PrimePowerQ[371293]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equivalent_1() {
+    assert_case(r#"Equivalent[True, True, False]"#, r#"False"#);
+  }
+  #[test]
+  fn equivalent_2() {
+    // Wolframscript-matched expectation. mathics rendered as the head
+    // form `Equivalent[a, b, c]`; wolframscript -code uses the infix
+    // `\[Equivalent]` (`⧦`) glyph, which is what Woxi emits too.
+    assert_case(
+      r#"Equivalent[True, True, False]; Equivalent[a, b, c]"#,
+      "a \u{29E6} b \u{29E6} c",
+    );
+  }
+  #[test]
+  fn equivalent_3() {
+    assert_case(
+      r#"Equivalent[True, True, False]; Equivalent[a, b, c]; Equivalent[a, b, True, c]"#,
+      r#"a && b && c"#,
+    );
+  }
+  #[test]
+  fn same_q() {
+    assert_case(r#"a === a; SameQ[a] === SameQ[] === True"#, r#"True"#);
+  }
+  #[test]
+  fn list_literal_1() {
+    assert_case(
+      r#"a === a; SameQ[a] === SameQ[] === True; {1==1., 1===1.}"#,
+      r#"{True, False}"#,
+    );
+  }
+  #[test]
+  fn equal_1() {
+    assert_case(
+      r#"a === a; SameQ[a] === SameQ[] === True; {1==1., 1===1.}; 2./9. === .2222222222222222`15.9546"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equal_2() {
+    assert_case(
+      r#"a === a; SameQ[a] === SameQ[] === True; {1==1., 1===1.}; 2./9. === .2222222222222222`15.9546; .2222222`6 === .2222`3"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn equal_3() {
+    assert_case(
+      r#"a === a; SameQ[a] === SameQ[] === True; {1==1., 1===1.}; 2./9. === .2222222222222222`15.9546; .2222222`6 === .2222`3; .2222222`6 === .222`3"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn true_q_1() {
+    assert_case(r#"TrueQ[True]"#, r#"True"#);
+  }
+  #[test]
+  fn true_q_2() {
+    assert_case(r#"TrueQ[True]; TrueQ[False]"#, r#"False"#);
+  }
+  #[test]
+  fn true_q_3() {
+    assert_case(r#"TrueQ[True]; TrueQ[False]; TrueQ[a]"#, r#"False"#);
+  }
+  #[test]
+  fn unequal_1() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn unequal_2() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn list_literal_2() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]; {1} != {2}"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn list_literal_3() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]; {1} != {2}; {1, 2} != {1, 2}"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn list_literal_4() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]; {1} != {2}; {1, 2} != {1, 2}; {a} != {a}"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_literal_1() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]; {1} != {2}; {1, 2} != {1, 2}; {a} != {a}; "a" != "b""#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn string_literal_2() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]; {1} != {2}; {1, 2} != {1, 2}; {a} != {a}; "a" != "b"; "a" != "a""#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn list_literal_5() {
+    assert_case(
+      r#"1 != 1.; 1 != 2 != 3; 1 != 2 != x; Unequal["11", "11"]; Unequal[11, "11"]; {1} != {2}; {1, 2} != {1, 2}; {a} != {a}; "a" != "b"; "a" != "a"; {Unequal[], Unequal[x], Unequal[1]}"#,
+      r#"{True, True, True}"#,
+    );
+  }
+  #[test]
+  fn coprime_q_1() {
+    assert_case(r#"CoprimeQ[7, 9]"#, r#"True"#);
+  }
+  #[test]
+  fn coprime_q_2() {
+    assert_case(r#"CoprimeQ[7, 9]; CoprimeQ[-4, 9]"#, r#"True"#);
+  }
+  #[test]
+  fn coprime_q_3() {
+    assert_case(
+      r#"CoprimeQ[7, 9]; CoprimeQ[-4, 9]; CoprimeQ[12, 15]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn coprime_q_4() {
+    assert_case(
+      r#"CoprimeQ[7, 9]; CoprimeQ[-4, 9]; CoprimeQ[12, 15]; CoprimeQ[1+2I, 1-I]; CoprimeQ[4+2I, 6+3I]; CoprimeQ[2, 3, 5]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn coprime_q_5() {
+    assert_case(
+      r#"CoprimeQ[7, 9]; CoprimeQ[-4, 9]; CoprimeQ[12, 15]; CoprimeQ[1+2I, 1-I]; CoprimeQ[4+2I, 6+3I]; CoprimeQ[2, 3, 5]; CoprimeQ[2, 4, 5]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn even_q_1() {
+    assert_case(r#"EvenQ[4]"#, r#"True"#);
+  }
+  #[test]
+  fn even_q_2() {
+    assert_case(r#"EvenQ[4]; EvenQ[-3]"#, r#"False"#);
+  }
+  #[test]
+  fn even_q_3() {
+    assert_case(r#"EvenQ[4]; EvenQ[-3]; EvenQ[n]"#, r#"False"#);
+  }
+  #[test]
+  fn integer_q_1() {
+    assert_case(r#"IntegerQ[3]"#, r#"True"#);
+  }
+  #[test]
+  fn integer_q_2() {
+    assert_case(r#"IntegerQ[3]; IntegerQ[Pi]"#, r#"False"#);
+  }
+  #[test]
+  fn negative_1() {
+    assert_case(r#"Negative[0]"#, r#"False"#);
+  }
+  #[test]
+  fn negative_2() {
+    assert_case(r#"Negative[0]; Negative[-3]"#, r#"True"#);
+  }
+  #[test]
+  fn negative_3() {
+    assert_case(r#"Negative[0]; Negative[-3]; Negative[10/7]"#, r#"False"#);
+  }
+  #[test]
+  fn negative_4() {
+    assert_case(
+      r#"Negative[0]; Negative[-3]; Negative[10/7]; Negative[1+2I]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn negative_5() {
+    assert_case(
+      r#"Negative[0]; Negative[-3]; Negative[10/7]; Negative[1+2I]; Negative[a + b]"#,
+      r#"Negative[a + b]"#,
+    );
+  }
+  #[test]
+  fn list_literal_6() {
+    assert_case(r#"{Positive[0], NonNegative[0]}"#, r#"{False, True}"#);
+  }
+  #[test]
+  fn list_literal_7() {
+    assert_case(r#"{Negative[0], NonPositive[0]}"#, r#"{False, True}"#);
+  }
+  #[test]
+  fn number_q_1() {
+    assert_case(r#"NumberQ[3+I]"#, r#"True"#);
+  }
+  #[test]
+  fn number_q_2() {
+    assert_case(r#"NumberQ[3+I]; NumberQ[5!]"#, r#"True"#);
+  }
+  #[test]
+  fn number_q_3() {
+    assert_case(r#"NumberQ[3+I]; NumberQ[5!]; NumberQ[Pi]"#, r#"False"#);
+  }
+  #[test]
+  fn numeric_q_1() {
+    assert_case(r#"NumericQ[2]"#, r#"True"#);
+  }
+  #[test]
+  fn numeric_q_2() {
+    assert_case(r#"NumericQ[2]; NumericQ[Sqrt[Pi]]"#, r#"True"#);
+  }
+  #[test]
+  fn number_q_4() {
+    assert_case(
+      r#"NumericQ[2]; NumericQ[Sqrt[Pi]]; NumberQ[Sqrt[Pi]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn numeric_q_3() {
+    assert_case(
+      r#"NumericQ[2]; NumericQ[Sqrt[Pi]]; NumberQ[Sqrt[Pi]]; NumericQ[a]=True"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn numeric_q_4() {
+    assert_case(
+      r#"NumericQ[2]; NumericQ[Sqrt[Pi]]; NumberQ[Sqrt[Pi]]; NumericQ[a]=True; NumericQ[a]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn numeric_q_5() {
+    assert_case(
+      r#"NumericQ[2]; NumericQ[Sqrt[Pi]]; NumberQ[Sqrt[Pi]]; NumericQ[a]=True; NumericQ[a]; NumericQ[Sin[a]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn odd_q_1() {
+    assert_case(r#"OddQ[-3]"#, r#"True"#);
+  }
+  #[test]
+  fn odd_q_2() {
+    assert_case(r#"OddQ[-3]; OddQ[0]"#, r#"False"#);
+  }
+  #[test]
+  fn possible_zero_q_1() {
+    assert_case(r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]"#, r#"True"#);
+  }
+  #[test]
+  fn possible_zero_q_2() {
+    assert_case(
+      r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]; PossibleZeroQ[(x + 1) (x - 1) - x^2 + 1]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn possible_zero_q_3() {
+    assert_case(
+      r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]; PossibleZeroQ[(x + 1) (x - 1) - x^2 + 1]; PossibleZeroQ[(E + Pi)^2 - E^2 - Pi^2 - 2 E Pi]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn possible_zero_q_4() {
+    assert_case(
+      r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]; PossibleZeroQ[(x + 1) (x - 1) - x^2 + 1]; PossibleZeroQ[(E + Pi)^2 - E^2 - Pi^2 - 2 E Pi]; PossibleZeroQ[E^Pi - Pi^E]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn possible_zero_q_5() {
+    assert_case(
+      r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]; PossibleZeroQ[(x + 1) (x - 1) - x^2 + 1]; PossibleZeroQ[(E + Pi)^2 - E^2 - Pi^2 - 2 E Pi]; PossibleZeroQ[E^Pi - Pi^E]; PossibleZeroQ[1/x + 1/y - (x + y)/(x y)]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn possible_zero_q_6() {
+    assert_case(
+      r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]; PossibleZeroQ[(x + 1) (x - 1) - x^2 + 1]; PossibleZeroQ[(E + Pi)^2 - E^2 - Pi^2 - 2 E Pi]; PossibleZeroQ[E^Pi - Pi^E]; PossibleZeroQ[1/x + 1/y - (x + y)/(x y)]; PossibleZeroQ[2^(2 I) - 2^(-2 I) - 2 I Sin[Log[4]]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn possible_zero_q_7() {
+    assert_case(
+      r#"PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]; PossibleZeroQ[(x + 1) (x - 1) - x^2 + 1]; PossibleZeroQ[(E + Pi)^2 - E^2 - Pi^2 - 2 E Pi]; PossibleZeroQ[E^Pi - Pi^E]; PossibleZeroQ[1/x + 1/y - (x + y)/(x y)]; PossibleZeroQ[2^(2 I) - 2^(-2 I) - 2 I Sin[Log[4]]]; PossibleZeroQ[Sqrt[x^2] - x]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn positive_1() {
+    assert_case(r#"Positive[1]"#, r#"True"#);
+  }
+  #[test]
+  fn positive_2() {
+    assert_case(r#"Positive[1]; Positive[0]"#, r#"False"#);
+  }
+  #[test]
+  fn positive_3() {
+    assert_case(r#"Positive[1]; Positive[0]; Positive[1 + 2 I]"#, r#"False"#);
+  }
+  #[test]
+  fn prime_q_1() {
+    assert_case(r#"PrimeQ[2]"#, r#"True"#);
+  }
+  #[test]
+  fn prime_q_2() {
+    assert_case(r#"PrimeQ[2]; PrimeQ[-3]"#, r#"True"#);
+  }
+  #[test]
+  fn prime_q_3() {
+    assert_case(r#"PrimeQ[2]; PrimeQ[-3]; PrimeQ[137]"#, r#"True"#);
+  }
+  #[test]
+  fn prime_q_4() {
+    assert_case(
+      r#"PrimeQ[2]; PrimeQ[-3]; PrimeQ[137]; PrimeQ[2 ^ 127 - 1]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn symbol_literal() {
+    assert_case(
+      r#"2; 3+2 I; 2/9;  "hi!"; Infinity; Pi; E; I; a; b=2;b; $MachinePrecision; NumericQ[a]=True; a"#,
+      r#"a"#,
+    );
+  }
+  #[test]
+  fn pi() {
+    assert_case(
+      r#"2; 3+2 I; 2/9;  "hi!"; Infinity; Pi; E; I; a; b=2;b; $MachinePrecision; NumericQ[a]=True; a; NumericQ[Pi]=False; Pi"#,
+      r#"Pi"#,
+    );
+  }
+  #[test]
+  fn print() {
+    assert_case(
+      r#"2; 3+2 I; 2/9;  "hi!"; Infinity; Pi; E; I; a; b=2;b; $MachinePrecision; NumericQ[a]=True; a; NumericQ[Pi]=False; Pi; Print"#,
+      r#"Print"#,
+    );
+  }
+  #[test]
+  fn sin() {
+    assert_case(
+      r#"2; 3+2 I; 2/9;  "hi!"; Infinity; Pi; E; I; a; b=2;b; $MachinePrecision; NumericQ[a]=True; a; NumericQ[Pi]=False; Pi; Print; Sin"#,
+      r#"Sin"#,
+    );
+  }
+  #[test]
+  fn numeric_q_6() {
+    assert_case(r#"NumericQ[a]=True;NumericQ[a]"#, r#"True"#);
+  }
+  #[test]
+  fn numeric_q_7() {
+    assert_case(
+      r#"NumericQ[a]=True;NumericQ[a]; NumericQ[a]=False;NumericQ[a]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn unsame_q_1() {
+    assert_case(r#"UnsameQ[]"#, r#"True"#);
+  }
+  #[test]
+  fn unsame_q_2() {
+    assert_case(r#"UnsameQ[]; UnsameQ[expr]"#, r#"True"#);
+  }
+  #[test]
+  fn unequal_3() {
+    assert_case(r#"UnsameQ[]; UnsameQ[expr]; x =!= x"#, r#"False"#);
+  }
+  #[test]
+  fn unequal_4() {
+    assert_case(r#"UnsameQ[]; UnsameQ[expr]; x =!= x; x =!= y"#, r#"True"#);
+  }
+  #[test]
+  fn unequal_5() {
+    assert_case(
+      r#"UnsameQ[]; UnsameQ[expr]; x =!= x; x =!= y; 1 =!= 2 =!= 3 =!= 4"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn unequal_6() {
+    assert_case(
+      r#"UnsameQ[]; UnsameQ[expr]; x =!= x; x =!= y; 1 =!= 2 =!= 3 =!= 4; 1 =!= 2 =!= 1 =!= 4"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn unsame_q_3() {
+    assert_case(
+      r#"UnsameQ[]; UnsameQ[expr]; x =!= x; x =!= y; 1 =!= 2 =!= 3 =!= 4; 1 =!= 2 =!= 1 =!= 4; UnsameQ[10, 5, 2, 1, 0]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn unsame_q_4() {
+    assert_case(
+      r#"UnsameQ[]; UnsameQ[expr]; x =!= x; x =!= y; 1 =!= 2 =!= 3 =!= 4; 1 =!= 2 =!= 1 =!= 4; UnsameQ[10, 5, 2, 1, 0]; UnsameQ[10, 5, 2, 1, 0, 0]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn negative_6() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn negative_7() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]; Negative[Sin[{11, 14}]]"#,
+      r#"{True, False}"#,
+    );
+  }
+  #[test]
+  fn positive_4() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]; Negative[Sin[{11, 14}]]; Positive[Pi]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn positive_5() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]; Negative[Sin[{11, 14}]]; Positive[Pi]; Positive[x]"#,
+      r#"Positive[x]"#,
+    );
+  }
+  #[test]
+  fn positive_6() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]; Negative[Sin[{11, 14}]]; Positive[Pi]; Positive[x]; Positive[Sin[{11, 14}]]"#,
+      r#"{False, True}"#,
+    );
+  }
+  #[test]
+  fn prime_q_5() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]; Negative[Sin[{11, 14}]]; Positive[Pi]; Positive[x]; Positive[Sin[{11, 14}]]; PrimeQ[1]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn prime_q_6() {
+    assert_case(
+      r#"MachineNumberQ[1.5 + 3.14159265358979324 I]; MachineNumberQ[1.5 + 5 I]; Negative[-E]; Negative[Sin[{11, 14}]]; Positive[Pi]; Positive[x]; Positive[Sin[{11, 14}]]; PrimeQ[1]; PrimeQ[2 ^ 255 - 1]"#,
+      r#"False"#,
+    );
+  }
+}

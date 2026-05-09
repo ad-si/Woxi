@@ -618,3 +618,28 @@ mod constant_real_arithmetic {
     );
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn pi_1() {
+    assert_case(r#"Pi"#, r#"Pi"#);
+  }
+  #[test]
+  fn pi_2() {
+    assert_case(r#"2; 3+2 I; 2/9;  "hi!"; Infinity; Pi"#, r#"Pi"#);
+  }
+  #[test]
+  fn e() {
+    assert_case(r#"2; 3+2 I; 2/9;  "hi!"; Infinity; Pi; E"#, r#"E"#);
+  }
+  #[test]
+  fn pi_3() {
+    assert_case(r#"I; 0; 1; Pi"#, r#"Pi"#);
+  }
+  #[test]
+  fn pi_4() {
+    assert_case(r#"I; 0; 1; Pi"#, r#"Pi"#);
+  }
+}

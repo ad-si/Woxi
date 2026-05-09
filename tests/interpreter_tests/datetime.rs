@@ -780,3 +780,165 @@ mod leap_year_q {
     assert_eq!(interpret("LeapYearQ[{2004}]").unwrap(), "True");
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn with() {
+    // The mathics original (`>> AbsoluteTime[] = ...`) accepts any
+    // output — wolframscript returns seconds since 1900-01-01, which
+    // changes every second. Verify the documented contract: a Real
+    // greater than the year-2000 epoch second count (3155673600).
+    assert_case(
+      r#"With[{t = AbsoluteTime[]}, Head[t] === Real && t > 3155673600]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn absolute_time_1() {
+    assert_case(r#"AbsoluteTime[]; AbsoluteTime[{2000}]"#, r#"3155673600"#);
+  }
+  #[test]
+  fn absolute_time_2() {
+    assert_case(
+      r#"AbsoluteTime[]; AbsoluteTime[{2000}]; AbsoluteTime[{"01/02/03", {"Day", "Month", "YearShort"}}]"#,
+      r#"3.2530464*^9"#,
+    );
+  }
+  #[test]
+  fn absolute_time_3() {
+    assert_case(
+      r#"AbsoluteTime[]; AbsoluteTime[{2000}]; AbsoluteTime[{"01/02/03", {"Day", "Month", "YearShort"}}]; AbsoluteTime["6 June 1991"]"#,
+      r#"2885155200"#,
+    );
+  }
+  #[test]
+  fn absolute_time_4() {
+    assert_case(
+      r#"AbsoluteTime[]; AbsoluteTime[{2000}]; AbsoluteTime[{"01/02/03", {"Day", "Month", "YearShort"}}]; AbsoluteTime["6 June 1991"]; AbsoluteTime[{"6-6-91", {"Day", "Month", "YearShort"}}]"#,
+      r#"2.8851552*^9"#,
+    );
+  }
+  #[test]
+  fn date_difference_1() {
+    assert_case(
+      r#"DateDifference[{2042, 1, 4}, {2057, 1, 1}]"#,
+      r#"Quantity[5476, "Days"]"#,
+    );
+  }
+  #[test]
+  fn date_difference_2() {
+    assert_case(
+      r#"DateDifference[{2042, 1, 4}, {2057, 1, 1}]; DateDifference[{1936, 8, 14}, {2000, 12, 1}, "Year"]"#,
+      r#"Quantity[64.2986301369863, "Years"]"#,
+    );
+  }
+  #[test]
+  fn date_difference_3() {
+    assert_case(
+      r#"DateDifference[{2042, 1, 4}, {2057, 1, 1}]; DateDifference[{1936, 8, 14}, {2000, 12, 1}, "Year"]; DateDifference[{2010, 6, 1}, {2015, 1, 1}, "Hour"]"#,
+      r#"Quantity[40200, "Hours"]"#,
+    );
+  }
+  #[test]
+  fn date_difference_4() {
+    assert_case(
+      r#"DateDifference[{2042, 1, 4}, {2057, 1, 1}]; DateDifference[{1936, 8, 14}, {2000, 12, 1}, "Year"]; DateDifference[{2010, 6, 1}, {2015, 1, 1}, "Hour"]; DateDifference[{2003, 8, 11}, {2003, 10, 19}, {"Week", "Day"}]"#,
+      r#"Quantity[MixedMagnitude[{9, 6}], MixedUnit[{"Weeks", "Days"}]]"#,
+    );
+  }
+  #[test]
+  fn date_object() {
+    assert_case(
+      r#"DateObject[{2020, 4, 15}]"#,
+      r#"DateObject[{2020, 4, 15}, "Day"]"#,
+    );
+  }
+  #[test]
+  fn date_plus_1() {
+    assert_case(r#"DatePlus[{2010, 2, 5}, 73]"#, r#"{2010, 4, 19}"#);
+  }
+  #[test]
+  fn date_plus_2() {
+    assert_case(
+      r#"DatePlus[{2010, 2, 5}, 73]; DatePlus[{2010, 2, 5}, {{8, "Week"}, {1, "Day"}}]"#,
+      r#"{2010, 4, 3}"#,
+    );
+  }
+  #[test]
+  fn date_list_1() {
+    assert_case(r#"DateList[0]"#, r#"{1900, 1, 1, 0, 0, 0.}"#);
+  }
+  #[test]
+  fn date_list_2() {
+    assert_case(
+      r#"DateList[0]; DateList[3155673600]"#,
+      r#"{2000, 1, 1, 0, 0, 0.}"#,
+    );
+  }
+  #[test]
+  fn date_list_3() {
+    assert_case(
+      r#"DateList[0]; DateList[3155673600]; DateList[{2003, 5, 0.5, 0.1, 0.767}]"#,
+      r#"{2003, 4, 30, 12, 6, 46.019999980926514}"#,
+    );
+  }
+  #[test]
+  fn date_list_4() {
+    assert_case(
+      r#"DateList[0]; DateList[3155673600]; DateList[{2003, 5, 0.5, 0.1, 0.767}]; DateList[{2012, 1, 300., 10}]"#,
+      r#"{2012, 10, 26, 10, 0, 0.}"#,
+    );
+  }
+  #[test]
+  fn date_list_5() {
+    assert_case(
+      r#"DateList[0]; DateList[3155673600]; DateList[{2003, 5, 0.5, 0.1, 0.767}]; DateList[{2012, 1, 300., 10}]; DateList["31/10/1991"]"#,
+      r#"{1991, 10, 31, 0, 0, 0.}"#,
+    );
+  }
+  #[test]
+  fn date_string_1() {
+    assert_case(
+      r#"DateString[]; DateString[{1991, 10, 31, 0, 0}, {"Day", " ", "MonthName", " ", "Year"}]"#,
+      r#""31 October 1991""#,
+    );
+  }
+  #[test]
+  fn date_string_2() {
+    assert_case(
+      r#"DateString[]; DateString[{1991, 10, 31, 0, 0}, {"Day", " ", "MonthName", " ", "Year"}]; DateString[{2007, 4, 15, 0}]"#,
+      r#""Sun 15 Apr 2007 00:00:00""#,
+    );
+  }
+  #[test]
+  fn date_string_3() {
+    assert_case(
+      r#"DateString[]; DateString[{1991, 10, 31, 0, 0}, {"Day", " ", "MonthName", " ", "Year"}]; DateString[{2007, 4, 15, 0}]; DateString[{1979, 3, 14}, {"DayName", "  ", "Month", "-", "YearShort"}]"#,
+      r#""Wednesday  03-79""#,
+    );
+  }
+  #[test]
+  fn date_string_4() {
+    assert_case(
+      r#"DateString[]; DateString[{1991, 10, 31, 0, 0}, {"Day", " ", "MonthName", " ", "Year"}]; DateString[{2007, 4, 15, 0}]; DateString[{1979, 3, 14}, {"DayName", "  ", "Month", "-", "YearShort"}]; DateString[{1991, 6, 6.5}]"#,
+      r#""Thu 6 Jun 1991 12:00:00""#,
+    );
+  }
+  #[test]
+  fn easter_sunday_1() {
+    assert_case(r#"EasterSunday[2000]"#, r#"EasterSunday[2000]"#);
+  }
+  #[test]
+  fn easter_sunday_2() {
+    assert_case(
+      r#"EasterSunday[2000]; EasterSunday[2030]"#,
+      r#"EasterSunday[2030]"#,
+    );
+  }
+  #[test]
+  fn absolute_time_5() {
+    assert_case(r#"AbsoluteTime[1000]"#, r#"1000"#);
+  }
+}

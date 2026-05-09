@@ -530,3 +530,126 @@ mod mixed_coefficient_combining {
     );
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn product_1() {
+    assert_case(r#"Product[k, {k, i, n}]"#, r#"Pochhammer[i, 1 - i + n]"#);
+  }
+  #[test]
+  fn product_2() {
+    assert_case(r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]"#, r#"n!"#);
+  }
+  #[test]
+  fn product_3() {
+    assert_case(
+      r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]; Product[k, {k, n}]"#,
+      r#"n!"#,
+    );
+  }
+  #[test]
+  fn product_4() {
+    assert_case(
+      r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]; Product[k, {k, n}]; Product[k, {k, 3, n}]"#,
+      r#"n! / 2"#,
+    );
+  }
+  #[test]
+  fn product_5() {
+    assert_case(
+      r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]; Product[k, {k, n}]; Product[k, {k, 3, n}]; Product[x^k, {k, 2, 20, 2}]"#,
+      r#"x ^ 110"#,
+    );
+  }
+  #[test]
+  fn product_6() {
+    assert_case(
+      r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]; Product[k, {k, n}]; Product[k, {k, 3, n}]; Product[x^k, {k, 2, 20, 2}]; Product[2 ^ i, {i, 1, n}]"#,
+      r#"2^((n*(1 + n))/2)"#,
+    );
+  }
+  #[test]
+  fn product_7() {
+    assert_case(
+      r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]; Product[k, {k, n}]; Product[k, {k, 3, n}]; Product[x^k, {k, 2, 20, 2}]; Product[2 ^ i, {i, 1, n}]; Product[f[i], {i, 1, 7}]"#,
+      r#"f[1]*f[2]*f[3]*f[4]*f[5]*f[6]*f[7]"#,
+    );
+  }
+  #[test]
+  fn primorial() {
+    assert_case(
+      r#"Product[k, {k, i, n}]; Product[k, {k, 1, n}]; Product[k, {k, n}]; Product[k, {k, 3, n}]; Product[x^k, {k, 2, 20, 2}]; Product[2 ^ i, {i, 1, n}]; Product[f[i], {i, 1, 7}]; Primorial[0] = 1; Primorial[n_Integer] := Product[Prime[k], {k, 1, n}]; Primorial[12]"#,
+      r#"7420738134810"#,
+    );
+  }
+  #[test]
+  fn sum_1() {
+    assert_case(r#"Sum[k, {k, 1, 10}]"#, r#"55"#);
+  }
+  #[test]
+  fn sum_2() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]"#,
+      r#"(n*(1 + n))/2"#,
+    );
+  }
+  #[test]
+  fn sum_3() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]"#,
+      r#"(-1 + 2^k)/2^k"#,
+    );
+  }
+  #[test]
+  fn sum_4() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn sum_5() {
+    assert_case(
+      r#"Sum[k, {k, 1, 10}]; Sum[k, {k, 1, n}]; Sum[1 / 2 ^ i, {i, 1, k}]; Sum[1 / 2 ^ i, {i, 1, Infinity}]; Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]"#,
+      r#"Pi / 4"#,
+    );
+  }
+  #[test]
+  fn r_solve_1() {
+    assert_case(r#"RSolve[a[n] == a[n+1], a[n], n]"#, r#"{{a[n] -> C[1]}}"#);
+  }
+  #[test]
+  fn r_solve_2() {
+    assert_case(
+      r#"RSolve[a[n] == a[n+1], a[n], n]; RSolve[{a[n + 2] == a[n]}, a, n]"#,
+      r#"{{a -> Function[{n}, C[1] + (-1)^n*C[2]]}}"#,
+    );
+  }
+  #[test]
+  fn r_solve_3() {
+    assert_case(
+      r#"RSolve[a[n] == a[n+1], a[n], n]; RSolve[{a[n + 2] == a[n]}, a, n]; RSolve[{a[n + 2] == a[n], a[0] == 1}, a, n]"#,
+      r#"{{a -> Function[{n}, (-1)^n + C[1] - (-1)^n*C[1]]}}"#,
+    );
+  }
+  #[test]
+  fn r_solve_4() {
+    assert_case(
+      r#"RSolve[a[n] == a[n+1], a[n], n]; RSolve[{a[n + 2] == a[n]}, a, n]; RSolve[{a[n + 2] == a[n], a[0] == 1}, a, n]; RSolve[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a, n]"#,
+      r#"{{a -> Function[{n}, (5 - 3*(-1)^n)/2]}}"#,
+    );
+  }
+  #[test]
+  fn sum_6() {
+    assert_case(
+      r#"Precision[1]; 1 / Infinity; Infinity + 100; Sum[1/x^2, {x, 1, Infinity}]"#,
+      r#"Pi ^ 2 / 6"#,
+    );
+  }
+  #[test]
+  fn product_8() {
+    assert_case(r#"Product[1 + 1 / i ^ 2, {i, Infinity}]"#, r#"Sinh[Pi]/Pi"#);
+  }
+}

@@ -371,3 +371,519 @@ mod rational_power {
     assert_eq!(interpret("(1/2)^4").unwrap(), "1/16");
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn round_1() {
+    assert_case(r#"Round[10.6]"#, r#"11"#);
+  }
+  #[test]
+  fn round_2() {
+    assert_case(r#"Round[10.6]; Round[0.06, 0.1]"#, r#"0.1"#);
+  }
+  #[test]
+  fn round_3() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]"#,
+      r#"0."#,
+    );
+  }
+  #[test]
+  fn round_4() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]"#,
+      r#"3."#,
+    );
+  }
+  #[test]
+  fn round_5() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn round_6() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]"#,
+      r#"8 / 3"#,
+    );
+  }
+  #[test]
+  fn round_7() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]; Round[10, Pi]"#,
+      r#"3*Pi"#,
+    );
+  }
+  #[test]
+  fn round_8() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]; Round[10, Pi]; Round[6/(2 + 3 I)]"#,
+      r#"1 - I"#,
+    );
+  }
+  #[test]
+  fn round_9() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]; Round[10, Pi]; Round[6/(2 + 3 I)]; Round[1 + 2 I, 2 I]"#,
+      r#"2*I"#,
+    );
+  }
+  #[test]
+  fn round_10() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]; Round[10, Pi]; Round[6/(2 + 3 I)]; Round[1 + 2 I, 2 I]; Round[-1.4]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn round_11() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]; Round[10, Pi]; Round[6/(2 + 3 I)]; Round[1 + 2 I, 2 I]; Round[-1.4]; Round[x]"#,
+      r#"Round[x]"#,
+    );
+  }
+  #[test]
+  fn round_12() {
+    assert_case(
+      r#"Round[10.6]; Round[0.06, 0.1]; Round[0.04, 0.1]; Round[Pi, .5]; Round[Pi^2]; Round[2.6, 1/3]; Round[10, Pi]; Round[6/(2 + 3 I)]; Round[1 + 2 I, 2 I]; Round[-1.4]; Round[x]; Round[1.5, k]"#,
+      r#"Round[1.5, k]"#,
+    );
+  }
+  #[test]
+  fn ceiling_1() {
+    assert_case(r#"Ceiling[1.2]"#, r#"2"#);
+  }
+  #[test]
+  fn ceiling_2() {
+    assert_case(r#"Ceiling[1.2]; Ceiling[3/2]"#, r#"2"#);
+  }
+  #[test]
+  fn ceiling_3() {
+    assert_case(
+      r#"Ceiling[1.2]; Ceiling[3/2]; Ceiling[1.3 + 0.7 I]"#,
+      r#"2 + I"#,
+    );
+  }
+  #[test]
+  fn floor_1() {
+    assert_case(r#"Floor[10.4]"#, r#"10"#);
+  }
+  #[test]
+  fn floor_2() {
+    assert_case(r#"Floor[10.4]; Floor[10/3]"#, r#"3"#);
+  }
+  #[test]
+  fn floor_3() {
+    assert_case(r#"Floor[10.4]; Floor[10/3]; Floor[10]"#, r#"10"#);
+  }
+  #[test]
+  fn floor_4() {
+    assert_case(
+      r#"Floor[10.4]; Floor[10/3]; Floor[10]; Floor[21, 2]"#,
+      r#"20"#,
+    );
+  }
+  #[test]
+  fn floor_5() {
+    assert_case(
+      r#"Floor[10.4]; Floor[10/3]; Floor[10]; Floor[21, 2]; Floor[2.6, 0.5]"#,
+      r#"2.5"#,
+    );
+  }
+  #[test]
+  fn floor_6() {
+    assert_case(
+      r#"Floor[10.4]; Floor[10/3]; Floor[10]; Floor[21, 2]; Floor[2.6, 0.5]; Floor[-10.4]"#,
+      r#"-11"#,
+    );
+  }
+  #[test]
+  fn floor_7() {
+    assert_case(
+      r#"Floor[10.4]; Floor[10/3]; Floor[10]; Floor[21, 2]; Floor[2.6, 0.5]; Floor[-10.4]; Floor[1.5 + 2.7 I]"#,
+      r#"1 + 2*I"#,
+    );
+  }
+  #[test]
+  fn floor_8() {
+    assert_case(
+      r#"Floor[10.4]; Floor[10/3]; Floor[10]; Floor[21, 2]; Floor[2.6, 0.5]; Floor[-10.4]; Floor[1.5 + 2.7 I]; Floor[10.4, -1]"#,
+      r#"11"#,
+    );
+  }
+  #[test]
+  fn floor_9() {
+    assert_case(
+      r#"Floor[10.4]; Floor[10/3]; Floor[10]; Floor[21, 2]; Floor[2.6, 0.5]; Floor[-10.4]; Floor[1.5 + 2.7 I]; Floor[10.4, -1]; Floor[-10.4, -1]"#,
+      r#"-10"#,
+    );
+  }
+  #[test]
+  fn fractional_part_1() {
+    assert_case(r#"FractionalPart[4.1]"#, r#"0.09999999999999964"#);
+  }
+  #[test]
+  fn fractional_part_2() {
+    assert_case(r#"FractionalPart[4.1]; FractionalPart[-5.25]"#, r#"-0.25"#);
+  }
+  #[test]
+  fn integer_part_1() {
+    assert_case(r#"IntegerPart[4.1]"#, r#"4"#);
+  }
+  #[test]
+  fn integer_part_2() {
+    assert_case(r#"IntegerPart[4.1]; IntegerPart[-5.25]"#, r#"-5"#);
+  }
+  #[test]
+  fn mod_1() {
+    assert_case(
+      r#"Mod[$RandomState, 10^100]"#,
+      r#"4741994566655706294890138869165136649510315974360597429933393392703942354819024473254400806573416326"#,
+    );
+  }
+  #[test]
+  fn math_ml_form() {
+    // mathics rendered the contents to MathML XML; wolframscript -code
+    // returns the unevaluated wrapper `MathMLForm[HoldForm[Sqrt[a^3]]]`
+    // verbatim. Woxi matches wolframscript.
+    assert_case(
+      r#"MathMLForm[HoldForm[Sqrt[a^3]]]"#,
+      r#"MathMLForm[HoldForm[Sqrt[a^3]]]"#,
+    );
+  }
+  #[test]
+  fn te_x_form() {
+    // mathics rendered the contents as `\sqrt{a^3}`; wolframscript -code
+    // returns the unevaluated wrapper `TeXForm[HoldForm[Sqrt[a^3]]]`
+    // verbatim. Woxi matches wolframscript.
+    assert_case(
+      r#"TeXForm[HoldForm[Sqrt[a^3]]]"#,
+      r#"TeXForm[HoldForm[Sqrt[a^3]]]"#,
+    );
+  }
+  #[test]
+  fn cube_root_1() {
+    assert_case(r#"CubeRoot[16]"#, r#"2*2^(1/3)"#);
+  }
+  #[test]
+  fn sqrt_1() {
+    assert_case(r#"Sqrt[4]"#, r#"2"#);
+  }
+  #[test]
+  fn sqrt_2() {
+    assert_case(r#"Sqrt[4]; Sqrt[5]"#, r#"Sqrt[5]"#);
+  }
+  #[test]
+  fn sqrt_3() {
+    assert_case(r#"Sqrt[4]; Sqrt[5]; Sqrt[5] // N"#, r#"2.23606797749979"#);
+  }
+  #[test]
+  fn sqrt_4() {
+    assert_case(r#"Sqrt[4]; Sqrt[5]; Sqrt[5] // N; Sqrt[a]^2"#, r#"a"#);
+  }
+  #[test]
+  fn sqrt_5() {
+    assert_case(
+      r#"Sqrt[4]; Sqrt[5]; Sqrt[5] // N; Sqrt[a]^2; Sqrt[-4]"#,
+      r#"2*I"#,
+    );
+  }
+  #[test]
+  fn equal() {
+    assert_case(
+      r#"Sqrt[4]; Sqrt[5]; Sqrt[5] // N; Sqrt[a]^2; Sqrt[-4]; I == Sqrt[-1]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn mod_2() {
+    assert_case(r#"Mod[14, 6]"#, r#"2"#);
+  }
+  #[test]
+  fn mod_3() {
+    assert_case(r#"Mod[14, 6]; Mod[-3, 4]"#, r#"1"#);
+  }
+  #[test]
+  fn mod_4() {
+    assert_case(r#"Mod[14, 6]; Mod[-3, 4]; Mod[-3, -4]"#, r#"-3"#);
+  }
+  #[test]
+  fn mod_5() {
+    assert_case(
+      r#"ModularInverse[2, 3]; k = 2; n = 3; Mod[ModularInverse[k, n] * k, n] == 1"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn sqrt_6() {
+    assert_case(r#"1; Sqrt[2]"#, r#"Sqrt[2]"#);
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(r#"1; Sqrt[2]; 2/9"#, r#"2/9"#);
+  }
+  #[test]
+  fn pi_1() {
+    assert_case(r#"1; Sqrt[2]; 2/9; Pi"#, r#"Pi"#);
+  }
+  #[test]
+  fn sqrt_7() {
+    assert_case(r#"1; 2/9; Sqrt[2]"#, r#"Sqrt[2]"#);
+  }
+  #[test]
+  fn pi_2() {
+    assert_case(r#"1; 2/9; Sqrt[2]; Pi"#, r#"Pi"#);
+  }
+  #[test]
+  fn sqrt_8() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes"#,
+      r#"SqrtBox["a"]"#,
+    );
+  }
+  #[test]
+  fn plus_1() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes"#,
+      r#"RowBox[{"a", "+", RowBox[{"b", " ", "c"}]}]"#,
+    );
+  }
+  #[test]
+  fn plus_2() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes"#,
+      r#"RowBox[{"a", "+", FractionBox["b", "c"]}]"#,
+    );
+  }
+  #[test]
+  fn plus_3() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes"#,
+      r#"InterpretationBox[StyleBox["a + b*c", ShowStringCharacters -> True, NumberMarks -> True], InputForm[a + b*c], Editable -> True, AutoDelete -> True]"#,
+    );
+  }
+  #[test]
+  fn plus_4() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes"#,
+      r#"InterpretationBox[StyleBox["a + b/c", ShowStringCharacters -> True, NumberMarks -> True], InputForm[a + b/c], Editable -> True, AutoDelete -> True]"#,
+    );
+  }
+  #[test]
+  fn plus_5() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes; a + b * c // OutputForm//MakeBoxes"#,
+      r#"InterpretationBox[PaneBox["\"a + b c\"", BaselinePosition -> Baseline], a + b c, Editable -> False]"#,
+    );
+  }
+  #[test]
+  fn plus_6() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes; a + b * c // OutputForm//MakeBoxes; a + b / c // OutputForm//MakeBoxes"#,
+      r#"InterpretationBox[PaneBox["\"    b\
+a + -\
+    c\"", BaselinePosition -> Baseline],     b
+a + -
+     c
+ , Editable -> False]"#,
+    );
+  }
+  #[test]
+  fn plus_7() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes; a + b * c // OutputForm//MakeBoxes; a + b / c // OutputForm//MakeBoxes; a + b * c // FullForm//MakeBoxes"#,
+      r#"TagBox[StyleBox[RowBox[{"Plus", "[", RowBox[{"a", ",", RowBox[{"Times", "[", RowBox[{"b", ",", "c"}], "]"}]}], "]"}], ShowSpecialCharacters -> False, ShowStringCharacters -> True, NumberMarks -> True], FullForm]"#,
+    );
+  }
+  #[test]
+  fn plus_8() {
+    assert_case(
+      r#""Hola"; "Hola
+qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes; a + b * c // OutputForm//MakeBoxes; a + b / c // OutputForm//MakeBoxes; a + b * c // FullForm//MakeBoxes; a + b / c // FullForm//MakeBoxes"#,
+      r#"TagBox[StyleBox[RowBox[{"Plus", "[", RowBox[{"a", ",", RowBox[{"Times", "[", RowBox[{"b", ",", RowBox[{"Power", "[", RowBox[{"c", ",", RowBox[{"-", "1"}]}], "]"}]}], "]"}]}], "]"}], ShowSpecialCharacters -> False, ShowStringCharacters -> True, NumberMarks -> True], FullForm]"#,
+    );
+  }
+  #[test]
+  fn round_13() {
+    assert_case(r#"Round[a, b]"#, r#"Round[a, b]"#);
+  }
+  #[test]
+  fn round_14() {
+    assert_case(r#"Round[a, b]; Round[a, b]"#, r#"Round[a, b]"#);
+  }
+  #[test]
+  fn minus_1() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q)"#,
+      r#"-6*a^(5/2)*q"#,
+    );
+  }
+  #[test]
+  fn plus_9() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q)"#,
+      r#"3*a^2*(5 + a + 2*b)*q"#,
+    );
+  }
+  #[test]
+  fn plus_10() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q); a (- 2 (5+ a+ 2 b)) * (3 a q)"#,
+      r#"-6*a^2*(5 + a + 2*b)*q"#,
+    );
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q); a (- 2 (5+ a+ 2 b)) * (3 a q); a  b a^2 / (2 a)^(3/2)"#,
+      r#"(a^(3/2)*b)/(2*Sqrt[2])"#,
+    );
+  }
+  #[test]
+  fn divide_3() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q); a (- 2 (5+ a+ 2 b)) * (3 a q); a  b a^2 / (2 a)^(3/2); a  b a^2 / (a)^(3/2)"#,
+      r#"a^(3/2)*b"#,
+    );
+  }
+  #[test]
+  fn divide_4() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q); a (- 2 (5+ a+ 2 b)) * (3 a q); a  b a^2 / (2 a)^(3/2); a  b a^2 / (a)^(3/2); a  b a^2 / (a b)^(3/2)"#,
+      r#"(a^3*b)/(a*b)^(3/2)"#,
+    );
+  }
+  #[test]
+  fn minus_2() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q); a (- 2 (5+ a+ 2 b)) * (3 a q); a  b a^2 / (2 a)^(3/2); a  b a^2 / (a)^(3/2); a  b a^2 / (a b)^(3/2); a  b a ^ 2  (a b)^(-3 / 2)"#,
+      r#"(a^3*b)/(a*b)^(3/2)"#,
+    );
+  }
+  #[test]
+  fn expression() {
+    assert_case(
+      r#"1.  2.  3.; 1 * 2/3 * 3/5; 1 (- 2/3) ( 3/5); 1. (- 2/3) ( 3 / 5); 1 (- 2/3) (2 I); 1. (- 2/3) (2 I); a ( 2 a) ( 3 a q); a (- 2 a) ( 3 Sqrt[a] q); a (5+ a+ 2 b) (3 a q); a (- 2 (5+ a+ 2 b)) * (3 a q); a  b a^2 / (2 a)^(3/2); a  b a^2 / (a)^(3/2); a  b a^2 / (a b)^(3/2); a  b a ^ 2  (a b)^(-3 / 2); a  b Infinity"#,
+      r#"a*b*Infinity"#,
+    );
+  }
+  #[test]
+  fn cube_root_2() {
+    assert_case(r#"CubeRoot[-5]"#, r#"-5 ^ (1 / 3)"#);
+  }
+  #[test]
+  fn cube_root_3() {
+    assert_case(r#"CubeRoot[-5]; CubeRoot[-510000]"#, r#"-10*510^(1/3)"#);
+  }
+  #[test]
+  fn cube_root_4() {
+    assert_case(
+      r#"CubeRoot[-5]; CubeRoot[-510000]; CubeRoot[-5.1]"#,
+      r#"-1.7213006207263157"#,
+    );
+  }
+  #[test]
+  fn cube_root_5() {
+    assert_case(
+      r#"CubeRoot[-5]; CubeRoot[-510000]; CubeRoot[-5.1]; CubeRoot[b]"#,
+      r#"Surd[b, 3]"#,
+    );
+  }
+  #[test]
+  fn cube_root_6() {
+    assert_case(
+      r#"CubeRoot[-5]; CubeRoot[-510000]; CubeRoot[-5.1]; CubeRoot[b]; CubeRoot[-0.5]"#,
+      r#"-0.7937005259840998"#,
+    );
+  }
+  #[test]
+  fn sqrt_9() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]"#,
+      r#"Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn sqrt_10() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]"#,
+      r#"I*Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn minus_3() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2)"#,
+      r#"I*Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn divide_5() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2)"#,
+      r#"Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn minus_4() {
+    assert_case(r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]"#, r#"0"#);
+  }
+  #[test]
+  fn minus_5() {
+    assert_case(r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi"#, r#"-Pi"#);
+  }
+  #[test]
+  fn minus_6() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn minus_7() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn sqrt_11() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]"#,
+      r#"Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn sqrt_12() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]"#,
+      r#"I*Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn minus_8() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2)"#,
+      r#"I*Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn divide_6() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2)"#,
+      r#"Sqrt[2]"#,
+    );
+  }
+}

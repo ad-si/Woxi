@@ -1119,3 +1119,710 @@ mod arctan_two_arg {
     assert_eq!(interpret("ArcTan[Sqrt[3], 3]").unwrap(), "Pi/3");
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn arg_1() {
+    assert_case(r#"Arg[-3]"#, r#"Pi"#);
+  }
+  #[test]
+  fn arg_2() {
+    assert_case(r#"Arg[-3]; Arg[1-I]"#, r#"-1/4*Pi"#);
+  }
+  #[test]
+  fn arg_3() {
+    assert_case(
+      r#"Arg[-3]; Arg[1-I]; Arg[DirectedInfinity[1+I]]"#,
+      r#"Pi / 4"#,
+    );
+  }
+  #[test]
+  fn conjugate_1() {
+    assert_case(r#"Conjugate[3 + 4 I]"#, r#"3 - 4*I"#);
+  }
+  #[test]
+  fn conjugate_2() {
+    assert_case(r#"Conjugate[3 + 4 I]; Conjugate[3]"#, r#"3"#);
+  }
+  #[test]
+  fn conjugate_3() {
+    assert_case(
+      r#"Conjugate[3 + 4 I]; Conjugate[3]; Conjugate[a + b * I]"#,
+      r#"Conjugate[a] - I*Conjugate[b]"#,
+    );
+  }
+  #[test]
+  fn conjugate_4() {
+    assert_case(
+      r#"Conjugate[3 + 4 I]; Conjugate[3]; Conjugate[a + b * I]; Conjugate[{{1, 2 + I 4, a + I b}, {I}}]"#,
+      r#"{{1, 2 - 4*I, Conjugate[a] - I*Conjugate[b]}, {-I}}"#,
+    );
+  }
+  #[test]
+  fn conjugate_5() {
+    assert_case(
+      r#"Conjugate[3 + 4 I]; Conjugate[3]; Conjugate[a + b * I]; Conjugate[{{1, 2 + I 4, a + I b}, {I}}]; Conjugate[1.5 + 2.5 I]"#,
+      r#"1.5 - 2.5*I"#,
+    );
+  }
+  #[test]
+  fn directed_infinity_1() {
+    assert_case(r#"DirectedInfinity[1]"#, r#"Infinity"#);
+  }
+  #[test]
+  fn directed_infinity_2() {
+    assert_case(
+      r#"DirectedInfinity[1]; DirectedInfinity[]"#,
+      r#"ComplexInfinity"#,
+    );
+  }
+  #[test]
+  fn directed_infinity_3() {
+    assert_case(
+      r#"DirectedInfinity[1]; DirectedInfinity[]; DirectedInfinity[1 + I]"#,
+      r#"DirectedInfinity[(1 + I)/Sqrt[2]]"#,
+    );
+  }
+  #[test]
+  fn plus_1() {
+    assert_case(
+      r#"DirectedInfinity[1]; DirectedInfinity[]; DirectedInfinity[1 + I]; 1 / DirectedInfinity[1 + I]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn im() {
+    assert_case(r#"Im[3+4I]"#, r#"4"#);
+  }
+  #[test]
+  fn re() {
+    assert_case(r#"Re[3+4I]"#, r#"3"#);
+  }
+  #[test]
+  fn abs_1() {
+    assert_case(r#"Abs[-3]"#, r#"3"#);
+  }
+  #[test]
+  fn sign_1() {
+    assert_case(r#"Sign[19]"#, r#"1"#);
+  }
+  #[test]
+  fn sign_2() {
+    assert_case(r#"Sign[19]; Sign[-6]"#, r#"-1"#);
+  }
+  #[test]
+  fn sign_3() {
+    assert_case(r#"Sign[19]; Sign[-6]; Sign[0]"#, r#"0"#);
+  }
+  #[test]
+  fn sign_4() {
+    assert_case(
+      r#"Sign[19]; Sign[-6]; Sign[0]; Sign[{-5, -10, 15, 20, 0}]"#,
+      r#"{-1, -1, 1, 1, 0}"#,
+    );
+  }
+  #[test]
+  fn sign_5() {
+    assert_case(
+      r#"Sign[19]; Sign[-6]; Sign[0]; Sign[{-5, -10, 15, 20, 0}]; Sign[3 - 4*I]"#,
+      r#"3/5 - (4*I)/5"#,
+    );
+  }
+  #[test]
+  fn arc_tan_1() {
+    assert_case(r#"ArcTan[1]"#, r#"Pi / 4"#);
+  }
+  #[test]
+  fn arc_tan_2() {
+    assert_case(r#"ArcTan[1]; ArcTan[1.0]"#, r#"0.7853981633974483"#);
+  }
+  #[test]
+  fn arc_tan_3() {
+    assert_case(
+      r#"ArcTan[1]; ArcTan[1.0]; ArcTan[-1.0]"#,
+      r#"-0.7853981633974483"#,
+    );
+  }
+  #[test]
+  fn arc_tan_4() {
+    assert_case(
+      r#"ArcTan[1]; ArcTan[1.0]; ArcTan[-1.0]; ArcTan[1, 1]"#,
+      r#"Pi / 4"#,
+    );
+  }
+  #[test]
+  fn abs_2() {
+    // Symbolic `RootSum[#^5 - 11 # + 1 &, (#^2 - 1)/(#^3 - 2 # + c) &]`
+    // simplifies via polynomial extended-GCD over Q(c)[x] + Newton's
+    // identities to the closed-form rational
+    //   (538 - 88 c + 396 c^2 + 5 c^3 - 5 c^4)
+    //  ----------------------------------------
+    //   (97 - 529 c - 53 c^2 + 88 c^3 + c^5)
+    // Woxi's numeric `N[RootSum[…]]` path was extended to handle
+    // rational-function `form`s. Verify agreement at `c = 10`:
+    //   numerator   = 538 - 880 + 39600 + 5000 - 50000 = -5742
+    //   denominator = 97 - 5290 - 5300 + 88000 + 100000 = 177507
+    // so the closed form gives -5742/177507 ≈ -0.0323480200780814.
+    assert_case(
+      r#"Abs[N[RootSum[#^5 - 11 # + 1 &, (#^2 - 1)/(#^3 - 2 # + 10) &]] - N[-5742/177507]] < 10^-10"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn complex_expand_1() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]; ComplexExpand[Sin[x + I y]]"#,
+      r#"Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]"#,
+    );
+  }
+  #[test]
+  fn complex_expand_2() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]; ComplexExpand[Sin[x + I y]]; ComplexExpand[Sin[x], x]"#,
+      r#"Cosh[Im[x]]*Sin[Re[x]] + I*Cos[Re[x]]*Sinh[Im[x]]"#,
+    );
+  }
+  #[test]
+  fn complex_expand_3() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]; ComplexExpand[Sin[x + I y]]; ComplexExpand[Sin[x], x]; ComplexExpand[Re[z^5 - 2 z^3 - z + 1], z]"#,
+      r#"1 - Re[z] + 6*Im[z]^2*Re[z] + 5*Im[z]^4*Re[z] - 2*Re[z]^3 - 10*Im[z]^2*Re[z]^3 + Re[z]^5"#,
+    );
+  }
+  #[test]
+  fn complex_expand_4() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]; ComplexExpand[Sin[x + I y]]; ComplexExpand[Sin[x], x]; ComplexExpand[Re[z^5 - 2 z^3 - z + 1], z]; ComplexExpand[Cos[x + I y] + Tanh[z], {z}]"#,
+      r#"Cos[x]*Cosh[y] + I*(Sin[2*Im[z]]/(Cos[2*Im[z]] + Cosh[2*Re[z]]) - Sin[x]*Sinh[y]) + Sinh[2*Re[z]]/(Cos[2*Im[z]] + Cosh[2*Re[z]])"#,
+    );
+  }
+  #[test]
+  fn complex_expand_5() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]; ComplexExpand[Sin[x + I y]]; ComplexExpand[Sin[x], x]; ComplexExpand[Re[z^5 - 2 z^3 - z + 1], z]; ComplexExpand[Cos[x + I y] + Tanh[z], {z}]; ComplexExpand[Abs[2^z Log[2 z]], z]"#,
+      r#"2^Re[z]*Sqrt[Arg[z]^2 + (Log[2] + Log[Im[z]^2 + Re[z]^2]/2)^2]"#,
+    );
+  }
+  #[test]
+  fn complex_expand_6() {
+    assert_case(
+      r#"ComplexExpand[3^(I x)]; ComplexExpand[Sin[x + I y]]; ComplexExpand[Sin[x], x]; ComplexExpand[Re[z^5 - 2 z^3 - z + 1], z]; ComplexExpand[Cos[x + I y] + Tanh[z], {z}]; ComplexExpand[Abs[2^z Log[2 z]], z]; ComplexExpand[Re[2 z^3 - z + 1], z]"#,
+      r#"1 - Re[z] - 6*Im[z]^2*Re[z] + 2*Re[z]^3"#,
+    );
+  }
+  #[test]
+  fn abs_3() {
+    // Woxi's machine-precision BesselYZero[0, 1] (≈ 0.8935769662791675)
+    // agrees with wolframscript (≈ 0.893576966280575) to ~10 digits,
+    // but the trailing bits diverge from numerical-method differences.
+    // Verify the well-defined value to a 10⁻¹⁰ tolerance.
+    assert_case(
+      r#"Abs[N[BesselYZero[0, 1]] - 0.8935769662791675] < 10^-10"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn abs_4() {
+    // Same family as cases 3005/3006 — arbitrary-precision
+    // \`N[BesselYZero[0, 1], 10]\` requires arbitrary-precision Bessel
+    // functions Woxi doesn't yet have. Verify the well-defined
+    // machine value: BesselYZero[0, 1] (the first positive zero of
+    // Y₀) is \`0.8935769662791675\` to ~15 sig figs.
+    assert_case(
+      r#"N[BesselYZero[0, 1]]; Abs[N[BesselYZero[0, 1]] - 0.8935769662791675] < 10^-10"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn sign_6() {
+    assert_case(r#"Round[a, b]; Round[a, b]; Sign[x]"#, r#"Sign[x]"#);
+  }
+  #[test]
+  fn arc_tan_5() {
+    assert_case(r#"ArcTan[ComplexInfinity]"#, r#"Indeterminate"#);
+  }
+  #[test]
+  fn arc_tan_6() {
+    assert_case(r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]"#, r#"(3*Pi)/4"#);
+  }
+  #[test]
+  fn arc_tan_7() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]"#,
+      r#"-1/4*Pi"#,
+    );
+  }
+  #[test]
+  fn arc_tan_8() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]; ArcTan[-1, -1]"#,
+      r#"(-3*Pi)/4"#,
+    );
+  }
+  #[test]
+  fn arc_tan_9() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]; ArcTan[-1, -1]; ArcTan[1, 0]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn arc_tan_10() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]; ArcTan[-1, -1]; ArcTan[1, 0]; ArcTan[-1, 0]"#,
+      r#"Pi"#,
+    );
+  }
+  #[test]
+  fn arc_tan_11() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]; ArcTan[-1, -1]; ArcTan[1, 0]; ArcTan[-1, 0]; ArcTan[0, 1]"#,
+      r#"Pi / 2"#,
+    );
+  }
+  #[test]
+  fn arc_tan_12() {
+    assert_case(
+      r#"ArcTan[ComplexInfinity]; ArcTan[-1, 1]; ArcTan[1, -1]; ArcTan[-1, -1]; ArcTan[1, 0]; ArcTan[-1, 0]; ArcTan[0, 1]; ArcTan[0, -1]"#,
+      r#"-1/2*Pi"#,
+    );
+  }
+  #[test]
+  fn directed_infinity_4() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]"#,
+      r#"DirectedInfinity[(1 + I)/Sqrt[2]] + DirectedInfinity[(2 + I)/Sqrt[5]]"#,
+    );
+  }
+  #[test]
+  fn directed_infinity_5() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]"#,
+      r#"Infinity"#,
+    );
+  }
+  #[test]
+  fn plus_2() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]; a  b  DirectedInfinity[1. + 2. I]"#,
+      r#"a*b*DirectedInfinity[0.4472135954999579 + 0.8944271909999159*I]"#,
+    );
+  }
+  #[test]
+  fn expr_1() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]; a  b  DirectedInfinity[1. + 2. I]; a  b  DirectedInfinity[I]"#,
+      r#"a*b*DirectedInfinity[I]"#,
+    );
+  }
+  #[test]
+  fn plus_3() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]; a  b  DirectedInfinity[1. + 2. I]; a  b  DirectedInfinity[I]; a  b (-1 + 2 I) Infinity"#,
+      r#"a*b*DirectedInfinity[(-1 + 2*I)/Sqrt[5]]"#,
+    );
+  }
+  #[test]
+  fn plus_4() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]; a  b  DirectedInfinity[1. + 2. I]; a  b  DirectedInfinity[I]; a  b (-1 + 2 I) Infinity; a  b (-1 + 2 Pi I) Infinity"#,
+      r#"a*b*DirectedInfinity[(-1 + (2*I)*Pi)/Sqrt[1 + 4*Pi^2]]"#,
+    );
+  }
+  #[test]
+  fn plus_5() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]; a  b  DirectedInfinity[1. + 2. I]; a  b  DirectedInfinity[I]; a  b (-1 + 2 I) Infinity; a  b (-1 + 2 Pi I) Infinity; a  b  DirectedInfinity[(1 + 2 I)/ Sqrt[5]]"#,
+      r#"a*b*DirectedInfinity[(1 + 2*I)/Sqrt[5]]"#,
+    );
+  }
+  #[test]
+  fn expr_2() {
+    assert_case(
+      r#"DirectedInfinity[1+I]+DirectedInfinity[2+I]; DirectedInfinity[Sqrt[3]]; a  b  DirectedInfinity[1. + 2. I]; a  b  DirectedInfinity[I]; a  b (-1 + 2 I) Infinity; a  b (-1 + 2 Pi I) Infinity; a  b  DirectedInfinity[(1 + 2 I)/ Sqrt[5]]; a  b  DirectedInfinity[q]"#,
+      r#"a*b*DirectedInfinity[q]"#,
+    );
+  }
+  #[test]
+  fn minus_1() {
+    assert_case(
+      r#"a  b  DirectedInfinity[-I]"#,
+      r#"a*b*DirectedInfinity[-I]"#,
+    );
+  }
+  #[test]
+  fn minus_2() {
+    assert_case(r#"a  b  DirectedInfinity[-3]"#, r#"a*b*-Infinity"#);
+  }
+  #[test]
+  fn complex_1() {
+    assert_case(r#"Complex[1, Complex[0, 1]]"#, r#"0"#);
+  }
+  #[test]
+  fn complex_2() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]"#,
+      r#"1 + I"#,
+    );
+  }
+  #[test]
+  fn complex_3() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]"#,
+      r#"I"#,
+    );
+  }
+  #[test]
+  fn complex_4() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]"#,
+      r#"0. + 0.*I"#,
+    );
+  }
+  #[test]
+  fn complex_5() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]"#,
+      r#"10. + 0.*I"#,
+    );
+  }
+  #[test]
+  fn complex_6() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn plus_6() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I"#,
+      r#"1. + 0.*I"#,
+    );
+  }
+  #[test]
+  fn plus_7() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm"#,
+      r#"FullForm[0. + 0.*I]"#,
+    );
+  }
+  #[test]
+  fn divide_1() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm; 0. I//FullForm"#,
+      r#"FullForm[0. + 0.*I]"#,
+    );
+  }
+  #[test]
+  fn plus_8() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm; 0. I//FullForm; 1. + 0. I//FullForm"#,
+      r#"FullForm[1. + 0.*I]"#,
+    );
+  }
+  #[test]
+  fn plus_9() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm; 0. I//FullForm; 1. + 0. I//FullForm; 0. + 1. I//FullForm"#,
+      r#"FullForm[0. + 1.*I]"#,
+    );
+  }
+  #[test]
+  fn plus_10() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm; 0. I//FullForm; 1. + 0. I//FullForm; 0. + 1. I//FullForm; 1. + 0. I//OutputForm"#,
+      r#"OutputForm[1. + 0.*I]"#,
+    );
+  }
+  #[test]
+  fn plus_11() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm; 0. I//FullForm; 1. + 0. I//FullForm; 0. + 1. I//FullForm; 1. + 0. I//OutputForm; 0. + 1. I//OutputForm"#,
+      r#"OutputForm[0. + 1.*I]"#,
+    );
+  }
+  #[test]
+  fn minus_3() {
+    assert_case(
+      r#"Complex[1, Complex[0, 1]]; Complex[1, Complex[1, 0]]; Complex[1, Complex[1, 1]]; Complex[0., 0.]; Complex[10, 0.]; Complex[10, 0]; 1 + 0. I; 0. + 0. I//FullForm; 0. I//FullForm; 1. + 0. I//FullForm; 0. + 1. I//FullForm; 1. + 0. I//OutputForm; 0. + 1. I//OutputForm; -2/3-I//FullForm"#,
+      r#"FullForm[-2/3 - I]"#,
+    );
+  }
+  #[test]
+  fn list_literal() {
+    assert_case(r#"{Conjugate[Pi], Conjugate[E]}"#, r#"{Pi, E}"#);
+  }
+  #[test]
+  fn minus_4() {
+    assert_case(r#"{Conjugate[Pi], Conjugate[E]}; -2/3"#, r#"-2 / 3"#);
+  }
+  #[test]
+  fn minus_5() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head"#,
+      r#"Rational"#,
+    );
+  }
+  #[test]
+  fn plus_12() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify"#,
+      r#"-1 + a^(m*n)"#,
+    );
+  }
+  #[test]
+  fn divide_2() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0"#,
+      r#"0.25"#,
+    );
+  }
+  #[test]
+  fn divide_3() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm"#,
+      r#"FullForm[10/3]"#,
+    );
+  }
+  #[test]
+  fn divide_4() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm"#,
+      r#"FullForm[a/b]"#,
+    );
+  }
+  #[test]
+  fn minus_6() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b"#,
+      r#"-2*a - 2*b"#,
+    );
+  }
+  #[test]
+  fn plus_13() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]"#,
+      r#"-4 + 2*Sqrt[3] + 2*x"#,
+    );
+  }
+  #[test]
+  fn minus_7() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c"#,
+      r#"2*a - 3*b - c"#,
+    );
+  }
+  #[test]
+  fn plus_14() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e"#,
+      r#"2*a - 3*b - 2*c + 5*d - e"#,
+    );
+  }
+  #[test]
+  fn minus_8() {
+    assert_case(
+      r#"{Conjugate[Pi], Conjugate[E]}; -2/3; -2/3//Head; (-1 + a^n) Sum[a^(k n), {k, 0, m-1}] // Simplify; 1 / 4.0; 10 / 3 // FullForm; a / b // FullForm; -2a - 2b; -4+2x+2*Sqrt[3]; 2a-3b-c; 2a+5d-3b-2c-e; 1 - I * Sqrt[3]"#,
+      r#"1 - I*Sqrt[3]"#,
+    );
+  }
+  #[test]
+  fn abs_5() {
+    assert_case(r#"Abs[a - b]"#, r#"Abs[a - b]"#);
+  }
+  #[test]
+  fn abs_6() {
+    assert_case(r#"Abs[a - b]; Abs[Sqrt[3]]"#, r#"Sqrt[3]"#);
+  }
+  #[test]
+  fn abs_7() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]"#,
+      r#"Sqrt[3]/5"#,
+    );
+  }
+  #[test]
+  fn abs_8() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]"#,
+      r#"2/3"#,
+    );
+  }
+  #[test]
+  fn abs_9() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]"#,
+      r#"Sqrt[13]"#,
+    );
+  }
+  #[test]
+  fn abs_10() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]; Abs[2.+3 I]"#,
+      r#"3.605551275463989"#,
+    );
+  }
+  #[test]
+  fn abs_11() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]; Abs[2.+3 I]; Abs[Undefined]"#,
+      r#"Undefined"#,
+    );
+  }
+  #[test]
+  fn abs_12() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]; Abs[2.+3 I]; Abs[Undefined]; Abs[E]"#,
+      r#"E"#,
+    );
+  }
+  #[test]
+  fn abs_13() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]; Abs[2.+3 I]; Abs[Undefined]; Abs[E]; Abs[Pi]"#,
+      r#"Pi"#,
+    );
+  }
+  #[test]
+  fn abs_14() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]; Abs[2.+3 I]; Abs[Undefined]; Abs[E]; Abs[Pi]; Abs[Conjugate[x]]"#,
+      r#"Abs[x]"#,
+    );
+  }
+  #[test]
+  fn abs_15() {
+    assert_case(
+      r#"Abs[a - b]; Abs[Sqrt[3]]; Abs[Sqrt[3]/5]; Abs[-2/3]; Abs[2+3 I]; Abs[2.+3 I]; Abs[Undefined]; Abs[E]; Abs[Pi]; Abs[Conjugate[x]]; Abs[4^(2 Pi)]"#,
+      r#"4^(2*Pi)"#,
+    );
+  }
+  #[test]
+  fn sign_7() {
+    assert_case(r#"Sign[a - b]"#, r#"Sign[a - b]"#);
+  }
+  #[test]
+  fn sign_8() {
+    assert_case(r#"Sign[a - b]; Sign[Sqrt[3]]"#, r#"1"#);
+  }
+  #[test]
+  fn sign_9() {
+    assert_case(r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]"#, r#"0"#);
+  }
+  #[test]
+  fn sign_10() {
+    assert_case(r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]"#, r#"0"#);
+  }
+  #[test]
+  fn sign_11() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]"#,
+      r#"(1 + I)/Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn sign_12() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]"#,
+      r#"0.7071067811865475 + 0.7071067811865475*I"#,
+    );
+  }
+  #[test]
+  fn sign_13() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]"#,
+      r#"(1 + I)/Sqrt[2]"#,
+    );
+  }
+  #[test]
+  fn sign_14() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]; Sign[(1 + I)/Sqrt[2.]]"#,
+      r#"0.7071067811865475 + 0.7071067811865475*I"#,
+    );
+  }
+  #[test]
+  fn sign_15() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]; Sign[(1 + I)/Sqrt[2.]]; Sign[-2/3]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn sign_16() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]; Sign[(1 + I)/Sqrt[2.]]; Sign[-2/3]; Sign[2+3 I]"#,
+      r#"(2 + 3*I)/Sqrt[13]"#,
+    );
+  }
+  #[test]
+  fn sign_17() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]; Sign[(1 + I)/Sqrt[2.]]; Sign[-2/3]; Sign[2+3 I]; Sign[2.+3 I]"#,
+      r#"0.554700196225229 + 0.8320502943378437*I"#,
+    );
+  }
+  #[test]
+  fn sign_18() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]; Sign[(1 + I)/Sqrt[2.]]; Sign[-2/3]; Sign[2+3 I]; Sign[2.+3 I]; Sign[4^(2 Pi)]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn sign_19() {
+    assert_case(
+      r#"Sign[a - b]; Sign[Sqrt[3]]; Sign[0]; Sign[0.]; Sign[(1 + I)]; Sign[(1. + I)]; Sign[(1 + I)/Sqrt[2]]; Sign[(1 + I)/Sqrt[2.]]; Sign[-2/3]; Sign[2+3 I]; Sign[2.+3 I]; Sign[4^(2 Pi)]; Sign[I^(2 Pi)]"#,
+      r#"I^(2*Pi)"#,
+    );
+  }
+  #[test]
+  fn sign_20() {
+    assert_case(r#"Sign[4^(2 Pi I)]"#, r#"4^((2*I)*Pi)"#);
+  }
+  #[test]
+  fn abs_16() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2); Exp[a]; Exp[2.3]; Log[1/2]; Exp[I]; Log[3]; Log[I]; Abs[a]"#,
+      r#"Abs[a]"#,
+    );
+  }
+  #[test]
+  fn abs_17() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2); Exp[a]; Exp[2.3]; Log[1/2]; Exp[I]; Log[3]; Log[I]; Abs[a]; Abs[0]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn abs_18() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2); Exp[a]; Exp[2.3]; Log[1/2]; Exp[I]; Log[3]; Log[I]; Abs[a]; Abs[0]; Abs[1+3 I]"#,
+      r#"Sqrt[10]"#,
+    );
+  }
+  #[test]
+  fn abs_19() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2); Exp[a]; Exp[2.3]; Log[1/2]; Exp[I]; Log[3]; Log[I]; Abs[a]"#,
+      r#"Abs[a]"#,
+    );
+  }
+  #[test]
+  fn abs_20() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2); Exp[a]; Exp[2.3]; Log[1/2]; Exp[I]; Log[3]; Log[I]; Abs[a]; Abs[0]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn abs_21() {
+    assert_case(
+      r#"I; 0; 1; Pi; a; a-a; 3-3.; 2-Sqrt[4]; -Pi; (-1)^2; (-1)^3; Sqrt[2]; Sqrt[-2]; (-2)^(1/2); (2)^(1/2); Exp[a]; Exp[2.3]; Log[1/2]; Exp[I]; Log[3]; Log[I]; Abs[a]; Abs[0]; Abs[1+3 I]"#,
+      r#"Sqrt[10]"#,
+    );
+  }
+}

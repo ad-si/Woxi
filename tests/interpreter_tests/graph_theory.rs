@@ -1252,3 +1252,27 @@ mod two_way_rule {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn directed_edge() {
+    assert_case(r#"DirectedEdge[x, y, z]"#, r#"DirectedEdge[x, y, z]"#);
+  }
+  #[test]
+  fn expr() {
+    assert_case(
+      r#"DirectedEdge[x, y, z]; a \[DirectedEdge] b"#,
+      r#"DirectedEdge[a, b]"#,
+    );
+  }
+  #[test]
+  fn undirected_edge() {
+    assert_case(r#"UndirectedEdge[x, y, z]"#, r#"UndirectedEdge[x, y, z]"#);
+  }
+  #[test]
+  fn less() {
+    assert_case(r#"UndirectedEdge[x, y, z]; a <-> b"#, r#"a <-> b"#);
+  }
+}

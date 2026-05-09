@@ -5047,3 +5047,1019 @@ mod to_radicals {
     );
   }
 }
+
+mod cases {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn maximize() {
+    assert_case(r#"Maximize[-2 x^2 - 3 x + 5, x]"#, r#"{49/8, {x -> -3/4}}"#);
+  }
+  #[test]
+  fn minimize() {
+    assert_case(r#"Minimize[2 x^2 - 3 x + 5, x]"#, r#"{31/8, {x -> 3/4}}"#);
+  }
+  #[test]
+  fn apart_1() {
+    assert_case(
+      r#"Apart[1 / (x^2 + 5x + 6)]"#,
+      r#"(2 + x)^(-1) - (3 + x)^(-1)"#,
+    );
+  }
+  #[test]
+  fn apart_2() {
+    assert_case(
+      r#"Apart[1 / (x^2 + 5x + 6)]; Apart[1 / (x^2 - y^2), x]"#,
+      r#"1/(2*(x - y)*y) - 1/(2*y*(x + y))"#,
+    );
+  }
+  #[test]
+  fn apart_3() {
+    assert_case(
+      r#"Apart[1 / (x^2 + 5x + 6)]; Apart[1 / (x^2 - y^2), x]; Apart[1 / (x^2 - y^2), y]"#,
+      r#"-1/2*1/(x*(-x + y)) + 1/(2*x*(x + y))"#,
+    );
+  }
+  #[test]
+  fn apart_4() {
+    assert_case(
+      r#"Apart[1 / (x^2 + 5x + 6)]; Apart[1 / (x^2 - y^2), x]; Apart[1 / (x^2 - y^2), y]; Apart[{1 / (x^2 + 5x + 6)}]"#,
+      r#"{(2 + x)^(-1) - (3 + x)^(-1)}"#,
+    );
+  }
+  #[test]
+  fn sin() {
+    assert_case(
+      r#"Apart[1 / (x^2 + 5x + 6)]; Apart[1 / (x^2 - y^2), x]; Apart[1 / (x^2 - y^2), y]; Apart[{1 / (x^2 + 5x + 6)}]; Sin[1 / (x ^ 2 - y ^ 2)] // Apart"#,
+      r#"Sin[(x^2 - y^2)^(-1)]"#,
+    );
+  }
+  #[test]
+  fn equal_1() {
+    assert_case(
+      r#"Apart[1 / (x^2 + 5x + 6)]; Apart[1 / (x^2 - y^2), x]; Apart[1 / (x^2 - y^2), y]; Apart[{1 / (x^2 + 5x + 6)}]; Sin[1 / (x ^ 2 - y ^ 2)] // Apart; a == "A" // Apart // InputForm"#,
+      r#"InputForm[a == "A"]"#,
+    );
+  }
+  #[test]
+  fn cancel_1() {
+    assert_case(r#"Cancel[x / x ^ 2]"#, r#"x^(-1)"#);
+  }
+  #[test]
+  fn cancel_2() {
+    assert_case(
+      r#"Cancel[x / x ^ 2]; Cancel[x / x ^ 2 + y / y ^ 2]"#,
+      r#"x^(-1) + y^(-1)"#,
+    );
+  }
+  #[test]
+  fn cancel_3() {
+    assert_case(
+      r#"Cancel[x / x ^ 2]; Cancel[x / x ^ 2 + y / y ^ 2]; Cancel[f[x] / x + x * f[x] / x ^ 2]"#,
+      r#"(2*f[x])/x"#,
+    );
+  }
+  #[test]
+  fn equal_2() {
+    assert_case(
+      r#"Cancel[x / x ^ 2]; Cancel[x / x ^ 2 + y / y ^ 2]; Cancel[f[x] / x + x * f[x] / x ^ 2]; a == "A" // Cancel // InputForm"#,
+      r#"InputForm[a == "A"]"#,
+    );
+  }
+  #[test]
+  fn coefficient_1() {
+    assert_case(r#"Coefficient[(x + y)^4, (x^2) * (y^2)]"#, r#"6"#);
+  }
+  #[test]
+  fn coefficient_2() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]"#,
+      r#"c"#,
+    );
+  }
+  #[test]
+  fn coefficient_3() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]"#,
+      r#"405*y^4"#,
+    );
+  }
+  #[test]
+  fn coefficient_4() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]"#,
+      r#"405"#,
+    );
+  }
+  #[test]
+  fn coefficient_5() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]"#,
+      r#"(-3 + y)^(-1) + (-2 + y)^(-1)"#,
+    );
+  }
+  #[test]
+  fn coefficient_6() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]; Coefficient[x*Cos[x + 3] + 6*y, x]"#,
+      r#"Cos[3 + x]"#,
+    );
+  }
+  #[test]
+  fn coefficient_7() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]; Coefficient[x*Cos[x + 3] + 6*y, x]; Coefficient[(x + 1)^3, x, 2]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn coefficient_8() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]; Coefficient[x*Cos[x + 3] + 6*y, x]; Coefficient[(x + 1)^3, x, 2]; Coefficient[a x^2 + b y^3 + c x + d y + 5, y, 3]"#,
+      r#"b"#,
+    );
+  }
+  #[test]
+  fn coefficient_9() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]; Coefficient[x*Cos[x + 3] + 6*y, x]; Coefficient[(x + 1)^3, x, 2]; Coefficient[a x^2 + b y^3 + c x + d y + 5, y, 3]; Coefficient[(x + 2)^3 + (x + 3)^2, x, 0]"#,
+      r#"17"#,
+    );
+  }
+  #[test]
+  fn coefficient_10() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]; Coefficient[x*Cos[x + 3] + 6*y, x]; Coefficient[(x + 1)^3, x, 2]; Coefficient[a x^2 + b y^3 + c x + d y + 5, y, 3]; Coefficient[(x + 2)^3 + (x + 3)^2, x, 0]; Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]"#,
+      r#"(2 + x) ^ 3 + (3 + x) ^ 2"#,
+    );
+  }
+  #[test]
+  fn coefficient_11() {
+    assert_case(
+      r#"Coefficient[(x + y)^4, (x^2) * (y^2)]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x]; Coefficient[(x + 3 y)^5, x]; Coefficient[(x + 3 y)^5, x * y^4]; Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]; Coefficient[x*Cos[x + 3] + 6*y, x]; Coefficient[(x + 1)^3, x, 2]; Coefficient[a x^2 + b y^3 + c x + d y + 5, y, 3]; Coefficient[(x + 2)^3 + (x + 3)^2, x, 0]; Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]; Coefficient[a x^2 + b y^3 + c x + d y + 5, x, 0]"#,
+      r#"5 + d*y + b*y^3"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_1() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]"#,
+      r#"{243, 405, 270, 90, 15, 1}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_2() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]"#,
+      r#"{y^4, 4*y^3, 6*y^2, 4*y, 1}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_3() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]"#,
+      r#"{5 + d*y + b*y^3, c, a}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_4() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]; CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]"#,
+      r#"{2/(-3 + y), (-3 + y)^(-1) + (-2 + y)^(-1)}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_5() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]; CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]; CoefficientList[(x + y)^3, z]"#,
+      r#"{(x + y) ^ 3}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_6() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]; CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]; CoefficientList[(x + y)^3, z]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]"#,
+      r#"{{5, d, 0, b}, {c, 0, 0, 0}, {a, 0, 0, 0}}"#,
+    );
+  }
+  #[test]
+  fn coefficient_list_7() {
+    assert_case(
+      r#"CoefficientList[(x + 3)^5, x]; CoefficientList[(x + y)^4, x]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]; CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]; CoefficientList[(x + y)^3, z]; CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]; CoefficientList[(x - 2 y + 3 z)^3, {x, y, z}]"#,
+      r#"{{{0, 0, 0, 27}, {0, 0, -54, 0}, {0, 36, 0, 0}, {-8, 0, 0, 0}}, {{0, 0, 27, 0}, {0, -36, 0, 0}, {12, 0, 0, 0}, {0, 0, 0, 0}}, {{0, 9, 0, 0}, {-6, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, {{1, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}}"#,
+    );
+  }
+  #[test]
+  fn collect_1() {
+    assert_case(r#"Collect[(x+y)^3, y]"#, r#"x^3 + 3*x^2*y + 3*x*y^2 + y^3"#);
+  }
+  #[test]
+  fn collect_2() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]"#,
+      r#"4*y^2*Sin[x*z] + 2*(x + x*Sin[y])*Sin[x*z]"#,
+    );
+  }
+  #[test]
+  fn collect_3() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]"#,
+      r#"x^3 + (3*x + 3*x^2)*y + y^3 + 4*x*Sin[x*z] + y^2*(3*x + 4*Sin[x*z])"#,
+    );
+  }
+  #[test]
+  fn collect_4() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]"#,
+      r#"x^3 + 3*x^2*y + y^3 + 4*y^2*Sin[x*z] + x*(3*y + 3*y^2 + 4*Sin[x*z])"#,
+    );
+  }
+  #[test]
+  fn collect_5() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}, h]"#,
+      r#"x^3*h[1] + y^3*h[1] + x^2*y*h[3] + y^2*h[4*Sin[x*z]] + x*(y*h[3] + y^2*h[3] + h[4*Sin[x*z]])"#,
+    );
+  }
+  #[test]
+  fn collect_6() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}, h]; Collect[(1 + a + x)^3, x]"#,
+      r#"1 + 3*a + 3*a^2 + a^3 + (3 + 6*a + 3*a^2)*x + (3 + 3*a)*x^2 + x^3"#,
+    );
+  }
+  #[test]
+  fn collect_7() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}, h]; Collect[(1 + a + x)^3, x]; Collect[a x + b y + c x + d y, y]"#,
+      r#"a*x + c*x + (b + d)*y"#,
+    );
+  }
+  #[test]
+  fn collect_8() {
+    assert_case(
+      r#"Collect[(x+y)^3, y]; Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]; Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}, h]; Collect[(1 + a + x)^3, x]; Collect[a x + b y + c x + d y, y]; Collect[(1 + a + x)^3, x, Simplify]"#,
+      r#"(1 + a)^3 + 3*(1 + a)^2*x + 3*(1 + a)*x^2 + x^3"#,
+    );
+  }
+  #[test]
+  fn denominator_1() {
+    assert_case(r#"Denominator[2 / 3]"#, r#"3"#);
+  }
+  #[test]
+  fn denominator_2() {
+    assert_case(r#"Denominator[2 / 3]; Denominator[a / b]"#, r#"b"#);
+  }
+  #[test]
+  fn denominator_3() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn denominator_4() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]; Denominator[a x^n y^-m]"#,
+      r#"y ^ m"#,
+    );
+  }
+  #[test]
+  fn denominator_5() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]; Denominator[a x^n y^-m]; Denominator[Sin[x]^a (Sin[x] - 2)^-b]"#,
+      r#"(-2 + Sin[x]) ^ b"#,
+    );
+  }
+  #[test]
+  fn denominator_6() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]; Denominator[a x^n y^-m]; Denominator[Sin[x]^a (Sin[x] - 2)^-b]; Denominator[3/7 + I/11]"#,
+      r#"77"#,
+    );
+  }
+  #[test]
+  fn denominator_7() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]; Denominator[a x^n y^-m]; Denominator[Sin[x]^a (Sin[x] - 2)^-b]; Denominator[3/7 + I/11]; Denominator[{1, 2, 3, 4, 5, 6}/3]"#,
+      r#"{3, 3, 1, 3, 3, 1}"#,
+    );
+  }
+  #[test]
+  fn denominator_8() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]; Denominator[a x^n y^-m]; Denominator[Sin[x]^a (Sin[x] - 2)^-b]; Denominator[3/7 + I/11]; Denominator[{1, 2, 3, 4, 5, 6}/3]; Denominator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]"#,
+      r#"{1, 1, Cos[x], Sin[x], Cos[x], Sin[x]}"#,
+    );
+  }
+  #[test]
+  fn denominator_9() {
+    assert_case(
+      r#"Denominator[2 / 3]; Denominator[a / b]; Denominator[a + b]; Denominator[a x^n y^-m]; Denominator[Sin[x]^a (Sin[x] - 2)^-b]; Denominator[3/7 + I/11]; Denominator[{1, 2, 3, 4, 5, 6}/3]; Denominator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]; Denominator[{Sinh[x], Cosh[x], Tanh[x], Csch[x] , Sech[x], Coth[x]}, Trig -> True]"#,
+      r#"{1, 1, Cosh[x], Sinh[x], Cosh[x], Sinh[x]}"#,
+    );
+  }
+  #[test]
+  fn expand_1() {
+    assert_case(r#"Expand[(x + y) ^ 3]"#, r#"x^3 + 3*x^2*y + 3*x*y^2 + y^3"#);
+  }
+  #[test]
+  fn expand_2() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]"#,
+      r#"a^2 + a*b + a*c + b*c + a*d + b*d"#,
+    );
+  }
+  #[test]
+  fn expand_3() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]"#,
+      r#"2*a^2*e + a*b*e + a*c*e + b*c*e + a*d*e + b*d*e + a^2*f + a*b*f + a*c*f + b*c*f + a*d*f + b*d*f"#,
+    );
+  }
+  #[test]
+  fn expand_4() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]"#,
+      r#"a^2*c + 2*a*b*c + b^2*c + a^2*d + 2*a*b*d + b^2*d"#,
+    );
+  }
+  #[test]
+  fn expand_5() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]"#,
+      r#"x^2 + 3*x*y + y^2"#,
+    );
+  }
+  #[test]
+  fn expand_6() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]"#,
+      r#"b + a*b + a^2*c^2 + 2*a*b*c^2 + b^2*c^2 + 2*a^2*c*d + 4*a*b*c*d + 2*b^2*c*d + a^2*d^2 + 2*a*b*d^2 + b^2*d^2"#,
+    );
+  }
+  #[test]
+  fn expand_7() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]"#,
+      r#"{4*x + 4*y, 2*x + 2*y -> 4*x + 4*y}"#,
+    );
+  }
+  #[test]
+  fn expand_8() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]; Expand[Sin[x + y], Trig -> True]"#,
+      r#"Cos[y]*Sin[x] + Cos[x]*Sin[y]"#,
+    );
+  }
+  #[test]
+  fn expand_9() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]; Expand[Sin[x + y], Trig -> True]; Expand[Tanh[x + y], Trig -> True]"#,
+      r#"(Cosh[y]*Sinh[x])/(Cosh[x]*Cosh[y] + Sinh[x]*Sinh[y]) + (Cosh[x]*Sinh[y])/(Cosh[x]*Cosh[y] + Sinh[x]*Sinh[y])"#,
+    );
+  }
+  #[test]
+  fn expand_10() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]; Expand[Sin[x + y], Trig -> True]; Expand[Tanh[x + y], Trig -> True]; Expand[Sin[x (1 + y)]]"#,
+      r#"Sin[x*(1 + y)]"#,
+    );
+  }
+  #[test]
+  fn expand_11() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]; Expand[Sin[x + y], Trig -> True]; Expand[Tanh[x + y], Trig -> True]; Expand[Sin[x (1 + y)]]; Expand[(x+a)^2+(y+a)^2+(x+y)(x+a), y]"#,
+      r#"a^2 + x*(a + x) + (a + x)^2 + 2*a*y + (a + x)*y + y^2"#,
+    );
+  }
+  #[test]
+  fn expand_12() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]; Expand[Sin[x + y], Trig -> True]; Expand[Tanh[x + y], Trig -> True]; Expand[Sin[x (1 + y)]]; Expand[(x+a)^2+(y+a)^2+(x+y)(x+a), y]; Expand[(1 + a)^12, Modulus -> 3]"#,
+      r#"1 + a ^ 3 + a ^ 9 + a ^ 12"#,
+    );
+  }
+  #[test]
+  fn expand_13() {
+    assert_case(
+      r#"Expand[(x + y) ^ 3]; Expand[(a + b) (a + c + d)]; Expand[(a + b) (a + c + d) (e + f) + e a a]; Expand[(a + b) ^ 2 * (c + d)]; Expand[(x + y) ^ 2 + x y]; Expand[((a + b) (c + d)) ^ 2 + b (1 + a)]; Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]; Expand[Sin[x + y], Trig -> True]; Expand[Tanh[x + y], Trig -> True]; Expand[Sin[x (1 + y)]]; Expand[(x+a)^2+(y+a)^2+(x+y)(x+a), y]; Expand[(1 + a)^12, Modulus -> 3]; Expand[(1 + a)^12, Modulus -> 4]"#,
+      r#"1 + 2*a^2 + 3*a^4 + 3*a^8 + 2*a^10 + a^12"#,
+    );
+  }
+  #[test]
+  fn exponent_1() {
+    assert_case(r#"Exponent[5 x^2 - 3 x + 7, x]"#, r#"2"#);
+  }
+  #[test]
+  fn exponent_2() {
+    assert_case(
+      r#"Exponent[5 x^2 - 3 x + 7, x]; Exponent[(x^3 + 1)^2 + 1, x]"#,
+      r#"6"#,
+    );
+  }
+  #[test]
+  fn exponent_3() {
+    assert_case(
+      r#"Exponent[5 x^2 - 3 x + 7, x]; Exponent[(x^3 + 1)^2 + 1, x]; Exponent[x^(n + 1) + Sqrt[x] + 1, x]"#,
+      r#"Max[1 / 2, 1 + n]"#,
+    );
+  }
+  #[test]
+  fn exponent_4() {
+    assert_case(
+      r#"Exponent[5 x^2 - 3 x + 7, x]; Exponent[(x^3 + 1)^2 + 1, x]; Exponent[x^(n + 1) + Sqrt[x] + 1, x]; Exponent[x / y, y]"#,
+      r#"-1"#,
+    );
+  }
+  #[test]
+  fn exponent_5() {
+    assert_case(
+      r#"Exponent[5 x^2 - 3 x + 7, x]; Exponent[(x^3 + 1)^2 + 1, x]; Exponent[x^(n + 1) + Sqrt[x] + 1, x]; Exponent[x / y, y]; Exponent[(x^2 + 1)^3 - 1, x, Min]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn exponent_6() {
+    assert_case(
+      r#"Exponent[5 x^2 - 3 x + 7, x]; Exponent[(x^3 + 1)^2 + 1, x]; Exponent[x^(n + 1) + Sqrt[x] + 1, x]; Exponent[x / y, y]; Exponent[(x^2 + 1)^3 - 1, x, Min]; Exponent[0, x]"#,
+      r#"-Infinity"#,
+    );
+  }
+  #[test]
+  fn exponent_7() {
+    assert_case(
+      r#"Exponent[5 x^2 - 3 x + 7, x]; Exponent[(x^3 + 1)^2 + 1, x]; Exponent[x^(n + 1) + Sqrt[x] + 1, x]; Exponent[x / y, y]; Exponent[(x^2 + 1)^3 - 1, x, Min]; Exponent[0, x]; Exponent[1, x]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn factor_1() {
+    assert_case(r#"Factor[x ^ 2 + 2 x + 1]"#, r#"(1 + x) ^ 2"#);
+  }
+  #[test]
+  fn factor_2() {
+    assert_case(
+      r#"Factor[x ^ 2 + 2 x + 1]; Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]"#,
+      r#"(2 + 2*x + 3*x^2 + x^4)/((1 + x)^2*(1 + x^2)^2)"#,
+    );
+  }
+  #[test]
+  fn factor_3() {
+    assert_case(
+      r#"Factor[x ^ 2 + 2 x + 1]; Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]; Factor[x a == x b + x c]"#,
+      r#"a*x == (b + c)*x"#,
+    );
+  }
+  #[test]
+  fn factor_4() {
+    assert_case(
+      r#"Factor[x ^ 2 + 2 x + 1]; Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]; Factor[x a == x b + x c]; Factor[{x + x^2, 2 x + 2 y + 2}]"#,
+      r#"{x*(1 + x), 2*(1 + x + y)}"#,
+    );
+  }
+  #[test]
+  fn factor_5() {
+    assert_case(
+      r#"Factor[x ^ 2 + 2 x + 1]; Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]; Factor[x a == x b + x c]; Factor[{x + x^2, 2 x + 2 y + 2}]; Factor[x ^ 3 + 3 x ^ 2 y + 3 x y ^ 2 + y ^ 3]"#,
+      r#"(x + y) ^ 3"#,
+    );
+  }
+  #[test]
+  fn equal_3() {
+    assert_case(
+      r#"Factor[x ^ 2 + 2 x + 1]; Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]; Factor[x a == x b + x c]; Factor[{x + x^2, 2 x + 2 y + 2}]; Factor[x ^ 3 + 3 x ^ 2 y + 3 x y ^ 2 + y ^ 3]; x^2 - x == 0 // Factor"#,
+      r#"(-1 + x)*x == 0"#,
+    );
+  }
+  #[test]
+  fn equal_4() {
+    assert_case(
+      r#"Factor[x ^ 2 + 2 x + 1]; Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]; Factor[x a == x b + x c]; Factor[{x + x^2, 2 x + 2 y + 2}]; Factor[x ^ 3 + 3 x ^ 2 y + 3 x y ^ 2 + y ^ 3]; x^2 - x == 0 // Factor; a == "A" // Factor // InputForm"#,
+      r#"InputForm[a == "A"]"#,
+    );
+  }
+  #[test]
+  fn simplify_1() {
+    assert_case(r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]"#, r#"2"#);
+  }
+  #[test]
+  fn simplify_2() {
+    assert_case(r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]"#, r#"x"#);
+  }
+  #[test]
+  fn simplify_3() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]"#,
+      r#"f[x]"#,
+    );
+  }
+  #[test]
+  fn simplify_4() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]; $Assumptions={a <= 0}; Simplify[ConditionalExpression[1, a > 0]]"#,
+      r#"Undefined"#,
+    );
+  }
+  #[test]
+  fn simplify_5() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]; $Assumptions={a <= 0}; Simplify[ConditionalExpression[1, a > 0]]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]"#,
+      r#"Undefined"#,
+    );
+  }
+  #[test]
+  fn simplify_6() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]; $Assumptions={a <= 0}; Simplify[ConditionalExpression[1, a > 0]]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], Assumptions -> { b > 0 }]"#,
+      r#"ConditionalExpression[1, a > 0]"#,
+    );
+  }
+  #[test]
+  fn simplify_7() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]; $Assumptions={a <= 0}; Simplify[ConditionalExpression[1, a > 0]]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], Assumptions -> { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], {a>0},Assumptions -> { b > 0 }]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn simplify_8() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]; $Assumptions={a <= 0}; Simplify[ConditionalExpression[1, a > 0]]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], Assumptions -> { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], {a>0},Assumptions -> { b > 0 }]; $Assumptions={}; Simplify[20 Log[2]]"#,
+      r#"20*Log[2]"#,
+    );
+  }
+  #[test]
+  fn simplify_9() {
+    assert_case(
+      r#"Simplify[2*Sin[x]^2 + 2*Cos[x]^2]; Simplify[x]; Simplify[f[x]]; $Assumptions={a <= 0}; Simplify[ConditionalExpression[1, a > 0]]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], Assumptions -> { b > 0 }]; Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], {a>0},Assumptions -> { b > 0 }]; $Assumptions={}; Simplify[20 Log[2]]; Simplify[20 Log[2], ComplexityFunction->LeafCount]"#,
+      r#"Log[1048576]"#,
+    );
+  }
+  #[test]
+  fn full_simplify() {
+    assert_case(r#"FullSimplify[2*Sin[x]^2 + 2*Cos[x]^2]"#, r#"2"#);
+  }
+  #[test]
+  fn minimal_polynomial_1() {
+    assert_case(r#"MinimalPolynomial[7, x]"#, r#"-7 + x"#);
+  }
+  #[test]
+  fn minimal_polynomial_2() {
+    assert_case(
+      r#"MinimalPolynomial[7, x]; MinimalPolynomial[Sqrt[2] + Sqrt[3], x]"#,
+      r#"1 - 10*x^2 + x^4"#,
+    );
+  }
+  #[test]
+  fn minimal_polynomial_3() {
+    assert_case(
+      r#"MinimalPolynomial[7, x]; MinimalPolynomial[Sqrt[2] + Sqrt[3], x]; MinimalPolynomial[Sqrt[1 + Sqrt[3]], x]"#,
+      r#"-2 - 2*x^2 + x^4"#,
+    );
+  }
+  #[test]
+  fn minimal_polynomial_4() {
+    assert_case(
+      r#"MinimalPolynomial[7, x]; MinimalPolynomial[Sqrt[2] + Sqrt[3], x]; MinimalPolynomial[Sqrt[1 + Sqrt[3]], x]; MinimalPolynomial[Sqrt[I + Sqrt[6]], x]"#,
+      r#"49 - 10*x^4 + x^8"#,
+    );
+  }
+  #[test]
+  fn numerator_1() {
+    assert_case(r#"Numerator[2 / 3]"#, r#"2"#);
+  }
+  #[test]
+  fn numerator_2() {
+    assert_case(r#"Numerator[2 / 3]; Numerator[a / b]"#, r#"a"#);
+  }
+  #[test]
+  fn numerator_3() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]"#,
+      r#"(-2 + x)*(-1 + x)"#,
+    );
+  }
+  #[test]
+  fn numerator_4() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]"#,
+      r#"33 + 7*I"#,
+    );
+  }
+  #[test]
+  fn numerator_5() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]; Numerator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]"#,
+      r#"{Sin[x], Cos[x], Sin[x], 1, 1, Cos[x]}"#,
+    );
+  }
+  #[test]
+  fn numerator_6() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]; Numerator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]; Numerator[{Sinh[x], Cosh[x], Tanh[x], Csch[x], Sech[x], Coth[x]}, Trig -> True]"#,
+      r#"{Sinh[x], Cosh[x], Sinh[x], 1, 1, Cosh[x]}"#,
+    );
+  }
+  #[test]
+  fn set_1() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]; Numerator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]; Numerator[{Sinh[x], Cosh[x], Tanh[x], Csch[x], Sech[x], Coth[x]}, Trig -> True]; expr = 5/7 (x - 1)^2/(x - 2)^3 a^b c^-d"#,
+      r#"(5*a^b*(-1 + x)^2)/(7*c^d*(-2 + x)^3)"#,
+    );
+  }
+  #[test]
+  fn set_2() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]; Numerator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]; Numerator[{Sinh[x], Cosh[x], Tanh[x], Csch[x], Sech[x], Coth[x]}, Trig -> True]; expr = 5/7 (x - 1)^2/(x - 2)^3 a^b c^-d; num = Numerator[expr]"#,
+      r#"5*a^b*(-1 + x)^2"#,
+    );
+  }
+  #[test]
+  fn set_3() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]; Numerator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]; Numerator[{Sinh[x], Cosh[x], Tanh[x], Csch[x], Sech[x], Coth[x]}, Trig -> True]; expr = 5/7 (x - 1)^2/(x - 2)^3 a^b c^-d; num = Numerator[expr]; den = Denominator[expr]"#,
+      r#"7*c^d*(-2 + x)^3"#,
+    );
+  }
+  #[test]
+  fn equal_5() {
+    assert_case(
+      r#"Numerator[2 / 3]; Numerator[a / b]; Numerator[(x - 1) (x - 2)/(x - 3)^2]; Numerator[3/7 + I/11]; Numerator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]; Numerator[{Sinh[x], Cosh[x], Tanh[x], Csch[x], Sech[x], Coth[x]}, Trig -> True]; expr = 5/7 (x - 1)^2/(x - 2)^3 a^b c^-d; num = Numerator[expr]; den = Denominator[expr]; expr === num / den"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn polynomial_q_1() {
+    assert_case(r#"PolynomialQ[x^2]"#, r#"True"#);
+  }
+  #[test]
+  fn polynomial_q_2() {
+    assert_case(r#"PolynomialQ[x^2]; PolynomialQ[2]"#, r#"True"#);
+  }
+  #[test]
+  fn polynomial_q_3() {
+    assert_case(
+      r#"PolynomialQ[x^2]; PolynomialQ[2]; PolynomialQ[x^2 + x/y]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn polynomial_q_4() {
+    assert_case(
+      r#"PolynomialQ[x^2]; PolynomialQ[2]; PolynomialQ[x^2 + x/y]; PolynomialQ[x^3 - 2 x/y + 3xz, x]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn polynomial_q_5() {
+    assert_case(
+      r#"PolynomialQ[x^2]; PolynomialQ[2]; PolynomialQ[x^2 + x/y]; PolynomialQ[x^3 - 2 x/y + 3xz, x]; PolynomialQ[x^3 - 2 x/y^2 + 3xz, y]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn polynomial_q_6() {
+    assert_case(
+      r#"PolynomialQ[x^2]; PolynomialQ[2]; PolynomialQ[x^2 + x/y]; PolynomialQ[x^3 - 2 x/y + 3xz, x]; PolynomialQ[x^3 - 2 x/y^2 + 3xz, y]; PolynomialQ[f[a] + f[a]^2, f[a]]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn polynomial_q_7() {
+    assert_case(
+      r#"PolynomialQ[x^2]; PolynomialQ[2]; PolynomialQ[x^2 + x/y]; PolynomialQ[x^3 - 2 x/y + 3xz, x]; PolynomialQ[x^3 - 2 x/y^2 + 3xz, y]; PolynomialQ[f[a] + f[a]^2, f[a]]; PolynomialQ[x^2 + axy^2 - bSin[c], {x, y}]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn polynomial_q_8() {
+    assert_case(
+      r#"PolynomialQ[x^2]; PolynomialQ[2]; PolynomialQ[x^2 + x/y]; PolynomialQ[x^3 - 2 x/y + 3xz, x]; PolynomialQ[x^3 - 2 x/y^2 + 3xz, y]; PolynomialQ[f[a] + f[a]^2, f[a]]; PolynomialQ[x^2 + axy^2 - bSin[c], {x, y}]; PolynomialQ[x^2 + axy^2 - bSin[c], {a, b, c}]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn together_1() {
+    assert_case(r#"Together[a / c + b / c]"#, r#"(a + b) / c"#);
+  }
+  #[test]
+  fn together_2() {
+    assert_case(
+      r#"Together[a / c + b / c]; Together[{x / (y+1) + x / (y+1)^2}]"#,
+      r#"{(x*(2 + y))/(1 + y)^2}"#,
+    );
+  }
+  #[test]
+  fn together_3() {
+    assert_case(
+      r#"Together[a / c + b / c]; Together[{x / (y+1) + x / (y+1)^2}]; Together[f[a / c + b / c]]"#,
+      r#"f[a / c + b / c]"#,
+    );
+  }
+  #[test]
+  fn find_maximum_1() {
+    assert_case(r#"FindMaximum[-(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
+  }
+  #[test]
+  fn find_maximum_2() {
+    assert_case(
+      r#"FindMaximum[-(x-3)^2+2., {x, 1}]; FindMaximum[-10*^-30 *(x-3)^2+2., {x, 1}]"#,
+      r#"{2., {x -> 3.}}"#,
+    );
+  }
+  #[test]
+  fn find_maximum_3() {
+    assert_case(
+      r#"FindMaximum[-(x-3)^2+2., {x, 1}]; FindMaximum[-10*^-30 *(x-3)^2+2., {x, 1}]; FindMaximum[Sin[x], {x, 1}]"#,
+      r#"{1., {x -> 1.5707963267948957}}"#,
+    );
+  }
+  #[test]
+  fn find_minimum_1() {
+    assert_case(r#"FindMinimum[(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
+  }
+  #[test]
+  fn find_minimum_2() {
+    assert_case(
+      r#"FindMinimum[(x-3)^2+2., {x, 1}]; FindMinimum[10*^-30 *(x-3)^2+2., {x, 1}]"#,
+      r#"{2., {x -> 3.}}"#,
+    );
+  }
+  #[test]
+  fn find_minimum_3() {
+    assert_case(
+      r#"FindMinimum[(x-3)^2+2., {x, 1}]; FindMinimum[10*^-30 *(x-3)^2+2., {x, 1}]; FindMinimum[Sin[x], {x, 1}]"#,
+      r#"{-1., {x -> -1.5707963267955243}}"#,
+    );
+  }
+  #[test]
+  fn find_root_1() {
+    assert_case(
+      r#"FindRoot[Cos[x], {x, 1}]"#,
+      r#"{x -> 1.5707963267948966}"#,
+    );
+  }
+  #[test]
+  fn find_root_2() {
+    assert_case(
+      r#"FindRoot[Cos[x], {x, 1}]; FindRoot[Sin[x] + Exp[x],{x, 0}]"#,
+      r#"{x -> -0.5885327439818611}"#,
+    );
+  }
+  #[test]
+  fn find_root_3() {
+    assert_case(
+      r#"FindRoot[Cos[x], {x, 1}]; FindRoot[Sin[x] + Exp[x],{x, 0}]; FindRoot[Sin[x] + Exp[x] == Pi,{x, 0}]"#,
+      r#"{x -> 0.8668152399114581}"#,
+    );
+  }
+  #[test]
+  fn find_root_4() {
+    assert_case(
+      r#"FindRoot[Cos[x], {x, 1}]; FindRoot[Sin[x] + Exp[x],{x, 0}]; FindRoot[Sin[x] + Exp[x] == Pi,{x, 0}]; x = "I am the result!"; FindRoot[Tan[x] + Sin[x] == Pi, {x, 1}]"#,
+      r#"{"I am the result!" -> 1.1491129543142686}"#,
+    );
+  }
+  #[test]
+  fn solve_1() {
+    assert_case(
+      r#"Solve[-4 - 4 x + x^4 + x^5 == 0, x, Integers]"#,
+      r#"{{x -> -1}}"#,
+    );
+  }
+  #[test]
+  fn solve_2() {
+    assert_case(
+      r#"Solve[-4 - 4 x + x^4 + x^5 == 0, x, Integers]; Solve[x^4 == 4, x, Integers]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn solve_3() {
+    assert_case(r#"Solve[x^3 == 1, x, Reals]"#, r#"{{x -> 1}}"#);
+  }
+  #[test]
+  fn root_1() {
+    assert_case(r#"Root[#1 ^ 2 - 1&, 1]"#, r#"-1"#);
+  }
+  #[test]
+  fn root_2() {
+    assert_case(r#"Root[#1 ^ 2 - 1&, 1]; Root[#1 ^ 2 - 1&, 2]"#, r#"1"#);
+  }
+  #[test]
+  fn root_3() {
+    assert_case(
+      r#"Root[#1 ^ 2 - 1&, 1]; Root[#1 ^ 2 - 1&, 2]; Root[#1 ^ 5 + 2 #1 + 1&, 2]"#,
+      r#"Root[1 + 2*#1 + #1^5 & , 2, 0]"#,
+    );
+  }
+  #[test]
+  fn solve_4() {
+    assert_case(r#"Solve[x ^ 2 - 3 x == 4, x]"#, r#"{{x -> -1}, {x -> 4}}"#);
+  }
+  #[test]
+  fn solve_5() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]"#,
+      r#"{{y -> 2}}"#,
+    );
+  }
+  #[test]
+  fn equal_6() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]"#,
+      r#"{{x -> -1}, {x -> 6}}"#,
+    );
+  }
+  #[test]
+  fn divide() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol"#,
+      r#"{-1, 6}"#,
+    );
+  }
+  #[test]
+  fn solve_6() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol; Solve[x + 1 == x, x]"#,
+      r#"{}"#,
+    );
+  }
+  #[test]
+  fn solve_7() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol; Solve[x + 1 == x, x]; Solve[x ^ 2 == x ^ 2, x]"#,
+      r#"{{}}"#,
+    );
+  }
+  #[test]
+  fn solve_8() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol; Solve[x + 1 == x, x]; Solve[x ^ 2 == x ^ 2, x]; Solve[x / (x ^ 2 + 1) == 1, x]"#,
+      r#"{{x -> (-1)^(1/3)}, {x -> -(-1)^(2/3)}}"#,
+    );
+  }
+  #[test]
+  fn solve_9() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol; Solve[x + 1 == x, x]; Solve[x ^ 2 == x ^ 2, x]; Solve[x / (x ^ 2 + 1) == 1, x]; Solve[(x^2 + 3 x + 2)/(4 x - 2) == 0, x]"#,
+      r#"{{x -> -2}, {x -> -1}}"#,
+    );
+  }
+  #[test]
+  fn solve_10() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol; Solve[x + 1 == x, x]; Solve[x ^ 2 == x ^ 2, x]; Solve[x / (x ^ 2 + 1) == 1, x]; Solve[(x^2 + 3 x + 2)/(4 x - 2) == 0, x]; Solve[Cos[x] == 0, x]"#,
+      r#"{{x -> ConditionalExpression[-1/2*Pi + 2*Pi*C[1], Element[C[1], Integers]]}, {x -> ConditionalExpression[Pi/2 + 2*Pi*C[1], Element[C[1], Integers]]}}"#,
+    );
+  }
+  #[test]
+  fn solve_11() {
+    assert_case(
+      r#"Solve[x ^ 2 - 3 x == 4, x]; Solve[4 y - 8 == 0, y]; sol = Solve[2 x^2 - 10 x - 12 == 0, x]; x /. sol; Solve[x + 1 == x, x]; Solve[x ^ 2 == x ^ 2, x]; Solve[x / (x ^ 2 + 1) == 1, x]; Solve[(x^2 + 3 x + 2)/(4 x - 2) == 0, x]; Solve[Cos[x] == 0, x]; Solve[f[x + y] == 3, f[x + y]]"#,
+      r#"{{f[x + y] -> 3}}"#,
+    );
+  }
+  #[test]
+  fn simplify_10() {
+    assert_case(
+      r#"LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, 5, 3}]; Simplify[LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, x, 3}]]"#,
+      r#"{(-4*(-3 + 2*x))/13, (-4 + 7*x)/13}"#,
+    );
+  }
+  #[test]
+  fn least_squares() {
+    assert_case(
+      r#"LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, 5, 3}]; Simplify[LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, x, 3}]]; LeastSquares[{{1, 1, 1}, {1, 1, 2}}, {1, 3}]"#,
+      r#"{-1/2, -1/2, 2}"#,
+    );
+  }
+  #[test]
+  fn simplify_11() {
+    assert_case(
+      r#"Simplify[Gamma[z] - (z - 1)!]"#,
+      r#"-(-1 + z)! + Gamma[z]"#,
+    );
+  }
+  #[test]
+  fn gamma_1() {
+    assert_case(r#"Simplify[Gamma[z] - (z - 1)!]; Gamma[8]"#, r#"5040"#);
+  }
+  #[test]
+  fn gamma_2() {
+    assert_case(
+      r#"Simplify[Gamma[z] - (z - 1)!]; Gamma[8]; Gamma[1/2]"#,
+      r#"Sqrt[Pi]"#,
+    );
+  }
+  #[test]
+  fn gamma_3() {
+    assert_case(
+      r#"Simplify[Gamma[z] - (z - 1)!]; Gamma[8]; Gamma[1/2]; Gamma[123.78]"#,
+      r#"4.210777742909557*^204"#,
+    );
+  }
+  #[test]
+  fn gamma_4() {
+    assert_case(
+      r#"Simplify[Gamma[z] - (z - 1)!]; Gamma[8]; Gamma[1/2]; Gamma[123.78]; Gamma[1. + I]"#,
+      r#"0.49801566811835557 - 0.15494982830181037*I"#,
+    );
+  }
+  #[test]
+  fn gamma_5() {
+    assert_case(
+      r#"Simplify[Gamma[z] - (z - 1)!]; Gamma[8]; Gamma[1/2]; Gamma[123.78]; Gamma[1. + I]; Gamma[1, x]"#,
+      r#"E ^ (-x)"#,
+    );
+  }
+  #[test]
+  fn gamma_6() {
+    assert_case(
+      r#"Simplify[Gamma[z] - (z - 1)!]; Gamma[8]; Gamma[1/2]; Gamma[123.78]; Gamma[1. + I]; Gamma[1, x]; Gamma[0, x]"#,
+      r#"Gamma[0, x]"#,
+    );
+  }
+  #[test]
+  fn boolean_q() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn max() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn min() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]; Min[x]"#,
+      r#"x"#,
+    );
+  }
+  #[test]
+  fn unequal_1() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]; Min[x]; Pi != N[Pi]"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn unequal_2() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]; Min[x]; Pi != N[Pi]; a_ != b_"#,
+      r#"(a_) != (b_)"#,
+    );
+  }
+  #[test]
+  fn unequal_3() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]; Min[x]; Pi != N[Pi]; a_ != b_; Clear[a, b];a != a != a"#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn string_literal() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]; Min[x]; Pi != N[Pi]; a_ != b_; Clear[a, b];a != a != a; "abc" != "def" != "abc""#,
+      r#"False"#,
+    );
+  }
+  #[test]
+  fn unequal_4() {
+    assert_case(
+      r#"BooleanQ["string"]; BooleanQ[Together[x/y + y/x]]; Max[x]; Min[x]; Pi != N[Pi]; a_ != b_; Clear[a, b];a != a != a; "abc" != "def" != "abc"; a != b != a"#,
+      r#"a != b != a"#,
+    );
+  }
+  #[test]
+  fn solve_12() {
+    assert_case(r#"Solve[x^2 +1 == 0, x]"#, r#"{{x -> -I}, {x -> I}}"#);
+  }
+  #[test]
+  fn solve_13() {
+    assert_case(
+      r#"Solve[x^2 +1 == 0, x]; Solve[x^5==x,x]"#,
+      r#"{{x -> -1}, {x -> 0}, {x -> -I}, {x -> I}, {x -> 1}}"#,
+    );
+  }
+  #[test]
+  fn apart_5() {
+    assert_case(
+      r#"Attributes[f] = {HoldAll}; Apart[f[x + x]]"#,
+      r#"f[x + x]"#,
+    );
+  }
+  #[test]
+  fn apart_6() {
+    assert_case(
+      r#"Attributes[f] = {HoldAll}; Apart[f[x + x]]; Attributes[f] = {}; Apart[f[x + x]]"#,
+      r#"f[2*x]"#,
+    );
+  }
+}

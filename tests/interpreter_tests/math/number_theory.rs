@@ -2176,3 +2176,579 @@ mod mersenne_prime_exponent {
     assert_eq!(interpret("MersennePrimeExponent[51]").unwrap(), "82589933");
   }
 }
+
+mod cases {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn bit_length_1() {
+    assert_case(r#"BitLength[1023]"#, r#"10"#);
+  }
+  #[test]
+  fn bit_length_2() {
+    assert_case(r#"BitLength[1023]; BitLength[100]"#, r#"7"#);
+  }
+  #[test]
+  fn bit_length_3() {
+    assert_case(r#"BitLength[1023]; BitLength[100]; BitLength[-5]"#, r#"3"#);
+  }
+  #[test]
+  fn bit_length_4() {
+    assert_case(
+      r#"BitLength[1023]; BitLength[100]; BitLength[-5]; BitLength[0]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn digit_count_1() {
+    assert_case(r#"DigitCount[1022]"#, r#"{1, 2, 0, 0, 0, 0, 0, 0, 0, 1}"#);
+  }
+  #[test]
+  fn digit_count_2() {
+    assert_case(
+      r#"DigitCount[1022]; DigitCount[Floor[Pi * 10^100]]"#,
+      r#"{8, 12, 12, 10, 8, 9, 8, 12, 14, 8}"#,
+    );
+  }
+  #[test]
+  fn digit_count_3() {
+    assert_case(
+      r#"DigitCount[1022]; DigitCount[Floor[Pi * 10^100]]; DigitCount[1022, 2]"#,
+      r#"{9, 1}"#,
+    );
+  }
+  #[test]
+  fn digit_count_4() {
+    assert_case(
+      r#"DigitCount[1022]; DigitCount[Floor[Pi * 10^100]]; DigitCount[1022, 2]; DigitCount[1022, 2, 1]"#,
+      r#"9"#,
+    );
+  }
+  #[test]
+  fn from_digits_1() {
+    assert_case(r#"FromDigits["123"]"#, r#"123"#);
+  }
+  #[test]
+  fn from_digits_2() {
+    assert_case(r#"FromDigits["123"]; FromDigits[{1, 2, 3}]"#, r#"123"#);
+  }
+  #[test]
+  fn from_digits_3() {
+    assert_case(
+      r#"FromDigits["123"]; FromDigits[{1, 2, 3}]; FromDigits[{1, 0, 1}, 1000]"#,
+      r#"1000001"#,
+    );
+  }
+  #[test]
+  fn from_digits_4() {
+    assert_case(
+      r#"FromDigits["123"]; FromDigits[{1, 2, 3}]; FromDigits[{1, 0, 1}, 1000]; FromDigits[{a, b, c}, 5]"#,
+      r#"5*(5*a + b) + c"#,
+    );
+  }
+  #[test]
+  fn from_digits_5() {
+    assert_case(
+      r#"FromDigits["123"]; FromDigits[{1, 2, 3}]; FromDigits[{1, 0, 1}, 1000]; FromDigits[{a, b, c}, 5]; FromDigits["a0"]"#,
+      r#"100"#,
+    );
+  }
+  #[test]
+  fn from_digits_6() {
+    assert_case(
+      r#"FromDigits["123"]; FromDigits[{1, 2, 3}]; FromDigits[{1, 0, 1}, 1000]; FromDigits[{a, b, c}, 5]; FromDigits["a0"]; FromDigits["a0", 16]"#,
+      r#"160"#,
+    );
+  }
+  #[test]
+  fn from_digits_7() {
+    assert_case(
+      r#"FromDigits["123"]; FromDigits[{1, 2, 3}]; FromDigits[{1, 0, 1}, 1000]; FromDigits[{a, b, c}, 5]; FromDigits["a0"]; FromDigits["a0", 16]; FromDigits[{}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn from_digits_8() {
+    assert_case(
+      r#"FromDigits["123"]; FromDigits[{1, 2, 3}]; FromDigits[{1, 0, 1}, 1000]; FromDigits[{a, b, c}, 5]; FromDigits["a0"]; FromDigits["a0", 16]; FromDigits[{}]; FromDigits[""]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn integer_digits_1() {
+    assert_case(r#"IntegerDigits[76543]"#, r#"{7, 6, 5, 4, 3}"#);
+  }
+  #[test]
+  fn integer_digits_2() {
+    assert_case(
+      r#"IntegerDigits[76543]; IntegerDigits[76543, 10]"#,
+      r#"{7, 6, 5, 4, 3}"#,
+    );
+  }
+  #[test]
+  fn integer_digits_3() {
+    assert_case(
+      r#"IntegerDigits[76543]; IntegerDigits[76543, 10]; IntegerDigits[-76543]"#,
+      r#"{7, 6, 5, 4, 3}"#,
+    );
+  }
+  #[test]
+  fn integer_digits_4() {
+    assert_case(
+      r#"IntegerDigits[76543]; IntegerDigits[76543, 10]; IntegerDigits[-76543]; IntegerDigits[76543, 10, 3]"#,
+      r#"{5, 4, 3}"#,
+    );
+  }
+  #[test]
+  fn integer_digits_5() {
+    assert_case(
+      r#"IntegerDigits[76543]; IntegerDigits[76543, 10]; IntegerDigits[-76543]; IntegerDigits[76543, 10, 3]; IntegerDigits[25, 8]"#,
+      r#"{3, 1}"#,
+    );
+  }
+  #[test]
+  fn integer_reverse_1() {
+    assert_case(r#"IntegerReverse[1234]"#, r#"4321"#);
+  }
+  #[test]
+  fn integer_reverse_2() {
+    assert_case(r#"IntegerReverse[1234]; IntegerReverse[1022, 2]"#, r#"511"#);
+  }
+  #[test]
+  fn integer_reverse_3() {
+    assert_case(
+      r#"IntegerReverse[1234]; IntegerReverse[1022, 2]; IntegerReverse[-123]"#,
+      r#"321"#,
+    );
+  }
+  #[test]
+  fn continued_fraction_1() {
+    assert_case(
+      r#"ContinuedFraction[Pi, 10]"#,
+      r#"{3, 7, 15, 1, 292, 1, 1, 1, 2, 1}"#,
+    );
+  }
+  #[test]
+  fn continued_fraction_2() {
+    assert_case(
+      r#"ContinuedFraction[Pi, 10]; ContinuedFraction[(1 + 2 Sqrt[3])/5]"#,
+      r#"{0, 1, {8, 3, 34, 3}}"#,
+    );
+  }
+  #[test]
+  fn continued_fraction_3() {
+    assert_case(
+      r#"ContinuedFraction[Pi, 10]; ContinuedFraction[(1 + 2 Sqrt[3])/5]; ContinuedFraction[Sqrt[70]]"#,
+      r#"{8, {2, 1, 2, 1, 2, 16}}"#,
+    );
+  }
+  #[test]
+  fn divisors_1() {
+    assert_case(r#"Divisors[20]"#, r#"{1, 2, 4, 5, 10, 20}"#);
+  }
+  #[test]
+  fn divisors_2() {
+    assert_case(r#"Divisors[20]"#, r#"{1, 2, 4, 5, 10, 20}"#);
+  }
+  #[test]
+  fn divisors_3() {
+    assert_case(
+      r#"Divisors[20]; Divisors[704]"#,
+      r#"{1, 2, 4, 8, 11, 16, 22, 32, 44, 64, 88, 176, 352, 704}"#,
+    );
+  }
+  #[test]
+  fn divisors_4() {
+    assert_case(
+      r#"Divisors[20]; Divisors[704]; Divisors[{87, 106, 202, 305}]"#,
+      r#"{{1, 3, 29, 87}, {1, 2, 53, 106}, {1, 2, 101, 202}, {1, 5, 61, 305}}"#,
+    );
+  }
+  #[test]
+  fn from_continued_fraction() {
+    assert_case(
+      r#"FromContinuedFraction[{3, 7, 15, 1, 292, 1, 1, 1, 2, 1}]"#,
+      r#"1146408 / 364913"#,
+    );
+  }
+  #[test]
+  fn next_prime_1() {
+    assert_case(r#"NextPrime[100]"#, r#"101"#);
+  }
+  #[test]
+  fn next_prime_2() {
+    assert_case(r#"NextPrime[100]; NextPrime[100.5, 2]"#, r#"103"#);
+  }
+  #[test]
+  fn next_prime_3() {
+    assert_case(
+      r#"NextPrime[100]; NextPrime[100.5, 2]; NextPrime[100, 2.5]"#,
+      r#"NextPrime[100, 2.5]"#,
+    );
+  }
+  #[test]
+  fn next_prime_4() {
+    assert_case(
+      r#"NextPrime[100]; NextPrime[100.5, 2]; NextPrime[100, 2.5]; NextPrime[100, -1]"#,
+      r#"97"#,
+    );
+  }
+  #[test]
+  fn powers_representations_1() {
+    assert_case(
+      r#"PowersRepresentations[1729, 2, 3]"#,
+      r#"{{1, 12}, {9, 10}}"#,
+    );
+  }
+  #[test]
+  fn powers_representations_2() {
+    assert_case(
+      r#"PowersRepresentations[1729, 2, 3]; PowersRepresentations[25, 2, 2]"#,
+      r#"{{0, 5}, {3, 4}}"#,
+    );
+  }
+  #[test]
+  fn powers_representations_3() {
+    assert_case(
+      r#"PowersRepresentations[1729, 2, 3]; PowersRepresentations[25, 2, 2]; PowersRepresentations[25, 3, 2]"#,
+      r#"{{0, 0, 5}, {0, 3, 4}}"#,
+    );
+  }
+  #[test]
+  fn prime_1() {
+    assert_case(r#"Prime[1]"#, r#"2"#);
+  }
+  #[test]
+  fn prime_2() {
+    assert_case(r#"Prime[1]; Prime[167]"#, r#"991"#);
+  }
+  #[test]
+  fn prime_3() {
+    assert_case(
+      r#"Prime[1]; Prime[167]; Prime[{5, 10, 15}]"#,
+      r#"{11, 29, 47}"#,
+    );
+  }
+  #[test]
+  fn prime_pi_1() {
+    assert_case(r#"PrimePi[2]"#, r#"1"#);
+  }
+  #[test]
+  fn prime_pi_2() {
+    assert_case(r#"PrimePi[2]; PrimePi[100]"#, r#"25"#);
+  }
+  #[test]
+  fn prime_pi_3() {
+    assert_case(r#"PrimePi[2]; PrimePi[100]; PrimePi[-1]"#, r#"0"#);
+  }
+  #[test]
+  fn prime_pi_4() {
+    assert_case(
+      r#"PrimePi[2]; PrimePi[100]; PrimePi[-1]; PrimePi[3.5]"#,
+      r#"2"#,
+    );
+  }
+  #[test]
+  fn prime_pi_5() {
+    assert_case(
+      r#"PrimePi[2]; PrimePi[100]; PrimePi[-1]; PrimePi[3.5]; PrimePi[E]"#,
+      r#"1"#,
+    );
+  }
+  #[test]
+  fn integer_length_1() {
+    assert_case(
+      r#"Mod[$RandomState, 10^100]; IntegerLength[$RandomState]"#,
+      r#"578"#,
+    );
+  }
+  #[test]
+  fn integer_exponent_1() {
+    assert_case(r#"IntegerExponent[16, 2]"#, r#"4"#);
+  }
+  #[test]
+  fn integer_exponent_2() {
+    assert_case(
+      r#"IntegerExponent[16, 2]; IntegerExponent[-510000]"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn integer_exponent_3() {
+    assert_case(
+      r#"IntegerExponent[16, 2]; IntegerExponent[-510000]; IntegerExponent[10, b]"#,
+      r#"IntegerExponent[10, b]"#,
+    );
+  }
+  #[test]
+  fn integer_length_2() {
+    assert_case(r#"IntegerLength[123456]"#, r#"6"#);
+  }
+  #[test]
+  fn integer_length_3() {
+    assert_case(
+      r#"IntegerLength[123456]; IntegerLength[10^10000]"#,
+      r#"10001"#,
+    );
+  }
+  #[test]
+  fn integer_length_4() {
+    assert_case(
+      r#"IntegerLength[123456]; IntegerLength[10^10000]; IntegerLength[-10^1000]"#,
+      r#"1001"#,
+    );
+  }
+  #[test]
+  fn integer_length_5() {
+    assert_case(
+      r#"IntegerLength[123456]; IntegerLength[10^10000]; IntegerLength[-10^1000]; IntegerLength[8, 2]"#,
+      r#"4"#,
+    );
+  }
+  #[test]
+  fn number_digit_1() {
+    assert_case(r#"NumberDigit[210.345, 2]"#, r#"2"#);
+  }
+  #[test]
+  fn number_digit_2() {
+    assert_case(
+      r#"NumberDigit[210.345, 2]; NumberDigit[210.345, -1]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn real_digits_1() {
+    assert_case(
+      r#"RealDigits[123.55555]"#,
+      r#"{{1, 2, 3, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0}, 3}"#,
+    );
+  }
+  #[test]
+  fn real_digits_2() {
+    assert_case(
+      r#"RealDigits[123.55555]; RealDigits[19 / 7]"#,
+      r#"{{2, {7, 1, 4, 2, 8, 5}}, 1}"#,
+    );
+  }
+  #[test]
+  fn real_digits_3() {
+    assert_case(
+      r#"RealDigits[123.55555]; RealDigits[19 / 7]; RealDigits[Pi, 10, 1, -500]; RealDigits[Pi, 10, 11, -3]"#,
+      r#"{{1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7}, -2}"#,
+    );
+  }
+  #[test]
+  fn real_digits_4() {
+    assert_case(
+      r#"RealDigits[123.55555]; RealDigits[19 / 7]; RealDigits[Pi, 10, 1, -500]; RealDigits[Pi, 10, 11, -3]; RealDigits[123.45, 10, 18]"#,
+      r#"{{1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Indeterminate, Indeterminate}, 3}"#,
+    );
+  }
+  #[test]
+  fn real_digits_5() {
+    assert_case(
+      r#"RealDigits[123.55555]; RealDigits[19 / 7]; RealDigits[Pi, 10, 1, -500]; RealDigits[Pi, 10, 11, -3]; RealDigits[123.45, 10, 18]; RealDigits[Pi, 10, 25]"#,
+      r#"{{3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3}, 1}"#,
+    );
+  }
+  #[test]
+  fn real_digits_6() {
+    assert_case(
+      r#"RealDigits[123.55555]; RealDigits[19 / 7]; RealDigits[Pi, 10, 1, -500]; RealDigits[Pi, 10, 11, -3]; RealDigits[123.45, 10, 18]; RealDigits[Pi, 10, 25]; RealDigits[10]"#,
+      r#"{{1, 0}, 2}"#,
+    );
+  }
+  #[test]
+  fn factorial2() {
+    assert_case(r#"5!!; Factorial2[-3]"#, r#"-1"#);
+  }
+  #[test]
+  fn plus() {
+    assert_case(r#"5!!; Factorial2[-3]; I!! + 1"#, r#"1 + I!!"#);
+  }
+  #[test]
+  fn pochhammer_1() {
+    assert_case(r#"Pochhammer[1, 3]"#, r#"6"#);
+  }
+  #[test]
+  fn pochhammer_2() {
+    assert_case(
+      r#"Pochhammer[1, 3]; Pochhammer[1, 3] == Pochhammer[2, 2]"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn subfactorial_1() {
+    assert_case(r#"Subfactorial[{0, 1, 2, 3}]"#, r#"{1, 0, 1, 2}"#);
+  }
+  #[test]
+  fn subfactorial_2() {
+    assert_case(
+      r#"Subfactorial[{0, 1, 2, 3}]; Subfactorial[6.0]"#,
+      r#"265."#,
+    );
+  }
+  #[test]
+  fn bell_b_1() {
+    assert_case(r#"BellB[10]"#, r#"115975"#);
+  }
+  #[test]
+  fn bell_b_2() {
+    assert_case(
+      r#"BellB[10]; BellB[5, x]"#,
+      r#"x + 15*x^2 + 25*x^3 + 10*x^4 + x^5"#,
+    );
+  }
+  #[test]
+  fn binomial_1() {
+    assert_case(r#"Binomial[5, 3]"#, r#"10"#);
+  }
+  #[test]
+  fn binomial_2() {
+    assert_case(
+      r#"Binomial[5, 3]; Binomial[10.5,3.2]"#,
+      r#"165.28610936725698"#,
+    );
+  }
+  #[test]
+  fn binomial_3() {
+    assert_case(
+      r#"Binomial[5, 3]; Binomial[10.5,3.2]; Binomial[10, -2]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn binomial_4() {
+    assert_case(
+      r#"Binomial[5, 3]; Binomial[10.5,3.2]; Binomial[10, -2]; Binomial[-10.5, -3.5]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
+  fn multinomial_1() {
+    assert_case(r#"Multinomial[2, 3, 4, 5]"#, r#"2522520"#);
+  }
+  #[test]
+  fn multinomial_2() {
+    assert_case(r#"Multinomial[2, 3, 4, 5]; Multinomial[]"#, r#"1"#);
+  }
+  #[test]
+  fn multinomial_3() {
+    assert_case(
+      r#"Multinomial[2, 3, 4, 5]; Multinomial[]; Multinomial[a, b, c]"#,
+      r#"Multinomial[a, b, c]"#,
+    );
+  }
+  #[test]
+  fn multinomial_4() {
+    assert_case(
+      r#"Multinomial[2, 3, 4, 5]; Multinomial[]; Multinomial[a, b, c]; Multinomial[2, 3]"#,
+      r#"10"#,
+    );
+  }
+  #[test]
+  fn bernoulli_b() {
+    assert_case(r#"BernoulliB[42]"#, r#"1520097643918070802691 / 1806"#);
+  }
+  #[test]
+  fn fibonacci_1() {
+    assert_case(r#"Fibonacci[0]"#, r#"0"#);
+  }
+  #[test]
+  fn fibonacci_2() {
+    assert_case(r#"Fibonacci[0]; Fibonacci[1]"#, r#"1"#);
+  }
+  #[test]
+  fn fibonacci_3() {
+    assert_case(r#"Fibonacci[0]; Fibonacci[1]; Fibonacci[10]"#, r#"55"#);
+  }
+  #[test]
+  fn fibonacci_4() {
+    assert_case(
+      r#"Fibonacci[0]; Fibonacci[1]; Fibonacci[10]; Fibonacci[200]"#,
+      r#"280571172992510140037611932413038677189525"#,
+    );
+  }
+  #[test]
+  fn fibonacci_5() {
+    assert_case(
+      r#"Fibonacci[0]; Fibonacci[1]; Fibonacci[10]; Fibonacci[200]; Fibonacci[7, x]"#,
+      r#"1 + 6*x^2 + 5*x^4 + x^6"#,
+    );
+  }
+  #[test]
+  fn linear_recurrence_1() {
+    assert_case(
+      r#"LinearRecurrence[{1, 1}, {1, 1}, 10]"#,
+      r#"{1, 1, 2, 3, 5, 8, 13, 21, 34, 55}"#,
+    );
+  }
+  #[test]
+  fn linear_recurrence_2() {
+    assert_case(
+      r#"LinearRecurrence[{1, 1}, {1, 1}, 10]; LinearRecurrence[{1, 1}, {1, 1}, {3, 5}]"#,
+      r#"{2, 3, 5}"#,
+    );
+  }
+  #[test]
+  fn linear_recurrence_3() {
+    assert_case(
+      r#"LinearRecurrence[{1, 1}, {1, 1}, 10]; LinearRecurrence[{1, 1}, {1, 1}, {3, 5}]; LinearRecurrence[{1, 1}, {1, 1}, {6}]"#,
+      r#"{8}"#,
+    );
+  }
+  #[test]
+  fn divisible_1() {
+    assert_case(r#"Divisible[10, 2]"#, r#"True"#);
+  }
+  #[test]
+  fn divisible_2() {
+    assert_case(r#"Divisible[10, 2]; Divisible[2, 10]"#, r#"False"#);
+  }
+  #[test]
+  fn gcd_1() {
+    assert_case(r#"GCD[20, 30]"#, r#"10"#);
+  }
+  #[test]
+  fn gcd_2() {
+    assert_case(r#"GCD[20, 30]; GCD[10, y]"#, r#"GCD[10, y]"#);
+  }
+  #[test]
+  fn gcd_3() {
+    assert_case(
+      r#"GCD[20, 30]; GCD[10, y]; GCD[4, {10, 11, 12, 13, 14}]"#,
+      r#"{2, 1, 4, 1, 2}"#,
+    );
+  }
+  #[test]
+  fn lcm_1() {
+    assert_case(r#"LCM[15, 20]"#, r#"60"#);
+  }
+  #[test]
+  fn lcm_2() {
+    assert_case(r#"LCM[15, 20]; LCM[20, 30, 40, 50]"#, r#"600"#);
+  }
+  #[test]
+  fn modular_inverse() {
+    assert_case(r#"ModularInverse[2, 3]"#, r#"2"#);
+  }
+  #[test]
+  fn power_mod() {
+    assert_case(r#"PowerMod[7, 2, 5]"#, r#"4"#);
+  }
+  #[test]
+  fn divisors_5() {
+    assert_case(r#"Divisors[0]"#, r#"Divisors[0]"#);
+  }
+  #[test]
+  fn divisors_6() {
+    assert_case(
+      r#"Divisors[0]; Divisors[{-206, -502, -1702, 9}]"#,
+      r#"{{1, 2, 103, 206}, {1, 2, 251, 502}, {1, 2, 23, 37, 46, 74, 851, 1702}, {1, 3, 9}}"#,
+    );
+  }
+  #[test]
+  fn binomial_5() {
+    assert_case(r#"Binomial[-10, -3.5]"#, r#"ComplexInfinity"#);
+  }
+}
