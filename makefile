@@ -144,7 +144,10 @@ jupyterlite-build: wasm-build jupyterlite-kernel-build
 
 .PHONY: docs/summary
 docs/summary:
-	wolframscript -file scripts/build_summary.wls
+	@if command -v wolframscript >/dev/null 2>&1; \
+	then wolframscript -file scripts/build_summary.wls; \
+	else woxi run scripts/build_summary.wls; \
+	fi
 
 
 .PHONY: docs/site

@@ -1,4 +1,3 @@
-#!/usr/bin/env wolframscript
 (* ::Package:: *)
 
 (* Sync tests/SUMMARY.md and the `nav` block of tests/zensical.toml.
