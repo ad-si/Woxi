@@ -1222,7 +1222,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
   }
 }
 
-pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
+pub fn flatten_sequences<'a>(
+  name: &str,
+  args: &'a [Expr],
+) -> std::borrow::Cow<'a, [Expr]> {
   // Check for SequenceHold attribute. HoldAllComplete implicitly carries
   // SequenceHold semantics (Wolfram Language: HoldAllComplete = HoldAll
   // + SequenceHold + ... ).
@@ -1244,11 +1247,32 @@ pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
       .contains(&"HoldAllComplete");
 
   if has_sequence_hold {
-    return args.to_vec();
+    return std::borrow::Cow::Borrowed(args);
+  }
+
+  // Common case: no arg is a Sequence/Splice — return the borrowed slice
+  // unchanged so the caller never pays for an O(N) Vec clone of the
+  // arguments. Tight user-defined recursion (parseLevel in
+  // build_summary.wls) hits this path on every iteration.
+  let needs_flatten = args.iter().any(|arg| match arg {
+    Expr::FunctionCall { name: seq_name, .. } if seq_name == "Sequence" => true,
+    Expr::FunctionCall {
+      name: splice_name,
+      args: splice_args,
+    } if splice_name == "Splice"
+      && splice_args.len() == 2
+      && matches!(&splice_args[1], Expr::Identifier(h) if h == name)
+      && matches!(&splice_args[0], Expr::List(_)) =>
+    {
+      true
+    }
+    _ => false,
+  });
+  if !needs_flatten {
+    return std::borrow::Cow::Borrowed(args);
   }
 
   let mut result = Vec::with_capacity(args.len());
-  let mut had_sequence = false;
   for arg in args {
     if let Expr::FunctionCall {
       name: seq_name,
@@ -1257,7 +1281,6 @@ pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
       && seq_name == "Sequence"
     {
       result.extend(seq_args.iter().cloned());
-      had_sequence = true;
       continue;
     }
     // Splice[list, head] — splice when the enclosing function matches head
@@ -1271,10 +1294,9 @@ pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
       && let Expr::List(items) = &splice_args[0]
     {
       result.extend(items.iter().cloned());
-      had_sequence = true;
       continue;
     }
     result.push(arg.clone());
   }
-  if had_sequence { result } else { args.to_vec() }
+  std::borrow::Cow::Owned(result)
 }

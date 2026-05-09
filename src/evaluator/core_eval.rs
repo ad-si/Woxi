@@ -1812,24 +1812,24 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "Manipulate"
         {
           // Flatten Sequence even in held args (unless SequenceHold)
-          let args = flatten_sequences(name, args);
+          let flattened = flatten_sequences(name, args);
           // Honour Evaluate[...] inside HoldAll wrappers like Hold and
           // HoldForm — Evaluate forces evaluation of its argument even
           // through a hold. HoldComplete suppresses it (matching Wolfram).
-          let args = if matches!(
+          let args: std::borrow::Cow<[Expr]> = if matches!(
             name.as_str(),
             "Hold" | "HoldForm" | "Function" | "Reap" | "Manipulate"
           ) {
-            let raw: Vec<Expr> = args
+            let raw: Vec<Expr> = flattened
               .iter()
               .map(unwrap_top_level_evaluate)
               .collect::<Result<Vec<Expr>, _>>()?;
             // Multi-arg Evaluate yields a Sequence that must splice into
             // the surrounding hold context (e.g. `Hold[Evaluate[1, 2]]`
             // becomes `Hold[1, 2]`).
-            splice_top_level_sequences(raw)
+            std::borrow::Cow::Owned(splice_top_level_sequences(raw))
           } else {
-            args
+            flattened
           };
           // Pass unevaluated args to the function dispatcher
           return evaluate_function_call_ast(name, &args);
