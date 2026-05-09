@@ -799,8 +799,15 @@ pub fn evaluate_expr_to_expr_inner(
       // evaluator iterates each expression to a fixed point; if a later
       // element introduces a rule, earlier elements that didn't match
       // before are re-evaluated against the new rule.
-      let defs_before: std::collections::HashSet<String> =
-        crate::FUNC_DEFS.with(|m| m.borrow().keys().cloned().collect());
+      //
+      // The key insight: we only need to detect *whether* the rule set
+      // changed, not collect the names. Comparing FUNC_DEFS length
+      // before/after is O(1); only when the length differs do we need
+      // the full re-evaluation pass. Length-equal-but-different (a
+      // remove + insert of the same name) doesn't happen via normal
+      // element evaluation, so the cheap check is sufficient.
+      let len_before =
+        crate::FUNC_DEFS.with(|m| m.borrow().len());
       for item in items {
         let val = evaluate_expr_to_expr(item)?;
         if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
@@ -834,9 +841,8 @@ pub fn evaluate_expr_to_expr_inner(
       // `{H[a, b], H[a, b], H[a, b]}`). Limited to one re-evaluation pass
       // to avoid infinite loops; deeper fixed-point semantics would need
       // pervasive iteration in the evaluator itself.
-      let defs_after: std::collections::HashSet<String> =
-        crate::FUNC_DEFS.with(|m| m.borrow().keys().cloned().collect());
-      if defs_after != defs_before {
+      let len_after = crate::FUNC_DEFS.with(|m| m.borrow().len());
+      if len_after != len_before {
         let mut re_eval: Vec<Expr> = Vec::with_capacity(evaluated.len());
         for item in &evaluated {
           re_eval.push(evaluate_expr_to_expr(item)?);
