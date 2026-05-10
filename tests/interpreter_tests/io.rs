@@ -2293,6 +2293,63 @@ mod information {
     assert!(result.starts_with("InformationDataGrid["));
     assert!(result.contains("System` -> {}"));
   }
+
+  // ── Graphical rendering of InformationData / InformationDataGrid ────
+
+  #[test]
+  fn builtin_information_captures_svg() {
+    // `Information[Sin]` via `interpret_with_stdout` (the visual entry point
+    // used by playground / woxi-studio) should attach a styled SVG card and
+    // suppress the textual `InformationData[…]` echo so the host renders
+    // only the graphic.
+    clear_state();
+    let result = interpret_with_stdout("Information[Sin]").unwrap();
+    assert_eq!(result.result, "");
+    let svg = result
+      .graphics
+      .expect("Information[Sin] should capture a graphical SVG card");
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("Sin"), "SVG should mention the symbol name");
+  }
+
+  #[test]
+  fn user_symbol_information_captures_svg() {
+    // The `?sym` shortcut on a user-defined symbol should also produce a
+    // styled SVG card.
+    clear_state();
+    let result = interpret_with_stdout("h[x_] := x^2; ?h").unwrap();
+    assert_eq!(result.result, "");
+    let svg = result
+      .graphics
+      .expect("?h should capture a graphical SVG card");
+    assert!(svg.contains("h"));
+    assert!(svg.contains("DownValues"));
+  }
+
+  #[test]
+  fn wildcard_query_captures_svg() {
+    // `?Plot*` should produce a graphical InformationDataGrid SVG.
+    clear_state();
+    let result = interpret_with_stdout("?Plot*").unwrap();
+    assert_eq!(result.result, "");
+    let svg = result
+      .graphics
+      .expect("?Plot* should capture a graphical SVG grid");
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("Plot"));
+    assert!(svg.contains("System`"));
+  }
+
+  #[test]
+  fn cli_information_text_unchanged() {
+    // The text-only `interpret()` entry point (CLI, scripts, tests) must
+    // continue to return the textual `InformationData[…]` form so existing
+    // wolframscript-equivalence tests stay green.
+    clear_state();
+    let result = interpret("Information[Sin]").unwrap();
+    assert!(result.starts_with("InformationData["));
+    assert!(result.ends_with("|>]"));
+  }
 }
 
 mod directory_name {

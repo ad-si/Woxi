@@ -609,11 +609,26 @@ pub fn dispatch_complex_and_special(
           }
           all_names.sort();
 
-          let matching: Vec<Expr> = all_names
+          let matching_names: Vec<String> = all_names
             .into_iter()
             .filter(|n| re.is_match(n))
+            .collect();
+          let matching: Vec<Expr> = matching_names
+            .iter()
+            .cloned()
             .map(Expr::Identifier)
             .collect();
+
+          // Capture a graphical SVG card alongside the textual result.
+          let groups =
+            vec![("System`".to_string(), matching_names.clone())];
+          if let Some(svg) =
+            crate::functions::information_render::render_information_grid_svg(
+              &groups,
+            )
+          {
+            crate::capture_graphics(&svg);
+          }
 
           return Some(Ok(Expr::FunctionCall {
             name: "InformationDataGrid".to_string(),
@@ -2296,16 +2311,22 @@ fn format_builtin_information(
 
   let description = info.map(|i| i.description).unwrap_or("");
 
-  // Build association fields
+  // Build association fields as parallel lists: textual key -> value lines
+  // (for the InputForm echo) and structured (label, value) pairs (for the
+  // Grid SVG card).
   let mut fields: Vec<String> = Vec::new();
+  let mut display_fields: Vec<(String, String)> = Vec::new();
   fields.push(format!("Name -> {}", sym));
+  display_fields.push(("Name".to_string(), sym.to_string()));
   if !description.is_empty() {
     fields.push(format!("Usage -> {}", description));
+    display_fields.push(("Usage".to_string(), description.to_string()));
   }
 
   if is_full {
     // Full output: include all fields
     fields.push("ObjectType -> Symbol".to_string());
+    display_fields.push(("ObjectType".to_string(), "Symbol".to_string()));
 
     // Options
     let stored_opts =
@@ -2319,18 +2340,38 @@ fn format_builtin_information(
         .collect::<Vec<_>>()
         .join(", ");
       fields.push(format!("Options -> {{{}}}", opts_str));
+      display_fields
+        .push(("Options".to_string(), format!("{{{}}}", opts_str)));
     } else {
       fields.push("Options -> {}".to_string());
+      display_fields.push(("Options".to_string(), "{}".to_string()));
     }
 
     // Attributes
     if all_attrs.is_empty() {
       fields.push("Attributes -> {}".to_string());
+      display_fields.push(("Attributes".to_string(), "{}".to_string()));
     } else {
       fields.push(format!("Attributes -> {{{}}}", all_attrs.join(", ")));
+      display_fields.push((
+        "Attributes".to_string(),
+        format!("{{{}}}", all_attrs.join(", ")),
+      ));
     }
 
     fields.push(format!("FullName -> System`{}", sym));
+    display_fields
+      .push(("FullName".to_string(), format!("System`{}", sym)));
+  }
+
+  // Capture a graphical SVG card alongside the textual InputForm result.
+  if let Some(svg) =
+    crate::functions::information_render::render_information_card_svg(
+      sym,
+      &display_fields,
+    )
+  {
+    crate::capture_graphics(&svg);
   }
 
   let _ = is_full; // is_full controls which fields appear above; the
@@ -2511,6 +2552,32 @@ fn format_user_information(
 
   // UpValues from `g[…sym…] ^:= …` style assignments.
   let up_str = format_upvalues_field(sym).unwrap_or_else(|| "None".to_string());
+
+  // Capture a graphical SVG card alongside the textual InputForm result.
+  // The card surfaces only the fields that carry information (skipping
+  // the long list of `None` placeholders that bloat the textual form).
+  let mut display_fields: Vec<(String, String)> = Vec::new();
+  display_fields.push(("ObjectType".to_string(), "Symbol".to_string()));
+  display_fields.push(("Usage".to_string(), usage_str.clone()));
+  if own_str != "None" {
+    display_fields.push(("OwnValues".to_string(), own_str.clone()));
+  }
+  if up_str != "None" {
+    display_fields.push(("UpValues".to_string(), up_str.clone()));
+  }
+  if down_str != "None" {
+    display_fields.push(("DownValues".to_string(), down_str.clone()));
+  }
+  display_fields.push(("Attributes".to_string(), attrs_str.clone()));
+  display_fields.push(("FullName".to_string(), format!("Global`{}", sym)));
+  if let Some(svg) =
+    crate::functions::information_render::render_information_card_svg(
+      sym,
+      &display_fields,
+    )
+  {
+    crate::capture_graphics(&svg);
+  }
 
   if is_full {
     // Full output: all fields

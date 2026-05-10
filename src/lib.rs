@@ -3022,6 +3022,20 @@ pub fn interpret_with_stdout(
   let output_svg = get_captured_output_svg();
   let warnings = get_captured_warnings();
 
+  // When `Information[…]` (or the `?sym` / `?Plot*` shortcuts) captured a
+  // styled SVG card, suppress the textual `InformationData[…]` echo so the
+  // visual host (playground, woxi-studio) shows only the graphical card.
+  // The CLI path is unaffected because it calls `interpret()` directly.
+  let result = if graphics.is_some()
+    && (result.starts_with("InformationData[")
+      || result.starts_with("InformationDataGrid["))
+    && (result.ends_with("|>]") || result.ends_with("False]") || result.ends_with("True]"))
+  {
+    String::new()
+  } else {
+    result
+  };
+
   // Return stdout, result, and any graphical output
   Ok(InterpretResult {
     stdout,

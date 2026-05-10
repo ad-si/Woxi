@@ -16,6 +16,7 @@ pub mod graph;
 pub mod graphics;
 pub mod graphicsbox;
 pub mod image_ast;
+pub mod information_render;
 pub mod interval_ast;
 pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
