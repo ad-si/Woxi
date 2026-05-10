@@ -79,6 +79,63 @@ fn parse_excluded_forms(arg: &Expr) -> Option<Vec<Expr>> {
   }
 }
 
+/// Splice the children of `expr` at the given position vectors. Positions are
+/// 1-based, may be negative (counted from the end), and apply at the level of
+/// the position's last index. Used by FlattenAt.
+fn flatten_at_positions(expr: &Expr, positions: &[Vec<i128>]) -> Expr {
+  let children: &[Expr] = match expr {
+    Expr::List(items) => items,
+    Expr::FunctionCall { args, .. } => args,
+    _ => return expr.clone(),
+  };
+  let len = children.len() as i128;
+  let mut groups: std::collections::HashMap<usize, Vec<Vec<i128>>> =
+    Default::default();
+  let mut flatten_here: std::collections::HashSet<usize> = Default::default();
+  for pos in positions {
+    if pos.is_empty() {
+      continue;
+    }
+    let first = pos[0];
+    let idx = if first < 0 { len + first + 1 } else { first };
+    if idx < 1 || idx > len {
+      continue;
+    }
+    let i = idx as usize;
+    if pos.len() == 1 {
+      flatten_here.insert(i);
+    } else {
+      groups.entry(i).or_default().push(pos[1..].to_vec());
+    }
+  }
+  let mut result: Vec<Expr> = Vec::new();
+  for (i, child) in children.iter().enumerate() {
+    let idx = i + 1;
+    let new_child = if let Some(deeper) = groups.get(&idx) {
+      flatten_at_positions(child, deeper)
+    } else {
+      child.clone()
+    };
+    if flatten_here.contains(&idx) {
+      match &new_child {
+        Expr::List(items) => result.extend(items.iter().cloned()),
+        Expr::FunctionCall { args, .. } => result.extend(args.iter().cloned()),
+        _ => result.push(new_child),
+      }
+    } else {
+      result.push(new_child);
+    }
+  }
+  match expr {
+    Expr::List(_) => Expr::List(result.into()),
+    Expr::FunctionCall { name, .. } => Expr::FunctionCall {
+      name: name.clone(),
+      args: result.into(),
+    },
+    _ => expr.clone(),
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -137,50 +194,67 @@ pub fn dispatch_list_operations(
         }
       }
     }
+    "FlattenAt" if args.len() == 1 => {
+      // Operator form FlattenAt[pos] — return unevaluated for currying.
+      return Some(Ok(Expr::FunctionCall {
+        name: "FlattenAt".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "FlattenAt" if args.len() == 2 => {
-      if let Expr::List(items) = &args[0] {
-        let len = items.len() as i128;
-        let positions: Vec<usize> = match &args[1] {
-          Expr::Integer(n) => {
-            let idx = if *n < 0 { len + n + 1 } else { *n };
-            if idx >= 1 && idx <= len {
-              vec![idx as usize]
-            } else {
-              return Some(Ok(Expr::FunctionCall {
-                name: "FlattenAt".to_string(),
-                args: args.to_vec().into(),
-              }));
-            }
+      let unevaluated = || {
+        Ok(Expr::FunctionCall {
+          name: "FlattenAt".to_string(),
+          args: args.to_vec().into(),
+        })
+      };
+      // Parse second arg into a list of position vectors.
+      let positions: Vec<Vec<i128>> = match &args[1] {
+        Expr::Integer(n) => vec![vec![*n]],
+        Expr::List(pos_list) => {
+          if pos_list.is_empty() {
+            return Some(Ok(args[0].clone()));
           }
-          Expr::List(pos_list) => {
-            let mut idxs = Vec::new();
+          let all_ints = pos_list.iter().all(|p| matches!(p, Expr::Integer(_)));
+          let all_lists = pos_list.iter().all(|p| matches!(p, Expr::List(_)));
+          if all_ints {
+            let v: Vec<i128> = pos_list
+              .iter()
+              .map(|p| match p {
+                Expr::Integer(n) => *n,
+                _ => 0,
+              })
+              .collect();
+            vec![v]
+          } else if all_lists {
+            let mut out: Vec<Vec<i128>> = Vec::new();
             for p in pos_list {
-              if let Expr::Integer(n) = p {
-                let idx = if *n < 0 { len + n + 1 } else { *n };
-                if idx >= 1 && idx <= len {
-                  idxs.push(idx as usize);
+              if let Expr::List(inner) = p {
+                if !inner.iter().all(|x| matches!(x, Expr::Integer(_))) {
+                  return Some(unevaluated());
                 }
+                let v: Vec<i128> = inner
+                  .iter()
+                  .map(|x| match x {
+                    Expr::Integer(n) => *n,
+                    _ => 0,
+                  })
+                  .collect();
+                out.push(v);
               }
             }
-            idxs
-          }
-          _ => vec![],
-        };
-        let pos_set: std::collections::HashSet<usize> =
-          positions.into_iter().collect();
-        let mut result = Vec::new();
-        for (i, item) in items.iter().enumerate() {
-          if pos_set.contains(&(i + 1)) {
-            if let Expr::List(sub) = item {
-              result.extend(sub.iter().cloned());
-            } else {
-              result.push(item.clone());
-            }
+            out
           } else {
-            result.push(item.clone());
+            return Some(unevaluated());
           }
         }
-        return Some(Ok(Expr::List(result.into())));
+        _ => return Some(unevaluated()),
+      };
+      match &args[0] {
+        Expr::List(_) | Expr::FunctionCall { .. } => {
+          return Some(Ok(flatten_at_positions(&args[0], &positions)));
+        }
+        _ => return Some(unevaluated()),
       }
     }
     "InversePermutation" if args.len() == 1 => {

@@ -440,6 +440,7 @@ pub fn apply_function_to_arg(
           | "Select"
           | "AllMatch"
           | "AnyMatch"
+          | "FlattenAt"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -683,6 +684,7 @@ pub fn apply_curried_call(
           | "Count"
           | "AllMatch"
           | "AnyMatch"
+          | "FlattenAt"
       ) && func_args.len() == 1
         && args.len() == 1
       {

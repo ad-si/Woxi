@@ -368,7 +368,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FixedPoint" => Some((2, usize::MAX)),
     "FixedPointList" => Some((2, usize::MAX)),
     "Flatten" => Some((1, 3)),
-    "FlattenAt" => Some((2, 2)),
+    "FlattenAt" => Some((1, 2)),
     "Floor" => Some((1, 2)),
     "Fold" => Some((2, 3)),
     "FoldList" => Some((2, 3)),

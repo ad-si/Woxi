@@ -295,6 +295,95 @@ mod list_tests {
     );
   }
 
+  // --- FlattenAt ---
+  #[test]
+  fn flatten_at_positive_index() {
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, {d, e}, {f}}, 2]").unwrap(),
+      "{a, b, c, {d, e}, {f}}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_negative_index() {
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, {d, e}, {f}}, -1]").unwrap(),
+      "{a, {b, c}, {d, e}, f}"
+    );
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, {d, e}, {f}}, -2]").unwrap(),
+      "{a, {b, c}, d, e, {f}}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_singleton_position() {
+    // {2} is a length-1 position vector — same as integer 2
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, {d, e}, {f}}, {2}]").unwrap(),
+      "{a, b, c, {d, e}, {f}}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_list_of_positions() {
+    // {{2}, {4}} flattens at positions 2 and 4
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, {d, e}, {f}}, {{2}, {4}}]").unwrap(),
+      "{a, b, c, {d, e}, f}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_list_of_positions_with_negative() {
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, {d, e}, {f}}, {{-1}, {2}}]").unwrap(),
+      "{a, b, c, {d, e}, f}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_nested_position() {
+    // {2, 1} is a single nested position — flatten expr[[2, 1]]
+    assert_eq!(
+      interpret("FlattenAt[{a, {{b, c}, {d, e}}, {f}}, {2, 1}]").unwrap(),
+      "{a, {b, c, {d, e}}, {f}}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_list_of_nested_positions() {
+    assert_eq!(
+      interpret(
+        "FlattenAt[{{a, b}, {c, {d, e}}, {f, {g, h}}}, {{2, 2}, {3, 2}}]"
+      )
+      .unwrap(),
+      "{{a, b}, {c, d, e}, {f, g, h}}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_non_list_head() {
+    assert_eq!(
+      interpret("FlattenAt[f[a, g[b, c], d], 2]").unwrap(),
+      "f[a, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn flatten_at_operator_form() {
+    assert_eq!(
+      interpret("FlattenAt[2][{a, {b, c}, {d, e}, {f}}]").unwrap(),
+      "{a, b, c, {d, e}, {f}}"
+    );
+  }
+
+  #[test]
+  fn flatten_at_empty_position() {
+    // FlattenAt[expr, {}] is a no-op
+    assert_eq!(interpret("FlattenAt[{a, b}, {}]").unwrap(), "{a, b}");
+  }
+
   // --- SubsetPosition ---
   #[test]
   fn subset_position_literal() {
