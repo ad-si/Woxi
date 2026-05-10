@@ -44,6 +44,7 @@ Output is always in [FullForm].
 - [`HalfPlane`](expressions/HalfPlane.md)
 - [`Head`](expressions/Head.md)
 - [`Hold`](expressions/Hold.md)
+- [`Hyperlink`](expressions/Hyperlink.md)
 - [`InfiniteLine`](expressions/InfiniteLine.md)
 - [`Information`](expressions/Information.md)
 - [`InputForm`](expressions/InputForm.md)

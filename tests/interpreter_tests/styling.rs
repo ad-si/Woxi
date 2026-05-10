@@ -663,6 +663,97 @@ mod long_right_arrow {
   }
 }
 
+mod hyperlink {
+  use super::*;
+
+  #[test]
+  fn label_and_uri() {
+    // Hyperlink[label, uri] keeps both arguments and renders them
+    // unquoted in OutputForm, matching wolframscript.
+    assert_eq!(
+      interpret(r#"Hyperlink["Woxi", "https://woxi.ad-si.com"]"#).unwrap(),
+      "Hyperlink[Woxi, https://woxi.ad-si.com]"
+    );
+  }
+
+  #[test]
+  fn uri_only() {
+    // Hyperlink[uri] is the single-argument form.
+    assert_eq!(
+      interpret(r#"Hyperlink["https://woxi.ad-si.com"]"#).unwrap(),
+      "Hyperlink[https://woxi.ad-si.com]"
+    );
+  }
+
+  #[test]
+  fn no_args_unevaluated() {
+    assert_eq!(interpret("Hyperlink[]").unwrap(), "Hyperlink[]");
+  }
+
+  #[test]
+  fn extra_args_unevaluated() {
+    assert_eq!(
+      interpret(r#"Hyperlink["a", "b", "c"]"#).unwrap(),
+      "Hyperlink[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret(r#"Head[Hyperlink["Woxi", "https://woxi.ad-si.com"]]"#)
+        .unwrap(),
+      "Hyperlink"
+    );
+  }
+
+  #[test]
+  fn length_two_args() {
+    assert_eq!(
+      interpret(r#"Length[Hyperlink["Woxi", "https://woxi.ad-si.com"]]"#)
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn length_one_arg() {
+    assert_eq!(
+      interpret(r#"Length[Hyperlink["https://woxi.ad-si.com"]]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn part_extracts_label() {
+    assert_eq!(
+      interpret(r#"Hyperlink["Woxi", "https://woxi.ad-si.com"][[1]]"#).unwrap(),
+      "Woxi"
+    );
+  }
+
+  #[test]
+  fn part_extracts_uri() {
+    assert_eq!(
+      interpret(r#"Hyperlink["Woxi", "https://woxi.ad-si.com"][[2]]"#).unwrap(),
+      "https://woxi.ad-si.com"
+    );
+  }
+
+  #[test]
+  fn input_form_quotes_strings() {
+    // ToString[..., InputForm] preserves the string quotes around
+    // the label and URI, matching wolframscript.
+    assert_eq!(
+      interpret(
+        r#"ToString[Hyperlink["Woxi", "https://woxi.ad-si.com"], InputForm]"#
+      )
+      .unwrap(),
+      r#"Hyperlink["Woxi", "https://woxi.ad-si.com"]"#
+    );
+  }
+}
+
 mod cases {
   use super::super::case_helpers::assert_case;
 
