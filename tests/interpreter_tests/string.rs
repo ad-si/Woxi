@@ -2230,6 +2230,30 @@ mod integer_string_tests {
   fn truncate_to_length() {
     assert_eq!(interpret("IntegerString[12345, 10, 3]").unwrap(), "345");
   }
+
+  #[test]
+  fn bigint_base2() {
+    // Beyond i128 — verifies BigInteger path. Reference value taken from
+    // wolframscript: IntegerString[143207491493571284560146904872817600361573129, 2].
+    assert_eq!(
+      interpret(
+        "IntegerString[143207491493571284560146904872817600361573129, 2]"
+      )
+      .unwrap(),
+      "110011010111111000011111110001111001100111000001111110111010000100011110001111110101101100100110010000011001000110000001111101000101010101100001001"
+    );
+  }
+
+  #[test]
+  fn bigint_negative_drops_sign() {
+    assert_eq!(
+      interpret(
+        "IntegerString[-143207491493571284560146904872817600361573129, 2]"
+      )
+      .unwrap(),
+      "110011010111111000011111110001111001100111000001111110111010000100011110001111110101101100100110010000011001000110000001111101000101010101100001001"
+    );
+  }
 }
 
 mod compress {

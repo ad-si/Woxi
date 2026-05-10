@@ -4365,7 +4365,6 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = expr_to_int(&args[0])?;
   let base = if args.len() >= 2 {
     expr_to_int(&args[1])? as u32
   } else {
@@ -4378,22 +4377,34 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // IntegerString uses absolute value (drops sign)
-  let abs_n = n.unsigned_abs();
-
-  let mut result = String::new();
-  if abs_n == 0 {
-    result.push('0');
-  } else {
-    let mut val = abs_n;
-    while val > 0 {
-      let digit = (val % base as u128) as u32;
-      let c = char::from_digit(digit, base).unwrap();
-      result.push(c);
-      val /= base as u128;
+  // IntegerString uses absolute value (drops sign). Handle BigInteger
+  // directly via num-bigint's to_str_radix; fall back to i128 for
+  // smaller integers and Real with zero fractional part.
+  let mut result = match &args[0] {
+    Expr::BigInteger(n) => {
+      use num_bigint::Sign;
+      match n.sign() {
+        Sign::Minus => (-n).to_str_radix(base),
+        _ => n.to_str_radix(base),
+      }
     }
-    result = result.chars().rev().collect();
-  }
+    _ => {
+      let n = expr_to_int(&args[0])?;
+      let abs_n = n.unsigned_abs();
+      if abs_n == 0 {
+        "0".to_string()
+      } else {
+        let mut val = abs_n;
+        let mut digits = String::new();
+        while val > 0 {
+          let digit = (val % base as u128) as u32;
+          digits.push(char::from_digit(digit, base).unwrap());
+          val /= base as u128;
+        }
+        digits.chars().rev().collect()
+      }
+    }
+  };
 
   // If length is specified, pad or truncate
   if args.len() == 3 {
