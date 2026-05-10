@@ -175,7 +175,11 @@ fn parse_cell_entry(s: &str) -> Result<CellEntry, String> {
   // Check if it's a CellGroupData
   let inner_trimmed = inner.trim();
   if inner_trimmed.starts_with("CellGroupData[") {
-    return parse_cell_group(inner_trimmed);
+    // Find the matching `]` for `CellGroupData[` so we can ignore any
+    // trailing options on the outer Cell (e.g. `ExpressionUUID -> "…"`).
+    let after_prefix = &inner_trimmed["CellGroupData[".len()..];
+    let (group_inner, _trailing_options) = find_matching_bracket(after_prefix)?;
+    return parse_cell_group_body(group_inner);
   }
 
   // Regular cell: Cell["content", "Style"]
@@ -183,17 +187,12 @@ fn parse_cell_entry(s: &str) -> Result<CellEntry, String> {
   Ok(CellEntry::Single(cell))
 }
 
-/// Parse CellGroupData[{cells...}, Open|Closed]
-fn parse_cell_group(s: &str) -> Result<CellEntry, String> {
-  let rest = s
-    .strip_prefix("CellGroupData[")
-    .ok_or("Expected CellGroupData[")?;
-  let rest = rest
-    .strip_suffix(']')
-    .ok_or("Missing closing ] for CellGroupData")?;
-
+/// Parse the body of `CellGroupData[...]`, i.e. the content *between*
+/// the brackets: `{cells...}, Open|Closed`. Any trailing items beyond
+/// `Open`/`Closed` (e.g. positional options) are ignored.
+fn parse_cell_group_body(s: &str) -> Result<CellEntry, String> {
   // Find the { ... } cell list and the Open/Closed flag.
-  let rest = rest.trim();
+  let rest = s.trim();
   let rest = rest
     .strip_prefix('{')
     .ok_or("Expected { after CellGroupData[")?;
@@ -468,6 +467,38 @@ fn find_matching_brace(s: &str) -> Result<(&str, &str), String> {
   }
 
   Err("Unmatched opening brace".to_string())
+}
+
+/// Find the matching `]` for content that starts right after `[`.
+/// Returns (content_inside_brackets, remainder_after_bracket).
+fn find_matching_bracket(s: &str) -> Result<(&str, &str), String> {
+  let mut depth = 1i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+
+  for (i, c) in s.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+
+    match c {
+      '"' => in_string = true,
+      '[' => depth += 1,
+      ']' => {
+        depth -= 1;
+        if depth == 0 {
+          return Ok((&s[..i], &s[i + 1..]));
+        }
+      }
+      _ => {}
+    }
+  }
+
+  Err("Unmatched opening bracket".to_string())
 }
 
 /// Split a string on commas at the top level (not inside brackets,
@@ -1639,6 +1670,30 @@ This code doesn\[CloseCurlyQuote]t work anymore due to changes in twitter\
       extract_cell_content(s),
       "This code doesn\u{2019}t work anymore due to changes in twitter\u{2019}s API"
     );
+  }
+
+  #[test]
+  fn test_parse_cell_group_with_trailing_options() {
+    // Real .nb files emit `Cell[CellGroupData[{...}, Open], ExpressionUUID -> "..."]`.
+    // The outer Cell has options after the CellGroupData that must be ignored.
+    let nb = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["1 + 1"], "Input", ExpressionUUID -> "aaa"],
+Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
+}, Open], ExpressionUUID -> "ccc"]
+}]"#;
+
+    let parsed = parse_notebook(nb).unwrap();
+    assert_eq!(parsed.cells.len(), 1);
+    match &parsed.cells[0] {
+      CellEntry::Group(group) => {
+        assert!(group.open);
+        assert_eq!(group.cells.len(), 2);
+        assert_eq!(group.cells[0].style, CellStyle::Input);
+        assert_eq!(group.cells[1].style, CellStyle::Output);
+      }
+      _ => panic!("Expected cell group"),
+    }
   }
 
   #[test]
