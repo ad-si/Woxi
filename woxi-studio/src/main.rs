@@ -3108,16 +3108,19 @@ fn render_hyperlink<'a>(
 
 /// Style the hyperlink button: borderless, transparent background,
 /// subtle hover/press tint that doesn't overpower the link color.
-fn hyperlink_button_style(
-  status: button::Status,
-  alpha: f32,
-) -> button::Style {
+fn hyperlink_button_style(status: button::Status, alpha: f32) -> button::Style {
   let bg = match status {
     button::Status::Hovered => Some(Background::Color(Color::from_rgba(
-      0.10, 0.45, 0.91, 0.10 * alpha,
+      0.10,
+      0.45,
+      0.91,
+      0.10 * alpha,
     ))),
     button::Status::Pressed => Some(Background::Color(Color::from_rgba(
-      0.10, 0.45, 0.91, 0.18 * alpha,
+      0.10,
+      0.45,
+      0.91,
+      0.18 * alpha,
     ))),
     _ => None,
   };

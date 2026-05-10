@@ -3029,7 +3029,9 @@ pub fn interpret_with_stdout(
   let result = if graphics.is_some()
     && (result.starts_with("InformationData[")
       || result.starts_with("InformationDataGrid["))
-    && (result.ends_with("|>]") || result.ends_with("False]") || result.ends_with("True]"))
+    && (result.ends_with("|>]")
+      || result.ends_with("False]")
+      || result.ends_with("True]"))
   {
     String::new()
   } else {

@@ -92,6 +92,34 @@ pub fn known_wolfram_function_names() -> Vec<&'static str> {
   names
 }
 
+/// `tests/SUMMARY.md` is the mdbook table of contents that lists every
+/// documented built-in. Embedding it lets `Information[…]` resolve a symbol
+/// name to its public documentation URL without runtime file I/O (works in
+/// WASM too).
+static SUMMARY_MD: &str = include_str!("../../tests/SUMMARY.md");
+
+/// Map of built-in symbol name → public documentation URL on
+/// <https://woxi.ad-si.com>. Built once from `SUMMARY.md` entries of the
+/// form `` [`Sin`](math/elementary/Sin.md) ``.
+static DOC_URL_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+  let re = regex::Regex::new(r"\[`([A-Za-z][A-Za-z0-9]*)`\]\(([^)]+)\.md\)")
+    .expect("valid SUMMARY.md regex");
+  let mut map = HashMap::new();
+  for cap in re.captures_iter(SUMMARY_MD) {
+    let name = cap.get(1).unwrap().as_str().to_string();
+    let path = cap.get(2).unwrap().as_str();
+    map
+      .entry(name)
+      .or_insert_with(|| format!("https://woxi.ad-si.com/docs/{}", path));
+  }
+  map
+});
+
+/// Look up the public documentation URL for a built-in symbol, if one exists.
+pub fn get_doc_url(name: &str) -> Option<&'static str> {
+  DOC_URL_MAP.get(name).map(|s| s.as_str())
+}
+
 pub(crate) mod assignment;
 mod attributes;
 mod binary_ops;

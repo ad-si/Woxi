@@ -3730,7 +3730,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           // Strip surrounding quotes from a string label (the box form
           // of `"Woxi"` is the literal text `"Woxi"` — show `Woxi`).
           let label_box = match &items[0] {
-            Expr::String(s) if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') => {
+            Expr::String(s)
+              if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
+            {
               Expr::String(s[1..s.len() - 1].to_string())
             }
             other => other.clone(),
@@ -6224,6 +6226,24 @@ fn grid_svg_styled_internal(
         // Text cell — extract optional Style attributes
         let (content, cell_fs, cell_fw, cell_fst, cell_color) =
           extract_cell_style(cell);
+
+        // Detect `Hyperlink[displayText, url]` cells so the grid can render
+        // them as clickable SVG anchors. The display text and href are kept
+        // separate: callers pass a stripped-down label (e.g. without the
+        // `https://` prefix) while the anchor target stays canonical.
+        let (text_content, link_href): (&Expr, Option<&str>) = match content {
+          Expr::FunctionCall { name, args }
+            if name == "Hyperlink" && args.len() == 2 =>
+          {
+            let href = match &args[1] {
+              Expr::String(s) => Some(s.as_str()),
+              _ => None,
+            };
+            (&args[0], href)
+          }
+          other => (other, None),
+        };
+
         let fs = cell_fs.or(default_style.font_size).unwrap_or(font_size);
         // Cell style overrides default style; default style overrides "normal"
         let eff_fw = if cell_fw != "normal" {
@@ -6246,17 +6266,31 @@ fn grid_svg_styled_internal(
         } else {
           String::new()
         };
+        // Hyperlink cells default to a link-blue fill (overridable via
+        // explicit Style[..., color]). Plain cells use the cell/default/theme
+        // colors as before.
         let text_fill = if let Some(ref c) = cell_color {
           c.to_svg_rgb()
+        } else if link_href.is_some() {
+          "#1a73e8".to_string()
         } else if let Some(ref c) = default_style.color {
           c.to_svg_rgb()
         } else {
           theme().text_primary.to_string()
         };
-        svg.push_str(&format!(
+        let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{col_align}\" dominant-baseline=\"central\">{}</text>\n",
-          expr_to_svg_markup(content)
-        ));
+          expr_to_svg_markup(text_content)
+        );
+        if let Some(href) = link_href {
+          svg.push_str(&format!(
+            "<a href=\"{href}\" target=\"_blank\" rel=\"noopener\">{text_elem}</a>\n",
+            href = svg_escape(href),
+            text_elem = text_elem,
+          ));
+        } else {
+          svg.push_str(&text_elem);
+        }
       }
       x_offset += col_w;
     }

@@ -2193,6 +2193,68 @@ mod information {
     let result = interpret("Information[Sin]").unwrap();
     assert!(result.contains("Name -> Sin"));
     assert!(result.contains("Usage -> Returns the sine"));
+    // Attributes and Documentation URL must be in the bare form too.
+    assert!(result.contains("Attributes -> {"));
+    assert!(result.contains("Listable"));
+    assert!(result.contains("NumericFunction"));
+    // Displayed URL strips the `https://` prefix.
+    assert!(
+      result.contains("Documentation -> woxi.ad-si.com/docs/"),
+      "expected stripped docs URL, got: {result}"
+    );
+    assert!(
+      !result.contains("https://"),
+      "textual form should not show the https:// prefix, got: {result}"
+    );
+    assert!(result.contains("/Sin"));
+  }
+
+  #[test]
+  fn builtin_information_includes_attributes_and_doc_url() {
+    // Plus has multiple attributes and a docs page — the bare
+    // Information[Plus] form should surface both.
+    clear_state();
+    let result = interpret("Information[Plus]").unwrap();
+    assert!(result.contains("Attributes -> {"));
+    assert!(result.contains("Flat"));
+    assert!(result.contains("Orderless"));
+    assert!(
+      result.contains("Documentation -> woxi.ad-si.com/docs/"),
+      "expected stripped docs URL, got: {result}"
+    );
+    assert!(!result.contains("https://"));
+    assert!(result.contains("/Plus"));
+  }
+
+  #[test]
+  fn builtin_information_svg_has_clickable_doc_link() {
+    // The SVG card rendered alongside the textual InformationData[…] form
+    // must wrap the documentation URL in an `<a href="https://…">` element
+    // (clickable in browsers/SVG viewers) while displaying the URL without
+    // the `https://` prefix.
+    clear_state();
+    let result = interpret_with_stdout("Information[Sin]").unwrap();
+    let svg = result
+      .graphics
+      .expect("Information[Sin] should capture an SVG card");
+    assert!(
+      svg.contains("<a href=\"https://woxi.ad-si.com/docs/"),
+      "SVG should contain a clickable anchor with full https:// href, got: {svg}"
+    );
+    assert!(
+      svg.contains("woxi.ad-si.com/docs/math/elementary/Sin"),
+      "SVG should display the docs URL"
+    );
+    // The visible text should not include "https://" — only the href does.
+    let visible_text_only: String = svg
+      .split('<')
+      .filter_map(|chunk| chunk.split_once('>').map(|(_, txt)| txt))
+      .collect::<Vec<_>>()
+      .join("");
+    assert!(
+      !visible_text_only.contains("https://"),
+      "visible SVG text should not include https://, got: {visible_text_only}"
+    );
   }
 
   #[test]

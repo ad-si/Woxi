@@ -44,14 +44,46 @@ fn list(items: Vec<Expr>) -> Expr {
   Expr::List(items.into())
 }
 
+/// One row of an `Information[…]` card. `value` is the display text;
+/// `url`, when set, makes the cell a clickable hyperlink whose anchor target
+/// is the URL while the rendered text remains `value`.
+pub struct InfoField {
+  pub label: String,
+  pub value: String,
+  pub url: Option<String>,
+}
+
+impl InfoField {
+  pub fn text(label: impl Into<String>, value: impl Into<String>) -> Self {
+    Self {
+      label: label.into(),
+      value: value.into(),
+      url: None,
+    }
+  }
+
+  pub fn link(
+    label: impl Into<String>,
+    value: impl Into<String>,
+    url: impl Into<String>,
+  ) -> Self {
+    Self {
+      label: label.into(),
+      value: value.into(),
+      url: Some(url.into()),
+    }
+  }
+}
+
 /// Render an InformationData card as SVG.
 ///
 /// `title` is rendered as a bold header value (e.g. the symbol name);
-/// `fields` is a list of (label, value) string pairs displayed in a two-column
-/// table below the header.
+/// `fields` is a list of (label, value[, url]) entries displayed in a
+/// two-column table below the header. Entries with a `url` become clickable
+/// hyperlinks via the grid renderer's `Hyperlink[…]` cell handling.
 pub fn render_information_card_svg(
   title: &str,
-  fields: &[(String, String)],
+  fields: &[InfoField],
 ) -> Option<String> {
   // Build a Grid with the title row spanning both columns, followed by
   // alternating field rows.
@@ -78,11 +110,19 @@ pub fn render_information_card_svg(
     colored_style("Symbol", "Gray"),
   ]));
 
-  for (label, value) in fields {
-    rows.push(list(vec![
-      bold_style(label),
-      Expr::String(value.clone()),
-    ]));
+  for field in fields {
+    let value_cell = match &field.url {
+      Some(url) => Expr::FunctionCall {
+        name: "Hyperlink".to_string(),
+        args: vec![
+          Expr::String(field.value.clone()),
+          Expr::String(url.clone()),
+        ]
+        .into(),
+      },
+      None => Expr::String(field.value.clone()),
+    };
+    rows.push(list(vec![bold_style(&field.label), value_cell]));
   }
 
   let grid_data = list(rows);
@@ -140,10 +180,7 @@ pub fn render_information_grid_svg(
     rows.push(list(vec![bold_style(ctx)]));
 
     if names.is_empty() {
-      rows.push(list(vec![colored_style(
-        "(no matching symbols)",
-        "Gray",
-      )]));
+      rows.push(list(vec![colored_style("(no matching symbols)", "Gray")]));
     } else {
       // Wrap names into columns of ~4 per row for compact display.
       let columns_per_row = 4_usize;
