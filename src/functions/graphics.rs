@@ -3714,6 +3714,52 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
       }
 
+      // TemplateBox[{label, uri}, "HyperlinkURL"] — clickable hyperlink.
+      // The label is unwrapped from its surrounding `"…"` if it boxed
+      // from a literal string (matching wolframscript's MakeBoxes,
+      // which bakes the quotes into the box content). Any other
+      // template falls through to the text fallback.
+      "TemplateBox"
+        if args.len() == 2
+          && matches!(&args[1], Expr::String(t) if t == "HyperlinkURL") =>
+      {
+        if let Expr::List(items) = &args[0]
+          && items.len() == 2
+          && let Expr::String(uri) = &items[1]
+        {
+          // Strip surrounding quotes from a string label (the box form
+          // of `"Woxi"` is the literal text `"Woxi"` — show `Woxi`).
+          let label_box = match &items[0] {
+            Expr::String(s) if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') => {
+              Expr::String(s[1..s.len() - 1].to_string())
+            }
+            other => other.clone(),
+          };
+          let label = layout_box(&label_box, font_size);
+          let underline_y = label.baseline + font_size * 0.12;
+          let stroke_w = (font_size * 0.05).max(0.6);
+          let elements = format!(
+            "<a href=\"{href}\" target=\"_blank\" rel=\"noopener\">\
+             <g fill=\"#1a73e8\" stroke=\"none\">{inner}</g>\
+             <line x1=\"0\" y1=\"{uy:.1}\" x2=\"{w:.1}\" y2=\"{uy:.1}\" stroke=\"#1a73e8\" stroke-width=\"{sw:.2}\"/>\
+             </a>",
+            href = svg_escape(uri),
+            inner = label.elements,
+            uy = underline_y,
+            w = label.width,
+            sw = stroke_w,
+          );
+          return BoxLayout {
+            width: label.width,
+            height: label.height.max(underline_y + stroke_w),
+            baseline: label.baseline,
+            elements,
+          };
+        }
+        let text = crate::syntax::expr_to_output(expr);
+        BoxLayout::text(&text, font_size)
+      }
+
       // Unknown function: render as text
       _ => {
         let text = crate::syntax::expr_to_output(expr);

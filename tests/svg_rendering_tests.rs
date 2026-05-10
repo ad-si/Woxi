@@ -1373,4 +1373,136 @@ mod box_representation_tests {
       "StyleBox text SVG should include fill color: got '{svg}'"
     );
   }
+
+  // ── Hyperlink rendering ──
+
+  #[test]
+  fn hyperlink_two_args_renders_clickable_anchor() {
+    // Hyperlink["Woxi", "https://woxi.ad-si.com"] should render as an
+    // SVG <a href="..."> wrapping a blue label, with an underline.
+    let expr = Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![
+        Expr::String("Woxi".to_string()),
+        Expr::String("https://woxi.ad-si.com".to_string()),
+      ]
+      .into(),
+    };
+    let boxes = expr_to_box_form(&expr);
+    let layout = layout_box(&boxes, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains("<a href=\"https://woxi.ad-si.com\""),
+      "expected SVG anchor with href: got '{svg}'"
+    );
+    assert!(
+      svg.contains("target=\"_blank\""),
+      "expected target=_blank on hyperlink: got '{svg}'"
+    );
+    assert!(
+      svg.contains("rel=\"noopener\""),
+      "expected rel=noopener on hyperlink: got '{svg}'"
+    );
+    assert!(
+      svg.contains("#1a73e8"),
+      "expected link-blue color #1a73e8: got '{svg}'"
+    );
+    assert!(
+      svg.contains(">Woxi<"),
+      "expected unquoted label text 'Woxi' between tags: got '{svg}'"
+    );
+    assert!(
+      svg.contains("<line"),
+      "expected underline <line> below the label: got '{svg}'"
+    );
+  }
+
+  #[test]
+  fn hyperlink_single_arg_uses_uri_as_label() {
+    // Hyperlink["https://woxi.ad-si.com"] should display the URI as
+    // both the visible text and the href.
+    let expr = Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![Expr::String("https://woxi.ad-si.com".to_string())].into(),
+    };
+    let boxes = expr_to_box_form(&expr);
+    let layout = layout_box(&boxes, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains("href=\"https://woxi.ad-si.com\""),
+      "expected href with URI: got '{svg}'"
+    );
+    assert!(
+      svg.contains(">https://woxi.ad-si.com<"),
+      "expected URI text between tags: got '{svg}'"
+    );
+  }
+
+  #[test]
+  fn hyperlink_box_form_is_template_box() {
+    // expr_to_box_form should produce TemplateBox[..., "HyperlinkURL"]
+    // matching wolframscript's MakeBoxes structure.
+    let expr = Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![
+        Expr::String("Woxi".to_string()),
+        Expr::String("https://woxi.ad-si.com".to_string()),
+      ]
+      .into(),
+    };
+    let boxes = expr_to_box_form(&expr);
+    if let Expr::FunctionCall { name, args } = &boxes {
+      assert_eq!(name, "TemplateBox");
+      assert_eq!(args.len(), 2);
+      assert!(
+        matches!(&args[1], Expr::String(s) if s == "HyperlinkURL"),
+        "second arg should be \"HyperlinkURL\": got {:?}",
+        args[1]
+      );
+    } else {
+      panic!("expected TemplateBox, got {:?}", boxes);
+    }
+  }
+
+  #[test]
+  fn hyperlink_with_non_string_uri_falls_back_to_function_call() {
+    // Hyperlink[label, expr] with a non-string URI should fall through
+    // to the generic function-call rendering (no anchor in SVG).
+    let expr = Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![
+        Expr::String("label".to_string()),
+        Expr::Identifier("someVar".to_string()),
+      ]
+      .into(),
+    };
+    let boxes = expr_to_box_form(&expr);
+    let layout = layout_box(&boxes, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      !svg.contains("<a href"),
+      "expected no anchor for non-string URI: got '{svg}'"
+    );
+  }
+
+  #[test]
+  fn hyperlink_html_in_uri_is_escaped() {
+    // A URI containing characters that need XML escaping should be
+    // properly escaped in the href to avoid breaking the SVG.
+    let expr = Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![
+        Expr::String("link".to_string()),
+        Expr::String("https://example.com/?q=a&b=<c>".to_string()),
+      ]
+      .into(),
+    };
+    let boxes = expr_to_box_form(&expr);
+    let layout = layout_box(&boxes, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains("&amp;b=&lt;c&gt;"),
+      "expected XML-escaped href: got '{svg}'"
+    );
+  }
 }

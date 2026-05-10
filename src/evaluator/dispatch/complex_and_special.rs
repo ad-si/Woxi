@@ -3733,6 +3733,44 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         .into(),
       }
     }
+    // Hyperlink[uri] / Hyperlink[label, uri] →
+    //   TemplateBox[{<box(label)>, "<uri>"}, "HyperlinkURL"]
+    // matching wolframscript's MakeBoxes output. The SVG layout
+    // recognizes the HyperlinkURL template and turns the label into a
+    // clickable `<a href>` element; consumers that don't (e.g. plain
+    // text rendering) fall back gracefully.
+    Expr::FunctionCall { name, args }
+      if name == "Hyperlink"
+        && (args.len() == 1 || args.len() == 2)
+        && matches!(
+          if args.len() == 1 { &args[0] } else { &args[1] },
+          Expr::String(_)
+        ) =>
+    {
+      let (label, uri_str) = if args.len() == 1 {
+        let s = match &args[0] {
+          Expr::String(s) => s.clone(),
+          _ => unreachable!(),
+        };
+        (Expr::String(s.clone()), s)
+      } else {
+        let s = match &args[1] {
+          Expr::String(s) => s.clone(),
+          _ => unreachable!(),
+        };
+        (args[0].clone(), s)
+      };
+      Expr::FunctionCall {
+        name: "TemplateBox".to_string(),
+        args: vec![
+          Expr::List(
+            vec![expr_to_box_form(&label), Expr::String(uri_str)].into(),
+          ),
+          Expr::String("HyperlinkURL".to_string()),
+        ]
+        .into(),
+      }
+    }
     // General function call f[x, y] → RowBox[{f, "[", RowBox[{x, ",", y}], "]"}]
     Expr::FunctionCall { name, args } => {
       let mut parts = Vec::new();

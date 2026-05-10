@@ -122,6 +122,10 @@ struct CellEditor {
   /// produced a well-formed `Manipulate[…]` expression. When present,
   /// the cell renders sliders / pick lists instead of the plain echo.
   manipulate_state: Option<manipulate::ManipulateState>,
+  /// `(label, uri)` pairs for `Hyperlink[…]` results. When non-empty,
+  /// the cell renders clickable link buttons instead of (or alongside)
+  /// the plain text echo.
+  hyperlinks: Vec<(String, String)>,
   /// Selectable text_editor content for the output text.
   output_content: text_editor::Content,
   /// Selectable text_editor content for stdout (Print output).
@@ -228,6 +232,9 @@ enum Message {
   // Manipulate interactive widgets
   ManipulateContinuousChanged(usize, usize, f64),
   ManipulateDiscreteChanged(usize, usize, String),
+
+  // Hyperlink: open the given URL in the user's default browser.
+  OpenHyperlink(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,6 +404,7 @@ impl WoxiStudio {
             output_stale: false,
             is_collapsed: cell.collapsed,
             manipulate_state: None,
+            hyperlinks: Vec::new(),
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           });
@@ -461,6 +469,7 @@ impl WoxiStudio {
                 output_stale: false,
                 is_collapsed: false,
                 manipulate_state: None,
+                hyperlinks: Vec::new(),
                 output_content,
                 stdout_content,
               });
@@ -484,6 +493,7 @@ impl WoxiStudio {
                 output_stale: false,
                 is_collapsed: false,
                 manipulate_state: None,
+                hyperlinks: Vec::new(),
                 output_content: text_editor::Content::new(),
                 stdout_content: text_editor::Content::new(),
               });
@@ -1197,6 +1207,7 @@ impl WoxiStudio {
             self.cell_editors[idx].graphics_svg = None;
             self.cell_editors[idx].graphics_handle = None;
             self.cell_editors[idx].graphics_image = None;
+            self.cell_editors[idx].hyperlinks.clear();
             self.cell_editors[idx].warnings.clear();
             self.cell_editors[idx].output_stale = false;
           }
@@ -1421,6 +1432,11 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::OpenHyperlink(url) => {
+        open_url(&url);
+        Task::none()
+      }
+
       Message::FocusCell(idx) => {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
@@ -1471,6 +1487,7 @@ impl WoxiStudio {
             output_stale: false,
             is_collapsed: false,
             manipulate_state: None,
+            hyperlinks: Vec::new(),
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           },
@@ -1499,6 +1516,7 @@ impl WoxiStudio {
             output_stale: false,
             is_collapsed: false,
             manipulate_state: None,
+            hyperlinks: Vec::new(),
             output_content: text_editor::Content::new(),
             stdout_content: text_editor::Content::new(),
           },
@@ -2522,6 +2540,11 @@ impl WoxiStudio {
           output_col.push(render_manipulate_widget(idx, state, stale));
       }
 
+      // Hyperlink buttons (clickable, blue, opens URL on press)
+      for (label, uri) in &editor.hyperlinks {
+        output_col = output_col.push(render_hyperlink(label, uri, stale));
+      }
+
       // Text output (filter out graphics placeholders)
       if editor.output.is_some()
         && !editor.output_content.text().trim().is_empty()
@@ -2599,6 +2622,11 @@ impl WoxiStudio {
       if let Some(ref state) = editor.manipulate_state {
         content_col =
           content_col.push(render_manipulate_widget(idx, state, stale));
+      }
+
+      // Hyperlink buttons
+      for (label, uri) in &editor.hyperlinks {
+        content_col = content_col.push(render_hyperlink(label, uri, stale));
       }
 
       if editor.output.is_some()
@@ -3057,6 +3085,51 @@ fn render_manipulate_widget<'a>(
     .into()
 }
 
+/// Build a clickable hyperlink button: blue label, transparent
+/// background, opens `uri` in the default browser on press. Stale
+/// state dims the button to match other output widgets.
+fn render_hyperlink<'a>(
+  label: &str,
+  uri: &str,
+  stale: bool,
+) -> Element<'a, Message> {
+  let alpha = if stale { 0.4 } else { 1.0 };
+  let link_color = Color::from_rgba(0.10, 0.45, 0.91, alpha);
+  let label_text = text(label.to_string())
+    .size(13)
+    .color(link_color)
+    .font(Font::MONOSPACE);
+  button(label_text)
+    .on_press(Message::OpenHyperlink(uri.to_string()))
+    .padding([2, 6])
+    .style(move |_theme, status| hyperlink_button_style(status, alpha))
+    .into()
+}
+
+/// Style the hyperlink button: borderless, transparent background,
+/// subtle hover/press tint that doesn't overpower the link color.
+fn hyperlink_button_style(
+  status: button::Status,
+  alpha: f32,
+) -> button::Style {
+  let bg = match status {
+    button::Status::Hovered => Some(Background::Color(Color::from_rgba(
+      0.10, 0.45, 0.91, 0.10 * alpha,
+    ))),
+    button::Status::Pressed => Some(Background::Color(Color::from_rgba(
+      0.10, 0.45, 0.91, 0.18 * alpha,
+    ))),
+    _ => None,
+  };
+  button::Style {
+    background: bg,
+    text_color: Color::from_rgba(0.10, 0.45, 0.91, alpha),
+    border: iced::Border::default(),
+    shadow: Default::default(),
+    snap: false,
+  }
+}
+
 /// Format a slider value for the inline readout. Integers render
 /// without a trailing zero, fractional values get 3 decimal digits of
 /// precision (with trailing zeros trimmed).
@@ -3127,6 +3200,7 @@ fn evaluate_cell_statements(
   // Track a Manipulate that appears as the final statement's result, so
   // we can render it as an interactive widget instead of a plain echo.
   let mut last_manipulate: Option<(String, manipulate::ManipulateState)> = None;
+  let mut hyperlinks: Vec<(String, String)> = Vec::new();
 
   for stmt in &statements {
     match woxi::interpret_with_stdout(stmt) {
@@ -3149,6 +3223,16 @@ fn evaluate_cell_statements(
           // Skip adding to outputs / graphics — the interactive widget
           // subsumes both the text echo and any placeholder graphics.
           last_graphics = None;
+          continue;
+        }
+
+        // Detect a top-level Hyperlink[…] result so the cell can
+        // render a clickable link button instead of plain text.
+        if result.result != "\0"
+          && let Ok(expr) = woxi::interpret_to_expr(stmt)
+          && let Some((label, uri)) = extract_hyperlink(&expr)
+        {
+          hyperlinks.push((label, uri));
           continue;
         }
 
@@ -3209,9 +3293,47 @@ fn evaluate_cell_statements(
     .as_ref()
     .and_then(|s| rasterize_svg(s, scale_factor, fontdb));
   editor.manipulate_state = last_manipulate.map(|(_, state)| state);
+  editor.hyperlinks = hyperlinks;
   editor.warnings = all_warnings;
   editor.output_stale = false;
   let _ = had_error;
+}
+
+/// Extract `(label, uri)` from a top-level `Hyperlink[…]` expression.
+/// Both `Hyperlink[uri]` and `Hyperlink[label, uri]` are accepted, with
+/// the URI required to be a literal string. Returns `None` for any
+/// other shape.
+fn extract_hyperlink(expr: &woxi::syntax::Expr) -> Option<(String, String)> {
+  let woxi::syntax::Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Hyperlink" {
+    return None;
+  }
+  match args.as_ref() {
+    [woxi::syntax::Expr::String(uri)] => Some((uri.clone(), uri.clone())),
+    [label, woxi::syntax::Expr::String(uri)] => {
+      let label_str = match label {
+        woxi::syntax::Expr::String(s) => s.clone(),
+        other => woxi::syntax::expr_to_string(other),
+      };
+      Some((label_str, uri.clone()))
+    }
+    _ => None,
+  }
+}
+
+/// Open `url` in the user's default browser. The command varies per
+/// platform; failures are silently ignored (the worst case is a no-op
+/// click, which is acceptable for a UI affordance).
+fn open_url(url: &str) {
+  #[cfg(target_os = "macos")]
+  let cmd = "open";
+  #[cfg(target_os = "linux")]
+  let cmd = "xdg-open";
+  #[cfg(target_os = "windows")]
+  let cmd = "start";
+  let _ = std::process::Command::new(cmd).arg(url).spawn();
 }
 
 // ── Custom styles ───────────────────────────────────────────────────
@@ -4679,5 +4801,76 @@ mod tests {
     let (new_line, shift) = toggle_line_comment("   ");
     assert_eq!(new_line, "   (*  *)");
     assert_eq!(shift, 3);
+  }
+
+  // ── Hyperlink extraction ──
+
+  #[test]
+  fn extract_hyperlink_two_args() {
+    let expr = woxi::syntax::Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![
+        woxi::syntax::Expr::String("Woxi".to_string()),
+        woxi::syntax::Expr::String("https://woxi.ad-si.com".to_string()),
+      ]
+      .into(),
+    };
+    assert_eq!(
+      extract_hyperlink(&expr),
+      Some(("Woxi".to_string(), "https://woxi.ad-si.com".to_string()))
+    );
+  }
+
+  #[test]
+  fn extract_hyperlink_single_arg_uses_uri_as_label() {
+    let expr = woxi::syntax::Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![woxi::syntax::Expr::String(
+        "https://woxi.ad-si.com".to_string(),
+      )]
+      .into(),
+    };
+    assert_eq!(
+      extract_hyperlink(&expr),
+      Some((
+        "https://woxi.ad-si.com".to_string(),
+        "https://woxi.ad-si.com".to_string()
+      ))
+    );
+  }
+
+  #[test]
+  fn extract_hyperlink_non_string_uri_rejected() {
+    let expr = woxi::syntax::Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![
+        woxi::syntax::Expr::String("label".to_string()),
+        woxi::syntax::Expr::Identifier("someVar".to_string()),
+      ]
+      .into(),
+    };
+    assert_eq!(extract_hyperlink(&expr), None);
+  }
+
+  #[test]
+  fn extract_hyperlink_other_function_rejected() {
+    let expr = woxi::syntax::Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        woxi::syntax::Expr::Integer(1),
+        woxi::syntax::Expr::Integer(2),
+      ]
+      .into(),
+    };
+    assert_eq!(extract_hyperlink(&expr), None);
+  }
+
+  #[test]
+  fn extract_hyperlink_zero_args_rejected() {
+    let expr = woxi::syntax::Expr::FunctionCall {
+      name: "Hyperlink".to_string(),
+      args: vec![].into(),
+    };
+    assert_eq!(extract_hyperlink(&expr), None);
   }
 }
