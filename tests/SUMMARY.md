@@ -1063,6 +1063,7 @@
     - [`ToTabular`](associations/ToTabular.md)
     - [`Values`](associations/Values.md)
   - [Expressions](expressions.md)
+    - [`Hyperlink`](expressions/Hyperlink.md)
     - [`Assuming`](expressions/Assuming.md)
     - [`BlankNullSequence`](expressions/BlankNullSequence.md)
     - [`ByteArray`](expressions/ByteArray.md)
