@@ -73,6 +73,13 @@ struct WoxiStudio {
   fontdb: Arc<resvg::usvg::fontdb::Database>,
   /// Index of the cell whose graphic is shown in the fullscreen modal.
   graphics_modal_cell: Option<usize>,
+  /// Index of the cell whose graphic context menu is open (right-click menu).
+  graphics_context_menu_cell: Option<usize>,
+  /// Position (in window logical coords) where the context menu should appear.
+  graphics_context_menu_pos: iced::Point,
+  /// Latest known cursor position, tracked via global mouse events so we can
+  /// place the right-click menu at the cursor.
+  cursor_position: iced::Point,
   /// Whether the table of contents sidebar is visible.
   show_toc: bool,
   /// Current window width in logical pixels.
@@ -211,6 +218,13 @@ enum Message {
   OpenGraphicsModal(usize),
   CloseGraphicsModal,
 
+  // Graphics right-click context menu
+  ShowGraphicsContextMenu(usize),
+  CloseGraphicsContextMenu,
+  SaveGraphicAs(usize),
+  GraphicSaved(Result<PathBuf, FileError>),
+  CursorMoved(iced::Point),
+
   // Manipulate interactive widgets
   ManipulateContinuousChanged(usize, usize, f64),
   ManipulateDiscreteChanged(usize, usize, String),
@@ -344,6 +358,9 @@ impl WoxiStudio {
           Arc::new(db)
         },
         graphics_modal_cell: None,
+        graphics_context_menu_cell: None,
+        graphics_context_menu_pos: iced::Point::ORIGIN,
+        cursor_position: iced::Point::ORIGIN,
         show_toc: false,
         window_width: 1024.0,
         hovered_gutter: None,
@@ -1295,6 +1312,61 @@ impl WoxiStudio {
 
       Message::CloseGraphicsModal => {
         self.graphics_modal_cell = None;
+        self.graphics_context_menu_cell = None;
+        Task::none()
+      }
+
+      Message::ShowGraphicsContextMenu(idx) => {
+        if idx < self.cell_editors.len()
+          && self.cell_editors[idx].graphics_svg.is_some()
+        {
+          self.graphics_context_menu_cell = Some(idx);
+          self.graphics_context_menu_pos = self.cursor_position;
+        }
+        Task::none()
+      }
+
+      Message::CloseGraphicsContextMenu => {
+        self.graphics_context_menu_cell = None;
+        Task::none()
+      }
+
+      Message::CursorMoved(pos) => {
+        self.cursor_position = pos;
+        Task::none()
+      }
+
+      Message::SaveGraphicAs(idx) => {
+        self.graphics_context_menu_cell = None;
+        if idx >= self.cell_editors.len() {
+          return Task::none();
+        }
+        let Some(svg_data) = self.cell_editors[idx].graphics_svg.clone() else {
+          return Task::none();
+        };
+        let default_dir = self
+          .file_path
+          .as_ref()
+          .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        let fontdb = self.fontdb.clone();
+        Task::perform(
+          save_graphic(svg_data, default_dir, fontdb),
+          Message::GraphicSaved,
+        )
+      }
+
+      Message::GraphicSaved(result) => {
+        match result {
+          Ok(path) => {
+            self.status = format!("Saved graphic: {}", path.display());
+          }
+          Err(FileError::DialogClosed) => {
+            self.status = String::from("Save cancelled");
+          }
+          Err(FileError::IoError(e)) => {
+            self.status = format!("Error saving graphic: {e:?}");
+          }
+        }
         Task::none()
       }
 
@@ -1543,14 +1615,19 @@ impl WoxiStudio {
       }
 
       Message::KeyPressed(key, modifiers) => {
-        // Escape closes the graphics modal
+        // Escape closes the graphics context menu, then the modal
         if matches!(
           key.as_ref(),
           keyboard::Key::Named(keyboard::key::Named::Escape)
-        ) && self.graphics_modal_cell.is_some()
-        {
-          self.graphics_modal_cell = None;
-          return Task::none();
+        ) {
+          if self.graphics_context_menu_cell.is_some() {
+            self.graphics_context_menu_cell = None;
+            return Task::none();
+          }
+          if self.graphics_modal_cell.is_some() {
+            self.graphics_modal_cell = None;
+            return Task::none();
+          }
         }
 
         if modifiers.command() {
@@ -1989,15 +2066,22 @@ impl WoxiStudio {
             text("No graphic").into()
           };
 
+        let graphic_clickable: Element<'_, Message> = mouse_area(graphic)
+          .on_right_press(Message::ShowGraphicsContextMenu(modal_idx))
+          .into();
+
         let close_btn = button(text("Close").size(13))
           .on_press(Message::CloseGraphicsModal)
           .padding([6, 16])
           .style(muted_button_style);
 
-        let modal_content =
-          container(column![graphic, close_btn].spacing(12).align_x(Center))
-            .center(Fill)
-            .padding(40);
+        let modal_content = container(
+          column![graphic_clickable, close_btn]
+            .spacing(12)
+            .align_x(Center),
+        )
+        .center(Fill)
+        .padding(40);
 
         mouse_area(
           container(opaque(modal_content))
@@ -2011,7 +2095,40 @@ impl WoxiStudio {
         column![].into()
       };
 
-    stack![main_view, modal_layer].into()
+    // ── Graphics context menu overlay ──
+    // Positioned at the cursor location captured when the right-click fired.
+    // A transparent full-window mouse_area catches outside-clicks to dismiss.
+    let context_menu_layer: Element<'_, Message> =
+      if let Some(menu_idx) = self.graphics_context_menu_cell {
+        let save_btn = button(text("Save Graphic As…").size(13))
+          .on_press(Message::SaveGraphicAs(menu_idx))
+          .padding([6, 14])
+          .style(context_menu_item_style);
+
+        let menu = container(column![save_btn].spacing(2))
+          .padding(4)
+          .style(context_menu_style);
+
+        let pos = self.graphics_context_menu_pos;
+        let x = pos.x.max(0.0);
+        let y = pos.y.max(0.0);
+        let positioned = column![
+          space::vertical().height(iced::Length::Fixed(y)),
+          row![
+            space::horizontal().width(iced::Length::Fixed(x)),
+            opaque(menu),
+          ],
+        ];
+
+        mouse_area(container(positioned).width(Fill).height(Fill))
+          .on_press(Message::CloseGraphicsContextMenu)
+          .on_right_press(Message::CloseGraphicsContextMenu)
+          .into()
+      } else {
+        column![].into()
+      };
+
+    stack![main_view, modal_layer, context_menu_layer].into()
   }
 
   /// Compute which cells are hidden due to a collapsed Chapter or
@@ -2375,6 +2492,7 @@ impl WoxiStudio {
 
       // Graphics rendering (pre-rasterized image, falls back to SVG)
       // Double-click opens a fullscreen modal for detailed inspection.
+      // Right-click opens a context menu (Save Graphic As).
       if let Some((ref img_handle, w, h)) = editor.graphics_image {
         let mut img_widget = image(img_handle.clone())
           .width(iced::Length::Fixed(w as f32))
@@ -2383,7 +2501,8 @@ impl WoxiStudio {
           img_widget = img_widget.opacity(0.3);
         }
         let clickable = mouse_area(container(img_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx));
+          .on_double_click(Message::OpenGraphicsModal(idx))
+          .on_right_press(Message::ShowGraphicsContextMenu(idx));
         output_col = output_col.push(clickable);
       } else if let Some(ref handle) = editor.graphics_handle {
         let mut svg_widget =
@@ -2392,7 +2511,8 @@ impl WoxiStudio {
           svg_widget = svg_widget.opacity(0.3);
         }
         let clickable = mouse_area(container(svg_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx));
+          .on_double_click(Message::OpenGraphicsModal(idx))
+          .on_right_press(Message::ShowGraphicsContextMenu(idx));
         output_col = output_col.push(clickable);
       }
 
@@ -2460,7 +2580,8 @@ impl WoxiStudio {
           img_widget = img_widget.opacity(0.3);
         }
         let clickable = mouse_area(container(img_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx));
+          .on_double_click(Message::OpenGraphicsModal(idx))
+          .on_right_press(Message::ShowGraphicsContextMenu(idx));
         content_col = content_col.push(clickable);
       } else if let Some(ref handle) = editor.graphics_handle {
         let mut svg_widget =
@@ -2469,7 +2590,8 @@ impl WoxiStudio {
           svg_widget = svg_widget.opacity(0.3);
         }
         let clickable = mouse_area(container(svg_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx));
+          .on_double_click(Message::OpenGraphicsModal(idx))
+          .on_right_press(Message::ShowGraphicsContextMenu(idx));
         content_col = content_col.push(clickable);
       }
 
@@ -2752,6 +2874,13 @@ fn handle_event(
   )) = &event
   {
     return Some(Message::DragEnd);
+  }
+
+  // Track cursor position so we can place the right-click context menu.
+  if let iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) =
+    &event
+  {
+    return Some(Message::CursorMoved(*position));
   }
 
   if let iced::Event::Window(iced::window::Event::CloseRequested) = &event {
@@ -3220,6 +3349,58 @@ fn graphics_modal_backdrop_style(_theme: &Theme) -> container::Style {
   container::Style {
     background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.75))),
     ..container::Style::default()
+  }
+}
+
+fn context_menu_style(theme: &Theme) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let (bg, border) = if is_dark {
+    (
+      Color::from_rgb(0.20, 0.22, 0.28),
+      Color::from_rgba(1.0, 1.0, 1.0, 0.15),
+    )
+  } else {
+    (Color::WHITE, Color::from_rgba(0.0, 0.0, 0.0, 0.15))
+  };
+  container::Style {
+    background: Some(Background::Color(bg)),
+    border: Border {
+      color: border,
+      width: 1.0,
+      radius: 6.0.into(),
+    },
+    ..container::Style::default()
+  }
+}
+
+fn context_menu_item_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let (text_color, hover_bg) = if is_dark {
+    (
+      Color::from_rgb(0.88, 0.90, 0.95),
+      Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+    )
+  } else {
+    (
+      Color::from_rgb(0.10, 0.10, 0.10),
+      Color::from_rgba(0.0, 0.0, 0.0, 0.06),
+    )
+  };
+  let bg = match status {
+    button::Status::Hovered | button::Status::Pressed => Some(hover_bg),
+    _ => None,
+  };
+  button::Style {
+    background: bg.map(Background::Color),
+    text_color,
+    border: Border {
+      radius: 4.0.into(),
+      ..Border::default()
+    },
+    ..button::Style::default()
   }
 }
 
@@ -3833,6 +4014,117 @@ async fn export_file(
     .map_err(|e| FileError::IoError(e.kind()))?;
 
   Ok(path)
+}
+
+/// Save a graphic (originally produced as SVG) to disk in the format
+/// implied by the chosen file extension. Supports SVG, PNG, and PDF.
+async fn save_graphic(
+  svg_data: String,
+  default_dir: Option<PathBuf>,
+  fontdb: Arc<resvg::usvg::fontdb::Database>,
+) -> Result<PathBuf, FileError> {
+  let mut dialog = rfd::AsyncFileDialog::new()
+    .set_title("Save Graphic As")
+    .set_file_name("graphic.svg")
+    .add_filter("SVG", &["svg"])
+    .add_filter("PNG", &["png"])
+    .add_filter("PDF", &["pdf"]);
+  if let Some(dir) = default_dir {
+    dialog = dialog.set_directory(dir);
+  }
+  let path = dialog
+    .save_file()
+    .await
+    .map(|h| h.path().to_owned())
+    .ok_or(FileError::DialogClosed)?;
+
+  let ext = path
+    .extension()
+    .and_then(|e| e.to_str())
+    .map(|s| s.to_ascii_lowercase())
+    .unwrap_or_else(|| String::from("svg"));
+
+  match ext.as_str() {
+    "png" => {
+      let png_bytes = encode_svg_as_png(&svg_data, &fontdb)
+        .ok_or(FileError::IoError(std::io::ErrorKind::InvalidData))?;
+      tokio::fs::write(&path, &png_bytes)
+        .await
+        .map_err(|e| FileError::IoError(e.kind()))?;
+    }
+    "pdf" => {
+      let pdf_bytes = encode_svg_as_pdf(&svg_data)
+        .map_err(|_| FileError::IoError(std::io::ErrorKind::InvalidData))?;
+      tokio::fs::write(&path, &pdf_bytes)
+        .await
+        .map_err(|e| FileError::IoError(e.kind()))?;
+    }
+    _ => {
+      tokio::fs::write(&path, svg_data.as_bytes())
+        .await
+        .map_err(|e| FileError::IoError(e.kind()))?;
+    }
+  }
+
+  Ok(path)
+}
+
+/// Rasterize an SVG string to a PNG byte buffer at 2× scale.
+fn encode_svg_as_png(
+  svg_str: &str,
+  fontdb: &Arc<resvg::usvg::fontdb::Database>,
+) -> Option<Vec<u8>> {
+  let opts = resvg::usvg::Options {
+    fontdb: fontdb.clone(),
+    ..Default::default()
+  };
+  let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
+  let size = tree.size();
+  let scale: f32 = 2.0;
+  let w = (size.width() * scale).ceil() as u32;
+  let h = (size.height() * scale).ceil() as u32;
+  if w == 0 || h == 0 {
+    return None;
+  }
+  let mut pixmap = tiny_skia::Pixmap::new(w, h)?;
+  resvg::render(
+    &tree,
+    tiny_skia::Transform::from_scale(scale, scale),
+    &mut pixmap.as_mut(),
+  );
+  pixmap.encode_png().ok()
+}
+
+/// Convert an SVG string to a PDF byte buffer via svg2pdf.
+fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
+  let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
+  fontdb.load_font_data(
+    include_bytes!(
+      "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
+    )
+    .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!(
+      "../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
+    )
+    .to_vec(),
+  );
+  fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
+  fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
+  fontdb.set_serif_family("Atkinson Hyperlegible Next");
+  fontdb.load_system_fonts();
+
+  let mut opt = svg2pdf::usvg::Options::default();
+  opt.fontdb = std::sync::Arc::new(fontdb);
+
+  let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|_| ())?;
+  svg2pdf::to_pdf(
+    &tree,
+    svg2pdf::ConversionOptions::default(),
+    svg2pdf::PageOptions::default(),
+  )
+  .map_err(|_| ())
 }
 
 /// Data extracted from cell editors for PDF export.
