@@ -243,6 +243,44 @@ if (savedCodeForOutput !== null && savedCodeForOutput !== DEFAULT_CODE) {
 
 restoreOutput()
 
+function appendOutputItem(outputsEl, item) {
+  if (item.type === "graphics") {
+    const div = document.createElement("div")
+    div.className = "output-box graphics-box"
+    div.innerHTML = item.svg
+    outputsEl.appendChild(div)
+  } else if (item.type === "text") {
+    if (item.svg) {
+      const div = document.createElement("div")
+      div.className = "output-box text-box"
+      div.innerHTML = item.svg
+      outputsEl.appendChild(div)
+    } else if (item.text) {
+      const pre = document.createElement("pre")
+      pre.className = "output-box text-box"
+      pre.textContent = item.text
+      outputsEl.appendChild(pre)
+    }
+  } else if (item.type === "manipulate") {
+    outputsEl.appendChild(renderManipulate(item))
+  } else if (item.type === "print") {
+    const pre = document.createElement("pre")
+    pre.className = "output-box print-box"
+    pre.textContent = item.text
+    outputsEl.appendChild(pre)
+  } else if (item.type === "warning") {
+    const pre = document.createElement("pre")
+    pre.className = "output-box warning-box"
+    pre.textContent = item.text
+    outputsEl.appendChild(pre)
+  } else if (item.type === "error") {
+    const pre = document.createElement("pre")
+    pre.className = "output-box error-box"
+    pre.textContent = item.text
+    outputsEl.appendChild(pre)
+  }
+}
+
 function renderOutputItems(items) {
   const outputsEl = document.getElementById("outputs")
   outputsEl.innerHTML = ""
@@ -253,41 +291,15 @@ function renderOutputItems(items) {
   manipulateRequests.clear()
 
   for (const item of items) {
-    if (item.type === "graphics") {
-      const div = document.createElement("div")
-      div.className = "output-box graphics-box"
-      div.innerHTML = item.svg
-      outputsEl.appendChild(div)
-    } else if (item.type === "text") {
-      if (item.svg) {
-        const div = document.createElement("div")
-        div.className = "output-box text-box"
-        div.innerHTML = item.svg
-        outputsEl.appendChild(div)
-      } else if (item.text) {
-        const pre = document.createElement("pre")
-        pre.className = "output-box text-box"
-        pre.textContent = item.text
-        outputsEl.appendChild(pre)
-      }
-    } else if (item.type === "manipulate") {
-      outputsEl.appendChild(renderManipulate(item))
-    } else if (item.type === "print") {
-      const pre = document.createElement("pre")
-      pre.className = "output-box print-box"
-      pre.textContent = item.text
-      outputsEl.appendChild(pre)
-    } else if (item.type === "warning") {
-      const pre = document.createElement("pre")
-      pre.className = "output-box warning-box"
-      pre.textContent = item.text
-      outputsEl.appendChild(pre)
-    } else if (item.type === "error") {
-      const pre = document.createElement("pre")
-      pre.className = "output-box error-box"
-      pre.textContent = item.text
-      outputsEl.appendChild(pre)
-    }
+    appendOutputItem(outputsEl, item)
+  }
+}
+
+function appendOutputItems(items) {
+  const outputsEl = document.getElementById("outputs")
+  outputsEl.classList.remove("stale")
+  for (const item of items) {
+    appendOutputItem(outputsEl, item)
   }
 }
 
@@ -503,6 +515,24 @@ function initWorker() {
       }
       saveOutput()
     }
+    else if (type === "partial_result") {
+      if (success) {
+        try {
+          const items = JSON.parse(result)
+          appendOutputItems(items)
+        } catch (_) {
+          appendOutputItems([{ type: "error", text: result }])
+        }
+      }
+    }
+    else if (type === "result_done") {
+      hideSpinner("runSpinner")
+      document.getElementById("runBtn").disabled = false
+      if (!success) {
+        appendOutputItems([{ type: "error", text: message }])
+      }
+      saveOutput()
+    }
     else if (type === "manipulate_result") {
       const widget = manipulateRequests.get(e.data.requestId)
       manipulateRequests.delete(e.data.requestId)
@@ -550,6 +580,9 @@ document.getElementById("runBtn").addEventListener("click", () => {
   document.getElementById("runBtn").disabled = true
   showSpinner("runSpinner")
   clearOutputs()
+  // Drop any pending manipulate requests targeting now-removed DOM nodes.
+  manipulateRequests.clear()
+  document.getElementById("outputs").classList.remove("stale")
 
   worker.postMessage({ type: "set_theme", dark: isDark() })
   worker.postMessage({ type: "evaluate", code: code })

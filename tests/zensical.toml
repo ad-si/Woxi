@@ -1467,6 +1467,7 @@ nav = [
   ] },
   { "Dates & Time" = [
     "dates.md",
+    { "Pause" = "dates/Pause.md" },
     { "AbsoluteTime" = "dates/AbsoluteTime.md" },
     { "AbsoluteTiming" = "dates/AbsoluteTiming.md" },
     { "DateDifference" = "dates/DateDifference.md" },

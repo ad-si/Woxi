@@ -73,12 +73,18 @@ self.onmessage = async function (e) {
     }
 
     try {
-      const result = wasm.evaluate_all(code)
-      postMessage({ type: "result", success: true, result })
+      // Stream output one statement at a time so Print/Pause/Print
+      // sequences appear progressively rather than batched.
+      const stmts = JSON.parse(wasm.split_statements(code))
+      for (const stmt of stmts) {
+        const partial = wasm.evaluate_statement(stmt)
+        postMessage({ type: "partial_result", success: true, result: partial })
+      }
+      postMessage({ type: "result_done", success: true })
     }
     catch (error) {
       postMessage({
-        type: "result",
+        type: "result_done",
         success: false,
         message: "Error: " + error.message,
       })

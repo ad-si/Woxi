@@ -80,6 +80,21 @@ pub fn init() {
   console_error_panic_hook::set_once();
 }
 
+/// Synchronously block the current (worker) thread for `secs` seconds.
+/// Implemented as a busy-wait against `Date.now()` because
+/// `std::thread::sleep` is unavailable on `wasm32-unknown-unknown`.
+/// Burns one core for the duration but does not block the UI thread
+/// when called from a Web Worker.
+pub fn sleep_seconds(secs: f64) {
+  if secs <= 0.0 {
+    return;
+  }
+  let end = js_sys::Date::now() + secs * 1000.0;
+  while js_sys::Date::now() < end {
+    // busy-wait
+  }
+}
+
 /// Evaluate a Wolfram Language expression and return the result.
 /// If the expression produces Print output, it is prepended to the result.
 #[wasm_bindgen]
@@ -143,66 +158,93 @@ pub fn set_dark_mode(enabled: bool) {
 pub fn evaluate_all(input: &str) -> String {
   let statements = crate::split_into_statements(input);
   let mut items = Vec::new();
-
   for stmt in &statements {
-    match interpret_with_stdout(stmt) {
-      Ok(result) => {
-        // Print output
-        let trimmed_stdout = result.stdout.trim_end();
-        if !trimmed_stdout.is_empty() {
-          items.push(json_output_item("print", trimmed_stdout, None));
-        }
+    items.extend(evaluate_statement_items(stmt));
+  }
+  format!("[{}]", items.join(","))
+}
 
-        // Warnings
-        for w in &result.warnings {
-          items.push(json_output_item("warning", w, None));
-        }
+/// Split `input` into top-level statements and return a JSON array of strings.
+/// Lets the front-end loop one statement at a time so output (and side
+/// effects like `Pause[n]`) appear progressively rather than batched.
+#[wasm_bindgen]
+pub fn split_statements(input: &str) -> String {
+  let statements = crate::split_into_statements(input);
+  let parts: Vec<String> = statements
+    .iter()
+    .map(|s| format!("\"{}\"", json_escape(s)))
+    .collect();
+  format!("[{}]", parts.join(","))
+}
 
-        // If the statement is a top-level Manipulate[…] call, emit a
-        // dedicated "manipulate" item so the frontend can render
-        // interactive controls instead of the plain text echo. We re-parse
-        // the source so we can inspect the held expression shape.
-        if result.result != "\0"
-          && let Some(item) = try_build_manipulate_item(stmt)
-        {
-          items.push(item);
-          continue;
-        }
+/// Evaluate a single statement and return a JSON array of output items
+/// (same shape as `evaluate_all`'s elements). Use together with
+/// `split_statements` for progressive output.
+#[wasm_bindgen]
+pub fn evaluate_statement(stmt: &str) -> String {
+  let items = evaluate_statement_items(stmt);
+  format!("[{}]", items.join(","))
+}
 
-        // Main result
-        if let Some(ref svg) = result.graphics {
-          // Only display graphics if output wasn't suppressed by trailing semicolon
-          if result.result != "\0" {
-            items.push(json_output_item("graphics", svg, None));
-            // Check for non-graphics text mixed in
-            let cleaned = result
-              .result
-              .replace("-Graphics-", "")
-              .replace("-Graphics3D-", "")
-              .replace("-Image-", "");
-            let cleaned = cleaned.trim();
-            if !cleaned.is_empty() && cleaned != "\0" {
-              items.push(json_output_item("text", cleaned, None));
-            }
+/// Build the JSON output items produced by a single statement.
+fn evaluate_statement_items(stmt: &str) -> Vec<String> {
+  let mut items = Vec::new();
+  match interpret_with_stdout(stmt) {
+    Ok(result) => {
+      // Print output
+      let trimmed_stdout = result.stdout.trim_end();
+      if !trimmed_stdout.is_empty() {
+        items.push(json_output_item("print", trimmed_stdout, None));
+      }
+
+      // Warnings
+      for w in &result.warnings {
+        items.push(json_output_item("warning", w, None));
+      }
+
+      // If the statement is a top-level Manipulate[…] call, emit a
+      // dedicated "manipulate" item so the frontend can render
+      // interactive controls instead of the plain text echo. We re-parse
+      // the source so we can inspect the held expression shape.
+      if result.result != "\0"
+        && let Some(item) = try_build_manipulate_item(stmt)
+      {
+        items.push(item);
+        return items;
+      }
+
+      // Main result
+      if let Some(ref svg) = result.graphics {
+        // Only display graphics if output wasn't suppressed by trailing semicolon
+        if result.result != "\0" {
+          items.push(json_output_item("graphics", svg, None));
+          // Check for non-graphics text mixed in
+          let cleaned = result
+            .result
+            .replace("-Graphics-", "")
+            .replace("-Graphics3D-", "")
+            .replace("-Image-", "");
+          let cleaned = cleaned.trim();
+          if !cleaned.is_empty() && cleaned != "\0" {
+            items.push(json_output_item("text", cleaned, None));
           }
-        } else if result.result != "\0" {
-          items.push(json_output_item(
-            "text",
-            &result.result,
-            result.output_svg.as_deref(),
-          ));
         }
-      }
-      Err(crate::InterpreterError::EmptyInput) => {
-        // Function definitions etc. produce no output
-      }
-      Err(e) => {
-        items.push(json_output_item("error", &format!("{e}"), None));
+      } else if result.result != "\0" {
+        items.push(json_output_item(
+          "text",
+          &result.result,
+          result.output_svg.as_deref(),
+        ));
       }
     }
+    Err(crate::InterpreterError::EmptyInput) => {
+      // Function definitions etc. produce no output
+    }
+    Err(e) => {
+      items.push(json_output_item("error", &format!("{e}"), None));
+    }
   }
-
-  format!("[{}]", items.join(","))
+  items
 }
 
 /// Try to detect whether `stmt` is a top-level `Manipulate[…]` call and

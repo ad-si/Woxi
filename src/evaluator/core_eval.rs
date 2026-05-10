@@ -1666,14 +1666,17 @@ pub fn evaluate_expr_to_expr_inner(
         if name == "Interrupt" && args.is_empty() {
           return Err(InterpreterError::Abort);
         }
-        // Pause[n] - sleep for n seconds and return Null
+        // Pause[n] - sleep for n seconds (wall clock) and return Null
         if name == "Pause" && args.len() == 1 {
           if let Ok(val) = evaluate_expr_to_expr(&args[0])
             && let Some(secs) =
               crate::functions::math_ast::try_eval_to_f64(&val)
             && secs > 0.0
           {
+            #[cfg(not(target_arch = "wasm32"))]
             std::thread::sleep(std::time::Duration::from_secs_f64(secs));
+            #[cfg(target_arch = "wasm32")]
+            crate::wasm::sleep_seconds(secs);
           }
           return Ok(Expr::Identifier("Null".to_string()));
         }

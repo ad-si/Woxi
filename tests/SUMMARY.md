@@ -1370,6 +1370,7 @@
   - [`TIF`](images/TIF.md)
   - [`TIFF`](images/TIFF.md)
 - [Dates & Time](dates.md)
+  - [`Pause`](dates/Pause.md)
   - [`AbsoluteTime`](dates/AbsoluteTime.md)
   - [`AbsoluteTiming`](dates/AbsoluteTiming.md)
   - [`DateDifference`](dates/DateDifference.md)
