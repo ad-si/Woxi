@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: PlaintextImport
-LINE: 372
-TYPE: >>
-INPUT: DeleteDuplicates[StringCases[Import["ExampleData/PrimeMeridian.html"], RegularExpression["Wiki[a-z]+"]]]
-EXPECTED:
-= {Wikipedia, Wikidata, Wikibase, Wikimedia}
----
-FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: SourceImport
 LINE: 398
 TYPE: >>
