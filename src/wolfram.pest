@@ -11,10 +11,14 @@ SpanExpr = { Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)? }
 PartIndex = _{ &HasSpanSep ~ SpanExpr | Expression }
 
 // Part bracket openers/closers: both ASCII "[[" / "]]" and the Unicode
-// DOUBLE-STRUCK brackets 〚 (U+301A) / 〛 (U+301B). Silent rules so the
-// existing PartIndexSuffix structure is unchanged.
-PartOpen  = _{ "[[" | "\u{301A}" }
-PartClose = _{ "]]" | "\u{301B}" }
+// double-struck brackets. We accept the MATHEMATICAL LEFT/RIGHT WHITE
+// SQUARE BRACKETs ⟦ (U+27E6) / ⟧ (U+27E7) — these are what Wolfram's
+// named characters \[LeftDoubleBracket] / \[RightDoubleBracket] map to —
+// as well as the CJK-aligned LEFT/RIGHT WHITE SQUARE BRACKETs 〚 (U+301A)
+// / 〛 (U+301B) for compatibility. Silent rules so the existing
+// PartIndexSuffix structure is unchanged.
+PartOpen  = _{ "[[" | "\u{27E6}" | "\u{301A}" }
+PartClose = _{ "]]" | "\u{27E7}" | "\u{301B}" }
 
 // Part extraction suffix: [[expr, ...]] or 〚expr, ...〛 for indexing
 PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
