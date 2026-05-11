@@ -315,7 +315,9 @@ impl WoxiStudio {
 
     let cell_editors = Self::editors_from_notebook(&notebook);
 
-    let task = if !std::env::args().any(|a| a == "--new")
+    let task = if let Some(path) = parse_cli_file_arg() {
+      Task::perform(open_file_path(path), Message::FileOpened)
+    } else if !std::env::args().any(|a| a == "--new")
       && let Some(path) = load_last_file_path()
     {
       Task::perform(open_file_path(path), Message::FileOpened)
@@ -4049,6 +4051,16 @@ const CELL_STYLES: &[CellStyle] = &[
   CellStyle::Output,
   CellStyle::Code,
 ];
+
+// ── CLI argument parsing ─────────────────────────────────────────────
+
+/// Returns the first positional (non-flag) argument as a file path, if any.
+/// Relative paths are resolved against the current working directory.
+fn parse_cli_file_arg() -> Option<PathBuf> {
+  let arg = std::env::args().skip(1).find(|a| !a.starts_with('-'))?;
+  let path = PathBuf::from(arg);
+  Some(std::fs::canonicalize(&path).unwrap_or(path))
+}
 
 // ── State persistence ────────────────────────────────────────────────
 
