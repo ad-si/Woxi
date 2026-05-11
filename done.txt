@@ -12494,3 +12494,11 @@ TYPE: >>
 INPUT: For[i=1, i<=10, i=i+1, n = n * i]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/recurrence.py
+CLASS: RSolve
+LINE: 36
+TYPE: >>
+INPUT: RSolve[a[n] == a[n+1], a[n], n]
+EXPECTED:
+= {{a[n] -> C[0]}}
+---

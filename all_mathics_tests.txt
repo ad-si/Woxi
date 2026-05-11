@@ -1,13 +1,5 @@
 FILE: mathics/builtin/recurrence.py
 CLASS: RSolve
-LINE: 36
-TYPE: >>
-INPUT: RSolve[a[n] == a[n+1], a[n], n]
-EXPECTED:
-= {{a[n] -> C[0]}}
----
-FILE: mathics/builtin/recurrence.py
-CLASS: RSolve
 LINE: 40
 TYPE: >>
 INPUT: RSolve[{a[n + 2] == a[n]}, a, n]
