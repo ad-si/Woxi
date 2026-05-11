@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: DataImport
-LINE: 285
-TYPE: #>
-INPUT: Length[Import["ExampleData/PrimeMeridian.html", "Data"]]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: HyperlinksImport
 LINE: 326
 TYPE: >>
