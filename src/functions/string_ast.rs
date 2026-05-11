@@ -4357,12 +4357,119 @@ pub fn character_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(chars.into()))
 }
 
+/// Encode the absolute value of an i128/BigInt-backed integer as a
+/// Wolfram-compatible Base64 string. The alphabet (in digit-value order
+/// 0..63) is `A-Z`, `a-z`, `0-9`, `+`, `/`; the sign of the input is
+/// dropped, matching Wolfram's `IntegerString[n, "Base64"]`.
+fn integer_to_base64_string(n: &Expr) -> Result<String, InterpreterError> {
+  const ALPHABET: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let abs_big = match n {
+    Expr::BigInteger(b) => {
+      use num_bigint::Sign;
+      match b.sign() {
+        Sign::Minus => -b,
+        _ => b.clone(),
+      }
+    }
+    _ => num_bigint::BigInt::from(expr_to_int(n)?.unsigned_abs()),
+  };
+  if abs_big == num_bigint::BigInt::from(0) {
+    return Ok("A".to_string());
+  }
+  let mut val = abs_big;
+  let base = num_bigint::BigInt::from(64);
+  let mut digits: Vec<u8> = Vec::new();
+  while val > num_bigint::BigInt::from(0) {
+    let rem = &val % &base;
+    let d = rem
+      .to_string()
+      .parse::<usize>()
+      .expect("remainder fits in usize");
+    digits.push(ALPHABET[d]);
+    val /= &base;
+  }
+  digits.reverse();
+  Ok(String::from_utf8(digits).expect("ASCII alphabet"))
+}
+
+/// Encode a positive integer as a Roman numeral string. Wolfram's
+/// `IntegerString[n, "Roman"]` uses the standard subtractive form for
+/// 1..3999 and an OverscriptBox-based "vinculum" form for larger values;
+/// we implement the plain subtractive form (sufficient for the
+/// 1..3999 range), and fall back to the unevaluated head for inputs
+/// outside that range.
+fn integer_to_roman_string(n: i128) -> Option<String> {
+  if !(1..=3999).contains(&n) {
+    return None;
+  }
+  let mut n = n as u32;
+  let table: &[(u32, &str)] = &[
+    (1000, "M"),
+    (900, "CM"),
+    (500, "D"),
+    (400, "CD"),
+    (100, "C"),
+    (90, "XC"),
+    (50, "L"),
+    (40, "XL"),
+    (10, "X"),
+    (9, "IX"),
+    (5, "V"),
+    (4, "IV"),
+    (1, "I"),
+  ];
+  let mut out = String::new();
+  for (v, s) in table {
+    while n >= *v {
+      out.push_str(s);
+      n -= *v;
+    }
+  }
+  Some(out)
+}
+
 /// IntegerString[n] or IntegerString[n, base] or IntegerString[n, base, length] - convert integer to string
 pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "IntegerString expects 1, 2, or 3 arguments".into(),
     ));
+  }
+
+  // Wolfram accepts a named "numeric system" as the base, e.g.
+  // `IntegerString[n, "Base64"]`. Handle the named forms before the
+  // generic integer-base path so the string isn't rejected by
+  // `expr_to_int`.
+  if args.len() >= 2
+    && let Expr::String(name) = &args[1]
+  {
+    let result = match name.as_str() {
+      "Base64" => integer_to_base64_string(&args[0])?,
+      "Roman" => {
+        let Some(s) =
+          expr_to_int(&args[0]).ok().and_then(integer_to_roman_string)
+        else {
+          // Unsupported range / non-integer — leave unevaluated rather
+          // than guess at the vinculum/OverscriptBox encoding.
+          return Ok(Expr::FunctionCall {
+            name: "IntegerString".to_string(),
+            args: args.to_vec().into(),
+          });
+        };
+        s
+      }
+      _ => {
+        crate::emit_message(&format!(
+          "IntegerString::numsys: Invalid numeric system {name}."
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "IntegerString".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    return Ok(Expr::String(result));
   }
 
   let base = if args.len() >= 2 {
