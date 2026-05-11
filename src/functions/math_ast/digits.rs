@@ -1870,14 +1870,15 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // The base may be an integer >= 2 (fast numeric path) or a symbolic
-  // expression (e.g. `FromDigits[{1,2,3}, x]` => `3 + 2*x + x^2`).
+  // The base may be an integer with |b| >= 2 (fast numeric path; negative
+  // bases compute the "negabinary"/"negadecimal" representation) or a
+  // symbolic expression (e.g. `FromDigits[{1,2,3}, x]` => `3 + 2*x + x^2`).
   let numeric_base: Option<i128> = if args.len() == 2 {
     match expr_to_i128(&args[1]) {
-      Some(b) if b >= 2 => Some(b),
+      Some(b) if b.abs() >= 2 => Some(b),
       Some(_) => {
         return Err(InterpreterError::EvaluationError(
-          "FromDigits: base must be an integer >= 2".into(),
+          "FromDigits: base must be an integer with |base| >= 2".into(),
         ));
       }
       None => None,
