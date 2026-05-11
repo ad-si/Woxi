@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: HyperlinksImport
-LINE: 326
-TYPE: >>
-INPUT: Import["ExampleData/PrimeMeridian.html", "Hyperlinks"][[1]]
-EXPECTED:
-= /wiki/Prime_meridian_(Greenwich)
----
-FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: ImageLinksImport
 LINE: 349
 TYPE: >>
