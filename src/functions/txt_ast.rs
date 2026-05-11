@@ -26,14 +26,23 @@ fn split_lines(s: &str) -> Vec<&str> {
   out
 }
 
-/// Auto-convert a token to Integer / Real / String, matching wolframscript's
-/// behaviour for the `"Data"` element of a plain-text file.
+/// Auto-convert a token to Integer / BigInteger / Real / String, matching
+/// wolframscript's behaviour for the `"Data"` element of a plain-text file.
 fn token_to_expr(tok: &str) -> Expr {
   if tok.is_empty() {
     return Expr::String(String::new());
   }
   if let Ok(n) = tok.parse::<i128>() {
     return Expr::Integer(n);
+  }
+  // Integer too large for i128 — try arbitrary precision before falling
+  // back to a Real/String, so that tokens like the 122-digit rows in
+  // the Carl-Gauss `prime.txt` round-trip as Integer.
+  if !tok.contains('.') && !tok.contains('e') && !tok.contains('E') {
+    use std::str::FromStr;
+    if let Ok(big) = num_bigint::BigInt::from_str(tok) {
+      return Expr::BigInteger(big);
+    }
   }
   if let Ok(f) = tok.parse::<f64>()
     && (tok.contains('.') || tok.contains('e') || tok.contains('E'))
@@ -54,6 +63,8 @@ fn token_to_expr(tok: &str) -> Expr {
 /// - `"Data"`  → if every non-empty line has the same whitespace-token
 ///               count, a list-of-lists with numeric tokens auto-converted;
 ///               otherwise a list of line strings (same as `"Lines"`).
+/// - `"Table"` → list-of-lists of auto-converted tokens, one row per line,
+///               regardless of whether the rows are uniform in length.
 pub fn import_element(content: &str, element: &str) -> Option<Expr> {
   match element {
     "Plaintext" | "String" => {
@@ -103,6 +114,16 @@ pub fn import_element(content: &str, element: &str) -> Option<Expr> {
             .collect(),
         ))
       }
+    }
+    "Table" => {
+      let lines = split_lines(content);
+      let rows: Vec<Expr> = lines
+        .iter()
+        .map(|line| {
+          Expr::List(line.split_whitespace().map(token_to_expr).collect())
+        })
+        .collect();
+      Some(Expr::List(rows.into()))
     }
     _ => None,
   }
