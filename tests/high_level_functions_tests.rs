@@ -3250,4 +3250,42 @@ mod high_level_functions_tests {
       assert_eq!(interpret("Pause[Sqrt[0]]").unwrap(), "\0");
     }
   }
+
+  mod option_value_tests {
+    use super::*;
+
+    #[test]
+    fn test_option_value_lookup_resolves_specified_option() {
+      assert_eq!(
+        interpret("f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[a]}")
+          .unwrap(),
+        "{3}"
+      );
+    }
+
+    #[test]
+    fn test_option_value_missing_falls_back_to_symbol() {
+      // Inside an OptionsPattern context, an unbound name resolves to
+      // the bare symbol (matches Wolfram).
+      assert_eq!(
+        interpret("f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[b]}")
+          .unwrap(),
+        "{b}"
+      );
+    }
+
+    #[test]
+    fn test_option_value_missing_string_arg_falls_back_to_symbol() {
+      assert_eq!(
+        interpret("f[a->3] /. f[OptionsPattern[{}]] :> {OptionValue[\"b\"]}")
+          .unwrap(),
+        "{b}"
+      );
+    }
+
+    #[test]
+    fn test_option_value_outside_context_stays_unevaluated() {
+      assert_eq!(interpret("OptionValue[b]").unwrap(), "OptionValue[b]");
+    }
+  }
 }

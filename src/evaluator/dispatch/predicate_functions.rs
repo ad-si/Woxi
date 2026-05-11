@@ -1228,23 +1228,32 @@ pub fn dispatch_predicate_functions(
           }));
         }
       };
-      // Look up in the current option value context stack (innermost first)
-      let result = crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+      // Look up in the current option value context stack (innermost first).
+      // Also note whether we're inside any OptionsPattern context at all —
+      // when we are, an unresolved name falls back to the bare symbol
+      // (Wolfram behavior); outside any context, OptionValue stays unevaluated.
+      let (result, in_context) = crate::OPTION_VALUE_CONTEXT.with(|ctx| {
         let stack = ctx.borrow();
+        let in_context = !stack.is_empty();
         for (_func_name, bindings) in stack.iter().rev() {
           for (key, val) in bindings {
             if *key == opt_name {
-              return Some(val.clone());
+              return (Some(val.clone()), in_context);
             }
           }
         }
-        None
+        (None, in_context)
       });
       match result {
         // Evaluate the looked-up value: option rules from `:>` (RuleDelayed)
         // store the RHS held, so `OptionValue[a]` for `a :> Print["x"]`
         // must trigger the Print at lookup time, matching Wolfram.
         Some(val) => return Some(evaluate_expr_to_expr(&val)),
+        None if in_context => {
+          // Inside an OptionsPattern context but name isn't bound — return
+          // the bare symbol (e.g. OptionValue[b] -> b, OptionValue["b"] -> b).
+          return Some(Ok(Expr::Identifier(opt_name)));
+        }
         None => {
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),
