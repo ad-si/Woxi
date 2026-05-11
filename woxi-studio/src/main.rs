@@ -1,5 +1,7 @@
 mod cell_type_dropdown;
 mod highlighter;
+#[cfg(target_os = "macos")]
+mod macos_open;
 mod manipulate;
 mod notebook;
 
@@ -20,6 +22,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 fn main() -> iced::Result {
+  #[cfg(target_os = "macos")]
+  macos_open::register();
+
   iced::application(WoxiStudio::new, WoxiStudio::update, WoxiStudio::view)
     .title(|state: &WoxiStudio| match &state.file_path {
       Some(path) => {
@@ -140,6 +145,9 @@ enum Message {
   // File operations
   NewNotebook,
   OpenFile,
+  /// Tick on macOS to drain any pending Apple Event file-open requests.
+  #[cfg(target_os = "macos")]
+  PollPendingOpens,
   FileOpened(Result<(PathBuf, Arc<String>), FileError>),
   SaveFile,
   SaveFileAs,
@@ -620,6 +628,19 @@ impl WoxiStudio {
         self.is_loading = true;
         self.status = String::from("Opening file...");
         Task::perform(open_file(), Message::FileOpened)
+      }
+
+      #[cfg(target_os = "macos")]
+      Message::PollPendingOpens => {
+        if self.is_loading {
+          return Task::none();
+        }
+        let Some(path) = macos_open::take_pending().pop() else {
+          return Task::none();
+        };
+        self.is_loading = true;
+        self.status = format!("Opening: {}", path.display());
+        Task::perform(open_file_path(path), Message::FileOpened)
       }
 
       Message::FileOpened(result) => {
@@ -1771,7 +1792,17 @@ impl WoxiStudio {
     // Use event::listen_with instead of keyboard::on_key_press
     // because on_key_press only fires for Status::Ignored events,
     // which means it never fires when a text_editor has focus.
-    iced::event::listen_with(handle_event)
+    let events = iced::event::listen_with(handle_event);
+    #[cfg(target_os = "macos")]
+    {
+      let poll = iced::time::every(std::time::Duration::from_millis(150))
+        .map(|_| Message::PollPendingOpens);
+      Subscription::batch([events, poll])
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+      events
+    }
   }
 
   fn view(&self) -> Element<'_, Message> {

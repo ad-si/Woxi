@@ -6630,6 +6630,8 @@ version = "0.1.0"
 dependencies = [
  "dark-light",
  "iced",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
  "resvg 0.45.1",
  "rfd",
  "svg2pdf",

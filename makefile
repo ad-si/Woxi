@@ -92,11 +92,45 @@ format:
 .PHONY: install
 install:
 	cargo install --path .
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		$(MAKE) install-macos-app; \
+	fi
 
 
 .PHONY: install-debug
 install-debug:
 	cargo install --debug --path .
+
+
+# Build Woxi Studio and install it as a macOS .app bundle in
+# /Applications. The bundle's icon is generated on the fly from
+# images/favicon.png via sips + iconutil (both shipped with macOS).
+APP_BUNDLE := /Applications/Woxi Studio.app
+
+.PHONY: install-macos-app
+install-macos-app:
+	cargo build --release -p woxi-studio
+	rm -rf "$(APP_BUNDLE)"
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
+	cp target/release/woxi-studio "$(APP_BUNDLE)/Contents/MacOS/woxi-studio"
+	cp woxi-studio/macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
+	@tmp=$$(mktemp -d) && \
+		iconset="$$tmp/icon.iconset" && \
+		mkdir "$$iconset" && \
+		for s in 16 32 64 128 256 512; do \
+			sips -z $$s $$s images/favicon.png \
+				--out "$$iconset/icon_$${s}x$${s}.png" >/dev/null && \
+			d=$$((s*2)) && \
+			sips -z $$d $$d images/favicon.png \
+				--out "$$iconset/icon_$${s}x$${s}@2x.png" >/dev/null; \
+		done && \
+		iconutil -c icns "$$iconset" \
+			-o "$(APP_BUNDLE)/Contents/Resources/icon.icns" && \
+		rm -rf "$$tmp"
+	@/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+		-f "$(APP_BUNDLE)"
+	@echo "Installed $(APP_BUNDLE)"
 
 
 .PHONY: wasm-build

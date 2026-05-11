@@ -15,3 +15,7 @@ dark-light = "2"
 svg2pdf = { version = "0.13", default-features = false, features = ["text"] }
 rfd = "0.15"
 tokio = { version = "1", features = ["full"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"

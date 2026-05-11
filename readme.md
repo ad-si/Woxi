@@ -61,6 +61,11 @@ cd Woxi
 make install
 ```
 
+On macOS, `make install` additionally builds the Woxi Studio notebook editor
+and installs it as a `.app` bundle at `/Applications/Woxi Studio.app`,
+registered with Launch Services so that `.nb`, `.wl`, and `.wls` files appear
+under Finder's "Open With…" menu.
+
 
 ## Usage
 
