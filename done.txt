@@ -12658,3 +12658,11 @@ INPUT: DeleteDuplicates[StringCases[Import["ExampleData/PrimeMeridian.html", "So
 EXPECTED:
 = {<title>, <tr>, <th>, <td>}
 ---
+FILE: mathics/builtin/fileformats/htmlformat.py
+CLASS: TitleImport
+LINE: 425
+TYPE: >>
+INPUT: Import["ExampleData/PrimeMeridian.html", "Title"]
+EXPECTED:
+= Prime meridian - Wikipedia
+---

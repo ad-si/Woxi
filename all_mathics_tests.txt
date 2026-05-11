@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: TitleImport
-LINE: 425
-TYPE: >>
-INPUT: Import["ExampleData/PrimeMeridian.html", "Title"]
-EXPECTED:
-= Prime meridian - Wikipedia
----
-FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: XMLObjectImport
 LINE: 447
 TYPE: >>
