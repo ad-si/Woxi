@@ -12437,3 +12437,12 @@ EXPECTED:
 | between
 | value
 ---
+FILE: mathics/builtin/options.py
+CLASS: Options
+LINE: 331
+TYPE: >>
+INPUT: f[a -> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]);
+EXPECTED:
+| value
+| between
+---

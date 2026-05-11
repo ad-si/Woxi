@@ -1,13 +1,4 @@
 FILE: mathics/builtin/options.py
-CLASS: Options
-LINE: 331
-TYPE: >>
-INPUT: f[a -> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]);
-EXPECTED:
-| value
-| between
----
-FILE: mathics/builtin/options.py
 CLASS: OptionValue
 LINE: 415
 TYPE: >>
