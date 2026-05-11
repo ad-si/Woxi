@@ -1374,7 +1374,7 @@ PositiveIntegers,Domain of positive integers,✅,pure,12.0,1391
 ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6.0,1392
 ConvolutionLayer,Neural network convolution layer,🚫,io,11.0,1393
 EmitSound,Emit a sound,🚫,io,6.0,1394
-SurvivalFunction,Survival function for distributions,🚫,pure,8.0,1395
+SurvivalFunction,Survival function for distributions,✅,pure,8.0,1395
 ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1.0,1397
 RootReduce,Reduce algebraic number to minimal polynomial root,🚫,pure,3.0,1397
 DotDashed,Dot-dashed line style directive,✅,none,6.0,1399
@@ -5974,7 +5974,7 @@ SolidFixedCondition,,,,13.0,
 SolidMechanicsPDEComponent,,,,13.0,
 SolidMechanicsStrain,,,,13.0,
 SolidMechanicsStress,,,,13.0,
-SolveValues,,,,12.3,
+SolveValues,Returns the values from solving equations (without Rules),✅,pure,12.3,
 SourcePDETerm,,,,12.2,
 SowVideo,,🚫,,14.1,
 SparseArrayQ,,,,13.0,

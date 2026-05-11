@@ -334,6 +334,56 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         .collect(),
     )
   }
+  // `TemplateBox` is used by the FrontEnd to pretty-print typeset values whose
+  // underlying expression is encoded in the trailing identifier. The actuarial
+  // example notebook uses
+  //   TemplateBox[{"19400", RowBox[…], "US dollars", "\"USDollars\""},
+  //               "QuantityPrefix"]
+  // for currency literals — we map these back to `Quantity[number, "unit"]`
+  // so the cell remains evaluable.
+  if s.starts_with("TemplateBox[")
+    && let Some(args) = split_args("TemplateBox", s)
+    && args.len() >= 2
+  {
+    let tag = args.last().unwrap().trim();
+    let tag = tag.trim_matches('"');
+    if tag == "QuantityPrefix" || tag == "Quantity" {
+      // First positional element is a list `{number, displayed_unit, unit_name, unit_id_string}`.
+      let first = args[0].trim();
+      let first_inner = first
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .unwrap_or(first);
+      let parts = split_top_level_commas(first_inner);
+      if parts.len() >= 4 {
+        let number = extract_cell_content(parts[0].trim());
+        // Element 4 is the canonical unit name string. It's written as
+        // `"\"USDollars\""` in the box expression (an *inner* string literal),
+        // so we strip every layer of surrounding quotes/backslashes to get
+        // the bare name, then re-wrap in a single pair of quotes.
+        let mut unit_name = parts[3].trim().to_string();
+        while unit_name.len() >= 2
+          && unit_name.starts_with('"')
+          && unit_name.ends_with('"')
+        {
+          unit_name = unit_name[1..unit_name.len() - 1].to_string();
+        }
+        // Unescape any remaining `\"` pairs.
+        let unit_name = unit_name.replace("\\\"", "");
+        return Some(format!("Quantity[{number}, \"{unit_name}\"]"));
+      }
+    }
+    // Fallback: first positional argument is the displayed value.
+    let first = args[0].trim();
+    let first_inner = first
+      .strip_prefix('{')
+      .and_then(|s| s.strip_suffix('}'))
+      .unwrap_or(first);
+    let parts = split_top_level_commas(first_inner);
+    if let Some(first_part) = parts.first() {
+      return Some(extract_cell_content(first_part.trim()));
+    }
+  }
   for head in [
     "FractionBox",
     "SuperscriptBox",
@@ -477,6 +527,19 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "DirectedEdge" => Some("\\[DirectedEdge]"),
     "UndirectedEdge" => Some("\\[UndirectedEdge]"),
     "Distributed" => Some("\\[Distributed]"),
+    "Conditioned" => Some("\\[Conditioned]"),
+    // \[Equal] is the typeset name for the `==` comparison operator. The
+    // default Wolfram→Unicode mapping is U+003D (`=`), which is `Set`
+    // (assignment) at evaluation time — definitely not what the box
+    // expression means. Force the operator form here so cells like
+    //   RowBox[{"prob2", "\[Equal]", RowBox[{"3", "prob4"}]}]
+    // parse as a predicate, not an assignment.
+    "Equal" => Some("=="),
+    "NotEqual" => Some("!="),
+    "LessEqual" => Some("<="),
+    "GreaterEqual" => Some(">="),
+    "And" => Some("&&"),
+    "Or" => Some("||"),
     "Cross" => Some("\\[Cross]"),
     "NoBreak" | "InvisibleSpace" | "InvisibleComma" | "ImplicitPlus"
     | "AutoSpace" | "ZeroWidthSpace" | "NonBreakingSpace" => Some(""),
@@ -1773,6 +1836,39 @@ Cell["Chapter 2", "Chapter"]
     // has no glyph in normal fonts and would appear blank.
     let s = r#"BoxData[RowBox[{"ImageSize", "\[Rule]", "350"}]]"#;
     assert_eq!(extract_cell_content(s), "ImageSize->350");
+  }
+
+  #[test]
+  fn test_extract_cell_content_equal_operator() {
+    // `\[Equal]` is the typeset name for the `==` comparison operator. The
+    // default Wolfram→Unicode mapping is U+003D (`=`), which is `Set`
+    // (assignment) at evaluation time — definitely not what the box
+    // expression means inside e.g. `SolveValues[lhs \[Equal] rhs, m]`.
+    let s = r#"BoxData[RowBox[{"a", "\[Equal]", "b"}]]"#;
+    assert_eq!(extract_cell_content(s), "a==b");
+  }
+
+  #[test]
+  fn test_extract_cell_content_inequality_operators() {
+    // Same concern for the related comparison operators.
+    let s = r#"BoxData[RowBox[{"a", "\[NotEqual]", "b"}]]"#;
+    assert_eq!(extract_cell_content(s), "a!=b");
+    let s = r#"BoxData[RowBox[{"a", "\[LessEqual]", "b"}]]"#;
+    assert_eq!(extract_cell_content(s), "a<=b");
+    let s = r#"BoxData[RowBox[{"a", "\[GreaterEqual]", "b"}]]"#;
+    assert_eq!(extract_cell_content(s), "a>=b");
+  }
+
+  #[test]
+  fn test_extract_cell_content_template_box_quantity() {
+    // `TemplateBox[{value, displayed, name, unit_id}, "QuantityPrefix"]` is
+    // how the FrontEnd typesets currency literals like `$5000`. We unpack
+    // these back to `Quantity[5000, "USDollars"]` so the cell stays evaluable.
+    let s = r#"BoxData[TemplateBox[{"5000", RowBox[{FormBox["\"$\"", TraditionalForm], "\[VeryThinSpace]"}], "US dollars", "\"USDollars\""}, "QuantityPrefix"]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Quantity[5000, \"USDollars\"]"
+    );
   }
 
   #[test]

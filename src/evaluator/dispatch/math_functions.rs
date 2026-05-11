@@ -942,11 +942,22 @@ pub fn dispatch_math_functions(
     "CDF" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::cdf_ast(args));
     }
-    "Probability" if args.len() == 2 => {
-      return Some(crate::functions::math_ast::probability_ast(args));
+    "SurvivalFunction" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::math_ast::survival_function_ast(args));
     }
-    "Expectation" if args.len() == 2 => {
-      return Some(crate::functions::math_ast::expectation_ast(args));
+    "Probability" if args.len() == 2 || args.len() == 3 => {
+      // The optional third argument is `Assumptions -> …`, which we
+      // currently ignore — pass through only the event and distribution.
+      return Some(crate::functions::math_ast::probability_ast(&args[..2]));
+    }
+    "Expectation" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::expectation_ast(&args[..2]));
+    }
+    "NProbability" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::n_probability_ast(&args[..2]));
+    }
+    "NExpectation" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::n_expectation_ast(&args[..2]));
     }
     "SeedRandom" if args.len() <= 1 => {
       return Some(crate::functions::math_ast::seed_random_ast(args));

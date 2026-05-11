@@ -220,6 +220,32 @@ thread_local! {
     static CAPTURED_OUTPUT_SVG: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+// Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
+// `interpret_with_stdout` after each successful evaluation and consulted by
+// the `Out[]` dispatch path. Independent of `$Line`: we only retain the
+// latest value (mirroring what woxi-studio actually needs for cells like
+// `N[%]` that reference the previous cell's result).
+thread_local! {
+    static LAST_OUTPUT_EXPR: RefCell<Option<syntax::Expr>> = const { RefCell::new(None) };
+}
+
+/// Stash an evaluated expression so subsequent `%` / `Out[]` references
+/// can resolve to it. Called from `interpret_with_stdout` after success.
+pub fn set_last_output(expr: syntax::Expr) {
+  LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = Some(expr));
+}
+
+/// Retrieve the most recent stashed expression, if any.
+pub fn get_last_output() -> Option<syntax::Expr> {
+  LAST_OUTPUT_EXPR.with(|c| c.borrow().clone())
+}
+
+/// Drop the cached previous output — used when the studio resets state
+/// before re-evaluating the whole notebook.
+pub fn clear_last_output() {
+  LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = None);
+}
+
 // Session start time for SessionTime[]
 static SESSION_START: std::sync::LazyLock<std::time::Instant> =
   std::sync::LazyLock::new(std::time::Instant::now);
@@ -1389,6 +1415,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         };
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
+        // Stash the top-level Expr so `%` / `Out[]` in a subsequent
+        // `interpret_with_stdout` call resolves to this cell's result.
+        // We only do this in visual mode (e.g. woxi-studio) so command-line
+        // semantics (a fresh process per evaluation, where `%` should still
+        // collapse to `Out[0]`) are preserved — matching wolframscript.
+        if VISUAL_MODE.with(|v| *v.borrow()) {
+          set_last_output(result_expr.clone());
+        }
         // In visual mode (playground), unwrap StandardForm/InputForm wrappers
         // so they display like in a Wolfram notebook.
         // CLI mode preserves wrappers to match wolframscript behavior.
@@ -3027,6 +3061,10 @@ pub fn interpret_with_stdout(
   // Enable visual mode for display wrapper rendering (e.g. TableForm → Grid SVG)
   VISUAL_MODE.with(|v| *v.borrow_mut() = true);
 
+  // Capture the top-level Expr so `%` resolves to this cell's result in
+  // subsequent evaluations. The cache is set at the moment evaluation
+  // completes (inside the dispatch loop) via `set_last_output`, so we
+  // do nothing here besides keep the value put there.
   // Perform the standard interpretation
   let result = interpret(input);
 

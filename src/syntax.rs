@@ -516,6 +516,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DirectedEdge" => Some("\u{F3D1}"),
     "UndirectedEdge" => Some("\u{F3D0}"),
     "Distributed" => Some("\u{F3D2}"),
+    "Conditioned" => Some("\u{F3D3}"),
     "Cross" => Some("\u{F3C4}"),
     // Dots
     "Ellipsis" => Some("\u{2026}"),
@@ -731,6 +732,7 @@ fn named_char_to_expr(s: &str) -> Expr {
     "DirectedEdge" => "\u{F3D1}",
     "UndirectedEdge" => "\u{F3D0}",
     "Distributed" => "\u{F3D2}",
+    "Conditioned" => "\u{F3D3}",
     "Cross" => "\u{F3C4}",
     // Unknown: keep original name as identifier
     _ => return Expr::Identifier(name.to_string()),
@@ -4336,6 +4338,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
     "<->" => 7, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
+    "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
@@ -4557,6 +4560,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[Distributed]" | "\u{F3D2}" => Expr::FunctionCall {
       name: "Distributed".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "\\[Conditioned]" | "\u{F3D3}" => Expr::FunctionCall {
+      name: "Conditioned".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {

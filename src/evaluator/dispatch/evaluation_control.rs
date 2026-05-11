@@ -69,17 +69,22 @@ pub fn dispatch_evaluation_control(
       return Some(Ok(Expr::Identifier("Infinity".to_string())));
     }
     "Out" => {
-      // `Out[]` and `Out[k]` for k <= 0 collapse to `Out[0]` because no
-      // output history is preserved across script-mode evaluations
-      // (mirroring `$Line == 1`). Positive integers stay as `Out[k]`
-      // symbolically — matching wolframscript, which renders the literal
-      // reference when the slot has nothing cached.
+      // `Out[]` and `Out[k]` for k <= 0 resolve to the cached previous
+      // output if one is available (set after each successful evaluation
+      // by `interpret_with_stdout`). Without a cached value we collapse to
+      // `Out[0]` for parity with wolframscript on `$Line == 1`. Positive
+      // integers stay symbolic — we don't keep numbered history.
       let target: Option<i128> = match args {
         [] => Some(0),
         [Expr::Integer(n)] => Some(*n),
         _ => None,
       };
       if let Some(k) = target {
+        if k <= 0
+          && let Some(prev) = crate::get_last_output()
+        {
+          return Some(Ok(prev));
+        }
         let normalized = if k <= 0 { 0 } else { k };
         return Some(Ok(Expr::FunctionCall {
           name: "Out".to_string(),

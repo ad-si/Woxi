@@ -496,6 +496,54 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Supports linear (degree 1) and quadratic (degree 2) equations.
 /// Also handles systems: Solve[{eq1, eq2, ...}, {x1, x2, ...}]
 /// And inequality constraints: Solve[eq && ineq, var]
+/// `SolveValues[eqn, var]` returns the values directly (not as rules).
+/// It's `Solve[eqn, var]` flattened to just the right-hand sides.
+pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let solutions = solve_ast(args)?;
+  // `solve_ast` returns either a list of rule-lists like {{var->val}, {var->val2}}
+  // or stays unevaluated. If it stayed symbolic, mirror that for SolveValues.
+  let Expr::List(solution_sets) = &solutions else {
+    return Ok(Expr::FunctionCall {
+      name: "SolveValues".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+
+  // The rules inside Solve's output use the dedicated `Expr::Rule` variant
+  // (not a generic `Rule[lhs, rhs]` function call), so we destructure it
+  // directly. Any unrecognised branch causes us to fall back to symbolic.
+  let mut values = Vec::with_capacity(solution_sets.len());
+  for branch in solution_sets.iter() {
+    let Expr::List(rules) = branch else {
+      return Ok(Expr::FunctionCall {
+        name: "SolveValues".to_string(),
+        args: args.to_vec().into(),
+      });
+    };
+    if rules.len() != 1 {
+      // Multi-variable Solve: take the values in order so SolveValues mirrors
+      // wolframscript's `{{val_x, val_y}, …}` output. But the actuarial
+      // example uses only single-variable Solve, so fall back symbolically
+      // if we see something more elaborate.
+      return Ok(Expr::FunctionCall {
+        name: "SolveValues".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    let Expr::Rule {
+      replacement, ..
+    } = &rules[0]
+    else {
+      return Ok(Expr::FunctionCall {
+        name: "SolveValues".to_string(),
+        args: args.to_vec().into(),
+      });
+    };
+    values.push((**replacement).clone());
+  }
+  Ok(Expr::List(values.into()))
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(

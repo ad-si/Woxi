@@ -407,3 +407,268 @@ mod quartiles {
     );
   }
 }
+
+mod probability_distribution {
+  use super::*;
+
+  #[test]
+  fn expectation_univariate() {
+    // E[x, x ~ PD[2/y^3, {y, 1, ∞}]] = ∫ x * 2/x^3 dx from 1 to ∞ = 2.
+    assert_eq!(
+      interpret(
+        "Expectation[x, x \\[Distributed] ProbabilityDistribution[2/y^3, {y, 1, Infinity}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn expectation_multivariate() {
+    // E[x, {x,y} ~ PD[(10-x*y^2)/64, {x,2,10}, {y,0,1}]] = 52/9.
+    // From the actuarial example notebook (cell #2).
+    assert_eq!(
+      interpret(
+        "Expectation[x, {x, y} \\[Distributed] ProbabilityDistribution[(10 - x*y^2)/64, {x, 2, 10}, {y, 0, 1}]]"
+      )
+      .unwrap(),
+      "52/9"
+    );
+  }
+
+  #[test]
+  fn pdf_with_renamed_variable() {
+    // PD's iterator is `y`; PDF[..., 2] substitutes y → 2 and gates by domain.
+    let result = interpret(
+      "PDF[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]",
+    )
+    .unwrap();
+    // (3/(1+2)^4) on the support → 3/81 → 1/27.
+    assert!(result.contains("1/27"), "got {result}");
+  }
+
+  #[test]
+  fn cdf_at_endpoint() {
+    // CDF[..., 2] = ∫₀² 3/(1+y)^4 dy = 1 - 1/27 = 26/27.
+    assert_eq!(
+      interpret(
+        "CDF[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]"
+      )
+      .unwrap(),
+      "26/27"
+    );
+  }
+
+  #[test]
+  fn survival_function() {
+    // S(t) = 1 - CDF.
+    assert_eq!(
+      interpret(
+        "SurvivalFunction[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]"
+      )
+      .unwrap(),
+      "1/27"
+    );
+  }
+
+  #[test]
+  fn probability_greater_than() {
+    // P[x > 2] for the same PD = SurvivalFunction at 2.
+    assert_eq!(
+      interpret(
+        "Probability[x > 2, x \\[Distributed] ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}]]"
+      )
+      .unwrap(),
+      "1/27"
+    );
+  }
+
+  #[test]
+  fn probability_less_than() {
+    assert_eq!(
+      interpret(
+        "Probability[x < 2, x \\[Distributed] ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}]]"
+      )
+      .unwrap(),
+      "26/27"
+    );
+  }
+
+  #[test]
+  fn probability_bounded() {
+    // P[1 < x < 3] = CDF[3] - CDF[1] = (1 - 1/64) - (1 - 1/8) = 1/8 - 1/64 = 7/64.
+    assert_eq!(
+      interpret(
+        "Probability[1 < x < 3, x \\[Distributed] ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}]]"
+      )
+      .unwrap(),
+      "7/64"
+    );
+  }
+
+  #[test]
+  fn n_expectation_routes_through_n() {
+    // `NExpectation` should wrap `Expectation`'s result with `N`. For a
+    // closed-form result like 2 (from the 2/y^3 distribution) the numeric
+    // output is `2.`.
+    let result = interpret(
+      "NExpectation[x, x \\[Distributed] ProbabilityDistribution[2/y^3, {y, 1, Infinity}]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.0).abs() < 1e-12, "got {val}");
+  }
+
+  #[test]
+  fn n_probability_numeric() {
+    let result = interpret(
+      "NProbability[x > 10, x \\[Distributed] ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    // P[x > 10] = (1/11)^3 = 1/1331 ≈ 0.000751…
+    assert!((val - 1.0 / 1331.0).abs() < 1e-12, "got {val}");
+  }
+
+  #[test]
+  fn quantile_numeric() {
+    // Quantile is the inverse CDF — for a continuous PD we bisect.
+    let result = interpret(
+      "Quantile[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 0.95]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    // CDF(t) = 1 - 1/(1+t)^3 = 0.95 → 1+t = 20^(1/3) → t ≈ 1.71441...
+    assert!((val - 1.7144176165949045).abs() < 1e-9, "got {val}");
+  }
+}
+
+mod censored_distribution_expectation {
+  use super::*;
+
+  #[test]
+  fn pareto_censored_at_10() {
+    // From actuarial example notebook (cell #8):
+    // lossDist = PD[2/y^3, {y, 1, ∞}]; censoredLoss = CensoredDistribution[{1, 10}, lossDist];
+    // E[x ~ censoredLoss] = ∫₁¹⁰ x · 2/x³ dx + 10 · P(Y > 10) = 9/5 + 10·1/100 = 19/10.
+    assert_eq!(
+      interpret(
+        "Expectation[x, x \\[Distributed] CensoredDistribution[{1, 10}, ProbabilityDistribution[2/y^3, {y, 1, Infinity}]]]"
+      )
+      .unwrap(),
+      "19/10"
+    );
+  }
+
+  #[test]
+  fn n_expectation_matches_floating_point() {
+    let result = interpret(
+      "NExpectation[x, x \\[Distributed] CensoredDistribution[{1, 10}, ProbabilityDistribution[2/y^3, {y, 1, Infinity}]]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.9).abs() < 1e-9, "got {val}");
+  }
+}
+
+mod conditioned_operator {
+  use super::*;
+
+  #[test]
+  fn parses_as_conditioned_function_call() {
+    // `\[Conditioned]` is the typeset name for the conditional-probability operator.
+    assert_eq!(
+      interpret("a \\[Conditioned] b").unwrap(),
+      "Conditioned[a, b]"
+    );
+  }
+
+  #[test]
+  fn binds_looser_than_comparison() {
+    // m > 40000 \[Conditioned] m > 10000 → Conditioned[m > 40000, m > 10000]
+    // (the comparisons bind tighter than the conditional operator).
+    assert_eq!(
+      interpret("m > 40000 \\[Conditioned] m > 10000").unwrap(),
+      "Conditioned[m > 40000, m > 10000]"
+    );
+  }
+
+  #[test]
+  fn probability_conditional() {
+    // P[a > 1/2 | a > 1/4] over PD with uniform-like pdf 1 on [0,1].
+    // = P[a > 1/2 ∧ a > 1/4] / P[a > 1/4] = (1/2) / (3/4) = 2/3.
+    let result = interpret(
+      "Probability[a > 1/2 \\[Conditioned] a > 1/4, a \\[Distributed] ProbabilityDistribution[1, {y, 0, 1}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "2/3");
+  }
+}
+
+mod solve_values {
+  use super::*;
+
+  #[test]
+  fn single_variable_quadratic() {
+    // SolveValues drops the rule wrapping that Solve produces.
+    assert_eq!(
+      interpret("SolveValues[m^2 == 4, m]").unwrap(),
+      "{-2, 2}"
+    );
+  }
+
+  #[test]
+  fn with_domain_restriction() {
+    assert_eq!(
+      interpret("SolveValues[m^2 == 4 && m > 0, m]").unwrap(),
+      "{2}"
+    );
+  }
+
+  #[test]
+  fn first_of_solve_values() {
+    // Common pattern from the actuarial example notebook: pluck the
+    // positive root with `First @ SolveValues[…]`.
+    assert_eq!(
+      interpret("First @ SolveValues[m^2 == 4 && m > 0, m]").unwrap(),
+      "2"
+    );
+  }
+}
+
+mod integrate_linear_power {
+  use super::*;
+
+  #[test]
+  fn negative_integer_exponent_indefinite() {
+    // ∫ 1/(1+x)^4 dx = -1/(3*(1+x)^3) — Wolfram keeps this factored.
+    // We accept any equivalent factored shape.
+    let result = interpret("Integrate[1/(1+x)^4, x]").unwrap();
+    assert!(
+      result.contains("(1 + x)^3") || result.contains("(1 + x)^(-3)"),
+      "expected a factored (1+x)^3 form, got: {result}"
+    );
+  }
+
+  #[test]
+  fn negative_integer_exponent_definite() {
+    // The case that motivated the change: PD with `1/(1+y)^4` integrand
+    // for SurvivalFunction / NProbability needs to be evaluable.
+    assert_eq!(
+      interpret("Integrate[3/(1+x)^4, {x, 10, Infinity}]").unwrap(),
+      "1/1331"
+    );
+  }
+
+  #[test]
+  fn small_positive_integer_still_expands() {
+    // Regression: my new linear-power case must not steal the
+    // `(2x-1)^2` path away from the Expand-then-integrate fallback,
+    // because Wolfram emits the expanded form for small `n`.
+    assert_eq!(
+      interpret("Integrate[(2*x - 1)^2, x]").unwrap(),
+      "x - 2*x^2 + (4*x^3)/3"
+    );
+  }
+}
+

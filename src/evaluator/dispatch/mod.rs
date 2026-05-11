@@ -5783,7 +5783,6 @@ pub fn evaluate_function_call_ast_inner(
       | "LegendFunction"
       | "RasterSize"
       | "TransformedField"
-      | "Conditioned"
       | "GeoProjection"
       | "SoundVolume"
       | "GradientFilter"

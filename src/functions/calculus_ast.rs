@@ -5938,6 +5938,32 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
         }
         Power => {
+          // ∫ 1/(a + b*x)^n dx for n ≥ 2 integer → -(a+b*x)^(1-n)/(b*(n-1))
+          // Wolfram keeps this factored, matching wolframscript's
+          // `Integrate[1/(1+x)^4, x]` → `-1/(3*(1+x)^3)`. Only applies when
+          // the base is linear in the variable and n is a negative integer.
+          if !matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+            && let Expr::Integer(n) = right.as_ref()
+            && *n <= -2
+            && let Some(slope) = extract_linear_coefficient(left, var)
+          {
+            let new_exp = Expr::Integer(*n + 1);
+            let new_pow = Expr::BinaryOp {
+              op: Power,
+              left: left.clone(),
+              right: Box::new(new_exp.clone()),
+            };
+            let divisor = simplify(Expr::BinaryOp {
+              op: Times,
+              left: Box::new(slope),
+              right: Box::new(new_exp),
+            });
+            return Some(Expr::BinaryOp {
+              op: Divide,
+              left: Box::new(new_pow),
+              right: Box::new(divisor),
+            });
+          }
           // ∫ x^n dx = x^(n+1)/(n+1) where n is constant
           if let Expr::Identifier(name) = left.as_ref()
             && name == var

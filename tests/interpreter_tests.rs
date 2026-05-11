@@ -180,6 +180,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_percent_history_in_visual_mode() {
+    // In visual mode (woxi-studio), `%` should resolve to the previous
+    // `interpret_with_stdout` call's top-level result so cells like
+    // `N[%]` work as expected. CLI mode keeps wolframscript's behaviour
+    // of returning `Out[0]` (no history), which is exercised elsewhere.
+    clear_state();
+    woxi::clear_last_output();
+    let r1 = interpret_with_stdout("2 + 3").unwrap();
+    assert_eq!(r1.result, "5");
+    let r2 = interpret_with_stdout("N[%]").unwrap();
+    assert_eq!(r2.result, "5.");
+  }
+
+  #[test]
+  fn test_percent_in_cli_mode_collapses_to_out_zero() {
+    // `interpret` (CLI / wolframscript-equivalent path) must not consume
+    // the visual-mode history. `%` collapses to `Out[0]` exactly as
+    // wolframscript does inside a single `-code` invocation.
+    clear_state();
+    woxi::clear_last_output();
+    let _ = interpret_with_stdout("123").unwrap(); // would populate history
+    // Bare `interpret` ignores history:
+    assert_eq!(interpret("%").unwrap(), "Out[0]");
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();

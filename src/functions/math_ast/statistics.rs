@@ -1457,6 +1457,15 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Quantile expects exactly 2 arguments".into(),
     ));
   }
+  // Quantile[dist, q] for a distribution — invert the CDF numerically.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && let Some(result) =
+      crate::functions::math_ast::quantile_distribution_numeric(
+        name, dargs, &args[1],
+      )?
+  {
+    return Ok(result);
+  }
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {

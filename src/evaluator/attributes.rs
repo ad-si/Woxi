@@ -465,6 +465,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "StringFreeQ"
     | "StringCount"
     | "Solve"
+    | "SolveValues"
     | "NSolve"
     | "Roots"
     | "Reduce"
