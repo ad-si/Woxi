@@ -220,6 +220,36 @@ mod coefficient {
       "(-3 + y)^(-1) + (-2 + y)^(-1)"
     );
   }
+
+  // Wolfram's `Coefficient[expr, form]` does *literal* factor-multiset
+  // matching on `form`. The form's numeric coefficient is just another
+  // factor that has to appear as-is in a term — `6*x` does not contain
+  // `2*x` as a literal factor (6 ≠ 2), so the coefficient is 0, not 3.
+  #[test]
+  fn composite_form_with_numeric_factor() {
+    assert_eq!(interpret("Coefficient[6*x, 2*x]").unwrap(), "0");
+    assert_eq!(interpret("Coefficient[2*x, 2*x]").unwrap(), "1");
+    assert_eq!(interpret("Coefficient[a*(2*x), 2*x]").unwrap(), "a");
+    assert_eq!(interpret("Coefficient[2*x*y + 4*x, 2*x]").unwrap(), "y");
+    assert_eq!(interpret("Coefficient[2*x*y + 2*x, 2*x]").unwrap(), "1 + y");
+    assert_eq!(interpret("Coefficient[6*x + 2*x*y, 2*x]").unwrap(), "y");
+  }
+
+  // Sign matters in literal factor matching: `-2` and `2` are distinct
+  // factors, so `-2 x` does not contribute to `Coefficient[..., 2 x]`.
+  #[test]
+  fn composite_form_negative_numeric() {
+    assert_eq!(interpret("Coefficient[-2*x*y + 2*x, 2*x]").unwrap(), "1");
+    assert_eq!(interpret("Coefficient[2*x*y - 2*x, 2*x]").unwrap(), "y");
+    assert_eq!(interpret("Coefficient[-2*x*y - 2*x, 2*x]").unwrap(), "0");
+  }
+
+  // 3-arg form with composite second argument: for n = 1 it reduces to
+  // the 2-arg form. Matches wolframscript.
+  #[test]
+  fn composite_form_three_arg_power_one() {
+    assert_eq!(interpret("Coefficient[2*a*x + b*y, 2*x, 1]").unwrap(), "a");
+  }
 }
 
 mod expand {

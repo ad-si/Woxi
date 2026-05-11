@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::evaluator::pattern_matching::expr_equal;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
@@ -58,6 +59,27 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && var_powers.len() > 1
   {
     return coefficient_of_monomial(&args[0], &var_powers);
+  }
+
+  // Composite form like `2*x` or `b*x` — anything beyond a bare symbol or
+  // pure variable monomial. Wolfram matches this as a literal factor
+  // multiset: each term in the expanded expression must contain every
+  // factor of `form`; the remaining factors are the coefficient. For the
+  // 3-arg form only `n = 1` is well-defined this way; other powers
+  // depend on canonicalization quirks we don't reproduce.
+  if !matches!(&args[1], Expr::Identifier(_)) {
+    let form_factors = collect_form_factors(&args[1]);
+    let is_bare_symbol = form_factors.len() == 1
+      && matches!(&form_factors[0], Expr::Identifier(_));
+    if !form_factors.is_empty() && !is_bare_symbol {
+      if args.len() == 3 && !matches!(&args[2], Expr::Integer(1)) {
+        return Ok(Expr::FunctionCall {
+          name: "Coefficient".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      return coefficient_of_general_form(&args[0], &form_factors);
+    }
   }
 
   let var = match &args[1] {
@@ -181,6 +203,118 @@ fn collect_product_factors(expr: &Expr, out: &mut Vec<Expr>) {
     }
     _ => out.push(expr.clone()),
   }
+}
+
+/// Decompose `expr` into a flat list of top-level multiplicative factors,
+/// folding leading-minus signs into the numeric factor so that `-2*x*y` and
+/// `Times[-2, x, y]` produce the same multiset `[-2, x, y]`.
+fn collect_form_factors(expr: &Expr) -> Vec<Expr> {
+  let mut factors = Vec::new();
+  collect_factors_with_sign(expr, false, &mut factors);
+  factors
+}
+
+fn collect_factors_with_sign(expr: &Expr, negate: bool, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_factors_with_sign(left, negate, out);
+      collect_factors_with_sign(right, false, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut first = true;
+      for a in args {
+        collect_factors_with_sign(a, negate && first, out);
+        first = false;
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      collect_factors_with_sign(operand, !negate, out);
+    }
+    _ => {
+      if negate {
+        out.push(negate_factor(expr));
+      } else {
+        out.push(expr.clone());
+      }
+    }
+  }
+}
+
+fn negate_factor(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(r) => Expr::Real(-r),
+    _ => Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(expr.clone()),
+    },
+  }
+}
+
+/// Multiply a list of factors into a single Expr, folding identity factors.
+fn factors_to_product(factors: &[Expr]) -> Expr {
+  let mut iter = factors.iter().cloned();
+  let Some(first) = iter.next() else {
+    return Expr::Integer(1);
+  };
+  iter.fold(first, |acc, f| multiply_exprs(&acc, &f))
+}
+
+/// Return `Some(remaining)` if `needed` is a sub-multiset of `available`
+/// (compared with `expr_equal`); otherwise `None`.
+fn factor_subset_remainder(
+  available: &[Expr],
+  needed: &[Expr],
+) -> Option<Vec<Expr>> {
+  let mut remaining: Vec<Expr> = available.to_vec();
+  for need in needed {
+    let pos = remaining.iter().position(|f| expr_equal(f, need))?;
+    remaining.remove(pos);
+  }
+  Some(remaining)
+}
+
+/// 2-arg `Coefficient` for forms that aren't a plain symbol or pure
+/// variable monomial — e.g. `2*x`, `(-2)*x`, `b*x`. Each expanded term
+/// must contain the form's factor multiset literally; the leftover
+/// factors form the contribution.
+fn coefficient_of_general_form(
+  expr: &Expr,
+  form_factors: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let expanded = expand_expr(expr);
+  let terms = collect_additive_terms(&expanded);
+  let mut contributions: Vec<Expr> = Vec::new();
+  for term in &terms {
+    let term_factors = collect_form_factors(term);
+    if let Some(remaining) =
+      factor_subset_remainder(&term_factors, form_factors)
+    {
+      contributions.push(factors_to_product(&remaining));
+    }
+  }
+  if contributions.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  if contributions.len() == 1 {
+    return Ok(contributions.remove(0));
+  }
+  let mut result = contributions.remove(0);
+  for c in contributions {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(c),
+    };
+  }
+  Ok(simplify(result))
 }
 
 /// Extract the coefficient of a multivariate monomial from a polynomial.
