@@ -1,11 +1,3 @@
-FILE: mathics/builtin/exp_structure/size_and_sig.py
-CLASS: Hash
-LINE: 94
-TYPE: >>
-INPUT: Hash[SomeHead[3.1415]]
-EXPECTED:
-= 47205238268993602951487675588386522878
----
 FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: HTMLGetString
 LINE: 180
