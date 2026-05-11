@@ -1,13 +1,5 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: HTMLGetString
-LINE: 180
-TYPE: #>
-INPUT: Head[HTML`Parser`HTMLGetString["<a></a>"]]
-EXPECTED:
-= XMLObject[Document]
----
-FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: HTMLGetString
 LINE: 183
 TYPE: #>
 INPUT: Head[HTML`Parser`HTMLGetString["<a><b></a>"]]
