@@ -480,4 +480,61 @@ mod list_tests {
       "2"
     );
   }
+
+  #[test]
+  fn range_imax() {
+    // Range[imax] generates {1, 2, ..., imax}
+    assert_eq!(interpret("Range[5]").unwrap(), "{1, 2, 3, 4, 5}");
+    assert_eq!(interpret("Range[1]").unwrap(), "{1}");
+    assert_eq!(interpret("Range[0]").unwrap(), "{}");
+    // Non-integer upper bound: step defaults to 1, min defaults to 1
+    // so the elements are integers (matches wolframscript).
+    assert_eq!(interpret("Range[3.5]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn range_imin_imax() {
+    // Range[imin, imax] generates {imin, ..., imax}
+    assert_eq!(interpret("Range[2, 8]").unwrap(), "{2, 3, 4, 5, 6, 7, 8}");
+    assert_eq!(interpret("Range[5, 5]").unwrap(), "{5}");
+    // Empty when imin > imax and step is positive (the default).
+    assert_eq!(interpret("Range[5, 1]").unwrap(), "{}");
+    // Integer min with Real (non-integer) max -> integer elements.
+    assert_eq!(interpret("Range[1, 3.5]").unwrap(), "{1, 2, 3}");
+    // Real min with integer max -> Real elements.
+    assert_eq!(
+      interpret("Range[1.0, 5]").unwrap(),
+      "{1., 2., 3., 4., 5.}"
+    );
+    // Negative bounds.
+    assert_eq!(interpret("Range[-2, 2]").unwrap(), "{-2, -1, 0, 1, 2}");
+  }
+
+  #[test]
+  fn range_imin_imax_step() {
+    // Range[imin, imax, di] uses step di.
+    assert_eq!(interpret("Range[1, 10, 2]").unwrap(), "{1, 3, 5, 7, 9}");
+    // Negative step iterates downward.
+    assert_eq!(
+      interpret("Range[10, 1, -1]").unwrap(),
+      "{10, 9, 8, 7, 6, 5, 4, 3, 2, 1}"
+    );
+    // Fractional rational step preserves exact rationals.
+    assert_eq!(
+      interpret("Range[1, 2, 1/4]").unwrap(),
+      "{1, 5/4, 3/2, 7/4, 2}"
+    );
+    // Real step -> Real outputs.
+    assert_eq!(
+      interpret("Range[0, 1, 0.25]").unwrap(),
+      "{0., 0.25, 0.5, 0.75, 1.}"
+    );
+    // Step that overshoots -> single element.
+    assert_eq!(interpret("Range[1, 5, 10]").unwrap(), "{1}");
+  }
+
+  #[test]
+  fn range_zero_step_errors() {
+    assert!(interpret("Range[1, 5, 0]").is_err());
+  }
 }

@@ -602,8 +602,10 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Check if any input is Real - if so, all outputs should be Real
-  let any_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+  // Output elements are Real only when `min` or `step` is Real.
+  // `max` only controls termination, so e.g. Range[3.5] yields integers.
+  let any_real =
+    matches!(&min_expr, Expr::Real(_)) || matches!(&step_expr, Expr::Real(_));
 
   let mut results = Vec::new();
   let mut val = min;
