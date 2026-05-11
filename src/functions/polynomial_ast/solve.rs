@@ -530,10 +530,7 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec().into(),
       });
     }
-    let Expr::Rule {
-      replacement, ..
-    } = &rules[0]
-    else {
+    let Expr::Rule { replacement, .. } = &rules[0] else {
       return Ok(Expr::FunctionCall {
         name: "SolveValues".to_string(),
         args: args.to_vec().into(),

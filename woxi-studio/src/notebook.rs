@@ -1865,10 +1865,7 @@ Cell["Chapter 2", "Chapter"]
     // how the FrontEnd typesets currency literals like `$5000`. We unpack
     // these back to `Quantity[5000, "USDollars"]` so the cell stays evaluable.
     let s = r#"BoxData[TemplateBox[{"5000", RowBox[{FormBox["\"$\"", TraditionalForm], "\[VeryThinSpace]"}], "US dollars", "\"USDollars\""}, "QuantityPrefix"]]"#;
-    assert_eq!(
-      extract_cell_content(s),
-      "Quantity[5000, \"USDollars\"]"
-    );
+    assert_eq!(extract_cell_content(s), "Quantity[5000, \"USDollars\"]");
   }
 
   #[test]

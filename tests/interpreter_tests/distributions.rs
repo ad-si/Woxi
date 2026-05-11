@@ -439,10 +439,9 @@ mod probability_distribution {
   #[test]
   fn pdf_with_renamed_variable() {
     // PD's iterator is `y`; PDF[..., 2] substitutes y → 2 and gates by domain.
-    let result = interpret(
-      "PDF[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]",
-    )
-    .unwrap();
+    let result =
+      interpret("PDF[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]")
+        .unwrap();
     // (3/(1+2)^4) on the support → 3/81 → 1/27.
     assert!(result.contains("1/27"), "got {result}");
   }
@@ -451,10 +450,8 @@ mod probability_distribution {
   fn cdf_at_endpoint() {
     // CDF[..., 2] = ∫₀² 3/(1+y)^4 dy = 1 - 1/27 = 26/27.
     assert_eq!(
-      interpret(
-        "CDF[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]"
-      )
-      .unwrap(),
+      interpret("CDF[ProbabilityDistribution[3/(1+y)^4, {y, 0, Infinity}], 2]")
+        .unwrap(),
       "26/27"
     );
   }
@@ -611,10 +608,7 @@ mod solve_values {
   #[test]
   fn single_variable_quadratic() {
     // SolveValues drops the rule wrapping that Solve produces.
-    assert_eq!(
-      interpret("SolveValues[m^2 == 4, m]").unwrap(),
-      "{-2, 2}"
-    );
+    assert_eq!(interpret("SolveValues[m^2 == 4, m]").unwrap(), "{-2, 2}");
   }
 
   #[test]
@@ -671,4 +665,3 @@ mod integrate_linear_power {
     );
   }
 }
-
