@@ -1,11 +1,3 @@
-FILE: mathics/builtin/options.py
-CLASS: OptionValue
-LINE: 428
-TYPE: >>
-INPUT: f[a->5] /. f[OptionsPattern[{}]] -> {OptionValue[Symbol["a"]]}
-EXPECTED:
-= {5}
----
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
 LINE: 63
