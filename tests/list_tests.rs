@@ -559,4 +559,27 @@ mod list_tests {
       interpret("Simplify[(b - a)/4]").unwrap()
     );
   }
+
+  #[test]
+  fn range_irrational_ratio() {
+    // When (max - min)/step simplifies to an irrational positive real
+    // like Pi (~3.14), Range should still enumerate using floor(k) + 1.
+    assert_eq!(interpret("Length[Range[a, b, (b - a)/Pi]]").unwrap(), "4");
+    assert_eq!(interpret("First[Range[a, b, (b - a)/Pi]]").unwrap(), "a");
+
+    // E ~ 2.718 -> 3 elements
+    assert_eq!(interpret("Length[Range[a, b, (b - a)/E]]").unwrap(), "3");
+
+    // GoldenRatio ~ 1.618 -> 2 elements
+    assert_eq!(
+      interpret("Length[Range[a, b, (b - a)/GoldenRatio]]").unwrap(),
+      "2"
+    );
+
+    // Sqrt[2] ~ 1.414 -> 2 elements
+    assert_eq!(
+      interpret("Length[Range[a, b, (b - a)/Sqrt[2]]]").unwrap(),
+      "2"
+    );
+  }
 }

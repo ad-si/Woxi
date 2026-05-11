@@ -514,13 +514,15 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]
         .into(),
       };
-      // Accept rationals (e.g. `5/2`) as well as floats — `expr_to_f64`
-      // only handles Integer/Real, so try `expr_to_rational` first.
-      let evaled_ratio = crate::evaluator::evaluate_expr_to_expr(&ratio_expr).ok();
+      // Accept rationals (e.g. `5/2`), floats, and symbolic reals like
+      // `Pi` — fall through to `try_numeric` (which calls `N[expr]`)
+      // when the ratio doesn't reduce to a literal Integer/Rational/Real.
+      let evaled_ratio =
+        crate::evaluator::evaluate_expr_to_expr(&ratio_expr).ok();
       let ratio_val = evaled_ratio.as_ref().and_then(|e| {
         expr_to_rational(e)
           .map(|(n, d)| n as f64 / d as f64)
-          .or_else(|| expr_to_f64(e))
+          .or_else(|| try_numeric(e))
       });
       if let Some(ratio_val) = ratio_val
         && ratio_val.is_finite()
