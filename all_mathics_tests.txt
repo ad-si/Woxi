@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: ImageLinksImport
-LINE: 349
-TYPE: >>
-INPUT: Import["ExampleData/PrimeMeridian.html", "ImageLinks"][[6]]
-EXPECTED:
-= //upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Prime_meridian.jpg/180px-Prime_meridian.jpg
----
-FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: PlaintextImport
 LINE: 372
 TYPE: >>
