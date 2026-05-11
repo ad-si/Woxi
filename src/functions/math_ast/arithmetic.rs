@@ -1668,7 +1668,11 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       right,
     } => {
       if let Expr::Identifier(s) = left.as_ref() {
-        let exp = expr_to_f64(right)?;
+        // Symbolic exponent (e.g. `a^n`): sort as a polynomial in `a` with
+        // a sentinel exponent above any concrete one, so `a < a^2 < a^n`
+        // and the term sits next to other powers of `a`. Final disambiguation
+        // among differing symbolic exponents falls through to term_sort_key.
+        let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
         return Some(vec![(s.clone(), exp)]);
       }
       if let Expr::FunctionCall { name, .. } = left.as_ref()
@@ -1681,7 +1685,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if let Expr::Identifier(s) = &args[0] {
-        let exp = expr_to_f64(&args[1])?;
+        let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
         return Some(vec![(s.clone(), exp)]);
       }
       if let Expr::FunctionCall { name: inner, .. } = &args[0]
@@ -2349,10 +2353,21 @@ fn compare_via_shared_fn_call_factor(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     )
   }
   if let Some(matching) = try_match(a, b) {
-    return compare_expr_canonical(matching, b);
+    let cmp = compare_expr_canonical(matching, b);
+    if cmp != std::cmp::Ordering::Equal {
+      return cmp;
+    }
+    // The matching factor inside `a` equals the bare term `b`, meaning
+    // `a` is `b` decorated with extra factors. Wolfram sorts the bare
+    // term first: `C[1] + (-1)^n*C[1]` (not the reverse).
+    return std::cmp::Ordering::Greater;
   }
   if let Some(matching) = try_match(b, a) {
-    return compare_expr_canonical(a, matching);
+    let cmp = compare_expr_canonical(a, matching);
+    if cmp != std::cmp::Ordering::Equal {
+      return cmp;
+    }
+    return std::cmp::Ordering::Less;
   }
   std::cmp::Ordering::Equal
 }

@@ -3301,9 +3301,46 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_option_value_non_symbol_arg_outside_context_unevaluated() {
+      assert_eq!(interpret("OptionValue[a+b]").unwrap(), "OptionValue[a + b]");
+    }
+  }
+
+  mod expand_canonical_order_tests {
+    use super::*;
+
+    #[test]
+    fn test_expand_symbolic_power_sorts_by_base() {
+      assert_eq!(interpret("Expand[a^n + b]").unwrap(), "a^n + b");
+      assert_eq!(interpret("Expand[c + b + a^n]").unwrap(), "a^n + b + c");
+    }
+
+    #[test]
+    fn test_expand_symbolic_power_after_numeric_power() {
+      assert_eq!(interpret("Expand[a^n + a^2]").unwrap(), "a^2 + a^n");
+      assert_eq!(interpret("Expand[a^n + a]").unwrap(), "a + a^n");
+    }
+
+    #[test]
+    fn test_expand_bare_call_before_times_product_with_same_call() {
+      // `C[1] + (-1)^n*C[1]` keeps the bare `C[1]` first when both terms
+      // share the same FunctionCall factor — Wolfram's canonical Plus
+      // ordering treats the bare call as "shorter" / lower.
       assert_eq!(
-        interpret("OptionValue[a+b]").unwrap(),
-        "OptionValue[a + b]"
+        interpret("Expand[C[1] - (-1)^n*C[1]]").unwrap(),
+        "C[1] - (-1)^n*C[1]"
+      );
+      assert_eq!(
+        interpret("Expand[(-1)^n + C[1] - (-1)^n*C[1]]").unwrap(),
+        "(-1)^n + C[1] - (-1)^n*C[1]"
+      );
+    }
+
+    #[test]
+    fn test_rsolve_initial_condition_canonical_form() {
+      // RSolve relies on the Expand ordering above for its readable output.
+      assert_eq!(
+        interpret("RSolve[{a[n + 2] == a[n], a[0] == 1}, a, n]").unwrap(),
+        "{{a -> Function[{n}, (-1)^n + C[1] - (-1)^n*C[1]]}}"
       );
     }
   }

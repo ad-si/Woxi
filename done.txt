@@ -12510,3 +12510,11 @@ INPUT: RSolve[{a[n + 2] == a[n]}, a, n]
 EXPECTED:
 = {{a -> Function[{n}, C[0] + C[1] (-1) ^ n]}}
 ---
+FILE: mathics/builtin/recurrence.py
+CLASS: RSolve
+LINE: 44
+TYPE: >>
+INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1}, a, n]
+EXPECTED:
+= ...
+---
