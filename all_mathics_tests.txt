@@ -1,15 +1,3 @@
-FILE: mathics/builtin/tensors.py
-CLASS: Transpose
-LINE: 358
-TYPE: >>
-INPUT: MatrixForm[%]
-EXPECTED:
-= 1   4
-. 
-. 2   5
-. 
-. 3   6
----
 FILE: mathics/builtin/exp_structure/size_and_sig.py
 CLASS: Hash
 LINE: 82
