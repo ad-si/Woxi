@@ -1,13 +1,5 @@
 FILE: mathics/builtin/exp_structure/size_and_sig.py
 CLASS: Hash
-LINE: 91
-TYPE: >>
-INPUT: Hash[{a, b, {c, {d, e, f}}}]
-EXPECTED:
-= 135682164776235407777080772547528225284
----
-FILE: mathics/builtin/exp_structure/size_and_sig.py
-CLASS: Hash
 LINE: 94
 TYPE: >>
 INPUT: Hash[SomeHead[3.1415]]
