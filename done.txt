@@ -12570,3 +12570,11 @@ INPUT: Hash["The Adventures of Huckleberry Finn"]
 EXPECTED:
 = 213425047836523694663619736686226550816
 ---
+FILE: mathics/builtin/exp_structure/size_and_sig.py
+CLASS: Hash
+LINE: 88
+TYPE: >>
+INPUT: Hash[1/3]
+EXPECTED:
+= 56073172797010645108327809727054836008
+---
