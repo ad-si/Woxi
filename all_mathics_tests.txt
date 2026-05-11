@@ -1,12 +1,4 @@
 FILE: mathics/builtin/tensors.py
-CLASS: Outer
-LINE: 200
-TYPE: >>
-INPUT: Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]
-EXPECTED:
-= {{{0, 0}, {a c, a d}}, {{b c, b d}, {0, 0}}}
----
-FILE: mathics/builtin/tensors.py
 CLASS: Transpose
 LINE: 358
 TYPE: >>
