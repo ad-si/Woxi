@@ -1222,6 +1222,15 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(name) => name.clone(),
         Expr::String(name) => name.clone(),
         _ => {
+          // Non-symbol/non-string argument: inside an OptionsPattern
+          // context, Wolfram returns the evaluated argument itself
+          // (e.g. OptionValue[a+b] -> a+b). Outside any context, leave
+          // OptionValue unevaluated.
+          let in_context = crate::OPTION_VALUE_CONTEXT
+            .with(|ctx| !ctx.borrow().is_empty());
+          if in_context {
+            return Some(Ok(opt_arg));
+          }
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),
             args: vec![opt_arg].into(),

@@ -1,14 +1,5 @@
 FILE: mathics/builtin/options.py
 CLASS: OptionValue
-LINE: 423
-TYPE: >>
-INPUT: f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[a+b]}
-EXPECTED:
-: Argument a + b at position 1 is expected to be a symbol.
-= {OptionValue[a + b]}
----
-FILE: mathics/builtin/options.py
-CLASS: OptionValue
 LINE: 428
 TYPE: >>
 INPUT: f[a->5] /. f[OptionsPattern[{}]] -> {OptionValue[Symbol["a"]]}

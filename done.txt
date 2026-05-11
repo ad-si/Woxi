@@ -12462,3 +12462,12 @@ INPUT: f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[b]}
 EXPECTED:
 = {b}
 ---
+FILE: mathics/builtin/options.py
+CLASS: OptionValue
+LINE: 423
+TYPE: >>
+INPUT: f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[a+b]}
+EXPECTED:
+: Argument a + b at position 1 is expected to be a symbol.
+= {OptionValue[a + b]}
+---

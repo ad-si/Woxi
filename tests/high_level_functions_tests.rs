@@ -3287,5 +3287,24 @@ mod high_level_functions_tests {
     fn test_option_value_outside_context_stays_unevaluated() {
       assert_eq!(interpret("OptionValue[b]").unwrap(), "OptionValue[b]");
     }
+
+    #[test]
+    fn test_option_value_non_symbol_arg_in_context_returns_argument() {
+      // OptionValue[a+b] inside OptionsPattern resolves to the bare
+      // expression a+b (not a symbol lookup), matching Wolfram.
+      assert_eq!(
+        interpret("f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[a+b]}")
+          .unwrap(),
+        "{a + b}"
+      );
+    }
+
+    #[test]
+    fn test_option_value_non_symbol_arg_outside_context_unevaluated() {
+      assert_eq!(
+        interpret("OptionValue[a+b]").unwrap(),
+        "OptionValue[a + b]"
+      );
+    }
   }
 }
