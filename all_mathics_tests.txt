@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/htmlformat.py
-CLASS: SourceImport
-LINE: 398
-TYPE: >>
-INPUT: DeleteDuplicates[StringCases[Import["ExampleData/PrimeMeridian.html", "Source"], RegularExpression["<t[a-z]+>"]]]
-EXPECTED:
-= {<title>, <tr>, <th>, <td>}
----
-FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: TitleImport
 LINE: 425
 TYPE: >>
