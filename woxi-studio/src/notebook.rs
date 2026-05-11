@@ -299,6 +299,14 @@ fn extract_cell_content(s: &str) -> String {
     return extract_rowbox_content(inner);
   }
 
+  // Handle 2-D typeset display boxes. These are emitted by the Wolfram
+  // FrontEnd to render assignments like `r = (matrix)` or expressions
+  // containing fractions / exponents in pretty-printed form; converting
+  // them back to plain InputForm text keeps the cell evaluable.
+  if let Some(result) = extract_typeset_box(s) {
+    return result;
+  }
+
   // Handle a bare list `{...}` (e.g. multi-statement Input cells written as
   // `BoxData[{ RowBox[...], "\n", RowBox[...], ... }]`). The list's items
   // follow the same conventions as a RowBox, so reuse that extractor.
@@ -308,6 +316,118 @@ fn extract_cell_content(s: &str) -> String {
 
   // Handle quoted strings
   extract_string_content(s)
+}
+
+/// Recognise the typeset box heads that the FrontEnd uses to pretty-print
+/// expressions (`FractionBox`, `SuperscriptBox`, `SqrtBox`, `TagBox`,
+/// `GridBox`, …) and convert them back into evaluable InputForm text.
+/// Returns `None` if `s` does not start with one of those heads.
+fn extract_typeset_box(s: &str) -> Option<String> {
+  fn split_args(head: &str, s: &str) -> Option<Vec<String>> {
+    let prefix = format!("{head}[");
+    let rest = s.strip_prefix(&prefix)?;
+    let (inner, _) = find_matching_bracket(rest).ok()?;
+    Some(
+      split_top_level_commas(inner)
+        .into_iter()
+        .map(|p| p.trim().to_string())
+        .collect(),
+    )
+  }
+  for head in [
+    "FractionBox",
+    "SuperscriptBox",
+    "SubscriptBox",
+    "SubsuperscriptBox",
+    "SqrtBox",
+    "RadicalBox",
+    "TagBox",
+    "GridBox",
+    "StyleBox",
+    "InterpretationBox",
+    "FormBox",
+    "AdjustmentBox",
+    "FrameBox",
+  ] {
+    if !s.starts_with(head) {
+      continue;
+    }
+    let args = split_args(head, s)?;
+    let conv = |a: &str| extract_cell_content(a);
+    return Some(match head {
+      // `FractionBox[a, b]` → `(a)/(b)`. The parentheses preserve operator
+      // precedence around composite numerators / denominators.
+      "FractionBox" if args.len() == 2 => {
+        format!("({})/({})", conv(&args[0]), conv(&args[1]))
+      }
+      // `SuperscriptBox[a, b]` → `(a)^(b)`.
+      "SuperscriptBox" if args.len() == 2 => {
+        format!("({})^({})", conv(&args[0]), conv(&args[1]))
+      }
+      // `SubscriptBox[a, b]` → `Subscript[a, b]` (Wolfram's evaluable form).
+      "SubscriptBox" if args.len() == 2 => {
+        format!("Subscript[{}, {}]", conv(&args[0]), conv(&args[1]))
+      }
+      // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
+      "SubsuperscriptBox" if args.len() == 3 => {
+        format!(
+          "(Subscript[{}, {}])^({})",
+          conv(&args[0]),
+          conv(&args[1]),
+          conv(&args[2])
+        )
+      }
+      // `SqrtBox[a]` → `Sqrt[a]`.
+      "SqrtBox" if args.len() == 1 => format!("Sqrt[{}]", conv(&args[0])),
+      // `RadicalBox[a, n]` → `Surd[a, n]` (n-th root).
+      "RadicalBox" if args.len() == 2 => {
+        format!("Surd[{}, {}]", conv(&args[0]), conv(&args[1]))
+      }
+      // `TagBox[content, tag, opts...]` is a display annotation; the
+      // evaluable value is just `content`.
+      "TagBox" if !args.is_empty() => conv(&args[0]),
+      // `StyleBox`, `FrameBox`, `AdjustmentBox`, `FormBox` similarly wrap
+      // a displayed expression; recurse into the first arg.
+      "StyleBox" | "FrameBox" | "AdjustmentBox" | "FormBox"
+        if !args.is_empty() =>
+      {
+        conv(&args[0])
+      }
+      // `InterpretationBox[displayed, value]` stores both the typeset form
+      // and the underlying expression that should be used for evaluation.
+      // We want the second argument.
+      "InterpretationBox" if args.len() >= 2 => conv(&args[1]),
+      // `GridBox[{{r11, r12, …}, {r21, …}, …}, opts…]` → the raw rows as a
+      // list literal. The rows themselves may contain box expressions, so
+      // recurse into each cell.
+      "GridBox" if !args.is_empty() => {
+        // `args[0]` is the outer list of rows: `{{a, b}, {c, d}}`.
+        let rows_text = args[0].trim();
+        let rows_inner = rows_text
+          .strip_prefix('{')
+          .and_then(|s| s.strip_suffix('}'))
+          .unwrap_or(rows_text);
+        let rows: Vec<String> = split_top_level_commas(rows_inner)
+          .into_iter()
+          .map(|row| {
+            let row = row.trim();
+            let row_inner = row
+              .strip_prefix('{')
+              .and_then(|s| s.strip_suffix('}'))
+              .unwrap_or(row);
+            let cells: Vec<String> = split_top_level_commas(row_inner)
+              .into_iter()
+              .map(|cell| extract_cell_content(cell.trim()))
+              .collect();
+            format!("{{{}}}", cells.join(", "))
+          })
+          .collect();
+        format!("{{{}}}", rows.join(", "))
+      }
+      _ => return None,
+    });
+  }
+  None
 }
 
 /// Extract text from a RowBox expression by concatenating string
@@ -329,6 +449,8 @@ fn extract_rowbox_content(s: &str) -> String {
       ));
     } else if part == "\"\\n\"" || part == "\"\\[NewLine]\"" {
       result.push('\n');
+    } else if let Some(converted) = extract_typeset_box(part) {
+      result.push_str(&converted);
     } else {
       // For non-string tokens, include as-is
       result.push_str(part);
@@ -341,6 +463,13 @@ fn extract_rowbox_content(s: &str) -> String {
 /// equivalents for display in code cells. The Wolfram FrontEnd encodes
 /// operators like `->` as `\[Rule]` (private-use U+F522), which has no
 /// glyph in normal fonts. Returning ASCII keeps the cell editable.
+///
+/// Display-only "invisible" characters — `\[NoBreak]`, `\[InvisibleSpace]`,
+/// `\[InvisibleTimes]`, `\[InvisibleComma]`, `\[ImplicitPlus]` — exist purely
+/// to influence pretty-printing in the FrontEnd. They have no meaning at
+/// evaluation time, so we strip them when reconstructing InputForm text
+/// from box expressions to avoid the parser tripping over the leftover
+/// `\[…]` tokens.
 fn named_char_to_code_op(name: &str) -> Option<&'static str> {
   match name {
     "Rule" => Some("->"),
@@ -349,6 +478,13 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "UndirectedEdge" => Some("\\[UndirectedEdge]"),
     "Distributed" => Some("\\[Distributed]"),
     "Cross" => Some("\\[Cross]"),
+    "NoBreak" | "InvisibleSpace" | "InvisibleComma" | "ImplicitPlus"
+    | "AutoSpace" | "ZeroWidthSpace" | "NonBreakingSpace" => Some(""),
+    // `\[InvisibleTimes]` represents implicit multiplication (e.g. `2 x`
+    // is encoded as `2 \[InvisibleTimes] x` in box form). Map it to an
+    // explicit `*` so the resulting InputForm parses as multiplication
+    // rather than producing two adjacent tokens that mean nothing.
+    "InvisibleTimes" => Some("*"),
     _ => None,
   }
 }
