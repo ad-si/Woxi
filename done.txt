@@ -12479,3 +12479,11 @@ INPUT: f[a->5] /. f[OptionsPattern[{}]] -> {OptionValue[Symbol["a"]]}
 EXPECTED:
 = {5}
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 63
+TYPE: >>
+INPUT: ElementData["Carbon", "IonizationEnergies"]
+EXPECTED:
+= {1086.5, 2352.6, 4620.5, 6222.7, 37831, 47277.}
+---
