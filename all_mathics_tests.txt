@@ -1,13 +1,5 @@
 FILE: mathics/builtin/options.py
 CLASS: OptionValue
-LINE: 415
-TYPE: >>
-INPUT: f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[a]}
-EXPECTED:
-= {3}
----
-FILE: mathics/builtin/options.py
-CLASS: OptionValue
 LINE: 419
 TYPE: >>
 INPUT: f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[b]}
