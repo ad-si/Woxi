@@ -12427,3 +12427,13 @@ INPUT: Find[stream, {"energy", "power"} ]
 EXPECTED:
 = a new and important source of energy in the immediate future. Certain aspects
 ---
+FILE: mathics/builtin/options.py
+CLASS: Options
+LINE: 326
+TYPE: >>
+INPUT: f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]);
+EXPECTED:
+| value
+| between
+| value
+---
