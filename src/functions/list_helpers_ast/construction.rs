@@ -482,59 +482,76 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let step_f = try_numeric(&step_expr);
 
     // If the endpoints are purely symbolic (e.g. `Range[a, a+5]`) the
-    // difference `max - min` may still simplify to a numeric value, even
-    // though the individual endpoints don't. In that case we can still
-    // enumerate the range using the numeric count and render each
-    // element symbolically.
+    // difference `max - min` — or the ratio `(max - min)/step` when the
+    // step is itself symbolic (e.g. `Range[a, b, (b - a)/4]`) — may still
+    // simplify to a numeric value. In that case we can enumerate the
+    // range using the numeric count and render each element symbolically.
     if min_f.is_none() || max_f.is_none() {
-      if let Some(step_val) = step_f {
-        if step_val == 0.0 {
+      if let Some(0.0) = step_f {
+        return Err(InterpreterError::EvaluationError(
+          "Range: step cannot be zero".into(),
+        ));
+      }
+      // ratio = (max - min) / step
+      let ratio_expr = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              max_expr.clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), min_expr.clone()].into(),
+              },
+            ]
+            .into(),
+          },
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![step_expr.clone(), Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      };
+      // Accept rationals (e.g. `5/2`) as well as floats — `expr_to_f64`
+      // only handles Integer/Real, so try `expr_to_rational` first.
+      let evaled_ratio = crate::evaluator::evaluate_expr_to_expr(&ratio_expr).ok();
+      let ratio_val = evaled_ratio.as_ref().and_then(|e| {
+        expr_to_rational(e)
+          .map(|(n, d)| n as f64 / d as f64)
+          .or_else(|| expr_to_f64(e))
+      });
+      if let Some(ratio_val) = ratio_val
+        && ratio_val.is_finite()
+      {
+        let count = ratio_val.floor() as i128 + 1;
+        if count <= 0 {
+          return Ok(Expr::List(vec![].into()));
+        }
+        if count > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
-            "Range: step cannot be zero".into(),
+            "Range: result too large".into(),
           ));
         }
-        let diff_expr = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            max_expr.clone(),
-            Expr::FunctionCall {
+        let mut results = Vec::with_capacity(count as usize);
+        for k in 0..count {
+          let elem = if k == 0 {
+            min_expr.clone()
+          } else {
+            let k_times_step = Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), min_expr.clone()].into(),
-            },
-          ]
-          .into(),
-        };
-        if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&diff_expr)
-          && let Some(diff_val) = expr_to_f64(&evaled)
-        {
-          let count = (diff_val / step_val).floor() as i128 + 1;
-          if count <= 0 {
-            return Ok(Expr::List(vec![].into()));
-          }
-          if count > 1_000_000 {
-            return Err(InterpreterError::EvaluationError(
-              "Range: result too large".into(),
-            ));
-          }
-          let mut results = Vec::with_capacity(count as usize);
-          for k in 0..count {
-            let elem = if k == 0 {
-              min_expr.clone()
-            } else {
-              let k_times_step = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(k), step_expr.clone()].into(),
-              };
-              let sum = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![min_expr.clone(), k_times_step].into(),
-              };
-              crate::evaluator::evaluate_expr_to_expr(&sum)?
+              args: vec![Expr::Integer(k), step_expr.clone()].into(),
             };
-            results.push(elem);
-          }
-          return Ok(Expr::List(results.into()));
+            let sum = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![min_expr.clone(), k_times_step].into(),
+            };
+            crate::evaluator::evaluate_expr_to_expr(&sum)?
+          };
+          results.push(elem);
         }
+        return Ok(Expr::List(results.into()));
       }
       // Fully symbolic with no way to determine length — leave
       // unevaluated like Mathematica.

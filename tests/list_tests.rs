@@ -502,10 +502,7 @@ mod list_tests {
     // Integer min with Real (non-integer) max -> integer elements.
     assert_eq!(interpret("Range[1, 3.5]").unwrap(), "{1, 2, 3}");
     // Real min with integer max -> Real elements.
-    assert_eq!(
-      interpret("Range[1.0, 5]").unwrap(),
-      "{1., 2., 3., 4., 5.}"
-    );
+    assert_eq!(interpret("Range[1.0, 5]").unwrap(), "{1., 2., 3., 4., 5.}");
     // Negative bounds.
     assert_eq!(interpret("Range[-2, 2]").unwrap(), "{-2, -1, 0, 1, 2}");
   }
@@ -536,5 +533,30 @@ mod list_tests {
   #[test]
   fn range_zero_step_errors() {
     assert!(interpret("Range[1, 5, 0]").is_err());
+  }
+
+  #[test]
+  fn range_symbolic_step_with_numeric_ratio() {
+    // Range[a, b, (b - a)/n]: step is symbolic but (max - min)/step
+    // simplifies to a numeric value, so the count is determined.
+    // Verify count and endpoints rather than exact string formatting.
+    assert_eq!(interpret("Length[Range[a, b, (b - a)/4]]").unwrap(), "5");
+    assert_eq!(interpret("First[Range[a, b, (b - a)/4]]").unwrap(), "a");
+    assert_eq!(interpret("Last[Range[a, b, (b - a)/4]]").unwrap(), "b");
+
+    assert_eq!(interpret("Length[Range[a, b, (b - a)/3]]").unwrap(), "4");
+    assert_eq!(interpret("First[Range[a, b, (b - a)/3]]").unwrap(), "a");
+    assert_eq!(interpret("Last[Range[a, b, (b - a)/3]]").unwrap(), "b");
+
+    // Mixed numeric/symbolic ratio: (b - a) / ((b - a)/2.5) = 2.5,
+    // so count = floor(2.5) + 1 = 3 elements.
+    assert_eq!(interpret("Length[Range[a, b, (b - a)/2.5]]").unwrap(), "3");
+    assert_eq!(interpret("First[Range[a, b, (b - a)/2.5]]").unwrap(), "a");
+
+    // Adjacent differences should equal the step.
+    assert_eq!(
+      interpret("Simplify[Range[a, b, (b - a)/4][[2]] - a]").unwrap(),
+      interpret("Simplify[(b - a)/4]").unwrap()
+    );
   }
 }
