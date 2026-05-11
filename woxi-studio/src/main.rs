@@ -629,6 +629,15 @@ impl WoxiStudio {
               self.notebook = nb;
               self.status = format!("Opened: {}", path.display());
               save_last_file_path(&path);
+              if let Some(dir) = path.parent() {
+                woxi::set_notebook_directory(Some(
+                  dir.to_string_lossy().into_owned(),
+                ));
+              }
+              woxi::set_system_variable(
+                "$InputFileName",
+                &format!("\"{}\"", path.to_string_lossy()),
+              );
               self.file_path = Some(path);
               self.is_dirty = false;
               self.show_toc = self

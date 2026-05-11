@@ -260,6 +260,25 @@ thread_local! {
     static CAPTURED_MESSAGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+// Directory of the notebook the current evaluation is running in. Front-ends
+// (e.g. woxi-studio) set this to the parent directory of the loaded `.nb`
+// file so `NotebookDirectory[]` returns a real path; when unset, the function
+// stays unevaluated to match wolframscript's behavior in non-FrontEnd mode.
+thread_local! {
+    static NOTEBOOK_DIRECTORY: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Set the directory returned by `NotebookDirectory[]` for the current
+/// thread. Pass `None` to clear it.
+pub fn set_notebook_directory(dir: Option<String>) {
+  NOTEBOOK_DIRECTORY.with(|d| *d.borrow_mut() = dir);
+}
+
+/// Get the directory configured via `set_notebook_directory`, if any.
+pub fn get_notebook_directory() -> Option<String> {
+  NOTEBOOK_DIRECTORY.with(|d| d.borrow().clone())
+}
+
 // When true, emit_message prints to stdout instead of stderr (matching wolframscript behavior)
 thread_local! {
     static MESSAGES_TO_STDOUT: RefCell<bool> = const { RefCell::new(false) };

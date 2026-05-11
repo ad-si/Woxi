@@ -678,6 +678,20 @@ pub fn dispatch_io_functions(
     "Directory" if args.is_empty() => {
       return Some(Ok(Expr::String(virtual_current_dir())));
     }
+    "NotebookDirectory" if args.is_empty() => {
+      return Some(match crate::get_notebook_directory() {
+        Some(dir) => Ok(Expr::String(dir)),
+        None => {
+          crate::emit_message(
+            "NotebookDirectory::nosv: The notebook directory is not available outside a notebook front-end.",
+          );
+          Ok(Expr::FunctionCall {
+            name: "NotebookDirectory".to_string(),
+            args: args.to_vec().into(),
+          })
+        }
+      });
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "ParentDirectory" if args.is_empty() || args.len() == 1 => {
       let base = if args.is_empty() {
