@@ -1,11 +1,3 @@
-FILE: mathics/builtin/system.py
-CLASS: Packages
-LINE: 507
-TYPE: S>
-INPUT: $Packages
-EXPECTED:
-= {ImportExport`, XML`, Internal`, System`, Global`}
----
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
 LINE: 189

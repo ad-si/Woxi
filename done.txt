@@ -12518,3 +12518,11 @@ INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1}, a, n]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: Packages
+LINE: 507
+TYPE: S>
+INPUT: $Packages
+EXPECTED:
+= {ImportExport`, XML`, Internal`, System`, Global`}
+---
