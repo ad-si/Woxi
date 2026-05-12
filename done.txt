@@ -12964,3 +12964,11 @@ TYPE: >>
 INPUT: Skip[stream, Word]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Skip
+LINE: 1258
+TYPE: >>
+INPUT: Read[stream, Word]
+EXPECTED:
+= c
+---
