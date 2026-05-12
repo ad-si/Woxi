@@ -12884,3 +12884,11 @@ INPUT: ReadList["ExampleData/strings.txt", Byte]
 EXPECTED:
 = {72, 101, 114, 101, 32, 105, 115, 32, 116, 101, 120, 116, 46, 10, 65, 110, 100, 32, 109, 111, 114, 101, 32, 116, 101, 120, 116, 46, 10}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 960
+TYPE: >>
+INPUT: ReadList["ExampleData/strings.txt", Word]
+EXPECTED:
+= {Here, is, text., And, more, text.}
+---

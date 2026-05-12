@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: ReadList
-LINE: 960
-TYPE: >>
-INPUT: ReadList["ExampleData/strings.txt", Word]
-EXPECTED:
-= {Here, is, text., And, more, text.}
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: ReadList
 LINE: 966
 TYPE: >>
 INPUT: ReadList["ExampleData/strings.txt", Word, WordSeparators -> {"e", "."}]
