@@ -13493,3 +13493,11 @@ INPUT: ThreeJSymbol[{1/2, -1/2}, {1/2, -1/2}, {1, 1}]
 EXPECTED:
 = -Sqrt[3] / 3
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryRead
+LINE: 375
+TYPE: >>
+INPUT: strm = OpenWrite[BinaryFormat -> True]
+EXPECTED:
+= OutputStream[...]
+---
