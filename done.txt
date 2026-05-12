@@ -12908,3 +12908,11 @@ INPUT: ReadList["ExampleData/strings.txt", Record]
 EXPECTED:
 = {Here is text., And more text.}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 985
+TYPE: >>
+INPUT: ReadList["ExampleData/sentences.txt", Record, RecordSeparators -> {".", "\\n"}]
+EXPECTED:
+= {Here is text,  And more, And a second line}
+---
