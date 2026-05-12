@@ -13413,3 +13413,11 @@ INPUT: % /. \[Phi] -> 2 Pi
 EXPECTED:
 = {{-1, 0}, {0, -1}}
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: SixJSymbol
+LINE: 150
+TYPE: >>
+INPUT: SixJSymbol[{1, 2, 3}, {1, 2, 3}]
+EXPECTED:
+= 1 / 105
+---
