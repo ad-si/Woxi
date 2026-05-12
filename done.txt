@@ -13741,3 +13741,11 @@ INPUT: a < b <= c
 EXPECTED:
 = a < b && b <= c
 ---
+FILE: mathics/builtin/testing_expressions/equality_inequality.py
+CLASS: SameQ
+LINE: 805
+TYPE: >>
+INPUT: 2./9. === .2222222222222222`15.9546
+EXPECTED:
+= True
+---
