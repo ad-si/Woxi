@@ -12844,3 +12844,11 @@ EXPECTED:
 = Tengo una
 . vaca lechera.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 927
+TYPE: >>
+INPUT: ReadList["ExampleData/numbers.txt", Number]
+EXPECTED:
+= {11.1, 22.2, 33.3, 44.4, 55.5, 66.6}
+---
