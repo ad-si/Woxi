@@ -1,11 +1,4 @@
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: CopyFile
-LINE: 145
-TYPE: X>
-INPUT: DeleteFile["MathicsSunflowers.jpg"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileInformation
 LINE: 563
 TYPE: >>
