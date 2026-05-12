@@ -1,12 +1,4 @@
 FILE: mathics/builtin/files_io/files.py
-CLASS: SetStreamPosition
-LINE: 1188
-TYPE: #>
-INPUT: SetStreamPosition[stream, 40]
-EXPECTED:
-= ERROR_MESSAGE_HERE
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Skip
 LINE: 1255
 TYPE: >>

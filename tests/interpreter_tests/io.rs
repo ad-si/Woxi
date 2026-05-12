@@ -2110,10 +2110,9 @@ mod read {
     // woxi mirrors the behaviour by emitting the message and leaving
     // the call unevaluated rather than silently reading.
     clear_state();
-    let result = interpret(
-      "ReadList[StringToStream[\"a 1 b 2\"], {Word, Number}, -1]",
-    )
-    .unwrap();
+    let result =
+      interpret("ReadList[StringToStream[\"a 1 b 2\"], {Word, Number}, -1]")
+        .unwrap();
     assert_eq!(
       result,
       "ReadList[InputStream[String, 1], {Word, Number}, -1]"
@@ -4274,6 +4273,17 @@ mod cases {
     assert_case(
       r#"stream = StringToStream["Mathics3 is cool!"]; SetStreamPosition[stream, 8]; Read[stream, Word]; SetStreamPosition[stream, Infinity]"#,
       r#"17"#,
+    );
+  }
+  #[test]
+  fn set_stream_position_out_of_range_clamps() {
+    // Wolfram emits `SetStreamPosition::stmrng` when the requested
+    // position exceeds the stream length and clamps to the end of
+    // the stream. The 16-char content here means position 40 lands
+    // at 16.
+    assert_case(
+      r#"stream = StringToStream["Hello world! 123"]; SetStreamPosition[stream, 40]"#,
+      r#"16"#,
     );
   }
   #[test]

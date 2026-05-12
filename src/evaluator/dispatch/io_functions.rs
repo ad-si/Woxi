@@ -1468,14 +1468,25 @@ pub fn dispatch_io_functions(
           if let Expr::Integer(id) = &stream_args[1] {
             let id_usize = *id as usize;
             if crate::is_stream_open(id_usize) {
+              let stream_len = crate::get_stream_content(id_usize)
+                .map(|(content, _)| content.len())
+                .unwrap_or(0);
               let pos = match pos_explicit {
-                Some(p) => p,
-                None => {
-                  // Infinity → end of stream content.
-                  crate::get_stream_content(id_usize)
-                    .map(|(content, _)| content.len())
-                    .unwrap_or(0)
+                Some(p) => {
+                  if p > stream_len {
+                    // wolframscript emits SetStreamPosition::stmrng
+                    // and clamps the position to the end of stream.
+                    let stream_str = crate::syntax::expr_to_string(stream);
+                    crate::emit_message(&format!(
+                      "SetStreamPosition::stmrng: Cannot set the current point in {} to position {}; the requested position exceeds the length of the stream.",
+                      stream_str, p
+                    ));
+                    stream_len
+                  } else {
+                    p
+                  }
                 }
+                None => stream_len, // Infinity → end of stream
               };
               crate::set_stream_position(id_usize, pos);
               return Some(Ok(Expr::Integer(pos as i128)));
