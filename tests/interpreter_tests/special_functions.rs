@@ -1609,6 +1609,25 @@ mod cases {
     assert_case(r#"ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]"#, r#"Sqrt[5/143]"#);
   }
   #[test]
+  fn three_j_symbol_eq_neg_recip_sqrt() {
+    // Regression: result must compare equal to -(1/(3 Sqrt[2])).
+    // Previously failed because Sqrt[1/2] yielded BinaryOp Divide(1, Sqrt[2])
+    // while the RHS normalised to Power[2, -1/2].
+    assert_case(
+      r#"ThreeJSymbol[{2, 1}, {2, 2}, {4, -3}] == -(1 / (3 Sqrt[2]))"#,
+      r#"True"#,
+    );
+  }
+  #[test]
+  fn sqrt_one_over_n_normalised() {
+    // Sqrt[1/n] must normalise to Power[n, -1/2] like Wolfram, not
+    // BinaryOp Divide(1, Sqrt[n]).
+    assert_case(r#"Sqrt[1/2] == 1/Sqrt[2]"#, r#"True"#);
+    assert_case(r#"Head[Sqrt[1/2]]"#, r#"Power"#);
+    assert_case(r#"Sqrt[1/2][[1]]"#, r#"2"#);
+    assert_case(r#"Sqrt[1/2][[2]]"#, r#"-1/2"#);
+  }
+  #[test]
   fn equal_2() {
     assert_case(
       r#"ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]; % == ThreeJSymbol[{2, 0}, {4, 0}, {6, 0}] == ThreeJSymbol[{4, 0}, {2, 0}, {6, 0}]"#,

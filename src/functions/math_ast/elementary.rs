@@ -615,24 +615,19 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let coeff = make_rational(n_out as i128, d_out as i128);
           return times_ast(&[coeff, sqrt_part]);
         } else if n_in == 1 {
-          // Result: n_out / (d_out * Sqrt[d_in])
-          let denom = if d_out == 1 {
-            make_sqrt(Expr::Integer(d_in as i128))
-          } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
-                Expr::Integer(d_out as i128),
-                make_sqrt(Expr::Integer(d_in as i128)),
-              ]
-              .into(),
-            }
-          };
-          return Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(Expr::Integer(n_out as i128)),
-            right: Box::new(denom),
-          });
+          // Result: (n_out / d_out) * Power[d_in, -1/2].
+          // Use Power[d, -1/2] (Wolfram's normal form for Sqrt[1/d])
+          // rather than BinaryOp Divide, so structural equality with
+          // 1/Sqrt[d] (which evaluates to Power[d, -1/2]) holds.
+          let power = power_ast(&[
+            Expr::Integer(d_in as i128),
+            make_rational(-1, 2),
+          ])?;
+          if n_out == 1 && d_out == 1 {
+            return Ok(power);
+          }
+          let coeff = make_rational(n_out as i128, d_out as i128);
+          return times_ast(&[coeff, power]);
         } else {
           // General case: (n_out / d_out) * Sqrt[n_in / d_in]
           let sqrt_part = make_sqrt(make_rational(n_in as i128, d_in as i128));
