@@ -13296,3 +13296,20 @@ INPUT: ImportString[str, "Elements"]
 EXPECTED:
 = {Data, Lines, Plaintext, String, Words}
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: ImportString
+LINE: 1621
+TYPE: >>
+(malformed entry — no INPUT or EXPECTED line was present)
+---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: ExportString
+LINE: 1878
+TYPE: >>
+INPUT: ExportString[{{1,2,3,4},{3},{2},{4}}, "CSV"]
+EXPECTED:
+= 1,2,3,4
+. 3,
+. 2,
+. 4,
+---
