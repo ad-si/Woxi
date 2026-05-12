@@ -1,11 +1,3 @@
-FILE: mathics/builtin/string/charcodes.py
-CLASS: FromCharacterCode
-LINE: 145
-TYPE: >>
-INPUT: ToCharacterCode[%]
-EXPECTED:
-= {100, 101, 102}
----
 FILE: mathics/builtin/string/operations.py
 CLASS: StringPosition
 LINE: 397

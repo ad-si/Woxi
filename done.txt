@@ -13797,3 +13797,11 @@ INPUT: FromCharacterCode[%]
 EXPECTED:
 = abc
 ---
+FILE: mathics/builtin/string/charcodes.py
+CLASS: FromCharacterCode
+LINE: 145
+TYPE: >>
+INPUT: ToCharacterCode[%]
+EXPECTED:
+= {100, 101, 102}
+---
