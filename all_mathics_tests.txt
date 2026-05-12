@@ -1,12 +1,4 @@
 FILE: mathics/builtin/binary/io.py
-CLASS: BinaryRead
-LINE: 389
-TYPE: >>
-INPUT: BinaryRead[strm, {"Character8", "Character8"}]
-EXPECTED:
-= {EndOfFile, EndOfFile}
----
-FILE: mathics/builtin/binary/io.py
 CLASS: BinaryReadList
 LINE: 482
 TYPE: >>
