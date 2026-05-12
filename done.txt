@@ -13709,3 +13709,11 @@ INPUT: BinaryWrite[strm, {97, 98, 99}, {"Byte", "Byte", "Byte"}]
 EXPECTED:
 = OutputStream[...]
 ---
+FILE: mathics/builtin/testing_expressions/equality_inequality.py
+CLASS: Equal
+LINE: 464
+TYPE: >>
+INPUT: Pi == 3.1415``4
+EXPECTED:
+= True
+---
