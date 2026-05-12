@@ -1,12 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: Write
-LINE: 1536
-TYPE: >>
-INPUT: stream = OpenRead[%];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Write
 LINE: 1537
 TYPE: >>
 INPUT: ReadList[stream]
