@@ -1133,11 +1133,15 @@ pub fn dispatch_io_functions(
       };
       let bytes: Vec<u8> = match &args[1] {
         Expr::Integer(n) => vec![(*n & 0xff) as u8],
+        // Strings are written as their raw UTF-8 bytes — matches
+        // wolframscript's default Character8 behaviour for BinaryWrite.
+        Expr::String(s) => s.as_bytes().to_vec(),
         Expr::List(items) => {
           let mut out = Vec::with_capacity(items.len());
           for it in items {
             match it {
               Expr::Integer(n) => out.push((*n & 0xff) as u8),
+              Expr::String(s) => out.extend_from_slice(s.as_bytes()),
               _ => {
                 return Some(Ok(Expr::FunctionCall {
                   name: "BinaryWrite".to_string(),
@@ -1221,9 +1225,8 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
-      let start_pos = stream_id
-        .and_then(crate::get_stream_position)
-        .unwrap_or(0);
+      let start_pos =
+        stream_id.and_then(crate::get_stream_position).unwrap_or(0);
       let form = if args.len() == 2 {
         args[1].clone()
       } else {

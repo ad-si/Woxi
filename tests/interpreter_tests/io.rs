@@ -4735,6 +4735,16 @@ mod cases {
     );
   }
   #[test]
+  fn binary_write_string_writes_utf8_bytes() {
+    // BinaryWrite[strm, "abc123"] must write the UTF-8 bytes of the string
+    // and return the same OutputStream (matching wolframscript). Reading
+    // the file back yields {97, 98, 99, 49, 50, 51}.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; path = strm[[1]]; BinaryWrite[strm, "abc123"]; Close[strm]; r = BinaryReadList[path]; DeleteFile[path]; r"#,
+      r#"{97, 98, 99, 49, 50, 51}"#,
+    );
+  }
+  #[test]
   fn binary_read_character8_advances_position() {
     // Sequential BinaryRead calls must advance the stream position.
     // First call reads byte 97 ("a"), second call reads two Character8
