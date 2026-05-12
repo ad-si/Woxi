@@ -1,13 +1,5 @@
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Equal
-LINE: 471
-TYPE: >>
-INPUT: 0.73908513321516064200000000 == 0.73908513321516064100000000
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
 LINE: 526
 TYPE: >>
 INPUT: g[1] == g[2] <= g[3]

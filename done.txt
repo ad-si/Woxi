@@ -13717,3 +13717,11 @@ INPUT: Pi == 3.1415``4
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/testing_expressions/equality_inequality.py
+CLASS: Equal
+LINE: 471
+TYPE: >>
+INPUT: 0.73908513321516064200000000 == 0.73908513321516064100000000
+EXPECTED:
+= False
+---
