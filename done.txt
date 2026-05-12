@@ -13163,3 +13163,11 @@ INPUT: "*.jpg"/. System`ConvertersDump`$ExtensionMappings
 EXPECTED:
 = JPEG
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: ConverterDumpsFormatMappings
+LINE: 978
+TYPE: >>
+INPUT: Select[System`ConvertersDump`$FormatMappings,(#1[[2]]=="JPEG")&][[All, 1]]
+EXPECTED:
+= ...
+---
