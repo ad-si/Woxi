@@ -13859,3 +13859,11 @@ EXPECTED:
 = 0
 ---
 ---
+FILE: mathics/builtin/vectors/math_ops.py
+CLASS: Norm
+LINE: 178
+TYPE: >>
+INPUT: Norm[Array[Subscript[a, ##] &, {2, 2}], "Frobenius"]
+EXPECTED:
+= Sqrt[Abs[Subscript[a, 1, 1]] ^ 2 + Abs[Subscript[a, 1, 2]] ^ 2 + Abs[Subscript[a, 2, 1]] ^ 2 + Abs[Subscript[a, 2, 2]] ^ 2]
+---
