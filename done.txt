@@ -12925,3 +12925,11 @@ EXPECTED:
 : Non-negative machine-sized integer expected at position 3 in ReadList[InputStream[String, ...], {Word, Number}, -1].
 = ReadList[InputStream[String, ...], {Word, Number}, -1]
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 1010
+TYPE: >>
+INPUT: InputForm[%]
+EXPECTED:
+= {123, abc}
+---
