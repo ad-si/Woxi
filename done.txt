@@ -13421,3 +13421,11 @@ INPUT: SixJSymbol[{1, 2, 3}, {1, 2, 3}]
 EXPECTED:
 = 1 / 105
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: SixJSymbol
+LINE: 155
+TYPE: >>
+INPUT: % == SixJSymbol[{3, 2, 1}, {3, 2, 1}]
+EXPECTED:
+= True
+---
