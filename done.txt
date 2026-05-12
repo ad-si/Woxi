@@ -12699,3 +12699,11 @@ INPUT: StringReplace[StringTake[Import["ExampleData/InventionNo1.xml", "Plaintex
 EXPECTED:
 = MuseScore 1.2/2012-09-12/5.7/40
 ---
+FILE: mathics/builtin/fileformats/xmlformat.py
+CLASS: TagsImport
+LINE: 358
+TYPE: >>
+INPUT: Take[Import["ExampleData/InventionNo1.xml", "Tags"], 10]
+EXPECTED:
+= {accidental, alter, arpeggiate, articulations, attributes, backup, bar-style, barline, beam, beat-type}
+---

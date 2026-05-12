@@ -1,12 +1,4 @@
 FILE: mathics/builtin/fileformats/xmlformat.py
-CLASS: TagsImport
-LINE: 358
-TYPE: >>
-INPUT: Take[Import["ExampleData/InventionNo1.xml", "Tags"], 10]
-EXPECTED:
-= {accidental, alter, arpeggiate, articulations, attributes, backup, bar-style, barline, beam, beat-type}
----
-FILE: mathics/builtin/fileformats/xmlformat.py
 CLASS: XMLObjectImport
 LINE: 394
 TYPE: >>
