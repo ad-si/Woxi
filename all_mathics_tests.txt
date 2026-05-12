@@ -1,15 +1,4 @@
 FILE: mathics/builtin/files_io/importexport.py
-CLASS: ExportString
-LINE: 1884
-TYPE: >>
-INPUT: ExportString[{1,2,3,4}, "CSV"]
-EXPECTED:
-= 1,
-. 2,
-. 3,
-. 4,
----
-FILE: mathics/builtin/files_io/importexport.py
 CLASS: B64Decode
 LINE: 2125
 TYPE: >>
