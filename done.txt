@@ -12691,3 +12691,11 @@ EXPECTED:
 = $Failed
 : Extra content at the end of the document, line 1, column 8.
 ---
+FILE: mathics/builtin/fileformats/xmlformat.py
+CLASS: PlaintextImport
+LINE: 326
+TYPE: >>
+INPUT: StringReplace[StringTake[Import["ExampleData/InventionNo1.xml", "Plaintext"],31],FromCharacterCode[10]->"/"]
+EXPECTED:
+= MuseScore 1.2/2012-09-12/5.7/40
+---
