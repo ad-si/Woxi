@@ -13994,3 +13994,11 @@ INPUT: ExpandAll[(a + Sin[x (1 + y)])^2]
 EXPECTED:
 = 2 a Sin[x + x y] + a ^ 2 + Sin[x + x y] ^ 2
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: ExpandAll
+LINE: 1239
+TYPE: >>
+INPUT: ExpandAll[Sin[(x+y)^2], Trig->True]
+EXPECTED:
+= Cos[x ^ 2] Cos[2 x y] Sin[y ^ 2] + Cos[x ^ 2] Cos[y ^ 2] Sin[2 x y] + Cos[2 x y] Cos[y ^ 2] Sin[x ^ 2] - Sin[x ^ 2] Sin[2 x y] Sin[y ^ 2]
+---
