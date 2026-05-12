@@ -13357,3 +13357,11 @@ INPUT: System`Convert`B64Dump`B64Encode[Integrate[f[x],{x,0,2}]]
 EXPECTED:
 = SW50ZWdyYXRlW2ZbeF0sIHt4LCAwLCAyfV0=
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: B64Encode
+LINE: 2168
+TYPE: >>
+INPUT: System`Convert`B64Dump`B64Decode[%]
+EXPECTED:
+= Integrate[f[x], {x, 0, 2}]
+---
