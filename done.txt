@@ -13003,3 +13003,11 @@ INPUT: Skip[stream, Word]
 EXPECTED:
 = EndOfFile
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Find
+LINE: 1329
+TYPE: #>
+INPUT: Close[stream]
+EXPECTED:
+= ...
+---

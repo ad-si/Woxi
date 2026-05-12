@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: Find
-LINE: 1329
-TYPE: #>
-INPUT: Close[stream]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Find
 LINE: 1335
 TYPE: >>
 INPUT: Find[stream, {"energy", "power"} ]
