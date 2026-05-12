@@ -3706,6 +3706,18 @@ mod cases {
     assert_case(r#"Curl[{y, -x}, {x, y}]"#, r#"-2"#);
   }
   #[test]
+  fn curl_2d_scalar() {
+    // Curl[s, {x, y}] for a scalar s returns {-D[s, y], D[s, x]}
+    // (perpendicular gradient). Wolframscript:
+    //   {-Derivative[0, 1][v][x, y], Derivative[1, 0][v][x, y]}
+    assert_case(
+      r#"Curl[v[x, y], {x, y}]"#,
+      r#"{-Derivative[0, 1][v][x, y], Derivative[1, 0][v][x, y]}"#,
+    );
+    // Closed-form scalar: Curl[x*y, {x, y}] = {-x, y}.
+    assert_case(r#"Curl[x*y, {x, y}]"#, r#"{-x, y}"#);
+  }
+  #[test]
   fn symbol_name() {
     assert_case(r#"SymbolName[x] // InputForm"#, r#"InputForm["x"]"#);
   }

@@ -63,7 +63,9 @@ pub fn dispatch_string_functions(
       fn is_valid_string_arg(e: &Expr) -> bool {
         match e {
           Expr::String(_) => true,
-          Expr::List(items) => items.iter().all(|it| matches!(it, Expr::String(_))),
+          Expr::List(items) => {
+            items.iter().all(|it| matches!(it, Expr::String(_)))
+          }
           _ => false,
         }
       }

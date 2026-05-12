@@ -8920,7 +8920,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Curl expects exactly 2 arguments".into(),
     ));
   }
-  let field = match &args[0] {
+  let vars = match &args[1] {
     Expr::List(items) => items,
     _ => {
       return Ok(Expr::FunctionCall {
@@ -8929,7 +8929,37 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let vars = match &args[1] {
+  // Curl[s, {x, y}] for a scalar s: the 2D scalar curl equals
+  // {-D[s, y], D[s, x]} (the perpendicular gradient). Matches Wolfram.
+  if !matches!(&args[0], Expr::List(_)) && vars.len() == 2 {
+    let var1 = match &vars[0] {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Curl".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    let var2 = match &vars[1] {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Curl".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    let dsdy = differentiate_expr(&args[0], var2)?;
+    let dsdx = differentiate_expr(&args[0], var1)?;
+    let neg_dsdy = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(dsdy),
+    })?;
+    return Ok(Expr::List(vec![neg_dsdy, dsdx].into()));
+  }
+  let field = match &args[0] {
     Expr::List(items) => items,
     _ => {
       return Ok(Expr::FunctionCall {
