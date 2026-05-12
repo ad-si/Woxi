@@ -13027,3 +13027,11 @@ INPUT: Close[stream]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Write
+LINE: 1530
+TYPE: >>
+INPUT: stream = OpenWrite[]
+EXPECTED:
+= ...
+---
