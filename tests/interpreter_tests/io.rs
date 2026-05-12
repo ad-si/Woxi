@@ -2103,6 +2103,22 @@ mod read {
     .unwrap();
     assert_eq!(result, "{a, b, c}");
   }
+
+  #[test]
+  fn read_list_negative_count_returns_unevaluated() {
+    // wolframscript rejects negative counts with ReadList::intnm;
+    // woxi mirrors the behaviour by emitting the message and leaving
+    // the call unevaluated rather than silently reading.
+    clear_state();
+    let result = interpret(
+      "ReadList[StringToStream[\"a 1 b 2\"], {Word, Number}, -1]",
+    )
+    .unwrap();
+    assert_eq!(
+      result,
+      "ReadList[InputStream[String, 1], {Word, Number}, -1]"
+    );
+  }
 }
 
 mod information {

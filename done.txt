@@ -12916,3 +12916,12 @@ INPUT: ReadList["ExampleData/sentences.txt", Record, RecordSeparators -> {".", "
 EXPECTED:
 = {Here is text,  And more, And a second line}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 995
+TYPE: #>
+INPUT: ReadList[StringToStream["a 1 b 2"], {Word, Number}, -1]
+EXPECTED:
+: Non-negative machine-sized integer expected at position 3 in ReadList[InputStream[String, ...], {Word, Number}, -1].
+= ReadList[InputStream[String, ...], {Word, Number}, -1]
+---

@@ -5950,12 +5950,27 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &Expr::Identifier("Expression".to_string())
   };
 
-  // Optional max count
+  // Optional max count: must be a non-negative machine integer when
+  // given. Match wolframscript on rejection: emit `ReadList::intnm`
+  // and leave the call unevaluated.
   let max_count: Option<usize> = if args.len() == 3 {
-    if let Expr::Integer(n) = &args[2] {
-      Some(*n as usize)
-    } else {
-      None
+    match &args[2] {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => {
+        let formatted_args = args
+          .iter()
+          .map(crate::syntax::expr_to_string)
+          .collect::<Vec<_>>()
+          .join(", ");
+        crate::emit_message(&format!(
+          "ReadList::intnm: Non-negative machine-sized integer expected at position 3 in ReadList[{}].",
+          formatted_args
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "ReadList".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
     }
   } else {
     None
