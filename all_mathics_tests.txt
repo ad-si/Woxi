@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: WriteString
-LINE: 1591
-TYPE: >>
-INPUT: pathname = Close[stream]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: WriteString
 LINE: 1593
 TYPE: >>
 INPUT: FilePrint[%]
