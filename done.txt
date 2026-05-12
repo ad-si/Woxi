@@ -13148,3 +13148,10 @@ INPUT: FindFile["VectorAnalysis`VectorAnalysis`"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: Needs
+LINE: 836
+TYPE: >>
+INPUT: Needs["VectorAnalysis`"]
+EXPECTED: (none)
+---
