@@ -13264,3 +13264,11 @@ INPUT: FilePrint["sample.txt"]
 EXPECTED:
 | rapbqrguvffgevat
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: Import
+LINE: 1334
+TYPE: >>
+INPUT: Import["ExampleData/ExampleData.txt", "Elements"]
+EXPECTED:
+= {Data, Lines, Plaintext, String, Words}
+---
