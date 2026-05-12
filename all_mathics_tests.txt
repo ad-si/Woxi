@@ -1,12 +1,4 @@
 FILE: mathics/builtin/files_io/files.py
-CLASS: Skip
-LINE: 1268
-TYPE: >>
-INPUT: Skip[stream, Word]
-EXPECTED:
-= EndOfFile
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Find
 LINE: 1329
 TYPE: #>
