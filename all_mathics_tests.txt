@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: RegisterImport
-LINE: 1090
-TYPE: >>
-INPUT: Import["ExampleData/ExampleData.txt", {"ExampleFormat2", "Header"}]
-EXPECTED:
-= {Example File Format, Created by Angus}
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: RegisterImport
 LINE: 1093
 TYPE: >>
 INPUT: Import["ExampleData/ExampleData.txt", {"ExampleFormat2", "Data"}] // Grid
