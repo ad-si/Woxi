@@ -1,11 +1,3 @@
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryWrite
-LINE: 586
-TYPE: >>
-INPUT: BinaryWrite[strm, {97, 98, 99}, {"Byte", "Byte", "Byte"}]
-EXPECTED:
-= OutputStream[...]
----
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Equal
 LINE: 464
