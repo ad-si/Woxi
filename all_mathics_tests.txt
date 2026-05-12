@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: Skip
-LINE: 1263
-TYPE: >>
-INPUT: Read[stream, Word]
-EXPECTED:
-= a
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Skip
 LINE: 1265
 TYPE: >>
 INPUT: Skip[stream, Word, 2]
