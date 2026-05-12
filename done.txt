@@ -13132,3 +13132,11 @@ INPUT: FileInformation["ExampleData/sunflowers.jpg"]
 EXPECTED:
 = {File -> ..., FileType -> File, ByteCount -> 142286, Date -> ...}
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FindFile
+LINE: 585
+TYPE: >>
+INPUT: FindFile["VectorAnalysis`"]
+EXPECTED:
+= ...
+---

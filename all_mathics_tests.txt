@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FindFile
-LINE: 585
-TYPE: >>
-INPUT: FindFile["VectorAnalysis`"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FindFile
 LINE: 588
 TYPE: >>
 INPUT: FindFile["VectorAnalysis`VectorAnalysis`"]
