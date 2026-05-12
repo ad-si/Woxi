@@ -13011,3 +13011,11 @@ INPUT: Close[stream]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Find
+LINE: 1335
+TYPE: >>
+INPUT: Find[stream, {"energy", "power"} ]
+EXPECTED:
+= by which vast amounts of power and large quantities of new radium-like
+---

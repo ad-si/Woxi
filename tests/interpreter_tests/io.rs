@@ -96,6 +96,30 @@ mod find {
     assert_eq!(result, "EndOfFile");
     std::fs::remove_file(path).ok();
   }
+
+  #[test]
+  fn find_string_stream_with_list_of_terms() {
+    // Find on a StringToStream-backed stream, with a list of search
+    // terms — returns the first line containing any term.
+    let result = interpret(
+      r#"stream = StringToStream["alpha line\nby which vast amounts of power and large quantities of new radium-like\nomega"]; Find[stream, {"energy", "power"}]"#,
+    )
+    .unwrap();
+    assert_eq!(
+      result,
+      "by which vast amounts of power and large quantities of new radium-like"
+    );
+  }
+
+  #[test]
+  fn find_advances_stream_position() {
+    // Consecutive Find calls walk forward through the stream.
+    let result = interpret(
+      r#"stream = StringToStream["foo bar\nbaz\nfoo qux"]; Find[stream, "foo"]; Find[stream, "foo"]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "foo qux");
+  }
 }
 
 mod get {

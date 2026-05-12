@@ -601,11 +601,47 @@ pub fn dispatch_io_functions(
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Find" if args.len() == 2 => {
-      // Find[stream_or_file, "text"] - find first line containing text
-      let filename = match &args[0] {
-        Expr::String(s) => s.clone(),
-        // Accept InputStream[…] / OutputStream[…] — resolve to the
-        // backing file path.
+      // Find[stream_or_file, "text" | {"a", "b", …}] - find first line
+      // that contains any of the search strings. Accepts file paths,
+      // InputStream[…] / OutputStream[…] backed by either a file or a
+      // string buffer. Advances the stream's position past the matched
+      // line so consecutive Find calls walk forward.
+      let search_terms: Vec<String> = match &args[1] {
+        Expr::String(s) => vec![s.clone()],
+        Expr::List(items) => {
+          let mut terms = Vec::with_capacity(items.len());
+          for item in items {
+            match item {
+              Expr::String(s) => terms.push(s.clone()),
+              _ => {
+                return Some(Err(InterpreterError::EvaluationError(
+                  "Find: second argument must be a string or a list of strings".into(),
+                )));
+              }
+            }
+          }
+          terms
+        }
+        _ => {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Find: second argument must be a string or a list of strings".into(),
+          )));
+        }
+      };
+
+      // (content, start_pos, optional stream id for position advance)
+      let (content, start_pos, stream_id) = match &args[0] {
+        Expr::String(path) => {
+          let body = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+              return Some(Err(InterpreterError::EvaluationError(format!(
+                "Find: {e}"
+              ))));
+            }
+          };
+          (body, 0usize, None)
+        }
         Expr::FunctionCall {
           name: stream_head,
           args: stream_args,
@@ -614,22 +650,16 @@ pub fn dispatch_io_functions(
           && stream_args.len() == 2 =>
         {
           if let Expr::Integer(id) = &stream_args[1] {
-            crate::STREAM_REGISTRY
-              .with(|reg| {
-                let registry = reg.borrow();
-                registry.get(&(*id as usize)).and_then(|s| match &s.kind {
-                  crate::StreamKind::FileStream(path) => Some(path.clone()),
-                  _ => None,
-                })
-              })
-              .unwrap_or_default()
+            let id_usize = *id as usize;
+            match crate::get_stream_content(id_usize) {
+              Some((c, p)) => (c, p, Some(id_usize)),
+              None => return Some(Ok(Expr::Identifier("$Failed".to_string()))),
+            }
           } else {
-            String::new()
+            return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
         }
         _ => {
-          // wolframscript emits `Find::stream` and returns $Failed on a
-          // non-stream / non-string argument.
           let arg_str = crate::syntax::expr_to_string(&args[0]);
           crate::emit_message(&format!(
             "Find::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
@@ -638,24 +668,22 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       };
-      let search = match &args[1] {
-        Expr::String(s) => s.clone(),
-        _ => {
-          return Some(Err(InterpreterError::EvaluationError(
-            "Find: second argument must be a string".into(),
-          )));
+
+      let remaining = &content[start_pos.min(content.len())..];
+      let mut consumed = 0usize;
+      for line in remaining.split_inclusive('\n') {
+        let stripped =
+          line.strip_suffix('\n').unwrap_or(line).trim_end_matches('\r');
+        consumed += line.len();
+        if search_terms.iter().any(|t| stripped.contains(t)) {
+          if let Some(id) = stream_id {
+            crate::set_stream_position(id, start_pos + consumed);
+          }
+          return Some(Ok(Expr::String(stripped.to_string())));
         }
-      };
-      let content = match std::fs::read_to_string(&filename)
-        .map_err(|e| InterpreterError::EvaluationError(format!("Find: {e}")))
-      {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-      };
-      for line in content.lines() {
-        if line.contains(&search) {
-          return Some(Ok(Expr::String(line.to_string())));
-        }
+      }
+      if let Some(id) = stream_id {
+        crate::set_stream_position(id, content.len());
       }
       return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
     }
