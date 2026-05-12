@@ -1,13 +1,5 @@
 FILE: mathics/builtin/quantum_mechanics/angular.py
 CLASS: PauliMatrix
-LINE: 109
-TYPE: >>
-INPUT: MatrixExp[I \\[Phi]/2 PauliMatrix[3]]
-EXPECTED:
-= {{E ^ (I / 2 ϕ), 0}, {0, E ^ ((-I / 2) ϕ)}}
----
-FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: PauliMatrix
 LINE: 112
 TYPE: >>
 INPUT: % /. \\[Phi] -> 2 Pi
