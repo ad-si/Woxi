@@ -846,6 +846,37 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Projection expects exactly 2 arguments".into(),
     ));
   }
+  // Symbolic case (neither argument is a literal list): expand to the
+  // Hermitian projection formula
+  //   (Conjugate[v] . u / Conjugate[v] . v) * v
+  // matching Wolfram, which prints it as `(v*Conjugate[v] . u)/Conjugate[v] . v`.
+  if !matches!(&args[0], Expr::List(_)) && !matches!(&args[1], Expr::List(_)) {
+    let u = args[0].clone();
+    let v = args[1].clone();
+    let conj_v = Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![v.clone()].into(),
+    };
+    let dot_cv_u = Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![conj_v.clone(), u].into(),
+    };
+    let dot_cv_v = Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![conj_v, v.clone()].into(),
+    };
+    let scalar = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(dot_cv_u),
+      right: Box::new(dot_cv_v),
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(scalar),
+      right: Box::new(v),
+    };
+    return evaluate_expr_to_expr(&result);
+  }
   let u = match &args[0] {
     Expr::List(items) => items.clone(),
     _ => {

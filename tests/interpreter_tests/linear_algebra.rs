@@ -3129,6 +3129,18 @@ mod cases {
     );
   }
   #[test]
+  fn projection_symbolic_vectors() {
+    // Projection[u, v] for unbound symbolic vectors expands to the
+    // Hermitian projection formula:
+    //   (Conjugate[v] . u / Conjugate[v] . v) * v
+    // Wolframscript renders this as
+    //   (v*Conjugate[v] . u)/Conjugate[v] . v
+    assert_case(
+      r#"Projection[u, v]"#,
+      r#"(v*Conjugate[v] . u) / Conjugate[v] . v"#,
+    );
+  }
+  #[test]
   fn unit_vector_1() {
     assert_case(r#"UnitVector[2]"#, r#"{0, 1}"#);
   }
