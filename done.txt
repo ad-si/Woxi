@@ -13637,3 +13637,11 @@ INPUT: BinaryWrite[strm, "abc123"]
 EXPECTED:
 = OutputStream[...]
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryWrite
+LINE: 563
+TYPE: >>
+INPUT: pathname = Close[%]
+EXPECTED:
+= ...
+---

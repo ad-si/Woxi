@@ -1,13 +1,5 @@
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryWrite
-LINE: 563
-TYPE: >>
-INPUT: pathname = Close[%]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryWrite
 LINE: 567
 TYPE: >>
 INPUT: strm = OpenRead[%, BinaryFormat -> True]
