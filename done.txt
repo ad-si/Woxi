@@ -12852,3 +12852,11 @@ INPUT: ReadList["ExampleData/numbers.txt", Number]
 EXPECTED:
 = {11.1, 22.2, 33.3, 44.4, 55.5, 66.6}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 935
+TYPE: >>
+INPUT: ReadList["ExampleData/numbers.txt", {Number, Number}]
+EXPECTED:
+= {{11.1, 22.2}, {33.3, 44.4}, {55.5, 66.6}}
+---
