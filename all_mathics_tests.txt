@@ -1,13 +1,5 @@
 FILE: mathics/builtin/fileformats/xmlformat.py
 CLASS: XMLGetString
-LINE: 298
-TYPE: >>
-INPUT: Head[XML`Parser`XMLGetString["<a></a>"]]
-EXPECTED:
-= XMLObject[Document]
----
-FILE: mathics/builtin/fileformats/xmlformat.py
-CLASS: XMLGetString
 LINE: 301
 TYPE: #>
 INPUT: XML`Parser`XMLGetString["<a></a>xyz"]

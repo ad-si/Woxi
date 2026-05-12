@@ -12674,3 +12674,11 @@ INPUT: Part[Import["ExampleData/PrimeMeridian.html", "XMLObject"], 2, 3, 1, 3, 2
 EXPECTED:
 = XMLElement[title, {}, {Prime meridian - Wikipedia}]
 ---
+FILE: mathics/builtin/fileformats/xmlformat.py
+CLASS: XMLGetString
+LINE: 298
+TYPE: >>
+INPUT: Head[XML`Parser`XMLGetString["<a></a>"]]
+EXPECTED:
+= XMLObject[Document]
+---
