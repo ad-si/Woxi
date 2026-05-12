@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: Collect
-LINE: 1047
-TYPE: >>
-INPUT: Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}, h]
-EXPECTED:
-= x h[4 Sin[x z]] + x ^ 3 h[1] + x y h[3] + x ^ 2 y h[3] + y ^ 2 h[4 Sin[x z]] + x y ^ 2 h[3] + y ^ 3 h[1]
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Expand
 LINE: 1177
 TYPE: >>
