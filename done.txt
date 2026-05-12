@@ -13930,3 +13930,11 @@ INPUT: a == "A" // Cancel // InputForm
 EXPECTED:
 = a == "A"
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: CoefficientArrays
+LINE: 794
+TYPE: >>
+INPUT: CoefficientArrays[1 + x^3, x]
+EXPECTED:
+= {1, {0}, {{0}}, {{{1}}}}
+---
