@@ -1,13 +1,5 @@
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: PossibleZeroQ
-LINE: 427
-TYPE: >>
-INPUT: PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: PossibleZeroQ
 LINE: 448
 TYPE: >>
 INPUT: PossibleZeroQ[2^(2 I) - 2^(-2 I) - 2 I Sin[Log[4]]]

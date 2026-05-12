@@ -13773,3 +13773,11 @@ INPUT: MachineNumberQ[2.71828182845904524 + 3.14159265358979324 I]
 EXPECTED:
 = False
 ---
+FILE: mathics/builtin/testing_expressions/numerical_properties.py
+CLASS: PossibleZeroQ
+LINE: 427
+TYPE: >>
+INPUT: PossibleZeroQ[E^(I Pi/4) - (-1)^(1/4)]
+EXPECTED:
+= True
+---
