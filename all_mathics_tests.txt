@@ -1,12 +1,4 @@
 FILE: mathics/builtin/files_io/files.py
-CLASS: Put
-LINE: 558
-TYPE: S>
-INPUT: DeleteFile[filename]
-EXPECTED:
-=
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Read
 LINE: 833
 TYPE: >>

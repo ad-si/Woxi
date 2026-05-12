@@ -12827,3 +12827,11 @@ EXPECTED:
 | 2432902008176640000
 | 265252859812191058636308480000000
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 558
+TYPE: S>
+INPUT: DeleteFile[filename]
+EXPECTED:
+=
+---
