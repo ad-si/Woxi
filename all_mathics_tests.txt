@@ -1,13 +1,5 @@
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryRead
-LINE: 382
-TYPE: >>
-INPUT: BinaryRead[strm]
-EXPECTED:
-= 97
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryRead
 LINE: 384
 TYPE: >>
 INPUT: BinaryRead[strm, {"Character8", "Character8"}]
