@@ -55,6 +55,30 @@ pub fn dispatch_string_functions(
       return Some(crate::functions::string_ast::string_riffle_ast(args));
     }
     "StringPosition" if args.len() == 2 || args.len() == 3 => {
+      // Wolfram emits StringPosition::strse and returns the call
+      // unevaluated whenever the first argument isn't a String or list
+      // of Strings (e.g. an unbound symbol in a script). Mirror that
+      // here so we don't silently coerce identifiers to their name and
+      // return `{}`.
+      fn is_valid_string_arg(e: &Expr) -> bool {
+        match e {
+          Expr::String(_) => true,
+          Expr::List(items) => items.iter().all(|it| matches!(it, Expr::String(_))),
+          _ => false,
+        }
+      }
+      if !is_valid_string_arg(&args[0]) {
+        let arg_strs: Vec<String> =
+          args.iter().map(crate::syntax::expr_to_output).collect();
+        crate::emit_message(&format!(
+          "StringPosition::strse: A string or list of strings is expected at position 1 in StringPosition[{}].",
+          arg_strs.join(", "),
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "StringPosition".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       return Some(crate::functions::string_ast::string_position_ast(args));
     }
     "StringMatchQ" if args.len() == 2 || args.len() == 3 => {

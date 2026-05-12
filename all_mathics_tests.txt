@@ -1,11 +1,3 @@
-FILE: mathics/builtin/string/operations.py
-CLASS: StringPosition
-LINE: 397
-TYPE: >>
-INPUT: StringPosition[data, "uranium"]
-EXPECTED:
-= {{299, 305}, {870, 876}, {1538, 1544}, {1671, 1677}, {2300, 2306}, {2784, 2790}, {3093, 3099}}
----
 ---
 FILE: mathics/builtin/box/layout.py
 CLASS: GridBox

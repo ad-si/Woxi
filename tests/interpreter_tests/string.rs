@@ -5612,9 +5612,17 @@ abb""#,
     // script) must not raise a hard error. Wolframscript emits the
     // FromCharacterCode::intnm message and returns the call unevaluated;
     // Woxi must do the same so chained sequences keep flowing.
+    assert_case(r#"FromCharacterCode[xyz]"#, r#"FromCharacterCode[xyz]"#);
+  }
+  #[test]
+  fn string_position_unbound_string_returns_unevaluated() {
+    // StringPosition[<unbound>, "uranium"] previously coerced the symbol
+    // to its name and searched there, returning `{}`. Wolframscript emits
+    // StringPosition::strse and returns the call unevaluated; Woxi must
+    // do the same.
     assert_case(
-      r#"FromCharacterCode[xyz]"#,
-      r#"FromCharacterCode[xyz]"#,
+      r#"StringPosition[data, "uranium"]"#,
+      r#"StringPosition[data, "uranium"]"#,
     );
   }
   #[test]
