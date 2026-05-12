@@ -5062,7 +5062,7 @@ mod planar_graph {
     );
     assert_eq!(
       interpret("EdgeList[PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
-      "{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}"
+      "{1  2, 2  3, 3  1}"
     );
   }
 

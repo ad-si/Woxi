@@ -5930,7 +5930,11 @@ fn is_well_formed_xml(input: &str) -> bool {
       }
       // <?...?> declaration or PI
       if i + 1 < b.len() && b[i + 1] == b'?' {
-        let end = b.windows(2).enumerate().skip(i + 2).find(|(_, w)| w == b"?>");
+        let end = b
+          .windows(2)
+          .enumerate()
+          .skip(i + 2)
+          .find(|(_, w)| w == b"?>");
         i = match end {
           Some((pos, _)) => pos + 2,
           None => return None,
@@ -5939,7 +5943,11 @@ fn is_well_formed_xml(input: &str) -> bool {
       }
       // <!-- ... --> comment
       if b[i..].starts_with(b"<!--") {
-        let end = b.windows(3).enumerate().skip(i + 4).find(|(_, w)| w == b"-->");
+        let end = b
+          .windows(3)
+          .enumerate()
+          .skip(i + 4)
+          .find(|(_, w)| w == b"-->");
         i = match end {
           Some((pos, _)) => pos + 3,
           None => return None,
@@ -5992,24 +6000,42 @@ fn is_well_formed_xml(input: &str) -> bool {
     }
     // Comments
     if b[i..].starts_with(b"<!--") {
-      let end = b.windows(3).enumerate().skip(i + 4).find(|(_, w)| w == b"-->");
+      let end = b
+        .windows(3)
+        .enumerate()
+        .skip(i + 4)
+        .find(|(_, w)| w == b"-->");
       return end.map(|(pos, _)| (pos + 3, TagKind::Skip));
     }
     // CDATA
     if b[i..].starts_with(b"<![CDATA[") {
-      let end = b.windows(3).enumerate().skip(i + 9).find(|(_, w)| w == b"]]>");
+      let end = b
+        .windows(3)
+        .enumerate()
+        .skip(i + 9)
+        .find(|(_, w)| w == b"]]>");
       return end.map(|(pos, _)| (pos + 3, TagKind::Skip));
     }
     // PI: <? ... ?>
     if i + 1 < b.len() && b[i + 1] == b'?' {
-      let end = b.windows(2).enumerate().skip(i + 2).find(|(_, w)| w == b"?>");
+      let end = b
+        .windows(2)
+        .enumerate()
+        .skip(i + 2)
+        .find(|(_, w)| w == b"?>");
       return end.map(|(pos, _)| (pos + 2, TagKind::Skip));
     }
     // Closing tag </name>
     if i + 1 < b.len() && b[i + 1] == b'/' {
       let name_start = i + 2;
       let mut j = name_start;
-      while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b':' || b[j] == b'-' || b[j] == b'.') {
+      while j < b.len()
+        && (b[j].is_ascii_alphanumeric()
+          || b[j] == b'_'
+          || b[j] == b':'
+          || b[j] == b'-'
+          || b[j] == b'.')
+      {
         j += 1;
       }
       let name = &b[name_start..j];
@@ -6026,7 +6052,13 @@ fn is_well_formed_xml(input: &str) -> bool {
     // Opening or self-closing tag: <name attrs...> or <name attrs.../>
     let name_start = i + 1;
     let mut j = name_start;
-    while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b':' || b[j] == b'-' || b[j] == b'.') {
+    while j < b.len()
+      && (b[j].is_ascii_alphanumeric()
+        || b[j] == b'_'
+        || b[j] == b':'
+        || b[j] == b'-'
+        || b[j] == b'.')
+    {
       j += 1;
     }
     let name = &b[name_start..j];
@@ -6040,10 +6072,8 @@ fn is_well_formed_xml(input: &str) -> bool {
       match (quote, c) {
         (Some(q), x) if x == q => quote = None,
         (None, b'"') | (None, b'\'') => quote = Some(c),
-        (None, b'/') => {
-          if j + 1 < b.len() && b[j + 1] == b'>' {
-            return Some((j + 2, TagKind::SelfClose));
-          }
+        (None, b'/') if j + 1 < b.len() && b[j + 1] == b'>' => {
+          return Some((j + 2, TagKind::SelfClose));
         }
         (None, b'>') => {
           return Some((j + 1, TagKind::Open(name)));

@@ -1576,7 +1576,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn tree_graph_edges_renders() {
     let result =
-      interpret("TreeGraph[{DirectedEdge[1, 2], DirectedEdge[1, 3]}]").unwrap();
+      interpret("TreeGraph[{1  2, 1  3}]").unwrap();
     assert!(
       result.contains("-Graphics-"),
       "TreeGraph should render as Graphics, got: {}",
@@ -3832,7 +3832,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[StarGraph[4]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}"
+      "{1  2, 1  3, 1  4}"
     );
   }
 
@@ -3853,8 +3853,8 @@ mod batch_unevaluated_wrappers_2 {
       "{1, 2, 3, 4, 5, 6, 7}"
     );
     let edges = interpret("EdgeList[KaryTree[7]]").unwrap();
-    assert!(edges.contains("UndirectedEdge[1, 2]"));
-    assert!(edges.contains("UndirectedEdge[1, 3]"));
+    assert!(edges.contains("1  2"));
+    assert!(edges.contains("1  3"));
   }
 
   // HypercubeGraph
@@ -3870,14 +3870,14 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn edge_q_true() {
     assert_eq!(
-      interpret("EdgeQ[CompleteGraph[3], UndirectedEdge[1, 2]]").unwrap(),
+      interpret("EdgeQ[CompleteGraph[3], 1  2]").unwrap(),
       "True"
     );
   }
   #[test]
   fn edge_q_false() {
     assert_eq!(
-      interpret("EdgeQ[StarGraph[3], UndirectedEdge[2, 3]]").unwrap(),
+      interpret("EdgeQ[StarGraph[3], 2  3]").unwrap(),
       "False"
     );
   }
@@ -3961,7 +3961,7 @@ mod batch_unevaluated_wrappers_2 {
         "EdgeList[GraphIntersection[CompleteGraph[3], PathGraph[{1, 2, 3}]]]"
       )
       .unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+      "{1  2, 2  3}"
     );
     assert_eq!(
       interpret(
@@ -3975,11 +3975,11 @@ mod batch_unevaluated_wrappers_2 {
   fn graph_intersection_disjoint() {
     // No common edges
     assert_eq!(
-      interpret("EdgeList[GraphIntersection[Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]]]").unwrap(),
+      interpret("EdgeList[GraphIntersection[Graph[{1, 2}, {1  2}], Graph[{3, 4}, {3  4}]]]").unwrap(),
       "{}"
     );
     assert_eq!(
-      interpret("VertexList[GraphIntersection[Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]]]").unwrap(),
+      interpret("VertexList[GraphIntersection[Graph[{1, 2}, {1  2}], Graph[{3, 4}, {3  4}]]]").unwrap(),
       "{1, 2, 3, 4}"
     );
   }
@@ -3991,7 +3991,7 @@ mod batch_unevaluated_wrappers_2 {
         "EdgeList[GraphIntersection[CompleteGraph[3], CompleteGraph[3]]]"
       )
       .unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}"
+      "{1  2, 1  3, 2  3}"
     );
   }
 
@@ -4004,7 +4004,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[VertexAdd[CompleteGraph[3], 4]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}"
+      "{1  2, 1  3, 2  3}"
     );
   }
   #[test]
@@ -4015,7 +4015,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[VertexAdd[CompleteGraph[2], {3, 4}]]").unwrap(),
-      "{UndirectedEdge[1, 2]}"
+      "{1  2}"
     );
   }
   #[test]
@@ -4027,7 +4027,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[VertexAdd[CompleteGraph[3], 1]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}"
+      "{1  2, 1  3, 2  3}"
     );
   }
   #[test]
@@ -4038,7 +4038,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[VertexAdd[Graph[{1 -> 2}], 3]]").unwrap(),
-      "{DirectedEdge[1, 2]}"
+      "{1  2}"
     );
   }
 
@@ -4046,23 +4046,23 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn index_graph_basic() {
     assert_eq!(
-      interpret(r#"VertexList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}]]]"#).unwrap(),
+      interpret(r#"VertexList[IndexGraph[Graph[{"a", "b", "c"}, {"a"  "b", "b"  "c"}]]]"#).unwrap(),
       "{1, 2, 3}"
     );
     assert_eq!(
-      interpret(r#"EdgeList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}]]]"#).unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+      interpret(r#"EdgeList[IndexGraph[Graph[{"a", "b", "c"}, {"a"  "b", "b"  "c"}]]]"#).unwrap(),
+      "{1  2, 2  3}"
     );
   }
   #[test]
   fn index_graph_with_start() {
     assert_eq!(
-      interpret(r#"VertexList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}], 5]]"#).unwrap(),
+      interpret(r#"VertexList[IndexGraph[Graph[{"a", "b", "c"}, {"a"  "b", "b"  "c"}], 5]]"#).unwrap(),
       "{5, 6, 7}"
     );
     assert_eq!(
-      interpret(r#"EdgeList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}], 5]]"#).unwrap(),
-      "{UndirectedEdge[5, 6], UndirectedEdge[6, 7]}"
+      interpret(r#"EdgeList[IndexGraph[Graph[{"a", "b", "c"}, {"a"  "b", "b"  "c"}], 5]]"#).unwrap(),
+      "{5  6, 6  7}"
     );
   }
   #[test]
@@ -4073,7 +4073,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[IndexGraph[Graph[{1 -> 2, 3 -> 1}]]]").unwrap(),
-      "{DirectedEdge[1, 2], DirectedEdge[3, 1]}"
+      "{1  2, 3  1}"
     );
   }
   #[test]
@@ -4084,7 +4084,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(
       interpret("EdgeList[IndexGraph[CompleteGraph[3], 10]]").unwrap(),
-      "{UndirectedEdge[10, 11], UndirectedEdge[10, 12], UndirectedEdge[11, 12]}"
+      "{10  11, 10  12, 11  12}"
     );
   }
 
@@ -4147,26 +4147,26 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn connected_graph_components_disconnected() {
     assert_eq!(
-      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]]]").unwrap(),
+      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {1  2, 3  4}]]]").unwrap(),
       "2"
     );
     assert_eq!(
-      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]][[1]]]").unwrap(),
+      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {1  2, 3  4}]][[1]]]").unwrap(),
       "{1, 2}"
     );
     assert_eq!(
-      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]][[2]]]").unwrap(),
+      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {1  2, 3  4}]][[2]]]").unwrap(),
       "{3, 4}"
     );
   }
   #[test]
   fn connected_graph_components_directed() {
     assert_eq!(
-      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]]]").unwrap(),
+      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3}, {1  2, 2  1}]]]").unwrap(),
       "2"
     );
     assert_eq!(
-      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]][[1]]]").unwrap(),
+      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3}, {1  2, 2  1}]][[1]]]").unwrap(),
       "{1, 2}"
     );
   }
@@ -4176,7 +4176,7 @@ mod batch_unevaluated_wrappers_2 {
   fn eulerian_graph_q_cycle() {
     // A cycle (all vertices have degree 2) is Eulerian
     assert_eq!(
-      interpret("EulerianGraphQ[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4], UndirectedEdge[4, 1]}]]").unwrap(),
+      interpret("EulerianGraphQ[Graph[{1  2, 2  3, 3  4, 4  1}]]").unwrap(),
       "True"
     );
   }
@@ -4272,7 +4272,7 @@ mod batch_unevaluated_wrappers_2 {
     // Complement should have only edge 2<->3
     assert_eq!(
       interpret("EdgeList[GraphComplement[StarGraph[3]]]").unwrap(),
-      "{UndirectedEdge[2, 3]}"
+      "{2  3}"
     );
   }
 
@@ -4814,7 +4814,7 @@ mod batch_unevaluated_wrappers_2 {
   fn knight_tour_graph_edges_2x3() {
     assert_eq!(
       interpret("EdgeList[KnightTourGraph[2, 3]]").unwrap(),
-      "{UndirectedEdge[1, 6], UndirectedEdge[3, 4]}"
+      "{1  6, 3  4}"
     );
   }
 
@@ -4974,7 +4974,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn betweenness_centrality_line() {
     assert_eq!(
-      interpret("BetweennessCentrality[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3]}]]").unwrap(),
+      interpret("BetweennessCentrality[Graph[{1,2,3},{1  2,2  3}]]").unwrap(),
       "{0., 1., 0.}"
     );
   }
@@ -4990,7 +4990,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn local_clustering_coefficient_triangle() {
     assert_eq!(
-      interpret("LocalClusteringCoefficient[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3],UndirectedEdge[1,3]}]]")
+      interpret("LocalClusteringCoefficient[Graph[{1,2,3},{1  2,2  3,1  3}]]")
         .unwrap(),
       "{1, 1, 1}"
     );
@@ -5000,7 +5000,7 @@ mod batch_unevaluated_wrappers_2 {
   fn local_clustering_coefficient_square() {
     assert_eq!(
       interpret(
-        "LocalClusteringCoefficient[Graph[{1,2,3,4},{UndirectedEdge[1,2],UndirectedEdge[2,3],UndirectedEdge[3,4],UndirectedEdge[1,4]}]]"
+        "LocalClusteringCoefficient[Graph[{1,2,3,4},{1  2,2  3,3  4,1  4}]]"
       )
       .unwrap(),
       "{0, 0, 0, 0}"
@@ -5048,7 +5048,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn weakly_connected_components_directed() {
     assert_eq!(
-      interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{DirectedEdge[1,2],DirectedEdge[3,4]}]]")
+      interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{1  2,3  4}]]")
         .unwrap(),
       "{{2, 1}, {4, 3}, {5}}"
     );
@@ -5057,7 +5057,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn weakly_connected_components_undirected() {
     assert_eq!(
-      interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{UndirectedEdge[1,2],UndirectedEdge[3,4]}]]")
+      interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{1  2,3  4}]]")
         .unwrap(),
       "{{2, 1}, {4, 3}, {5}}"
     );
@@ -5267,7 +5267,7 @@ mod option_symbols_batch {
   #[test]
   fn tutte_polynomial_single_edge() {
     assert_eq!(
-      interpret("TuttePolynomial[Graph[{1, 2}, {UndirectedEdge[1, 2]}]][x, y]")
+      interpret("TuttePolynomial[Graph[{1, 2}, {1  2}]][x, y]")
         .unwrap(),
       "x"
     );

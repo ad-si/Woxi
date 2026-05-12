@@ -513,8 +513,8 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DoubleLeftRightArrow" => Some("\u{21D4}"),
     "Rule" => Some("\u{F522}"),
     "RuleDelayed" => Some("\u{F51F}"),
-    "DirectedEdge" => Some("\u{F3D1}"),
-    "UndirectedEdge" => Some("\u{F3D0}"),
+    "DirectedEdge" => Some("\u{F3D5}"),
+    "UndirectedEdge" => Some("\u{F3D4}"),
     "Distributed" => Some("\u{F3D2}"),
     "Conditioned" => Some("\u{F3D3}"),
     "Cross" => Some("\u{F3C4}"),
@@ -729,8 +729,8 @@ fn named_char_to_expr(s: &str) -> Expr {
     "NotElement" => "\u{2209}",
     "ReverseElement" => "\u{220B}",
     // Edge operators (when used as identifiers)
-    "DirectedEdge" => "\u{F3D1}",
-    "UndirectedEdge" => "\u{F3D0}",
+    "DirectedEdge" => "\u{F3D5}",
+    "UndirectedEdge" => "\u{F3D4}",
     "Distributed" => "\u{F3D2}",
     "Conditioned" => "\u{F3D3}",
     "Cross" => "\u{F3C4}",
@@ -4334,8 +4334,8 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[NotElement]" | "\u{2209}" => 7, // NotElement (same level as comparisons)
     "\\[ReverseElement]" | "\u{220B}" => 7, // ReverseElement (same level as comparisons)
     "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
-    "\\[DirectedEdge]" | "\u{F3D1}" => 7, // DirectedEdge (same level as comparisons)
-    "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
+    "\\[DirectedEdge]" | "\u{F3D5}" => 7, // DirectedEdge (same level as comparisons)
+    "\\[UndirectedEdge]" | "\u{F3D4}" => 7, // UndirectedEdge (same level as comparisons)
     "<->" => 7, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
@@ -4546,11 +4546,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "ReverseElement".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
-    "\\[DirectedEdge]" | "\u{F3D1}" => Expr::FunctionCall {
+    "\\[DirectedEdge]" | "\u{F3D5}" => Expr::FunctionCall {
       name: "DirectedEdge".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
-    "\\[UndirectedEdge]" | "\u{F3D0}" => Expr::FunctionCall {
+    "\\[UndirectedEdge]" | "\u{F3D4}" => Expr::FunctionCall {
       name: "UndirectedEdge".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
@@ -6364,6 +6364,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       }
       if name == "TwoWayRule" && args.len() == 2 {
         return format!("{} <-> {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      // Graph edges render as infix with their Wolfram private-use glyphs,
+      // matching `wolframscript -code` (which prints U+F3D5/U+F3D4 directly).
+      if name == "DirectedEdge" && args.len() == 2 {
+        return format!("{} \u{F3D5} {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "UndirectedEdge" && args.len() == 2 {
+        return format!("{} \u{F3D4} {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "RuleDelayed" && args.len() == 2 {
         // Parenthesize RHS if it's an assignment (Set/SetDelayed/Up*), so

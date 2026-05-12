@@ -1226,8 +1226,8 @@ pub fn dispatch_predicate_functions(
           // context, Wolfram returns the evaluated argument itself
           // (e.g. OptionValue[a+b] -> a+b). Outside any context, leave
           // OptionValue unevaluated.
-          let in_context = crate::OPTION_VALUE_CONTEXT
-            .with(|ctx| !ctx.borrow().is_empty());
+          let in_context =
+            crate::OPTION_VALUE_CONTEXT.with(|ctx| !ctx.borrow().is_empty());
           if in_context {
             return Some(Ok(opt_arg));
           }

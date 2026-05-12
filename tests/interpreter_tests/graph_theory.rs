@@ -6,7 +6,7 @@ mod connected_components {
   #[test]
   fn undirected_two_components() {
     let result =
-      interpret("ConnectedComponents[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[4, 5]}]]")
+      interpret("ConnectedComponents[Graph[{1  2, 2  3, 4  5}]]")
         .unwrap();
     assert_eq!(result, "{{1, 2, 3}, {4, 5}}");
   }
@@ -14,7 +14,7 @@ mod connected_components {
   #[test]
   fn undirected_single_component() {
     let result = interpret(
-      "ConnectedComponents[Graph[{UndirectedEdge[a, b], UndirectedEdge[c, d], UndirectedEdge[b, c]}]]",
+      "ConnectedComponents[Graph[{a  b, c  d, b  c}]]",
     )
     .unwrap();
     assert_eq!(result, "{{a, b, c, d}}");
@@ -153,7 +153,7 @@ mod adjacency_graph_from_matrix {
     assert_eq!(
       interpret("EdgeList[AdjacencyGraph[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}]]")
         .unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3]}"
+      "{1  2, 1  3}"
     );
     assert_eq!(
       interpret(
@@ -169,7 +169,7 @@ mod adjacency_graph_from_matrix {
     assert_eq!(
       interpret("EdgeList[AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]]")
         .unwrap(),
-      "{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}"
+      "{1  2, 2  3, 3  1}"
     );
     assert_eq!(
       interpret(
@@ -186,8 +186,8 @@ mod adjacency_graph_from_matrix {
       "EdgeList[AdjacencyGraph[{\"a\", \"b\", \"c\"}, {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}]]",
     )
     .unwrap();
-    assert!(result.contains("UndirectedEdge[a, b]"));
-    assert!(result.contains("UndirectedEdge[b, c]"));
+    assert!(result.contains("a  b"));
+    assert!(result.contains("b  c"));
   }
 }
 
@@ -202,7 +202,7 @@ mod path_graph {
     );
     assert_eq!(
       interpret("EdgeList[PathGraph[{1, 2, 3, 4}]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4]}"
+      "{1  2, 2  3, 3  4}"
     );
   }
 
@@ -214,7 +214,7 @@ mod path_graph {
     );
     assert_eq!(
       interpret("EdgeList[PathGraph[{a, b, c}]]").unwrap(),
-      "{UndirectedEdge[a, b], UndirectedEdge[b, c]}"
+      "{a  b, b  c}"
     );
   }
 }
@@ -543,7 +543,7 @@ mod expression_graph {
   fn simple_function() {
     assert_eq!(
       interpret("EdgeList[ExpressionGraph[f[x, y]]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3]}"
+      "{1  2, 1  3}"
     );
   }
 
@@ -551,7 +551,7 @@ mod expression_graph {
   fn nested_function() {
     assert_eq!(
       interpret("EdgeList[ExpressionGraph[f[x, g[y, z]]]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[3, 4], UndirectedEdge[3, 5]}"
+      "{1  2, 1  3, 3  4, 3  5}"
     );
   }
 
@@ -563,7 +563,7 @@ mod expression_graph {
     );
     assert_eq!(
       interpret("EdgeList[ExpressionGraph[a + b*c]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[3, 4], UndirectedEdge[3, 5]}"
+      "{1  2, 1  3, 3  4, 3  5}"
     );
   }
 
@@ -571,7 +571,7 @@ mod expression_graph {
   fn list_expression() {
     assert_eq!(
       interpret("EdgeList[ExpressionGraph[{a, b, c}]]").unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}"
+      "{1  2, 1  3, 1  4}"
     );
   }
 
@@ -590,7 +590,7 @@ mod graph_rendering {
   #[test]
   fn undirected_graph_renders() {
     assert_eq!(
-      interpret("Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}]").unwrap(),
+      interpret("Graph[{1  2, 2  3, 3  1}]").unwrap(),
       "-Graphics-"
     );
   }
@@ -599,7 +599,7 @@ mod graph_rendering {
   fn directed_graph_renders() {
     assert_eq!(
       interpret(
-        "Graph[{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}]"
+        "Graph[{1  2, 2  3, 3  1}]"
       )
       .unwrap(),
       "-Graphics-"
@@ -609,7 +609,7 @@ mod graph_rendering {
   #[test]
   fn graph_with_vertex_style() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}, VertexStyle -> Orange], \"SVG\"]"
+      "ExportString[Graph[{1  2, 2  3, 3  1}, VertexStyle -> Orange], \"SVG\"]"
     ).unwrap();
     assert!(result.contains("rgb(255,128,0)"));
   }
@@ -617,7 +617,7 @@ mod graph_rendering {
   #[test]
   fn graph_with_edge_style() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}, EdgeStyle -> Red], \"SVG\"]"
+      "ExportString[Graph[{1  2, 2  3}, EdgeStyle -> Red], \"SVG\"]"
     ).unwrap();
     assert!(result.contains("rgb(255,0,0)"));
   }
@@ -625,7 +625,7 @@ mod graph_rendering {
   #[test]
   fn graph_with_vertex_labels() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}, VertexLabels -> \"Name\"], \"SVG\"]"
+      "ExportString[Graph[{1  2, 2  3}, VertexLabels -> \"Name\"], \"SVG\"]"
     ).unwrap();
     assert!(result.contains(">1</text>"));
     assert!(result.contains(">2</text>"));
@@ -635,7 +635,7 @@ mod graph_rendering {
   #[test]
   fn graph_with_labeled_edge() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2], Labeled[UndirectedEdge[2, 3], \"hello\"]}], \"SVG\"]"
+      "ExportString[Graph[{1  2, Labeled[2  3, \"hello\"]}], \"SVG\"]"
     ).unwrap();
     assert!(result.contains(">hello</text>"));
   }
@@ -660,7 +660,7 @@ mod graph_rendering {
   #[test]
   fn graph_with_diamond_shape() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexShapeFunction -> \"Diamond\"], \"SVG\"]"
+      "ExportString[Graph[{1  2}, VertexShapeFunction -> \"Diamond\"], \"SVG\"]"
     ).unwrap();
     // Diamond is rendered as polygon with 4 points
     assert!(result.contains("<polygon"));
@@ -669,7 +669,7 @@ mod graph_rendering {
   #[test]
   fn graph_with_directive_vertex_style() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexStyle -> Directive[Orange, EdgeForm[Orange]]], \"SVG\"]"
+      "ExportString[Graph[{1  2}, VertexStyle -> Directive[Orange, EdgeForm[Orange]]], \"SVG\"]"
     ).unwrap();
     assert!(result.contains("rgb(255,128,0)"));
   }
@@ -731,7 +731,7 @@ mod graph_rendering {
   #[test]
   fn graph_export_string_svg() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}], \"SVG\"]"
+      "ExportString[Graph[{1  2, 2  3, 3  1}], \"SVG\"]"
     ).unwrap();
     assert!(result.starts_with("<svg"));
     assert!(result.contains("</svg>"));
@@ -740,7 +740,7 @@ mod graph_rendering {
   #[test]
   fn directed_graph_has_arrows() {
     let result = interpret(
-      "ExportString[Graph[{DirectedEdge[1, 2], DirectedEdge[2, 3]}], \"SVG\"]",
+      "ExportString[Graph[{1  2, 2  3}], \"SVG\"]",
     )
     .unwrap();
     // Arrows produce polygon arrowheads
@@ -751,7 +751,7 @@ mod graph_rendering {
   fn graph_with_vertex_size_medium() {
     // Should render without error with Medium vertex size
     assert_eq!(
-      interpret("Graph[{UndirectedEdge[1, 2]}, VertexSize -> Medium]").unwrap(),
+      interpret("Graph[{1  2}, VertexSize -> Medium]").unwrap(),
       "-Graphics-"
     );
   }
@@ -865,7 +865,7 @@ mod graph_rendering {
   fn graph_preserves_vertex_list() {
     assert_eq!(
       interpret(
-        "VertexList[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]"
+        "VertexList[Graph[{1  2, 2  3}]]"
       )
       .unwrap(),
       "{1, 2, 3}"
@@ -876,17 +876,17 @@ mod graph_rendering {
   fn graph_preserves_edge_list() {
     assert_eq!(
       interpret(
-        "EdgeList[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]"
+        "EdgeList[Graph[{1  2, 2  3}]]"
       )
       .unwrap(),
-      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+      "{1  2, 2  3}"
     );
   }
 
   #[test]
   fn graph_with_square_shape() {
     let result = interpret(
-      "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexShapeFunction -> \"Square\"], \"SVG\"]"
+      "ExportString[Graph[{1  2}, VertexShapeFunction -> \"Square\"], \"SVG\"]"
     ).unwrap();
     assert!(result.starts_with("<svg"));
   }
@@ -894,7 +894,7 @@ mod graph_rendering {
   #[test]
   fn directed_self_loop() {
     let result = interpret(
-      "ExportString[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], DirectedEdge[2, 2]}], \"SVG\"]"
+      "ExportString[Graph[{1, 2, 3}, {1  2, 2  3, 2  2}], \"SVG\"]"
     ).unwrap();
     assert!(result.starts_with("<svg"));
     // Self-loop produces an arrowhead polygon
@@ -904,7 +904,7 @@ mod graph_rendering {
   #[test]
   fn undirected_self_loop() {
     let result = interpret(
-      "ExportString[Graph[{1, 2}, {UndirectedEdge[1, 2], UndirectedEdge[1, 1]}], \"SVG\"]"
+      "ExportString[Graph[{1, 2}, {1  2, 1  1}], \"SVG\"]"
     ).unwrap();
     assert!(result.starts_with("<svg"));
     // Should have 2 polylines: one regular edge + one self-loop
@@ -1030,7 +1030,7 @@ mod two_way_rule {
     );
     assert_eq!(
       interpret("EdgeList[Graph[{a -> b, b -> a, b <-> b}]]").unwrap(),
-      "{DirectedEdge[a, b], DirectedEdge[b, a], UndirectedEdge[b, b]}"
+      "{a  b, b  a, b  b}"
     );
   }
 
@@ -1038,8 +1038,8 @@ mod two_way_rule {
   fn graph_mixed_rule_and_undirected_edge() {
     // Same mixed case but with an explicit UndirectedEdge[..] alongside a Rule.
     assert_eq!(
-      interpret("EdgeList[Graph[{1 -> 2, UndirectedEdge[2, 3]}]]").unwrap(),
-      "{DirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+      interpret("EdgeList[Graph[{1 -> 2, 2  3}]]").unwrap(),
+      "{1  2, 2  3}"
     );
   }
 
@@ -1264,7 +1264,7 @@ mod cases {
   fn expr() {
     assert_case(
       r#"DirectedEdge[x, y, z]; a \[DirectedEdge] b"#,
-      r#"DirectedEdge[a, b]"#,
+      r#"a  b"#,
     );
   }
   #[test]

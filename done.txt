@@ -12735,3 +12735,11 @@ EXPECTED:
 . 
 . 0   0   3
 ---
+FILE: mathics/builtin/no_meaning/infix_extra.py
+CLASS: DirectedEdge
+LINE: 33
+TYPE: >>
+INPUT: a \[DirectedEdge] b
+EXPECTED:
+= a → b
+---

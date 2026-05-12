@@ -150,8 +150,8 @@ Operator = @{
     "\\[NotElement]" | "\u{2209}" // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}" // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
-  | "\\[DirectedEdge]" | "\u{F3D1}" // Named character operator: DirectedEdge
-  | "\\[UndirectedEdge]" | "\u{F3D0}" // Named character operator: UndirectedEdge
+  | "\\[DirectedEdge]" | "\u{F3D5}" // Named character operator: DirectedEdge
+  | "\\[UndirectedEdge]" | "\u{F3D4}" // Named character operator: UndirectedEdge
   | "\\[Distributed]" | "\u{F3D2}" // Named character operator: Distributed
   | "\\[Conditioned]" | "\u{F3D3}" // Named character operator: Conditioned
   | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
