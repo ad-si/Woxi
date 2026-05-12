@@ -5607,6 +5607,17 @@ abb""#,
     );
   }
   #[test]
+  fn from_character_code_invalid_arg_returns_unevaluated() {
+    // Non-integer / non-list args (e.g. an unbound symbol via `%` in a
+    // script) must not raise a hard error. Wolframscript emits the
+    // FromCharacterCode::intnm message and returns the call unevaluated;
+    // Woxi must do the same so chained sequences keep flowing.
+    assert_case(
+      r#"FromCharacterCode[xyz]"#,
+      r#"FromCharacterCode[xyz]"#,
+    );
+  }
+  #[test]
   fn unequal() {
     assert_case(
       r#"System`Convert`B64Dump`B64Decode["R!="]"#,

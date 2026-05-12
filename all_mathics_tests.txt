@@ -1,12 +1,4 @@
 FILE: mathics/builtin/string/charcodes.py
-CLASS: ToCharacterCode
-LINE: 45
-TYPE: >>
-INPUT: FromCharacterCode[%]
-EXPECTED:
-= abc
----
-FILE: mathics/builtin/string/charcodes.py
 CLASS: FromCharacterCode
 LINE: 145
 TYPE: >>

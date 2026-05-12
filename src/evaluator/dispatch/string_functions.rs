@@ -123,6 +123,32 @@ pub fn dispatch_string_functions(
       // the encoding is informational for ASCII-compatible encodings like
       // "ISO8859-1" and "UTF-8" — we simply pass through and let the core
       // routine build the string from codepoints.
+      // Validate args[0] up front — wolframscript emits
+      // FromCharacterCode::intnm and returns the unevaluated form for any
+      // non-Integer / non-list-of-Integers input. Mirror that so script
+      // sequences using `%` (which resolves to Out[0] when nothing has
+      // been printed) stay alive instead of aborting with a hard error.
+      fn is_valid_codepoint_arg(e: &Expr) -> bool {
+        match e {
+          Expr::Integer(_) | Expr::BigInteger(_) => true,
+          Expr::List(items) => items.iter().all(|it| {
+            matches!(it, Expr::Integer(_) | Expr::BigInteger(_))
+              || matches!(it, Expr::List(inner)
+                if inner.iter().all(|x| matches!(x, Expr::Integer(_) | Expr::BigInteger(_))))
+          }),
+          _ => false,
+        }
+      }
+      if !is_valid_codepoint_arg(&args[0]) {
+        crate::emit_message(&format!(
+          "FromCharacterCode::intnm: Non-negative machine-sized integer expected at position 1 in FromCharacterCode[{}].",
+          crate::syntax::expr_to_string(&args[0]),
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "FromCharacterCode".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       return Some(crate::functions::string_ast::from_character_code_ast(
         &args[0..1],
       ));

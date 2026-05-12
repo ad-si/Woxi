@@ -13789,3 +13789,11 @@ INPUT: PossibleZeroQ[2^(2 I) - 2^(-2 I) - 2 I Sin[Log[4]]]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/string/charcodes.py
+CLASS: ToCharacterCode
+LINE: 45
+TYPE: >>
+INPUT: FromCharacterCode[%]
+EXPECTED:
+= abc
+---
