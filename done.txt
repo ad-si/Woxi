@@ -13898,3 +13898,11 @@ INPUT: Abs[VectorAngle[Projection[u, v], v]] < 0. + 10^-7
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Apart
+LINE: 377
+TYPE: >>
+INPUT: Apart[1 / (x^2 - y^2), x]
+EXPECTED:
+= -1 / (2 y (x + y)) + 1 / (2 y (x - y))
+---
