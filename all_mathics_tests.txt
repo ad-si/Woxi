@@ -1,13 +1,5 @@
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: MapIndexed
-LINE: 297
-TYPE: >>
-INPUT: MapIndexed[#2 &, listified, {-1}]
-EXPECTED:
-= {{1}, {{2, 1}, {{2, 2, 1}}, {{2, 3, 1}, {2, 3, 2}}}}
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: MapIndexed
 LINE: 300
 TYPE: >>
 INPUT: MapIndexed[#2 &, listified, {-1}, Heads -> True]
