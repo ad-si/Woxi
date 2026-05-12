@@ -1177,9 +1177,15 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(args[0].clone()));
     }
-    // BinaryRead[stream]            — read 1 Byte (Integer 0..255)
-    // BinaryRead[stream, "Byte"]    — read 1 Byte
-    // BinaryRead[stream, {forms…}]  — read N items, returning a List
+    // BinaryRead[stream]                — read 1 Byte (Integer 0..255)
+    // BinaryRead[stream, "Byte"]        — read 1 Byte
+    // BinaryRead[stream, "Character8"]  — read 1 Char (String of length 1)
+    // BinaryRead[stream, {forms…}]      — read N items, returning a List
+    //
+    // Sequential calls advance the stream's read position so a chain like
+    //   BinaryRead[s]; BinaryRead[s, {"Character8","Character8"}]
+    // returns the next bytes after the first call rather than starting
+    // from offset 0 every time.
     #[cfg(not(target_arch = "wasm32"))]
     "BinaryRead" if (1..=2).contains(&args.len()) => {
       let path = match io_stream_path(&args[0]) {
@@ -1191,6 +1197,21 @@ pub fn dispatch_io_functions(
           }));
         }
       };
+      // Extract stream id (second arg of InputStream[path, id]) so we can
+      // track and advance the read position. Falls back to id-less reads
+      // (always from offset 0) when the structure doesn't match.
+      let stream_id = if let Expr::FunctionCall {
+        name: sname,
+        args: sargs,
+      } = &args[0]
+        && (sname == "InputStream" || sname == "OutputStream")
+        && sargs.len() == 2
+        && let Expr::Integer(id) = &sargs[1]
+      {
+        Some(*id as usize)
+      } else {
+        None
+      };
       let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
@@ -1200,37 +1221,74 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
+      let start_pos = stream_id
+        .and_then(crate::get_stream_position)
+        .unwrap_or(0);
       let form = if args.len() == 2 {
         args[1].clone()
       } else {
         Expr::String("Byte".to_string())
       };
-      match &form {
-        Expr::String(s) if s == "Byte" => {
-          if bytes.is_empty() {
-            return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+      // Render a single-byte form (Byte/Character8) at the given offset,
+      // returning EndOfFile when out of range.
+      let read_one = |form: &Expr, offset: usize| -> Option<Expr> {
+        match form {
+          Expr::String(s) if s == "Byte" => {
+            if offset < bytes.len() {
+              Some(Expr::Integer(bytes[offset] as i128))
+            } else {
+              Some(Expr::Identifier("EndOfFile".to_string()))
+            }
           }
-          return Some(Ok(Expr::Integer(bytes[0] as i128)));
+          Expr::String(s) if s == "Character8" => {
+            if offset < bytes.len() {
+              // Character8 is a raw byte rendered as a 1-char string;
+              // values >127 use the Latin-1 mapping.
+              let c = bytes[offset] as char;
+              Some(Expr::String(c.to_string()))
+            } else {
+              Some(Expr::Identifier("EndOfFile".to_string()))
+            }
+          }
+          _ => None,
+        }
+      };
+      match &form {
+        Expr::String(_) => {
+          let Some(result) = read_one(&form, start_pos) else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "BinaryRead".to_string(),
+              args: args.to_vec().into(),
+            }));
+          };
+          if let Some(id) = stream_id {
+            let advance = if matches!(&result, Expr::Identifier(s) if s == "EndOfFile")
+            {
+              0
+            } else {
+              1
+            };
+            crate::set_stream_position(id, start_pos + advance);
+          }
+          return Some(Ok(result));
         }
         Expr::List(items) => {
           let mut out = Vec::with_capacity(items.len());
-          for (i, it) in items.iter().enumerate() {
-            match it {
-              Expr::String(s) if s == "Byte" => {
-                if i < bytes.len() {
-                  out.push(Expr::Integer(bytes[i] as i128));
-                } else {
-                  out.push(Expr::Identifier("EndOfFile".to_string()));
-                }
-              }
-              _ => {
-                // Unsupported form spec — fall back to unevaluated.
-                return Some(Ok(Expr::FunctionCall {
-                  name: "BinaryRead".to_string(),
-                  args: args.to_vec().into(),
-                }));
-              }
+          let mut offset = start_pos;
+          for it in items.iter() {
+            let Some(value) = read_one(it, offset) else {
+              return Some(Ok(Expr::FunctionCall {
+                name: "BinaryRead".to_string(),
+                args: args.to_vec().into(),
+              }));
+            };
+            if !matches!(&value, Expr::Identifier(s) if s == "EndOfFile") {
+              offset += 1;
             }
+            out.push(value);
+          }
+          if let Some(id) = stream_id {
+            crate::set_stream_position(id, offset);
           }
           return Some(Ok(Expr::List(out.into())));
         }

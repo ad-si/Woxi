@@ -4735,6 +4735,16 @@ mod cases {
     );
   }
   #[test]
+  fn binary_read_character8_advances_position() {
+    // Sequential BinaryRead calls must advance the stream position.
+    // First call reads byte 97 ("a"), second call reads two Character8
+    // values starting from position 1 → {b, c}, third call hits EOF.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; path = strm[[1]]; BinaryWrite[strm, {97, 98, 99}]; Close[strm]; strm2 = OpenRead[path, BinaryFormat -> True]; r1 = BinaryRead[strm2]; r2 = BinaryRead[strm2, {"Character8", "Character8"}]; r3 = BinaryRead[strm2, {"Character8", "Character8"}]; Close[strm2]; DeleteFile[path]; {r1, r2, r3}"#,
+      r#"{97, {b, c}, {EndOfFile, EndOfFile}}"#,
+    );
+  }
+  #[test]
   fn do_5() {
     assert_case(
       r#"res=CompoundExpression[x, y, z]; res; z = Max[1, 1 + x]; x = 2; z; Clear[x]; Clear[z]; Clear[res]; Do[Print["hi"],{1+1}]"#,

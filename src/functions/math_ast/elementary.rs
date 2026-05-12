@@ -619,10 +619,8 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Use Power[d, -1/2] (Wolfram's normal form for Sqrt[1/d])
           // rather than BinaryOp Divide, so structural equality with
           // 1/Sqrt[d] (which evaluates to Power[d, -1/2]) holds.
-          let power = power_ast(&[
-            Expr::Integer(d_in as i128),
-            make_rational(-1, 2),
-          ])?;
+          let power =
+            power_ast(&[Expr::Integer(d_in as i128), make_rational(-1, 2)])?;
           if n_out == 1 && d_out == 1 {
             return Ok(power);
           }

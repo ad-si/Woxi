@@ -13525,3 +13525,11 @@ INPUT: BinaryRead[strm]
 EXPECTED:
 = 97
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryRead
+LINE: 384
+TYPE: >>
+INPUT: BinaryRead[strm, {"Character8", "Character8"}]
+EXPECTED:
+= {b, c}
+---
