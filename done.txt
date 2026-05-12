@@ -12785,3 +12785,11 @@ INPUT: MapIndexed[#2 &, listified, {-1}, Heads -> True]
 EXPECTED:
 = {0}[{1}, {2, 0}[{2, 1}, {2, 2, 0}[{2, 2, 1}], {2, 3, 0}[{2, 3, 1}, {2, 3, 2}]]]
 ---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: MapIndexed
+LINE: 304
+TYPE: >>
+INPUT: MapIndexed[Extract[expr, #2] &, listified, {-1}, Heads -> True]
+EXPECTED:
+= a + b f[g] c ^ e
+---
