@@ -1,13 +1,3 @@
-FILE: mathics/builtin/box/layout.py
-CLASS: InterpretationBox
-LINE: 266
-TYPE: >>
-INPUT: DisplayForm[A]
-EXPECTED:
-= Four
----
----
----
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: LucasL
 LINE: 320
