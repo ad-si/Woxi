@@ -13621,3 +13621,11 @@ INPUT: BinaryRead[strm, "Character8"]
 EXPECTED:
 = z
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryWrite
+LINE: 559
+TYPE: >>
+INPUT: strm = OpenWrite[BinaryFormat -> True]
+EXPECTED:
+= OutputStream[...]
+---
