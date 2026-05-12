@@ -5863,8 +5863,15 @@ pub fn evaluate_function_call_ast_inner(
   // XML`Parser`XMLGetString[xml] — minimal stub: return an expression
   // whose head is `XMLObject["Document"]`, so `Head[XML`Parser`XMLGetString[…]]`
   // matches the documented `XMLObject["Document"]`. The inner XML is
-  // wrapped opaquely; full XML parsing is out of scope here.
+  // wrapped opaquely; full XML parsing is out of scope here. Well-
+  // formedness is validated (balanced tags, no trailing content): if
+  // the input is malformed, return `$Failed` to match wolframscript.
   if name == "XML`Parser`XMLGetString" && args.len() == 1 {
+    if let Expr::String(s) = &args[0]
+      && !is_well_formed_xml(s)
+    {
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
     return Ok(Expr::CurriedCall {
       func: Box::new(Expr::FunctionCall {
         name: "XMLObject".to_string(),
@@ -5894,6 +5901,222 @@ pub fn evaluate_function_call_ast_inner(
 
 /// Extract RGB components from a color expression as (numerator, denominator) pairs.
 /// Returns None if the expression is not a recognized color.
+/// Lightweight XML well-formedness check used by `XML`Parser`XMLGetString`.
+/// Accepts a single root element with balanced nested tags. Rejects
+/// inputs with text outside the root element (such as trailing junk
+/// after the closing tag), unbalanced tags, or empty content. Comments,
+/// CDATA sections, processing instructions, and XML declarations are
+/// recognized only at the document level. Not a conformant XML parser —
+/// just enough to flag the obviously broken cases that should yield
+/// `$Failed` to match wolframscript.
+fn is_well_formed_xml(input: &str) -> bool {
+  let bytes = input.as_bytes();
+  let mut i = 0;
+  let n = bytes.len();
+
+  fn skip_ws(b: &[u8], mut i: usize) -> usize {
+    while i < b.len() && b[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    i
+  }
+  // Skip prolog: whitespace, XML declaration, processing instructions,
+  // comments. Returns the new index, or None on malformed prolog.
+  fn skip_prolog(b: &[u8], mut i: usize) -> Option<usize> {
+    loop {
+      i = skip_ws(b, i);
+      if i >= b.len() || b[i] != b'<' {
+        return Some(i);
+      }
+      // <?...?> declaration or PI
+      if i + 1 < b.len() && b[i + 1] == b'?' {
+        let end = b.windows(2).enumerate().skip(i + 2).find(|(_, w)| w == b"?>");
+        i = match end {
+          Some((pos, _)) => pos + 2,
+          None => return None,
+        };
+        continue;
+      }
+      // <!-- ... --> comment
+      if b[i..].starts_with(b"<!--") {
+        let end = b.windows(3).enumerate().skip(i + 4).find(|(_, w)| w == b"-->");
+        i = match end {
+          Some((pos, _)) => pos + 3,
+          None => return None,
+        };
+        continue;
+      }
+      // <!DOCTYPE...> — skip until matching '>'
+      if b[i..].starts_with(b"<!") {
+        let mut depth = 1;
+        let mut j = i + 2;
+        while j < b.len() && depth > 0 {
+          match b[j] {
+            b'<' => depth += 1,
+            b'>' => depth -= 1,
+            _ => {}
+          }
+          j += 1;
+        }
+        if depth != 0 {
+          return None;
+        }
+        i = j;
+        continue;
+      }
+      return Some(i);
+    }
+  }
+
+  i = match skip_prolog(bytes, i) {
+    Some(j) => j,
+    None => return false,
+  };
+  if i >= n || bytes[i] != b'<' {
+    return false;
+  }
+
+  // Parse a tag starting at `i` (which points to `<`). Returns
+  // (end_index_after_>, kind) where kind is Open/Close/SelfClose/Other.
+  // Open/Close also return the tag name.
+  #[derive(PartialEq)]
+  enum TagKind<'a> {
+    Open(&'a [u8]),
+    Close(&'a [u8]),
+    SelfClose,
+    Skip, // comment / PI / CDATA — no impact on tag stack
+  }
+  fn parse_tag<'a>(b: &'a [u8], i: usize) -> Option<(usize, TagKind<'a>)> {
+    if i >= b.len() || b[i] != b'<' {
+      return None;
+    }
+    // Comments
+    if b[i..].starts_with(b"<!--") {
+      let end = b.windows(3).enumerate().skip(i + 4).find(|(_, w)| w == b"-->");
+      return end.map(|(pos, _)| (pos + 3, TagKind::Skip));
+    }
+    // CDATA
+    if b[i..].starts_with(b"<![CDATA[") {
+      let end = b.windows(3).enumerate().skip(i + 9).find(|(_, w)| w == b"]]>");
+      return end.map(|(pos, _)| (pos + 3, TagKind::Skip));
+    }
+    // PI: <? ... ?>
+    if i + 1 < b.len() && b[i + 1] == b'?' {
+      let end = b.windows(2).enumerate().skip(i + 2).find(|(_, w)| w == b"?>");
+      return end.map(|(pos, _)| (pos + 2, TagKind::Skip));
+    }
+    // Closing tag </name>
+    if i + 1 < b.len() && b[i + 1] == b'/' {
+      let name_start = i + 2;
+      let mut j = name_start;
+      while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b':' || b[j] == b'-' || b[j] == b'.') {
+        j += 1;
+      }
+      let name = &b[name_start..j];
+      if name.is_empty() {
+        return None;
+      }
+      // Skip whitespace then expect '>'
+      let k = skip_ws(b, j);
+      if k >= b.len() || b[k] != b'>' {
+        return None;
+      }
+      return Some((k + 1, TagKind::Close(name)));
+    }
+    // Opening or self-closing tag: <name attrs...> or <name attrs.../>
+    let name_start = i + 1;
+    let mut j = name_start;
+    while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b':' || b[j] == b'-' || b[j] == b'.') {
+      j += 1;
+    }
+    let name = &b[name_start..j];
+    if name.is_empty() {
+      return None;
+    }
+    // Scan to '>' or '/>'. Track string quoting to skip '>' inside attribute values.
+    let mut quote: Option<u8> = None;
+    while j < b.len() {
+      let c = b[j];
+      match (quote, c) {
+        (Some(q), x) if x == q => quote = None,
+        (None, b'"') | (None, b'\'') => quote = Some(c),
+        (None, b'/') => {
+          if j + 1 < b.len() && b[j + 1] == b'>' {
+            return Some((j + 2, TagKind::SelfClose));
+          }
+        }
+        (None, b'>') => {
+          return Some((j + 1, TagKind::Open(name)));
+        }
+        _ => {}
+      }
+      j += 1;
+    }
+    None
+  }
+
+  // Read the root element (and everything inside it).
+  let mut stack: Vec<&[u8]> = Vec::new();
+  let (mut next, kind) = match parse_tag(bytes, i) {
+    Some(v) => v,
+    None => return false,
+  };
+  match kind {
+    TagKind::Open(name) => stack.push(name),
+    TagKind::SelfClose => {
+      // Single self-closing root tag is well-formed; jump past trailing
+      // prolog-like content.
+      i = next;
+      return matches!(skip_prolog(bytes, i), Some(j) if j >= n);
+    }
+    _ => return false,
+  }
+  i = next;
+
+  while !stack.is_empty() {
+    if i >= n {
+      return false; // unclosed tag
+    }
+    if bytes[i] != b'<' {
+      // Text content — fine; advance to next '<'
+      while i < n && bytes[i] != b'<' {
+        i += 1;
+      }
+      continue;
+    }
+    let (j, k) = match parse_tag(bytes, i) {
+      Some(v) => v,
+      None => return false,
+    };
+    match k {
+      TagKind::Open(name) => {
+        stack.push(name);
+      }
+      TagKind::Close(name) => {
+        let top = match stack.last() {
+          Some(t) => *t,
+          None => return false,
+        };
+        if top != name {
+          return false;
+        }
+        stack.pop();
+      }
+      TagKind::SelfClose | TagKind::Skip => {}
+    }
+    i = j;
+    next = j;
+    let _ = next;
+  }
+
+  // After the root element closes, only prolog-like trailing content
+  // (whitespace, comments, PIs) is allowed.
+  match skip_prolog(bytes, i) {
+    Some(j) => j >= n,
+    None => false,
+  }
+}
+
 fn extract_rgb_rational(color: &Expr) -> Option<[(i128, i128); 3]> {
   match color {
     Expr::FunctionCall { name, args }

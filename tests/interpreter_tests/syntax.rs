@@ -7286,6 +7286,30 @@ mod cases {
     );
   }
   #[test]
+  fn xml_get_string_trailing_content_returns_failed() {
+    // Extra text after the root element makes the document malformed;
+    // wolframscript returns `$Failed` for this input.
+    assert_case(r#"XML`Parser`XMLGetString["<a></a>xyz"]"#, r#"$Failed"#);
+  }
+  #[test]
+  fn xml_get_string_mismatched_tags_returns_failed() {
+    assert_case(r#"XML`Parser`XMLGetString["<a><b></a>"]"#, r#"$Failed"#);
+  }
+  #[test]
+  fn xml_get_string_self_closing_root_is_valid() {
+    assert_case(
+      r#"Head[XML`Parser`XMLGetString["<a/>"]]"#,
+      r#"XMLObject[Document]"#,
+    );
+  }
+  #[test]
+  fn xml_get_string_with_declaration_is_valid() {
+    assert_case(
+      r#"Head[XML`Parser`XMLGetString["<?xml version=\"1.0\"?><a/>"]]"#,
+      r#"XMLObject[Document]"#,
+    );
+  }
+  #[test]
   fn head_12() {
     assert_case(
       r#"Head[HTML`Parser`HTMLGetString["<a></a>"]]"#,

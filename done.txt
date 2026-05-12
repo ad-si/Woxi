@@ -12682,3 +12682,12 @@ INPUT: Head[XML`Parser`XMLGetString["<a></a>"]]
 EXPECTED:
 = XMLObject[Document]
 ---
+FILE: mathics/builtin/fileformats/xmlformat.py
+CLASS: XMLGetString
+LINE: 301
+TYPE: #>
+INPUT: XML`Parser`XMLGetString["<a></a>xyz"]
+EXPECTED:
+= $Failed
+: Extra content at the end of the document, line 1, column 8.
+---
