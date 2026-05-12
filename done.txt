@@ -13938,3 +13938,11 @@ INPUT: CoefficientArrays[1 + x^3, x]
 EXPECTED:
 = {1, {0}, {{0}}, {{{1}}}}
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: CoefficientArrays
+LINE: 796
+TYPE: >>
+INPUT: CoefficientArrays[1 + x y+ x^3, {x, y}]
+EXPECTED:
+= {1, {0, 0}, {{0, 1}, {0, 0}}, {{{1, 0}, {0, 0}}, {{0, 0}, {0, 0}}}}
+---
