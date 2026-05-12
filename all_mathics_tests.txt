@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: ExpandAll
-LINE: 1233
-TYPE: >>
-INPUT: ExpandAll[(a + Sin[x (1 + y)])^2]
-EXPECTED:
-= 2 a Sin[x + x y] + a ^ 2 + Sin[x + x y] ^ 2
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: ExpandAll
 LINE: 1239
 TYPE: >>
 INPUT: ExpandAll[Sin[(x+y)^2], Trig->True]

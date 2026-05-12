@@ -13986,3 +13986,11 @@ INPUT: Expand[(x+a)^2+(y+a)^2+(x+y)(x+a), y]
 EXPECTED:
 = a ^ 2 + 2 a y + x (a + x) + y (a + x) + y ^ 2 + (a + x) ^ 2
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: ExpandAll
+LINE: 1233
+TYPE: >>
+INPUT: ExpandAll[(a + Sin[x (1 + y)])^2]
+EXPECTED:
+= 2 a Sin[x + x y] + a ^ 2 + Sin[x + x y] ^ 2
+---
