@@ -13078,3 +13078,11 @@ TYPE: >>
 INPUT: WriteString[stream, "This is also a test 2"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: WriteString
+LINE: 1585
+TYPE: >>
+INPUT: FilePrint[%]
+EXPECTED:
+| This is a test 1This is also a test 2
+---
