@@ -13109,3 +13109,11 @@ INPUT: FilePrint[%]
 EXPECTED:
 | This is a test 1This is also a test 2
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: CopyFile
+LINE: 143
+TYPE: X>
+INPUT: CopyFile["ExampleData/sunflowers.jpg", "MathicsSunflowers.jpg"]
+EXPECTED:
+= MathicsSunflowers.jpg
+---

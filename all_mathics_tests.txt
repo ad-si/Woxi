@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: CopyFile
-LINE: 143
-TYPE: X>
-INPUT: CopyFile["ExampleData/sunflowers.jpg", "MathicsSunflowers.jpg"]
-EXPECTED:
-= MathicsSunflowers.jpg
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: CopyFile
 LINE: 145
 TYPE: X>
 INPUT: DeleteFile["MathicsSunflowers.jpg"]
