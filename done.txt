@@ -13733,3 +13733,11 @@ INPUT: g[1] == g[2] <= g[3]
 EXPECTED:
 = g[1] == g[2] && g[2] <= g[3]
 ---
+FILE: mathics/builtin/testing_expressions/equality_inequality.py
+CLASS: Inequality
+LINE: 609
+TYPE: >>
+INPUT: a < b <= c
+EXPECTED:
+= a < b && b <= c
+---
