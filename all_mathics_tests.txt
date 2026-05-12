@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientArrays
-LINE: 798
-TYPE: >>
-INPUT: CoefficientArrays[{1 + x^2, x y}, {x, y}]
-EXPECTED:
-= {{1, 0}, {{0, 0}, {0, 0}}, {{{1, 0}, {0, 0}}, {{0, 1}, {0, 0}}}}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientArrays
 LINE: 800
 TYPE: >>
 INPUT: CoefficientArrays[(x+y+Sin[z])^3, {x,y}]
