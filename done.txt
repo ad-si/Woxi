@@ -13962,3 +13962,11 @@ INPUT: CoefficientArrays[(x+y+Sin[z])^3, {x,y}]
 EXPECTED:
 = {Sin[z] ^ 3, {3 Sin[z] ^ 2, 3 Sin[z] ^ 2}, {{3 Sin[z], 6 Sin[z]}, {0, 3 Sin[z]}}, {{{1, 3}, {0, 3}}, {{0, 0}, {0, 1}}}}
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Collect
+LINE: 1045
+TYPE: >>
+INPUT: Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]
+EXPECTED:
+= 4 x Sin[x z] + x ^ 3 + 3 x y + 3 x ^ 2 y + 4 y ^ 2 Sin[x z] + 3 x y ^ 2 + y ^ 3
+---
