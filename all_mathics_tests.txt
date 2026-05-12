@@ -1,13 +1,5 @@
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryReadList
-LINE: 482
-TYPE: >>
-INPUT: strm = OpenWrite[BinaryFormat -> True]
-EXPECTED:
-= OutputStream[...]
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryReadList
 LINE: 484
 TYPE: >>
 INPUT: BinaryWrite[strm, {97, 98, 99}]
