@@ -707,7 +707,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "OpenAppend" => Some((0, 2)),
     "OpenRead" => Some((1, 2)),
     "OpenWrite" => Some((0, 2)),
-    "BinaryWrite" => Some((2, 2)),
+    "BinaryWrite" => Some((2, 3)),
     "BinaryRead" => Some((1, 2)),
     "BinaryReadList" => Some((1, 2)),
     "Operate" => Some((2, 3)),

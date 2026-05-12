@@ -1117,11 +1117,15 @@ pub fn dispatch_io_functions(
         args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
       }));
     }
-    // BinaryWrite[stream, bytes] — write bytes (Integers in 0..255) to the
-    // file backing `stream`. Returns the same `stream`. Supports a single
-    // Integer or a List of Integers.
+    // BinaryWrite[stream, bytes]              — write bytes (Integers in 0..255)
+    // BinaryWrite[stream, bytes, type]        — write with explicit type spec
+    // BinaryWrite[stream, bytes, {types…}]    — per-element types
+    //
+    // Returns the same `stream`. Supported types: "Byte" (Integer → 1 byte),
+    // "Character8" (Integer or 1-char String → 1 byte). The 2-arg form
+    // infers the type from the value (Integer → Byte, String → Character8).
     #[cfg(not(target_arch = "wasm32"))]
-    "BinaryWrite" if args.len() == 2 => {
+    "BinaryWrite" if (2..=3).contains(&args.len()) => {
       let path = match io_stream_path(&args[0]) {
         Some(p) => p,
         None => {
@@ -1131,32 +1135,75 @@ pub fn dispatch_io_functions(
           }));
         }
       };
-      let bytes: Vec<u8> = match &args[1] {
-        Expr::Integer(n) => vec![(*n & 0xff) as u8],
-        // Strings are written as their raw UTF-8 bytes — matches
-        // wolframscript's default Character8 behaviour for BinaryWrite.
-        Expr::String(s) => s.as_bytes().to_vec(),
-        Expr::List(items) => {
-          let mut out = Vec::with_capacity(items.len());
-          for it in items {
-            match it {
-              Expr::Integer(n) => out.push((*n & 0xff) as u8),
-              Expr::String(s) => out.extend_from_slice(s.as_bytes()),
-              _ => {
-                return Some(Ok(Expr::FunctionCall {
-                  name: "BinaryWrite".to_string(),
-                  args: args.to_vec().into(),
-                }));
+      // Render a single value at the given type into the byte buffer.
+      // Returns false on an unsupported pairing so the caller can fall
+      // back to the unevaluated form.
+      fn write_value(out: &mut Vec<u8>, value: &Expr, ty: &str) -> bool {
+        match (value, ty) {
+          (Expr::Integer(n), "Byte" | "Character8") => {
+            out.push((*n & 0xff) as u8);
+            true
+          }
+          (Expr::String(s), "Byte" | "Character8") => {
+            out.extend_from_slice(s.as_bytes());
+            true
+          }
+          _ => false,
+        }
+      }
+      let unevaluated = || Expr::FunctionCall {
+        name: "BinaryWrite".to_string(),
+        args: args.to_vec().into(),
+      };
+      let bytes: Vec<u8> = if args.len() == 3 {
+        // Explicit type spec — either a single type string applied to
+        // every value or a list of per-element types.
+        let mut out: Vec<u8> = Vec::new();
+        let values: Vec<&Expr> = match &args[1] {
+          Expr::List(items) => items.iter().collect(),
+          v => vec![v],
+        };
+        match &args[2] {
+          Expr::String(ty) => {
+            for v in &values {
+              if !write_value(&mut out, v, ty) {
+                return Some(Ok(unevaluated()));
               }
             }
           }
-          out
+          Expr::List(types) => {
+            if types.len() != values.len() {
+              return Some(Ok(unevaluated()));
+            }
+            for (v, t) in values.iter().zip(types.iter()) {
+              let Expr::String(ty) = t else {
+                return Some(Ok(unevaluated()));
+              };
+              if !write_value(&mut out, v, ty) {
+                return Some(Ok(unevaluated()));
+              }
+            }
+          }
+          _ => return Some(Ok(unevaluated())),
         }
-        _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "BinaryWrite".to_string(),
-            args: args.to_vec().into(),
-          }));
+        out
+      } else {
+        // 2-arg form: infer type from the value(s).
+        match &args[1] {
+          Expr::Integer(n) => vec![(*n & 0xff) as u8],
+          Expr::String(s) => s.as_bytes().to_vec(),
+          Expr::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for it in items {
+              match it {
+                Expr::Integer(n) => out.push((*n & 0xff) as u8),
+                Expr::String(s) => out.extend_from_slice(s.as_bytes()),
+                _ => return Some(Ok(unevaluated())),
+              }
+            }
+            out
+          }
+          _ => return Some(Ok(unevaluated())),
         }
       };
       use std::io::Write;

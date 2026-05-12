@@ -4735,6 +4735,32 @@ mod cases {
     );
   }
   #[test]
+  fn binary_write_three_arg_byte_scalar() {
+    // BinaryWrite[strm, value, type] — 3-arg form with explicit type spec.
+    // For "Byte" the value is written as a single byte and the same
+    // OutputStream is returned.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; path = strm[[1]]; BinaryWrite[strm, 97, "Byte"]; Close[strm]; r = BinaryReadList[path]; DeleteFile[path]; r"#,
+      r#"{97}"#,
+    );
+  }
+  #[test]
+  fn binary_write_three_arg_list_of_types() {
+    // Per-element types: a list of values paired with a list of type names.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; path = strm[[1]]; BinaryWrite[strm, {97, 98, 99}, {"Byte", "Byte", "Byte"}]; Close[strm]; r = BinaryReadList[path]; DeleteFile[path]; r"#,
+      r#"{97, 98, 99}"#,
+    );
+  }
+  #[test]
+  fn binary_write_three_arg_character8_string() {
+    // Character8 type: write the string's bytes verbatim.
+    assert_case(
+      r#"strm = OpenWrite[BinaryFormat -> True]; path = strm[[1]]; BinaryWrite[strm, "abc", "Character8"]; Close[strm]; r = BinaryReadList[path]; DeleteFile[path]; r"#,
+      r#"{97, 98, 99}"#,
+    );
+  }
+  #[test]
   fn binary_write_string_writes_utf8_bytes() {
     // BinaryWrite[strm, "abc123"] must write the UTF-8 bytes of the string
     // and return the same OutputStream (matching wolframscript). Reading
