@@ -6415,10 +6415,16 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "DivideBy" && args.len() == 2 {
         return format!("{} /= {}", fmt(&args[0]), fmt(&args[1]));
       }
-      // Chained ++/-- variants: parenthesize the inner expression when
-      // it is itself an Increment/PreIncrement family call so the
-      // printed form re-parses to the same structure (e.g. `(a++)++`,
-      // `++(a++)`). Bare operands keep the compact form (`a++`, `++a`).
+      // Chained ++/-- variants follow Wolfram's display convention:
+      //   * Postfix outers (Increment, Decrement) never parenthesize
+      //     their inner expression — `Increment[Increment[a]]` prints
+      //     as `a++++`, `Increment[PreIncrement[a]]` as `++a++`.
+      //   * Prefix outers (PreIncrement, PreDecrement) always wrap
+      //     inner ++/-- calls in parentheses for visual
+      //     disambiguation — `PreIncrement[PreIncrement[a]]` prints
+      //     as `++(++a)`, `PreIncrement[Increment[a]]` as `++(a++)`.
+      // Round-trip parsing isn't preserved for mixed cases (Wolfram
+      // also doesn't preserve them), but the display matches.
       let needs_inc_parens = |e: &Expr| -> bool {
         matches!(
           e,
@@ -6428,20 +6434,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         )
       };
       if name == "Increment" && args.len() == 1 {
-        let inner = fmt(&args[0]);
-        return if needs_inc_parens(&args[0]) {
-          format!("({})++", inner)
-        } else {
-          format!("{}++", inner)
-        };
+        return format!("{}++", fmt(&args[0]));
       }
       if name == "Decrement" && args.len() == 1 {
-        let inner = fmt(&args[0]);
-        return if needs_inc_parens(&args[0]) {
-          format!("({})--", inner)
-        } else {
-          format!("{}--", inner)
-        };
+        return format!("{}--", fmt(&args[0]));
       }
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
@@ -6543,9 +6539,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         }
         return format!("({})?{}", pat, test);
       }
-      // Chained ++/-- variants: parenthesize when the inner is itself
-      // another Increment/PreIncrement family call so the print
-      // round-trips through the parser.
+      // See the matching block above for the Wolfram display rule:
+      // postfix outer never parenthesizes; prefix outer parenthesizes
+      // any inner Increment/Decrement/PreIncrement/PreDecrement.
       let needs_inc_parens = |e: &Expr| -> bool {
         matches!(
           e,
@@ -6555,20 +6551,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         )
       };
       if name == "Increment" && args.len() == 1 {
-        let inner = fmt(&args[0]);
-        return if needs_inc_parens(&args[0]) {
-          format!("({})++", inner)
-        } else {
-          format!("{}++", inner)
-        };
+        return format!("{}++", fmt(&args[0]));
       }
       if name == "Decrement" && args.len() == 1 {
-        let inner = fmt(&args[0]);
-        return if needs_inc_parens(&args[0]) {
-          format!("({})--", inner)
-        } else {
-          format!("{}--", inner)
-        };
+        return format!("{}--", fmt(&args[0]));
       }
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);

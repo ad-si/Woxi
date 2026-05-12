@@ -12743,3 +12743,11 @@ INPUT: a \[DirectedEdge] b
 EXPECTED:
 = a → b
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: Increment
+LINE: 195
+TYPE: >>
+INPUT: ++++a+++++2 // Hold // FullForm
+EXPECTED:
+= Hold[Plus[PreIncrement[PreIncrement[Increment[Increment[a]]]], 2]]
+---

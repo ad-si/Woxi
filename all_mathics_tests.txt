@@ -1,11 +1,3 @@
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Increment
-LINE: 195
-TYPE: >>
-INPUT: ++++a+++++2 // Hold // FullForm
-EXPECTED:
-= Hold[Plus[PreIncrement[PreIncrement[Increment[Increment[a]]]], 2]]
----
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: Set
 LINE: 91

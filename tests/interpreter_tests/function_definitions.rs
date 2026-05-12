@@ -1590,7 +1590,44 @@ f[2][x_] := x^2"#,
   fn plus_3() {
     assert_case(
       r#"a = 1; a++; a; a = 1.5; a++; a; y = 2 x; y++; y; x = {1, 3, 5}; ++++a+++++2 // Hold // FullForm"#,
-      r#"FullForm[Hold[++(++((a++)++)) + 2]]"#,
+      r#"FullForm[Hold[++(++(a++++)) + 2]]"#,
+    );
+  }
+  #[test]
+  fn increment_chain_postfix() {
+    // Postfix outer never parenthesizes; chained postfix prints
+    // compactly. Matches wolframscript.
+    assert_case(r#"Hold[a++++]"#, r#"Hold[a++++]"#);
+    assert_case(
+      r#"Hold[Increment[Increment[a]]]"#,
+      r#"Hold[a++++]"#,
+    );
+  }
+  #[test]
+  fn increment_chain_prefix() {
+    // Prefix outer parenthesizes inner ++/--.
+    assert_case(r#"Hold[++++a]"#, r#"Hold[++(++a)]"#);
+  }
+  #[test]
+  fn increment_chain_mixed() {
+    // Mixed chains follow the same rule: postfix outer = no parens,
+    // prefix outer = parens.
+    assert_case(
+      r#"Hold[Increment[PreIncrement[a]]]"#,
+      r#"Hold[++a++]"#,
+    );
+    assert_case(
+      r#"Hold[PreIncrement[Increment[a]]]"#,
+      r#"Hold[++(a++)]"#,
+    );
+  }
+  #[test]
+  fn increment_chain_fullform_round_trip() {
+    // The mathics-derived FullForm string is the ultimate authority
+    // on the parsed structure; matches wolframscript exactly.
+    assert_case(
+      r#"ToString[FullForm[Hold[++++a+++++2]]]"#,
+      r#"Hold[Plus[PreIncrement[PreIncrement[Increment[Increment[a]]]], 2]]"#,
     );
   }
   #[test]
