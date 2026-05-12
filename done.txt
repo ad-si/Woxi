@@ -14010,3 +14010,11 @@ INPUT: ExpandAll[((1 + x)(1 + y))[x]]
 EXPECTED:
 = (1 + x + y + x y)[x]
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: ExpandAll
+LINE: 1246
+TYPE: >>
+INPUT: ExpandAll[(1 + a) ^ 6 / (x + y)^3, Modulus -> 3]
+EXPECTED:
+= (1 + 2 a ^ 3 + a ^ 6) / (x ^ 3 + y ^ 3)
+---

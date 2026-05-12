@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: ExpandAll
-LINE: 1246
-TYPE: >>
-INPUT: ExpandAll[(1 + a) ^ 6 / (x + y)^3, Modulus -> 3]
-EXPECTED:
-= (1 + 2 a ^ 3 + a ^ 6) / (x ^ 3 + y ^ 3)
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Factor
 LINE: 1377
 TYPE: >>
