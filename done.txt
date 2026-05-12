@@ -13064,3 +13064,10 @@ INPUT: ReadList[stream]
 EXPECTED:
 = {10 x + 15 y ^ 2, 3 Sin[z]}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: WriteString
+LINE: 1582
+TYPE: >>
+INPUT: WriteString[stream, "This is a test 1"]
+EXPECTED: (none)
+---
