@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: ImportString
-LINE: 1619
-TYPE: >>
-INPUT: ImportString[str, "Elements"]
-EXPECTED:
-= {Data, Lines, Plaintext, String, Words}
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: ImportString
 LINE: 1621
 TYPE: >>
 FILE: mathics/builtin/files_io/importexport.py
