@@ -1,13 +1,5 @@
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryWrite
-LINE: 550
-TYPE: >>
-INPUT: BinaryRead[strm]
-EXPECTED:
-= 39
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryWrite
 LINE: 552
 TYPE: >>
 INPUT: BinaryRead[strm, "Byte"]
