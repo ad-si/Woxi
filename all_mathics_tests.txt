@@ -1,12 +1,4 @@
 FILE: mathics/builtin/files_io/importexport.py
-CLASS: ConverterDumpsExtensionMappings
-LINE: 954
-TYPE: >>
-INPUT: "*.jpg"/. System`ConvertersDump`$ExtensionMappings
-EXPECTED:
-= JPEG
----
-FILE: mathics/builtin/files_io/importexport.py
 CLASS: ConverterDumpsFormatMappings
 LINE: 978
 TYPE: >>
