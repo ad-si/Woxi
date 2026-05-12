@@ -1575,8 +1575,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn tree_graph_edges_renders() {
-    let result =
-      interpret("TreeGraph[{1  2, 1  3}]").unwrap();
+    let result = interpret("TreeGraph[{1  2, 1  3}]").unwrap();
     assert!(
       result.contains("-Graphics-"),
       "TreeGraph should render as Graphics, got: {}",
@@ -3869,17 +3868,11 @@ mod batch_unevaluated_wrappers_2 {
   // EdgeQ
   #[test]
   fn edge_q_true() {
-    assert_eq!(
-      interpret("EdgeQ[CompleteGraph[3], 1  2]").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("EdgeQ[CompleteGraph[3], 1  2]").unwrap(), "True");
   }
   #[test]
   fn edge_q_false() {
-    assert_eq!(
-      interpret("EdgeQ[StarGraph[3], 2  3]").unwrap(),
-      "False"
-    );
+    assert_eq!(interpret("EdgeQ[StarGraph[3], 2  3]").unwrap(), "False");
   }
 
   // Booleans domain
@@ -4147,7 +4140,10 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn connected_graph_components_disconnected() {
     assert_eq!(
-      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {1  2, 3  4}]]]").unwrap(),
+      interpret(
+        "Length[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {1  2, 3  4}]]]"
+      )
+      .unwrap(),
       "2"
     );
     assert_eq!(
@@ -4162,7 +4158,10 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn connected_graph_components_directed() {
     assert_eq!(
-      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3}, {1  2, 2  1}]]]").unwrap(),
+      interpret(
+        "Length[ConnectedGraphComponents[Graph[{1, 2, 3}, {1  2, 2  1}]]]"
+      )
+      .unwrap(),
       "2"
     );
     assert_eq!(
@@ -4990,8 +4989,10 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn local_clustering_coefficient_triangle() {
     assert_eq!(
-      interpret("LocalClusteringCoefficient[Graph[{1,2,3},{1  2,2  3,1  3}]]")
-        .unwrap(),
+      interpret(
+        "LocalClusteringCoefficient[Graph[{1,2,3},{1  2,2  3,1  3}]]"
+      )
+      .unwrap(),
       "{1, 1, 1}"
     );
   }
@@ -5267,8 +5268,7 @@ mod option_symbols_batch {
   #[test]
   fn tutte_polynomial_single_edge() {
     assert_eq!(
-      interpret("TuttePolynomial[Graph[{1, 2}, {1  2}]][x, y]")
-        .unwrap(),
+      interpret("TuttePolynomial[Graph[{1, 2}, {1  2}]][x, y]").unwrap(),
       "x"
     );
   }

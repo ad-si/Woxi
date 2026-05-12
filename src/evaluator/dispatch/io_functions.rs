@@ -615,7 +615,8 @@ pub fn dispatch_io_functions(
               Expr::String(s) => terms.push(s.clone()),
               _ => {
                 return Some(Err(InterpreterError::EvaluationError(
-                  "Find: second argument must be a string or a list of strings".into(),
+                  "Find: second argument must be a string or a list of strings"
+                    .into(),
                 )));
               }
             }
@@ -624,7 +625,8 @@ pub fn dispatch_io_functions(
         }
         _ => {
           return Some(Err(InterpreterError::EvaluationError(
-            "Find: second argument must be a string or a list of strings".into(),
+            "Find: second argument must be a string or a list of strings"
+              .into(),
           )));
         }
       };
@@ -672,8 +674,10 @@ pub fn dispatch_io_functions(
       let remaining = &content[start_pos.min(content.len())..];
       let mut consumed = 0usize;
       for line in remaining.split_inclusive('\n') {
-        let stripped =
-          line.strip_suffix('\n').unwrap_or(line).trim_end_matches('\r');
+        let stripped = line
+          .strip_suffix('\n')
+          .unwrap_or(line)
+          .trim_end_matches('\r');
         consumed += line.len();
         if search_terms.iter().any(|t| stripped.contains(t)) {
           if let Some(id) = stream_id {

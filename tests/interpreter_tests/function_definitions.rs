@@ -1598,10 +1598,7 @@ f[2][x_] := x^2"#,
     // Postfix outer never parenthesizes; chained postfix prints
     // compactly. Matches wolframscript.
     assert_case(r#"Hold[a++++]"#, r#"Hold[a++++]"#);
-    assert_case(
-      r#"Hold[Increment[Increment[a]]]"#,
-      r#"Hold[a++++]"#,
-    );
+    assert_case(r#"Hold[Increment[Increment[a]]]"#, r#"Hold[a++++]"#);
   }
   #[test]
   fn increment_chain_prefix() {
@@ -1612,14 +1609,8 @@ f[2][x_] := x^2"#,
   fn increment_chain_mixed() {
     // Mixed chains follow the same rule: postfix outer = no parens,
     // prefix outer = parens.
-    assert_case(
-      r#"Hold[Increment[PreIncrement[a]]]"#,
-      r#"Hold[++a++]"#,
-    );
-    assert_case(
-      r#"Hold[PreIncrement[Increment[a]]]"#,
-      r#"Hold[++(a++)]"#,
-    );
+    assert_case(r#"Hold[Increment[PreIncrement[a]]]"#, r#"Hold[++a++]"#);
+    assert_case(r#"Hold[PreIncrement[Increment[a]]]"#, r#"Hold[++(a++)]"#);
   }
   #[test]
   fn increment_chain_fullform_round_trip() {

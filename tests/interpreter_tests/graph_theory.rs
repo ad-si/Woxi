@@ -6,17 +6,14 @@ mod connected_components {
   #[test]
   fn undirected_two_components() {
     let result =
-      interpret("ConnectedComponents[Graph[{1  2, 2  3, 4  5}]]")
-        .unwrap();
+      interpret("ConnectedComponents[Graph[{1  2, 2  3, 4  5}]]").unwrap();
     assert_eq!(result, "{{1, 2, 3}, {4, 5}}");
   }
 
   #[test]
   fn undirected_single_component() {
-    let result = interpret(
-      "ConnectedComponents[Graph[{a  b, c  d, b  c}]]",
-    )
-    .unwrap();
+    let result =
+      interpret("ConnectedComponents[Graph[{a  b, c  d, b  c}]]").unwrap();
     assert_eq!(result, "{{a, b, c, d}}");
   }
 
@@ -598,10 +595,7 @@ mod graph_rendering {
   #[test]
   fn directed_graph_renders() {
     assert_eq!(
-      interpret(
-        "Graph[{1  2, 2  3, 3  1}]"
-      )
-      .unwrap(),
+      interpret("Graph[{1  2, 2  3, 3  1}]").unwrap(),
       "-Graphics-"
     );
   }
@@ -617,16 +611,18 @@ mod graph_rendering {
   #[test]
   fn graph_with_edge_style() {
     let result = interpret(
-      "ExportString[Graph[{1  2, 2  3}, EdgeStyle -> Red], \"SVG\"]"
-    ).unwrap();
+      "ExportString[Graph[{1  2, 2  3}, EdgeStyle -> Red], \"SVG\"]",
+    )
+    .unwrap();
     assert!(result.contains("rgb(255,0,0)"));
   }
 
   #[test]
   fn graph_with_vertex_labels() {
     let result = interpret(
-      "ExportString[Graph[{1  2, 2  3}, VertexLabels -> \"Name\"], \"SVG\"]"
-    ).unwrap();
+      "ExportString[Graph[{1  2, 2  3}, VertexLabels -> \"Name\"], \"SVG\"]",
+    )
+    .unwrap();
     assert!(result.contains(">1</text>"));
     assert!(result.contains(">2</text>"));
     assert!(result.contains(">3</text>"));
@@ -635,8 +631,9 @@ mod graph_rendering {
   #[test]
   fn graph_with_labeled_edge() {
     let result = interpret(
-      "ExportString[Graph[{1  2, Labeled[2  3, \"hello\"]}], \"SVG\"]"
-    ).unwrap();
+      "ExportString[Graph[{1  2, Labeled[2  3, \"hello\"]}], \"SVG\"]",
+    )
+    .unwrap();
     assert!(result.contains(">hello</text>"));
   }
 
@@ -730,19 +727,16 @@ mod graph_rendering {
 
   #[test]
   fn graph_export_string_svg() {
-    let result = interpret(
-      "ExportString[Graph[{1  2, 2  3, 3  1}], \"SVG\"]"
-    ).unwrap();
+    let result =
+      interpret("ExportString[Graph[{1  2, 2  3, 3  1}], \"SVG\"]").unwrap();
     assert!(result.starts_with("<svg"));
     assert!(result.contains("</svg>"));
   }
 
   #[test]
   fn directed_graph_has_arrows() {
-    let result = interpret(
-      "ExportString[Graph[{1  2, 2  3}], \"SVG\"]",
-    )
-    .unwrap();
+    let result =
+      interpret("ExportString[Graph[{1  2, 2  3}], \"SVG\"]").unwrap();
     // Arrows produce polygon arrowheads
     assert!(result.contains("<polygon"));
   }
@@ -864,10 +858,7 @@ mod graph_rendering {
   #[test]
   fn graph_preserves_vertex_list() {
     assert_eq!(
-      interpret(
-        "VertexList[Graph[{1  2, 2  3}]]"
-      )
-      .unwrap(),
+      interpret("VertexList[Graph[{1  2, 2  3}]]").unwrap(),
       "{1, 2, 3}"
     );
   }
@@ -875,10 +866,7 @@ mod graph_rendering {
   #[test]
   fn graph_preserves_edge_list() {
     assert_eq!(
-      interpret(
-        "EdgeList[Graph[{1  2, 2  3}]]"
-      )
-      .unwrap(),
+      interpret("EdgeList[Graph[{1  2, 2  3}]]").unwrap(),
       "{1  2, 2  3}"
     );
   }
@@ -894,8 +882,9 @@ mod graph_rendering {
   #[test]
   fn directed_self_loop() {
     let result = interpret(
-      "ExportString[Graph[{1, 2, 3}, {1  2, 2  3, 2  2}], \"SVG\"]"
-    ).unwrap();
+      "ExportString[Graph[{1, 2, 3}, {1  2, 2  3, 2  2}], \"SVG\"]",
+    )
+    .unwrap();
     assert!(result.starts_with("<svg"));
     // Self-loop produces an arrowhead polygon
     assert!(result.contains("<polygon"));
@@ -903,9 +892,9 @@ mod graph_rendering {
 
   #[test]
   fn undirected_self_loop() {
-    let result = interpret(
-      "ExportString[Graph[{1, 2}, {1  2, 1  1}], \"SVG\"]"
-    ).unwrap();
+    let result =
+      interpret("ExportString[Graph[{1, 2}, {1  2, 1  1}], \"SVG\"]")
+        .unwrap();
     assert!(result.starts_with("<svg"));
     // Should have 2 polylines: one regular edge + one self-loop
     assert_eq!(result.matches("<polyline").count(), 2);
@@ -1262,10 +1251,7 @@ mod cases {
   }
   #[test]
   fn expr() {
-    assert_case(
-      r#"DirectedEdge[x, y, z]; a \[DirectedEdge] b"#,
-      r#"a  b"#,
-    );
+    assert_case(r#"DirectedEdge[x, y, z]; a \[DirectedEdge] b"#, r#"a  b"#);
   }
   #[test]
   fn undirected_edge() {
