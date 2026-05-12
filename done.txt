@@ -13365,3 +13365,11 @@ INPUT: System`Convert`B64Dump`B64Decode[%]
 EXPECTED:
 = Integrate[f[x], {x, 0, 2}]
 ---
+FILE: mathics/builtin/symbolic_history/stack.py
+CLASS: Stack
+LINE: 21
+TYPE: >>
+INPUT: f[g[1, Print[Stack[]] ; 2]]
+EXPECTED:
+= {f[g[1, Print[Stack[]] ; 2]], g[1, Print[Stack[]] ; 2], Print[Stack[]] ; 2, CompoundExpression, Print[Stack[]]}
+---
