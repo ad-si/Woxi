@@ -4185,6 +4185,20 @@ mod slot_function {
       "{1, 2, {c1, c2}, 3}"
     );
   }
+
+  #[test]
+  fn destructuring_assignment_returns_post_assign_value() {
+    // Wolfram returns the RHS re-evaluated in the post-assignment
+    // environment: the trailing `{a}` becomes `{1}` because `a` was
+    // just bound to 1 by the destructuring.
+    assert_eq!(
+      interpret(
+        "Clear[a, b, c, d]; {a, b, {c, {d}}} = {1, 2, {{c1, c2}, {a}}}"
+      )
+      .unwrap(),
+      "{1, 2, {{c1, c2}, {1}}}"
+    );
+  }
 }
 
 mod set_delayed {

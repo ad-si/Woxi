@@ -1353,6 +1353,14 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         for (l, r) in lhs_items.iter().zip(rhs_items.iter()) {
           set_ast(l, r)?;
         }
+        // Re-evaluate the RHS in the post-assignment environment so
+        // references to the freshly-bound variables resolve to their
+        // new values. Wolfram returns the RHS-after-substitution:
+        //   {a, b, {c, {d}}} = {1, 2, {{c1, c2}, {a}}}
+        //     → {1, 2, {{c1, c2}, {1}}}
+        // (the trailing `{a}` becomes `{1}` because `a` was just
+        // bound to 1).
+        return evaluate_expr_to_expr(&rhs_value);
       } else {
         crate::emit_message(&format!(
           "Set::shape: Lists {} and {} are not the same shape.",

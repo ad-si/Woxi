@@ -12751,3 +12751,11 @@ INPUT: ++++a+++++2 // Hold // FullForm
 EXPECTED:
 = Hold[Plus[PreIncrement[PreIncrement[Increment[Increment[a]]]], 2]]
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 91
+TYPE: >>
+INPUT: {a, b, {c, {d}}} = {1, 2, {{c1, c2}, {a}}}
+EXPECTED:
+= {1, 2, {{c1, c2}, {10}}}
+---
