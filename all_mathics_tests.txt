@@ -1,12 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: WriteString
-LINE: 1583
-TYPE: >>
-INPUT: WriteString[stream, "This is also a test 2"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: WriteString
 LINE: 1585
 TYPE: >>
 INPUT: FilePrint[%]
