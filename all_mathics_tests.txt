@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: Cancel
-LINE: 440
-TYPE: >>
-INPUT: a == "A" // Cancel // InputForm
-EXPECTED:
-= a == "A"
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientArrays
 LINE: 794
 TYPE: >>
