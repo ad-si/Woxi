@@ -12723,3 +12723,15 @@ INPUT: Part[Import["ExampleData/Namespaces.xml"], 2]
 EXPECTED:
 = XMLElement[book, {{http://www.w3.org/2000/xmlns/, xmlns} -> urn:loc.gov:books}, {XMLElement[title, {}, {Cheaper by the Dozen}], XMLElement[{urn:ISBN:0-395-36341-6, number}, {}, {1568491379}], XMLElement[notes, {}, {XMLElement[p, {{http://www.w3.org/2000/xmlns/, xmlns} -> http://www.w3.org/1999/xhtml}, {This is a, XMLElement[i, {}, {funny, book!}]}]}]}]
 ---
+FILE: mathics/builtin/matrices/constrmatrix.py
+CLASS: DiagonalMatrix
+LINE: 65
+TYPE: >>
+INPUT: MatrixForm[%]
+EXPECTED:
+= 1   0   0
+. 
+. 0   2   0
+. 
+. 0   0   3
+---
