@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: ReadList
-LINE: 951
-TYPE: >>
-INPUT: ReadList["ExampleData/strings.txt", Character]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: ReadList
 LINE: 955
 TYPE: >>
 INPUT: ReadList["ExampleData/strings.txt", Byte]
