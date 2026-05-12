@@ -13324,3 +13324,12 @@ EXPECTED:
 . 3,
 . 4,
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: B64Decode
+LINE: 2125
+TYPE: >>
+INPUT: System`Convert`B64Dump`B64Decode["R!="]
+EXPECTED:
+: String "R!=" is not a valid b64 encoded string.
+= $Failed
+---
