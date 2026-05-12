@@ -12707,3 +12707,11 @@ INPUT: Take[Import["ExampleData/InventionNo1.xml", "Tags"], 10]
 EXPECTED:
 = {accidental, alter, arpeggiate, articulations, attributes, backup, bar-style, barline, beam, beat-type}
 ---
+FILE: mathics/builtin/fileformats/xmlformat.py
+CLASS: XMLObjectImport
+LINE: 394
+TYPE: >>
+INPUT: Part[Import["ExampleData/InventionNo1.xml", "XMLObject"], 2, 3, 1]
+EXPECTED:
+= XMLElement[identification, {}, {XMLElement[encoding, {}, {XMLElement[software, {}, {MuseScore 1.2}], XMLElement[encoding-date, {}, {2012-09-12}]}]}]
+---
