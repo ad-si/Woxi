@@ -12933,3 +12933,11 @@ INPUT: InputForm[%]
 EXPECTED:
 = {123, abc}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: SetStreamPosition
+LINE: 1182
+TYPE: >>
+INPUT: SetStreamPosition[stream, Infinity]
+EXPECTED:
+= 16
+---

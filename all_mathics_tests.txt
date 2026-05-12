@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: SetStreamPosition
-LINE: 1182
-TYPE: >>
-INPUT: SetStreamPosition[stream, Infinity]
-EXPECTED:
-= 16
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: SetStreamPosition
 LINE: 1188
 TYPE: #>
 INPUT: SetStreamPosition[stream, 40]
