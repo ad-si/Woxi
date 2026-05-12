@@ -12949,3 +12949,11 @@ INPUT: SetStreamPosition[stream, 40]
 EXPECTED:
 = ERROR_MESSAGE_HERE
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Skip
+LINE: 1255
+TYPE: >>
+INPUT: Read[stream, Word]
+EXPECTED:
+= a
+---
