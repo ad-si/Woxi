@@ -1,13 +1,3 @@
-FILE: mathics/builtin/assignments/types.py
-CLASS: SubValues
-LINE: 157
-TYPE: >>
-INPUT: Definition[f]
-EXPECTED:
-= f[2][x_] = x^2
-. 
-. f[1][x_] = x
----
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: MapIndexed
 LINE: 297
