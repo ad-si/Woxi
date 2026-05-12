@@ -13914,3 +13914,11 @@ INPUT: Apart[1 / (x^2 - y^2), y]
 EXPECTED:
 = 1 / (2 x (x + y)) + 1 / (2 x (x - y))
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Apart
+LINE: 390
+TYPE: >>
+INPUT: a == "A" // Apart // InputForm
+EXPECTED:
+= a == "A"
+---

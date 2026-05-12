@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: Apart
-LINE: 390
-TYPE: >>
-INPUT: a == "A" // Apart // InputForm
-EXPECTED:
-= a == "A"
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Cancel
 LINE: 440
 TYPE: >>
