@@ -13677,3 +13677,11 @@ INPUT: strm = OpenRead[%, BinaryFormat -> True]
 EXPECTED:
 = InputStream[...]
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryWrite
+LINE: 577
+TYPE: >>
+INPUT: BinaryRead[strm, {"Byte", "Byte", "Byte", "Byte", "Byte", "Byte", "Byte"}]
+EXPECTED:
+= {97, 98, 99, 49, 50, 51, EndOfFile}
+---
