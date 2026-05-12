@@ -1,12 +1,4 @@
 FILE: mathics/builtin/files_io/files.py
-CLASS: OpenRead
-LINE: 462
-TYPE: >>
-INPUT: OpenRead["ExampleData/EinsteinSzilLetter.txt", CharacterEncoding->"UTF8"]
-EXPECTED:
-= InputStream[...]
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Put
 LINE: 547
 TYPE: S>
