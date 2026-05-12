@@ -806,6 +806,11 @@ function main() {
     // these forms exercise the parser at top level and don't round-trip
     // identically through the Quiet[ToString[(...), InputForm]] wrapper.
     "ToString[FullForm[1 ;; All]]",
+    // ReadList with a fresh StringToStream stream — the InputStream ID is
+    // session-specific (Woxi starts from 1 in a fresh kernel; wolframscript
+    // accumulates IDs across the batch session). Surface form is otherwise
+    // identical and the unit test asserts the Woxi-side ID directly.
+    "ReadList[StringToStream[\"a 1 b 2\"], {Word, Number}, -1]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

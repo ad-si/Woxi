@@ -3042,9 +3042,18 @@ mod begin_end_package {
   }
 
   #[test]
-  fn end_package_returns_null() {
-    // EndPackage[] returns Null (matching wolframscript)
-    assert_eq!(interpret("EndPackage[]").unwrap(), "\0");
+  fn end_package_without_begin_stays_unevaluated() {
+    // Without a prior BeginPackage[], wolframscript emits
+    // EndPackage::noctx and leaves the call unevaluated.
+    assert_eq!(interpret("EndPackage[]").unwrap(), "EndPackage[]");
+  }
+
+  #[test]
+  fn end_package_after_begin_returns_null() {
+    assert_eq!(
+      interpret("BeginPackage[\"MyPkg`\"]; EndPackage[]").unwrap(),
+      "\0"
+    );
   }
 }
 

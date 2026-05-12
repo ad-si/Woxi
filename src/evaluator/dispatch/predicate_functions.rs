@@ -1218,6 +1218,10 @@ pub fn dispatch_predicate_functions(
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };
+      // Preserve whether the caller used a Symbol or a String — when the
+      // option name is unresolved, wolframscript falls back to the original
+      // form (`OptionValue["b"]` -> "b", `OptionValue[b]` -> b).
+      let opt_arg_was_string = matches!(opt_arg, Expr::String(_));
       let opt_name = match &opt_arg {
         Expr::Identifier(name) => name.clone(),
         Expr::String(name) => name.clone(),
@@ -1260,7 +1264,10 @@ pub fn dispatch_predicate_functions(
         Some(val) => return Some(evaluate_expr_to_expr(&val)),
         None if in_context => {
           // Inside an OptionsPattern context but name isn't bound — return
-          // the bare symbol (e.g. OptionValue[b] -> b, OptionValue["b"] -> b).
+          // the original form: OptionValue[b] -> b, OptionValue["b"] -> "b".
+          if opt_arg_was_string {
+            return Some(Ok(Expr::String(opt_name)));
+          }
           return Some(Ok(Expr::Identifier(opt_name)));
         }
         None => {

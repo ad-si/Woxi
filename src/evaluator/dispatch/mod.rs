@@ -1508,7 +1508,16 @@ pub fn evaluate_function_call_ast_inner(
   // the package context (and the extras passed to BeginPackage[]) are
   // prepended to the underlying $ContextPath, so the package's exports
   // remain reachable after EndPackage[].
+  // Without a prior BeginPackage[], wolframscript emits
+  // `EndPackage::noctx` and leaves the call unevaluated.
   if name == "EndPackage" && args.is_empty() {
+    if !crate::has_package_context() {
+      crate::emit_message("EndPackage::noctx: No previous context defined.");
+      return Ok(Expr::FunctionCall {
+        name: "EndPackage".to_string(),
+        args: vec![].into(),
+      });
+    }
     crate::pop_context();
     if let Some(active) = crate::pop_context_path() {
       // The pushed path is `[pkg, extras..., "System`"]`; the prepend

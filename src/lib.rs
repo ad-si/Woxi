@@ -799,6 +799,13 @@ pub fn pop_context_path() -> Option<Vec<String>> {
   CONTEXT_PATH_STACK.with(|s| s.borrow_mut().pop())
 }
 
+/// Whether any `BeginPackage[]` is currently active (i.e. the
+/// `$ContextPath` stack is non-empty). Used by `EndPackage[]` to decide
+/// between popping and emitting `EndPackage::noctx`.
+pub fn has_package_context() -> bool {
+  CONTEXT_PATH_STACK.with(|s| !s.borrow().is_empty())
+}
+
 /// Register an additional package context to be reported by `$Packages`.
 /// Pushed by `BeginPackage[]` (the first argument and any extras in the
 /// second argument). Duplicate entries are ignored.

@@ -1666,19 +1666,41 @@ pub fn evaluate_expr_to_expr_inner(
         if name == "Interrupt" && args.is_empty() {
           return Err(InterpreterError::Abort);
         }
-        // Pause[n] - sleep for n seconds (wall clock) and return Null
+        // Pause[n] - sleep for n seconds (wall clock) and return Null.
+        // A negative or non-numeric n emits Pause::numnm and leaves the
+        // call unevaluated, matching wolframscript.
         if name == "Pause" && args.len() == 1 {
-          if let Ok(val) = evaluate_expr_to_expr(&args[0])
-            && let Some(secs) =
-              crate::functions::math_ast::try_eval_to_f64(&val)
-            && secs > 0.0
-          {
-            #[cfg(not(target_arch = "wasm32"))]
-            std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-            #[cfg(target_arch = "wasm32")]
-            crate::wasm::sleep_seconds(secs);
+          let evaluated = evaluate_expr_to_expr(&args[0]).ok();
+          let secs = evaluated
+            .as_ref()
+            .and_then(crate::functions::math_ast::try_eval_to_f64);
+          match secs {
+            Some(s) if s >= 0.0 => {
+              if s > 0.0 {
+                #[cfg(not(target_arch = "wasm32"))]
+                std::thread::sleep(std::time::Duration::from_secs_f64(s));
+                #[cfg(target_arch = "wasm32")]
+                crate::wasm::sleep_seconds(s);
+              }
+              return Ok(Expr::Identifier("Null".to_string()));
+            }
+            _ => {
+              let shown = evaluated.as_ref().unwrap_or(&args[0]);
+              let call_str =
+                crate::syntax::expr_to_string(&Expr::FunctionCall {
+                  name: "Pause".to_string(),
+                  args: vec![shown.clone()].into(),
+                });
+              crate::emit_message(&format!(
+                "Pause::numnm: Non-negative machine-sized number expected at position 1 in {}.",
+                call_str
+              ));
+              return Ok(Expr::FunctionCall {
+                name: "Pause".to_string(),
+                args: vec![shown.clone()].into(),
+              });
+            }
           }
-          return Ok(Expr::Identifier("Null".to_string()));
         }
         // Special handling for CheckAbort[expr, failexpr]
         if name == "CheckAbort" && args.len() == 2 {

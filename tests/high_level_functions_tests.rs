@@ -3236,8 +3236,15 @@ mod high_level_functions_tests {
     }
 
     #[test]
-    fn test_pause_negative_returns_null() {
-      assert_eq!(interpret("Pause[-1]").unwrap(), "\0");
+    fn test_pause_negative_stays_unevaluated() {
+      // wolframscript rejects negative durations with Pause::numnm and
+      // leaves the call unevaluated.
+      assert_eq!(interpret("Pause[-1]").unwrap(), "Pause[-1]");
+    }
+
+    #[test]
+    fn test_pause_non_numeric_stays_unevaluated() {
+      assert_eq!(interpret("Pause[a]").unwrap(), "Pause[a]");
     }
 
     #[test]
@@ -3275,11 +3282,23 @@ mod high_level_functions_tests {
     }
 
     #[test]
-    fn test_option_value_missing_string_arg_falls_back_to_symbol() {
+    fn test_option_value_missing_string_arg_falls_back_to_string() {
+      // wolframscript preserves the original String form when the option
+      // name is unresolved — OptionValue["b"] returns the string "b" (not
+      // the bare symbol). OutputForm strips the surrounding quotes for
+      // display, so `interpret` returns `{b}` here while
+      // `ToString[..., InputForm]` round-trips to `{"b"}`.
       assert_eq!(
         interpret("f[a->3] /. f[OptionsPattern[{}]] :> {OptionValue[\"b\"]}")
           .unwrap(),
         "{b}"
+      );
+      assert_eq!(
+        interpret(
+          "ToString[f[a->3] /. f[OptionsPattern[{}]] :> {OptionValue[\"b\"]}, InputForm]"
+        )
+        .unwrap(),
+        "{\"b\"}"
       );
     }
 

@@ -1349,10 +1349,12 @@ pub fn dispatch_io_functions(
         "String".to_string(),
         crate::StreamKind::StringStream(text),
       );
+      // Use Symbol `String` (not the string literal "String") so the
+      // formatted form matches wolframscript: `InputStream[String, id]`.
       return Some(Ok(Expr::FunctionCall {
         name: "InputStream".to_string(),
         args: vec![
-          Expr::String("String".to_string()),
+          Expr::Identifier("String".to_string()),
           Expr::Integer(id as i128),
         ]
         .into(),
