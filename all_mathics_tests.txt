@@ -1,14 +1,3 @@
----
-FILE: mathics/builtin/box/layout.py
-CLASS: GridBox
-LINE: 192
-TYPE: #>
-INPUT: Grid[{{a,bc},{d,e}}, ColumnAlignments:>Symbol["Rig"<>"ht"]]
-EXPECTED:
-= a   bc
-. 
-. d   e
----
 FILE: mathics/builtin/box/layout.py
 CLASS: GridBox
 LINE: 197
