@@ -13823,3 +13823,11 @@ EXPECTED:
 . 
 . d   e
 ---
+FILE: mathics/builtin/box/layout.py
+CLASS: GridBox
+LINE: 197
+TYPE: #>
+INPUT: TeXForm@Grid[{{a,bc},{d,e}}, ColumnAlignments->Left]
+EXPECTED:
+= \begin{array}{ll} a & \text{bc}\\ d & e\end{array}
+---
