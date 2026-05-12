@@ -1,12 +1,3 @@
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: RegisterImport
-LINE: 1074
-TYPE: >>
-INPUT: Import["ExampleData/ExampleData.txt", {"ExampleFormat1", "Elements"}]
-EXPECTED:
-= {Data, Header}
----
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: RegisterImport
 LINE: 1077

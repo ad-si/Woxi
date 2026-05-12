@@ -13190,3 +13190,11 @@ EXPECTED:
 | 0.838697    0.436220
 | 0.309496    0.833591
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: RegisterImport
+LINE: 1074
+TYPE: >>
+INPUT: Import["ExampleData/ExampleData.txt", {"ExampleFormat1", "Elements"}]
+EXPECTED:
+= {Data, Header}
+---
