@@ -13248,3 +13248,11 @@ EXPECTED:
 . 
 . 0.309496   0.833591
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: RegisterExport
+LINE: 1191
+TYPE: >>
+INPUT: FilePrint["sample.txt"]
+EXPECTED:
+| Encode this string!
+---

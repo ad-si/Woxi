@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: RegisterExport
-LINE: 1191
-TYPE: >>
-INPUT: FilePrint["sample.txt"]
-EXPECTED:
-| Encode this string!
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: RegisterExport
 LINE: 1203
 TYPE: >>
 INPUT: FilePrint["sample.txt"]
