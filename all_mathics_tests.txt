@@ -1,12 +1,4 @@
 FILE: mathics/builtin/binary/io.py
-CLASS: BinaryReadList
-LINE: 489
-TYPE: >>
-INPUT: BinaryReadList[strm]
-EXPECTED:
-= {97, 98, 99}
----
-FILE: mathics/builtin/binary/io.py
 CLASS: BinaryWrite
 LINE: 543
 TYPE: >>
