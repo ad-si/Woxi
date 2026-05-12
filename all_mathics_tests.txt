@@ -1,13 +1,4 @@
 FILE: mathics/builtin/files_io/files.py
-CLASS: Read
-LINE: 833
-TYPE: >>
-INPUT: stream = StringToStream["\\"Tengo una\\nvaca lechera.\\""]; Read[stream]
-EXPECTED:
-= Tengo una
-. vaca lechera.
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: ReadList
 LINE: 927
 TYPE: >>

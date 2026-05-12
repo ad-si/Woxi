@@ -2052,6 +2052,19 @@ mod read {
   }
 
   #[test]
+  fn read_expression_spans_newlines_inside_string() {
+    // A quoted string literal containing a newline must not be cut at
+    // that newline when reading an Expression. mathics expected
+    // (and woxi now produces) the full two-line string.
+    clear_state();
+    let result = interpret(
+      "stream = StringToStream[\"\\\"Tengo una\\nvaca lechera.\\\"\"]; Read[stream]",
+    )
+    .unwrap();
+    assert_eq!(result, "Tengo una\nvaca lechera.");
+  }
+
+  #[test]
   fn read_end_of_file() {
     clear_state();
     let result = interpret(

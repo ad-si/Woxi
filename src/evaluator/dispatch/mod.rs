@@ -215,13 +215,44 @@ pub fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       (Expr::String(ch.to_string()), ch.len_utf8())
     }
     "Expression" | _ => {
-      // Read until newline and try to interpret as expression
+      // Read the next top-level Wolfram expression. Strings, comments,
+      // and bracketed groups are allowed to span newlines, so we scan
+      // forward tracking quote/bracket depth instead of cutting at the
+      // first newline — otherwise inputs like `"Tengo una\nvaca."`
+      // would only read the unbalanced opener `"Tengo una`.
       let trimmed = remaining.trim_start();
       let skipped = remaining.len() - trimmed.len();
       if trimmed.is_empty() {
         return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
       }
-      let end = trimmed.find('\n').unwrap_or(trimmed.len());
+      let bytes = trimmed.as_bytes();
+      let mut i = 0;
+      let mut depth: i32 = 0;
+      let mut in_string = false;
+      while i < bytes.len() {
+        let c = bytes[i];
+        if in_string {
+          if c == b'\\' && i + 1 < bytes.len() {
+            // Escape: skip next byte too.
+            i += 2;
+            continue;
+          }
+          if c == b'"' {
+            in_string = false;
+          }
+          i += 1;
+          continue;
+        }
+        match c {
+          b'"' => in_string = true,
+          b'(' | b'[' | b'{' => depth += 1,
+          b')' | b']' | b'}' => depth -= 1,
+          b'\n' if depth == 0 => break,
+          _ => {}
+        }
+        i += 1;
+      }
+      let end = i;
       let line = &trimmed[..end];
       let advance = if skipped + end < remaining.len() {
         skipped + end + 1
