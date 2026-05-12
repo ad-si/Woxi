@@ -13445,3 +13445,11 @@ INPUT: SixJSymbol[{1/2, 1/2, 1}, {5/2, 7/2, 3}]
 EXPECTED:
 = -Sqrt[21] / 21
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: SixJSymbol
+LINE: 167
+TYPE: >>
+INPUT: SixJSymbol[{1, 2, 3}, {2, 1, 2}] == 1 / (5 Sqrt[21])
+EXPECTED:
+= True
+---
