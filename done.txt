@@ -13867,3 +13867,19 @@ INPUT: Norm[Array[Subscript[a, ##] &, {2, 2}], "Frobenius"]
 EXPECTED:
 = Sqrt[Abs[Subscript[a, 1, 1]] ^ 2 + Abs[Subscript[a, 1, 2]] ^ 2 + Abs[Subscript[a, 2, 1]] ^ 2 + Abs[Subscript[a, 2, 2]] ^ 2]
 ---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: KroneckerProduct
+LINE: 48
+TYPE: >>
+INPUT: KroneckerProduct[a, b] // MatrixForm
+EXPECTED:
+= 0    0    1   2
+. 
+. 0    0    3   4
+. 
+. -1   -2   0   0
+. 
+. -3   -4   0   0
+---
+---
+FILE: mathics/builtin/vectors/vector_space_operations.py
