@@ -1,12 +1,5 @@
 FILE: mathics/builtin/files_io/files.py
 CLASS: Write
-LINE: 1532
-TYPE: >>
-INPUT: Write[stream, 10 x + 15 y ^ 2]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Write
 LINE: 1533
 TYPE: >>
 INPUT: Write[stream, 3 Sin[z]]

@@ -13035,3 +13035,10 @@ INPUT: stream = OpenWrite[]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Write
+LINE: 1532
+TYPE: >>
+INPUT: Write[stream, 10 x + 15 y ^ 2]
+EXPECTED: (none)
+---
