@@ -12809,3 +12809,11 @@ INPUT: OpenRead["ExampleData/EinsteinSzilLetter.txt", CharacterEncoding->"UTF8"]
 EXPECTED:
 = InputStream[...]
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 547
+TYPE: S>
+INPUT: Get[filename]
+EXPECTED:
+= 815915283247897734345611269596115894272000000000
+---
