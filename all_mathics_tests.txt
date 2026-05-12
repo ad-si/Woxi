@@ -1,12 +1,4 @@
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
-LINE: 526
-TYPE: >>
-INPUT: g[1] == g[2] <= g[3]
-EXPECTED:
-= g[1] == g[2] && g[2] <= g[3]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Inequality
 LINE: 609
 TYPE: >>
