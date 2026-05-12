@@ -12957,3 +12957,10 @@ INPUT: Read[stream, Word]
 EXPECTED:
 = a
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Skip
+LINE: 1257
+TYPE: >>
+INPUT: Skip[stream, Word]
+EXPECTED: (none)
+---
