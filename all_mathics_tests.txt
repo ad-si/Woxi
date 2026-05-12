@@ -1,13 +1,5 @@
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: B64Encode
-LINE: 2164
-TYPE: >>
-INPUT: System`Convert`B64Dump`B64Decode[%]
-EXPECTED:
-= Hello world
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: B64Encode
 LINE: 2166
 TYPE: >>
 INPUT: System`Convert`B64Dump`B64Encode[Integrate[f[x],{x,0,2}]]

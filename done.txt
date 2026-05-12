@@ -13341,3 +13341,11 @@ INPUT: System`Convert`B64Dump`B64Encode["Hello world"]
 EXPECTED:
 = SGVsbG8gd29ybGQ=
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: B64Encode
+LINE: 2164
+TYPE: >>
+INPUT: System`Convert`B64Dump`B64Decode[%]
+EXPECTED:
+= Hello world
+---
