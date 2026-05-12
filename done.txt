@@ -13661,3 +13661,11 @@ INPUT: BinaryRead[strm, {"Character8", "Character8", "Character8", "Character8",
 EXPECTED:
 = {a, b, c, 1, 2, 3, EndOfFile}
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryWrite
+LINE: 571
+TYPE: >>
+INPUT: pathname = Close[strm]
+EXPECTED:
+= ...
+---
