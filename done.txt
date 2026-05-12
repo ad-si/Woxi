@@ -13954,3 +13954,11 @@ INPUT: CoefficientArrays[{1 + x^2, x y}, {x, y}]
 EXPECTED:
 = {{1, 0}, {{0, 0}, {0, 0}}, {{{1, 0}, {0, 0}}, {{0, 1}, {0, 0}}}}
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: CoefficientArrays
+LINE: 800
+TYPE: >>
+INPUT: CoefficientArrays[(x+y+Sin[z])^3, {x,y}]
+EXPECTED:
+= {Sin[z] ^ 3, {3 Sin[z] ^ 2, 3 Sin[z] ^ 2}, {{3 Sin[z], 6 Sin[z]}, {0, 3 Sin[z]}}, {{{1, 3}, {0, 3}}, {{0, 0}, {0, 1}}}}
+---

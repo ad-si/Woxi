@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientArrays
-LINE: 800
-TYPE: >>
-INPUT: CoefficientArrays[(x+y+Sin[z])^3, {x,y}]
-EXPECTED:
-= {Sin[z] ^ 3, {3 Sin[z] ^ 2, 3 Sin[z] ^ 2}, {{3 Sin[z], 6 Sin[z]}, {0, 3 Sin[z]}}, {{{1, 3}, {0, 3}}, {{0, 0}, {0, 1}}}}
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Collect
 LINE: 1045
 TYPE: >>
