@@ -1,12 +1,4 @@
 FILE: mathics/builtin/files_io/files.py
-CLASS: Write
-LINE: 1537
-TYPE: >>
-INPUT: ReadList[stream]
-EXPECTED:
-= {10 x + 15 y ^ 2, 3 Sin[z]}
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: WriteString
 LINE: 1582
 TYPE: >>
