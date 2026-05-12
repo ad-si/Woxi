@@ -13373,3 +13373,11 @@ INPUT: f[g[1, Print[Stack[]] ; 2]]
 EXPECTED:
 = {f[g[1, Print[Stack[]] ; 2]], g[1, Print[Stack[]] ; 2], Print[Stack[]] ; 2, CompoundExpression, Print[Stack[]]}
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: ClebschGordan
+LINE: 47
+TYPE: >>
+INPUT: ClebschGordan[{3 / 2, 3 / 2}, {1 / 2, -1 / 2}, {1, 1}]
+EXPECTED:
+= Sqrt[3] / 2
+---
