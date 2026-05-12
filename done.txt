@@ -12793,3 +12793,11 @@ INPUT: MapIndexed[Extract[expr, #2] &, listified, {-1}, Heads -> True]
 EXPECTED:
 = a + b f[g] c ^ e
 ---
+FILE: mathics/builtin/functional/functional_iteration.py
+CLASS: FixedPointList
+LINE: 116
+TYPE: >>
+INPUT: list = FixedPointList[collatz, 14]
+EXPECTED:
+= {14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}
+---
