@@ -13581,3 +13581,11 @@ INPUT: strm = OpenWrite[BinaryFormat -> True]
 EXPECTED:
 = OutputStream[...]
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryWrite
+LINE: 545
+TYPE: >>
+INPUT: BinaryWrite[strm, {39, 4, 122}]
+EXPECTED:
+= OutputStream[...]
+---

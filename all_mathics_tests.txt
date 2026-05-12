@@ -1,13 +1,5 @@
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryWrite
-LINE: 545
-TYPE: >>
-INPUT: BinaryWrite[strm, {39, 4, 122}]
-EXPECTED:
-= OutputStream[...]
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryWrite
 LINE: 548
 TYPE: >>
 INPUT: strm = OpenRead[%, BinaryFormat -> True]
