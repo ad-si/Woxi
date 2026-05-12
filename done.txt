@@ -13124,3 +13124,11 @@ TYPE: X>
 INPUT: DeleteFile["MathicsSunflowers.jpg"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileInformation
+LINE: 563
+TYPE: >>
+INPUT: FileInformation["ExampleData/sunflowers.jpg"]
+EXPECTED:
+= {File -> ..., FileType -> File, ByteCount -> 142286, Date -> ...}
+---
