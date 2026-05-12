@@ -13206,3 +13206,11 @@ INPUT: Import["ExampleData/ExampleData.txt", {"ExampleFormat1", "Header"}]
 EXPECTED:
 = {Example File Format, Created by Angus}
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: RegisterImport
+LINE: 1087
+TYPE: >>
+INPUT: Import["ExampleData/ExampleData.txt", {"ExampleFormat2", "Elements"}]
+EXPECTED:
+= {Data, Header}
+---
