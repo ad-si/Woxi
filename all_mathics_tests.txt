@@ -1,13 +1,5 @@
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryRead
-LINE: 380
-TYPE: >>
-INPUT: strm = OpenRead[%, BinaryFormat -> True]
-EXPECTED:
-= InputStream[...]
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryRead
 LINE: 382
 TYPE: >>
 INPUT: BinaryRead[strm]
