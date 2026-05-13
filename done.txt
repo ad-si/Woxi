@@ -16056,3 +16056,11 @@ INPUT: Log[Gamma[-2.+3 I]]
 EXPECTED:
 = -6.77652 + 1.71439 I
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: LogGamma
+LINE: 381
+TYPE: >>
+INPUT: LogGamma[1.*^20]
+EXPECTED:
+= 4.50517×10^21
+---
