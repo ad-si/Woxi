@@ -14279,3 +14279,11 @@ INPUT: N[Integrate[Sin[Exp[-x^2 /2 ]],{x,1,2}]]
 EXPECTED:
 = 0.330804
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: O_
+LINE: 1609
+TYPE: >>
+INPUT: O[x] // FullForm
+EXPECTED:
+= SeriesData[x, 0, {}, 1, 1, 1]
+---

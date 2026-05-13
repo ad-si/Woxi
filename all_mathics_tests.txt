@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: O_
-LINE: 1609
-TYPE: >>
-INPUT: O[x] // FullForm
-EXPECTED:
-= SeriesData[x, 0, {}, 1, 1, 1]
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: Root
 LINE: 1654
 TYPE: >>
