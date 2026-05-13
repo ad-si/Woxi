@@ -14146,3 +14146,12 @@ INPUT: DiscreteLimit[(n/(n + 2)) E^(-m/(m + 1)), {m -> Infinity, n -> Infinity}]
 EXPECTED:
 = 1 / E
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindMaximum
+LINE: 770
+TYPE: >>
+INPUT: FindMaximum[-10*^-30 *(x-3)^2+2., {x, 1}]
+EXPECTED:
+: Encountered a gradient that is effectively zero. The result returned may not be a maximum; it may be a minimum or a saddle point.
+= {2., {x -> 3.}}
+---
