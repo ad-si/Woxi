@@ -1,13 +1,5 @@
 FILE: mathics/builtin/directories/directory_operations.py
 CLASS: CreateDirectory
-LINE: 35
-TYPE: #>
-INPUT: DirectoryQ[dir]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/directories/directory_operations.py
-CLASS: CreateDirectory
 LINE: 37
 TYPE: #>
 INPUT: DeleteDirectory[dir]

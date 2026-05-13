@@ -15540,3 +15540,11 @@ INPUT: Length[Names["System`*"]]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/directories/directory_operations.py
+CLASS: CreateDirectory
+LINE: 35
+TYPE: #>
+INPUT: DirectoryQ[dir]
+EXPECTED:
+= True
+---
