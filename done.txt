@@ -14863,3 +14863,11 @@ TYPE: >>
 INPUT: SeedRandom[42]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomChoice
+LINE: 310
+TYPE: >>
+INPUT: RandomChoice[{a, b, c}, {5, 2}]
+EXPECTED:
+= {{c, a}, {c, c}, {a, a}, {c, b}, {c, c}}
+---

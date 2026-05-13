@@ -480,23 +480,47 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let idx = crate::with_rng(|rng| rng.gen_range(0..items.len()));
     Ok(items[idx].clone())
   } else {
-    let n = match &args[1] {
-      Expr::Integer(n) if *n >= 0 => *n as usize,
+    // Accept either a non-negative integer (flat list) or a list of
+    // positive integers (nested array of that shape). Matches Wolfram.
+    let dims: Vec<usize> = match &args[1] {
+      Expr::Integer(n) if *n >= 0 => vec![*n as usize],
+      Expr::List(ds) if !ds.is_empty() => {
+        let mut out = Vec::with_capacity(ds.len());
+        for d in ds.iter() {
+          match d {
+            Expr::Integer(k) if *k > 0 => out.push(*k as usize),
+            _ => {
+              return Err(InterpreterError::EvaluationError(
+                "RandomChoice: dimension entries must be positive integers".into(),
+              ));
+            }
+          }
+        }
+        out
+      }
       _ => {
         return Err(InterpreterError::EvaluationError(
-          "RandomChoice: second argument must be a non-negative integer".into(),
+          "RandomChoice: second argument must be a non-negative integer or list of dimensions".into(),
         ));
       }
     };
-    let result: Vec<Expr> = crate::with_rng(|rng| {
-      (0..n)
-        .map(|_| {
-          let idx = rng.gen_range(0..items.len());
-          items[idx].clone()
-        })
-        .collect()
-    });
-    Ok(Expr::List(result.into()))
+    fn build(items: &[Expr], dims: &[usize]) -> Expr {
+      use rand::Rng;
+      let n = dims[0];
+      if dims.len() == 1 {
+        let result: Vec<Expr> = crate::with_rng(|rng| {
+          (0..n)
+            .map(|_| items[rng.gen_range(0..items.len())].clone())
+            .collect()
+        });
+        Expr::List(result.into())
+      } else {
+        let inner = &dims[1..];
+        let result: Vec<Expr> = (0..n).map(|_| build(items, inner)).collect();
+        Expr::List(result.into())
+      }
+    }
+    Ok(build(items, &dims))
   }
 }
 
@@ -709,7 +733,8 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Integer(n) if *n > 0 => ds.push(*n as usize),
             _ => {
               return Err(InterpreterError::EvaluationError(
-                "RandomPrime: dimension entries must be positive integers".into(),
+                "RandomPrime: dimension entries must be positive integers"
+                  .into(),
               ));
             }
           }
@@ -740,7 +765,11 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::List(groups.into())
   }
-  let total: usize = if dims.is_empty() { 1 } else { dims.iter().product() };
+  let total: usize = if dims.is_empty() {
+    1
+  } else {
+    dims.iter().product()
+  };
   let count = total;
 
   let range_size = max - min + 1;
