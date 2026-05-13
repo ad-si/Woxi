@@ -15736,3 +15736,11 @@ INPUT: BesselY[-3/2, x]
 EXPECTED:
 = Sqrt[2] Sqrt[x] (-Sin[x] / x ^ 2 + Cos[x] / x) / Sqrt[Pi]
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselJZero
+LINE: 492
+TYPE: >>
+INPUT: N[BesselJZero[0, 1], 10]
+EXPECTED:
+= 2.404825558
+---

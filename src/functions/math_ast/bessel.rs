@@ -339,22 +339,34 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Extract numeric values
+  // Extract numeric values, accepting Integer / Real / BigFloat (so that
+  // N[BesselJZero[n, k], precision] flows through after N propagates the
+  // precision marker to each arg).
   let n_val = match &args[0] {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
     _ => None,
   };
   let k_val = match &args[1] {
     Expr::Integer(k) => Some(*k),
     Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().and_then(|f| {
+      if f == f.floor() && f > 0.0 { Some(f as i128) } else { None }
+    }),
     _ => None,
   };
 
-  // Numeric evaluation when n is Real or k is Real
-  let has_real =
-    matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
-  if has_real
+  // Numeric evaluation when n or k carries a numeric type beyond a bare
+  // Integer (Real or BigFloat from N[…, prec]).
+  let has_numeric = matches!(
+    &args[0],
+    Expr::Real(_) | Expr::BigFloat(_, _)
+  ) || matches!(
+    &args[1],
+    Expr::Real(_) | Expr::BigFloat(_, _)
+  );
+  if has_numeric
     && let (Some(n), Some(k)) = (n_val, k_val)
     && k >= 1
   {
