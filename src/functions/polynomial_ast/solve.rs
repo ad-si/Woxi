@@ -5279,6 +5279,39 @@ pub fn find_minimum_ast(
     expr_to_f64(&evaled)
   };
 
+  // Pre-flight: if f doesn't reduce to a real number at the starting
+  // point (e.g. contains an unbound symbol like phi[x]), emit
+  // {func_name}::nrnum and return the call unevaluated. Matches
+  // wolframscript's behaviour and lets script chains keep flowing
+  // instead of aborting with a hard "Cannot evaluate numerically".
+  if eval_at(f, &x).is_err() {
+    let mut substituted = f.clone();
+    for (i, var) in vars.iter().enumerate() {
+      substituted =
+        crate::syntax::substitute_variable(&substituted, var, &Expr::Real(x[i]));
+    }
+    let value_str = crate::syntax::expr_to_output(&substituted);
+    let var_str: String = if vars.len() == 1 {
+      format!("{{{}}} = {{{}}}", vars[0], x[0])
+    } else {
+      let names = vars.join(", ");
+      let vals = x
+        .iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+      format!("{{{}}} = {{{}}}", names, vals)
+    };
+    crate::emit_message(&format!(
+      "{func_name}::nrnum: The function value {} is not a real number at {}.",
+      value_str, var_str,
+    ));
+    return Ok(Expr::FunctionCall {
+      name: func_name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   let sign = if maximize { -1.0 } else { 1.0 };
   let max_iter = 200;
   let tol = 1e-15;
