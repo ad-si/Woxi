@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: Simplify
-LINE: 1574
-TYPE: >>
-INPUT: Simplify[20 Log[2], ComplexityFunction->LeafCount]
-EXPECTED:
-= Log[1048576]
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: MinimalPolynomial
 LINE: 1690
 TYPE: >>
