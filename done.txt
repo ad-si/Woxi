@@ -14114,3 +14114,11 @@ INPUT: (# ^ 4&)''
 EXPECTED:
 = 12 #1 ^ 2&
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 388
+TYPE: >>
+INPUT: Derivative[1][#2 Sin[#1]+Cos[#2]&]
+EXPECTED:
+= Cos[#1] #2&
+---
