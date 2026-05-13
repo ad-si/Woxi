@@ -15094,3 +15094,11 @@ INPUT: Haversine[0.5 + 2I]
 EXPECTED:
 = -1.15082 + 0.869405 I
 ---
+FILE: mathics/builtin/patterns/__init__.py
+CLASS: None
+LINE: 17
+TYPE: >>
+INPUT: a + 2 + b + c + x * y /. n_Integer + s__Symbol + rest_ -> {n, s, rest}
+EXPECTED:
+= {2, a, b + c + x y}
+---
