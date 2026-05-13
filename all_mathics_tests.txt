@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Factorial2
-LINE: 213
-TYPE: >>
-INPUT: N[Pi!!, 6]
-EXPECTED:
-= 3.35237
----
-FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Gamma
 LINE: 301
 TYPE: >>
