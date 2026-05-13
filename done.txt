@@ -14530,3 +14530,11 @@ INPUT: DSolve[D[f[x, y], x] x + D[f[x, y], y] y == 2, f[x, y], {x, y}]
 EXPECTED:
 = {{f[x, y] -> 2 Log[x] + C[1][y / x]}}
 ---
+FILE: mathics/builtin/numbers/diffeqns.py
+CLASS: DSolve
+LINE: 43
+TYPE: >>
+INPUT: DSolve[D[y[x, t], t] + 2 D[y[x, t], x] == 0, y[x, t], {x, t}]
+EXPECTED:
+= {{y[x, t] -> C[1][x - 2 t]}}
+---

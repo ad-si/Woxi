@@ -1,11 +1,3 @@
-FILE: mathics/builtin/numbers/diffeqns.py
-CLASS: DSolve
-LINE: 43
-TYPE: >>
-INPUT: DSolve[D[y[x, t], t] + 2 D[y[x, t], x] == 0, y[x, t], {x, t}]
-EXPECTED:
-= {{y[x, t] -> C[1][x - 2 t]}}
----
 FILE: mathics/builtin/numbers/exp.py
 CLASS: LogisticSigmoid
 LINE: 297
