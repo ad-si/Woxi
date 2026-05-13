@@ -14407,3 +14407,11 @@ INPUT: Solve[Cos[x] == 0, x]
 EXPECTED:
 = {{x -> Pi / 2}, {x -> 3 Pi / 2}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2311
+TYPE: >>
+INPUT: sol = Solve[eqs, {x, y}] // Simplify
+EXPECTED:
+= {{x -> 0, y -> 0}, {x -> 1, y -> 1}, {x -> -1 / 2 + I / 2 Sqrt[3], y -> -1 / 2 - I / 2 Sqrt[3]}, {x -> -1 / 2 - I / 2 Sqrt[3], y -> -1 / 2 + I / 2 Sqrt[3]}}
+---

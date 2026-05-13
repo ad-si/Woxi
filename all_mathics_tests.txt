@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
-LINE: 2311
-TYPE: >>
-INPUT: sol = Solve[eqs, {x, y}] // Simplify
-EXPECTED:
-= {{x -> 0, y -> 0}, {x -> 1, y -> 1}, {x -> -1 / 2 + I / 2 Sqrt[3], y -> -1 / 2 - I / 2 Sqrt[3]}, {x -> -1 / 2 - I / 2 Sqrt[3], y -> -1 / 2 + I / 2 Sqrt[3]}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
 LINE: 2313
 TYPE: >>
 INPUT: eqs /. sol // Simplify
