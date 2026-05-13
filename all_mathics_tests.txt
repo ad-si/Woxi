@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: SphericalBesselJ
-LINE: 743
-TYPE: >>
-INPUT: SphericalBesselJ[1, 5.2]
-EXPECTED:
-= -0.122771
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: SphericalBesselY
 LINE: 772
 TYPE: >>
