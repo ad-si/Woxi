@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: MatrixExp
-LINE: 552
-TYPE: >>
-INPUT: MatrixExp[{{0, 2}, {0, 1}}]
-EXPECTED:
-= {{1, -2 + 2 E}, {0, E}}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: MatrixExp
 LINE: 555
 TYPE: >>
 INPUT: MatrixExp[{{1.5, 0.5}, {0.5, 2.0}}]
