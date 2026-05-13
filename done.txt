@@ -14018,3 +14018,11 @@ INPUT: ExpandAll[(1 + a) ^ 6 / (x + y)^3, Modulus -> 3]
 EXPECTED:
 = (1 + 2 a ^ 3 + a ^ 6) / (x ^ 3 + y ^ 3)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Factor
+LINE: 1377
+TYPE: >>
+INPUT: Factor[1 / (x^2+2x+1) + 1 / (x^4+2x^2+1)]
+EXPECTED:
+= (2 + 2 x + 3 x ^ 2 + x ^ 4) / ((1 + x) ^ 2 (1 + x ^ 2) ^ 2)
+---
