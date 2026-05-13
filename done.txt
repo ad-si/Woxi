@@ -15158,3 +15158,11 @@ INPUT: f[x, 0, 0, 0] /. f[x, s:0..] -> s
 EXPECTED:
 = Sequence[0, 0, 0]
 ---
+FILE: mathics/builtin/patterns/defaults.py
+CLASS: Optional
+LINE: 60
+TYPE: >>
+INPUT: y : 1 // FullForm
+EXPECTED:
+= Pattern[y, 1]
+---
