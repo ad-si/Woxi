@@ -15198,3 +15198,11 @@ INPUT: ReplaceList[{a, b, c}, {{{___, x__, ___} -> {x}}, {{a, b, c} -> t}}, 2]
 EXPECTED:
 = {{{a}, {a, b}}, {t}}
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceRepeated
+LINE: 428
+TYPE: >>
+INPUT: Log[a * (b * c) ^ d ^ e * f] //. logrules
+EXPECTED:
+= Log[a] + Log[f] + (Log[b] + Log[c]) d ^ e
+---

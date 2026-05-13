@@ -2569,6 +2569,20 @@ pub fn evaluate_expr_to_expr_inner(
         } else {
           &evaluated_rules
         };
+      // Same `reps` shape-validation as ReplaceAll: emit the matching
+      // ReplaceRepeated::reps message and return the call unevaluated
+      // when the rules slot isn't a Rule / RuleDelayed (or list of
+      // such, possibly nested for multi-solution forms).
+      if !is_valid_replace_rules(unwrapped) {
+        crate::emit_message(&format!(
+          "ReplaceRepeated::reps: {{{}}} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
+          crate::syntax::expr_to_output(unwrapped),
+        ));
+        return Ok(Expr::ReplaceRepeated {
+          expr: Box::new(evaluated_expr),
+          rules: Box::new(evaluated_rules),
+        });
+      }
       apply_replace_repeated_ast(&evaluated_expr, unwrapped)
     }
     Expr::Map { func, list } => {
