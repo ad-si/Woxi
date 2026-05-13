@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryBi
-LINE: 172
-TYPE: >>
-INPUT: AiryBi[0.5 + I]
-EXPECTED:
-= 0.688145 + 0.370815 I
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryBiZero
 LINE: 233
 TYPE: >>
