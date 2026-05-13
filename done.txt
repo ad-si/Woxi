@@ -15640,3 +15640,11 @@ INPUT: AiryAi[0.5 + I]
 EXPECTED:
 = 0.157118 - 0.24104 I
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: AiryAiZero
+LINE: 116
+TYPE: >>
+INPUT: N[AiryAiZero[1]]
+EXPECTED:
+= -2.33811
+---
