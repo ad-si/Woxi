@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: RootSum
-LINE: 1744
-TYPE: >>
-INPUT: %//Normal
-EXPECTED:
-= Log[-1 / 4 - Sqrt[5] / 4 - I Sqrt[5 / 8 - Sqrt[5] / 8] + x] + Log[-1 / 4 - Sqrt[5] / 4 + I Sqrt[5 / 8 - Sqrt[5] / 8] + x] + Log[-1 / 4 - I Sqrt[5 / 8 + Sqrt[5] / 8] + Sqrt[5] / 4 + x] + Log[-1 / 4 + I Sqrt[5 / 8 + Sqrt[5] / 8] + Sqrt[5] / 4 + x]
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: Series
 LINE: 1781
 TYPE: >>
