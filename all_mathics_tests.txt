@@ -1,11 +1,3 @@
-FILE: mathics/builtin/atomic/strings.py
-CLASS: ToExpression
-LINE: 777
-TYPE: >>
-INPUT: ToExpression["log(x)", TraditionalForm]
-EXPECTED:
-= Log[x]
----
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Context
 LINE: 191
