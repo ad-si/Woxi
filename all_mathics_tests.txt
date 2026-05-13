@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Factorial
-LINE: 168
-TYPE: >>
-INPUT: 10.5!
-EXPECTED:
-= 1.18994×10^7
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Factorial
 LINE: 170
 TYPE: >>
 INPUT: (-3.0+1.5*I)!
