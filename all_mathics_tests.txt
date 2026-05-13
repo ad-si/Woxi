@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: KelvinBer
-LINE: 637
-TYPE: >>
-INPUT: KelvinBer[0.5, 0.25]
-EXPECTED:
-= 0.148824
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: KelvinKei
 LINE: 673
 TYPE: >>
