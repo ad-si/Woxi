@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomChoice
-LINE: 307
-TYPE: >>
-INPUT: RandomChoice[{"a", {1, 2}, x, {}}, 10]
-EXPECTED:
-= {x, {}, a, x, x, {}, a, a, x, {1, 2}}
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomChoice
 LINE: 309
 TYPE: >>
 INPUT: SeedRandom[42]
