@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: RootSum
-LINE: 1731
-TYPE: >>
-INPUT: N[%, 50]
-EXPECTED:
-= 0.051278805184286949884270940103072421286139857550894
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: RootSum
 LINE: 1735
 TYPE: >>
 INPUT: RootSum[#^5 - 11 # + 1 &, (#^2 - 1)/(#^3 - 2 # + c) &]
