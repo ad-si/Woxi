@@ -15976,3 +15976,11 @@ INPUT: z == ProductLog[z] * E ^ ProductLog[z]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/specialfns/expintegral.py
+CLASS: ProductLog
+LINE: 117
+TYPE: >>
+INPUT: ProductLog[-1.5]
+EXPECTED:
+= -0.0327837 + 1.54964 I
+---
