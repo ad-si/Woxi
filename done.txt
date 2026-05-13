@@ -16016,3 +16016,11 @@ INPUT: N[Pi!!, 6]
 EXPECTED:
 = 3.35237
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Gamma
+LINE: 301
+TYPE: >>
+INPUT: Simplify[Gamma[z] - (z - 1)!]
+EXPECTED:
+= 0
+---
