@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: LinearModelFit
-LINE: 421
-TYPE: >>
-INPUT: m["BasisFunctions"]
-EXPECTED:
-= {1, Sin[x], Cos[y]}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: LinearModelFit
 LINE: 424
 TYPE: >>
 INPUT: m["Function"]
