@@ -15928,3 +15928,11 @@ INPUT: WeberE[1.5, 3.5]
 EXPECTED:
 = -0.397256
 ---
+FILE: mathics/builtin/specialfns/elliptic.py
+CLASS: EllipticE
+LINE: 46
+TYPE: >>
+INPUT: EllipticE[0.3, 0.8]
+EXPECTED:
+= 0.296426
+---

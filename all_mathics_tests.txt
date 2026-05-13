@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticE
-LINE: 46
-TYPE: >>
-INPUT: EllipticE[0.3, 0.8]
-EXPECTED:
-= 0.296426
----
-FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticPi
 LINE: 183
 TYPE: >>
