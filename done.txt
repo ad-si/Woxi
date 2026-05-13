@@ -15952,3 +15952,11 @@ INPUT: Erf[1.0]
 EXPECTED:
 = 0.842701
 ---
+FILE: mathics/builtin/specialfns/erf.py
+CLASS: Erfc
+LINE: 80
+TYPE: >>
+INPUT: Erfc[1.0]
+EXPECTED:
+= 0.157299
+---
