@@ -1,13 +1,5 @@
 FILE: mathics/builtin/patterns/defaults.py
 CLASS: Optional
-LINE: 81
-TYPE: >>
-INPUT: g[a]
-EXPECTED:
-= {a, 4}
----
-FILE: mathics/builtin/patterns/defaults.py
-CLASS: Optional
 LINE: 88
 TYPE: >>
 INPUT: x : _+y_ : d // FullForm

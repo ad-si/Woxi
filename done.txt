@@ -15166,3 +15166,11 @@ INPUT: y : 1 // FullForm
 EXPECTED:
 = Pattern[y, 1]
 ---
+FILE: mathics/builtin/patterns/defaults.py
+CLASS: Optional
+LINE: 81
+TYPE: >>
+INPUT: g[a]
+EXPECTED:
+= {a, 4}
+---
