@@ -461,23 +461,85 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    Expr::List(_) => {
-      return Err(InterpreterError::EvaluationError(
-        "RandomChoice: list cannot be empty".into(),
-      ));
+  // Weighted form: RandomChoice[weights -> values, …]. Build a CDF and
+  // pick by drawing a uniform u in [0, total) and binary-searching the
+  // first prefix sum >= u. Falls back to unevaluated when the rule's
+  // shape isn't valid.
+  let (items_owned, weighted_cdf): (Vec<Expr>, Option<Vec<f64>>) =
+    match &args[0] {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        let (Expr::List(weights), Expr::List(values)) =
+          (pattern.as_ref(), replacement.as_ref())
+        else {
+          return Ok(Expr::FunctionCall {
+            name: "RandomChoice".to_string(),
+            args: args.to_vec().into(),
+          });
+        };
+        if weights.is_empty() || weights.len() != values.len() {
+          return Err(InterpreterError::EvaluationError(
+            "RandomChoice: weight and value lists must have matching length".into(),
+          ));
+        }
+        let mut cdf = Vec::with_capacity(weights.len());
+        let mut acc = 0.0f64;
+        for w in weights.iter() {
+          let v = expr_to_num(w).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "RandomChoice: weights must be numeric".into(),
+            )
+          })?;
+          if v < 0.0 {
+            return Err(InterpreterError::EvaluationError(
+              "RandomChoice: weights must be non-negative".into(),
+            ));
+          }
+          acc += v;
+          cdf.push(acc);
+        }
+        if acc <= 0.0 {
+          return Err(InterpreterError::EvaluationError(
+            "RandomChoice: weights must sum to a positive value".into(),
+          ));
+        }
+        (values.iter().cloned().collect(), Some(cdf))
+      }
+      _ => (Vec::new(), None),
+    };
+  let items: &[Expr] = if weighted_cdf.is_some() {
+    &items_owned
+  } else {
+    match &args[0] {
+      Expr::List(items) if !items.is_empty() => items.as_ref(),
+      Expr::List(_) => {
+        return Err(InterpreterError::EvaluationError(
+          "RandomChoice: list cannot be empty".into(),
+        ));
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "RandomChoice".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "RandomChoice".to_string(),
-        args: args.to_vec().into(),
-      });
+  };
+  // Helper: pick one index given the (optional) weight CDF.
+  let pick_index = |rng: &mut dyn rand::RngCore| -> usize {
+    if let Some(cdf) = weighted_cdf.as_ref() {
+      let total = *cdf.last().unwrap();
+      let u = rng.gen_range(0.0..total);
+      cdf.iter().position(|&c| u < c).unwrap_or(cdf.len() - 1)
+    } else {
+      rng.gen_range(0..items.len())
     }
   };
 
   if args.len() == 1 {
-    let idx = crate::with_rng(|rng| rng.gen_range(0..items.len()));
+    let idx = crate::with_rng(pick_index);
     Ok(items[idx].clone())
   } else {
     // Accept either a non-negative integer (flat list) or a list of
@@ -491,7 +553,8 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Integer(k) if *k > 0 => out.push(*k as usize),
             _ => {
               return Err(InterpreterError::EvaluationError(
-                "RandomChoice: dimension entries must be positive integers".into(),
+                "RandomChoice: dimension entries must be positive integers"
+                  .into(),
               ));
             }
           }
@@ -504,23 +567,37 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     };
-    fn build(items: &[Expr], dims: &[usize]) -> Expr {
+    fn build(
+      items: &[Expr],
+      dims: &[usize],
+      cdf: Option<&[f64]>,
+    ) -> Expr {
       use rand::Rng;
       let n = dims[0];
       if dims.len() == 1 {
         let result: Vec<Expr> = crate::with_rng(|rng| {
           (0..n)
-            .map(|_| items[rng.gen_range(0..items.len())].clone())
+            .map(|_| {
+              let idx = if let Some(cdf) = cdf {
+                let total = *cdf.last().unwrap();
+                let u = rng.gen_range(0.0..total);
+                cdf.iter().position(|&c| u < c).unwrap_or(cdf.len() - 1)
+              } else {
+                rng.gen_range(0..items.len())
+              };
+              items[idx].clone()
+            })
             .collect()
         });
         Expr::List(result.into())
       } else {
         let inner = &dims[1..];
-        let result: Vec<Expr> = (0..n).map(|_| build(items, inner)).collect();
+        let result: Vec<Expr> =
+          (0..n).map(|_| build(items, inner, cdf)).collect();
         Expr::List(result.into())
       }
     }
-    Ok(build(items, &dims))
+    Ok(build(items, &dims, weighted_cdf.as_deref()))
   }
 }
 
