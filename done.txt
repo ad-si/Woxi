@@ -16040,3 +16040,11 @@ INPUT: Gamma[1. + I]
 EXPECTED:
 = 0.498016 - 0.15495 I
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: LogGamma
+LINE: 376
+TYPE: >>
+INPUT: LogGamma[-2.+3 I]
+EXPECTED:
+= -6.77652 - 4.56879 I
+---

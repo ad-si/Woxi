@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: LogGamma
-LINE: 376
-TYPE: >>
-INPUT: LogGamma[-2.+3 I]
-EXPECTED:
-= -6.77652 - 4.56879 I
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: LogGamma
 LINE: 378
 TYPE: >>
 INPUT: Log[Gamma[-2.+3 I]]
