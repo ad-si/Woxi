@@ -14247,3 +14247,11 @@ INPUT: FindRoot[x^2 - 2, {x, 1,3}, Method->"Secant"]
 EXPECTED:
 = {x -> 1.41421}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 996
+TYPE: >>
+INPUT: Integrate[1 / (1 - 4 x + x^2), x]
+EXPECTED:
+= Sqrt[3] (Log[-2 - Sqrt[3] + x] - Log[-2 + Sqrt[3] + x]) / 6
+---
