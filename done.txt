@@ -14826,3 +14826,10 @@ INPUT: RandomChoice[{a, b, c}]
 EXPECTED:
 = {c}
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomChoice
+LINE: 303
+TYPE: >>
+INPUT: SeedRandom[42] (* Set for repeatable randomness *)
+EXPECTED: (none)
+---
