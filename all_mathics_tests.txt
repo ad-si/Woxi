@@ -1,12 +1,4 @@
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: MachineEpsilon_
-LINE: 632
-TYPE: >>
-INPUT: x - 1
-EXPECTED:
-= {0., 0., 2.22045×10^-16}
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: MachinePrecision
 LINE: 679
 TYPE: >>

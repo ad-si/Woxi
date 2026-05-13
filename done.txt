@@ -15398,3 +15398,11 @@ EXPECTED:
 : Requested precision 11 is larger than $MaxPrecision. Using current $MaxPrecision of 10. instead. $MaxPrecision = Infinity specifies that any precision should be allowed.
 = 3.141592654
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: MachineEpsilon_
+LINE: 632
+TYPE: >>
+INPUT: x - 1
+EXPECTED:
+= {0., 0., 2.22045×10^-16}
+---
