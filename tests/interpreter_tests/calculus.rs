@@ -1600,7 +1600,7 @@ mod nintegrate {
   fn nintegrate_with_options() {
     // NIntegrate should accept and use options like Tolerance and Method
     assert_approx(
-      "NIntegrate[Exp[-x],{x,0,Infinity},Tolerance->1*^-6, Method->\"Internal\"]",
+      "NIntegrate[Exp[-x],{x,0,Infinity},Tolerance->1*^-6, Method->\"GaussLegendre\"]",
       1.0,
       1e-5,
     );
@@ -1609,7 +1609,7 @@ mod nintegrate {
   #[test]
   fn nintegrate_neg_infinity_with_options() {
     assert_approx(
-      "NIntegrate[Exp[x],{x,-Infinity, 0},Tolerance->1*^-6, Method->\"Internal\"]",
+      "NIntegrate[Exp[x],{x,-Infinity, 0},Tolerance->1*^-6, Method->\"GaussLegendre\"]",
       1.0,
       1e-5,
     );
@@ -1619,7 +1619,7 @@ mod nintegrate {
   fn nintegrate_gaussian_with_options() {
     // ∫_{-∞}^∞ e^(-x²/2) dx = √(2π) ≈ 2.5066
     assert_approx(
-      "NIntegrate[Exp[-x^2/2.],{x,-Infinity, Infinity},Tolerance->1*^-6, Method->\"Internal\"]",
+      "NIntegrate[Exp[-x^2/2.],{x,-Infinity, Infinity},Tolerance->1*^-6, Method->\"GaussLegendre\"]",
       2.5066282746310002,
       1e-3,
     );

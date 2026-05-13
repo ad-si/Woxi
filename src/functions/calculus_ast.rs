@@ -8564,31 +8564,96 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
+  // Recognised method names — anything else triggers NIntegrate::bdmtd.
+  // These are the standard Wolfram NIntegrate strategies; Woxi treats
+  // them all as the same adaptive Simpson backend internally for now.
+  const KNOWN_METHODS: &[&str] = &[
+    "Automatic",
+    "AdaptiveMonteCarlo",
+    "AdaptiveQuasiMonteCarlo",
+    "DoubleExponential",
+    "GaussKronrod",
+    "GaussLegendre",
+    "GlobalAdaptive",
+    "InterpolationPointsSubdivision",
+    "LocalAdaptive",
+    "MonteCarlo",
+    "MultidimensionalRule",
+    "QuasiMonteCarlo",
+    "Romberg",
+    "Simpson",
+    "Trapezoidal",
+  ];
+  let mut bad_method_call = false;
   for opt in &args[2..] {
-    if let Expr::FunctionCall { name, args: rargs } = opt
-      && (name == "Rule" || name == "RuleDelayed")
-      && rargs.len() == 2
-    {
-      let opt_name = match &rargs[0] {
-        Expr::Identifier(s) => s.as_str(),
-        _ => continue,
-      };
-      match opt_name {
-        "Tolerance" => {
-          if let Some(t) =
-            crate::functions::math_ast::try_eval_to_f64(&rargs[1])
-          {
-            tolerance = t;
-          }
+    let (opt_name, opt_value) = match opt {
+      Expr::FunctionCall { name, args: rargs }
+        if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
+      {
+        match &rargs[0] {
+          Expr::Identifier(s) => (s.as_str(), &rargs[1]),
+          _ => continue,
         }
-        "MaxRecursion" => {
-          if let Some(n) = crate::functions::math_ast::expr_to_i128(&rargs[1]) {
-            max_recursion = n.max(1) as u32;
-          }
-        }
-        _ => {} // Ignore other options (Method, etc.)
       }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(s) => (s.as_str(), replacement.as_ref()),
+        _ => continue,
+      },
+      _ => continue,
+    };
+    match opt_name {
+      "Tolerance" => {
+        if let Some(t) = crate::functions::math_ast::try_eval_to_f64(opt_value)
+        {
+          tolerance = t;
+        }
+      }
+      "MaxRecursion" => {
+        if let Some(n) = crate::functions::math_ast::expr_to_i128(opt_value) {
+          max_recursion = n.max(1) as u32;
+        }
+      }
+      "Method" => {
+        // Validate the method name. Strings like "GaussLegendre" must
+        // match exactly; identifiers like Automatic are accepted too.
+        // Lists like {"GaussLegendre", "Points" -> 5} are accepted by
+        // checking only the leading method name.
+        let method_name: Option<String> = match opt_value {
+          Expr::String(s) => Some(s.clone()),
+          Expr::Identifier(s) => Some(s.clone()),
+          Expr::List(items) if !items.is_empty() => match &items[0] {
+            Expr::String(s) => Some(s.clone()),
+            Expr::Identifier(s) => Some(s.clone()),
+            _ => None,
+          },
+          _ => None,
+        };
+        if let Some(name) = method_name
+          && !KNOWN_METHODS.contains(&name.as_str())
+        {
+          // Wolfram emits one bdmtd per attempted recursion, but we
+          // surface a single message and bail to the unevaluated form.
+          crate::emit_message(
+            "NIntegrate::bdmtd: The Method option should be a built-in method name or a list with a name followed by method options.",
+          );
+          bad_method_call = true;
+        }
+      }
+      _ => {} // Ignore unrecognised options (Wolfram does too).
     }
+  }
+  if bad_method_call {
+    return Ok(Expr::FunctionCall {
+      name: "NIntegrate".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Second argument must be {var, lo, hi}
