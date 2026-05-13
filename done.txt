@@ -15142,3 +15142,11 @@ INPUT: 0..1 // FullForm
 EXPECTED:
 = Repeated[0]
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Repeated
+LINE: 554
+TYPE: >>
+INPUT: {{}, {a}, {a, b}, {a, a, a}, {a, a, a, a}} /. {Repeated[x : a | b, 3]} -> x
+EXPECTED:
+= {{}, a, {a, b}, a, {a, a, a, a}}
+---

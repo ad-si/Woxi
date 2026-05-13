@@ -1,13 +1,5 @@
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Repeated
-LINE: 554
-TYPE: >>
-INPUT: {{}, {a}, {a, b}, {a, a, a}, {a, a, a, a}} /. {Repeated[x : a | b, 3]} -> x
-EXPECTED:
-= {{}, a, {a, b}, a, {a, a, a, a}}
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Repeated
 LINE: 556
 TYPE: >>
 INPUT: f[x, 0, 0, 0] /. f[x, s:0..] -> s
