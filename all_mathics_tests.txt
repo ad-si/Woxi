@@ -1,13 +1,4 @@
 FILE: mathics/builtin/specialfns/gamma.py
-CLASS: LogGamma
-LINE: 383
-TYPE: >>
-INPUT: Log[Gamma[1.*^20]]
-EXPECTED:
-: Overflow occurred in computation.
-= Overflow[]
----
-FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Pochhammer
 LINE: 441
 TYPE: >>

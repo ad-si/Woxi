@@ -1558,6 +1558,15 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
+  // Log[Overflow[]] = Overflow[] (matches wolframscript)
+  if !args.is_empty()
+    && matches!(&args[0], Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty())
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Overflow".to_string(),
+      args: vec![].into(),
+    });
+  }
   match args.len() {
     1 => {
       // Log[0] = -Infinity

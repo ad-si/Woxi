@@ -6936,4 +6936,20 @@ mod cases {
       r#"0"#,
     );
   }
+  #[test]
+  fn gamma_overflow_huge_real() {
+    // Gamma[1.*^20] overflows f64. Wolfram returns Overflow[] with
+    // General::ovfl message. mathics doctest at gamma.py:381 / 383.
+    assert_case(r#"Quiet[Gamma[1.*^20]]"#, r#"Overflow[]"#);
+  }
+  #[test]
+  fn log_of_overflow() {
+    // Per wolframscript: Log[Overflow[]] = Overflow[].
+    assert_case(r#"Log[Overflow[]]"#, r#"Overflow[]"#);
+  }
+  #[test]
+  fn log_gamma_overflow_huge_real() {
+    // Log[Gamma[1.*^20]] should propagate Overflow[].
+    assert_case(r#"Quiet[Log[Gamma[1.*^20]]]"#, r#"Overflow[]"#);
+  }
 }

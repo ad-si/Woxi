@@ -16064,3 +16064,12 @@ INPUT: LogGamma[1.*^20]
 EXPECTED:
 = 4.50517×10^21
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: LogGamma
+LINE: 383
+TYPE: >>
+INPUT: Log[Gamma[1.*^20]]
+EXPECTED:
+: Overflow occurred in computation.
+= Overflow[]
+---

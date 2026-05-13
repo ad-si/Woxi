@@ -192,6 +192,17 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Poles at non-positive integers
         return Ok(Expr::Identifier("ComplexInfinity".to_string()));
       }
+      // For arguments beyond Wolfram's machine-precision overflow band
+      // (around 1e14), wolframscript emits General::ovfl and returns
+      // Overflow[]. Match that behavior — f64 can't represent values
+      // out here anyway.
+      if f >= 1.0e14 {
+        crate::emit_message("General::ovfl: Overflow occurred in computation.");
+        return Ok(Expr::FunctionCall {
+          name: "Overflow".to_string(),
+          args: vec![].into(),
+        });
+      }
       // Use Stirling's approximation via the standard library's tgamma equivalent
       // Rust doesn't have tgamma in std, but we can compute via the Lanczos approximation
       let result = gamma_fn(f);
