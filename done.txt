@@ -14674,3 +14674,11 @@ INPUT: m["BestFitParameters"]
 EXPECTED:
 = {0.186441, 0.779661}
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 408
+TYPE: >>
+INPUT: m["DesignMatrix"]
+EXPECTED:
+= {{1, 2}, {1, 3}, {1, 5}, {1, 7}}
+---
