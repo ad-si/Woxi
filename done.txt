@@ -14594,3 +14594,11 @@ INPUT: ComplexExpand[Sin[x], x]
 EXPECTED:
 = Cosh[Im[x]] Sin[Re[x]] + I Cos[Re[x]] Sinh[Im[x]]
 ---
+FILE: mathics/builtin/numbers/hyperbolic.py
+CLASS: ComplexExpand
+LINE: 278
+TYPE: >>
+INPUT: ComplexExpand[Re[z^5 - 2 z^3 - z + 1], z]
+EXPECTED:
+= 1 + Re[z] ^ 5 - 2 Re[z] ^ 3 - Re[z] - 10 Im[z] ^ 2 Re[z] ^ 3 + 5 Im[z] ^ 4 Re[z] + 6 Im[z] ^ 2 Re[z]
+---
