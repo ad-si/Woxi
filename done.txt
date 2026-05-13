@@ -14074,3 +14074,11 @@ INPUT: Simplify[20 Log[2], ComplexityFunction->LeafCount]
 EXPECTED:
 = Log[1048576]
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: MinimalPolynomial
+LINE: 1690
+TYPE: >>
+INPUT: MinimalPolynomial[Sqrt[1 + Sqrt[3]], x]
+EXPECTED:
+= -2 - 2 x ^ 2 + x ^ 4
+---
