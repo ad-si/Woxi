@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselYZero
-LINE: 510
-TYPE: >>
-INPUT: N[BesselYZero[0, 1]]
-EXPECTED:
-= 0.893577
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselYZero
 LINE: 513
 TYPE: >>
 INPUT: N[BesselYZero[0, 1], 10]

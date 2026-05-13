@@ -15744,3 +15744,11 @@ INPUT: N[BesselJZero[0, 1], 10]
 EXPECTED:
 = 2.404825558
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselYZero
+LINE: 510
+TYPE: >>
+INPUT: N[BesselYZero[0, 1]]
+EXPECTED:
+= 0.893577
+---
