@@ -14450,3 +14450,15 @@ LINE: 583
 TYPE: >>
 INPUT: Exp[10.*^20]
 EXPECTED:
+: Overflow occurred in computation.
+= Overflow[]
+---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Overflow
+LINE: 586
+TYPE: >>
+INPUT: Table[Exp[10.^k],{k, 3}]
+EXPECTED:
+: Overflow occurred in computation.
+= {22026.5, 2.68812×10^43, Overflow[]}
+---
