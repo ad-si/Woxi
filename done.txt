@@ -15110,3 +15110,11 @@ INPUT: f[y, a->3] /. f[x_, OptionsPattern[{a->2, b->5}]] -> {x, OptionValue[a], 
 EXPECTED:
 = {y, 3, 5}
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Pattern
+LINE: 403
+TYPE: >>
+INPUT: FullForm[a:_:b]
+EXPECTED:
+= Optional[Pattern[a, Blank[]], b]
+---
