@@ -14214,3 +14214,11 @@ EXPECTED:
 : The maximum number of iterations was exceeded. The result might be inaccurate.
 = ...
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindRoot
+LINE: 877
+TYPE: >>
+INPUT: FindRoot[Sin[x] + Exp[x] == Pi,{x, 0}]
+EXPECTED:
+= {x -> 0.866815}
+---
