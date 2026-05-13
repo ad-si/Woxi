@@ -15357,3 +15357,11 @@ INPUT: Accuracy[F[1.3, Pi, A]]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Accuracy
+LINE: 113
+TYPE: >>
+INPUT: 0``2
+EXPECTED:
+= 0.00
+---
