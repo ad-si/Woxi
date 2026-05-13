@@ -14351,3 +14351,11 @@ INPUT: SeriesCoefficient[%, 4]
 EXPECTED:
 = -1 / 8
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesData
+LINE: 1923
+TYPE: >>
+INPUT: series + Series[Sinh[x],{x, 0, 3}]
+EXPECTED:
+= 1 + x + x ^ 2 / 2 + O[x] ^ 3
+---

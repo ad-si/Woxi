@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesData
-LINE: 1923
-TYPE: >>
-INPUT: series + Series[Sinh[x],{x, 0, 3}]
-EXPECTED:
-= 1 + x + x ^ 2 / 2 + O[x] ^ 3
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: SeriesData
 LINE: 1926
 TYPE: >>
 INPUT: Series[f[x],{x,0,2}] * g[w]
