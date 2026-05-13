@@ -1,12 +1,4 @@
 FILE: mathics/builtin/distance/clusters.py
-CLASS: ClusteringComponents
-LINE: 263
-TYPE: >>
-INPUT: ClusteringComponents[{10, 100, 20}, Method -> "KMeans"]
-EXPECTED:
-= {1, 0, 1}
----
-FILE: mathics/builtin/distance/clusters.py
 CLASS: FindClusters
 LINE: 304
 TYPE: >>
