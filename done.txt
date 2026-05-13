@@ -14722,3 +14722,11 @@ INPUT: m["Function"]
 EXPECTED:
 = 3.33077 - 5.65221 Cos[#2] - 5.01042 Sin[#1]&
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 428
+TYPE: >>
+INPUT: m["BasisFunctions"]
+EXPECTED:
+= {#1, #2}
+---
