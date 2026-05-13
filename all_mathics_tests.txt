@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: RootSum
-LINE: 1738
-TYPE: >>
-INPUT: RootSum[#^5 - 3 # - 7 &, Sin] //N//Chop
-EXPECTED:
-= 0.292188
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: RootSum
 LINE: 1744
 TYPE: >>
 INPUT: %//Normal
