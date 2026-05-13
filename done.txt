@@ -15912,3 +15912,11 @@ INPUT: StruveH[1.5, 3.5]
 EXPECTED:
 = 1.13192
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: StruveL
+LINE: 862
+TYPE: >>
+INPUT: StruveL[1.5, 3.5]
+EXPECTED:
+= 4.41126
+---
