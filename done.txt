@@ -15904,3 +15904,11 @@ INPUT: SphericalHankelH2[3, 1.5]
 EXPECTED:
 = 0.0283246 + 3.78927 I
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: StruveH
+LINE: 838
+TYPE: >>
+INPUT: StruveH[1.5, 3.5]
+EXPECTED:
+= 1.13192
+---
