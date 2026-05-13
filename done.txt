@@ -15832,3 +15832,11 @@ INPUT: KelvinKei[0.5]
 EXPECTED:
 = -0.671582
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: KelvinKei
+LINE: 676
+TYPE: >>
+INPUT: KelvinKei[1.5 + I]
+EXPECTED:
+= -0.248994 + 0.303326 I
+---
