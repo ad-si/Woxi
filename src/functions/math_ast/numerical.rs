@@ -2053,11 +2053,12 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Real(_) => Ok(Expr::Identifier("MachinePrecision".to_string())),
     Expr::BigFloat(digits, prec) => {
-      // A literal zero BigFloat (e.g. `0.`20`, `0.00`2`) reports
-      // MachinePrecision in Wolfram — there's no precision to speak of when
-      // all significant digits are zero.
+      // A literal zero BigFloat (e.g. `0.`20`, `0.``3`) reports
+      // precision 0 in Wolfram — there are no significant digits when
+      // the value itself is zero, so precision = -Log10(|0|) is treated
+      // as 0 rather than the spec'd precision.
       if digits.parse::<f64>().is_ok_and(|f| f == 0.0) {
-        Ok(Expr::Identifier("MachinePrecision".to_string()))
+        Ok(Expr::Real(0.0))
       } else {
         Ok(Expr::Real(*prec))
       }

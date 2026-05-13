@@ -470,9 +470,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
       is_known_positive(right).map(|p| !p)
     }
     // Log[c] is positive iff c > 1 (for real positive c).
-    Expr::FunctionCall { name, args }
-      if name == "Log" && args.len() == 1 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
       match &args[0] {
         Expr::Integer(n) => Some(*n > 1),
         Expr::Real(f) => Some(*f > 1.0),
@@ -481,9 +479,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
       }
     }
     // Sqrt[c] is positive when c is positive.
-    Expr::FunctionCall { name, args }
-      if name == "Sqrt" && args.len() == 1 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       is_known_positive(&args[0])
     }
     _ => None,

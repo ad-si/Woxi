@@ -1,11 +1,3 @@
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: Precision
-LINE: 779
-TYPE: >>
-INPUT: Precision[0.``3]
-EXPECTED:
-= 0.
----
 FILE: mathics/builtin/atomic/strings.py
 CLASS: InterpretedBox
 LINE: 389

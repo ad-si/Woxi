@@ -5224,9 +5224,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           None
         }
       }
-      Expr::FunctionCall { name, args }
-        if name == "Log" && args.len() == 1 =>
-      {
+      Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
         match &args[0] {
           Expr::Integer(n) => Some(*n > 1),
           Expr::Real(f) => Some(*f > 1.0),
