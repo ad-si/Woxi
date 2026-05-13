@@ -14042,3 +14042,11 @@ INPUT: a == "A" // Factor // InputForm
 EXPECTED:
 = a == "A"
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Simplify
+LINE: 1558
+TYPE: >>
+INPUT: Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]
+EXPECTED:
+= ConditionalExpression[1, a > 0]
+---
