@@ -14506,3 +14506,11 @@ INPUT: % // N
 EXPECTED:
 = 1.
 ---
+FILE: mathics/builtin/numbers/diffeqns.py
+CLASS: DSolve
+LINE: 33
+TYPE: >>
+INPUT: DSolve[y''[x] == y[x], y, x]
+EXPECTED:
+= {{y -> Function[{x}, C[1] E ^ (-x) + C[2] E ^ x]}}
+---
