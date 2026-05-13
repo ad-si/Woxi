@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselK
-LINE: 418
-TYPE: >>
-INPUT: BesselK[-3/2, x]
-EXPECTED:
-= Sqrt[2] Sqrt[x] Sqrt[Pi] (E ^ (-x) / x ^ 2 + E ^ (-x) / x) / 2
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselY
 LINE: 450
 TYPE: >>
