@@ -15609,3 +15609,10 @@ EXPECTED:
 . draw(((1,1,-1)--(1,1,1)), rgb(0.4, 0.4, 0.4)+linewidth(1));
 . \end{asy}
 ---
+FILE: mathics/builtin/drawing/plot.py
+CLASS: ColorData
+LINE: 84
+TYPE: >>
+INPUT: Unprotect[ColorData]; ColorData["test"] := ColorDataFunction["test", "Gradients", {0, 1}, Blend[{Red, Green, Blue}, #1] &]; Protect[ColorData]
+EXPECTED: (none)
+---
