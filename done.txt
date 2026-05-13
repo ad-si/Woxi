@@ -15182,3 +15182,11 @@ INPUT: x : _+y_ : d // FullForm
 EXPECTED:
 = Pattern[x, Plus[Blank[], Optional[Pattern[y, Blank[]], d]]]
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceAll
+LINE: 281
+TYPE: >>
+INPUT: {a, b} /. {{{a->x, b->y}, a->w, b->z}, {a->u, b->v}}
+EXPECTED:
+: Elements of {{a -> x, b -> y}, a -> w, b -> z} are a mixture of lists and nonlists.
+= {{a, b} /. {{a -> x, b -> y}, a -> w, b -> z}, {u, v}}
