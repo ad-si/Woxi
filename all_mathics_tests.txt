@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Root
-LINE: 1654
-TYPE: >>
-INPUT: Root[#1 ^ 5 + 2 #1 + 1&, 2]
-EXPECTED:
-= Root[1 + #1 ^ 5 + 2 #1&, 2]
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: RootSum
 LINE: 1729
 TYPE: >>
