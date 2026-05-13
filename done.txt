@@ -14658,3 +14658,11 @@ INPUT: Simplify[LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, x, 3}]]
 EXPECTED:
 = {12 / 13 - 8 x / 13, -4 / 13 + 7 x / 13}
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 402
+TYPE: >>
+INPUT: m["BestFit"]
+EXPECTED:
+= 0.186441 + 0.779661 x
+---
