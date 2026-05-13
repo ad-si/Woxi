@@ -14538,3 +14538,11 @@ INPUT: DSolve[D[y[x, t], t] + 2 D[y[x, t], x] == 0, y[x, t], {x, t}]
 EXPECTED:
 = {{y[x, t] -> C[1][x - 2 t]}}
 ---
+FILE: mathics/builtin/numbers/exp.py
+CLASS: LogisticSigmoid
+LINE: 297
+TYPE: >>
+INPUT: LogisticSigmoid[0.5 + 2.3 I]
+EXPECTED:
+= 1.06475 + 0.808177 I
+---
