@@ -647,8 +647,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let svars_args_owned: Vec<Expr>;
-  let args = if let (Expr::List(eqs), Expr::List(vars)) = (&args[0], &args[1])
-  {
+  let args = if let (Expr::List(eqs), Expr::List(vars)) = (&args[0], &args[1]) {
     let used: Vec<usize> = vars
       .iter()
       .enumerate()

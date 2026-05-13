@@ -1173,7 +1173,24 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => Ok(Expr::Integer(1)),
     Expr::Integer(1) => Ok(Expr::Constant("E".to_string())),
-    Expr::Real(f) => Ok(Expr::Real(f.exp())),
+    Expr::Real(f) => {
+      // Wolfram only emits General::ovfl + Overflow[] for *truly* huge
+      // arguments (around |x| >= 10^15) — its big-exponent reals can
+      // represent things like Exp[10^10] just fine. Inside that band
+      // we let f64 do its thing (returns Infinity past x ≈ 709), so
+      // downstream formulas like 1/(1+Exp[x]) — common in logistic
+      // models — still collapse to 0 instead of breaking on Overflow[].
+      if f.abs() >= 1.0e15 {
+        crate::emit_message(
+          "General::ovfl: Overflow occurred in computation.",
+        );
+        return Ok(Expr::FunctionCall {
+          name: "Overflow".to_string(),
+          args: vec![].into(),
+        });
+      }
+      Ok(Expr::Real(f.exp()))
+    }
     _ => power_two(&Expr::Constant("E".to_string()), &args[0]),
   }
 }

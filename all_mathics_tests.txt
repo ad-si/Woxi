@@ -1,11 +1,3 @@
----
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Overflow
-LINE: 583
-TYPE: >>
-INPUT: Exp[10.*^20]
-EXPECTED:
 : Overflow occurred in computation.
 = Overflow[]
 ---

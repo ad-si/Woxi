@@ -2957,6 +2957,14 @@ mod integrate_by_parts {
   }
 
   #[test]
+  fn exp_real_overflow_returns_overflow_object() {
+    // Wolfram emits General::ovfl and returns Overflow[] when a real
+    // Exp argument blows past the f64 range. Woxi was returning bare
+    // Infinity (the f64 saturate value).
+    assert_eq!(interpret("Exp[10.*^20]").unwrap(), "Overflow[]");
+  }
+
+  #[test]
   fn x_general_exp() {
     assert_eq!(
       interpret("Integrate[x * e^x, x]").unwrap(),
