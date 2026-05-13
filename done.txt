@@ -14490,3 +14490,11 @@ INPUT: 5 * Underflow[]
 EXPECTED:
 = 5 Underflow[]
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Underflow
+LINE: 731
+TYPE: >>
+INPUT: % // N
+EXPECTED:
+= 0.
+---

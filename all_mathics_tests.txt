@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Underflow
-LINE: 731
-TYPE: >>
-INPUT: % // N
-EXPECTED:
-= 0.
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Underflow
 LINE: 737
 TYPE: >>
 INPUT: % // N
