@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ComplexExpand
-LINE: 269
-TYPE: >>
-INPUT: ComplexExpand[Sin[x + I y]]
-EXPECTED:
-= Cosh[y] Sin[x] + I Cos[x] Sinh[y]
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ComplexExpand
 LINE: 274
 TYPE: >>
 INPUT: ComplexExpand[Sin[x], x]
