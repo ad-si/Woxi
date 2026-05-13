@@ -15294,3 +15294,11 @@ INPUT: FindClusters[{1, 2, 3, 10, 17, 18}, Method -> "Agglomerate"]
 EXPECTED:
 = {{1, 2, 3}, {10}, {17, 18}}
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: FindClusters
+LINE: 331
+TYPE: >>
+INPUT: FindClusters[{{1}, {5, 6}, {7}, {2, 4}}, DistanceFunction -> (Abs[Length[#1] - Length[#2]]&)]
+EXPECTED:
+= {{{1}, {7}}, {{5, 6}, {2, 4}}}
+---

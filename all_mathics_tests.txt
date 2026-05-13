@@ -1,13 +1,5 @@
 FILE: mathics/builtin/distance/clusters.py
 CLASS: FindClusters
-LINE: 331
-TYPE: >>
-INPUT: FindClusters[{{1}, {5, 6}, {7}, {2, 4}}, DistanceFunction -> (Abs[Length[#1] - Length[#2]]&)]
-EXPECTED:
-= {{{1}, {7}}, {{5, 6}, {2, 4}}}
----
-FILE: mathics/builtin/distance/clusters.py
-CLASS: FindClusters
 LINE: 334
 TYPE: >>
 INPUT: FindClusters[{"meep", "heap", "deep", "weep", "sheep", "leap", "keep"}, 3]
