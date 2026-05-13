@@ -2694,6 +2694,40 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Parse second argument: {var, x0} or {var, x0, x1}
+  // First peek at the variable name and start point; if the start point
+  // evaluates to a complex number we route to a complex Newton iteration
+  // before the real-only path below.
+  let (var_name, x_start_expr) = match &args[1] {
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+      let name = match &items[0] {
+        Expr::Identifier(n) => n.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: variable must be a symbol".into(),
+          ));
+        }
+      };
+      (name, items[1].clone())
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindRoot: second argument must be {var, x0} or {var, x0, x1}".into(),
+      ));
+    }
+  };
+  // Try to detect a complex start (e.g. -I, 1 + 2 I). If the start
+  // evaluates to a non-real numeric value, fall through to a complex
+  // Newton iteration.
+  if let Some((re0, im0)) = try_extract_complex_f64(&x_start_expr)
+    && im0 != 0.0
+  {
+    let func = build_find_root_func(&args[0]);
+    let deriv =
+      crate::functions::calculus_ast::differentiate_expr(&func, &var_name)
+        .ok()
+        .map(simplify);
+    return find_root_complex_newton(&func, deriv.as_ref(), &var_name, re0, im0);
+  }
   let (var, x0, x1_opt) = match &args[1] {
     Expr::List(items) if items.len() == 2 => {
       let var_name = match &items[0] {
@@ -2730,31 +2764,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let use_secant = use_secant || x1_opt.is_some();
 
   // Extract the function to find root of: expr or lhs - rhs for equations
-  let func = match &args[0] {
-    Expr::Comparison {
-      operands,
-      operators,
-    } if operands.len() == 2
-      && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
-    {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
-    }
-    Expr::FunctionCall { name, args: fargs }
-      if name == "Equal" && fargs.len() == 2 =>
-    {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(fargs[0].clone()),
-        right: Box::new(fargs[1].clone()),
-      }
-    }
-    other => other.clone(),
-  };
+  let func = build_find_root_func(&args[0]);
 
   // Secant method when requested
   if use_secant {
@@ -2864,6 +2874,287 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     vec![Expr::Rule {
       pattern: Box::new(lhs),
       replacement: Box::new(result_val),
+    }]
+    .into(),
+  ))
+}
+
+/// Convert FindRoot's first argument into the function whose root we
+/// seek. For equations `lhs == rhs` this is `lhs - rhs`; otherwise the
+/// expression is used directly.
+fn build_find_root_func(arg: &Expr) -> Expr {
+  match arg {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Equal" && fargs.len() == 2 =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(fargs[0].clone()),
+        right: Box::new(fargs[1].clone()),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
+/// Try to evaluate `expr` to a complex `(re, im)` pair using f64
+/// arithmetic. Returns None when the expression isn't fully numeric.
+fn try_extract_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
+  let n_result = crate::functions::math_ast::n_ast(&[expr.clone()]).ok()?;
+  expr_to_complex_f64(&n_result)
+}
+
+/// Decompose an evaluated expression into a `(re, im)` pair.
+fn expr_to_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
+  match expr {
+    Expr::Integer(n) => Some((*n as f64, 0.0)),
+    Expr::Real(r) => Some((*r, 0.0)),
+    Expr::Constant(s) | Expr::Identifier(s) if s == "I" => Some((0.0, 1.0)),
+    Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+      let re = expr_to_real_f64(&args[0])?;
+      let im = expr_to_real_f64(&args[1])?;
+      Some((re, im))
+    }
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n as f64 / *d as f64, 0.0))
+      } else {
+        None
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (re, im) = expr_to_complex_f64(operand)?;
+      Some((-re, -im))
+    }
+    // Plus form: a + b — sum of complex parts.
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let (lr, li) = expr_to_complex_f64(left)?;
+      let (rr, ri) = expr_to_complex_f64(right)?;
+      Some((lr + rr, li + ri))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let (lr, li) = expr_to_complex_f64(left)?;
+      let (rr, ri) = expr_to_complex_f64(right)?;
+      Some((lr - rr, li - ri))
+    }
+    // Times form: a * b — complex multiplication.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (ar, ai) = expr_to_complex_f64(left)?;
+      let (br, bi) = expr_to_complex_f64(right)?;
+      Some((ar * br - ai * bi, ar * bi + ai * br))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let (ar, ai) = expr_to_complex_f64(left)?;
+      let (br, bi) = expr_to_complex_f64(right)?;
+      let denom = br * br + bi * bi;
+      if denom < 1e-300 {
+        return None;
+      }
+      Some(((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom))
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut re = 0.0;
+      let mut im = 0.0;
+      for a in args.iter() {
+        let (r, i) = expr_to_complex_f64(a)?;
+        re += r;
+        im += i;
+      }
+      Some((re, im))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut re = 1.0;
+      let mut im = 0.0;
+      for a in args.iter() {
+        let (br, bi) = expr_to_complex_f64(a)?;
+        let nr = re * br - im * bi;
+        let ni = re * bi + im * br;
+        re = nr;
+        im = ni;
+      }
+      Some((re, im))
+    }
+    _ => None,
+  }
+}
+
+fn expr_to_real_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some(*n as f64 / *d as f64)
+      } else {
+        None
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(-expr_to_real_f64(operand)?),
+    _ => None,
+  }
+}
+
+/// Substitute `var` with the complex value `re + im*I` in `expr`,
+/// evaluate, and return the result as `(re, im)`. Falls back to None
+/// when the result isn't reducible to a complex number.
+fn find_root_eval_complex_at(
+  expr: &Expr,
+  var: &str,
+  re: f64,
+  im: f64,
+) -> Option<(f64, f64)> {
+  let value = if im == 0.0 {
+    Expr::Real(re)
+  } else {
+    Expr::FunctionCall {
+      name: "Complex".to_string(),
+      args: vec![Expr::Real(re), Expr::Real(im)].into(),
+    }
+  };
+  let substituted = crate::syntax::substitute_variable(expr, var, &value);
+  let evaled = crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+  // First try the natural form; if not yet a Complex/Real, push through
+  // N[] which collapses things like Sin[Complex[…]] into a numeric form.
+  if let Some(c) = expr_to_complex_f64(&evaled) {
+    return Some(c);
+  }
+  let n_result = crate::functions::math_ast::n_ast(&[evaled]).ok()?;
+  expr_to_complex_f64(&n_result)
+}
+
+/// Newton's method on the complex plane. Mirrors the real-only path
+/// but works in (re, im) pairs throughout. Uses a numerical derivative
+/// when the symbolic derivative isn't available.
+fn find_root_complex_newton(
+  func: &Expr,
+  deriv: Option<&Expr>,
+  var: &str,
+  re0: f64,
+  im0: f64,
+) -> Result<Expr, InterpreterError> {
+  let max_iter = 100;
+  let tol = 1e-15;
+  let (mut re, mut im) = (re0, im0);
+  // Complex helpers
+  let cabs = |a: f64, b: f64| (a * a + b * b).sqrt();
+  let cdiv =
+    |ar: f64, ai: f64, br: f64, bi: f64| -> Option<(f64, f64)> {
+      let denom = br * br + bi * bi;
+      if denom < 1e-300 {
+        return None;
+      }
+      Some(((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom))
+    };
+  for _ in 0..max_iter {
+    let (fr, fi) = match find_root_eval_complex_at(func, var, re, im) {
+      Some(v) => v,
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression at complex point".into(),
+        ));
+      }
+    };
+    if cabs(fr, fi) < tol {
+      break;
+    }
+    let (dr, di) = if let Some(d) = deriv {
+      match find_root_eval_complex_at(d, var, re, im) {
+        Some(v) => v,
+        None => return Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate derivative at complex point".into(),
+        )),
+      }
+    } else {
+      // Numerical derivative via complex finite difference along the
+      // real axis. f(z+h) − f(z) over h, with small real h.
+      let h = re.abs().max(1.0) * 1e-6;
+      let (fr_p, fi_p) = match find_root_eval_complex_at(func, var, re + h, im)
+      {
+        Some(v) => v,
+        None => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: cannot evaluate expression for derivative".into(),
+          ));
+        }
+      };
+      ((fr_p - fr) / h, (fi_p - fi) / h)
+    };
+    let Some((sr, si)) = cdiv(fr, fi, dr, di) else {
+      return Err(InterpreterError::EvaluationError(
+        "FindRoot: derivative is zero, cannot converge".into(),
+      ));
+    };
+    re -= sr;
+    im -= si;
+  }
+  // Build the complex result. Drop the imaginary part if it collapsed
+  // to zero so the rule reads like a real solution. Otherwise build
+  // `re + im*I` (or `re - |im|*I`) so it formats like wolframscript.
+  let value = if im.abs() < 1e-14 {
+    Expr::Real(re)
+  } else {
+    let im_term = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Real(im.abs())),
+      right: Box::new(Expr::Identifier("I".to_string())),
+    };
+    let combined = if im >= 0.0 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Real(re)),
+        right: Box::new(im_term),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Real(re)),
+        right: Box::new(im_term),
+      }
+    };
+    crate::evaluator::evaluate_expr_to_expr(&combined).unwrap_or(combined)
+  };
+  let lhs_ident = Expr::Identifier(var.to_string());
+  let lhs =
+    crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
+  Ok(Expr::List(
+    vec![Expr::Rule {
+      pattern: Box::new(lhs),
+      replacement: Box::new(value),
     }]
     .into(),
   ))
@@ -5287,8 +5578,11 @@ pub fn find_minimum_ast(
   if eval_at(f, &x).is_err() {
     let mut substituted = f.clone();
     for (i, var) in vars.iter().enumerate() {
-      substituted =
-        crate::syntax::substitute_variable(&substituted, var, &Expr::Real(x[i]));
+      substituted = crate::syntax::substitute_variable(
+        &substituted,
+        var,
+        &Expr::Real(x[i]),
+      );
     }
     let value_str = crate::syntax::expr_to_output(&substituted);
     let var_str: String = if vars.len() == 1 {

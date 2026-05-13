@@ -2869,6 +2869,20 @@ mod find_root {
       "FindRoot[f[x] == 0, {x, 0}]"
     );
   }
+  #[test]
+  fn find_root_complex_starting_point() {
+    // Complex starting points must drive Newton iteration in C, not abort
+    // with "starting point must be numeric". For x^2+x+1 starting at -I
+    // the iteration converges to the lower root -1/2 - sqrt(3)/2 i.
+    let result = interpret("FindRoot[x^2 + x + 1, {x, -I}]").unwrap();
+    // wolframscript yields {x -> -0.5 - 0.8660254037844386*I};
+    // accept any complex value within a small tolerance of that root.
+    assert!(
+      result.contains("-0.5") && result.contains("0.866"),
+      "Expected complex root near -0.5 - 0.866*I, got: {}",
+      result
+    );
+  }
 }
 
 mod replace {
