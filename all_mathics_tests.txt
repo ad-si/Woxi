@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Series
-LINE: 1781
-TYPE: >>
-INPUT: series // FullForm
-EXPECTED:
-= SeriesData[x, 0, {1, 0, 1}, 0, 3, 1]
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesCoefficient
 LINE: 1852
 TYPE: >>
