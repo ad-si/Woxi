@@ -15373,3 +15373,11 @@ INPUT: Accuracy[0.``2]
 EXPECTED:
 = 2.
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Accuracy
+LINE: 119
+TYPE: >>
+INPUT: Accuracy[0.`] == $MachinePrecision - Log[10, $MinMachineNumber]
+EXPECTED:
+= True
+---
