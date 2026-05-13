@@ -15800,3 +15800,11 @@ INPUT: KelvinBei[0.5, 0.25]
 EXPECTED:
 = 0.370153
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: KelvinBer
+LINE: 631
+TYPE: >>
+INPUT: KelvinBer[0.5]
+EXPECTED:
+= 0.999023
+---
