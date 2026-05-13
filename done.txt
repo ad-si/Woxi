@@ -15431,3 +15431,11 @@ INPUT: Precision[0.``3]
 EXPECTED:
 = 0.
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: InterpretedBox
+LINE: 389
+TYPE: >>
+INPUT: \! \(2+2\)
+EXPECTED:
+= 4
+---
