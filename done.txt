@@ -15624,3 +15624,11 @@ INPUT: Union[{1, 2, 3}, {2, 3, 4}, SameTest->Less]
 EXPECTED:
 = {1, 2, 2, 3, 4}
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: Intersection
+LINE: 1469
+TYPE: >>
+INPUT: Intersection[{1, 2, 3}, {2, 3, 4}, SameTest->Less]
+EXPECTED:
+= {3}
+---
