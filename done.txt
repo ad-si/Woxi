@@ -14391,3 +14391,11 @@ INPUT: x /. sol
 EXPECTED:
 = {-1, 6}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2282
+TYPE: >>
+INPUT: Solve[x / (x ^ 2 + 1) == 1, x]
+EXPECTED:
+= {{x -> 1 / 2 - I / 2 Sqrt[3]}, {x -> 1 / 2 + I / 2 Sqrt[3]}}
+---
