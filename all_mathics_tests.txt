@@ -1,13 +1,4 @@
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: MinPrecision
-LINE: 709
-TYPE: >>
-INPUT: N[Pi, 9]
-EXPECTED:
-: Requested precision 9 is smaller than $MinPrecision. Using current $MinPrecision of 10. instead.
-= 3.141592654
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: Precision
 LINE: 779
 TYPE: >>
