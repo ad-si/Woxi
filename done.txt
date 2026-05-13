@@ -15768,3 +15768,11 @@ INPUT: HankelH1[1.5, 4]
 EXPECTED:
 = 0.185286 + 0.367112 I
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: HankelH2
+LINE: 556
+TYPE: >>
+INPUT: HankelH2[1.5, 4]
+EXPECTED:
+= 0.185286 - 0.367112 I
+---
