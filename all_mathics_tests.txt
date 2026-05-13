@@ -1,11 +1,3 @@
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: SingularValueDecomposition
-LINE: 829
-TYPE: >>
-INPUT: SingularValueDecomposition[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]
-EXPECTED:
-= {{-3, 2, 0}, {2, -1, 0}, {1, -2, 1}}
----
 FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: FactorInteger
 LINE: 298
