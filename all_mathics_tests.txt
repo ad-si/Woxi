@@ -1,11 +1,3 @@
-FILE: mathics/builtin/distance/clusters.py
-CLASS: Nearest
-LINE: 402
-TYPE: >>
-INPUT: Nearest[{Blue -> "blue", White -> "white", Red -> "red", Green -> "green"}, {Orange, Gray}]
-EXPECTED:
-= {{red}, {white}}
----
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: SetFileDate
 LINE: 243

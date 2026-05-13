@@ -15310,3 +15310,11 @@ INPUT: FindClusters[{"meep", "heap", "deep", "weep", "sheep", "leap", "keep"}, 3
 EXPECTED:
 = {{meep, deep, weep, keep}, {heap, leap}, {sheep}}
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: Nearest
+LINE: 402
+TYPE: >>
+INPUT: Nearest[{Blue -> "blue", White -> "white", Red -> "red", Green -> "green"}, {Orange, Gray}]
+EXPECTED:
+= {{red}, {white}}
+---
