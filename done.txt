@@ -15056,3 +15056,10 @@ INPUT: RandomSample[Range[10]]
 EXPECTED:
 = {9, 2, 6, 1, 8, 3, 10, 5, 4, 7}
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomSample
+LINE: 765
+TYPE: >>
+INPUT: SeedRandom[42]
+EXPECTED: (none)
+---
