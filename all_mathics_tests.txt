@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AngerJ
-LINE: 287
-TYPE: >>
-INPUT: AngerJ[1.5, 3.5]
-EXPECTED:
-= 0.294479
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselI
 LINE: 324
 TYPE: >>

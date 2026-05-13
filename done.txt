@@ -15664,3 +15664,11 @@ INPUT: N[AiryBiZero[1]]
 EXPECTED:
 = -1.17371
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: AngerJ
+LINE: 287
+TYPE: >>
+INPUT: AngerJ[1.5, 3.5]
+EXPECTED:
+= 0.294479
+---
