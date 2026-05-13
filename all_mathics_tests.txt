@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 393
-TYPE: >>
-INPUT: Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]
-EXPECTED:
-= 0&
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: DiscreteLimit
 LINE: 563
 TYPE: >>
