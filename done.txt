@@ -14474,3 +14474,11 @@ INPUT: N[Pi, 20]
 EXPECTED:
 = 3.1415926535897932385
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Pi
+LINE: 679
+TYPE: >>
+INPUT: N[Pi, 20, Method->"numpy"]
+EXPECTED:
+= 3.1415...
+---

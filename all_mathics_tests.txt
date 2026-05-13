@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Pi
-LINE: 679
-TYPE: >>
-INPUT: N[Pi, 20, Method->"numpy"]
-EXPECTED:
-= 3.1415...
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Underflow
 LINE: 729
 TYPE: >>
