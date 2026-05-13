@@ -14058,3 +14058,11 @@ INPUT: Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0],
 EXPECTED:
 = ConditionalExpression[1, a > 0]
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Simplify
+LINE: 1564
+TYPE: >>
+INPUT: Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], {a>0},Assumptions -> { b > 0 }]
+EXPECTED:
+= 1
+---
