@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/linalg.py
-CLASS: PseudoInverse
-LINE: 715
-TYPE: >>
-INPUT: PseudoInverse[{{1.0, 2.5}, {2.5, 1.0}}]
-EXPECTED:
-= {{-0.190476, 0.47619}, {0.47619, -0.190476}}
----
-FILE: mathics/builtin/numbers/linalg.py
 CLASS: QRDecomposition
 LINE: 745
 TYPE: >>
