@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: KelvinKer
-LINE: 710
-TYPE: >>
-INPUT: KelvinKer[1.5 + I]
-EXPECTED:
-= -0.167162 - 0.184404 I
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: KelvinKer
 LINE: 713
 TYPE: >>
 INPUT: KelvinKer[0.5, 0.25]
