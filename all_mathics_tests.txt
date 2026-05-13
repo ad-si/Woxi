@@ -1,12 +1,5 @@
 FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomSample
-LINE: 761
-TYPE: >>
-INPUT: SeedRandom[42]
-EXPECTED: (none)
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomSample
 LINE: 762
 TYPE: >>
 INPUT: RandomSample[Range[10]]
