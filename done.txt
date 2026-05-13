@@ -15365,3 +15365,11 @@ INPUT: 0``2
 EXPECTED:
 = 0.00
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Accuracy
+LINE: 115
+TYPE: >>
+INPUT: Accuracy[0.``2]
+EXPECTED:
+= 2.
+---
