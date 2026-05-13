@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 1018
-TYPE: >>
-INPUT: % // Precision
-EXPECTED:
-= MachinePrecision
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 1029
 TYPE: >>
 INPUT: N[Integrate[Sin[Exp[-x^2 /2 ]],{x,1,2}]]
