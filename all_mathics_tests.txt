@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/erf.py
-CLASS: Erf
-LINE: 38
-TYPE: >>
-INPUT: Erf[1.0]
-EXPECTED:
-= 0.842701
----
-FILE: mathics/builtin/specialfns/erf.py
 CLASS: Erfc
 LINE: 80
 TYPE: >>

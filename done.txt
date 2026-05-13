@@ -15944,3 +15944,11 @@ INPUT: EllipticPi[0.4, 0.6]
 EXPECTED:
 = 2.89281
 ---
+FILE: mathics/builtin/specialfns/erf.py
+CLASS: Erf
+LINE: 38
+TYPE: >>
+INPUT: Erf[1.0]
+EXPECTED:
+= 0.842701
+---
