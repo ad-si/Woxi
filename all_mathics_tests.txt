@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselI
-LINE: 331
-TYPE: >>
-INPUT: BesselI[3/2, x]
-EXPECTED:
-= Sqrt[2] Sqrt[x] (-Sinh[x] / x ^ 2 + Cosh[x] / x) / Sqrt[Pi]
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselJ
 LINE: 363
 TYPE: >>
