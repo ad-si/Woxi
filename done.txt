@@ -14383,3 +14383,11 @@ INPUT: D[Series[Exp[-a x],{x,0,2}],a]
 EXPECTED:
 = -x + a x ^ 2 + O[x] ^ 3
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2270
+TYPE: >>
+INPUT: x /. sol
+EXPECTED:
+= {-1, 6}
+---
