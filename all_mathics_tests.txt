@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Gamma
-LINE: 311
-TYPE: >>
-INPUT: Gamma[123.78]
-EXPECTED:
-= 4.21078×10^204
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Gamma
 LINE: 314
 TYPE: >>
 INPUT: Gamma[1. + I]

@@ -16024,3 +16024,11 @@ INPUT: Simplify[Gamma[z] - (z - 1)!]
 EXPECTED:
 = 0
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Gamma
+LINE: 311
+TYPE: >>
+INPUT: Gamma[123.78]
+EXPECTED:
+= 4.21078×10^204
+---
