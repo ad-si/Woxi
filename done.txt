@@ -15118,3 +15118,11 @@ INPUT: FullForm[a:_:b]
 EXPECTED:
 = Optional[Pattern[a, Blank[]], b]
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Pattern
+LINE: 414
+TYPE: >>
+INPUT: f[y] /. f[a:b,_:d] -> {a, b}
+EXPECTED:
+= f[y]
+---

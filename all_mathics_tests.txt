@@ -1,13 +1,5 @@
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Pattern
-LINE: 414
-TYPE: >>
-INPUT: f[y] /. f[a:b,_:d] -> {a, b}
-EXPECTED:
-= f[y]
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Pattern
 LINE: 420
 TYPE: >>
 INPUT: FullForm[a:b:c:d:e]
