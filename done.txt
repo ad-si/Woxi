@@ -14180,3 +14180,12 @@ EXPECTED:
 : The maximum number of iterations was exceeded. The result might be inaccurate.
 = ...
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindMinimum
+LINE: 821
+TYPE: >>
+INPUT: FindMinimum[10*^-30 *(x-3)^2+2., {x, 1}]
+EXPECTED:
+: Encountered a gradient that is effectively zero. The result returned may not be a minimum; it may be a maximum or a saddle point.
+= {2., {x -> 3.}}
+---
