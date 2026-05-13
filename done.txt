@@ -14730,3 +14730,11 @@ INPUT: m["BasisFunctions"]
 EXPECTED:
 = {#1, #2}
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 431
+TYPE: >>
+INPUT: m["FitResiduals"]
+EXPECTED:
+= {-0.142857, 0.214286, -0.0714286}
+---
