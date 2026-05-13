@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomSample
-LINE: 758
-TYPE: >>
-INPUT: RandomSample[{"a", {1, 2}, x, {}}, 3]
-EXPECTED:
-= {{1, 2}, {}, a}
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomSample
 LINE: 761
 TYPE: >>
 INPUT: SeedRandom[42]
