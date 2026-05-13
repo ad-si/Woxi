@@ -15333,3 +15333,11 @@ INPUT: FindList["ExampleData/EinsteinSzilLetter.txt", "uranium", 1]
 EXPECTED:
 = {in manuscript, leads me to expect that the element uranium may be turned into}
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Accuracy
+LINE: 87
+TYPE: >>
+INPUT: Accuracy[3.1416`2]
+EXPECTED:
+= 1.50298
+---
