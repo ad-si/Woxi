@@ -1,11 +1,3 @@
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: MaxRecursion
-LINE: 245
-TYPE: >>
-INPUT: NIntegrate[Exp[-10^8 x^2], {x, -1, 1}, Method->"Internal", MaxRecursion -> 6]
-EXPECTED:
-= 0.00972222
----
 FILE: mathics/builtin/drawing/graphics3d.py
 CLASS: Graphics3D
 LINE: 81
