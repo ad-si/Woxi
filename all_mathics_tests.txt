@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ComplexExpand
-LINE: 282
-TYPE: >>
-INPUT: ComplexExpand[Cos[x + I y] + Tanh[z], {z}]
-EXPECTED:
-= Cos[x] Cosh[y] - I Sin[x] Sinh[y] + Cosh[Re[z]] Sinh[Re[z]] / (Cos[Im[z]] ^ 2 + Sinh[Re[z]] ^ 2) + I Cos[Im[z]] Sin[Im[z]] / (Cos[Im[z]] ^ 2 + Sinh[Re[z]] ^ 2)
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ComplexExpand
 LINE: 286
 TYPE: >>
 INPUT: ComplexExpand[Abs[2^z Log[2 z]], z]

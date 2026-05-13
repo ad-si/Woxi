@@ -14602,3 +14602,11 @@ INPUT: ComplexExpand[Re[z^5 - 2 z^3 - z + 1], z]
 EXPECTED:
 = 1 + Re[z] ^ 5 - 2 Re[z] ^ 3 - Re[z] - 10 Im[z] ^ 2 Re[z] ^ 3 + 5 Im[z] ^ 4 Re[z] + 6 Im[z] ^ 2 Re[z]
 ---
+FILE: mathics/builtin/numbers/hyperbolic.py
+CLASS: ComplexExpand
+LINE: 282
+TYPE: >>
+INPUT: ComplexExpand[Cos[x + I y] + Tanh[z], {z}]
+EXPECTED:
+= Cos[x] Cosh[y] - I Sin[x] Sinh[y] + Cosh[Re[z]] Sinh[Re[z]] / (Cos[Im[z]] ^ 2 + Sinh[Re[z]] ^ 2) + I Cos[Im[z]] Sin[Im[z]] / (Cos[Im[z]] ^ 2 + Sinh[Re[z]] ^ 2)
+---
