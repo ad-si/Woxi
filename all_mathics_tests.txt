@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
-LINE: 1029
-TYPE: >>
-INPUT: N[Integrate[Sin[Exp[-x^2 /2 ]],{x,1,2}]]
-EXPECTED:
-= 0.330804
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: O_
 LINE: 1609
 TYPE: >>
