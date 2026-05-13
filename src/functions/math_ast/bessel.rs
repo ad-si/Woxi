@@ -399,17 +399,16 @@ pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(k) => Some(*k),
     Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
     Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().and_then(|f| {
-      if f == f.floor() && f > 0.0 { Some(f as i128) } else { None }
+      if f == f.floor() && f > 0.0 {
+        Some(f as i128)
+      } else {
+        None
+      }
     }),
     _ => None,
   };
-  let has_numeric = matches!(
-    &args[0],
-    Expr::Real(_) | Expr::BigFloat(_, _)
-  ) || matches!(
-    &args[1],
-    Expr::Real(_) | Expr::BigFloat(_, _)
-  );
+  let has_numeric = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    || matches!(&args[1], Expr::Real(_) | Expr::BigFloat(_, _));
   if has_numeric
     && let (Some(n), Some(k)) = (n_val, k_val)
     && k >= 1
