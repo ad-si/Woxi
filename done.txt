@@ -14690,3 +14690,11 @@ INPUT: m["Function"]
 EXPECTED:
 = 0.186441 + 0.779661 #1&
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 414
+TYPE: >>
+INPUT: m["Response"]
+EXPECTED:
+= {1, 4, 3, 6}
+---
