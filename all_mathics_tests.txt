@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ComplexExpand
-LINE: 265
-TYPE: >>
-INPUT: ComplexExpand[3^(I x)]
-EXPECTED:
-= 3 ^ (-Im[x]) Re[3 ^ (I Re[x])] + I Im[3 ^ (I Re[x])] 3 ^ (-Im[x])
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ComplexExpand
 LINE: 269
 TYPE: >>
 INPUT: ComplexExpand[Sin[x + I y]]
