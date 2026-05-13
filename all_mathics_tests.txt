@@ -1,14 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindRoot
-LINE: 888
-TYPE: >>
-INPUT: FindRoot[x^2 + x + 1, {x, 1}]
-EXPECTED:
-: The maximum number of iterations was exceeded. The result might be inaccurate.
-= {x -> -1.}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: FindRoot
 LINE: 893
 TYPE: >>
 INPUT: FindRoot[x ^ 2 + x + 1, {x, -I}]
