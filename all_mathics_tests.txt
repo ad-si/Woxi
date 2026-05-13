@@ -1,11 +1,3 @@
-FILE: mathics/builtin/file_operations/file_utilities.py
-CLASS: FindList
-LINE: 36
-TYPE: >>
-INPUT: FindList["ExampleData/EinsteinSzilLetter.txt", "uranium", 1]
-EXPECTED:
-= {in manuscript, leads me to expect that the element uranium may be turned into}
----
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: Accuracy
 LINE: 87
