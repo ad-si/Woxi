@@ -14375,3 +14375,11 @@ INPUT: Series[Exp[-a x],{x,0,2}] * Series[Exp[-b x],{x,0,2}]
 EXPECTED:
 = 1 + (-a - b) x + (a ^ 2 / 2 + a b + b ^ 2 / 2) x ^ 2 + O[x] ^ 3
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesData
+LINE: 1932
+TYPE: >>
+INPUT: D[Series[Exp[-a x],{x,0,2}],a]
+EXPECTED:
+= -x + a x ^ 2 + O[x] ^ 3
+---
