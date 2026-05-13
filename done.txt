@@ -15134,3 +15134,11 @@ INPUT: FullForm[a:b:c:d:e]
 EXPECTED:
 = Optional[Pattern[a, b], Optional[Pattern[c, d], e]]
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Repeated
+LINE: 552
+TYPE: >>
+INPUT: 0..1 // FullForm
+EXPECTED:
+= Repeated[0]
+---
