@@ -5921,8 +5921,13 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // Check if the function is a known but unimplemented Wolfram Language function
-  if is_known_wolfram_function(name) {
+  // Check if the function is a known but unimplemented Wolfram Language function.
+  // Some symbolic CAS objects (Root, RootSum, …) intentionally stay
+  // unevaluated as their canonical form, so flagging them as
+  // "unimplemented" is a false positive. Exclude that small set.
+  if is_known_wolfram_function(name)
+    && !matches!(name, "Root" | "RootSum" | "RootApproximant")
+  {
     let args_str = args
       .iter()
       .map(expr_to_string)

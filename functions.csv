@@ -1866,7 +1866,7 @@ SingleLetterItalics,Single letter italics option,,unevaluated,3.0,1897
 AbsArg,Returns {Abs[z] and Arg[z]} for a complex number z,✅,pure,10.1,1901
 Haversine,Haversine function,✅,computation,7.0,1901
 PolarGridLines,Polar grid lines option,,unevaluated,7.0,1901
-RootApproximant,Root approximant,,unevaluated,6.0,1901
+RootApproximant,Root approximant,✅,unevaluated,6.0,1901
 Databin,Databin cloud storage,,unevaluated,10.0,1905
 Interpretation,Interpretation wrapper,,unevaluated,6.0,1905
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
@@ -2097,7 +2097,7 @@ PacletInstall,Install Wolfram paclet,🚫,,12.1,2138
 Parallelogram,Parallelogram geometric region,🚫,,10.0,2138
 SectorChart,Creates a sector chart from data,✅,pure,7.0,2138
 InexactNumberQ,Tests if an expression is an inexact real number,✅,pure,4.0,2141
-RootSum,Sum over polynomial roots,🚫,,3.0,2141
+RootSum,Sum over polynomial roots,✅,,3.0,2141
 ServiceExecute,Execute external service,🚫,,10.0,2141
 ArgMin,Find argument minimizing expression,🚫,,7.0,2144
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144
