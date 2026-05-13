@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: LinearModelFit
-LINE: 417
-TYPE: >>
-INPUT: m["FitResiduals"]
-EXPECTED:
-= {-0.745763, 1.47458, -1.08475, 0.355932}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: LinearModelFit
 LINE: 421
 TYPE: >>
 INPUT: m["BasisFunctions"]

@@ -14698,3 +14698,11 @@ INPUT: m["Response"]
 EXPECTED:
 = {1, 4, 3, 6}
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 417
+TYPE: >>
+INPUT: m["FitResiduals"]
+EXPECTED:
+= {-0.745763, 1.47458, -1.08475, 0.355932}
+---
