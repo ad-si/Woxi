@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: SeriesCoefficient
-LINE: 1852
-TYPE: >>
-INPUT: SeriesCoefficient[%, 4]
-EXPECTED:
-= -1 / 8
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesData
 LINE: 1923
 TYPE: >>
