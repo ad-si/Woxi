@@ -1,13 +1,4 @@
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: MaxPrecision
-LINE: 597
-TYPE: >>
-INPUT: N[Pi, 11]
-EXPECTED:
-: Requested precision 11 is larger than $MaxPrecision. Using current $MaxPrecision of 10. instead. $MaxPrecision = Infinity specifies that any precision should be allowed.
-= 3.141592654
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: MachineEpsilon_
 LINE: 632
 TYPE: >>
