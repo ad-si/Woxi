@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: Hypergeometric1F1
-LINE: 69
-TYPE: >>
-INPUT: Hypergeometric1F1[2 + I, 2, 0.5]
-EXPECTED:
-= 1.61833 + 0.379258 I
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric1F1
 LINE: 73
 TYPE: >>
 INPUT: Hypergeometric1F1[3, 4, 10^10]

@@ -16081,3 +16081,11 @@ INPUT: Pochhammer[1, 3.001]
 EXPECTED:
 = 6.00754
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: Hypergeometric1F1
+LINE: 69
+TYPE: >>
+INPUT: Hypergeometric1F1[2 + I, 2, 0.5]
+EXPECTED:
+= 1.61833 + 0.379258 I
+---
