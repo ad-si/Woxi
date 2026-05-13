@@ -1,11 +1,3 @@
-FILE: mathics/builtin/numbers/exp.py
-CLASS: LogisticSigmoid
-LINE: 300
-TYPE: >>
-INPUT: LogisticSigmoid[{-0.2, 0.1, 0.3}]
-EXPECTED:
-= {0.450166, 0.524979, 0.574443}
----
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ArcCosh
 LINE: 53

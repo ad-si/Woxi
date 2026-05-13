@@ -14546,3 +14546,11 @@ INPUT: LogisticSigmoid[0.5 + 2.3 I]
 EXPECTED:
 = 1.06475 + 0.808177 I
 ---
+FILE: mathics/builtin/numbers/exp.py
+CLASS: LogisticSigmoid
+LINE: 300
+TYPE: >>
+INPUT: LogisticSigmoid[{-0.2, 0.1, 0.3}]
+EXPECTED:
+= {0.450166, 0.524979, 0.574443}
+---
