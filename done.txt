@@ -15341,3 +15341,11 @@ INPUT: Accuracy[3.1416`2]
 EXPECTED:
 = 1.50298
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Accuracy
+LINE: 102
+TYPE: >>
+INPUT: Accuracy[z] == -Log[10, Sqrt[10^(-2 Accuracy[Re[z]]) + 10^(-2 Accuracy[Im[z]])]]
+EXPECTED:
+= True
+---

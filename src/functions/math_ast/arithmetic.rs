@@ -5203,6 +5203,54 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // Infinity / positive_finite → Infinity. Wolfram absorbs any
+  // known-positive scalar divisor; if we can prove the divisor is
+  // positive (numeric, named constants like Pi/E, or Log[c>1]), the
+  // result is Infinity. Negative divisors flip to -Infinity.
+  fn is_known_positive_local(e: &Expr) -> Option<bool> {
+    match e {
+      Expr::Integer(n) => Some(*n > 0),
+      Expr::Real(f) => Some(*f > 0.0),
+      Expr::Constant(c) => match c.as_str() {
+        "Pi" | "E" | "Degree" => Some(true),
+        _ => None,
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some((*n > 0 && *d > 0) || (*n < 0 && *d < 0))
+        } else {
+          None
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Log" && args.len() == 1 =>
+      {
+        match &args[0] {
+          Expr::Integer(n) => Some(*n > 1),
+          Expr::Real(f) => Some(*f > 1.0),
+          Expr::Constant(c) if c == "E" || c == "Pi" => Some(true),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  if is_infinity_like(a) && !is_infinity_like(b) {
+    if let Some(true) = is_known_positive_local(b) {
+      return Ok(a.clone());
+    }
+    if let Some(false) = is_known_positive_local(b) {
+      // Negative divisor flips Infinity → -Infinity. Use UnaryOp Minus
+      // so the formatter prints `-Infinity` consistently.
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(a.clone()),
+      });
+    }
+  }
+
   // Handle Quantity division
   if let Some(result) =
     crate::functions::quantity_ast::try_quantity_divide(a, b)

@@ -1805,8 +1805,9 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if val == 1 {
           return Ok(Expr::Integer(exp));
         }
-        // Return Log[x]/Log[base] symbolically
-        return Ok(Expr::BinaryOp {
+        // Return Log[x]/Log[base] symbolically (evaluated so any
+        // numeric/limit reduction inside the Log calls fires).
+        let result = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(Expr::FunctionCall {
             name: "Log".to_string(),
@@ -1816,7 +1817,8 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Log".to_string(),
             args: vec![args[0].clone()].into(),
           }),
-        });
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&result);
       }
       // Log[base, x] — evaluate for Real args
       if let (Expr::Real(base), Expr::Real(x)) = (&args[0], &args[1])
@@ -1826,8 +1828,9 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(Expr::Real(x.ln() / base.ln()));
       }
-      // Canonicalize Log[base, x] → Log[x]/Log[base]
-      Ok(Expr::BinaryOp {
+      // Canonicalize Log[base, x] → Log[x]/Log[base] (evaluated so
+      // sub-expressions like Log[0] collapse to -Infinity).
+      let result = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(Expr::FunctionCall {
           name: "Log".to_string(),
@@ -1837,7 +1840,8 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Log".to_string(),
           args: vec![args[0].clone()].into(),
         }),
-      })
+      };
+      crate::evaluator::evaluate_expr_to_expr(&result)
     }
     _ => Err(InterpreterError::EvaluationError(
       "Log expects 1 or 2 arguments".into(),
