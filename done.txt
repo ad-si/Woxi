@@ -15206,3 +15206,11 @@ INPUT: Log[a * (b * c) ^ d ^ e * f] //. logrules
 EXPECTED:
 = Log[a] + Log[f] + (Log[b] + Log[c]) d ^ e
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: ClusteringComponents
+LINE: 260
+TYPE: >>
+INPUT: ClusteringComponents[{1, 2, 3, 1, 2, 10, 100}]
+EXPECTED:
+= {1, 1, 1, 1, 1, 1, 2}
+---
