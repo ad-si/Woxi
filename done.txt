@@ -15190,3 +15190,11 @@ INPUT: {a, b} /. {{{a->x, b->y}, a->w, b->z}, {a->u, b->v}}
 EXPECTED:
 : Elements of {{a -> x, b -> y}, a -> w, b -> z} are a mixture of lists and nonlists.
 = {{a, b} /. {{a -> x, b -> y}, a -> w, b -> z}, {u, v}}
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceList
+LINE: 346
+TYPE: >>
+INPUT: ReplaceList[{a, b, c}, {{{___, x__, ___} -> {x}}, {{a, b, c} -> t}}, 2]
+EXPECTED:
+= {{{a}, {a, b}}, {t}}
+---
