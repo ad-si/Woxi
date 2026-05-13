@@ -1,12 +1,3 @@
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
-LINE: 2317
-TYPE: >>
-INPUT: Solve[x^2 == 1 && z^2 == -1, {x, y, z}]
-EXPECTED:
-: Equations may not give solutions for all "solve" variables.
-= {{x -> -1, z -> -I}, {x -> -1, z -> I}, {x -> 1, z -> -I}, {x -> 1, z -> I}}
----
 ---
 ---
 FILE: mathics/builtin/numbers/constants.py

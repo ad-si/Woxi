@@ -548,6 +548,139 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Pre-pass: turn an And-of-equations into a List of equations so the
+  // multi-equation path picks them up. Wolfram lets users write
+  // Solve[a == b && c == d, ...] interchangeably with the list form.
+  // && parses to a BinaryOp::And tree (left-associative), so flatten
+  // the chain. The FunctionCall("And", …) variant covers the other
+  // path through the parser.
+  fn flatten_and(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        flatten_and(left, out);
+        flatten_and(right, out);
+      }
+      Expr::FunctionCall { name, args: aargs } if name == "And" => {
+        for a in aargs.iter() {
+          flatten_and(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  // Only flatten when every conjunct is an equality (Comparison with
+  // Equal). Inequalities stay inside the And so the existing Reduce
+  // path (which understands constraints) handles cases like
+  // `m^2 == 4 && m > 0`.
+  fn all_equalities(items: &[Expr]) -> bool {
+    items.iter().all(|e| matches!(
+      e,
+      Expr::Comparison { operators, .. }
+        if operators.iter().all(|o| matches!(o, crate::syntax::ComparisonOp::Equal))
+    ) || matches!(
+      e,
+      Expr::FunctionCall { name, args }
+        if name == "Equal" && args.len() == 2
+    ))
+  }
+  let args_owned: Vec<Expr>;
+  let args = match &args[0] {
+    Expr::FunctionCall { name, .. } if name == "And" => {
+      let mut conjuncts = Vec::new();
+      flatten_and(&args[0], &mut conjuncts);
+      if all_equalities(&conjuncts) {
+        let mut new_args = args.to_vec();
+        new_args[0] = Expr::List(conjuncts.into());
+        args_owned = new_args;
+        args_owned.as_slice()
+      } else {
+        args
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      ..
+    } => {
+      let mut conjuncts = Vec::new();
+      flatten_and(&args[0], &mut conjuncts);
+      if all_equalities(&conjuncts) {
+        let mut new_args = args.to_vec();
+        new_args[0] = Expr::List(conjuncts.into());
+        args_owned = new_args;
+        args_owned.as_slice()
+      } else {
+        args
+      }
+    }
+    _ => args,
+  };
+
+  // Pre-pass: drop variables from the var list that don't appear in any
+  // equation. Wolfram emits Solve::svars and continues with the
+  // remaining variables. Without this, an extra var like `y` in
+  // `Solve[x^2 == 1 && z^2 == -1, {x, y, z}]` would block the solver.
+  // We can't reuse calculus_ast::is_constant_wrt because it doesn't
+  // recurse into Comparison nodes — the equations here are
+  // x^2 == 1 etc.
+  fn expr_uses_var(expr: &Expr, var: &str) -> bool {
+    match expr {
+      Expr::Identifier(s) => s == var,
+      Expr::List(items) => items.iter().any(|e| expr_uses_var(e, var)),
+      Expr::BinaryOp { left, right, .. } => {
+        expr_uses_var(left, var) || expr_uses_var(right, var)
+      }
+      Expr::UnaryOp { operand, .. } => expr_uses_var(operand, var),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|e| expr_uses_var(e, var))
+      }
+      Expr::FunctionCall { args, .. } => {
+        args.iter().any(|e| expr_uses_var(e, var))
+      }
+      Expr::CurriedCall { func, args } => {
+        expr_uses_var(func, var) || args.iter().any(|e| expr_uses_var(e, var))
+      }
+      _ => false,
+    }
+  }
+  let svars_args_owned: Vec<Expr>;
+  let args = if let (Expr::List(eqs), Expr::List(vars)) = (&args[0], &args[1])
+  {
+    let used: Vec<usize> = vars
+      .iter()
+      .enumerate()
+      .filter_map(|(i, v)| {
+        if let Expr::Identifier(name) = v
+          && eqs.iter().any(|e| expr_uses_var(e, name))
+        {
+          Some(i)
+        } else if !matches!(v, Expr::Identifier(_)) {
+          // Non-identifier var: keep as-is (existing handling will deal).
+          Some(i)
+        } else {
+          None
+        }
+      })
+      .collect();
+    if used.len() < vars.len() {
+      crate::emit_message(
+        "Solve::svars: Equations may not give solutions for all \"solve\" variables.",
+      );
+      let kept: Vec<Expr> = used.into_iter().map(|i| vars[i].clone()).collect();
+      let mut new_args = args.to_vec();
+      new_args[1] = Expr::List(kept.into());
+      svars_args_owned = new_args;
+      svars_args_owned.as_slice()
+    } else {
+      args
+    }
+  } else {
+    args
+  };
+
   // Parse domain from optional 3rd argument (Reals, Integers, Complexes, etc.)
   let domain = if args.len() == 3 {
     match &args[2] {
