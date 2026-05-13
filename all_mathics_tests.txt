@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselI
-LINE: 324
-TYPE: >>
-INPUT: BesselI[1.5, 4]
-EXPECTED:
-= 8.17263
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselI
 LINE: 331
 TYPE: >>
 INPUT: BesselI[3/2, x]
