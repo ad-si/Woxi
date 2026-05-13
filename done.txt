@@ -14642,3 +14642,11 @@ INPUT: Eigenvectors[{{0.1, 0.2}, {0.8, 0.5}}]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LeastSquares
+LINE: 350
+TYPE: >>
+INPUT: LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, 5, 3}]
+EXPECTED:
+= {-28 / 13, 31 / 13}
+---
