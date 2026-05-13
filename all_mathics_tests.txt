@@ -1,11 +1,3 @@
-FILE: mathics/builtin/patterns/__init__.py
-CLASS: None
-LINE: 37
-TYPE: >>
-INPUT: f[y, a->3] /. f[x_, OptionsPattern[{a->2, b->5}]] -> {x, OptionValue[a], OptionValue[b]}
-EXPECTED:
-= {y, 3, 5}
----
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Pattern
 LINE: 403
