@@ -14090,3 +14090,11 @@ INPUT: MinimalPolynomial[Sqrt[I + Sqrt[6]], x]
 EXPECTED:
 = 49 - 10 x ^ 4 + x ^ 8
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Together
+LINE: 1904
+TYPE: >>
+INPUT: Together[{x / (y+1) + x / (y+1)^2}]
+EXPECTED:
+= {x (2 + y) / (1 + y) ^ 2}
+---
