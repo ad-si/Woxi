@@ -1181,9 +1181,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // downstream formulas like 1/(1+Exp[x]) — common in logistic
       // models — still collapse to 0 instead of breaking on Overflow[].
       if f.abs() >= 1.0e15 {
-        crate::emit_message(
-          "General::ovfl: Overflow occurred in computation.",
-        );
+        crate::emit_message("General::ovfl: Overflow occurred in computation.");
         return Ok(Expr::FunctionCall {
           name: "Overflow".to_string(),
           args: vec![].into(),

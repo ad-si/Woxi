@@ -695,18 +695,53 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let count = if args.len() == 2 {
+  // The second arg may be a positive integer (length of a flat list)
+  // or a list of dimensions {n1, n2, ...} for a nested array. Track
+  // both as a `dims` vector — when it has length 1 we keep the
+  // original flat-list output to match wolframscript.
+  let dims: Vec<usize> = if args.len() == 2 {
     match &args[1] {
-      Expr::Integer(n) if *n > 0 => *n as usize,
+      Expr::Integer(n) if *n > 0 => vec![*n as usize],
+      Expr::List(items) if !items.is_empty() => {
+        let mut ds = Vec::with_capacity(items.len());
+        for it in items.iter() {
+          match it {
+            Expr::Integer(n) if *n > 0 => ds.push(*n as usize),
+            _ => {
+              return Err(InterpreterError::EvaluationError(
+                "RandomPrime: dimension entries must be positive integers".into(),
+              ));
+            }
+          }
+        }
+        ds
+      }
       _ => {
         return Err(InterpreterError::EvaluationError(
-          "RandomPrime: second argument must be a positive integer".into(),
+          "RandomPrime: second argument must be a positive integer or list of dimensions".into(),
         ));
       }
     }
   } else {
-    1
+    Vec::new()
   };
+  // Build a flat-then-nested list of `total` primes, then reshape into
+  // the requested dims (skipping reshape when dims is empty/scalar or a
+  // single-dim list).
+  fn reshape_into_dims(flat: Vec<Expr>, dims: &[usize]) -> Expr {
+    if dims.len() <= 1 {
+      return Expr::List(flat.into());
+    }
+    let chunk = flat.len() / dims[0];
+    let mut groups: Vec<Expr> = Vec::with_capacity(dims[0]);
+    for i in 0..dims[0] {
+      let part: Vec<Expr> = flat[i * chunk..(i + 1) * chunk].to_vec();
+      groups.push(reshape_into_dims(part, &dims[1..]));
+    }
+    Expr::List(groups.into())
+  }
+  let total: usize = if dims.is_empty() { 1 } else { dims.iter().product() };
+  let count = total;
 
   let range_size = max - min + 1;
 
@@ -718,16 +753,16 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "There are no primes in the specified interval.".into(),
       ));
     }
-    if count == 1 {
+    if dims.is_empty() {
       let idx = crate::with_rng(|rng| rng.gen_range(0..primes.len()));
       Ok(Expr::Integer(primes[idx]))
     } else {
-      let result: Vec<Expr> = crate::with_rng(|rng| {
+      let flat: Vec<Expr> = crate::with_rng(|rng| {
         (0..count)
           .map(|_| Expr::Integer(primes[rng.gen_range(0..primes.len())]))
           .collect()
       });
-      Ok(Expr::List(result.into()))
+      Ok(reshape_into_dims(flat, &dims))
     }
   } else {
     // Rejection sampling for large ranges
@@ -749,10 +784,10 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
       results.push(Expr::Integer(prime));
     }
-    if count == 1 {
+    if dims.is_empty() {
       Ok(results.into_iter().next().unwrap())
     } else {
-      Ok(Expr::List(results.into()))
+      Ok(reshape_into_dims(results, &dims))
     }
   }
 }

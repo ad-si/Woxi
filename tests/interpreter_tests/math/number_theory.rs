@@ -1991,6 +1991,22 @@ mod random_prime {
   }
 
   #[test]
+  fn dim_list_produces_matrix() {
+    // RandomPrime[range, {2, 5}] yields a 2x5 matrix of primes (matches
+    // wolframscript). Previously we rejected the dim-list with
+    // "second argument must be a positive integer".
+    interpret("SeedRandom[42]").unwrap();
+    let result =
+      interpret("Dimensions[RandomPrime[{10, 30}, {2, 5}]]").unwrap();
+    assert_eq!(result, "{2, 5}");
+    interpret("SeedRandom[42]").unwrap();
+    let all_prime =
+      interpret("AllTrue[Flatten[RandomPrime[{10, 30}, {2, 5}]], PrimeQ]")
+        .unwrap();
+    assert_eq!(all_prime, "True");
+  }
+
+  #[test]
   fn all_results_in_range() {
     interpret("SeedRandom[42]").unwrap();
     assert_eq!(
