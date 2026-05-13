@@ -481,7 +481,8 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         if weights.is_empty() || weights.len() != values.len() {
           return Err(InterpreterError::EvaluationError(
-            "RandomChoice: weight and value lists must have matching length".into(),
+            "RandomChoice: weight and value lists must have matching length"
+              .into(),
           ));
         }
         let mut cdf = Vec::with_capacity(weights.len());
@@ -567,11 +568,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     };
-    fn build(
-      items: &[Expr],
-      dims: &[usize],
-      cdf: Option<&[f64]>,
-    ) -> Expr {
+    fn build(items: &[Expr], dims: &[usize], cdf: Option<&[f64]>) -> Expr {
       use rand::Rng;
       let n = dims[0];
       if dims.len() == 1 {
@@ -629,9 +626,19 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let n = match &args[1] {
       Expr::Integer(n) if *n >= 0 => *n as usize,
       _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RandomSample: second argument must be a non-negative integer".into(),
+        // Match wolframscript: emit RandomSample::intnm and return the
+        // call unevaluated rather than aborting. Covers the dim-list
+        // form (e.g. {2, 3}) which Wolfram doesn't support either.
+        let arg_strs: Vec<String> =
+          args.iter().map(crate::syntax::expr_to_output).collect();
+        crate::emit_message(&format!(
+          "RandomSample::intnm: Non-negative machine-sized integer expected at position 2 in RandomSample[{}].",
+          arg_strs.join(", "),
         ));
+        return Ok(Expr::FunctionCall {
+          name: "RandomSample".to_string(),
+          args: args.to_vec().into(),
+        });
       }
     };
     if n > items.len() {
