@@ -1,13 +1,5 @@
 FILE: mathics/builtin/distance/clusters.py
 CLASS: FindClusters
-LINE: 304
-TYPE: >>
-INPUT: FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]
-EXPECTED:
-= {{1, 2, 20, 10, 11, 19}, {40, 42}}
----
-FILE: mathics/builtin/distance/clusters.py
-CLASS: FindClusters
 LINE: 307
 TYPE: >>
 INPUT: FindClusters[{25, 100, 17, 20}]

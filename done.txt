@@ -15222,3 +15222,11 @@ INPUT: ClusteringComponents[{10, 100, 20}, Method -> "KMeans"]
 EXPECTED:
 = {1, 0, 1}
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: FindClusters
+LINE: 304
+TYPE: >>
+INPUT: FindClusters[{1, 2, 20, 10, 11, 40, 19, 42}]
+EXPECTED:
+= {{1, 2, 20, 10, 11, 19}, {40, 42}}
+---
