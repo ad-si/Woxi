@@ -2242,6 +2242,20 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         condition: None,
       })
     }
+    // Pattern[name, Repeated[...]] / Pattern[name, RepeatedNull[...]]:
+    // wrap the inner sequence info with the binding name so the matched
+    // run gets captured under `name` as a Sequence (matches Wolfram).
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Pattern"
+      && pat_args.len() == 2
+      && let Expr::Identifier(bind_name) = &pat_args[0] =>
+    {
+      let mut inner = get_sequence_info(&pat_args[1])?;
+      inner.name = bind_name.clone();
+      Some(inner)
+    }
     // Repeated[pat] or Repeated[pat, {min, max}] — matches 1+ elements each matching pat
     // RepeatedNull[pat] or RepeatedNull[pat, {min, max}] — matches 0+ elements
     Expr::FunctionCall { name, args }

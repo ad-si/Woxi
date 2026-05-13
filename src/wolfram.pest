@@ -548,7 +548,7 @@ PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
 // where the body is any expression the pattern should match. Distinct
 // from `name_:default` (Optional with default) and `name::tag`
 // (MessageName); the negative lookaheads keep those forms intact.
-PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term }
+PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)

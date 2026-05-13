@@ -3141,7 +3141,24 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // which mirrors wolframscript's `a:b:(c:d:e)` display.
       let mut inner = pair.into_inner();
       let name = inner.next().unwrap().as_str().to_string();
-      let body = pair_to_expr(inner.next().unwrap());
+      let mut body = pair_to_expr(inner.next().unwrap());
+      // Optional trailing `..` / `...` postfix: wrap body in
+      // Repeated[…] / RepeatedNull[…] before the Pattern so e.g.
+      // `s:0..` parses as `Pattern[s, Repeated[0]]` (Wolfram's binding)
+      // rather than `Repeated[Pattern[s, 0]]`.
+      if let Some(suffix) = inner.next() {
+        let suffix_name = match suffix.as_rule() {
+          Rule::RepeatedNullSuffix => "RepeatedNull",
+          Rule::RepeatedSuffix => "Repeated",
+          _ => "",
+        };
+        if !suffix_name.is_empty() {
+          body = Expr::FunctionCall {
+            name: suffix_name.to_string(),
+            args: vec![body].into(),
+          };
+        }
+      }
       if let Expr::FunctionCall {
         name: bn,
         args: bargs,

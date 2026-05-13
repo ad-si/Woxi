@@ -629,7 +629,8 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if weights.is_empty() || weights.len() != values.len() {
         return Err(InterpreterError::EvaluationError(
-          "RandomSample: weight and value lists must have matching length".into(),
+          "RandomSample: weight and value lists must have matching length"
+            .into(),
         ));
       }
       let mut ws = Vec::with_capacity(weights.len());
@@ -673,15 +674,22 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ws.iter()
           .map(|&w| {
             let u: f64 = rng.gen_range(f64::MIN_POSITIVE..1.0);
-            if w <= 0.0 { f64::NEG_INFINITY } else { u.ln() / w }
+            if w <= 0.0 {
+              f64::NEG_INFINITY
+            } else {
+              u.ln() / w
+            }
           })
           .collect()
       });
       let mut idxs: Vec<usize> = (0..items.len()).collect();
       idxs.sort_by(|&a, &b| {
-        keys[b].partial_cmp(&keys[a]).unwrap_or(std::cmp::Ordering::Equal)
+        keys[b]
+          .partial_cmp(&keys[a])
+          .unwrap_or(std::cmp::Ordering::Equal)
       });
-      let result: Vec<Expr> = idxs.into_iter().map(|i| items[i].clone()).collect();
+      let result: Vec<Expr> =
+        idxs.into_iter().map(|i| items[i].clone()).collect();
       Ok(Expr::List(result.into()))
     } else {
       let mut shuffled: Vec<Expr> = items.to_vec();
@@ -720,22 +728,27 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ws.iter()
           .map(|&w| {
             let u: f64 = rng.gen_range(f64::MIN_POSITIVE..1.0);
-            if w <= 0.0 { f64::NEG_INFINITY } else { u.ln() / w }
+            if w <= 0.0 {
+              f64::NEG_INFINITY
+            } else {
+              u.ln() / w
+            }
           })
           .collect()
       });
       let mut idxs: Vec<usize> = (0..items.len()).collect();
       idxs.sort_by(|&a, &b| {
-        keys[b].partial_cmp(&keys[a]).unwrap_or(std::cmp::Ordering::Equal)
+        keys[b]
+          .partial_cmp(&keys[a])
+          .unwrap_or(std::cmp::Ordering::Equal)
       });
       idxs.truncate(n);
       let sampled: Vec<Expr> =
         idxs.into_iter().map(|i| items[i].clone()).collect();
       Ok(Expr::List(sampled.into()))
     } else {
-      let sampled: Vec<Expr> = crate::with_rng(|rng| {
-        items.choose_multiple(rng, n).cloned().collect()
-      });
+      let sampled: Vec<Expr> =
+        crate::with_rng(|rng| items.choose_multiple(rng, n).cloned().collect());
       Ok(Expr::List(sampled.into()))
     }
   }
