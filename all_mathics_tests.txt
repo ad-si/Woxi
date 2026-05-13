@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/expintegral.py
 CLASS: ProductLog
-LINE: 108
-TYPE: >>
-INPUT: z == ProductLog[z] * E ^ ProductLog[z]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/specialfns/expintegral.py
-CLASS: ProductLog
 LINE: 117
 TYPE: >>
 INPUT: ProductLog[-1.5]

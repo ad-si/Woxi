@@ -15968,3 +15968,11 @@ INPUT: InverseErf /@ {0.9, 1.0, 1.1}
 EXPECTED:
 = {1.16309, Infinity, InverseErf[1.1]}
 ---
+FILE: mathics/builtin/specialfns/expintegral.py
+CLASS: ProductLog
+LINE: 108
+TYPE: >>
+INPUT: z == ProductLog[z] * E ^ ProductLog[z]
+EXPECTED:
+= True
+---
