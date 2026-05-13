@@ -15632,3 +15632,11 @@ INPUT: Intersection[{1, 2, 3}, {2, 3, 4}, SameTest->Less]
 EXPECTED:
 = {3}
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: AiryAi
+LINE: 54
+TYPE: >>
+INPUT: AiryAi[0.5 + I]
+EXPECTED:
+= 0.157118 - 0.24104 I
+---
