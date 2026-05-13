@@ -1,12 +1,4 @@
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: Context
-LINE: 191
-TYPE: >>
-INPUT: Context[b`c]
-EXPECTED:
-= b`
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
 LINE: 235
 TYPE: >>

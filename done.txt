@@ -15455,3 +15455,11 @@ INPUT: ToExpression["log(x)", TraditionalForm]
 EXPECTED:
 = Log[x]
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Context
+LINE: 191
+TYPE: >>
+INPUT: Context[b`c]
+EXPECTED:
+= b`
+---
