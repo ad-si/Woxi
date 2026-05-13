@@ -1,13 +1,5 @@
 FILE: mathics/builtin/distance/clusters.py
 CLASS: FindClusters
-LINE: 322
-TYPE: >>
-INPUT: FindClusters[{1, 2, 5} -> {a, b, c}]
-EXPECTED:
-= {{a, b}, {c}}
----
-FILE: mathics/builtin/distance/clusters.py
-CLASS: FindClusters
 LINE: 325
 TYPE: >>
 INPUT: FindClusters[{1, 2, 3, 1, 2, 10, 100}, Method -> "Agglomerate"]

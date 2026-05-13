@@ -15270,3 +15270,11 @@ INPUT: FindClusters[{1 -> a, 2 -> b, 10 -> c}]
 EXPECTED:
 = {{a, b}, {c}}
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: FindClusters
+LINE: 322
+TYPE: >>
+INPUT: FindClusters[{1, 2, 5} -> {a, b, c}]
+EXPECTED:
+= {{a, b}, {c}}
+---
