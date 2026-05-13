@@ -14794,3 +14794,12 @@ INPUT: SingularValueDecomposition[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]
 EXPECTED:
 = {{-3, 2, 0}, {2, -1, 0}, {1, -2, 1}}
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: FactorInteger
+LINE: 298
+TYPE: >>
+INPUT: Times @@ Power @@@ factors
+EXPECTED:
+= 2010
+---
+---
