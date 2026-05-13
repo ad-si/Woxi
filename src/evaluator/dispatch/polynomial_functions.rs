@@ -156,12 +156,12 @@ pub fn dispatch_polynomial_functions(
         other => return Some(other),
       }
     }
-    "FindMinimum" if args.len() == 2 => {
+    "FindMinimum" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::find_minimum_ast(
         args, false,
       ));
     }
-    "FindMaximum" if args.len() == 2 => {
+    "FindMaximum" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::find_minimum_ast(
         args, true,
       ));

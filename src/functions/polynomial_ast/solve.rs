@@ -5193,12 +5193,15 @@ pub fn find_minimum_ast(
   } else {
     "FindMinimum"
   };
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{func_name} expects 2 arguments"
+      "{func_name} expects at least 2 arguments"
     )));
   }
-
+  // Trailing arguments are options (e.g. MaxIterations -> 2,
+  // Method -> "Newton"). They aren't honoured yet, but we accept them
+  // silently rather than aborting so call shapes match Wolfram.
+  // Only the first two positional arguments drive the optimisation.
   let f = &args[0];
 
   // Parse variables and starting points: {x, x0} or {{x, x0}, {y, y0}}

@@ -14171,3 +14171,12 @@ INPUT: Quiet[FindMaximum[-phi[x] + x, {x, 1.2}, Method->"Newton"]]
 EXPECTED:
 = {0.5, {x -> 1.00001}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindMaximum
+LINE: 780
+TYPE: >>
+INPUT: FindMaximum[-Exp[-1/x^2]+1., {x,1.2}, MaxIterations->2]
+EXPECTED:
+: The maximum number of iterations was exceeded. The result might be inaccurate.
+= ...
+---

@@ -1,13 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: FindMaximum
-LINE: 780
-TYPE: >>
-INPUT: FindMaximum[-Exp[-1/x^2]+1., {x,1.2}, MaxIterations->2]
-EXPECTED:
-: The maximum number of iterations was exceeded. The result might be inaccurate.
-= ...
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindMinimum
 LINE: 821
 TYPE: >>

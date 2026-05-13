@@ -5806,6 +5806,20 @@ mod cases {
     );
   }
   #[test]
+  fn find_maximum_accepts_options() {
+    // Trailing options (Method, MaxIterations, ...) must not abort the
+    // call. Wolfram accepts the 3-arg form; Woxi previously rejected it
+    // with FindMaximum::argrx.
+    assert_case(
+      r#"FindMaximum[-(x-3)^2+2., {x, 1}, MaxIterations->2]"#,
+      r#"{2., {x -> 3.}}"#,
+    );
+    assert_case(
+      r#"FindMaximum[Sin[x], {x, 1}, Method->"Newton"]"#,
+      r#"{1., {x -> 1.5707963267948957}}"#,
+    );
+  }
+  #[test]
   fn find_minimum_1() {
     assert_case(r#"FindMinimum[(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
   }
