@@ -14973,3 +14973,11 @@ TYPE: >>
 INPUT: SeedRandom["Mathics"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: SeedRandom
+LINE: 673
+TYPE: >>
+INPUT: RandomInteger[100]
+EXPECTED:
+= ...
+---
