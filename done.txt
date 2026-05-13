@@ -14255,3 +14255,11 @@ INPUT: Integrate[1 / (1 - 4 x + x^2), x]
 EXPECTED:
 = Sqrt[3] (Log[-2 - Sqrt[3] + x] - Log[-2 + Sqrt[3] + x]) / 6
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1016
+TYPE: >>
+INPUT: Integrate[Abs[Sin[phi]], {phi, 0, 2Pi}] // N
+EXPECTED:
+= 4.
+---

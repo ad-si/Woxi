@@ -69,6 +69,22 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
+      // N[Integrate[expr, {var, a, b}]] — when symbolic Integrate
+      // didn't simplify (e.g. Abs[Sin[phi]]), fall back to NIntegrate.
+      // Matches wolframscript's behaviour of computing the value
+      // numerically rather than returning the unevaluated form.
+      if name == "Integrate" && args.len() == 2 {
+        if let Expr::List(spec) = &args[1]
+          && spec.len() == 3
+          && matches!(&spec[0], Expr::Identifier(_))
+        {
+          if let Ok(r) = crate::functions::calculus_ast::nintegrate_ast(args)
+            && matches!(&r, Expr::Real(_) | Expr::Integer(_))
+          {
+            return Ok(r);
+          }
+        }
+      }
       // Special case for functions that stay symbolic when called
       // directly with a Real but have a numeric value triggered by N[].
       if args.len() == 1

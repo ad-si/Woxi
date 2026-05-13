@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 1016
-TYPE: >>
-INPUT: Integrate[Abs[Sin[phi]], {phi, 0, 2Pi}] // N
-EXPECTED:
-= 4.
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 1018
 TYPE: >>
 INPUT: % // Precision

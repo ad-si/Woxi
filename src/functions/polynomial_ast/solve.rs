@@ -2726,7 +2726,13 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::calculus_ast::differentiate_expr(&func, &var_name)
         .ok()
         .map(simplify);
-    return find_root_complex_newton(&func, deriv.as_ref(), &var_name, re0, im0);
+    return find_root_complex_newton(
+      &func,
+      deriv.as_ref(),
+      &var_name,
+      re0,
+      im0,
+    );
   }
   let (var, x0, x1_opt) = match &args[1] {
     Expr::List(items) if items.len() == 2 => {
@@ -2923,12 +2929,16 @@ fn expr_to_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
     Expr::Integer(n) => Some((*n as f64, 0.0)),
     Expr::Real(r) => Some((*r, 0.0)),
     Expr::Constant(s) | Expr::Identifier(s) if s == "I" => Some((0.0, 1.0)),
-    Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
       let re = expr_to_real_f64(&args[0])?;
       let im = expr_to_real_f64(&args[1])?;
       Some((re, im))
     }
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
         Some((*n as f64 / *d as f64, 0.0))
       } else {
@@ -3014,7 +3024,9 @@ fn expr_to_real_f64(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(r) => Some(*r),
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
         Some(*n as f64 / *d as f64)
       } else {
@@ -3072,14 +3084,13 @@ fn find_root_complex_newton(
   let (mut re, mut im) = (re0, im0);
   // Complex helpers
   let cabs = |a: f64, b: f64| (a * a + b * b).sqrt();
-  let cdiv =
-    |ar: f64, ai: f64, br: f64, bi: f64| -> Option<(f64, f64)> {
-      let denom = br * br + bi * bi;
-      if denom < 1e-300 {
-        return None;
-      }
-      Some(((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom))
-    };
+  let cdiv = |ar: f64, ai: f64, br: f64, bi: f64| -> Option<(f64, f64)> {
+    let denom = br * br + bi * bi;
+    if denom < 1e-300 {
+      return None;
+    }
+    Some(((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom))
+  };
   for _ in 0..max_iter {
     let (fr, fi) = match find_root_eval_complex_at(func, var, re, im) {
       Some(v) => v,
@@ -3095,9 +3106,11 @@ fn find_root_complex_newton(
     let (dr, di) = if let Some(d) = deriv {
       match find_root_eval_complex_at(d, var, re, im) {
         Some(v) => v,
-        None => return Err(InterpreterError::EvaluationError(
-          "FindRoot: cannot evaluate derivative at complex point".into(),
-        )),
+        None => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: cannot evaluate derivative at complex point".into(),
+          ));
+        }
       }
     } else {
       // Numerical derivative via complex finite difference along the
