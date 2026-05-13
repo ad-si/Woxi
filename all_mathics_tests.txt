@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: Hypergeometric2F1
-LINE: 120
-TYPE: >>
-INPUT: Hypergeometric2F1[2, 3, 4, x]
-EXPECTED:
-= 6 Log[1 - x] / x ^ 3 + (-6 + 3 x) / (-x ^ 2 + x ^ 3)
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric2F1
 LINE: 124
 TYPE: >>
 INPUT: Hypergeometric2F1[2 + I, -I, 3/4, 0.5 - 0.5 I]

@@ -16105,3 +16105,11 @@ INPUT: Hypergeometric2F1[2., 3., 4., 5.0]
 EXPECTED:
 = 0.156542 + 0.150796 I
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: Hypergeometric2F1
+LINE: 120
+TYPE: >>
+INPUT: Hypergeometric2F1[2, 3, 4, x]
+EXPECTED:
+= 6 Log[1 - x] / x ^ 3 + (-6 + 3 x) / (-x ^ 2 + x ^ 3)
+---
