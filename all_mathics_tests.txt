@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindMaximum
-LINE: 773
-TYPE: >>
-INPUT: FindMaximum[Sin[x], {x, 1}]
-EXPECTED:
-= {1., {x -> 1.5708}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: FindMaximum
 LINE: 776
 TYPE: >>
 INPUT: Quiet[FindMaximum[-phi[x] + x, {x, 1.2}, Method->"Newton"]]

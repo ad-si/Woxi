@@ -14155,3 +14155,11 @@ EXPECTED:
 : Encountered a gradient that is effectively zero. The result returned may not be a maximum; it may be a minimum or a saddle point.
 = {2., {x -> 3.}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindMaximum
+LINE: 773
+TYPE: >>
+INPUT: FindMaximum[Sin[x], {x, 1}]
+EXPECTED:
+= {1., {x -> 1.5708}}
+---
