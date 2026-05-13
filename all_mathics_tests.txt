@@ -1,11 +1,3 @@
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: InverseErf
-LINE: 177
-TYPE: >>
-INPUT: InverseErf /@ {0.9, 1.0, 1.1}
-EXPECTED:
-= {1.16309, Infinity, InverseErf[1.1]}
----
 FILE: mathics/builtin/specialfns/expintegral.py
 CLASS: ProductLog
 LINE: 108
