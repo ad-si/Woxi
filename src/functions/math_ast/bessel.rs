@@ -352,20 +352,19 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(k) => Some(*k),
     Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
     Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().and_then(|f| {
-      if f == f.floor() && f > 0.0 { Some(f as i128) } else { None }
+      if f == f.floor() && f > 0.0 {
+        Some(f as i128)
+      } else {
+        None
+      }
     }),
     _ => None,
   };
 
   // Numeric evaluation when n or k carries a numeric type beyond a bare
   // Integer (Real or BigFloat from N[…, prec]).
-  let has_numeric = matches!(
-    &args[0],
-    Expr::Real(_) | Expr::BigFloat(_, _)
-  ) || matches!(
-    &args[1],
-    Expr::Real(_) | Expr::BigFloat(_, _)
-  );
+  let has_numeric = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    || matches!(&args[1], Expr::Real(_) | Expr::BigFloat(_, _));
   if has_numeric
     && let (Some(n), Some(k)) = (n_val, k_val)
     && k >= 1
@@ -388,19 +387,30 @@ pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "BesselYZero expects exactly 2 arguments".into(),
     ));
   }
+  // Same Integer/Real/BigFloat extraction as bessel_j_zero_ast so that
+  // N[BesselYZero[n, k], precision] flows through to the numeric path.
   let n_val = match &args[0] {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
     _ => None,
   };
   let k_val = match &args[1] {
     Expr::Integer(k) => Some(*k),
     Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().and_then(|f| {
+      if f == f.floor() && f > 0.0 { Some(f as i128) } else { None }
+    }),
     _ => None,
   };
-  let has_real =
-    matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
-  if has_real
+  let has_numeric = matches!(
+    &args[0],
+    Expr::Real(_) | Expr::BigFloat(_, _)
+  ) || matches!(
+    &args[1],
+    Expr::Real(_) | Expr::BigFloat(_, _)
+  );
+  if has_numeric
     && let (Some(n), Some(k)) = (n_val, k_val)
     && k >= 1
   {
