@@ -14399,3 +14399,11 @@ INPUT: Solve[x / (x ^ 2 + 1) == 1, x]
 EXPECTED:
 = {{x -> 1 / 2 - I / 2 Sqrt[3]}, {x -> 1 / 2 + I / 2 Sqrt[3]}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2288
+TYPE: >>
+INPUT: Solve[Cos[x] == 0, x]
+EXPECTED:
+= {{x -> Pi / 2}, {x -> 3 Pi / 2}}
+---
