@@ -15524,3 +15524,11 @@ EXPECTED:
 . 
 . Options[r] = {Opt -> 3}
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Names
+LINE: 567
+TYPE: >>
+INPUT: Names["Global`*"]
+EXPECTED:
+= {x}
+---
