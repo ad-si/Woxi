@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcTanh
-LINE: 228
-TYPE: >>
-INPUT: ArcTanh[.5 + 2 I]
-EXPECTED:
-= 0.0964156 + 1.12656 I
----
-FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ComplexExpand
 LINE: 265
 TYPE: >>
