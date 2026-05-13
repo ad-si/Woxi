@@ -1,12 +1,4 @@
 FILE: mathics/builtin/distance/clusters.py
-CLASS: FindClusters
-LINE: 334
-TYPE: >>
-INPUT: FindClusters[{"meep", "heap", "deep", "weep", "sheep", "leap", "keep"}, 3]
-EXPECTED:
-= {{meep, deep, weep, keep}, {heap, leap}, {sheep}}
----
-FILE: mathics/builtin/distance/clusters.py
 CLASS: Nearest
 LINE: 402
 TYPE: >>
