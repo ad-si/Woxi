@@ -15174,3 +15174,11 @@ INPUT: g[a]
 EXPECTED:
 = {a, 4}
 ---
+FILE: mathics/builtin/patterns/defaults.py
+CLASS: Optional
+LINE: 88
+TYPE: >>
+INPUT: x : _+y_ : d // FullForm
+EXPECTED:
+= Pattern[x, Plus[Blank[], Optional[Pattern[y, Blank[]], d]]]
+---
