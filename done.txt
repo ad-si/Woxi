@@ -14904,3 +14904,11 @@ INPUT: $RandomState != previousState
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomState
+LINE: 618
+TYPE: >>
+INPUT: Mod[$RandomState, 10^100]
+EXPECTED:
+= ...
+---

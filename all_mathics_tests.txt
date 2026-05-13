@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomState
-LINE: 618
-TYPE: >>
-INPUT: Mod[$RandomState, 10^100]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomState
 LINE: 620
 TYPE: >>
 INPUT: IntegerLength[$RandomState]
