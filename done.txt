@@ -15473,3 +15473,30 @@ EXPECTED:
 . 
 . g[f] ^= 2
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 260
+TYPE: >>
+INPUT: Definition[r]
+EXPECTED:
+= Attributes[r] = {Orderless}
+. 
+. r[(arg_.), OptionsPattern[r]] = {arg, OptionValue[Opt]}
+. 
+. N[r, MachinePrecision] = 3.5
+. 
+. Format[r[args___], MathMLForm] = Infix[{args}, "#"]
+. 
+. Format[r[args___], OutputForm] = Infix[{args}, "#"]
+. 
+. Format[r[args___], StandardForm] = Infix[{args}, "#"]
+. 
+. Format[r[args___], TeXForm] = Infix[{args}, "#"]
+. 
+. Format[r[args___], TraditionalForm] = Infix[{args}, "#"]
+. 
+. Default[r, 1] = 2
+. 
+. Options[r] = {Opt -> 3}
+.
+---
