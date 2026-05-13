@@ -15555,3 +15555,11 @@ TYPE: #>
 INPUT: DeleteDirectory[dir]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/directories/directory_operations.py
+CLASS: DeleteDirectory
+LINE: 99
+TYPE: #>
+INPUT: Quiet[DeleteDirectory[dir]]
+EXPECTED:
+= $Failed
+---

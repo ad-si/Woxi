@@ -1,11 +1,3 @@
-FILE: mathics/builtin/directories/directory_operations.py
-CLASS: DeleteDirectory
-LINE: 99
-TYPE: #>
-INPUT: Quiet[DeleteDirectory[dir]]
-EXPECTED:
-= $Failed
----
 FILE: mathics/builtin/drawing/drawing_options.py
 CLASS: MaxRecursion
 LINE: 243
