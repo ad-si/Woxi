@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: MinimalPolynomial
-LINE: 1692
-TYPE: >>
-INPUT: MinimalPolynomial[Sqrt[I + Sqrt[6]], x]
-EXPECTED:
-= 49 - 10 x ^ 4 + x ^ 8
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Together
 LINE: 1904
 TYPE: >>

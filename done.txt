@@ -14082,3 +14082,11 @@ INPUT: MinimalPolynomial[Sqrt[1 + Sqrt[3]], x]
 EXPECTED:
 = -2 - 2 x ^ 2 + x ^ 4
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: MinimalPolynomial
+LINE: 1692
+TYPE: >>
+INPUT: MinimalPolynomial[Sqrt[I + Sqrt[6]], x]
+EXPECTED:
+= 49 - 10 x ^ 4 + x ^ 8
+---
