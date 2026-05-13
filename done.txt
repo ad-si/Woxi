@@ -15532,3 +15532,11 @@ INPUT: Names["Global`*"]
 EXPECTED:
 = {x}
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Names
+LINE: 571
+TYPE: >>
+INPUT: Length[Names["System`*"]]
+EXPECTED:
+= ...
+---
