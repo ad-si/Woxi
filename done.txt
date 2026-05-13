@@ -15696,3 +15696,11 @@ INPUT: BesselJ[0, 5.2]
 EXPECTED:
 = -0.11029
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselJ
+LINE: 376
+TYPE: >>
+INPUT: BesselJ[1/2, x]
+EXPECTED:
+= Sqrt[2] Sin[x] / (Sqrt[x] Sqrt[Pi])
+---
