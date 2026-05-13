@@ -14482,3 +14482,11 @@ INPUT: N[Pi, 20, Method->"numpy"]
 EXPECTED:
 = 3.1415...
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Underflow
+LINE: 729
+TYPE: >>
+INPUT: 5 * Underflow[]
+EXPECTED:
+= 5 Underflow[]
+---
