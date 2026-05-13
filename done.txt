@@ -15880,3 +15880,11 @@ INPUT: SphericalBesselJ[1, 5.2]
 EXPECTED:
 = -0.122771
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: SphericalBesselY
+LINE: 772
+TYPE: >>
+INPUT: SphericalBesselY[1, 5.5]
+EXPECTED:
+= 0.104853
+---
