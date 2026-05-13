@@ -429,6 +429,23 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
   Ok(expr_to_string(&evaluate_expr_to_expr(expr)?))
 }
 
+/// Whether an expression is a valid rules slot for ReplaceAll /
+/// ReplaceRepeated: a single Rule/RuleDelayed, or a (possibly nested)
+/// list of such rules. Anything else triggers ReplaceAll::reps in
+/// Wolfram.
+fn is_valid_replace_rules(expr: &Expr) -> bool {
+  match expr {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+    Expr::FunctionCall { name, .. }
+      if name == "Rule" || name == "RuleDelayed" =>
+    {
+      true
+    }
+    Expr::List(items) => items.iter().all(is_valid_replace_rules),
+    _ => false,
+  }
+}
+
 /// Evaluate an Expr AST and return a new Expr (not a string).
 /// This is the core function for AST-based evaluation without string round-trips.
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -2520,6 +2537,21 @@ pub fn evaluate_expr_to_expr_inner(
         } else {
           &evaluated_rules
         };
+      // Validate rules shape. Wolfram emits ReplaceAll::reps and returns
+      // the call unevaluated when the rules slot isn't a Rule/RuleDelayed
+      // (or list of such, possibly nested for multi-solution forms).
+      // Mirror that here so `eqs /. sol` with `sol` unbound surfaces the
+      // same diagnostic instead of silently returning `eqs`.
+      if !is_valid_replace_rules(unwrapped) {
+        crate::emit_message(&format!(
+          "ReplaceAll::reps: {{{}}} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
+          crate::syntax::expr_to_output(unwrapped),
+        ));
+        return Ok(Expr::ReplaceAll {
+          expr: Box::new(evaluated_expr),
+          rules: Box::new(evaluated_rules),
+        });
+      }
       let result = apply_replace_all_ast(&evaluated_expr, unwrapped)?;
       Err(InterpreterError::TailCall(Box::new(result)))
     }

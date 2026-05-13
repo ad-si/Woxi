@@ -1,13 +1,5 @@
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
-LINE: 2313
-TYPE: >>
-INPUT: eqs /. sol // Simplify
-EXPECTED:
-= {{True, True}, {True, True}, {True, True}, {True, True}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
 LINE: 2317
 TYPE: >>
 INPUT: Solve[x^2 == 1 && z^2 == -1, {x, y, z}]
