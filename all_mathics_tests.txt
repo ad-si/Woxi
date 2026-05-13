@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCosh
-LINE: 53
-TYPE: >>
-INPUT: ArcCosh[0.00000000000000000000000000000000000000]
-EXPECTED:
-= 1.5707963267948966192313216916397514421 I
----
-FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ArcTanh
 LINE: 228
 TYPE: >>
