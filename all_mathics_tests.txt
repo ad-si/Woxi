@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomInteger
-LINE: 478
-TYPE: >>
-INPUT: $RandomState != previousState
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomState
 LINE: 618
 TYPE: >>
