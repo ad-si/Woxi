@@ -15616,3 +15616,11 @@ TYPE: >>
 INPUT: Unprotect[ColorData]; ColorData["test"] := ColorDataFunction["test", "Gradients", {0, 1}, Blend[{Red, Green, Blue}, #1] &]; Protect[ColorData]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: Union
+LINE: 1427
+TYPE: >>
+INPUT: Union[{1, 2, 3}, {2, 3, 4}, SameTest->Less]
+EXPECTED:
+= {1, 2, 2, 3, 4}
+---
