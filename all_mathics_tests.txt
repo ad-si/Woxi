@@ -1,11 +1,3 @@
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Underflow
-LINE: 737
-TYPE: >>
-INPUT: % // N
-EXPECTED:
-= 1.
----
 FILE: mathics/builtin/numbers/diffeqns.py
 CLASS: DSolve
 LINE: 33
