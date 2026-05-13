@@ -14770,3 +14770,11 @@ INPUT: QRDecomposition[{{1, 2}, {3, 4}, {5, 6}}]
 EXPECTED:
 = {{{Sqrt[35] / 35, 3 Sqrt[35] / 35, Sqrt[35] / 7}, {13 Sqrt[210] / 210, 2 Sqrt[210] / 105, -Sqrt[210] / 42}}, {{Sqrt[35], 44 Sqrt[35] / 35}, {0, 2 Sqrt[210] / 35}}}
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: SingularValueDecomposition
+LINE: 820
+TYPE: >>
+INPUT: SingularValueDecomposition[{{1.5, 2.0}, {2.5, 3.0}}]
+EXPECTED:
+= {{{0.538954, 0.842335}, {0.842335, -0.538954}}, {{4.63555, 0.}, {0., 0.107862}}, {{0.628678, 0.777666}, {-0.777666, 0.628678}}}
+---
