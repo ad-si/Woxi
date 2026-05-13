@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: DiscreteLimit
-LINE: 563
-TYPE: >>
-INPUT: DiscreteLimit[(n/(n + 2)) E^(-m/(m + 1)), {m -> Infinity, n -> Infinity}]
-EXPECTED:
-= 1 / E
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindMaximum
 LINE: 770
 TYPE: >>

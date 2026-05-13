@@ -14138,3 +14138,11 @@ INPUT: Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]
 EXPECTED:
 = 0&
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: DiscreteLimit
+LINE: 563
+TYPE: >>
+INPUT: DiscreteLimit[(n/(n + 2)) E^(-m/(m + 1)), {m -> Infinity, n -> Infinity}]
+EXPECTED:
+= 1 / E
+---

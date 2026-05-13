@@ -6944,6 +6944,46 @@ fn limit_at_infinity(
     return crate::evaluator::evaluate_expr_to_expr(expr);
   }
 
+  // Pull out multiplicative factors that are constant w.r.t. `var_name`.
+  // Lets `Limit[a*f(n), n -> Infinity]` reduce to `a * Limit[f(n), n -> Infinity]`
+  // — without this, our numeric-fallback path bails when the expression
+  // contains free variables besides the limit target. Only apply when at
+  // least one factor would actually be peeled off.
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(expr);
+  if factors.len() >= 2 {
+    let (constant_factors, var_factors): (Vec<Expr>, Vec<Expr>) = factors
+      .into_iter()
+      .partition(|f| is_constant_wrt(f, var_name));
+    if !constant_factors.is_empty() && !var_factors.is_empty() {
+      let var_part = if var_factors.len() == 1 {
+        var_factors.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: var_factors.into(),
+        }
+      };
+      let inner_limit = limit_at_infinity(&var_part, var_name, point)?;
+      // Only commit to the factored form if the recursive limit actually
+      // resolved (didn't come back wrapped in a Limit[...] head).
+      if !matches!(&inner_limit, Expr::FunctionCall { name, .. } if name == "Limit")
+      {
+        let mut all = constant_factors;
+        all.push(inner_limit);
+        let product = if all.len() == 1 {
+          all.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: all.into(),
+          }
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&product);
+      }
+    }
+  }
+
   // Handle var itself: Limit[n, n -> Infinity] = Infinity
   if let Expr::Identifier(name) = expr
     && name == var_name
@@ -6962,8 +7002,27 @@ fn limit_at_infinity(
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
-  // Handle f^g form (e.g., (1 + 1/n)^n -> E)
+  // Handle f^g form (e.g., (1 + 1/n)^n -> E, or E^(-m/(m+1)) -> E^(-1))
   if let Some((base, exp)) = extract_power(expr) {
+    // Constant base, variable exponent: lift the limit into the exponent.
+    // Limit[c^g(n), n -> point] = c^Limit[g, n -> point] when c is free of n.
+    if is_constant_wrt(&base, var_name) && !is_constant_wrt(&exp, var_name) {
+      let rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var_name.to_string())),
+        replacement: Box::new(point.clone()),
+      };
+      let exp_limit = limit_ast(&[exp.clone(), rule])?;
+      // Only commit if the inner Limit fully resolved.
+      if !matches!(&exp_limit, Expr::FunctionCall { name, .. } if name == "Limit")
+      {
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(base.clone()),
+          right: Box::new(exp_limit),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
+    }
     // Check if base -> 1 and exponent -> Infinity (1^Infinity indeterminate form)
     if eval_at_infinity_is_one(&base, var_name)
       && eval_at_infinity_diverges(&exp, var_name).is_some()

@@ -1462,6 +1462,29 @@ mod limit {
       "1"
     );
   }
+  #[test]
+  fn limit_factors_out_constants_at_infinity() {
+    // Limit[a*f(n), n -> Infinity] should pull `a` (free of n) out of
+    // the limit. wolframscript reduces this to `a` (since n/(n+2) -> 1).
+    assert_eq!(
+      interpret("Limit[a*n/(n + 2), n -> Infinity]").unwrap(),
+      "a"
+    );
+  }
+  #[test]
+  fn discrete_limit_multivar_at_infinity() {
+    // DiscreteLimit applied to a 2-variable expression with iterated
+    // substitutions {m -> Inf, n -> Inf} should reduce to E^(-1).
+    // The outer limit pulls n/(n+2) -> 1; the inner pulls
+    // E^(-m/(m+1)) -> E^(-1).
+    assert_eq!(
+      interpret(
+        "DiscreteLimit[(n/(n + 2)) E^(-m/(m + 1)), {m -> Infinity, n -> Infinity}]"
+      )
+      .unwrap(),
+      "E^(-1)"
+    );
+  }
 }
 
 mod nintegrate {
