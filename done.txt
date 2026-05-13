@@ -15086,3 +15086,11 @@ INPUT: RandomSample[Range[100] -> Range[100], 5]
 EXPECTED:
 = {62, 98, 86, 78, 40}
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: Haversine
+LINE: 701
+TYPE: >>
+INPUT: Haversine[0.5 + 2I]
+EXPECTED:
+= -1.15082 + 0.869405 I
+---

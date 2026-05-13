@@ -1,11 +1,3 @@
-FILE: mathics/builtin/numbers/trig.py
-CLASS: Haversine
-LINE: 701
-TYPE: >>
-INPUT: Haversine[0.5 + 2I]
-EXPECTED:
-= -1.15082 + 0.869405 I
----
 FILE: mathics/builtin/patterns/__init__.py
 CLASS: None
 LINE: 17
