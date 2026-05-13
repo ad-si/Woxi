@@ -1,17 +1,5 @@
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 284
-TYPE: >>
-INPUT: Definition[r]
-EXPECTED:
-= Attributes[r] = {Orderless, ReadProtected}
-. 
-. Default[r, 1] = 2
-. 
-. Options[r] = {Opt -> 3}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 304
 TYPE: >>
 INPUT: Definition[r]
