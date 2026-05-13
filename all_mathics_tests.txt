@@ -1,12 +1,4 @@
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: Factor
-LINE: 1397
-TYPE: >>
-INPUT: a == "A" // Factor // InputForm
-EXPECTED:
-= a == "A"
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Simplify
 LINE: 1558
 TYPE: >>

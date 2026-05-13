@@ -14034,3 +14034,11 @@ INPUT: Factor[x a == x b + x c]
 EXPECTED:
 = a x == x (b + c)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Factor
+LINE: 1397
+TYPE: >>
+INPUT: a == "A" // Factor // InputForm
+EXPECTED:
+= a == "A"
+---
