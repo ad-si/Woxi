@@ -16073,3 +16073,11 @@ EXPECTED:
 : Overflow occurred in computation.
 = Overflow[]
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Pochhammer
+LINE: 441
+TYPE: >>
+INPUT: Pochhammer[1, 3.001]
+EXPECTED:
+= 6.00754
+---
