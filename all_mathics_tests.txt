@@ -1,11 +1,3 @@
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomSample
-LINE: 770
-TYPE: >>
-INPUT: RandomSample[Range[100] -> Range[100], 5]
-EXPECTED:
-= {62, 98, 86, 78, 40}
----
 FILE: mathics/builtin/numbers/trig.py
 CLASS: Haversine
 LINE: 701

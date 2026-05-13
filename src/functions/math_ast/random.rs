@@ -600,6 +600,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomSample[list]
 pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
   use rand::seq::SliceRandom;
 
   if args.is_empty() || args.len() > 2 {
@@ -608,20 +609,85 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "RandomSample".to_string(),
-        args: args.to_vec().into(),
-      });
+  // Weighted form: RandomSample[weights -> values, n]. Sample without
+  // replacement using the standard "exponential trick" (Efraimidis–Spirakis):
+  // assign each item a key u_i^(1/w_i) where u_i ~ Uniform(0, 1), then pick
+  // the n items with the largest keys. Equivalent to weighted reservoir
+  // sampling without replacement, matching Wolfram's semantics.
+  let (items_owned, weights): (Vec<Expr>, Option<Vec<f64>>) = match &args[0] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let (Expr::List(weights), Expr::List(values)) =
+        (pattern.as_ref(), replacement.as_ref())
+      else {
+        return Ok(Expr::FunctionCall {
+          name: "RandomSample".to_string(),
+          args: args.to_vec().into(),
+        });
+      };
+      if weights.is_empty() || weights.len() != values.len() {
+        return Err(InterpreterError::EvaluationError(
+          "RandomSample: weight and value lists must have matching length".into(),
+        ));
+      }
+      let mut ws = Vec::with_capacity(weights.len());
+      for w in weights.iter() {
+        let v = expr_to_num(w).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RandomSample: weights must be numeric".into(),
+          )
+        })?;
+        if v < 0.0 {
+          return Err(InterpreterError::EvaluationError(
+            "RandomSample: weights must be non-negative".into(),
+          ));
+        }
+        ws.push(v);
+      }
+      (values.iter().cloned().collect(), Some(ws))
+    }
+    _ => (Vec::new(), None),
+  };
+
+  let items: &[Expr] = if weights.is_some() {
+    &items_owned
+  } else {
+    match &args[0] {
+      Expr::List(items) => items.as_ref(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "RandomSample".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
     }
   };
 
   if args.len() == 1 {
-    let mut shuffled = items.clone();
-    crate::with_rng(|rng| shuffled.shuffle(rng));
-    Ok(Expr::List(shuffled))
+    // Weighted shuffle: full ordering by Efraimidis–Spirakis keys when
+    // weights are supplied, otherwise plain uniform shuffle.
+    if let Some(ws) = weights.as_ref() {
+      let keys: Vec<f64> = crate::with_rng(|rng| {
+        ws.iter()
+          .map(|&w| {
+            let u: f64 = rng.gen_range(f64::MIN_POSITIVE..1.0);
+            if w <= 0.0 { f64::NEG_INFINITY } else { u.ln() / w }
+          })
+          .collect()
+      });
+      let mut idxs: Vec<usize> = (0..items.len()).collect();
+      idxs.sort_by(|&a, &b| {
+        keys[b].partial_cmp(&keys[a]).unwrap_or(std::cmp::Ordering::Equal)
+      });
+      let result: Vec<Expr> = idxs.into_iter().map(|i| items[i].clone()).collect();
+      Ok(Expr::List(result.into()))
+    } else {
+      let mut shuffled: Vec<Expr> = items.to_vec();
+      crate::with_rng(|rng| shuffled.shuffle(rng));
+      Ok(Expr::List(shuffled.into()))
+    }
   } else {
     let n = match &args[1] {
       Expr::Integer(n) if *n >= 0 => *n as usize,
@@ -648,9 +714,30 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         items.len()
       )));
     }
-    let sampled: Vec<Expr> =
-      crate::with_rng(|rng| items.choose_multiple(rng, n).cloned().collect());
-    Ok(Expr::List(sampled.into()))
+    if let Some(ws) = weights.as_ref() {
+      // Pick the n items with the largest Efraimidis–Spirakis keys.
+      let keys: Vec<f64> = crate::with_rng(|rng| {
+        ws.iter()
+          .map(|&w| {
+            let u: f64 = rng.gen_range(f64::MIN_POSITIVE..1.0);
+            if w <= 0.0 { f64::NEG_INFINITY } else { u.ln() / w }
+          })
+          .collect()
+      });
+      let mut idxs: Vec<usize> = (0..items.len()).collect();
+      idxs.sort_by(|&a, &b| {
+        keys[b].partial_cmp(&keys[a]).unwrap_or(std::cmp::Ordering::Equal)
+      });
+      idxs.truncate(n);
+      let sampled: Vec<Expr> =
+        idxs.into_iter().map(|i| items[i].clone()).collect();
+      Ok(Expr::List(sampled.into()))
+    } else {
+      let sampled: Vec<Expr> = crate::with_rng(|rng| {
+        items.choose_multiple(rng, n).cloned().collect()
+      });
+      Ok(Expr::List(sampled.into()))
+    }
   }
 }
 
