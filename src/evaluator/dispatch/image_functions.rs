@@ -79,7 +79,7 @@ pub fn dispatch_image_functions(
     "ImageRotate" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_rotate_ast(args));
     }
-    "ImageResize" if args.len() == 2 => {
+    "ImageResize" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_resize_ast(args));
     }
     "ImageTrim" if args.len() == 2 => {

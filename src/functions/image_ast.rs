@@ -1069,6 +1069,20 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
 pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // wolframscript checks the image arg before validating the arg
+  // count, so a non-image first arg emits imginv even when extra
+  // options are passed.
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "ImageResize::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "ImageResize".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageResize expects exactly 2 arguments".into(),
