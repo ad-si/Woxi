@@ -19270,3 +19270,16 @@ NOTE: parameter-name placeholder for `test_private_doctests_characters2`
   `tests/interpreter_tests/string.rs`. The placeholder row carries no
   test data.
 ---
+FILE: mathics/test/builtin/test_system.py
+FUNCTION: test_private_doctests_system
+LINE: 14
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: assert_tag_message
+NOTE: parameter-name placeholder for `test_private_doctests_system`,
+  mathics's parameterised doctest harness for system-level built-ins
+  (e.g. `$Version`, `$System`, `$SystemTimeZone`). Woxi has its own
+  system-symbol implementations and coverage in
+  `tests/interpreter_tests/machine_specific.rs` and friends. The
+  placeholder row carries no test data.
+---
