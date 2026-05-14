@@ -1,13 +1,5 @@
 FILE: mathics/builtin/colors/color_directives.py
 CLASS: ColorDistance
-LINE: 283
-TYPE: >>
-INPUT: ColorDistance[Magenta, Green]
-EXPECTED:
-= 2.2507
----
-FILE: mathics/builtin/colors/color_directives.py
-CLASS: ColorDistance
 LINE: 285
 TYPE: >>
 INPUT: ColorDistance[{Red, Blue}, {Green, Yellow}, DistanceFunction -> {"CMC", "Perceptibility"}]

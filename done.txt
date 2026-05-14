@@ -16313,3 +16313,11 @@ INPUT: Zeta[-2.5 + I]
 EXPECTED:
 = 0.0235936 + 0.0014078 I
 ---
+FILE: mathics/builtin/colors/color_directives.py
+CLASS: ColorDistance
+LINE: 283
+TYPE: >>
+INPUT: ColorDistance[Magenta, Green]
+EXPECTED:
+= 2.2507
+---
