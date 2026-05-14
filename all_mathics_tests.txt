@@ -1,12 +1,3 @@
-FILE: mathics/builtin/image/misc.py
-CLASS: TextRecognize
-LINE: 227
-TYPE: >>
-INPUT: TextRecognize[textimage]
-EXPECTED:
-= ...
-: ...
----
 FILE: mathics/builtin/image/morph.py
 CLASS: Closing
 LINE: 50

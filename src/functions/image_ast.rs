@@ -2177,6 +2177,22 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// TextRecognize[img] — OCR stub. Real text recognition is not
+/// implemented; this stub matches wolframscript's TextRecognize::imgvinv
+/// warning for non-image input.
+pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "TextRecognize::imgvinv: Expecting an image, graphics or video instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "TextRecognize".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// MedianFilter[arg, r] — stub. Emits MedianFilter::arg1 when first
 /// arg isn't an image or list. (MaxFilter and MinFilter have their own
 /// arg1 warnings inside their existing list-processing dispatch in
