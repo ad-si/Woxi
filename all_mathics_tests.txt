@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/drawing/test_image.py
-FUNCTION: None
-LINE: 49
-INPUT: Binarize[img, {0.2, 0.6}
-EXPECTED: -Image-
----
 FILE: mathics/test/builtin/specialfns/test_bessel.py
 FUNCTION: None
 LINE: 26
