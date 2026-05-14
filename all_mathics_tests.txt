@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_misc_private_tests
-LINE: 664
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: message
----
 FILE: mathics/test/builtin/test_numeric.py
 FUNCTION: test_right_number_of_arguments
 LINE: 137

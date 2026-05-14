@@ -19166,3 +19166,14 @@ NOTE: parameter-name placeholder for `test_cmp_compare_numbers` —
   and the existing comparison tests in
   `tests/interpreter_tests/algebra.rs` and friends.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_misc_private_tests
+LINE: 664
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: message
+NOTE: parameter-name placeholder for `test_misc_private_tests` in
+  the Comparison module — miscellaneous internal mathics regression
+  rows for Equal/UnsameQ/etc. Broadly covered by Woxi's existing
+  comparison test suite.
+---
