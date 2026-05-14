@@ -19340,3 +19340,14 @@ NOTE: parameter-name placeholder for `test_random_sample`. RNG-family
   Python random's output, which diverges from wolframscript's and
   Woxi's RNG sequences. See memory `project-rng-sequence-divergence`.
 ---
+FILE: mathics/test/builtin/numbers/test_randomnumbers.py
+FUNCTION: test_random_sample
+LINE: 11
+INPUT: SeedRandom[42]; RandomSample[{a, b, c, d}]
+EXPECTED: {b, d, a, c}
+NOTE: duplicate of the SeedRandom[42] / RandomSample[{a, b, c, d}]
+  row from earlier loops. RNG-sequence divergence: mathics uses
+  Python random, wolframscript uses its own RNG, Woxi uses
+  ChaCha8Rng. All three produce different valid permutations. See
+  memory `project-rng-sequence-divergence`.
+---
