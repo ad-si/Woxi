@@ -583,11 +583,10 @@ pub fn pixel_value_positions_ast(
       Ok(Expr::List(positions.into()))
     }
     _ => {
-      crate::emit_message(
-        "PixelValuePositions: argument is not an Image; returning unevaluated."
-          .to_string()
-          .as_str(),
-      );
+      crate::emit_message(&format!(
+        "PixelValuePositions::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
       Ok(Expr::FunctionCall {
         name: "PixelValuePositions".to_string(),
         args: args.to_vec().into(),
