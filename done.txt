@@ -17937,3 +17937,16 @@ NOTE: row in test_accuracy parameterisation that runs
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   accuracy_of_list_with_accuracy_tagged_zero.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 260
+INPUT: 0.4 + 2.4 I
+EXPECTED: MachinePrecision
+NOTE: extraction labelled this `test_accuracy` but the actual mathics
+  test is `test_precision`: row `(" 0.4 + 2.4 I", "MachinePrecision")`
+  runs `Precision[0.4 + 2.4 I]`. A complex value with two machine-
+  precision components has Precision = MachinePrecision. Woxi matches
+  wolframscript exactly. Regression test:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  precision_of_complex_machine_real.
+---

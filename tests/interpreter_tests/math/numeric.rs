@@ -110,6 +110,16 @@ mod n_arbitrary_precision {
     assert_eq!(interpret("Accuracy[{1, 0.``5}]").unwrap(), "5.");
   }
 
+  // Regression (mathics test_numbers.py:260): a complex with machine-
+  // precision real and imaginary parts has Precision = MachinePrecision.
+  #[test]
+  fn precision_of_complex_machine_real() {
+    assert_eq!(
+      interpret("Precision[0.4 + 2.4 I]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
   #[test]
   fn n_of_machine_real_stays_machine() {
     // N[1.5, 30] on a machine-precision Real returns the Real unchanged;

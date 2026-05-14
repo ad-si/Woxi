@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
-LINE: 260
-INPUT: 0.4 + 2.4 I
-EXPECTED: MachinePrecision
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_accuracy
 LINE: 267
 INPUT: {1, 0.}
 EXPECTED: MachinePrecision
