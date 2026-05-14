@@ -17806,3 +17806,14 @@ NOTE: RNG-sequence divergence. mathics's expected `{b, d, a, c}` is
   the underlying RNG. Implementing wolframscript-byte-equivalent RNG
   is out of scope. See memory `project-rng-sequence-divergence`.
 ---
+FILE: mathics/test/builtin/numbers/test_randomnumbers.py
+FUNCTION: None
+LINE: 28
+INPUT: SeedRandom[42]; RandomSample[Range[10]]
+EXPECTED: {9, 2, 6, 1, 8, 3, 10, 5, 4, 7}
+NOTE: same RNG-sequence divergence as line 14. mathics's expected is
+  Python random's seed-42 sequence; wolframscript returns
+  `{7, 1, 5, 9, 8, 10, 4, 6, 3, 2}`; Woxi (ChaCha8Rng) returns
+  `{1, 4, 6, 8, 10, 5, 9, 2, 7, 3}`. All three are valid 10-element
+  permutations of 1..10. See memory `project-rng-sequence-divergence`.
+---

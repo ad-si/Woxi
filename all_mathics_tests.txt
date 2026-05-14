@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/numbers/test_randomnumbers.py
-FUNCTION: None
-LINE: 28
-INPUT: SeedRandom[42]; RandomSample[Range[10]]
-EXPECTED: {9, 2, 6, 1, 8, 3, 10, 5, 4, 7}
----
 FILE: mathics/test/builtin/numbers/test_trig.py
 FUNCTION: test_ArcCos
 LINE: 20
