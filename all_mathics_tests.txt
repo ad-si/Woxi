@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 274
-TYPE: >>
-INPUT: 13.1416``4 == 13.1413``4
-EXPECTED:
-= True
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 279
 TYPE: >>
 INPUT: 0``4
@@ -2776,4 +2768,12 @@ TYPE: >>
 INPUT: WordCloud[Range[50] -> ToString /@ Range[50]]
 EXPECTED:
 = -Image-
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 274
+TYPE: >>
+INPUT: 13.1416``4 == 13.1413``4
+EXPECTED:
+= True
 ---
