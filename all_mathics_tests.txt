@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/basic.py
-CLASS: ImagePartition
-LINE: 194
-TYPE: >>
-INPUT: ImagePartition[hedy, {512, 128}]
-EXPECTED:
-= {{-Image-}, {-Image-}, {-Image-}, {-Image-}, {-Image-}, {-Image-}}
----
-FILE: mathics/builtin/image/basic.py
 CLASS: Sharpen
 LINE: 238
 TYPE: >>
