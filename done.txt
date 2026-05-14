@@ -16217,3 +16217,11 @@ INPUT: HermiteH[4.2, 2]
 EXPECTED:
 = 77.5291
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: JacobiP
+LINE: 115
+TYPE: >>
+INPUT: JacobiP[1, a, b, z]
+EXPECTED:
+= a / 2 - b / 2 + z (1 + a / 2 + b / 2)
+---
