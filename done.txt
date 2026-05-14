@@ -19307,3 +19307,14 @@ NOTE: parameter-name placeholder for `test_set_and_clear`
   `tests/interpreter_tests/function_definitions.rs` and
   `tests/interpreter_tests/control_flow.rs`.
 ---
+FILE: mathics/test/builtin/assignments/test_assignment.py
+FUNCTION: test_set_and_clear_to_fix
+LINE: 264
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_set_and_clear_to_fix` —
+  the "_to_fix" suffix marks rows mathics itself flags as known-
+  broken. Same assignment-system territory as `test_set_and_clear`,
+  covered by Woxi's existing assignment tests.
+---
