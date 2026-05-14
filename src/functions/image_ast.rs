@@ -512,9 +512,16 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       Ok(Expr::List(rows.into()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageData: argument is not an Image".into(),
-    )),
+    _ => {
+      crate::emit_message(&format!(
+        "ImageData::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageData".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

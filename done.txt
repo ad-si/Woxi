@@ -17075,3 +17075,11 @@ INPUT: ImageChannels[img]
 EXPECTED:
 = 3
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageData
+LINE: 88
+TYPE: >>
+INPUT: ImageData[img]
+EXPECTED:
+= {{0.2, 0.4}, {0.9, 0.6}, {0.5, 0.8}}
+---
