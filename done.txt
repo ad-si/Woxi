@@ -16707,3 +16707,11 @@ INPUT: ImageAdd[i, i]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/composition.py
+CLASS: ImageAdd
+LINE: 85
+TYPE: >>
+INPUT: ImageAdd[noise, ein]
+EXPECTED:
+= -Image-
+---

@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/composition.py
 CLASS: ImageAdd
-LINE: 85
-TYPE: >>
-INPUT: ImageAdd[noise, ein]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/composition.py
-CLASS: ImageAdd
 LINE: 89
 TYPE: >>
 INPUT: noise = RandomImage[{-0.2, 0.2}, ImageDimensions[hedy], ColorSpace -> "RGB"];
