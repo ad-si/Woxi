@@ -17235,3 +17235,13 @@ INPUT: r[1, 2, 3]
 EXPECTED:
 = 1 ~ 2 ~ 3
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 888
+TYPE: >>
+INPUT: Grid[{{a, b}, {c, d}}]
+EXPECTED:
+= a   b
+.
+. c   d
+---
