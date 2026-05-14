@@ -17854,3 +17854,17 @@ NOTE: Woxi produces `(5*Pi)/6`, matching wolframscript. mathics's
   `5/6 Pi` is the same value rendered differently. Regression test:
   tests/interpreter_tests/arithmetic.rs::arccos_neg_half_sqrt3.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 102
+INPUT: RealDigits[1/197, 260, 5, -6]
+EXPECTED: {{246, 208, 137, 67, 80}, -5}
+NOTE: Woxi's `real_digits_ast` rational-input path ignored the
+  optional `start_pos` (4th) argument, so it returned the first 5
+  digits from the MSD instead of starting at position -6. Added a
+  skip/pad pass mirroring the bigfloat path: pre-extract enough digits
+  to cover [MSD..p-num_digits+1], then slice. Now matches wolframscript
+  for `RealDigits[x, b, n, p]` across positive and negative `p`.
+  Regression tests in
+  tests/interpreter_tests/math/number_theory.rs::real_digits.
+---

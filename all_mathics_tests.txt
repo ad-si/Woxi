@@ -6,12 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 102
-INPUT: RealDigits[1/197, 260, 5, -6]
-EXPECTED: {{246, 208, 137, 67, 80}, -5}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
 LINE: 166
 INPUT: N[Pi, Pi]

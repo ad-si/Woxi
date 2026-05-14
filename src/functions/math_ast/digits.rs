@@ -1655,7 +1655,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let int_part = remainder / d;
       remainder %= d;
 
-      // Determine exponent from integer part
+      // Determine exponent from integer part (Wolfram convention: number
+      // of digits to the left of the decimal point, so first digit sits
+      // at position `exponent - 1`).
       let exponent: i128 = if int_part == 0 {
         let mut temp = remainder * base;
         let mut leading_zeros: i128 = 0;
@@ -1672,6 +1674,23 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           temp /= base;
         }
         count
+      };
+
+      // When the caller provides `start_pos = p`, we need to collect
+      // digits at positions p, p-1, …, p-num_digits+1. Pre-extract more
+      // digits than `num_digits` so the skip-and-pad logic below can
+      // align the slice correctly. The MSD sits at position `exponent - 1`.
+      let (effective_digits, leading_pad) = if let Some(p) = start_pos {
+        let msd_pos = exponent - 1;
+        let skip = msd_pos - p; // > 0 when p < MSD (need extra digits)
+        if skip >= 0 {
+          ((skip as usize) + num_digits, 0usize)
+        } else {
+          // p above MSD: pad zeros on the left.
+          (num_digits.saturating_sub((-skip) as usize), (-skip) as usize)
+        }
+      } else {
+        (num_digits, 0usize)
       };
 
       // Extract integer part digits
@@ -1700,7 +1719,8 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         None
       };
-      let max_known = precision_cap.unwrap_or(num_digits).min(num_digits);
+      let max_known =
+        precision_cap.unwrap_or(effective_digits).min(effective_digits);
 
       // Generate up to `max_known` known digits.
       while digits.len() < max_known {
@@ -1710,6 +1730,35 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         digits.push(digit);
       }
       digits.truncate(max_known);
+
+      // Slice + pad to satisfy `start_pos` semantics.
+      if let Some(p) = start_pos {
+        let msd_pos = exponent - 1;
+        let skip = msd_pos - p;
+        if skip > 0 {
+          let sk = skip as usize;
+          if sk >= digits.len() {
+            digits.clear();
+          } else {
+            digits.drain(..sk);
+          }
+        }
+        // Trailing zeros to reach num_digits.
+        while digits.len() + leading_pad < num_digits {
+          digits.push(0);
+        }
+        if digits.len() + leading_pad > num_digits {
+          digits.truncate(num_digits - leading_pad);
+        }
+        let mut digit_exprs: Vec<Expr> = std::iter::repeat_n(0i128, leading_pad)
+          .chain(digits.iter().copied())
+          .map(Expr::Integer)
+          .collect();
+        digit_exprs.truncate(num_digits);
+        return Ok(Expr::List(
+          vec![Expr::List(digit_exprs.into()), Expr::Integer(p + 1)].into(),
+        ));
+      }
 
       let mut digit_exprs: Vec<Expr> =
         digits.iter().map(|&dig| Expr::Integer(dig)).collect();

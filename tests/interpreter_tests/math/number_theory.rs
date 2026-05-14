@@ -1391,6 +1391,44 @@ mod real_digits {
     );
   }
 
+  // Regression (mathics test_numbers.py:102): `RealDigits[x, b, len, p]`
+  // returns digits at positions p, p-1, …, p-len+1 (exp = p + 1). The
+  // rational long-division path previously ignored the `p` argument.
+  #[test]
+  fn one_over_197_base_260_5_digits_start_pos_neg_6() {
+    assert_eq!(
+      interpret("RealDigits[1/197, 260, 5, -6]").unwrap(),
+      "{{246, 208, 137, 67, 80}, -5}"
+    );
+  }
+
+  #[test]
+  fn one_over_197_base_260_3_digits_start_pos_neg_2() {
+    assert_eq!(
+      interpret("RealDigits[1/197, 260, 3, -2]").unwrap(),
+      "{{83, 38, 71}, -1}"
+    );
+  }
+
+  #[test]
+  fn one_over_197_base_260_start_pos_zero_pads_msd() {
+    // start_pos = 0 includes the (zero) integer-part digit at the front.
+    assert_eq!(
+      interpret("RealDigits[1/197, 260, 3, 0]").unwrap(),
+      "{{0, 1, 83}, 1}"
+    );
+  }
+
+  #[test]
+  fn one_over_197_base_260_start_pos_above_msd_zeros() {
+    // start_pos = 2 is two positions above the MSD; all returned digits
+    // are zero.
+    assert_eq!(
+      interpret("RealDigits[1/197, 260, 3, 2]").unwrap(),
+      "{{0, 0, 0}, 3}"
+    );
+  }
+
   #[test]
   fn pi_part_extraction() {
     assert_eq!(
