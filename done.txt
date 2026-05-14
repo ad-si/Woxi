@@ -16987,3 +16987,11 @@ EXPECTED:
 = ...
 : ...
 ---
+FILE: mathics/builtin/image/morph.py
+CLASS: Closing
+LINE: 50
+TYPE: >>
+INPUT: Closing[ein, 2.5]
+EXPECTED:
+= -Image-
+---

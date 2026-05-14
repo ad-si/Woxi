@@ -5781,9 +5781,22 @@ pub fn evaluate_function_call_ast_inner(
   // Morphological operations: Opening, Closing, Erosion, Dilation
   if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
     && args.len() == 2
-    && let Some(result) = morphological_op(name, &args[0], &args[1])
   {
-    return result;
+    if let Some(result) = morphological_op(name, &args[0], &args[1]) {
+      return result;
+    }
+    // First arg isn't a list or image — match wolframscript's arg1 warning.
+    if !matches!(&args[0], Expr::List(_) | Expr::Image { .. }) {
+      crate::emit_message(&format!(
+        "{}::arg1: The first argument {} should be a rectangular array, image or video.",
+        name,
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
   }
 
   // Formatting wrappers and symbolic heads that stay unevaluated
