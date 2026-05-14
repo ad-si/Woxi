@@ -17725,3 +17725,14 @@ NOTE: tests REPL/CLI `%` semantics: after `CompoundExpression[x, y, Null]`
   on `VISUAL_MODE`) for the infrastructure that already exists for
   woxi-studio's notebook mode.
 ---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 131
+INPUT: ToString[%]
+EXPECTED: x
+NOTE: REPL-only — same family as line 127. After
+  `CompoundExpression[CompoundExpression[y, x, Null], Null]` in a REPL,
+  `%` stores the last non-Null sub-expression (`x`). Woxi script-mode
+  `eval` resolves `%` to `Out[0]`, matching wolframscript script mode.
+  See memory `project-woxi-no-repl-history`.
+---
