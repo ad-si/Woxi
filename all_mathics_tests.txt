@@ -6,12 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
-LINE: 20
-INPUT: Gudermannian[6/4 Pi I]
-EXPECTED: DirectedInfinity[-I]
----
-FILE: mathics/test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_complexexpand
 LINE: 33
 INPUT: ComplexExpand[Sin[x + I y]]

@@ -3284,11 +3284,99 @@ pub fn negative_pi_over_2() -> Expr {
 
 /// Gudermannian[x] - the Gudermannian function: 2 ArcTan[Tanh[x/2]]
 /// Gudermannian[0] = 0, Gudermannian[Infinity] = Pi/2, Gudermannian[-Infinity] = -Pi/2
+/// If `e` is `Times[…]` whose flat factors are exactly:
+/// a single Rational(k, 2) (k odd integer) together with one `I` and
+/// one `Pi`, return `k`. Used by `gudermannian_ast` to detect arguments
+/// at the simple poles `(2n+1) π i / 2`. Times trees may be nested
+/// (e.g. `Times[Rational(5,2), Times[I, Pi]]`), so we flatten first.
+fn extract_half_odd_pi_i_coefficient(e: &Expr) -> Option<i128> {
+  fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          flatten(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+      }
+      _ => out.push(e),
+    }
+  }
+  let mut factors: Vec<&Expr> = Vec::new();
+  flatten(e, &mut factors);
+  if factors.len() < 3 {
+    return None;
+  }
+  let mut k: Option<i128> = None;
+  let mut has_i = false;
+  let mut has_pi = false;
+  for f in factors {
+    match f {
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(2)) =>
+      {
+        if let Expr::Integer(n) = &args[0]
+          && n % 2 != 0
+        {
+          if k.is_some() {
+            return None;
+          }
+          k = Some(*n);
+        } else {
+          return None;
+        }
+      }
+      Expr::Identifier(s) if s == "I" => {
+        if has_i {
+          return None;
+        }
+        has_i = true;
+      }
+      Expr::Constant(s) | Expr::Identifier(s) if s == "Pi" => {
+        if has_pi {
+          return None;
+        }
+        has_pi = true;
+      }
+      _ => return None,
+    }
+  }
+  if has_i && has_pi { k } else { None }
+}
+
 pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Gudermannian expects 1 argument".into(),
     ));
+  }
+  // Gudermannian has simple poles at z = (2n+1) π i / 2 with values
+  // alternating between DirectedInfinity[I] and DirectedInfinity[-I].
+  // Detect `Times[Rational(k, 2), I, Pi]` with odd `k`.
+  if let Some(k) = extract_half_odd_pi_i_coefficient(&args[0]) {
+    // k odd: k mod 4 ∈ {1, 3} (or {-1, -3}). +I for k ≡ 1 (mod 4),
+    // -I for k ≡ -1 (mod 4).
+    let m = ((k % 4) + 4) % 4;
+    let direction = if m == 1 {
+      Expr::Identifier("I".to_string())
+    } else {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("I".to_string())),
+      }
+    };
+    return Ok(Expr::FunctionCall {
+      name: "DirectedInfinity".to_string(),
+      args: vec![direction].into(),
+    });
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),

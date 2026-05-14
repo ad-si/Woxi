@@ -58,6 +58,66 @@ mod gudermannian {
       "Gudermannian[(2*I)*Pi]"
     );
   }
+
+  // Regression (mathics test_hyperbolic.py:20): at the simple poles
+  // `(2n+1) π i / 2` Gudermannian returns DirectedInfinity[±I]; sign
+  // alternates with k mod 4 (k = 2n+1).
+  #[test]
+  fn pole_3_pi_i_over_2() {
+    assert_eq!(
+      interpret("Gudermannian[6/4 Pi I]").unwrap(),
+      "DirectedInfinity[-I]"
+    );
+  }
+
+  #[test]
+  fn pole_pi_i_over_2() {
+    assert_eq!(
+      interpret("Gudermannian[Pi I / 2]").unwrap(),
+      "DirectedInfinity[I]"
+    );
+  }
+
+  #[test]
+  fn pole_neg_pi_i_over_2() {
+    assert_eq!(
+      interpret("Gudermannian[-Pi I / 2]").unwrap(),
+      "DirectedInfinity[-I]"
+    );
+  }
+
+  #[test]
+  fn pole_5_pi_i_over_2() {
+    assert_eq!(
+      interpret("Gudermannian[5 Pi I / 2]").unwrap(),
+      "DirectedInfinity[I]"
+    );
+  }
+
+  #[test]
+  fn pole_7_pi_i_over_2() {
+    assert_eq!(
+      interpret("Gudermannian[7 Pi I / 2]").unwrap(),
+      "DirectedInfinity[-I]"
+    );
+  }
+
+  #[test]
+  fn pole_neg_3_pi_i_over_2() {
+    assert_eq!(
+      interpret("Gudermannian[-3 Pi I / 2]").unwrap(),
+      "DirectedInfinity[I]"
+    );
+  }
+
+  // Not a pole: coefficient is `1/4`, not an odd-half-integer.
+  #[test]
+  fn imaginary_pi_over_4_stays_symbolic() {
+    assert_eq!(
+      interpret("Gudermannian[Pi I / 4]").unwrap(),
+      "Gudermannian[I/4*Pi]"
+    );
+  }
 }
 
 mod inverse_gudermannian {

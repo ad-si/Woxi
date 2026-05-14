@@ -17770,3 +17770,17 @@ NOTE: Woxi already produces {{1.}, {G[x]}}, matching wolframscript.
   tests/interpreter_tests/function_definitions.rs::
   user_defined_functions::typed_function_definition_re_evaluates_per_x_binding.
 ---
+FILE: mathics/test/builtin/numbers/test_hyperbolic.py
+FUNCTION: test_gudermannian
+LINE: 20
+INPUT: Gudermannian[6/4 Pi I]
+EXPECTED: DirectedInfinity[-I]
+NOTE: Woxi's `gudermannian_ast` previously returned the expression
+  unevaluated for purely-imaginary half-odd-integer multiples of Pi.
+  Added a pre-check that flattens Times factors and detects
+  `Rational(k, 2) · I · Pi` with odd k, returning DirectedInfinity[I]
+  when k ≡ 1 (mod 4) and DirectedInfinity[-I] when k ≡ 3 (mod 4).
+  Matches wolframscript. Regression tests:
+  tests/interpreter_tests/math/special_functions.rs::gudermannian::
+  pole_*.
+---
