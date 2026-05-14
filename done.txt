@@ -17568,3 +17568,13 @@ NOTE: same mathics-vs-wolframscript divergence as line 430. Woxi and
   (first row as a 1-D NumericArray). Regression test:
   tests/interpreter_tests/functions.rs::first_of_numeric_array_2d_returns_row_array
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 437
+INPUT: Last[NumericArray[{{1,2}, {3,4}}]]
+EXPECTED: <Integer64, 2>
+NOTE: same mathics-vs-wolframscript divergence as line 430. Woxi and
+  wolframscript both produce `NumericArray[<2>, UnsignedInteger8]`
+  (last row as a 1-D NumericArray). Regression test:
+  tests/interpreter_tests/functions.rs::last_of_numeric_array_2d_returns_row_array
+---
