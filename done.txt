@@ -19047,3 +19047,14 @@ NOTE: duplicate of `(N[2/9, 4], .22222, True)` from earlier loops.
   SameQ precision-rounding fix. Covered by regression test
   `same_q_precision_4_vs_machine_real_above_truncation`.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: N[2/9, 4]
+EXPECTED: .222`3
+MESSAGE: False
+NOTE: duplicate of `(N[2/9, 4], .222`3, False)` known mathics-vs-
+  wolframscript divergence. mathics expects False; wolframscript and
+  Woxi return True (both round to 0.222 at min-precision 3). See
+  memory `project-mathics-sameq-too-strict`.
+---
