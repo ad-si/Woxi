@@ -8,12 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/builtin/numbers/test_randomnumbers.py
 FUNCTION: test_random_sample
 LINE: 11
-INPUT: str_expr
-EXPECTED: str_expected
----
-FILE: mathics/test/builtin/numbers/test_randomnumbers.py
-FUNCTION: test_random_sample
-LINE: 11
 INPUT: SeedRandom[42]; RandomSample[{a, b, c, d}]
 EXPECTED: {b, d, a, c}
 ---

@@ -19330,3 +19330,13 @@ NOTE: parameter-name placeholder for `test_combinatorial_arg_errors`
   argcount handling is covered by Woxi's `arg_count.rs` dispatch
   table.
 ---
+FILE: mathics/test/builtin/numbers/test_randomnumbers.py
+FUNCTION: test_random_sample
+LINE: 11
+INPUT: str_expr
+EXPECTED: str_expected
+NOTE: parameter-name placeholder for `test_random_sample`. RNG-family
+  tests use SeedRandom + RandomSample; mathics's expected values are
+  Python random's output, which diverges from wolframscript's and
+  Woxi's RNG sequences. See memory `project-rng-sequence-divergence`.
+---
