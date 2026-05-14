@@ -16922,3 +16922,11 @@ INPUT: Import["ExampleData/sunflowers.jpg"]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/misc.py
+CLASS: ImageImport
+LINE: 63
+TYPE: >>
+INPUT: Import["ExampleData/MadTeaParty.gif"]
+EXPECTED:
+= -Image-
+---
