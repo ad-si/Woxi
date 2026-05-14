@@ -18977,3 +18977,15 @@ NOTE: parameter-name placeholder for the `test_compare_many_members`
   loops) exercise `Equal` / `==` chains and mixed-precision Real
   comparisons. Covered by Woxi's Equal / comparison test suite.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: str_lhs
+EXPECTED: str_rhs
+MESSAGE: str_expected
+NOTE: parameter-name placeholder for the `test_sameq` parametrisation.
+  Actual rows (lines 159-167 from this same file, already moved to
+  done.txt) exercise mixed-precision SameQ. Covered by the
+  precision-rounding fix in `same_q_real_bigfloat` and the
+  `project-mathics-sameq-too-strict` memory.
+---
