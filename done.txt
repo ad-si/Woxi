@@ -19351,3 +19351,12 @@ NOTE: duplicate of the SeedRandom[42] / RandomSample[{a, b, c, d}]
   ChaCha8Rng. All three produce different valid permutations. See
   memory `project-rng-sequence-divergence`.
 ---
+FILE: mathics/test/builtin/numbers/test_randomnumbers.py
+FUNCTION: test_random_sample
+LINE: 11
+INPUT: SeedRandom[42]; RandomSample[Range[10]]
+EXPECTED: {9, 2, 6, 1, 8, 3, 10, 5, 4, 7}
+NOTE: duplicate of the SeedRandom[42] / RandomSample[Range[10]] row
+  from earlier loops. RNG-sequence divergence; see memory
+  `project-rng-sequence-divergence`.
+---
