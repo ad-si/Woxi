@@ -17631,3 +17631,14 @@ NOTE: SameQ row `("N[2/9, 4]", ".2222`3", "True")` from test_sameq.
   SameQ precision-rounding fix; see same_q_precision_4_vs_precision_3
   for a closely related case.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 163
+INPUT: N[2/9, 4]
+EXPECTED: .22222`3
+MESSAGE: True
+NOTE: SameQ row `("N[2/9, 4]", ".22222`3", "True")` from test_sameq.
+  mathics, wolframscript, and Woxi all agree this is True (both round
+  to 0.222 at min-precision 3). Already covered transitively by the
+  SameQ precision-rounding fix.
+---
