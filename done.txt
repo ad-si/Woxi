@@ -18060,3 +18060,12 @@ NOTE: `alice` is another mathics-bundled test image (Alice in
   the fixture both Woxi and wolframscript leave the expression
   unevaluated. See memory `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 36
+INPUT: ImageDimensions[ImageTake[alice, 50]]
+EXPECTED: {640, 50}
+NOTE: same `alice` image-fixture limitation. Without the fixture both
+  Woxi and wolframscript leave the expression unevaluated. See memory
+  `project-mathics-image-fixtures`.
+---
