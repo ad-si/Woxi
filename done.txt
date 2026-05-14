@@ -18499,3 +18499,15 @@ NOTE: tests mathics's internal `int_to_string_shorter_repr(value,
   EXTRACTED INPUT/EXPECTED/MESSAGE are parameter names from the
   parametrized test, not actual values.
 ---
+FILE: mathics/test/core/test_assignment.py
+FUNCTION: test_get_reference_expression
+LINE: 13
+INPUT: expr_str
+EXPECTED: expected_str
+NOTE: tests mathics's internal `get_reference_expression(expr)` helper
+  used by mathics's assignment system to peel off `HoldPattern`,
+  `Condition`, etc. when computing the LHS-reference symbol of a
+  Set/SetDelayed assignment. No portable wolframscript surface for
+  this internal pass. The extracted INPUT/EXPECTED are parameter
+  names, not real values.
+---

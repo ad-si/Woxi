@@ -6,12 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/core/test_assignment.py
-FUNCTION: test_get_reference_expression
-LINE: 13
-INPUT: expr_str
-EXPECTED: expected_str
----
-FILE: mathics/test/core/test_assignment.py
 FUNCTION: test_pop_reference_head
 LINE: 53
 INPUT: expr_str
