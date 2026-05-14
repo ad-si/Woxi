@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/drawing/test_image.py
 FUNCTION: None
-LINE: 18
-INPUT: BinaryImageQ[hedy]
-EXPECTED: False
----
-FILE: mathics/test/builtin/drawing/test_image.py
-FUNCTION: None
 LINE: 19
 INPUT: BinaryImageQ[Binarize[hedy]]
 EXPECTED: True

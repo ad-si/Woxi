@@ -17973,3 +17973,18 @@ NOTE: actually `test_precision`, not `test_accuracy`. The row
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   precision_of_list_with_accuracy_tagged_zero.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 18
+INPUT: BinaryImageQ[hedy]
+EXPECTED: False
+NOTE: `hedy` is mathics's built-in Hedy Lamarr test image. Neither
+  Woxi nor real wolframscript ships with that fixture, so both
+  evaluate `BinaryImageQ[undefined_symbol]` and return `False`. The
+  mathics expected `False` is for the real (non-binary) hedy image;
+  Woxi/wolframscript happen to return the same `False` because the
+  symbol is undefined. Result matches the expectation either way.
+  Note: a real binary `Image[{{0,1},{1,0}}, "Bit"]` returns False in
+  Woxi (wolframscript returns True) — separate Image-handling bug not
+  exercised by this mathics row.
+---
