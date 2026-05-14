@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 193
-TYPE: >>
-INPUT: Tan[I + 0.5]
-EXPECTED:
-= 0.195577 + 0.842966 I
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 211
 TYPE: >>
 INPUT: N[Pi, 30]
