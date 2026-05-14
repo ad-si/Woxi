@@ -17845,3 +17845,12 @@ NOTE: Woxi produces `Pi/6`, matching wolframscript. mathics's `1/6 Pi`
   is the same value rendered differently. Regression test:
   tests/interpreter_tests/arithmetic.rs::arccos_half_sqrt3.
 ---
+FILE: mathics/test/builtin/numbers/test_trig.py
+FUNCTION: test_ArcCos
+LINE: 23
+INPUT: ArcCos[-1/2 Sqrt[3]]
+EXPECTED: 5/6 Pi
+NOTE: Woxi produces `(5*Pi)/6`, matching wolframscript. mathics's
+  `5/6 Pi` is the same value rendered differently. Regression test:
+  tests/interpreter_tests/arithmetic.rs::arccos_neg_half_sqrt3.
+---
