@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 949
-TYPE: >>
-INPUT: [1 2 3]
-EXPECTED:
-: ...
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 973
 TYPE: #>
 INPUT: squared[1, 2] // TeXForm
@@ -2742,4 +2734,12 @@ INPUT: f[x_] := f[x + 1]; Block[{$IterationLimit = 30}, f[1]]
 EXPECTED:
 : Iteration limit of 30 exceeded.
 = $Aborted
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 949
+TYPE: >>
+INPUT: [1 2 3]
+EXPECTED:
+: ...
 ---
