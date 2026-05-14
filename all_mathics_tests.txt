@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/geometric.py
 CLASS: ImageResize
-LINE: 56
-TYPE: S>
-INPUT: shape = ImageDimensions[alice]
-EXPECTED:
-= {640, 487}
----
-FILE: mathics/builtin/image/geometric.py
-CLASS: ImageResize
 LINE: 59
 TYPE: S>
 INPUT: ImageResize[alice, shape / 2]
