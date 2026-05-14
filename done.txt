@@ -17328,3 +17328,10 @@ INPUT: F[1.2, 2/9]
 EXPECTED: $MachinePrecision
 MESSAGE: F[1.2, .2222222222222222`15]
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_sameQ
+LINE: 39
+INPUT: F[1.2`3, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .22222232818603515`15]
+---
