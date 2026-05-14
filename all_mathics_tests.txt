@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/geometric.py
-CLASS: ImageReflect
-LINE: 157
-TYPE: >>
-INPUT: ImageReflect[ein, Left -> Top]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/geometric.py
 CLASS: ImageRotate
 LINE: 219
 TYPE: >>
