@@ -18300,3 +18300,16 @@ NOTE: row is from mathics's `test_eval_NValues` parameterisation
   precision_of_complex_machine_real and family). The mathics
   EXPECTED `1.000000000` is mathics-internal display, not portable.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: Sqrt[2]
+EXPECTED: $MachinePrecision
+MESSAGE: 1.41421356237310
+NOTE: row from mathics's `test_eval_NValues` parameterisation
+  `("Sqrt[2]", "$MachinePrecision", "Sqrt[2.0\`]", None)` — calls the
+  internal `eval_NValues` function directly, not portable. The
+  user-facing `N[Sqrt[2], $MachinePrecision]` returns
+  `1.41421356237309504880168872420969807857\`15.954589770191003` in
+  both Woxi and wolframscript exactly.
+---

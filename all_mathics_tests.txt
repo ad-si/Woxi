@@ -8,13 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_eval_N
 LINE: 29
-INPUT: Sqrt[2]
-EXPECTED: $MachinePrecision
-MESSAGE: 1.41421356237310
----
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_eval_N
-LINE: 29
 INPUT: 2/9
 EXPECTED: $MachinePrecision
 MESSAGE: 2.000000`5*9.0000000000`5^(-1.`)
