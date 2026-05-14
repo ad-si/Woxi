@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/zeta.py
 CLASS: LerchPhi
-LINE: 38
-TYPE: >>
-INPUT: LerchPhi[2, 3, -1.5]
-EXPECTED:
-= 19.3893 - 2.1346 I
----
-FILE: mathics/builtin/specialfns/zeta.py
-CLASS: LerchPhi
 LINE: 41
 TYPE: >>
 INPUT: LerchPhi[1, 2, 1/4] == 8 Catalan + Pi^2
@@ -3690,4 +3682,12 @@ FILE: examples/symbolic_logic/gries_schneider/GS3.m
 LINE: 640
 ACTUAL (expression): q, q], p
 EXPECTED (should equal): eqv[eqv[p
+---
+FILE: mathics/builtin/specialfns/zeta.py
+CLASS: LerchPhi
+LINE: 38
+TYPE: >>
+INPUT: LerchPhi[2, 3, -1.5]
+EXPECTED:
+= 19.3893 - 2.1346 I
 ---
