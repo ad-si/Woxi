@@ -19079,3 +19079,14 @@ NOTE: duplicate of `(N[2/9, 4], .22222`3, True)` from earlier loops.
   All three agree on True (both round to 0.222 at min-precision 3).
   Covered by the SameQ precision-rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: N[2/9, 4]
+EXPECTED: .222`5
+MESSAGE: False
+NOTE: SameQ row `(N[2/9, 4], .222`5, False)`. All three (mathics,
+  wolframscript, Woxi) agree on False — `.222`5` rounds to 0.2220 at
+  min-precision 4 while `N[2/9, 4]` rounds to 0.2222; they differ at
+  the 4th digit. Covered by the SameQ precision-rounding fix.
+---
