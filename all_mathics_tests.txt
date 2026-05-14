@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/format/test_makeboxes.py
-FUNCTION: test_makeboxes_custom2
-LINE: 262
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
 FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: test_one_identity
 LINE: 19

@@ -18807,3 +18807,18 @@ NOTE: tests mathics's `from_sympy(expr.to_sympy())` round-trip — a
   surface. The extracted INPUT/EXPECTED/MESSAGE are parameter names,
   not real values.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_custom2
+LINE: 262
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholders. The mathics function is decorated
+  with `@skip_or_fail` ("Most of them are broken, because our
+  implementation is different that the WMA"), so even mathics itself
+  doesn't enforce these rows. MakeBoxes is a low-level display
+  internal — Woxi has its own MakeBoxes machinery already covered by
+  the StandardForm/InputForm rendering tests in
+  tests/interpreter_tests/syntax.rs. No portable wolframscript surface
+  for this specific test framework hook.
+---
