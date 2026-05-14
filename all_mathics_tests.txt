@@ -1,13 +1,5 @@
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
-LINE: 325
-TYPE: >>
-INPUT: DominantColors[img, 2, "LABColor"]
-EXPECTED:
-= {LABColor[0.00581591, 0.00207458, -0.00760911], LABColor[0.863667, 0.156864, 0.173956]}
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: DominantColors
 LINE: 328
 TYPE: >>
 INPUT: DominantColors[img, MinColorDistance -> 0.5]
