@@ -18395,3 +18395,13 @@ NOTE: `N[F[1.2\`3, 2/9], 5]` previously promoted the inner
   Regression test: tests/interpreter_tests/math/numeric.rs::
   n_arbitrary_precision::n_higher_precision_keeps_lower_bigfloat_in_function_call.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: F[1.2`3, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .222222`5]
+NOTE: same test row as the previous F[1.2\`3, 2/9] entry, with
+  mathics's alternate `.222222\`5` MESSAGE format. Covered by the
+  same BigFloat-precision-clamp fix.
+---
