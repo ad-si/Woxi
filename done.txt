@@ -17384,3 +17384,10 @@ INPUT: F[b, 2/9]
 EXPECTED: F[b, 2 *9 ^ (-1)]
 MESSAGE: N[b,_]=1.2`3
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 25
+INPUT: s:(A/;A>0)
+EXPECTED: A
+MESSAGE: ownvalues
+---
