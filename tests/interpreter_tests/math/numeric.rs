@@ -82,6 +82,25 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression (mathics test_numbers.py:175): a high-digit literal
+  // passed through `N[_, 5]` keeps its 19-digit machine-precision
+  // payload internally but ToString rounds to the requested 5 digits.
+  #[test]
+  fn n_high_digit_literal_at_precision_5() {
+    assert_eq!(
+      interpret("N[1.012345678901234567890123, 5]").unwrap(),
+      "1.0123456789012345679`5."
+    );
+  }
+
+  #[test]
+  fn n_high_digit_literal_at_precision_5_to_string() {
+    assert_eq!(
+      interpret("ToString[N[1.012345678901234567890123, 5]]").unwrap(),
+      "1.0123"
+    );
+  }
+
   #[test]
   fn n_of_machine_real_stays_machine() {
     // N[1.5, 30] on a machine-precision Real returns the Real unchanged;

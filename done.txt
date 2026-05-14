@@ -17897,3 +17897,15 @@ NOTE: mathics's EXPECTED is what `ToString[N[1/9, 30]]` produces (30
   tests: tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   n_one_ninth_at_30_digits and n_one_ninth_at_30_digits_to_string.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 175
+INPUT: N[1.012345678901234567890123, 5]
+EXPECTED: 1.0123
+NOTE: mathics's EXPECTED `1.0123` is `ToString[N[...]]`. Internally
+  Woxi keeps the 19-digit machine-precision payload tagged `5.` and
+  matches wolframscript exactly. ToString rounds to the requested 5
+  digits. Regression tests:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  n_high_digit_literal_at_precision_5{,_to_string}.
+---
