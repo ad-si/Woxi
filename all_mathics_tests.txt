@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/drawing/test_image.py
 FUNCTION: None
-LINE: 25
-INPUT: ImageDimensions[ImageResize[ein, {61, 76}]]
-EXPECTED: {61, 76}
----
-FILE: mathics/test/builtin/drawing/test_image.py
-FUNCTION: None
 LINE: 26
 INPUT: ImageDimensions[ImageTake[ein, 50]]
 EXPECTED: {615, 50}

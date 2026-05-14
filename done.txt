@@ -18001,3 +18001,16 @@ NOTE: `hedy` is a mathics-bundled test image (Hedy Lamarr). Without
   matches wolframscript's no-fixture behavior. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 25
+INPUT: ImageDimensions[ImageResize[ein, {61, 76}]]
+EXPECTED: {61, 76}
+NOTE: `ein` is mathics's bundled Einstein test image. Without the
+  fixture, both Woxi and wolframscript leave the expression
+  unevaluated (wolframscript emits `ImageResize::imginv` and
+  `ImageDimensions::imginv` warnings). The mathics expected
+  `{61, 76}` requires `ein` to be loaded as an actual 615×768 image
+  that ImageResize scales to 61×76. See memory
+  `project-mathics-image-fixtures`.
+---
