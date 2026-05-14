@@ -19154,3 +19154,15 @@ NOTE: parameter-name placeholder for `test_cmp2_no_pass` — the
   Equal[…] when it doesn't simplify. Same Plus-numeric-contagion
   family already covered by earlier loops.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_cmp_compare_numbers
+LINE: 627
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: message
+NOTE: parameter-name placeholder for `test_cmp_compare_numbers` —
+  numeric `Less`/`Greater`/etc. comparison parametrisation. Woxi's
+  numeric comparison logic is broadly covered by `boolean_ast.rs`
+  and the existing comparison tests in
+  `tests/interpreter_tests/algebra.rs` and friends.
+---
