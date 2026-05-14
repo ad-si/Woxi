@@ -17342,3 +17342,10 @@ INPUT: F[1.2`3, 2/9]
 EXPECTED: 5
 MESSAGE: F[1.20`3, .222222`5]
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_sameQ
+LINE: 41
+INPUT: F[1.2`3, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .222222]
+---
