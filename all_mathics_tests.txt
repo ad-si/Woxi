@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/geometric.py
 CLASS: ImageResize
-LINE: 53
-TYPE: S>
-INPUT: alice = Import["ExampleData/MadTeaParty.gif"]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/geometric.py
-CLASS: ImageResize
 LINE: 56
 TYPE: S>
 INPUT: shape = ImageDimensions[alice]

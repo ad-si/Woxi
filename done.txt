@@ -16826,3 +16826,11 @@ INPUT: MinFilter[hedy, 5]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/geometric.py
+CLASS: ImageResize
+LINE: 53
+TYPE: S>
+INPUT: alice = Import["ExampleData/MadTeaParty.gif"]
+EXPECTED:
+= -Image-
+---
