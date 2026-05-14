@@ -2115,6 +2115,27 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// Colorize[arg] — colorize stub. Real colorization is not implemented
+/// yet; this stub matches wolframscript's invinput warning when the
+/// argument is not an integer matrix or image. (Note: 'invinput', not
+/// 'imginv', because Colorize accepts label matrices as well as images.)
+pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_integer_matrix = matches!(&args[0], Expr::List(rows)
+    if rows.iter().all(|r| matches!(r, Expr::List(cols)
+      if cols.iter().all(|c| matches!(c, Expr::Integer(_))))));
+  let is_image = matches!(&args[0], Expr::Image { .. });
+  if !is_image && !is_integer_matrix {
+    crate::emit_message(&format!(
+      "Colorize::invinput: Expecting an integer matrix or an image instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Colorize".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// ColorSeparate[img] — split image into channels stub. Real channel
 /// separation is not implemented yet; this stub matches wolframscript's
 /// imginv warning for non-image input.

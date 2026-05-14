@@ -103,6 +103,9 @@ pub fn dispatch_image_functions(
     "ColorSeparate" if args.len() == 1 => {
       return Some(crate::functions::image_ast::color_separate_ast(args));
     }
+    "Colorize" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::colorize_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
