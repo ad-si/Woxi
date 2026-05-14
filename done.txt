@@ -16201,3 +16201,11 @@ INPUT: ChebyshevU[1 - I, 0.5]
 EXPECTED:
 = 1.60029 + 0.721322 I
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: GegenbauerC
+LINE: 70
+TYPE: >>
+INPUT: GegenbauerC[4 - I, 1 + 2 I, 0.7]
+EXPECTED:
+= -3.2621 - 24.9739 I
+---

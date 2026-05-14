@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: GegenbauerC
-LINE: 70
-TYPE: >>
-INPUT: GegenbauerC[4 - I, 1 + 2 I, 0.7]
-EXPECTED:
-= -3.2621 - 24.9739 I
----
-FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: HermiteH
 LINE: 96
 TYPE: >>
