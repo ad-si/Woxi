@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/eval/makeboxes/test_number_form.py
-FUNCTION: test_string_conversion_limited_size
-LINE: 84
-INPUT: int_expr
-EXPECTED: digits
-MESSAGE: str_repr
----
 FILE: mathics/test/core/test_assignment.py
 FUNCTION: test_get_reference_expression
 LINE: 13

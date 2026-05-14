@@ -18485,3 +18485,17 @@ NOTE: same `test_numerify` mathics-internal family as the previous
   leaves the rational expansion form. No portable wolframscript
   surface for this internal pass.
 ---
+FILE: mathics/test/eval/makeboxes/test_number_form.py
+FUNCTION: test_string_conversion_limited_size
+LINE: 84
+INPUT: int_expr
+EXPECTED: digits
+MESSAGE: str_repr
+NOTE: tests mathics's internal `int_to_string_shorter_repr(value,
+  digits)` helper that elides long integer digit runs with a
+  `<<n>>` placeholder (e.g. `-12345678900987654321` at width 16 →
+  `-1234 <<13>> 321`). Pure mathics formatting internal — no
+  wolframscript surface produces this short-form output. The
+  EXTRACTED INPUT/EXPECTED/MESSAGE are parameter names from the
+  parametrized test, not actual values.
+---
