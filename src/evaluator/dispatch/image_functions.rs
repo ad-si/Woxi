@@ -94,7 +94,11 @@ pub fn dispatch_image_functions(
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
-    "DominantColors" if !args.is_empty() && args.len() <= 2 => {
+    "DominantColors" if !args.is_empty() => {
+      // Dispatch every non-empty call: dominant_colors_ast itself checks
+      // for non-Image first arg (emits DominantColors::imginv) before
+      // validating arg count, matching wolframscript when an upstream
+      // Import has returned $Failed.
       return Some(crate::functions::image_ast::dominant_colors_ast(args));
     }
     "ImageApply" if args.len() == 2 => {

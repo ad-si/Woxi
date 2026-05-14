@@ -274,7 +274,13 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DivisorSum" => Some((2, 2)),
     "DMSList" => Some((1, 1)),
     "Do" => Some((2, usize::MAX)),
-    "DominantColors" => Some((1, 2)),
+    // wolframscript reports (1, 4): valid forms are
+    //   DominantColors[img], DominantColors[img, n],
+    //   DominantColors[img, n, prop], DominantColors[img, n, prop, distFn].
+    // Image validation is handled inside dominant_colors_ast so the
+    // imginv warning fires (instead of argt) when arg count is OK but
+    // the first arg is non-image.
+    "DominantColors" => Some((1, 4)),
     "Dot" => Some((2, 2)),
     "DotProduct" => Some((2, 3)),
     "Downsample" => Some((2, 3)),

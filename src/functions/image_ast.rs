@@ -1525,7 +1525,27 @@ fn quantize_gradient_direction(angle: f64) -> (i32, i32) {
 
 /// DominantColors[img] or DominantColors[img, n] - K-means clustering
 pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "DominantColors expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // wolframscript checks the image argument before validating the arg
+  // count, so a chain like Import[missing]; DominantColors[img, 3, "X"]
+  // reports DominantColors::imginv (on $Failed) rather than ::argt.
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "DominantColors::imginv: Expecting an image or graphics instead of {{{}}}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "DominantColors".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  if args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "DominantColors expects 1 or 2 arguments".into(),
     ));
@@ -1579,19 +1599,7 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       Ok(Expr::List(colors.into()))
     }
-    _ => {
-      // Match wolframscript: emit DominantColors::imginv and return the
-      // call unevaluated rather than erroring out, so downstream code
-      // (e.g. failed Import chains) doesn't blow up.
-      crate::emit_message(&format!(
-        "DominantColors::imginv: Expecting an image or graphics instead of {{{}}}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "DominantColors".to_string(),
-        args: args.to_vec().into(),
-      })
-    }
+    _ => unreachable!("non-Image first arg handled above"),
   }
 }
 
