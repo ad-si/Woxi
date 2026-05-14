@@ -17211,3 +17211,11 @@ INPUT: 13.1416``4
 EXPECTED:
 = 13.142
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 279
+TYPE: >>
+INPUT: 0``4
+EXPECTED:
+= 0.0000
+---
