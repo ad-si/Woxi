@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/composition.py
-CLASS: ImageSubtract
-LINE: 136
-TYPE: >>
-INPUT: ImageSubtract[i, i]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/composition.py
 CLASS: WordCloud
 LINE: 163
 TYPE: >>

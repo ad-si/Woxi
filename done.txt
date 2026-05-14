@@ -16754,3 +16754,11 @@ INPUT: ImageSubtract[i, 0.2]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/composition.py
+CLASS: ImageSubtract
+LINE: 136
+TYPE: >>
+INPUT: ImageSubtract[i, i]
+EXPECTED:
+= -Image-
+---
