@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 983
-TYPE: >>
-INPUT: InputForm[%]
-EXPECTED:
-= RowBox[{"m", "+", "n"}]
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1123
 TYPE: >>
 INPUT: {f'[x], f''[x], f'''[x]} // Together

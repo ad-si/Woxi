@@ -17253,3 +17253,11 @@ INPUT: squared[1, 2] // TeXForm
 EXPECTED:
 = \text{squared}[1, 2]^2
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 983
+TYPE: >>
+INPUT: InputForm[%]
+EXPECTED:
+= RowBox[{"m", "+", "n"}]
+---
