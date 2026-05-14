@@ -16346,3 +16346,11 @@ EXPECTED:
 : {1, 0.5} should be a real number or a list of non-negative numbers, which has the same length as {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}.
 = Blend[{RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}, {1, 0.5}]
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: DominantColors
+LINE: 307
+TYPE: >>
+INPUT: img = Import["ExampleData/hedy.tif"]
+EXPECTED:
+= -Image-
+---

@@ -1,13 +1,5 @@
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
-LINE: 307
-TYPE: >>
-INPUT: img = Import["ExampleData/hedy.tif"]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: DominantColors
 LINE: 310
 TYPE: >>
 INPUT: DominantColors[img]

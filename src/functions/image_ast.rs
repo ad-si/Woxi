@@ -2824,6 +2824,16 @@ pub fn import_image_from_bytes(bytes: &[u8]) -> Result<Expr, InterpreterError> {
 /// Import an image file and return an Expr::Image
 #[cfg(not(target_arch = "wasm32"))]
 pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
+  // Match wolframscript: emit Import::nffil before returning $Failed for a
+  // missing file. Other failures (e.g. corrupt image) still return $Failed
+  // but without the not-found message.
+  if !std::path::Path::new(path).exists() {
+    crate::emit_message(&format!(
+      "Import::nffil: File {} not found during Import.",
+      path
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
   let img = match image::open(path) {
     Ok(img) => img,
     Err(_) => {
