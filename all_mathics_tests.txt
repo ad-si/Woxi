@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1211
-TYPE: >>
-INPUT: B . (RandomInteger[100] * %[[1]] + s)
-EXPECTED:
-= {1, 2, 3}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1243
 TYPE: #>
 INPUT: Definition[Dice]
@@ -2703,4 +2695,12 @@ TYPE: >>
 INPUT: inflections = Solve[f''[x] == 0, x] // N // Chop
 EXPECTED:
 = {{x -> -1.0852}, {x -> -3.21463}, {x -> 4.29983}}
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1211
+TYPE: >>
+INPUT: B . (RandomInteger[100] * %[[1]] + s)
+EXPECTED:
+= {1, 2, 3}
 ---
