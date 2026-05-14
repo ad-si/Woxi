@@ -2470,9 +2470,16 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         image_type: *image_type,
       })
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageTake: first argument is not an Image".into(),
-    )),
+    _ => {
+      crate::emit_message(&format!(
+        "ImageTake::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageTake".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

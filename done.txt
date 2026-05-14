@@ -17115,3 +17115,11 @@ INPUT: ImageType[Binarize[img]]
 EXPECTED:
 = Bit
 ---
+FILE: mathics/builtin/image/structure.py
+CLASS: ImageTake
+LINE: 40
+TYPE: >>
+INPUT: alice = Import["ExampleData/MadTeaParty.gif"]; ImageTake[alice, 244]
+EXPECTED:
+= -Image-
+---
