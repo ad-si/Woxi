@@ -1,13 +1,5 @@
 FILE: mathics/builtin/colors/named_colors.py
 CLASS: _ColorObject
-LINE: 27
-TYPE: >>
-INPUT: Graphics[{EdgeForm[Black], %(name)s, Disk[]}, ImageSize->Small]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/colors/named_colors.py
-CLASS: _ColorObject
 LINE: 30
 TYPE: >>
 INPUT: %(name)s // ToBoxes

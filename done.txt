@@ -16418,3 +16418,11 @@ INPUT: DominantColors[img, ColorCoverage -> 0.15]
 EXPECTED:
 = {RGBColor[0.00784314, 0.00784314, 0.0156863]}
 ---
+FILE: mathics/builtin/colors/named_colors.py
+CLASS: _ColorObject
+LINE: 27
+TYPE: >>
+INPUT: Graphics[{EdgeForm[Black], %(name)s, Disk[]}, ImageSize->Small]
+EXPECTED:
+= -Graphics-
+---
