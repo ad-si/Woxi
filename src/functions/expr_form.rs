@@ -454,6 +454,23 @@ pub fn render_full_form(expr: &Expr) -> String {
     return format!("Complex[{}, {}]", re, im);
   }
 
+  // Machine-precision complex number: `Real + Real*I` (including
+  // `0. + 0.*I`) renders as `Complex[re\`, im\`]` like wolframscript.
+  // Only fires when the expression syntactically contains `I` and at
+  // least one Real component, so pure Reals continue to render as
+  // `<value>\``.
+  if expr_contains_imag_unit(expr)
+    && expr_contains_real(expr)
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(expr)
+  {
+    return format!(
+      "Complex[{}, {}]",
+      format_real_full_form(re),
+      format_real_full_form(im)
+    );
+  }
+
   // Machine-precision Reals get the `1.\`` / `0.2\`` precision-marker
   // shape in FullForm — Wolfram's `ToString[FullForm[1.0]]` returns
   // `"1.\`"`, distinct from the bare `1.` it shows in OutputForm.
@@ -472,6 +489,37 @@ pub fn render_full_form(expr: &Expr) -> String {
       let parts: Vec<String> = children.iter().map(render_full_form).collect();
       format!("{}[{}]", head, parts.join(", "))
     }
+  }
+}
+
+/// Does `expr` syntactically reference the imaginary-unit symbol `I`?
+fn expr_contains_imag_unit(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) => s == "I",
+    Expr::List(items) => items.iter().any(expr_contains_imag_unit),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_imag_unit),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_imag_unit(left) || expr_contains_imag_unit(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_imag_unit(operand),
+    _ => false,
+  }
+}
+
+/// Does `expr` contain at least one machine-precision Real? Used
+/// together with `expr_contains_imag_unit` to decide whether a sum
+/// like `Real + Real*I` should collapse to `Complex[re\`, im\`]` in
+/// FullForm.
+fn expr_contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::List(items) => items.iter().any(expr_contains_real),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_real),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_real(left) || expr_contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
+    _ => false,
   }
 }
 

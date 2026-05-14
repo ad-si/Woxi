@@ -18238,3 +18238,21 @@ NOTE: default REPL output matches wolframscript exactly
   refactor with significant regression risk (many existing Woxi
   tests compare against `*`-separator output). Out of scope here.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_power
+LINE: 309
+INPUT: 0. + 0. I//FullForm
+EXPECTED: Complex[0.`, 0.`]
+MESSAGE: WMA compatibility
+NOTE: Woxi stores machine-precision complex numbers structurally
+  (Plus[Real, Times[Real, I]]) rather than as atomic Complex[re, im]
+  like wolframscript. Without a fix, `ToString[FullForm[0. + 0. I]]`
+  produced `Plus[0.\`, Times[0.\`, Complex[0, 1]]]` instead of
+  `Complex[0.\`, 0.\`]`. Extended `render_full_form` to detect
+  `Real + Real*I` structures (via `try_extract_complex_float` plus the
+  new `expr_contains_imag_unit` + `expr_contains_real` guards) and
+  emit `Complex[re\`, im\`]` for the FullForm render. Exact-rational
+  complex still routes through the existing integer/rational path;
+  pure Reals keep their bare `1.\`` form. Regression tests in
+  tests/interpreter_tests/syntax.rs::full_form::full_form_*_complex_*.
+---

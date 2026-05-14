@@ -618,6 +618,41 @@ mod full_form {
     assert_eq!(interpret("ToString[FullForm[5*x]]").unwrap(), "Times[5, x]");
   }
 
+  // Regression (mathics test_basic.py:309): a machine-precision
+  // complex number, even when both components are zero, renders as
+  // `Complex[0.\`, 0.\`]` in FullForm (matches wolframscript).
+  #[test]
+  fn full_form_zero_complex_machine() {
+    assert_eq!(
+      interpret("ToString[FullForm[0. + 0. I]]").unwrap(),
+      "Complex[0.`, 0.`]"
+    );
+  }
+
+  #[test]
+  fn full_form_nonzero_complex_machine() {
+    assert_eq!(
+      interpret("ToString[FullForm[1.0 + 2.0 I]]").unwrap(),
+      "Complex[1.`, 2.`]"
+    );
+  }
+
+  // A pure machine Real keeps its bare `1.\`` form (no Complex wrap).
+  #[test]
+  fn full_form_pure_real_keeps_real_form() {
+    assert_eq!(interpret("ToString[FullForm[1.0]]").unwrap(), "1.`");
+  }
+
+  // Exact-rational complex still routes through the integer
+  // `try_extract_complex_exact` path.
+  #[test]
+  fn full_form_exact_complex_unchanged() {
+    assert_eq!(
+      interpret("ToString[FullForm[1 + 2 I]]").unwrap(),
+      "Complex[1, 2]"
+    );
+  }
+
   #[test]
   fn full_form_list() {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around lists
