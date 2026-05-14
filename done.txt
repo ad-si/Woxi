@@ -18676,3 +18676,14 @@ NOTE: same `test_get_tag_position` mathics-internal family. Pattern
   SubValue shape and classifies as SubValue under tag `A`. No
   portable wolframscript surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: A[x][t]
+EXPECTED: A
+MESSAGE: subvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Curried
+  call `A[x][t]` (DownValue-shaped Head applied to additional args)
+  classifies as a SubValue under tag `A`. No portable wolframscript
+  surface.
+---
