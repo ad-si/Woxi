@@ -18795,3 +18795,15 @@ NOTE: final row in the `test_get_tag_position` mathics-internal
   as an UpValue under tag `A` — the rule attaches to the inner `A`
   symbol. No portable wolframscript surface.
 ---
+FILE: mathics/test/core/convert/test_sympy.py
+FUNCTION: test_from_to_sympy_change
+LINE: 68
+INPUT: expr
+EXPECTED: result
+MESSAGE: msg
+NOTE: tests mathics's `from_sympy(expr.to_sympy())` round-trip — a
+  pure mathics-internal sympy conversion test. Woxi doesn't use sympy
+  at all (its CAS layer is independent). No portable wolframscript
+  surface. The extracted INPUT/EXPECTED/MESSAGE are parameter names,
+  not real values.
+---

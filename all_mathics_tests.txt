@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/core/convert/test_sympy.py
-FUNCTION: test_from_to_sympy_change
-LINE: 68
-INPUT: expr
-EXPECTED: result
-MESSAGE: msg
----
 FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: test_makeboxes_custom2
 LINE: 262
