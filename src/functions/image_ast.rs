@@ -417,9 +417,16 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       Ok(Expr::String(type_str.to_string()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageType: argument is not an Image".into(),
-    )),
+    _ => {
+      crate::emit_message(&format!(
+        "ImageType::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageType".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

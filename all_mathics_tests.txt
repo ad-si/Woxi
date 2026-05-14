@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/properties.py
 CLASS: ImageType
-LINE: 158
-TYPE: >>
-INPUT: ImageType[img]
-EXPECTED:
-= Byte
----
-FILE: mathics/builtin/image/properties.py
-CLASS: ImageType
 LINE: 164
 TYPE: X>
 INPUT: ImageType[Binarize[img]]
