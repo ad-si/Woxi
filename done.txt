@@ -17440,3 +17440,10 @@ INPUT: N[A[x_], _]/; x>0
 EXPECTED: A
 MESSAGE: nvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 47
+INPUT: S[x_, s_A/;s>0]
+EXPECTED: A
+MESSAGE: upvalues
+---

@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 47
-INPUT: S[x_, s_A/;s>0]
-EXPECTED: A
-MESSAGE: upvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 48
 INPUT: S[x_, q:A]
 EXPECTED: A
