@@ -16137,3 +16137,11 @@ INPUT: HypergeometricPFQ[{1, 1, 3}, {2, 2}, x]
 EXPECTED:
 = -Log[1 - x] / (2 x) - 1 / (-2 + 2 x)
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: HypergeometricPFQ
+LINE: 185
+TYPE: >>
+INPUT: HypergeometricPFQ[{-2, a}, {b}, x]
+EXPECTED:
+= (-2 a x (1 + b) + a x ^ 2 (1 + a) + b (1 + b)) / (b (1 + b))
+---
