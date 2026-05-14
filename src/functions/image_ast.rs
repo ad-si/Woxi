@@ -1012,9 +1012,18 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       Ok(dynamic_image_to_expr(&flipped))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageReflect: first argument is not an Image".into(),
-    )),
+    _ => {
+      // Note: ImageReflect uses imgvinv (with the extra 'v' for video),
+      // distinct from most image functions which use imginv.
+      crate::emit_message(&format!(
+        "ImageReflect::imgvinv: Expecting an image, graphics or video instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageReflect".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
