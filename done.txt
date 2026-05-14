@@ -17302,3 +17302,15 @@ EXPECTED:
 . 
 . Format[Dice[n_Integer ? (1 <= #1 <= 6&)], TraditionalForm] = Block[{p = 0.2, r = 0.05}, Graphics[{EdgeForm[Black], White, Rectangle[], Black, EdgeForm[], If[OddQ[n], Disk[{0.5, 0.5}, r]], If[MemberQ[{2, 3, 4, 5, 6}, n], Disk[{p, p}, r]], If[MemberQ[{2, 3, 4, 5, 6}, n], Disk[{1 - p, 1 - p}, r]], If[MemberQ[{4, 5, 6}, n], Disk[{p, 1 - p}, r]], If[MemberQ[{4, 5, 6}, n], Disk[{1 - p, p}, r]], If[n === 6, {Disk[{p, 0.5}, r], Disk[{1 - p, 0.5}, r]}]}, ImageSize -> Tiny]]
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1289
+TYPE: >>
+INPUT: Table[{Dice[Sequence @@ d], DiceSum @ Dice[Sequence @@ d]}, {d, {{1, 2}, {2, 2}, {2, 6}}}] // TableForm
+EXPECTED:
+= -Graphics--Graphics-   3
+.
+. -Graphics--Graphics-   4
+.
+. -Graphics--Graphics-   8
+---

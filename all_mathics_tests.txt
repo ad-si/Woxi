@@ -1,15 +1,3 @@
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1289
-TYPE: >>
-INPUT: Table[{Dice[Sequence @@ d], DiceSum @ Dice[Sequence @@ d]}, {d, {{1, 2}, {2, 2}, {2, 6}}}] // TableForm
-EXPECTED:
-= -Graphics--Graphics-   3
-. 
-. -Graphics--Graphics-   4
-. 
-. -Graphics--Graphics-   8
----
 ====================================================================================================
 SECTION 2: PYTEST DATA-DRIVEN TESTS (tuples) (475 tests)
 ====================================================================================================
