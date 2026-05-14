@@ -16459,3 +16459,15 @@ INPUT: StandardForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: TableForm
+LINE: 726
+TYPE: >>
+INPUT: TableForm[Array[a, {3,2}],TableDepth->1]
+EXPECTED:
+= {a[1, 1], a[1, 2]}
+.
+. {a[2, 1], a[2, 2]}
+.
+. {a[3, 1], a[3, 2]}
+---
