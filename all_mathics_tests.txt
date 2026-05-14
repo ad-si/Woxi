@@ -1,12 +1,4 @@
 FILE: mathics/builtin/colors/color_operations.py
-CLASS: ColorNegate
-LINE: 228
-TYPE: >>
-INPUT: ColorNegate[Import["ExampleData/sunflowers.jpg"]]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
 LINE: 307
 TYPE: >>
@@ -3641,4 +3633,12 @@ TYPE: >>
 INPUT: LerchPhi[2, 3, -1.5]
 EXPECTED:
 = 19.3893 - 2.1346 I
+---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: ColorNegate
+LINE: 228
+TYPE: >>
+INPUT: ColorNegate[Import["ExampleData/sunflowers.jpg"]]
+EXPECTED:
+= -Image-
 ---
