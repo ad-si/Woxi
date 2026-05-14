@@ -523,11 +523,11 @@ pub fn spherical_harmonic_y_ast(
 
   // Try to get integer values for l and m
   let l_val = match &args[0] {
-    Expr::Integer(n) => Some(*n as i64),
+    Expr::Integer(n) => Some(*n as i128),
     _ => None,
   };
   let m_val = match &args[1] {
-    Expr::Integer(n) => Some(*n as i64),
+    Expr::Integer(n) => Some(*n as i128),
     _ => None,
   };
 
@@ -640,7 +640,7 @@ pub fn spherical_harmonic_y_ast(
 
     // Associated Legendre polynomial P_l^m(cos θ). Our P_l^m already
     // includes the Condon–Shortley (−1)^m phase, so no extra sign here.
-    let plm = associated_legendre_f64(l, m, cos_theta);
+    let plm = associated_legendre_f64(l as i64, m as i64, cos_theta);
 
     // Y_l^m = norm * P_l^m(cos θ) * e^(imφ)
     let re = norm * plm * (m as f64 * phi).cos();
@@ -1258,11 +1258,117 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(legendre_q_eval_f64(n, x_f)));
   }
 
-  // Return unevaluated for symbolic
-  Ok(Expr::FunctionCall {
-    name: "LegendreQ".to_string(),
-    args: args.to_vec().into(),
-  })
+  // Closed-form expansion for integer n ≥ 0 and non-Real x:
+  //   Q_n(x) = LegendreP[n, x] · (Log[1+x] − Log[1−x])/2 − W_{n−1}(x)
+  // with W_{n−1}(x) = Σ_{k=1..n} P_{k−1}(x) · P_{n−k}(x) / k.
+  // Matches wolframscript's natural symbolic form (modulo Times factor
+  // ordering); collapses to the rational-function form at rational x.
+  legendre_q_symbolic_ast(n, &args[1])
+}
+
+fn legendre_q_symbolic_ast(
+  n: usize,
+  x: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Q_0(x) = -Log[1-x]/2 + Log[1+x]/2
+  let half = Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+  };
+  let neg_half = Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+  };
+  let log_1mx = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), x.clone()].into(),
+        },
+      ]
+      .into(),
+    }]
+    .into(),
+  };
+  let log_1px = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(1), x.clone()].into(),
+    }]
+    .into(),
+  };
+  let q0 = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![neg_half, log_1mx].into(),
+      },
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![half, log_1px].into(),
+      },
+    ]
+    .into(),
+  };
+
+  if n == 0 {
+    return crate::evaluator::evaluate_expr_to_expr(&q0);
+  }
+
+  // LegendreP[n, x] (Woxi already returns the polynomial for symbolic x).
+  let p_n = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "LegendreP".to_string(),
+    args: vec![Expr::Integer(n as i128), x.clone()].into(),
+  })?;
+
+  // W_{n-1}(x) = Σ_{k=1..n} P_{k-1}(x) · P_{n-k}(x) / k
+  let mut w_terms = Vec::with_capacity(n);
+  for k in 1..=n {
+    let p_k_minus_1 =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: vec![Expr::Integer((k - 1) as i128), x.clone()].into(),
+      })?;
+    let p_n_minus_k =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: vec![Expr::Integer((n - k) as i128), x.clone()].into(),
+      })?;
+    let one_over_k = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(k as i128)].into(),
+    };
+    w_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![one_over_k, p_k_minus_1, p_n_minus_k].into(),
+    });
+  }
+  let w = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: w_terms.into(),
+  };
+
+  let result = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), w].into(),
+      },
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![p_n, q0].into(),
+      },
+    ]
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Type-2 LegendreQ_ν(z) for complex/inexact ν and |z| > 1.

@@ -6937,6 +6937,29 @@ mod cases {
     );
   }
   #[test]
+  fn legendre_q_0_symbolic() {
+    assert_case(
+      r#"LegendreQ[0, x]"#,
+      r#"-1/2*Log[1 - x] + Log[1 + x]/2"#,
+    );
+  }
+  #[test]
+  fn legendre_q_1_symbolic() {
+    assert_case(
+      r#"LegendreQ[1, x]"#,
+      r#"-1 + x*(-1/2*Log[1 - x] + Log[1 + x]/2)"#,
+    );
+  }
+  #[test]
+  fn legendre_q_2_symbolic_at_half() {
+    // Verify Q_2 closed form by substituting x=1/2. wolframscript prints
+    // this as -3/4 + (-1/2*Log[3/2] - Log[2]/2)/8 — mathematically equal.
+    assert_case(
+      r#"LegendreQ[2, x] /. x -> 1/2"#,
+      r#"-3/4 - (Log[2]/2 + Log[3/2]/2)/8"#,
+    );
+  }
+  #[test]
   fn hypergeometric_u_3_2_1_float() {
     // HypergeometricU[3, 2, 1.] should match wolframscript at full
     // machine precision (~16 sig figs). Previously the float fast-path

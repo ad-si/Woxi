@@ -16273,3 +16273,11 @@ INPUT: LegendreQ[1.6, 3.1, 1.5]
 EXPECTED:
 = -1.71931 - 7.70273 I
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LegendreQ
+LINE: 241
+TYPE: >>
+INPUT: LegendreQ[2, x]
+EXPECTED:
+= -3 x / 2 - 3 x ^ 2 Log[1 - x] / 4 + 3 x ^ 2 Log[1 + x] / 4 - Log[1 + x] / 4 + Log[1 - x] / 4
+---
