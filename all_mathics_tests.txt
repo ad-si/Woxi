@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/colors.py
-CLASS: Colorize
-LINE: 252
-TYPE: >>
-INPUT: Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/colors.py
 CLASS: ImageColorSpace
 LINE: 320
 TYPE: >>
@@ -3304,4 +3296,12 @@ TYPE: >>
 INPUT: E^2 + 3E // SympyForm
 EXPECTED:
 = exp(2) + 3*E
+---
+FILE: mathics/builtin/image/colors.py
+CLASS: Colorize
+LINE: 252
+TYPE: >>
+INPUT: Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]
+EXPECTED:
+= -Image-
 ---
