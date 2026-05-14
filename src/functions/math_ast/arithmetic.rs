@@ -545,6 +545,35 @@ fn try_series_data_times(
   }
 }
 
+/// Does this expression contain any named Wolfram numeric constant
+/// (Pi, E, Degree, EulerGamma, Catalan, GoldenRatio, Glaisher, Khinchin)?
+/// Used by `plus_ast` to decide whether a symbolic summand should have
+/// its constants numerified when a machine Real is present in the sum.
+fn contains_named_numeric_constant(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(s) => matches!(
+      s.as_str(),
+      "Pi"
+        | "E"
+        | "Degree"
+        | "EulerGamma"
+        | "Catalan"
+        | "GoldenRatio"
+        | "Glaisher"
+        | "Khinchin"
+    ),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_named_numeric_constant)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_named_numeric_constant(left)
+        || contains_named_numeric_constant(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_named_numeric_constant(operand),
+    _ => false,
+  }
+}
+
 /// Plus[args...] - Sum of arguments, with list threading
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
@@ -769,6 +798,30 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         symbolic_args.push(arg.clone());
       }
+    }
+
+    // Numeric contagion: if any term is a machine Real, fold each
+    // symbolic numeric-constant term (Pi, E, etc.) into real_sum, and
+    // numerify the numeric constants embedded inside otherwise non-real
+    // terms like `Pi*I` so `2. + Pi*I` → `2. + 3.14159…*I`. Matches
+    // wolframscript: `2. + Pi` → `5.14159…`, `2. + Pi*I` →
+    // `2. + 3.14159…*I`, but `2. + (x-3)^2` stays `2. + (-3 + x)^2`
+    // because the symbolic summand contains no numeric constants.
+    if has_real_term {
+      let mut remaining_symbolic: Vec<Expr> = Vec::new();
+      for arg in symbolic_args.drain(..) {
+        if let Some(f) = try_eval_to_f64(&arg) {
+          // Whole term reduces to a Real (e.g. Pi, E, Sqrt[2]).
+          real_sum += f;
+        } else if contains_named_numeric_constant(&arg)
+          && let Ok(n_val) = crate::functions::math_ast::n_eval(&arg)
+        {
+          remaining_symbolic.push(n_val);
+        } else {
+          remaining_symbolic.push(arg);
+        }
+      }
+      symbolic_args = remaining_symbolic;
     }
 
     // Build final args: numeric sum first (if non-zero), then symbolic terms sorted

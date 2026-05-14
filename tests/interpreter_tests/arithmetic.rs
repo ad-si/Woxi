@@ -474,6 +474,61 @@ mod real_number_formatting {
   }
 }
 
+mod plus_numeric_contagion {
+  use super::*;
+
+  // Regression (mathics test_comparison.py:570): a machine Real among
+  // the Plus terms numerifies named numeric constants (Pi, E, ...) and
+  // any numeric constants embedded inside otherwise-symbolic summands
+  // (e.g. `Pi*I`), matching wolframscript. Bare variables stay symbolic.
+  #[test]
+  fn real_plus_pi_numerifies() {
+    assert_eq!(interpret("2. + Pi").unwrap(), "5.141592653589793");
+  }
+
+  #[test]
+  fn real_plus_e_numerifies() {
+    assert_eq!(interpret("2. + E").unwrap(), "4.718281828459045");
+  }
+
+  #[test]
+  fn real_plus_sqrt2_numerifies() {
+    assert_eq!(interpret("2. + Sqrt[2]").unwrap(), "3.414213562373095");
+  }
+
+  #[test]
+  fn real_plus_pi_times_i_numerifies_pi_only() {
+    // Pi is numerified but I stays symbolic, matching wolframscript.
+    assert_eq!(
+      interpret("2.+ Pi I").unwrap(),
+      "2. + 3.141592653589793*I"
+    );
+  }
+
+  #[test]
+  fn real_plus_pi_plus_symbol() {
+    // Pi numerified into the Real sum; bare symbol stays.
+    assert_eq!(interpret("2. + Pi + a").unwrap(), "5.141592653589793 + a");
+  }
+
+  #[test]
+  fn real_plus_symbol_stays_symbolic() {
+    // No numeric constants in the symbolic part — nothing to numerify.
+    assert_eq!(interpret("2. + a").unwrap(), "2. + a");
+  }
+
+  // Regression: numeric contagion must not over-eagerly numerify
+  // bare integer exponents or unrelated integer summands inside the
+  // symbolic part.
+  #[test]
+  fn real_plus_polynomial_keeps_exact_exponent() {
+    assert_eq!(
+      interpret("Plus[2., (x-3)^2]").unwrap(),
+      "2. + (-3 + x)^2"
+    );
+  }
+}
+
 mod big_integer {
   use super::*;
 

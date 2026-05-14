@@ -17676,3 +17676,21 @@ NOTE: SameQ row `("N[2/9, 4]", ".222222`5", "True")` from test_sameq.
   to 0.2222 at min-precision 4). Covered by the SameQ precision-
   rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 570
+INPUT: 2.+ Pi I
+EXPECTED: a
+MESSAGE: 2. + 3.14159265358979 I == a
+NOTE: row `("2.+ Pi I", "a", "2. + 3.14159265358979 I == a")` from
+  test_cmp1_no_pass tests `Equal[2.+ Pi I, a]`. Woxi previously kept
+  `Pi` symbolic in `2. + Pi I` (returned `2. + I*Pi == a`); fixed Plus
+  to numerify named constants (Pi, E, Sqrt[2], ...) and any constants
+  embedded in otherwise-symbolic summands when at least one summand is
+  a machine Real, so `2.+ Pi I` now evaluates to
+  `2. + 3.141592653589793*I` (matches wolframscript). The mathics
+  expected `…3.14159265358979 I` truncates one digit; the EXPECTED is
+  still effectively equivalent for the structural Equal test.
+  Regression tests: tests/interpreter_tests/arithmetic.rs::
+  plus_numeric_contagion::*.
+---
