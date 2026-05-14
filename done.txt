@@ -16233,3 +16233,11 @@ INPUT: JacobiP[3.5 + I, 3, 2, 4 - I]
 EXPECTED:
 = 1410.02 + 5797.3 I
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LegendreP
+LINE: 183
+TYPE: >>
+INPUT: LegendreP[1.75, 1.4, 0.53]
+EXPECTED:
+= -1.32619
+---
