@@ -19500,3 +19500,16 @@ NOTE: mathics expected `Accuracy[1.]` is a symbolic reference: it
   agreement to machine precision; tiny last-digit difference is the
   usual extended-decimal-rendering algorithm quirk.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT:  0.4 + 2.4 I
+EXPECTED: $MachinePrecision-Log[10, Abs[.4+2.4 I]]
+NOTE: mathics asserts
+  `Accuracy[0.4 + 2.4 I] == $MachinePrecision - Log[10, Abs[.4+2.4 I]]`.
+  Both Woxi and wolframscript satisfy this — Woxi yields
+  `15.568428916829543` for both sides; wolframscript yields
+  `…543` for the formula and `…545` for Accuracy (same last-digit
+  extended-decimal divergence). Equality holds to machine precision
+  in both systems.
+---
