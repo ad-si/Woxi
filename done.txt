@@ -17707,3 +17707,21 @@ NOTE: row `("2.+ Pi I", "2 + 3 a", "2. + 3.14159265358979 I == 2 + 3 a")`
   wolframscript. mathics's expected `…3.14159265358979 I` truncates one
   digit but is structurally equivalent for the Equal test.
 ---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 127
+INPUT: ToString[%]
+EXPECTED: y
+NOTE: tests REPL/CLI `%` semantics: after `CompoundExpression[x, y, Null]`
+  in a fresh REPL cell, `Out[n]` and `%` reference the last non-Null
+  element (`y`), not the actual `Null` return value. Real wolframscript
+  REPL produces `y` here (verified via stdin REPL test). However in
+  *script* mode (both `wolframscript -code` / `-file` and Woxi's `eval`
+  / `run`), `%` collapses to `Out[0]` because there is no per-cell
+  Out-history. Woxi's command-line `eval` therefore matches
+  wolframscript's script-mode behavior (`Out[0]`), not its REPL
+  behavior. Implementing this test requires REPL/notebook support,
+  which is out of scope here. See `src/lib.rs` `set_last_output` (gated
+  on `VISUAL_MODE`) for the infrastructure that already exists for
+  woxi-studio's notebook mode.
+---
