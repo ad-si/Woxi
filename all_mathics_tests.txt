@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: test_Attributes_wrong_args
-LINE: 209
-INPUT: str_expr
-EXPECTED: arg_count
----
 FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_private_doctests_io
 LINE: 9

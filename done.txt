@@ -18858,3 +18858,17 @@ NOTE: parameter-name placeholder for a second `test_one_identity_*`
   file). Same `OneIdentity` / pattern-match family, also decorated
   `@skip_or_fail` upstream. Covered by Woxi's pattern-matching tests.
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_Attributes_wrong_args
+LINE: 209
+INPUT: str_expr
+EXPECTED: arg_count
+NOTE: parameter-name placeholder. Actual test rows exercise
+  `SetAttributes` with wrong arities (0, 1, 3 args) and expect a
+  `SetAttributes::argrx` message — both Woxi and wolframscript emit
+  this and return the expression unevaluated. Verified directly:
+  `SetAttributes[F]` produces "SetAttributes::argrx: SetAttributes
+  called with 1 argument; 2 arguments are expected." in Woxi
+  (matching the expected behavior). Existing Woxi argcount-message
+  coverage lives in tests/interpreter_tests/arg_count.rs.
+---
