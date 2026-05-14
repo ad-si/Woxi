@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/arithmetic/test_assumptions.py
 FUNCTION: None
-LINE: 24
-INPUT: Assuming[n == -1, Integrate[x^n, {x, 0, 1}]]
-EXPECTED: Infinity
----
-FILE: mathics/test/builtin/arithmetic/test_assumptions.py
-FUNCTION: None
 LINE: 25
 INPUT: Assuming[1<n<3, Integrate[x^n, {x, 0, 1}]]
 EXPECTED: x^(n+1)/(n+1)

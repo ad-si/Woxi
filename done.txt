@@ -18155,3 +18155,18 @@ NOTE: same family as line 22. After the Assuming equality-substitution
   Regression test: tests/interpreter_tests/algebra.rs::
   simplify_with_assumption::assuming_eq_two_integrate_x_n.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: None
+LINE: 24
+INPUT: Assuming[n == -1, Integrate[x^n, {x, 0, 1}]]
+EXPECTED: Infinity
+NOTE: Woxi returns `Infinity` after the equality-substitution fix
+  (`Integrate[1/x, {x, 0, 1}]` → `Infinity`), matching the mathics
+  expected. wolframscript actually leaves the integral unevaluated
+  with an `Integrate::idiv` warning — Woxi computes the divergent
+  improper integral and returns the +∞ limit. mathics-vs-wolframscript
+  divergence in Integrate divergence handling; Woxi happens to match
+  the mathematical truth and mathics, not the wolframscript surface
+  behavior. Existing regression coverage via the Assuming-equality
+  tests.
+---
