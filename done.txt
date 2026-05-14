@@ -17479,3 +17479,9 @@ LINE: 304
 INPUT: Derivative[x][4] '
 EXPECTED: Derivative[1][Derivative[x][4]]
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 375
+INPUT: (a;;b);;c
+EXPECTED: Span[Span[a, b], c]
+---

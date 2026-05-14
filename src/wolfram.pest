@@ -425,7 +425,7 @@ Term = _{
   | AssociationExtended
   | Association
   | ParenExtended
-  | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+  | "(" ~ (&HasSpanSep ~ SpanExpr | &HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -445,7 +445,7 @@ SimpleTerm = _{
   | Slot
   | OutShortcut
   | List
-  | "(" ~ Expression ~ ")"
+  | "(" ~ (&HasSpanSep ~ SpanExpr | Expression) ~ ")"
 }
 
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
