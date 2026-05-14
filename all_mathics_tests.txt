@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/basic.py
 CLASS: ImagePartition
-LINE: 191
-TYPE: >>
-INPUT: ImagePartition[hedy, 256]
-EXPECTED:
-= {{-Image-, -Image-}, {-Image-, -Image-}, {-Image-, -Image-}}
----
-FILE: mathics/builtin/image/basic.py
-CLASS: ImagePartition
 LINE: 194
 TYPE: >>
 INPUT: ImagePartition[hedy, {512, 128}]

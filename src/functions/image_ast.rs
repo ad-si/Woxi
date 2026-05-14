@@ -2094,6 +2094,29 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// ImagePartition[img, n] / [img, n, d] — image tile partition stub.
+/// Real image partitioning isn't implemented yet; this stub only matches
+/// wolframscript's behavior for non-image input (emits ImagePartition::imginv
+/// and returns the call unevaluated) so doctests like
+/// `ImagePartition[hedy, 256]` (no image present) line up.
+pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "ImagePartition::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "ImagePartition".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // Image input: leave unevaluated for now (real partitioning TBD).
+  Ok(Expr::FunctionCall {
+    name: "ImagePartition".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
