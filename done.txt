@@ -18687,3 +18687,13 @@ NOTE: same `test_get_tag_position` mathics-internal family. Curried
   classifies as a SubValue under tag `A`. No portable wolframscript
   surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: (s:A[x])[t]
+EXPECTED: A
+MESSAGE: subvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Named-
+  pattern `(s:A[x])[t]` (curried call wrapping a Pattern) classifies
+  as a SubValue under tag `A`. No portable wolframscript surface.
+---
