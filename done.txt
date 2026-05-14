@@ -19458,3 +19458,13 @@ NOTE: `Accuracy[10.00\`20]` returns `19.` in Woxi (matching mathics
   `precision − log10(10)` f64 rounding tail as line 187. Both match
   to machine precision.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: 10.00000000000000000000
+EXPECTED: 20.
+NOTE: `Accuracy[10.0000000000000000000]` returns `20.` in Woxi
+  (matching mathics exactly). wolframscript returns
+  `19.999999999999996` — same `precision − log10(10)` rounding-tail
+  quirk as the previous rows.
+---
