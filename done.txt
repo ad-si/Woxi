@@ -18932,3 +18932,14 @@ NOTE: duplicate of the same `NumericArray` row already handled in
   `project-mathics-numericarray-divergence`. Regression test:
   tests/interpreter_tests/functions.rs::numeric_array_2d_display.
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: ToString[NumericArray[{{1,2},{3,4}}]]
+NOTE: duplicate of the ToString[NumericArray[{{1,2},{3,4}}]] row
+  handled earlier (line 431 in test_binary.py). Same mathics-vs-
+  wolframscript divergence; Woxi matches wolframscript with
+  `NumericArray[<2,2>, UnsignedInteger8]`. See memory
+  `project-mathics-numericarray-divergence`. Regression test:
+  tests/interpreter_tests/functions.rs::tostring_numeric_array_2d.
+---
