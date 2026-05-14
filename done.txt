@@ -16635,3 +16635,11 @@ INPUT: Threshold[img, Method -> "Median"]
 EXPECTED:
 = 0.0593961
 ---
+FILE: mathics/builtin/image/colors.py
+CLASS: Binarize
+LINE: 46
+TYPE: >>
+INPUT: Binarize[hedy]
+EXPECTED:
+= -Image-
+---
