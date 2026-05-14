@@ -17988,3 +17988,16 @@ NOTE: `hedy` is mathics's built-in Hedy Lamarr test image. Neither
   Woxi (wolframscript returns True) — separate Image-handling bug not
   exercised by this mathics row.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 19
+INPUT: BinaryImageQ[Binarize[hedy]]
+EXPECTED: True
+NOTE: `hedy` is a mathics-bundled test image (Hedy Lamarr). Without
+  the fixture, both Woxi and wolframscript evaluate `Binarize[hedy]`
+  against an undefined symbol → `BinaryImageQ` returns `False`
+  (wolframscript additionally emits `Binarize::imginv`). The mathics
+  expected `True` only holds when hedy is loaded as an image. Woxi
+  matches wolframscript's no-fixture behavior. See memory
+  `project-mathics-image-fixtures`.
+---
