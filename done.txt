@@ -19543,3 +19543,12 @@ NOTE: parameter-name placeholder for the `test_precision`
   precision-tagged values, complex numbers, and lists — broadly
   covered by Woxi's `n_arbitrary_precision` tests.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: 0.``2
+EXPECTED: 0.
+NOTE: `Precision[0.\`\`2]` returns `0.` in both Woxi and
+  wolframscript — a zero with accuracy 2 has zero significant
+  digits (accuracy-only value).
+---
