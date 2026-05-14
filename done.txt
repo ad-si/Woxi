@@ -19383,3 +19383,14 @@ NOTE: parameter-name placeholder for `test_limit` parametrisation.
   wolframscript. Limit coverage in Woxi's
   `tests/interpreter_tests/calculus.rs`.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: str_expr
+EXPECTED: str_expected
+NOTE: parameter-name placeholder for the `test_accuracy`
+  parametrisation. Actual rows exercise `Accuracy[…]` against
+  precision-tagged zeros, integers, and tagged reals — covered by
+  Woxi's accuracy/precision tests in
+  `tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision`.
+---
