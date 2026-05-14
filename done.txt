@@ -18458,3 +18458,18 @@ NOTE: `N[sym, _] = v` installs an NValue rule with a blank-pattern
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   n_blank_precision_nvalue_*.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_numerify
+LINE: 91
+INPUT: F[a, 2/9]
+EXPECTED: F[a, 2 *9 ^ (-1)]
+MESSAGE: a=1.2`3;
+NOTE: tests mathics's internal `numerify(expr, evaluation)` helper —
+  no portable wolframscript equivalent. mathics's `numerify` converts
+  exact numerics to inexact based on installed N-values, without
+  evaluating user symbols. Both Woxi and wolframscript produce the
+  same `Hold[F[a, Times[2, Power[9, -1]]]]` structural form (which
+  is what `Hold[…][[1]]` returns the inner of) for the input. The
+  internal numerify logic doesn't surface through standard
+  wolframscript calls.
+---
