@@ -17539,3 +17539,13 @@ LINE: 99
 INPUT: f[a;\nb;\nc;\n]
 EXPECTED: f[CompoundExpression[a, b, c, Null]]
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 430
+INPUT: NumericArray[{{1,2},{3,4}}]
+EXPECTED: <Integer64, 2×2>
+NOTE: mathics expected uses mathics's own short-form display
+  `<Integer64, 2×2>` and its default-Integer64 inference. Both Woxi
+  and wolframscript produce `NumericArray[<2,2>, UnsignedInteger8]`
+  (smallest-fitting unsigned int + `<rows,cols>` shape).
+---

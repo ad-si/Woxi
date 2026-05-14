@@ -975,6 +975,44 @@ mod first_last_extended {
   fn last_of_numeric_array_is_last_element() {
     assert_eq!(interpret("Last[NumericArray[{1, 2, 3}]]").unwrap(), "3");
   }
+
+  // Regression (mathics test_binary.py:430-437): for a 2-D NumericArray the
+  // wrapper itself, and First/Last/ToString of it, render the abbreviated
+  // `NumericArray[<dim,...>, type]` form rather than spelling out the
+  // payload list — matching wolframscript exactly. The mathics-side
+  // expectation (`<Integer64, 2×2>`) reflects mathics's own default type
+  // inference (Integer64) and short-form display, not wolframscript output.
+  #[test]
+  fn numeric_array_2d_display() {
+    assert_eq!(
+      interpret("NumericArray[{{1,2},{3,4}}]").unwrap(),
+      "NumericArray[<2,2>, UnsignedInteger8]"
+    );
+  }
+
+  #[test]
+  fn tostring_numeric_array_2d() {
+    assert_eq!(
+      interpret("ToString[NumericArray[{{1,2},{3,4}}]]").unwrap(),
+      "NumericArray[<2,2>, UnsignedInteger8]"
+    );
+  }
+
+  #[test]
+  fn first_of_numeric_array_2d_returns_row_array() {
+    assert_eq!(
+      interpret("First[NumericArray[{{1,2}, {3,4}}]]").unwrap(),
+      "NumericArray[<2>, UnsignedInteger8]"
+    );
+  }
+
+  #[test]
+  fn last_of_numeric_array_2d_returns_row_array() {
+    assert_eq!(
+      interpret("Last[NumericArray[{{1,2}, {3,4}}]]").unwrap(),
+      "NumericArray[<2>, UnsignedInteger8]"
+    );
+  }
 }
 
 mod array_predicates {
