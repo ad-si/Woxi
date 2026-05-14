@@ -16185,3 +16185,11 @@ INPUT: MeijerG[{{1, 2},{}}, {{3},{}}, 1.]
 EXPECTED:
 = 0.210958
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: ChebyshevT
+LINE: 25
+TYPE: >>
+INPUT: ChebyshevT[1 - I, 0.5]
+EXPECTED:
+= 0.800143 + 1.08198 I
+---
