@@ -17187,3 +17187,11 @@ INPUT: N[Pi, 30]
 EXPECTED:
 = 3.14159265358979323846264338328
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 249
+TYPE: >>
+INPUT: 3.1416`3 == 3.1413`4
+EXPECTED:
+= True
+---
