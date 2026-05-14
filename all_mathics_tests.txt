@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
-LINE: 49
-INPUT: S[x_, q:(A[t_]/;t>0)]
-EXPECTED: A
-MESSAGE: upvalues
----
 FILE: mathics/test/core/parser/test_convert.py
 FUNCTION: None
 LINE: 152
