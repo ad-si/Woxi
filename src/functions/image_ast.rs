@@ -1489,9 +1489,16 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         image_type: ImageType::Bit,
       })
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "EdgeDetect: argument is not an Image".into(),
-    )),
+    _ => {
+      crate::emit_message(&format!(
+        "EdgeDetect::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "EdgeDetect".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

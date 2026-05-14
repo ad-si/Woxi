@@ -16946,3 +16946,11 @@ INPUT: Import["ExampleData/hedy.tif"]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/misc.py
+CLASS: EdgeDetect
+LINE: 181
+TYPE: >>
+INPUT: EdgeDetect[hedy]
+EXPECTED:
+= -Image-
+---
