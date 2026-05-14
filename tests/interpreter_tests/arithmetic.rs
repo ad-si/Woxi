@@ -2426,6 +2426,15 @@ mod expand_threading {
     assert_eq!(interpret("ArcCos[-1/2 Sqrt[3]]").unwrap(), "(5*Pi)/6");
   }
 
+  // Regression (mathics test_basic.py:48): `E^(I Pi/4)` stays in
+  // symbolic exponent form rather than being expanded to roots of
+  // unity. mathics's expected `E ^ (I / 4 Pi)` is the same value
+  // rendered with a different surface form.
+  #[test]
+  fn e_to_imaginary_pi_quarter() {
+    assert_eq!(interpret("E^(I Pi/4)").unwrap(), "E^(I/4*Pi)");
+  }
+
   #[test]
   fn arccos_neg_sqrt2_over_2() {
     assert_eq!(interpret("ArcCos[-Sqrt[2]/2]").unwrap(), "(3*Pi)/4");

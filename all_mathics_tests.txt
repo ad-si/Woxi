@@ -6,12 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_add
-LINE: 48
-INPUT: log2=.; E^(I Pi/4)
-EXPECTED: E ^ (I / 4 Pi)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_multiply
 LINE: 173
 INPUT: a  b  DirectedInfinity[-3]

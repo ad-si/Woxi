@@ -18213,3 +18213,14 @@ NOTE: same family as lines 25–26. mathics's expected is the
   implement inequality-driven `0^x` simplification under assumptions.
   Same out-of-scope ConditionalExpression project.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_add
+LINE: 48
+INPUT: log2=.; E^(I Pi/4)
+EXPECTED: E ^ (I / 4 Pi)
+NOTE: Woxi produces `E^(I/4*Pi)`, matching wolframscript exactly.
+  mathics's expected `E ^ (I / 4 Pi)` is the same value rendered with
+  a different surface form. Regression test:
+  tests/interpreter_tests/arithmetic.rs::real_number_formatting::
+  e_to_imaginary_pi_quarter.
+---
