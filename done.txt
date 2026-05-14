@@ -18966,3 +18966,14 @@ NOTE: duplicate of the Last[NumericArray[…]] row handled earlier
   `project-mathics-numericarray-divergence`. Regression test:
   tests/interpreter_tests/functions.rs::last_of_numeric_array_2d_returns_row_array.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 7
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: assert_fail_message
+NOTE: parameter-name placeholder for the `test_compare_many_members`
+  parametrisation. Actual rows (already moved to done.txt in earlier
+  loops) exercise `Equal` / `==` chains and mixed-precision Real
+  comparisons. Covered by Woxi's Equal / comparison test suite.
+---
