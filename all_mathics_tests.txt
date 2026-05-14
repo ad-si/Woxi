@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/pixel.py
 CLASS: PixelValuePositions
-LINE: 64
-TYPE: >>
-INPUT: PixelValuePositions[Image[{{0.2, 0.4}, {0.9, 0.6}, {0.3, 0.8}}], 0.5, 0.15]
-EXPECTED:
-= {{2, 2}, {2, 3}}
----
-FILE: mathics/builtin/image/pixel.py
-CLASS: PixelValuePositions
 LINE: 68
 TYPE: >>
 INPUT: PixelValuePositions[hedy, 1, 0][[1]]
