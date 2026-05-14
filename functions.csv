@@ -1967,7 +1967,7 @@ MarginalDistribution,Marginal distribution of multivariate distribution (complex
 TooltipStyle,Style option for tooltips (GUI),🚫,,8.0,2002
 BitShiftRight,Shifts integer bits to the right,✅,pure,6.0,2003
 MultiedgeStyle,Style option for multi-edges in graphs (GUI),🚫,,6.0,2005
-PixelValue,Get pixel value from image (image processing),🚫,,8.0,2005
+PixelValue,Get pixel value from image (image processing),✅,,8.0,2005
 WaveletPsi,Wavelet function (signal processing),🚫,,8.0,2006
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7.0,2008
 Shallow,Control output depth display (notebook display),🚫,,2.0,2008

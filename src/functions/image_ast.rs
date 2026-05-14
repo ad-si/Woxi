@@ -2177,6 +2177,22 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// PixelValue[img, pos] — pixel-color lookup stub. Real implementation
+/// is left for future work; this stub matches wolframscript's
+/// PixelValue::imginv warning for non-image input.
+pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "PixelValue::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "PixelValue".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// TextRecognize[img] — OCR stub. Real text recognition is not
 /// implemented; this stub matches wolframscript's TextRecognize::imgvinv
 /// warning for non-image input.

@@ -118,6 +118,9 @@ pub fn dispatch_image_functions(
     "TextRecognize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::text_recognize_ast(args));
     }
+    "PixelValue" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::pixel_value_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
