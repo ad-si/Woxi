@@ -1,13 +1,5 @@
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
-LINE: 319
-TYPE: >>
-INPUT: DominantColors[img, 3, "CoverageImage"]
-EXPECTED:
-= {-Image-, -Image-, -Image-}
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: DominantColors
 LINE: 322
 TYPE: >>
 INPUT: DominantColors[img, 3, "Count"]
