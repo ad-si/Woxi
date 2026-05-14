@@ -692,6 +692,16 @@ fn n_eval_arbitrary_partial(
   if let Expr::Real(_) = expr {
     return Ok(expr.clone());
   }
+  // BigFloat input with a lower precision tag: keep the original tag
+  // — N can't manufacture digits the input didn't carry. Matches
+  // wolframscript: `N[F[1.2\`3, 2/9], 5]` keeps the `1.2\`3` literal at
+  // precision 3 while promoting only the rational to precision 5.
+  if let Expr::BigFloat(_, prec_f64) = expr {
+    let prec_in = if *prec_f64 > 0.0 { *prec_f64 } else { 0.0 };
+    if precision > prec_in {
+      return Ok(expr.clone());
+    }
+  }
   // If the whole expression can be converted to BigFloat, do it
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
     let decimal = bigfloat_to_string(&result, None, rm, cc)?;

@@ -18376,3 +18376,22 @@ NOTE: same test row as the previous F[1.2, 2/9] entry, with mathics's
   as machine Real and expand `2/9` to BigFloat-tagged 0.222… at
   MachinePrecision.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: F[1.2`3, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .22222232818603515`15]
+NOTE: `N[F[1.2\`3, 2/9], 5]` previously promoted the inner
+  `1.2\`3` BigFloat (precision 3) to the requested precision 5
+  because `n_eval_arbitrary_partial` always re-encoded BigFloat
+  arguments. wolframscript clamps to `min(input_prec, requested_prec)`
+  — N can't manufacture digits the input didn't carry. Added a
+  BigFloat early-return in `n_eval_arbitrary_partial` that mirrors the
+  one already in `n_eval_arbitrary`: when `precision > prec_in`, return
+  the BigFloat unchanged. Now `F[1.2\`3., 0.222…\`5.]` matches
+  wolframscript (digit-count divergence in 2/9 expansion is the
+  pre-existing extended-decimal-rendering algorithm difference).
+  Regression test: tests/interpreter_tests/math/numeric.rs::
+  n_arbitrary_precision::n_higher_precision_keeps_lower_bigfloat_in_function_call.
+---

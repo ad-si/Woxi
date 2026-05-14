@@ -109,11 +109,24 @@ mod n_arbitrary_precision {
   // `n_eval_arbitrary_partial` now skips machine-precision Reals.
   #[test]
   fn n_machine_precision_inside_function_call_keeps_real() {
-    let result =
-      interpret("N[F[1.2, 2/9], $MachinePrecision]").unwrap();
+    let result = interpret("N[F[1.2, 2/9], $MachinePrecision]").unwrap();
     assert!(
       result.starts_with("F[1.2, 0."),
       "expected `1.2` to stay machine-precision, got: {}",
+      result
+    );
+  }
+
+  // Regression (mathics test_evaluators.py:29, F[1.2\`3, 2/9]):
+  // a lower-precision BigFloat inside a FunctionCall keeps its
+  // original precision tag when N requests a higher precision —
+  // N can't manufacture digits the input doesn't carry.
+  #[test]
+  fn n_higher_precision_keeps_lower_bigfloat_in_function_call() {
+    let result = interpret("N[F[1.2`3, 2/9], 5]").unwrap();
+    assert!(
+      result.starts_with("F[1.2`3., 0."),
+      "expected `1.2\\`3` to stay at precision 3, got: {}",
       result
     );
   }
