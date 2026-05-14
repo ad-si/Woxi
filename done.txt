@@ -19394,3 +19394,12 @@ NOTE: parameter-name placeholder for the `test_accuracy`
   Woxi's accuracy/precision tests in
   `tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision`.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: 0.00000000000000000000
+EXPECTED: 20.
+NOTE: `Accuracy[0.00000000000000000000]` returns `20.` in both Woxi
+  and wolframscript exactly — a literal zero with 20 trailing
+  fractional zeros carries 20 digits of accuracy.
+---
