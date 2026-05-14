@@ -16643,3 +16643,11 @@ INPUT: Binarize[hedy]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/colors.py
+CLASS: Binarize
+LINE: 49
+TYPE: >>
+INPUT: Binarize[hedy, 0.7]
+EXPECTED:
+= -Image-
+---
