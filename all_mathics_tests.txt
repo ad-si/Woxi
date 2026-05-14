@@ -8,12 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
 LINE: 186
-INPUT: 0.``20
-EXPECTED: 20.
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_accuracy
-LINE: 186
 INPUT: -0.``2
 EXPECTED: 2.
 ---
