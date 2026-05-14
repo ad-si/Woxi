@@ -4981,6 +4981,36 @@ mod right_tee {
   fn single_arg() {
     assert_eq!(interpret("RightTee[a]").unwrap(), "RightTee[a]");
   }
+
+  // Regression (mathics test_parser.py:592): `x1 \[RightTee] x2` is an
+  // infix operator that parses to `RightTee[x1, x2]`.
+  #[test]
+  fn infix_named_character() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x1 \\[RightTee] x2]]]").unwrap(),
+      "Hold[RightTee[x1, x2]]"
+    );
+  }
+
+  // The Unicode ⊢ (U+22A2) also parses as the RightTee infix operator.
+  #[test]
+  fn infix_unicode_u22a2() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \u{22A2} b]]]").unwrap(),
+      "Hold[RightTee[a, b]]"
+    );
+  }
+
+  // RightTee is right-associative (not Flat):
+  // a \[RightTee] b \[RightTee] c → RightTee[a, RightTee[b, c]].
+  #[test]
+  fn infix_right_associative() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \\[RightTee] b \\[RightTee] c]]]")
+        .unwrap(),
+      "Hold[RightTee[a, RightTee[b, c]]]"
+    );
+  }
 }
 
 mod prime_zeta_p {

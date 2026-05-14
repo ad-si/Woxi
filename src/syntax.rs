@@ -4359,6 +4359,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
     "\\[Cap]" | "\u{2322}" => 12,        // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 12,        // Cup (⌣, infix → Cup[a, b])
+    "\\[RightTee]" | "\u{22A2}" => 5,    // RightTee (⊢, right-assoc, between -> and ==)
     // wolframscript: \[Function] is lower than Set, Condition, and Rule —
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
@@ -4430,6 +4431,8 @@ fn build_expr_with_precedence(
       || op_str == "/@"
       || op_str == "@*"
       || op_str == "/*"
+      || op_str == "\\[RightTee]"
+      || op_str == "\u{22A2}"
     {
       prec
     } else {
@@ -4653,6 +4656,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         args: parts.into(),
       }
     }
+    "\\[RightTee]" | "\u{22A2}" => Expr::FunctionCall {
+      name: "RightTee".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
     "~~" => {
       // Flatten nested StringExpression (it's Flat/associative)
       let mut parts = Vec::new();
