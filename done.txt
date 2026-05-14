@@ -18772,3 +18772,15 @@ NOTE: same `test_get_tag_position` mathics-internal family. Curried
   classifies as an UpValue under tag `s` (the rule attaches to the
   inner symbol). No portable wolframscript surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: DisplayForm[boxexpr_InterpretationBox]
+EXPECTED: InterpretationBox
+MESSAGE: upvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Pattern
+  `DisplayForm[boxexpr_InterpretationBox]` (typed-blank `_InterpretationBox`
+  in DisplayForm's arg) classifies as an UpValue under tag
+  `InterpretationBox` — the rule attaches to the inner-type symbol.
+  No portable wolframscript surface.
+---
