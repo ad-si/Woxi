@@ -18313,3 +18313,17 @@ NOTE: row from mathics's `test_eval_NValues` parameterisation
   `1.41421356237309504880168872420969807857\`15.954589770191003` in
   both Woxi and wolframscript exactly.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: 2/9
+EXPECTED: $MachinePrecision
+MESSAGE: 2.000000`5*9.0000000000`5^(-1.`)
+NOTE: row from mathics's `test_eval_NValues` parameterisation — calls
+  internal `eval_NValues` directly. The user-facing `N[2/9,
+  $MachinePrecision]` returns
+  `0.22222222222222222222222222222222222222\`15.954589770191003` in
+  both Woxi and wolframscript exactly. The mathics MESSAGE
+  `2.000000\`5*9.0000000000\`5^(-1.\`)` is internal-only structural
+  form.
+---
