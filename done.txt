@@ -19283,3 +19283,14 @@ NOTE: parameter-name placeholder for `test_private_doctests_system`,
   `tests/interpreter_tests/machine_specific.rs` and friends. The
   placeholder row carries no test data.
 ---
+FILE: mathics/test/builtin/test_testing_expressions.py
+FUNCTION: test_order
+LINE: 180
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: assert_fail_msg
+NOTE: parameter-name placeholder for `test_order` parametrisation
+  (canonical-ordering primitive). Quick spot-check: `Order[1, 2] → 1`
+  and `Order[b, a] → -1` in both Woxi and wolframscript. Existing
+  Order coverage lives in Woxi's list/sort tests.
+---
