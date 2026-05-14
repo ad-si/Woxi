@@ -19487,3 +19487,16 @@ NOTE: `Accuracy[10.\`\`20]` returns `20.` in Woxi (matching mathics
   exactly). wolframscript returns `20.000000000000007` — same
   rounding-tail quirk. All three agree to machine precision.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: 1. I
+EXPECTED: Accuracy[1.]
+NOTE: mathics expected `Accuracy[1.]` is a symbolic reference: it
+  asserts `Accuracy[1. I] == Accuracy[1.]`. Both Woxi and
+  wolframscript satisfy this (their `Accuracy[1. I]` equals their
+  `Accuracy[1.]` exactly). Numerically: Woxi
+  `15.954589770191003`, wolframscript `15.954589770191005` —
+  agreement to machine precision; tiny last-digit difference is the
+  usual extended-decimal-rendering algorithm quirk.
+---
