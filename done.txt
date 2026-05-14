@@ -18405,3 +18405,13 @@ NOTE: same test row as the previous F[1.2\`3, 2/9] entry, with
   mathics's alternate `.222222\`5` MESSAGE format. Covered by the
   same BigFloat-precision-clamp fix.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: F[1.2`3, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .222222]
+NOTE: same test row as the previous F[1.2\`3, 2/9] entry, with
+  mathics's bare `.222222` MESSAGE format (truncated to 6 digits).
+  Covered by the same BigFloat-precision-clamp fix.
+---
