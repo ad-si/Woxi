@@ -19294,3 +19294,16 @@ NOTE: parameter-name placeholder for `test_order` parametrisation
   and `Order[b, a] → -1` in both Woxi and wolframscript. Existing
   Order coverage lives in Woxi's list/sort tests.
 ---
+FILE: mathics/test/builtin/assignments/test_assignment.py
+FUNCTION: test_set_and_clear
+LINE: 80
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_set_and_clear`
+  parametrisation (Set / SetDelayed / Clear / Unset interactions).
+  Spot-check: `a = 5; b = a; a = 10; b` returns `5` in both Woxi and
+  wolframscript. Assignment coverage lives in
+  `tests/interpreter_tests/function_definitions.rs` and
+  `tests/interpreter_tests/control_flow.rs`.
+---
