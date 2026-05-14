@@ -17269,3 +17269,11 @@ INPUT: {f'[x], f''[x], f'''[x]} // Together
 EXPECTED:
 = {-4 (-5 + x ^ 2) / (5 + 3 x + x ^ 2) ^ 2, 8 (-15 - 15 x + x ^ 3) / (5 + 3 x + x ^ 2) ^ 3, -24 (-20 - 60 x - 30 x ^ 2 + x ^ 4) / (5 + 3 x + x ^ 2) ^ 4}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1131
+TYPE: >>
+INPUT: f''[x] /. extremes // N
+EXPECTED:
+= {1.65086, -0.064079}
+---
