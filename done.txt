@@ -18908,3 +18908,15 @@ NOTE: parameter-name placeholder. The `test_ByteOrdering`
   `NumericArray[…]` short-form display; this placeholder row itself
   carries no test data.
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: str_expr
+EXPECTED: str_expected
+NOTE: parameter-name placeholder for the `test_basics` parametrisation
+  (NumericArray short-form display tests). Actual rows already moved
+  in earlier loops to done.txt — they exercise the same `<Integer64,
+  …>` mathics-vs-wolframscript divergence documented in memory
+  `project-mathics-numericarray-divergence`. Placeholder row has no
+  test data.
+---
