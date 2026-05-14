@@ -19403,3 +19403,11 @@ NOTE: `Accuracy[0.00000000000000000000]` returns `20.` in both Woxi
   and wolframscript exactly — a literal zero with 20 trailing
   fractional zeros carries 20 digits of accuracy.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: 0.``2
+EXPECTED: 2.
+NOTE: `Accuracy[0.\`\`2]` (zero with accuracy 2) returns `2.` in both
+  Woxi and wolframscript exactly.
+---
