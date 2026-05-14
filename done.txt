@@ -18041,3 +18041,12 @@ NOTE: same `ein` image-fixture limitation. Without the fixture both
   Woxi and wolframscript leave the expression unevaluated. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 29
+INPUT: ImageDimensions[ImageTake[ein, -100000]]
+EXPECTED: {615, 768}
+NOTE: same `ein` image-fixture limitation. Without the fixture both
+  Woxi and wolframscript leave the expression unevaluated. See memory
+  `project-mathics-image-fixtures`.
+---
