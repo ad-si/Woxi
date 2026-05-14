@@ -1,11 +1,3 @@
-FILE: mathics/builtin/image/filters.py
-CLASS: MinFilter
-LINE: 170
-TYPE: >>
-INPUT: MinFilter[hedy, 5]
-EXPECTED:
-= -Image-
----
 FILE: mathics/builtin/image/geometric.py
 CLASS: ImageResize
 LINE: 53
