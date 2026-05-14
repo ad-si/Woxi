@@ -17784,3 +17784,12 @@ NOTE: Woxi's `gudermannian_ast` previously returned the expression
   tests/interpreter_tests/math/special_functions.rs::gudermannian::
   pole_*.
 ---
+FILE: mathics/test/builtin/numbers/test_hyperbolic.py
+FUNCTION: test_complexexpand
+LINE: 33
+INPUT: ComplexExpand[Sin[x + I y]]
+EXPECTED: Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]
+NOTE: Woxi already produces `Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]`,
+  matching wolframscript and mathics. Covered by existing regression
+  test tests/interpreter_tests/math/complex.rs::complex_expand_1.
+---

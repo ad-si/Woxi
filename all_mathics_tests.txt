@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_complexexpand
-LINE: 33
-INPUT: ComplexExpand[Sin[x + I y]]
-EXPECTED: Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]
----
 FILE: mathics/test/builtin/numbers/test_randomnumbers.py
 FUNCTION: None
 LINE: 14
