@@ -18822,3 +18822,17 @@ NOTE: parameter-name placeholders. The mathics function is decorated
   tests/interpreter_tests/syntax.rs. No portable wolframscript surface
   for this specific test framework hook.
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity
+LINE: 19
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: extracted row is the parameter-name placeholder for the
+  `test_one_identity` parametrisation. The actual test data covers
+  `MatchQ` against `OneIdentity` / `Flat` attributes with Optional
+  patterns and defaults — already covered in Woxi's pattern-matching
+  tests (`patterns.rs`, `function_definitions.rs`). The final row in
+  the mathics parameter list is `(None, None, None)`, a no-op
+  sentinel.
+---
