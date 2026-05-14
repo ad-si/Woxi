@@ -2482,9 +2482,58 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Default (no form or unrecognized form): OutputForm-like
   // Resolve any nested form wrappers (TeXForm, CForm, FortranForm) first,
   // matching wolframscript behavior where ToString extracts form conversions.
+  // Then truncate machine-precision Reals to 6 significant digits — Wolfram's
+  // ToString default for `Real` values, which is *not* the same as the REPL
+  // /Print display (those keep full f64 precision).
   let resolved = resolve_form_wrappers(&args[0]);
-  let s = crate::syntax::expr_to_output(&resolved);
+  let truncated = truncate_machine_reals_for_to_string(&resolved);
+  let s = crate::syntax::expr_to_output(&truncated);
   Ok(Expr::String(s))
+}
+
+/// Round a machine-precision Real to 6 significant decimal digits — the
+/// width wolframscript uses for `ToString[real]` on a default
+/// (MachinePrecision) Real. Returns NaN/inf unchanged; 0.0 stays 0.0.
+fn round_real_to_6_sig_digits(f: f64) -> f64 {
+  if f == 0.0 || !f.is_finite() {
+    return f;
+  }
+  let magnitude = f.abs().log10().floor();
+  let factor = 10f64.powf(5.0 - magnitude);
+  (f * factor).round() / factor
+}
+
+/// Recursively replace each `Expr::Real(f)` in `expr` with its
+/// 6-sig-digit-rounded counterpart, so the default ToString path
+/// emits e.g. `15.8406` for the f64 value `15.840646417884168`.
+/// Leaves BigFloat, Integer, and symbolic Expr nodes intact.
+fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Real(f) => Expr::Real(round_real_to_6_sig_digits(*f)),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(truncate_machine_reals_for_to_string)
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(truncate_machine_reals_for_to_string)
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(truncate_machine_reals_for_to_string(left)),
+      right: Box::new(truncate_machine_reals_for_to_string(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(truncate_machine_reals_for_to_string(operand)),
+    },
+    _ => expr.clone(),
+  }
 }
 
 /// Recursively replace TeXForm/CForm/FortranForm wrappers with their converted

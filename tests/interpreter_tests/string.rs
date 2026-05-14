@@ -4154,6 +4154,70 @@ mod string_position_anchors {
 // the decimal expansion to `p` significant digits — matching
 // wolframscript: `ToString[N[Pi, 100]]` is the bare 101-char string
 // "3.<99 digits>".
+mod to_string_machine_real {
+  use super::*;
+
+  // Regression (mathics test_numbers.py:221, via Accuracy[F[1.3, Pi, A]]):
+  // wolframscript's ToString of a machine Real truncates to 6 significant
+  // digits, not the full f64 representation. Print/InputForm/direct REPL
+  // output still show full precision.
+  #[test]
+  fn to_string_short_real_unchanged() {
+    assert_eq!(interpret("ToString[3.14]").unwrap(), "3.14");
+  }
+
+  #[test]
+  fn to_string_pi_truncates_to_6_digits() {
+    assert_eq!(
+      interpret("ToString[3.14159265358979]").unwrap(),
+      "3.14159"
+    );
+  }
+
+  #[test]
+  fn to_string_real_integer_keeps_dot() {
+    assert_eq!(interpret("ToString[15.0]").unwrap(), "15.");
+  }
+
+  #[test]
+  fn to_string_negative_real_truncates() {
+    assert_eq!(interpret("ToString[-3.14159265]").unwrap(), "-3.14159");
+  }
+
+  #[test]
+  fn to_string_real_three_digits_int_part() {
+    assert_eq!(interpret("ToString[100.123456]").unwrap(), "100.123");
+  }
+
+  #[test]
+  fn to_string_list_truncates_each_real() {
+    assert_eq!(
+      interpret("ToString[{3.14159265, 1.234}]").unwrap(),
+      "{3.14159, 1.234}"
+    );
+  }
+
+  // The flagship case from mathics test_accuracy: the inner Real
+  // computed by `Accuracy[F[1.3, Pi, A]]` is approximately
+  // 15.8406464…, which ToString trims to "15.8406".
+  #[test]
+  fn to_string_accuracy_of_mixed_args() {
+    assert_eq!(
+      interpret("ToString[Accuracy[F[1.3, Pi, A]]]").unwrap(),
+      "15.8406"
+    );
+  }
+
+  // The default REPL output (not via ToString) keeps full precision.
+  #[test]
+  fn repl_output_keeps_full_precision() {
+    assert_eq!(
+      interpret("3.14159265358979").unwrap(),
+      "3.14159265358979"
+    );
+  }
+}
+
 mod to_string_bigfloat {
   use super::*;
 
