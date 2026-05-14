@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/test.py
 CLASS: BinaryImageQ
-LINE: 23
-TYPE: S>
-INPUT: BinaryImageQ[img]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/image/test.py
-CLASS: BinaryImageQ
 LINE: 26
 TYPE: S>
 INPUT: BinaryImageQ[Binarize[img]]

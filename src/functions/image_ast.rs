@@ -2203,6 +2203,14 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// BinaryImageQ[img] — predicate: True iff the argument is a binary
+/// (Bit-type) image. Non-images return False (no warning), matching
+/// wolframscript's quiet predicate behavior.
+pub fn binary_image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let result = matches!(&args[0], Expr::Image { image_type: ImageType::Bit, .. });
+  Ok(Expr::Identifier(if result { "True" } else { "False" }.to_string()))
+}
+
 /// PixelValue[img, pos] — pixel-color lookup stub. Real implementation
 /// is left for future work; this stub matches wolframscript's
 /// PixelValue::imginv warning for non-image input.

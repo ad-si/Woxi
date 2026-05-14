@@ -17146,3 +17146,11 @@ TYPE: S>
 INPUT: img = Import["ExampleData/hedy.tif"];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/image/test.py
+CLASS: BinaryImageQ
+LINE: 23
+TYPE: S>
+INPUT: BinaryImageQ[img]
+EXPECTED:
+= False
+---

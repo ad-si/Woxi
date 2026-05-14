@@ -4474,7 +4474,7 @@ AnimationTimeIndex,,🚫,,10.0,4660
 AudioDelete,,🚫,,11.0,4660
 AutoCopy,,,,11.0,4660
 BesselFilterModel,,,,9.0,4660
-BinaryImageQ,,🚫,,7.0,4660
+BinaryImageQ,Test if an image is binary (Bit type),✅,pure,7.0,4660
 BiquadraticFilterModel,,,,10.4,4660
 CanonicalizePolyhedron,,,,12.0,4660
 CarlemanLinearize,,,,10.0,4660

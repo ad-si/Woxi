@@ -121,6 +121,9 @@ pub fn dispatch_image_functions(
     "PixelValue" if args.len() == 2 => {
       return Some(crate::functions::image_ast::pixel_value_ast(args));
     }
+    "BinaryImageQ" if args.len() == 1 => {
+      return Some(crate::functions::image_ast::binary_image_q_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
