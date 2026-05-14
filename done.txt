@@ -18327,3 +18327,20 @@ NOTE: row from mathics's `test_eval_NValues` parameterisation — calls
   `2.000000\`5*9.0000000000\`5^(-1.\`)` is internal-only structural
   form.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: Pi
+EXPECTED: $MachinePrecision
+MESSAGE: 3.141592653589793`15
+NOTE: row from mathics's `test_eval_NValues` — internal eval test.
+  User-facing `N[Pi, $MachinePrecision]`:
+  - Woxi: `3.1415926535897932384626433832795028842\`15.954589770191003`
+  - ws:   `3.14159265358979323846264338327950419732\`15.954589770191003`
+  Both are valid machine-precision Pi: first ~16 digits agree (the f64
+  precision limit); past digit 16 the decimal-conversion algorithms
+  produce different "garbage" tails. mathics's `3.141592653589793\`15`
+  truncates to 15-16 digits via its own renderer. Implementation-
+  detail divergence in extended decimal rendering of f64 — both are
+  correct representations of the same underlying f64 value.
+---
