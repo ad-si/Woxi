@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_sameQ
-LINE: 44
-INPUT: N[b]=1.2`3;F[b, 2/9]
-EXPECTED: 5
-MESSAGE: F[b, .222222]
----
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_sameQ
 LINE: 45
 INPUT: N[b,_]=1.2`3;F[b, 2/9]
 EXPECTED: 5
