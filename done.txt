@@ -17003,3 +17003,11 @@ INPUT: Dilation[ein, 2.5]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/morph.py
+CLASS: Erosion
+LINE: 88
+TYPE: >>
+INPUT: Erosion[ein, 2.5]
+EXPECTED:
+= -Image-
+---
