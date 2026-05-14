@@ -16515,3 +16515,11 @@ INPUT: AppendTo[$BoxForms, MyBoxForm]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: BoxForms_
+LINE: 84
+TYPE: >>
+INPUT: MyBoxForm[F[3]]
+EXPECTED:
+= F<ooo>
+---

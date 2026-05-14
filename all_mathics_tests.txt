@@ -1,11 +1,3 @@
-FILE: mathics/builtin/forms/variables.py
-CLASS: BoxForms_
-LINE: 84
-TYPE: >>
-INPUT: MyBoxForm[F[3]]
-EXPECTED:
-= F<ooo>
----
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Divide
 LINE: 124
