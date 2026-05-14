@@ -317,10 +317,18 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     )),
-    _ => Ok(Expr::FunctionCall {
-      name: "ImageDimensions".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      // Match wolframscript: emit ImageDimensions::imginv before
+      // returning the unevaluated call.
+      crate::emit_message(&format!(
+        "ImageDimensions::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageDimensions".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

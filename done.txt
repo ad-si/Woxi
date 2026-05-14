@@ -16563,3 +16563,11 @@ INPUT: ImageAdjust[hedy]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/basic.py
+CLASS: ImagePartition
+LINE: 189
+TYPE: >>
+INPUT: ImageDimensions[hedy]
+EXPECTED:
+= {646, 800}
+---
