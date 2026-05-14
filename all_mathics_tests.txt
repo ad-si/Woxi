@@ -8,13 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_eval_N
 LINE: 29
-INPUT: F[1.2, 2/9]
-EXPECTED: $MachinePrecision
-MESSAGE: F[1.2, .2222222222222222`15]
----
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_eval_N
-LINE: 29
 INPUT: F[1.2`3, 2/9]
 EXPECTED: 5
 MESSAGE: F[1.20`3, .22222232818603515`15]

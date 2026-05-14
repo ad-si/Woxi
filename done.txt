@@ -18364,3 +18364,15 @@ NOTE: `N[F[1.2, 2/9], $MachinePrecision]` previously expanded the
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   n_machine_precision_inside_function_call_keeps_real.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: F[1.2, 2/9]
+EXPECTED: $MachinePrecision
+MESSAGE: F[1.2, .2222222222222222`15]
+NOTE: same test row as the previous F[1.2, 2/9] entry, with mathics's
+  alternate `.2222222222222222\`15` MESSAGE format. Covered by the
+  same Real-preservation fix; both Woxi and wolframscript keep `1.2`
+  as machine Real and expand `2/9` to BigFloat-tagged 0.222… at
+  MachinePrecision.
+---
