@@ -19552,3 +19552,11 @@ NOTE: `Precision[0.\`\`2]` returns `0.` in both Woxi and
   wolframscript — a zero with accuracy 2 has zero significant
   digits (accuracy-only value).
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: 0.``20
+EXPECTED: 0.
+NOTE: `Precision[0.\`\`20]` returns `0.` in both Woxi and
+  wolframscript — accuracy-only zero has zero significant digits.
+---
