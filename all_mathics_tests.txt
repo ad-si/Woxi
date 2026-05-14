@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/zeta.py
-CLASS: LerchPhi
-LINE: 41
-TYPE: >>
-INPUT: LerchPhi[1, 2, 1/4] == 8 Catalan + Pi^2
-EXPECTED:
-= True
----
-FILE: mathics/builtin/specialfns/zeta.py
 CLASS: Zeta
 LINE: 117
 TYPE: >>

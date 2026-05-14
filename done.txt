@@ -16297,3 +16297,11 @@ INPUT: SphericalHarmonicY[3, 1, theta, phi]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/specialfns/zeta.py
+CLASS: LerchPhi
+LINE: 41
+TYPE: >>
+INPUT: LerchPhi[1, 2, 1/4] == 8 Catalan + Pi^2
+EXPECTED:
+= True
+---
