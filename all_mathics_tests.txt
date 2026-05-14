@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/test_numeric.py
-FUNCTION: test_right_number_of_arguments
-LINE: 137
-INPUT: str_expr
-EXPECTED: assert_fail_msg
----
 FILE: mathics/test/builtin/test_procedural.py
 FUNCTION: test_nestwhile
 LINE: 17
