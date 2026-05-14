@@ -1,11 +1,3 @@
-FILE: mathics/builtin/image/geometric.py
-CLASS: ImageRotate
-LINE: 225
-TYPE: >>
-INPUT: ImageRotate[ein, Pi / 4]
-EXPECTED:
-= -Image-
----
 FILE: mathics/builtin/image/misc.py
 CLASS: ImageImport
 LINE: 59

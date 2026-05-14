@@ -16898,3 +16898,11 @@ INPUT: ImageRotate[ein, 45 Degree]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/geometric.py
+CLASS: ImageRotate
+LINE: 225
+TYPE: >>
+INPUT: ImageRotate[ein, Pi / 4]
+EXPECTED:
+= -Image-
+---
