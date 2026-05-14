@@ -18069,3 +18069,13 @@ NOTE: same `alice` image-fixture limitation. Without the fixture both
   Woxi and wolframscript leave the expression unevaluated. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 47
+INPUT: ImageType[Binarize[img]]
+EXPECTED: Bit
+NOTE: `img` is another mathics-bundled test image. Same fixture-
+  dependent pattern as `hedy`/`ein`/`alice`. Without the fixture both
+  Woxi and wolframscript leave the expression unevaluated. See memory
+  `project-mathics-image-fixtures`.
+---
