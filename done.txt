@@ -16249,3 +16249,11 @@ INPUT: LegendreP[1.6, 3.1, 1.5]
 EXPECTED:
 = -0.303998 - 1.91937 I
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LegendreQ
+LINE: 228
+TYPE: >>
+INPUT: LegendreQ[5/2, 1.5]
+EXPECTED:
+= 0.036211 - 6.56219 I
+---
