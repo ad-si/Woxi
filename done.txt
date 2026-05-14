@@ -19210,3 +19210,15 @@ NOTE: parameter-name placeholder for `test_quantity_operations`.
   arithmetic coverage lives in
   `tests/interpreter_tests/quantity.rs`.
 ---
+FILE: mathics/test/builtin/test_rules.py
+FUNCTION: test_condition_in_rules
+LINE: 54
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_condition_in_rules`. Quick
+  spot-check: `f[x_] /; x > 0 := x^2; f[3]` returns `9` in both Woxi
+  and wolframscript. Condition-in-rules coverage lives in
+  `tests/interpreter_tests/patterns.rs` and
+  `tests/interpreter_tests/function_definitions.rs`.
+---

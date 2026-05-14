@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/test_rules.py
-FUNCTION: test_condition_in_rules
-LINE: 54
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
-FILE: mathics/test/builtin/test_rules.py
 FUNCTION: test_orderless_on_rules
 LINE: 99
 INPUT: str_expr
