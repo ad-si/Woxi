@@ -2089,6 +2089,9 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
           | "StandardForm"
           | "InputForm"
           | "OutputForm"
+          | "Plus"
+          | "Times"
+          | "Power"
       ) =>
     {
       let new_args: Vec<syntax::Expr> = args
@@ -2101,6 +2104,18 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         args: new_args.into(),
       }
     }
+    // Arithmetic BinaryOps (Plus, Times, Power, etc.) can carry a
+    // Graphics[...] FunctionCall as a child — wolframscript still
+    // summarizes that inner graphic as `-Graphics-`, so recurse.
+    syntax::Expr::BinaryOp { op, left, right } => syntax::Expr::BinaryOp {
+      op: *op,
+      left: Box::new(render_graphics_fc_if_needed(*left.clone())),
+      right: Box::new(render_graphics_fc_if_needed(*right.clone())),
+    },
+    syntax::Expr::UnaryOp { op, operand } => syntax::Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(render_graphics_fc_if_needed(*operand.clone())),
+    },
     _ => expr,
   }
 }
