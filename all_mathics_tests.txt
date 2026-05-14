@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/numbers/test_randomnumbers.py
 FUNCTION: None
-LINE: 14
-INPUT: SeedRandom[42]; RandomSample[{a, b, c, d}]
-EXPECTED: {b, d, a, c}
----
-FILE: mathics/test/builtin/numbers/test_randomnumbers.py
-FUNCTION: None
 LINE: 28
 INPUT: SeedRandom[42]; RandomSample[Range[10]]
 EXPECTED: {9, 2, 6, 1, 8, 3, 10, 5, 4, 7}

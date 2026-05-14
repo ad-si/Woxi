@@ -17793,3 +17793,16 @@ NOTE: Woxi already produces `Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]`,
   matching wolframscript and mathics. Covered by existing regression
   test tests/interpreter_tests/math/complex.rs::complex_expand_1.
 ---
+FILE: mathics/test/builtin/numbers/test_randomnumbers.py
+FUNCTION: None
+LINE: 14
+INPUT: SeedRandom[42]; RandomSample[{a, b, c, d}]
+EXPECTED: {b, d, a, c}
+NOTE: RNG-sequence divergence. mathics's expected `{b, d, a, c}` is
+  Python's `random` output for seed 42. Real wolframscript produces
+  `{b, c, d, a}`; Woxi (ChaCha8Rng) produces `{a, c, b, d}`. All three
+  return valid 4-element permutations of `{a, b, c, d}` and are
+  deterministic for a fixed seed, but the exact ordering depends on
+  the underlying RNG. Implementing wolframscript-byte-equivalent RNG
+  is out of scope. See memory `project-rng-sequence-divergence`.
+---
