@@ -653,6 +653,17 @@ mod full_form {
     );
   }
 
+  // Regression (mathics test_basic.py:313): a machine-precision
+  // complex number with zero imaginary part renders in OutputForm as
+  // `1. + 0. I` (space-separated, no `*`).
+  #[test]
+  fn output_form_one_plus_zero_i() {
+    assert_eq!(
+      interpret("ToString[1. + 0. I, OutputForm]").unwrap(),
+      "1. + 0. I"
+    );
+  }
+
   #[test]
   fn full_form_list() {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around lists

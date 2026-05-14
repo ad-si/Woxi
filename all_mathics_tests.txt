@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_power
-LINE: 313
-INPUT: 1. + 0. I//OutputForm
-EXPECTED: 1. + 0. I
-MESSAGE: Formatted
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
 LINE: 314
 INPUT: 0. + 1. I//OutputForm
 EXPECTED: 0. + 1. I
