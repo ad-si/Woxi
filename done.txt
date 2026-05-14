@@ -17203,3 +17203,11 @@ INPUT: Pi == 3.141987654321`3
 EXPECTED:
 = True
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 267
+TYPE: >>
+INPUT: 13.1416``4
+EXPECTED:
+= 13.142
+---
