@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/test_quantities.py
-FUNCTION: test_quantity_operations
-LINE: 143
-INPUT: str_expr
-EXPECTED: str_expected
----
 FILE: mathics/test/builtin/test_rules.py
 FUNCTION: test_condition_in_rules
 LINE: 54

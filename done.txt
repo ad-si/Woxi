@@ -19199,3 +19199,14 @@ NOTE: parameter-name placeholder for the `test_nestwhile`
   lives in Woxi's `tests/interpreter_tests/function_application.rs`
   and `tests/interpreter_tests/control_flow.rs`.
 ---
+FILE: mathics/test/builtin/test_quantities.py
+FUNCTION: test_quantity_operations
+LINE: 143
+INPUT: str_expr
+EXPECTED: str_expected
+NOTE: parameter-name placeholder for `test_quantity_operations`.
+  Quick spot-check: `Quantity[3, "Meters"] + Quantity[5, "Meters"]`
+  → `Quantity[8, Meters]` in both Woxi and wolframscript. Quantity
+  arithmetic coverage lives in
+  `tests/interpreter_tests/quantity.rs`.
+---
