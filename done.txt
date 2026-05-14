@@ -19132,3 +19132,14 @@ NOTE: parameter-name placeholder for the `test_unsameq`
   to the same `same_q_real_bigfloat` machinery. Covered by the
   existing SameQ regression tests.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_cmp1_no_pass
+LINE: 575
+INPUT: str_lhs
+EXPECTED: str_rhs
+MESSAGE: str_expected
+NOTE: parameter-name placeholder for `test_cmp1_no_pass`, the
+  parametrised tests of `Equal[lhs, rhs]` where the comparison
+  doesn't fully simplify. Sample rows (e.g. `2.+ Pi I == a`) already
+  handled in earlier loops via the Plus numeric-contagion fix.
+---
