@@ -17642,3 +17642,15 @@ NOTE: SameQ row `("N[2/9, 4]", ".22222`3", "True")` from test_sameq.
   to 0.222 at min-precision 3). Already covered transitively by the
   SameQ precision-rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 165
+INPUT: N[2/9, 4]
+EXPECTED: .2222`5
+MESSAGE: False
+NOTE: SameQ row `("N[2/9, 4]", ".2222`5", "False")` from test_sameq.
+  Known mathics-vs-wolframscript divergence: mathics expects False,
+  wolframscript (and Woxi after the SameQ precision-rounding fix)
+  returns True (both round to 0.2222 at min-precision 4). See memory
+  `project-mathics-sameq-too-strict`.
+---
