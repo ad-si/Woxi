@@ -18187,3 +18187,17 @@ NOTE: mathics's expected `x^(n+1)/(n+1)` is the antiderivative form,
   patterns — out of scope for this loop. The mathics expected can't
   be matched without reproducing its bug.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: None
+LINE: 26
+INPUT: Assuming[Or[n==1, n==2], Integrate[x^n, {x, 0, 1}]]
+EXPECTED: x^(n+1)/(n+1)
+NOTE: same family as line 25. mathics's expected `x^(n+1)/(n+1)` is
+  the antiderivative (mathematically wrong for the definite integral).
+  wolframscript returns `(1 + n)^(-1)` (the Or-of-equalities lets it
+  conclude n+1>0 and drop `0^(n+1)`). Woxi returns the raw
+  `(1 + n)^(-1) - 0^(1 + n)/(1 + n)` — disjunctions of equalities
+  don't trigger Woxi's substitution path, and inequality-based
+  assumption simplification isn't implemented. Same out-of-scope
+  ConditionalExpression + assumption-handling project.
+---
