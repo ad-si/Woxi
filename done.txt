@@ -16507,3 +16507,11 @@ INPUT: MathMLForm[HoldForm[Sqrt[a^3]]]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: BoxForms_
+LINE: 52
+TYPE: >>
+INPUT: AppendTo[$BoxForms, MyBoxForm]
+EXPECTED:
+= ...
+---
