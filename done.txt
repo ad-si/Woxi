@@ -18847,3 +18847,14 @@ NOTE: parameter-name placeholder. The mathics function is decorated
   `MatchQ` + `OneIdentity` family as `test_one_identity` — already
   covered by Woxi's pattern-matching tests.
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_stil_failing
+LINE: 135
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for a second `test_one_identity_*`
+  parametrisation (note the typo "stil_failing" — mathics original
+  file). Same `OneIdentity` / pattern-match family, also decorated
+  `@skip_or_fail` upstream. Covered by Woxi's pattern-matching tests.
+---
