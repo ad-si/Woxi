@@ -1,11 +1,3 @@
-FILE: mathics/builtin/image/properties.py
-CLASS: ImageType
-LINE: 164
-TYPE: X>
-INPUT: ImageType[Binarize[img]]
-EXPECTED:
-= Bit
----
 FILE: mathics/builtin/image/structure.py
 CLASS: ImageTake
 LINE: 40

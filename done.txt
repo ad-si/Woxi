@@ -17107,3 +17107,11 @@ INPUT: ImageType[img]
 EXPECTED:
 = Byte
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageType
+LINE: 164
+TYPE: X>
+INPUT: ImageType[Binarize[img]]
+EXPECTED:
+= Bit
+---
