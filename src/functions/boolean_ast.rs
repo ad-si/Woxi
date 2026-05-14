@@ -174,54 +174,55 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier("True".to_string()))
 }
 
-/// Special-case SameQ between two floating-point operands where at least
-/// one carries an explicit precision tag. Two flavours are handled:
+/// SameQ between two floating-point operands. Matches wolframscript's
+/// precision-aware semantics: both values are rounded to the *lower* of
+/// their two precisions and compared. Machine-precision `Real` is
+/// treated as having ≈15.954589770191003 digits of precision (Wolfram's
+/// `$MachinePrecision`).
 ///
-/// 1. Machine-precision `Real` vs a BigFloat whose precision tag is in the
-///    machine-precision band (≈15.95 digits): require bit-exact f64
-///    agreement, so `2./9. === .2222…`15.9546` is True even though one
-///    side is tagged.
-/// 2. Two BigFloats with explicit precision tags: agree if the values
-///    round to the same number at the *lower* of the two precisions.
-///    `.2222222`6 === .2222`3` is True because both reduce to `.222`
-///    once you only look at 3 significant digits.
+/// - Two plain Reals fall back to bit-exact equality (handled by the
+///   string-comparison path before this is reached, so we return false
+///   here to defer).
+/// - When *both* operands sit in the machine-precision band we still
+///   require bit-exact f64 agreement — wolframscript treats two machine
+///   reals strictly.
+/// - Otherwise (at least one tagged precision below the machine band),
+///   we compare with a ½-ULP tolerance at the lower precision:
+///   `|a - b| ≤ ½ · 10^(⌊log10 max(|a|,|b|)⌋ - p_min + 1)`. So
+///   `N[2/9, 4] === .2222` is True (both round to `0.2222` at 4 digits)
+///   even though `.2222` carries the full machine precision.
 pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
-  fn as_pair(e: &Expr) -> Option<(f64, Option<f64>)> {
+  // $MachinePrecision in Wolfram, used when comparing a machine-precision
+  // Real against a tagged BigFloat.
+  const MACHINE_PRECISION: f64 = 15.954589770191003;
+  fn as_pair(e: &Expr) -> Option<(f64, f64, bool)> {
+    // (value, precision_digits, is_machine_real)
     match e {
-      Expr::Real(f) => Some((*f, None)),
-      Expr::BigFloat(s, p) => s.parse::<f64>().ok().map(|f| (f, Some(*p))),
+      Expr::Real(f) => Some((*f, MACHINE_PRECISION, true)),
+      Expr::BigFloat(s, p) => s.parse::<f64>().ok().map(|f| (f, *p, false)),
       _ => None,
     }
   }
-  let Some((va, pa)) = as_pair(a) else {
+  let Some((va, pa, a_machine)) = as_pair(a) else {
     return false;
   };
-  let Some((vb, pb)) = as_pair(b) else {
+  let Some((vb, pb, b_machine)) = as_pair(b) else {
     return false;
   };
   let machine_band = |p: f64| -> bool { (15.0..=16.5).contains(&p) };
-  // Branch 1: machine Real ↔ BigFloat in the machine band — require
-  // bit-exact f64 equality.
-  let either_machine = pa.is_none() || pb.is_none();
-  if either_machine {
-    let band_ok = pa.is_none_or(machine_band) && pb.is_none_or(machine_band);
-    if !band_ok {
-      return false;
-    }
-    if pa.is_none() && pb.is_none() {
-      return false; // two plain Reals — defer to string equality
-    }
+  // Two plain Reals — defer to string equality (handled by the caller).
+  if a_machine && b_machine {
+    return false;
+  }
+  // Both operands in the machine band (machine Real or BigFloat tagged
+  // ~15.95): require bit-exact f64 equality, matching wolframscript's
+  // strict treatment of machine-precision values.
+  if machine_band(pa) && machine_band(pb) {
     return va.to_bits() == vb.to_bits();
   }
-  // Branch 2: two BigFloats with precision tags. Agree at the lower
-  // precision: |a - b| ≤ ½ * 10^(⌊log10|max|⌋ - p_min + 1). Using
-  // ½ ULP at the rounded position lets two values that round to the
-  // same lower-precision number still compare equal — wolframscript's
-  // SameQ semantics for tagged numbers.
-  let (Some(p_a), Some(p_b)) = (pa, pb) else {
-    return false;
-  };
-  let p_min = p_a.min(p_b);
+  // Otherwise: round to the lower precision and compare with ½-ULP
+  // tolerance at that position.
+  let p_min = pa.min(pb);
   if !p_min.is_finite() || p_min <= 0.0 {
     return false;
   }

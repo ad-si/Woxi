@@ -17578,3 +17578,19 @@ NOTE: same mathics-vs-wolframscript divergence as line 430. Woxi and
   (last row as a 1-D NumericArray). Regression test:
   tests/interpreter_tests/functions.rs::last_of_numeric_array_2d_returns_row_array
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 159
+INPUT: N[2/9, 4]
+EXPECTED: .2222
+MESSAGE: False
+NOTE: test row is `("N[2/9, 4]", ".2222", "False")` from
+  test_sameq parameterisation (msg → expected SameQ result). mathics
+  expects `N[2/9, 4] === .2222` to be False, but wolframscript returns
+  True (both round to 0.2222 at precision 4). Woxi previously returned
+  False (matching mathics's bug). Fixed `same_q_real_bigfloat` to
+  round to the lower precision when one operand is a machine Real and
+  the other is tagged below the machine band — now matches
+  wolframscript. Regression test:
+  tests/interpreter_tests/math/predicates.rs::same_q_precision_4_vs_machine_real_at_truncation
+---

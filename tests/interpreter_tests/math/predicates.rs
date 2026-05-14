@@ -599,6 +599,50 @@ mod same_q_unsame_q {
   fn same_q_complex_integer_equal_self() {
     assert_eq!(interpret("SameQ[3 + 2 I, 3 + 2 I]").unwrap(), "True");
   }
+
+  // Regression (mathics test_comparison.py:159-167, where mathics's own
+  // expectations are too strict — these match wolframscript): SameQ
+  // between a low-precision tagged Real and a machine-precision Real
+  // rounds both to the lower precision before comparing.
+  #[test]
+  fn same_q_precision_4_vs_machine_real_below_truncation() {
+    // .222 differs from N[2/9, 4] = 0.2222 at the 4th digit → False.
+    assert_eq!(interpret("N[2/9, 4] === .222").unwrap(), "False");
+  }
+
+  #[test]
+  fn same_q_precision_4_vs_machine_real_at_truncation() {
+    // .2222 rounds to 0.2222 at precision 4 → True (mathics disagrees;
+    // wolframscript agrees).
+    assert_eq!(interpret("N[2/9, 4] === .2222").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_precision_4_vs_machine_real_above_truncation() {
+    // .22222 rounds to 0.2222 at precision 4 → True.
+    assert_eq!(interpret("N[2/9, 4] === .22222").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_precision_4_vs_precision_3() {
+    // Both BigFloats; min precision is 3, both round to 0.222 → True.
+    assert_eq!(interpret("N[2/9, 4] === .222`3").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_machine_real_vs_precision_4() {
+    // 2./9. (machine precision) vs N[2/9, 4]: round to precision 4,
+    // both equal 0.2222 → True (wolframscript) — Woxi used to return
+    // False for any precision below the machine band.
+    assert_eq!(interpret("2./9. === N[2/9, 4]").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_machine_real_vs_machine_real_strict() {
+    // Two machine reals with no shared bits still compare strictly:
+    // 0.22221 ≠ 0.2222 bit-for-bit, so SameQ is False.
+    assert_eq!(interpret(".22221 === .2222").unwrap(), "False");
+  }
 }
 
 mod equivalent_logic {
