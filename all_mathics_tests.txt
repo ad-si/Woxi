@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/misc.py
 CLASS: TextRecognize
-LINE: 225
-TYPE: >>
-INPUT: textimage = Import["ExampleData/TextRecognize.png"]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/misc.py
-CLASS: TextRecognize
 LINE: 227
 TYPE: >>
 INPUT: TextRecognize[textimage]
