@@ -17091,3 +17091,11 @@ INPUT: ImageData[img, "Byte"]
 EXPECTED:
 = {{51, 102}, {229, 153}, {127, 204}}
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageDimensions
+LINE: 133
+TYPE: >>
+INPUT: ImageDimensions[hedy]
+EXPECTED:
+= {646, 800}
+---
