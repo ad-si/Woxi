@@ -869,7 +869,6 @@ pub fn apply_curried_call(
         // multi-index branch above and never reaches here).
         if name == "Derivative"
           && func_args.len() == 1
-          && let Expr::Integer(n) = &func_args[0]
           && args.len() == 1
         {
           let arg0 = &args[0];
@@ -889,13 +888,13 @@ pub fn apply_curried_call(
             Expr::Identifier(s) if s == "I"
           );
           if is_constant_arg {
-            return Ok(Expr::Function {
-              body: Box::new(if *n == 0 {
-                arg0.clone()
-              } else {
-                Expr::Integer(0)
-              }),
-            });
+            // Integer order: 0 -> const&, otherwise 0&. Non-integer order:
+            // wolframscript also folds to 0& (treating the order as nonzero).
+            let body = match &func_args[0] {
+              Expr::Integer(0) => arg0.clone(),
+              _ => Expr::Integer(0),
+            };
+            return Ok(Expr::Function { body: Box::new(body) });
           }
         }
         // Known operator-form functions: flatten curried call
