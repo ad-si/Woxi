@@ -101,6 +101,15 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression (mathics test_numbers.py:225): a list of values where
+  // one carries an explicit accuracy tag `0.``5` (zero with accuracy
+  // 5 digits) reports that accuracy as the minimum. The Integer 1 has
+  // infinite accuracy, so the list's accuracy is dictated by 0.``5.
+  #[test]
+  fn accuracy_of_list_with_accuracy_tagged_zero() {
+    assert_eq!(interpret("Accuracy[{1, 0.``5}]").unwrap(), "5.");
+  }
+
   #[test]
   fn n_of_machine_real_stays_machine() {
     // N[1.5, 30] on a machine-precision Real returns the Real unchanged;

@@ -17924,3 +17924,16 @@ NOTE: row in test_accuracy parameterisation that runs
   Print/InputForm/REPL keep full precision). Regression tests in
   tests/interpreter_tests/string.rs::to_string_machine_real.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 225
+INPUT: {1, 0.``5}
+EXPECTED: 5.
+NOTE: row in test_accuracy parameterisation that runs
+  `Accuracy[{1, 0.``5}]`. The `0.``5` literal is "zero with accuracy
+  5 digits". Integer 1 has infinite accuracy, so the list's accuracy
+  is dictated by the tagged zero. Woxi produces `5.`, matching
+  wolframscript exactly. Regression test:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  accuracy_of_list_with_accuracy_tagged_zero.
+---

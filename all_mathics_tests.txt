@@ -6,12 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_n
-LINE: 225
-INPUT: {1, 0.``5}
-EXPECTED: 5.
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
 LINE: 260
 INPUT: 0.4 + 2.4 I
