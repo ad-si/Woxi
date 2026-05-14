@@ -19427,3 +19427,11 @@ EXPECTED: 2.
 NOTE: `Accuracy[-0.\`\`2]` (negative zero with accuracy 2) returns
   `2.` in both Woxi and wolframscript exactly.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: -0.``20
+EXPECTED: 20.
+NOTE: `Accuracy[-0.\`\`20]` (negative zero with accuracy 20) returns
+  `20.` in both Woxi and wolframscript exactly.
+---
