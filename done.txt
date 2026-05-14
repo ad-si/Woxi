@@ -17027,3 +17027,11 @@ INPUT: PixelValue[hedy, {1, 1}]
 EXPECTED:
 = {0.439216, 0.356863, 0.337255}
 ---
+FILE: mathics/builtin/image/pixel.py
+CLASS: PixelValuePositions
+LINE: 61
+TYPE: >>
+INPUT: PixelValuePositions[Image[{{0, 1}, {1, 0}, {1, 1}}], 1]
+EXPECTED:
+= {{1, 1}, {1, 2}, {2, 1}, {2, 3}}
+---
