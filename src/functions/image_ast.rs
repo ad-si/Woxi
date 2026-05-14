@@ -386,9 +386,16 @@ pub fn image_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Image { channels, .. } => Ok(Expr::Integer(*channels as i128)),
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageChannels: argument is not an Image".into(),
-    )),
+    _ => {
+      crate::emit_message(&format!(
+        "ImageChannels::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageChannels".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

@@ -17067,3 +17067,11 @@ INPUT: ImageAspectRatio[img]
 EXPECTED:
 = 400 / 323
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageChannels
+LINE: 62
+TYPE: >>
+INPUT: ImageChannels[img]
+EXPECTED:
+= 3
+---
