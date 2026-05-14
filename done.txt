@@ -18524,3 +18524,17 @@ NOTE: tests mathics's internal `pop_reference_head(expr)` helper from
   extracted INPUT/EXPECTED/MESSAGE are parameter names, not real
   values.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: pattern_str
+EXPECTED: tag
+MESSAGE: position
+NOTE: tests mathics's internal `get_tag_position(pattern)` helper that
+  classifies where a pattern would be stored in the definitions
+  system (DownValues, OwnValues, UpValues, SubValues, etc.). No
+  portable wolframscript surface — purely internal mathics
+  machinery. The extracted INPUT/EXPECTED/MESSAGE are parameter
+  names, not real values (the actual test rows follow with concrete
+  patterns like `A/;A>0` → `A`, `ownvalues`).
+---
