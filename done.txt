@@ -18920,3 +18920,15 @@ NOTE: parameter-name placeholder for the `test_basics` parametrisation
   `project-mathics-numericarray-divergence`. Placeholder row has no
   test data.
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: NumericArray[{{1,2},{3,4}}]
+EXPECTED: <Integer64, 2×2>
+NOTE: duplicate of the same `NumericArray` row already handled in
+  earlier loops. mathics's `<Integer64, 2×2>` is its short-form
+  display + Integer64 default; both Woxi and wolframscript produce
+  `NumericArray[<2,2>, UnsignedInteger8]`. See memory
+  `project-mathics-numericarray-divergence`. Regression test:
+  tests/interpreter_tests/functions.rs::numeric_array_2d_display.
+---
