@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1273
-TYPE: >>
-INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4]
-EXPECTED:
-= -Graphics--Graphics--Graphics--Graphics--Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1276
 TYPE: #>
 INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4] // InputForm
@@ -2685,4 +2677,12 @@ INPUT: Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]
 EXPECTED:
 : Tag Plus in Dice[a___] + Dice[b___] is Protected.
 = $Failed
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1273
+TYPE: >>
+INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4]
+EXPECTED:
+= -Graphics--Graphics--Graphics--Graphics--Graphics-
 ---
