@@ -18872,3 +18872,16 @@ NOTE: parameter-name placeholder. Actual test rows exercise
   (matching the expected behavior). Existing Woxi argcount-message
   coverage lives in tests/interpreter_tests/arg_count.rs.
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_private_doctests_io
+LINE: 9
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: fail_msg
+NOTE: parameter-name placeholder. The mathics function runs a large
+  doctest set for binary I/O (`BinaryWrite`/`BinaryRead`/`OpenWrite`)
+  via parameterised rows. Woxi has binary I/O support
+  (`OutputStream[…]`, `BinaryWrite`), broadly covered by existing
+  io tests in `tests/interpreter_tests/io.rs`. The placeholder row
+  itself carries no test data.
+---
