@@ -19121,3 +19121,14 @@ NOTE: last duplicate of `(N[2/9, 4], .222222`5, True)` from earlier
   loops. All three agree on True. Covered by the SameQ precision-
   rounding fix. End of the test_sameq parametrisation rows.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 178
+INPUT: str_expr
+EXPECTED: str_expected
+NOTE: parameter-name placeholder for the `test_unsameq`
+  parametrisation. UnsameQ is the structural negation of SameQ —
+  same precision-rounding semantics; Woxi's `unsame_q_ast` delegates
+  to the same `same_q_real_bigfloat` machinery. Covered by the
+  existing SameQ regression tests.
+---
