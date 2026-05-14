@@ -1,11 +1,3 @@
-FILE: mathics/builtin/image/composition.py
-CLASS: WordCloud
-LINE: 166
-TYPE: >>
-INPUT: WordCloud[Range[50] -> ToString /@ Range[50]]
-EXPECTED:
-= -Image-
----
 FILE: mathics/builtin/image/filters.py
 CLASS: GaussianFilter
 LINE: 39
@@ -3215,6 +3207,14 @@ CLASS: Colorize
 LINE: 252
 TYPE: >>
 INPUT: Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]
+EXPECTED:
+= -Image-
+---
+FILE: mathics/builtin/image/composition.py
+CLASS: WordCloud
+LINE: 166
+TYPE: >>
+INPUT: WordCloud[Range[50] -> ToString /@ Range[50]]
 EXPECTED:
 = -Image-
 ---
