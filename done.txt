@@ -16627,3 +16627,11 @@ INPUT: Threshold[img, Method -> "Mean"]
 EXPECTED:
 = 0.22086
 ---
+FILE: mathics/builtin/image/basic.py
+CLASS: Threshold
+LINE: 288
+TYPE: X>
+INPUT: Threshold[img, Method -> "Median"]
+EXPECTED:
+= 0.0593961
+---
