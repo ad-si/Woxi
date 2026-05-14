@@ -1,14 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 809
-TYPE: >>
-INPUT: Block[{$RecursionLimit = 30}, x = 2 x]
-EXPECTED:
-: Recursion depth of 30 exceeded.
-= $Aborted
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 813
 TYPE: >>
 INPUT: f[x_] := f[x + 1]; Block[{$IterationLimit = 30}, f[1]]
@@ -2760,4 +2751,13 @@ TYPE: >>
 INPUT: 13.1416``4 == 13.1413``4
 EXPECTED:
 = True
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 809
+TYPE: >>
+INPUT: Block[{$RecursionLimit = 30}, x = 2 x]
+EXPECTED:
+: Recursion depth of 30 exceeded.
+= $Aborted
 ---
