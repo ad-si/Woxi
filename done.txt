@@ -19244,3 +19244,17 @@ NOTE: parameter-name placeholder for `test_flat_on_rules`. Quick
   `f[a, b, c, d]` in both Woxi and wolframscript. Flat-attribute
   coverage lives in `tests/interpreter_tests/attributes.rs`.
 ---
+FILE: mathics/test/builtin/test_rules.py
+FUNCTION: test_default_optional_on_rules
+LINE: 188
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_default_optional_on_rules`,
+  which is decorated `@pytest.mark.xfail` in mathics itself
+  (acknowledged broken). Tests `Default[…] / Optional` interactions
+  with `/.` rules and `Dispatch` — already broadly covered by Woxi's
+  Optional / default-value tests in
+  `tests/interpreter_tests/patterns.rs` and
+  `tests/interpreter_tests/function_definitions.rs::default_values`.
+---
