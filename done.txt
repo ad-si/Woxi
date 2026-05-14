@@ -17606,3 +17606,16 @@ NOTE: SameQ row `("N[2/9, 4]", ".22222", "True")` from test_sameq.
   tests/interpreter_tests/math/predicates.rs::same_q_precision_4_vs_machine_real_above_truncation
   (added with the SameQ precision-rounding fix in the prior commit).
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 161
+INPUT: N[2/9, 4]
+EXPECTED: .222`3
+MESSAGE: False
+NOTE: SameQ row `("N[2/9, 4]", ".222`3", "False")` from test_sameq.
+  Known mathics-vs-wolframscript divergence: mathics expects False,
+  wolframscript returns True (both round to 0.222 at precision 3).
+  Woxi follows wolframscript; see memory
+  `project-mathics-sameq-too-strict`. Regression test:
+  tests/interpreter_tests/math/predicates.rs::same_q_precision_4_vs_precision_3
+---
