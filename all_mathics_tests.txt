@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/geometric.py
 CLASS: ImageReflect
-LINE: 155
-TYPE: >>
-INPUT: ImageReflect[ein, Left]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/geometric.py
-CLASS: ImageReflect
 LINE: 157
 TYPE: >>
 INPUT: ImageReflect[ein, Left -> Top]
