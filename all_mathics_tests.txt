@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/basic.py
 CLASS: Blur
-LINE: 43
-TYPE: >>
-INPUT: Blur[hedy]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/basic.py
-CLASS: Blur
 LINE: 45
 TYPE: >>
 INPUT: Blur[hedy, 5]

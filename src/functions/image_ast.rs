@@ -809,9 +809,19 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let blurred = dyn_img.blur(sigma);
       Ok(dynamic_image_to_expr(&blurred))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Blur: first argument is not an Image".into(),
-    )),
+    _ => {
+      // Match wolframscript: emit Blur::imginv and return the call
+      // unevaluated rather than erroring out. Unlike DominantColors,
+      // the message does NOT wrap the bad argument in braces.
+      crate::emit_message(&format!(
+        "Blur::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "Blur".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

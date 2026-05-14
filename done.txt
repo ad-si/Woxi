@@ -16539,3 +16539,11 @@ INPUT: 2 Graphics[{Red,Disk[]}] + 3 Graphics[{Red,Disk[]}]
 EXPECTED:
 = 5 -Graphics-
 ---
+FILE: mathics/builtin/image/basic.py
+CLASS: Blur
+LINE: 43
+TYPE: >>
+INPUT: Blur[hedy]
+EXPECTED:
+= -Image-
+---
