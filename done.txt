@@ -16762,3 +16762,11 @@ INPUT: ImageSubtract[i, i]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/composition.py
+CLASS: WordCloud
+LINE: 163
+TYPE: >>
+INPUT: WordCloud[StringSplit[Import["ExampleData/EinsteinSzilLetter.txt", CharacterEncoding->"UTF8"]]]
+EXPECTED:
+= -Image-
+---

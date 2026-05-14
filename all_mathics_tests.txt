@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/composition.py
 CLASS: WordCloud
-LINE: 163
-TYPE: >>
-INPUT: WordCloud[StringSplit[Import["ExampleData/EinsteinSzilLetter.txt", CharacterEncoding->"UTF8"]]]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/composition.py
-CLASS: WordCloud
 LINE: 166
 TYPE: >>
 INPUT: WordCloud[Range[50] -> ToString /@ Range[50]]
