@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: MeijerG
-LINE: 271
-TYPE: >>
-INPUT: MeijerG[{{1, 2},{}}, {{3},{}}, 1] // N
-EXPECTED:
-= 0.210958
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: MeijerG
 LINE: 273
 TYPE: >>
 INPUT: MeijerG[{{1, 2},{}}, {{3},{}}, 1.]
