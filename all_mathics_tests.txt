@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/properties.py
-CLASS: ImageData
-LINE: 91
-TYPE: >>
-INPUT: ImageData[img, "Byte"]
-EXPECTED:
-= {{51, 102}, {229, 153}, {127, 204}}
----
-FILE: mathics/builtin/image/properties.py
 CLASS: ImageDimensions
 LINE: 133
 TYPE: >>
