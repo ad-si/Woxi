@@ -17885,3 +17885,15 @@ NOTE: mathics's EXPECTED `3.14` is what `ToString[N[Pi, Pi]]` produces.
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   n_pi_pi_*.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 167
+INPUT: N[1/9, 30]
+EXPECTED: 0.111111111111111111111111111111
+NOTE: mathics's EXPECTED is what `ToString[N[1/9, 30]]` produces (30
+  ones after the decimal). Woxi's REPL output stores a 58-digit
+  BigFloat tagged `30.`, matching wolframscript; `ToString` rounds to
+  30 digits. Both Woxi and wolframscript agree exactly. Regression
+  tests: tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  n_one_ninth_at_30_digits and n_one_ninth_at_30_digits_to_string.
+---

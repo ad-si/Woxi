@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
-LINE: 167
-INPUT: N[1/9, 30]
-EXPECTED: 0.111111111111111111111111111111
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_n
 LINE: 175
 INPUT: N[1.012345678901234567890123, 5]
 EXPECTED: 1.0123

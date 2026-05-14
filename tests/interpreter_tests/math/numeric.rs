@@ -63,6 +63,25 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression (mathics test_numbers.py:167): `N[1/9, 30]` displays 30
+  // ones after the decimal via ToString. Internally a 58-digit BigFloat
+  // (matching wolframscript's bit budget for p ≤ 47).
+  #[test]
+  fn n_one_ninth_at_30_digits() {
+    assert_eq!(
+      interpret("N[1/9, 30]").unwrap(),
+      "0.1111111111111111111111111111111111111111111111111111111111`30."
+    );
+  }
+
+  #[test]
+  fn n_one_ninth_at_30_digits_to_string() {
+    assert_eq!(
+      interpret("ToString[N[1/9, 30]]").unwrap(),
+      "0.111111111111111111111111111111"
+    );
+  }
+
   #[test]
   fn n_of_machine_real_stays_machine() {
     // N[1.5, 30] on a machine-precision Real returns the Real unchanged;
