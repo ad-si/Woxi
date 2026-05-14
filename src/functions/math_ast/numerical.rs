@@ -26,14 +26,26 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if p > 0 {
             p as usize
           } else {
-            return Err(InterpreterError::EvaluationError(
-              "N: precision must be a positive number".into(),
+            // Match wolframscript: emit N::precbd and return unevaluated
+            // rather than erroring out.
+            crate::emit_message(&format!(
+              "N::precbd: Requested precision {} is not a machine-sized real number between $MinPrecision and $MaxPrecision.",
+              crate::syntax::expr_to_string(other)
             ));
+            return Ok(Expr::FunctionCall {
+              name: "N".to_string(),
+              args: args.to_vec().into(),
+            });
           }
         } else {
-          return Err(InterpreterError::EvaluationError(
-            "N: precision must be a positive number".into(),
+          crate::emit_message(&format!(
+            "N::precbd: Requested precision {} is not a machine-sized real number between $MinPrecision and $MaxPrecision.",
+            crate::syntax::expr_to_string(other)
           ));
+          return Ok(Expr::FunctionCall {
+            name: "N".to_string(),
+            args: args.to_vec().into(),
+          });
         }
       }
     };
