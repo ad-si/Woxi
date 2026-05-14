@@ -477,7 +477,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // fires before arg-count, so widen the range here and let the
     // ast handler emit imginv when applicable.
     "ImageResize" => Some((2, usize::MAX)),
-    "ImageRotate" => Some((2, 2)),
+    // wolframscript: ImageRotate[img], ImageRotate[img, angle, opts...].
+    // Image-arg check fires before arg-count, so widen here.
+    "ImageRotate" => Some((1, usize::MAX)),
     "ImageSubtract" => Some((2, 2)),
     "ImageTake" => Some((2, 3)),
     "ImageType" => Some((1, 1)),

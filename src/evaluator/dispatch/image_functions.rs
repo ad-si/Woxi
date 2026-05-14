@@ -76,7 +76,7 @@ pub fn dispatch_image_functions(
     "ImageReflect" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_reflect_ast(args));
     }
-    "ImageRotate" if args.len() == 2 => {
+    "ImageRotate" if !args.is_empty() => {
       return Some(crate::functions::image_ast::image_rotate_ast(args));
     }
     "ImageResize" if args.len() >= 2 => {

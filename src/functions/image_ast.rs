@@ -1029,6 +1029,19 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ImageRotate[img, angle] - Rotate by angle in radians
 pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // wolframscript checks the image arg before arg count, so a non-image
+  // first arg emits imginv regardless of how many extra args are passed.
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "ImageRotate::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "ImageRotate".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageRotate expects exactly 2 arguments".into(),
