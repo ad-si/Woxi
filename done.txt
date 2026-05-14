@@ -18896,3 +18896,15 @@ NOTE: parameter-name placeholder for the `test_ByteArray`
   and equality. Woxi has ByteArray support; no portable surface
   reachable via this placeholder row alone.
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 397
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: fail_msg
+NOTE: parameter-name placeholder. The `test_ByteOrdering`
+  parametrisation tests `$ByteOrdering` and related machine-endian
+  behavior. Subsequent rows (already handled in earlier loops) cover
+  `NumericArray[…]` short-form display; this placeholder row itself
+  carries no test data.
+---
