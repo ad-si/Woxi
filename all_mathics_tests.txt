@@ -1,14 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1269
-TYPE: >>
-INPUT: Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]
-EXPECTED:
-: Tag Plus in Dice[a___] + Dice[b___] is Protected.
-= $Failed
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1273
 TYPE: >>
 INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4]
@@ -2685,4 +2676,13 @@ TYPE: >>
 INPUT: B . (RandomInteger[100] * %[[1]] + s)
 EXPECTED:
 = {1, 2, 3}
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1269
+TYPE: >>
+INPUT: Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]
+EXPECTED:
+: Tag Plus in Dice[a___] + Dice[b___] is Protected.
+= $Failed
 ---
