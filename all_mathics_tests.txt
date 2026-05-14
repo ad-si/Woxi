@@ -1,11 +1,3 @@
-FILE: mathics/builtin/image/morph.py
-CLASS: Opening
-LINE: 140
-TYPE: >>
-INPUT: Opening[ein, 2.5]
-EXPECTED:
-= -Image-
----
 FILE: mathics/builtin/image/pixel.py
 CLASS: PixelValue
 LINE: 28
