@@ -2414,6 +2414,12 @@ mod expand_threading {
     assert_eq!(interpret("ArcCos[-1/2 Sqrt[2]]").unwrap(), "(3*Pi)/4");
   }
 
+  // Regression (mathics test_trig.py:22): `ArcCos[1/2 Sqrt[3]]` → Pi/6.
+  #[test]
+  fn arccos_half_sqrt3() {
+    assert_eq!(interpret("ArcCos[1/2 Sqrt[3]]").unwrap(), "Pi/6");
+  }
+
   #[test]
   fn arccos_neg_sqrt2_over_2() {
     assert_eq!(interpret("ArcCos[-Sqrt[2]/2]").unwrap(), "(3*Pi)/4");
