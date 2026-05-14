@@ -19143,3 +19143,14 @@ NOTE: parameter-name placeholder for `test_cmp1_no_pass`, the
   doesn't fully simplify. Sample rows (e.g. `2.+ Pi I == a`) already
   handled in earlier loops via the Plus numeric-contagion fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_cmp2_no_pass
+LINE: 602
+INPUT: str_lhs
+EXPECTED: str_rhs
+MESSAGE: str_expected
+NOTE: parameter-name placeholder for `test_cmp2_no_pass` — the
+  companion of `test_cmp1_no_pass` that tests the commutativity of
+  Equal[…] when it doesn't simplify. Same Plus-numeric-contagion
+  family already covered by earlier loops.
+---
