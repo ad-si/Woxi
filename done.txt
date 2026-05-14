@@ -18415,3 +18415,15 @@ NOTE: same test row as the previous F[1.2\`3, 2/9] entry, with
   mathics's bare `.222222` MESSAGE format (truncated to 6 digits).
   Covered by the same BigFloat-precision-clamp fix.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: a=1.2`3;F[a, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .222222]
+NOTE: extends the F[1.2\`3, 2/9] family by binding `a = 1.2\`3` first.
+  Woxi and wolframscript both resolve `a` to its precision-3
+  BigFloat and produce `F[1.2\`3., 0.222…\`5.]` matching structure.
+  Already covered by the BigFloat-precision-clamp fix in the same
+  family.
+---
