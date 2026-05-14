@@ -18050,3 +18050,13 @@ NOTE: same `ein` image-fixture limitation. Without the fixture both
   Woxi and wolframscript leave the expression unevaluated. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 35
+INPUT: ImageDimensions[ImageResize[alice, {64, 48}]]
+EXPECTED: {64, 48}
+NOTE: `alice` is another mathics-bundled test image (Alice in
+  Wonderland), same fixture-dependent pattern as `hedy`/`ein`. Without
+  the fixture both Woxi and wolframscript leave the expression
+  unevaluated. See memory `project-mathics-image-fixtures`.
+---
