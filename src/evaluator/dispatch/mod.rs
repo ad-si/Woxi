@@ -1775,6 +1775,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Congruent"
     | "DirectedEdge"
     | "RightTee"
+    | "DoubleRightTee"
     | "UndirectedEdge"
     | "Entity"
     | "InfiniteLine"

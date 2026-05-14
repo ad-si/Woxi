@@ -4359,7 +4359,8 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
     "\\[Cap]" | "\u{2322}" => 12,        // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 12,        // Cup (⌣, infix → Cup[a, b])
-    "\\[RightTee]" | "\u{22A2}" => 5,    // RightTee (⊢, right-assoc, between -> and ==)
+    "\\[RightTee]" | "\u{22A2}" => 5, // RightTee (⊢, right-assoc, between -> and ==)
+    "\\[DoubleRightTee]" | "\u{22A8}" => 5, // DoubleRightTee (⊨, right-assoc, same level)
     // wolframscript: \[Function] is lower than Set, Condition, and Rule —
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
@@ -4433,6 +4434,8 @@ fn build_expr_with_precedence(
       || op_str == "/*"
       || op_str == "\\[RightTee]"
       || op_str == "\u{22A2}"
+      || op_str == "\\[DoubleRightTee]"
+      || op_str == "\u{22A8}"
     {
       prec
     } else {
@@ -4658,6 +4661,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     }
     "\\[RightTee]" | "\u{22A2}" => Expr::FunctionCall {
       name: "RightTee".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "\\[DoubleRightTee]" | "\u{22A8}" => Expr::FunctionCall {
+      name: "DoubleRightTee".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
     "~~" => {
@@ -6342,6 +6349,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "RightTee" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22A2} ");
+      }
+      // Special case: DoubleRightTee[a, b, ...] displays as a ⊨ b ⊨ ...
+      if name == "DoubleRightTee" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{22A8} ");
       }
       // Special case: Style[expr, directives...] — OutputForm unwraps to
       // just the content expression (matching wolframscript's default
@@ -9397,6 +9409,12 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{22A2} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DoubleRightTee" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{22A8} ")
     }
     Expr::FunctionCall { name, args }
       if name == "LongRightArrow" && args.len() >= 2 =>

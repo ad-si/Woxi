@@ -17503,3 +17503,9 @@ LINE: 592
 INPUT: x1 \\[RightTee] x2
 EXPECTED: RightTee[x1, x2]
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 593
+INPUT: x1 \\[DoubleRightTee] x2
+EXPECTED: DoubleRightTee[x1, x2]
+---

@@ -5013,6 +5013,55 @@ mod right_tee {
   }
 }
 
+mod double_right_tee {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("DoubleRightTee[a, b]").unwrap(), "a \u{22A8} b");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(
+      interpret("DoubleRightTee[a]").unwrap(),
+      "DoubleRightTee[a]"
+    );
+  }
+
+  // Regression (mathics test_parser.py:593): `x1 \[DoubleRightTee] x2` is
+  // an infix operator that parses to `DoubleRightTee[x1, x2]`.
+  #[test]
+  fn infix_named_character() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x1 \\[DoubleRightTee] x2]]]").unwrap(),
+      "Hold[DoubleRightTee[x1, x2]]"
+    );
+  }
+
+  // The Unicode ⊨ (U+22A8) also parses as the DoubleRightTee operator.
+  #[test]
+  fn infix_unicode_u22a8() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \u{22A8} b]]]").unwrap(),
+      "Hold[DoubleRightTee[a, b]]"
+    );
+  }
+
+  // DoubleRightTee is right-associative:
+  // a ⊨ b ⊨ c → DoubleRightTee[a, DoubleRightTee[b, c]].
+  #[test]
+  fn infix_right_associative() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[a \\[DoubleRightTee] b \\[DoubleRightTee] c]]]"
+      )
+      .unwrap(),
+      "Hold[DoubleRightTee[a, DoubleRightTee[b, c]]]"
+    );
+  }
+}
+
 mod prime_zeta_p {
   use super::*;
 
