@@ -17391,3 +17391,10 @@ INPUT: s:(A/;A>0)
 EXPECTED: A
 MESSAGE: ownvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 26
+INPUT: (s:A)/;A>0
+EXPECTED: A
+MESSAGE: ownvalues
+---
