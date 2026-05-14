@@ -5,20 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-====================================================================================================
-SECTION 3: PYTEST PARAMETRIZED TESTS (338 tests)
-====================================================================================================
-Source: test/**/*.py — @pytest.mark.parametrize decorated test functions
-Runner: pytest (invoked via `make pytest`)
-----------------------------------------------------------------------------------------------------
-
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_eval_N
-LINE: 29
-INPUT: 1
-EXPECTED: $MachinePrecision
-MESSAGE: 1.000000000
----
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_eval_N
 LINE: 29

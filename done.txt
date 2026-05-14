@@ -18284,3 +18284,19 @@ NOTE: Woxi's `plus_ast` dropped the leading `0.` summand whenever
   `1. + 0. I`, and `2. + 3. I`. Regression tests in
   tests/interpreter_tests/syntax.rs::full_form::output_form_*.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: 1
+EXPECTED: $MachinePrecision
+MESSAGE: 1.000000000
+NOTE: row is from mathics's `test_eval_NValues` parameterisation
+  `("1", "$MachinePrecision", "1.000000000", None)` which calls
+  mathics's internal `eval_NValues(expr, prec, evaluation)` function
+  directly — no user-facing wolframscript equivalent. The
+  user-facing `N[1, $MachinePrecision]` produces
+  `1.\`15.954589770191003` in both Woxi and wolframscript exactly
+  (covered by tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  precision_of_complex_machine_real and family). The mathics
+  EXPECTED `1.000000000` is mathics-internal display, not portable.
+---
