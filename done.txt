@@ -18079,3 +18079,13 @@ NOTE: `img` is another mathics-bundled test image. Same fixture-
   Woxi and wolframscript leave the expression unevaluated. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 48
+INPUT: Binarize[img, 0.7]
+EXPECTED: -Image-
+NOTE: same `img` image-fixture limitation. mathics's `-Image-`
+  expected is its short-form for "any Image[…] result". Without the
+  fixture both Woxi and wolframscript leave the expression
+  unevaluated. See memory `project-mathics-image-fixtures`.
+---
