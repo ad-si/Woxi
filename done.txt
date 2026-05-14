@@ -18538,3 +18538,14 @@ NOTE: tests mathics's internal `get_tag_position(pattern)` helper that
   names, not real values (the actual test rows follow with concrete
   patterns like `A/;A>0` → `A`, `ownvalues`).
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: A/;A>0
+EXPECTED: A
+MESSAGE: ownvalues
+NOTE: same `test_get_tag_position` mathics-internal helper family.
+  Tests that `A/;A>0` (a Condition pattern on bare symbol A)
+  classifies as an OwnValue stored under tag `A`. No portable
+  wolframscript surface — pure mathics definitions-system internal.
+---
