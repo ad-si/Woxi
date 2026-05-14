@@ -19111,3 +19111,13 @@ NOTE: duplicate of `(N[2/9, 4], .22222`5, True)` from earlier loops.
   All three (mathics, wolframscript, Woxi) agree on True. Covered by
   the SameQ precision-rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: N[2/9, 4]
+EXPECTED: .222222`5
+MESSAGE: True
+NOTE: last duplicate of `(N[2/9, 4], .222222`5, True)` from earlier
+  loops. All three agree on True. Covered by the SameQ precision-
+  rounding fix. End of the test_sameq parametrisation rows.
+---

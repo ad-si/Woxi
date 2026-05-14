@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: N[2/9, 4]
-EXPECTED: .222222`5
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
 LINE: 178
 INPUT: str_expr
