@@ -1,11 +1,3 @@
-FILE: mathics/builtin/image/colors.py
-CLASS: ImageColorSpace
-LINE: 320
-TYPE: >>
-INPUT: ImageColorSpace[img]
-EXPECTED:
-= RGB
----
 FILE: mathics/builtin/image/composition.py
 CLASS: ImageAdd
 LINE: 77
