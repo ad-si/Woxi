@@ -18582,3 +18582,14 @@ NOTE: same `test_get_tag_position` mathics-internal family. Pattern
   classifies as OwnValue under tag `A`. No portable wolframscript
   surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: _A
+EXPECTED: A
+MESSAGE: downvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Pattern
+  `_A` (Blank with head A — matches any expression with Head A)
+  classifies as DownValue under tag `A`. No portable wolframscript
+  surface.
+---

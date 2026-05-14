@@ -15,13 +15,6 @@ MESSAGE: downvalues
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: test_get_tag_position
 LINE: 12
-INPUT: _A
-EXPECTED: A
-MESSAGE: downvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: test_get_tag_position
-LINE: 12
 INPUT: A[p_, q]
 EXPECTED: A
 MESSAGE: downvalues
