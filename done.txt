@@ -17619,3 +17619,15 @@ NOTE: SameQ row `("N[2/9, 4]", ".222`3", "False")` from test_sameq.
   `project-mathics-sameq-too-strict`. Regression test:
   tests/interpreter_tests/math/predicates.rs::same_q_precision_4_vs_precision_3
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 162
+INPUT: N[2/9, 4]
+EXPECTED: .2222`3
+MESSAGE: True
+NOTE: SameQ row `("N[2/9, 4]", ".2222`3", "True")` from test_sameq.
+  mathics, wolframscript, and Woxi all agree this is True (both round
+  to 0.222 at the lower precision of 3 digits). Already covered by the
+  SameQ precision-rounding fix; see same_q_precision_4_vs_precision_3
+  for a closely related case.
+---
