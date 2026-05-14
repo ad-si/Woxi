@@ -19025,3 +19025,14 @@ NOTE: SameQ row `("N[2/9, 4]", ".222", "False")` tests
   `0.2222` at the 4th digit. Covered by the SameQ precision-rounding
   fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: N[2/9, 4]
+EXPECTED: .2222
+MESSAGE: False
+NOTE: same `(N[2/9, 4], .2222, False)` mathics-vs-wolframscript
+  divergence already documented in earlier loops. mathics expects
+  False; wolframscript (and Woxi after the precision-rounding fix)
+  returns True. See memory `project-mathics-sameq-too-strict`.
+---
