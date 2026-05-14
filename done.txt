@@ -17950,3 +17950,14 @@ NOTE: extraction labelled this `test_accuracy` but the actual mathics
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   precision_of_complex_machine_real.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 267
+INPUT: {1, 0.}
+EXPECTED: MachinePrecision
+NOTE: actually `test_precision`, not `test_accuracy`. The row
+  `("{1, 0.}", "MachinePrecision")` runs `Precision[{1, 0.}]`. Woxi
+  returns `MachinePrecision`, matching wolframscript. Regression test:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  precision_of_list_with_integer_and_machine_real.
+---

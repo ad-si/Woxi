@@ -120,6 +120,17 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression (mathics test_numbers.py:267): a list containing an
+  // Integer (Precision Infinity) and a machine-precision Real reports
+  // Precision = MachinePrecision (the lower of the two).
+  #[test]
+  fn precision_of_list_with_integer_and_machine_real() {
+    assert_eq!(
+      interpret("Precision[{1, 0.}]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
   #[test]
   fn n_of_machine_real_stays_machine() {
     // N[1.5, 30] on a machine-precision Real returns the Real unchanged;
