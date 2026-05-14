@@ -18427,3 +18427,15 @@ NOTE: extends the F[1.2\`3, 2/9] family by binding `a = 1.2\`3` first.
   Already covered by the BigFloat-precision-clamp fix in the same
   family.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: N[b]=1.2`3;F[b, 2/9]
+EXPECTED: 5
+MESSAGE: F[b, .222222]
+NOTE: `N[b] = 1.2\`3` installs an N-value rule on `b` for the default
+  (MachinePrecision) lookup; calling `N[F[b, 2/9], 5]` at precision 5
+  doesn't trigger the rule, so `b` stays symbolic. Woxi matches
+  wolframscript structurally — `F[b, 0.222…\`5.]`. Already covered by
+  the BigFloat-precision-clamp fix in the family.
+---
