@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 571
-INPUT: 2.+ Pi I
-EXPECTED: 2 + 3 a
-MESSAGE: 2. + 3.14159265358979 I == 2 + 3 a
----
 FILE: mathics/test/builtin/test_procedural.py
 FUNCTION: test_history_compound_expression
 LINE: 127
