@@ -19523,3 +19523,13 @@ NOTE: duplicate of `Accuracy[F[1.3, Pi, A]] → 15.8406` row from
   in tests/interpreter_tests/string.rs::to_string_machine_real::
   to_string_accuracy_of_mixed_args.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: {1, 0.``5}
+EXPECTED: 5.
+NOTE: duplicate of `Accuracy[{1, 0.\`\`5}] → 5.` from earlier loops.
+  Already covered by regression test
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  accuracy_of_list_with_accuracy_tagged_zero.
+---
