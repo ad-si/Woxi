@@ -18473,3 +18473,15 @@ NOTE: tests mathics's internal `numerify(expr, evaluation)` helper —
   internal numerify logic doesn't surface through standard
   wolframscript calls.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_numerify
+LINE: 91
+INPUT: F[b, 2/9]
+EXPECTED: F[b, 2 *9 ^ (-1)]
+MESSAGE: N[b,_]=1.2`3
+NOTE: same `test_numerify` mathics-internal family as the previous
+  F[a, 2/9] entry. With `N[b,_]=1.2\`3` installed, mathics's internal
+  `numerify` still keeps `b` symbolic (doesn't substitute) and just
+  leaves the rational expansion form. No portable wolframscript
+  surface for this internal pass.
+---
