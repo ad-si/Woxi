@@ -19360,3 +19360,15 @@ NOTE: duplicate of the SeedRandom[42] / RandomSample[Range[10]] row
   from earlier loops. RNG-sequence divergence; see memory
   `project-rng-sequence-divergence`.
 ---
+FILE: mathics/test/builtin/matrix/constrmatrix.py
+FUNCTION: test_boxmatrix
+LINE: 10
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: failure_message
+NOTE: parameter-name placeholder for `test_boxmatrix`
+  (matrix-construction function). Spot-check: `BoxMatrix[3]` returns
+  the 7×7 all-ones matrix in both Woxi and wolframscript exactly.
+  Matrix-construction coverage in Woxi's
+  `tests/interpreter_tests/linear_algebra.rs`.
+---
