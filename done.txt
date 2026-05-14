@@ -16691,3 +16691,11 @@ INPUT: ImageColorSpace[img]
 EXPECTED:
 = RGB
 ---
+FILE: mathics/builtin/image/composition.py
+CLASS: ImageAdd
+LINE: 77
+TYPE: >>
+INPUT: ImageAdd[i, 0.5]
+EXPECTED:
+= -Image-
+---

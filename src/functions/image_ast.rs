@@ -2037,10 +2037,23 @@ fn pointwise_image_op(
     });
   }
 
-  Err(InterpreterError::EvaluationError(format!(
-    "{}: both arguments must be Images",
-    name
-  )))
+  // Neither argument is a usable image (and no scalar broadcast applies).
+  // Match wolframscript: identify the first non-image argument, emit
+  // <Name>::imginv, and return the call unevaluated.
+  let bad = if !matches!(&args[0], Expr::Image { .. }) {
+    &args[0]
+  } else {
+    &args[1]
+  };
+  crate::emit_message(&format!(
+    "{}::imginv: Expecting an image or graphics instead of {}.",
+    name,
+    crate::syntax::expr_to_string(bad)
+  ));
+  Ok(Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 /// ImageAdd[img1, img2] - Pointwise add, clamped [0,1]

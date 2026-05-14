@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/composition.py
 CLASS: ImageAdd
-LINE: 77
-TYPE: >>
-INPUT: ImageAdd[i, 0.5]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/composition.py
-CLASS: ImageAdd
 LINE: 80
 TYPE: >>
 INPUT: ImageAdd[i, i]
