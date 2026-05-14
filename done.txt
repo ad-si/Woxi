@@ -17549,3 +17549,12 @@ NOTE: mathics expected uses mathics's own short-form display
   and wolframscript produce `NumericArray[<2,2>, UnsignedInteger8]`
   (smallest-fitting unsigned int + `<rows,cols>` shape).
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 431
+INPUT: ToString[NumericArray[{{1,2},{3,4}}]]
+EXPECTED: <Integer64, 2×2>
+NOTE: same mathics-vs-wolframscript divergence as line 430. Woxi and
+  wolframscript both produce `NumericArray[<2,2>, UnsignedInteger8]`.
+  Regression test: tests/interpreter_tests/functions.rs::tostring_numeric_array_2d
+---
