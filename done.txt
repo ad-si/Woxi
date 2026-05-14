@@ -18623,3 +18623,13 @@ NOTE: same `test_get_tag_position` mathics-internal family. Pattern
   `s:A[p_, q]` (named-pattern wrapping `A[p_, q]`) classifies as a
   DownValue under tag `A`. No portable wolframscript surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: A[p_, q]/;q>0
+EXPECTED: A
+MESSAGE: downvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Pattern
+  `A[p_, q]/;q>0` (DownValue-shape with Condition) classifies as
+  DownValue under tag `A`. No portable wolframscript surface.
+---
