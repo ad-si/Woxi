@@ -18014,3 +18014,12 @@ NOTE: `ein` is mathics's bundled Einstein test image. Without the
   that ImageResize scales to 61×76. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 26
+INPUT: ImageDimensions[ImageTake[ein, 50]]
+EXPECTED: {615, 50}
+NOTE: `ein` is mathics's bundled Einstein test image (615×768).
+  Without the fixture, both Woxi and wolframscript leave the
+  expression unevaluated. See memory `project-mathics-image-fixtures`.
+---
