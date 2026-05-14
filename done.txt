@@ -16954,3 +16954,11 @@ INPUT: EdgeDetect[hedy]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/misc.py
+CLASS: EdgeDetect
+LINE: 183
+TYPE: >>
+INPUT: EdgeDetect[hedy, 5]
+EXPECTED:
+= -Image-
+---
