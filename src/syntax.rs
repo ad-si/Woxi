@@ -4357,7 +4357,8 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
-    "\\[Cap]" | "\u{2322}" => 12,           // Cap (⌢, infix → Cap[a, b])
+    "\\[Cap]" | "\u{2322}" => 12,        // Cap (⌢, infix → Cap[a, b])
+    "\\[Cup]" | "\u{2323}" => 12,        // Cup (⌣, infix → Cup[a, b])
     // wolframscript: \[Function] is lower than Set, Condition, and Rule —
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
@@ -4629,6 +4630,26 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Cap".to_string(),
+        args: parts.into(),
+      }
+    }
+    "\\[Cup]" | "\u{2323}" => {
+      // Cup is Flat/associative — flatten chains: a ⌣ b ⌣ c → Cup[a, b, c].
+      let mut parts = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "Cup" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "Cup" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "Cup".to_string(),
         args: parts.into(),
       }
     }
@@ -6299,6 +6320,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "Cap" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{2322} ");
+      }
+      // Special case: Cup[a, b, ...] displays as a ⌣ b ⌣ ...
+      if name == "Cup" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{2323} ");
       }
       // Special case: Congruent[a, b, ...] displays as a ≡ b ≡ ...
       if name == "Congruent" && args.len() >= 2 {
@@ -9348,6 +9374,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Cap" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2322} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Cup" && args.len() >= 2 => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2323} ")
     }
     Expr::FunctionCall { name, args }
       if name == "Congruent" && args.len() >= 2 =>

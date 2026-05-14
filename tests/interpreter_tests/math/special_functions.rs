@@ -4771,6 +4771,39 @@ mod cap {
   }
 }
 
+mod cup {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("Cup[x, y]").unwrap(), "x \u{2323} y");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("Cup[x]").unwrap(), "Cup[x]");
+  }
+
+  // Regression (mathics test_parser.py:546): `a \[Cup] b \[Cup] c` is an
+  // infix Flat/associative operator that parses to `Cup[a, b, c]`.
+  #[test]
+  fn infix_chained_flat() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \\[Cup] b \\[Cup] c]]]").unwrap(),
+      "Hold[Cup[a, b, c]]"
+    );
+  }
+
+  // The Unicode ⌣ (U+2323) also parses as the Cup infix operator.
+  #[test]
+  fn infix_unicode_u2323() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \u{2323} b]]]").unwrap(),
+      "Hold[Cup[a, b]]"
+    );
+  }
+}
+
 mod bit_set {
   use super::*;
 

@@ -1771,6 +1771,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Bond"
     | "Colon"
     | "Cap"
+    | "Cup"
     | "Congruent"
     | "DirectedEdge"
     | "RightTee"
