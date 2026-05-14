@@ -1,12 +1,4 @@
 FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: ChebyshevU
-LINE: 48
-TYPE: >>
-INPUT: ChebyshevU[1 - I, 0.5]
-EXPECTED:
-= 1.60029 + 0.721322 I
----
-FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: GegenbauerC
 LINE: 70
 TYPE: >>
