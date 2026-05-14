@@ -19013,3 +19013,15 @@ NOTE: SameQ row `(".222222`5", "N[2/9,4]", "True")` tests
   — both BigFloats round to 0.2222 at min-precision 4. Covered by the
   SameQ precision-rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: N[2/9, 4]
+EXPECTED: .222
+MESSAGE: False
+NOTE: SameQ row `("N[2/9, 4]", ".222", "False")` tests
+  `N[2/9, 4] === .222`. All three (mathics, wolframscript, Woxi)
+  agree on False — `.222` rounded to precision 4 differs from
+  `0.2222` at the 4th digit. Covered by the SameQ precision-rounding
+  fix.
+---
