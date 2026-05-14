@@ -18114,3 +18114,15 @@ NOTE: Woxi produces `(Sqrt[2/Pi]*Cos[z])/Sqrt[z]`, matching
   tests/interpreter_tests/math/special_functions.rs::bessel_j::
   negative_half_order_cos_closed_form.
 ---
+FILE: mathics/test/builtin/specialfns/test_bessel.py
+FUNCTION: None
+LINE: 27
+INPUT: BesselJ[1/2,z]
+EXPECTED: Sqrt[2] Sin[z] / (Sqrt[z] Sqrt[Pi])
+MESSAGE: BesselJ 1/2 rule
+NOTE: Woxi produces `(Sqrt[2/Pi]*Sin[z])/Sqrt[z]`, matching
+  wolframscript exactly. Mathematically equivalent to mathics's
+  expected `Sqrt[2] Sin[z] / (Sqrt[z] Sqrt[Pi])`. Existing regression
+  test: tests/interpreter_tests/math/special_functions.rs::bessel_j::
+  half_order_sin_closed_form.
+---
