@@ -5023,10 +5023,7 @@ mod double_right_tee {
 
   #[test]
   fn single_arg() {
-    assert_eq!(
-      interpret("DoubleRightTee[a]").unwrap(),
-      "DoubleRightTee[a]"
-    );
+    assert_eq!(interpret("DoubleRightTee[a]").unwrap(), "DoubleRightTee[a]");
   }
 
   // Regression (mathics test_parser.py:593): `x1 \[DoubleRightTee] x2` is
@@ -5058,6 +5055,50 @@ mod double_right_tee {
       )
       .unwrap(),
       "Hold[DoubleRightTee[a, DoubleRightTee[b, c]]]"
+    );
+  }
+}
+
+mod left_tee {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("LeftTee[a, b]").unwrap(), "a \u{22A3} b");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("LeftTee[a]").unwrap(), "LeftTee[a]");
+  }
+
+  // Regression (mathics test_parser.py:594): `x1 \[LeftTee] x2` is an
+  // infix operator that parses to `LeftTee[x1, x2]`.
+  #[test]
+  fn infix_named_character() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x1 \\[LeftTee] x2]]]").unwrap(),
+      "Hold[LeftTee[x1, x2]]"
+    );
+  }
+
+  // The Unicode ⊣ (U+22A3) also parses as the LeftTee infix operator.
+  #[test]
+  fn infix_unicode_u22a3() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \u{22A3} b]]]").unwrap(),
+      "Hold[LeftTee[a, b]]"
+    );
+  }
+
+  // LeftTee is left-associative (opposite of RightTee):
+  // a ⊣ b ⊣ c → LeftTee[LeftTee[a, b], c].
+  #[test]
+  fn infix_left_associative() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \\[LeftTee] b \\[LeftTee] c]]]")
+        .unwrap(),
+      "Hold[LeftTee[LeftTee[a, b], c]]"
     );
   }
 }

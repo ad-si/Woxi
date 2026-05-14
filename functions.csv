@@ -3858,7 +3858,7 @@ GeogravityModelData,,🚫,,10.1,3972
 HeatTransferValue,,,,12.2,3972
 Interrupt,Interrupts evaluation,✅,effectful,2.0,3972
 InverseMellinTransform,,,,11.0,3972
-LeftTee,,,,3.0,3972
+LeftTee,Inert operator displayed with the ⊣ symbol,✅,pure,3.0,3972
 LibraryFunctionUnload,,,,8.0,3972
 MoleculeModify,,🚫,,12.0,3972
 NormalMatrixQ,Test whether a matrix is normal,✅,none,10.0,3972
