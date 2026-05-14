@@ -19435,3 +19435,16 @@ EXPECTED: 20.
 NOTE: `Accuracy[-0.\`\`20]` (negative zero with accuracy 20) returns
   `20.` in both Woxi and wolframscript exactly.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: 10.00`2
+EXPECTED: 1.
+NOTE: `Accuracy[10.00\`2]` returns `1.` in Woxi (matching the
+  mathics expected exactly). wolframscript returns
+  `1.000000000000002` — its computation `precision - log10(|10|)
+  = 2 - 1` picks up a tiny f64 rounding tail past the machine band.
+  Both representations agree to machine precision; the wolframscript
+  tail is the usual extended-decimal-rendering quirk documented in
+  the N[Pi, $MachinePrecision] note.
+---
