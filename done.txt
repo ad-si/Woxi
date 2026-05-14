@@ -18989,3 +18989,16 @@ NOTE: parameter-name placeholder for the `test_sameq` parametrisation.
   precision-rounding fix in `same_q_real_bigfloat` and the
   `project-mathics-sameq-too-strict` memory.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: .2222222222222222`16
+EXPECTED: 2./9.
+MESSAGE: True
+NOTE: SameQ row `(".2222222222222222`16", "2./9.", "True")` tests
+  `.2222222222222222\`16 === 2./9.`. Both Woxi and wolframscript
+  return True (both operands are in the machine-precision band, so
+  Woxi's `same_q_real_bigfloat` uses bit-exact f64 equality after
+  the parser maps `.2222222222222222\`16` to a Real with the same f64
+  bits as `2./9.`). Covered by the SameQ precision-rounding fix.
+---
