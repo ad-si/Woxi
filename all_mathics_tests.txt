@@ -1,12 +1,3 @@
-FILE: mathics/builtin/image/test.py
-CLASS: BinaryImageQ
-LINE: 26
-TYPE: S>
-INPUT: BinaryImageQ[Binarize[img]]
-EXPECTED:
-= ...
-: ...
----
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
 LINE: 136
