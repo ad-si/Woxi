@@ -18145,3 +18145,13 @@ NOTE: Woxi's `Assuming` was a thin `$Assumptions` setter — it didn't
   assuming_eq_two_integrate_x_n,
   assuming_eq_does_not_substitute_into_bare_power.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: None
+LINE: 23
+INPUT: Assuming[n == 2, Integrate[x^n, {x, 0, 1}]]
+EXPECTED: 1 / 3
+NOTE: same family as line 22. After the Assuming equality-substitution
+  fix, Woxi produces `1/3` matching wolframscript and mathics.
+  Regression test: tests/interpreter_tests/algebra.rs::
+  simplify_with_assumption::assuming_eq_two_integrate_x_n.
+---
