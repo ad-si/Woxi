@@ -17868,3 +17868,20 @@ NOTE: Woxi's `real_digits_ast` rational-input path ignored the
   Regression tests in
   tests/interpreter_tests/math/number_theory.rs::real_digits.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 166
+INPUT: N[Pi, Pi]
+EXPECTED: 3.14
+NOTE: mathics's EXPECTED `3.14` is what `ToString[N[Pi, Pi]]` produces.
+  Both wolframscript and Woxi already render `ToString[N[Pi, Pi]]` as
+  "3.14". The REPL-style output was diverging because Woxi's
+  n_eval_arbitrary truncated the precision argument to `usize` —
+  `N[Pi, Pi]` carried tag `3.` instead of `3.141592653589793`. Changed
+  `n_eval_arbitrary`/`n_eval_arbitrary_partial` to accept `f64`
+  precision, plumbed the exact value through, and now produce
+  `3.1415926535897932385`3.141592653589793` matching wolframscript
+  exactly. Regression tests in
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  n_pi_pi_*.
+---

@@ -675,13 +675,13 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For Sin[x], `d log(sin x) / d log x = x*cos(x)/sin(x) = x/tan(x)`,
   // so output precision = `prec_in - log10(|x/tan(x)|)`.
   if let Expr::BigFloat(digits, prec) = &args[0] {
-    let p_usize = (*prec as usize).max(1);
+    let p_in = (*prec).max(1.0);
     let result = crate::functions::math_ast::n_eval_arbitrary(
       &Expr::FunctionCall {
         name: "Sin".to_string(),
         args: args.to_vec().into(),
       },
-      p_usize,
+      p_in,
     )?;
     if let Expr::BigFloat(ref out_digits, _) = result {
       let x_f64 = digits.parse::<f64>().unwrap_or(0.0);
@@ -858,13 +858,13 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For Cos[x], `d log(cos x) / d log x = -x*tan(x)`, so the output
   // relative precision is `prec_in - log10(|x*tan(x)|)`.
   if let Expr::BigFloat(digits, prec) = &args[0] {
-    let p_usize = (*prec as usize).max(1);
+    let p_in = (*prec).max(1.0);
     let result = crate::functions::math_ast::n_eval_arbitrary(
       &Expr::FunctionCall {
         name: "Cos".to_string(),
         args: args.to_vec().into(),
       },
-      p_usize,
+      p_in,
     )?;
     if let Expr::BigFloat(ref out_digits, _) = result {
       let x_f64 = digits.parse::<f64>().unwrap_or(0.0);

@@ -37,6 +37,32 @@ mod n_arbitrary_precision {
     assert_eq!(interpret("N[2/9]").unwrap(), "0.2222222222222222");
   }
 
+  // Regression (mathics test_numbers.py:166): when the precision
+  // argument is a non-integer numeric expression like Pi, the
+  // resulting BigFloat carries the *exact* precision value as its
+  // backtick tag — not the integer floor. ToString uses the precision
+  // to round, so `ToString[N[Pi, Pi]]` displays as "3.14".
+  #[test]
+  fn n_pi_pi_precision_tag_is_full_pi_value() {
+    assert_eq!(
+      interpret("N[Pi, Pi]").unwrap(),
+      "3.1415926535897932385`3.141592653589793"
+    );
+  }
+
+  #[test]
+  fn n_pi_pi_to_string_rounds_to_3_digits() {
+    assert_eq!(interpret("ToString[N[Pi, Pi]]").unwrap(), "3.14");
+  }
+
+  #[test]
+  fn precision_of_n_pi_pi_returns_full_pi() {
+    assert_eq!(
+      interpret("Precision[N[Pi, Pi]]").unwrap(),
+      "3.141592653589793"
+    );
+  }
+
   #[test]
   fn n_of_machine_real_stays_machine() {
     // N[1.5, 30] on a machine-precision Real returns the Real unchanged;

@@ -15,28 +15,18 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&args[1], Expr::Identifier(s) if s == "MachinePrecision") {
       return n_eval(&args[0]);
     }
-    // N[expr, precision] — arbitrary-precision evaluation
-    // Precision can be a numeric expression (e.g. N[Pi, Pi])
-    let precision = match &args[1] {
-      Expr::Integer(n) if *n > 0 => *n as usize,
+    // N[expr, precision] — arbitrary-precision evaluation. Precision
+    // can be a numeric expression (e.g. N[Pi, Pi] uses ≈3.14159… as
+    // the precision marker); we preserve the full f64 value so the
+    // emitted BigFloat carries the exact precision tag wolframscript
+    // shows.
+    let precision_f64 = match &args[1] {
+      Expr::Integer(n) if *n > 0 => *n as f64,
       other => {
-        // Try evaluating to a float
-        if let Some(v) = try_eval_to_f64(other) {
-          let p = v.floor() as i128;
-          if p > 0 {
-            p as usize
-          } else {
-            // Match wolframscript: emit N::precbd and return unevaluated
-            // rather than erroring out.
-            crate::emit_message(&format!(
-              "N::precbd: Requested precision {} is not a machine-sized real number between $MinPrecision and $MaxPrecision.",
-              crate::syntax::expr_to_string(other)
-            ));
-            return Ok(Expr::FunctionCall {
-              name: "N".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
+        if let Some(v) = try_eval_to_f64(other)
+          && v.floor() as i128 > 0
+        {
+          v
         } else {
           crate::emit_message(&format!(
             "N::precbd: Requested precision {} is not a machine-sized real number between $MinPrecision and $MaxPrecision.",
@@ -49,7 +39,7 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     };
-    return n_eval_arbitrary(&args[0], precision);
+    return n_eval_arbitrary(&args[0], precision_f64);
   }
   n_eval(&args[0])
 }
@@ -569,7 +559,7 @@ pub fn bigfloat_to_string(
 /// N[expr, precision] — arbitrary-precision numeric evaluation using BigFloat
 pub fn n_eval_arbitrary(
   expr: &Expr,
-  precision: usize,
+  precision: f64,
 ) -> Result<Expr, InterpreterError> {
   // Handle List recursively at the Expr level
   if let Expr::List(items) = expr {
@@ -579,6 +569,12 @@ pub fn n_eval_arbitrary(
       .collect();
     return Ok(Expr::List(results?.into()));
   }
+
+  // Floor of the precision tag is what bit/digit budgets are sized
+  // from — astro-float can't operate on a fractional precision, but
+  // we still want the resulting BigFloat to carry the original f64
+  // precision marker.
+  let prec_usize = precision.floor().max(1.0) as usize;
 
   // Machine-precision Reals already live at MachinePrecision and cannot be
   // promoted by N — wolframscript returns the Real unchanged.
@@ -593,7 +589,7 @@ pub fn n_eval_arbitrary(
   // with the original precision marker.
   if let Expr::BigFloat(digits, prec_f64) = expr {
     let prec_floor = if *prec_f64 > 0.0 { *prec_f64 } else { 0.0 };
-    if (precision as f64) > prec_floor {
+    if precision > prec_floor {
       return Ok(Expr::BigFloat(digits.clone(), prec_floor));
     }
   }
@@ -610,7 +606,7 @@ pub fn n_eval_arbitrary(
   // `max_display_digits` decimal digits — without the extra word, e.g. a
   // 192-bit Sqrt[2] only yields 58 digits and N[Sqrt[2], 40] truncates one
   // digit short of Wolfram's 59-digit display.
-  let bits = nominal_bits(precision) + 64;
+  let bits = nominal_bits(prec_usize) + 64;
 
   // Wolfram displays digit counts that match a 64-bit-aligned bit count
   // computed from precision plus a ~36-bit guard. We always evaluate with
@@ -621,7 +617,7 @@ pub fn n_eval_arbitrary(
   //   29 ≤ p ≤ 47  → 59 digits  (192-bit)
   //   etc.
   let display_bits = {
-    let b = (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize + 36;
+    let b = (precision * std::f64::consts::LOG2_10).ceil() as usize + 36;
     ((b + 63) & !63).max(64)
   };
   // Match Wolfram's display digit counts. The number of fractional digits
@@ -639,7 +635,7 @@ pub fn n_eval_arbitrary(
     Ok(result) => {
       let decimal =
         bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc)?;
-      Ok(Expr::BigFloat(decimal, precision as f64))
+      Ok(Expr::BigFloat(decimal, precision))
     }
     Err(_) => {
       // Try complex BigFloat evaluation (handles expressions with I)
@@ -656,7 +652,7 @@ pub fn n_eval_arbitrary(
               &input_complex.1,
               &re,
               &im,
-              precision,
+              prec_usize,
               rm,
               &mut cc,
             )
@@ -666,12 +662,12 @@ pub fn n_eval_arbitrary(
             im,
             &prec_re_str,
             &prec_im_str,
-            precision,
+            prec_usize,
             rm,
             &mut cc,
           );
         }
-        return build_complex_bigfloat_result(re, im, precision, rm, &mut cc);
+        return build_complex_bigfloat_result(re, im, prec_usize, rm, &mut cc);
       }
       // Fall back to partial evaluation: convert numeric sub-expressions
       // to arbitrary precision while leaving symbolic parts as-is
@@ -684,7 +680,7 @@ pub fn n_eval_arbitrary(
 /// Numeric parts are converted to BigFloat; symbolic parts are left as-is.
 fn n_eval_arbitrary_partial(
   expr: &Expr,
-  precision: usize,
+  precision: f64,
   bits: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
@@ -692,7 +688,7 @@ fn n_eval_arbitrary_partial(
   // If the whole expression can be converted to BigFloat, do it
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
     let decimal = bigfloat_to_string(&result, None, rm, cc)?;
-    return Ok(Expr::BigFloat(decimal, precision as f64));
+    return Ok(Expr::BigFloat(decimal, precision));
   }
 
   match expr {
@@ -780,7 +776,7 @@ fn n_eval_arbitrary_partial(
       if let Some(entries) = nval {
         for (lhs_p, rhs) in &entries {
           if let Some(p) = arbitrary_precision_lhs(lhs_p)
-            && (p as usize) == precision
+            && (p as usize) == (precision.floor() as usize)
           {
             return n_eval_arbitrary(rhs, precision);
           }
