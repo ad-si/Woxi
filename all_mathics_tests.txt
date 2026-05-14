@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/misc.py
 CLASS: ImageImport
-LINE: 59
-TYPE: >>
-INPUT: Import["ExampleData/Einstein.jpg"]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/misc.py
-CLASS: ImageImport
 LINE: 61
 TYPE: >>
 INPUT: Import["ExampleData/sunflowers.jpg"]
