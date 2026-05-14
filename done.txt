@@ -18511,3 +18511,16 @@ NOTE: tests mathics's internal `get_reference_expression(expr)` helper
   this internal pass. The extracted INPUT/EXPECTED are parameter
   names, not real values.
 ---
+FILE: mathics/test/core/test_assignment.py
+FUNCTION: test_pop_reference_head
+LINE: 53
+INPUT: expr_str
+EXPECTED: lhs_ref_str
+MESSAGE: expected_str
+NOTE: tests mathics's internal `pop_reference_head(expr)` helper from
+  the same assignment-system family as `get_reference_expression`. No
+  portable wolframscript surface — purely internal mathics machinery
+  for resolving the LHS-reference symbol during Set/SetDelayed. The
+  extracted INPUT/EXPECTED/MESSAGE are parameter names, not real
+  values.
+---

@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/core/test_assignment.py
-FUNCTION: test_pop_reference_head
-LINE: 53
-INPUT: expr_str
-EXPECTED: lhs_ref_str
-MESSAGE: expected_str
----
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: test_get_tag_position
 LINE: 12
