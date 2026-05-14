@@ -1,13 +1,5 @@
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricU
-LINE: 226
-TYPE: >>
-INPUT: HypergeometricU[3, 2, 1]
-EXPECTED:
-= MeijerG[{{-2}, {}}, ...
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: HypergeometricU
 LINE: 231
 TYPE: >>
 INPUT: HypergeometricU[3, 2, 1] // N

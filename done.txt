@@ -16145,3 +16145,11 @@ INPUT: HypergeometricPFQ[{-2, a}, {b}, x]
 EXPECTED:
 = (-2 a x (1 + b) + a x ^ 2 (1 + a) + b (1 + b)) / (b (1 + b))
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: HypergeometricU
+LINE: 226
+TYPE: >>
+INPUT: HypergeometricU[3, 2, 1]
+EXPECTED:
+= MeijerG[{{-2}, {}}, ...
+---
