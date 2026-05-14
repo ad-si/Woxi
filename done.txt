@@ -16802,3 +16802,11 @@ INPUT: ImageConvolve[hedy, BoxMatrix[5] / 121]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/filters.py
+CLASS: MaxFilter
+LINE: 122
+TYPE: >>
+INPUT: MaxFilter[hedy, 5]
+EXPECTED:
+= -Image-
+---

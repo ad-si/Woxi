@@ -112,6 +112,9 @@ pub fn dispatch_image_functions(
     "ImageConvolve" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_convolve_ast(args));
     }
+    "MedianFilter" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::median_filter_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }

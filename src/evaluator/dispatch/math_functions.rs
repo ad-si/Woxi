@@ -2896,6 +2896,18 @@ pub fn dispatch_math_functions(
         }
         return Some(Ok(Expr::List(result.into())));
       }
+      // First arg isn't a list/image — emit wolframscript's arg1 warning
+      // and return unevaluated (matches MinFilter/MedianFilter/GaussianFilter).
+      if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
+        crate::emit_message(&format!(
+          "MaxFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "MaxFilter".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
     }
     "MinFilter" if args.len() == 2 => {
       if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
@@ -2914,6 +2926,17 @@ pub fn dispatch_math_functions(
           result.push(min_val);
         }
         return Some(Ok(Expr::List(result.into())));
+      }
+      // First arg isn't a list/image — emit wolframscript's arg1 warning.
+      if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
+        crate::emit_message(&format!(
+          "MinFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "MinFilter".to_string(),
+          args: args.to_vec().into(),
+        }));
       }
     }
     "Upsample" if args.len() == 2 => {

@@ -2128,6 +2128,24 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// MedianFilter[arg, r] — stub. Emits MedianFilter::arg1 when first
+/// arg isn't an image or list. (MaxFilter and MinFilter have their own
+/// arg1 warnings inside their existing list-processing dispatch in
+/// math_functions.rs.)
+pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let valid = matches!(&args[0], Expr::Image { .. } | Expr::List(_));
+  if !valid {
+    crate::emit_message(&format!(
+      "MedianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "MedianFilter".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// ImageConvolve[img, kernel] — stub. Real convolution is not
 /// implemented; this stub matches wolframscript's imginv warning for
 /// non-image first arg.
