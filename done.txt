@@ -17527,3 +17527,15 @@ LINE: 775
 INPUT: a?b[c]
 EXPECTED: PatternTest[a, b][c]
 ---
+FILE: mathics/test/core/parser/test_util.py
+FUNCTION: None
+LINE: 98
+INPUT: f[a;\nb;\nc;]
+EXPECTED: f[CompoundExpression[a, b, c, Null]]
+---
+FILE: mathics/test/core/parser/test_util.py
+FUNCTION: None
+LINE: 99
+INPUT: f[a;\nb;\nc;\n]
+EXPECTED: f[CompoundExpression[a, b, c, Null]]
+---

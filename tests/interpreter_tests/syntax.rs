@@ -561,6 +561,26 @@ mod newline_statements {
       "FullForm[Hold[f[a; b]]]"
     );
   }
+
+  // Regression (mathics test_util.py:98): a trailing `;` inside a
+  // function-call's CompoundExpression introduces a final `Null`.
+  #[test]
+  fn function_call_compound_expression_trailing_semicolon() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[a;\nb;\nc;]]]]").unwrap(),
+      "Hold[f[CompoundExpression[a, b, c, Null]]]"
+    );
+  }
+
+  // Regression (mathics test_util.py:99): same as above with an extra
+  // trailing newline before the closing bracket.
+  #[test]
+  fn function_call_compound_expression_trailing_semicolon_newline() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f[a;\nb;\nc;\n]]]]").unwrap(),
+      "Hold[f[CompoundExpression[a, b, c, Null]]]"
+    );
+  }
 }
 
 mod full_form {

@@ -5,18 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 98
-INPUT: f[a;\nb;\nc;]
-EXPECTED: f[CompoundExpression[a, b, c, Null]]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 99
-INPUT: f[a;\nb;\nc;\n]
-EXPECTED: f[CompoundExpression[a, b, c, Null]]
----
 FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_ByteOrdering
 LINE: 430
