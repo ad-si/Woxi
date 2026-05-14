@@ -17736,3 +17736,14 @@ NOTE: REPL-only — same family as line 127. After
   `eval` resolves `%` to `Out[0]`, matching wolframscript script mode.
   See memory `project-woxi-no-repl-history`.
 ---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 133
+INPUT: ToString[%]
+EXPECTED: y
+NOTE: REPL-only — same family as line 127. After
+  `CompoundExpression[x, y, Null, Null]` in a REPL, `%` stores the last
+  non-Null sub-expression (`y`). Woxi script-mode `eval` resolves `%`
+  to `Out[0]`, matching wolframscript script mode. See memory
+  `project-woxi-no-repl-history`.
+---
