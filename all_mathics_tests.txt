@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
-LINE: 166
-INPUT: N[2/9, 4]
-EXPECTED: .22222`5
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
 LINE: 167
 INPUT: N[2/9, 4]
 EXPECTED: .222222`5
