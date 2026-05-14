@@ -1,13 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1127
-TYPE: >>
-INPUT: extremes = Solve[f'[x] == 0, x]
-EXPECTED:
-= {{x -> -Sqrt[5]}, {x -> Sqrt[5]}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1131
 TYPE: >>
 INPUT: f''[x] /. extremes // N
@@ -2718,4 +2710,12 @@ TYPE: >>
 INPUT: [1 2 3]
 EXPECTED:
 : ...
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1127
+TYPE: >>
+INPUT: extremes = Solve[f'[x] == 0, x]
+EXPECTED:
+= {{x -> -Sqrt[5]}, {x -> Sqrt[5]}}
 ---
