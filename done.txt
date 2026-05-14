@@ -17961,3 +17961,15 @@ NOTE: actually `test_precision`, not `test_accuracy`. The row
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   precision_of_list_with_integer_and_machine_real.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 268
+INPUT: {1, 0.``5}
+EXPECTED: 0.
+NOTE: actually `test_precision`, not `test_accuracy`. The row
+  `("{1, 0.``5}", "0.")` runs `Precision[{1, 0.``5}]`. The accuracy-
+  tagged zero has no significant digits, so the list's Precision is
+  `0.`. Woxi matches wolframscript. Regression test:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  precision_of_list_with_accuracy_tagged_zero.
+---

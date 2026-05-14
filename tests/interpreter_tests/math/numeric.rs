@@ -125,10 +125,15 @@ mod n_arbitrary_precision {
   // Precision = MachinePrecision (the lower of the two).
   #[test]
   fn precision_of_list_with_integer_and_machine_real() {
-    assert_eq!(
-      interpret("Precision[{1, 0.}]").unwrap(),
-      "MachinePrecision"
-    );
+    assert_eq!(interpret("Precision[{1, 0.}]").unwrap(), "MachinePrecision");
+  }
+
+  // Regression (mathics test_numbers.py:268): when a list contains
+  // `0.``5` (zero with accuracy 5), its Precision is `0.` (no
+  // significant digits — the value is accuracy-only).
+  #[test]
+  fn precision_of_list_with_accuracy_tagged_zero() {
+    assert_eq!(interpret("Precision[{1, 0.``5}]").unwrap(), "0.");
   }
 
   #[test]
