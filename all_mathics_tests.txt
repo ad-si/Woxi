@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/arithmetic/test_assumptions.py
-FUNCTION: None
-LINE: 27
-INPUT: Assuming[Or[n>2, n>=3], Integrate[x^n, {x, 0, 1}]]
-EXPECTED: x^(n+1)/(n+1)
----
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_add
 LINE: 48

@@ -18201,3 +18201,15 @@ NOTE: same family as line 25. mathics's expected `x^(n+1)/(n+1)` is
   assumption simplification isn't implemented. Same out-of-scope
   ConditionalExpression + assumption-handling project.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: None
+LINE: 27
+INPUT: Assuming[Or[n>2, n>=3], Integrate[x^n, {x, 0, 1}]]
+EXPECTED: x^(n+1)/(n+1)
+NOTE: same family as lines 25–26. mathics's expected is the
+  antiderivative (wrong); wolframscript returns `(1 + n)^(-1)` via
+  inequality-based assumption simplification. Woxi keeps the raw
+  `(1 + n)^(-1) - 0^(1 + n)/(1 + n)` form because it doesn't yet
+  implement inequality-driven `0^x` simplification under assumptions.
+  Same out-of-scope ConditionalExpression project.
+---
