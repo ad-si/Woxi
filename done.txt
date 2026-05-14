@@ -17059,3 +17059,11 @@ INPUT: PixelValue[hedy, {180, 192}]
 EXPECTED:
 = {0.00784314, 0.00784314, 0.0156863}
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageAspectRatio
+LINE: 33
+TYPE: >>
+INPUT: ImageAspectRatio[img]
+EXPECTED:
+= 400 / 323
+---

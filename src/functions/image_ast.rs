@@ -364,10 +364,16 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "ImageAspectRatio".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      crate::emit_message(&format!(
+        "ImageAspectRatio::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageAspectRatio".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
