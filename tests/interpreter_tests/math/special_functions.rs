@@ -4741,6 +4741,34 @@ mod cap {
   fn single_arg() {
     assert_eq!(interpret("Cap[x]").unwrap(), "Cap[x]");
   }
+
+  // Regression (mathics test_parser.py:545): `a \[Cap] b` is an infix
+  // operator that parses to `Cap[a, b]`.
+  #[test]
+  fn infix_named_character() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \\[Cap] b]]]").unwrap(),
+      "Hold[Cap[a, b]]"
+    );
+  }
+
+  // The Unicode ⌢ (U+2322) also parses as the Cap infix operator.
+  #[test]
+  fn infix_unicode_u2322() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \u{2322} b]]]").unwrap(),
+      "Hold[Cap[a, b]]"
+    );
+  }
+
+  // Cap is Flat/associative — chains flatten: a ⌢ b ⌢ c → Cap[a, b, c].
+  #[test]
+  fn infix_chained_flat() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \\[Cap] b \\[Cap] c]]]").unwrap(),
+      "Hold[Cap[a, b, c]]"
+    );
+  }
 }
 
 mod bit_set {

@@ -4357,6 +4357,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
+    "\\[Cap]" | "\u{2322}" => 12,           // Cap (⌢, infix → Cap[a, b])
     // wolframscript: \[Function] is lower than Set, Condition, and Rule —
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
@@ -4608,6 +4609,26 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Cross".to_string(),
+        args: parts.into(),
+      }
+    }
+    "\\[Cap]" | "\u{2322}" => {
+      // Cap is Flat/associative — flatten chains: a ⌢ b ⌢ c → Cap[a, b, c].
+      let mut parts = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "Cap" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "Cap" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "Cap".to_string(),
         args: parts.into(),
       }
     }

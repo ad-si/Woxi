@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 545
-INPUT: a \\[Cap] b
-EXPECTED: Cap[a,b]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 546
 INPUT: a \\[Cup] b \\[Cup] c
 EXPECTED: Cup[a,b,c]
