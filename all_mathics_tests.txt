@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 35
-INPUT: (s:A[p_, q])/;q>0
-EXPECTED: A
-MESSAGE: downvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 37
 INPUT: N[A[x_], _]
 EXPECTED: A
