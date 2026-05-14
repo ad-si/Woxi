@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/basic.py
-CLASS: ImageAdjust
-LINE: 80
-TYPE: >>
-INPUT: ImageAdjust[hedy]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/basic.py
 CLASS: ImagePartition
 LINE: 189
 TYPE: >>

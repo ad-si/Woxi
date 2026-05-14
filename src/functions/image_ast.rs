@@ -919,9 +919,18 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         image_type: *image_type,
       })
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageAdjust: first argument is not an Image".into(),
-    )),
+    _ => {
+      // Match wolframscript: emit ImageAdjust::imginv and return the
+      // call unevaluated rather than erroring.
+      crate::emit_message(&format!(
+        "ImageAdjust::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageAdjust".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
