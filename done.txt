@@ -17314,3 +17314,10 @@ EXPECTED:
 .
 . -Graphics--Graphics-   8
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_sameQ
+LINE: 36
+INPUT: F[1.2, 2/9]
+EXPECTED: $MachinePrecision
+MESSAGE: F[1.2, .2222222222222222]
+---

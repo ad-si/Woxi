@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_sameQ
-LINE: 36
-INPUT: F[1.2, 2/9]
-EXPECTED: $MachinePrecision
-MESSAGE: F[1.2, .2222222222222222]
----
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_sameQ
 LINE: 37
 INPUT: F[1.2, 2/9]
 EXPECTED: $MachinePrecision
