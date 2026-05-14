@@ -18170,3 +18170,20 @@ NOTE: Woxi returns `Infinity` after the equality-substitution fix
   behavior. Existing regression coverage via the Assuming-equality
   tests.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: None
+LINE: 25
+INPUT: Assuming[1<n<3, Integrate[x^n, {x, 0, 1}]]
+EXPECTED: x^(n+1)/(n+1)
+NOTE: mathics's expected `x^(n+1)/(n+1)` is the antiderivative form,
+  which is wrong for a definite integral on [0,1] — the value is
+  `1/(n+1)`. wolframscript returns `(1 + n)^(-1)` (uses the
+  assumption `1<n<3` to drop the `0^(n+1)` term). Woxi returns
+  `(1 + n)^(-1) - 0^(1 + n)/(1 + n)` — the raw expansion without
+  assumption-driven simplification. Three-way divergence: mathics has
+  the wrong expected; wolframscript simplifies using the inequality;
+  Woxi keeps the raw form. Properly matching wolframscript requires
+  inequality-based assumption handling for ConditionalExpression / 0^x
+  patterns — out of scope for this loop. The mathics expected can't
+  be matched without reproducing its bug.
+---
