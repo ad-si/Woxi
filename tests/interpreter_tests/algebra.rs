@@ -2179,6 +2179,34 @@ mod simplify_assumptions {
       "x + y"
     );
   }
+
+  // Regression (mathics test_assumptions.py:22): `Assuming[var == value,
+  // Integrate[...]]` substitutes `var → value` in the Integrate body
+  // before evaluating, so the definite integral specialises to the
+  // concrete numeric result.
+  #[test]
+  fn assuming_eq_one_integrate_x_n() {
+    assert_eq!(
+      interpret("Assuming[n == 1, Integrate[x^n, {x, 0, 1}]]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn assuming_eq_two_integrate_x_n() {
+    assert_eq!(
+      interpret("Assuming[n == 2, Integrate[x^n, {x, 0, 1}]]").unwrap(),
+      "1/3"
+    );
+  }
+
+  // Substitution must only kick in when the body has an Integrate /
+  // Sum / Product / Limit subexpression. A bare `x^n` keeps its
+  // symbolic form (matching wolframscript).
+  #[test]
+  fn assuming_eq_does_not_substitute_into_bare_power() {
+    assert_eq!(interpret("Assuming[n == 1, x^n]").unwrap(), "x^n");
+  }
 }
 
 // Regression: Simplify should collapse nested continued-fraction-like

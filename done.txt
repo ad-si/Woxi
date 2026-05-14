@@ -18126,3 +18126,22 @@ NOTE: Woxi produces `(Sqrt[2/Pi]*Sin[z])/Sqrt[z]`, matching
   test: tests/interpreter_tests/math/special_functions.rs::bessel_j::
   half_order_sin_closed_form.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: None
+LINE: 22
+INPUT: Assuming[n == 1, Integrate[x^n, {x, 0, 1}]]
+EXPECTED: 1 / 2
+NOTE: Woxi's `Assuming` was a thin `$Assumptions` setter — it didn't
+  specialise the body. wolframscript responds to `n == 1` by
+  reducing `Integrate[x^n, {x, 0, 1}]`'s ConditionalExpression to
+  `1/2`. Added an equality-substitution pass that walks the assumption
+  for `Expr::Comparison` / `Equal[var, value]` and rewrites the body
+  via `substitute_variable`, but only when the body contains an
+  Integrate / Sum / Product / Limit subexpression (so
+  `Assuming[n == 1, x^n]` still returns `x^n`, matching wolframscript).
+  Regression tests:
+  tests/interpreter_tests/algebra.rs::simplify_with_assumption::
+  assuming_eq_one_integrate_x_n,
+  assuming_eq_two_integrate_x_n,
+  assuming_eq_does_not_substitute_into_bare_power.
+---

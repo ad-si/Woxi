@@ -640,8 +640,21 @@ pub fn assuming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .insert("$Assumptions".to_string(), StoredValue::Raw(val))
   });
 
+  // If the assumption is a simple equality `var == value` (or a List of
+  // such), AND the body contains an Integrate/Sum/Product/Limit (where
+  // wolframscript's ConditionalExpression handling would specialise the
+  // result), substitute `var → value` in the body before evaluating.
+  // Matches wolframscript: `Assuming[n == 1, Integrate[x^n, {x, 0, 1}]]`
+  // returns `1/2`. Cases like `Assuming[n == 1, x^n]` keep `x^n`
+  // because wolframscript also doesn't substitute there.
+  let body = if contains_assumption_consumer(&args[1]) {
+    apply_assumption_substitutions(&args[1], &assumption)
+  } else {
+    args[1].clone()
+  };
+
   // Evaluate the body expression
-  let result = evaluate_expr_to_expr(&args[1]);
+  let result = evaluate_expr_to_expr(&body);
 
   // Restore previous $Assumptions (even if body returned an error)
   ENV.with(|e| {
@@ -653,6 +666,85 @@ pub fn assuming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   });
 
+  result
+}
+
+/// Does `expr` contain a function whose result depends on
+/// `$Assumptions` (Integrate / Sum / Product / Limit)? Used as a guard
+/// before specialising the body of `Assuming`, so `Assuming[n == 1, x^n]`
+/// keeps `x^n` (matching wolframscript) while
+/// `Assuming[n == 1, Integrate[x^n, ...]]` substitutes.
+fn contains_assumption_consumer(expr: &Expr) -> bool {
+  fn is_consumer(name: &str) -> bool {
+    matches!(name, "Integrate" | "Sum" | "Product" | "Limit")
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      is_consumer(name) || args.iter().any(contains_assumption_consumer)
+    }
+    Expr::List(items) => items.iter().any(contains_assumption_consumer),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_assumption_consumer(left)
+        || contains_assumption_consumer(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_assumption_consumer(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(contains_assumption_consumer)
+    }
+    _ => false,
+  }
+}
+
+/// Walk `assumption` looking for equality assumptions of the form
+/// `Equal[symbol, value]` (parsed as Comparison or FunctionCall, with
+/// optional List wrapper for conjunctions) and substitute each
+/// `symbol → value` in `body`. Used by `assuming_ast` to specialise an
+/// integration / sum / etc. before evaluating it.
+fn apply_assumption_substitutions(body: &Expr, assumption: &Expr) -> Expr {
+  fn extract_equalities(a: &Expr, out: &mut Vec<(String, Expr)>) {
+    match a {
+      // List of assumptions: walk each entry.
+      Expr::List(items) => {
+        for item in items.iter() {
+          extract_equalities(item, out);
+        }
+      }
+      // And[…] (sometimes from `&&`): walk each clause.
+      Expr::FunctionCall { name, args } if name == "And" => {
+        for arg in args.iter() {
+          extract_equalities(arg, out);
+        }
+      }
+      // FullForm Equal[var, value]
+      Expr::FunctionCall { name, args }
+        if name == "Equal" && args.len() == 2 =>
+      {
+        if let Expr::Identifier(var) = &args[0] {
+          out.push((var.clone(), args[1].clone()));
+        }
+      }
+      // Parsed `var == value` is `Comparison { operands: [var, value],
+      // operators: [Equal] }` (not a FunctionCall).
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && operators.len() == 1
+        && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      {
+        if let Expr::Identifier(var) = &operands[0] {
+          out.push((var.clone(), operands[1].clone()));
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut pairs: Vec<(String, Expr)> = Vec::new();
+  extract_equalities(assumption, &mut pairs);
+  let mut result = body.clone();
+  for (var, value) in &pairs {
+    result = crate::syntax::substitute_variable(&result, var, value);
+  }
   result
 }
 
