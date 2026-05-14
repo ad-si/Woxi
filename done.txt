@@ -16442,3 +16442,12 @@ INPUT: Sort[{x_ + n_*y_, x_ + y_}, PatternsOrderedQ]
 EXPECTED:
 = {x_ + n_ y_, x_ + y_}
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: StringForm
+LINE: 678
+TYPE: >>
+INPUT: StringForm["`` is Global`a", a]
+EXPECTED:
+: Unmatched backquote in `` is Global`a.
+= `` is Global`a
+---

@@ -1,14 +1,5 @@
 FILE: mathics/builtin/forms/data.py
 CLASS: StringForm
-LINE: 678
-TYPE: >>
-INPUT: StringForm["`` is Global`a", a]
-EXPECTED:
-: Unmatched backquote in `` is Global`a.
-= `` is Global`a
----
-FILE: mathics/builtin/forms/data.py
-CLASS: StringForm
 LINE: 690
 TYPE: >>
 INPUT: StandardForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]
