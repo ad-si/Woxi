@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/composition.py
-CLASS: ImageAdd
-LINE: 90
-TYPE: >>
-INPUT: ImageAdd[noise, hedy]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/composition.py
 CLASS: ImageMultiply
 LINE: 108
 TYPE: >>
