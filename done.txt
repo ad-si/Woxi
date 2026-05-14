@@ -16611,3 +16611,11 @@ INPUT: Threshold[img]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/image/basic.py
+CLASS: Threshold
+LINE: 284
+TYPE: X>
+INPUT: Binarize[img, %]
+EXPECTED:
+= -Image-
+---

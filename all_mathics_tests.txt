@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/basic.py
 CLASS: Threshold
-LINE: 284
-TYPE: X>
-INPUT: Binarize[img, %]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/basic.py
-CLASS: Threshold
 LINE: 286
 TYPE: X>
 INPUT: Threshold[img, Method -> "Mean"]

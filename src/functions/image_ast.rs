@@ -744,6 +744,20 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // wolframscript validates the image before the threshold, so a chain
+  // like `Binarize[img, Out[0]]` (where `img` is undefined) emits
+  // Binarize::imginv rather than choking on the non-numeric threshold.
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "Binarize::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Binarize".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   let threshold = if args.len() == 2 {
     expr_to_f64(&args[1])?
   } else {
