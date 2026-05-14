@@ -16810,3 +16810,11 @@ INPUT: MaxFilter[hedy, 5]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/filters.py
+CLASS: MedianFilter
+LINE: 146
+TYPE: >>
+INPUT: MedianFilter[hedy, 5]
+EXPECTED:
+= -Image-
+---
