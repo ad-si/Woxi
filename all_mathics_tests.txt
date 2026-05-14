@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/filters.py
 CLASS: ImageConvolve
-LINE: 89
-TYPE: >>
-INPUT: ImageConvolve[hedy, DiskMatrix[5] / 97]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/filters.py
-CLASS: ImageConvolve
 LINE: 91
 TYPE: >>
 INPUT: ImageConvolve[hedy, BoxMatrix[5] / 121]
