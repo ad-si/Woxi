@@ -17757,3 +17757,16 @@ NOTE: REPL-only — same family as line 127. After empty
   script-mode `eval` resolves `%` to `Out[0]`, matching wolframscript
   script mode. See memory `project-woxi-no-repl-history`.
 ---
+FILE: mathics/test/builtin/assignments/test_assignment.py
+FUNCTION: test_assign_list
+LINE: 405
+INPUT: G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}
+EXPECTED: {{1.}, {G[x]}}
+NOTE: Woxi already produces {{1.}, {G[x]}}, matching wolframscript.
+  Tests that `a = {G[x]}` is stored as-is (G[x] symbolic when x is
+  undefined) and each read of `a` re-evaluates G against the current
+  binding of x — `x = 1.` triggers `G[x_Real] = x^2` to give 1.; then
+  `x = .` restores symbolic. Regression test:
+  tests/interpreter_tests/function_definitions.rs::
+  user_defined_functions::typed_function_definition_re_evaluates_per_x_binding.
+---

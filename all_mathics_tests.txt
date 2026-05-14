@@ -5,12 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/assignments/test_assignment.py
-FUNCTION: test_assign_list
-LINE: 405
-INPUT: G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}
-EXPECTED: {{1.}, {G[x]}}
----
 FILE: mathics/test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_gudermannian
 LINE: 20

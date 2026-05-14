@@ -49,6 +49,22 @@ mod user_defined_functions {
       "2"
     );
   }
+
+  // Regression (mathics test_assignment.py:405): when a list is built
+  // from `G[x]` and `x` is later assigned/unassigned between read-backs,
+  // each read re-evaluates G against the current head-constrained
+  // definition. The list elements are not "frozen" at definition time.
+  #[test]
+  fn typed_function_definition_re_evaluates_per_x_binding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}"
+      )
+      .unwrap(),
+      "{{1.}, {G[x]}}"
+    );
+  }
 }
 
 mod conditional_definitions {
