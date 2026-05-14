@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: test_one_identity_still_failing
-LINE: 92
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
-FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: test_one_identity_stil_failing
 LINE: 135
 INPUT: str_expr
