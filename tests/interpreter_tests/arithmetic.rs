@@ -2408,6 +2408,12 @@ mod expand_threading {
     assert_eq!(interpret("ArcCos[1/2 Sqrt[2]]").unwrap(), "Pi/4");
   }
 
+  // Regression (mathics test_trig.py:21): the negative variant.
+  #[test]
+  fn arccos_neg_half_sqrt2() {
+    assert_eq!(interpret("ArcCos[-1/2 Sqrt[2]]").unwrap(), "(3*Pi)/4");
+  }
+
   #[test]
   fn arccos_neg_sqrt2_over_2() {
     assert_eq!(interpret("ArcCos[-Sqrt[2]/2]").unwrap(), "(3*Pi)/4");
