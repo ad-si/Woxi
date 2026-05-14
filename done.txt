@@ -17461,3 +17461,9 @@ INPUT: S[x_, q:(A[t_]/;t>0)]
 EXPECTED: A
 MESSAGE: upvalues
 ---
+FILE: mathics/test/core/parser/test_convert.py
+FUNCTION: None
+LINE: 152
+INPUT: Derivative[1][f]'
+EXPECTED: (f')'
+---

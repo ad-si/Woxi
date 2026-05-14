@@ -306,6 +306,25 @@ pub fn dispatch_calculus_functions(
       }));
     }
     "Derivative" if args.len() == 2 => {
+      // Derivative[m][Derivative[n][f]] → Derivative[m + n][f]
+      // (composition of single-variable derivatives sums the orders).
+      // The inner Derivative reaches us flattened as
+      // FunctionCall(Derivative, [n, f]) — applying Derivative[m][...]
+      // to it currys to (m, FunctionCall(Derivative, [n, f])).
+      if let (Expr::Integer(m), Expr::FunctionCall { name: inner_name, args: inner_args }) =
+        (&args[0], &args[1])
+        && inner_name == "Derivative"
+        && inner_args.len() == 2
+        && let Expr::Integer(n) = &inner_args[0]
+      {
+        return Some(Ok(Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![Expr::Integer(*m + *n)].into(),
+          }),
+          args: vec![inner_args[1].clone()],
+        }));
+      }
       // `Derivative[n][expr]` where `expr` is not an identifier or pure
       // function (e.g. a String, FunctionCall like `h[1]`, etc.) keeps the
       // curried form unchanged in Wolfram, since there is no symbolic
