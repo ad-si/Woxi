@@ -664,6 +664,25 @@ mod full_form {
     );
   }
 
+  // Regression (mathics test_basic.py:314): a machine-precision
+  // complex number with zero *real* part keeps the leading `0. +` in
+  // OutputForm (so the result is `0. + 1. I`, not the bare `1. I`).
+  #[test]
+  fn output_form_zero_plus_one_i() {
+    assert_eq!(
+      interpret("ToString[0. + 1. I, OutputForm]").unwrap(),
+      "0. + 1. I"
+    );
+  }
+
+  #[test]
+  fn output_form_two_plus_three_i() {
+    assert_eq!(
+      interpret("ToString[2. + 3. I, OutputForm]").unwrap(),
+      "2. + 3. I"
+    );
+  }
+
   #[test]
   fn full_form_list() {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around lists

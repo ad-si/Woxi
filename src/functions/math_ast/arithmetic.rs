@@ -827,18 +827,18 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
     let mut final_args: Vec<Expr> = Vec::new();
 
-    // Detect a `Real(0.0) * I` symbolic summand: when present, the Plus is
-    // displaying an inexact-zero Complex form (`Complex[r, 0.]`). The
-    // imaginary `0.*I` will be preserved by `collect_like_terms`, but we
-    // also need to keep a leading `0.` real coefficient so the output
-    // reads `0. + 0.*I` rather than just `0.*I`.
+    // Detect any `Times[Real, I]` symbolic summand. When present, the
+    // sum is in the machine-precision Complex form (`Complex[r, im]`)
+    // and we keep a leading `0.` real coefficient when real_sum is 0
+    // so the output reads `0. + r*I` rather than dropping the `0.`.
+    // This covers both `0. + 0. I` and `0. + 1. I`.
     let has_inexact_zero_imag = symbolic_args.iter().any(|e| {
       matches!(
         e,
         Expr::FunctionCall { name, args }
           if name == "Times"
             && args.len() == 2
-            && matches!(args[0], Expr::Real(v) if v == 0.0)
+            && matches!(args[0], Expr::Real(_))
             && matches!(&args[1], Expr::Identifier(s) if s == "I")
       ) || matches!(
         e,
@@ -846,7 +846,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           op: crate::syntax::BinaryOperator::Times,
           left,
           right,
-        } if matches!(left.as_ref(), Expr::Real(v) if *v == 0.0)
+        } if matches!(left.as_ref(), Expr::Real(_))
           && matches!(right.as_ref(), Expr::Identifier(s) if s == "I")
       )
     });

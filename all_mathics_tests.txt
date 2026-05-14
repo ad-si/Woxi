@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
-LINE: 314
-INPUT: 0. + 1. I//OutputForm
-EXPECTED: 0. + 1. I
-MESSAGE: Formatting 1. I
----
 ====================================================================================================
 SECTION 3: PYTEST PARAMETRIZED TESTS (338 tests)
 ====================================================================================================

@@ -18268,3 +18268,19 @@ NOTE: `ToString[1. + 0. I, OutputForm]` returns `1. + 0. I` in both
   tests/interpreter_tests/syntax.rs::full_form::
   output_form_one_plus_zero_i.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_power
+LINE: 314
+INPUT: 0. + 1. I//OutputForm
+EXPECTED: 0. + 1. I
+MESSAGE: Formatting 1. I
+NOTE: Woxi's `plus_ast` dropped the leading `0.` summand whenever
+  real_sum was 0, producing `1.*I` for `0. + 1. I`. wolframscript
+  keeps the `0. + …` to convey the machine-precision Complex form.
+  Widened the `has_inexact_zero_imag` guard so it fires for *any*
+  `Times[Real, I]` summand (not just `Real(0.) * I`); now Plus keeps
+  the `0.` real coefficient whenever an imaginary `Real*I` factor is
+  present, matching wolframscript for `0. + 1. I`, `0. + 0. I`,
+  `1. + 0. I`, and `2. + 3. I`. Regression tests in
+  tests/interpreter_tests/syntax.rs::full_form::output_form_*.
+---
