@@ -18439,3 +18439,22 @@ NOTE: `N[b] = 1.2\`3` installs an N-value rule on `b` for the default
   wolframscript structurally — `F[b, 0.222…\`5.]`. Already covered by
   the BigFloat-precision-clamp fix in the family.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: N[b,_]=1.2`3;F[b, 2/9]
+EXPECTED: 5
+MESSAGE: F[1.20`3, .222222]
+NOTE: `N[sym, _] = v` installs an NValue rule with a blank-pattern
+  precision slot that matches *every* requested precision (in Wolfram
+  semantics). Woxi previously stored the rule but only fired it for
+  the canonical `N[sym, {p, Infinity}]` and `MachinePrecision` LHS
+  shapes. Added `is_blank_precision_lhs` / `is_blank_pattern_expr`
+  helpers and wired them into both the machine-precision and
+  arbitrary-precision lookup paths in `numerical.rs`. Now
+  `N[b,_]=1.2\`3; N[F[b, 2/9], 5]` substitutes `b → 1.2\`3.` and
+  produces `F[1.2\`3., 0.222…\`5.]` matching wolframscript
+  structurally. Regression tests:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  n_blank_precision_nvalue_*.
+---

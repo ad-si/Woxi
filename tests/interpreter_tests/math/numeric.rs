@@ -131,6 +131,43 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression (mathics test_evaluators.py:29, N[b,_]=…):
+  // `N[sym, _] = v` installs an NValue rule with a blank-pattern
+  // precision slot that should match every requested precision. Woxi
+  // previously stored the rule but only fired it for the canonical
+  // `N[sym, {p_real, Infinity}]` / `MachinePrecision` LHS shapes.
+  #[test]
+  fn n_blank_precision_nvalue_fires_at_arbitrary_precision() {
+    clear_state();
+    assert_eq!(
+      interpret("N[b,_]=1.2`3; N[b, 5]").unwrap(),
+      "1.2`3."
+    );
+  }
+
+  #[test]
+  fn n_blank_precision_nvalue_fires_at_machine_precision() {
+    clear_state();
+    assert_eq!(
+      interpret("N[b,_]=1.2`3; N[b]").unwrap(),
+      "1.2"
+    );
+  }
+
+  // The rule fires inside symbolic FunctionCall arguments too, so
+  // `N[F[b, 2/9], 5]` substitutes `b → 1.2\`3`.
+  #[test]
+  fn n_blank_precision_nvalue_fires_inside_function_call() {
+    clear_state();
+    let result =
+      interpret("N[b,_]=1.2`3; N[F[b, 2/9], 5]").unwrap();
+    assert!(
+      result.starts_with("F[1.2`3., 0."),
+      "expected b → 1.2\\`3 substitution, got: {}",
+      result
+    );
+  }
+
   // Regression (mathics test_numbers.py:225): a list of values where
   // one carries an explicit accuracy tag `0.``5` (zero with accuracy
   // 5 digits) reports that accuracy as the minimum. The Integer 1 has

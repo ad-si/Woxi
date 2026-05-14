@@ -262,7 +262,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
             }
           };
           for (lhs_p, rhs) in &entries {
-            if is_machine_precision_lhs(lhs_p) {
+            if is_machine_precision_lhs(lhs_p) || is_blank_precision_lhs(lhs_p) {
               return n_eval(rhs);
             }
           }
@@ -786,7 +786,9 @@ fn n_eval_arbitrary_partial(
     // Identifier: check user-installed `N[sym, p] = value` rules. The
     // canonical LHS Wolfram stores under NValues is
     // `N[sym, {p., Infinity}]`; match on numeric `p` equal to (or below)
-    // the requested precision.
+    // the requested precision. Also fire for "any-precision" LHS shapes
+    // like `N[sym, _]` (Blank[]) or `N[sym, x_]` (Pattern[x, Blank[]]),
+    // which match every requested precision.
     Expr::Identifier(name) => {
       let nval = crate::evaluator::assignment::N_VALUES
         .with(|m| m.borrow().get(name).cloned());
@@ -797,12 +799,52 @@ fn n_eval_arbitrary_partial(
           {
             return n_eval_arbitrary(rhs, precision);
           }
+          if is_blank_precision_lhs(lhs_p) {
+            return n_eval_arbitrary(rhs, precision);
+          }
         }
       }
       Ok(expr.clone())
     }
     // Other non-numeric expressions: leave as-is
     _ => Ok(expr.clone()),
+  }
+}
+
+/// Does `lhs` have shape `N[sym, _]` (Blank[]) or `N[sym, x_]`
+/// (Pattern[name, Blank[]])? Such an LHS pattern matches *any*
+/// precision, so the corresponding NValue rule should fire on every
+/// `N[sym, p]` lookup regardless of `p`.
+fn is_blank_precision_lhs(lhs: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = lhs else {
+    return false;
+  };
+  if name != "N" || args.len() != 2 {
+    return false;
+  }
+  is_blank_pattern_expr(&args[1])
+}
+
+/// Recognise any of the Blank-style pattern shapes that match every
+/// concrete argument: `Blank[]` / `Blank[h]`, `Pattern[…, Blank[…]]`,
+/// or the AST-level `Expr::PatternSimple` / `Expr::PatternTest` etc.
+/// Plus a string-level fallback against the FullForm rendering for
+/// shapes Woxi displays as `Pattern[, Blank[]]` but stores under a
+/// different Expr variant.
+fn is_blank_pattern_expr(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name: n2, .. } if n2 == "Blank" => true,
+    Expr::FunctionCall { name: n2, args: pa }
+      if n2 == "Pattern" && pa.len() == 2 =>
+    {
+      is_blank_pattern_expr(&pa[1])
+    }
+    _ => {
+      let rendered = crate::syntax::expr_to_string(e);
+      rendered == "_"
+        || rendered.starts_with("Blank[")
+        || rendered.contains("Pattern[")
+    }
   }
 }
 
