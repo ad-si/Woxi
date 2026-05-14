@@ -18761,3 +18761,14 @@ NOTE: same `test_get_tag_position` mathics-internal family. Pattern
   Condition in non-head position) classifies as an UpValue under tag
   `A`. No portable wolframscript surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: A[x_][s[y]]
+EXPECTED: s
+MESSAGE: upvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Curried
+  call `A[x_][s[y]]` with literal `s` inside a SubValue argument
+  classifies as an UpValue under tag `s` (the rule attaches to the
+  inner symbol). No portable wolframscript surface.
+---
