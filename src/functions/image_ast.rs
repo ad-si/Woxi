@@ -859,9 +859,16 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let sharpened = dyn_img.unsharpen(sigma, 1);
       Ok(dynamic_image_to_expr(&sharpened))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Sharpen: first argument is not an Image".into(),
-    )),
+    _ => {
+      crate::emit_message(&format!(
+        "Sharpen::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "Sharpen".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
