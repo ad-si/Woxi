@@ -8,13 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: test_get_tag_position
 LINE: 12
-INPUT: s:A/;A>0
-EXPECTED: A
-MESSAGE: ownvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: test_get_tag_position
-LINE: 12
 INPUT: _A
 EXPECTED: A
 MESSAGE: downvalues
