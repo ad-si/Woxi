@@ -6448,6 +6448,20 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       })
     }
   } else {
+    // Blend[{c1, c2, ...}, weights] where weights is a list of the wrong
+    // length: wolframscript emits Blend::argl and returns the call
+    // unevaluated (with named colors expanded to RGBColor).
+    if let Expr::List(weights) = &args[1]
+      && weights.len() != n
+    {
+      let colors_expr = Expr::List(colors.clone());
+      crate::emit_message(&format!(
+        "Blend::argl: {} should be a real number or a list of non-negative numbers, which has the same length as {}.",
+        crate::syntax::expr_to_string(&args[1]),
+        crate::syntax::expr_to_string(&colors_expr),
+      ));
+      return None;
+    }
     // Blend[{c1, c2, ...}, t] — interpolation along the color list.
     // If `t` is an inexact Real, fall back to float arithmetic so the
     // resulting RGBColor components are reals, matching wolframscript.
