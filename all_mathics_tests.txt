@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/test_rules.py
-FUNCTION: test_flat_on_rules
-LINE: 143
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
-FILE: mathics/test/builtin/test_rules.py
 FUNCTION: test_default_optional_on_rules
 LINE: 188
 INPUT: str_expr

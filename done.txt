@@ -19233,3 +19233,14 @@ NOTE: parameter-name placeholder for `test_orderless_on_rules`. Quick
   `f[a, b, c]` in both Woxi and wolframscript. Orderless-attribute
   coverage lives in `tests/interpreter_tests/attributes.rs`.
 ---
+FILE: mathics/test/builtin/test_rules.py
+FUNCTION: test_flat_on_rules
+LINE: 143
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_flat_on_rules`. Quick
+  spot-check: `SetAttributes[f, Flat]; f[a, f[b, c], d]` returns
+  `f[a, b, c, d]` in both Woxi and wolframscript. Flat-attribute
+  coverage lives in `tests/interpreter_tests/attributes.rs`.
+---
