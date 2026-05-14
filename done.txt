@@ -17163,3 +17163,11 @@ EXPECTED:
 = ...
 : ...
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 136
+TYPE: >>
+INPUT: % ^ 2
+EXPECTED:
+= 9
+---
