@@ -18023,3 +18023,12 @@ NOTE: `ein` is mathics's bundled Einstein test image (615×768).
   Without the fixture, both Woxi and wolframscript leave the
   expression unevaluated. See memory `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 27
+INPUT: ImageDimensions[ImageTake[ein, -50]]
+EXPECTED: {615, 50}
+NOTE: same `ein` image-fixture limitation. Without the fixture both
+  Woxi and wolframscript leave the expression unevaluated. See memory
+  `project-mathics-image-fixtures`.
+---
