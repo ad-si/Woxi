@@ -18100,3 +18100,17 @@ NOTE: same `img` image-fixture limitation. (The extracted INPUT is
   wolframscript leave the expression unevaluated. See memory
   `project-mathics-image-fixtures`.
 ---
+FILE: mathics/test/builtin/specialfns/test_bessel.py
+FUNCTION: None
+LINE: 26
+INPUT: BesselJ[-1/2,z]
+EXPECTED: Sqrt[2] Cos[z] / (Sqrt[z] Sqrt[Pi])
+MESSAGE: BesselJ -1/2 rule
+NOTE: Woxi produces `(Sqrt[2/Pi]*Cos[z])/Sqrt[z]`, matching
+  wolframscript exactly. mathics's expected
+  `Sqrt[2] Cos[z] / (Sqrt[z] Sqrt[Pi])` is mathematically equivalent
+  (since `Sqrt[2/Pi] = Sqrt[2]/Sqrt[Pi]`), just a different surface
+  form. Existing regression test:
+  tests/interpreter_tests/math/special_functions.rs::bessel_j::
+  negative_half_order_cos_closed_form.
+---
