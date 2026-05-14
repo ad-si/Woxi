@@ -18707,3 +18707,14 @@ NOTE: same `test_get_tag_position` mathics-internal family. Pattern
   `(x_A/;u>0)[p]` (typed-blank with Condition, curried) classifies as
   a SubValue under tag `A`. No portable wolframscript surface.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: S[x_, A]
+EXPECTED: A
+MESSAGE: upvalues
+NOTE: same `test_get_tag_position` mathics-internal family. `S[x_, A]`
+  with literal `A` in a non-head position classifies as an UpValue
+  under tag `A` (the rule is attached to `A` rather than `S`). No
+  portable wolframscript surface.
+---
