@@ -16329,3 +16329,11 @@ INPUT: ColorDistance[{Red, Blue}, {Green, Yellow}, DistanceFunction -> {"CMC", "
 EXPECTED:
 = {1.0495, 1.27455}
 ---
+FILE: mathics/builtin/colors/color_directives.py
+CLASS: RGBColor
+LINE: 682
+TYPE: >>
+INPUT: RGBColor[0, 1, 0] // ToBoxes
+EXPECTED:
+= StyleBox[GraphicsBox[...], ...]
+---
