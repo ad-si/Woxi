@@ -1386,7 +1386,7 @@ Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
 TreePlot,Plot a tree graph,🚫,pure,6.0,1405
 Audio,Create an audio object,🚫,io,11.0,1406
-ColorSeparate,Separate color channels of an image,🚫,io,7.0,1409
+ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
 StringContainsQ,Tests if a string contains a substring,✅,pure,10.1,1409
 Discriminant,Polynomial discriminant via resultant,✅,pure,6.0,1410

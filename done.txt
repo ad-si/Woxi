@@ -16667,3 +16667,11 @@ INPUT: ColorQuantize[img, 6]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/colors.py
+CLASS: ColorSeparate
+LINE: 209
+TYPE: >>
+INPUT: ColorSeparate[img]
+EXPECTED:
+= ...
+---

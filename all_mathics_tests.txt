@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/colors.py
-CLASS: ColorSeparate
-LINE: 209
-TYPE: >>
-INPUT: ColorSeparate[img]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/image/colors.py
 CLASS: Colorize
 LINE: 249
 TYPE: >>

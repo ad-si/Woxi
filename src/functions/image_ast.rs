@@ -2115,6 +2115,22 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// ColorSeparate[img] — split image into channels stub. Real channel
+/// separation is not implemented yet; this stub matches wolframscript's
+/// imginv warning for non-image input.
+pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "ColorSeparate::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ColorSeparate".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// ColorQuantize[img, n] — color quantization stub. Real quantization is
 /// not implemented yet; this stub matches wolframscript's imginv warning
 /// when the first arg is not an image.
