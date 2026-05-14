@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 38
-INPUT: N[A[x_], _]/; x>0
-EXPECTED: A
-MESSAGE: nvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 42
 INPUT: (s:A[x])[t]
 EXPECTED: A
