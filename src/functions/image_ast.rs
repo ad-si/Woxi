@@ -1579,9 +1579,19 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       Ok(Expr::List(colors.into()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "DominantColors: first argument is not an Image".into(),
-    )),
+    _ => {
+      // Match wolframscript: emit DominantColors::imginv and return the
+      // call unevaluated rather than erroring out, so downstream code
+      // (e.g. failed Import chains) doesn't blow up.
+      crate::emit_message(&format!(
+        "DominantColors::imginv: Expecting an image or graphics instead of {{{}}}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "DominantColors".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

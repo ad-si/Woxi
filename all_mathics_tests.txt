@@ -1,13 +1,5 @@
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
-LINE: 310
-TYPE: >>
-INPUT: DominantColors[img]
-EXPECTED:
-= {RGBColor[0.00784314, 0.00784314, 0.0156863], RGBColor[0.996078, 0.803922, 0.721569], RGBColor[0.227451, 0.329412, 0.360784]}
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: DominantColors
 LINE: 313
 TYPE: >>
 INPUT: DominantColors[img, 3]
