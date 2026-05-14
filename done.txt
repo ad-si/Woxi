@@ -16603,3 +16603,11 @@ INPUT: Sharpen[hedy, 5]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/basic.py
+CLASS: Threshold
+LINE: 282
+TYPE: >>
+INPUT: Threshold[img]
+EXPECTED:
+= ...
+---

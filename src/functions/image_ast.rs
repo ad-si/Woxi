@@ -2101,6 +2101,26 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// Threshold[arg] — stub. Real thresholding (image / array / sound) is not
+/// implemented yet; this stub matches wolframscript's Threshold::wlist
+/// warning for non-image/array input.
+pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_array_like = matches!(
+    &args[0],
+    Expr::Image { .. } | Expr::List(_) | Expr::FunctionCall { .. }
+  );
+  if !is_array_like {
+    crate::emit_message(&format!(
+      "Threshold::wlist: Argument {} should be one of rectangular array of any depth, image, sound or sampled sound list.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Threshold".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// ImagePartition[img, n] / [img, n, d] — image tile partition stub.
 /// Real image partitioning isn't implemented yet; this stub only matches
 /// wolframscript's behavior for non-image input (emits ImagePartition::imginv

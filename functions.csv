@@ -2184,7 +2184,7 @@ EmbeddedHTML,Web embedding,🚫,None,10.0,2225
 MittagLefflerE,Special function,🚫,None,9.0,2225
 NProduct,Numerical product of a sequence,✅,none,1.0,2229
 SimpleGraph,Graph construction,🚫,None,8.0,2229
-Threshold,Image processing thresholding,🚫,None,8.0,2229
+Threshold,Image processing thresholding,✅,None,8.0,2229
 Hexahedron,3D geometric primitive,🚫,None,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
 TimeSeriesShift,Time series manipulation,🚫,None,10.0,2233

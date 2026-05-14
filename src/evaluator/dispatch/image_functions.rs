@@ -94,6 +94,9 @@ pub fn dispatch_image_functions(
     "ImagePartition" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::image_ast::image_partition_ast(args));
     }
+    "Threshold" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::threshold_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
