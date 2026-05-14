@@ -17131,3 +17131,11 @@ INPUT: ImageTake[alice, -244]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/structure.py
+CLASS: ImageTake
+LINE: 48
+TYPE: >>
+INPUT: ImageTake[alice, {40, 150}, {500, 600}]
+EXPECTED:
+= -Image-
+---
