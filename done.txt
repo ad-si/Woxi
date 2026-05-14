@@ -19318,3 +19318,15 @@ NOTE: parameter-name placeholder for `test_set_and_clear_to_fix` —
   broken. Same assignment-system territory as `test_set_and_clear`,
   covered by Woxi's existing assignment tests.
 ---
+FILE: mathics/test/builtin/intfns/test_combinatorial.py
+FUNCTION: test_combinatorial_arg_errors
+LINE: 11
+INPUT: str_expr
+EXPECTED: msgs
+MESSAGE: fail_msg
+NOTE: parameter-name placeholder for `test_combinatorial_arg_errors`
+  parametrisation. Spot-check: `Binomial[5]` (wrong arity) returns
+  unevaluated in both Woxi and wolframscript. Combinatorial-function
+  argcount handling is covered by Woxi's `arg_count.rs` dispatch
+  table.
+---
