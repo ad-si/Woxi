@@ -109,6 +109,9 @@ pub fn dispatch_image_functions(
     "GaussianFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gaussian_filter_ast(args));
     }
+    "ImageConvolve" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::image_convolve_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }

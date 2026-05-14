@@ -2128,6 +2128,22 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageTake[img, n] - take first n rows
 /// ImageTake[img, {r1, r2}] - take rows r1..r2 (1-indexed inclusive)
 /// ImageTake[img, {r1, r2}, {c1, c2}] - take rows r1..r2 and columns c1..c2
+/// ImageConvolve[img, kernel] — stub. Real convolution is not
+/// implemented; this stub matches wolframscript's imginv warning for
+/// non-image first arg.
+pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "ImageConvolve::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ImageConvolve".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// GaussianFilter[arg, sigma] — stub. Real Gaussian filtering for
 /// images/arrays/videos is not implemented yet; this stub matches
 /// wolframscript's GaussianFilter::arg1 warning for inputs that are
