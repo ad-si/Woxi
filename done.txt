@@ -19258,3 +19258,15 @@ NOTE: parameter-name placeholder for `test_default_optional_on_rules`,
   `tests/interpreter_tests/patterns.rs` and
   `tests/interpreter_tests/function_definitions.rs::default_values`.
 ---
+FILE: mathics/test/builtin/test_strings.py
+FUNCTION: test_private_doctests_characters2
+LINE: 503
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: fail_msg
+NOTE: parameter-name placeholder for `test_private_doctests_characters2`
+  — mathics's parameterised doctest harness for string/character
+  built-ins. Woxi has broad string-function coverage in
+  `tests/interpreter_tests/string.rs`. The placeholder row carries no
+  test data.
+---
