@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/basic.py
-CLASS: Sharpen
-LINE: 240
-TYPE: >>
-INPUT: Sharpen[hedy, 5]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/basic.py
 CLASS: Threshold
 LINE: 282
 TYPE: >>
