@@ -19002,3 +19002,14 @@ NOTE: SameQ row `(".2222222222222222`16", "2./9.", "True")` tests
   the parser maps `.2222222222222222\`16` to a Real with the same f64
   bits as `2./9.`). Covered by the SameQ precision-rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: .222222`5
+EXPECTED: N[2/9,4]
+MESSAGE: True
+NOTE: SameQ row `(".222222`5", "N[2/9,4]", "True")` tests
+  `.222222\`5 === N[2/9, 4]`. Both Woxi and wolframscript return True
+  — both BigFloats round to 0.2222 at min-precision 4. Covered by the
+  SameQ precision-rounding fix.
+---
