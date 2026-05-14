@@ -19188,3 +19188,14 @@ NOTE: parameter-name placeholder for `test_right_number_of_arguments`
   `src/evaluator/dispatch/arg_count.rs` and broadly covered by
   `tests/interpreter_tests/arg_count.rs`.
 ---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_nestwhile
+LINE: 17
+INPUT: str_expr
+EXPECTED: str_expected
+NOTE: parameter-name placeholder for the `test_nestwhile`
+  parametrisation. Quick spot-check: `NestWhile[#/2 &, 256, EvenQ]`
+  returns `1` in both Woxi and wolframscript. NestWhile coverage
+  lives in Woxi's `tests/interpreter_tests/function_application.rs`
+  and `tests/interpreter_tests/control_flow.rs`.
+---
