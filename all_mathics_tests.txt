@@ -1,12 +1,4 @@
 FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 124
-TYPE: >>
-INPUT: N[%]
-EXPECTED:
-= 0.125
----
-FILE: mathics/builtin/arithfns/basic.py
 CLASS: Plus
 LINE: 257
 TYPE: >>

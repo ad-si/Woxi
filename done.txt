@@ -16523,3 +16523,11 @@ INPUT: MyBoxForm[F[3]]
 EXPECTED:
 = F<ooo>
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Divide
+LINE: 124
+TYPE: >>
+INPUT: N[%]
+EXPECTED:
+= 0.125
+---
