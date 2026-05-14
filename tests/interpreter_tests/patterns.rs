@@ -637,6 +637,55 @@ mod pattern_matching {
     }
   }
 
+  mod pattern_test_infix {
+    use super::*;
+
+    // Regression (mathics test_parser.py:775): `a?b[c]` is parsed as
+    // `PatternTest[a, b][c]`, not `PatternTest[a, b[c]]`. The `?`
+    // operator binds tighter than the trailing `[args]`.
+    #[test]
+    fn bare_infix_with_trailing_call() {
+      assert_eq!(
+        interpret("ToString[FullForm[Hold[a?b[c]]]]").unwrap(),
+        "Hold[PatternTest[a, b][c]]"
+      );
+    }
+
+    #[test]
+    fn bare_infix_without_call() {
+      assert_eq!(
+        interpret("ToString[FullForm[Hold[a?b]]]").unwrap(),
+        "Hold[PatternTest[a, b]]"
+      );
+    }
+
+    #[test]
+    fn bare_infix_curried_chain() {
+      // `a?b[c][d]` → `PatternTest[a, b][c][d]`
+      assert_eq!(
+        interpret("ToString[FullForm[Hold[a?b[c][d]]]]").unwrap(),
+        "Hold[PatternTest[a, b][c][d]]"
+      );
+    }
+
+    #[test]
+    fn bare_infix_multi_arg_call() {
+      assert_eq!(
+        interpret("ToString[FullForm[Hold[a?b[c, d]]]]").unwrap(),
+        "Hold[PatternTest[a, b][c, d]]"
+      );
+    }
+
+    #[test]
+    fn bare_infix_parenthesised_rhs() {
+      // Parens around the RHS allow it to be a function call.
+      assert_eq!(
+        interpret("ToString[FullForm[Hold[a?(f[x])]]]").unwrap(),
+        "Hold[PatternTest[a, f[x]]]"
+      );
+    }
+  }
+
   mod structural_pattern {
     use super::*;
 

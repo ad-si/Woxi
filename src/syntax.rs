@@ -3232,10 +3232,55 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::PatternTest => {
-      // PatternTest: x_?test or _?test or x_Head?test or _Head?test etc.
+      // PatternTest has two alternatives:
+      //   (a) pattern form:  x_?test, _?test, x_Head?test, _Head?test, ...
+      //   (b) bare-infix form: a?b, a?b[c], a?(expr)[c], ...
+      //       — `?` binds before any trailing `[args]`, producing
+      //       PatternTest[a, b][c]. The first inner pair is a
+      //       PatternTestLhsBare in this case.
       let full = pair.as_str();
-      let mut inner = pair.into_inner();
-      // Collect children: optional PatternName, optional PatternTestHead, then test
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      if matches!(
+        inner_pairs.first().map(|p| p.as_rule()),
+        Some(Rule::PatternTestLhsBare)
+      ) {
+        let mut iter = inner_pairs.into_iter();
+        let lhs_pair = iter.next().unwrap();
+        let lhs = Expr::Identifier(lhs_pair.as_str().to_string());
+        let rhs = pair_to_expr(iter.next().unwrap());
+        let bracket_sequences: Vec<Vec<Expr>> = iter
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .map(|bracket| {
+            bracket
+              .into_inner()
+              .filter(|p| {
+                p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+              })
+              .map(pair_to_expr)
+              .collect()
+          })
+          .collect();
+        let pt = Expr::FunctionCall {
+          name: "PatternTest".to_string(),
+          args: vec![lhs, rhs].into(),
+        };
+        if bracket_sequences.is_empty() {
+          return pt;
+        }
+        let mut result = Expr::CurriedCall {
+          func: Box::new(pt),
+          args: bracket_sequences[0].clone(),
+        };
+        for args in bracket_sequences.into_iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+        return result;
+      }
+      // Pattern form (existing): optional PatternName, optional PatternTestHead, then test
+      let mut inner = inner_pairs.into_iter();
       let mut name = String::new();
       let mut head: Option<String> = None;
       let mut last = inner.next().unwrap();
@@ -3248,7 +3293,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         last = inner.next().unwrap();
       }
       let test_pair = last;
-      // Count underscores in the full text (reliable even with implicit whitespace)
       let blank_count = full.chars().filter(|&c| c == '_').count();
       let blank_type = blank_count.min(3) as u8;
       let test = pair_to_expr(test_pair);

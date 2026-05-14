@@ -497,9 +497,19 @@ ExpressionNoImplicit = {
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
 // PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
+// Plus general bare-infix form (no pattern blanks): a?b → PatternTest[a, b];
+// a?b[c] uses a trailing BracketArgs* so it parses as PatternTest[a, b][c]
+// rather than PatternTest[a, b[c]].
 // The test can be an Identifier or a parenthesized expression (e.g. anonymous function)
 PatternTestFunc = _{ Identifier | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
-PatternTest = { PatternName? ~ PatternBlanks ~ PatternTestHead? ~ "?" ~ PatternTestFunc }
+PatternTest = {
+    PatternName? ~ PatternBlanks ~ PatternTestHead? ~ "?" ~ PatternTestFunc
+  | PatternTestLhsBare ~ "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs*
+}
+// LHS for the bare-infix form: an Identifier that does NOT end with an
+// underscore — `!"_"` after Identifier ensures the pattern branch above
+// keeps ownership of cases like `x_?test`.
+PatternTestLhsBare = @{ Identifier ~ !"_" }
 PatternTestHead = { !("_") ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule

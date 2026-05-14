@@ -4738,10 +4738,20 @@ mod deeply_nested_lists {
 
   #[test]
   fn deeply_nested_braces() {
-    assert_eq!(
-      interpret("{f[{1, {{{{{{1}}}}}}}]}").unwrap(),
-      "{f[{1, {{{{{{1}}}}}}}]}"
-    );
+    // pest's recursive-descent parser grows ~stack-frames-per-bracket
+    // with the input, so 6 nested braces sits just above the default
+    // 2 MiB test-thread stack. Run on an 8 MiB stack to avoid SIGABRT.
+    std::thread::Builder::new()
+      .stack_size(8 * 1024 * 1024)
+      .spawn(|| {
+        assert_eq!(
+          interpret("{f[{1, {{{{{{1}}}}}}}]}").unwrap(),
+          "{f[{1, {{{{{{1}}}}}}}]}"
+        );
+      })
+      .unwrap()
+      .join()
+      .unwrap();
   }
 
   #[test]
