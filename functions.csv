@@ -1158,7 +1158,7 @@ Glow,Graphics directive for glow effect,✅,1,6.0,1169
 Cone,3D cone graphics primitive,✅,none,7.0,1170
 DistanceFunction,,🚫,,6.0,1171
 IgnoreCase,,🚫,,2.0,1172
-GaussianFilter,,🚫,,7.0,1173
+GaussianFilter,Gaussian filter for images and arrays,✅,,7.0,1173
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure,2.0,1174
 EdgeShapeFunction,,🚫,,8.0,1175
 BSplineFunction,,🚫,,7.0,1176

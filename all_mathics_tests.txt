@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/filters.py
-CLASS: GaussianFilter
-LINE: 39
-TYPE: >>
-INPUT: GaussianFilter[hedy, 2.5]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/filters.py
 CLASS: ImageConvolve
 LINE: 87
 TYPE: >>

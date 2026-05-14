@@ -106,6 +106,9 @@ pub fn dispatch_image_functions(
     "Colorize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::colorize_ast(args));
     }
+    "GaussianFilter" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::gaussian_filter_ast(args));
+    }
     "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
