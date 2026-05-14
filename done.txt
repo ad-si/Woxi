@@ -19372,3 +19372,14 @@ NOTE: parameter-name placeholder for `test_boxmatrix`
   Matrix-construction coverage in Woxi's
   `tests/interpreter_tests/linear_algebra.rs`.
 ---
+FILE: mathics/test/builtin/calculus/test_limit.py
+FUNCTION: test_limit
+LINE: 10
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_limit` parametrisation.
+  Spot-check: `Limit[Sin[x]/x, x -> 0]` returns `1` in both Woxi and
+  wolframscript. Limit coverage in Woxi's
+  `tests/interpreter_tests/calculus.rs`.
+---

@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/calculus/test_limit.py
-FUNCTION: test_limit
-LINE: 10
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
 LINE: 186
