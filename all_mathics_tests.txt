@@ -1,12 +1,5 @@
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1139
-TYPE: >>
-INPUT: f'''[x] /. inflections
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1211
 TYPE: >>
 INPUT: B . (RandomInteger[100] * %[[1]] + s)

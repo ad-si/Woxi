@@ -17277,3 +17277,10 @@ INPUT: f''[x] /. extremes // N
 EXPECTED:
 = {1.65086, -0.064079}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1139
+TYPE: >>
+INPUT: f'''[x] /. inflections
+EXPECTED: (none)
+---
