@@ -18549,3 +18549,14 @@ NOTE: same `test_get_tag_position` mathics-internal helper family.
   classifies as an OwnValue stored under tag `A`. No portable
   wolframscript surface — pure mathics definitions-system internal.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: s:(A/;A>0)
+EXPECTED: A
+MESSAGE: ownvalues
+NOTE: same `test_get_tag_position` mathics-internal family. Pattern
+  `s:(A/;A>0)` (named-Pattern wrapping a Condition on bare symbol A)
+  classifies as OwnValue under tag `A`. No portable wolframscript
+  surface.
+---
