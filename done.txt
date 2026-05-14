@@ -19069,3 +19069,13 @@ NOTE: duplicate of `(N[2/9, 4], .2222`3, True)` from earlier loops.
   round to 0.222 at min-precision 3) after the SameQ precision-
   rounding fix.
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: N[2/9, 4]
+EXPECTED: .22222`3
+MESSAGE: True
+NOTE: duplicate of `(N[2/9, 4], .22222`3, True)` from earlier loops.
+  All three agree on True (both round to 0.222 at min-precision 3).
+  Covered by the SameQ precision-rounding fix.
+---
