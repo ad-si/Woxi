@@ -1106,10 +1106,16 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       Ok(dynamic_image_to_expr(&resized))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "ImageResize".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      crate::emit_message(&format!(
+        "ImageResize::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageResize".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

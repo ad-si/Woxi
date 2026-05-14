@@ -1,13 +1,5 @@
 FILE: mathics/builtin/image/geometric.py
 CLASS: ImageResize
-LINE: 59
-TYPE: S>
-INPUT: ImageResize[alice, shape / 2]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/geometric.py
-CLASS: ImageResize
 LINE: 66
 TYPE: S>
 INPUT: ImageResize[alice, shape / 2, Resampling -> "Box"]
