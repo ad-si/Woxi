@@ -18955,3 +18955,14 @@ NOTE: duplicate of the First[NumericArray[…]] row handled earlier
   `project-mathics-numericarray-divergence`. Regression test:
   tests/interpreter_tests/functions.rs::first_of_numeric_array_2d_returns_row_array.
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: Last[NumericArray[{{1,2}, {3,4}}]]
+EXPECTED: <Integer64, 2>
+NOTE: duplicate of the Last[NumericArray[…]] row handled earlier
+  (line 437 in test_binary.py). Woxi matches wolframscript with
+  `NumericArray[<2>, UnsignedInteger8]`. See memory
+  `project-mathics-numericarray-divergence`. Regression test:
+  tests/interpreter_tests/functions.rs::last_of_numeric_array_2d_returns_row_array.
+---
