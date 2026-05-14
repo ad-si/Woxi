@@ -499,10 +499,7 @@ mod plus_numeric_contagion {
   #[test]
   fn real_plus_pi_times_i_numerifies_pi_only() {
     // Pi is numerified but I stays symbolic, matching wolframscript.
-    assert_eq!(
-      interpret("2.+ Pi I").unwrap(),
-      "2. + 3.141592653589793*I"
-    );
+    assert_eq!(interpret("2.+ Pi I").unwrap(), "2. + 3.141592653589793*I");
   }
 
   #[test]
@@ -522,10 +519,7 @@ mod plus_numeric_contagion {
   // symbolic part.
   #[test]
   fn real_plus_polynomial_keeps_exact_exponent() {
-    assert_eq!(
-      interpret("Plus[2., (x-3)^2]").unwrap(),
-      "2. + (-3 + x)^2"
-    );
+    assert_eq!(interpret("Plus[2., (x-3)^2]").unwrap(), "2. + (-3 + x)^2");
   }
 }
 
@@ -2403,6 +2397,15 @@ mod expand_threading {
   #[test]
   fn arccos_sqrt2_over_2() {
     assert_eq!(interpret("ArcCos[Sqrt[2]/2]").unwrap(), "Pi/4");
+  }
+
+  // Regression (mathics test_trig.py:20): `ArcCos[1/2 Sqrt[2]]` is the
+  // same value as `ArcCos[Sqrt[2]/2]`. mathics expects `1/4 Pi` (its
+  // own rendering of `Times[Rational[1,4], Pi]`); Woxi (and
+  // wolframscript) render it as `Pi/4`.
+  #[test]
+  fn arccos_half_sqrt2() {
+    assert_eq!(interpret("ArcCos[1/2 Sqrt[2]]").unwrap(), "Pi/4");
   }
 
   #[test]

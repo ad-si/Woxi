@@ -17817,3 +17817,13 @@ NOTE: same RNG-sequence divergence as line 14. mathics's expected is
   `{1, 4, 6, 8, 10, 5, 9, 2, 7, 3}`. All three are valid 10-element
   permutations of 1..10. See memory `project-rng-sequence-divergence`.
 ---
+FILE: mathics/test/builtin/numbers/test_trig.py
+FUNCTION: test_ArcCos
+LINE: 20
+INPUT: ArcCos[1/2 Sqrt[2]]
+EXPECTED: 1/4 Pi
+NOTE: Woxi produces `Pi/4`, matching wolframscript exactly. The
+  mathics expected `1/4 Pi` is the same value (`Times[Rational[1,4],
+  Pi]`) rendered with mathics's textual format. Regression test:
+  tests/interpreter_tests/arithmetic.rs::arccos_half_sqrt2.
+---
