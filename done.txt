@@ -16499,3 +16499,11 @@ EXPECTED:
 .
 .
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: MathMLForm
+LINE: 114
+TYPE: >>
+INPUT: MathMLForm[HoldForm[Sqrt[a^3]]]
+EXPECTED:
+= ...
+---

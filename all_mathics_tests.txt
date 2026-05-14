@@ -1,11 +1,3 @@
-FILE: mathics/builtin/forms/print.py
-CLASS: MathMLForm
-LINE: 114
-TYPE: >>
-INPUT: MathMLForm[HoldForm[Sqrt[a^3]]]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/forms/variables.py
 CLASS: BoxForms_
 LINE: 52
