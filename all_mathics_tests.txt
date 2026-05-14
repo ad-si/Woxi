@@ -7,12 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 275
-INPUT: x \\[Function] y
-EXPECTED: Function[x, y]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 304
 INPUT: Derivative[x][4] '
 EXPECTED: Derivative[1][Derivative[x][4]]

@@ -3279,6 +3279,16 @@ mod cases {
     );
   }
   #[test]
+  fn function_arrow_named_char() {
+    // \[Function] is wolfram's binary function-arrow operator. Right
+    // operand absorbs +, ==, ->, /; (precedence below all of these).
+    assert_case(r#"x \[Function] y"#, r#"Function[x, y]"#);
+    assert_case(r#"x \[Function] y + 1"#, r#"Function[x, y + 1]"#);
+    assert_case(r#"x \[Function] y == 1"#, r#"Function[x, y == 1]"#);
+    assert_case(r#"x \[Function] y -> 1"#, r#"Function[x, y -> 1]"#);
+    assert_case(r#"(x \[Function] x^2)[5]"#, r#"25"#);
+  }
+  #[test]
   fn ranked_max() {
     assert_case(r#"RankedMax[{482, 17, 181, -12}, 2]"#, r#"181"#);
   }

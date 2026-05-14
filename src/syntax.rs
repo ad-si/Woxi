@@ -4357,6 +4357,10 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
+    // wolframscript: \[Function] is lower than Set, Condition, and Rule —
+    // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
+    // level so its rhs stays maximally permissive.
+    "\\[Function]" | "\u{F4A1}" => 1,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
     "~~" => 8,           // StringExpression (lower than Alternatives)
@@ -4581,6 +4585,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[Conditioned]" | "\u{F3D3}" => Expr::FunctionCall {
       name: "Conditioned".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "\\[Function]" | "\u{F4A1}" => Expr::FunctionCall {
+      name: "Function".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {
