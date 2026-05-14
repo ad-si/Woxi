@@ -16281,3 +16281,11 @@ INPUT: LegendreQ[2, x]
 EXPECTED:
 = -3 x / 2 - 3 x ^ 2 Log[1 - x] / 4 + 3 x ^ 2 Log[1 + x] / 4 - Log[1 + x] / 4 + Log[1 - x] / 4
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: SphericalHarmonicY
+LINE: 270
+TYPE: >>
+INPUT: SphericalHarmonicY[3/4, 0.5, Pi/5, Pi/3]
+EXPECTED:
+= 0.254247 + 0.14679 I
+---
