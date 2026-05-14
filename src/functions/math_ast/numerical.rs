@@ -685,6 +685,13 @@ fn n_eval_arbitrary_partial(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
+  // A machine-precision Real already carries the maximum information
+  // an f64 can hold — N cannot recover more digits from it, so leave
+  // it alone (matches wolframscript: `N[F[1.2, 2/9], $MachinePrecision]`
+  // keeps the `1.2` literal and only expands the rational `2/9`).
+  if let Expr::Real(_) = expr {
+    return Ok(expr.clone());
+  }
   // If the whole expression can be converted to BigFloat, do it
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
     let decimal = bigfloat_to_string(&result, None, rm, cc)?;

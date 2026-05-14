@@ -10,13 +10,6 @@ FUNCTION: test_eval_N
 LINE: 29
 INPUT: F[1.2, 2/9]
 EXPECTED: $MachinePrecision
-MESSAGE: F[1.2, .2222222222222222]
----
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_eval_N
-LINE: 29
-INPUT: F[1.2, 2/9]
-EXPECTED: $MachinePrecision
 MESSAGE: F[1.2, .2222222222222222`15]
 ---
 FILE: mathics/test/test_evaluators.py

@@ -101,6 +101,23 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression (mathics test_evaluators.py:29, F[1.2, 2/9]):
+  // `N[F[1.2, 2/9], $MachinePrecision]` previously expanded `1.2` to
+  // its 50-digit binary-exact decimal expansion inside the
+  // FunctionCall args. wolframscript keeps the user-entered `1.2`
+  // literal and only expands the rational `2/9` to a BigFloat.
+  // `n_eval_arbitrary_partial` now skips machine-precision Reals.
+  #[test]
+  fn n_machine_precision_inside_function_call_keeps_real() {
+    let result =
+      interpret("N[F[1.2, 2/9], $MachinePrecision]").unwrap();
+    assert!(
+      result.starts_with("F[1.2, 0."),
+      "expected `1.2` to stay machine-precision, got: {}",
+      result
+    );
+  }
+
   // Regression (mathics test_numbers.py:225): a list of values where
   // one carries an explicit accuracy tag `0.``5` (zero with accuracy
   // 5 digits) reports that accuracy as the minimum. The Integer 1 has

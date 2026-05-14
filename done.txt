@@ -18344,3 +18344,23 @@ NOTE: row from mathics's `test_eval_NValues` — internal eval test.
   detail divergence in extended decimal rendering of f64 — both are
   correct representations of the same underlying f64 value.
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_eval_N
+LINE: 29
+INPUT: F[1.2, 2/9]
+EXPECTED: $MachinePrecision
+MESSAGE: F[1.2, .2222222222222222]
+NOTE: `N[F[1.2, 2/9], $MachinePrecision]` previously expanded the
+  machine Real `1.2` inside the FunctionCall to its 50-digit binary-
+  exact decimal (`1.1999...671875`) because
+  `n_eval_arbitrary_partial` always converted Reals through the
+  BigFloat path. Added an early `Expr::Real` guard so machine Reals
+  inside symbolic function calls stay unchanged, matching
+  wolframscript (`F[1.2, 0.222...\`15.95...]`). The trailing 2/9
+  expansion still differs in digit count from wolframscript (extended
+  decimal rendering algorithm divergence) but both share the same
+  first ~16 digits — the mathics-expected `0.2222222222222222`.
+  Regression test:
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  n_machine_precision_inside_function_call_keeps_real.
+---
