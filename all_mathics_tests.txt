@@ -7,13 +7,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 43
-INPUT: (x_A/;u>0)[p]
-EXPECTED: A
-MESSAGE: subvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 47
 INPUT: S[x_, s_A/;s>0]
 EXPECTED: A
@@ -2545,6 +2538,13 @@ FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
 LINE: 42
 INPUT: (s:A[x])[t]
+EXPECTED: A
+MESSAGE: subvalues
+---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 43
+INPUT: (x_A/;u>0)[p]
 EXPECTED: A
 MESSAGE: subvalues
 ---
