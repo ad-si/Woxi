@@ -867,10 +867,7 @@ pub fn apply_curried_call(
         // order interpretation: Real, Rational, Constant, BigFloat, Complex,
         // and Integer (since `Derivative[1, 0][f]` already routed through the
         // multi-index branch above and never reaches here).
-        if name == "Derivative"
-          && func_args.len() == 1
-          && args.len() == 1
-        {
+        if name == "Derivative" && func_args.len() == 1 && args.len() == 1 {
           let arg0 = &args[0];
           let is_constant_arg = matches!(
             arg0,
@@ -894,7 +891,9 @@ pub fn apply_curried_call(
               Expr::Integer(0) => arg0.clone(),
               _ => Expr::Integer(0),
             };
-            return Ok(Expr::Function { body: Box::new(body) });
+            return Ok(Expr::Function {
+              body: Box::new(body),
+            });
           }
         }
         // Known operator-form functions: flatten curried call

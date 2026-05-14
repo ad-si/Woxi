@@ -523,11 +523,11 @@ pub fn spherical_harmonic_y_ast(
 
   // Try to get integer values for l and m
   let l_val = match &args[0] {
-    Expr::Integer(n) => Some(*n as i128),
+    Expr::Integer(n) => Some(*n),
     _ => None,
   };
   let m_val = match &args[1] {
-    Expr::Integer(n) => Some(*n as i128),
+    Expr::Integer(n) => Some(*n),
     _ => None,
   };
 
@@ -713,8 +713,8 @@ pub fn spherical_harmonic_y_ast(
     args: vec![args[2].clone()].into(),
   };
   let plm_raw = associated_legendre_p_ast(
-    &Expr::Integer(l as i128),
-    &Expr::Integer(m as i128),
+    &Expr::Integer(l),
+    &Expr::Integer(m),
     &cos_theta,
   )?;
   // Rewrite Sqrt[1 - Cos[θ]^2] → Sin[θ] in the result so the symbolic
@@ -732,7 +732,7 @@ pub fn spherical_harmonic_y_ast(
           name: "Times".to_string(),
           args: vec![
             Expr::Identifier("I".to_string()),
-            Expr::Integer(m as i128),
+            Expr::Integer(m),
             args[3].clone(),
           ]
           .into(),

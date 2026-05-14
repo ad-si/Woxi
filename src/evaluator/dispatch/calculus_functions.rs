@@ -311,8 +311,13 @@ pub fn dispatch_calculus_functions(
       // The inner Derivative reaches us flattened as
       // FunctionCall(Derivative, [n, f]) — applying Derivative[m][...]
       // to it currys to (m, FunctionCall(Derivative, [n, f])).
-      if let (Expr::Integer(m), Expr::FunctionCall { name: inner_name, args: inner_args }) =
-        (&args[0], &args[1])
+      if let (
+        Expr::Integer(m),
+        Expr::FunctionCall {
+          name: inner_name,
+          args: inner_args,
+        },
+      ) = (&args[0], &args[1])
         && inner_name == "Derivative"
         && inner_args.len() == 2
         && let Expr::Integer(n) = &inner_args[0]

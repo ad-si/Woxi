@@ -6938,10 +6938,7 @@ mod cases {
   }
   #[test]
   fn legendre_q_0_symbolic() {
-    assert_case(
-      r#"LegendreQ[0, x]"#,
-      r#"-1/2*Log[1 - x] + Log[1 + x]/2"#,
-    );
+    assert_case(r#"LegendreQ[0, x]"#, r#"-1/2*Log[1 - x] + Log[1 + x]/2"#);
   }
   #[test]
   fn legendre_q_1_symbolic() {
