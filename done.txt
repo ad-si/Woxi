@@ -17558,3 +17558,13 @@ NOTE: same mathics-vs-wolframscript divergence as line 430. Woxi and
   wolframscript both produce `NumericArray[<2,2>, UnsignedInteger8]`.
   Regression test: tests/interpreter_tests/functions.rs::tostring_numeric_array_2d
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 435
+INPUT: First[NumericArray[{{1,2}, {3,4}}]]
+EXPECTED: <Integer64, 2>
+NOTE: same mathics-vs-wolframscript divergence as line 430. Woxi and
+  wolframscript both produce `NumericArray[<2>, UnsignedInteger8]`
+  (first row as a 1-D NumericArray). Regression test:
+  tests/interpreter_tests/functions.rs::first_of_numeric_array_2d_returns_row_array
+---
