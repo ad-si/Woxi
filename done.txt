@@ -16995,3 +16995,11 @@ INPUT: Closing[ein, 2.5]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/morph.py
+CLASS: Dilation
+LINE: 69
+TYPE: >>
+INPUT: Dilation[ein, 2.5]
+EXPECTED:
+= -Image-
+---
