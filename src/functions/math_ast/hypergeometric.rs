@@ -1377,26 +1377,34 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // Numeric evaluation when at least one argument is Real and all are numeric
+  // Numeric evaluation when at least one argument is Real and all are numeric.
+  // Skip this fast-path when integer (a, b) match a symbolic closed-form
+  // pattern below — the recurrence stays exact at machine precision, while
+  // the Richardson extrapolation used for integer b loses ~3 sig figs.
   let a_val = expr_to_f64(&args[0]);
   let b_val = expr_to_f64(&args[1]);
   let z_val = expr_to_f64(&args[2]);
+
+  let symbolic_path_applies = matches!(
+    (&args[0], &args[1]),
+    (Expr::Integer(_), Expr::Integer(b)) if *b == 2 || matches!(&args[0], Expr::Integer(a) if *b == *a + 1 || *a == 1 && *b >= 2)
+  );
 
   if let (Some(a), Some(b), Some(z)) = (a_val, b_val, z_val) {
     let has_real = matches!(&args[0], Expr::Real(_))
       || matches!(&args[1], Expr::Real(_))
       || matches!(&args[2], Expr::Real(_));
-    if has_real {
+    if has_real && !symbolic_path_applies {
       return Ok(Expr::Real(hypergeometric_u_f64(a, b, z)));
     }
   }
 
-  // Special case: HypergeometricU[a, a+1, z] = z^(-a) (symbolic)
+  // Special case: HypergeometricU[a, a+1, z] = z^(-a)
   if let Expr::Integer(a) = &args[0]
     && let Expr::Integer(b) = &args[1]
     && *b == *a + 1
   {
-    return Ok(Expr::FunctionCall {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![args[2].clone(), Expr::Integer(-*a)].into(),
     });

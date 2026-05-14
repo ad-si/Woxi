@@ -6937,6 +6937,21 @@ mod cases {
     );
   }
   #[test]
+  fn hypergeometric_u_3_2_1_float() {
+    // HypergeometricU[3, 2, 1.] should match wolframscript at full
+    // machine precision (~16 sig figs). Previously the float fast-path
+    // used Richardson extrapolation (only ~12 sig figs); the symbolic
+    // recurrence U[a,2,z] is exact and stays accurate at z=1.0.
+    assert_case(r#"HypergeometricU[3, 2, 1.]"#, r#"0.10547895651520889"#);
+  }
+  #[test]
+  fn hypergeometric_u_a_aplus1_evaluates() {
+    // U[a, a+1, z] = z^(-a) must actually evaluate, not return
+    // unevaluated z^(-a). wolframscript: 1/25 (int) and 0.04 (real).
+    assert_case(r#"HypergeometricU[2, 3, 5]"#, r#"1/25"#);
+    assert_case(r#"HypergeometricU[2, 3, 5.]"#, r#"0.04"#);
+  }
+  #[test]
   fn gamma_overflow_huge_real() {
     // Gamma[1.*^20] overflows f64. Wolfram returns Overflow[] with
     // General::ovfl message. mathics doctest at gamma.py:381 / 383.
