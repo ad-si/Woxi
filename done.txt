@@ -16410,3 +16410,11 @@ INPUT: DominantColors[img, MinColorDistance -> 0.5]
 EXPECTED:
 = {RGBColor[0.00784314, 0.00784314, 0.0156863], RGBColor[0.996078, 0.803922, 0.721569]}
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: DominantColors
+LINE: 331
+TYPE: >>
+INPUT: DominantColors[img, ColorCoverage -> 0.15]
+EXPECTED:
+= {RGBColor[0.00784314, 0.00784314, 0.0156863]}
+---
