@@ -17515,3 +17515,9 @@ LINE: 594
 INPUT: x1 \\[LeftTee] x2
 EXPECTED: LeftTee[x1, x2]
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 595
+INPUT: x1 \\[DoubleLeftTee] x2
+EXPECTED: DoubleLeftTee[x1, x2]
+---

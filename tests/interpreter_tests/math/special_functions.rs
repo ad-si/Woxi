@@ -5103,6 +5103,52 @@ mod left_tee {
   }
 }
 
+mod double_left_tee {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("DoubleLeftTee[a, b]").unwrap(), "a \u{2AE4} b");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("DoubleLeftTee[a]").unwrap(), "DoubleLeftTee[a]");
+  }
+
+  // Regression (mathics test_parser.py:595): `x1 \[DoubleLeftTee] x2` is
+  // an infix operator that parses to `DoubleLeftTee[x1, x2]`.
+  #[test]
+  fn infix_named_character() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x1 \\[DoubleLeftTee] x2]]]").unwrap(),
+      "Hold[DoubleLeftTee[x1, x2]]"
+    );
+  }
+
+  // The Unicode ⫤ (U+2AE4) also parses as the DoubleLeftTee operator.
+  #[test]
+  fn infix_unicode_u2ae4() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a \u{2AE4} b]]]").unwrap(),
+      "Hold[DoubleLeftTee[a, b]]"
+    );
+  }
+
+  // DoubleLeftTee is left-associative:
+  // a ⫤ b ⫤ c → DoubleLeftTee[DoubleLeftTee[a, b], c].
+  #[test]
+  fn infix_left_associative() {
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[a \\[DoubleLeftTee] b \\[DoubleLeftTee] c]]]"
+      )
+      .unwrap(),
+      "Hold[DoubleLeftTee[DoubleLeftTee[a, b], c]]"
+    );
+  }
+}
+
 mod prime_zeta_p {
   use super::*;
 

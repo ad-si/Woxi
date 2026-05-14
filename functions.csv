@@ -5194,7 +5194,7 @@ ConfidenceRange,,,,9.0,5486
 CopyFunction,,,,12.2,5486
 DiggleGrattonPointProcess,,🚫,,12.2,5486
 DihedralAngle,,,,12.0,5486
-DoubleLeftTee,,,,3.0,5486
+DoubleLeftTee,Inert operator displayed with the ⫤ symbol,✅,pure,3.0,5486
 DownTee,,,,3.0,5486
 EmptySpaceF,,,,12.2,5486
 EntityUnregister,Unregisters entities from a registered entity store,✅,effectful,11.3,5486
