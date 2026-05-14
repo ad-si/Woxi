@@ -16738,3 +16738,11 @@ INPUT: ImageMultiply[i, 0.2]
 EXPECTED:
 = -Image-
 ---
+FILE: mathics/builtin/image/composition.py
+CLASS: ImageMultiply
+LINE: 111
+TYPE: >>
+INPUT: ImageMultiply[i, i]
+EXPECTED:
+= -Image-
+---

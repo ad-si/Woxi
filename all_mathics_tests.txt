@@ -1,12 +1,4 @@
 FILE: mathics/builtin/image/composition.py
-CLASS: ImageMultiply
-LINE: 111
-TYPE: >>
-INPUT: ImageMultiply[i, i]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/composition.py
 CLASS: ImageSubtract
 LINE: 133
 TYPE: >>
