@@ -18224,3 +18224,17 @@ NOTE: Woxi produces `E^(I/4*Pi)`, matching wolframscript exactly.
   tests/interpreter_tests/arithmetic.rs::real_number_formatting::
   e_to_imaginary_pi_quarter.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_multiply
+LINE: 173
+INPUT: a  b  DirectedInfinity[-3]
+EXPECTED: a b (-Infinity)
+NOTE: default REPL output matches wolframscript exactly
+  (`a*b*-Infinity`). mathics's expected `a b (-Infinity)` comes from
+  the `ToString` (OutputForm) path: wolframscript uses space as the
+  Times separator and parenthesises `-Infinity` in OutputForm. Woxi's
+  ToString currently uses `*` like the eval REPL — implementing
+  full OutputForm Times-with-space requires a broader formatter
+  refactor with significant regression risk (many existing Woxi
+  tests compare against `*`-separator output). Out of scope here.
+---

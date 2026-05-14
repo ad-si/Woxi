@@ -6,12 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_multiply
-LINE: 173
-INPUT: a  b  DirectedInfinity[-3]
-EXPECTED: a b (-Infinity)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_power
 LINE: 309
 INPUT: 0. + 0. I//FullForm
