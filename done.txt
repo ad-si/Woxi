@@ -20582,3 +20582,14 @@ NOTE: Woxi and wolframscript both produce
   ShowStringCharacters -> True, NumberMarks -> True], FullForm]`.
   Symbol case is the simplest; same family as integer/real rows.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Symbol
+FORM: InputForm
+INPUT: MakeBoxes[x//InputForm]
+EXPECTED: InterpretationBox[StyleBox["x", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[x], Editable -> True, AutoDelete -> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[StyleBox[x, ShowStringCharacters -> True,
+  NumberMarks -> True], InputForm[x], Editable -> True,
+  AutoDelete -> True]`.
+---
