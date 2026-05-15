@@ -8,13 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/builtin/specialfns/test_bessel.py
 FUNCTION: test_add
 LINE: 11
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: assert_failure_msg
----
-FILE: mathics/test/builtin/specialfns/test_bessel.py
-FUNCTION: test_add
-LINE: 11
 INPUT: BesselJ[-1/2,z]
 EXPECTED: Sqrt[2] Cos[z] / (Sqrt[z] Sqrt[Pi])
 MESSAGE: BesselJ -1/2 rule

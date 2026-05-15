@@ -19687,3 +19687,15 @@ NOTE: parameter-name placeholder for `test_table`. Spot-check
   `tests/interpreter_tests/list.rs` and
   `tests/interpreter_tests/control_flow.rs`.
 ---
+FILE: mathics/test/builtin/specialfns/test_bessel.py
+FUNCTION: test_add
+LINE: 11
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: assert_failure_msg
+NOTE: parameter-name placeholder for `test_add` in test_bessel.py.
+  Real BesselJ rows immediately follow in all_mathics_tests.txt.
+  Spot-check `BesselJ[0, 0] → 1` matches between Woxi and
+  wolframscript. BesselJ coverage in
+  `tests/interpreter_tests/math/special_functions.rs`.
+---
