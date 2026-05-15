@@ -21356,3 +21356,18 @@ NOTE: Mathics's expected `-Graphics--Graphics-…` requires a
   input order (`Dice[1, 5] + Dice[3, 2] + Dice[4]`). A separate
   Plus-argument-sort task could address that.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1276
+TYPE: #>
+INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4] // InputForm
+EXPECTED:
+= Dice[1, 2, 3, 4, 5]
+NOTE: Same family as line 1273. Mathics's expected requires the
+  prior `Dice[a___] + Dice[b___] := Dice[Sequence @@ Sort[{a,b}]]`
+  rule (which is now rejected with `SetDelayed::write` on both
+  Woxi and wolframscript because Plus is Protected — see line
+  1269 row). Without that rule, both leave the expression
+  symbolic. Plus argument-ordering still diverges (input order
+  in Woxi vs canonical order in wolframscript).
+---
