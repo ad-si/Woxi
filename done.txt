@@ -19612,3 +19612,13 @@ NOTE: `Precision[10.\`\`2]` (10 with accuracy 2) returns `3.` in both
   Woxi and wolframscript exactly — precision = accuracy + log10(|10|)
   = 2 + 1 = 3.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: 10.``20
+EXPECTED: 21.
+NOTE: `Precision[10.\`\`20]` returns `21.` in Woxi (matching mathics
+  exactly). wolframscript returns `21.000000000000004` — same
+  `accuracy + log10(10)` rounding-tail quirk. All agree to machine
+  precision.
+---
