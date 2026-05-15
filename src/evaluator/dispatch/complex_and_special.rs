@@ -3014,6 +3014,22 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
 }
 
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
+  // MakeBoxes has HoldAllComplete, so a postfix `expr // f` arg is
+  // delivered as `Expr::Postfix { expr, func }` rather than being
+  // normalised to `FunctionCall { name: f, args: [expr] }`. The
+  // form-specific branches below match on FunctionCall heads (e.g.
+  // `FullForm[…]`), so unwrap any Postfix chain first so
+  // `MakeBoxes[a-b // FullForm]` and `MakeBoxes[FullForm[a-b]]`
+  // produce identical TagBox/StyleBox output.
+  if let Expr::Postfix { expr: inner, func } = expr
+    && let Expr::Identifier(fname) = func.as_ref()
+  {
+    let normalised = Expr::FunctionCall {
+      name: fname.clone(),
+      args: vec![(**inner).clone()].into(),
+    };
+    return expr_to_box_form(&normalised);
+  }
   match expr {
     Expr::Integer(n) => Expr::String(n.to_string()),
     Expr::BigInteger(n) => Expr::String(n.to_string()),

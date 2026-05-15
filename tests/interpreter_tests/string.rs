@@ -3172,6 +3172,27 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // `MakeBoxes` is HoldAllComplete, so a postfix arg
+  // `expr // FullForm` arrives as `Expr::Postfix` rather than a
+  // FunctionCall. Without normalisation it produced a plain string
+  // `"FullForm[a - b]"`. Regression: postfix and prefix forms must
+  // yield the same TagBox/StyleBox structure (mathics
+  // makeboxes_tests.yaml `MakeBoxes[a-b//FullForm]`).
+  #[test]
+  fn make_boxes_postfix_full_form_matches_prefix() {
+    let postfix = interpret("MakeBoxes[a-b//FullForm]").unwrap();
+    let prefix = interpret("MakeBoxes[FullForm[a-b]]").unwrap();
+    assert_eq!(postfix, prefix);
+    assert!(
+      postfix.starts_with("TagBox[StyleBox["),
+      "expected TagBox/StyleBox tagged with FullForm, got: {postfix}"
+    );
+    assert!(
+      postfix.ends_with(", FullForm]"),
+      "expected trailing FullForm tag, got: {postfix}"
+    );
+  }
+
   #[test]
   fn make_boxes_sqrt() {
     assert_eq!(interpret("MakeBoxes[Sqrt[x]]").unwrap(), "SqrtBox[x]");
@@ -4168,10 +4189,7 @@ mod to_string_machine_real {
 
   #[test]
   fn to_string_pi_truncates_to_6_digits() {
-    assert_eq!(
-      interpret("ToString[3.14159265358979]").unwrap(),
-      "3.14159"
-    );
+    assert_eq!(interpret("ToString[3.14159265358979]").unwrap(), "3.14159");
   }
 
   #[test]
@@ -4211,10 +4229,7 @@ mod to_string_machine_real {
   // The default REPL output (not via ToString) keeps full precision.
   #[test]
   fn repl_output_keeps_full_precision() {
-    assert_eq!(
-      interpret("3.14159265358979").unwrap(),
-      "3.14159265358979"
-    );
+    assert_eq!(interpret("3.14159265358979").unwrap(), "3.14159265358979");
   }
 }
 

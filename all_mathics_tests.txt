@@ -35,12 +35,6 @@ Runner: pytest via test/format/test_makeboxes.py
 Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Arithmetic
-FORM: FullForm
-INPUT: MakeBoxes[a-b//FullForm]
-EXPECTED: TagBox[StyleBox[RowBox[{"Plus", "[", RowBox[{"a", ",", RowBox[{"Times", "[", RowBox[{RowBox[{"-", "1"}], ",", "b"}], "]"}]}], "]"}], System`ShowSpecialCharacters-> False, System`ShowStringCharacters -> True, System`NumberMarks -> True], FullForm]
 ---
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms

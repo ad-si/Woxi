@@ -20247,3 +20247,24 @@ NOTE: `complexplot3d` is a yaml-table key whose `expr` is a
   plot family — see [[project_woxi_complex_plot_gap]]. Same
   state as `vec-complexplot3d-poles-zeros`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Arithmetic
+FORM: FullForm
+INPUT: MakeBoxes[a-b//FullForm]
+EXPECTED: TagBox[StyleBox[RowBox[{"Plus", "[", RowBox[{"a", ",", RowBox[{"Times", "[", RowBox[{RowBox[{"-", "1"}], ",", "b"}], "]"}]}], "]"}], System`ShowSpecialCharacters-> False, System`ShowStringCharacters -> True, System`NumberMarks -> True], FullForm]
+NOTE: MakeBoxes is HoldAllComplete, so a postfix arg
+  `expr // FullForm` is delivered as `Expr::Postfix` (not a
+  FunctionCall). The form-specific MakeBoxes branches only
+  matched FunctionCall heads, so the postfix form fell through
+  to a plain-string box (`"FullForm[a - b]"`) while the prefix
+  form produced the correct TagBox/StyleBox. Fixed in
+  `expr_to_box_form` (`src/evaluator/dispatch/complex_and_special.rs`)
+  by normalising `Expr::Postfix { expr, func }` to
+  `FunctionCall { name: func, args: [expr] }` at entry.
+  Regression in
+  `tests/interpreter_tests/string.rs::make_boxes::make_boxes_postfix_full_form_matches_prefix`.
+  Output (Woxi and wolframscript): `TagBox[StyleBox[RowBox[…],
+  …], FullForm]`. The mathics-expected `System\`` context
+  prefixes are stripped by wolframscript script mode.
+---
