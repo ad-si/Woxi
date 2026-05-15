@@ -43,13 +43,6 @@ Runner: pytest
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/test_makeboxes.py
-FUNCTION: None
-LINE: 37
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: fail_msg
----
-FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: test_makeboxes_basic_forms
 LINE: 53
 INPUT: str_expr

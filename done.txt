@@ -20890,3 +20890,14 @@ NOTE: Parameter-name placeholder for parametrized
   TeXForm coverage in
   `tests/interpreter_tests/string.rs::make_boxes_tex_form_*`.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: None
+LINE: 37
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: fail_msg
+NOTE: Parameter-name placeholder for parametrized
+  `test_makeboxes.py` (line 37 is the pytest decorator).
+  MakeBoxes coverage in
+  `tests/interpreter_tests/string.rs::make_boxes`.
+---
