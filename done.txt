@@ -20411,3 +20411,16 @@ NOTE: Woxi and wolframscript both produce
   ShowStringCharacters -> True, NumberMarks -> True], FullForm]`.
   Mathics's `System\`` prefixes are stripped in both.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_negative
+FORM: InputForm
+INPUT: MakeBoxes[-14//InputForm]
+EXPECTED: InterpretationBox[StyleBox["-14", System`ShowStringCharacters -> True, System`NumberMarks -> True], InputForm[-14], Editable -> True, AutoDelete -> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[StyleBox[-14, ShowStringCharacters -> True,
+  NumberMarks -> True], InputForm[-14], Editable -> True,
+  AutoDelete -> True]`. Mathics's `System\`` prefixes and the
+  quoted `"-14"` literal are mathics-specific; wolframscript and
+  Woxi use the unquoted form.
+---
