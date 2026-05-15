@@ -28,11 +28,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: __DEFAULTS__
-EXPECTED:
-  cls: False
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-complexplot3d-poles-zeros
 EXPECTED:
   expr: ComplexPlot3D[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I}, PlotRange-> {0,4}]

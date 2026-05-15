@@ -20199,3 +20199,12 @@ NOTE: Mathics skips this row (`skip: True`). Spot-check both
   `tests/interpreter_tests/graphics.rs` and
   `tests/interpreter_tests/control_flow.rs`.
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: __DEFAULTS__
+EXPECTED:
+  cls: False
+NOTE: Same yaml-config sentinel pattern as `doc_tests.yaml`'s
+  `__DEFAULTS__`. Sets `cls: False` (no class-equality check) as
+  the default for every vec-test row in this file. Not a Wolfram
+  Language expression.
+---
