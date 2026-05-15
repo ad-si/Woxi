@@ -20496,3 +20496,13 @@ NOTE: Woxi and wolframscript both produce
   OutputForm[14], Editable -> False]`. Same family as the `-14`
   OutputForm row.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_positive
+FORM: TeXForm
+INPUT: MakeBoxes[14//TeXForm]
+EXPECTED: InterpretationBox["\"14\"", TeXForm[14], Editable -> True, AutoDelete-> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox["14", TeXForm[14], Editable -> True,
+  AutoDelete -> True]`. Same family as the `-14` TeXForm row.
+---
