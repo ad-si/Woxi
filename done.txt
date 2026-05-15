@@ -20880,3 +20880,13 @@ NOTE: Parameter-name placeholder for `test_makeboxes_mathml`.
   `-code` doesn't render MathML. MakeBoxes coverage in
   `tests/interpreter_tests/string.rs::make_boxes`.
 ---
+FILE: mathics/test/format/test_latex.py
+FUNCTION: None
+LINE: 22
+INPUT: testcase
+EXPECTED: expected
+NOTE: Parameter-name placeholder for parametrized
+  `test_latex.py`. wolframscript `-code` doesn't render LaTeX.
+  TeXForm coverage in
+  `tests/interpreter_tests/string.rs::make_boxes_tex_form_*`.
+---

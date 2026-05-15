@@ -42,12 +42,6 @@ Source: test/format/test_*.py
 Runner: pytest
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/format/test_latex.py
-FUNCTION: None
-LINE: 22
-INPUT: testcase
-EXPECTED: expected
----
 FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: None
 LINE: 37
