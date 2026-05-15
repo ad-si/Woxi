@@ -21274,3 +21274,20 @@ NOTE: Invalid Wolfram syntax. Both Woxi and wolframscript reject
   appropriately refuse to evaluate. Mathics's `: ...` is just a
   placeholder for "some error message".
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1127
+TYPE: >>
+INPUT: extremes = Solve[f'[x] == 0, x]
+EXPECTED:
+= {{x -> -Sqrt[5]}, {x -> Sqrt[5]}}
+NOTE: This row depends on a prior `f[x_] := …` definition from
+  earlier in 1-Manual.mdoc (likely something like
+  `f[x_] := x^3/3 - 5 x`). Without that context loaded, both
+  Woxi and wolframscript leave the Solve mostly unevaluated:
+  Woxi returns `Solve[Derivative[1][f][x] == 0, x]`,
+  wolframscript returns `{{x -> InverseFunction[…][0]}}` with a
+  `Solve::ifun` warning. Neither matches mathics's expected.
+  The test would pass only when run with the prior chapter's
+  setup loaded into the session.
+---

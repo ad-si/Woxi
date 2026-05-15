@@ -53,14 +53,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1127
-TYPE: >>
-INPUT: extremes = Solve[f'[x] == 0, x]
-EXPECTED:
-= {{x -> -Sqrt[5]}, {x -> Sqrt[5]}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1136
 TYPE: >>
 INPUT: inflections = Solve[f''[x] == 0, x] // N // Chop
