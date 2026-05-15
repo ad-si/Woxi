@@ -19675,3 +19675,15 @@ NOTE: parameter-name placeholder for `test_range`. Spot-check
   wolframscript. Range coverage in
   `tests/interpreter_tests/list.rs`.
 ---
+FILE: mathics/test/builtin/list/test_constructing.py
+FUNCTION: test_table
+LINE: 53
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: failure_message
+NOTE: parameter-name placeholder for `test_table`. Spot-check
+  `Table[i^2, {i, 5}] → {1, 4, 9, 16, 25}` matches between Woxi
+  and wolframscript. Table coverage in
+  `tests/interpreter_tests/list.rs` and
+  `tests/interpreter_tests/control_flow.rs`.
+---
