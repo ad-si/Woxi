@@ -36,13 +36,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Symbol
-FORM: TeXForm
-INPUT: MakeBoxes[x//TeXForm]
-EXPECTED: InterpretationBox["\"x\"", TeXForm[x], Editable -> True, AutoDelete-> True]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Numbers
 EXPRESSION: MachineReal, positive
 FORM: StandardForm
