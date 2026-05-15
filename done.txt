@@ -19760,3 +19760,14 @@ NOTE: parameter-name placeholder for `test_color_separate`. The
   Spot-check `ColorSeparate[{1,2,3}]` returns identical
   `ColorSeparate::imginv` error in Woxi and wolframscript.
 ---
+FILE: mathics/test/builtin/arithmetic/test_abs.py
+FUNCTION: test_abs
+LINE: 10
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_abs`. Spot-check
+  `Abs[-5] → 5` matches between Woxi and wolframscript. Abs
+  coverage in `tests/interpreter_tests/math/numeric.rs` and
+  `tests/interpreter_tests/arithmetic.rs`.
+---
