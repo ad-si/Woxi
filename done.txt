@@ -21011,3 +21011,11 @@ NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
   [[project_mathics_image_fixtures]] family of similar
   per-test-bench setups.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 355
+ACTUAL (expression): not[p]],              dual[eqv[p,not[p]]]
+EXPECTED (should equal): neqv[p
+NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
+  `expect[neqv[p, not[p]], dual[eqv[p, not[p]]]]`. Symbols live
+  in GS.m; not auto-loaded.
+---
