@@ -20149,3 +20149,19 @@ NOTE: `doc-013` is a mathics yaml-doc-tests identifier; the
   script mode. DiscretePlot coverage in
   `tests/interpreter_tests/plotting.rs`.
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-022
+EXPECTED:
+  expr: ListLinePlot[list]
+  skip: True
+NOTE: Mathics skips this row (`skip: True`). The expression is
+  `ListLinePlot[list]` where `list` is an undefined symbol.
+  wolframscript prints `ListLinePlot::lpn: list is not a list of
+  numbers or pairs of numbers.` and returns the call unevaluated.
+  Woxi previously threw a fatal `EvaluationError`; updated
+  `src/evaluator/dispatch/plotting.rs` to guard before
+  `quiet_plot` so the message escapes Quiet mode and the call is
+  returned symbolic. Regression in
+  `tests/interpreter_tests/graphics.rs::list_line_plot_non_list_arg_unevaluated`
+  and `…_integer_arg_unevaluated`.
+---

@@ -116,9 +116,28 @@ pub fn dispatch_plotting(
     "DiscretePlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::plot3d::discrete_plot3d_ast(args)
     })),
-    "ListLinePlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::list_plot::list_line_plot_ast(args)
-    })),
+    "ListLinePlot" if !args.is_empty() => {
+      // Match wolframscript: if the first argument doesn't evaluate
+      // to a List, emit `ListLinePlot::lpn` (outside Quiet) and
+      // return the call unevaluated. wolframscript on
+      // `ListLinePlot[list]` prints the message and leaves the
+      // expression symbolic.
+      match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
+        Ok(evaluated) if !matches!(evaluated, Expr::List(_)) => {
+          crate::emit_message(&format!(
+            "ListLinePlot::lpn: {} is not a list of numbers or pairs of numbers.",
+            crate::syntax::expr_to_string(&evaluated)
+          ));
+          Some(Ok(Expr::FunctionCall {
+            name: "ListLinePlot".to_string(),
+            args: args.to_vec().into(),
+          }))
+        }
+        _ => Some(quiet_plot(|| {
+          crate::functions::list_plot::list_line_plot_ast(args)
+        })),
+      }
+    }
     "ListLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_log_plot_ast(args)
     })),
