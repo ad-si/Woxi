@@ -245,6 +245,9 @@ script_test!(script_voronoi_diagram_index, "voronoi_diagram_index.wls");
 
 script_test!(script_entity_store, "entity_store.wls");
 
+script_test!(script_sign_predicates, "sign-predicates.wls");
+script_test!(script_euro_coins_100g_2, "euro_coins_100g_2.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);
