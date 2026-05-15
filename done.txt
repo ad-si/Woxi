@@ -20702,3 +20702,22 @@ NOTE: Added `trim_bigfloat_to_precision_for_output` that pre-walks
   `tests/interpreter_tests/string.rs::make_boxes_output_form_{truncates,pads}_precision`.
   15979/15979 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: PrecisionReal, Many Accuracy
+FORM: StandardForm
+INPUT: MakeBoxes[1.5``20]
+EXPECTED: "1.5`20.176091259055685"
+MESSAGE: In Mathics3, precision is always an integer number.
+NOTE: Woxi outputs `1.5`20.17609125905568` (14 fractional
+  digits of the precision tag), wolframscript outputs
+  `1.5`20.176091259055685` (15 fractional digits ending in
+  `…85`). The underlying value `20 + log10(1.5)` is correct
+  to within f64 representation in both; the divergence is at
+  the 16th–17th significant digit because Woxi uses f64
+  `log10` whereas wolframscript uses arbitrary-precision
+  arithmetic. See [[project_woxi_accuracy_precision_last_digit]].
+  The MakeBoxes wrapper and accuracy-form rendering work
+  correctly; only the trailing digit of the precision tag
+  differs.
+---
