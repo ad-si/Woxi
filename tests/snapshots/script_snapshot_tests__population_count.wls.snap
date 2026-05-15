@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+population count of powers of 3
+first thirty evil numbers
+first thirty odious numbers

@@ -1,0 +1,16 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, first, A partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, second, Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, third, Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, fourth, Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, fifth, FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, sixth, Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, seventh, Seven swans a-swimming,,Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, eighth, Eight maids a-milking,Seven swans a-swimming,,Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, ninth, Nine ladies dancing,Eight maids a-milking,Seven swans a-swimming,,Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, tenth, Ten lords a-leaping,Nine ladies dancing,Eight maids a-milking,Seven swans a-swimming,,Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, eleventh, Eleven pipers piping,Ten lords a-leaping,Nine ladies dancing,Eight maids a-milking,Seven swans a-swimming,,Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]
+StringForm[On the `1` day of Christmas, my true love gave to me: `2`, twelfth, Twelve drummers drumming,Eleven pipers piping,Ten lords a-leaping,Nine ladies dancing,Eight maids a-milking,Seven swans a-swimming,,Six geese a-laying,FIVE GOLDEN RINGS,Four calling birds,Three french hens,Two turtle doves,And a partridge in a pear tree.]

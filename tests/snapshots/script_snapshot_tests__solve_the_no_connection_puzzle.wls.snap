@@ -1,0 +1,13 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+StringForm[    ``   ``
+   /|\ /|\
+  / | X | \
+ /  |/ \|  \
+`` - `` - `` - ``
+ \  |\ /|  /
+  \ | X | /
+   \|/ \|/
+    ``   ``, 3, 4, 7, 1, 8, 2, 5, 6]

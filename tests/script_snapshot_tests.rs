@@ -248,6 +248,48 @@ script_test!(script_entity_store, "entity_store.wls");
 script_test!(script_sign_predicates, "sign-predicates.wls");
 script_test!(script_euro_coins_100g_2, "euro_coins_100g_2.wls");
 
+script_test!(script_anonymous_recursion, "anonymous_recursion.wls");
+script_test!(
+  script_averages_pythagorean_means,
+  "averages_pythagorean_means.wls"
+);
+script_test!(script_count_in_factors, "count_in_factors.wls");
+script_test!(script_extend_your_language, "extend_your_language.wls");
+script_test!(script_jortsort, "jortsort.wls");
+script_test!(
+  script_move_to_front_algorithm,
+  "move-to-front_algorithm.wls"
+);
+script_test!(script_negative_base_numbers, "negative_base_numbers.wls");
+script_test!(
+  script_order_disjoint_list_items,
+  "order_disjoint_list_items.wls"
+);
+script_test!(script_pernicious_numbers, "pernicious_numbers.wls");
+script_test!(script_population_count, "population_count.wls");
+script_test!(script_priority_queue, "priority_queue.wls");
+script_test!(
+  script_respond_to_an_unknown_method_call,
+  "respond_to_an_unknown_method_call.wls"
+);
+script_test!(
+  script_solve_the_no_connection_puzzle,
+  "solve_the_no_connection_puzzle.wls"
+);
+script_test!(
+  script_short_circuit_evaluation,
+  "short-circuit_evaluation.wls"
+);
+script_test!(
+  script_terminal_control_ringing_the_terminal_bell,
+  "terminal_control_ringing_the_terminal_bell.wls"
+);
+script_test!(script_top_rank_per_group, "top_rank_per_group.wls");
+script_test!(
+  script_the_twelve_days_of_christmas,
+  "the_twelve_days_of_christmas.wls"
+);
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

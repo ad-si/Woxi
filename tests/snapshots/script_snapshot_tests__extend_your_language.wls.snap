@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Second: 1
+First: 2
+Neither: 3
+Both: 4

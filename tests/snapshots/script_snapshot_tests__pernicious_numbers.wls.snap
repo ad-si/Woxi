@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+first 25 pernicious numbers
+Pernicious numbers between 888,888,877 and 888,888,888 (inclusive)

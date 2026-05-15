@@ -1,0 +1,11 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+the mat sat on the cat
+the cat sat on the mat
+C B A C B A A B C
+E B C A B D A B E
+A B
+B A
+B A B A

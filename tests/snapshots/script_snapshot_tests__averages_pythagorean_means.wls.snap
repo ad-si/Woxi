@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{Arithmetic Mean, Geometric Mean, Harmonic Mean} = {5.5, 4.528728688116765, 3.414171521474055}

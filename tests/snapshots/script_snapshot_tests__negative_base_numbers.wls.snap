@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+EncodeNegBase[10, -2]=-EncodeNegBase[10, -2]
+EncodeNegBase[146, -3]=-2*EncodeNegBase[146, -3]
+EncodeNegBase[15, -10]=-9*EncodeNegBase[15, -10]

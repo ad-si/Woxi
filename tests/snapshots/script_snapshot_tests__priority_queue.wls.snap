@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+5
+Make tea
+{{1, Solve RC tasks}, {2, Tax return}, {3, Clear drains}, {4, Feed cat}, {6, Drink tea}}

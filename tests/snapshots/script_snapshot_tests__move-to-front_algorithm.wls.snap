@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+'broood' encodes to: {1, 17, 15, 0, 0, 5} - {1, 17, 15, 0, 0, 5} decodes to: 'broood' - Input equals Output: True
+'bananaaa' encodes to: {1, 1, 13, 1, 1, 1, 0, 0} - {1, 1, 13, 1, 1, 1, 0, 0} decodes to: 'bananaaa' - Input equals Output: True
+'hiphophiphop' encodes to: {7, 8, 15, 2, 15, 2, 2, 3, 2, 2, 3, 2} - {7, 8, 15, 2, 15, 2, 2, 3, 2, 2, 3, 2} decodes to: 'hiphophiphop' - Input equals Output: True
