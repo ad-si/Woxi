@@ -21111,3 +21111,11 @@ NOTE: Gries-Schneider GS3.m row. Same `eqv[eqv[p, q], q] == p`
   pattern as line 209 — GS.m bench context, lowercase `eqv`
   defined inside the file.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS3.m
+LINE: 640
+ACTUAL (expression): q, q], p
+EXPECTED (should equal): eqv[eqv[p
+NOTE: Gries-Schneider GS3.m row (final row in this section).
+  Same `eqv[eqv[p, q], q] == p` pattern as lines 209 / 323.
+  GS.m bench context.
+---
