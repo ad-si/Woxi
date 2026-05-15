@@ -1687,7 +1687,10 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ((skip as usize) + num_digits, 0usize)
         } else {
           // p above MSD: pad zeros on the left.
-          (num_digits.saturating_sub((-skip) as usize), (-skip) as usize)
+          (
+            num_digits.saturating_sub((-skip) as usize),
+            (-skip) as usize,
+          )
         }
       } else {
         (num_digits, 0usize)
@@ -1719,8 +1722,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         None
       };
-      let max_known =
-        precision_cap.unwrap_or(effective_digits).min(effective_digits);
+      let max_known = precision_cap
+        .unwrap_or(effective_digits)
+        .min(effective_digits);
 
       // Generate up to `max_known` known digits.
       while digits.len() < max_known {
@@ -1750,10 +1754,11 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if digits.len() + leading_pad > num_digits {
           digits.truncate(num_digits - leading_pad);
         }
-        let mut digit_exprs: Vec<Expr> = std::iter::repeat_n(0i128, leading_pad)
-          .chain(digits.iter().copied())
-          .map(Expr::Integer)
-          .collect();
+        let mut digit_exprs: Vec<Expr> =
+          std::iter::repeat_n(0i128, leading_pad)
+            .chain(digits.iter().copied())
+            .map(Expr::Integer)
+            .collect();
         digit_exprs.truncate(num_digits);
         return Ok(Expr::List(
           vec![Expr::List(digit_exprs.into()), Expr::Integer(p + 1)].into(),

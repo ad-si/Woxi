@@ -487,10 +487,7 @@ mod protect_unprotect {
   #[test]
   fn n_value_assignment_allowed_despite_protected() {
     clear_state();
-    assert_eq!(
-      interpret("N[c, p_?(#>10&)] := p; N[c, 11]").unwrap(),
-      "11"
-    );
+    assert_eq!(interpret("N[c, p_?(#>10&)] := p; N[c, 11]").unwrap(), "11");
   }
 }
 

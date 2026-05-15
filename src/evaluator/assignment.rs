@@ -1701,15 +1701,9 @@ pub fn set_delayed_ast(
         .contains(&"Protected");
     if is_user_protected || is_builtin_protected {
       let (msg_tag, ret) = if is_builtin_protected && !is_user_protected {
-        (
-          "SetDelayed::write",
-          Expr::Identifier("$Failed".to_string()),
-        )
+        ("SetDelayed::write", Expr::Identifier("$Failed".to_string()))
       } else {
-        (
-          "SetDelayed::wrsym",
-          Expr::Identifier("Null".to_string()),
-        )
+        ("SetDelayed::wrsym", Expr::Identifier("Null".to_string()))
       };
       let lhs_str = crate::syntax::expr_to_string(lhs);
       crate::emit_message(&format!(

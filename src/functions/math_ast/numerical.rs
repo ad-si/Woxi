@@ -262,7 +262,8 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
             }
           };
           for (lhs_p, rhs) in &entries {
-            if is_machine_precision_lhs(lhs_p) || is_blank_precision_lhs(lhs_p) {
+            if is_machine_precision_lhs(lhs_p) || is_blank_precision_lhs(lhs_p)
+            {
               return n_eval(rhs);
             }
           }

@@ -684,8 +684,7 @@ fn contains_assumption_consumer(expr: &Expr) -> bool {
     }
     Expr::List(items) => items.iter().any(contains_assumption_consumer),
     Expr::BinaryOp { left, right, .. } => {
-      contains_assumption_consumer(left)
-        || contains_assumption_consumer(right)
+      contains_assumption_consumer(left) || contains_assumption_consumer(right)
     }
     Expr::UnaryOp { operand, .. } => contains_assumption_consumer(operand),
     Expr::Comparison { operands, .. } => {
