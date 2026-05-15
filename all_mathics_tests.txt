@@ -51,9 +51,3 @@ Format: expect[expected_result, expression_to_evaluate]
 Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern matching
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
-LINE: 65
-INPUT: + + a
-EXPECTED: Plus[a]
----

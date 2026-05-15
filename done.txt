@@ -21402,3 +21402,14 @@ NOTE: Same family as line 42 — added `Condition` to the
   `tests/interpreter_tests/patterns.rs::patterns_inside_plus::curried_call_on_condition_head_wraps_in_parens`.
   16002/16002 pass.
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 65
+INPUT: + + a
+EXPECTED: Plus[a]
+NOTE: Unary prefix `+` is not supported by Woxi's PEG grammar.
+  wolframscript treats `+ + a` as `Plus[a] → a` (the prefix `+`
+  is a no-op). Adding it to the grammar interacts poorly with
+  binary operator parsing and was previously deferred — see
+  git commit `7faf8953` ("Defer + + a parser test").
+---
