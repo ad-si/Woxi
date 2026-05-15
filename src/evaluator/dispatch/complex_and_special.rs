@@ -3868,6 +3868,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // `OutputForm[G[F[3.002]]]` to render as the formatted form
       // `G[{Formatted f, {3.002}, Standard}]`.
       let formatted_inner = apply_format_recursively(&args[0], "OutputForm");
+      // OutputForm strips the precision-tag backtick from
+      // precision-tagged BigFloats and trims the decimal
+      // representation to its precision digits — e.g.
+      // `OutputForm[3.142`3]` renders as `3.14`, not `3.142`3.`.
+      // Walk the expression and rewrite BigFloat leaves to plain
+      // Reals truncated to their stored precision before
+      // rendering.
+      let formatted_inner =
+        trim_bigfloat_to_precision_for_output(&formatted_inner);
       let output_text = crate::syntax::expr_to_output_form_2d(&formatted_inner);
       // wolframscript's MakeBoxes[OutputForm[expr]] stores the
       // rendered text as a String whose content has literal `"`
@@ -4024,6 +4033,73 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     // Default: use the string representation
     _ => box_as_output_string(expr),
+  }
+}
+
+/// Trim every BigFloat leaf in `expr` to its stored precision so
+/// the OutputForm rendering drops the trailing backtick precision
+/// tag and reports only the significant digits. For example
+/// `BigFloat("3.142", 3)` → `Real(3.14)`. Used by
+/// `MakeBoxes[OutputForm[…]]` so wolframscript's
+/// "OutputForm trims digits up to precision" behavior is honored.
+fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BigFloat(digits, prec) => {
+      // OutputForm shows exactly `prec` significant digits:
+      // truncate when the stored digits exceed it, pad with
+      // trailing zeros when they fall short. Examples:
+      //   BigFloat("3.142", 3) → "3.14"     (truncate)
+      //   BigFloat("3.14",  5) → "3.1400"   (pad)
+      let prec_target = prec.round().max(1.0) as usize;
+      let (sign, rest) = if let Some(r) = digits.strip_prefix('-') {
+        ("-", r)
+      } else {
+        ("", digits.as_str())
+      };
+      let (int_part, frac_part) = match rest.find('.') {
+        Some(dp) => (&rest[..dp], &rest[dp + 1..]),
+        None => (rest, ""),
+      };
+      let int_sig = if int_part == "0" {
+        0
+      } else {
+        int_part.trim_start_matches('0').len()
+      };
+      let frac_needed = prec_target.saturating_sub(int_sig);
+      let formatted = if frac_needed == 0 {
+        format!("{}{}.", sign, int_part)
+      } else if frac_part.len() >= frac_needed {
+        format!("{}{}.{}", sign, int_part, &frac_part[..frac_needed])
+      } else {
+        format!(
+          "{}{}.{}{}",
+          sign,
+          int_part,
+          frac_part,
+          "0".repeat(frac_needed - frac_part.len())
+        )
+      };
+      // OutputForm uses `Raw` so the rendered text is the exact
+      // padded/truncated decimal — bypasses `format_real`'s
+      // default trimming.
+      Expr::Raw(formatted)
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(trim_bigfloat_to_precision_for_output)
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(trim_bigfloat_to_precision_for_output)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    other => other.clone(),
   }
 }
 

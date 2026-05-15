@@ -20685,3 +20685,20 @@ NOTE: Woxi previously appended the backtick precision marker at
   `tests/interpreter_tests/string.rs::make_boxes_real_scientific_backtick_before_exponent`
   and `make_boxes_negative_real_scientific`. 15977/15977 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: PrecisionReal, Few Digits
+FORM: OutputForm
+INPUT: MakeBoxes[OutputForm[3.142`3]]
+EXPECTED: InterpretationBox[PaneBox["\"3.14\""], OutputForm[3.14], Editable -> False]
+MESSAGE: OutputForm trims digits up to precision.
+NOTE: Added `trim_bigfloat_to_precision_for_output` that pre-walks
+  the expression for `MakeBoxes[OutputForm[…]]` and rewrites every
+  BigFloat leaf to a `Raw` String with exactly `prec` significant
+  digits (truncating when too long, padding with trailing zeros
+  when too short). Matches wolframscript:
+  `MakeBoxes[OutputForm[3.142`3]] → "3.14"` and
+  `MakeBoxes[OutputForm[3.14`5]] → "3.1400"`. Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_output_form_{truncates,pads}_precision`.
+  15979/15979 pass.
+---

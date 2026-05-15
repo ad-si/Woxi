@@ -3212,6 +3212,29 @@ mod make_boxes {
     );
   }
 
+  // OutputForm trims (or pads) a precision-tagged BigFloat to
+  // exactly its `prec` significant digits and drops the backtick
+  // tag from the rendered text. wolframscript:
+  //   `MakeBoxes[OutputForm[3.142`3]]` → `"3.14"` (truncate)
+  //   `MakeBoxes[OutputForm[3.14`5]]`  → `"3.1400"` (pad)
+  // Regression for mathics makeboxes_tests.yaml
+  // `MakeBoxes[OutputForm[3.142`3]]` (PrecisionReal, Few Digits).
+  #[test]
+  fn make_boxes_output_form_truncates_precision() {
+    assert_eq!(
+      interpret("MakeBoxes[OutputForm[3.142`3]]").unwrap(),
+      r#"InterpretationBox[PaneBox["3.14", BaselinePosition -> Baseline], OutputForm[3.142`3.], Editable -> False]"#
+    );
+  }
+
+  #[test]
+  fn make_boxes_output_form_pads_precision() {
+    assert_eq!(
+      interpret("MakeBoxes[OutputForm[3.14`5]]").unwrap(),
+      r#"InterpretationBox[PaneBox["3.1400", BaselinePosition -> Baseline], OutputForm[3.14`5.], Editable -> False]"#
+    );
+  }
+
   // Same negative-sign decomposition rule for Real and BigFloat
   // values: `MakeBoxes[-2.5]` → `RowBox[{-, 2.5`}]`,
   // `MakeBoxes[-14.`3 // FullForm]` → `TagBox[StyleBox[RowBox[{-,
