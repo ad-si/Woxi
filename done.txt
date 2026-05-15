@@ -20348,3 +20348,16 @@ NOTE: Added `StandardForm[expr]` and `TraditionalForm[expr]`
   and `make_boxes_traditional_form_uses_parentheses`.
   15969/15969 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: FullForm
+INPUT: MakeBoxes[F[x]//FullForm]
+EXPECTED: TagBox[StyleBox[RowBox[{"F", "[", "x", "]"}], ShowSpecialCharacters-> False, System`ShowStringCharacters -> True, System`NumberMarks -> True], FullForm]
+NOTE: Woxi and wolframscript both produce
+  `TagBox[StyleBox[RowBox[{F, [, x, ]}], ShowSpecialCharacters -> False,
+  ShowStringCharacters -> True, NumberMarks -> True], FullForm]`.
+  The mathics-expected `System\`` context prefixes are stripped
+  by wolframscript and Woxi in script mode. Postfix arg flows
+  through the Postfix→FunctionCall normalisation added earlier.
+---
