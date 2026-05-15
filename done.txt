@@ -21261,3 +21261,16 @@ NOTE: `$IterationLimit = 30` inside a Block should cap the
   evaluator doesn't fully honor the recursion/iteration limit
   symbols at the DownValue level. Deferred.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 949
+TYPE: >>
+INPUT: [1 2 3]
+EXPECTED:
+: ...
+NOTE: Invalid Wolfram syntax. Both Woxi and wolframscript reject
+  with a parse error (Woxi: pest "expected SpanSep" at column 8;
+  wolframscript: `ToExpression::sntx: Invalid syntax`). Both
+  appropriately refuse to evaluate. Mathics's `: ...` is just a
+  placeholder for "some error message".
+---
