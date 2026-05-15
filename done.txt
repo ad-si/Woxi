@@ -21045,3 +21045,12 @@ NOTE: Gries-Schneider GS2.m row. `randomBooleanExpression[]` is
   fields. Without the GS.m bench loaded, no Wolfram surface to
   spot-check.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 483
+ACTUAL (expression): true]],   not[and[p, false]]
+EXPECTED (should equal): dualTheorem[or [p
+NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
+  `expect[dualTheorem[or[p, true]], not[and[p, false]]]`. GS.m
+  context (lowercase booleans / `dualTheorem` defined in the
+  test bench).
+---
