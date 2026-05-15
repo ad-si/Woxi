@@ -20130,3 +20130,12 @@ NOTE: Woxi previously emitted `x__.` shorthand for any
   `tests/interpreter_tests/patterns.rs::optional_pattern_without_default`
   (`optional_*_keeps_long_form` and `optional_*_uses_shorthand`).
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: __DEFAULTS__
+EXPECTED:
+  vec: False
+NOTE: `__DEFAULTS__` is a mathics-internal yaml-config sentinel
+  that sets the default `vec: False` (no vector-graphics
+  comparison) for all rows in this file. Not a Wolfram Language
+  expression; nothing to evaluate.
+---

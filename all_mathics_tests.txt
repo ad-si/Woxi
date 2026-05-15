@@ -28,11 +28,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: __DEFAULTS__
-EXPECTED:
-  vec: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-013
 EXPECTED:
   expr: DiscretePlot[2.5 Sqrt[k], {k, 100}]
