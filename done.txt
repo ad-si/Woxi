@@ -19835,3 +19835,14 @@ NOTE: parameter-name placeholder for `test_multiply`. Spot-check
   `Times[3, 4] → 12` matches between Woxi and wolframscript.
   Times coverage in `tests/interpreter_tests/arithmetic.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_directed_infinity_precedence
+LINE: 135
+INPUT: a  b  DirectedInfinity[-3]
+EXPECTED: a b (-Infinity)
+NOTE: Woxi and wolframscript both return `a*b*-Infinity`
+  (InputForm). Mathics's `a b (-Infinity)` is a different
+  OutputForm pretty-print. DirectedInfinity coverage in
+  `tests/interpreter_tests/math/numeric.rs` and
+  `tests/interpreter_tests/arithmetic.rs`.
+---
