@@ -20965,3 +20965,15 @@ NOTE: Parameter-name placeholder for `test_makeboxes_others_fail`.
   mathics expects to fail or error; not a Wolfram Language
   surface to spot-check directly.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_custom
+LINE: 263
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Parameter-name placeholder for `test_makeboxes_custom`.
+  User-defined `MakeBoxes[F[x_], fmt_] := …` rules already work
+  in Woxi when called with the matching 2-arg form. Spot-check
+  `MakeBoxes[F[42], StandardForm] → F[42]` matches between Woxi
+  and wolframscript.
+---

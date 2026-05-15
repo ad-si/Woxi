@@ -42,13 +42,6 @@ Source: test/format/test_*.py
 Runner: pytest
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/format/test_makeboxes.py
-FUNCTION: test_makeboxes_custom
-LINE: 263
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
 FILE: mathics/test/format/test_svg.py
 FUNCTION: None
 LINE: 42
