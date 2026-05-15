@@ -20625,3 +20625,15 @@ NOTE: Woxi and wolframscript both produce `1.4`` (machine-real
   with backtick precision mark). Positive Real, so no sign
   decomposition needed.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: MachineReal, positive
+FORM: OutputForm
+INPUT: MakeBoxes[1.4`//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"1.4\""], OutputForm[1.4], Editable -> False]
+MESSAGE: MachineReal, OutputForm.
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["1.4", BaselinePosition -> Baseline],
+  OutputForm[1.4], Editable -> False]`. OutputForm strips the
+  backtick precision mark, leaving `1.4`.
+---
