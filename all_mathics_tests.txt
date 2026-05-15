@@ -52,11 +52,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 ----------------------------------------------------------------------------------------------------
 
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 354
-ACTUAL (expression): q],              dual[implies[p, q]]
-EXPECTED (should equal): nbecause[p
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 355
 ACTUAL (expression): not[p]],              dual[eqv[p,not[p]]]
 EXPECTED (should equal): neqv[p

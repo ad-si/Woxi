@@ -21000,3 +21000,14 @@ NOTE: Gries-Schneider symbolic-logic test from the mathics
   wolframscript. Both Woxi and wolframscript leave
   `dual[or[p, q]]` symbolic without that context.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 354
+ACTUAL (expression): q],              dual[implies[p, q]]
+EXPECTED (should equal): nbecause[p
+NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
+  `expect[nbecause[p, q], dual[implies[p, q]]]`. The lowercase
+  `dual`/`implies`/`nbecause` definitions live inside GS.m and
+  aren't auto-loaded. Same context as line 353. See
+  [[project_mathics_image_fixtures]] family of similar
+  per-test-bench setups.
+---
