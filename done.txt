@@ -20097,3 +20097,11 @@ NOTE: Woxi's script-mode output
   with mathics-only renderers fall outside Woxi's
   wolframscript-parity target.
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Grid[{{a,b},{c,d}}]
+DESCRIPTION: GridBox
+NOTE: Woxi and wolframscript both produce
+  `Grid[{{a, b}, {c, d}}]` in script mode. The other formats
+  (OutputForm grid layout, LaTeX, MathML) are mathics-internal
+  format renderers; same as the previous Grid entry.
+---
