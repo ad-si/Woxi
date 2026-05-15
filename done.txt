@@ -21228,3 +21228,19 @@ NOTE: Widened `Equal`'s precision-tagged tolerance from
   `tests/interpreter_tests/math/predicates.rs::equal_accuracy_form::accuracy_four_{equal,unequal}_*`.
   15996/15996 pass.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 809
+TYPE: >>
+INPUT: Block[{$RecursionLimit = 30}, x = 2 x]
+EXPECTED:
+: Recursion depth of 30 exceeded.
+= $Aborted
+NOTE: Self-referential `Set` (`x = 2 x`) in wolframscript causes
+  the OwnValue to be re-evaluated on every later lookup,
+  expanding `2*x` → `2*(2*x)` → … until `$RecursionLimit` aborts.
+  Woxi treats the OwnValue lookup as a fixed-point substitution
+  (substitute once, stop), so `x` returns `2*x` and no recursion
+  fires. See [[project_woxi_self_referential_assignment]].
+  Substantial evaluator-semantics change; deferred.
+---
