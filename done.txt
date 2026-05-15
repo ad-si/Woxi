@@ -21136,3 +21136,20 @@ NOTE: Woxi's `lerch_phi_numeric` only converges inside the unit
   `19.3893 - 2.1346 I` also disagrees with wolframscript
   (mathics bug). Deferred to a focused special-function task.
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: ColorNegate
+LINE: 228
+TYPE: >>
+INPUT: ColorNegate[Import["ExampleData/sunflowers.jpg"]]
+EXPECTED:
+= -Image-
+NOTE: The `ExampleData/sunflowers.jpg` fixture isn't available
+  in Woxi or in our wolframscript invocation. Both emit
+  `Import::nffil` for the missing file, then operate on
+  `$Failed`. Updated Woxi's `color_negate_ast` to emit
+  `ColorNegate::imginv` and return the call unevaluated for
+  non-image arguments (previously threw a fatal evaluator
+  error) — matching wolframscript. Regression in
+  `tests/interpreter_tests/image.rs::color_negate_{non_image,failed}_returns_unevaluated`.
+  15989/15989 pass.
+---

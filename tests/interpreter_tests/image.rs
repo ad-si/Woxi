@@ -309,6 +309,29 @@ mod image_processing {
     );
   }
 
+  // wolframscript on `ColorNegate[<non-image>]` emits
+  // `ColorNegate::imginv` and leaves the call unevaluated.
+  // Regression for mathics color_operations.py
+  // `ColorNegate[Import["ExampleData/sunflowers.jpg"]]` row
+  // (where Import fails and yields `$Failed`).
+  #[test]
+  fn color_negate_non_image_returns_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorNegate[42]").unwrap(),
+      "ColorNegate[42]"
+    );
+  }
+
+  #[test]
+  fn color_negate_failed_returns_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorNegate[$Failed]").unwrap(),
+      "ColorNegate[$Failed]"
+    );
+  }
+
   #[test]
   fn binarize_default_threshold() {
     clear_state();

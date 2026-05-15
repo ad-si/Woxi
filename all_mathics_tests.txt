@@ -51,14 +51,6 @@ Format: expect[expected_result, expression_to_evaluate]
 Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern matching
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: ColorNegate
-LINE: 228
-TYPE: >>
-INPUT: ColorNegate[Import["ExampleData/sunflowers.jpg"]]
-EXPECTED:
-= -Image-
----
 FILE: mathics/builtin/forms/mathics3.py
 CLASS: SympyForm
 LINE: 72

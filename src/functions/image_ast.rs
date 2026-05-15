@@ -756,9 +756,22 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )),
       }
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ColorNegate: argument is not an Image".into(),
-    )),
+    other => {
+      // Match wolframscript: when the argument isn't a valid
+      // image / color directive, emit `ColorNegate::imginv` and
+      // return the call unevaluated instead of throwing a fatal
+      // evaluator error. wolframscript prints
+      // `<v> should be a valid image, a color directive or a
+      // list of such objects.` on `ColorNegate[$Failed]`.
+      crate::emit_message(&format!(
+        "ColorNegate::imginv: {} should be a valid image, a color directive or a list of such objects.",
+        crate::syntax::expr_to_string(other)
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ColorNegate".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
