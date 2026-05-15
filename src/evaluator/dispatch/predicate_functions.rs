@@ -456,6 +456,10 @@ pub fn dispatch_predicate_functions(
           return Some(Ok(Expr::List(result.into())));
         }
         _ => {
+          crate::emit_message(&format!(
+            "Unique::usym: {} is not a symbol or a valid symbol name.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
           return Some(Ok(Expr::FunctionCall {
             name: "Unique".to_string(),
             args: args.to_vec().into(),
@@ -481,16 +485,16 @@ pub fn dispatch_predicate_functions(
         if is_inexact { "True" } else { "False" }.to_string(),
       )));
     }
-    "Positive" | "PositiveQ" if args.len() == 1 => {
+    "Positive" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::positive_q_ast(args));
     }
-    "Negative" | "NegativeQ" if args.len() == 1 => {
+    "Negative" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::negative_q_ast(args));
     }
-    "NonPositive" | "NonPositiveQ" if args.len() == 1 => {
+    "NonPositive" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::non_positive_q_ast(args));
     }
-    "NonNegative" | "NonNegativeQ" if args.len() == 1 => {
+    "NonNegative" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::non_negative_q_ast(args));
     }
     "PrimeQ" if args.len() == 1 => {
@@ -582,6 +586,16 @@ pub fn dispatch_predicate_functions(
       return Some(crate::functions::predicate_ast::subset_q_ast(args));
     }
     "PossibleZeroQ" => {
+      if args.len() != 1 {
+        crate::emit_message(&format!(
+          "PossibleZeroQ::argx: PossibleZeroQ called with {} arguments; 1 argument is expected.",
+          args.len()
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "PossibleZeroQ".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       return Some(crate::functions::predicate_ast::possible_zero_q_ast(args));
     }
     "OptionQ" if args.len() == 1 => {
@@ -1359,15 +1373,15 @@ pub fn dispatch_predicate_functions(
           return Some(Ok(v));
         }
       }
-      // Not found: emit optnf warning (to stderr via eprintln), return name as-is
+      // Not found: emit optnf warning, return name as-is
       let fname_display = match &func_name {
         Some(n) => n.clone(),
         None => crate::syntax::expr_to_string(&func_arg),
       };
-      eprintln!(
+      crate::emit_message(&format!(
         "OptionValue::optnf: Option name {} not found in defaults for {}.",
         lookup_key, fname_display
-      );
+      ));
       return Some(Ok(name_arg));
     }
     // Construct - creates function call f[a][b] etc.

@@ -16,6 +16,10 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let rule_num = match &args[0] {
     Expr::Integer(n) => *n as u8,
     _ => {
+      crate::emit_message(&format!(
+        "CellularAutomaton::nspecnl: Rule specification {} should be an Integer, a List, a pure Boolean function, a String or an Association.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
       return Ok(Expr::FunctionCall {
         name: "CellularAutomaton".to_string(),
         args: args.to_vec().into(),

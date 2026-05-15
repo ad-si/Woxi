@@ -6848,6 +6848,10 @@ pub fn byte_array_to_string_ast(
     };
     return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
   }
+  crate::emit_message(&format!(
+    "ByteArrayToString::barray: {} is not a ByteArray object or {{}}.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
   Ok(Expr::FunctionCall {
     name: "ByteArrayToString".to_string(),
     args: args.to_vec().into(),

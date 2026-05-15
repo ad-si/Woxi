@@ -6333,6 +6333,10 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
         } else {
           expr.clone()
         };
+        crate::emit_message(&format!(
+          "Insphere::indep: Insphere does not exist for {}.",
+          crate::syntax::expr_to_string(&normalized)
+        ));
         Ok(Expr::FunctionCall {
           name: "Insphere".to_string(),
           args: vec![normalized].into(),

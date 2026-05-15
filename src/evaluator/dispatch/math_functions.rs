@@ -5985,6 +5985,9 @@ fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = match data {
     Expr::List(items) => items,
     _ => {
+      crate::emit_message(
+        "Standardize::vectmat: The first argument is expected to be a vector or matrix.",
+      );
       return Ok(Expr::FunctionCall {
         name: "Standardize".to_string(),
         args: args.to_vec().into(),

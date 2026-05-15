@@ -3,6 +3,24 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+// Format a `Power::infy` warning in wolframscript's 2D layout, e.g.
+// `0^-3` renders as:
+//     "                                  -3\n\
+//      Power::infy: Infinite expression 0   encountered."
+fn format_power_infy_2d(base: &str, exp: &str) -> String {
+  const PREFIX: &str = "Power::infy: Infinite expression ";
+  let line1_width = PREFIX.len() + base.len() + exp.len();
+  let trailing_spaces = " ".repeat(exp.len() + 1);
+  format!(
+    "{:>width$}\n{}{}{}encountered.",
+    exp,
+    PREFIX,
+    base,
+    trailing_spaces,
+    width = line1_width
+  )
+}
+
 /// WeierstrassP[u, {g2, g3}] - Weierstrass elliptic function ℘(u; g₂, g₃)
 pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -22,8 +40,11 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Special case: u = 0 → ComplexInfinity (pole at origin)
+  // Special case: u = 0 → ComplexInfinity (pole at origin). wolframscript
+  // computes ℘ via 1/u² internally, so it emits a `Power::infy` warning
+  // for the 0⁻² that arises along the way.
   if is_expr_zero(u) {
+    crate::emit_message(&format_power_infy_2d("0", "-2"));
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 
@@ -63,8 +84,11 @@ pub fn weierstrass_p_prime_ast(
     }
   };
 
-  // Special case: u = 0 → ComplexInfinity (pole of order 3 at origin)
+  // Special case: u = 0 → ComplexInfinity (pole of order 3 at origin).
+  // wolframscript's ℘′ implementation hits 0⁻³ along the way, so emit the
+  // matching `Power::infy` warning.
   if is_expr_zero(u) {
+    crate::emit_message(&format_power_infy_2d("0", "-3"));
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 

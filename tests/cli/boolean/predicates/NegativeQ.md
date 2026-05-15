@@ -4,10 +4,10 @@ Tests whether a number is strictly negative.
 
 ```scrut
 $ wo 'NegativeQ[-3]'
-True
+NegativeQ[-3]
 ```
 
 ```scrut
 $ wo 'NegativeQ[0]'
-False
+NegativeQ[0]
 ```

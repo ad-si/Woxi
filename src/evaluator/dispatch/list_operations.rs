@@ -2426,6 +2426,17 @@ pub fn dispatch_list_operations(
     }
     // SequencePosition[list, sublist] — find positions of subsequence (overlapping)
     "SequencePosition" if args.len() == 2 => {
+      if !matches!(&args[0], Expr::List(_)) {
+        crate::emit_message(&format!(
+          "SequencePosition::list: List expected at position 1 in SequencePosition[{}, {}].",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "SequencePosition".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
         if sub.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
@@ -2460,6 +2471,17 @@ pub fn dispatch_list_operations(
     // SequenceCases[list, sublist] — find matching subsequences
     // Supports: plain list, Condition[list, test], Rule/RuleDelayed[list, rhs]
     "SequenceCases" if args.len() == 2 => {
+      if !matches!(&args[0], Expr::List(_)) {
+        crate::emit_message(&format!(
+          "SequenceCases::list: List expected at position 1 in SequenceCases[{}, {}].",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "SequenceCases".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       if let Expr::List(list) = &args[0] {
         // Extract the list pattern and optional replacement from
         // Condition, Rule, or RuleDelayed wrappers

@@ -478,185 +478,65 @@ mod cross {
   }
 }
 
-mod dot_product {
+// The legacy `VectorAnalysis` package functions — DotProduct, CrossProduct,
+// ScalarTripleProduct, Coordinates, SetCoordinates, CoordinatesToCartesian,
+// CoordinatesFromCartesian — are deliberately left unevaluated to match
+// wolframscript's `-code` mode behaviour, which does not load that legacy
+// package.
+mod vector_analysis_unevaluated {
   use super::*;
 
   #[test]
-  fn dot_product_integers() {
-    // Legacy VectorAnalysis spelling of Dot.
-    assert_eq!(interpret("DotProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(), "32");
-  }
-
-  #[test]
-  fn dot_product_floats() {
+  fn dot_product_stays_unevaluated() {
     assert_eq!(
-      interpret("DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]").unwrap(),
-      "0.56"
-    );
-  }
-}
-
-mod cross_product {
-  use super::*;
-
-  #[test]
-  fn cross_product_integers() {
-    // Legacy VectorAnalysis spelling of Cross.
-    assert_eq!(
-      interpret("CrossProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(),
-      "{-3, 6, -3}"
+      interpret("DotProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "DotProduct[{1, 2, 3}, {4, 5, 6}]"
     );
   }
 
   #[test]
-  fn cross_product_unit_vectors() {
+  fn cross_product_stays_unevaluated() {
     assert_eq!(
       interpret("CrossProduct[{1, 0, 0}, {0, 1, 0}]").unwrap(),
-      "{0, 0, 1}"
-    );
-  }
-}
-
-mod scalar_triple_product {
-  use super::*;
-
-  #[test]
-  fn scalar_triple_product_integers() {
-    // ScalarTripleProduct[a, b, c] = a · (b × c).
-    // For a=(-2,3,1), b=(0,4,0), c=(-1,3,3):
-    //   b × c = (12, 0, 4) and a · (12,0,4) = -24 + 0 + 4 = -20.
-    assert_eq!(
-      interpret("ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]").unwrap(),
-      "-20"
+      "CrossProduct[{1, 0, 0}, {0, 1, 0}]"
     );
   }
 
   #[test]
-  fn scalar_triple_product_floats() {
-    let result = interpret(
-      "ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]",
-    )
-    .unwrap();
-    let val: f64 = result.parse().unwrap();
-    assert!((val - (-2.79)).abs() < 1e-10);
-  }
-
-  #[test]
-  fn scalar_triple_product_symbolic() {
-    // Cyclic: ScalarTripleProduct[a, b, c] = a·(b×c) for symbolic vectors.
-    let result =
-      interpret("ScalarTripleProduct[{a, b, c}, {d, e, f}, {g, h, i}]")
-        .unwrap();
-    // Expand the determinant: a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g).
-    // We just check that the result mentions the right pieces.
-    assert!(result.contains("e*i") || result.contains("i*e"));
-    assert!(result.contains("f*h") || result.contains("h*f"));
-  }
-}
-
-// Legacy `VectorAnalysis` package: CoordinatesToCartesian /
-// CoordinatesFromCartesian for Spherical and Cylindrical systems.
-mod coordinate_conversions {
-  use super::*;
-
-  #[test]
-  fn spherical_to_cartesian_exact() {
-    // {r, θ, φ} = {2, π, 3} → {2 sin π cos 3, 2 sin π sin 3, 2 cos π}
-    // = {0, 0, -2}.
+  fn scalar_triple_product_stays_unevaluated() {
     assert_eq!(
-      interpret("CoordinatesToCartesian[{2, Pi, 3}, Spherical]").unwrap(),
-      "{0, 0, -2}"
-    );
-  }
-
-  #[test]
-  fn cylindrical_to_cartesian_exact() {
-    // {r, θ, z} = {2, π, 3} → {2 cos π, 2 sin π, 3} = {-2, 0, 3}.
-    assert_eq!(
-      interpret("CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]").unwrap(),
-      "{-2, 0, 3}"
-    );
-  }
-
-  #[test]
-  fn spherical_to_cartesian_numeric() {
-    assert_eq!(
-      interpret("CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]")
+      interpret("ScalarTripleProduct[{-2, 3, 1}, {0, 4, 0}, {-1, 3, 3}]")
         .unwrap(),
-      "{0.0798518563676219, 0.10486654429093223, 0.23564101706435286}"
+      "ScalarTripleProduct[{-2, 3, 1}, {0, 4, 0}, {-1, 3, 3}]"
     );
   }
 
   #[test]
-  fn cylindrical_to_cartesian_numeric() {
-    assert_eq!(
-      interpret("CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]")
-        .unwrap(),
-      "{0.23564101706435286, 0.13180785665838501, 0.92}"
-    );
+  fn coordinates_stays_unevaluated() {
+    assert_eq!(interpret("Coordinates[]").unwrap(), "Coordinates[]");
   }
 
   #[test]
-  fn spherical_inverse_round_trip() {
-    assert_eq!(
-      interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]").unwrap(),
-      "{2, Pi, 0}"
-    );
-  }
-
-  #[test]
-  fn cylindrical_inverse_round_trip() {
-    assert_eq!(
-      interpret("CoordinatesFromCartesian[{-2, 0, 3}, Cylindrical]").unwrap(),
-      "{2, Pi, 3}"
-    );
-  }
-
-  // Both x and y are zero ⇒ azimuth conventionally 0 even though
-  // ArcTan[0, 0] is Indeterminate. Matches `VectorAnalysis`.
-  #[test]
-  fn azimuth_zero_when_xy_both_zero() {
-    let r =
-      interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]").unwrap();
-    assert!(r.ends_with(", 0}"), "azimuth should be 0, got: {}", r);
-    let r2 =
-      interpret("CoordinatesFromCartesian[{0, 0, 5}, Cylindrical]").unwrap();
-    assert!(r2.contains(", 0,"), "azimuth should be 0, got: {}", r2);
-  }
-
-  // `Coordinates[sys]` lists the conventional symbol names from the
-  // legacy `VectorAnalysis` package. `SetCoordinates[sys]` packages them
-  // into `sys[<symbols>]`.
-  #[test]
-  fn coordinates_default_is_cartesian() {
-    assert_eq!(interpret("Coordinates[]").unwrap(), "{Xx, Yy, Zz}");
-  }
-
-  #[test]
-  fn coordinates_spherical_symbols() {
-    assert_eq!(
-      interpret("Coordinates[Spherical]").unwrap(),
-      "{Rr, Ttheta, Pphi}"
-    );
-  }
-
-  #[test]
-  fn coordinates_cylindrical_symbols() {
-    assert_eq!(
-      interpret("Coordinates[Cylindrical]").unwrap(),
-      "{Rr, Ttheta, Zz}"
-    );
-  }
-
-  #[test]
-  fn set_coordinates_returns_system_with_symbols() {
-    assert_eq!(
-      interpret("SetCoordinates[Cylindrical]").unwrap(),
-      "Cylindrical[Rr, Ttheta, Zz]"
-    );
+  fn set_coordinates_stays_unevaluated() {
     assert_eq!(
       interpret("SetCoordinates[Spherical]").unwrap(),
-      "Spherical[Rr, Ttheta, Pphi]"
+      "SetCoordinates[Spherical]"
+    );
+  }
+
+  #[test]
+  fn coordinates_to_cartesian_stays_unevaluated() {
+    assert_eq!(
+      interpret("CoordinatesToCartesian[{2, Pi, 3}, Spherical]").unwrap(),
+      "CoordinatesToCartesian[{2, Pi, 3}, Spherical]"
+    );
+  }
+
+  #[test]
+  fn coordinates_from_cartesian_stays_unevaluated() {
+    assert_eq!(
+      interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]").unwrap(),
+      "CoordinatesFromCartesian[{0, 0, -2}, Spherical]"
     );
   }
 }

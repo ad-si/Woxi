@@ -352,129 +352,11 @@ pub fn dispatch_linear_algebra_functions(
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
     // DotProduct[a, b] is the legacy VectorAnalysis spelling of Dot[a, b];
-    // CrossProduct[a, b] is the same for Cross[a, b]. wolframscript's
-    // `-code` mode leaves them unevaluated (the package isn't loaded),
-    // but the natural reduction is what mathics expects.
-    "DotProduct" if args.len() == 2 || args.len() == 3 => {
-      let dot_call = Expr::FunctionCall {
-        name: "Dot".to_string(),
-        args: vec![args[0].clone(), args[1].clone()].into(),
-      };
-      return Some(evaluate_expr_to_expr(&dot_call));
-    }
-    "CrossProduct" if args.len() == 2 => {
-      return Some(crate::functions::linear_algebra_ast::cross_ast(args));
-    }
-    // ScalarTripleProduct[a, b, c] = a · (b × c). Originally part of the
-    // legacy VectorAnalysis package — wolframscript's `-code` mode also
-    // leaves it unevaluated, so the value-level reduction here matches
-    // the mathics expectation (and is consistent with how Cross/Dot are
-    // already evaluated eagerly).
-    // Legacy VectorAnalysis package: `Coordinates[]` returns the
-    // default coordinate symbols (Cartesian), `Coordinates[sys]`
-    // returns the symbols for the named system. `SetCoordinates[sys]`
-    // returns `sys[<symbols>]`.
-    "Coordinates" if args.is_empty() => {
-      return Some(Ok(Expr::List(coordinate_symbols("Cartesian").into())));
-    }
-    "Coordinates" if args.len() == 1 => {
-      if let Expr::Identifier(s) = &args[0] {
-        return Some(Ok(Expr::List(coordinate_symbols(s).into())));
-      }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Coordinates".to_string(),
-        args: args.to_vec().into(),
-      }));
-    }
-    "SetCoordinates" if args.is_empty() => {
-      // 0-arg form reports the current default — Cartesian in Woxi.
-      return Some(Ok(Expr::FunctionCall {
-        name: "Cartesian".to_string(),
-        args: coordinate_symbols("Cartesian").into(),
-      }));
-    }
-    "SetCoordinates" if args.len() == 1 => {
-      if let Expr::Identifier(sys) = &args[0] {
-        return Some(Ok(Expr::FunctionCall {
-          name: sys.clone(),
-          args: coordinate_symbols(sys).into(),
-        }));
-      }
-      return Some(Ok(Expr::FunctionCall {
-        name: "SetCoordinates".to_string(),
-        args: args.to_vec().into(),
-      }));
-    }
-    // Legacy VectorAnalysis package: CoordinatesToCartesian /
-    // CoordinatesFromCartesian convert between coordinate systems. Default
-    // system is Cartesian (no-op), `Spherical` is {r, θ, φ}, `Cylindrical`
-    // is {r, θ, z}.
-    "CoordinatesToCartesian" if args.len() == 2 => {
-      let Expr::List(items) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "CoordinatesToCartesian".to_string(),
-          args: args.to_vec().into(),
-        }));
-      };
-      if items.len() != 3 {
-        return Some(Ok(Expr::FunctionCall {
-          name: "CoordinatesToCartesian".to_string(),
-          args: args.to_vec().into(),
-        }));
-      }
-      let system = match &args[1] {
-        Expr::Identifier(s) => s.as_str(),
-        _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "CoordinatesToCartesian".to_string(),
-            args: args.to_vec().into(),
-          }));
-        }
-      };
-      return Some(coordinates_to_cartesian(
-        &items[0], &items[1], &items[2], system,
-      ));
-    }
-    "CoordinatesFromCartesian" if args.len() == 2 => {
-      let Expr::List(items) = &args[0] else {
-        return Some(Ok(Expr::FunctionCall {
-          name: "CoordinatesFromCartesian".to_string(),
-          args: args.to_vec().into(),
-        }));
-      };
-      if items.len() != 3 {
-        return Some(Ok(Expr::FunctionCall {
-          name: "CoordinatesFromCartesian".to_string(),
-          args: args.to_vec().into(),
-        }));
-      }
-      let system = match &args[1] {
-        Expr::Identifier(s) => s.as_str(),
-        _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "CoordinatesFromCartesian".to_string(),
-            args: args.to_vec().into(),
-          }));
-        }
-      };
-      return Some(coordinates_from_cartesian(
-        &items[0], &items[1], &items[2], system,
-      ));
-    }
-    "ScalarTripleProduct" if args.len() == 3 => {
-      let cross_bc = match crate::functions::linear_algebra_ast::cross_ast(&[
-        args[1].clone(),
-        args[2].clone(),
-      ]) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-      };
-      let dot_call = Expr::FunctionCall {
-        name: "Dot".to_string(),
-        args: vec![args[0].clone(), cross_bc].into(),
-      };
-      return Some(evaluate_expr_to_expr(&dot_call));
-    }
+    // The legacy `VectorAnalysis` package functions — DotProduct,
+    // CrossProduct, ScalarTripleProduct, Coordinates, SetCoordinates,
+    // CoordinatesToCartesian, CoordinatesFromCartesian — are deliberately
+    // left unevaluated to match wolframscript's `-code` behaviour, which
+    // does not load that legacy package.
     "TensorWedge" if !args.is_empty() => {
       return Some(crate::functions::linear_algebra_ast::tensor_wedge_ast(
         args,
@@ -1768,6 +1650,14 @@ pub fn dispatch_linear_algebra_functions(
         let row2 = Expr::List(vec![neg(b), a.clone(), Expr::Integer(0)].into());
         return Some(Ok(Expr::List(vec![row0, row1, row2].into())));
       }
+      crate::emit_message(&format!(
+        "CrossMatrix::notre: The first argument {} must be a non-complex number or a list of non-complex numbers.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Some(Ok(Expr::FunctionCall {
+        name: "CrossMatrix".to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     // FourierMatrix[n] — discrete Fourier transform matrix
     // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
@@ -1860,12 +1750,13 @@ pub fn dispatch_linear_algebra_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
-    // Symmetrize[matrix] — symmetrize a square matrix: (M + M^T) / 2
-    // Wolfram returns SymmetrizedArray; we return a plain list (Normal form).
+    // Symmetrize[matrix] — symmetrize a square matrix. wolframscript returns
+    // a SymmetrizedArray whose StructuredData stores only the upper-triangle
+    // entries (positions {i, j} with i ≤ j) of (M + M^T)/2, marked with a
+    // `Symmetric[{1, 2}]` tag.
     "Symmetrize" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
-        // Check it's a square matrix of numeric values
         let mut matrix: Vec<Vec<Expr>> = Vec::new();
         let mut all_ok = true;
         for row in rows {
@@ -1881,34 +1772,65 @@ pub fn dispatch_linear_algebra_functions(
           }
         }
         if all_ok && n > 0 {
-          let mut result_rows = Vec::with_capacity(n);
+          let mut rules: Vec<Expr> = Vec::new();
           for i in 0..n {
-            let mut result_cols = Vec::with_capacity(n);
-            for j in 0..n {
-              // (M[i,j] + M[j,i]) / 2
-              let sum = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![matrix[i][j].clone(), matrix[j][i].clone()].into(),
+            for j in i..n {
+              let entry = if i == j {
+                matrix[i][j].clone()
+              } else {
+                let sum = Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![matrix[i][j].clone(), matrix[j][i].clone()].into(),
+                };
+                let half = Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![
+                    Expr::FunctionCall {
+                      name: "Rational".to_string(),
+                      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+                    },
+                    sum,
+                  ]
+                  .into(),
+                };
+                match evaluate_expr_to_expr(&half) {
+                  Ok(val) => val,
+                  Err(_) => half,
+                }
               };
-              let half = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-                  },
-                  sum,
+              let pos = Expr::List(
+                vec![
+                  Expr::Integer((i + 1) as i128),
+                  Expr::Integer((j + 1) as i128),
                 ]
                 .into(),
-              };
-              match evaluate_expr_to_expr(&half) {
-                Ok(val) => result_cols.push(val),
-                Err(_) => result_cols.push(half),
-              }
+              );
+              rules.push(Expr::FunctionCall {
+                name: "Rule".to_string(),
+                args: vec![pos, entry].into(),
+              });
             }
-            result_rows.push(Expr::List(result_cols.into()));
           }
-          return Some(Ok(Expr::List(result_rows.into())));
+          let dims = Expr::List(
+            vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
+          );
+          let symmetric_tag = Expr::FunctionCall {
+            name: "Symmetric".to_string(),
+            args: vec![Expr::List(
+              vec![Expr::Integer(1), Expr::Integer(2)].into(),
+            )]
+            .into(),
+          };
+          let inner_list =
+            Expr::List(vec![Expr::List(rules.into()), symmetric_tag].into());
+          let structured_data = Expr::FunctionCall {
+            name: "StructuredArray`StructuredData".to_string(),
+            args: vec![dims, inner_list].into(),
+          };
+          return Some(Ok(Expr::FunctionCall {
+            name: "SymmetrizedArray".to_string(),
+            args: vec![structured_data].into(),
+          }));
         }
       }
     }
@@ -2238,172 +2160,4 @@ fn binary_dissimilarity_ast(
   }
 
   Ok(crate::functions::math_ast::make_rational(num, den))
-}
-
-/// Default symbol names for each coordinate system, matching the legacy
-/// `VectorAnalysis` package: Cartesian = `{Xx, Yy, Zz}`,
-/// Spherical = `{Rr, Ttheta, Pphi}`, Cylindrical = `{Rr, Ttheta, Zz}`.
-/// Unknown systems return Cartesian (the Wolfram default).
-fn coordinate_symbols(system: &str) -> Vec<Expr> {
-  let names: [&str; 3] = match system {
-    "Spherical" => ["Rr", "Ttheta", "Pphi"],
-    "Cylindrical" => ["Rr", "Ttheta", "Zz"],
-    _ => ["Xx", "Yy", "Zz"],
-  };
-  names
-    .iter()
-    .map(|n| Expr::Identifier((*n).to_string()))
-    .collect()
-}
-
-/// Build `Sin[arg]`, `Cos[arg]`, `ArcCos[arg]`, etc. and immediately
-/// evaluate so numeric inputs give numeric output and exact symbolic
-/// inputs (`Pi`, `Pi/2`, …) reduce to their canonical form.
-fn call_eval(name: &str, arg: Expr) -> Result<Expr, InterpreterError> {
-  evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![arg].into(),
-  })
-}
-
-fn call2_eval(name: &str, a: Expr, b: Expr) -> Result<Expr, InterpreterError> {
-  evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![a, b].into(),
-  })
-}
-
-/// Convert `{r, θ, φ}` (Spherical) or `{r, θ, z}` (Cylindrical) to
-/// Cartesian `{x, y, z}`. Cartesian is identity. Returns the original
-/// expression unevaluated if `system` isn't recognised.
-fn coordinates_to_cartesian(
-  c0: &Expr,
-  c1: &Expr,
-  c2: &Expr,
-  system: &str,
-) -> Result<Expr, InterpreterError> {
-  match system {
-    "Cartesian" => {
-      Ok(Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()))
-    }
-    "Spherical" => {
-      // x = r Sin[θ] Cos[φ], y = r Sin[θ] Sin[φ], z = r Cos[θ].
-      let r = c0.clone();
-      let theta = c1.clone();
-      let phi = c2.clone();
-      let sin_theta = call_eval("Sin", theta.clone())?;
-      let cos_theta = call_eval("Cos", theta)?;
-      let sin_phi = call_eval("Sin", phi.clone())?;
-      let cos_phi = call_eval("Cos", phi)?;
-      let x = crate::functions::math_ast::times_ast(&[
-        r.clone(),
-        sin_theta.clone(),
-        cos_phi,
-      ])?;
-      let y = crate::functions::math_ast::times_ast(&[
-        r.clone(),
-        sin_theta,
-        sin_phi,
-      ])?;
-      let z = crate::functions::math_ast::times_ast(&[r, cos_theta])?;
-      Ok(Expr::List(vec![x, y, z].into()))
-    }
-    "Cylindrical" => {
-      // x = r Cos[θ], y = r Sin[θ], z = z.
-      let r = c0.clone();
-      let theta = c1.clone();
-      let z = c2.clone();
-      let cos_theta = call_eval("Cos", theta.clone())?;
-      let sin_theta = call_eval("Sin", theta)?;
-      let x = crate::functions::math_ast::times_ast(&[r.clone(), cos_theta])?;
-      let y = crate::functions::math_ast::times_ast(&[r, sin_theta])?;
-      Ok(Expr::List(vec![x, y, z].into()))
-    }
-    _ => Ok(Expr::FunctionCall {
-      name: "CoordinatesToCartesian".to_string(),
-      args: vec![
-        Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()),
-        Expr::Identifier(system.to_string()),
-      ]
-      .into(),
-    }),
-  }
-}
-
-/// Inverse of `coordinates_to_cartesian`. Spherical returns
-/// `{Sqrt[x²+y²+z²], ArcCos[z/r], ArcTan[x, y]}`; Cylindrical returns
-/// `{Sqrt[x²+y²], ArcTan[x, y], z}`.
-fn coordinates_from_cartesian(
-  c0: &Expr,
-  c1: &Expr,
-  c2: &Expr,
-  system: &str,
-) -> Result<Expr, InterpreterError> {
-  match system {
-    "Cartesian" => {
-      Ok(Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()))
-    }
-    "Spherical" => {
-      let x = c0.clone();
-      let y = c1.clone();
-      let z = c2.clone();
-      let two = Expr::Integer(2);
-      let sq = |e: &Expr| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
-        left: Box::new(e.clone()),
-        right: Box::new(two.clone()),
-      };
-      let sum_sq =
-        crate::functions::math_ast::plus_ast(&[sq(&x), sq(&y), sq(&z)])?;
-      let r = call_eval("Sqrt", sum_sq)?;
-      // ArcCos[z / r]
-      let z_over_r = crate::functions::math_ast::times_ast(&[
-        z,
-        Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
-          left: Box::new(r.clone()),
-          right: Box::new(Expr::Integer(-1)),
-        },
-      ])?;
-      let theta = call_eval("ArcCos", z_over_r)?;
-      // ArcTan[x, y] (two-arg form, y / x with quadrant correction).
-      // When both x and y are zero the point is on the z-axis and the
-      // azimuth is conventionally 0 — matching `VectorAnalysis` /
-      // wolframscript, even though `ArcTan[0, 0]` itself is
-      // Indeterminate.
-      let phi = if is_zero_expr(&x) && is_zero_expr(&y) {
-        Expr::Integer(0)
-      } else {
-        call2_eval("ArcTan", x, y)?
-      };
-      Ok(Expr::List(vec![r, theta, phi].into()))
-    }
-    "Cylindrical" => {
-      let x = c0.clone();
-      let y = c1.clone();
-      let z = c2.clone();
-      let two = Expr::Integer(2);
-      let sq = |e: &Expr| Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
-        left: Box::new(e.clone()),
-        right: Box::new(two.clone()),
-      };
-      let sum_sq = crate::functions::math_ast::plus_ast(&[sq(&x), sq(&y)])?;
-      let r = call_eval("Sqrt", sum_sq)?;
-      let theta = if is_zero_expr(&x) && is_zero_expr(&y) {
-        Expr::Integer(0)
-      } else {
-        call2_eval("ArcTan", x, y)?
-      };
-      Ok(Expr::List(vec![r, theta, z].into()))
-    }
-    _ => Ok(Expr::FunctionCall {
-      name: "CoordinatesFromCartesian".to_string(),
-      args: vec![
-        Expr::List(vec![c0.clone(), c1.clone(), c2.clone()].into()),
-        Expr::Identifier(system.to_string()),
-      ]
-      .into(),
-    }),
-  }
 }

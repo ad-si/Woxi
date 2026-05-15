@@ -4116,6 +4116,12 @@ fn minimize_single_var(
   };
 
   if !bounded {
+    let head = if maximize { "Maximize" } else { "Minimize" };
+    let kind = if maximize { "maximum" } else { "minimum" };
+    crate::emit_message(&format!(
+      "{}::natt: The {} is not attained at any point satisfying the given constraints.",
+      head, kind
+    ));
     return Ok(minimize_neg_infinity_result(&[var.to_string()], maximize));
   }
 

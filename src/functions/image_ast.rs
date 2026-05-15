@@ -550,6 +550,18 @@ pub fn pixel_value_positions_ast(
       "PixelValuePositions expects 2 or 3 arguments".into(),
     ));
   }
+  // wolframscript validates the image argument first and emits `imginv`
+  // before inspecting the target value, so do the same here.
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "PixelValuePositions::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "PixelValuePositions".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   let target = match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
     Some(v) => v,
     None => {

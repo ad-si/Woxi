@@ -1,8 +1,11 @@
 # `Share`
 
-Memory sharing optimization (no-op).
+Memory sharing optimization. wolframscript returns the number of bytes
+shared; Woxi has no shared-memory optimisation and always returns `0`. The
+return value is therefore an integer in both backends — match any digit
+sequence.
 
 ```scrut
 $ wo 'Share[]'
-0
+\d+ (regex)
 ```

@@ -4999,111 +4999,12 @@ mod cases {
   fn clean_all_2() {
     assert_case(r#"CleanAll[u];CleanAll[v]"#, r#"CleanAll[v]"#);
   }
-  #[test]
-  fn dot_product_1() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]"#,
-      r#"32"#,
-    );
-  }
-  #[test]
-  fn dot_product_2() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]"#,
-      r#"0.56"#,
-    );
-  }
-  #[test]
-  fn cross_product_1() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]"#,
-      r#"{-3, 6, -3}"#,
-    );
-  }
-  #[test]
-  fn cross_product_2() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]"#,
-      r#"{0.8999999999999999, 2.4, -0.8999999999999998}"#,
-    );
-  }
-  #[test]
-  fn scalar_triple_product_1() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]"#,
-      r#"-20"#,
-    );
-  }
-  #[test]
-  fn scalar_triple_product_2() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]"#,
-      r#"-2.7899999999999996"#,
-    );
-  }
-  #[test]
-  fn set_9() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]"#,
-      r#"{0, 0, -2}"#,
-    );
-  }
-  #[test]
-  fn coordinates_from_cartesian_1() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]"#,
-      r#"{2, Pi, 0}"#,
-    );
-  }
-  #[test]
-  fn set_10() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]"#,
-      r#"{-2, 0, 3}"#,
-    );
-  }
-  #[test]
-  fn coordinates_from_cartesian_2() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]"#,
-      r#"{2, Pi, 3}"#,
-    );
-  }
-  #[test]
-  fn coordinates_to_cartesian_1() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]"#,
-      r#"{0.23564101706435286, 0.13180785665838501, 0.92}"#,
-    );
-  }
-  #[test]
-  fn coordinates_to_cartesian_2() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]"#,
-      r#"{0.0798518563676219, 0.10486654429093223, 0.23564101706435286}"#,
-    );
-  }
-  #[test]
-  fn coordinates_1() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]; Coordinates[]"#,
-      r#"{Xx, Yy, Zz}"#,
-    );
-  }
-  #[test]
-  fn coordinates_2() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]; Coordinates[]; Coordinates[Spherical]"#,
-      r#"{Rr, Ttheta, Pphi}"#,
-    );
-  }
-  #[test]
-  fn set_coordinates() {
-    assert_case(
-      r#"Needs["VectorAnalysis`"]; DotProduct[{1,2,3}, {4,5,6}]; DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; CrossProduct[{1,2,3}, {4,5,6}]; CrossProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]; ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]; ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]; last=CoordinatesToCartesian[{2, Pi, 3}, Spherical]; CoordinatesFromCartesian[last, Spherical]; last=CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]; CoordinatesFromCartesian[last, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]; CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]; Coordinates[]; Coordinates[Spherical]; SetCoordinates[Cylindrical]"#,
-      r#"Cylindrical[Rr, Ttheta, Zz]"#,
-    );
-  }
+  // The legacy `VectorAnalysis` package functions (DotProduct, CrossProduct,
+  // ScalarTripleProduct, Coordinates, SetCoordinates, CoordinatesToCartesian,
+  // CoordinatesFromCartesian) are deliberately left unevaluated to match
+  // wolframscript's `-code` mode. The earlier sequence-style tests that
+  // expected computed values have been removed; the symbolic-unevaluated
+  // behaviour is covered in tests/interpreter_tests/linear_algebra.rs.
   #[test]
   fn expr_1() {
     // Wolframscript-matched expectation. mathics quoted the string

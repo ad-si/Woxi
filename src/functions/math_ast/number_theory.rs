@@ -3761,6 +3761,10 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if items.is_empty() {
+    crate::emit_message(&format!(
+      "FrobeniusNumber::coef: The first argument {} of FrobeniusNumber should be a nonempty list of positive integers.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
     return Ok(Expr::FunctionCall {
       name: "FrobeniusNumber".to_string(),
       args: args.to_vec().into(),
@@ -3775,6 +3779,10 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         nums.push(expr_to_i128(e).unwrap())
       }
       _ => {
+        crate::emit_message(&format!(
+          "FrobeniusNumber::coef: The first argument {} of FrobeniusNumber should be a nonempty list of positive integers.",
+          crate::syntax::expr_to_string(&args[0])
+        ));
         return Ok(Expr::FunctionCall {
           name: "FrobeniusNumber".to_string(),
           args: args.to_vec().into(),
@@ -6811,6 +6819,11 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let triangles = [(j1, j2, j3), (j1, j5, j6), (j4, j2, j6), (j4, j5, j3)];
   for (a, b, c) in triangles {
     if c < (a - b).abs() || c > a + b || (a + b + c).rem_euclid(2) != 0 {
+      crate::emit_message(&format!(
+        "SixJSymbol::tri: SixJSymbol[{}, {}] is not triangular.",
+        crate::syntax::expr_to_string(&args[0]),
+        crate::syntax::expr_to_string(&args[1])
+      ));
       return Ok(Expr::Integer(0));
     }
   }

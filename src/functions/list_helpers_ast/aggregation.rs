@@ -1046,6 +1046,9 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = match &args[0] {
     Expr::List(items) => items,
     _ => {
+      crate::emit_message(
+        "BinLists::vectmat: The first argument is expected to be a unit compatible vector or a matrix with unit compatible columns.",
+      );
       return Ok(Expr::FunctionCall {
         name: "BinLists".to_string(),
         args: args.to_vec().into(),
@@ -1251,6 +1254,10 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = match &args[0] {
     Expr::List(items) => items,
     _ => {
+      crate::emit_message(&format!(
+        "HistogramList::ldata: {} is not a valid dataset or list of datasets.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
       return Ok(Expr::FunctionCall {
         name: "HistogramList".to_string(),
         args: args.to_vec().into(),
@@ -1552,6 +1559,9 @@ pub fn clustering_components_ast(
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
+      crate::emit_message(
+        "ClusteringComponents::nosup: This type of data is not supported.",
+      );
       return Ok(Expr::FunctionCall {
         name: "ClusteringComponents".to_string(),
         args: vec![list.clone()].into(),

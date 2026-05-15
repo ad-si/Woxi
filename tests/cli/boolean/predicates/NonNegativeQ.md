@@ -4,5 +4,5 @@ Tests whether a number is `>= 0`.
 
 ```scrut
 $ wo 'NonNegativeQ[0]'
-True
+NonNegativeQ[0]
 ```

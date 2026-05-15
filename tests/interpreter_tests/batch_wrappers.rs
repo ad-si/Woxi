@@ -3610,21 +3610,20 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
-  // Symmetrize
+  // Symmetrize: wolframscript returns SymmetrizedArray with the upper
+  // triangle of (M + M^T)/2.
   #[test]
   fn symmetrize_symmetric() {
-    // Already symmetric: (M + M^T)/2 = M
     assert_eq!(
       interpret("Symmetrize[{{1, 2}, {2, 3}}]").unwrap(),
-      "{{1, 2}, {2, 3}}"
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, {{{1, 1} -> 1, {1, 2} -> 2, {2, 2} -> 3}, Symmetric[{1, 2}]}]]"
     );
   }
   #[test]
   fn symmetrize_asymmetric() {
-    // (M + M^T)/2: {{1, (2+4)/2}, {(4+2)/2, 3}} = {{1, 3}, {3, 3}}
     assert_eq!(
       interpret("Symmetrize[{{1, 2}, {4, 3}}]").unwrap(),
-      "{{1, 3}, {3, 3}}"
+      "SymmetrizedArray[StructuredArray`StructuredData[{2, 2}, {{{1, 1} -> 1, {1, 2} -> 3, {2, 2} -> 3}, Symmetric[{1, 2}]}]]"
     );
   }
 

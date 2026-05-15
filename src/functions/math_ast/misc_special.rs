@@ -222,6 +222,24 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     });
   }
+  // wolframscript emits `MeijerG::hdiv` when the upper/lower parameter
+  // arguments aren't both nested length-2 lists. Trigger the same warning
+  // at the entry point so callers like `MeijerG[1, 2, 3]` produce a
+  // matching message.
+  let upper_ok = matches!(&args[0], Expr::List(v) if v.len() == 2 && matches!(&v[0], Expr::List(_)) && matches!(&v[1], Expr::List(_)));
+  let lower_ok = matches!(&args[1], Expr::List(v) if v.len() == 2 && matches!(&v[0], Expr::List(_)) && matches!(&v[1], Expr::List(_)));
+  if !upper_ok || !lower_ok {
+    crate::emit_message(&format!(
+      "MeijerG::hdiv: MeijerG[{}, {}, {}] does not exist. Arguments are not consistent.",
+      crate::syntax::expr_to_string(&args[0]),
+      crate::syntax::expr_to_string(&args[1]),
+      crate::syntax::expr_to_string(&args[2])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "MeijerG".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
 
   // Parse upper parameters: {{a1,...,an}, {an+1,...,ap}}
   let (upper_n, upper_rest) = match &args[0] {
@@ -2289,13 +2307,12 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 1 => *n as usize,
-    Expr::Integer(_) | Expr::Real(_) => {
-      return Ok(Expr::FunctionCall {
-        name: "PerfectNumber".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
     _ => {
+      crate::emit_message(&format!(
+        "PerfectNumber::pintprm: Parameter {} at position 1 in PerfectNumber[{}] is expected to be a positive integer.",
+        crate::syntax::expr_to_string(&args[0]),
+        crate::syntax::expr_to_string(&args[0])
+      ));
       return Ok(Expr::FunctionCall {
         name: "PerfectNumber".to_string(),
         args: args.to_vec().into(),

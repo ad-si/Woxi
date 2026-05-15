@@ -5782,7 +5782,20 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
 
-  // Morphological operations: Opening, Closing, Erosion, Dilation
+  // Morphological operations: Opening, Closing, Erosion, Dilation —
+  // require a kernel argument; emit Wolfram-style `argr` when missing.
+  if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
+    && args.len() == 1
+  {
+    crate::emit_message(&format!(
+      "{}::argr: {} called with 1 argument; 2 arguments are expected.",
+      name, name
+    ));
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
     && args.len() == 2
   {
