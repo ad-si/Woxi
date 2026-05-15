@@ -49,12 +49,21 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse iterator: {t, tmin, tmax}
   let (var_name, t_min, t_max) = parse_iterator(iter_spec, "ParametricPlot")?;
 
-  // Collect curve bodies: either {fx, fy} or {{fx1,fy1}, {fx2,fy2}, ...}
+  // Collect curve bodies. Wolfram accepts either a single curve
+  // `{fx, fy}` or any number of curves `{{fx1,fy1}, {fx2,fy2}, …}`.
+  // The previous form-check required `items.len() == 2`, which
+  // rejected 3+ curves; relax it to inspect the *inner* shape so
+  // arbitrarily many curves work (regression for mathics doc-044
+  // `ParametricPlot[{{Sin[u], Cos[u]}, {0.6 Sin[u], 0.6 Cos[u]},
+  // {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, …]`).
   let curves: Vec<(&Expr, &Expr)> = match body {
-    Expr::List(items) if items.len() == 2 => {
-      // Check if it's {fx, fy} (single curve) or {{fx1,fy1}, {fx2,fy2}}
-      if matches!(&items[0], Expr::List(inner) if inner.len() == 2) {
-        // Multiple curves: {{fx1,fy1}, {fx2,fy2}, ...}
+    Expr::List(items) if !items.is_empty() => {
+      // If every item is a 2-element list, treat as multi-curve.
+      let all_pairs = items
+        .iter()
+        .all(|i| matches!(i, Expr::List(inner) if inner.len() == 2));
+      if all_pairs && items.len() != 2 {
+        // Clearly multi-curve (3+ curves).
         items
           .iter()
           .filter_map(|item| {
@@ -66,9 +75,30 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             None
           })
           .collect()
+      } else if items.len() == 2 {
+        if matches!(&items[0], Expr::List(inner) if inner.len() == 2)
+          && matches!(&items[1], Expr::List(inner) if inner.len() == 2)
+        {
+          // Ambiguous-looking `{{a,b}, {c,d}}` resolves to two curves.
+          items
+            .iter()
+            .filter_map(|item| {
+              if let Expr::List(pair) = item
+                && pair.len() == 2
+              {
+                return Some((&pair[0], &pair[1]));
+              }
+              None
+            })
+            .collect()
+        } else {
+          // Single curve: {fx, fy}
+          vec![(&items[0], &items[1])]
+        }
       } else {
-        // Single curve: {fx, fy}
-        vec![(&items[0], &items[1])]
+        return Err(InterpreterError::EvaluationError(
+          "ParametricPlot: first argument must be {fx, fy}".into(),
+        ));
       }
     }
     _ => {

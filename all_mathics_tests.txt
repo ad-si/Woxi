@@ -28,11 +28,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-044
-EXPECTED:
-  expr: ParametricPlot[{{Sin[u], Cos[u]},{0.6 Sin[u], 0.6 Cos[u]}, {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, PlotRange->1, AspectRatio->1]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-053
 EXPECTED:
   expr: Plot3D[Sin[x y] /(x y), {x, -3, 3}, {y, -3, 3}, Mesh->All]

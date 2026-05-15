@@ -20165,3 +20165,16 @@ NOTE: Mathics skips this row (`skip: True`). The expression is
   `tests/interpreter_tests/graphics.rs::list_line_plot_non_list_arg_unevaluated`
   and `…_integer_arg_unevaluated`.
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-044
+EXPECTED:
+  expr: ParametricPlot[{{Sin[u], Cos[u]},{0.6 Sin[u], 0.6 Cos[u]}, {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, PlotRange->1, AspectRatio->1]
+NOTE: Woxi previously rejected 3+ curves in ParametricPlot with
+  a fatal error because the multi-curve check required
+  `items.len() == 2` at the top level. Relaxed in
+  `src/functions/parametric_plot.rs` to treat any non-empty list
+  of 2-element lists as multi-curve. Now matches wolframscript
+  (`-Graphics-` for any curve count). Regression in
+  `tests/interpreter_tests/graphics.rs::parametric_plot_three_concentric_circles`
+  and `_two_concentric_circles`.
+---
