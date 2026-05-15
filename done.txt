@@ -20649,3 +20649,15 @@ NOTE: Woxi and wolframscript both produce `RowBox[{-, 1.4`}]`.
   negative-Real fix), and the absolute value `1.4` keeps the
   backtick precision mark in StandardForm.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: MachineReal, negative
+FORM: OutputForm
+INPUT: MakeBoxes[-1.4`//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"-1.4\""], OutputForm[-1.4], Editable -> False]
+MESSAGE: MachineReal, negative,  OutputForm.
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["-1.4", BaselinePosition -> Baseline],
+  OutputForm[-1.4], Editable -> False]`. OutputForm keeps the
+  sign inline with the number (no RowBox decomposition).
+---
