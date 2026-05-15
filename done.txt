@@ -19603,3 +19603,12 @@ NOTE: `Precision[10.0000000000000000000]` returns `21.` in both Woxi
   and wolframscript exactly — 2 integer digits + 20 fractional zeros
   = 21 significant digits.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: 10.``2
+EXPECTED: 3.
+NOTE: `Precision[10.\`\`2]` (10 with accuracy 2) returns `3.` in both
+  Woxi and wolframscript exactly — precision = accuracy + log10(|10|)
+  = 2 + 1 = 3.
+---
