@@ -21190,3 +21190,21 @@ NOTE: Promoted Colorize from a stub to a basic renderer in
   `tests/interpreter_tests/image.rs::colorize_{integer,simple,non}_matrix*`.
   15993/15993 pass.
 ---
+FILE: mathics/builtin/image/composition.py
+CLASS: WordCloud
+LINE: 166
+TYPE: >>
+INPUT: WordCloud[Range[50] -> ToString /@ Range[50]]
+EXPECTED:
+= -Image-
+NOTE: Two issues here:
+  (1) WordCloud is unimplemented in Woxi (and not produced by
+  wolframscript as `-Image-` either — wolframscript renders it
+  as `-Graphics-`). Mathics's `-Image-` expected disagrees with
+  real wolframscript.
+  (2) Woxi's parser rejects `a -> b /@ c` (precedence-mix bug);
+  explicit `Range[50] -> Map[ToString, Range[50]]` parses fine.
+  Both issues are deferred to focused tasks. wolframscript output
+  is `-Graphics-`, which is also what a future WordCloud stub
+  could produce (`-Image-` is mathics-side error).
+---
