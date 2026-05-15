@@ -20571,3 +20571,14 @@ NOTE: Added BigFloat handling to `expr_to_tex` plus a
   `tests/interpreter_tests/string.rs::make_boxes_tex_form_pads_precision_real{,_more_digits}`.
   15975/15975 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Symbol
+FORM: FullForm
+INPUT: MakeBoxes[x//FullForm]
+EXPECTED: TagBox[StyleBox["x", System`ShowSpecialCharacters -> False, System`ShowStringCharacters-> True, System`NumberMarks -> True], FullForm]
+NOTE: Woxi and wolframscript both produce
+  `TagBox[StyleBox[x, ShowSpecialCharacters -> False,
+  ShowStringCharacters -> True, NumberMarks -> True], FullForm]`.
+  Symbol case is the simplest; same family as integer/real rows.
+---
