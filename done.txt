@@ -20534,3 +20534,15 @@ NOTE: Woxi and wolframscript both produce
   AutoDelete -> True]`. InputForm keeps the precision-tagged
   literal as a single token (only FullForm decomposes the sign).
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: PrecisionReal
+FORM: OutputForm
+INPUT: MakeBoxes[-14.0//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"-14.\""], OutputForm[-14.0], Editable-> False]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["-14.", BaselinePosition -> Baseline],
+  OutputForm[-14.], Editable -> False]`. Single-layer baked-in
+  quotes (vs mathics's doubly-escaped form). `-14.0` literal
+  truncates to `-14.` in OutputForm rendering for both.
+---
