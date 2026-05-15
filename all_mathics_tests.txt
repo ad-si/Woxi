@@ -52,11 +52,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 ----------------------------------------------------------------------------------------------------
 
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 504
-ACTUAL (expression): q], eqv[q, p]]
-EXPECTED (should equal): dualTheorem[eqv[eqv[p
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 511
 ACTUAL (expression): q]], and[not[p], not[q]]]
 EXPECTED (should equal): dualTheorem[eqv[not[or[p
