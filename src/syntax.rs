@@ -8930,10 +8930,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // When func is a Function (body &) or a non-atomic expression
       // (e.g. a Plus/Times like `1 + x + y + x*y`), wrap in parens so
       // `[x]` clearly applies to the whole head, matching Wolfram's
-      // `(1 + x + y + x*y)[x]` rendering.
+      // `(1 + x + y + x*y)[x]` rendering. Pattern/Optional heads
+      // (`s:A[x]`, `x_:default`) also need parens so the `:` doesn't
+      // re-associate with the trailing `[args]` — wolframscript
+      // prints `(s:A[x])[t]`, not `s:A[x][t]`.
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
       let func_str = fmt(func);
       let needs_parens = matches!(func.as_ref(), Expr::Function { .. })
+        || matches!(func.as_ref(), Expr::PatternOptional { .. })
         || matches!(
           func.as_ref(),
           Expr::BinaryOp { .. }
@@ -8943,7 +8947,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         || matches!(
           func.as_ref(),
           Expr::FunctionCall { name, args }
-            if matches!(name.as_str(), "Plus" | "Times" | "Power")
+            if matches!(name.as_str(), "Plus" | "Times" | "Power" | "Pattern" | "Optional")
               && args.len() >= 2
         );
       let func_display = if needs_parens {

@@ -778,6 +778,15 @@ mod pattern_matching {
       assert_eq!(interpret("a_. + b_").unwrap(), "(a_.) + (b_)");
     }
 
+    // CurriedCall with a Pattern/Optional head needs surrounding
+    // parens so the `:` doesn't re-associate with `[args]` —
+    // wolframscript prints `(s:A[x])[t]`, not `s:A[x][t]`.
+    // Regression for mathics test_definitions.py line 42 row.
+    #[test]
+    fn curried_call_on_pattern_head_wraps_in_parens() {
+      assert_eq!(interpret("(s:A[x])[t]").unwrap(), "(s:A[x])[t]");
+    }
+
     #[test]
     fn pattern_optional_subtracted_wraps() {
       assert_eq!(interpret("a_. - b_").unwrap(), "(a_.) - (b_)");

@@ -21371,3 +21371,20 @@ NOTE: Same family as line 1273. Mathics's expected requires the
   symbolic. Plus argument-ordering still diverges (input order
   in Woxi vs canonical order in wolframscript).
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 42
+INPUT: (s:A[x])[t]
+EXPECTED: A
+MESSAGE: subvalues
+NOTE: Mathics's expected `A` is the SubValue tag extracted via
+  their internal definition lookup (the "value tag" for SubValue
+  storage). Both Woxi and wolframscript leave the expression
+  symbolic — no SubValue defined for `A`. Surface-level printing
+  fix: added `Pattern`/`Optional`/`PatternOptional` heads to
+  CurriedCall's `needs_parens` set in `src/syntax.rs` so
+  `(s:A[x])[t]` renders correctly (Woxi previously dropped the
+  parens, printing `s:A[x][t]`). Regression in
+  `tests/interpreter_tests/patterns.rs::patterns_inside_plus::curried_call_on_pattern_head_wraps_in_parens`.
+  16001/16001 pass.
+---

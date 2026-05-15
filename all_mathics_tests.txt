@@ -53,13 +53,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 42
-INPUT: (s:A[x])[t]
-EXPECTED: A
-MESSAGE: subvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 43
 INPUT: (x_A/;u>0)[p]
 EXPECTED: A
