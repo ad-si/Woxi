@@ -37,13 +37,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Numbers
-EXPRESSION: MachineReal, Very Large
-FORM: StandardForm
-INPUT: MakeBoxes[34.*^9]
-EXPECTED: "3.4`*^10"
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Numbers
 EXPRESSION: PrecisionReal, Few Digits
 FORM: OutputForm
 INPUT: MakeBoxes[OutputForm[3.142`3]]

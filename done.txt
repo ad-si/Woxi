@@ -20671,3 +20671,17 @@ NOTE: Woxi and wolframscript both produce `34000.`` (machine
   real, integer-valued, with backtick precision mark). The
   `34.*^3` literal evaluates to `34000.` numerically.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: MachineReal, Very Large
+FORM: StandardForm
+INPUT: MakeBoxes[34.*^9]
+EXPECTED: "3.4`*^10"
+NOTE: Woxi previously appended the backtick precision marker at
+  the very end (`3.4*^10``). Updated the Real branch in
+  `expr_to_box_form` to insert the backtick between the mantissa
+  and the `*^` exponent (`3.4`*^10`), matching wolframscript.
+  Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_real_scientific_backtick_before_exponent`
+  and `make_boxes_negative_real_scientific`. 15977/15977 pass.
+---

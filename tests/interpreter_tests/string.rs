@@ -3194,6 +3194,24 @@ mod make_boxes {
     );
   }
 
+  // Machine-real values in scientific notation place the
+  // backtick precision marker between the mantissa and the `*^`
+  // exponent (`3.4`*^10`), not at the very end (`3.4*^10``).
+  // Regression for mathics makeboxes_tests.yaml
+  // `MakeBoxes[34.*^9]` (Very Large MachineReal) row.
+  #[test]
+  fn make_boxes_real_scientific_backtick_before_exponent() {
+    assert_eq!(interpret("MakeBoxes[34.*^9]").unwrap(), "3.4`*^10");
+  }
+
+  #[test]
+  fn make_boxes_negative_real_scientific() {
+    assert_eq!(
+      interpret("MakeBoxes[-34.*^9]").unwrap(),
+      "RowBox[{-, 3.4`*^10}]"
+    );
+  }
+
   // Same negative-sign decomposition rule for Real and BigFloat
   // values: `MakeBoxes[-2.5]` → `RowBox[{-, 2.5`}]`,
   // `MakeBoxes[-14.`3 // FullForm]` → `TagBox[StyleBox[RowBox[{-,

@@ -3093,10 +3093,18 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       }
     }
     Expr::Real(f) => {
-      // Machine-precision floats render with a trailing backtick
-      // (`2.``) in MakeBoxes output. Negative values decompose
-      // into `RowBox[{"-", "abs_text"}]`, matching wolframscript.
-      let text = format!("{}`", crate::syntax::format_real(f.abs()));
+      // Machine-precision floats render with a backtick precision
+      // marker in MakeBoxes output: plain magnitude gets a
+      // trailing `` ` `` (e.g. `2.``), but scientific notation
+      // places the `` ` `` between the mantissa and the `*^`
+      // exponent (e.g. `3.4`*^10`, not `3.4*^10``). Negative
+      // values decompose into `RowBox[{"-", "abs_text"}]`.
+      let abs_text = crate::syntax::format_real(f.abs());
+      let text = if let Some(idx) = abs_text.find("*^") {
+        format!("{}`{}", &abs_text[..idx], &abs_text[idx..])
+      } else {
+        format!("{}`", abs_text)
+      };
       if *f < 0.0 {
         Expr::FunctionCall {
           name: "RowBox".to_string(),
