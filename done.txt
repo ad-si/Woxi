@@ -20869,3 +20869,14 @@ NOTE: Parameter-name placeholder for a parametrized mathics test
   Woxi already matches in many earlier rows). No specific input
   to spot-check here.
 ---
+FILE: mathics/test/format/test_format.py
+FUNCTION: test_makeboxes_mathml
+LINE: 220
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Parameter-name placeholder for `test_makeboxes_mathml`.
+  Mathics-internal MakeBoxes-to-MathML test; wolframscript
+  `-code` doesn't render MathML. MakeBoxes coverage in
+  `tests/interpreter_tests/string.rs::make_boxes`.
+---
