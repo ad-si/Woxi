@@ -38,13 +38,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Integer_negative
-FORM: OutputForm
-INPUT: MakeBoxes[-14//OutputForm]
-EXPECTED: InterpretationBox[PaneBox["\"-14\""], OutputForm[-14], Editable -> False]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Integer_negative
 FORM: StandardForm
 INPUT: MakeBoxes[-14]
 EXPECTED: RowBox[{"-", "14"}]

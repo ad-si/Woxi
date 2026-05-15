@@ -20424,3 +20424,15 @@ NOTE: Woxi and wolframscript both produce
   quoted `"-14"` literal are mathics-specific; wolframscript and
   Woxi use the unquoted form.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_negative
+FORM: OutputForm
+INPUT: MakeBoxes[-14//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"-14\""], OutputForm[-14], Editable -> False]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["-14", BaselinePosition -> Baseline],
+  OutputForm[-14], Editable -> False]`. Mathics's doubly-escaped
+  `"\"-14\""` is mathics-specific; both Woxi and wolframscript use
+  single-layer baked-in quotes plus the BaselinePosition option.
+---
