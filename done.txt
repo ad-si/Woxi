@@ -19945,3 +19945,13 @@ NOTE: wolframscript prints `Null` for input that consists only
   `tests/cli/basics.md` (Comments section: `(**)` and
   `(* only a comment *)`).
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation
+LINE: 28
+TYPE: session_evaluate
+INPUT: F[x]
+EXPECTED: (assertion - see source)
+NOTE: Both Woxi and wolframscript leave `F[x]` symbolic
+  (unknown head returns unchanged). Coverage in many places
+  including `tests/interpreter_tests/syntax.rs`.
+---
