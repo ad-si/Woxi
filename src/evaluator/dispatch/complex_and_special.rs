@@ -3589,7 +3589,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     {
       expr_to_box_form(&args[0])
     }
-    // CForm/TeXForm/FortranForm → converted text as a string
+    // CForm/TeXForm/FortranForm: wolframscript wraps the
+    // converted text in
+    //   InterpretationBox["<text>", <Form>[<orig>],
+    //     Editable -> True, AutoDelete -> True]
+    // so the rendered string keeps a reference back to the
+    // original expression. Match that shape.
     Expr::FunctionCall { name, args }
       if (name == "CForm" || name == "TeXForm" || name == "FortranForm")
         && args.len() == 1 =>
@@ -3602,7 +3607,29 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         }
         _ => unreachable!(),
       };
-      Expr::String(text)
+      // wolframscript bakes one set of quotes into the String
+      // content so the rendered text reads `"a-b"` (with quotes)
+      // when Woxi's top-level output strips outer String quotes.
+      let quoted_text = format!("\"{}\"", text);
+      Expr::FunctionCall {
+        name: "InterpretationBox".to_string(),
+        args: vec![
+          Expr::String(quoted_text),
+          Expr::FunctionCall {
+            name: name.clone(),
+            args: vec![args[0].clone()].into(),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            replacement: Box::new(Expr::Identifier("True".to_string())),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("AutoDelete".to_string())),
+            replacement: Box::new(Expr::Identifier("True".to_string())),
+          },
+        ]
+        .into(),
+      }
     }
     // Color specs render via a TemplateBox swatch wrapper:
     //   RGBColor[r, g, b]      → TemplateBox[<|color -> RGBColor[…]|>, RGBColorSwatchTemplate]

@@ -3172,6 +3172,40 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // wolframscript wraps `MakeBoxes[TeXForm[expr]]` (and CForm/
+  // FortranForm) in `InterpretationBox["<text>", <Form>[<expr>],
+  // Editable -> True, AutoDelete -> True]` with single-layer
+  // baked-in quotes. Regression for mathics
+  // makeboxes_tests.yaml `MakeBoxes[a-b//TeXForm]`.
+  #[test]
+  fn make_boxes_tex_form_wraps_in_interpretation_box() {
+    assert_eq!(
+      interpret("MakeBoxes[a-b//TeXForm]").unwrap(),
+      r#"InterpretationBox["a-b", TeXForm[a - b], Editable -> True, AutoDelete -> True]"#
+    );
+  }
+
+  #[test]
+  fn make_boxes_c_form_wraps_in_interpretation_box() {
+    assert_eq!(
+      interpret("MakeBoxes[a-b//CForm]").unwrap(),
+      r#"InterpretationBox["a - b", CForm[a - b], Editable -> True, AutoDelete -> True]"#
+    );
+  }
+
+  #[test]
+  fn make_boxes_fortran_form_wraps_in_interpretation_box() {
+    let out = interpret("MakeBoxes[a-b//FortranForm]").unwrap();
+    assert!(
+      out.starts_with("InterpretationBox[\""),
+      "expected InterpretationBox wrapper, got: {out}"
+    );
+    assert!(
+      out.ends_with(", FortranForm[a - b], Editable -> True, AutoDelete -> True]"),
+      "expected FortranForm tail, got: {out}"
+    );
+  }
+
   // `MakeBoxes` is HoldAllComplete, so a postfix arg
   // `expr // FullForm` arrives as `Expr::Postfix` rather than a
   // FunctionCall. Without normalisation it produced a plain string

@@ -20301,3 +20301,17 @@ NOTE: Two fixes brought Woxi's `MakeBoxes[X//OutputForm]` in
   cases 2/4/6/11) and `tests/interpreter_tests/math/rounding.rs`
   (plus_5/plus_6).
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Arithmetic
+FORM: TeXForm
+INPUT: MakeBoxes[a-b//TeXForm]
+EXPECTED: InterpretationBox["\"a-b\"", TeXForm[a-b], Editable -> True, AutoDelete-> True]
+NOTE: Previously `MakeBoxes[X//TeXForm]` returned just the
+  String text. Updated `src/evaluator/dispatch/complex_and_special.rs`
+  to wrap CForm/TeXForm/FortranForm in
+  `InterpretationBox["<text>", <Form>[<expr>], Editable -> True,
+  AutoDelete -> True]` with single-layer baked-in quotes,
+  matching wolframscript. Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_{tex,c,fortran}_form_wraps_in_interpretation_box`.
+---
