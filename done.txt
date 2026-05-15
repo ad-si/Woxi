@@ -19931,3 +19931,17 @@ NOTE: Spot-check `$ByteOrdering → -1` matches between Woxi and
   mathics test_optionvalues asserts `$ByteOrdering` is callable;
   Woxi implements it returning -1.
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation
+LINE: 21
+TYPE: session_evaluate
+INPUT: (**)
+EXPECTED: (assertion - see source)
+NOTE: wolframscript prints `Null` for input that consists only
+  of a Wolfram comment `(* … *)` or whitespace. Woxi's
+  EmptyInput branch previously suppressed output; updated
+  `src/main.rs` to print `Null` when the original `-code`/`eval`
+  argument is non-empty. Regression in
+  `tests/cli/basics.md` (Comments section: `(**)` and
+  `(* only a comment *)`).
+---

@@ -16,6 +16,16 @@ $ wo '5 (* This comment is ignored *)'
 5
 ```
 
+```scrut
+$ wo '(**)'
+Null
+```
+
+```scrut
+$ wo '(* only a comment *)'
+Null
+```
+
 
 ## Semicolon
 

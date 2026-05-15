@@ -112,7 +112,13 @@ fn main() {
           }
         }
         Err(woxi::InterpreterError::EmptyInput) => {
-          // No output for empty/comment-only input
+          // Comment-only or whitespace-only input: wolframscript
+          // prints `Null` (the value of "nothing"). Truly empty
+          // input ("") still suppresses output — only print Null
+          // when the original `expression` is non-empty.
+          if !expression.is_empty() {
+            println!("Null");
+          }
         }
         Err(e) => {
           eprintln!("Error: {}", e);
