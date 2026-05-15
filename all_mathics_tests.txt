@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_multiply
-LINE: 56
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_directed_infinity_precedence
 LINE: 135
 INPUT: a  b  DirectedInfinity[-3]

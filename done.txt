@@ -19825,3 +19825,13 @@ NOTE: Both Woxi and wolframscript produce `E^(I/4*Pi)` (same
   and has no effect here. Regression at
   `tests/interpreter_tests/arithmetic.rs:2435`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_multiply
+LINE: 56
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_multiply`. Spot-check
+  `Times[3, 4] → 12` matches between Woxi and wolframscript.
+  Times coverage in `tests/interpreter_tests/arithmetic.rs`.
+---
