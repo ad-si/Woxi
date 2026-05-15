@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_change_prec
-LINE: 278
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
 FILE: mathics/test/builtin/atomic/test_strings.py
 FUNCTION: test_string
 LINE: 35

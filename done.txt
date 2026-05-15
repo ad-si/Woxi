@@ -19632,3 +19632,13 @@ NOTE: duplicate of `Precision[{1, 0.\`\`5}] → 0.` from earlier loops.
   tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
   precision_of_list_with_accuracy_tagged_zero.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_change_prec
+LINE: 278
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_change_prec`, exercising
+  `SetPrecision[…]` / `SetAccuracy[…]` precision-mutation rules.
+  Broadly covered by Woxi's `n_arbitrary_precision` tests.
+---
