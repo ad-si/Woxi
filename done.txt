@@ -20451,3 +20451,14 @@ NOTE: Woxi previously rendered `Expr::Integer(-14)` as the
   `tests/interpreter_tests/string.rs::make_boxes_{positive,negative}_integer_*`.
   15971/15971 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_negative
+FORM: TeXForm
+INPUT: MakeBoxes[-14//TeXForm]
+EXPECTED: InterpretationBox["\"-14\"", TeXForm[-14], Editable -> True, AutoDelete-> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox["-14", TeXForm[-14], Editable -> True,
+  AutoDelete -> True]`. Mathics's doubly-escaped `"\"-14\""` is
+  mathics-specific; single-layer quoting in wolframscript+Woxi.
+---
