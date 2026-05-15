@@ -12,13 +12,6 @@ Source: test/**/*.py — direct assert evaluate(expr) == expected patterns
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/test_evaluation.py
-FUNCTION: test_optionvalues
-LINE: 268
-TYPE: session_evaluate
-INPUT: $ByteOrdering
-EXPECTED: (assertion - see source)
----
 FILE: mathics/test/test_session.py
 FUNCTION: test_session_evaluation
 LINE: 21

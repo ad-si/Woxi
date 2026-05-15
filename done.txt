@@ -19920,3 +19920,14 @@ NOTE: parameter-name placeholder for `test_zero`. Spot-checks
   wolframscript. PossibleZeroQ coverage in
   `tests/interpreter_tests/predicates.rs`.
 ---
+FILE: mathics/test/test_evaluation.py
+FUNCTION: test_optionvalues
+LINE: 268
+TYPE: session_evaluate
+INPUT: $ByteOrdering
+EXPECTED: (assertion - see source)
+NOTE: Spot-check `$ByteOrdering → -1` matches between Woxi and
+  wolframscript on little-endian (Apple Silicon, x86_64). The
+  mathics test_optionvalues asserts `$ByteOrdering` is callable;
+  Woxi implements it returning -1.
+---
