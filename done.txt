@@ -20937,3 +20937,20 @@ NOTE: Parameter-name placeholder for `test_makeboxes_precedence`.
   wolframscript (`*` rendered as the implicit-times space inside
   the nested RowBox).
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_part_boxes
+LINE: 147
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Added an `Expr::Part` arm to `expr_to_box_form` that
+  decomposes `MakeBoxes[a[[i, j, …]]]` into `RowBox[{<head>, 〚,
+  <indices>, 〛}]` using the Unicode double-bracket glyphs
+  (U+301A `〚` / U+301B `〛`). Single index → bare token inside
+  the outer RowBox; multi-index → nested
+  `RowBox[{i, ",", j, …}]`. Walks chained `Expr::Part` so
+  `a[[1, 2, 3]]` (parsed as nested Parts) flattens into one
+  bracket pair. Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_part_{single,multi}_index`.
+  15987/15987 pass.
+---

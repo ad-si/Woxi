@@ -3228,7 +3228,8 @@ mod make_boxes {
   #[test]
   fn make_boxes_output_form_graphics3d_uses_placeholder() {
     assert_eq!(
-      interpret("MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]//OutputForm]").unwrap(),
+      interpret("MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]//OutputForm]")
+        .unwrap(),
       r#"InterpretationBox[PaneBox["-Graphics3D-", BaselinePosition -> Baseline], OutputForm[-Graphics3D-], Editable -> False]"#
     );
   }
@@ -3271,6 +3272,28 @@ mod make_boxes {
     assert_eq!(
       interpret("MakeBoxes[-14.`3//FullForm]").unwrap(),
       "TagBox[StyleBox[RowBox[{-, 14.`3.}], ShowSpecialCharacters -> False, ShowStringCharacters -> True, NumberMarks -> True], FullForm]"
+    );
+  }
+
+  // `MakeBoxes[a[[i, j, …]]]` (Part extraction) decomposes
+  // into `RowBox[{<head>, 〚, <i> | RowBox[{i, ",", j, …}], 〛}]`
+  // using the Unicode double-bracket glyphs (U+301A `〚` /
+  // U+301B `〛`). A single-index part uses a bare token inside
+  // the outer RowBox; multi-index parts use a nested RowBox.
+  // Regression for mathics test_makeboxes.py `test_part_boxes`.
+  #[test]
+  fn make_boxes_part_single_index() {
+    assert_eq!(
+      interpret("MakeBoxes[a[[1]]]").unwrap(),
+      "RowBox[{a, 〚, 1, 〛}]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_part_multi_index() {
+    assert_eq!(
+      interpret("MakeBoxes[a[[1, 2, 3]]]").unwrap(),
+      "RowBox[{a, 〚, RowBox[{1, ,, 2, ,, 3}], 〛}]"
     );
   }
 

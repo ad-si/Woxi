@@ -3147,6 +3147,52 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{}\"", s)),
+    // Part[expr, indices…] (Expr::Part / chained Part) →
+    //   RowBox[{<head>, 〚, <i1>, ",", <i2>, …, 〛}]
+    // wolframscript uses the Unicode double-bracket glyphs
+    // (U+301A `〚` / U+301B `〛`).
+    Expr::Part { expr, index } => {
+      // Walk a chain of nested `Part`s so a[[1, 2, 3]] flattens
+      // back into a single bracket pair. wolframscript wraps a
+      // multi-index list in a nested `RowBox[{1, ",", 2, ",", 3}]`
+      // and uses a single-token inside the outer RowBox when only
+      // one index is present.
+      let mut indices: Vec<&Expr> = vec![index.as_ref()];
+      let mut head_expr: &Expr = expr.as_ref();
+      while let Expr::Part {
+        expr: inner,
+        index: inner_idx,
+      } = head_expr
+      {
+        indices.insert(0, inner_idx.as_ref());
+        head_expr = inner.as_ref();
+      }
+      let inner_box = if indices.len() == 1 {
+        expr_to_box_form(indices[0])
+      } else {
+        let mut inner_args: Vec<Expr> = Vec::with_capacity(indices.len() * 2);
+        for (i, idx) in indices.iter().enumerate() {
+          if i > 0 {
+            inner_args.push(Expr::String(",".to_string()));
+          }
+          inner_args.push(expr_to_box_form(idx));
+        }
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(inner_args.into())].into(),
+        }
+      };
+      let row_args: Vec<Expr> = vec![
+        expr_to_box_form(head_expr),
+        Expr::String("\u{301A}".to_string()),
+        inner_box,
+        Expr::String("\u{301B}".to_string()),
+      ];
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(row_args.into())].into(),
+      }
+    }
     Expr::Slot(n) => Expr::String(if *n == 1 {
       "#".to_string()
     } else {
