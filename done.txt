@@ -19989,3 +19989,14 @@ NOTE: Same as line 38 — `$Line → 1` in both Woxi and
   scenarios that Woxi's script mode doesn't model. See
   [[project_woxi_no_repl_history]].
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation_as_in_cli
+LINE: 49
+TYPE: session_evaluate
+INPUT: $Line
+EXPECTED: (assertion - see source)
+NOTE: Same as lines 38/44 — `$Line → 1` matches in both Woxi
+  and wolframscript script mode. This is the final
+  `_as_in_cli $Line` iteration. See
+  [[project_woxi_no_repl_history]].
+---
