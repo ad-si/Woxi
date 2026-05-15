@@ -21119,3 +21119,20 @@ NOTE: Gries-Schneider GS3.m row (final row in this section).
   Same `eqv[eqv[p, q], q] == p` pattern as lines 209 / 323.
   GS.m bench context.
 ---
+FILE: mathics/builtin/specialfns/zeta.py
+CLASS: LerchPhi
+LINE: 38
+TYPE: >>
+INPUT: LerchPhi[2, 3, -1.5]
+EXPECTED:
+= 19.3893 - 2.1346 I
+NOTE: Woxi's `lerch_phi_numeric` only converges inside the unit
+  disc (|z| < 1). Input z=2 is outside; Woxi returns the call
+  symbolic. wolframscript yields
+  `51.981861922538684 - 2.1345964981239467*I` via analytic
+  continuation (different complex algorithm, requires Crandall's
+  algorithm or Hurwitz contour formula). See
+  [[project_woxi_lerch_phi_outside_disc]]. Mathics's expected
+  `19.3893 - 2.1346 I` also disagrees with wolframscript
+  (mathics bug). Deferred to a focused special-function task.
+---
