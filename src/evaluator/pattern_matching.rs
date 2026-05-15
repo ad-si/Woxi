@@ -2250,10 +2250,14 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
       args: pat_args,
     } if pat_name == "Pattern"
       && pat_args.len() == 2
-      && let Expr::Identifier(bind_name) = &pat_args[0] =>
+      && matches!(&pat_args[0], Expr::Identifier(_)) =>
     {
+      let bind_name = match &pat_args[0] {
+        Expr::Identifier(n) => n.clone(),
+        _ => unreachable!(),
+      };
       let mut inner = get_sequence_info(&pat_args[1])?;
-      inner.name = bind_name.clone();
+      inner.name = bind_name;
       Some(inner)
     }
     // Repeated[pat] or Repeated[pat, {min, max}] — matches 1+ elements each matching pat
