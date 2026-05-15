@@ -20783,3 +20783,14 @@ NOTE: Already covered by the previous commit's
   Editable -> False]`. Regression at
   `tests/interpreter_tests/string.rs::make_boxes_output_form_graphics3d_uses_placeholder`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Parsing string form
+EXPRESSION: RowBox
+FORM: StandardForm
+INPUT: \( a, b \)
+EXPECTED: RowBox[{"a", ",", "b"}]
+MESSAGE: TODO: Parsing of special characters (like commas).
+NOTE: Woxi and wolframscript both produce `RowBox[{a, ,, b}]`.
+  Mathics's quoted-token form is mathics-specific. The mathics
+  MESSAGE flags this as a known TODO row in their test suite.
+---

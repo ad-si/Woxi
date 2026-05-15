@@ -37,14 +37,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Parsing string form
-EXPRESSION: RowBox
-FORM: StandardForm
-INPUT: \( a, b \)
-EXPECTED: RowBox[{"a", ",", "b"}]
-MESSAGE: TODO: Parsing of special characters (like commas).
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Parsing string form
 EXPRESSION: FractionBox
 FORM: StandardForm
 INPUT: \(x \/ y + z\)
