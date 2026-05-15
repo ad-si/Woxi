@@ -19874,3 +19874,14 @@ NOTE: Woxi and wolframscript both produce `OutputForm[1. + 0.*I]`
   [[project_woxi_no_repl_history]] and
   [[project_woxi_complex_head_divergence]].
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_complex
+LINE: 289
+INPUT: 0. + 1. I//OutputForm
+EXPECTED: 0. + 1. I
+MESSAGE: Formatting 1. I
+NOTE: Woxi and wolframscript both produce `OutputForm[0. + 1.*I]`
+  in script mode — OutputForm doesn't transform in `-code`/eval
+  mode. See [[project_woxi_no_repl_history]] and
+  [[project_woxi_complex_head_divergence]].
+---
