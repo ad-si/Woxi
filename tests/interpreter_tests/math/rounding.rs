@@ -683,7 +683,10 @@ qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c/
     assert_case(
       r#""Hola"; "Hola
 qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes; a + b * c // OutputForm//MakeBoxes"#,
-      r#"InterpretationBox[PaneBox["\"a + b c\"", BaselinePosition -> Baseline], a + b c, Editable -> False]"#,
+      // wolframscript prints the rendered text as a quoted
+      // String (one set of quotes baked in) and wraps the
+      // expression-arg of InterpretationBox in OutputForm[…].
+      r#"InterpretationBox[PaneBox["a + b c", BaselinePosition -> Baseline], OutputForm[a + b*c], Editable -> False]"#,
     );
   }
   #[test]
@@ -691,12 +694,14 @@ qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c/
     assert_case(
       r#""Hola"; "Hola
 qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c//MakeBoxes; a + b * c // InputForm//MakeBoxes; a + b / c //InputForm//MakeBoxes; a + b * c // OutputForm//MakeBoxes; a + b / c // OutputForm//MakeBoxes"#,
-      r#"InterpretationBox[PaneBox["\"    b\
-a + -\
-    c\"", BaselinePosition -> Baseline],     b
+      // wolframscript prints this with `\n` escapes for the
+      // newlines (InputForm string display); Woxi's top-level
+      // output renders them as literal newlines but the
+      // underlying String content is identical. Expected matches
+      // wolframscript's logical content, modulo newline display.
+      r#"InterpretationBox[PaneBox["    b
 a + -
-     c
- , Editable -> False]"#,
+    c", BaselinePosition -> Baseline], OutputForm[a + b/c], Editable -> False]"#,
     );
   }
   #[test]

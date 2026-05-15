@@ -3672,19 +3672,19 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // `G[{Formatted f, {3.002}, Standard}]`.
       let formatted_inner = apply_format_recursively(&args[0], "OutputForm");
       let output_text = crate::syntax::expr_to_output_form_2d(&formatted_inner);
-      // PaneBox stores the InputForm rendering of the string-with-quotes,
-      // i.e. content like `\"a + b c\"`. Since Woxi strings render
-      // unquoted in OutputForm, we have to bake the literal `"` and
-      // backslash-escaped newlines into the string content directly.
-      let escaped = output_text.replace('\\', "\\\\").replace('\n', "\\\n");
-      let pane_string = format!("\"\\\"{}\\\"\"", escaped);
+      // wolframscript's MakeBoxes[OutputForm[expr]] stores the
+      // rendered text as a String whose content has literal `"`
+      // characters at the start and end. When displayed in
+      // script-mode (which strips outer String quotes) this
+      // reproduces the visible `"a - b"` quoting.
+      let quoted_text = format!("\"{}\"", output_text);
       Expr::FunctionCall {
         name: "InterpretationBox".to_string(),
         args: vec![
           Expr::FunctionCall {
             name: "PaneBox".to_string(),
             args: vec![
-              Expr::String(pane_string),
+              Expr::String(quoted_text),
               Expr::Rule {
                 pattern: Box::new(Expr::Identifier(
                   "BaselinePosition".to_string(),
@@ -3694,7 +3694,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             ]
             .into(),
           },
-          Expr::String(output_text),
+          // wolframscript's second arg is the wrapped OutputForm
+          // expression itself, not the plain text.
+          Expr::FunctionCall {
+            name: "OutputForm".to_string(),
+            args: vec![args[0].clone()].into(),
+          },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("Editable".to_string())),
             replacement: Box::new(Expr::Identifier("False".to_string())),

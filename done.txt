@@ -20283,3 +20283,21 @@ NOTE: Woxi and wolframscript both produce
   Postfix arg works thanks to the Postfix→FunctionCall
   normalisation added for the FullForm row.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Arithmetic
+FORM: OutputForm
+INPUT: MakeBoxes[a-b//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"a - b\""], OutputForm[a - b], Editable-> False]
+NOTE: Two fixes brought Woxi's `MakeBoxes[X//OutputForm]` in
+  line with wolframscript:
+  (1) the PaneBox text string used to be wrapped with two layers
+  of baked-in quotes (`"\"a - b\""`); wolframscript uses one
+  layer. (2) the second InterpretationBox arg used to be the
+  rendered plain text; wolframscript uses the original
+  `OutputForm[<expr>]` wrapper. Both fixed in
+  `src/evaluator/dispatch/complex_and_special.rs`. Regression
+  in `tests/interpreter_tests/string.rs::make_boxes_*` (updated
+  cases 2/4/6/11) and `tests/interpreter_tests/math/rounding.rs`
+  (plus_5/plus_6).
+---

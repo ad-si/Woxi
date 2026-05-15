@@ -58,10 +58,7 @@ mod user_defined_functions {
   fn typed_function_definition_re_evaluates_per_x_binding() {
     clear_state();
     assert_eq!(
-      interpret(
-        "G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}"
-      )
-      .unwrap(),
+      interpret("G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}").unwrap(),
       "{{1.}, {G[x]}}"
     );
   }

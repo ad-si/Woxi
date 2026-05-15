@@ -5736,7 +5736,9 @@ abb""#,
   fn make_boxes_2() {
     assert_case(
       r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]"#,
-      r#"InterpretationBox[PaneBox["\"G[F[3.002]]\"", BaselinePosition -> Baseline], G[F[3.002]], Editable -> False]"#,
+      // wolframscript: single layer of baked-in quotes,
+      // second arg wraps the original expression in OutputForm.
+      r#"InterpretationBox[PaneBox["G[F[3.002]]", BaselinePosition -> Baseline], OutputForm[G[F[3.002]]], Editable -> False]"#,
     );
   }
   #[test]
@@ -5763,7 +5765,10 @@ abb""#,
   fn make_boxes_4() {
     assert_case(
       r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]"#,
-      r#"InterpretationBox[PaneBox["\"G[{Formatted f, {3.002}, Standard}]\"", BaselinePosition -> Baseline], G[{Formatted f, {3.002}, Standard}], Editable -> False]"#,
+      // wolframscript form: single layer of baked-in quotes;
+      // second arg wraps the *original* expression in OutputForm.
+      // The Format rule still applies inside the rendered string.
+      r#"InterpretationBox[PaneBox["G[{Formatted f, {3.002}, Standard}]", BaselinePosition -> Baseline], OutputForm[G[F[3.002]]], Editable -> False]"#,
     );
   }
   #[test]
@@ -5790,7 +5795,9 @@ abb""#,
   fn make_boxes_6() {
     assert_case(
       r#"MakeBoxes[G[F[2.]], StandardForm]; MakeBoxes[F[x_], fmt_] := "F[" <> ToString[x] <> "]";MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_]] := {"Formatted f", {x}, "Standard"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]; Format[F[x_], StandardForm] :=  {"Formatted f", {x}, "Standard"};Format[F[x_], OutputForm] :=  {"Formatted f", {x}, "Output"}; MakeBoxes[G[F[3.002]], StandardForm]; MakeBoxes[OutputForm[G[F[3.002]]], StandardForm]"#,
-      r#"InterpretationBox[PaneBox["\"G[{Formatted f, {3.002}, Output}]\"", BaselinePosition -> Baseline], G[{Formatted f, {3.002}, Output}], Editable -> False]"#,
+      // wolframscript form: single layer of baked-in quotes;
+      // second arg wraps the *original* expression in OutputForm.
+      r#"InterpretationBox[PaneBox["G[{Formatted f, {3.002}, Output}]", BaselinePosition -> Baseline], OutputForm[G[F[3.002]]], Editable -> False]"#,
     );
   }
   #[test]
@@ -5956,7 +5963,12 @@ abb""#,
   fn make_boxes_11() {
     assert_case(
       r#"MakeBoxes[F[x__], fmt_] :=  RowBox[{"F", "<~", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], "~>"}]; MakeBoxes[G[x___], fmt_] := RowBox[{"G", "<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">"}]; MakeBoxes[GG[x___], fmt_] := RowBox[{"GG", "<<", RowBox[MakeBoxes[#1, fmt] & /@ List[x]], ">>"}]; Format[F[x_, y_], StandardForm] := {F[x], "Standard"}; Format[G[x___], StandardForm] :=  {"Standard", GG[x]}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; Format[F[x_, y_], InputForm] := {F[x], "In"}; Format[G[x___], InputForm] :=  {"In", GG[x]}; Format[F[x_, y_], OutputForm] := {F[x], "Out"}; Format[G[x___], OutputForm] :=  {"Out", GG[x]}; Format[F[x_, y_], FullForm] := {F[x], "full"}; ToString[G[F[1., "l"], .2], StandardForm]; ToString[FullForm[G[F[1., "l"], .2]]]; ToString[G[F[1., "l"], .2], InputForm]; ToString[G[F[1., "l"], .2], OutputForm]; MakeBoxes[G[F[1., "l"], .2], StandardForm]; MakeBoxes[InputForm[G[F[1., "l"], .2]], StandardForm]; MakeBoxes[OutputForm[G[F[1., "l"], .2]], StandardForm]"#,
-      r#"InterpretationBox[PaneBox["\"{Out, GG[{F[1.], Out}, 0.2]}\"", BaselinePosition -> Baseline], {Out, GG[{F[1.], Out}, 0.2]}, Editable -> False]"#,
+      // wolframscript form: single layer of baked-in quotes;
+      // second arg is `OutputForm[<original-expr>]` rather than
+      // the formatted body. (`G[F[1., "l"], .2]` has no
+      // OutputForm Format rule applied yet at MakeBoxes time
+      // because the rule operates inside expr_to_output_form_2d.)
+      r#"InterpretationBox[PaneBox["{Out, GG[{F[1.], Out}, 0.2]}", BaselinePosition -> Baseline], OutputForm[G[F[1., l], 0.2]], Editable -> False]"#,
     );
   }
   #[test]

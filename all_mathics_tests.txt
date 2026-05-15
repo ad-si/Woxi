@@ -38,13 +38,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Arithmetic
-FORM: OutputForm
-INPUT: MakeBoxes[a-b//OutputForm]
-EXPECTED: InterpretationBox[PaneBox["\"a - b\""], OutputForm[a - b], Editable-> False]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Arithmetic
 FORM: TeXForm
 INPUT: MakeBoxes[a-b//TeXForm]
 EXPECTED: InterpretationBox["\"a-b\"", TeXForm[a-b], Editable -> True, AutoDelete-> True]
