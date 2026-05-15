@@ -6728,7 +6728,39 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         };
       }
       if name == "Optional" && args.len() == 1 {
-        return format!("{}.", fmt(&args[0]));
+        // The `.` shorthand only exists for `Optional[Blank[]]`
+        // (`_.`) and `Optional[Pattern[x, Blank[]]]` (`x_.`).
+        // BlankSequence/BlankNullSequence inner patterns and
+        // typed Blanks (`_Integer`, `x_Integer`) do not have a
+        // valid `.` shorthand in wolframscript and must be
+        // printed as `Optional[…]`.
+        let inner_is_untyped_single_blank = match &args[0] {
+          Expr::Pattern {
+            blank_type: 1,
+            head: None,
+            ..
+          } => true,
+          Expr::FunctionCall { name: bn, args: ba, .. }
+            if bn == "Blank" && ba.is_empty() =>
+          {
+            true
+          }
+          Expr::FunctionCall { name: pn, args: pargs, .. }
+            if pn == "Pattern" && pargs.len() == 2 =>
+          {
+            matches!(
+              &pargs[1],
+              Expr::FunctionCall { name: bn, args: ba, .. }
+                if bn == "Blank" && ba.is_empty()
+            )
+          }
+          _ => false,
+        };
+        if inner_is_untyped_single_blank {
+          return format!("{}.", fmt(&args[0]));
+        }
+        let inner = fmt(&args[0]);
+        return format!("Optional[{}]", inner);
       }
       if name == "Optional" && args.len() == 2 {
         // Parenthesize the default when it's itself an Optional —

@@ -1850,6 +1850,57 @@ mod optional_pattern_without_default {
   fn optional_named_blank_colon_syntax_default() {
     assert_eq!(interpret("f[] /. f[a:_:b] -> {a, b}").unwrap(), "{b, b}");
   }
+
+  // `Optional[X]` only collapses to the `X.` shorthand when X is a
+  // single untyped Blank (`_` or `x_`). BlankSequence (`__`),
+  // BlankNullSequence (`___`), and typed Blanks (`_Integer`,
+  // `x_Integer`) all keep the explicit `Optional[…]` form to match
+  // wolframscript — `__.` etc. are not valid Wolfram syntax.
+  #[test]
+  fn optional_anonymous_blank_uses_shorthand() {
+    assert_eq!(interpret("Optional[_]").unwrap(), "_.");
+  }
+
+  #[test]
+  fn optional_named_blank_uses_shorthand() {
+    assert_eq!(interpret("Optional[x_]").unwrap(), "x_.");
+  }
+
+  #[test]
+  fn optional_anonymous_blank_sequence_keeps_long_form() {
+    assert_eq!(interpret("Optional[__]").unwrap(), "Optional[__]");
+  }
+
+  #[test]
+  fn optional_named_blank_sequence_keeps_long_form() {
+    assert_eq!(interpret("Optional[x__]").unwrap(), "Optional[x__]");
+  }
+
+  #[test]
+  fn optional_anonymous_null_sequence_keeps_long_form() {
+    assert_eq!(interpret("Optional[___]").unwrap(), "Optional[___]");
+  }
+
+  #[test]
+  fn optional_named_null_sequence_keeps_long_form() {
+    assert_eq!(interpret("Optional[x___]").unwrap(), "Optional[x___]");
+  }
+
+  #[test]
+  fn optional_typed_named_blank_keeps_long_form() {
+    assert_eq!(
+      interpret("Optional[x_Integer]").unwrap(),
+      "Optional[x_Integer]"
+    );
+  }
+
+  #[test]
+  fn optional_typed_anonymous_blank_keeps_long_form() {
+    assert_eq!(
+      interpret("Optional[_Integer]").unwrap(),
+      "Optional[_Integer]"
+    );
+  }
 }
 
 mod cases {

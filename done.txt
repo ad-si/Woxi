@@ -20115,3 +20115,18 @@ NOTE: Woxi and wolframscript both produce
   neither real wolframscript nor Woxi generate from `-code`.
   Entry's own description (`Fragile!`) acknowledges this.
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Optional[x__]
+DESCRIPTION: Optional with one argument
+NOTE: Woxi previously emitted `x__.` shorthand for any
+  `Optional[X]`. wolframscript only uses the `.` shorthand for
+  `Optional[Blank[]]` (`_.`) and `Optional[Pattern[x, Blank[]]]`
+  (`x_.`) — BlankSequence/BlankNullSequence inner patterns and
+  typed Blanks (`_Integer`, `x_Integer`) all keep the explicit
+  `Optional[…]` form. Mathics's expected `(x__.)` is invalid
+  syntax that wolframscript rejects with `ToExpression::sntx`.
+  Fixed in `src/syntax.rs` (`expr_to_string` Optional/1 branch).
+  Regression in
+  `tests/interpreter_tests/patterns.rs::optional_pattern_without_default`
+  (`optional_*_keeps_long_form` and `optional_*_uses_shorthand`).
+---
