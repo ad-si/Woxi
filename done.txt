@@ -19722,3 +19722,17 @@ NOTE: Woxi and wolframscript both produce
   `tests/interpreter_tests/math/special_functions.rs:205` —
   `half_order_sin_closed_form`.
 ---
+FILE: mathics/test/builtin/image/test_image_colors.py
+FUNCTION: test_binarize
+LINE: 14
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: assert_failure_msg
+NOTE: parameter-name placeholder for `test_binarize`. The real
+  rows feed `Binarize` an image fixture (`hedy`/`ein`/...) which
+  is bound only in mathics' test harness — see
+  `project_mathics_image_fixtures` memory. Spot-check
+  `Binarize[{0.1, 0.6, 0.9}]` returns the same
+  `Binarize::imginv` error + unevaluated form in Woxi and
+  wolframscript.
+---
