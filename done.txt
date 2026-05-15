@@ -19699,3 +19699,26 @@ NOTE: parameter-name placeholder for `test_add` in test_bessel.py.
   wolframscript. BesselJ coverage in
   `tests/interpreter_tests/math/special_functions.rs`.
 ---
+FILE: mathics/test/builtin/specialfns/test_bessel.py
+FUNCTION: test_add
+LINE: 11
+INPUT: BesselJ[-1/2,z]
+EXPECTED: Sqrt[2] Cos[z] / (Sqrt[z] Sqrt[Pi])
+MESSAGE: BesselJ -1/2 rule
+NOTE: Woxi and wolframscript both produce
+  `(Sqrt[2/Pi]*Cos[z])/Sqrt[z]` (same value, slightly nicer form
+  than mathics expected). Regression at
+  `tests/interpreter_tests/math/special_functions.rs:213` —
+  `negative_half_order_cos_closed_form`.
+---
+FILE: mathics/test/builtin/specialfns/test_bessel.py
+FUNCTION: test_add
+LINE: 11
+INPUT: BesselJ[1/2,z]
+EXPECTED: Sqrt[2] Sin[z] / (Sqrt[z] Sqrt[Pi])
+MESSAGE: BesselJ 1/2 rule
+NOTE: Woxi and wolframscript both produce
+  `(Sqrt[2/Pi]*Sin[z])/Sqrt[z]`. Regression at
+  `tests/interpreter_tests/math/special_functions.rs:205` —
+  `half_order_sin_closed_form`.
+---
