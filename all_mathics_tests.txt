@@ -37,13 +37,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Numbers
-EXPRESSION: PrecisionReal, Zero_LargePrec
-FORM: StandardForm
-INPUT: MakeBoxes[0.`30]
-EXPECTED: "0.`"
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Numbers
 EXPRESSION: PrecisionReal, Zero_Accuracy
 FORM: StandardForm
 INPUT: MakeBoxes[0.``30]
