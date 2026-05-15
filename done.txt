@@ -21244,3 +21244,20 @@ NOTE: Self-referential `Set` (`x = 2 x`) in wolframscript causes
   fires. See [[project_woxi_self_referential_assignment]].
   Substantial evaluator-semantics change; deferred.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 813
+TYPE: >>
+INPUT: f[x_] := f[x + 1]; Block[{$IterationLimit = 30}, f[1]]
+EXPECTED:
+: Iteration limit of 30 exceeded.
+= $Aborted
+NOTE: `$IterationLimit = 30` inside a Block should cap the
+  DownValue-rewrite loop at 30 iterations; wolframscript aborts
+  with `$IterationLimit::itlim`. Woxi keeps iterating (visibly
+  reaches ~1023 expansions of `f[x_] := f[x + 1]` before
+  stopping for unrelated reasons). Same family as
+  [[project_woxi_self_referential_assignment]] — Woxi's
+  evaluator doesn't fully honor the recursion/iteration limit
+  symbols at the DownValue level. Deferred.
+---

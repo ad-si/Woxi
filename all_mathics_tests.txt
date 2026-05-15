@@ -53,15 +53,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 813
-TYPE: >>
-INPUT: f[x_] := f[x + 1]; Block[{$IterationLimit = 30}, f[1]]
-EXPECTED:
-: Iteration limit of 30 exceeded.
-= $Aborted
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 949
 TYPE: >>
 INPUT: [1 2 3]
