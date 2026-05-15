@@ -19908,3 +19908,15 @@ NOTE: parameter-name placeholder for `test_positivity`.
   wolframscript. Positivity coverage in
   `tests/interpreter_tests/predicates.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_lowlevel_properties.py
+FUNCTION: test_zero
+LINE: 50
+INPUT: str_expr
+EXPECTED: expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_zero`. Spot-checks
+  `PossibleZeroQ[0] → True`, `PossibleZeroQ[1] → False`,
+  `PossibleZeroQ[Sin[0]] → True` all match between Woxi and
+  wolframscript. PossibleZeroQ coverage in
+  `tests/interpreter_tests/predicates.rs`.
+---
