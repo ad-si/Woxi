@@ -19748,3 +19748,15 @@ NOTE: parameter-name placeholder for `test_color_quantize`. The
   Spot-check `ColorQuantize[{1,2,3}, 4]` returns identical
   `ColorQuantize::imginv` error in Woxi and wolframscript.
 ---
+FILE: mathics/test/builtin/image/test_image_colors.py
+FUNCTION: test_color_separate
+LINE: 77
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: assert_failure_msg
+NOTE: parameter-name placeholder for `test_color_separate`. The
+  real rows operate on image fixtures bound only in mathics'
+  test harness — see `project_mathics_image_fixtures` memory.
+  Spot-check `ColorSeparate[{1,2,3}]` returns identical
+  `ColorSeparate::imginv` error in Woxi and wolframscript.
+---

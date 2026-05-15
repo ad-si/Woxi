@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/image/test_image_colors.py
-FUNCTION: test_color_separate
-LINE: 77
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: assert_failure_msg
----
 FILE: mathics/test/builtin/arithmetic/test_abs.py
 FUNCTION: test_abs
 LINE: 10
