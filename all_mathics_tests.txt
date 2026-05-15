@@ -14,13 +14,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/test_settings.py
 FUNCTION: test_settings
-LINE: 11
-TYPE: session_evaluate
-INPUT: Settings`$TraceGet
-EXPECTED: (assertion - see source)
----
-FILE: mathics/test/test_settings.py
-FUNCTION: test_settings
 LINE: 23
 TYPE: session_evaluate
 INPUT: Settings`$PreferredBackendMethod

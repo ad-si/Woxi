@@ -20000,3 +20000,15 @@ NOTE: Same as lines 38/44 — `$Line → 1` matches in both Woxi
   `_as_in_cli $Line` iteration. See
   [[project_woxi_no_repl_history]].
 ---
+FILE: mathics/test/test_settings.py
+FUNCTION: test_settings
+LINE: 11
+TYPE: session_evaluate
+INPUT: Settings`$TraceGet
+EXPECTED: (assertion - see source)
+NOTE: `Settings`$TraceGet` is a mathics-internal context variable.
+  Both Woxi and wolframscript leave it as the bare symbol
+  `Settings`$TraceGet` (no defined value). The mathics test
+  asserts the symbol is bound in mathics' own Settings context;
+  no portable wolframscript surface.
+---
