@@ -21303,3 +21303,16 @@ NOTE: Same dependency on the prior chapter's `f[x_] := …`
   wolframscript return mostly-unevaluated. Test would pass only
   in the original chapter's session.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1211
+TYPE: >>
+INPUT: B . (RandomInteger[100] * %[[1]] + s)
+EXPECTED:
+= {1, 2, 3}
+NOTE: Uses `%[[1]]` (REPL output history) and the symbols
+  `B`/`s` defined earlier in the manual. Both Woxi and
+  wolframscript fail without that context. REPL-history `%`
+  not available in script mode either — see
+  [[project_woxi_no_repl_history]].
+---
