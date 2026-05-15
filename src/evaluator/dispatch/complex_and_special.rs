@@ -3589,6 +3589,51 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     {
       expr_to_box_form(&args[0])
     }
+    // Format[expr] / Format[expr, form] → wolframscript boxes
+    // these as
+    //   TagBox[FormBox[<inner-box>, <form>], <tag>]
+    // where <form> defaults to StandardForm and <tag> is the
+    // bare symbol `Format` for the 1-arg form, or `#1 &` for the
+    // 2-arg form. Only StandardForm and TraditionalForm route
+    // through this branch; OutputForm/InputForm/FullForm in the
+    // form-slot fall through to the surrounding handlers.
+    Expr::FunctionCall { name, args }
+      if name == "Format"
+        && (args.len() == 1
+          || (args.len() == 2
+            && matches!(
+              &args[1],
+              Expr::Identifier(s)
+                if s == "StandardForm" || s == "TraditionalForm"
+            ))) =>
+    {
+      let form_name = if args.len() == 2 {
+        if let Expr::Identifier(s) = &args[1] {
+          s.clone()
+        } else {
+          "StandardForm".to_string()
+        }
+      } else {
+        "StandardForm".to_string()
+      };
+      let inner_box = expr_to_box_form(&args[0]);
+      let form_box = Expr::FunctionCall {
+        name: "FormBox".to_string(),
+        args: vec![inner_box, Expr::Identifier(form_name)].into(),
+      };
+      let tag = if args.len() == 1 {
+        Expr::Identifier("Format".to_string())
+      } else {
+        // `#1 &` — an anonymous Function with body Slot(1).
+        Expr::Function {
+          body: Box::new(Expr::Slot(1)),
+        }
+      };
+      Expr::FunctionCall {
+        name: "TagBox".to_string(),
+        args: vec![form_box, tag].into(),
+      }
+    }
     // CForm/TeXForm/FortranForm: wolframscript wraps the
     // converted text in
     //   InterpretationBox["<text>", <Form>[<orig>],

@@ -3172,6 +3172,35 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // `MakeBoxes[Format[expr, StandardForm]]` and the 1-arg form
+  // both produce `TagBox[FormBox[<inner>, <form>], <tag>]`,
+  // where the tag is the bare `Format` symbol for the 1-arg
+  // form or `#1 &` for the 2-arg form. Regression for mathics
+  // makeboxes_tests.yaml `MakeBoxes[Format[F[x], StandardForm]]`.
+  #[test]
+  fn make_boxes_format_no_form_uses_format_tag() {
+    assert_eq!(
+      interpret("MakeBoxes[Format[F[x]]]").unwrap(),
+      "TagBox[FormBox[RowBox[{F, [, x, ]}], StandardForm], Format]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_format_standard_uses_identity_tag() {
+    assert_eq!(
+      interpret("MakeBoxes[Format[F[x], StandardForm]]").unwrap(),
+      "TagBox[FormBox[RowBox[{F, [, x, ]}], StandardForm], #1 & ]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_format_traditional_uses_identity_tag() {
+    assert_eq!(
+      interpret("MakeBoxes[Format[F[x], TraditionalForm]]").unwrap(),
+      "TagBox[FormBox[RowBox[{F, [, x, ]}], TraditionalForm], #1 & ]"
+    );
+  }
+
   // wolframscript wraps `MakeBoxes[TeXForm[expr]]` (and CForm/
   // FortranForm) in `InterpretationBox["<text>", <Form>[<expr>],
   // Editable -> True, AutoDelete -> True]` with single-layer
@@ -3201,7 +3230,9 @@ mod make_boxes {
       "expected InterpretationBox wrapper, got: {out}"
     );
     assert!(
-      out.ends_with(", FortranForm[a - b], Editable -> True, AutoDelete -> True]"),
+      out.ends_with(
+        ", FortranForm[a - b], Editable -> True, AutoDelete -> True]"
+      ),
       "expected FortranForm tail, got: {out}"
     );
   }

@@ -38,13 +38,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Expression
-FORM: Format
-INPUT: MakeBoxes[Format[F[x], StandardForm]]
-EXPECTED: TagBox[FormBox[RowBox[List["F", "[", "x", "]"]], StandardForm], (Format[#1, StandardForm])&]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Expression
 FORM: TraditionalForm
 INPUT: MakeBoxes[F[x]//TraditionalForm]
 EXPECTED: TagBox[FormBox[RowBox[List["F", "(", "x", ")"]], TraditionalForm], TraditionalForm, Editable-> True]

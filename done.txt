@@ -20315,3 +20315,19 @@ NOTE: Previously `MakeBoxes[X//TeXForm]` returned just the
   matching wolframscript. Regression in
   `tests/interpreter_tests/string.rs::make_boxes_{tex,c,fortran}_form_wraps_in_interpretation_box`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: Format
+INPUT: MakeBoxes[Format[F[x], StandardForm]]
+EXPECTED: TagBox[FormBox[RowBox[List["F", "[", "x", "]"]], StandardForm], (Format[#1, StandardForm])&]
+NOTE: Added `Format[expr]` / `Format[expr, StandardForm|TraditionalForm]`
+  handling to `expr_to_box_form` so MakeBoxes wraps these as
+  `TagBox[FormBox[<inner>, <form>], <tag>]`, where the 1-arg
+  form uses the bare `Format` tag and the 2-arg form uses `#1 &`
+  (the identity anonymous function) — matching wolframscript.
+  Mathics expected `(Format[#1, StandardForm])&` is a mathics-
+  specific tag wolframscript does not produce. Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_format_*` (3
+  tests). 15966/15966 pass.
+---
