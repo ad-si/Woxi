@@ -20387,3 +20387,16 @@ NOTE: Woxi and wolframscript both produce
   single-layer baked-in quotes. The BaselinePosition option is
   emitted by wolframscript but not in mathics's expected.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: TeXForm
+INPUT: MakeBoxes[F[x]//TeXForm]
+EXPECTED: InterpretationBox["\"F(x)\"", TeXForm[F[x]], Editable -> True, AutoDelete-> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox["F(x)", TeXForm[F[x]], Editable -> True,
+  AutoDelete -> True]`. TeXForm renders function-call brackets
+  as `F(x)` in the rendered LaTeX-target text. The
+  TeX/CForm/FortranForm InterpretationBox wrapper was added in
+  an earlier commit; this row exercises it on a function call.
+---
