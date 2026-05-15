@@ -20546,3 +20546,14 @@ NOTE: Woxi and wolframscript both produce
   quotes (vs mathics's doubly-escaped form). `-14.0` literal
   truncates to `-14.` in OutputForm rendering for both.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: PrecisionReal
+FORM: StandardForm
+INPUT: MakeBoxes[-14.`3]
+EXPECTED: RowBox[{"-","14.`3."}]
+NOTE: Woxi and wolframscript both produce
+  `RowBox[{-, 14.`3.}]` thanks to the BigFloat negative-sign
+  decomposition added earlier. Mathics's quoted token form
+  (`"-"`, `"14.`3."`) is mathics-specific.
+---
