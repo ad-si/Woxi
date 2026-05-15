@@ -20912,3 +20912,16 @@ NOTE: Parameter-name placeholder for `test_makeboxes_basic_forms`.
   InputForm / OutputForm / TeXForm / StandardForm / TraditionalForm
   paths for integer / real / symbol / function expressions.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_real
+LINE: 71
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Parameter-name placeholder for `test_makeboxes_real`.
+  Real-number MakeBoxes coverage was added in the recent
+  negative-sign decomposition and scientific-notation backtick
+  fixes:
+  `tests/interpreter_tests/string.rs::make_boxes_{negative_real,
+  real_scientific_backtick_before_exponent, output_form_{truncates,pads}_precision}`.
+---
