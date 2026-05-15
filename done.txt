@@ -19804,3 +19804,13 @@ NOTE: parameter-name placeholder for `test_assumptions_simplify`.
   between Woxi and wolframscript. Assuming coverage in
   `tests/interpreter_tests/algebra.rs::simplify_with_assumption`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_add
+LINE: 10
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_add`. Spot-check
+  `Plus[1, 2] → 3` matches between Woxi and wolframscript. Plus
+  coverage in `tests/interpreter_tests/arithmetic.rs`.
+---
