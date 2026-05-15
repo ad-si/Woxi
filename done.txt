@@ -21316,3 +21316,27 @@ NOTE: Uses `%[[1]]` (REPL output history) and the symbols
   not available in script mode either — see
   [[project_woxi_no_repl_history]].
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1269
+TYPE: >>
+INPUT: Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]
+EXPECTED:
+: Tag Plus in Dice[a___] + Dice[b___] is Protected.
+= $Failed
+NOTE: Added Protected-head rejection to SetDelayed in two
+  locations:
+  (1) `src/lib.rs::store_function_definition` — handles
+      `Sin[x_] := …` (Identifier head).
+  (2) `src/evaluator/assignment.rs::set_delayed_ast` — handles
+      `Plus[…]/Times[…]` (BinaryOp head) via operator → tag.
+  Both emit `SetDelayed::write: Tag <h> in <lhs> is Protected.`
+  and return `$Failed`. Exception list: `N`, `MessageName`,
+  `Format`, `Default`, `Options` — these are "redirected per-
+  symbol" assignments that wolframscript allows despite the
+  head being Protected. Also honors runtime
+  `Unprotect[<sym>]` via `FUNC_ATTRS_REMOVED`. Regression in
+  `tests/interpreter_tests/attributes.rs::protect_unprotect::set_delayed_on_protected_*`
+  and `n_value_assignment_allowed_despite_protected`.
+  15998/15998 pass.
+---

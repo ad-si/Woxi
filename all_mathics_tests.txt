@@ -53,15 +53,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1269
-TYPE: >>
-INPUT: Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]
-EXPECTED:
-: Tag Plus in Dice[a___] + Dice[b___] is Protected.
-= $Failed
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1273
 TYPE: >>
 INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4]

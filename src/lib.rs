@@ -1472,8 +1472,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         }
       }
       ProgramStmt::FunctionDefinition(node) => {
-        store_function_definition(node.clone())?;
-        last_result = Some("\0".to_string());
+        match store_function_definition(node.clone())? {
+          Some(s) => last_result = Some(s),
+          None => last_result = Some("\0".to_string()),
+        }
         any_nonempty = true;
       }
       ProgramStmt::TagSetDelayed(node) => {
@@ -3192,10 +3194,61 @@ pub fn parse_list_string(s: &str) -> Option<Vec<String>> {
   Some(parts)
 }
 
-fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
+fn store_function_definition(
+  pair: Pair<Rule>,
+) -> Result<Option<String>, InterpreterError> {
   // FunctionDefinition  :=  Identifier "[" (Pattern ("," Pattern)*)? "]" ":=" Expression
+  let raw_lhs = {
+    // pest pairs are not Clone, so capture the source slice up to ":=".
+    let span = pair.as_span().as_str();
+    span
+      .split_once(":=")
+      .map(|(l, _)| l.trim().to_string())
+      .unwrap_or_else(|| span.trim().to_string())
+  };
   let mut inner = pair.into_inner();
   let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
+
+  // Reject assignments to built-in Protected heads (e.g. `Sin`,
+  // `Plus`, …). wolframscript emits `SetDelayed::write: Tag <h>
+  // in <lhs> is Protected.` and returns `$Failed`. Special case:
+  // `N[sym, …] := body` is stored as an NValue on `sym` instead
+  // of as a DownValue on `N`, so wolframscript allows it even
+  // though `N` is Protected. Treat that pattern as not-rejected.
+  // Heads where wolframscript allows DownValue-shaped assignment
+  // (the rule is redirected to a per-symbol mechanism — NValues
+  // for `N`, Messages for `MessageName`, Format/Default/Options
+  // for the formatting heads, etc.).
+  let allows_redirected_rule = matches!(
+    func_name.as_str(),
+    "N" | "MessageName" | "Format" | "Default" | "Options"
+  );
+  let is_n_value_assignment = allows_redirected_rule;
+  let was_unprotected = FUNC_ATTRS_REMOVED.with(|m| {
+    m.borrow()
+      .get(func_name.as_str())
+      .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
+  });
+  let is_builtin_protected = !is_n_value_assignment
+    && !was_unprotected
+    && evaluator::get_builtin_attributes(&func_name).contains(&"Protected");
+  let is_user_protected = FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(func_name.as_str())
+      .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
+  });
+  if is_builtin_protected || is_user_protected {
+    let (tag, ret) = if is_builtin_protected && !is_user_protected {
+      ("SetDelayed::write", Some("$Failed".to_string()))
+    } else {
+      ("SetDelayed::wrsym", None)
+    };
+    emit_message(&format!(
+      "{}: Tag {} in {} is Protected.",
+      tag, func_name, raw_lhs
+    ));
+    return Ok(ret);
+  }
 
   // Collect all pattern parameters with their optional conditions, defaults, and head constraints
   let mut params = Vec::new();
@@ -3418,7 +3471,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
       (params, conditions, defaults, heads, blank_types, body_expr),
     );
   });
-  Ok(())
+  Ok(None)
 }
 
 /// Handle TagSetDelayed: tag /: f[args...] := body  (evaluate_rhs=false)

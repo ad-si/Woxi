@@ -1409,6 +1409,32 @@ pub fn set_delayed_ast(
   lhs: &Expr,
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Early reject: `a + b := c` / `a * b := c` / `a^b := c` etc.
+  // attempt to install DownValues on the corresponding built-in
+  // (`Plus`, `Times`, `Power`, …) which are Protected.
+  // wolframscript emits `SetDelayed::write: Tag <op> in <lhs> is
+  // Protected.` and returns `$Failed`. Detect the BinaryOp head
+  // here so the message and return value match.
+  if let Expr::BinaryOp { op, .. } = lhs {
+    use crate::syntax::BinaryOperator as B;
+    let tag = match op {
+      B::Plus | B::Minus => Some("Plus"),
+      B::Times | B::Divide => Some("Times"),
+      B::Power => Some("Power"),
+      _ => None,
+    };
+    if let Some(t) = tag
+      && crate::evaluator::get_builtin_attributes(t).contains(&"Protected")
+    {
+      crate::emit_message(&format!(
+        "SetDelayed::write: Tag {} in {} is Protected.",
+        t,
+        crate::syntax::expr_to_string(lhs)
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+  }
+
   // Unwrap nested Conditions on LHS:
   //   f[x_] /; a /; b := body → SetDelayed[Condition[Condition[f[x_], a], b], body]
   // Collect each condition and keep unwrapping until the LHS is no longer a Condition.
@@ -1645,18 +1671,52 @@ pub fn set_delayed_ast(
   {
     // Resolve Module-scoped unique symbols (e.g. f → f$1)
     let func_name = &resolve_func_name(func_name);
-    // Check user-defined Protected attribute for DownValues
+    // Check user-defined Protected attribute for DownValues, and
+    // also the built-in Protected attribute for system symbols
+    // like `Sin`, `Plus`, etc. wolframscript emits
+    // `SetDelayed::write` (not `::wrsym`) and returns `$Failed`
+    // for protected built-ins. Special case: `N[sym, …] := body`
+    // stores an NValue on `sym`, so allow even though `N` is
+    // Protected.
     let is_user_protected = crate::FUNC_ATTRS.with(|m| {
       m.borrow()
         .get(func_name.as_str())
         .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
     });
-    if is_user_protected {
+    // Heads with a redirected per-symbol storage mechanism —
+    // wolframscript permits these even though the head is
+    // Protected (NValues, Messages, Format rules, etc.).
+    let is_n_value_assignment = matches!(
+      func_name.as_str(),
+      "N" | "MessageName" | "Format" | "Default" | "Options"
+    );
+    let was_unprotected = crate::FUNC_ATTRS_REMOVED.with(|m| {
+      m.borrow()
+        .get(func_name.as_str())
+        .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
+    });
+    let is_builtin_protected = !is_n_value_assignment
+      && !was_unprotected
+      && crate::evaluator::attributes::get_builtin_attributes(func_name)
+        .contains(&"Protected");
+    if is_user_protected || is_builtin_protected {
+      let (msg_tag, ret) = if is_builtin_protected && !is_user_protected {
+        (
+          "SetDelayed::write",
+          Expr::Identifier("$Failed".to_string()),
+        )
+      } else {
+        (
+          "SetDelayed::wrsym",
+          Expr::Identifier("Null".to_string()),
+        )
+      };
+      let lhs_str = crate::syntax::expr_to_string(lhs);
       crate::emit_message(&format!(
-        "SetDelayed::wrsym: Symbol {} is Protected.",
-        func_name
+        "{}: Tag {} in {} is Protected.",
+        msg_tag, func_name, lhs_str
       ));
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(ret);
     }
 
     let mut params = Vec::new();

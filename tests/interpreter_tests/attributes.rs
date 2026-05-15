@@ -459,6 +459,39 @@ mod protect_unprotect {
       "True"
     );
   }
+
+  // `Sin[x_] := y` attempts to install a DownValue on a
+  // built-in Protected symbol. wolframscript emits
+  // `SetDelayed::write` and returns `$Failed`. Regression for
+  // mathics 1-Manual `Dice[a___] + Dice[b___] := …` row.
+  #[test]
+  fn set_delayed_on_protected_builtin_fails() {
+    clear_state();
+    // The CLI prints `$Failed`; the underlying message goes to
+    // stdout. Just check the return value here.
+    assert_eq!(interpret("Sin[x_] := y").unwrap(), "$Failed");
+  }
+
+  #[test]
+  fn set_delayed_on_protected_binary_op_fails() {
+    clear_state();
+    assert_eq!(
+      interpret("Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]").unwrap(),
+      "$Failed"
+    );
+  }
+
+  // NValues / Messages / Format / Default / Options are
+  // "redirected per-symbol" definitions: wolframscript permits
+  // them even though the head is Protected.
+  #[test]
+  fn n_value_assignment_allowed_despite_protected() {
+    clear_state();
+    assert_eq!(
+      interpret("N[c, p_?(#>10&)] := p; N[c, 11]").unwrap(),
+      "11"
+    );
+  }
 }
 
 mod attributes_assignment {
