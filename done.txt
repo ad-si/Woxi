@@ -21103,3 +21103,11 @@ NOTE: Gries-Schneider GS3.m row. Mathics-extractor split of an
   `expect[eqv[eqv[p, q], q], p]` line. GS.m bench context —
   the bench defines `eqv` and other logic primitives.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS3.m
+LINE: 323
+ACTUAL (expression): q, q], p
+EXPECTED (should equal): eqv[eqv[p
+NOTE: Gries-Schneider GS3.m row. Same `eqv[eqv[p, q], q] == p`
+  pattern as line 209 — GS.m bench context, lowercase `eqv`
+  defined inside the file.
+---
