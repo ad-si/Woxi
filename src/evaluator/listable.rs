@@ -304,6 +304,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$PathnameSeparator" => {
       Some(Expr::String(std::path::MAIN_SEPARATOR.to_string()))
     }
+    // In script mode (no Mathematica front end / notebook UI),
+    // wolframscript returns `False`. Woxi is always headless.
+    "$Notebooks" => Some(Expr::Identifier("False".to_string())),
     // `$RandomState` is wolframscript's RNG state — a multi-thousand-digit
     // integer whose value depends on seed and history. Reproducing the
     // exact value isn't feasible without sharing wolframscript's PRNG

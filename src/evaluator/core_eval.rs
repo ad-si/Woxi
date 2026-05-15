@@ -722,9 +722,16 @@ pub fn evaluate_expr_to_expr_inner(
             .into(),
           });
         }
-        // Handle system $ variables
+        // Handle system $ variables (both unqualified `$Foo` and
+        // System-context-qualified `System`$Foo` forms).
         if name.starts_with('$')
           && let Some(val) = get_system_variable(name)
+        {
+          return Ok(val);
+        }
+        if let Some(short) = name.strip_prefix("System`")
+          && short.starts_with('$')
+          && let Some(val) = get_system_variable(short)
         {
           return Ok(val);
         }

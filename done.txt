@@ -20023,3 +20023,19 @@ NOTE: Same as `Settings`$TraceGet` — mathics-internal context
   mathics test asserts mathics's own binding in the Settings
   context; no portable wolframscript surface.
 ---
+FILE: mathics/test/test_settings.py
+FUNCTION: test_is_not_notebook
+LINE: 33
+TYPE: session_evaluate
+INPUT: System`$Notebooks
+EXPECTED: (assertion - see source)
+NOTE: wolframscript returns `False` for both `$Notebooks` and
+  `System`$Notebooks` in script mode (no front end). Woxi
+  previously left both as symbolic. Implemented `$Notebooks` ->
+  `False` in `src/evaluator/listable.rs` and added a generic
+  `System\`$Foo` -> `$Foo` rewrite in `src/evaluator/core_eval.rs`
+  so any system $ variable resolves under the System context too.
+  Regression in
+  `tests/interpreter_tests/machine_specific.rs:notebooks_false_in_script_mode`
+  and the three `system_qualified_*` companions.
+---

@@ -475,4 +475,29 @@ mod cases {
       r#"True"#,
     );
   }
+
+  // wolframscript's `$Notebooks` is `False` in script mode (no front
+  // end), and the System-context-qualified form resolves the same way.
+  #[test]
+  fn notebooks_false_in_script_mode() {
+    assert_case(r#"$Notebooks"#, r#"False"#);
+  }
+
+  #[test]
+  fn system_qualified_notebooks_false() {
+    assert_case(r#"System`$Notebooks"#, r#"False"#);
+  }
+
+  #[test]
+  fn system_qualified_line_resolves() {
+    assert_case(r#"System`$Line"#, r#"1"#);
+  }
+
+  #[test]
+  fn system_qualified_byte_ordering_resolves() {
+    assert_case(
+      r#"System`$ByteOrdering == -1 || System`$ByteOrdering == 1"#,
+      r#"True"#,
+    );
+  }
 }

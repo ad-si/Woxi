@@ -12,13 +12,6 @@ Source: test/**/*.py — direct assert evaluate(expr) == expected patterns
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/test_settings.py
-FUNCTION: test_is_not_notebook
-LINE: 33
-TYPE: session_evaluate
-INPUT: System`$Notebooks
-EXPECTED: (assertion - see source)
----
 ====================================================================================================
 SECTION 5: ADDITIONAL PYTEST TESTS (compile, evaluation, context, etc.) (41 tests)
 ====================================================================================================
