@@ -19781,3 +19781,15 @@ NOTE: parameter-name placeholder for `test_sign`. Spot-check
   `Sign[-5] → -1` matches between Woxi and wolframscript. Sign
   coverage in `tests/interpreter_tests/math/numeric.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: test_assumptions_integrate
+LINE: 84
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: message
+NOTE: parameter-name placeholder for `test_assumptions_integrate`.
+  Spot-check
+  `Assuming[x>0, Integrate[Exp[-x], {x, 0, Infinity}]] → 1`
+  matches between Woxi and wolframscript. Assuming coverage in
+  `tests/interpreter_tests/algebra.rs::simplify_with_assumption`.
+---

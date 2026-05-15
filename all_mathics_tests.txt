@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/arithmetic/test_assumptions.py
-FUNCTION: test_assumptions_integrate
-LINE: 84
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: message
----
-FILE: mathics/test/builtin/arithmetic/test_assumptions.py
 FUNCTION: test_assumptions_simplify
 LINE: 93
 INPUT: str_expr
