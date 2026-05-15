@@ -8,13 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_complex
 LINE: 289
-INPUT: 1. + 0. I//OutputForm
-EXPECTED: 1. + 0. I
-MESSAGE: Formatted
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
 INPUT: 0. + 1. I//OutputForm
 EXPECTED: 0. + 1. I
 MESSAGE: Formatting 1. I

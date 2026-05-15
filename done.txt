@@ -19860,3 +19860,17 @@ NOTE: Mathics auto-promotes `0. + 0. I` to `Complex[0.`, 0.`]`,
   memories for similar mathics-side promotions Woxi follows
   wolframscript on.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_complex
+LINE: 289
+INPUT: 1. + 0. I//OutputForm
+EXPECTED: 1. + 0. I
+MESSAGE: Formatted
+NOTE: Woxi and wolframscript both produce `OutputForm[1. + 0.*I]`
+  in script mode (`-code`/`eval`) — OutputForm doesn't transform
+  the printed expression in `-code` mode. Mathics expected
+  `1. + 0. I` is the REPL-style pretty-print which neither Woxi
+  nor wolframscript produce in script mode. See
+  [[project_woxi_no_repl_history]] and
+  [[project_woxi_complex_head_divergence]].
+---
