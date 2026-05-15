@@ -20485,3 +20485,14 @@ NOTE: Woxi and wolframscript both produce
   NumberMarks -> True], InputForm[14], Editable -> True,
   AutoDelete -> True]`. Same family as the `-14` row.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_positive
+FORM: OutputForm
+INPUT: MakeBoxes[14//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"14\""], OutputForm[14], Editable -> False]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["14", BaselinePosition -> Baseline],
+  OutputForm[14], Editable -> False]`. Same family as the `-14`
+  OutputForm row.
+---
