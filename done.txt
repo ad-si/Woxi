@@ -20925,3 +20925,15 @@ NOTE: Parameter-name placeholder for `test_makeboxes_real`.
   `tests/interpreter_tests/string.rs::make_boxes_{negative_real,
   real_scientific_backtick_before_exponent, output_form_{truncates,pads}_precision}`.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_precedence
+LINE: 88
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Parameter-name placeholder for `test_makeboxes_precedence`.
+  Spot-check `MakeBoxes[a + b * c]` →
+  `RowBox[{a, +, RowBox[{b,  , c}]}]` matches between Woxi and
+  wolframscript (`*` rendered as the implicit-times space inside
+  the nested RowBox).
+---
