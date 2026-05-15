@@ -19955,3 +19955,14 @@ NOTE: Both Woxi and wolframscript leave `F[x]` symbolic
   (unknown head returns unchanged). Coverage in many places
   including `tests/interpreter_tests/syntax.rs`.
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation
+LINE: 32
+TYPE: session_evaluate
+INPUT: $Line
+EXPECTED: (assertion - see source)
+NOTE: Both Woxi and wolframscript return `1` for `$Line` (the
+  current input-line counter). The session_evaluate test
+  asserts this scalar value; Woxi matches wolframscript in
+  script mode.
+---
