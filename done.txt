@@ -21095,3 +21095,11 @@ NOTE: Gries-Schneider GS2.m row (final row in this file).
   `expect[dualTheorem[eqv[not[or[p, q]], and[not[p], not[q]]]], …]`.
   GS.m bench context.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS3.m
+LINE: 209
+ACTUAL (expression): q, q], p
+EXPECTED (should equal): eqv[eqv[p
+NOTE: Gries-Schneider GS3.m row. Mathics-extractor split of an
+  `expect[eqv[eqv[p, q], q], p]` line. GS.m bench context —
+  the bench defines `eqv` and other logic primitives.
+---

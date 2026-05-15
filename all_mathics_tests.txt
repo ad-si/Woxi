@@ -52,11 +52,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 ----------------------------------------------------------------------------------------------------
 
 FILE: examples/symbolic_logic/gries_schneider/GS3.m
-LINE: 209
-ACTUAL (expression): q, q], p
-EXPECTED (should equal): eqv[eqv[p
----
-FILE: examples/symbolic_logic/gries_schneider/GS3.m
 LINE: 323
 ACTUAL (expression): q, q], p
 EXPECTED (should equal): eqv[eqv[p
