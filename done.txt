@@ -19642,3 +19642,14 @@ NOTE: parameter-name placeholder for `test_change_prec`, exercising
   `SetPrecision[…]` / `SetAccuracy[…]` precision-mutation rules.
   Broadly covered by Woxi's `n_arbitrary_precision` tests.
 ---
+FILE: mathics/test/builtin/atomic/test_strings.py
+FUNCTION: test_string
+LINE: 35
+INPUT: str_expr
+EXPECTED: warnings
+MESSAGE: str_expected
+NOTE: parameter-name placeholder for `test_string` parametrisation —
+  mathics's string built-in tests (StringJoin, StringLength,
+  StringReplace, etc.). Broad coverage lives in Woxi's
+  `tests/interpreter_tests/string.rs`.
+---
