@@ -21062,3 +21062,11 @@ NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
   `expect[dualTheorem[or[p, not[p]]], not[and[p, not[p]]]]`.
   Same GS.m bench context.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 490
+ACTUAL (expression): true]
+EXPECTED (should equal): dualTheorem[eqv[true
+NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of an
+  `expect[dualTheorem[eqv[true, …]], …]` line. GS.m bench
+  context.
+---
