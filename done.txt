@@ -20474,3 +20474,14 @@ NOTE: Woxi and wolframscript both produce
   Mathics's `System\`` prefixes and quoted `"14"` literal are
   mathics-specific.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_positive
+FORM: InputForm
+INPUT: MakeBoxes[14//InputForm]
+EXPECTED: InterpretationBox[StyleBox["14", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[14], Editable -> True, AutoDelete -> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[StyleBox[14, ShowStringCharacters -> True,
+  NumberMarks -> True], InputForm[14], Editable -> True,
+  AutoDelete -> True]`. Same family as the `-14` row.
+---
