@@ -20084,3 +20084,16 @@ NOTE: Woxi's InputForm output `1.09*^12 + 3.*I` matches mathics's
   any of them either (e.g. `OutputForm[…]` stays as a wrapped
   expression). Woxi follows wolframscript script-mode output.
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Grid[{{"Spanish", "Hola!"},{"Portuguese", "Olà!"},{"English", "Hi!"}}]
+DESCRIPTION: Strings in a GridBox
+NOTE: Woxi's script-mode output
+  `Grid[{{Spanish, Hola!}, {Portuguese, Olà!}, {English, Hi!}}]`
+  matches wolframscript exactly (modulo a wolframscript UTF-8
+  mojibake bug on `à`). The other format_tests forms
+  (StandardForm/TraditionalForm grid layouts, LaTeX, MathML) are
+  produced by mathics's internal format renderers; wolframscript
+  `-code` does not generate any of them. Format-tests YAML rows
+  with mathics-only renderers fall outside Woxi's
+  wolframscript-parity target.
+---
