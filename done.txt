@@ -20901,3 +20901,14 @@ NOTE: Parameter-name placeholder for parametrized
   MakeBoxes coverage in
   `tests/interpreter_tests/string.rs::make_boxes`.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_basic_forms
+LINE: 53
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Parameter-name placeholder for `test_makeboxes_basic_forms`.
+  Earlier rows in this section already covered the FullForm /
+  InputForm / OutputForm / TeXForm / StandardForm / TraditionalForm
+  paths for integer / real / symbol / function expressions.
+---
