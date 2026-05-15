@@ -20374,3 +20374,16 @@ NOTE: Woxi and wolframscript both produce
   `"F[x]"` are mathics-specific. Postfix arg flows through the
   earlier-added normalisation.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: OutputForm
+INPUT: MakeBoxes[F[x]//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"F[x]\""], OutputForm[F[x]], Editable ->False]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["F[x]", BaselinePosition -> Baseline],
+  OutputForm[F[x]], Editable -> False]`. Mathics's doubly-escaped
+  `"\"F[x]\""` is mathics-specific; wolframscript uses
+  single-layer baked-in quotes. The BaselinePosition option is
+  emitted by wolframscript but not in mathics's expected.
+---
