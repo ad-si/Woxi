@@ -21153,3 +21153,23 @@ NOTE: The `ExampleData/sunflowers.jpg` fixture isn't available
   `tests/interpreter_tests/image.rs::color_negate_{non_image,failed}_returns_unevaluated`.
   15989/15989 pass.
 ---
+FILE: mathics/builtin/forms/mathics3.py
+CLASS: SympyForm
+LINE: 72
+TYPE: >>
+INPUT: E^2 + 3E // SympyForm
+EXPECTED:
+= exp(2) + 3*E
+NOTE: SympyForm is a mathics-internal renderer (sympy AST); not
+  produced by wolframscript `-code`. Both Woxi and wolframscript
+  leave `SympyForm[…]` as an unknown wrapper. The expression
+  under it, `E^2 + 3E`, now also matches wolframscript on
+  argument ordering: both produce `3*E + E^2` (ascending
+  exponent, low first). Fix in `extract_var_exp_pairs`
+  (`src/functions/math_ast/arithmetic.rs`): added `Expr::Constant`
+  handling inside the Power branches, restricted to concrete
+  numeric exponents (so `E^x` with symbolic exponent still
+  routes through term-sort-key). Regression in
+  `tests/interpreter_tests/arithmetic.rs::plus_{pi,e}_orders_by_concrete_exponent`.
+  15991/15991 pass.
+---

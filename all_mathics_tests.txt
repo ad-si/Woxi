@@ -51,13 +51,6 @@ Format: expect[expected_result, expression_to_evaluate]
 Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern matching
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/builtin/forms/mathics3.py
-CLASS: SympyForm
-LINE: 72
-TYPE: >>
-INPUT: E^2 + 3E // SympyForm
-EXPECTED:
-= exp(2) + 3*E
 ---
 FILE: mathics/builtin/image/colors.py
 CLASS: Colorize

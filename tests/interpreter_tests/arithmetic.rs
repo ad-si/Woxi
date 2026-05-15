@@ -421,6 +421,22 @@ mod arithmetic {
       // -Sin[x]*Sin[x] should simplify to -Sin[x]^2
       assert_eq!(interpret("Times[-Sin[x], Sin[x]]").unwrap(), "-Sin[x]^2");
     }
+
+    // Named numeric constants (Pi, E, Degree, …) raised to a
+    // *concrete* integer exponent sort like polynomial variables
+    // in Plus, so `Pi^2 + 3*Pi` lands as `3*Pi + Pi^2` (ascending
+    // exponent, low first). Symbolic exponents (e.g. `E^x`) still
+    // route through the old term-sort-key path. Regression for
+    // mathics mathics3.py `E^2 + 3E` row.
+    #[test]
+    fn plus_pi_orders_by_concrete_exponent() {
+      assert_eq!(interpret("Pi^2 + 3 Pi").unwrap(), "3*Pi + Pi^2");
+    }
+
+    #[test]
+    fn plus_e_orders_by_concrete_exponent() {
+      assert_eq!(interpret("E^2 + 3 E").unwrap(), "3*E + E^2");
+    }
   }
 }
 

@@ -1728,6 +1728,17 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
         return Some(vec![(s.clone(), exp)]);
       }
+      if let Expr::Constant(c) = left.as_ref()
+        && let Some(exp) = expr_to_f64(right)
+      {
+        // Named numeric constants (Pi, E, …) raised to a *concrete*
+        // numeric exponent sort like polynomial variables so
+        // `Pi^2 + 3*Pi` lands as `3*Pi + Pi^2`, matching
+        // wolframscript. Symbolic exponents (e.g. `E^x`) fall
+        // through to the term-sort-key path so their existing
+        // ordering rules apply.
+        return Some(vec![(format!("{c:?}"), exp)]);
+      }
       if let Expr::FunctionCall { name, .. } = left.as_ref()
         && matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
       {
@@ -1740,6 +1751,11 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       if let Expr::Identifier(s) = &args[0] {
         let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
         return Some(vec![(s.clone(), exp)]);
+      }
+      if let Expr::Constant(c) = &args[0]
+        && let Some(exp) = expr_to_f64(&args[1])
+      {
+        return Some(vec![(format!("{c:?}"), exp)]);
       }
       if let Expr::FunctionCall { name: inner, .. } = &args[0]
         && matches!(inner.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
