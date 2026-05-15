@@ -19814,3 +19814,14 @@ NOTE: parameter-name placeholder for `test_add`. Spot-check
   `Plus[1, 2] → 3` matches between Woxi and wolframscript. Plus
   coverage in `tests/interpreter_tests/arithmetic.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_exponential
+LINE: 37
+INPUT: log2=.; E^(I Pi/4)
+EXPECTED: E ^ (I / 4 Pi)
+NOTE: Both Woxi and wolframscript produce `E^(I/4*Pi)` (same
+  expression, slightly different OutputForm than mathics's
+  pretty-printed string). The `log2=.` prefix is `Unset[log2]`
+  and has no effect here. Regression at
+  `tests/interpreter_tests/arithmetic.rs:2435`.
+---
