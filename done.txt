@@ -20954,3 +20954,14 @@ NOTE: Added an `Expr::Part` arm to `expr_to_box_form` that
   `tests/interpreter_tests/string.rs::make_boxes_part_{single,multi}_index`.
   15987/15987 pass.
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_others_fail
+LINE: 173
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: Parameter-name placeholder for `test_makeboxes_others_fail`.
+  Per the function name, this exercises MakeBoxes cases that
+  mathics expects to fail or error; not a Wolfram Language
+  surface to spot-check directly.
+---
