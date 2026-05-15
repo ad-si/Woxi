@@ -20012,3 +20012,14 @@ NOTE: `Settings`$TraceGet` is a mathics-internal context variable.
   asserts the symbol is bound in mathics' own Settings context;
   no portable wolframscript surface.
 ---
+FILE: mathics/test/test_settings.py
+FUNCTION: test_settings
+LINE: 23
+TYPE: session_evaluate
+INPUT: Settings`$PreferredBackendMethod
+EXPECTED: (assertion - see source)
+NOTE: Same as `Settings`$TraceGet` — mathics-internal context
+  variable. Both Woxi and wolframscript leave it symbolic. The
+  mathics test asserts mathics's own binding in the Settings
+  context; no portable wolframscript surface.
+---
