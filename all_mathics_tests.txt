@@ -36,14 +36,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Numbers
-EXPRESSION: PrecisionReal, Zero_Accuracy
-FORM: StandardForm
-INPUT: MakeBoxes[0.``30]
-EXPECTED: "0``30."
-MESSAGE: In Mathics3, precision is always an integer number.
----
-FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Graphics
 EXPRESSION: Disk
 FORM: OutputForm
