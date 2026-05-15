@@ -20856,3 +20856,16 @@ NOTE: Added `\`` (FormBox) box-form operator: `<form> \` <body>`
   `tests/interpreter_tests/arithmetic.rs::box_form_form_box`.
   15986/15986 pass.
 ---
+FILE: mathics/test/format/test_format.py
+FUNCTION: None
+LINE: 50
+INPUT: text
+EXPECTED: latex
+MESSAGE: mathml
+NOTE: Parameter-name placeholder for a parametrized mathics test
+  iterating over (text, latex, mathml) output forms. `text`/
+  `latex`/`mathml` are mathics-internal renderers; wolframscript
+  in `-code` mode produces only the text/InputForm output (which
+  Woxi already matches in many earlier rows). No specific input
+  to spot-check here.
+---

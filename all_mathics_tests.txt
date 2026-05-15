@@ -43,13 +43,6 @@ Runner: pytest
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/test_format.py
-FUNCTION: None
-LINE: 50
-INPUT: text
-EXPECTED: latex
-MESSAGE: mathml
----
-FILE: mathics/test/format/test_format.py
 FUNCTION: test_makeboxes_mathml
 LINE: 220
 INPUT: str_expr
