@@ -20637,3 +20637,15 @@ NOTE: Woxi and wolframscript both produce
   OutputForm[1.4], Editable -> False]`. OutputForm strips the
   backtick precision mark, leaving `1.4`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: MachineReal, negative
+FORM: StandardForm
+INPUT: MakeBoxes[-1.4`]
+EXPECTED: RowBox[{"-", "1.4`"}]
+MESSAGE: StandardForm always shows a precision mark.
+NOTE: Woxi and wolframscript both produce `RowBox[{-, 1.4`}]`.
+  Negative Real decomposes the sign (from the earlier
+  negative-Real fix), and the absolute value `1.4` keeps the
+  backtick precision mark in StandardForm.
+---

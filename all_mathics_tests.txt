@@ -38,14 +38,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Numbers
 EXPRESSION: MachineReal, negative
-FORM: StandardForm
-INPUT: MakeBoxes[-1.4`]
-EXPECTED: RowBox[{"-", "1.4`"}]
-MESSAGE: StandardForm always shows a precision mark.
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Numbers
-EXPRESSION: MachineReal, negative
 FORM: OutputForm
 INPUT: MakeBoxes[-1.4`//OutputForm]
 EXPECTED: InterpretationBox[PaneBox["\"-1.4\""], OutputForm[-1.4], Editable -> False]
