@@ -787,6 +787,15 @@ mod pattern_matching {
       assert_eq!(interpret("(s:A[x])[t]").unwrap(), "(s:A[x])[t]");
     }
 
+    // CurriedCall with a Condition head (`/;`) needs surrounding
+    // parens too — wolframscript prints `(x_A /; u > 0)[p]`,
+    // not `x_A /; u > 0[p]`. Regression for mathics
+    // test_definitions.py line 43 row.
+    #[test]
+    fn curried_call_on_condition_head_wraps_in_parens() {
+      assert_eq!(interpret("(x_A/;u>0)[p]").unwrap(), "(x_A /; u > 0)[p]");
+    }
+
     #[test]
     fn pattern_optional_subtracted_wraps() {
       assert_eq!(interpret("a_. - b_").unwrap(), "(a_.) - (b_)");

@@ -21388,3 +21388,17 @@ NOTE: Mathics's expected `A` is the SubValue tag extracted via
   `tests/interpreter_tests/patterns.rs::patterns_inside_plus::curried_call_on_pattern_head_wraps_in_parens`.
   16001/16001 pass.
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 43
+INPUT: (x_A/;u>0)[p]
+EXPECTED: A
+MESSAGE: subvalues
+NOTE: Same family as line 42 — added `Condition` to the
+  CurriedCall `needs_parens` list in `src/syntax.rs` so
+  `(x_A /; u > 0)[p]` renders with the surrounding parens
+  matching wolframscript (Woxi previously printed
+  `x_A /; u > 0[p]`). Regression in
+  `tests/interpreter_tests/patterns.rs::patterns_inside_plus::curried_call_on_condition_head_wraps_in_parens`.
+  16002/16002 pass.
+---

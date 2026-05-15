@@ -51,13 +51,6 @@ Format: expect[expected_result, expression_to_evaluate]
 Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern matching
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
-LINE: 43
-INPUT: (x_A/;u>0)[p]
-EXPECTED: A
-MESSAGE: subvalues
----
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
 LINE: 65

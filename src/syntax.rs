@@ -8947,8 +8947,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         || matches!(
           func.as_ref(),
           Expr::FunctionCall { name, args }
-            if matches!(name.as_str(), "Plus" | "Times" | "Power" | "Pattern" | "Optional")
-              && args.len() >= 2
+            if matches!(
+              name.as_str(),
+              "Plus" | "Times" | "Power" | "Pattern" | "Optional" | "Condition"
+            ) && args.len() >= 2
         );
       let func_display = if needs_parens {
         format!("({})", func_str)
