@@ -21340,3 +21340,19 @@ NOTE: Added Protected-head rejection to SetDelayed in two
   and `n_value_assignment_allowed_despite_protected`.
   15998/15998 pass.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1273
+TYPE: >>
+INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4]
+EXPECTED:
+= -Graphics--Graphics--Graphics--Graphics--Graphics-
+NOTE: Mathics's expected `-Graphics--Graphics-…` requires a
+  prior `Dice[…]` graphics-rendering rule defined earlier in
+  the chapter; not loaded here. Both Woxi and wolframscript
+  leave the Plus expression symbolic. They differ on argument
+  ordering — wolframscript sorts by canonical order
+  (`Dice[4] + Dice[1, 5] + Dice[3, 2]`) while Woxi preserves
+  input order (`Dice[1, 5] + Dice[3, 2] + Dice[4]`). A separate
+  Plus-argument-sort task could address that.
+---

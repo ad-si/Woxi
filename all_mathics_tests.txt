@@ -53,14 +53,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1273
-TYPE: >>
-INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4]
-EXPECTED:
-= -Graphics--Graphics--Graphics--Graphics--Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1276
 TYPE: #>
 INPUT: Dice[1, 5] + Dice[3, 2] + Dice[4] // InputForm
