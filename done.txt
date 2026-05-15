@@ -20361,3 +20361,16 @@ NOTE: Woxi and wolframscript both produce
   by wolframscript and Woxi in script mode. Postfix arg flows
   through the Postfix→FunctionCall normalisation added earlier.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: InputForm
+INPUT: MakeBoxes[F[x]//InputForm]
+EXPECTED: InterpretationBox[StyleBox["F[x]", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[F[x]], Editable -> True, AutoDelete -> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[StyleBox[F[x], ShowStringCharacters -> True,
+  NumberMarks -> True], InputForm[F[x]], Editable -> True,
+  AutoDelete -> True]`. Mathics's `System\`` prefixes and quoted
+  `"F[x]"` are mathics-specific. Postfix arg flows through the
+  earlier-added normalisation.
+---
