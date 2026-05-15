@@ -6,13 +6,6 @@ Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/arithmetic/test_lowlevel_properties.py
-FUNCTION: test_positivity
-LINE: 15
-INPUT: str_expr
-EXPECTED: expected
-MESSAGE: msg
----
-FILE: mathics/test/builtin/arithmetic/test_lowlevel_properties.py
 FUNCTION: test_zero
 LINE: 50
 INPUT: str_expr

@@ -19896,3 +19896,15 @@ NOTE: parameter-name placeholder for `test_element`. Spot-check
   wolframscript. Element coverage in
   `tests/interpreter_tests/predicates.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_lowlevel_properties.py
+FUNCTION: test_positivity
+LINE: 15
+INPUT: str_expr
+EXPECTED: expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_positivity`.
+  Spot-checks `Positive[5] → True`, `Positive[-5] → False`,
+  `NonNegative[0] → True` all match between Woxi and
+  wolframscript. Positivity coverage in
+  `tests/interpreter_tests/predicates.rs`.
+---
