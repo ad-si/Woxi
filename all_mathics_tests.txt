@@ -52,11 +52,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 ----------------------------------------------------------------------------------------------------
 
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 408
-ACTUAL (expression): tconst[t]]], randomBooleanExpression[]
-EXPECTED (should equal): fconst[fconst[s
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 483
 ACTUAL (expression): true]],   not[and[p, false]]
 EXPECTED (should equal): dualTheorem[or [p

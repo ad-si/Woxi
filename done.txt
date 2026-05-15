@@ -21035,3 +21035,13 @@ NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
   `expect[neqv[or[not[p], not[q]], r], dual[eqv[and[not[p], not[q]], r]]]`.
   Same GS.m context as the other rows in this section.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 408
+ACTUAL (expression): tconst[t]]], randomBooleanExpression[]
+EXPECTED (should equal): fconst[fconst[s
+NOTE: Gries-Schneider GS2.m row. `randomBooleanExpression[]` is
+  a GS-defined random generator; the mathics extractor split a
+  single `expect[…, randomBooleanExpression[]]` line across two
+  fields. Without the GS.m bench loaded, no Wolfram surface to
+  spot-check.
+---
