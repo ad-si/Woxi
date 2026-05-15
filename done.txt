@@ -20987,3 +20987,16 @@ NOTE: Degenerate parametrize header from `test_svg.py`. Input
   output from graphics is exercised throughout
   `tests/interpreter_tests/graphics.rs`.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 353
+ACTUAL (expression): q],                   dual[or[p, q]]
+EXPECTED (should equal): and[p
+NOTE: Gries-Schneider symbolic-logic test from the mathics
+  `examples/symbolic_logic/gries_schneider/GS2.m` test bench.
+  The mathics extractor split a single
+  `expect[and[p, q], dual[or[p, q]]]` line into multiple text
+  fields. The lowercase `and`/`or`/`dual` symbols are defined
+  by GS.m itself; they aren't loaded by default in Woxi or
+  wolframscript. Both Woxi and wolframscript leave
+  `dual[or[p, q]]` symbolic without that context.
+---
