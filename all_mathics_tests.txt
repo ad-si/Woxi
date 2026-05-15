@@ -14,13 +14,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/test_session.py
 FUNCTION: test_session_evaluation_as_in_cli
-LINE: 44
-TYPE: session_evaluate
-INPUT: $Line
-EXPECTED: (assertion - see source)
----
-FILE: mathics/test/test_session.py
-FUNCTION: test_session_evaluation_as_in_cli
 LINE: 49
 TYPE: session_evaluate
 INPUT: $Line
