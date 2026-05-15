@@ -28,12 +28,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-053
-EXPECTED:
-  expr: Plot3D[Sin[x y] /(x y), {x, -3, 3}, {y, -3, 3}, Mesh->All]
-  skip: True
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-092
 EXPECTED:
   expr: Plot[Piecewise[{{Log[x], x > 0}, {x*-0.5, x < 0}}], {x, -1, 1}]

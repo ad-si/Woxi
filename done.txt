@@ -20178,3 +20178,13 @@ NOTE: Woxi previously rejected 3+ curves in ParametricPlot with
   `tests/interpreter_tests/graphics.rs::parametric_plot_three_concentric_circles`
   and `_two_concentric_circles`.
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-053
+EXPECTED:
+  expr: Plot3D[Sin[x y] /(x y), {x, -3, 3}, {y, -3, 3}, Mesh->All]
+  skip: True
+NOTE: Mathics skips this row (`skip: True`). Spot-check both
+  Woxi and wolframscript produce `-Graphics3D-` in script mode.
+  Plot3D coverage in
+  `tests/interpreter_tests/graphics.rs::plot3d`.
+---
