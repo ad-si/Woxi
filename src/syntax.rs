@@ -1484,6 +1484,17 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
         i = j + 1;
       }
       _ => {
+        // Try `parse_box_chain` first so operators like `\/` (and
+        // `\^`/`\_`) can combine with neighbouring units (e.g.
+        // `x \/ y` inside `\(x \/ y + z\)` becomes
+        // `FractionBox[x, y]`).
+        if let Some((chained, new_i)) = parse_box_chain(toks, i)
+          && new_i > i + 1
+        {
+          parts.push(chained);
+          i = new_i;
+          continue;
+        }
         let unit = box_unit(&toks[i])?;
         parts.push(unit);
         i += 1;
@@ -1518,7 +1529,7 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
     }
     if c == b'\\' && i + 1 < bytes.len() {
       let n = bytes[i + 1];
-      if matches!(n, b'^' | b'_' | b'+' | b'&' | b'%' | b'@') {
+      if matches!(n, b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'/') {
         toks.push(BoxTok::Op(n as char));
         i += 2;
         continue;
@@ -1635,6 +1646,19 @@ fn parse_box_continued(
           "SubscriptBox"
         };
         return Some((box_call(head, vec![lhs, rhs]), end));
+      }
+      BoxTok::Op('/') => {
+        // `\/` → FractionBox[lhs, next-unit]. Binds tighter than the
+        // surrounding RowBox so e.g. `\(x \/ y + z\)` parses as
+        // `RowBox[{FractionBox["x", "y"], "+", "z"}]`. We only
+        // consume a single token on the right (not a full chain) so
+        // the chain returns to the outer rowbox builder.
+        if idx + 1 >= toks.len() {
+          return None;
+        }
+        let rhs = box_unit(&toks[idx + 1])?;
+        lhs = box_call("FractionBox", vec![lhs, rhs]);
+        idx += 2;
       }
       BoxTok::Op('+') | BoxTok::Op('&') => {
         let op = match &toks[idx] {
@@ -6740,14 +6764,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             head: None,
             ..
           } => true,
-          Expr::FunctionCall { name: bn, args: ba, .. }
-            if bn == "Blank" && ba.is_empty() =>
-          {
-            true
-          }
-          Expr::FunctionCall { name: pn, args: pargs, .. }
-            if pn == "Pattern" && pargs.len() == 2 =>
-          {
+          Expr::FunctionCall {
+            name: bn, args: ba, ..
+          } if bn == "Blank" && ba.is_empty() => true,
+          Expr::FunctionCall {
+            name: pn,
+            args: pargs,
+            ..
+          } if pn == "Pattern" && pargs.len() == 2 => {
             matches!(
               &pargs[1],
               Expr::FunctionCall { name: bn, args: ba, .. }

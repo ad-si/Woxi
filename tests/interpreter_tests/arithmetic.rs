@@ -3363,6 +3363,23 @@ mod cases {
       r#"UnderoverscriptBox["a", "c", "b"]"#,
     );
   }
+
+  // Box-form `\/` is the FractionBox operator. It binds tighter
+  // than the surrounding RowBox so `\(x \/ y + z\)` parses as
+  // `RowBox[{FractionBox["x", "y"], "+", "z"}]`. Regression for
+  // mathics makeboxes_tests.yaml `\(x \/ y + z\)` row.
+  #[test]
+  fn box_form_fraction_simple() {
+    assert_case(r#"\(x \/ y\)"#, r#"FractionBox["x", "y"]"#);
+  }
+
+  #[test]
+  fn box_form_fraction_in_rowbox() {
+    assert_case(
+      r#"\(x \/ y + z\)"#,
+      r#"RowBox[{FractionBox["x", "y"], "+", "z"}]"#,
+    );
+  }
   #[test]
   fn span_inside_parens_then_span() {
     // wolframscript: (a;;b);;c -> Span[Span[a, b], c]
