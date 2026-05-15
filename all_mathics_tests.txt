@@ -38,13 +38,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: PrecisionReal
-FORM: InputForm
-INPUT: MakeBoxes[-14.`3//InputForm]
-EXPECTED: InterpretationBox[StyleBox["-14.`3.", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[-14.`3], Editable -> True, AutoDelete -> True]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: PrecisionReal
 FORM: OutputForm
 INPUT: MakeBoxes[-14.0//OutputForm]
 EXPECTED: InterpretationBox[PaneBox["\"-14.\""], OutputForm[-14.0], Editable-> False]

@@ -20522,3 +20522,15 @@ NOTE: Extended the negative-sign decomposition (added for
   `tests/interpreter_tests/string.rs::make_boxes_negative_real_decomposes_sign`
   and `…_precision_real_full_form_decomposes_sign`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: PrecisionReal
+FORM: InputForm
+INPUT: MakeBoxes[-14.`3//InputForm]
+EXPECTED: InterpretationBox[StyleBox["-14.`3.", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[-14.`3], Editable -> True, AutoDelete -> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[StyleBox[-14.`3., ShowStringCharacters -> True,
+  NumberMarks -> True], InputForm[-14.`3.], Editable -> True,
+  AutoDelete -> True]`. InputForm keeps the precision-tagged
+  literal as a single token (only FullForm decomposes the sign).
+---
