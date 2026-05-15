@@ -3877,6 +3877,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // rendering.
       let formatted_inner =
         trim_bigfloat_to_precision_for_output(&formatted_inner);
+      // Replace held `Graphics[…]` / `Graphics3D[…]` FunctionCalls
+      // with their `-Graphics-` / `-Graphics3D-` placeholder text
+      // so wolframscript's text rendering of held graphics inside
+      // OutputForm matches.
+      let formatted_inner = replace_graphics_with_placeholder(&formatted_inner);
       let output_text = crate::syntax::expr_to_output_form_2d(&formatted_inner);
       // wolframscript's MakeBoxes[OutputForm[expr]] stores the
       // rendered text as a String whose content has literal `"`
@@ -3901,10 +3906,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             .into(),
           },
           // wolframscript's second arg is the wrapped OutputForm
-          // expression itself, not the plain text.
+          // expression itself, not the plain text. Graphics/
+          // Graphics3D inside should print as their placeholder
+          // (`-Graphics-` / `-Graphics3D-`); apply the same
+          // substitution we used for the PaneBox text.
           Expr::FunctionCall {
             name: "OutputForm".to_string(),
-            args: vec![args[0].clone()].into(),
+            args: vec![replace_graphics_with_placeholder(&args[0])].into(),
           },
           Expr::Rule {
             pattern: Box::new(Expr::Identifier("Editable".to_string())),
@@ -4042,6 +4050,41 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
 /// `BigFloat("3.142", 3)` → `Real(3.14)`. Used by
 /// `MakeBoxes[OutputForm[…]]` so wolframscript's
 /// "OutputForm trims digits up to precision" behavior is honored.
+/// Walk the expression replacing `Graphics[…]` and `Graphics3D[…]`
+/// FunctionCalls with their `-Graphics-` / `-Graphics3D-` text
+/// placeholder. wolframscript's `MakeBoxes[OutputForm[Graphics[…]]]`
+/// renders the inner graphics as the placeholder string in both
+/// the PaneBox text *and* the second InterpretationBox arg (since
+/// Graphics-headed FunctionCalls print as the placeholder).
+fn replace_graphics_with_placeholder(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Graphics" => {
+      let _ = args;
+      Expr::Raw("-Graphics-".to_string())
+    }
+    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+      let _ = args;
+      Expr::Raw("-Graphics3D-".to_string())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(replace_graphics_with_placeholder)
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(replace_graphics_with_placeholder)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    other => other.clone(),
+  }
+}
+
 fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
   match expr {
     Expr::BigFloat(digits, prec) => {

@@ -20751,3 +20751,21 @@ NOTE: Woxi and wolframscript both produce `0``30.` (zero with
   the double-backtick accuracy form). Accuracy literal preserves
   the `30.` tag because zero has no log10-based precision.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Graphics
+EXPRESSION: Disk
+FORM: OutputForm
+INPUT: MakeBoxes[Graphics[{Disk[{0,0}, 1]}]//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"-Graphics-\""], OutputForm[Graphics[{Disk[{0, 0}, 1]}]], Editable -> False]
+NOTE: Added `replace_graphics_with_placeholder` to
+  `src/evaluator/dispatch/complex_and_special.rs` and wired it
+  into the MakeBoxes OutputForm branch: held `Graphics[…]` /
+  `Graphics3D[…]` FunctionCalls in the PaneBox text and the
+  OutputForm 2nd arg are now rewritten to the
+  `-Graphics-` / `-Graphics3D-` text placeholder, matching
+  wolframscript. (Mathics's expected keeps the full Graphics
+  expression in the 2nd arg, but wolframscript prints the
+  placeholder — Woxi follows wolframscript.) Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_output_form_{graphics,graphics3d}_uses_placeholder`.
+  15981/15981 pass.
+---

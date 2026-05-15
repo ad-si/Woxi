@@ -3212,6 +3212,27 @@ mod make_boxes {
     );
   }
 
+  // `MakeBoxes[OutputForm[Graphics[…]]]` wraps the rendered
+  // placeholder `-Graphics-` (or `-Graphics3D-`) in both the
+  // PaneBox text and the OutputForm 2nd arg, instead of the
+  // full held Graphics expression. Regression for mathics
+  // makeboxes_tests.yaml Graphics rows.
+  #[test]
+  fn make_boxes_output_form_graphics_uses_placeholder() {
+    assert_eq!(
+      interpret("MakeBoxes[Graphics[{Disk[{0,0}, 1]}]//OutputForm]").unwrap(),
+      r#"InterpretationBox[PaneBox["-Graphics-", BaselinePosition -> Baseline], OutputForm[-Graphics-], Editable -> False]"#
+    );
+  }
+
+  #[test]
+  fn make_boxes_output_form_graphics3d_uses_placeholder() {
+    assert_eq!(
+      interpret("MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]//OutputForm]").unwrap(),
+      r#"InterpretationBox[PaneBox["-Graphics3D-", BaselinePosition -> Baseline], OutputForm[-Graphics3D-], Editable -> False]"#
+    );
+  }
+
   // OutputForm trims (or pads) a precision-tagged BigFloat to
   // exactly its `prec` significant digits and drops the backtick
   // tag from the rendered text. wolframscript:
