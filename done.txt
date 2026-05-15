@@ -20050,3 +20050,27 @@ NOTE: `%` is the REPL output-history reference. In script mode
   exercises REPL state through `check_evaluation_as_in_cli`. See
   [[project_woxi_no_repl_history]].
 ---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 131
+INPUT: ToString[%]
+EXPECTED: x
+NOTE: REPL-history `%` reference; script mode has no history.
+  Same as line 127. See [[project_woxi_no_repl_history]].
+---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 133
+INPUT: ToString[%]
+EXPECTED: y
+NOTE: REPL-history `%` reference; script mode has no history.
+  Same as line 127. See [[project_woxi_no_repl_history]].
+---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 135
+INPUT: ToString[%]
+EXPECTED: Null
+NOTE: REPL-history `%` reference; script mode has no history.
+  Same as line 127. See [[project_woxi_no_repl_history]].
+---

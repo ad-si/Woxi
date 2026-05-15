@@ -19,24 +19,6 @@ Source: Various test files with mixed patterns
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/test_procedural.py
-FUNCTION: test_history_compound_expression
-LINE: 131
-INPUT: ToString[%]
-EXPECTED: x
----
-FILE: mathics/test/builtin/test_procedural.py
-FUNCTION: test_history_compound_expression
-LINE: 133
-INPUT: ToString[%]
-EXPECTED: y
----
-FILE: mathics/test/builtin/test_procedural.py
-FUNCTION: test_history_compound_expression
-LINE: 135
-INPUT: ToString[%]
-EXPECTED: Null
----
 ====================================================================================================
 SECTION 6: YAML FORMAT TESTS (text, LaTeX, MathML output) (260 tests)
 ====================================================================================================
