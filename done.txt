@@ -19846,3 +19846,17 @@ NOTE: Woxi and wolframscript both return `a*b*-Infinity`
   `tests/interpreter_tests/math/numeric.rs` and
   `tests/interpreter_tests/arithmetic.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_complex
+LINE: 289
+INPUT: 0. + 0. I//FullForm
+EXPECTED: Complex[0.`, 0.`]
+MESSAGE: WMA compatibility
+NOTE: Mathics auto-promotes `0. + 0. I` to `Complex[0.`, 0.`]`,
+  but real wolframscript leaves the sum as `0. + 0.*I` (FullForm
+  also unapplied because the wrapper is just a Symbol). Woxi
+  matches wolframscript. This is a mathics-vs-wolframscript
+  divergence — see `project_mathics_image_fixtures` family of
+  memories for similar mathics-side promotions Woxi follows
+  wolframscript on.
+---

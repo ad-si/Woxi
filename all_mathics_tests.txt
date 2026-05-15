@@ -8,13 +8,6 @@ Runner: pytest (invoked via `make pytest`)
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_complex
 LINE: 289
-INPUT: 0. + 0. I//FullForm
-EXPECTED: Complex[0.`, 0.`]
-MESSAGE: WMA compatibility
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
 INPUT: 1. + 0. I//OutputForm
 EXPECTED: 1. + 0. I
 MESSAGE: Formatted
