@@ -3172,6 +3172,28 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // TeX rendering of a precision-tagged BigFloat omits the
+  // backtick precision tag and pads with trailing zeros so the
+  // digit count equals the stored precision. wolframscript:
+  // `-14.`3 // TeXForm` → `-14.0`, `3.14`5 // TeXForm` → `3.1400`.
+  // Regression for mathics makeboxes_tests.yaml PrecisionReal
+  // TeXForm row.
+  #[test]
+  fn make_boxes_tex_form_pads_precision_real() {
+    assert_eq!(
+      interpret("MakeBoxes[-14.`3//TeXForm]").unwrap(),
+      r#"InterpretationBox["-14.0", TeXForm[-14.`3.], Editable -> True, AutoDelete -> True]"#
+    );
+  }
+
+  #[test]
+  fn make_boxes_tex_form_pads_precision_real_more_digits() {
+    assert_eq!(
+      interpret("MakeBoxes[3.14`5//TeXForm]").unwrap(),
+      r#"InterpretationBox["3.1400", TeXForm[3.14`5.], Editable -> True, AutoDelete -> True]"#
+    );
+  }
+
   // Same negative-sign decomposition rule for Real and BigFloat
   // values: `MakeBoxes[-2.5]` → `RowBox[{-, 2.5`}]`,
   // `MakeBoxes[-14.`3 // FullForm]` → `TagBox[StyleBox[RowBox[{-,

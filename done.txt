@@ -20557,3 +20557,17 @@ NOTE: Woxi and wolframscript both produce
   decomposition added earlier. Mathics's quoted token form
   (`"-"`, `"14.`3."`) is mathics-specific.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: PrecisionReal
+FORM: TeXForm
+INPUT: MakeBoxes[-14.`3//TeXForm]
+EXPECTED: InterpretationBox["\"-14.0\"", TeXForm[-14.`3], Editable -> True, AutoDelete -> True]
+NOTE: Added BigFloat handling to `expr_to_tex` plus a
+  `pad_bigfloat_to_precision` helper. The rendered TeX text now
+  shows all `prec` significant digits with trailing zeros
+  (`-14.`3` → `-14.0`, `3.14`5` → `3.1400`), matching
+  wolframscript. Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_tex_form_pads_precision_real{,_more_digits}`.
+  15975/15975 pass.
+---

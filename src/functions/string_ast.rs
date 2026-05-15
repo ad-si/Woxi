@@ -2630,6 +2630,44 @@ fn box_ast_to_tex(expr: &Expr) -> String {
   }
 }
 
+/// Pad a BigFloat digit string with trailing zeros so the total
+/// number of significant digits equals `prec`. Used by TeX/C/
+/// Fortran rendering where the precision-tag suffix isn't shown
+/// but the digit count should still reflect the stored precision.
+/// `digits` is e.g. `-14.` or `3.14`; `prec` is the significant-
+/// digit count. Returns `-14.0` for `("-14.", 3.0)`.
+fn pad_bigfloat_to_precision(digits: &str, prec: f64) -> String {
+  let prec_target = prec.round().max(0.0) as usize;
+  let (sign, rest) = if let Some(r) = digits.strip_prefix('-') {
+    ("-", r)
+  } else {
+    ("", digits)
+  };
+  // Split into integer and fractional parts around the decimal
+  // point (if any).
+  let (int_part, frac_part) = match rest.find('.') {
+    Some(dp) => (&rest[..dp], &rest[dp + 1..]),
+    None => (rest, ""),
+  };
+  // Significant digits in the integer part: skip leading zeros
+  // unless the integer is just "0".
+  let int_sig = if int_part == "0" {
+    0
+  } else {
+    int_part.trim_start_matches('0').len()
+  };
+  let current_sig = int_sig + frac_part.len();
+  if current_sig >= prec_target {
+    return digits.to_string();
+  }
+  let pad = prec_target - current_sig;
+  if rest.contains('.') {
+    format!("{}{}.{}{}", sign, int_part, frac_part, "0".repeat(pad))
+  } else {
+    format!("{}{}.{}", sign, int_part, "0".repeat(pad))
+  }
+}
+
 pub fn expr_to_tex(expr: &Expr) -> String {
   use crate::syntax::{BinaryOperator, UnaryOperator};
   // HoldForm[x] is a display wrapper; render its content transparently.
@@ -2653,6 +2691,14 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => crate::syntax::format_real(*f),
+    Expr::BigFloat(digits, prec) => {
+      // TeX rendering of a precision-tagged BigFloat uses the
+      // plain decimal digits (no `…` precision marker), padded
+      // with trailing zeros to show all `prec` significant
+      // digits. wolframscript's `-14.`3 // TeXForm` → `-14.0`
+      // (3 sig digits = "14" + "0").
+      pad_bigfloat_to_precision(digits, *prec)
+    }
     Expr::String(s) => format!("\\text{{{}}}", s),
     // Raw is the rendered output of OutputForm / 2d boxes — treat as text.
     Expr::Raw(s) => format!("\\text{{{}}}", s),
