@@ -19966,3 +19966,14 @@ NOTE: Both Woxi and wolframscript return `1` for `$Line` (the
   asserts this scalar value; Woxi matches wolframscript in
   script mode.
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation_as_in_cli
+LINE: 38
+TYPE: session_evaluate
+INPUT: $Line
+EXPECTED: (assertion - see source)
+NOTE: Both Woxi and wolframscript return `1` for `$Line` in
+  script mode. `_as_in_cli` is the mathics REPL variant; both
+  Woxi and wolframscript script-mode behavior match here. See
+  [[project_woxi_no_repl_history]].
+---
