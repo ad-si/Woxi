@@ -20614,3 +20614,14 @@ NOTE: Woxi and wolframscript both produce
   `InterpretationBox["x", TeXForm[x], Editable -> True,
   AutoDelete -> True]`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: MachineReal, positive
+FORM: StandardForm
+INPUT: MakeBoxes[1.4`]
+EXPECTED: "1.4`"
+MESSAGE: StandardForm always shows a precision mark.
+NOTE: Woxi and wolframscript both produce `1.4`` (machine-real
+  with backtick precision mark). Positive Real, so no sign
+  decomposition needed.
+---
