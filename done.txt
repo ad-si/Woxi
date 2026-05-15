@@ -21291,3 +21291,15 @@ NOTE: This row depends on a prior `f[x_] := …` definition from
   The test would pass only when run with the prior chapter's
   setup loaded into the session.
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1136
+TYPE: >>
+INPUT: inflections = Solve[f''[x] == 0, x] // N // Chop
+EXPECTED:
+= {{x -> -1.0852}, {x -> -3.21463}, {x -> 4.29983}}
+NOTE: Same dependency on the prior chapter's `f[x_] := …`
+  definition as line 1127. Without context, both Woxi and
+  wolframscript return mostly-unevaluated. Test would pass only
+  in the original chapter's session.
+---
