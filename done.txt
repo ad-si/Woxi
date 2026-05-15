@@ -19653,3 +19653,14 @@ NOTE: parameter-name placeholder for `test_string` parametrisation —
   StringReplace, etc.). Broad coverage lives in Woxi's
   `tests/interpreter_tests/string.rs`.
 ---
+FILE: mathics/test/builtin/list/test_constructing.py
+FUNCTION: test_array
+LINE: 10
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: failure_message
+NOTE: parameter-name placeholder for `test_array`. Spot-check
+  `Array[f, 5] → {f[1], f[2], f[3], f[4], f[5]}` matches between
+  Woxi and wolframscript. Array coverage in
+  `tests/interpreter_tests/list.rs`.
+---
