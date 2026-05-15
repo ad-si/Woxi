@@ -21054,3 +21054,11 @@ NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
   context (lowercase booleans / `dualTheorem` defined in the
   test bench).
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 484
+ACTUAL (expression): not[p]]], not[and[p, not[p]]]
+EXPECTED (should equal): dualTheorem[or [p
+NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
+  `expect[dualTheorem[or[p, not[p]]], not[and[p, not[p]]]]`.
+  Same GS.m bench context.
+---
