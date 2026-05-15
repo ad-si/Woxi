@@ -19664,3 +19664,14 @@ NOTE: parameter-name placeholder for `test_array`. Spot-check
   Woxi and wolframscript. Array coverage in
   `tests/interpreter_tests/list.rs`.
 ---
+FILE: mathics/test/builtin/list/test_constructing.py
+FUNCTION: test_range
+LINE: 29
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: failure_message
+NOTE: parameter-name placeholder for `test_range`. Spot-check
+  `Range[5] → {1, 2, 3, 4, 5}` matches between Woxi and
+  wolframscript. Range coverage in
+  `tests/interpreter_tests/list.rs`.
+---
