@@ -3031,8 +3031,43 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     return expr_to_box_form(&normalised);
   }
   match expr {
-    Expr::Integer(n) => Expr::String(n.to_string()),
-    Expr::BigInteger(n) => Expr::String(n.to_string()),
+    // wolframscript: positive integers render as a single String
+    // (`"14"`); negative integers decompose into
+    // `RowBox[{"-", "14"}]` (the sign is its own token).
+    Expr::Integer(n) => {
+      if *n < 0 {
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::String("-".to_string()),
+              Expr::String((-*n).to_string()),
+            ]
+            .into(),
+          )]
+          .into(),
+        }
+      } else {
+        Expr::String(n.to_string())
+      }
+    }
+    Expr::BigInteger(n) => {
+      if *n < 0i128.into() {
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::String("-".to_string()),
+              Expr::String((-n.clone()).to_string()),
+            ]
+            .into(),
+          )]
+          .into(),
+        }
+      } else {
+        Expr::String(n.to_string())
+      }
+    }
     Expr::Real(f) => {
       // Machine-precision floats render with a trailing backtick (`2.``)
       // in MakeBoxes output, matching wolframscript.

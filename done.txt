@@ -20436,3 +20436,18 @@ NOTE: Woxi and wolframscript both produce
   `"\"-14\""` is mathics-specific; both Woxi and wolframscript use
   single-layer baked-in quotes plus the BaselinePosition option.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_negative
+FORM: StandardForm
+INPUT: MakeBoxes[-14]
+EXPECTED: RowBox[{"-", "14"}]
+NOTE: Woxi previously rendered `Expr::Integer(-14)` as the
+  literal String `"-14"`. wolframscript decomposes negative
+  integers into `RowBox[{-, 14}]` (the sign is its own token).
+  Updated `expr_to_box_form` and the BigInteger branch in
+  `src/evaluator/dispatch/complex_and_special.rs` accordingly.
+  Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_{positive,negative}_integer_*`.
+  15971/15971 pass.
+---

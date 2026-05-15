@@ -3172,6 +3172,20 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // Negative integers decompose into `RowBox[{"-", "14"}]` in
+  // wolframscript's MakeBoxes output (the sign is its own token).
+  // Positive integers stay as a single bare String. Regression for
+  // mathics makeboxes_tests.yaml Integer_negative rows.
+  #[test]
+  fn make_boxes_negative_integer_decomposes_sign() {
+    assert_eq!(interpret("MakeBoxes[-14]").unwrap(), "RowBox[{-, 14}]");
+  }
+
+  #[test]
+  fn make_boxes_positive_integer_keeps_single_token() {
+    assert_eq!(interpret("MakeBoxes[14]").unwrap(), "14");
+  }
+
   // `MakeBoxes[StandardForm[expr]]` and `MakeBoxes[TraditionalForm[expr]]`
   // wrap the inner box in `TagBox[FormBox[<inner>, <form>], <form>,
   // Editable -> True]`. TraditionalForm uses `(` / `)` instead of
