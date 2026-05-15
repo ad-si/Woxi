@@ -20977,3 +20977,13 @@ NOTE: Parameter-name placeholder for `test_makeboxes_custom`.
   `MakeBoxes[F[42], StandardForm] → F[42]` matches between Woxi
   and wolframscript.
 ---
+FILE: mathics/test/format/test_svg.py
+FUNCTION: None
+LINE: 42
+INPUT: \n
+EXPECTED:
+NOTE: Degenerate parametrize header from `test_svg.py`. Input
+  is a literal newline placeholder; nothing to spot-check. SVG
+  output from graphics is exercised throughout
+  `tests/interpreter_tests/graphics.rs`.
+---
