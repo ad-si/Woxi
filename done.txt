@@ -19622,3 +19622,13 @@ NOTE: `Precision[10.\`\`20]` returns `21.` in Woxi (matching mathics
   `accuracy + log10(10)` rounding-tail quirk. All agree to machine
   precision.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: {1, 0.``5}
+EXPECTED: 0.
+NOTE: duplicate of `Precision[{1, 0.\`\`5}] → 0.` from earlier loops.
+  Already covered by regression test
+  tests/interpreter_tests/math/numeric.rs::n_arbitrary_precision::
+  precision_of_list_with_accuracy_tagged_zero.
+---
