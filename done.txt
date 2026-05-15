@@ -20139,3 +20139,13 @@ NOTE: `__DEFAULTS__` is a mathics-internal yaml-config sentinel
   comparison) for all rows in this file. Not a Wolfram Language
   expression; nothing to evaluate.
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-013
+EXPECTED:
+  expr: DiscretePlot[2.5 Sqrt[k], {k, 100}]
+NOTE: `doc-013` is a mathics yaml-doc-tests identifier; the
+  actual expression is `DiscretePlot[2.5 Sqrt[k], {k, 100}]`.
+  Both Woxi and wolframscript produce `-Graphics-` for this in
+  script mode. DiscretePlot coverage in
+  `tests/interpreter_tests/plotting.rs`.
+---
