@@ -21019,3 +21019,11 @@ NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
   `expect[neqv[p, not[p]], dual[eqv[p, not[p]]]]`. Symbols live
   in GS.m; not auto-loaded.
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 356
+ACTUAL (expression): and[f, p]],           dual[neqv[f, or[t, p]]]
+EXPECTED (should equal): eqv[t
+NOTE: Gries-Schneider GS2.m row. Mathics-extractor split of
+  `expect[eqv[t, and[f, p]], dual[neqv[f, or[t, p]]]]`. Same
+  context as other GS2.m rows — symbols defined inside GS.m.
+---
