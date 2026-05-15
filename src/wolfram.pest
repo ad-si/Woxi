@@ -393,7 +393,7 @@ DisplayedBoxes = { "\\!" ~ ("\\(" ~ Expression ~ "\\)" | BoxNotation) }
 BoxNotation = { "\\(" ~ BoxInner* ~ "\\)" }
 BoxInner = _{
     BoxNotation
-  | "\\^" | "\\_" | "\\+" | "\\&" | "\\%" | "\\@" | "\\/"
+  | "\\^" | "\\_" | "\\+" | "\\&" | "\\%" | "\\@" | "\\/" | "\\`"
   | !"\\)" ~ ANY
 }
 

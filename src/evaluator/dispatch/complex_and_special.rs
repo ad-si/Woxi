@@ -1835,6 +1835,14 @@ pub fn dispatch_complex_and_special(
         args: args.to_vec().into(),
       }));
     }
+    // FormBox[content, form] — inert box wrapper tagging the
+    // content with a form (e.g. TraditionalForm). Stays unevaluated.
+    "FormBox" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
       return Some(compute_area(&args[0]));

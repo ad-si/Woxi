@@ -35,13 +35,6 @@ Runner: pytest via test/format/test_makeboxes.py
 Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Parsing string form
-EXPRESSION: FormBox
-FORM: StandardForm
-INPUT: \(TraditionalForm \` a + b\)
-EXPECTED: FormBox[RowBox[{"a", "+", "b"}], TraditionalForm]
----
 ====================================================================================================
 SECTION 8: FORMAT PYTEST TESTS (13 tests)
 ====================================================================================================

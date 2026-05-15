@@ -1529,7 +1529,7 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
     }
     if c == b'\\' && i + 1 < bytes.len() {
       let n = bytes[i + 1];
-      if matches!(n, b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'/') {
+      if matches!(n, b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'/' | b'`') {
         toks.push(BoxTok::Op(n as char));
         i += 2;
         continue;
@@ -1703,6 +1703,19 @@ fn parse_box_continued(
         let (rhs, end) = box_unit_or_group(toks, idx + 1)?;
         lhs = box_call("FractionBox", vec![lhs, rhs]);
         idx = end;
+      }
+      BoxTok::Op('`') => {
+        // `\`` → FormBox[<rest>, lhs]. The body consumes the entire
+        // remaining chain, e.g. `\(TraditionalForm \` a + b\)` →
+        // `FormBox[RowBox[{a, +, b}], TraditionalForm]`. lhs is
+        // converted from a quoted String token into the bare form
+        // identifier (wolframscript's FormBox tag is unquoted).
+        let body = parse_box_rowbox(&toks[idx + 1..])?;
+        let form_tag = match &lhs {
+          Expr::String(s) => Expr::Identifier(s.clone()),
+          other => other.clone(),
+        };
+        return Some((box_call("FormBox", vec![body, form_tag]), toks.len()));
       }
       BoxTok::Op('+') | BoxTok::Op('&') => {
         let op = match &toks[idx] {

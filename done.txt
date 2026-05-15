@@ -20838,3 +20838,21 @@ NOTE: Woxi and wolframscript both produce
   Woxi and wolframscript don't). `\@` is the prefix SqrtBox
   operator — already supported in `parse_box_chain`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Parsing string form
+EXPRESSION: FormBox
+FORM: StandardForm
+INPUT: \(TraditionalForm \` a + b\)
+EXPECTED: FormBox[RowBox[{"a", "+", "b"}], TraditionalForm]
+NOTE: Added `\`` (FormBox) box-form operator: `<form> \` <body>`
+  wraps the entire remaining chain in `FormBox[body, form]`.
+  Grammar extended (`src/wolfram.pest`) to accept `\``,
+  tokenizer emits `Op('`')`, `parse_box_continued` consumes the
+  rest of the chain as the body (right-associative through
+  `parse_box_rowbox`). Also registered `FormBox[content, form]`
+  as an inert head in
+  `src/evaluator/dispatch/complex_and_special.rs` so it stays
+  symbolic at eval. Regression in
+  `tests/interpreter_tests/arithmetic.rs::box_form_form_box`.
+  15986/15986 pass.
+---

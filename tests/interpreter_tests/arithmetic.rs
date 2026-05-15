@@ -3381,6 +3381,18 @@ mod cases {
     );
   }
 
+  // `\`` is the box-form FormBox operator. `<form> \` <body>`
+  // wraps the body in `FormBox[body, form]`, where the body is
+  // the entire remaining chain (as a RowBox when multiple tokens).
+  // Regression for mathics makeboxes_tests.yaml `FormBox` row.
+  #[test]
+  fn box_form_form_box() {
+    assert_case(
+      r#"\(TraditionalForm \` a + b\)"#,
+      r#"FormBox[RowBox[{"a", "+", "b"}], TraditionalForm]"#,
+    );
+  }
+
   // A balanced `(...)` group inside box-notation is taken as a
   // single unit by the surrounding operator. wolframscript:
   // `\(x \/ (y + z)\)` → `FractionBox["x", RowBox[{"(", RowBox[{"y",
