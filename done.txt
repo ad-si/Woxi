@@ -20105,3 +20105,13 @@ NOTE: Woxi and wolframscript both produce
   (OutputForm grid layout, LaTeX, MathML) are mathics-internal
   format renderers; same as the previous Grid entry.
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: TableForm[{Graphics[{Text[a^b,{0,0}]}], Graphics[{Text[a^b,{0,0}]}]}]
+DESCRIPTION: A table of graphics - Fragile!
+NOTE: Woxi and wolframscript both produce
+  `TableForm[{-Graphics-, -Graphics-}]` in script mode. The
+  mathics-expected LaTeX `\begin{asy}…` rendering is produced by
+  mathics's own format renderer (Asymptote backend), which
+  neither real wolframscript nor Woxi generate from `-code`.
+  Entry's own description (`Fragile!`) acknowledges this.
+---
