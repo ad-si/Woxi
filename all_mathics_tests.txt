@@ -36,13 +36,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Graphics
-EXPRESSION: Sphere
-FORM: OutputForm
-INPUT: MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]//OutputForm]
-EXPECTED: InterpretationBox[PaneBox["\"-Graphics3D-\""], OutputForm[Graphics3D[{Sphere[{0, 0, 0}, 1]}]], Editable -> False]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Parsing string form
 EXPRESSION: RowBox
 FORM: StandardForm

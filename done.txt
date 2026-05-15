@@ -20769,3 +20769,17 @@ NOTE: Added `replace_graphics_with_placeholder` to
   `tests/interpreter_tests/string.rs::make_boxes_output_form_{graphics,graphics3d}_uses_placeholder`.
   15981/15981 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Graphics
+EXPRESSION: Sphere
+FORM: OutputForm
+INPUT: MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"-Graphics3D-\""], OutputForm[Graphics3D[{Sphere[{0, 0, 0}, 1]}]], Editable -> False]
+NOTE: Already covered by the previous commit's
+  `replace_graphics_with_placeholder` substitution. Both Woxi
+  and wolframscript produce
+  `InterpretationBox[PaneBox["-Graphics3D-",
+  BaselinePosition -> Baseline], OutputForm[-Graphics3D-],
+  Editable -> False]`. Regression at
+  `tests/interpreter_tests/string.rs::make_boxes_output_form_graphics3d_uses_placeholder`.
+---
