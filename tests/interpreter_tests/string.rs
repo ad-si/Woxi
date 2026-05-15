@@ -3172,6 +3172,24 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // Same negative-sign decomposition rule for Real and BigFloat
+  // values: `MakeBoxes[-2.5]` → `RowBox[{-, 2.5`}]`,
+  // `MakeBoxes[-14.`3 // FullForm]` → `TagBox[StyleBox[RowBox[{-,
+  // 14.`3.}], …], FullForm]`. Regression for mathics
+  // makeboxes_tests.yaml PrecisionReal rows.
+  #[test]
+  fn make_boxes_negative_real_decomposes_sign() {
+    assert_eq!(interpret("MakeBoxes[-2.5]").unwrap(), "RowBox[{-, 2.5`}]");
+  }
+
+  #[test]
+  fn make_boxes_negative_precision_real_full_form_decomposes_sign() {
+    assert_eq!(
+      interpret("MakeBoxes[-14.`3//FullForm]").unwrap(),
+      "TagBox[StyleBox[RowBox[{-, 14.`3.}], ShowSpecialCharacters -> False, ShowStringCharacters -> True, NumberMarks -> True], FullForm]"
+    );
+  }
+
   // Negative integers decompose into `RowBox[{"-", "14"}]` in
   // wolframscript's MakeBoxes output (the sign is its own token).
   // Positive integers stay as a single bare String. Regression for

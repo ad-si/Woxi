@@ -2816,10 +2816,34 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
       return Expr::String(s);
     }
     Expr::Real(f) => {
-      return Expr::String(format!("{}`", crate::syntax::format_real(*f)));
+      let text = format!("{}`", crate::syntax::format_real(f.abs()));
+      if *f < 0.0 {
+        return Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(
+            vec![Expr::String("-".to_string()), Expr::String(text)].into(),
+          )]
+          .into(),
+        };
+      }
+      return Expr::String(text);
     }
     Expr::BigFloat(digits, prec) => {
-      return Expr::String(crate::syntax::format_bigfloat(digits, *prec));
+      let text = crate::syntax::format_bigfloat(digits, *prec);
+      if let Some(without_minus) = text.strip_prefix('-') {
+        return Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::String("-".to_string()),
+              Expr::String(without_minus.to_string()),
+            ]
+            .into(),
+          )]
+          .into(),
+        };
+      }
+      return Expr::String(text);
     }
     Expr::Identifier(s) | Expr::Constant(s) => {
       return Expr::String(s.clone());
@@ -3069,12 +3093,41 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       }
     }
     Expr::Real(f) => {
-      // Machine-precision floats render with a trailing backtick (`2.``)
-      // in MakeBoxes output, matching wolframscript.
-      Expr::String(format!("{}`", crate::syntax::format_real(*f)))
+      // Machine-precision floats render with a trailing backtick
+      // (`2.``) in MakeBoxes output. Negative values decompose
+      // into `RowBox[{"-", "abs_text"}]`, matching wolframscript.
+      let text = format!("{}`", crate::syntax::format_real(f.abs()));
+      if *f < 0.0 {
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(
+            vec![Expr::String("-".to_string()), Expr::String(text)].into(),
+          )]
+          .into(),
+        }
+      } else {
+        Expr::String(text)
+      }
     }
     Expr::BigFloat(digits, prec) => {
-      Expr::String(crate::syntax::format_bigfloat(digits, *prec))
+      // Same sign-decomposition rule as Expr::Real for
+      // precision-tagged big-float literals.
+      let text = crate::syntax::format_bigfloat(digits, *prec);
+      if let Some(without_minus) = text.strip_prefix('-') {
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::String("-".to_string()),
+              Expr::String(without_minus.to_string()),
+            ]
+            .into(),
+          )]
+          .into(),
+        }
+      } else {
+        Expr::String(text)
+      }
     }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{}\"", s)),

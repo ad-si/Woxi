@@ -20506,3 +20506,19 @@ NOTE: Woxi and wolframscript both produce
   `InterpretationBox["14", TeXForm[14], Editable -> True,
   AutoDelete -> True]`. Same family as the `-14` TeXForm row.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: PrecisionReal
+FORM: FullForm
+INPUT: MakeBoxes[-14.`3//FullForm]
+EXPECTED: TagBox[StyleBox[RowBox[{"-", "14.`3."}], System`ShowSpecialCharacters -> False, System`ShowStringCharacters-> True, System`NumberMarks -> True], FullForm]
+MESSAGE: In Mathics3, precision is always an integer number.
+NOTE: Extended the negative-sign decomposition (added for
+  Integer in the previous commit) to `Expr::Real` and
+  `Expr::BigFloat` in both `expr_to_box_form` and
+  `expr_to_full_box_form` (`src/evaluator/dispatch/complex_and_special.rs`).
+  Now `MakeBoxes[-2.5]` and `MakeBoxes[-14.`3//FullForm]` match
+  wolframscript exactly. Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_negative_real_decomposes_sign`
+  and `…_precision_real_full_form_decomposes_sign`.
+---
