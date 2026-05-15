@@ -5,13 +5,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/arithmetic/test_assumptions.py
-FUNCTION: test_assumptions_simplify
-LINE: 93
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: message
----
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_add
 LINE: 10

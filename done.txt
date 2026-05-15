@@ -19793,3 +19793,14 @@ NOTE: parameter-name placeholder for `test_assumptions_integrate`.
   matches between Woxi and wolframscript. Assuming coverage in
   `tests/interpreter_tests/algebra.rs::simplify_with_assumption`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_assumptions.py
+FUNCTION: test_assumptions_simplify
+LINE: 93
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: message
+NOTE: parameter-name placeholder for `test_assumptions_simplify`.
+  Spot-check `Assuming[x > 0, Simplify[Sqrt[x^2]]] → x` matches
+  between Woxi and wolframscript. Assuming coverage in
+  `tests/interpreter_tests/algebra.rs::simplify_with_assumption`.
+---
