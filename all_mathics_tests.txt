@@ -35,14 +35,6 @@ Runner: pytest via test/format/test_makeboxes.py
 Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 ----------------------------------------------------------------------------------------------------
 
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Arithmetic
-FORM: InputForm
-INPUT: MakeBoxes[a-b//InputForm]
-EXPECTED: InterpretationBox[StyleBox["a - b", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[a - b], Editable -> True, AutoDelete -> True]
----
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Arithmetic

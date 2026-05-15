@@ -20268,3 +20268,18 @@ NOTE: MakeBoxes is HoldAllComplete, so a postfix arg
   …], FullForm]`. The mathics-expected `System\`` context
   prefixes are stripped by wolframscript script mode.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Arithmetic
+FORM: InputForm
+INPUT: MakeBoxes[a-b//InputForm]
+EXPECTED: InterpretationBox[StyleBox["a - b", System`ShowStringCharacters -> True, NumberMarks-> True], InputForm[a - b], Editable -> True, AutoDelete -> True]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[StyleBox[a - b, ShowStringCharacters -> True,
+  NumberMarks -> True], InputForm[a - b], Editable -> True,
+  AutoDelete -> True]`. The mathics-expected `System\`` context
+  prefixes and the quotes around `"a - b"` are mathics-specific
+  formatting; Woxi follows wolframscript's stripped form.
+  Postfix arg works thanks to the Postfix→FunctionCall
+  normalisation added for the FullForm row.
+---
