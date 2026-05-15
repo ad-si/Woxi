@@ -19771,3 +19771,13 @@ NOTE: parameter-name placeholder for `test_abs`. Spot-check
   coverage in `tests/interpreter_tests/math/numeric.rs` and
   `tests/interpreter_tests/arithmetic.rs`.
 ---
+FILE: mathics/test/builtin/arithmetic/test_abs.py
+FUNCTION: test_sign
+LINE: 30
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+NOTE: parameter-name placeholder for `test_sign`. Spot-check
+  `Sign[-5] → -1` matches between Woxi and wolframscript. Sign
+  coverage in `tests/interpreter_tests/math/numeric.rs`.
+---
