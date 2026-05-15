@@ -20827,3 +20827,14 @@ NOTE: Added `box_unit_or_group` helper in `src/syntax.rs` that
   `tests/interpreter_tests/arithmetic.rs::box_form_fraction_with_paren_group`.
   15985/15985 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Parsing string form
+EXPRESSION: SqrtBox
+FORM: StandardForm
+INPUT: \( \@ a + b \)
+EXPECTED: RowBox[{SqrtBox["a"], "+", "b"}]
+NOTE: Woxi and wolframscript both produce
+  `RowBox[{SqrtBox[a], +, b}]` (mathics quotes tokens; both
+  Woxi and wolframscript don't). `\@` is the prefix SqrtBox
+  operator — already supported in `parse_box_chain`.
+---

@@ -37,13 +37,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Parsing string form
-EXPRESSION: SqrtBox
-FORM: StandardForm
-INPUT: \( \@ a + b \)
-EXPECTED: RowBox[{SqrtBox["a"], "+", "b"}]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Parsing string form
 EXPRESSION: FormBox
 FORM: StandardForm
 INPUT: \(TraditionalForm \` a + b\)
