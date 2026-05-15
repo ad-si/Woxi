@@ -20074,3 +20074,13 @@ EXPECTED: Null
 NOTE: REPL-history `%` reference; script mode has no history.
   Same as line 127. See [[project_woxi_no_repl_history]].
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Complex[1.09*^12, 3.]
+DESCRIPTION: Complex number
+NOTE: Woxi's InputForm output `1.09*^12 + 3.*I` matches mathics's
+  expected `text[System`InputForm]`. The other forms
+  (StandardForm, TraditionalForm, LaTeX, MathML) are mathics's
+  own renderers — wolframscript in `-code` mode doesn't produce
+  any of them either (e.g. `OutputForm[…]` stays as a wrapped
+  expression). Woxi follows wolframscript script-mode output.
+---
