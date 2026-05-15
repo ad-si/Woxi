@@ -21208,3 +21208,23 @@ NOTE: Two issues here:
   is `-Graphics-`, which is also what a future WordCloud stub
   could produce (`-Image-` is mathics-side error).
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 274
+TYPE: >>
+INPUT: 13.1416``4 == 13.1413``4
+EXPECTED:
+= True
+NOTE: Widened `Equal`'s precision-tagged tolerance from
+  `10^-p` to `10^-(p - 1)` so wolframscript-equal accuracy-form
+  literals (whose difference has zero significant digits) return
+  True. Fix applied in both
+  `src/evaluator/core_eval.rs` (`Expr::Comparison` handler) and
+  `src/functions/boolean_ast.rs` (`equal_ast`). Stored precision
+  for `13.1416``4` is ~5.12; |Δ| = 3e-4 now sits within
+  10^-(5.12 - 1) ≈ 7.6e-4. Larger differences (e.g.
+  `13.1416``4 == 13.5``4`) still return False, matching
+  wolframscript. Regression in
+  `tests/interpreter_tests/math/predicates.rs::equal_accuracy_form::accuracy_four_{equal,unequal}_*`.
+  15996/15996 pass.
+---

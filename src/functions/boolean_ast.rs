@@ -450,7 +450,19 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if any_real {
         let mut tol = f64::max(first.abs(), v.abs()) * (2.0_f64).powi(-46);
         if let Some(p) = min_bigfloat_precision {
-          let prec_tol = f64::max(first.abs(), v.abs()) * 10.0_f64.powf(-p);
+          // wolframscript's `Equal` is more lenient than
+          // `|a - b| < 10^-p`: it returns True whenever the
+          // precision of the difference is below 1 (i.e. the
+          // result has no significant digit). Practically this
+          // works out to roughly an extra decade of slack —
+          // `13.1416``4 == 13.1413``4 → True` even though
+          // `|Δ| = 3e-4 > 10^-5.12`. Use `10^-(p - 1)` as the
+          // tolerance for precision-tagged operands so low-
+          // precision near-equal accuracy literals match
+          // wolframscript.
+          let widened_p = (p - 1.0).max(0.0);
+          let prec_tol =
+            f64::max(first.abs(), v.abs()) * 10.0_f64.powf(-widened_p);
           if prec_tol > tol {
             tol = prec_tol;
           }

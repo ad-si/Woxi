@@ -2323,8 +2323,18 @@ pub fn evaluate_expr_to_expr_inner(
                     })
                     .reduce(f64::min);
                   if let Some(p) = bigfloat_prec {
-                    let prec_tol =
-                      f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-p);
+                    // wolframscript's `Equal` is more lenient than
+                    // `|a - b| < 10^-p`: it returns True whenever
+                    // the precision of the difference is below 1
+                    // (no significant digit). Practically that's
+                    // roughly an extra decade of slack — use
+                    // `10^-(p - 1)` so accuracy-form literals like
+                    // `13.1416``4 == 13.1413``4` match (diff
+                    // 3e-4 within 10^-4.12 ≈ 7.6e-5? no, within
+                    // 10^-(5.12 - 1) ≈ 7.6e-4).
+                    let widened_p = (p - 1.0).max(0.0);
+                    let prec_tol = f64::max(l.abs(), r.abs())
+                      * 10.0_f64.powf(-widened_p);
                     if prec_tol > tol {
                       tol = prec_tol;
                     }

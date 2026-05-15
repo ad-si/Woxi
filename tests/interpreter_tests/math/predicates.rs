@@ -1881,3 +1881,26 @@ mod cases {
     );
   }
 }
+
+mod equal_accuracy_form {
+  use super::*;
+
+  // wolframscript's `Equal` is more lenient than
+  // `|a - b| < 10^-p` for precision-tagged operands: it allows
+  // up to roughly an extra decade of slack so that low-precision
+  // near-equal literals match. Regression for mathics 1-Manual
+  // `13.1416``4 == 13.1413``4 → True` row. Stored precision is
+  // ~5.12 sig digits, |Δ| = 3e-4 ~ between 10^-5.12 and
+  // 10^-(5.12 - 1) ≈ 7.6e-4.
+  #[test]
+  fn accuracy_four_equal_when_within_one_extra_decade() {
+    assert_eq!(interpret("13.1416``4 == 13.1413``4").unwrap(), "True");
+  }
+
+  // Beyond the widened tolerance the comparison still returns
+  // False, matching wolframscript.
+  #[test]
+  fn accuracy_four_unequal_when_difference_is_large() {
+    assert_eq!(interpret("13.1416``4 == 13.5``4").unwrap(), "False");
+  }
+}
