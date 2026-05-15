@@ -19586,3 +19586,11 @@ EXPECTED: 2.
 NOTE: `Precision[10.00\`2]` (precision-tagged 10.00 with precision 2)
   returns `2.` in both Woxi and wolframscript exactly.
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: 10.00`20
+EXPECTED: 20.
+NOTE: `Precision[10.00\`20]` returns `20.` in both Woxi and
+  wolframscript exactly.
+---
