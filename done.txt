@@ -20661,3 +20661,13 @@ NOTE: Woxi and wolframscript both produce
   OutputForm[-1.4], Editable -> False]`. OutputForm keeps the
   sign inline with the number (no RowBox decomposition).
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: MachineReal, Large
+FORM: StandardForm
+INPUT: MakeBoxes[34.*^3]
+EXPECTED: "34000.`"
+NOTE: Woxi and wolframscript both produce `34000.`` (machine
+  real, integer-valued, with backtick precision mark). The
+  `34.*^3` literal evaluates to `34000.` numerically.
+---
