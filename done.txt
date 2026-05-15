@@ -20039,3 +20039,14 @@ NOTE: wolframscript returns `False` for both `$Notebooks` and
   `tests/interpreter_tests/machine_specific.rs:notebooks_false_in_script_mode`
   and the three `system_qualified_*` companions.
 ---
+FILE: mathics/test/builtin/test_procedural.py
+FUNCTION: test_history_compound_expression
+LINE: 127
+INPUT: ToString[%]
+EXPECTED: y
+NOTE: `%` is the REPL output-history reference. In script mode
+  there is no previous output, so both Woxi and wolframscript
+  return `Out[0]` (the empty-history `%`). The mathics test
+  exercises REPL state through `check_evaluation_as_in_cli`. See
+  [[project_woxi_no_repl_history]].
+---
