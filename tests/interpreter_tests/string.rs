@@ -3172,6 +3172,27 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
   }
 
+  // `MakeBoxes[StandardForm[expr]]` and `MakeBoxes[TraditionalForm[expr]]`
+  // wrap the inner box in `TagBox[FormBox[<inner>, <form>], <form>,
+  // Editable -> True]`. TraditionalForm uses `(` / `)` instead of
+  // `[` / `]` for function-call brackets. Regression for mathics
+  // makeboxes_tests.yaml `MakeBoxes[F[x]//TraditionalForm]`.
+  #[test]
+  fn make_boxes_standard_form_wraps_in_tagbox_formbox() {
+    assert_eq!(
+      interpret("MakeBoxes[F[x]//StandardForm]").unwrap(),
+      "TagBox[FormBox[RowBox[{F, [, x, ]}], StandardForm], StandardForm, Editable -> True]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_traditional_form_uses_parentheses() {
+    assert_eq!(
+      interpret("MakeBoxes[F[x]//TraditionalForm]").unwrap(),
+      "TagBox[FormBox[RowBox[{F, (, x, )}], TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+  }
+
   // `MakeBoxes[Format[expr, StandardForm]]` and the 1-arg form
   // both produce `TagBox[FormBox[<inner>, <form>], <tag>]`,
   // where the tag is the bare `Format` symbol for the 1-arg

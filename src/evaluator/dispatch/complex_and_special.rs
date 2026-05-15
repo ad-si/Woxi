@@ -3589,6 +3589,35 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     {
       expr_to_box_form(&args[0])
     }
+    // StandardForm[expr] / TraditionalForm[expr]:
+    //   TagBox[FormBox[<inner-box>, <form>], <form>, Editable -> True]
+    // The inner content uses [/] brackets in StandardForm and
+    // (/) parentheses in TraditionalForm for function calls.
+    Expr::FunctionCall { name, args }
+      if (name == "StandardForm" || name == "TraditionalForm")
+        && args.len() == 1 =>
+    {
+      let inner_box = if name == "TraditionalForm" {
+        expr_to_box_form_traditional(&args[0])
+      } else {
+        expr_to_box_form(&args[0])
+      };
+      Expr::FunctionCall {
+        name: "TagBox".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "FormBox".to_string(),
+            args: vec![inner_box, Expr::Identifier(name.clone())].into(),
+          },
+          Expr::Identifier(name.clone()),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            replacement: Box::new(Expr::Identifier("True".to_string())),
+          },
+        ]
+        .into(),
+      }
+    }
     // Format[expr] / Format[expr, form] → wolframscript boxes
     // these as
     //   TagBox[FormBox[<inner-box>, <form>], <tag>]
@@ -3899,6 +3928,32 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     // Default: use the string representation
     _ => box_as_output_string(expr),
+  }
+}
+
+/// Like `expr_to_box_form` but renders function calls with `(` / `)`
+/// instead of `[` / `]` for TraditionalForm (e.g. `F[x]` → `F(x)`).
+/// Only function-call brackets are swapped; List `{…}` braces and all
+/// other syntax stay as in StandardForm.
+pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      let mut row_args: Vec<Expr> = Vec::with_capacity(args.len() * 2 + 2);
+      row_args.push(Expr::String(name.clone()));
+      row_args.push(Expr::String("(".to_string()));
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          row_args.push(Expr::String(",".to_string()));
+        }
+        row_args.push(expr_to_box_form_traditional(arg));
+      }
+      row_args.push(Expr::String(")".to_string()));
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(row_args.into())].into(),
+      }
+    }
+    _ => expr_to_box_form(expr),
   }
 }
 

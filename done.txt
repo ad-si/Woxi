@@ -20331,3 +20331,20 @@ NOTE: Added `Format[expr]` / `Format[expr, StandardForm|TraditionalForm]`
   `tests/interpreter_tests/string.rs::make_boxes_format_*` (3
   tests). 15966/15966 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: TraditionalForm
+INPUT: MakeBoxes[F[x]//TraditionalForm]
+EXPECTED: TagBox[FormBox[RowBox[List["F", "(", "x", ")"]], TraditionalForm], TraditionalForm, Editable-> True]
+NOTE: Added `StandardForm[expr]` and `TraditionalForm[expr]`
+  handlers to `expr_to_box_form`. Both wrap in
+  `TagBox[FormBox[<inner>, <form>], <form>, Editable -> True]`.
+  Added `expr_to_box_form_traditional` helper that renders
+  function-call brackets as `(` / `)` (e.g. `F[x] → F(x)`)
+  while keeping List `{…}` braces and other syntax unchanged.
+  Regression in
+  `tests/interpreter_tests/string.rs::make_boxes_standard_form_wraps_in_tagbox_formbox`
+  and `make_boxes_traditional_form_uses_parentheses`.
+  15969/15969 pass.
+---
