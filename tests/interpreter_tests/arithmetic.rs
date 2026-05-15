@@ -3380,6 +3380,19 @@ mod cases {
       r#"RowBox[{FractionBox["x", "y"], "+", "z"}]"#,
     );
   }
+
+  // A balanced `(...)` group inside box-notation is taken as a
+  // single unit by the surrounding operator. wolframscript:
+  // `\(x \/ (y + z)\)` → `FractionBox["x", RowBox[{"(", RowBox[{"y",
+  // "+", "z"}], ")"}]]`. Regression for mathics
+  // makeboxes_tests.yaml `FractionBox bracket` row.
+  #[test]
+  fn box_form_fraction_with_paren_group() {
+    assert_case(
+      r#"\(x \/ (y + z)\)"#,
+      r#"FractionBox["x", RowBox[{"(", RowBox[{"y", "+", "z"}], ")"}]]"#,
+    );
+  }
   #[test]
   fn span_inside_parens_then_span() {
     // wolframscript: (a;;b);;c -> Span[Span[a, b], c]

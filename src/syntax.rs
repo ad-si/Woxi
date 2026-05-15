@@ -1606,6 +1606,52 @@ fn box_unit(tok: &BoxTok) -> Option<Expr> {
   }
 }
 
+/// Consume one "box unit" from `toks[start..]`, expanding a balanced
+/// `(...)` group into `RowBox[{"(", inner, ")"}]`. Returns the
+/// resulting Expr together with the index just past the consumed
+/// tokens.
+fn box_unit_or_group(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
+  if start >= toks.len() {
+    return None;
+  }
+  if matches!(&toks[start], BoxTok::Atom(s) if s == "(") {
+    // Find matching `)`.
+    let mut depth = 1usize;
+    let mut j = start + 1;
+    while j < toks.len() && depth > 0 {
+      match &toks[j] {
+        BoxTok::Atom(s) if s == "(" => depth += 1,
+        BoxTok::Atom(s) if s == ")" => {
+          depth -= 1;
+          if depth == 0 {
+            break;
+          }
+        }
+        _ => {}
+      }
+      j += 1;
+    }
+    if j >= toks.len() {
+      return None;
+    }
+    let inner = parse_box_rowbox(&toks[start + 1..j])?;
+    let group = box_call(
+      "RowBox",
+      vec![Expr::List(
+        vec![
+          Expr::String("(".to_string()),
+          inner,
+          Expr::String(")".to_string()),
+        ]
+        .into(),
+      )],
+    );
+    return Some((group, j + 1));
+  }
+  let unit = box_unit(&toks[start])?;
+  Some((unit, start + 1))
+}
+
 fn box_call(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
@@ -1648,17 +1694,15 @@ fn parse_box_continued(
         return Some((box_call(head, vec![lhs, rhs]), end));
       }
       BoxTok::Op('/') => {
-        // `\/` → FractionBox[lhs, next-unit]. Binds tighter than the
-        // surrounding RowBox so e.g. `\(x \/ y + z\)` parses as
-        // `RowBox[{FractionBox["x", "y"], "+", "z"}]`. We only
-        // consume a single token on the right (not a full chain) so
-        // the chain returns to the outer rowbox builder.
-        if idx + 1 >= toks.len() {
-          return None;
-        }
-        let rhs = box_unit(&toks[idx + 1])?;
+        // `\/` → FractionBox[lhs, rhs]. Binds tighter than the
+        // surrounding RowBox so `\(x \/ y + z\)` parses as
+        // `RowBox[{FractionBox["x", "y"], "+", "z"}]`. The rhs is a
+        // single "box unit" — a token or a balanced `(...)` group
+        // that recursively becomes `RowBox[{"(", inner, ")"}]`
+        // (regression for `\(x \/ (y + z)\)`).
+        let (rhs, end) = box_unit_or_group(toks, idx + 1)?;
         lhs = box_call("FractionBox", vec![lhs, rhs]);
-        idx += 2;
+        idx = end;
       }
       BoxTok::Op('+') | BoxTok::Op('&') => {
         let op = match &toks[idx] {

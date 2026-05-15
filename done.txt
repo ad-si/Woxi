@@ -20811,3 +20811,19 @@ NOTE: Added `\/` (FractionBox) box-form operator. The grammar
   `tests/interpreter_tests/arithmetic.rs::box_form_fraction_simple`
   and `box_form_fraction_in_rowbox`. 15983/15983 pass.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Parsing string form
+EXPRESSION: FractionBox bracket
+FORM: StandardForm
+INPUT: \(x \/ (y + z)\)
+EXPECTED: FractionBox["x", RowBox[{"(", RowBox[{"y", "+", "z"}], ")"}]]
+NOTE: Added `box_unit_or_group` helper in `src/syntax.rs` that
+  recognises a balanced `(...)` token sequence inside the
+  box-form chain and expands it to `RowBox[{"(", inner, ")"}]`.
+  The `\/` (FractionBox) handler now consumes its rhs via this
+  helper so `\(x \/ (y + z)\)` parses as
+  `FractionBox[x, RowBox[{(, RowBox[{y, +, z}], )}]]`, matching
+  wolframscript. Regression in
+  `tests/interpreter_tests/arithmetic.rs::box_form_fraction_with_paren_group`.
+  15985/15985 pass.
+---

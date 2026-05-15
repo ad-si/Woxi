@@ -37,13 +37,6 @@ Tests the MakeBoxes formatting system for FullForm, InputForm, OutputForm, etc.
 
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Parsing string form
-EXPRESSION: FractionBox bracket
-FORM: StandardForm
-INPUT: \(x \/ (y + z)\)
-EXPECTED: FractionBox["x", RowBox[{"(", RowBox[{"y", "+", "z"}], ")"}]]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Parsing string form
 EXPRESSION: SqrtBox
 FORM: StandardForm
 INPUT: \( \@ a + b \)
