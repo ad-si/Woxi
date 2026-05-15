@@ -27,11 +27,6 @@ Runner: pytest via test/format/test_format.py and test/builtin/drawing/test_plot
 Tests output formatting across text, LaTeX, and MathML for various Wolfram Language forms
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: complexplot3d
-EXPECTED:
-  {'expr': 'ComplexPlot3D[Exp[I z],{z,-2-2 I,2+2 I}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} '}
----
 ====================================================================================================
 SECTION 7: MAKEBOXES YAML TESTS (54 tests)
 ====================================================================================================

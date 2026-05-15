@@ -20238,3 +20238,12 @@ NOTE: Same yaml-config sentinel pattern as `doc_tests.yaml`'s
   (`opts2`, `opts3`) and disables SVG comparison for every row
   in `parameters.yaml`. Not a Wolfram Language expression.
 ---
+FILE: mathics/test/builtin/drawing/parameters.yaml
+INPUT: complexplot3d
+EXPECTED:
+  {'expr': 'ComplexPlot3D[Exp[I z],{z,-2-2 I,2+2 I}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} '}
+NOTE: `complexplot3d` is a yaml-table key whose `expr` is a
+  `ComplexPlot3D[…]` call. Woxi doesn't render the Complex*
+  plot family — see [[project_woxi_complex_plot_gap]]. Same
+  state as `vec-complexplot3d-poles-zeros`.
+---
