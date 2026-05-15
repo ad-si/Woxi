@@ -27,11 +27,6 @@ Runner: pytest via test/format/test_format.py and test/builtin/drawing/test_plot
 Tests output formatting across text, LaTeX, and MathML for various Wolfram Language forms
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-parametricplot-zeta-sideways
-EXPECTED:
-  expr:  ParametricPlot[ {{Abs[Zeta[0.5 + I y]], y}}, {y,0,50}, PlotRange -> {{0, 4}, {0, 50}}, AxesLabel -> {"|zeta(x + i y)|", "y"}, ImageSize->{300,400} ]
----
 FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: __DEFAULTS__
 EXPECTED:

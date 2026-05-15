@@ -20220,3 +20220,12 @@ NOTE: ComplexPlot3D is unimplemented in Woxi; wolframscript
   hue from phase), and 3D-mesh integration — non-trivial and
   deferred to a focused feature task.
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: vec-parametricplot-zeta-sideways
+EXPECTED:
+  expr:  ParametricPlot[ {{Abs[Zeta[0.5 + I y]], y}}, {y,0,50}, PlotRange -> {{0, 4}, {0, 50}}, AxesLabel -> {"|zeta(x + i y)|", "y"}, ImageSize->{300,400} ]
+NOTE: Woxi and wolframscript both produce `-Graphics-`. The
+  expression uses the now-supported single-curve form
+  `{{fx, fy}}` of ParametricPlot, Abs+Zeta, plus standard
+  styling options — all already implemented. Spot-check passes.
+---
