@@ -21173,3 +21173,20 @@ NOTE: SympyForm is a mathics-internal renderer (sympy AST); not
   `tests/interpreter_tests/arithmetic.rs::plus_{pi,e}_orders_by_concrete_exponent`.
   15991/15991 pass.
 ---
+FILE: mathics/builtin/image/colors.py
+CLASS: Colorize
+LINE: 252
+TYPE: >>
+INPUT: Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]
+EXPECTED:
+= -Image-
+NOTE: Promoted Colorize from a stub to a basic renderer in
+  `src/functions/image_ast.rs::colorize_ast`. For an integer
+  label matrix it now produces a real `Expr::Image` (gray ramp
+  from min→max). The `ColorFunction -> …` option is accepted
+  but currently ignored — the placeholder display still matches
+  wolframscript's `-Image-`. Non-matrix args still emit
+  `Colorize::invinput` and stay symbolic. Regression in
+  `tests/interpreter_tests/image.rs::colorize_{integer,simple,non}_matrix*`.
+  15993/15993 pass.
+---

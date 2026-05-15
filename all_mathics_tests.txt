@@ -51,15 +51,6 @@ Format: expect[expected_result, expression_to_evaluate]
 Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern matching
 ----------------------------------------------------------------------------------------------------
 
----
-FILE: mathics/builtin/image/colors.py
-CLASS: Colorize
-LINE: 252
-TYPE: >>
-INPUT: Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]
-EXPECTED:
-= -Image-
----
 FILE: mathics/builtin/image/composition.py
 CLASS: WordCloud
 LINE: 166

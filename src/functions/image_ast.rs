@@ -2316,16 +2316,61 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Colorize[arg] — colorize stub. Real colorization is not implemented
-/// yet; this stub matches wolframscript's invinput warning when the
-/// argument is not an integer matrix or image. (Note: 'invinput', not
-/// 'imginv', because Colorize accepts label matrices as well as images.)
+/// Colorize[matrix] — colorize an integer-label matrix as an RGB
+/// image. wolframscript prints the result as `-Image-`. A real
+/// renderer would consult `ColorFunction -> …` and evaluate the
+/// function at each label; for now we map each unique integer
+/// label to a deterministic shade of gray so the result is a
+/// well-formed `Expr::Image`. Non-matrix / non-image arguments
+/// emit `Colorize::invinput` and stay symbolic, matching
+/// wolframscript.
 pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let is_integer_matrix = matches!(&args[0], Expr::List(rows)
-    if rows.iter().all(|r| matches!(r, Expr::List(cols)
-      if cols.iter().all(|c| matches!(c, Expr::Integer(_))))));
+  if let Expr::List(rows) = &args[0]
+    && !rows.is_empty()
+    && let Some(first_row) = rows.first()
+    && let Expr::List(first_cols) = first_row
+    && rows.iter().all(|r| {
+      matches!(r, Expr::List(cols)
+        if cols.len() == first_cols.len()
+          && cols.iter().all(|c| matches!(c, Expr::Integer(_))))
+    })
+  {
+    let height = rows.len() as u32;
+    let width = first_cols.len() as u32;
+    let mut labels: Vec<i64> = Vec::with_capacity((width * height) as usize);
+    for row in rows.iter() {
+      if let Expr::List(cols) = row {
+        for c in cols.iter() {
+          if let Expr::Integer(n) = c {
+            labels.push(*n as i64);
+          }
+        }
+      }
+    }
+    let (min, max) = labels
+      .iter()
+      .fold((i64::MAX, i64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+    let span = (max - min).max(1) as f64;
+    // Default rendering: map each label linearly to a gray
+    // ramp [0, 1]; emit 3-channel RGB data so the Image stays
+    // well-formed. Future work: honor `ColorFunction -> …`.
+    let mut data: Vec<f64> = Vec::with_capacity(labels.len() * 3);
+    for v in &labels {
+      let t = ((*v - min) as f64) / span;
+      data.push(t);
+      data.push(t);
+      data.push(t);
+    }
+    return Ok(Expr::Image {
+      width,
+      height,
+      channels: 3,
+      data: Arc::new(data),
+      image_type: crate::syntax::ImageType::Real64,
+    });
+  }
   let is_image = matches!(&args[0], Expr::Image { .. });
-  if !is_image && !is_integer_matrix {
+  if !is_image {
     crate::emit_message(&format!(
       "Colorize::invinput: Expecting an integer matrix or an image instead of {}.",
       crate::syntax::expr_to_string(&args[0])

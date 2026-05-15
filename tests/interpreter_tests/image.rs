@@ -317,10 +317,7 @@ mod image_processing {
   #[test]
   fn color_negate_non_image_returns_unevaluated() {
     clear_state();
-    assert_eq!(
-      interpret("ColorNegate[42]").unwrap(),
-      "ColorNegate[42]"
-    );
+    assert_eq!(interpret("ColorNegate[42]").unwrap(), "ColorNegate[42]");
   }
 
   #[test]
@@ -330,6 +327,33 @@ mod image_processing {
       interpret("ColorNegate[$Failed]").unwrap(),
       "ColorNegate[$Failed]"
     );
+  }
+
+  // `Colorize[<integer-matrix>, …]` renders the matrix as an
+  // Image (printed as `-Image-`). The `ColorFunction -> …` option
+  // is accepted but currently the renderer maps each label to a
+  // shade of gray; the displayed placeholder still matches
+  // wolframscript. Regression for mathics image/colors.py
+  // `Colorize[{{1, 2}, {2, 2}, {2, 3}}, …]` row.
+  #[test]
+  fn colorize_integer_matrix_returns_image() {
+    clear_state();
+    assert_eq!(
+      interpret("Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]").unwrap(),
+      "-Image-"
+    );
+  }
+
+  #[test]
+  fn colorize_simple_matrix_returns_image() {
+    clear_state();
+    assert_eq!(interpret("Colorize[{{1, 2}, {3, 4}}]").unwrap(), "-Image-");
+  }
+
+  #[test]
+  fn colorize_non_matrix_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("Colorize[42]").unwrap(), "Colorize[42]");
   }
 
   #[test]
