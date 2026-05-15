@@ -20593,3 +20593,14 @@ NOTE: Woxi and wolframscript both produce
   NumberMarks -> True], InputForm[x], Editable -> True,
   AutoDelete -> True]`.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Symbol
+FORM: OutputForm
+INPUT: MakeBoxes[x//OutputForm]
+EXPECTED: InterpretationBox[PaneBox["\"x\""], OutputForm[x], Editable -> False]
+NOTE: Woxi and wolframscript both produce
+  `InterpretationBox[PaneBox["x", BaselinePosition -> Baseline],
+  OutputForm[x], Editable -> False]`. Same family as the integer/
+  real OutputForm rows.
+---
