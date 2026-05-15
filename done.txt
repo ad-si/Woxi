@@ -20721,3 +20721,13 @@ NOTE: Woxi outputs `1.5`20.17609125905568` (14 fractional
   correctly; only the trailing digit of the precision tag
   differs.
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: PrecisionReal, Zero_LowPrec
+FORM: StandardForm
+INPUT: MakeBoxes[0.`3]
+EXPECTED: "0.`"
+NOTE: Woxi and wolframscript both produce `0.`` (just zero
+  with the backtick precision mark). Precision arg is ignored
+  for zero — same as wolframscript.
+---
