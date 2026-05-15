@@ -20229,3 +20229,12 @@ NOTE: Woxi and wolframscript both produce `-Graphics-`. The
   `{{fx, fy}}` of ParametricPlot, Abs+Zeta, plus standard
   styling options — all already implemented. Spot-check passes.
 ---
+FILE: mathics/test/builtin/drawing/parameters.yaml
+INPUT: __DEFAULTS__
+EXPECTED:
+  {'opts2': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 ', 'opts3': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} ', 'svg': False}
+NOTE: Same yaml-config sentinel pattern as `doc_tests.yaml`'s
+  `__DEFAULTS__`. Defines reusable option-string fragments
+  (`opts2`, `opts3`) and disables SVG comparison for every row
+  in `parameters.yaml`. Not a Wolfram Language expression.
+---
