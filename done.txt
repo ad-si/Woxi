@@ -20188,3 +20188,14 @@ NOTE: Mathics skips this row (`skip: True`). Spot-check both
   Plot3D coverage in
   `tests/interpreter_tests/graphics.rs::plot3d`.
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-092
+EXPECTED:
+  expr: Plot[Piecewise[{{Log[x], x > 0}, {x*-0.5, x < 0}}], {x, -1, 1}]
+  skip: True
+NOTE: Mathics skips this row (`skip: True`). Spot-check both
+  Woxi and wolframscript produce `-Graphics-` for the Piecewise
+  Plot. Plot/Piecewise coverage in
+  `tests/interpreter_tests/graphics.rs` and
+  `tests/interpreter_tests/control_flow.rs`.
+---

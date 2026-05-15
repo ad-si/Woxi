@@ -27,12 +27,6 @@ Runner: pytest via test/format/test_format.py and test/builtin/drawing/test_plot
 Tests output formatting across text, LaTeX, and MathML for various Wolfram Language forms
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-092
-EXPECTED:
-  expr: Plot[Piecewise[{{Log[x], x > 0}, {x*-0.5, x < 0}}], {x, -1, 1}]
-  skip: True
----
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: __DEFAULTS__
 EXPECTED:
