@@ -368,6 +368,22 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Listable-style threading: Range[{a,b}, ...] => {Range[a, ...], Range[b, ...]}.
+  // Mathematica threads Range over any list argument when the other
+  // arguments are scalars, so e.g. Range[0, 999, {3, 5}] returns
+  // {Range[0,999,3], Range[0,999,5]}.
+  for (idx, arg) in args.iter().enumerate() {
+    if let Expr::List(items) = arg {
+      let mut threaded = Vec::with_capacity(items.len());
+      for item in items {
+        let mut new_args: Vec<Expr> = args.to_vec();
+        new_args[idx] = item.clone();
+        threaded.push(range_ast(&new_args)?);
+      }
+      return Ok(Expr::List(threaded.into()));
+    }
+  }
+
   // Try exact rational arithmetic first
   let all_rational = args.iter().all(|a| expr_to_rational(a).is_some());
 

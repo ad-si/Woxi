@@ -1,3 +1,9 @@
 [profile.default]
 # Fail any individual test that takes longer than 20 seconds.
 slow-timeout = { period = "20s", terminate-after = 1 }
+
+# Some script_snapshot_tests run heavy RosettaCode programs that take
+# tens of seconds in debug builds. Give them a generous budget.
+[[profile.default.overrides]]
+filter = 'test(/^script_/)'
+slow-timeout = { period = "120s", terminate-after = 1 }

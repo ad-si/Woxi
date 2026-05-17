@@ -1802,7 +1802,7 @@ pub fn dispatch_math_functions(
     "ChineseRemainder" if args.len() == 2 => {
       return Some(crate::functions::math_ast::chinese_remainder_ast(args));
     }
-    "DivisorSum" if args.len() == 2 => {
+    "DivisorSum" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::divisor_sum_ast(args));
     }
     "BernoulliB" if args.len() == 1 || args.len() == 2 => {

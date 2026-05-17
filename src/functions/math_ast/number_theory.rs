@@ -679,11 +679,12 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(result))
 }
 
-/// DivisorSum[n, form] - applies form to each divisor and sums
+/// DivisorSum[n, form] — applies form to each divisor and sums
+/// DivisorSum[n, form, cond] — also filters by cond[div]
 pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "DivisorSum expects exactly 2 arguments".into(),
+      "DivisorSum expects 2 or 3 arguments".into(),
     ));
   }
   let n = match expr_to_i128(&args[0]) {
@@ -696,18 +697,39 @@ pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let func = &args[1];
+  let cond = if args.len() == 3 { Some(&args[2]) } else { None };
 
-  // Get divisors
-  let mut divs = Vec::new();
-  for i in 1..=n {
-    if n % i == 0 {
-      divs.push(i);
+  // Get divisors via O(√n) trial division (the naïve O(n) loop hangs on
+  // 12-digit inputs like 15355717786080 from RosettaCode's
+  // aliquot-sequence-classifications).
+  let n_u = n as u128;
+  let sqrt_n = (n_u as f64).sqrt() as u128;
+  let mut small_divs: Vec<u128> = Vec::new();
+  let mut large_divs: Vec<u128> = Vec::new();
+  for i in 1..=sqrt_n {
+    if n_u % i == 0 {
+      small_divs.push(i);
+      if i != n_u / i {
+        large_divs.push(n_u / i);
+      }
     }
   }
+  large_divs.reverse();
+  let mut divs: Vec<i128> = Vec::with_capacity(small_divs.len() + large_divs.len());
+  divs.extend(small_divs.iter().map(|&x| x as i128));
+  divs.extend(large_divs.iter().map(|&x| x as i128));
 
-  // Apply function to each divisor and sum
+  // Apply function to each divisor and sum, filtering by cond if present
   let mut sum = Expr::Integer(0);
   for d in divs {
+    if let Some(c) = cond {
+      let keep =
+        crate::evaluator::apply_function_to_arg(c, &Expr::Integer(d))?;
+      let keep = crate::evaluator::evaluate_expr_to_expr(&keep)?;
+      if !matches!(&keep, Expr::Identifier(s) if s == "True") {
+        continue;
+      }
+    }
     let val = crate::evaluator::apply_function_to_arg(func, &Expr::Integer(d))?;
     sum = super::plus_ast(&[sum, val])?;
   }

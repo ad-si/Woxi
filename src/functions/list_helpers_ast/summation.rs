@@ -837,6 +837,40 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (min_val, max_val, step_val)
       };
 
+      // Closed-form fast paths to avoid pathological iteration for large
+      // bounds (e.g. Sum[k, {k, 3, 10^20-1, 3}]).
+      let n_terms: Option<i128> = if step > 0 && max >= min {
+        Some((max - min) / step + 1)
+      } else if step < 0 && max <= min {
+        Some((min - max) / (-step) + 1)
+      } else if min == max {
+        Some(1)
+      } else {
+        // Empty sum
+        Some(0)
+      };
+      if let Some(n) = n_terms {
+        if n == 0 {
+          return Ok(Expr::Integer(0));
+        }
+        // Sum[c, {k, ...}] when body doesn't reference k: c * n_terms.
+        if !crate::functions::polynomial_ast::contains_var(body, &var_name) {
+          let val = crate::evaluator::evaluate_expr_to_expr(body)?;
+          return crate::functions::math_ast::times_ast(&[
+            val,
+            Expr::Integer(n),
+          ]);
+        }
+        // Sum[k, {k, a, b, c}] = n_terms * (first + last) / 2.
+        if matches!(body, Expr::Identifier(name) if name == &var_name) {
+          let last = min + step * (n - 1);
+          let sum_num = num_bigint::BigInt::from(n)
+            * (num_bigint::BigInt::from(min) + num_bigint::BigInt::from(last));
+          let sum = sum_num / num_bigint::BigInt::from(2);
+          return Ok(crate::functions::math_ast::bigint_to_expr(sum));
+        }
+      }
+
       let mut acc = Expr::Integer(0);
       let mut i = min;
       if step > 0 {

@@ -271,7 +271,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Divisible" => Some((2, 2)),
     "Divisors" => Some((1, 1)),
     "DivisorSigma" => Some((2, 2)),
-    "DivisorSum" => Some((2, 2)),
+    "DivisorSum" => Some((2, 3)),
     "DMSList" => Some((1, 1)),
     "Do" => Some((2, usize::MAX)),
     // wolframscript reports (1, 4): valid forms are

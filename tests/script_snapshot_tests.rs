@@ -859,6 +859,94 @@ script_test!(
   "write_float_arrays_to_a_text_file.wls"
 );
 
+
+// === Slow-but-matching RosettaCode scripts (60s timeout safe) ===
+script_test!(script_aks_test_for_primes, "aks_test_for_primes.wls");
+script_test!(
+  script_arithmetic_geometric_mean_calculate_pi,
+  "arithmetic-geometric_mean_calculate_pi.wls"
+);
+script_test!(script_barnsley_fern, "barnsley_fern.wls");
+script_test!(script_fractran, "fractran.wls");
+script_test!(
+  script_largest_number_divisible_by_its_digits,
+  "largest_number_divisible_by_its_digits.wls"
+);
+script_test!(script_list_comprehensions, "list_comprehensions.wls");
+script_test!(script_munching_squares, "munching_squares.wls");
+script_test!(
+  script_n9_billion_names_of_god_the_integer,
+  "9_billion_names_of_god_the_integer.wls"
+);
+script_test!(
+  script_partition_an_integer_x_into_n_primes,
+  "partition_an_integer_x_into_n_primes.wls"
+);
+script_test!(script_probabilistic_choice, "probabilistic_choice.wls");
+script_test!(script_square_free_integers, "square-free_integers.wls");
+script_test!(
+  script_sum_multiples_of_3_and_5,
+  "sum_multiples_of_3_and_5.wls"
+);
+script_test!(script_sum_to_100, "sum_to_100.wls");
+
+
+// === Additional matching scripts (post-bugfixes) ===
+script_test!(script_archimedean_spiral, "archimedean_spiral.wls");
+script_test!(
+  script_bitmap_bezier_curves_cubic,
+  "bitmap_bezier_curves_cubic.wls"
+);
+script_test!(
+  script_bitmap_bezier_curves_quadratic,
+  "bitmap_bezier_curves_quadratic.wls"
+);
+script_test!(script_bitmap_flood_fill, "bitmap_flood_fill.wls");
+script_test!(
+  script_bitmap_ppm_conversion_through_a_pipe,
+  "bitmap_ppm_conversion_through_a_pipe.wls"
+);
+script_test!(
+  script_catalan_numbers_pascals_triangle,
+  "catalan_numbers_pascals_triangle.wls"
+);
+script_test!(script_chaos_game, "chaos_game.wls");
+script_test!(script_color_of_a_screen_pixel, "color_of_a_screen_pixel.wls");
+script_test!(script_colour_bars_display, "colour_bars_display.wls");
+script_test!(script_colour_pinstripe_display, "colour_pinstripe_display.wls");
+script_test!(
+  script_constrained_random_points_on_a_circle,
+  "constrained_random_points_on_a_circle.wls"
+);
+script_test!(script_death_star, "death_star.wls");
+script_test!(script_dragon_curve, "dragon_curve.wls");
+script_test!(script_draw_a_cuboid, "draw_a_cuboid.wls");
+script_test!(script_draw_a_sphere, "draw_a_sphere.wls");
+script_test!(
+  script_elementary_cellular_automaton,
+  "elementary_cellular_automaton.wls"
+);
+script_test!(script_evolutionary_algorithm, "evolutionary_algorithm.wls");
+script_test!(script_fibonacci_word_fractal, "fibonacci_word_fractal.wls");
+script_test!(script_morse_code, "morse_code.wls");
+script_test!(script_pentagram, "pentagram.wls");
+script_test!(script_pinstripe_display, "pinstripe_display.wls");
+script_test!(script_plot_coordinate_pairs, "plot_coordinate_pairs.wls");
+script_test!(
+  script_reverse_words_in_a_string,
+  "reverse_words_in_a_string.wls"
+);
+script_test!(
+  script_sorting_algorithms_radix_sort,
+  "sorting_algorithms_radix_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_selection_sort,
+  "sorting_algorithms_selection_sort.wls"
+);
+script_test!(script_superellipse, "superellipse.wls");
+script_test!(script_van_der_corput_sequence, "van_der_corput_sequence.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

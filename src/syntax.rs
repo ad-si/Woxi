@@ -3990,6 +3990,11 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut operators: Vec<String> = Vec::new();
   let mut leading_minus = false;
   let mut leading_not = false;
+  // True iff the *first* term was prefixed by `!`. Survives operator
+  // boundaries (unlike pending_not_on_last, which is flushed eagerly).
+  // Used to re-apply Not at the right precedence after the binary tree
+  // is built.
+  let mut leading_not_at_start = false;
   // Tracks a pending Not prefix that should wrap the *final* form of the
   // current term — i.e. after all suffixes (!, !!, \[Transpose], ..) have
   // been applied. This makes "!a!" parse as Not[Factorial[a]] rather than
@@ -4212,10 +4217,38 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           // applied so that operators like `!` bind tighter than the prefix
           // Not, matching Wolfram precedence.
           pending_not_on_last = true;
+          // If this is the first term (no operators yet), record the leading
+          // `!` so we can re-apply it at the right precedence after the
+          // binary tree is built. Mathematica's `!` (prec 230) is looser
+          // than `+`, `==`, `@@`, `/@`, `@`, …, but tighter than `&&` (215)
+          // and `||` (213). So `! Or @@ {…}` should parse as
+          // `Not[Or @@ {…}]`, not `(Not[Or]) @@ {…}`.
+          if terms.len() == 1 && operators.is_empty() {
+            leading_not_at_start = true;
+          }
           leading_not = false;
         }
       }
     }
+  }
+  // Decide whether to suppress the term-level Not in favour of wrapping
+  // the whole tree after it is built. We only suppress when the *first*
+  // infix operator binds tighter than `!`; otherwise the local wrap is
+  // already correct (e.g. `!a && b` → `And[Not[a], b]`).
+  let leading_not_on_first =
+    leading_not_at_start && !operators.is_empty() && {
+      let first_op_prec = operator_precedence(&operators[0]);
+      first_op_prec > 6
+    };
+  if leading_not_on_first {
+    // Undo the term-level wrap: terms[0] was set to Not[orig]; unwrap it.
+    if let Expr::FunctionCall { name, args } = &terms[0]
+      && name == "Not"
+      && args.len() == 1
+    {
+      terms[0] = args[0].clone();
+    }
+    pending_not_on_last = false;
   }
   flush_pending_not(
     &mut pending_not_on_last,
@@ -4270,6 +4303,16 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       build_binary_tree(terms, operators)
     }
   };
+
+  // If we deferred the leading `!` past tighter-binding operators, wrap
+  // the (now-complete) sub-tree in Not now. For `! Or @@ {…}` this yields
+  // `Not[Or @@ {…}]` rather than the wrong `(Not[Or]) @@ {…}`.
+  if leading_not_on_first {
+    result = Expr::FunctionCall {
+      name: "Not".to_string(),
+      args: vec![result].into(),
+    };
+  }
 
   // Apply ReplaceAll/ReplaceRepeated if present.
   // In Wolfram Language, /. has higher precedence than = and :=, so:
@@ -4371,8 +4414,37 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       }
       post_postfix.reverse();
 
+      // If the pre-& result is an assignment (`a = body &`), the post-&
+      // continuation operators (e.g. `/@ newlist`) almost always bind
+      // tighter than `=`, so they should be applied to the RHS only.
+      // Otherwise `a = body & /@ newlist` would wrongly parse as
+      // `Map[Set[a, Function[body]], newlist]` and trigger Set::argrx.
+      let assignment_lhs: Option<(String, Expr)> = if let Expr::FunctionCall {
+        name,
+        args,
+      } = &result
+        && matches!(
+          name.as_str(),
+          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+        )
+        && args.len() == 2
+      {
+        Some((name.clone(), args[0].clone()))
+      } else {
+        None
+      };
+      let starting_term = if let Some((_, _)) = &assignment_lhs {
+        if let Expr::FunctionCall { args, .. } = &result {
+          args[1].clone()
+        } else {
+          unreachable!()
+        }
+      } else {
+        result
+      };
+
       // Parse continuation as operator-term pairs
-      post_terms.push(result);
+      post_terms.push(starting_term);
       let mut pending_anon_chains: Vec<Vec<Vec<Expr>>> = Vec::new();
       let mut iter = post_pairs.into_iter();
       while let Some(op_pair) = iter.next() {
@@ -4453,6 +4525,14 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         result = Expr::Postfix {
           expr: Box::new(result),
           func: Box::new(func),
+        };
+      }
+
+      // Re-wrap the assignment around the now-extended RHS.
+      if let Some((name, lhs)) = assignment_lhs {
+        result = Expr::FunctionCall {
+          name,
+          args: vec![lhs, result].into(),
         };
       }
     }

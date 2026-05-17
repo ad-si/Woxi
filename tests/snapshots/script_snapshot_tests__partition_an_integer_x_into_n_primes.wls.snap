@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Partitioned 40355 with 3 primes: 5+7+40343
