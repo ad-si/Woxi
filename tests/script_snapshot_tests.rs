@@ -1027,6 +1027,24 @@ script_test!(script_url_encoding, "url_encoding.wls");
 script_test!(script_vampire_number, "vampire_number.wls");
 script_test!(script_zig_zag_matrix, "zig-zag_matrix.wls");
 
+// === Additional promoted _tasks_ RosettaCode scripts ===
+script_test!(
+  script_calculating_the_value_of_e,
+  "calculating_the_value_of_e.wls"
+);
+script_test!(script_hailstone_sequence, "hailstone_sequence.wls");
+script_test!(
+  script_interactive_programming,
+  "interactive_programming.wls"
+);
+script_test!(script_mac_vendor_lookup, "mac_vendor_lookup.wls");
+script_test!(script_md5, "md5.wls");
+script_test!(script_monte_carlo_methods, "monte_carlo_methods.wls");
+script_test!(script_primorial_numbers, "primorial_numbers.wls");
+script_test!(script_sierpinski_triangle, "sierpinski_triangle.wls");
+script_test!(script_time_a_function, "time_a_function.wls");
+script_test!(script_variadic_function, "variadic_function.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);
