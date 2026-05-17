@@ -960,6 +960,14 @@ script_test!(
   script_van_der_corput_sequence,
   "van_der_corput_sequence.wls"
 );
+script_test!(
+  script_assigning_values_to_an_array,
+  "assigning_values_to_an_array.wls"
+);
+script_test!(
+  script_sequence_of_non_squares,
+  "sequence_of_non-squares.wls"
+);
 
 #[test]
 fn script_cli_args() {

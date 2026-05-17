@@ -919,6 +919,38 @@ pub fn set_part_deep(
     return Ok(());
   }
 
+  // Handle `All` index (a[[All]] = ...) — equivalent to Span[1, All].
+  // Threads the assignment over every position in the current list.
+  if matches!(&indices[0], Expr::Identifier(s) | Expr::Constant(s) if s == "All")
+  {
+    let len = match expr {
+      Expr::List(items) => items.len(),
+      Expr::FunctionCall { args, .. } => args.len(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Part assignment: cannot apply All to this expression".into(),
+        ));
+      }
+    };
+    let rhs_items = match value {
+      Expr::List(items) if items.len() == len => Some(items.clone()),
+      _ => None,
+    };
+    for i in 0..len {
+      let elem_value = match &rhs_items {
+        Some(items) => items[i].clone(),
+        None => value.clone(),
+      };
+      let inner = match expr {
+        Expr::List(items) => &mut items[i],
+        Expr::FunctionCall { args, .. } => &mut args[i],
+        _ => unreachable!(),
+      };
+      set_part_deep(inner, &indices[1..], &elem_value)?;
+    }
+    return Ok(());
+  }
+
   // Handle Span index (e.g., 1;;n, ;;, 1;;-1) by threading the assignment
   // over each selected position in the current list.
   if let Expr::FunctionCall { name, args } = &indices[0]
@@ -934,19 +966,15 @@ pub fn set_part_deep(
       }
     };
     let positions = resolve_span(args, len)?;
+    // Match wolframscript: a List of the same length as the selection
+    // distributes element-wise; any other RHS (scalar, or list with
+    // different length) is broadcast as a whole to each position.
     let rhs_items = match value {
-      Expr::List(items) => Some(items.clone()),
+      Expr::List(items) if items.len() == positions.len() => {
+        Some(items.clone())
+      }
       _ => None,
     };
-    if let Some(rhs_items) = &rhs_items
-      && rhs_items.len() != positions.len()
-    {
-      return Err(InterpreterError::EvaluationError(format!(
-        "Set::partw: Cannot assign {} values to {} positions.",
-        rhs_items.len(),
-        positions.len()
-      )));
-    }
     for (i, &pos) in positions.iter().enumerate() {
       let actual_idx = (pos - 1) as usize;
       let elem_value = match &rhs_items {
@@ -959,6 +987,68 @@ pub fn set_part_deep(
         _ => unreachable!(),
       };
       set_part_deep(inner, &indices[1..], elem_value)?;
+    }
+    return Ok(());
+  }
+
+  // Handle List index (e.g., a[[{1, 3}]] = ...): assign to each selected
+  // position. When the RHS is a List of the same length, distribute its
+  // elements; otherwise broadcast the entire RHS to every position.
+  if let Expr::List(index_items) = &indices[0] {
+    let len = match expr {
+      Expr::List(items) => items.len() as i64,
+      Expr::FunctionCall { args, .. } => args.len() as i64,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Part assignment: cannot apply list index to this expression".into(),
+        ));
+      }
+    };
+    let mut positions = Vec::with_capacity(index_items.len());
+    for item in index_items {
+      let n = match item {
+        Expr::Integer(n) => *n as i64,
+        Expr::BigInteger(n) => {
+          use num_traits::ToPrimitive;
+          n.to_i64().ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Part assignment: index too large".into(),
+            )
+          })?
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Part assignment: index must be an integer".into(),
+          ));
+        }
+      };
+      let actual_idx = if n < 0 { len + n } else { n - 1 };
+      if actual_idx < 0 || actual_idx >= len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Part::partw: Part {} of list does not exist.",
+          n
+        )));
+      }
+      positions.push(actual_idx as usize);
+    }
+    let distribute =
+      matches!(value, Expr::List(items) if items.len() == positions.len());
+    for (i, &actual_idx) in positions.iter().enumerate() {
+      let elem_value: Expr = if distribute {
+        if let Expr::List(items) = value {
+          items[i].clone()
+        } else {
+          unreachable!()
+        }
+      } else {
+        value.clone()
+      };
+      let inner = match expr {
+        Expr::List(items) => &mut items[actual_idx],
+        Expr::FunctionCall { args, .. } => &mut args[actual_idx],
+        _ => unreachable!(),
+      };
+      set_part_deep(inner, &indices[1..], &elem_value)?;
     }
     return Ok(());
   }

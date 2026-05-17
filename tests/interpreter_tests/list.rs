@@ -2042,6 +2042,57 @@ mod part_extraction {
   }
 
   #[test]
+  fn part_list_of_indices_assignment_distributes() {
+    // a[[{i, j}]] = {x, y} assigns element-wise when lengths match.
+    assert_eq!(
+      interpret("a = {1, 2, 3, 4, 5}; a[[{1, 3}]] = {99, 88}; a").unwrap(),
+      "{99, 2, 88, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn part_list_of_indices_assignment_broadcasts_scalar() {
+    // a[[{i, j}]] = scalar broadcasts the scalar to every selected position.
+    assert_eq!(
+      interpret("a = {1, 2, 3, 4, 5}; a[[{1, 3}]] = 0; a").unwrap(),
+      "{0, 2, 0, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn part_list_of_indices_assignment_broadcasts_mismatched_list() {
+    // RHS list with different length is broadcast as a whole to each position.
+    assert_eq!(
+      interpret("a = {1, 2, 3, 4, 5}; a[[{1, 3, 5}]] = {99, 88}; a").unwrap(),
+      "{{99, 88}, 2, {99, 88}, 4, {99, 88}}"
+    );
+  }
+
+  #[test]
+  fn part_list_of_indices_assignment_with_inner_column() {
+    // Nested case: a[[{i, j}, k]] = {x, y} sets column k of selected rows.
+    assert_eq!(
+      interpret(
+        "a = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}; a[[{1, 3}, 2]] = {99, 88}; a"
+      )
+      .unwrap(),
+      "{{1, 99, 3}, {4, 5, 6}, {7, 88, 9}}"
+    );
+  }
+
+  #[test]
+  fn part_list_of_indices_assignment_swap_in_module() {
+    // Regression: Module-local list with `a[[{i, j}]] = a[[{j, i}]]` swap.
+    assert_eq!(
+      interpret(
+        "swap[lst_, i_, j_] := Module[{a = lst}, a[[{i, j}]] = a[[{j, i}]]; a]; swap[{1, 2, 3, 4, 5}, 1, 3]"
+      )
+      .unwrap(),
+      "{3, 2, 1, 4, 5}"
+    );
+  }
+
+  #[test]
   fn part_all_with_variable() {
     assert_eq!(
       interpret("x = {{1, 2}, {3, 4}}; x[[All, 1]]").unwrap(),
