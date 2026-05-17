@@ -1,0 +1,7 @@
+left[n_] := left[n] = Sum[k!, {k, 0, n - 1}]
+Print["left factorials 0 through 10:"]
+Print[left /@ Range[0, 10] // TableForm]
+Print["left factorials 20 through 110, by tens:"]
+Print[left /@ Range[20, 110, 10] // TableForm]
+Print["Digits in left factorials 1,000 through 10,000, by thousands:"]
+Print[Length[IntegerDigits[left[#]]] & /@ Range[1000, 10000, 1000] // TableForm]

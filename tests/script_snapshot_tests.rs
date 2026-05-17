@@ -968,6 +968,30 @@ script_test!(
   script_sequence_of_non_squares,
   "sequence_of_non-squares.wls"
 );
+script_test!(script_accumulator_factory, "accumulator_factory.wls");
+script_test!(script_balanced_ternary, "balanced_ternary.wls");
+script_test!(script_cramers_rule, "cramers_rule.wls");
+script_test!(
+  script_eulers_sum_of_powers_conjecture,
+  "eulers_sum_of_powers_conjecture.wls"
+);
+script_test!(
+  script_gui_enabling_disabling_of_controls,
+  "gui_enabling_disabling_of_controls.wls"
+);
+script_test!(script_koch_curve, "koch_curve.wls");
+script_test!(script_langtons_ant, "langtons_ant.wls");
+script_test!(script_left_factorials, "left_factorials.wls");
+script_test!(
+  script_longest_string_challenge,
+  "longest_string_challenge.wls"
+);
+script_test!(script_resistor_mesh, "resistor_mesh.wls");
+script_test!(script_roots_of_a_function, "roots_of_a_function.wls");
+script_test!(script_run_length_encoding, "run-length_encoding.wls");
+script_test!(script_xml_dom_serialization, "xml_dom_serialization.wls");
+script_test!(script_xml_output, "xml_output.wls");
+script_test!(script_zebra_puzzle, "zebra_puzzle.wls");
 
 #[test]
 fn script_cli_args() {

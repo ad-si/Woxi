@@ -6,4 +6,4 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 # tens of seconds in debug builds. Give them a generous budget.
 [[profile.default.overrides]]
 filter = 'test(/^script_/)'
-slow-timeout = { period = "120s", terminate-after = 1 }
+slow-timeout = { period = "180s", terminate-after = 1 }
