@@ -860,7 +860,6 @@ script_test!(
   "write_float_arrays_to_a_text_file.wls"
 );
 
-
 // === Slow-but-matching RosettaCode scripts (60s timeout safe) ===
 script_test!(script_aks_test_for_primes, "aks_test_for_primes.wls");
 script_test!(
@@ -891,7 +890,6 @@ script_test!(
 );
 script_test!(script_sum_to_100, "sum_to_100.wls");
 
-
 // === Additional matching scripts (post-bugfixes) ===
 script_test!(script_archimedean_spiral, "archimedean_spiral.wls");
 script_test!(
@@ -912,9 +910,15 @@ script_test!(
   "catalan_numbers_pascals_triangle.wls"
 );
 script_test!(script_chaos_game, "chaos_game.wls");
-script_test!(script_color_of_a_screen_pixel, "color_of_a_screen_pixel.wls");
+script_test!(
+  script_color_of_a_screen_pixel,
+  "color_of_a_screen_pixel.wls"
+);
 script_test!(script_colour_bars_display, "colour_bars_display.wls");
-script_test!(script_colour_pinstripe_display, "colour_pinstripe_display.wls");
+script_test!(
+  script_colour_pinstripe_display,
+  "colour_pinstripe_display.wls"
+);
 script_test!(
   script_constrained_random_points_on_a_circle,
   "constrained_random_points_on_a_circle.wls"
@@ -952,7 +956,10 @@ script_test!(
   "sorting_algorithms_selection_sort.wls"
 );
 script_test!(script_superellipse, "superellipse.wls");
-script_test!(script_van_der_corput_sequence, "van_der_corput_sequence.wls");
+script_test!(
+  script_van_der_corput_sequence,
+  "van_der_corput_sequence.wls"
+);
 
 #[test]
 fn script_cli_args() {

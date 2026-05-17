@@ -192,17 +192,16 @@ fn eval_mul(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (Expr::Integer(x), Expr::Integer(y)) => match x.checked_mul(*y) {
       Some(p) => Expr::Integer(p),
-      None => match crate::functions::math_ast::times_ast(&[
-        a.clone(),
-        b.clone(),
-      ]) {
-        Ok(r) => r,
-        Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        },
-      },
+      None => {
+        match crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]) {
+          Ok(r) => r,
+          Err(_) => Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(a.clone()),
+            right: Box::new(b.clone()),
+          },
+        }
+      }
     },
     (Expr::Integer(x), Expr::Real(y)) | (Expr::Real(y), Expr::Integer(x)) => {
       Expr::Real(*x as f64 * y)

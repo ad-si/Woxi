@@ -4235,11 +4235,10 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   // the whole tree after it is built. We only suppress when the *first*
   // infix operator binds tighter than `!`; otherwise the local wrap is
   // already correct (e.g. `!a && b` → `And[Not[a], b]`).
-  let leading_not_on_first =
-    leading_not_at_start && !operators.is_empty() && {
-      let first_op_prec = operator_precedence(&operators[0]);
-      first_op_prec > 6
-    };
+  let leading_not_on_first = leading_not_at_start && !operators.is_empty() && {
+    let first_op_prec = operator_precedence(&operators[0]);
+    first_op_prec > 6
+  };
   if leading_not_on_first {
     // Undo the term-level wrap: terms[0] was set to Not[orig]; unwrap it.
     if let Expr::FunctionCall { name, args } = &terms[0]
@@ -4437,20 +4436,18 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       // tighter than `=`, so they should be applied to the RHS only.
       // Otherwise `a = body & /@ newlist` would wrongly parse as
       // `Map[Set[a, Function[body]], newlist]` and trigger Set::argrx.
-      let assignment_lhs: Option<(String, Expr)> = if let Expr::FunctionCall {
-        name,
-        args,
-      } = &result
-        && matches!(
-          name.as_str(),
-          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-        )
-        && args.len() == 2
-      {
-        Some((name.clone(), args[0].clone()))
-      } else {
-        None
-      };
+      let assignment_lhs: Option<(String, Expr)> =
+        if let Expr::FunctionCall { name, args } = &result
+          && matches!(
+            name.as_str(),
+            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+          )
+          && args.len() == 2
+        {
+          Some((name.clone(), args[0].clone()))
+        } else {
+          None
+        };
       let starting_term = if let Some((_, _)) = &assignment_lhs {
         if let Expr::FunctionCall { args, .. } = &result {
           args[1].clone()
