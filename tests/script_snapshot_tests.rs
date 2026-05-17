@@ -993,6 +993,40 @@ script_test!(script_xml_dom_serialization, "xml_dom_serialization.wls");
 script_test!(script_xml_output, "xml_output.wls");
 script_test!(script_zebra_puzzle, "zebra_puzzle.wls");
 
+// === Additional promoted RosettaCode scripts ===
+script_test!(script_quine, "quine.wls");
+script_test!(script_ackermann_function, "ackermann_function.wls");
+script_test!(script_arithmetic_rational, "arithmetic_rational.wls");
+script_test!(
+  script_catmull_clark_subdivision_surface,
+  "catmull%E2%80%93clark_subdivision_surface.wls"
+);
+script_test!(script_executable_library, "executable_library.wls");
+script_test!(script_forward_difference, "forward_difference.wls");
+script_test!(script_function_composition, "function_composition.wls");
+script_test!(
+  script_greatest_subsequential_sum,
+  "greatest_subsequential_sum.wls"
+);
+script_test!(script_hofstadter_q_sequence, "hofstadter_q_sequence.wls");
+script_test!(script_knights_tour, "knights_tour.wls");
+script_test!(script_long_multiplication, "long_multiplication.wls");
+script_test!(script_maze_generation, "maze_generation.wls");
+script_test!(script_md5_implementation, "md5_implementation.wls");
+script_test!(
+  script_miller_rabin_primality_test,
+  "miller-rabin_primality_test.wls"
+);
+script_test!(
+  script_real_constants_and_functions,
+  "real_constants_and_functions.wls"
+);
+script_test!(script_sum_of_squares, "sum_of_squares.wls");
+script_test!(script_tree_traversal, "tree_traversal.wls");
+script_test!(script_url_encoding, "url_encoding.wls");
+script_test!(script_vampire_number, "vampire_number.wls");
+script_test!(script_zig_zag_matrix, "zig-zag_matrix.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

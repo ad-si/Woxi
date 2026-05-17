@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+a=InputForm[Print["a=",InputForm[a],";",a]];Print["a=",InputForm[a],";",a]
