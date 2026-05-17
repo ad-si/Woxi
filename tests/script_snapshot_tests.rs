@@ -367,6 +367,7 @@ script_test!(script_combinations, "combinations.wls");
 script_test!(script_comma_quibbling, "comma_quibbling.wls");
 script_test!(script_command_line_arguments, "command-line_arguments.wls");
 script_test!(script_comments, "comments.wls");
+script_test!(script_continued_fraction, "continued_fraction.wls");
 script_test!(
   script_continued_fraction_arithmetic_construct_from_rational_number,
   "continued_fraction_arithmetic_construct_from_rational_number.wls"
@@ -928,6 +929,10 @@ script_test!(
 );
 script_test!(script_evolutionary_algorithm, "evolutionary_algorithm.wls");
 script_test!(script_fibonacci_word_fractal, "fibonacci_word_fractal.wls");
+script_test!(
+  script_magic_squares_of_odd_order,
+  "magic_squares_of_odd_order.wls"
+);
 script_test!(script_morse_code, "morse_code.wls");
 script_test!(script_munchausen_numbers, "munchausen_numbers.wls");
 script_test!(script_pentagram, "pentagram.wls");
@@ -937,6 +942,7 @@ script_test!(
   script_reverse_words_in_a_string,
   "reverse_words_in_a_string.wls"
 );
+script_test!(script_semiprime, "semiprime.wls");
 script_test!(
   script_sorting_algorithms_radix_sort,
   "sorting_algorithms_radix_sort.wls"

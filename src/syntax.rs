@@ -4349,13 +4349,31 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     };
   }
 
-  // Apply postfix functions
+  // Apply postfix functions. In Wolfram, `//` (postfix application) has
+  // precedence 110 — higher than Set/SetDelayed (40) and TagSet/TagSetDelayed
+  // (40), so `r = m // Grid` parses as `Set[r, Grid[m]]`, not as
+  // `Grid[Set[r, m]]`. Push postfix wrappers into the RHS of the
+  // assignment when one is present.
   for func_pair in postfix_funcs {
     let func = parse_postfix_function(func_pair);
-    result = Expr::Postfix {
-      expr: Box::new(result),
-      func: Box::new(func),
-    };
+    if let Expr::FunctionCall { name, args } = &mut result
+      && matches!(
+        name.as_str(),
+        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+      )
+      && args.len() == 2
+    {
+      let rhs = std::mem::replace(&mut args[1], Expr::Integer(0));
+      args[1] = Expr::Postfix {
+        expr: Box::new(rhs),
+        func: Box::new(func),
+      };
+    } else {
+      result = Expr::Postfix {
+        expr: Box::new(result),
+        func: Box::new(func),
+      };
+    }
   }
 
   // Apply AnonymousFunctionSuffix: expr &
