@@ -290,6 +290,575 @@ script_test!(
   "the_twelve_days_of_christmas.wls"
 );
 
+script_test!(
+  script_electron_deflection_tube,
+  "electron-deflection-tube.wls"
+);
+script_test!(script_euro_coins_100g_3, "euro_coins_100g_3.wls");
+script_test!(script_rolldice, "rolldice.wls");
+script_test!(script_spring_damper_system, "spring_damper_system.wl");
+
+// === Auto-promoted RosettaCode scripts ===
+script_test!(
+  script_abundant_deficient_and_perfect_number_classifications,
+  "abundant__deficient_and_perfect_number_classifications.wls"
+);
+script_test!(script_active_object, "active_object.wls");
+script_test!(
+  script_add_a_variable_to_a_class_instance_at_runtime,
+  "add_a_variable_to_a_class_instance_at_runtime.wls"
+);
+script_test!(script_almost_prime, "almost_prime.wls");
+script_test!(script_amb, "amb.wls");
+script_test!(script_amicable_pairs, "amicable_pairs.wls");
+script_test!(script_arithmetic_evaluation, "arithmetic_evaluation.wls");
+script_test!(
+  script_arithmetic_geometric_mean,
+  "arithmetic-geometric_mean.wls"
+);
+script_test!(script_assertions, "assertions.wls");
+script_test!(
+  script_associative_array_creation,
+  "associative_array_creation.wls"
+);
+script_test!(
+  script_averages_arithmetic_mean,
+  "averages_arithmetic_mean.wls"
+);
+script_test!(script_averages_mean_angle, "averages_mean_angle.wls");
+script_test!(
+  script_averages_mean_time_of_day,
+  "averages_mean_time_of_day.wls"
+);
+script_test!(script_averages_median, "averages_median.wls");
+script_test!(
+  script_averages_simple_moving_average,
+  "averages_simple_moving_average.wls"
+);
+script_test!(script_babbage_problem, "babbage_problem.wls");
+script_test!(script_balanced_brackets, "balanced_brackets.wls");
+script_test!(script_base64_decode_data, "base64_decode_data.wls");
+script_test!(script_benfords_law, "benfords_law.wls");
+script_test!(script_binary_search, "binary_search.wls");
+script_test!(script_bitmap_read_a_ppm_file, "bitmap_read_a_ppm_file.wls");
+script_test!(
+  script_bitmap_write_a_ppm_file,
+  "bitmap_write_a_ppm_file.wls"
+);
+script_test!(script_box_the_compass, "box_the_compass.wls");
+script_test!(script_caesar_cipher, "caesar_cipher.wls");
+script_test!(script_calendar, "calendar.wls");
+script_test!(script_call_a_function, "call_a_function.wls");
+script_test!(
+  script_carmichael_3_strong_pseudoprimes,
+  "carmichael_3_strong_pseudoprimes.wls"
+);
+script_test!(
+  script_cartesian_product_of_two_or_more_lists,
+  "cartesian_product_of_two_or_more_lists.wls"
+);
+script_test!(script_casting_out_nines, "casting_out_nines.wls");
+script_test!(
+  script_circles_of_given_radius_through_two_points,
+  "circles_of_given_radius_through_two_points.wls"
+);
+script_test!(script_closest_pair_problem, "closest-pair_problem.wls");
+script_test!(script_combinations, "combinations.wls");
+script_test!(script_comma_quibbling, "comma_quibbling.wls");
+script_test!(script_command_line_arguments, "command-line_arguments.wls");
+script_test!(script_comments, "comments.wls");
+script_test!(
+  script_continued_fraction_arithmetic_construct_from_rational_number,
+  "continued_fraction_arithmetic_construct_from_rational_number.wls"
+);
+script_test!(
+  script_convert_seconds_to_compound_duration,
+  "convert_seconds_to_compound_duration.wls"
+);
+script_test!(
+  script_count_occurrences_of_a_substring,
+  "count_occurrences_of_a_substring.wls"
+);
+script_test!(script_count_the_coins, "count_the_coins.wls");
+script_test!(script_crc_32, "crc-32.wls");
+script_test!(
+  script_create_a_two_dimensional_array_at_runtime,
+  "create_a_two-dimensional_array_at_runtime.wls"
+);
+script_test!(
+  script_create_an_object_native_demonstration,
+  "create_an_object_native_demonstration.wls"
+);
+script_test!(
+  script_csv_to_html_translation,
+  "csv_to_html_translation.wls"
+);
+script_test!(
+  script_cumulative_standard_deviation,
+  "cumulative_standard_deviation.wls"
+);
+script_test!(script_date_format, "date_format.wls");
+script_test!(script_date_manipulation, "date_manipulation.wls");
+script_test!(script_day_of_the_week, "day_of_the_week.wls");
+script_test!(script_deconvolution_1d, "deconvolution_1d.wls");
+script_test!(script_department_numbers, "department_numbers.wls");
+script_test!(
+  script_detect_division_by_zero,
+  "detect_division_by_zero.wls"
+);
+script_test!(
+  script_determine_if_only_one_instance_is_running,
+  "determine_if_only_one_instance_is_running.wls"
+);
+script_test!(script_digital_root, "digital_root.wls");
+script_test!(
+  script_dutch_national_flag_problem,
+  "dutch_national_flag_problem.wls"
+);
+script_test!(script_emirp_primes, "emirp_primes.wls");
+script_test!(script_empty_string, "empty_string.wls");
+script_test!(script_entropy, "entropy.wls");
+script_test!(script_environment_variables, "environment_variables.wls");
+script_test!(script_equilibrium_index, "equilibrium_index.wls");
+script_test!(
+  script_ethiopian_multiplication,
+  "ethiopian_multiplication.wls"
+);
+script_test!(
+  script_exceptions_catch_an_exception_thrown_in_a_nested_call,
+  "exceptions_catch_an_exception_thrown_in_a_nested_call.wls"
+);
+script_test!(
+  script_execute_a_markov_algorithm,
+  "execute_a_markov_algorithm.wls"
+);
+script_test!(
+  script_exponentiation_operator,
+  "exponentiation_operator.wls"
+);
+script_test!(
+  script_extensible_prime_generator,
+  "extensible_prime_generator.wls"
+);
+script_test!(
+  script_extreme_floating_point_values,
+  "extreme_floating_point_values.wls"
+);
+script_test!(script_factorial, "factorial.wls");
+script_test!(script_fast_fourier_transform, "fast_fourier_transform.wls");
+script_test!(script_fasta_format, "fasta_format.wls");
+script_test!(
+  script_fibonacci_n_step_number_sequences,
+  "fibonacci_n-step_number_sequences.wls"
+);
+script_test!(script_fibonacci_word, "fibonacci_word.wls");
+script_test!(script_filter, "filter.wls");
+script_test!(
+  script_find_first_and_last_set_bit_of_a_long_integer_2,
+  "find_first_and_last_set_bit_of_a_long_integer_2.wls"
+);
+script_test!(script_first_class_functions, "first-class_functions.wls");
+script_test!(
+  script_first_class_functions_use_numbers_analogously,
+  "first-class_functions_use_numbers_analogously.wls"
+);
+script_test!(script_formal_power_series, "formal_power_series.wls");
+script_test!(
+  script_formatted_numeric_output_2,
+  "formatted_numeric_output_2.wls"
+);
+script_test!(script_function_definition_2, "function_definition_2.wls");
+script_test!(script_function_frequency, "function_frequency.wls");
+script_test!(script_gaussian_elimination, "gaussian_elimination.wls");
+script_test!(script_general_fizzbuzz, "general_fizzbuzz.wls");
+script_test!(script_generic_swap, "generic_swap.wls");
+script_test!(script_gray_code, "gray_code.wls");
+script_test!(script_grayscale_image, "grayscale_image.wls");
+script_test!(
+  script_greatest_element_of_a_list,
+  "greatest_element_of_a_list.wls"
+);
+script_test!(script_hamming_numbers, "hamming_numbers.wls");
+script_test!(script_happy_numbers, "happy_numbers.wls");
+script_test!(
+  script_harshad_or_niven_series,
+  "harshad_or_niven_series.wls"
+);
+script_test!(script_hash_join, "hash_join.wls");
+script_test!(script_haversine_formula, "haversine_formula.wls");
+script_test!(
+  script_hello_world_line_printer,
+  "hello_world_line_printer.wls"
+);
+script_test!(
+  script_hickerson_series_of_almost_integers,
+  "hickerson_series_of_almost_integers.wls"
+);
+script_test!(script_higher_order_functions, "higher-order_functions.wls");
+script_test!(
+  script_hofstadter_figure_figure_sequences,
+  "hofstadter_figure-figure_sequences.wls"
+);
+script_test!(script_host_introspection, "host_introspection.wls");
+script_test!(script_huffman_coding, "huffman_coding.wls");
+script_test!(script_iban, "iban.wls");
+script_test!(script_include_a_file, "include_a_file.wls");
+script_test!(script_integer_overflow, "integer_overflow.wls");
+script_test!(script_jensens_device, "jensens_device.wls");
+script_test!(script_josephus_problem_2, "josephus_problem_2.wls");
+script_test!(script_json, "json.wls");
+script_test!(
+  script_knapsack_problem_continuous,
+  "knapsack_problem_continuous.wls"
+);
+script_test!(
+  script_knapsack_problem_unbounded,
+  "knapsack_problem_unbounded.wls"
+);
+script_test!(script_knuth_shuffle, "knuth_shuffle.wls");
+script_test!(script_kronecker_product, "kronecker_product.wls");
+script_test!(
+  script_largest_int_from_concatenated_ints,
+  "largest_int_from_concatenated_ints.wls"
+);
+script_test!(
+  script_levenshtein_distance_alignment,
+  "levenshtein_distance_alignment.wls"
+);
+script_test!(
+  script_longest_common_substring_2,
+  "longest_common_substring_2.wls"
+);
+script_test!(
+  script_longest_increasing_subsequence,
+  "longest_increasing_subsequence.wls"
+);
+script_test!(script_look_and_say_sequence, "look-and-say_sequence.wls");
+script_test!(
+  script_loops_n_plus_one_half_2,
+  "loops_n_plus_one_half_2.wls"
+);
+script_test!(script_lu_decomposition, "lu_decomposition.wls");
+script_test!(script_make_directory_path, "make_directory_path.wls");
+script_test!(
+  script_matrix_exponentiation_operator,
+  "matrix-exponentiation_operator.wls"
+);
+script_test!(script_matrix_multiplication, "matrix_multiplication.wls");
+script_test!(script_matrix_transposition, "matrix_transposition.wls");
+script_test!(
+  script_maximum_triangle_path_sum,
+  "maximum_triangle_path_sum.wls"
+);
+script_test!(script_mcnuggets_problem, "mcnuggets_problem.wls");
+script_test!(script_median_filter, "median_filter.wls");
+script_test!(script_menu, "menu.wls");
+script_test!(script_metaprogramming, "metaprogramming.wls");
+script_test!(script_middle_three_digits, "middle_three_digits.wls");
+script_test!(
+  script_mind_boggling_card_trick,
+  "mind_boggling_card_trick.wls"
+);
+script_test!(script_modular_inverse, "modular_inverse.wls");
+script_test!(script_modulinos, "modulinos.wls");
+script_test!(script_monty_hall_problem, "monty_hall_problem.wls");
+script_test!(script_multifactorial, "multifactorial.wls");
+script_test!(
+  script_multiple_distinct_objects,
+  "multiple_distinct_objects.wls"
+);
+script_test!(script_multiplication_tables, "multiplication_tables.wls");
+script_test!(script_multiplicative_order, "multiplicative_order.wls");
+script_test!(script_mutual_recursion, "mutual_recursion.wls");
+script_test!(script_n24_game_solve, "24_game_solve.wls");
+script_test!(
+  script_narcissistic_decimal_number,
+  "narcissistic_decimal_number.wls"
+);
+script_test!(script_nested_function, "nested_function.wls");
+script_test!(
+  script_non_continuous_subsequences,
+  "non-continuous_subsequences.wls"
+);
+script_test!(script_nth, "nth.wls");
+script_test!(script_numerical_integration, "numerical_integration.wls");
+script_test!(
+  script_numerical_integration_gauss_legendre_quadrature,
+  "numerical_integration_gauss-legendre_quadrature.wls"
+);
+script_test!(
+  script_one_of_n_lines_in_a_file,
+  "one_of_n_lines_in_a_file.wls"
+);
+script_test!(
+  script_order_two_numerical_lists,
+  "order_two_numerical_lists.wls"
+);
+script_test!(script_ordered_partitions, "ordered_partitions.wls");
+script_test!(script_pangram_checker, "pangram_checker.wls");
+script_test!(script_parallel_calculations, "parallel_calculations.wls");
+script_test!(
+  script_partial_function_application_2,
+  "partial_function_application_2.wls"
+);
+script_test!(
+  script_pascals_triangle_puzzle,
+  "pascals_triangle_puzzle.wls"
+);
+script_test!(script_password_generator, "password_generator.wls");
+script_test!(script_perfect_numbers, "perfect_numbers.wls");
+script_test!(script_perfect_shuffle, "perfect_shuffle.wls");
+script_test!(script_permutations, "permutations.wls");
+script_test!(script_phrase_reversals, "phrase_reversals.wls");
+script_test!(
+  script_polynomial_long_division,
+  "polynomial_long_division.wls"
+);
+script_test!(script_polynomial_regression, "polynomial_regression.wls");
+script_test!(script_price_fraction, "price_fraction.wls");
+script_test!(
+  script_primality_by_trial_division,
+  "primality_by_trial_division.wls"
+);
+script_test!(script_problem_of_apollonius, "problem_of_apollonius.wls");
+script_test!(script_program_name, "program_name.wls");
+script_test!(script_program_termination, "program_termination.wls");
+script_test!(script_proper_divisors, "proper_divisors.wls");
+script_test!(script_pythagorean_triples, "pythagorean_triples.wls");
+script_test!(script_queue_definition, "queue_definition.wls");
+script_test!(script_ramseys_theorem, "ramseys_theorem.wls");
+script_test!(
+  script_random_number_generator_device,
+  "random_number_generator_(device).wls"
+);
+script_test!(script_range_expansion, "range_expansion.wls");
+script_test!(script_range_extraction, "range_extraction.wls");
+script_test!(
+  script_read_a_file_line_by_line,
+  "read_a_file_line_by_line.wls"
+);
+script_test!(
+  script_reduced_row_echelon_form,
+  "reduced_row_echelon_form.wls"
+);
+script_test!(script_regular_expressions, "regular_expressions.wls");
+script_test!(
+  script_remove_duplicate_elements,
+  "remove_duplicate_elements.wls"
+);
+script_test!(
+  script_remove_lines_from_a_file,
+  "remove_lines_from_a_file.wls"
+);
+script_test!(script_rep_string, "rep-string.wls");
+script_test!(script_repeat_a_string, "repeat_a_string.wls");
+script_test!(script_roman_numerals_encode, "roman_numerals_encode.wls");
+script_test!(
+  script_roots_of_a_quadratic_function,
+  "roots_of_a_quadratic_function.wls"
+);
+script_test!(script_roots_of_unity, "roots_of_unity.wls");
+script_test!(script_search_a_list, "search_a_list.wls");
+script_test!(
+  script_search_a_list_of_records,
+  "search_a_list_of_records.wls"
+);
+script_test!(script_secure_temporary_file, "secure_temporary_file.wls");
+script_test!(
+  script_self_describing_numbers,
+  "self-describing_numbers.wls"
+);
+script_test!(script_set, "set.wls");
+script_test!(script_set_consolidation, "set_consolidation.wls");
+script_test!(
+  script_seven_sided_dice_from_five_sided_dice,
+  "seven-sided_dice_from_five-sided_dice.wls"
+);
+script_test!(script_shell_one_liner, "shell_one-liner.wls");
+script_test!(
+  script_shoelace_formula_for_polygonal_area,
+  "shoelace_formula_for_polygonal_area.wls"
+);
+script_test!(script_show_the_epoch, "show_the_epoch.wls");
+script_test!(script_sierpinski_carpet, "sierpinski_carpet.wls");
+script_test!(script_sierpinski_pentagon, "sierpinski_pentagon.wls");
+script_test!(script_sleep, "sleep.wls");
+script_test!(script_smith_numbers, "smith_numbers.wls");
+script_test!(
+  script_sort_an_array_of_composite_structures,
+  "sort_an_array_of_composite_structures.wls"
+);
+script_test!(script_sort_stability, "sort_stability.wls");
+script_test!(script_sort_three_variables, "sort_three_variables.wls");
+script_test!(
+  script_sort_using_a_custom_comparator,
+  "sort_using_a_custom_comparator.wls"
+);
+script_test!(
+  script_sorting_algorithms_bead_sort,
+  "sorting_algorithms_bead_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_bubble_sort,
+  "sorting_algorithms_bubble_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_cocktail_sort,
+  "sorting_algorithms_cocktail_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_comb_sort,
+  "sorting_algorithms_comb_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_counting_sort,
+  "sorting_algorithms_counting_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_gnome_sort,
+  "sorting_algorithms_gnome_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_heapsort,
+  "sorting_algorithms_heapsort.wls"
+);
+script_test!(
+  script_sorting_algorithms_insertion_sort,
+  "sorting_algorithms_insertion_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_permutation_sort,
+  "sorting_algorithms_permutation_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_quicksort,
+  "sorting_algorithms_quicksort.wls"
+);
+script_test!(
+  script_sorting_algorithms_shell_sort,
+  "sorting_algorithms_shell_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_stooge_sort,
+  "sorting_algorithms_stooge_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_strand_sort,
+  "sorting_algorithms_strand_sort.wls"
+);
+script_test!(script_soundex, "soundex.wls");
+script_test!(script_sparkline_in_unicode, "sparkline_in_unicode.wls");
+script_test!(script_spiral_matrix, "spiral_matrix.wls");
+script_test!(
+  script_split_a_character_string_based_on_change_of_character,
+  "split_a_character_string_based_on_change_of_character.wls"
+);
+script_test!(
+  script_sql_based_authentication,
+  "sql-based_authentication.wls"
+);
+script_test!(script_stair_climbing_puzzle, "stair-climbing_puzzle.wls");
+script_test!(script_stem_and_leaf_plot, "stem-and-leaf_plot.wls");
+script_test!(script_string_comparison_2, "string_comparison_2.wls");
+script_test!(script_string_matching_2, "string_matching_2.wls");
+script_test!(script_string_prepend, "string_prepend.wls");
+script_test!(
+  script_strip_comments_from_a_string,
+  "strip_comments_from_a_string.wls"
+);
+script_test!(
+  script_strip_control_codes_and_extended_characters_from_a_string,
+  "strip_control_codes_and_extended_characters_from_a_string.wls"
+);
+script_test!(
+  script_strip_whitespace_from_a_string_top_and_tail_2,
+  "strip_whitespace_from_a_string_top_and_tail_2.wls"
+);
+script_test!(script_substring_2, "substring_2.wls");
+script_test!(
+  script_substring_top_and_tail_2,
+  "substring_top_and_tail_2.wls"
+);
+script_test!(script_subtractive_generator, "subtractive_generator.wls");
+script_test!(script_sudoku, "sudoku.wls");
+script_test!(
+  script_sum_and_product_of_an_array_2,
+  "sum_and_product_of_an_array_2.wls"
+);
+script_test!(
+  script_sum_digits_of_an_integer_2,
+  "sum_digits_of_an_integer_2.wls"
+);
+script_test!(script_sum_of_a_series, "sum_of_a_series.wls");
+script_test!(script_temperature_conversion, "temperature_conversion.wls");
+script_test!(
+  script_terminal_control_clear_the_screen,
+  "terminal_control_clear_the_screen.wls"
+);
+script_test!(
+  script_terminal_control_cursor_positioning,
+  "terminal_control_cursor_positioning.wls"
+);
+script_test!(
+  script_terminal_control_dimensions,
+  "terminal_control_dimensions.wls"
+);
+script_test!(
+  script_terminal_control_hiding_the_cursor,
+  "terminal_control_hiding_the_cursor.wls"
+);
+script_test!(
+  script_terminal_control_inverse_video,
+  "terminal_control_inverse_video.wls"
+);
+script_test!(
+  script_terminal_control_preserve_screen,
+  "terminal_control_preserve_screen.wls"
+);
+script_test!(
+  script_trigonometric_functions_2,
+  "trigonometric_functions_2.wls"
+);
+script_test!(script_truncatable_primes, "truncatable_primes.wls");
+script_test!(script_truncate_a_file, "truncate_a_file.wls");
+script_test!(script_truth_table, "truth_table.wls");
+script_test!(
+  script_unbias_a_random_generator,
+  "unbias_a_random_generator.wls"
+);
+script_test!(script_unix_ls, "unix_ls.wls");
+script_test!(
+  script_utf_8_encode_and_decode,
+  "utf-8_encode_and_decode.wls"
+);
+script_test!(
+  script_variable_length_quantity,
+  "variable-length_quantity.wls"
+);
+script_test!(script_variable_size_get, "variable_size_get.wls");
+script_test!(
+  script_verify_distribution_uniformity_chi_squared_test,
+  "verify_distribution_uniformity_chi-squared_test.wls"
+);
+script_test!(
+  script_verify_distribution_uniformity_naive,
+  "verify_distribution_uniformity_naive.wls"
+);
+script_test!(script_vigen_c3_a8re_cipher, "vigen%C3%A8re_cipher.wls");
+script_test!(
+  script_walk_a_directory_non_recursively,
+  "walk_a_directory_non-recursively.wls"
+);
+script_test!(
+  script_walk_a_directory_recursively,
+  "walk_a_directory_recursively.wls"
+);
+script_test!(script_write_entire_file, "write_entire_file.wls");
+script_test!(
+  script_write_float_arrays_to_a_text_file,
+  "write_float_arrays_to_a_text_file.wls"
+);
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

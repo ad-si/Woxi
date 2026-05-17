@@ -18,3 +18,16 @@
 
 # Side effects of FilePrint/Export round-trip tests (cases 3268, 3269).
 /sample.txt
+
+# Side effects of promoted RosettaCode script snapshot tests
+# (scripts that write to the working directory via Export/Write/Save/…).
+/80
+/\output.txt
+/a.txt
+/b.txt
+/c.txt
+/data/
+/file.ppm
+/filename.txt
+/out.bmp
+/output.txt
