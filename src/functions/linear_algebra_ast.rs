@@ -165,28 +165,45 @@ fn matrix_to_expr(matrix: Vec<Vec<Expr>>) -> Expr {
 /// Helper: evaluate a simple arithmetic expression on Exprs
 fn eval_add(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
-    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
+    (Expr::Integer(x), Expr::Integer(y)) => match x.checked_add(*y) {
+      Some(s) => Expr::Integer(s),
+      None => fallback_plus(a, b),
+    },
     (Expr::Integer(x), Expr::Real(y)) | (Expr::Real(y), Expr::Integer(x)) => {
       Expr::Real(*x as f64 + y)
     }
     (Expr::Real(x), Expr::Real(y)) => Expr::Real(x + y),
-    _ => {
-      // Symbolic addition via evaluator
-      match crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()]) {
-        Ok(r) => r,
-        Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        },
-      }
-    }
+    _ => fallback_plus(a, b),
+  }
+}
+
+fn fallback_plus(a: &Expr, b: &Expr) -> Expr {
+  match crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()]) {
+    Ok(r) => r,
+    Err(_) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
   }
 }
 
 fn eval_mul(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
-    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
+    (Expr::Integer(x), Expr::Integer(y)) => match x.checked_mul(*y) {
+      Some(p) => Expr::Integer(p),
+      None => match crate::functions::math_ast::times_ast(&[
+        a.clone(),
+        b.clone(),
+      ]) {
+        Ok(r) => r,
+        Err(_) => Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(a.clone()),
+          right: Box::new(b.clone()),
+        },
+      },
+    },
     (Expr::Integer(x), Expr::Real(y)) | (Expr::Real(y), Expr::Integer(x)) => {
       Expr::Real(*x as f64 * y)
     }
@@ -204,20 +221,25 @@ fn eval_mul(a: &Expr, b: &Expr) -> Expr {
 
 fn eval_sub(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
-    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x - y),
+    (Expr::Integer(x), Expr::Integer(y)) => match x.checked_sub(*y) {
+      Some(s) => Expr::Integer(s),
+      None => fallback_sub(a, b),
+    },
     (Expr::Integer(x), Expr::Real(y)) => Expr::Real(*x as f64 - y),
     (Expr::Real(x), Expr::Integer(y)) => Expr::Real(x - *y as f64),
     (Expr::Real(x), Expr::Real(y)) => Expr::Real(x - y),
-    _ => {
-      match crate::functions::math_ast::subtract_ast(&[a.clone(), b.clone()]) {
-        Ok(r) => r,
-        Err(_) => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        },
-      }
-    }
+    _ => fallback_sub(a, b),
+  }
+}
+
+fn fallback_sub(a: &Expr, b: &Expr) -> Expr {
+  match crate::functions::math_ast::subtract_ast(&[a.clone(), b.clone()]) {
+    Ok(r) => r,
+    Err(_) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
   }
 }
 

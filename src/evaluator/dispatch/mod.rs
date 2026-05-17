@@ -1550,10 +1550,33 @@ pub fn evaluate_function_call_ast_inner(
   if name == "Begin"
     || name == "End"
     || name == "BeginPackage"
-    || name == "Off"
-    || name == "On"
     || name == "ClearAttributes"
   {
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // Off[Head::tag, ...] / On[Head::tag, ...] — toggle message suppression.
+  // Each argument is expected to be `MessageName[Head, "tag"]`.
+  if name == "Off" || name == "On" {
+    for a in args {
+      if let Expr::FunctionCall { name: mn, args: ma } = a
+        && mn == "MessageName"
+        && ma.len() == 2
+        && let Expr::Identifier(head) = &ma[0]
+      {
+        let tag_str = match &ma[1] {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          _ => continue,
+        };
+        let key = format!("{}::{}", head, tag_str);
+        if name == "Off" {
+          crate::off_message(&key);
+        } else {
+          crate::on_message(&key);
+        }
+      }
+    }
     return Ok(Expr::Identifier("Null".to_string()));
   }
   // Remove[syms...] - fully remove the named symbols (drop env, defs,

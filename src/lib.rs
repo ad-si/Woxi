@@ -286,6 +286,54 @@ thread_local! {
     static CAPTURED_MESSAGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+// Set of message tags suppressed via `Off[head::tag]`. Keys are formatted as
+// "Head::tag" (e.g. "Power::indet"). When a message about to be emitted starts
+// with one of these tags, it is silently dropped instead of being printed.
+thread_local! {
+    static OFF_MESSAGES: RefCell<std::collections::HashSet<String>> =
+        RefCell::new(std::collections::HashSet::new());
+}
+
+/// Mark a message tag as off, so future `emit_message` calls whose text starts
+/// with `"<tag>: "` are dropped. Used to implement `Off[Head::tag]`.
+pub fn off_message(tag: &str) {
+  OFF_MESSAGES.with(|s| {
+    s.borrow_mut().insert(tag.to_string());
+  });
+}
+
+/// Re-enable a previously suppressed message tag (mirror of `off_message`).
+pub fn on_message(tag: &str) {
+  OFF_MESSAGES.with(|s| {
+    s.borrow_mut().remove(tag);
+  });
+}
+
+fn message_is_off(msg: &str) -> bool {
+  // Scan each line for a `Head::tag: ` prefix and check whether any matches
+  // a suppressed tag. We can't just take msg[..find(": ")] because some
+  // messages prepend a right-aligned context line (e.g. the exponent above
+  // the base in Power::indet) before the tag line.
+  OFF_MESSAGES.with(|set| {
+    let set = set.borrow();
+    if set.is_empty() {
+      return false;
+    }
+    for line in msg.lines() {
+      if let Some(colon_space) = line.find(": ")
+        && let Some(double_colon) = line[..colon_space].find("::")
+      {
+        let tag = &line[..colon_space];
+        // Validate `tag` looks like Head::tag (no spaces).
+        if !tag.contains(' ') && double_colon > 0 && set.contains(tag) {
+          return true;
+        }
+      }
+    }
+    false
+  })
+}
+
 // Directory of the notebook the current evaluation is running in. Front-ends
 // (e.g. woxi-studio) set this to the parent directory of the loaded `.nb`
 // file so `NotebookDirectory[]` returns a real path; when unset, the function
@@ -598,6 +646,12 @@ fn format_stack_trace() -> Option<String> {
 /// When messages_to_stdout is enabled, prints to stdout (matching wolframscript).
 /// Includes a stack trace showing the chain of function calls.
 pub fn emit_message(msg: &str) {
+  // Some messages start with right-aligned context lines (e.g. Power::indet
+  // prints the exponent above the base) followed by `\n` and then the actual
+  // `Head::tag: …` line. Scan for the tag wherever it appears.
+  if message_is_off(msg) {
+    return;
+  }
   CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().push(msg.to_string());
   });

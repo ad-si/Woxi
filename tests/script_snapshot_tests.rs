@@ -929,6 +929,7 @@ script_test!(
 script_test!(script_evolutionary_algorithm, "evolutionary_algorithm.wls");
 script_test!(script_fibonacci_word_fractal, "fibonacci_word_fractal.wls");
 script_test!(script_morse_code, "morse_code.wls");
+script_test!(script_munchausen_numbers, "munchausen_numbers.wls");
 script_test!(script_pentagram, "pentagram.wls");
 script_test!(script_pinstripe_display, "pinstripe_display.wls");
 script_test!(script_plot_coordinate_pairs, "plot_coordinate_pairs.wls");
