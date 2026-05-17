@@ -889,7 +889,8 @@ pub fn dispatch_linear_algebra_functions(
       }));
     }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
-    "RotationTransform" if args.len() == 1 => {
+    // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
+    "RotationTransform" if args.len() == 1 || args.len() == 2 => {
       let theta = &args[0];
       let cos_t = Expr::FunctionCall {
         name: "Cos".to_string(),
@@ -903,12 +904,57 @@ pub fn dispatch_linear_algebra_functions(
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), sin_t.clone()].into(),
       };
+      // Default last column is the zero translation
+      let (tx, ty) = if args.len() == 2 {
+        if let Expr::List(center) = &args[1]
+          && center.len() == 2
+        {
+          let cx = center[0].clone();
+          let cy = center[1].clone();
+          // Translation column for rotation about {cx,cy}:
+          // tx = cx - cx*cos + cy*sin
+          // ty = cy - cx*sin - cy*cos
+          let neg_cx_cos = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), cx.clone(), cos_t.clone()].into(),
+          };
+          let cy_sin = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![cy.clone(), sin_t.clone()].into(),
+          };
+          let tx_e = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![cx.clone(), neg_cx_cos, cy_sin].into(),
+          };
+          let neg_cx_sin = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), cx.clone(), sin_t.clone()].into(),
+          };
+          let neg_cy_cos = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), cy.clone(), cos_t.clone()].into(),
+          };
+          let ty_e = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![cy.clone(), neg_cx_sin, neg_cy_cos].into(),
+          };
+          (tx_e, ty_e)
+        } else {
+          // Non-list or wrong-dim center: leave unevaluated.
+          return Some(Ok(Expr::FunctionCall {
+            name: "RotationTransform".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      } else {
+        (Expr::Integer(0), Expr::Integer(0))
+      };
       // Build the 3x3 homogeneous rotation matrix:
-      // {{Cos[x], -Sin[x], 0}, {Sin[x], Cos[x], 0}, {0, 0, 1}}
+      // {{Cos[x], -Sin[x], tx}, {Sin[x], Cos[x], ty}, {0, 0, 1}}
       let matrix = Expr::List(
         vec![
-          Expr::List(vec![cos_t.clone(), neg_sin_t, Expr::Integer(0)].into()),
-          Expr::List(vec![sin_t, cos_t, Expr::Integer(0)].into()),
+          Expr::List(vec![cos_t.clone(), neg_sin_t, tx].into()),
+          Expr::List(vec![sin_t, cos_t, ty].into()),
           Expr::List(
             vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)].into(),
           ),
