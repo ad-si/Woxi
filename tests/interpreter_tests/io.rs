@@ -3506,6 +3506,42 @@ mod directory_stack {
   }
 }
 
+mod input_function {
+  use super::*;
+
+  // In script mode (non-interactive), Input/InputString return EndOfFile
+  // — matching wolframscript's behaviour when stdin is closed.
+
+  #[test]
+  fn input_no_args_returns_end_of_file() {
+    clear_state();
+    assert_eq!(interpret("Input[]").unwrap(), "EndOfFile");
+  }
+
+  #[test]
+  fn input_with_prompt_returns_end_of_file() {
+    clear_state();
+    assert_eq!(interpret(r#"Input["enter: "]"#).unwrap(), "EndOfFile");
+  }
+
+  #[test]
+  fn input_string_returns_end_of_file() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"InputString["name? "]"#).unwrap(),
+      "EndOfFile"
+    );
+  }
+
+  #[test]
+  fn input_result_is_usable_as_value() {
+    clear_state();
+    // Regression: scripts that bind `a = Input[…]` and use `a` later need
+    // the EndOfFile symbol, not an unevaluated `Input[…]`.
+    assert_eq!(interpret("a = Input[]; a").unwrap(), "EndOfFile");
+  }
+}
+
 mod read_line {
   use super::*;
 

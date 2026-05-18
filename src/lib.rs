@@ -475,6 +475,13 @@ fn capture_stdout(text: &str) {
   });
 }
 
+/// Appends to the captured stdout buffer without a trailing newline.
+pub fn capture_stdout_raw(text: &str) {
+  CAPTURED_STDOUT.with(|buffer| {
+    buffer.borrow_mut().push_str(text);
+  });
+}
+
 /// Gets the captured stdout content
 fn get_captured_stdout() -> String {
   CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())

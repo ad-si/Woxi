@@ -1,0 +1,1 @@
+Graphics@HilbertCurve[4]

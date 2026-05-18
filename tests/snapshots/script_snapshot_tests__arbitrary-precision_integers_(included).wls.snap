@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+62060698786608744707...92256259918212890625 (183231 digits)

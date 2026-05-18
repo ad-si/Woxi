@@ -1049,6 +1049,66 @@ script_test!(script_variadic_function, "variadic_function.wls");
 script_test!(script_permutation_test, "permutation_test.wls");
 script_test!(script_url_decoding, "url_decoding.wls");
 
+// === RosettaCode _tasks_* first-block scripts ===
+script_test!(script_n15_puzzle_game, "15_puzzle_game.wls");
+script_test!(script_n24_game, "24_game.wls");
+script_test!(script_animate_a_pendulum, "animate_a_pendulum.wls");
+script_test!(
+  script_arbitrary_precision_integers_included,
+  "arbitrary-precision_integers_(included).wls"
+);
+script_test!(script_arithmetic_integer, "arithmetic_integer.wls");
+script_test!(script_bitmap, "bitmap.wls");
+script_test!(script_cholesky_decomposition, "cholesky_decomposition.wls");
+script_test!(script_deconvolution_2d_, "deconvolution_2d_.wls");
+script_test!(script_distributed_programming, "distributed_programming.wls");
+script_test!(script_draw_a_clock, "draw_a_clock.wls");
+script_test!(script_draw_a_rotating_cube, "draw_a_rotating_cube.wls");
+script_test!(script_farey_sequence, "farey_sequence.wls");
+script_test!(
+  script_get_system_command_output,
+  "get_system_command_output.wls"
+);
+script_test!(
+  script_hello_world_standard_error,
+  "hello_world_standard_error.wls"
+);
+script_test!(script_hilbert_curve, "hilbert_curve.wls");
+script_test!(script_honeycombs, "honeycombs.wls");
+script_test!(script_https, "https.wls");
+script_test!(
+  script_https_client_authenticated,
+  "https_client-authenticated.wls"
+);
+script_test!(script_image_noise, "image_noise.wls");
+script_test!(script_integer_comparison, "integer_comparison.wls");
+script_test!(script_joystick_position, "joystick_position.wls");
+script_test!(script_julia_set, "julia_set.wls");
+script_test!(
+  script_longest_common_subsequence,
+  "longest_common_subsequence.wls"
+);
+script_test!(script_maze_solving, "maze_solving.wls");
+script_test!(script_musical_scale, "musical_scale.wls");
+script_test!(
+  script_pascal_matrix_generation,
+  "pascal_matrix_generation.wls"
+);
+script_test!(script_record_sound, "record_sound.wls");
+script_test!(
+  script_retrieve_and_search_chat_history,
+  "retrieve_and_search_chat_history.wls"
+);
+script_test!(script_roman_numerals_decode, "roman_numerals_decode.wls");
+script_test!(script_send_email, "send_email.wls");
+script_test!(
+  script_sutherland_hodgman_polygon_clipping,
+  "sutherland-hodgman_polygon_clipping.wls"
+);
+script_test!(script_topological_sort, "topological_sort.wls");
+script_test!(script_total_circles_area, "total_circles_area.wls");
+script_test!(script_url_parser, "url_parser.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

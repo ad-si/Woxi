@@ -35,18 +35,17 @@ fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
       n != self_name && ENV.with(|e| e.borrow().contains_key(n))
     }
     Expr::List(items) => items.iter().any(|a| needs_reevaluation(a, self_name)),
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(|a| needs_reevaluation(a, self_name))
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      needs_reevaluation(left, self_name)
-        || needs_reevaluation(right, self_name)
-    }
-    Expr::UnaryOp { operand, .. } => needs_reevaluation(operand, self_name),
-    Expr::CurriedCall { func, args } => {
-      needs_reevaluation(func, self_name)
-        || args.iter().any(|a| needs_reevaluation(a, self_name))
-    }
+    // FunctionCall / BinaryOp / UnaryOp / CurriedCall stored via SetDelayed
+    // (`x := expr`) must be re-evaluated on each lookup — that is the whole
+    // point of `:=`. Set (`x = expr`) evaluates the RHS first, so the stored
+    // value would only be a FunctionCall when evaluation didn't reduce it
+    // (e.g. `x = Sin[a]` with `a` unbound); re-evaluating those on lookup is
+    // also the right behaviour (matches wolframscript: when `a` later gets a
+    // value, `x` picks it up).
+    Expr::FunctionCall { .. } => true,
+    Expr::BinaryOp { .. } => true,
+    Expr::UnaryOp { .. } => true,
+    Expr::CurriedCall { .. } => true,
     _ => false,
   }
 }

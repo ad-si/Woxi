@@ -1,0 +1,11 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Give me an integer please!Give me another integer please!You gave me EndOfFile and EndOfFile
+sum: 2*EndOfFile
+difference: 0
+product: EndOfFile^2
+integer quotient: 1
+remainder: Mod[EndOfFile, EndOfFile]
+exponentiation: EndOfFile^EndOfFile

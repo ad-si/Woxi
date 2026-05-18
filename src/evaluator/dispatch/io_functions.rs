@@ -2501,6 +2501,25 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::String(result)));
       }
     }
+    // Input[] / Input[prompt] / InputString[] / InputString[prompt] —
+    // wolframscript in script mode prints the prompt to stdout (no trailing
+    // newline) and returns `EndOfFile` since interactive stdin isn't
+    // available. Match that so non-interactive scripts behave identically.
+    "Input" | "InputString" if args.len() <= 1 => {
+      if let Some(arg) = args.first() {
+        let prompt = match arg {
+          Expr::String(p) => p.clone(),
+          _ => crate::syntax::expr_to_string(arg),
+        };
+        if !crate::is_quiet_print() {
+          use std::io::Write as _;
+          print!("{prompt}");
+          let _ = std::io::stdout().flush();
+        }
+        crate::capture_stdout_raw(&prompt);
+      }
+      return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+    }
     _ => {}
   }
   None

@@ -4324,6 +4324,25 @@ mod set_delayed {
       "{11, 12}"
     );
   }
+
+  #[test]
+  fn set_delayed_own_value_evaluates_on_access() {
+    // `x := 2 + 3; x` must evaluate the body on lookup, not return the
+    // stored `Plus[2, 3]` form. Regression: previously the lookup heuristic
+    // only re-evaluated when the body contained a free Identifier in ENV.
+    assert_eq!(interpret("x := 2 + 3; x").unwrap(), "5");
+  }
+
+  #[test]
+  fn set_delayed_function_call_body_evaluates_on_access() {
+    // `x := ToString[5^4^3^2]` references no other identifiers, so the old
+    // `needs_reevaluation` check returned false and `x` came back as the
+    // unevaluated FunctionCall. Verify the body actually runs.
+    assert_eq!(
+      interpret("s := ToString[5^4^3^2]; StringTake[s, 20]").unwrap(),
+      "62060698786608744707"
+    );
+  }
 }
 
 mod compound_expression {
@@ -6162,19 +6181,13 @@ mod line_continuation {
     // Regression: `/.` (ReplaceAll) at end of line must continue on the
     // next line. Previously insert_statement_separators didn't recognise
     // `.` as a continuation char when preceded by `/`.
-    assert_eq!(
-      interpret("{1, 2, 3} /.\n  1 -> 10").unwrap(),
-      "{10, 2, 3}"
-    );
+    assert_eq!(interpret("{1, 2, 3} /.\n  1 -> 10").unwrap(), "{10, 2, 3}");
   }
 
   #[test]
   fn replace_repeated_across_newline() {
     // Same regression for `//.` (ReplaceRepeated).
-    assert_eq!(
-      interpret("f[g[a]] //.\n  f[x_] :> x").unwrap(),
-      "g[a]"
-    );
+    assert_eq!(interpret("f[g[a]] //.\n  f[x_] :> x").unwrap(), "g[a]");
   }
 }
 
