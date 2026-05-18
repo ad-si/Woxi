@@ -1719,8 +1719,16 @@ pub fn set_delayed_ast(
     let mut heads: Vec<Option<String>> = Vec::new();
     let mut blank_types: Vec<u8> = Vec::new();
     // We also need to track substitutions for list-pattern destructuring
-    let mut body_substitutions: Vec<(String, Vec<(String, Option<String>)>)> =
-      Vec::new();
+    // Each entry: (param_name, element_bindings, trailing_seq_blank).
+    // `trailing_seq_blank` is the blank type of the last element when it is
+    // a sequence pattern (`__` → 2, `___` → 3), and 0 otherwise. When >= 2,
+    // a named trailing element is bound to `Sequence@@Drop[param, idx]`
+    // instead of `Part[param, idx+1]`.
+    let mut body_substitutions: Vec<(
+      String,
+      Vec<(String, Option<String>)>,
+      u8,
+    )> = Vec::new();
     let mut inline_opts_defaults: Option<Vec<Expr>> = None;
 
     for (i, arg) in lhs_args.iter().enumerate() {
@@ -1743,27 +1751,58 @@ pub fn set_delayed_ast(
             inline_opts_defaults = Some(rules.to_vec());
           }
         }
-        // List pattern: {x_Integer, y_Integer} — destructure a list argument
+        // List pattern: {x_Integer, y_Integer} — destructure a list argument.
+        // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
+        // element, which relaxes the length check and (for named sequence
+        // elements) binds the sequence variable to the matching tail.
         Expr::List(patterns) => {
           let param_name = format!("_lp{}", i);
-          // Condition: argument must be a list with the right length
+          // Detect a trailing sequence pattern (BlankSequence or BlankNullSequence).
+          let (trailing_seq, trailing_seq_blank) = patterns
+            .last()
+            .map(|p| {
+              let (_, _, bt) = extract_pattern_info(p);
+              (bt >= 2, bt)
+            })
+            .unwrap_or((false, 0));
+          // Length condition:
+          // - All single-element patterns (`x_`): Length === N.
+          // - Trailing `__` (BlankSequence): Length >= N (since `__` consumes ≥1).
+          // - Trailing `___` (BlankNullSequence): Length >= N-1 (consumes ≥0).
+          let len_cmp = if !trailing_seq {
+            (crate::syntax::ComparisonOp::SameQ, patterns.len() as i128)
+          } else if trailing_seq_blank == 2 {
+            (
+              crate::syntax::ComparisonOp::GreaterEqual,
+              patterns.len() as i128,
+            )
+          } else {
+            (
+              crate::syntax::ComparisonOp::GreaterEqual,
+              (patterns.len() - 1) as i128,
+            )
+          };
           conditions.push(Some(Expr::Comparison {
             operands: vec![
               Expr::FunctionCall {
                 name: "Length".to_string(),
                 args: vec![Expr::Identifier(param_name.clone())].into(),
               },
-              Expr::Integer(patterns.len() as i128),
+              Expr::Integer(len_cmp.1),
             ],
-            operators: vec![crate::syntax::ComparisonOp::SameQ],
+            operators: vec![len_cmp.0],
           }));
-          // Extract pattern names and head constraints from list elements
           let mut element_bindings = Vec::new();
           for pat in patterns {
             let (pat_name, head, _blank_type) = extract_pattern_info(pat);
             element_bindings.push((pat_name, head));
           }
-          body_substitutions.push((param_name.clone(), element_bindings));
+          let trailing_bt = if trailing_seq { trailing_seq_blank } else { 0 };
+          body_substitutions.push((
+            param_name.clone(),
+            element_bindings,
+            trailing_bt,
+          ));
           params.push(param_name);
           defaults.push(None);
           heads.push(Some("List".to_string()));
@@ -1856,6 +1895,60 @@ pub fn set_delayed_ast(
                 inline_opts_defaults = Some(rules.to_vec());
               }
             }
+            // `Pattern[name, {p1, p2, ...}]` — named list pattern.
+            // Bind `name` to the entire list AND destructure inner elements.
+            Expr::List(patterns) => {
+              let inner_patterns: Vec<Expr> = patterns.to_vec();
+              let (trailing_seq, trailing_seq_blank) = inner_patterns
+                .last()
+                .map(|p| {
+                  let (_, _, bt) = extract_pattern_info(p);
+                  (bt >= 2, bt)
+                })
+                .unwrap_or((false, 0));
+              let len_cmp = if !trailing_seq {
+                (
+                  crate::syntax::ComparisonOp::SameQ,
+                  inner_patterns.len() as i128,
+                )
+              } else if trailing_seq_blank == 2 {
+                (
+                  crate::syntax::ComparisonOp::GreaterEqual,
+                  inner_patterns.len() as i128,
+                )
+              } else {
+                (
+                  crate::syntax::ComparisonOp::GreaterEqual,
+                  (inner_patterns.len() - 1) as i128,
+                )
+              };
+              conditions.push(Some(Expr::Comparison {
+                operands: vec![
+                  Expr::FunctionCall {
+                    name: "Length".to_string(),
+                    args: vec![Expr::Identifier(pname.clone())].into(),
+                  },
+                  Expr::Integer(len_cmp.1),
+                ],
+                operators: vec![len_cmp.0],
+              }));
+              let mut element_bindings = Vec::new();
+              for pat in &inner_patterns {
+                let (n, h, _bt) = extract_pattern_info(pat);
+                element_bindings.push((n, h));
+              }
+              let trailing_bt =
+                if trailing_seq { trailing_seq_blank } else { 0 };
+              body_substitutions.push((
+                pname.clone(),
+                element_bindings,
+                trailing_bt,
+              ));
+              params.push(pname);
+              defaults.push(None);
+              heads.push(Some("List".to_string()));
+              blank_types.push(1);
+            }
             // `Pattern[name, _]` / `Pattern[name, _Head]` / etc. — treat as
             // a plain named pattern.
             _ => {
@@ -1936,28 +2029,49 @@ pub fn set_delayed_ast(
       }
     }
 
-    // Build the body with list-destructuring substitutions.
-    // For each list-pattern param, replace references to element names
-    // with Part[param, index] expressions.
+    // Build the body with list-destructuring substitutions. Each element
+    // name is replaced with `Part[param, idx+1]`, except a named trailing
+    // sequence pattern (`y___` or `y__`) which becomes
+    // `Sequence@@Drop[param, idx]` so the body can splice in the tail.
     let mut final_body = body.clone();
-    for (param_name, element_bindings) in &body_substitutions {
+    for (param_name, element_bindings, trailing_bt) in &body_substitutions {
+      let last_idx = element_bindings.len().saturating_sub(1);
       for (idx, (elem_name, _head)) in element_bindings.iter().enumerate() {
-        if !elem_name.is_empty() {
-          // Replace elem_name with Part[param_name, idx+1]
-          let part_expr = Expr::FunctionCall {
+        if elem_name.is_empty() {
+          continue;
+        }
+        let is_trailing_seq = idx == last_idx && *trailing_bt >= 2;
+        let replacement = if is_trailing_seq {
+          Expr::FunctionCall {
+            name: "Apply".to_string(),
+            args: vec![
+              Expr::Identifier("Sequence".to_string()),
+              Expr::FunctionCall {
+                name: "Drop".to_string(),
+                args: vec![
+                  Expr::Identifier(param_name.clone()),
+                  Expr::Integer(idx as i128),
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          }
+        } else {
+          Expr::FunctionCall {
             name: "Part".to_string(),
             args: vec![
               Expr::Identifier(param_name.clone()),
               Expr::Integer((idx + 1) as i128),
             ]
             .into(),
-          };
-          final_body = crate::syntax::substitute_variable(
-            &final_body,
-            elem_name,
-            &part_expr,
-          );
-        }
+          }
+        };
+        final_body = crate::syntax::substitute_variable(
+          &final_body,
+          elem_name,
+          &replacement,
+        );
       }
     }
 

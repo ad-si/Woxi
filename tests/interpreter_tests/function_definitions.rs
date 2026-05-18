@@ -188,6 +188,69 @@ mod set_delayed {
   }
 
   #[test]
+  fn list_pattern_trailing_blank_null_sequence() {
+    clear_state();
+    assert_eq!(
+      interpret("f[{x_, ___}] := x; f[{2, 3, 4}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn list_pattern_trailing_blank_sequence() {
+    clear_state();
+    assert_eq!(
+      interpret("f[{x_, __}] := x; f[{2, 3}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn list_pattern_blank_sequence_requires_at_least_one_extra() {
+    clear_state();
+    // `{x_, __}` requires at least one element after x.
+    assert_eq!(
+      interpret("f[{x_, __}] := x; f[{2}]").unwrap(),
+      "f[{2}]"
+    );
+  }
+
+  #[test]
+  fn list_pattern_named_trailing_sequence() {
+    clear_state();
+    assert_eq!(
+      interpret("f[{x_, y___}] := {x, y}; f[{2, 3, 4}]").unwrap(),
+      "{2, 3, 4}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[{x_, y___}] := {y, x}; f[{1, 2, 3}]").unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+
+  #[test]
+  fn named_outer_list_pattern() {
+    // `seq:{x_, ___}` binds both `seq` (whole list) and `x` (first element).
+    clear_state();
+    assert_eq!(
+      interpret("f[seq:{x_, ___}] := seq; f[{2, 3, 4}]").unwrap(),
+      "{2, 3, 4}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[seq:{x_, ___}] := x; f[{2, 3, 4}]").unwrap(),
+      "2"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[seq:{x_, ___}] := {seq, x}; f[{2, 3, 4}]")
+        .unwrap(),
+      "{{2, 3, 4}, 2}"
+    );
+  }
+
+  #[test]
   fn literal_arg_priority_over_blank() {
     // f[1] := 1 (literal) should take priority over f[x_] := x + 1 (blank)
     clear_state();

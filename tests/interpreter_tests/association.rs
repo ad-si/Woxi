@@ -476,6 +476,38 @@ mod value_q {
   fn value_q_cleared() {
     assert_eq!(interpret("x = 5; ClearAll[x]; ValueQ[x]").unwrap(), "False");
   }
+
+  #[test]
+  fn value_q_downvalue_match() {
+    assert_eq!(
+      interpret("Foo[x_Integer] := Mod[x, 2]; ValueQ[Foo[8]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn value_q_downvalue_nonmatching_args() {
+    // wolframscript returns True whenever the head has any DownValues,
+    // regardless of whether the specific argument matches a pattern.
+    assert_eq!(
+      interpret("Foo[x_Integer] := Mod[x, 2]; ValueQ[Foo[{a, b}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn value_q_undefined_head() {
+    assert_eq!(interpret("ValueQ[Foo[1]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn value_q_specific_downvalue() {
+    assert_eq!(
+      interpret("Foo[5] = \"five\"; ValueQ[Foo[5]]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod clear {

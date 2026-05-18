@@ -1,0 +1,20 @@
+---
+source: tests/script_snapshot_tests.rs
+assertion_line: 59
+expression: stdout
+---
+Foo: Foo[{Some, List}]
+Bar: Bar[{Some, List}]
+Baz: Baz[{Some, List}]
+
+Foo: 0
+Bar: 2
+Baz: 3
+
+Foo: foo
+Bar: bar
+Baz: baz
+
+Foo: Foo[foobarbaz]
+Bar: Bar[foobarbaz]
+Baz: Baz[foobarbaz]

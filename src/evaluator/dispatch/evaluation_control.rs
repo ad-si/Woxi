@@ -542,7 +542,17 @@ pub fn dispatch_evaluation_control(
       return Some(Ok(Expr::List(vec![].into())));
     }
     "ValueQ" if args.len() == 1 => {
-      if let Expr::Identifier(sym) = &args[0] {
+      // ValueQ[head[args...]] is True iff `head` has any OwnValues or
+      // DownValues (matching wolframscript). For a bare symbol the same
+      // rule applies. Note: this does NOT require the specific
+      // call-site to match an existing rule — any definition on the head
+      // is enough.
+      let head_name: Option<&str> = match &args[0] {
+        Expr::Identifier(sym) => Some(sym.as_str()),
+        Expr::FunctionCall { name, .. } => Some(name.as_str()),
+        _ => None,
+      };
+      if let Some(sym) = head_name {
         let has_value = ENV.with(|e| e.borrow().contains_key(sym));
         let has_func = crate::FUNC_DEFS.with(|m| m.borrow().contains_key(sym));
         return Some(Ok(Expr::Identifier(
