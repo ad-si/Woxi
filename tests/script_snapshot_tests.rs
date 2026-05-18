@@ -1045,6 +1045,10 @@ script_test!(script_sierpinski_triangle, "sierpinski_triangle.wls");
 script_test!(script_time_a_function, "time_a_function.wls");
 script_test!(script_variadic_function, "variadic_function.wls");
 
+// === Scripts unlocked by multi-line operator continuation fix ===
+script_test!(script_permutation_test, "permutation_test.wls");
+script_test!(script_url_decoding, "url_decoding.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

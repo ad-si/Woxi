@@ -2658,14 +2658,16 @@ pub fn insert_statement_separators(input: &str) -> String {
         last_code_char == Some('=') && prev_code_char == Some(':');
       let ends_with_tag_set =
         last_code_char == Some(':') && prev_code_char == Some('/');
-      // Line ending with an operator means the expression continues on the next line
+      // Line ending with an operator means the expression continues on the next line.
+      // `>` alone is the Greater operator; `<>` is StringJoin; `->`, `:>`, `>>`, `>>>`
+      // all end in `>`. Treating any trailing `>` as a continuation covers all forms.
       let ends_with_operator = matches!(
         last_code_char,
-        Some('+' | '-' | '*' | '/' | '^' | '@' | '~' | ',' | '=' | '<' | '|')
-      ) || (last_code_char == Some('>')
-        && matches!(prev_code_char, Some('-' | ':' | '>')))  // -> or :> or >> or >>>
-        || (last_code_char == Some('&')
-        && prev_code_char == Some('&')); // &&
+        Some('+' | '-' | '*' | '/' | '^' | '@' | '~' | ',' | '=' | '<' | '>' | '|')
+      ) || (last_code_char == Some('&')
+        && prev_code_char == Some('&')) // &&
+        || (last_code_char == Some('.')
+        && prev_code_char == Some('/')); // /. or //.
       let needs_semi = line_has_code
         && last_code_char != Some(';')
         && !ends_with_set_delayed

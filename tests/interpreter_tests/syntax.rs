@@ -6127,6 +6127,55 @@ mod line_continuation {
     // Backslash inside strings should NOT be treated as line continuation
     assert_eq!(interpret(r#""hello\nworld""#).unwrap(), r#"hello\nworld"#);
   }
+
+  #[test]
+  fn string_join_across_newline() {
+    // Regression: a line ending with `<>` (StringJoin) must continue on the
+    // next line. Previously insert_statement_separators only treated `>`
+    // as a continuation when preceded by `-`, `:`, or `>` (for ->, :>, >>,
+    // >>>), so `<>` got a spurious `;` inserted after it.
+    assert_eq!(interpret("\"a\" <>\n\"b\"").unwrap(), "ab");
+  }
+
+  #[test]
+  fn greater_across_newline() {
+    // Regression: `>` at end of line (Greater operator) must continue on
+    // the next line, matching wolframscript.
+    assert_eq!(interpret("If[1 >\n2, \"yes\", \"no\"]").unwrap(), "no");
+  }
+
+  #[test]
+  fn multiline_string_join_in_function_def() {
+    // Real-world case from RosettaCode `egyptian_fractions`: a multi-line
+    // `:=` body using `<>` across newlines.
+    assert_eq!(
+      interpret(
+        "disp[f_] :=\n  ToString[f] <> \" = \" <>\n   ToString[2*f];\ndisp[3]"
+      )
+      .unwrap(),
+      "3 = 6"
+    );
+  }
+
+  #[test]
+  fn replace_all_across_newline() {
+    // Regression: `/.` (ReplaceAll) at end of line must continue on the
+    // next line. Previously insert_statement_separators didn't recognise
+    // `.` as a continuation char when preceded by `/`.
+    assert_eq!(
+      interpret("{1, 2, 3} /.\n  1 -> 10").unwrap(),
+      "{10, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn replace_repeated_across_newline() {
+    // Same regression for `//.` (ReplaceRepeated).
+    assert_eq!(
+      interpret("f[g[a]] //.\n  f[x_] :> x").unwrap(),
+      "g[a]"
+    );
+  }
 }
 
 mod structural_pattern_consistency {
