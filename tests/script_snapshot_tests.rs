@@ -1061,7 +1061,10 @@ script_test!(script_arithmetic_integer, "arithmetic_integer.wls");
 script_test!(script_bitmap, "bitmap.wls");
 script_test!(script_cholesky_decomposition, "cholesky_decomposition.wls");
 script_test!(script_deconvolution_2d_, "deconvolution_2d_.wls");
-script_test!(script_distributed_programming, "distributed_programming.wls");
+script_test!(
+  script_distributed_programming,
+  "distributed_programming.wls"
+);
 script_test!(script_draw_a_clock, "draw_a_clock.wls");
 script_test!(script_draw_a_rotating_cube, "draw_a_rotating_cube.wls");
 script_test!(script_farey_sequence, "farey_sequence.wls");

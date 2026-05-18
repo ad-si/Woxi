@@ -3527,10 +3527,7 @@ mod input_function {
   #[test]
   fn input_string_returns_end_of_file() {
     clear_state();
-    assert_eq!(
-      interpret(r#"InputString["name? "]"#).unwrap(),
-      "EndOfFile"
-    );
+    assert_eq!(interpret(r#"InputString["name? "]"#).unwrap(), "EndOfFile");
   }
 
   #[test]
