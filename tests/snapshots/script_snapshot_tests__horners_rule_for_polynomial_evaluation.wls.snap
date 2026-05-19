@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+-19 + x*(7 + x*(-4 + 6*x))
+128

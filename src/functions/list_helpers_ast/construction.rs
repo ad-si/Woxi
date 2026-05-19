@@ -1220,6 +1220,208 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Multi-iterator Do: `Do[body, iter1, iter2, ...]`.
+///
+/// In Wolfram, a multi-iterator `Do` is a single construct: `Break[]` and
+/// `Return[]` exit the entire `Do`, not just the innermost iterator. We
+/// implement this by recursing over the iterator list, evaluating `body`
+/// at the innermost level. The recursion is performed on a special inner
+/// helper that does NOT catch `Break`/`Return`; only this outer wrapper
+/// catches them so they propagate through all levels.
+pub fn do_multi_ast(
+  body: &Expr,
+  iter_specs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  match do_multi_inner(body, iter_specs) {
+    Ok(_) => Ok(Expr::Identifier("Null".to_string())),
+    Err(InterpreterError::BreakSignal) => {
+      Ok(Expr::Identifier("Null".to_string()))
+    }
+    Err(InterpreterError::ReturnValue(val)) => Ok(*val),
+    Err(e) => Err(e),
+  }
+}
+
+fn do_multi_inner(
+  body: &Expr,
+  iter_specs: &[Expr],
+) -> Result<(), InterpreterError> {
+  if iter_specs.is_empty() {
+    // Evaluate body; let Break/Return/Continue propagate up.
+    match crate::evaluator::evaluate_expr_to_expr(body) {
+      Ok(_) => Ok(()),
+      Err(InterpreterError::ContinueSignal) => Ok(()),
+      Err(e) => Err(e),
+    }
+  } else {
+    let iter_spec = &iter_specs[0];
+    let rest = &iter_specs[1..];
+    iterate_spec(iter_spec, &mut |_| do_multi_inner(body, rest))
+  }
+}
+
+/// Helper: drive a single iterator spec, calling `step` once per iteration.
+/// `step` receives the current iteration index (0-based) for informational
+/// purposes; the iterator variable (if any) is bound in ENV before each call.
+/// Errors from `step` (Break/Return/etc.) propagate up.
+fn iterate_spec<F>(
+  iter_spec: &Expr,
+  step: &mut F,
+) -> Result<(), InterpreterError>
+where
+  F: FnMut(usize) -> Result<(), InterpreterError>,
+{
+  match iter_spec {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let n = expr_to_i128(iter_spec).unwrap_or(0);
+      for i in 0..n {
+        step(i as usize)?;
+      }
+      Ok(())
+    }
+    Expr::List(items) if items.len() == 1 => {
+      let n_expr = crate::evaluator::evaluate_expr_to_expr(&items[0])?;
+      let n = expr_to_i128(&n_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Do: repeat count must be an integer".into(),
+        )
+      })?;
+      for i in 0..n {
+        step(i as usize)?;
+      }
+      Ok(())
+    }
+    Expr::List(items) if items.len() >= 2 => {
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Do: iterator variable must be an identifier".into(),
+          ));
+        }
+      };
+
+      // Iterator over an explicit list: Do[..., {v, {a, b, c}}]
+      if items.len() == 2 {
+        let val_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        if let Expr::List(list_items) = &val_expr {
+          let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+          let mut err: Option<InterpreterError> = None;
+          for (i, item) in list_items.iter().enumerate() {
+            bind_loop_var(&var_name, item.clone());
+            match step(i) {
+              Ok(()) => {}
+              Err(e) => {
+                err = Some(e);
+                break;
+              }
+            }
+          }
+          restore_loop_var(&var_name, prev);
+          if let Some(e) = err {
+            return Err(e);
+          }
+          return Ok(());
+        }
+      }
+
+      // Numeric range iterator: {v, max} or {v, min, max} or {v, min, max, step}.
+      let (min, max, step_val) = if items.len() == 2 {
+        let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: iterator bound must be an integer".into(),
+            )
+          })?;
+        (1i128, max_val, 1i128)
+      } else {
+        let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
+        let min_val = super::utilities::expr_to_i128_floor(&min_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: iterator bound must be an integer".into(),
+            )
+          })?;
+        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: iterator bound must be an integer".into(),
+            )
+          })?;
+        let s = if items.len() >= 4 {
+          let s_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
+          super::utilities::expr_to_i128_floor(&s_expr).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: step must be an integer".into(),
+            )
+          })?
+        } else {
+          1i128
+        };
+        (min_val, max_val, s)
+      };
+
+      if step_val == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Do: step cannot be zero".into(),
+        ));
+      }
+
+      let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+      let mut err: Option<InterpreterError> = None;
+      let mut i = min;
+      let mut idx = 0usize;
+      if step_val > 0 {
+        while i <= max {
+          crate::ENV.with(|e| {
+            e.borrow_mut().insert(
+              var_name.clone(),
+              crate::StoredValue::ExprVal(Expr::Integer(i)),
+            );
+          });
+          match step(idx) {
+            Ok(()) => {}
+            Err(e) => {
+              err = Some(e);
+              break;
+            }
+          }
+          i += step_val;
+          idx += 1;
+        }
+      } else {
+        while i >= max {
+          crate::ENV.with(|e| {
+            e.borrow_mut().insert(
+              var_name.clone(),
+              crate::StoredValue::ExprVal(Expr::Integer(i)),
+            );
+          });
+          match step(idx) {
+            Ok(()) => {}
+            Err(e) => {
+              err = Some(e);
+              break;
+            }
+          }
+          i += step_val;
+          idx += 1;
+        }
+      }
+      restore_loop_var(&var_name, prev);
+      if let Some(e) = err {
+        return Err(e);
+      }
+      Ok(())
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Do: invalid iterator specification".into(),
+    )),
+  }
+}
+
 /// Array[f, n] - creates a list by applying f to indices 1..n
 pub fn array_ast(func: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   let mut result = Vec::new();

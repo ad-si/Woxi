@@ -2016,19 +2016,11 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::do_ast(&args[0], &args[1]));
     }
     "Do" if args.len() > 2 => {
-      // Multi-iterator Do: Do[body, {i, ...}, {j, ...}, ...]
-      // Nest the iterators: outermost is first iterator, innermost is last
-      // Build a nested Do: Do[Do[body, last_iter], ..., first_iter]
-      let body = &args[0];
-      let iters = &args[1..];
-      let mut nested = body.clone();
-      for iter in iters.iter().rev() {
-        nested = Expr::FunctionCall {
-          name: "Do".to_string(),
-          args: vec![nested, iter.clone()].into(),
-        };
-      }
-      return Some(evaluate_expr_to_expr(&nested));
+      // Multi-iterator Do: Do[body, {i, ...}, {j, ...}, ...] is a single
+      // construct in Wolfram. Break[] and Return[] exit the entire Do, not
+      // just the innermost iterator, so we cannot lower it to nested Do
+      // calls (each of which would catch Break/Return at its own level).
+      return Some(list_helpers_ast::do_multi_ast(&args[0], &args[1..]));
     }
     "For" if args.len() == 3 || args.len() == 4 => {
       return Some(for_ast(args));

@@ -1125,6 +1125,18 @@ script_test!(
   "digital_root_multiplicative_digital_root.wls"
 );
 
+// === Multi-iterator Do propagates Break/Return through all levels ===
+script_test!(script_loops_nested, "loops_nested.wls");
+// === Implicit-multiplication of factorials: `a! b!` parses as
+//     `Times[Factorial[a], Factorial[b]]` ===
+script_test!(script_catalan_numbers, "catalan_numbers.wls");
+script_test!(script_modular_exponentiation, "modular_exponentiation.wls");
+script_test!(
+  script_horners_rule_for_polynomial_evaluation,
+  "horners_rule_for_polynomial_evaluation.wls"
+);
+script_test!(script_kaprekar_numbers, "kaprekar_numbers.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

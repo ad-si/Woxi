@@ -773,6 +773,38 @@ mod big_integer {
     );
   }
 
+  // `a! b!` is implicit multiplication of two factorials. Each factor
+  // in an ImplicitTimes accepts a trailing `!` / `!!` postfix, matching
+  // Wolfram's binding (Factorial > implicit Times > Power).
+  #[test]
+  fn factorial_implicit_times_two_symbols() {
+    assert_eq!(interpret("a! b!").unwrap(), "a!*b!");
+  }
+
+  #[test]
+  fn factorial_implicit_times_two_integers() {
+    assert_eq!(interpret("5! 3!").unwrap(), "720");
+  }
+
+  #[test]
+  fn factorial_in_power_exponent_binds_tighter() {
+    // `a^b!` parses as `a^(b!)` because Factorial binds tighter than Power.
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a^b!]]]").unwrap(),
+      "Hold[Power[a, Factorial[b]]]"
+    );
+  }
+
+  #[test]
+  fn factorial_quotient_of_factorials() {
+    // The Catalan-number style expression `(2 n)!/((n + 1)! n!)`
+    // exercises factorials nested in parentheses and implicit times.
+    assert_eq!(
+      interpret("(2 n)!/((n + 1)! n!) /. n -> 5").unwrap(),
+      "42"
+    );
+  }
+
   #[test]
   fn digit_count_big_integer() {
     assert_eq!(interpret("DigitCount[2^128, 10, 3]").unwrap(), "7");

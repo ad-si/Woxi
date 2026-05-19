@@ -256,10 +256,14 @@ DivideBy = { (PartExtract | Identifier) ~ "/=" ~ Expression }
 // The optional `PartIndexSuffix?` after the exponent term lets `y^-m[[1]]`
 // parse as `y^(-Part[m, 1])`, matching Wolfram's `Part` precedence.
 NegSimpleTerm = { "-" ~ SimpleTerm ~ PartIndexSuffix? }
-ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm | SimpleTerm ~ PartIndexSuffix?) }
+// FactorialSuffix may follow the exponent because `!` (Factorial) binds
+// tighter than `^` (Power) in Wolfram, so `a^b!` parses as `a^(b!)`.
+ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm ~ FactorialSuffix? | SimpleTerm ~ PartIndexSuffix? ~ FactorialSuffix?) }
 // Allow trailing `..` / `...` (Repeated/RepeatedNull) so `0..1` parses
 // as `Repeated[0] * 1` rather than splitting into two statements.
-ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+// FactorialSuffix on each factor lets `a b!` parse as `a*(b!)` and
+// `a! b!` as `(a!)*(b!)`.
+ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 // NegativeImplicitFirst allows -N as the first factor in implicit multiplication
 // so that "-90 Degree" parses as Times[-90, Degree] instead of failing.
 NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }

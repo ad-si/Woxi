@@ -1139,6 +1139,37 @@ mod return_in_loops {
       "5"
     );
   }
+
+  #[test]
+  fn return_exits_all_iterators_of_multi_iter_do() {
+    clear_state();
+    // `Do[body, {i,...}, {j,...}]` is a single construct: Return[]
+    // exits the entire Do, not just the innermost iterator. Without
+    // the fix, the test would print all 9 lines instead of 5.
+    interpret(
+      "log = {}; Do[AppendTo[log, {i, j}]; If[i == 2 && j == 2, \
+       Return[]], {i, 1, 3}, {j, 1, 3}]",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("log").unwrap(),
+      "{{1, 1}, {1, 2}, {1, 3}, {2, 1}, {2, 2}}"
+    );
+  }
+
+  #[test]
+  fn break_exits_all_iterators_of_multi_iter_do() {
+    clear_state();
+    interpret(
+      "log = {}; Do[AppendTo[log, {i, j}]; If[i == 2 && j == 2, \
+       Break[]], {i, 1, 3}, {j, 1, 3}]",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("log").unwrap(),
+      "{{1, 1}, {1, 2}, {1, 3}, {2, 1}, {2, 2}}"
+    );
+  }
 }
 
 mod logical_expand {

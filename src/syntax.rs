@@ -1381,6 +1381,17 @@ pub fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
           index: Box::new(pair_to_expr(idx_pair)),
         };
       }
+    } else if p.as_rule() == Rule::FactorialSuffix {
+      // `a^b!` parses as `a^(b!)` because Factorial binds tighter than Power.
+      let func_name = if p.as_str() == "!!" {
+        "Factorial2"
+      } else {
+        "Factorial"
+      };
+      expr = Expr::FunctionCall {
+        name: func_name.to_string(),
+        args: vec![expr].into(),
+      };
     }
   }
   expr
@@ -3738,6 +3749,21 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               "RepeatedNull"
             } else {
               "Repeated"
+            };
+            factors.push(Expr::FunctionCall {
+              name: func_name.to_string(),
+              args: vec![base].into(),
+            });
+          }
+        } else if inners[i].as_rule() == Rule::FactorialSuffix {
+          // `!` / `!!` postfix wraps the previous factor in
+          // `Factorial[…]` / `Factorial2[…]`. `a! b!` parses as
+          // `Times[Factorial[a], Factorial[b]]`.
+          if let Some(base) = factors.pop() {
+            let func_name = if inners[i].as_str() == "!!" {
+              "Factorial2"
+            } else {
+              "Factorial"
             };
             factors.push(Expr::FunctionCall {
               name: func_name.to_string(),
