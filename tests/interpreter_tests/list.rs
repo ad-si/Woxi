@@ -7704,6 +7704,25 @@ mod cases {
       r#"1 + 2*I"#,
     );
   }
+  // Running-product fast path for Sum[Factorial[var], {var, min, max(, step)}].
+  // Iterates large factorial sums in O(n) bignum multiplications instead of
+  // O(n^2) — covers the left-factorials RosettaCode script.
+  #[test]
+  fn sum_factorial_small() {
+    assert_case(r#"Sum[k!, {k, 0, 5}]"#, r#"154"#);
+  }
+  #[test]
+  fn sum_factorial_nonzero_min() {
+    assert_case(r#"Sum[k!, {k, 3, 6}]"#, r#"870"#);
+  }
+  #[test]
+  fn sum_factorial_with_step() {
+    assert_case(r#"Sum[k!, {k, 0, 10, 2}]"#, r#"3669867"#);
+  }
+  #[test]
+  fn sum_factorial_large() {
+    assert_case(r#"Length[IntegerDigits[Sum[k!, {k, 0, 1000}]]]"#, r#"2568"#);
+  }
   #[test]
   fn reverse_sort_1() {
     assert_case(r#"ReverseSort[{c, b, d, a}]"#, r#"{d, c, b, a}"#);

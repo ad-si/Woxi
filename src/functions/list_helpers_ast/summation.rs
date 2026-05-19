@@ -700,6 +700,50 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
 
+      // Fast path: Sum[Factorial[var], {var, min, max(, step)}] with integer
+      // bounds, min >= 0, step >= 1. Uses a running product so each factorial
+      // is built incrementally instead of recomputed from scratch.
+      if (items.len() == 3 || items.len() == 4)
+        && let Expr::FunctionCall {
+          name: fname,
+          args: fargs,
+        } = body
+        && fname == "Factorial"
+        && fargs.len() == 1
+        && matches!(&fargs[0], Expr::Identifier(fv) if fv == &var_name)
+      {
+        let min_int = expr_to_i128(&items[1]);
+        let max_int = expr_to_i128(&items[2]);
+        let step_int = if items.len() == 4 {
+          expr_to_i128(&items[3])
+        } else {
+          Some(1)
+        };
+        if let (Some(min), Some(max), Some(step)) = (min_int, max_int, step_int)
+          && step >= 1
+          && min >= 0
+          && max >= min
+        {
+          let mut fact = num_bigint::BigInt::from(1);
+          for k in 2..=min {
+            fact *= num_bigint::BigInt::from(k);
+          }
+          let mut sum = num_bigint::BigInt::from(0);
+          let mut i = min;
+          while i <= max {
+            sum += &fact;
+            for s in 1..=step {
+              let next = i + s;
+              if next >= 2 {
+                fact *= num_bigint::BigInt::from(next);
+              }
+            }
+            i += step;
+          }
+          return Ok(crate::functions::math_ast::bigint_to_expr(sum));
+        }
+      }
+
       // Try real-valued iteration when bounds are numeric but not integers
       if items.len() == 3 {
         let min_int = expr_to_i128(&items[1]);
