@@ -216,6 +216,30 @@ mod do_single_iter {
       "a\nb\nc\n"
     );
   }
+
+  #[test]
+  fn do_rational_upper_bound() {
+    // Wolfram floors fractional bounds: Do[..., {i, 2, 7/2}] runs i = 2, 3
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Do[Print[i], {i, 2, 7/2}]")
+        .unwrap()
+        .stdout,
+      "2\n3\n"
+    );
+  }
+
+  #[test]
+  fn do_real_upper_bound() {
+    // Floor[3.5] = 3 — same flooring rule as fractional bounds.
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Do[Print[i], {i, 2, 3.5}]")
+        .unwrap()
+        .stdout,
+      "2\n3\n"
+    );
+  }
 }
 
 mod while_single_arg {
@@ -326,6 +350,18 @@ mod append_to {
     assert_eq!(
       interpret("x = {1, 2}; AppendTo[x, 3]; x").unwrap(),
       "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn appends_to_part_target() {
+    // AppendTo[x[[i]], v] writes v into the i-th slot of x — wolframscript
+    // accepts a Part LHS just like Set/AddTo do.
+    clear_state();
+    assert_eq!(
+      interpret("nums = ConstantArray[{}, 3]; AppendTo[nums[[1]], 5]; nums")
+        .unwrap(),
+      "{{5}, {}, {}}"
     );
   }
 }

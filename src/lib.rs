@@ -2675,11 +2675,39 @@ pub fn insert_statement_separators(input: &str) -> String {
         && prev_code_char == Some('&')) // &&
         || (last_code_char == Some('.')
         && prev_code_char == Some('/')); // /. or //.
+      // `!` at end of line is ambiguous: postfix Factorial (`5!`) or prefix
+      // Not (`:= ! palindromeQ@...`). Treat it as a continuation when the
+      // preceding code char is one that can't be a value (operators or
+      // openers), since only then is the `!` necessarily prefix Not.
+      let ends_with_prefix_not = last_code_char == Some('!')
+        && matches!(
+          prev_code_char,
+          Some(
+            '='
+              | '&'
+              | '|'
+              | ','
+              | ';'
+              | '{'
+              | '('
+              | '['
+              | '+'
+              | '-'
+              | '*'
+              | '/'
+              | '^'
+              | '@'
+              | '~'
+              | '<'
+              | '>'
+          )
+        );
       let needs_semi = line_has_code
         && last_code_char != Some(';')
         && !ends_with_set_delayed
         && !ends_with_tag_set
-        && !ends_with_operator;
+        && !ends_with_operator
+        && !ends_with_prefix_not;
 
       if needs_semi {
         // Defer the semicolon — record position before the newline
@@ -2841,12 +2869,38 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       ) || (last_code_char == Some('>')
         && matches!(prev_code_char, Some('-' | ':' | '>')))
         || (last_code_char == Some('&') && prev_code_char == Some('&'));
+      // Trailing `!` is prefix Not (and thus a continuation) when the
+      // previous code char is an operator/opener rather than a value.
+      let ends_with_prefix_not = last_code_char == Some('!')
+        && matches!(
+          prev_code_char,
+          Some(
+            '='
+              | '&'
+              | '|'
+              | ','
+              | ';'
+              | '{'
+              | '('
+              | '['
+              | '+'
+              | '-'
+              | '*'
+              | '/'
+              | '^'
+              | '@'
+              | '~'
+              | '<'
+              | '>'
+          )
+        );
 
       let should_split = line_has_code
         && !ends_with_set_delayed
         && !ends_with_tag_set
         && !ends_with_condition
-        && !ends_with_operator;
+        && !ends_with_operator
+        && !ends_with_prefix_not;
 
       if should_split {
         let stmt = current.trim().to_string();

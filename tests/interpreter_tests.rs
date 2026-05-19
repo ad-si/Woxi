@@ -42,6 +42,17 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_split_preserves_prefix_not_continuation() {
+    // `lychrelQ[n_] := !\n  palindromeQ[n]` — the `!` at end of line is
+    // a prefix Not awaiting its operand on the next line, not a postfix
+    // Factorial. Detected by the prev_code_char being an operator (`=`).
+    assert_eq!(
+      split_into_statements("f[n_] := !\n  g[n]\nf[5]"),
+      vec!["f[n_] := !\n  g[n]", "f[5]"]
+    );
+  }
+
+  #[test]
   fn test_split_semicolon_lines() {
     assert_eq!(
       split_into_statements("a = 5;\nb = 10;\na + b"),

@@ -299,8 +299,14 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  const MAX_ITERATIONS: usize = 100000;
-  let mut iterations = 0;
+  // Safety cap to catch runaway loops in interactive use. Wolframscript
+  // has no fixed iteration limit; we set a very high one so that practical
+  // loops (e.g. `While[SessionTime[] - start < 2.5, …]` which on a fast
+  // machine can spin millions of times before the wall-clock condition
+  // trips) aren't truncated, while a true infinite loop still terminates
+  // eventually instead of hanging the host.
+  const MAX_ITERATIONS: usize = 1_000_000_000;
+  let mut iterations: usize = 0;
 
   loop {
     let test = evaluate_expr_to_expr(&args[0])?;

@@ -3182,6 +3182,29 @@ mod random_integer {
       "{3, 4}"
     );
   }
+
+  #[test]
+  fn zero_length() {
+    // wolframscript: `RandomInteger[150, 0]` -> `{}`. Required for
+    // RosettaCode `sorting_algorithms_selection_sort.wls`, which calls
+    // `RandomInteger[150, RandomInteger[1000]]` — the inner draw can
+    // legitimately return 0.
+    assert_eq!(interpret("RandomInteger[150, 0]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero_outer_dim() {
+    assert_eq!(interpret("RandomInteger[150, {0, 3}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero_inner_dim() {
+    // wolframscript: `RandomInteger[150, {3, 0}]` -> `{{}, {}, {}}`
+    assert_eq!(
+      interpret("RandomInteger[150, {3, 0}]").unwrap(),
+      "{{}, {}, {}}"
+    );
+  }
 }
 
 mod distributions {

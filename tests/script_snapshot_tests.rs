@@ -1115,6 +1115,16 @@ script_test!(script_url_parser, "url_parser.wls");
 // === Scripts unlocked by ValueQ-on-FunctionCall fix ===
 script_test!(script_abstract_type, "abstract_type.wls");
 
+// === Scripts unlocked by Do[i, {.., n/2}] rational iterator bounds +
+//     trailing-`!`-as-prefix-Not multi-line continuation +
+//     AppendTo[x[[i]], v] Part-target mutation ===
+script_test!(script_lychrel_numbers, "lychrel_numbers.wls");
+script_test!(script_sieve_of_eratosthenes, "sieve_of_eratosthenes.wls");
+script_test!(
+  script_digital_root_multiplicative_digital_root,
+  "digital_root_multiplicative_digital_root.wls"
+);
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

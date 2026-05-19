@@ -1063,28 +1063,31 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
 
       let (min, max, step) = if items.len() == 2 {
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Do: iterator bound must be an integer".into(),
-          )
-        })?;
+        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: iterator bound must be an integer".into(),
+            )
+          })?;
         (1i128, max_val, 1i128)
       } else if items.len() >= 3 {
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-        let min_val = expr_to_i128(&min_expr).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Do: iterator bound must be an integer".into(),
-          )
-        })?;
-        let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Do: iterator bound must be an integer".into(),
-          )
-        })?;
+        let min_val = super::utilities::expr_to_i128_floor(&min_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: iterator bound must be an integer".into(),
+            )
+          })?;
+        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: iterator bound must be an integer".into(),
+            )
+          })?;
         let step_val = if items.len() >= 4 {
           let step_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
-          expr_to_i128(&step_expr).ok_or_else(|| {
+          super::utilities::expr_to_i128_floor(&step_expr).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "Do: step must be an integer".into(),
             )

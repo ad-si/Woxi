@@ -803,7 +803,10 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let incr = &args[2];
   let body = args.get(3);
 
-  const MAX_ITERATIONS: usize = 100000;
+  // Mirror the While safety cap. Wolframscript has no For iteration limit;
+  // we set a very high one so practical scripts run unhindered while a true
+  // infinite loop still terminates eventually rather than hanging the host.
+  const MAX_ITERATIONS: usize = 1_000_000_000;
 
   // Evaluate the initialization
   evaluate_expr_to_expr(init)?;

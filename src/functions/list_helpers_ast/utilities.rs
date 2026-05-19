@@ -95,6 +95,20 @@ pub(crate) fn expr_to_i128(expr: &Expr) -> Option<i128> {
   }
 }
 
+/// Like `expr_to_i128`, but also floors fractional Reals and Rationals so
+/// iterator bounds like `Do[..., {i, 1, 7/2}]` or `Do[..., {i, 1, 3.5}]`
+/// behave the same as wolframscript (which iterates up to `Floor[bound]`).
+pub(crate) fn expr_to_i128_floor(expr: &Expr) -> Option<i128> {
+  if let Some(n) = expr_to_i128(expr) {
+    return Some(n);
+  }
+  let f = crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)?;
+  if f.is_infinite() || f.is_nan() {
+    return None;
+  }
+  Some(f.floor() as i128)
+}
+
 /// Apply a function to n arguments.
 pub fn apply_func_to_n_args(
   func: &Expr,

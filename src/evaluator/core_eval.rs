@@ -1319,6 +1319,53 @@ pub fn evaluate_expr_to_expr_inner(
             return Ok(new_val);
           }
         }
+        // AppendTo/PrependTo on a Part target: AppendTo[x[[i]], v]
+        // Evaluate the current value at the Part location, append, then
+        // write back via the existing Part-assignment machinery. This is
+        // how wolframscript handles `AppendTo[nums[[k]], i]`.
+        if (name == "AppendTo" || name == "PrependTo")
+          && args.len() == 2
+          && let Expr::Part { .. } = &args[0]
+        {
+          let elem = evaluate_expr_to_expr(&args[1])?;
+          let is_append = name == "AppendTo";
+          let mut current = evaluate_expr_to_expr(&args[0])?;
+          let new_val = match &mut current {
+            Expr::List(items) => {
+              let mut items = std::mem::take(items);
+              if is_append {
+                items.push(elem);
+              } else {
+                items.insert(0, elem);
+              }
+              Expr::List(items)
+            }
+            Expr::FunctionCall {
+              name: head,
+              args: fa,
+            } => {
+              let head = std::mem::take(head);
+              let mut fa = std::mem::take(fa);
+              if is_append {
+                fa.push(elem);
+              } else {
+                fa.insert(0, elem);
+              }
+              Expr::FunctionCall {
+                name: head,
+                args: fa,
+              }
+            }
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "{} requires a list-valued target",
+                name
+              )));
+            }
+          };
+          crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+          return Ok(new_val);
+        }
         // Special handling for AppendTo, PrependTo - x = Append[x, elem]
         if (name == "AppendTo" || name == "PrependTo")
           && args.len() == 2

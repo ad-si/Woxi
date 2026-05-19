@@ -45,16 +45,18 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     2 => {
       // RandomInteger[range, n] or RandomInteger[range, {n}] or RandomInteger[range, {n, m, ...}]
+      // Wolframscript accepts non-negative dimensions; `n == 0` yields an
+      // empty list, `{3, 0}` yields three empty inner lists, etc.
       let dims = match &args[1] {
-        Expr::Integer(n) if *n > 0 => vec![*n as usize],
+        Expr::Integer(n) if *n >= 0 => vec![*n as usize],
         Expr::List(items) => {
           let mut dims = Vec::new();
           for item in items {
             match item {
-              Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
+              Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
               _ => {
                 return Err(InterpreterError::EvaluationError(
-                  "RandomInteger: dimension specification must contain positive integers".into(),
+                  "RandomInteger: dimension specification must contain non-negative integers".into(),
                 ));
               }
             }
@@ -63,7 +65,7 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => {
           return Err(InterpreterError::EvaluationError(
-            "RandomInteger: second argument must be a positive integer or list of positive integers".into(),
+            "RandomInteger: second argument must be a non-negative integer or list of non-negative integers".into(),
           ));
         }
       };
@@ -156,16 +158,18 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     2 => {
       // RandomReal[range, n] or RandomReal[range, {n}] or RandomReal[range, {n, m, ...}]
+      // Wolframscript accepts non-negative dimensions; `n == 0` yields an
+      // empty list, matching RandomInteger.
       let dims = match &args[1] {
-        Expr::Integer(n) if *n > 0 => vec![*n as usize],
+        Expr::Integer(n) if *n >= 0 => vec![*n as usize],
         Expr::List(items) => {
           let mut dims = Vec::new();
           for item in items {
             match item {
-              Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
+              Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
               _ => {
                 return Err(InterpreterError::EvaluationError(
-                  "RandomReal: dimension specification must contain positive integers".into(),
+                  "RandomReal: dimension specification must contain non-negative integers".into(),
                 ));
               }
             }
@@ -174,7 +178,7 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => {
           return Err(InterpreterError::EvaluationError(
-            "RandomReal: second argument must be a positive integer or list of positive integers".into(),
+            "RandomReal: second argument must be a non-negative integer or list of non-negative integers".into(),
           ));
         }
       };
@@ -366,16 +370,17 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       draw_one(rng, re_lo, re_hi, im_lo, im_hi)
     })),
     2 => {
+      // Non-negative dimensions match wolframscript; `n == 0` yields `{}`.
       let dims = match &args[1] {
-        Expr::Integer(n) if *n > 0 => vec![*n as usize],
+        Expr::Integer(n) if *n >= 0 => vec![*n as usize],
         Expr::List(items) => {
           let mut dims = Vec::new();
           for item in items {
             match item {
-              Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
+              Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
               _ => {
                 return Err(InterpreterError::EvaluationError(
-                  "RandomComplex: dimension specification must contain positive integers".into(),
+                  "RandomComplex: dimension specification must contain non-negative integers".into(),
                 ));
               }
             }
@@ -384,7 +389,7 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => {
           return Err(InterpreterError::EvaluationError(
-            "RandomComplex: second argument must be a positive integer or list of positive integers".into(),
+            "RandomComplex: second argument must be a non-negative integer or list of non-negative integers".into(),
           ));
         }
       };
