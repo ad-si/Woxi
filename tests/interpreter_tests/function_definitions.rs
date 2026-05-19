@@ -190,29 +190,20 @@ mod set_delayed {
   #[test]
   fn list_pattern_trailing_blank_null_sequence() {
     clear_state();
-    assert_eq!(
-      interpret("f[{x_, ___}] := x; f[{2, 3, 4}]").unwrap(),
-      "2"
-    );
+    assert_eq!(interpret("f[{x_, ___}] := x; f[{2, 3, 4}]").unwrap(), "2");
   }
 
   #[test]
   fn list_pattern_trailing_blank_sequence() {
     clear_state();
-    assert_eq!(
-      interpret("f[{x_, __}] := x; f[{2, 3}]").unwrap(),
-      "2"
-    );
+    assert_eq!(interpret("f[{x_, __}] := x; f[{2, 3}]").unwrap(), "2");
   }
 
   #[test]
   fn list_pattern_blank_sequence_requires_at_least_one_extra() {
     clear_state();
     // `{x_, __}` requires at least one element after x.
-    assert_eq!(
-      interpret("f[{x_, __}] := x; f[{2}]").unwrap(),
-      "f[{2}]"
-    );
+    assert_eq!(interpret("f[{x_, __}] := x; f[{2}]").unwrap(), "f[{2}]");
   }
 
   #[test]
@@ -244,8 +235,7 @@ mod set_delayed {
     );
     clear_state();
     assert_eq!(
-      interpret("f[seq:{x_, ___}] := {seq, x}; f[{2, 3, 4}]")
-        .unwrap(),
+      interpret("f[seq:{x_, ___}] := {seq, x}; f[{2, 3, 4}]").unwrap(),
       "{{2, 3, 4}, 2}"
     );
   }

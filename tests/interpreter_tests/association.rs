@@ -490,8 +490,7 @@ mod value_q {
     // wolframscript returns True whenever the head has any DownValues,
     // regardless of whether the specific argument matches a pattern.
     assert_eq!(
-      interpret("Foo[x_Integer] := Mod[x, 2]; ValueQ[Foo[{a, b}]]")
-        .unwrap(),
+      interpret("Foo[x_Integer] := Mod[x, 2]; ValueQ[Foo[{a, b}]]").unwrap(),
       "True"
     );
   }
