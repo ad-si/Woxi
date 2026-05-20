@@ -2655,6 +2655,25 @@ mod to_expression {
   }
 
   #[test]
+  fn to_string_input_form_wrapper() {
+    // `ToString[InputForm[x]]` ≡ `ToString[x, InputForm]`. Previously the
+    // single-arg form just stringified the unevaluated `InputForm[x]`
+    // FunctionCall as text, producing `"InputForm[2]"` instead of `"2"`.
+    assert_eq!(
+      interpret(r#"ToString[InputForm[2]]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm["hello"]]"#).unwrap(),
+      r#""hello""#
+    );
+    assert_eq!(
+      interpret(r#"ToString @ InputForm @ 2"#).unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn listable_threads_over_list_arg() {
     // ToExpression has the Listable attribute, so a list of strings becomes
     // a list of parsed integers. Previously the whole list was stringified

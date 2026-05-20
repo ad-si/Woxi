@@ -2309,6 +2309,23 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )));
   }
 
+  // `ToString[InputForm[expr]]` is equivalent to `ToString[expr, InputForm]`
+  // — render in InputForm (strings quoted, infix operators).
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "InputForm"
+    && inner_args.len() == 1
+  {
+    let formatted =
+      crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
+        &inner_args[0],
+        "InputForm",
+      );
+    return Ok(Expr::String(crate::syntax::expr_to_input_form(&formatted)));
+  }
+
   // If the expression is FortranForm[inner], produce Fortran representation
   if let Expr::FunctionCall {
     name,
