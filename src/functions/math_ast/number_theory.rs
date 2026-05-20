@@ -2316,10 +2316,34 @@ pub fn generate_partitions_restricted(
   if current.len() as u64 >= max_len {
     return;
   }
-  for i in start_idx..elems.len() {
+  // Skip elements that are too large via binary search on the
+  // descending-sorted slice (O(log n) vs the previous linear skip).
+  let skip = elems[start_idx..].partition_point(|&p| p > remaining);
+  let lo = start_idx + skip;
+  // Number of additional parts still allowed after we pick one here.
+  let parts_left_after = max_len - current.len() as u64 - 1;
+  // Fast path: when this is the final part, no need to recurse.
+  // A single value equal to `remaining` must exist in `elems[lo..]`
+  // (which is sorted descending). Binary-search for it.
+  if parts_left_after == 0 {
+    if (current.len() as u64 + 1) >= min_len
+      && let Ok(_) = elems[lo..].binary_search_by(|p| remaining.cmp(p))
+    {
+      current.push(remaining);
+      result.push(current.clone());
+      current.pop();
+    }
+    return;
+  }
+  for i in lo..elems.len() {
     let part = elems[i];
-    if part > remaining {
-      continue;
+    // Lower-bound prune: with `parts_left_after` more parts available
+    // (each <= part, since elems is descending and start_idx grows),
+    // the maximum reachable sum is `(parts_left_after + 1) * part`.
+    // If that's still below `remaining`, no smaller part can reach it
+    // either — break out of the loop entirely.
+    if part * (parts_left_after + 1) < remaining {
+      break;
     }
     current.push(part);
     generate_partitions_restricted(

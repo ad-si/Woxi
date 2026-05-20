@@ -10432,6 +10432,43 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
   substitute_slots_impl(expr, values)
 }
 
+/// Returns `true` if `expr` contains a `Slot(0)` / `Slot[0]` reference
+/// (i.e. uses `#0` for anonymous-function self-reference). Used as a
+/// fast pre-check before calling `substitute_slot_zero_with_self`, which
+/// would otherwise walk and clone the entire tree for nothing.
+pub fn contains_slot_zero(expr: &Expr) -> bool {
+  match expr {
+    Expr::Slot(0) => true,
+    Expr::Slot(_) | Expr::SlotSequence(_) => false,
+    Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
+      matches!(&args[0], Expr::Integer(0))
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_slot_zero),
+    Expr::CurriedCall { func, args } => {
+      contains_slot_zero(func) || args.iter().any(contains_slot_zero)
+    }
+    Expr::List(items) => items.iter().any(contains_slot_zero),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_slot_zero(left) || contains_slot_zero(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_slot_zero(operand),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(contains_slot_zero)
+    }
+    Expr::CompoundExpr(items) => items.iter().any(contains_slot_zero),
+    Expr::Association(items) => items
+      .iter()
+      .any(|(k, v)| contains_slot_zero(k) || contains_slot_zero(v)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => contains_slot_zero(pattern) || contains_slot_zero(replacement),
+    // Nested Function/NamedFunction bodies introduce their own #0 scope.
+    Expr::Function { .. } | Expr::NamedFunction { .. } => false,
+    _ => false,
+  }
+}
+
 /// Replace every `Slot(0)` / `Slot[0]` inside `expr` with `self_fn`. Used by
 /// anonymous-function application to support `#0` self-reference, enabling
 /// recursive definitions like `If[#1 <= 1, 1, #1 #0[#1-1]] &`.

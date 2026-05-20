@@ -1132,6 +1132,58 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Fast path: small integer input + small/default integer base — avoid
+  // BigInt allocations for typical 1..i128 sized values.
+  if let Expr::Integer(n_i128) = &args[0] {
+    let base_i128: i128 = if args.len() >= 2 {
+      match expr_to_i128(&args[1]) {
+        Some(b) if b >= 2 => b,
+        Some(_) => {
+          return Err(InterpreterError::EvaluationError(
+            "IntegerDigits: base must be an integer >= 2".into(),
+          ));
+        }
+        None => 0, // signal fallback
+      }
+    } else {
+      10
+    };
+    if base_i128 >= 2 {
+      let mut num = n_i128.unsigned_abs();
+      let base_u = base_i128 as u128;
+      let mut digits: Vec<Expr> = Vec::with_capacity(20);
+      if num == 0 {
+        digits.push(Expr::Integer(0));
+      } else {
+        while num != 0 {
+          digits.push(Expr::Integer((num % base_u) as i128));
+          num /= base_u;
+        }
+        digits.reverse();
+      }
+      if args.len() == 3 {
+        match expr_to_i128(&args[2]) {
+          Some(len) if len >= 0 => {
+            let len = len as usize;
+            if digits.len() < len {
+              let mut padded = vec![Expr::Integer(0); len - digits.len()];
+              padded.append(&mut digits);
+              digits = padded;
+            } else if digits.len() > len {
+              digits = digits[digits.len() - len..].to_vec();
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "IntegerDigits: length must be a non-negative integer".into(),
+            ));
+          }
+        }
+      }
+      return Ok(Expr::List(digits.into()));
+    }
+  }
+
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
     None => {

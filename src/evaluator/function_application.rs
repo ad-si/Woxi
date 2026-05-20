@@ -391,11 +391,15 @@ pub fn apply_function_to_arg(
     Expr::Function { body } => {
       // Anonymous function: first substitute #0 with the whole function (to
       // support recursion like If[#1<=1, 1, #1 #0[#1-1]]&), then substitute
-      // the remaining numeric slots with arg.
-      let self_substituted =
-        crate::syntax::substitute_slot_zero_with_self(body, func);
-      let substituted =
-        crate::syntax::substitute_slots(&self_substituted, &[arg.clone()]);
+      // the remaining numeric slots with arg. Skip the self-substitution
+      // pass when #0 is absent — avoids a full tree clone per call.
+      let substituted = if crate::syntax::contains_slot_zero(body) {
+        let self_substituted =
+          crate::syntax::substitute_slot_zero_with_self(body, func);
+        crate::syntax::substitute_slots(&self_substituted, &[arg.clone()])
+      } else {
+        crate::syntax::substitute_slots(body, &[arg.clone()])
+      };
       evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body, .. } => {
@@ -489,11 +493,15 @@ pub fn apply_curried_call(
     }
     Expr::Function { body } => {
       // Anonymous function: substitute #0 with the whole function first,
-      // then # with args and evaluate.
-      let self_substituted =
-        crate::syntax::substitute_slot_zero_with_self(body, func);
-      let substituted =
-        crate::syntax::substitute_slots(&self_substituted, args);
+      // then # with args and evaluate. Skip the self-substitution pass
+      // when #0 is absent — avoids a full tree clone per call.
+      let substituted = if crate::syntax::contains_slot_zero(body) {
+        let self_substituted =
+          crate::syntax::substitute_slot_zero_with_self(body, func);
+        crate::syntax::substitute_slots(&self_substituted, args)
+      } else {
+        crate::syntax::substitute_slots(body, args)
+      };
       evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body, .. } => {
