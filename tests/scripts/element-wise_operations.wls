@@ -1,0 +1,11 @@
+S = 10; M = {{7, 11, 13}, {17, 19, 23}, {29, 31, 37}};
+Print[M + S]
+Print[M - S]
+Print[M * S]
+Print[M / S]
+Print[M ^ S]
+Print[M + M]
+Print[M - M]
+Print[M * M]
+Print[M / M]
+Print[M ^ M]

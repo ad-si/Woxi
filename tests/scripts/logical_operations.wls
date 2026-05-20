@@ -1,0 +1,6 @@
+Print[And[True, True]]
+Print[Or[False, True]]
+Print[Not[True]]
+Print[Xor[True, False]]
+Print[Nand[True, True]]
+Print[Nor[True, False]]

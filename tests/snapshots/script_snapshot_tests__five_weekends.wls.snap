@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+201 months with 5 weekends

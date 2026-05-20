@@ -1205,6 +1205,41 @@ script_test!(script_bernoulli_numbers, "bernoulli_numbers.wls");
 
 script_test!(script_topswops, "topswops.wls");
 
+// === Manually-fixed RC scripts (source had pre-existing bugs) ===
+// Each of these had a real bug in the RC task source — undefined symbol,
+// protected-name override, stray glyph, missing `Push` head — that errored
+// even under wolframscript. Promoted versions correct the typo while
+// preserving the original algorithm.
+script_test!(script_taxicab_numbers, "taxicab_numbers.wls");
+script_test!(
+  script_compare_a_list_of_strings,
+  "compare_a_list_of_strings.wls"
+);
+script_test!(
+  script_apply_a_callback_to_an_array,
+  "apply_a_callback_to_an_array.wls"
+);
+script_test!(script_null_object, "null_object.wls");
+script_test!(script_documentation, "documentation.wls");
+script_test!(script_symmetric_difference, "symmetric_difference.wls");
+script_test!(script_hash_from_two_arrays, "hash_from_two_arrays.wls");
+script_test!(script_stack, "stack.wls");
+script_test!(script_five_weekends, "five_weekends.wls");
+script_test!(
+  script_determinant_and_permanent,
+  "determinant_and_permanent.wls"
+);
+script_test!(
+  script_element_wise_operations,
+  "element-wise_operations.wls"
+);
+script_test!(script_runtime_evaluation, "runtime_evaluation.wls");
+script_test!(
+  script_runtime_evaluation_in_an_environment,
+  "runtime_evaluation_in_an_environment.wls"
+);
+script_test!(script_logical_operations, "logical_operations.wls");
+
 script_test!(script_prime_decomposition, "prime_decomposition.wls");
 
 script_test!(
