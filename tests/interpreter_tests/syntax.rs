@@ -129,6 +129,30 @@ mod postfix_application {
   }
 }
 
+mod prefix_apply_assignment {
+  use super::*;
+
+  #[test]
+  fn at_form_as_downvalue_lhs() {
+    // `f @ x = rhs` must parse the LHS as `f[x]` (FunctionCall) so the
+    // downvalue assignment path accepts it. Previously the `@` infix branch
+    // built an `Expr::PrefixApply` that Set didn't recognise, erroring with
+    // "First argument of Set must be an identifier, part extract, or function
+    // call".
+    assert_eq!(interpret(r#"del2@banana = "phone""#).unwrap(), "phone");
+    assert_eq!(interpret(r#"del2@banana = "phone"; del2[banana]"#).unwrap(), "phone");
+    assert_eq!(interpret(r#"del2@banana = "phone"; del2@banana"#).unwrap(), "phone");
+  }
+
+  #[test]
+  fn at_form_threads_through_replaceall() {
+    // `f @ x /. rule` must evaluate as `f[x] /. rule`, i.e. with `f[x]` as
+    // the ReplaceAll target. (The original failure mode here was the LHS
+    // becoming `Set[f, Function[x]] [args]` style nonsense.)
+    assert_eq!(interpret("Piecewise @ {{1, True}, {2, False}}").unwrap(), "1");
+  }
+}
+
 mod assignment_with_anon_call {
   use super::*;
 

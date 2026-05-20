@@ -62,14 +62,19 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let pairs = match &args[0] {
-    Expr::List(items) => items,
+  // Force evaluation of the first argument so a stored variable holding a
+  // pair list (or `Piecewise[Table[…]]` with FunctionCall instead of
+  // PrefixApply head) resolves to the underlying List before we inspect it.
+  let evaluated_first = evaluate_expr_to_expr(&args[0])?;
+  let pairs = match &evaluated_first {
+    Expr::List(items) => items.clone(),
     _ => {
       return Err(InterpreterError::EvaluationError(
         "First argument of Piecewise must be a list of {value, condition} pairs".into(),
       ));
     }
   };
+  let pairs = &pairs;
 
   let default = if args.len() == 2 {
     Some(&args[1])

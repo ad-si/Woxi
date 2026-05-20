@@ -24,10 +24,76 @@ expression: stdout
 <text x="328.15" y="194.93" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">3</text>
 <text x="328.15" y="343.07" fill="rgb(0,0,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">6</text>
 </svg>
-<svg width="360" height="462" viewBox="0 0 360 462" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<polyline points="180.00,73.77 180.00,388.23" fill="none" stroke="rgb(153,153,153)" stroke-width="1.85" stroke-linejoin="round" stroke-linecap="butt"/>
-<rect x="84.09" y="17.16" width="191.82" height="113.21" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
-<rect x="13.33" y="331.63" width="333.33" height="113.21" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
-<text x="180.00" y="73.77" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">Defer</text>
-<text x="180.00" y="388.23" fill="rgb(0,0,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">-Graphics-</text>
+<svg width="800" height="195" viewBox="0 0 800 195" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polyline points="534.01,14.71 534.01,56.11" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="534.01,56.11 339.88,97.50" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="534.01,56.11 728.15,97.50" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="339.88,97.50 62.54,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="339.88,97.50 173.47,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="339.88,97.50 284.41,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="339.88,97.50 395.34,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="339.88,97.50 506.28,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="339.88,97.50 617.21,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="62.54,138.89 34.80,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="62.54,138.89 90.27,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="173.47,138.89 145.74,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="173.47,138.89 201.21,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="284.41,138.89 256.67,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="284.41,138.89 312.14,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="395.34,138.89 367.61,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="395.34,138.89 423.08,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="506.28,138.89 478.54,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="506.28,138.89 534.01,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="617.21,138.89 589.48,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="617.21,138.89 644.95,180.29" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="728.15,97.50 700.41,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="728.15,97.50 755.88,138.89" fill="none" stroke="rgb(153,153,153)" stroke-width="3.20" stroke-linejoin="round" stroke-linecap="butt"/>
+<rect x="521.39" y="7.26" width="25.25" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="513.94" y="48.66" width="40.15" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="329.11" y="90.05" width="21.52" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="36.87" y="131.44" width="51.33" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="29.63" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="85.10" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="147.81" y="131.44" width="51.33" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="140.56" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="196.03" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="258.74" y="131.44" width="51.33" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="251.50" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="306.97" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="369.68" y="131.44" width="51.33" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="362.44" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="417.90" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="480.61" y="131.44" width="51.33" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="473.37" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="528.84" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="591.55" y="131.44" width="51.33" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="584.31" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="639.77" y="172.84" width="10.35" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="717.39" y="90.05" width="21.52" height="14.90" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="674.75" y="131.44" width="51.33" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="741.39" y="131.44" width="28.98" height="14.90" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<text x="534.01" y="14.71" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">Defer</text>
+<text x="534.01" y="56.11" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">TreeGraph</text>
+<text x="339.88" y="97.50" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">List</text>
+<text x="62.54" y="138.89" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">DirectedEdge</text>
+<text x="34.80" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">1</text>
+<text x="90.27" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">2</text>
+<text x="173.47" y="138.89" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">DirectedEdge</text>
+<text x="145.74" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">1</text>
+<text x="201.21" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">3</text>
+<text x="284.41" y="138.89" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">DirectedEdge</text>
+<text x="256.67" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">2</text>
+<text x="312.14" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">4</text>
+<text x="395.34" y="138.89" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">DirectedEdge</text>
+<text x="367.61" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">2</text>
+<text x="423.08" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">5</text>
+<text x="506.28" y="138.89" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">DirectedEdge</text>
+<text x="478.54" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">3</text>
+<text x="534.01" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">6</text>
+<text x="617.21" y="138.89" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">DirectedEdge</text>
+<text x="589.48" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">4</text>
+<text x="644.95" y="180.29" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">7</text>
+<text x="728.15" y="97.50" fill="rgb(214,122,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">Rule</text>
+<text x="700.41" y="138.89" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">VertexLabels</text>
+<text x="755.88" y="138.89" fill="rgb(0,0,0)" font-size="8" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">&quot;Name&quot;</text>
 </svg>

@@ -5011,9 +5011,23 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         args: funcs.into(),
       }
     }
-    "@" => Expr::PrefixApply {
-      func: Box::new(left.clone()),
-      arg: Box::new(right.clone()),
+    // `f @ x` == `f[x]`. Use the FunctionCall form when the LHS is a plain
+    // identifier (matching the Rule::PrefixApplySimple branch) so downstream
+    // code that pattern-matches on FunctionCall (e.g. DownValue assignment,
+    // `del2@banana = "phone"`) sees the canonical shape.
+    "@" => match left {
+      Expr::Identifier(name) => Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![right.clone()].into(),
+      },
+      Expr::FunctionCall { .. } => Expr::CurriedCall {
+        func: Box::new(left.clone()),
+        args: vec![right.clone()],
+      },
+      _ => Expr::PrefixApply {
+        func: Box::new(left.clone()),
+        arg: Box::new(right.clone()),
+      },
     },
     "." => Expr::FunctionCall {
       name: "Dot".to_string(),

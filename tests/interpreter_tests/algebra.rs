@@ -1228,6 +1228,18 @@ mod piecewise {
       "1"
     );
   }
+
+  #[test]
+  fn variable_holding_pairs_evaluates_to_inner_value() {
+    // Regression: `Piecewise[x]` where `x` is bound to a literal list of
+    // pairs erroneously errored out because the head check ran before the
+    // arg was evaluated. With the eval-the-arg-first change, the variable
+    // resolves to its bound List first.
+    assert_eq!(
+      interpret("x = {{1, True}, {2, False}}; Piecewise[x]").unwrap(),
+      "1"
+    );
+  }
 }
 
 mod match_q {

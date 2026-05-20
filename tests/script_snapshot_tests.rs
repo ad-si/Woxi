@@ -1199,6 +1199,8 @@ script_test!(
 
 script_test!(script_infinity, "infinity.wls");
 
+script_test!(script_exceptions, "exceptions.wls");
+
 script_test!(script_prime_decomposition, "prime_decomposition.wls");
 
 script_test!(
