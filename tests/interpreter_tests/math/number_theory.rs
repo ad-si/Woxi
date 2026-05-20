@@ -1046,6 +1046,20 @@ mod bitwise_ops {
     assert_eq!(interpret("BitShiftLeft[3]").unwrap(), "6");
     assert_eq!(interpret("BitShiftLeft[5, 0]").unwrap(), "5");
   }
+
+  #[test]
+  fn bit_ops_thread_over_lists() {
+    // Bit{And,Or,Xor,Not,ShiftRight,ShiftLeft,Length} are all Listable.
+    assert_eq!(
+      interpret("BitShiftRight[{8, 16, 32}, 2]").unwrap(),
+      "{2, 4, 8}"
+    );
+    assert_eq!(
+      interpret("BitAnd[{1, 5, 12}, {3, 6, 9}]").unwrap(),
+      "{1, 4, 8}"
+    );
+    assert_eq!(interpret("BitNot[{0, 1, 2}]").unwrap(), "{-1, -2, -3}");
+  }
 }
 
 mod gcd {

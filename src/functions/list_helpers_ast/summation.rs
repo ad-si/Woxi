@@ -684,6 +684,20 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
+      // Short form `Sum[expr, {i, max}]` is sugar for `Sum[expr, {i, 1, max}]`.
+      // Forward to the 3-element form so symbolic / Infinity bounds work.
+      if items.len() == 2 {
+        let new_iter = Expr::List(
+          vec![
+            items[0].clone(),
+            Expr::Integer(1),
+            items[1].clone(),
+          ]
+          .into(),
+        );
+        return sum_ast(&[body.clone(), new_iter]);
+      }
+
       // Check for infinite sum: {i, min, Infinity}
       if items.len() == 3
         && let Expr::Identifier(s) = &items[2]

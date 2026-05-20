@@ -129,6 +129,55 @@ mod postfix_application {
   }
 }
 
+mod assignment_with_anon_call {
+  use super::*;
+
+  #[test]
+  fn assign_anon_function_application() {
+    // `a = (#+1)&[5]` should parse as `Set[a, CurriedCall[Function[#+1], [5]]]`,
+    // i.e. the `[5]` belongs to the RHS, not wrapped around the whole Set.
+    // Regression: previously stored the Function instead of 6.
+    assert_eq!(interpret("a = (#+1)&[5]; a").unwrap(), "6");
+    assert_eq!(interpret("a = (#+1)&[5]; FullForm[a]").unwrap(), "FullForm[6]");
+  }
+
+  #[test]
+  fn assign_anon_function_chained_application() {
+    assert_eq!(interpret("a = (#*#)&[7]; a + 1").unwrap(), "50");
+  }
+}
+
+mod assign_rule_of_strings {
+  use super::*;
+
+  #[test]
+  fn assign_rule_with_string_endpoints() {
+    // `r = "a"->"n"` was round-tripped through StoredValue::Raw and the
+    // re-parser misread `"a" -> "n"` as a single quoted literal because it
+    // started and ended with `"`.
+    assert_eq!(interpret(r#"r = "a"->"n"; Head[r]"#).unwrap(), "Rule");
+    assert_eq!(
+      interpret(r#"r = "a"->"n"; StringReplace["abc", r]"#).unwrap(),
+      "nbc"
+    );
+  }
+
+  #[test]
+  fn assign_list_of_string_rules() {
+    // ROT-13 idiom: build a rules list from CharacterRange and use with
+    // StringReplace. Bug was that the rules became a string after assignment.
+    assert_eq!(
+      interpret(
+        r#"
+          rules = Thread[#-> RotateLeft[#, 13]]&[CharacterRange["a", "z"]];
+          StringReplace["abc", rules]
+        "#
+      ).unwrap(),
+      "nop"
+    );
+  }
+}
+
 mod trailing_semicolon {
   use super::*;
 

@@ -2489,15 +2489,27 @@ pub fn dispatch_list_operations(
           _ => (&args[1], None),
         };
 
-        // Get the inner list pattern (unwrapping Condition if needed)
-        let list_pat = match match_pat {
-          Expr::List(_) => match_pat,
-          Expr::FunctionCall {
-            name,
-            args: cond_args,
-          } if name == "Condition" && cond_args.len() == 2 => &cond_args[0],
-          _ => match_pat,
-        };
+        // Unwrap `Pattern[name, inner]` (from `name : inner` binding) so the
+        // inner list-pattern controls length calculations; `match_pat` keeps
+        // the Pattern so bindings still flow through `match_pattern`.
+        let mut list_pat = match_pat;
+        loop {
+          match list_pat {
+            Expr::FunctionCall {
+              name,
+              args: inner_args,
+            } if name == "Pattern" && inner_args.len() == 2 => {
+              list_pat = &inner_args[1];
+            }
+            Expr::FunctionCall {
+              name,
+              args: cond_args,
+            } if name == "Condition" && cond_args.len() == 2 => {
+              list_pat = &cond_args[0];
+            }
+            _ => break,
+          }
+        }
 
         // Get the sub-elements for length calculations
         let sub = match list_pat {

@@ -2788,6 +2788,17 @@ mod batch_unevaluated_wrappers_2 {
       "{3, 4}"
     );
   }
+
+  #[test]
+  fn sequence_cases_named_binding_with_repeated_null() {
+    // Regression: previously returned `{}` because the `l : {...}` Pattern
+    // wrapper wasn't unwrapped when computing match lengths.
+    assert_eq!(
+      interpret("SequenceCases[{1/2, 1/3, 1/16}, l : {_, 1 ...} :> Length[l]]")
+        .unwrap(),
+      "{1, 1, 1}"
+    );
+  }
   #[test]
   fn sequence_cases_three_element_condition() {
     assert_eq!(

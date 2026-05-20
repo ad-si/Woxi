@@ -90,6 +90,14 @@ mod sum {
   }
 
   #[test]
+  fn infinite_sum_short_iterator_form() {
+    // `{n, max}` is shorthand for `{n, 1, max}`, including when max is Infinity
+    // — previously failed with "Sum: iterator bounds must be integers".
+    assert_eq!(interpret("Sum[1/n^2, {n, Infinity}]").unwrap(), "Pi^2/6");
+    assert_eq!(interpret("Sum[k, {k, 10}]").unwrap(), "55");
+  }
+
+  #[test]
   fn infinite_sum_zeta_4() {
     assert_eq!(
       interpret("Sum[1/n^4, {n, 1, Infinity}]").unwrap(),

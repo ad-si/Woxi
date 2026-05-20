@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{M3, M5, M7, M13, M17, M19, M31, M61, M89, M107, M127, M521, M607, M1279}

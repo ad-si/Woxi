@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{4527027/5000000, 259259/500000, 3/4}

@@ -133,6 +133,13 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Numerator"
       | "Denominator"
       | "PrimePi"
+      | "BitAnd"
+      | "BitOr"
+      | "BitXor"
+      | "BitNot"
+      | "BitShiftRight"
+      | "BitShiftLeft"
+      | "ToExpression"
   )
 }
 

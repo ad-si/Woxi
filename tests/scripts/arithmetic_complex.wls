@@ -1,0 +1,10 @@
+x=1+2I;
+y=3+4I;
+Print[x+y];
+Print[x-y];
+Print[y x];
+Print[y/x];
+Print[x^3];
+Print[y^4];
+Print[x^y];
+Print[N[x^y]];

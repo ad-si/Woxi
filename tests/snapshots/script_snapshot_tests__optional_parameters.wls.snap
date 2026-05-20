@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Null
+{{, q, z}, {a, b, c}, {zap, zip, Zot}}
+{{zap, zip, Zot}, {, q, z}, {a, b, c}}

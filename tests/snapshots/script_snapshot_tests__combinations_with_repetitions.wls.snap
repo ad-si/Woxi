@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{{iced, iced}, {iced, jam}, {iced, plain}, {jam, jam}, {jam, plain}, {plain, plain}}
+Null
+6
+220

@@ -1137,6 +1137,80 @@ script_test!(
 );
 script_test!(script_kaprekar_numbers, "kaprekar_numbers.wls");
 
+script_test!(
+  script_convert_decimal_number_to_rational,
+  "convert_decimal_number_to_rational.wls"
+);
+
+script_test!(
+  script_terminal_control_unicode_output,
+  "terminal_control_unicode_output.wls"
+);
+
+script_test!(
+  script_case_sensitivity_of_identifiers,
+  "case-sensitivity_of_identifiers.wls"
+);
+
+script_test!(
+  script_strip_a_set_of_characters_from_a_string,
+  "strip_a_set_of_characters_from_a_string.wls"
+);
+
+script_test!(
+  script_find_the_missing_permutation,
+  "find_the_missing_permutation.wls"
+);
+
+script_test!(script_lucas_lehmer_test, "lucas-lehmer_test.wls");
+
+script_test!(script_named_parameters, "named_parameters.wls");
+
+script_test!(
+  script_combinations_with_repetitions,
+  "combinations_with_repetitions.wls"
+);
+
+script_test!(script_enumerations, "enumerations.wls");
+
+script_test!(script_optional_parameters, "optional_parameters.wls");
+
+script_test!(script_qr_decomposition, "qr_decomposition.wls");
+
+script_test!(script_arithmetic_complex, "arithmetic_complex.wls");
+
+script_test!(script_collections, "collections.wls");
+
+script_test!(script_ludic_numbers, "ludic_numbers.wls");
+
+script_test!(script_undefined_values, "undefined_values.wls");
+
+// === Unlocked by Set parser/storage fixes ===
+// - `lhs = body & [args]`: bracket args now belong INSIDE the assignment's RHS
+//   instead of being wrapped around the entire Set node.
+// - `lhs = "a" -> "n"`: stored Raw values like `"a" -> "n"` are no longer
+//   misread back as a single quoted string literal.
+script_test!(script_rot_13, "rot-13.wls");
+
+script_test!(
+  script_find_common_directory_path,
+  "find_common_directory_path.wls"
+);
+
+script_test!(script_infinity, "infinity.wls");
+
+script_test!(script_prime_decomposition, "prime_decomposition.wls");
+
+script_test!(
+  script_linear_congruential_generator,
+  "linear_congruential_generator.wls"
+);
+
+script_test!(
+  script_luhn_test_of_credit_card_numbers,
+  "luhn_test_of_credit_card_numbers.wls"
+);
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

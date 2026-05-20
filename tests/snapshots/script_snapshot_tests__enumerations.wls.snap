@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{{1}, {2}, {3}, {4}}
+{1}
+{2}
+{4}

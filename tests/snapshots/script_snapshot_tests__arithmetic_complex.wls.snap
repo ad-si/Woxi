@@ -1,0 +1,12 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+4 + 6*I
+-2 - 2*I
+-5 + 10*I
+11/5 - (2*I)/5
+-11 - 2*I
+-527 - 336*I
+(1 + 2*I)^(3 + 4*I)
+0.12900959407446697 + 0.03392409290517014*I

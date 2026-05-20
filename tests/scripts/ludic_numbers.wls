@@ -1,0 +1,10 @@
+n=10^5;
+Ludic={1};
+seq=Range[2,n];
+ClearAll[DoStep];
+Print[DoStep[seq:{f_,___}]:=Module[{out=seq},
+ AppendTo[Ludic,f];
+ out[[;;;;f]]=Sequence[];
+ out
+]];
+Print[Nest[DoStep,seq,2500]];

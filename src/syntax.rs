@@ -4434,11 +4434,27 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         body: Box::new(result),
       };
     }
-    for args in bracket_args {
-      result = Expr::CurriedCall {
-        func: Box::new(result),
-        args,
-      };
+    if pushed_into_assignment && !bracket_args.is_empty() {
+      // `lhs = (body) & [args]` — both `&` and the `[args]` application
+      // bind tighter than `=`, so the curried call belongs INSIDE the
+      // assignment's RHS, not wrapped around the entire Set node.
+      if let Expr::FunctionCall { args: set_args, .. } = &mut result {
+        let mut rhs = std::mem::replace(&mut set_args[1], Expr::Integer(0));
+        for args in bracket_args {
+          rhs = Expr::CurriedCall {
+            func: Box::new(rhs),
+            args,
+          };
+        }
+        set_args[1] = rhs;
+      }
+    } else {
+      for args in bracket_args {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args,
+        };
+      }
     }
 
     // Apply continuation operators after & (e.g., #^2& @ 3)
@@ -10311,10 +10327,27 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
     return Ok(Expr::Real(f));
   }
 
-  // Check for quoted string
+  // Check for quoted string — but only when the entire input is one literal,
+  // not e.g. `"a" -> "n"` which also starts and ends with `"`.
   if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-    let inner = &trimmed[1..trimmed.len() - 1];
-    return Ok(Expr::String(inner.to_string()));
+    let bytes = trimmed.as_bytes();
+    let mut is_single_literal = true;
+    let mut i = 1;
+    while i < bytes.len() - 1 {
+      match bytes[i] {
+        b'\\' if i + 1 < bytes.len() - 1 => i += 2,
+        b'"' => {
+          // Unescaped quote before the final char — input is not a single literal
+          is_single_literal = false;
+          break;
+        }
+        _ => i += 1,
+      }
+    }
+    if is_single_literal {
+      let inner = &trimmed[1..trimmed.len() - 1];
+      return Ok(Expr::String(inner.to_string()));
+    }
   }
 
   // Check for simple identifier

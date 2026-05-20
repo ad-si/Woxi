@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+The three dogs are named Benjamin, Samba and Bernie
