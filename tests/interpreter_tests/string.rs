@@ -2659,18 +2659,12 @@ mod to_expression {
     // `ToString[InputForm[x]]` ≡ `ToString[x, InputForm]`. Previously the
     // single-arg form just stringified the unevaluated `InputForm[x]`
     // FunctionCall as text, producing `"InputForm[2]"` instead of `"2"`.
-    assert_eq!(
-      interpret(r#"ToString[InputForm[2]]"#).unwrap(),
-      "2"
-    );
+    assert_eq!(interpret(r#"ToString[InputForm[2]]"#).unwrap(), "2");
     assert_eq!(
       interpret(r#"ToString[InputForm["hello"]]"#).unwrap(),
       r#""hello""#
     );
-    assert_eq!(
-      interpret(r#"ToString @ InputForm @ 2"#).unwrap(),
-      "2"
-    );
+    assert_eq!(interpret(r#"ToString @ InputForm @ 2"#).unwrap(), "2");
   }
 
   #[test]
@@ -2678,10 +2672,7 @@ mod to_expression {
     // ToExpression has the Listable attribute, so a list of strings becomes
     // a list of parsed integers. Previously the whole list was stringified
     // to `{"9", "2"}` and re-parsed back to a list of *strings*.
-    assert_eq!(
-      interpret(r#"ToExpression[{"9", "2"}]"#).unwrap(),
-      "{9, 2}"
-    );
+    assert_eq!(interpret(r#"ToExpression[{"9", "2"}]"#).unwrap(), "{9, 2}");
     assert_eq!(
       interpret(r#"Total[2 * ToExpression[{"9", "2"}]]"#).unwrap(),
       "22"

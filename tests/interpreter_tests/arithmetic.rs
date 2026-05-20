@@ -799,10 +799,7 @@ mod big_integer {
   fn factorial_quotient_of_factorials() {
     // The Catalan-number style expression `(2 n)!/((n + 1)! n!)`
     // exercises factorials nested in parentheses and implicit times.
-    assert_eq!(
-      interpret("(2 n)!/((n + 1)! n!) /. n -> 5").unwrap(),
-      "42"
-    );
+    assert_eq!(interpret("(2 n)!/((n + 1)! n!) /. n -> 5").unwrap(), "42");
   }
 
   #[test]

@@ -140,8 +140,14 @@ mod prefix_apply_assignment {
     // "First argument of Set must be an identifier, part extract, or function
     // call".
     assert_eq!(interpret(r#"del2@banana = "phone""#).unwrap(), "phone");
-    assert_eq!(interpret(r#"del2@banana = "phone"; del2[banana]"#).unwrap(), "phone");
-    assert_eq!(interpret(r#"del2@banana = "phone"; del2@banana"#).unwrap(), "phone");
+    assert_eq!(
+      interpret(r#"del2@banana = "phone"; del2[banana]"#).unwrap(),
+      "phone"
+    );
+    assert_eq!(
+      interpret(r#"del2@banana = "phone"; del2@banana"#).unwrap(),
+      "phone"
+    );
   }
 
   #[test]
@@ -149,7 +155,10 @@ mod prefix_apply_assignment {
     // `f @ x /. rule` must evaluate as `f[x] /. rule`, i.e. with `f[x]` as
     // the ReplaceAll target. (The original failure mode here was the LHS
     // becoming `Set[f, Function[x]] [args]` style nonsense.)
-    assert_eq!(interpret("Piecewise @ {{1, True}, {2, False}}").unwrap(), "1");
+    assert_eq!(
+      interpret("Piecewise @ {{1, True}, {2, False}}").unwrap(),
+      "1"
+    );
   }
 }
 
@@ -162,7 +171,10 @@ mod assignment_with_anon_call {
     // i.e. the `[5]` belongs to the RHS, not wrapped around the whole Set.
     // Regression: previously stored the Function instead of 6.
     assert_eq!(interpret("a = (#+1)&[5]; a").unwrap(), "6");
-    assert_eq!(interpret("a = (#+1)&[5]; FullForm[a]").unwrap(), "FullForm[6]");
+    assert_eq!(
+      interpret("a = (#+1)&[5]; FullForm[a]").unwrap(),
+      "FullForm[6]"
+    );
   }
 
   #[test]
@@ -196,7 +208,8 @@ mod assign_rule_of_strings {
           rules = Thread[#-> RotateLeft[#, 13]]&[CharacterRange["a", "z"]];
           StringReplace["abc", rules]
         "#
-      ).unwrap(),
+      )
+      .unwrap(),
       "nop"
     );
   }

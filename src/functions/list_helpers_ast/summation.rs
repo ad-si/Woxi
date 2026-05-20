@@ -688,12 +688,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Forward to the 3-element form so symbolic / Infinity bounds work.
       if items.len() == 2 {
         let new_iter = Expr::List(
-          vec![
-            items[0].clone(),
-            Expr::Integer(1),
-            items[1].clone(),
-          ]
-          .into(),
+          vec![items[0].clone(), Expr::Integer(1), items[1].clone()].into(),
         );
         return sum_ast(&[body.clone(), new_iter]);
       }
