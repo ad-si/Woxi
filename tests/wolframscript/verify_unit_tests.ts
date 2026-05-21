@@ -552,6 +552,11 @@ function main() {
                             // flaky results in batch mode. All Quantity, UnitConvert,
                             // CompatibleUnitQ, QuantityMagnitude, QuantityUnit expressions
                             // are covered by Woxi's own 167 unit tests instead.
+    /\bInput\[/,            // Interactive: in `wolframscript -code` batch mode Input[]
+                            // blocks on stdin and prevents the DONE sentinel from being
+                            // reached. Woxi's script-mode EndOfFile behavior is covered
+                            // by the input_function unit tests in tests/interpreter_tests/io.rs.
+    /\bInputString\[/,      // Same as Input[] — blocks on stdin in batch mode.
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
