@@ -922,8 +922,14 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         | Expr::NamedFunction { .. }
         | Expr::Image { .. }
         | Expr::Graphics { .. }
+        | Expr::Rule { .. }
+        | Expr::RuleDelayed { .. }
     ) {
-      // Store lists, function calls, functions, and strings as ExprVal for faithful roundtrip
+      // Store lists, function calls, functions, strings, and rules as
+      // ExprVal for faithful roundtrip. Rules in particular must not be
+      // stored as Raw — `(p /; c) :> b` would reparse without the parens
+      // as `Condition[p, RuleDelayed[c, b]]` because `:>` binds tighter
+      // than `/;`.
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(rhs_value.clone()))

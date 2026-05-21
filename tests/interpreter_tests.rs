@@ -285,6 +285,40 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_replace_repeated_with_conditional_rule_stored_in_variable() {
+    // Bubble-sort-style rule with a Condition guard, stored in an OwnValue
+    // and applied via //.. Regression for two bugs:
+    //   1. Set was stringifying RuleDelayed, dropping the parens around
+    //      `(p /; c)` and re-parsing as `Condition[p, RuleDelayed[c, body]]`.
+    //   2. Pattern matching with `/;` didn't backtrack through sequence
+    //      splits, so the first split `b=1, c=2` failed the condition and
+    //      the rule never fired even though `b=2, c=1` satisfies `b > c`.
+    clear_state();
+    interpret("sort = ({a___, b_, c_, d___} /; b > c) :> {a, c, b, d}")
+      .unwrap();
+    assert_eq!(interpret("{1, 2, 1} //. sort").unwrap(), "{1, 1, 2}");
+    assert_eq!(
+      interpret("{3, 1, 2, 5, 4} //. sort").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn test_match_q_with_condition_backtracks_through_sequence_splits() {
+    // MatchQ must enumerate sequence splits when the LHS has a Condition,
+    // returning True if any split satisfies the guard.
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 1}, {a___, b_, c_, d___} /; b > c]").unwrap(),
+      "True",
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {a___, b_, c_, d___} /; b > c]").unwrap(),
+      "False",
+    );
+  }
+
+  #[test]
   fn test_nested_comment() {
     clear_state();
     assert_eq!(

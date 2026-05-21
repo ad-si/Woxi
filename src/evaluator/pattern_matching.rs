@@ -7,6 +7,31 @@ use std::cell::RefCell;
 // with already-bound variables from outer pattern contexts.
 thread_local! {
   static MATCH_CONTEXT: RefCell<Vec<Vec<(String, Expr)>>> = const { RefCell::new(Vec::new()) };
+  /// Stack of LHS Condition expressions active during pattern matching.
+  /// When the top of the stack is `Some`, `match_args_with_sequences`
+  /// substitutes the current candidate bindings into the condition and
+  /// evaluates it. A definite `False` triggers backtracking, while
+  /// `True` or any unevaluated result (because some variables are still
+  /// unbound at this recursion level) allows the match to propagate
+  /// upward for a final check at the outermost level.
+  static OUTER_LHS_CONDITION: RefCell<Vec<Expr>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Returns `true` when an LHS Condition is on the stack and the current
+/// partial bindings make it definitively evaluate to `False`. In that
+/// case the caller should skip this branch and continue backtracking.
+fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
+  OUTER_LHS_CONDITION.with(|stack| {
+    let stack = stack.borrow();
+    let Some(cond) = stack.last() else {
+      return false;
+    };
+    let evaluated = match apply_bindings(cond, bindings) {
+      Ok(e) => e,
+      Err(_) => return false,
+    };
+    matches!(evaluated, Expr::Identifier(ref s) if s == "False")
+  })
 }
 
 fn push_match_context(bindings: &[(String, Expr)]) {
@@ -607,16 +632,54 @@ pub fn try_ast_pattern_replace_single(
   condition: Option<&str>,
 ) -> Result<Option<Expr>, InterpreterError> {
   // Unwrap a `Condition[pat, test]` LHS into its inner pattern and an
-  // additional guard string. This makes /; on the pattern side and
+  // additional guard expression. This makes /; on the pattern side and
   // Condition[...] on the LHS behave the same way.
-  let (pattern, lhs_extra_cond): (&Expr, Option<String>) = match pattern {
+  let (pattern, lhs_extra_cond_expr): (&Expr, Option<Expr>) = match pattern {
     Expr::FunctionCall { name, args }
       if name == "Condition" && args.len() == 2 =>
     {
-      (&args[0], Some(expr_to_string(&args[1])))
+      (&args[0], Some(args[1].clone()))
     }
     _ => (pattern, None),
   };
+
+  // Combine the legacy string-based `condition` and the LHS Condition
+  // guard into a single Expr we push onto OUTER_LHS_CONDITION so that
+  // `match_args_with_sequences` can backtrack through sequence splits
+  // that would make the condition False. `(p /; c) :> r` against
+  // `{1, 2, 1}` would otherwise lock in the first split with `b=1, c=2`
+  // and reject the rule even though `b=2, c=1` satisfies `b > c`.
+  let combined_cond: Option<Expr> = match (condition, &lhs_extra_cond_expr) {
+    (None, None) => None,
+    (Some(s), None) => crate::syntax::string_to_expr(s).ok(),
+    (None, Some(e)) => Some(e.clone()),
+    (Some(s), Some(e)) => match crate::syntax::string_to_expr(s) {
+      Ok(parsed) => Some(Expr::FunctionCall {
+        name: "And".to_string(),
+        args: vec![parsed, e.clone()].into(),
+      }),
+      Err(_) => Some(e.clone()),
+    },
+  };
+
+  struct CondGuard {
+    pushed: bool,
+  }
+  impl Drop for CondGuard {
+    fn drop(&mut self) {
+      if self.pushed {
+        OUTER_LHS_CONDITION.with(|s| {
+          s.borrow_mut().pop();
+        });
+      }
+    }
+  }
+  let _guard = CondGuard {
+    pushed: combined_cond.is_some(),
+  };
+  if let Some(ref c) = combined_cond {
+    OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(c.clone()));
+  }
 
   // First try normal structural match
   let bindings_opt = match match_pattern(value, pattern) {
@@ -636,29 +699,13 @@ pub fn try_ast_pattern_replace_single(
   };
 
   if let Some(bindings) = bindings_opt {
-    // Check condition if present
-    if let Some(cond_str) = condition {
-      // Substitute bindings into condition and evaluate
-      let mut substituted_cond = cond_str.to_string();
-      for (var, val) in &bindings {
-        substituted_cond =
-          replace_var_with_value(&substituted_cond, var, &expr_to_string(val));
-      }
-      match interpret(&substituted_cond) {
-        Ok(result) if result == "True" => {}
-        _ => return Ok(None), // Condition not satisfied
-      }
-    }
-    // Same for an LHS Condition[pat, test] guard.
-    if let Some(cond_str) = lhs_extra_cond {
-      let mut substituted_cond = cond_str.clone();
-      for (var, val) in &bindings {
-        substituted_cond =
-          replace_var_with_value(&substituted_cond, var, &expr_to_string(val));
-      }
-      match interpret(&substituted_cond) {
-        Ok(result) if result == "True" => {}
-        _ => return Ok(None),
+    // Final outer check: paths that don't go through
+    // `match_args_with_sequences` (e.g. single-Blank patterns) still
+    // need the condition validated once all bindings are known.
+    if let Some(ref c) = combined_cond {
+      let evaluated = apply_bindings(c, &bindings)?;
+      if !matches!(evaluated, Expr::Identifier(ref s) if s == "True") {
+        return Ok(None);
       }
     }
     // Substitute bindings into replacement using apply_bindings
@@ -2498,6 +2545,12 @@ fn match_args_with_sequences(
               _ => continue,
             }
           }
+          // Outer LHS Condition (`pat /; cond` or `Condition[pat, test]`):
+          // backtrack to the next sequence split when the candidate
+          // bindings make the condition definitively False.
+          if lhs_condition_definitely_fails(&elem_bindings) {
+            continue;
+          }
           return Some(elem_bindings);
         }
         continue;
@@ -2533,6 +2586,9 @@ fn match_args_with_sequences(
             _ => continue,
           }
         }
+        if lhs_condition_definitely_fails(&rest_bindings) {
+          continue;
+        }
         return Some(rest_bindings);
       }
     }
@@ -2547,6 +2603,9 @@ fn match_args_with_sequences(
         match_args_with_sequences(&expr_args[1..], rest_pats)
       && merge_bindings(&mut bindings, rest_bindings)
     {
+      if lhs_condition_definitely_fails(&bindings) {
+        return None;
+      }
       return Some(bindings);
     }
     None
@@ -2916,9 +2975,26 @@ fn match_pattern_impl(
       name: pat_name,
       args: pat_args,
     } if pat_name == "Condition" && pat_args.len() == 2 => {
+      // Push the condition onto OUTER_LHS_CONDITION so that
+      // `match_args_with_sequences` can backtrack through sequence
+      // splits whose bindings make the test False (e.g. matching
+      // `{a___, b_, c_, d___} /; b > c` against `{1, 2, 1}` must reject
+      // the first split `b=1, c=2` and retry with `b=2, c=1`).
+      OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(pat_args[1].clone()));
+      struct G;
+      impl Drop for G {
+        fn drop(&mut self) {
+          OUTER_LHS_CONDITION.with(|s| {
+            s.borrow_mut().pop();
+          });
+        }
+      }
+      let _g = G;
+
       // First match the pattern part
       if let Some(bindings) = match_pattern(expr, &pat_args[0]) {
-        // Substitute bindings into the test expression and evaluate
+        // Final outer check: paths that don't go through
+        // `match_args_with_sequences` still need a top-level validation.
         let test_expr = apply_bindings(&pat_args[1], &bindings)
           .unwrap_or(pat_args[1].clone());
         match evaluate_expr_to_expr(&test_expr) {
