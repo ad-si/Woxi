@@ -213,10 +213,14 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FindRoot" => {
       vec!["HoldAll", "Protected"]
     }
-    // Manipulate: HoldAll + Protected + ReadProtected (matches wolframscript).
-    // HoldAll ensures the body, variable specs, and options like
-    // Initialization :> (...) remain unevaluated.
-    "Manipulate" => vec!["HoldAll", "Protected", "ReadProtected"],
+    // Manipulate: Protected + ReadProtected (matches wolframscript).
+    // Wolfram does NOT expose HoldAll on Manipulate even though it
+    // holds its body and variable specs in practice — the hold
+    // behavior is implemented by the kernel internally (and in Woxi
+    // by the explicit name-match in core_eval.rs), not via the
+    // attribute. Adding HoldAll here would diverge from `Attributes[
+    // Manipulate]` in wolframscript without changing semantics.
+    "Manipulate" => vec!["Protected", "ReadProtected"],
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
     "True" | "False" => vec!["Locked", "Protected"],
 
