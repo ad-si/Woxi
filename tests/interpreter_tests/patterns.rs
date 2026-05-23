@@ -796,6 +796,23 @@ mod pattern_matching {
       assert_eq!(interpret("(x_A/;u>0)[p]").unwrap(), "(x_A /; u > 0)[p]");
     }
 
+    // The InputForm formatter (used by `ToString[_, InputForm]`) must
+    // also emit the Pattern/Condition head parens — the direct-eval
+    // formatter already did, but `expr_to_input_form` was missing them.
+    // Regression for the verify_unit_tests.ts batch wrapping these
+    // expressions in `Quiet[ToString[(...), InputForm]]`.
+    #[test]
+    fn curried_pattern_head_keeps_parens_in_input_form() {
+      assert_eq!(
+        interpret("ToString[((s:A[x])[t]), InputForm]").unwrap(),
+        "(s:A[x])[t]"
+      );
+      assert_eq!(
+        interpret("ToString[((x_A/;u>0)[p]), InputForm]").unwrap(),
+        "(x_A /; u > 0)[p]"
+      );
+    }
+
     #[test]
     fn pattern_optional_subtracted_wraps() {
       assert_eq!(interpret("a_. - b_").unwrap(), "(a_.) - (b_)");

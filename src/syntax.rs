@@ -10247,12 +10247,32 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       )
     }
 
-    // CurriedCall: display as nested calls f[a][b, c] using InputForm
-    // When func is a Function (body &), wrap in parens: (body &)[args]
+    // CurriedCall: display as nested calls f[a][b, c] using InputForm.
+    // Wrap the head in parens whenever it would otherwise re-associate
+    // with the trailing `[args]` on re-parse — e.g. `(s:A[x])[t]` must
+    // not collapse to `s:A[x][t]`, and `(x_A /; u > 0)[p]` must keep
+    // its `(... /; ...)` group. Mirrors the InputForm logic in
+    // format_expr's CurriedCall arm above.
     Expr::CurriedCall { func, args } => {
       let args_str: Vec<String> = args.iter().map(expr_to_input_form).collect();
       let func_str = expr_to_input_form(func);
-      let func_display = if matches!(func.as_ref(), Expr::Function { .. }) {
+      let needs_parens = matches!(func.as_ref(), Expr::Function { .. })
+        || matches!(func.as_ref(), Expr::PatternOptional { .. })
+        || matches!(
+          func.as_ref(),
+          Expr::BinaryOp { .. }
+            | Expr::UnaryOp { .. }
+            | Expr::Comparison { .. }
+        )
+        || matches!(
+          func.as_ref(),
+          Expr::FunctionCall { name, args }
+            if matches!(
+              name.as_str(),
+              "Plus" | "Times" | "Power" | "Pattern" | "Optional" | "Condition"
+            ) && args.len() >= 2
+        );
+      let func_display = if needs_parens {
         format!("({})", func_str)
       } else {
         func_str
