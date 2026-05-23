@@ -3213,10 +3213,12 @@ mod begin_end_package {
   }
 
   #[test]
-  fn end_package_without_begin_stays_unevaluated() {
+  fn end_package_without_begin_returns_null() {
     // Without a prior BeginPackage[], wolframscript emits
-    // EndPackage::noctx and leaves the call unevaluated.
-    assert_eq!(interpret("EndPackage[]").unwrap(), "EndPackage[]");
+    // EndPackage::noctx and still returns Null (the call evaluates,
+    // it just doesn't have a stacked context to pop). Interpret renders
+    // Null as the "\0" sentinel.
+    assert_eq!(interpret("EndPackage[]").unwrap(), "\0");
   }
 
   #[test]
