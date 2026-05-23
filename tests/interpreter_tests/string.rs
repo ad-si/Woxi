@@ -2668,6 +2668,23 @@ mod to_expression {
   }
 
   #[test]
+  fn to_string_explicit_input_form_keeps_inner_wrapper() {
+    // `ToString[InputForm[expr], InputForm]` asks for the structural
+    // InputForm of the wrapped expression, which keeps the `InputForm[…]`
+    // head visible. Only the single-arg form (OutputForm default) unwraps.
+    // Regression for verify_unit_tests.ts harness reports against
+    // `f'[x] // InputForm`, `2+F[x] // InputForm`, etc.
+    assert_eq!(
+      interpret(r#"ToString[InputForm[a + b], InputForm]"#).unwrap(),
+      "InputForm[a + b]"
+    );
+    assert_eq!(
+      interpret(r#"ToString[(f'[x] // InputForm), InputForm]"#).unwrap(),
+      "InputForm[Derivative[1][f][x]]"
+    );
+  }
+
+  #[test]
   fn listable_threads_over_list_arg() {
     // ToExpression has the Listable attribute, so a list of strings becomes
     // a list of parsed integers. Previously the whole list was stringified

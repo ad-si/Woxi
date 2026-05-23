@@ -2309,12 +2309,22 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )));
   }
 
-  // `ToString[InputForm[expr]]` is equivalent to `ToString[expr, InputForm]`
-  // — render in InputForm (strings quoted, infix operators).
-  if let Expr::FunctionCall {
-    name,
-    args: inner_args,
-  } = &args[0]
+  // `ToString[InputForm[expr]]` (single arg, default OutputForm rendering)
+  // unwraps the InputForm head and renders the inner expression in
+  // InputForm — wolframscript prints `a + b`, not `InputForm[a + b]`,
+  // because the outer form is OutputForm and `InputForm[x]`'s OutputForm
+  // is the InputForm of x.
+  //
+  // For the 2-arg form `ToString[InputForm[expr], InputForm]` the target
+  // is structural InputForm, which keeps the `InputForm[…]` head visible
+  // (`"InputForm[a + b]"`). Skip this unwrap path in that case; the
+  // 2-arg branch below renders the wrapped expression via
+  // `expr_to_input_form`, which preserves the wrapper.
+  if args.len() == 1
+    && let Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } = &args[0]
     && name == "InputForm"
     && inner_args.len() == 1
   {
