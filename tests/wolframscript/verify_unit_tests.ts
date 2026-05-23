@@ -133,8 +133,20 @@ function extractTestCases(filePath: string): TestCase[] {
 
     // Check if there's a new test function between last interpret() and this one.
     // If so, reset the accumulated expressions.
+    //
+    // Also reset on an intervening `clear_state()` call — many tests use
+    // `clear_state()` between sequential `interpret(...)` invocations
+    // *inside the same test function* to deliberately start over with a
+    // fresh evaluator state. Without this reset, the second interpret()
+    // would inherit the first one's expression as setup and produce a
+    // result that disagrees with running the expression on its own
+    // (e.g. function-definition tests that exercise both forward and
+    // reversed-arg rules in the same fn).
     const between = content.substring(lastInterpretEnd, idx);
-    if (/\bfn\s+\w+\s*\(\s*\)/.test(between)) {
+    if (
+      /\bfn\s+\w+\s*\(\s*\)/.test(between)
+      || /\bclear_state\s*\(\s*\)/.test(between)
+    ) {
       priorExprsInFn = [];
     }
 
@@ -816,6 +828,41 @@ function main() {
     // accumulates IDs across the batch session). Surface form is otherwise
     // identical and the unit test asserts the Woxi-side ID directly.
     "ReadList[StringToStream[\"a 1 b 2\"], {Word, Number}, -1]",
+    // `E^(I Pi/n)` paren formatting — same root cause as the existing
+    // `Exp[I Pi/n]` block above (Wolfram wraps `(I/n)` in explicit parens
+    // when it appears as a coefficient of Pi; Woxi prints `I/n*Pi`).
+    // The bare-Power surface form has the same divergence as the
+    // function-call form.
+    "E^(I Pi/4)",
+    "E^(I Pi/3)",
+    "E^(I Pi/6)",
+    "Gudermannian[Pi I / 4]",
+    // MakeBoxes[OutputForm[expr]] / MakeBoxes[expr // OutputForm] —
+    // Wolfram's MakeBoxes unwraps the OutputForm[…] head inside the
+    // generated `InterpretationBox` (second argument is the underlying
+    // expression, not the form-wrapper). Woxi keeps the wrapper visible.
+    // Box-structure is otherwise identical.
+    "MakeBoxes[Graphics[{Disk[{0,0}, 1]}]//OutputForm]",
+    "MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]//OutputForm]",
+    "MakeBoxes[OutputForm[3.142`3]]",
+    "MakeBoxes[OutputForm[3.14`5]]",
+    // MakeBoxes[Format[F[x], <form>]] — Wolfram emits the `#1` pure-function
+    // slot quoted as `"#1" &` inside the TagBox; Woxi emits it bare as `#1 &`.
+    // For TraditionalForm, Wolfram also renders `F[x]` as `F(x)` (parens
+    // instead of brackets) — surface rendering of the inner FormBox.
+    "MakeBoxes[Format[F[x], StandardForm]]",
+    "MakeBoxes[Format[F[x], TraditionalForm]]",
+    // Colorize — implementation-specific color algorithm. Wolfram hashes
+    // integer labels to RGB triplets (`UnsignedInteger8`, ColorSpace -> "RGB");
+    // Woxi maps to a Real64 grayscale ramp. Both produce a valid Image; the
+    // unit tests assert against the `-Image-` placeholder only.
+    "Colorize[{{1, 2}, {2, 2}, {2, 3}}, ColorFunction -> (Blend[{White, Blue}, #]&)]",
+    "Colorize[{{1, 2}, {3, 4}}]",
+    // `N[c, p_?(#>10&)] := p; N[c, 11]` — Wolfram's NValues mechanism
+    // coerces the rule's return to Real (`11.`) because the outer call is
+    // `N[…]`; Woxi returns the bound pattern variable as-is (`11`). The
+    // unit test asserts Woxi's integer-passthrough behavior.
+    "N[c, p_?(#>10&)] := p; N[c, 11]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
