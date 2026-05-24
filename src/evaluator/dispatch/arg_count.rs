@@ -484,6 +484,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageTake" => Some((2, 3)),
     "ImageType" => Some((1, 1)),
     "Implies" => Some((2, 2)),
+    "Indexed" => Some((2, 2)),
     "Import" => Some((1, 2)),
     "ImportString" => Some((1, 2)),
     "InexactNumberQ" => Some((1, 1)),

@@ -2182,6 +2182,74 @@ pub fn dispatch_list_operations(
     "MinMax" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::min_max_ast(args));
     }
+    // Indexed[expr, i]            ≡ Part[expr, i]     for a concrete List expr
+    // Indexed[expr, {i, j, ...}]  ≡ Part[expr, i, j, ...]
+    // Otherwise the call stays unevaluated, with the index normalised
+    // into a singleton list (matching wolframscript's canonical form).
+    "Indexed" if args.len() == 2 => {
+      let unevaluated_with_list_index = || {
+        let idx = match &args[1] {
+          Expr::List(_) => args[1].clone(),
+          other => Expr::List(vec![other.clone()].into()),
+        };
+        Expr::FunctionCall {
+          name: "Indexed".to_string(),
+          args: vec![args[0].clone(), idx].into(),
+        }
+      };
+      // Collect the indices from the second arg. A non-list index is
+      // treated as a single-element index list.
+      let idx_specs: Vec<&Expr> = match &args[1] {
+        Expr::List(items) => items.iter().collect(),
+        other => vec![other],
+      };
+      if idx_specs.is_empty() {
+        return Some(Ok(args[0].clone()));
+      }
+      // Validate every index is a nonzero integer; otherwise stay
+      // unevaluated (the original unsimplified call).
+      let mut ints: Vec<i128> = Vec::with_capacity(idx_specs.len());
+      for spec in &idx_specs {
+        match spec {
+          Expr::Integer(n) if *n != 0 => ints.push(*n),
+          Expr::Integer(_) => {
+            crate::emit_message(
+              "Indexed::ind: The index 0 is not a nonzero integer.",
+            );
+            return Some(Ok(Expr::FunctionCall {
+              name: "Indexed".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+          _ => {
+            return Some(Ok(unevaluated_with_list_index()));
+          }
+        }
+      }
+      // Walk into the data one level per index. A non-List head means
+      // we can't resolve concretely — fall back to canonical Indexed.
+      let mut current = args[0].clone();
+      for n in &ints {
+        let Expr::List(items) = &current else {
+          return Some(Ok(unevaluated_with_list_index()));
+        };
+        let len = items.len() as i128;
+        let pos: i128 = if *n > 0 { *n - 1 } else { len + *n };
+        if pos < 0 || pos >= len {
+          crate::emit_message(&format!(
+            "Indexed::partw: Part {} of {} does not exist.",
+            n,
+            crate::syntax::expr_to_string(&current)
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "Indexed".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+        current = items[pos as usize].clone();
+      }
+      return Some(Ok(current));
+    }
     "Part" if args.len() >= 2 => {
       let mut part_expr = Expr::Part {
         expr: Box::new(args[0].clone()),

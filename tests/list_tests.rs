@@ -826,7 +826,8 @@ mod list_tests {
   fn threshold_numeric_list() {
     // |x| <= t triggers replacement (note the boundary case: |2| <= 2 → 0).
     assert_eq!(
-      interpret("Threshold[{-3, 1, -2, 0, 2, -1, 0, 1, -3, 3, 2}, 3/2]").unwrap(),
+      interpret("Threshold[{-3, 1, -2, 0, 2, -1, 0, 1, -3, 3, 2}, 3/2]")
+        .unwrap(),
       "{-3, 0, -2, 0, 2, 0, 0, 0, -3, 3, 2}"
     );
     assert_eq!(
@@ -857,6 +858,57 @@ mod list_tests {
       interpret("Threshold[{1, 2, x}, 1]").unwrap(),
       "Threshold[{1, 2, x}, 1]"
     );
+  }
+
+  #[test]
+  fn indexed_concrete_vector() {
+    // Indexed[list, i] behaves like Part[list, i] for a concrete list.
+    assert_eq!(interpret("Indexed[{a, b}, 1]").unwrap(), "a");
+    assert_eq!(interpret("Indexed[{a, b}, 2]").unwrap(), "b");
+    // Negative indices count from the end.
+    assert_eq!(interpret("Indexed[{a, b, c}, -1]").unwrap(), "c");
+  }
+
+  #[test]
+  fn indexed_concrete_matrix() {
+    // Indexed[expr, {i, j, ...}] descends one level per index.
+    assert_eq!(
+      interpret("Indexed[{{a, b, c}, {d, e, f}}, {1, 2}]").unwrap(),
+      "b"
+    );
+    assert_eq!(
+      interpret("Indexed[{{a, b, c}, {d, e, f}}, {2, 3}]").unwrap(),
+      "f"
+    );
+    // A one-element index list still indexes one level.
+    assert_eq!(
+      interpret("Indexed[{{a, b, c}, {d, e, f}}, {2}]").unwrap(),
+      "{d, e, f}"
+    );
+    assert_eq!(interpret("Indexed[{a, b, c}, {2}]").unwrap(), "b");
+  }
+
+  #[test]
+  fn indexed_out_of_range_returns_unevaluated() {
+    // Out-of-range indices leave the call unevaluated (matching
+    // wolframscript's Indexed::partw message).
+    assert_eq!(
+      interpret("Indexed[{a, b}, 3]").unwrap(),
+      "Indexed[{a, b}, 3]"
+    );
+    // Zero is rejected (Indexed::ind: not a nonzero integer).
+    assert_eq!(
+      interpret("Indexed[{a, b}, 0]").unwrap(),
+      "Indexed[{a, b}, 0]"
+    );
+  }
+
+  #[test]
+  fn indexed_symbolic_normalises_to_list_index() {
+    // A non-list argument cannot be indexed concretely, so the call
+    // stays symbolic — but the integer index is canonicalised into a
+    // singleton list, matching wolframscript.
+    assert_eq!(interpret("Indexed[x, 1]").unwrap(), "Indexed[x, {1}]");
   }
 
   #[test]
