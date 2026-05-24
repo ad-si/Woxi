@@ -1222,6 +1222,17 @@ mod list_tests {
   }
 
   #[test]
+  fn beta_median_symbolic() {
+    // Median[BetaDistribution[a, b]] = InverseBetaRegularized[1/2, a, b]
+    // (symbolic; the inverse regularized beta has no elementary closed
+    // form for general a, b).
+    assert_eq!(
+      interpret("Median[BetaDistribution[a, b]]").unwrap(),
+      "InverseBetaRegularized[1/2, a, b]"
+    );
+  }
+
+  #[test]
   fn pareto_median_symbolic() {
     // Median[ParetoDistribution[k, a]] = k * 2^(1/a).
     assert_eq!(
@@ -1238,10 +1249,7 @@ mod list_tests {
       "3*Sqrt[2]"
     );
     // a = 1: Median = 2k.
-    assert_eq!(
-      interpret("Median[ParetoDistribution[5, 1]]").unwrap(),
-      "10"
-    );
+    assert_eq!(interpret("Median[ParetoDistribution[5, 1]]").unwrap(), "10");
   }
 
   #[test]

@@ -360,6 +360,17 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[CauchyDistribution[a, b]] = a (symmetric about a)
       Some(dargs[0].clone())
     }
+    "BetaDistribution" if dargs.len() == 2 => {
+      // Median[BetaDistribution[a, b]] = InverseBetaRegularized[1/2, a, b].
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      Some(Expr::FunctionCall {
+        name: "InverseBetaRegularized".to_string(),
+        args: vec![half, dargs[0].clone(), dargs[1].clone()].into(),
+      })
+    }
     "ParetoDistribution" if dargs.len() == 2 => {
       // Median[ParetoDistribution[k, a]] = k * 2^(1/a)
       let k = dargs[0].clone();
