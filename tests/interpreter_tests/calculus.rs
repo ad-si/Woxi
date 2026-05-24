@@ -5062,10 +5062,7 @@ mod cases {
     // Derivative recovers RealAbs[x] (away from 0):
     //   d/dx[(x*RealAbs[x])/2] = (RealAbs[x] + x^2/RealAbs[x]) / 2
     //                         = RealAbs[x]  (since x^2/RealAbs[x] = RealAbs[x]).
-    assert_case(
-      r#"Integrate[RealAbs[x], x]"#,
-      r#"(x*RealAbs[x])/2"#,
-    );
+    assert_case(r#"Integrate[RealAbs[x], x]"#, r#"(x*RealAbs[x])/2"#);
   }
   #[test]
   fn integrate_real_abs_definite() {

@@ -406,6 +406,34 @@ mod quartiles {
       "{7/4, 3, 17/4}"
     );
   }
+
+  #[test]
+  fn exponential_distribution_symbolic() {
+    // Quartiles[ExponentialDistribution[λ]] uses the closed-form quantile
+    // -Log[1-p]/λ. For p ∈ {1/4, 1/2, 3/4} this collapses to
+    // {Log[4/3]/λ, Log[2]/λ, Log[4]/λ}.
+    assert_eq!(
+      interpret("Quartiles[ExponentialDistribution[a]]").unwrap(),
+      "{Log[4/3]/a, Log[2]/a, Log[4]/a}"
+    );
+  }
+
+  #[test]
+  fn quantile_exponential_distribution_symbolic() {
+    // Direct Quantile calls should produce the same closed form.
+    assert_eq!(
+      interpret("Quantile[ExponentialDistribution[a], 1/4]").unwrap(),
+      "Log[4/3]/a"
+    );
+    assert_eq!(
+      interpret("Quantile[ExponentialDistribution[a], 1/2]").unwrap(),
+      "Log[2]/a"
+    );
+    assert_eq!(
+      interpret("Quantile[ExponentialDistribution[a], 3/4]").unwrap(),
+      "Log[4]/a"
+    );
+  }
 }
 
 mod probability_distribution {

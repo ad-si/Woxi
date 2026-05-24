@@ -185,6 +185,31 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   eval(minus(int(1), cdf))
 }
 
+/// Closed-form Quantile[dist, q] for distributions whose inverse CDF is
+/// elementary. Returns `Some(expr)` when the head is recognised. Callers
+/// should try this before the numerical fallback.
+pub fn quantile_distribution_closed_form(
+  dist_name: &str,
+  dargs: &[Expr],
+  q: &Expr,
+) -> Option<Expr> {
+  match dist_name {
+    // Quantile[ExponentialDistribution[lambda], q] = -Log[1 - q] / lambda
+    "ExponentialDistribution" if dargs.len() == 1 => {
+      let lambda = dargs[0].clone();
+      let one_minus_q = minus(int(1), q.clone());
+      let log_term = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![one_minus_q].into(),
+      };
+      let neg_log = times(int(-1), log_term);
+      let expr = divide(neg_log, lambda);
+      eval(expr).ok()
+    }
+    _ => None,
+  }
+}
+
 /// Numerical inverse-CDF for distributions whose CDF Woxi can compute
 /// symbolically or numerically. Returns `Some(quantile)` if successful,
 /// `None` if the head isn't recognised (caller falls back), or `Err` for

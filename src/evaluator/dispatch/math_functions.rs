@@ -80,6 +80,44 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::quantile_ast(args));
     }
     "Quartiles" if args.len() == 1 => {
+      // Quartiles[dist] for a distribution head — produce
+      // {Quantile[dist, 1/4], Quantile[dist, 1/2], Quantile[dist, 3/4]}.
+      if let Expr::FunctionCall { .. } = &args[0] {
+        let qs = [(1i128, 4i128), (1, 2), (3, 4)];
+        let mut results = Vec::with_capacity(3);
+        let mut all_ok = true;
+        for (qn, qd) in qs {
+          let q_expr = crate::functions::math_ast::make_rational(qn, qd);
+          let call = Expr::FunctionCall {
+            name: "Quantile".to_string(),
+            args: vec![args[0].clone(), q_expr].into(),
+          };
+          match crate::evaluator::evaluate_expr_to_expr(&call) {
+            Ok(v) => {
+              // Treat an unevaluated Quantile[...] result as failure so we
+              // leave the whole call symbolic rather than emitting a
+              // half-symbolic list.
+              if matches!(&v, Expr::FunctionCall { name, .. } if name == "Quantile")
+              {
+                all_ok = false;
+                break;
+              }
+              results.push(v);
+            }
+            Err(_) => {
+              all_ok = false;
+              break;
+            }
+          }
+        }
+        if all_ok && results.len() == 3 {
+          return Some(Ok(Expr::List(results.into())));
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "Quartiles".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       // Quartiles uses Quantile with parameters {{1/2, 0}, {0, 1}}
       // Formula: pos = 1/2 + n*q, then linear interpolation
       if let Expr::List(items) = &args[0] {
