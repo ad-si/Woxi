@@ -474,6 +474,39 @@ mod volume {
   }
 }
 
+mod region_measure {
+  use super::*;
+
+  #[test]
+  fn ellipsoid_3d_numeric() {
+    // 3-D ellipsoid volume = 4 Pi r1 r2 r3 / 3.
+    assert_eq!(
+      interpret("RegionMeasure[Ellipsoid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "8*Pi"
+    );
+  }
+
+  #[test]
+  fn ellipsoid_3d_symbolic() {
+    assert_eq!(
+      interpret(
+        "RegionMeasure[Ellipsoid[{Subscript[c, 1], Subscript[c, 2], Subscript[c, 3]}, {Subscript[r, 1], Subscript[r, 2], Subscript[r, 3]}]]"
+      )
+      .unwrap(),
+      "(4*Pi*Subscript[r, 1]*Subscript[r, 2]*Subscript[r, 3])/3"
+    );
+  }
+
+  #[test]
+  fn ellipsoid_2d() {
+    // 2-D ellipse area = Pi r1 r2.
+    assert_eq!(
+      interpret("RegionMeasure[Ellipsoid[{0, 0}, {2, 3}]]").unwrap(),
+      "6*Pi"
+    );
+  }
+}
+
 mod triangle {
   use super::*;
 

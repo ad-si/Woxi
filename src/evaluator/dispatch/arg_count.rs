@@ -851,6 +851,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Refine" => Some((1, 2)),
     "ReflectionMatrix" => Some((1, 1)),
     "RegionCentroid" => Some((1, 1)),
+    "RegionMeasure" => Some((1, 1)),
     "RegionPlot" => Some((3, usize::MAX)),
     "RegionWithin" => Some((2, 2)),
     "RegularExpression" => Some((1, 1)),

@@ -1302,7 +1302,7 @@ FourierSeries,,🚫,,7.0,1317
 Inactivate,,✅,,10.0,1317
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 Deploy,,🚫,,6.0,1320
-RegionMeasure,,🚫,,10.0,1320
+RegionMeasure,N-dimensional measure of a region (Ellipsoid),✅,pure,2.0,1320
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8.0,1322
 WeibullDistribution,Weibull probability distribution,✅,,6.0,1322
 Front,,🚫,,6.0,1324

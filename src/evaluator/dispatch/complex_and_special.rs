@@ -1851,6 +1851,10 @@ pub fn dispatch_complex_and_special(
     "Volume" if args.len() == 1 => {
       return Some(compute_volume(&args[0]));
     }
+    // RegionMeasure[region] — n-dim measure for explicit regions
+    "RegionMeasure" if args.len() == 1 => {
+      return Some(compute_region_measure(&args[0]));
+    }
     "RegionCentroid" if args.len() == 1 => {
       return Some(compute_region_centroid(&args[0]));
     }
@@ -4597,6 +4601,59 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
 // ─── Area ──────────────────────────────────────────────────────────────
 
 /// Compute the area of a geometric region.
+fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Ellipsoid[c, {r1, ..., rn}]:
+  //   2D -> Pi * r1 * r2
+  //   3D -> (4 Pi r1 r2 r3) / 3
+  // Other shapes: not yet routed through RegionMeasure (Area/Volume
+  // already cover Disk, Cuboid, Sphere, Cylinder, Cone elsewhere).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Ellipsoid"
+    && args.len() == 2
+    && let (Expr::List(center), Expr::List(radii)) = (&args[0], &args[1])
+    && center.len() == radii.len()
+  {
+    match radii.len() {
+      2 => {
+        let area = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Constant("Pi".to_string()),
+            radii[0].clone(),
+            radii[1].clone(),
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&area);
+      }
+      3 => {
+        let product = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(4),
+            Expr::Constant("Pi".to_string()),
+            radii[0].clone(),
+            radii[1].clone(),
+            radii[2].clone(),
+          ]
+          .into(),
+        };
+        let volume = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(product),
+          right: Box::new(Expr::Integer(3)),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&volume);
+      }
+      _ => {}
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "RegionMeasure".to_string(),
+    args: vec![expr.clone()].into(),
+  })
+}
+
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Cylinder[]/Cylinder[{p1, p2}]/Cylinder[{p1, p2}, r]:
   //   Volume = Pi * r^2 * Sqrt[Sum_i (p2_i - p1_i)^2].
