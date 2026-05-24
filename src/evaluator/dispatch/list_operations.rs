@@ -3133,6 +3133,17 @@ pub fn dispatch_list_operations(
     }
     // PermutationOrder[perm] — order (smallest n such that perm^n = identity)
     "PermutationOrder" if args.len() == 1 => {
+      // Cycles[{cycle1, ...}] form: order is LCM of cycle lengths.
+      if let Some(cycles) = cycles_arg(&args[0]) {
+        let mut order: i128 = 1;
+        for cycle in cycles {
+          let len = cycle.len() as i128;
+          if len > 0 {
+            order = lcm_i128(order, len);
+          }
+        }
+        return Some(Ok(Expr::Integer(order)));
+      }
       if let Expr::List(perm) = &args[0] {
         // Permutation as list form
         let n = perm.len();
@@ -3360,6 +3371,12 @@ pub fn dispatch_list_operations(
     }
     // PermutationLength[perm] — number of non-fixed points
     "PermutationLength" if args.len() == 1 => {
+      // Cycles form: sum of cycle lengths (Cycles canonicalises away
+      // length-1 cycles, so every listed element is moved).
+      if let Some(cycles) = cycles_arg(&args[0]) {
+        let total: i128 = cycles.iter().map(|c| c.len() as i128).sum();
+        return Some(Ok(Expr::Integer(total)));
+      }
       if let Expr::List(perm) = &args[0] {
         let mut count: i128 = 0;
         for (i, p) in perm.iter().enumerate() {
@@ -3478,6 +3495,15 @@ pub fn dispatch_list_operations(
     }
     // PermutationSupport[perm] — set of elements moved by the permutation
     "PermutationSupport" if args.len() == 1 => {
+      // Cycles form: sorted union of integers across all cycles.
+      if let Some(cycles) = cycles_arg(&args[0]) {
+        let mut support: Vec<i128> = cycles.iter().flatten().copied().collect();
+        support.sort();
+        support.dedup();
+        return Some(Ok(Expr::List(
+          support.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+        )));
+      }
       if let Expr::List(perm) = &args[0] {
         let mut support = Vec::new();
         for (i, p) in perm.iter().enumerate() {
@@ -3492,6 +3518,11 @@ pub fn dispatch_list_operations(
     }
     // PermutationMax[perm] — largest element moved by the permutation
     "PermutationMax" if args.len() == 1 => {
+      // Cycles form: max element across all cycles.
+      if let Some(cycles) = cycles_arg(&args[0]) {
+        let max_val = cycles.iter().flatten().copied().max();
+        return Some(Ok(Expr::Integer(max_val.unwrap_or(0))));
+      }
       if let Expr::List(perm) = &args[0] {
         let mut max_val: Option<i128> = None;
         for (i, p) in perm.iter().enumerate() {
@@ -3510,6 +3541,14 @@ pub fn dispatch_list_operations(
     }
     // PermutationMin[perm] — smallest element moved by the permutation
     "PermutationMin" if args.len() == 1 => {
+      // Cycles form: min element across all cycles.
+      if let Some(cycles) = cycles_arg(&args[0]) {
+        if let Some(min_val) = cycles.iter().flatten().copied().min() {
+          return Some(Ok(Expr::Integer(min_val)));
+        }
+        // Empty Cycles → wolframscript returns Infinity (no moved points).
+        return Some(Ok(Expr::Identifier("Infinity".to_string())));
+      }
       if let Expr::List(perm) = &args[0] {
         let mut min_val: Option<i128> = None;
         for (i, p) in perm.iter().enumerate() {
@@ -3593,6 +3632,37 @@ fn lcm_i128(a: i128, b: i128) -> i128 {
   }
   let g = gcd_i128(a.abs(), b.abs());
   (a / g * b).abs()
+}
+
+/// If `expr` is `Cycles[{{...}, {...}, ...}]` with all-integer cycles,
+/// return each cycle as `Vec<i128>`. Returns `None` for any other shape
+/// so callers can fall through to list-form handling.
+fn cycles_arg(expr: &Expr) -> Option<Vec<Vec<i128>>> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Cycles" || args.len() != 1 {
+    return None;
+  }
+  let Expr::List(cycles) = &args[0] else {
+    return None;
+  };
+  let mut result = Vec::with_capacity(cycles.len());
+  for cycle in cycles.iter() {
+    let Expr::List(items) = cycle else {
+      return None;
+    };
+    let mut nums = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      if let Expr::Integer(n) = item {
+        nums.push(*n);
+      } else {
+        return None;
+      }
+    }
+    result.push(nums);
+  }
+  Some(result)
 }
 
 fn get_assoc_value(assoc: &Expr, key: &str) -> Option<Expr> {

@@ -701,6 +701,69 @@ mod list_tests {
   }
 
   #[test]
+  fn permutation_length_cycles() {
+    // PermutationLength counts the number of moved points (sum of
+    // cycle lengths in Cycles form).
+    assert_eq!(
+      interpret("PermutationLength[Cycles[{{1, 7, 3, 5}, {2, 12, 9}}]]")
+        .unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("PermutationLength[Cycles[{}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn permutation_max_cycles() {
+    assert_eq!(
+      interpret("PermutationMax[Cycles[{{1, 6, 3}, {2, 5, 12, 9}}]]").unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn permutation_min_cycles() {
+    assert_eq!(
+      interpret("PermutationMin[Cycles[{{3, 4, 6}, {2, 7}}]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn permutation_order_cycles() {
+    // Order is the LCM of cycle lengths: LCM(3, 5, 2) = 30.
+    assert_eq!(
+      interpret(
+        "PermutationOrder[Cycles[{{2, 3, 5}, {1, 6, 7, 4, 10}, {8, 9}}]]"
+      )
+      .unwrap(),
+      "30"
+    );
+    // Identity has order 1.
+    assert_eq!(
+      interpret("PermutationOrder[Cycles[{}]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn permutation_support_cycles() {
+    // Support is the sorted union of integers across all cycles.
+    assert_eq!(
+      interpret("PermutationSupport[Cycles[{{1, 7}, {2, 5, 10, 9}, {4, 6}}]]")
+        .unwrap(),
+      "{1, 2, 4, 5, 6, 7, 9, 10}"
+    );
+    // Empty Cycles -> empty support.
+    assert_eq!(
+      interpret("PermutationSupport[Cycles[{}]]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_symbolic() {
     // n / Plus[1/x1, ..., 1/xn], with reciprocals printed as x^(-1).
     assert_eq!(
@@ -1171,18 +1234,12 @@ mod list_tests {
   fn normal_median_symbolic() {
     // The normal distribution is symmetric about its mean, so the
     // median equals mu.
-    assert_eq!(
-      interpret("Median[NormalDistribution[m, s]]").unwrap(),
-      "m"
-    );
+    assert_eq!(interpret("Median[NormalDistribution[m, s]]").unwrap(), "m");
   }
 
   #[test]
   fn normal_median_numeric() {
-    assert_eq!(
-      interpret("Median[NormalDistribution[3, 2]]").unwrap(),
-      "3"
-    );
+    assert_eq!(interpret("Median[NormalDistribution[3, 2]]").unwrap(), "3");
     // Zero-arg form defaults to mu = 0, sigma = 1.
     assert_eq!(interpret("Median[NormalDistribution[]]").unwrap(), "0");
   }
