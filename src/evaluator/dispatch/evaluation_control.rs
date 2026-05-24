@@ -252,6 +252,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "HypergeometricDistribution" if args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "HypergeometricDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "CauchyDistribution" => {
       let cauchy_args = if args.is_empty() {
         vec![Expr::Integer(0), Expr::Integer(1)]

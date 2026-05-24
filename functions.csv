@@ -2241,7 +2241,7 @@ CellDingbat,Notebook UI,🚫,None,3.0,2286
 DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286
 WheelGraph,Graph construction,🚫,None,8.0,2286
 ContainsAll,Test if a list contains all elements of another list,✅,1,10.2,2289
-HypergeometricDistribution,Probability distribution,🚫,None,6.0,2289
+HypergeometricDistribution,Probability distribution,✅,pure,6.0,2289
 SystemsModelLabels,Control systems,🚫,None,8.0,2289
 JoinAcross,Joins lists of associations on a common key,✅,None,10.0,2292
 MeshCellMeasure,mesh computation option,🚫,None,10.0,2292

@@ -828,9 +828,43 @@ mod cdf {
   fn student_t_at_zero() {
     // x = 0 -> first branch (x <= 0 is True): BetaRegularized[1, v/2, 1/2]/2
     // = 1/2 by identity.
+    assert_eq!(interpret("CDF[StudentTDistribution[v], 0]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn hypergeometric_pdf_concrete() {
+    // PDF[HypergeometricDistribution[20, 50, 100], k] =
+    //   Binomial[50, k] * Binomial[50, 20 - k] / Binomial[100, 20] for
+    //   0 <= k <= 20, else 0. Binomial[100, 20] = 535983370403809682970.
+    // (Times canonicalisation puts Binomial[50, k] before
+    //  Binomial[50, 20 - k]; mathematically identical to wolframscript's
+    //  reverse order.)
     assert_eq!(
-      interpret("CDF[StudentTDistribution[v], 0]").unwrap(),
-      "1/2"
+      interpret("PDF[HypergeometricDistribution[20, 50, 100], k]").unwrap(),
+      "Piecewise[{{(Binomial[50, k]*Binomial[50, 20 - k])/535983370403809682970, 0 <= k <= 20}}, 0]"
+    );
+  }
+
+  #[test]
+  fn hypergeometric_pdf_at_zero() {
+    // PDF at k = 0: Binomial[50, 0] * Binomial[50, 20] / Binomial[100, 20]
+    // = 47129212243960 / 535983370403809682970, reduced to 148/1683150111.
+    assert_eq!(
+      interpret("PDF[HypergeometricDistribution[20, 50, 100], 0]").unwrap(),
+      "148/1683150111"
+    );
+  }
+
+  #[test]
+  fn hypergeometric_pdf_outside_support() {
+    // k outside [0, n] -> 0 (Piecewise default branch).
+    assert_eq!(
+      interpret("PDF[HypergeometricDistribution[20, 50, 100], -1]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[HypergeometricDistribution[20, 50, 100], 25]").unwrap(),
+      "0"
     );
   }
 

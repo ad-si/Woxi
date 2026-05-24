@@ -130,6 +130,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
+    "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
     "InverseGammaDistribution" => pdf_inverse_gamma(dargs, x),
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
@@ -565,6 +566,48 @@ fn pdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond1 = comparison(x, ComparisonOp::Equal, int(1));
 
   eval(piecewise(vec![(one_minus_p, cond0), (p, cond1)], int(0)))
+}
+
+/// PDF[HypergeometricDistribution[n, ns, nt], k] =
+///   Piecewise[
+///     {{Binomial[ns, k]*Binomial[nt-ns, n-k]/Binomial[nt, n], 0 <= k <= n}},
+///     0]
+/// (For non-trivial parameter constraints, the support is
+///  max(0, n + ns - nt) <= k <= min(n, ns); when the implicit bounds are
+///  automatically satisfied (e.g. n <= ns and n + ns <= nt), the
+///  Piecewise condition collapses to 0 <= k <= n.)
+fn pdf_hypergeometric(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "HypergeometricDistribution expects 3 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let ns = dargs[1].clone();
+  let nt = dargs[2].clone();
+
+  let binom = |a: Expr, b: Expr| Expr::FunctionCall {
+    name: "Binomial".to_string(),
+    args: vec![a, b].into(),
+  };
+  // Pre-evaluate the density expression so e.g. Binomial[100 - 50, ...]
+  // collapses to Binomial[50, ...]. Piecewise holds its arguments, so we
+  // can't rely on a subsequent global pass to simplify these.
+  let numerator = times(
+    binom(ns.clone(), x.clone()),
+    binom(eval(minus(nt.clone(), ns))?, eval(minus(n.clone(), x.clone()))?),
+  );
+  let denominator = eval(binom(nt, n.clone()))?;
+  let density = eval(divide(numerator, denominator))?;
+  // Build 0 <= k <= n as a single chained comparison.
+  let cond = Expr::Comparison {
+    operands: vec![int(0), x, n],
+    operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+  };
+  eval(piecewise(vec![(density, cond)], int(0)))
 }
 
 /// PDF[CauchyDistribution[a, b], x] = 1/(Pi*b*(1+((x-a)/b)^2))
