@@ -1115,10 +1115,7 @@ mod list_tests {
   #[test]
   fn logistic_mean_variance_median() {
     // Mean = mu; Variance = beta^2 * Pi^2 / 3; Median = mu.
-    assert_eq!(
-      interpret("Mean[LogisticDistribution[m, b]]").unwrap(),
-      "m"
-    );
+    assert_eq!(interpret("Mean[LogisticDistribution[m, b]]").unwrap(), "m");
     assert_eq!(
       interpret("Variance[LogisticDistribution[m, b]]").unwrap(),
       "(b^2*Pi^2)/3"
@@ -1167,6 +1164,34 @@ mod list_tests {
     assert_eq!(
       interpret("Median[ExtremeValueDistribution[1, 2]]").unwrap(),
       "1 - 2*Log[Log[2]]"
+    );
+  }
+
+  #[test]
+  fn gompertz_makeham_mean_and_median_symbolic() {
+    // Gompertz (two-arg) form: Mean = (E^xi*Gamma[0, xi])/lambda;
+    // Median = Log[1 + Log[2]/xi]/lambda.
+    assert_eq!(
+      interpret("Mean[GompertzMakehamDistribution[l, x]]").unwrap(),
+      "(E^x*Gamma[0, x])/l"
+    );
+    assert_eq!(
+      interpret("Median[GompertzMakehamDistribution[l, x]]").unwrap(),
+      "Log[1 + Log[2]/x]/l"
+    );
+  }
+
+  #[test]
+  fn gompertz_makeham_mean_and_median_numeric() {
+    // Concrete parameters keep the closed form unevaluated where
+    // wolframscript also keeps it symbolic (Gamma[0, 3], Log[2]/3).
+    assert_eq!(
+      interpret("Mean[GompertzMakehamDistribution[2, 3]]").unwrap(),
+      "(E^3*Gamma[0, 3])/2"
+    );
+    assert_eq!(
+      interpret("Median[GompertzMakehamDistribution[2, 3]]").unwrap(),
+      "Log[1 + Log[2]/3]/2"
     );
   }
 

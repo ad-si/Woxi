@@ -348,6 +348,35 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "GompertzMakehamDistribution" if dargs.len() == 2 => {
+      let lambda = dargs[0].clone();
+      let xi = dargs[1].clone();
+      // Median = Log[1 + Log[2]/xi] / lambda
+      let log2 = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![Expr::Integer(2)].into(),
+      };
+      let log2_over_xi = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(log2),
+        right: Box::new(xi),
+      };
+      let one_plus = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(log2_over_xi),
+      };
+      let log_arg = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![one_plus].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(log_arg),
+        right: Box::new(lambda),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     _ => None,
   }
 }

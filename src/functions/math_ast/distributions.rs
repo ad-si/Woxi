@@ -2587,6 +2587,34 @@ fn distribution_mean_variance(
       let var = divide(times(power(b, int(2)), power(pi(), int(2))), int(6));
       Ok((mean, var))
     }
+    "GompertzMakehamDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "GompertzMakehamDistribution expects 2 arguments".into(),
+        ));
+      }
+      let lambda = dargs[0].clone();
+      let xi = dargs[1].clone();
+      // Mean = (E^xi * Gamma[0, xi]) / lambda
+      let gamma_0_xi = Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![int(0), xi.clone()].into(),
+      };
+      let mean = divide(times(power(e(), xi), gamma_0_xi), lambda.clone());
+      // Variance has no simple closed form in elementary functions;
+      // GompertzMakehamDistribution is intentionally absent from the
+      // Variance dispatch list, so this placeholder is never returned
+      // to the user. Provide an unevaluated stub so the tuple typechecks.
+      let var = Expr::FunctionCall {
+        name: "Variance".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "GompertzMakehamDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        }]
+        .into(),
+      };
+      Ok((mean, var))
+    }
     "FrechetDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

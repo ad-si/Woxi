@@ -313,6 +313,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "WeibullDistribution"
         | "FrechetDistribution"
         | "ExtremeValueDistribution"
+        | "GompertzMakehamDistribution"
         | "HalfNormalDistribution"
         | "HypoexponentialDistribution"
         | "InverseGaussianDistribution"
