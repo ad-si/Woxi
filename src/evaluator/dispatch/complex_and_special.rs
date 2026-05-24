@@ -4598,11 +4598,13 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
 
 /// Compute the area of a geometric region.
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
-  // Cylinder[] / Cylinder[{p1, p2}] / Cylinder[{p1, p2}, r]:
+  // Cylinder[]/Cylinder[{p1, p2}]/Cylinder[{p1, p2}, r]:
   //   Volume = Pi * r^2 * Sqrt[Sum_i (p2_i - p1_i)^2].
+  // Cone[]/Cone[{p1, p2}]/Cone[{p1, p2}, r]:
+  //   Volume = (Pi * r^2 * Sqrt[Sum_i (p2_i - p1_i)^2]) / 3.
   // Default endpoints are {0, 0, -1} and {0, 0, 1}, default radius is 1.
   if let Expr::FunctionCall { name, args } = expr
-    && name == "Cylinder"
+    && matches!(name.as_str(), "Cylinder" | "Cone")
   {
     let (p1_vec, p2_vec, radius) = match args.len() {
       0 => (
@@ -4692,10 +4694,17 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
       name: "Power".to_string(),
       args: vec![radius, Expr::Integer(2)].into(),
     };
-    let volume = Expr::FunctionCall {
+    let mut volume = Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Constant("Pi".to_string()), r_squared, length].into(),
     };
+    if name == "Cone" {
+      volume = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(volume),
+        right: Box::new(Expr::Integer(3)),
+      };
+    }
     return crate::evaluator::evaluate_expr_to_expr(&volume);
   }
 

@@ -435,6 +435,43 @@ mod volume {
       "Pi*r^2*Sqrt[(Subscript[x, 1] - Subscript[x, 2])^2 + (Subscript[y, 1] - Subscript[y, 2])^2 + (Subscript[z, 1] - Subscript[z, 2])^2]"
     );
   }
+
+  #[test]
+  fn cone_default() {
+    // Cone[] is a unit cone from {0, 0, -1} to {0, 0, 1}: r = 1, length 2
+    // -> volume (1/3) * Pi * 1 * 2 = 2 Pi / 3.
+    assert_eq!(interpret("Volume[Cone[]]").unwrap(), "(2*Pi)/3");
+  }
+
+  #[test]
+  fn cone_with_radius() {
+    // (1/3) * Pi * 2^2 * 5 = 20 Pi / 3.
+    assert_eq!(
+      interpret("Volume[Cone[{{0, 0, 0}, {0, 0, 5}}, 2]]").unwrap(),
+      "(20*Pi)/3"
+    );
+  }
+
+  #[test]
+  fn cone_default_radius() {
+    // Default radius 1: (1/3) * Pi * 5 = 5 Pi / 3.
+    assert_eq!(
+      interpret("Volume[Cone[{{0, 0, 0}, {0, 0, 5}}]]").unwrap(),
+      "(5*Pi)/3"
+    );
+  }
+
+  #[test]
+  fn cone_symbolic() {
+    // (Pi * r^2 * Sqrt[Sum[(x2_i - x1_i)^2]]) / 3.
+    assert_eq!(
+      interpret(
+        "Volume[Cone[{{Subscript[x, 1], Subscript[y, 1], Subscript[z, 1]}, {Subscript[x, 2], Subscript[y, 2], Subscript[z, 2]}}, r]]"
+      )
+      .unwrap(),
+      "(Pi*r^2*Sqrt[(Subscript[x, 1] - Subscript[x, 2])^2 + (Subscript[y, 1] - Subscript[y, 2])^2 + (Subscript[z, 1] - Subscript[z, 2])^2])/3"
+    );
+  }
 }
 
 mod triangle {
