@@ -360,6 +360,31 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[CauchyDistribution[a, b]] = a (symmetric about a)
       Some(dargs[0].clone())
     }
+    "WeibullDistribution" if dargs.len() == 2 => {
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Median = b * Log[2]^(1/a)
+      let log2 = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![Expr::Integer(2)].into(),
+      };
+      let inv_a = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(a),
+      };
+      let pow_term = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(log2),
+        right: Box::new(inv_a),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(b),
+        right: Box::new(pow_term),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "LogNormalDistribution" if dargs.len() == 2 => {
       // Median[LogNormalDistribution[mu, sigma]] = E^mu
       let med = Expr::BinaryOp {

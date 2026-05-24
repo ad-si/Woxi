@@ -1222,21 +1222,38 @@ mod list_tests {
   }
 
   #[test]
-  fn cauchy_median_symbolic() {
-    // Median[CauchyDistribution[a, b]] = a (Cauchy is symmetric about
-    // its location parameter even though Mean is Indeterminate).
+  fn weibull_median_symbolic() {
+    // Median[WeibullDistribution[a, b]] = b * Log[2]^(1/a).
     assert_eq!(
-      interpret("Median[CauchyDistribution[a, b]]").unwrap(),
-      "a"
+      interpret("Median[WeibullDistribution[a, b]]").unwrap(),
+      "b*Log[2]^a^(-1)"
     );
   }
 
   #[test]
-  fn cauchy_median_numeric() {
+  fn weibull_median_numeric() {
+    // a = 2: Median = b * Sqrt[Log[2]].
     assert_eq!(
-      interpret("Median[CauchyDistribution[5, 2]]").unwrap(),
-      "5"
+      interpret("Median[WeibullDistribution[2, 3]]").unwrap(),
+      "3*Sqrt[Log[2]]"
     );
+    // a = 1 (exponential) collapses to b * Log[2].
+    assert_eq!(
+      interpret("Median[WeibullDistribution[1, 2]]").unwrap(),
+      "2*Log[2]"
+    );
+  }
+
+  #[test]
+  fn cauchy_median_symbolic() {
+    // Median[CauchyDistribution[a, b]] = a (Cauchy is symmetric about
+    // its location parameter even though Mean is Indeterminate).
+    assert_eq!(interpret("Median[CauchyDistribution[a, b]]").unwrap(), "a");
+  }
+
+  #[test]
+  fn cauchy_median_numeric() {
+    assert_eq!(interpret("Median[CauchyDistribution[5, 2]]").unwrap(), "5");
     // Zero-arg form defaults to (0, 1).
     assert_eq!(interpret("Median[CauchyDistribution[]]").unwrap(), "0");
   }
