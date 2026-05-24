@@ -1168,6 +1168,30 @@ mod list_tests {
   }
 
   #[test]
+  fn lognormal_median_symbolic() {
+    // Median[LogNormalDistribution[mu, sigma]] = E^mu (the median of
+    // a lognormal is determined entirely by the location parameter).
+    assert_eq!(
+      interpret("Median[LogNormalDistribution[m, s]]").unwrap(),
+      "E^m"
+    );
+  }
+
+  #[test]
+  fn lognormal_median_numeric() {
+    // Concrete location collapses to E^1 == E.
+    assert_eq!(
+      interpret("Median[LogNormalDistribution[1, 2]]").unwrap(),
+      "E"
+    );
+    // E^0 == 1.
+    assert_eq!(
+      interpret("Median[LogNormalDistribution[0, 1]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
   fn stable_mean_type_zero_symbolic() {
     // Type-0 parametrisation: Mean = mu - beta*sigma*Tan[Pi*alpha/2]
     // when 1 < alpha <= 2; otherwise Indeterminate.

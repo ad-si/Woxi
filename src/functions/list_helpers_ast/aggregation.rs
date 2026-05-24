@@ -352,6 +352,15 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[LaplaceDistribution[mu, beta]] = mu
       Some(dargs[0].clone())
     }
+    "LogNormalDistribution" if dargs.len() == 2 => {
+      // Median[LogNormalDistribution[mu, sigma]] = E^mu
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(dargs[0].clone()),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "UniformDistribution" | "ArcSinDistribution" if dargs.len() == 1 => {
       let Expr::List(bounds) = &dargs[0] else {
         return None;
