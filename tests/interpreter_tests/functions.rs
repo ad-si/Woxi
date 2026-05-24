@@ -836,6 +836,29 @@ mod toeplitz_matrix {
       "{{a, b}, {b, a}}"
     );
   }
+
+  #[test]
+  fn integer_n() {
+    // ToeplitzMatrix[n] gives the n×n integer Toeplitz matrix with
+    // first row/column 1..n. Entry (i, j) = |i - j| + 1.
+    assert_eq!(
+      interpret("ToeplitzMatrix[4]").unwrap(),
+      "{{1, 2, 3, 4}, {2, 1, 2, 3}, {3, 2, 1, 2}, {4, 3, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn integer_one() {
+    assert_eq!(interpret("ToeplitzMatrix[1]").unwrap(), "{{1}}");
+  }
+
+  #[test]
+  fn integer_three() {
+    assert_eq!(
+      interpret("ToeplitzMatrix[3]").unwrap(),
+      "{{1, 2, 3}, {2, 1, 2}, {3, 2, 1}}"
+    );
+  }
 }
 
 mod mantissa_exponent {

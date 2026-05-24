@@ -124,13 +124,14 @@ pub fn dispatch_linear_algebra_functions(
       // Accept either HilbertMatrix[n] (square) or HilbertMatrix[{m, n}]
       // (rectangular). Both fill entry (i, j) with 1/(i + j - 1).
       let dims = match &args[0] {
-        Expr::List(items) if items.len() == 2 => match (
-          expr_to_i128(&items[0]),
-          expr_to_i128(&items[1]),
-        ) {
-          (Some(m), Some(n)) if m >= 0 && n >= 0 => Some((m as usize, n as usize)),
-          _ => None,
-        },
+        Expr::List(items) if items.len() == 2 => {
+          match (expr_to_i128(&items[0]), expr_to_i128(&items[1])) {
+            (Some(m), Some(n)) if m >= 0 && n >= 0 => {
+              Some((m as usize, n as usize))
+            }
+            _ => None,
+          }
+        }
         other => expr_to_i128(other)
           .filter(|n| *n >= 0)
           .map(|n| (n as usize, n as usize)),
@@ -157,6 +158,22 @@ pub fn dispatch_linear_algebra_functions(
           for j in 0..n {
             let idx = i.abs_diff(j);
             row.push(elems[idx].clone());
+          }
+          rows.push(Expr::List(row.into()));
+        }
+        return Some(Ok(Expr::List(rows.into())));
+      }
+      // ToeplitzMatrix[n] — integer form. First row and column are
+      // 1..n, so entry (i, j) = |i - j| + 1.
+      if let Some(n) = expr_to_i128(&args[0])
+        && n >= 0
+      {
+        let n = n as usize;
+        let mut rows = Vec::with_capacity(n);
+        for i in 0..n {
+          let mut row = Vec::with_capacity(n);
+          for j in 0..n {
+            row.push(Expr::Integer((i.abs_diff(j) + 1) as i128));
           }
           rows.push(Expr::List(row.into()));
         }
