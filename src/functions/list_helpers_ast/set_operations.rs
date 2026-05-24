@@ -599,9 +599,26 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![].into()));
   }
 
+  // Default form Commonest[list] is equivalent to picking the single
+  // most common count tier (all elements tied at the maximum count).
+  let mut tier_mode = false;
   let n = if args.len() == 2 {
     match &args[1] {
       Expr::Integer(n) if *n >= 1 => *n as usize,
+      // UpTo[n] caps at min(n, distinct_count).
+      Expr::FunctionCall { name, args: a }
+        if name == "UpTo" && a.len() == 1 =>
+      {
+        match &a[0] {
+          Expr::Integer(n) if *n >= 0 => *n as usize,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Commonest".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
+        }
+      }
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Commonest".to_string(),
@@ -610,38 +627,49 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    1
+    tier_mode = true;
+    usize::MAX
   };
 
-  // Count occurrences, preserving order of first appearance
-  let mut counts: Vec<(String, &Expr, usize)> = Vec::new();
-  for item in items {
+  // Count occurrences, recording first-appearance index for stable ordering.
+  // counts: Vec<(key, item, count, first_appearance)>
+  let mut counts: Vec<(String, &Expr, usize, usize)> = Vec::new();
+  for (idx, item) in items.iter().enumerate() {
     let key = crate::syntax::expr_to_string(item);
-    if let Some(entry) = counts.iter_mut().find(|(k, _, _)| k == &key) {
+    if let Some(entry) = counts.iter_mut().find(|(k, _, _, _)| k == &key) {
       entry.2 += 1;
     } else {
-      counts.push((key, item, 1));
+      counts.push((key, item, 1, idx));
     }
   }
 
-  // Sort by count descending (stable sort preserves insertion order for ties)
-  counts.sort_by(|a, b| b.2.cmp(&a.2));
+  // Sort by (-count, first_appearance) so the highest-count elements come
+  // first and ties break by where they first appeared in the input.
+  let mut ranked = counts.clone();
+  ranked.sort_by(|a, b| b.2.cmp(&a.2).then(a.3.cmp(&b.3)));
 
-  // Take top n distinct count levels
-  let mut result = Vec::new();
-  let mut distinct_counts = 0;
-  let mut last_count = 0;
-  for (_, item, count) in &counts {
-    if *count != last_count {
-      distinct_counts += 1;
-      if distinct_counts > n {
-        break;
-      }
-      last_count = *count;
-    }
-    result.push((*item).clone());
+  // Default form returns just the top count tier.
+  let limit = if tier_mode {
+    let max_count = ranked.first().map(|t| t.2).unwrap_or(0);
+    ranked.iter().take_while(|t| t.2 == max_count).count()
+  } else {
+    n.min(ranked.len())
+  };
+
+  // Mark the top `limit` elements (by first-appearance index) as chosen,
+  // then emit them in input order.
+  let mut chosen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+  for (_, _, _, fa) in ranked.iter().take(limit) {
+    chosen.insert(*fa);
   }
-
+  let mut result: Vec<Expr> = counts
+    .iter()
+    .filter(|(_, _, _, fa)| chosen.contains(fa))
+    .map(|(_, item, _, _)| (*item).clone())
+    .collect();
+  // `counts` was already built in first-appearance order, so `result`
+  // is too — but we kept the iteration explicit for clarity.
+  let _ = &mut result; // satisfy clippy if ever flipped
   Ok(Expr::List(result.into()))
 }
 

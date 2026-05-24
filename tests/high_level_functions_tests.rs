@@ -423,6 +423,32 @@ mod high_level_functions_tests {
     fn test_commonest_numeric() {
       assert_eq!(interpret("Commonest[{1,2,2,3,3,3}]").unwrap(), "{3}");
     }
+    #[test]
+    fn test_commonest_first_appearance_order() {
+      // When n covers more than one count tier, the chosen elements
+      // come back in first-appearance order, not count order.
+      assert_eq!(
+        interpret("Commonest[{b, a, c, 2, a, b, 1, 2}, 4]").unwrap(),
+        "{b, a, c, 2}"
+      );
+      assert_eq!(
+        interpret("Commonest[{b, a, c, 2, a, b, 1, 2}, 5]").unwrap(),
+        "{b, a, c, 2, 1}"
+      );
+    }
+    #[test]
+    fn test_commonest_up_to() {
+      // UpTo[n] returns at most n distinct elements (input has 5 distinct
+      // values, so UpTo[6] returns all 5 in first-appearance order).
+      assert_eq!(
+        interpret("Commonest[{b, a, c, 2, a, b, 1, 2}, UpTo[6]]").unwrap(),
+        "{b, a, c, 2, 1}"
+      );
+      assert_eq!(
+        interpret("Commonest[{b, a, c, 2, a, b, 1, 2}, UpTo[3]]").unwrap(),
+        "{b, a, 2}"
+      );
+    }
   }
 
   mod compose_list_tests {
