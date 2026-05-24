@@ -6286,6 +6286,30 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             None
           }
         }
+        // ∫ RealAbs[x] dx = (x * RealAbs[x]) / 2. Differentiating
+        // (x*RealAbs[x])/2 with the rule d/dx[RealAbs[x]] = x/RealAbs[x]
+        // collapses x^2/RealAbs[x] back to RealAbs[x], so the chosen
+        // antiderivative recovers the original integrand (away from 0).
+        "RealAbs" if args.len() == 1 => {
+          if matches!(&args[0], Expr::Identifier(n) if n == var) {
+            let x = Expr::Identifier(var.to_string());
+            let real_abs_x = Expr::FunctionCall {
+              name: "RealAbs".to_string(),
+              args: vec![x.clone()].into(),
+            };
+            Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(x),
+                right: Box::new(real_abs_x),
+              }),
+              right: Box::new(Expr::Integer(2)),
+            })
+          } else {
+            None
+          }
+        }
         "Sin" if args.len() == 1 => {
           // ∫ sin(a*x) dx = -cos(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {

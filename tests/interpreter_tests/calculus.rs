@@ -5057,6 +5057,23 @@ mod cases {
     );
   }
   #[test]
+  fn integrate_real_abs() {
+    // Indefinite integral of RealAbs[x]: (x*RealAbs[x])/2.
+    // Derivative recovers RealAbs[x] (away from 0):
+    //   d/dx[(x*RealAbs[x])/2] = (RealAbs[x] + x^2/RealAbs[x]) / 2
+    //                         = RealAbs[x]  (since x^2/RealAbs[x] = RealAbs[x]).
+    assert_case(
+      r#"Integrate[RealAbs[x], x]"#,
+      r#"(x*RealAbs[x])/2"#,
+    );
+  }
+  #[test]
+  fn integrate_real_abs_definite() {
+    // Definite integrals over symmetric and one-sided intervals.
+    assert_case(r#"Integrate[RealAbs[x], {x, 0, 2}]"#, r#"2"#);
+    assert_case(r#"Integrate[RealAbs[x], {x, -1, 1}]"#, r#"1"#);
+  }
+  #[test]
   fn d_2() {
     assert_case(
       r#"RealSign[-3.]; RealSign[2. + 3. I]; D[RealSign[x^2],x]"#,
