@@ -790,6 +790,32 @@ mod hilbert_matrix {
       "{{1, 1/2, 1/3}, {1/2, 1/3, 1/4}, {1/3, 1/4, 1/5}}"
     );
   }
+
+  #[test]
+  fn rectangular_three_by_five() {
+    // HilbertMatrix[{m, n}] gives the m×n Hilbert matrix.
+    assert_eq!(
+      interpret("HilbertMatrix[{3, 5}]").unwrap(),
+      "{{1, 1/2, 1/3, 1/4, 1/5}, {1/2, 1/3, 1/4, 1/5, 1/6}, {1/3, 1/4, 1/5, 1/6, 1/7}}"
+    );
+  }
+
+  #[test]
+  fn rectangular_two_by_three() {
+    assert_eq!(
+      interpret("HilbertMatrix[{2, 3}]").unwrap(),
+      "{{1, 1/2, 1/3}, {1/2, 1/3, 1/4}}"
+    );
+  }
+
+  #[test]
+  fn rectangular_taller_than_wide() {
+    // Rectangular form should also work for m > n.
+    assert_eq!(
+      interpret("HilbertMatrix[{4, 2}]").unwrap(),
+      "{{1, 1/2}, {1/2, 1/3}, {1/3, 1/4}, {1/4, 1/5}}"
+    );
+  }
 }
 
 mod toeplitz_matrix {

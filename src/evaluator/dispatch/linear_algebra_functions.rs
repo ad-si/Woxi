@@ -121,12 +121,23 @@ pub fn dispatch_linear_algebra_functions(
       return Some(crate::functions::linear_algebra_ast::disk_matrix_ast(args));
     }
     "HilbertMatrix" if args.len() == 1 => {
-      if let Some(n) = expr_to_i128(&args[0])
-        && n >= 0
-      {
-        let n = n as usize;
-        let mut rows = Vec::with_capacity(n);
-        for i in 0..n {
+      // Accept either HilbertMatrix[n] (square) or HilbertMatrix[{m, n}]
+      // (rectangular). Both fill entry (i, j) with 1/(i + j - 1).
+      let dims = match &args[0] {
+        Expr::List(items) if items.len() == 2 => match (
+          expr_to_i128(&items[0]),
+          expr_to_i128(&items[1]),
+        ) {
+          (Some(m), Some(n)) if m >= 0 && n >= 0 => Some((m as usize, n as usize)),
+          _ => None,
+        },
+        other => expr_to_i128(other)
+          .filter(|n| *n >= 0)
+          .map(|n| (n as usize, n as usize)),
+      };
+      if let Some((m, n)) = dims {
+        let mut rows = Vec::with_capacity(m);
+        for i in 0..m {
           let mut row = Vec::with_capacity(n);
           for j in 0..n {
             let denom = (i + j + 1) as i128;
