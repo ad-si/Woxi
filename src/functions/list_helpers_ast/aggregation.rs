@@ -392,6 +392,25 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "BernoulliDistribution" if dargs.len() == 1 => {
+      // Median[BernoulliDistribution[p]] = Piecewise[{{1, p > 1/2}}, 0].
+      let p = dargs[0].clone();
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      let cond = Expr::Comparison {
+        operands: vec![p, half],
+        operators: vec![crate::syntax::ComparisonOp::Greater],
+      };
+      let pair = Expr::List(vec![Expr::Integer(1), cond].into());
+      let cases = Expr::List(vec![pair].into());
+      let med = Expr::FunctionCall {
+        name: "Piecewise".to_string(),
+        args: vec![cases, Expr::Integer(0)].into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "DagumDistribution" if dargs.len() == 3 => {
       // Median[DagumDistribution[p, a, b]] = b / (-1 + 2^(1/p))^(1/a),
       // from inverting the CDF (1 + (b/x)^a)^(-p) = 1/2.

@@ -1252,6 +1252,29 @@ mod list_tests {
   }
 
   #[test]
+  fn bernoulli_median_symbolic() {
+    // Median[BernoulliDistribution[p]] = Piecewise[{{1, p > 1/2}}, 0].
+    assert_eq!(
+      interpret("Median[BernoulliDistribution[p]]").unwrap(),
+      "Piecewise[{{1, p > 1/2}}, 0]"
+    );
+  }
+
+  #[test]
+  fn bernoulli_median_numeric() {
+    // p < 1/2 collapses to 0.
+    assert_eq!(
+      interpret("Median[BernoulliDistribution[0.3]]").unwrap(),
+      "0"
+    );
+    // p > 1/2 collapses to 1.
+    assert_eq!(
+      interpret("Median[BernoulliDistribution[0.7]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
   fn dagum_median_symbolic() {
     // Median[DagumDistribution[p, a, b]] = b / (-1 + 2^(1/p))^(1/a),
     // from inverting (1 + (b/x)^a)^(-p) = 1/2.
