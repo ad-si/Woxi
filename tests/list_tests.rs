@@ -1168,6 +1168,30 @@ mod list_tests {
   }
 
   #[test]
+  fn uniform_median_symbolic() {
+    // Median[UniformDistribution[{a, b}]] = (a + b)/2.
+    assert_eq!(
+      interpret("Median[UniformDistribution[{a, b}]]").unwrap(),
+      "(a + b)/2"
+    );
+  }
+
+  #[test]
+  fn uniform_median_numeric() {
+    // Concrete bounds collapse to a rational.
+    assert_eq!(
+      interpret("Median[UniformDistribution[{0, 1}]]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Median[UniformDistribution[{2, 6}]]").unwrap(),
+      "4"
+    );
+    // Zero-arg form defaults to {0, 1}.
+    assert_eq!(interpret("Median[UniformDistribution[]]").unwrap(), "1/2");
+  }
+
+  #[test]
   fn student_t_median_symbolic() {
     // The t-distribution is symmetric about 0, so Median = 0 for every ν,
     // even when the Mean (Piecewise) is Indeterminate.

@@ -352,6 +352,26 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[LaplaceDistribution[mu, beta]] = mu
       Some(dargs[0].clone())
     }
+    "UniformDistribution" if dargs.len() == 1 => {
+      let Expr::List(bounds) = &dargs[0] else {
+        return None;
+      };
+      if bounds.len() != 2 {
+        return None;
+      }
+      // Median = (a + b)/2
+      let sum = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(bounds[0].clone()),
+        right: Box::new(bounds[1].clone()),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(sum),
+        right: Box::new(Expr::Integer(2)),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "StudentTDistribution" if dargs.len() == 1 => {
       // Median[StudentTDistribution[v]] = 0 (symmetric about 0 for every v).
       Some(Expr::Integer(0))
