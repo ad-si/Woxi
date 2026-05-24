@@ -123,19 +123,13 @@ mod area {
       "4*Pi*r^2"
     );
     // Concrete radius collapses to 4*Pi*r^2 simplified.
-    assert_eq!(
-      interpret("Area[Sphere[{0, 0, 0}, 2]]").unwrap(),
-      "16*Pi"
-    );
+    assert_eq!(interpret("Area[Sphere[{0, 0, 0}, 2]]").unwrap(), "16*Pi");
   }
 
   #[test]
   fn sphere_origin_default_radius() {
     // Sphere[p] with a 3-D center defaults to unit radius.
-    assert_eq!(
-      interpret("Area[Sphere[{1, 2, 3}]]").unwrap(),
-      "4*Pi"
-    );
+    assert_eq!(interpret("Area[Sphere[{1, 2, 3}]]").unwrap(), "4*Pi");
   }
 }
 
@@ -361,6 +355,50 @@ mod region_centroid {
     assert_eq!(
       interpret("RegionCentroid[foo]").unwrap(),
       "RegionCentroid[foo]"
+    );
+  }
+}
+
+mod volume {
+  use super::*;
+
+  #[test]
+  fn unit_cuboid() {
+    // Cuboid[] is the unit hypercube — volume 1.
+    assert_eq!(interpret("Volume[Cuboid[]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn cuboid_with_single_corner() {
+    // Cuboid[pmin] is also a unit hypercube.
+    assert_eq!(interpret("Volume[Cuboid[{1, 2, 3}]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn cuboid_with_bounds_numeric() {
+    // 2×3×4 brick.
+    assert_eq!(
+      interpret("Volume[Cuboid[{0, 0, 0}, {2, 3, 4}]]").unwrap(),
+      "24"
+    );
+  }
+
+  #[test]
+  fn cuboid_with_bounds_symbolic() {
+    // General 3-D cuboid: Abs[(d - a) * (e - b) * (f - c)].
+    assert_eq!(
+      interpret("Volume[Cuboid[{a, b, c}, {d, e, f}]]").unwrap(),
+      "Abs[(-a + d)*(-b + e)*(-c + f)]"
+    );
+  }
+
+  #[test]
+  fn cuboid_2d() {
+    // Lower-dimensional Cuboid (a rectangle) — Volume gives the planar
+    // measure, i.e. |d - a| * |e - b| canonicalised by Abs.
+    assert_eq!(
+      interpret("Volume[Cuboid[{0, 0}, {2, 3}]]").unwrap(),
+      "6"
     );
   }
 }

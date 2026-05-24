@@ -1165,7 +1165,7 @@ BSplineFunction,,🚫,,7.0,1176
 VertexShapeFunction,,🚫,,8.0,1177
 CosIntegral,Cosine integral Ci(z),✅,pure,2.0,1178
 GeoListPlot,,🚫,,10.0,1180
-Volume,,🚫,,10.0,1180
+Volume,N-dimensional measure of a region (currently Cuboid),✅,pure,2.0,1180
 TimeConstrained,Runs computation with time limit (no-op in Woxi),✅,effectful,1.0,1182
 VectorStyle,,🚫,,7.0,1182
 Monitor,,🚫,,6.0,1183

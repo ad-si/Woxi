@@ -1847,6 +1847,10 @@ pub fn dispatch_complex_and_special(
     "Area" if args.len() == 1 => {
       return Some(compute_area(&args[0]));
     }
+    // Volume[region] — n-dimensional measure of a geometric region
+    "Volume" if args.len() == 1 => {
+      return Some(compute_volume(&args[0]));
+    }
     "RegionCentroid" if args.len() == 1 => {
       return Some(compute_region_centroid(&args[0]));
     }
@@ -4593,6 +4597,69 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
 // ─── Area ──────────────────────────────────────────────────────────────
 
 /// Compute the area of a geometric region.
+fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Cuboid[] / Cuboid[p] are unit hypercubes (Volume = 1).
+  // Cuboid[p1, p2] has Volume = Abs[(p2_1 - p1_1) * ... * (p2_n - p1_n)].
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Cuboid"
+  {
+    return match args.len() {
+      0 | 1 => Ok(Expr::Integer(1)),
+      2 => {
+        let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) else {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        };
+        if p1.len() != p2.len() || p1.is_empty() {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        }
+        // Build (p2_i - p1_i) for each dimension and take Abs of the product.
+        let diffs: Vec<Expr> = p1
+          .iter()
+          .zip(p2.iter())
+          .map(|(a, b)| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              b.clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), a.clone()].into(),
+              },
+            ]
+            .into(),
+          })
+          .collect();
+        let product = if diffs.len() == 1 {
+          diffs.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: diffs.into(),
+          }
+        };
+        let abs_expr = Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![product].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&abs_expr)
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "Volume".to_string(),
+        args: vec![expr.clone()].into(),
+      }),
+    };
+  }
+  Ok(Expr::FunctionCall {
+    name: "Volume".to_string(),
+    args: vec![expr.clone()].into(),
+  })
+}
+
 fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
