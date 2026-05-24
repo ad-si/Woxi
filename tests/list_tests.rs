@@ -1168,6 +1168,35 @@ mod list_tests {
   }
 
   #[test]
+  fn discrete_uniform_median_symbolic() {
+    // Median[DiscreteUniformDistribution[{min, max}]]
+    //   = -1 + min + Max[1, Ceiling[(1 + max - min)/2]]
+    assert_eq!(
+      interpret("Median[DiscreteUniformDistribution[{min, max}]]").unwrap(),
+      "-1 + min + Max[1, Ceiling[(1 + max - min)/2]]"
+    );
+  }
+
+  #[test]
+  fn discrete_uniform_median_numeric() {
+    // Odd-length support: median is the exact middle element.
+    assert_eq!(
+      interpret("Median[DiscreteUniformDistribution[{1, 5}]]").unwrap(),
+      "3"
+    );
+    // Even-length support uses Ceiling to pick the lower-middle index.
+    assert_eq!(
+      interpret("Median[DiscreteUniformDistribution[{1, 6}]]").unwrap(),
+      "3"
+    );
+    // Negative-shifted support: {-2, -2, -1, 0, 1, 2} → median 0.
+    assert_eq!(
+      interpret("Median[DiscreteUniformDistribution[{-2, 2}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
   fn binomial_mean_variance_symbolic() {
     // Mean[BinomialDistribution[n, p]] = n*p.
     assert_eq!(

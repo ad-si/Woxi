@@ -348,6 +348,50 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "DiscreteUniformDistribution" if dargs.len() == 1 => {
+      let Expr::List(bounds) = &dargs[0] else {
+        return None;
+      };
+      if bounds.len() != 2 {
+        return None;
+      }
+      let imin = bounds[0].clone();
+      let imax = bounds[1].clone();
+      // Median = -1 + min + Max[1, Ceiling[(1 + max - min)/2]]
+      let diff = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(imax),
+        right: Box::new(imin.clone()),
+      };
+      let one_plus_diff = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(diff),
+      };
+      let half = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(one_plus_diff),
+        right: Box::new(Expr::Integer(2)),
+      };
+      let ceiling = Expr::FunctionCall {
+        name: "Ceiling".to_string(),
+        args: vec![half].into(),
+      };
+      let max_call = Expr::FunctionCall {
+        name: "Max".to_string(),
+        args: vec![Expr::Integer(1), ceiling].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(imin),
+          right: Box::new(max_call),
+        }),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "InverseGammaDistribution" if dargs.len() == 2 => {
       let a = dargs[0].clone();
       let b = dargs[1].clone();
