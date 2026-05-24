@@ -634,4 +634,67 @@ mod list_tests {
       "Cycles[{{1, 2, 3}, {6, 7, 8}}]"
     );
   }
+
+  #[test]
+  fn permutation_power_list() {
+    // List-form permutations (regression coverage for existing behaviour).
+    assert_eq!(
+      interpret("PermutationPower[{2, 3, 1}, 3]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("PermutationPower[{2, 3, 1}, 2]").unwrap(),
+      "{3, 1, 2}"
+    );
+    assert_eq!(
+      interpret("PermutationPower[{2, 3, 1}, -1]").unwrap(),
+      "{3, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn permutation_power_cycles() {
+    // Sixth power of a permutation with cycle lengths 3 and 4. The
+    // 3-cycle returns to identity (6 mod 3 = 0) and is dropped; the
+    // 4-cycle becomes its square (two swaps).
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{4, 2, 5}, {6, 3, 1, 7}}], 6]").unwrap(),
+      "Cycles[{{1, 6}, {3, 7}}]"
+    );
+    // Inverse squared on the same permutation.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{4, 2, 5}, {6, 3, 1, 7}}], -2]").unwrap(),
+      "Cycles[{{1, 6}, {2, 5, 4}, {3, 7}}]"
+    );
+    // Zeroth power: identity.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{1, 2, 3}}], 0]").unwrap(),
+      "Cycles[{}]"
+    );
+    // Cube of a 3-cycle is identity.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{1, 2, 3}}], 3]").unwrap(),
+      "Cycles[{}]"
+    );
+    // Square of a 3-cycle is its inverse.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{1, 2, 3}}], 2]").unwrap(),
+      "Cycles[{{1, 3, 2}}]"
+    );
+    // Negative power of a 3-cycle.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{1, 2, 3}}], -1]").unwrap(),
+      "Cycles[{{1, 3, 2}}]"
+    );
+    // Odd power of a 2-cycle is itself.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{{1, 2}}], 5]").unwrap(),
+      "Cycles[{{1, 2}}]"
+    );
+    // Any power of the identity is the identity.
+    assert_eq!(
+      interpret("PermutationPower[Cycles[{}], 5]").unwrap(),
+      "Cycles[{}]"
+    );
+  }
 }

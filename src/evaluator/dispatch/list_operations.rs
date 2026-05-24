@@ -291,7 +291,8 @@ pub fn dispatch_list_operations(
         && cargs.len() == 1
         && let Expr::List(cycle_list) = &cargs[0]
       {
-        let mut out_cycles: Vec<Vec<i128>> = Vec::with_capacity(cycle_list.len());
+        let mut out_cycles: Vec<Vec<i128>> =
+          Vec::with_capacity(cycle_list.len());
         let mut valid = true;
         for cycle in cycle_list.iter() {
           let Expr::List(c) = cycle else {
@@ -2924,6 +2925,142 @@ pub fn dispatch_list_operations(
             .map(|v| Expr::Integer(v as i128))
             .collect();
           return Some(Ok(Expr::List(result_exprs.into())));
+        }
+      }
+      // PermutationPower[Cycles[{...}], n] — apply cycle-form permutation n times,
+      // returning canonical Cycles form.
+      if let (
+        Expr::FunctionCall {
+          name: cname,
+          args: cargs,
+        },
+        Some(n),
+      ) = (&args[0], expr_to_i128(&args[1]))
+        && cname == "Cycles"
+        && cargs.len() == 1
+        && let Expr::List(cycle_list) = &cargs[0]
+      {
+        let mut max_elem: usize = 0;
+        let mut valid = true;
+        for cycle in cycle_list.iter() {
+          let Expr::List(c) = cycle else {
+            valid = false;
+            break;
+          };
+          for e in c.iter() {
+            if let Expr::Integer(v) = e {
+              if *v >= 1 {
+                let u = *v as usize;
+                if u > max_elem {
+                  max_elem = u;
+                }
+              } else {
+                valid = false;
+                break;
+              }
+            } else {
+              valid = false;
+              break;
+            }
+          }
+          if !valid {
+            break;
+          }
+        }
+        if valid {
+          // Build the underlying permutation map perm[i] = σ(i) for i in 1..=N
+          let mut perm: Vec<usize> = (0..=max_elem).collect();
+          for cycle in cycle_list.iter() {
+            if let Expr::List(c) = cycle {
+              let ints: Vec<usize> = c
+                .iter()
+                .filter_map(|e| {
+                  if let Expr::Integer(v) = e {
+                    Some(*v as usize)
+                  } else {
+                    None
+                  }
+                })
+                .collect();
+              if ints.len() >= 2 {
+                for i in 0..ints.len() - 1 {
+                  perm[ints[i]] = ints[i + 1];
+                }
+                perm[ints[ints.len() - 1]] = ints[0];
+              }
+            }
+          }
+          // Invert if n < 0
+          let (perm, n_abs) = if n < 0 {
+            let mut inv = vec![0usize; max_elem + 1];
+            for i in 1..=max_elem {
+              inv[perm[i]] = i;
+            }
+            inv[0] = 0;
+            (inv, (-n) as u128)
+          } else {
+            (perm, n as u128)
+          };
+          // Compute σ^n_abs by decomposing into disjoint cycles and shifting
+          // each cycle by n_abs mod cycle_len. This is the same trick used
+          // for the list-form branch but adapted to a 1-indexed map.
+          let mut result: Vec<usize> = (0..=max_elem).collect();
+          let mut visited = vec![false; max_elem + 1];
+          visited[0] = true;
+          for start in 1..=max_elem {
+            if visited[start] {
+              continue;
+            }
+            let mut cycle = Vec::new();
+            let mut curr = start;
+            while !visited[curr] {
+              visited[curr] = true;
+              cycle.push(curr);
+              curr = perm[curr];
+            }
+            let cycle_len = cycle.len();
+            let shift = (n_abs % cycle_len as u128) as usize;
+            for (i, &pos) in cycle.iter().enumerate() {
+              result[pos] = cycle[(i + shift) % cycle_len];
+            }
+          }
+          // Build canonical Cycles from result: extract cycles, skip fixed
+          // points, rotate each so its smallest element comes first, and
+          // sort cycles by smallest element.
+          let mut visited2 = vec![false; max_elem + 1];
+          visited2[0] = true;
+          let mut out_cycles: Vec<Vec<i128>> = Vec::new();
+          for start in 1..=max_elem {
+            if visited2[start] {
+              continue;
+            }
+            let mut cycle = Vec::new();
+            let mut curr = start;
+            while !visited2[curr] {
+              visited2[curr] = true;
+              cycle.push(curr as i128);
+              curr = result[curr];
+            }
+            if cycle.len() >= 2 {
+              let min_idx = cycle
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, v)| *v)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+              cycle.rotate_left(min_idx);
+              out_cycles.push(cycle);
+            }
+          }
+          out_cycles.sort_by_key(|c| c[0]);
+          let cycle_exprs: Vec<Expr> = out_cycles
+            .into_iter()
+            .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
+            .collect();
+          return Some(Ok(Expr::FunctionCall {
+            name: "Cycles".to_string(),
+            args: vec![Expr::List(cycle_exprs.into())].into(),
+          }));
         }
       }
     }
