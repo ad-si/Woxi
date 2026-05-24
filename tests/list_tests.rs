@@ -1252,6 +1252,25 @@ mod list_tests {
   }
 
   #[test]
+  fn dagum_median_symbolic() {
+    // Median[DagumDistribution[p, a, b]] = b / (-1 + 2^(1/p))^(1/a),
+    // from inverting (1 + (b/x)^a)^(-p) = 1/2.
+    assert_eq!(
+      interpret("Median[DagumDistribution[p, a, b]]").unwrap(),
+      "b/(-1 + 2^p^(-1))^a^(-1)"
+    );
+  }
+
+  #[test]
+  fn dagum_median_numeric() {
+    // p = 1, a = 2, b = 3: (-1 + 2)^(1/2) = 1, so Median = 3.
+    assert_eq!(
+      interpret("Median[DagumDistribution[1, 2, 3]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
   fn pareto_median_symbolic() {
     // Median[ParetoDistribution[k, a]] = k * 2^(1/a).
     assert_eq!(

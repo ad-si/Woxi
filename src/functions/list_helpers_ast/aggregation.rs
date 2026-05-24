@@ -392,6 +392,44 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "DagumDistribution" if dargs.len() == 3 => {
+      // Median[DagumDistribution[p, a, b]] = b / (-1 + 2^(1/p))^(1/a),
+      // from inverting the CDF (1 + (b/x)^a)^(-p) = 1/2.
+      let p = dargs[0].clone();
+      let a = dargs[1].clone();
+      let b = dargs[2].clone();
+      let inv_p = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(p),
+      };
+      let two_pow = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(inv_p),
+      };
+      let base = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(two_pow),
+      };
+      let inv_a = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(a),
+      };
+      let denom = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(inv_a),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(b),
+        right: Box::new(denom),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "BetaDistribution" if dargs.len() == 2 => {
       // Median[BetaDistribution[a, b]] = InverseBetaRegularized[1/2, a, b].
       let half = Expr::FunctionCall {
