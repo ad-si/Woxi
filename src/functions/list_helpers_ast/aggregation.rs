@@ -352,6 +352,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[LaplaceDistribution[mu, beta]] = mu
       Some(dargs[0].clone())
     }
+    "StudentTDistribution" if dargs.len() == 1 => {
+      // Median[StudentTDistribution[v]] = 0 (symmetric about 0 for every v).
+      Some(Expr::Integer(0))
+    }
     "RayleighDistribution" if dargs.len() == 1 => {
       let sigma = dargs[0].clone();
       // Median = sigma * Sqrt[Log[4]]
