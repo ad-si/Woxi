@@ -1023,6 +1023,42 @@ mod list_tests {
   }
 
   #[test]
+  fn half_normal_mean_and_variance_symbolic() {
+    // Mean = 1/theta; rendered with the negative-exponent form.
+    assert_eq!(
+      interpret("Mean[HalfNormalDistribution[a]]").unwrap(),
+      "a^(-1)"
+    );
+    // Variance = (Pi - 2) / (2 theta^2).
+    assert_eq!(
+      interpret("Variance[HalfNormalDistribution[a]]").unwrap(),
+      "(-2 + Pi)/(2*a^2)"
+    );
+  }
+
+  #[test]
+  fn half_normal_median_symbolic() {
+    // Median = Sqrt[Pi] * InverseErf[1/2] / theta.
+    assert_eq!(
+      interpret("Median[HalfNormalDistribution[a]]").unwrap(),
+      "(Sqrt[Pi]*InverseErf[1/2])/a"
+    );
+  }
+
+  #[test]
+  fn half_normal_numeric_values() {
+    // Concrete parameters should collapse to exact rationals.
+    assert_eq!(
+      interpret("Mean[HalfNormalDistribution[2]]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Variance[HalfNormalDistribution[2]]").unwrap(),
+      "(-2 + Pi)/8"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_matrix() {
     // List-of-lists input → column-wise harmonic mean.
     assert_eq!(

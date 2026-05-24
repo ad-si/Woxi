@@ -267,6 +267,32 @@ pub fn group_by_ast(
 /// distributions whose median Woxi cannot express symbolically.
 fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
   match name {
+    "HalfNormalDistribution" if dargs.len() == 1 => {
+      let theta = dargs[0].clone();
+      // Median = Sqrt[Pi] * InverseErf[1/2] / theta
+      let sqrt_pi = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Identifier("Pi".to_string())].into(),
+      };
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      let inverse_erf_half = Expr::FunctionCall {
+        name: "InverseErf".to_string(),
+        args: vec![half].into(),
+      };
+      let numer = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![sqrt_pi, inverse_erf_half].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(numer),
+        right: Box::new(theta),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "FrechetDistribution" if dargs.len() == 2 => {
       let a = dargs[0].clone();
       let b = dargs[1].clone();

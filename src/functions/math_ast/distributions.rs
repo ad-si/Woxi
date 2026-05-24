@@ -2490,6 +2490,23 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "HalfNormalDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "HalfNormalDistribution expects 1 argument".into(),
+        ));
+      }
+      let theta = dargs[0].clone();
+      // Mean = 1/theta
+      let mean = divide(int(1), theta.clone());
+      // Variance = (Pi - 2) / (2 * theta^2). Built as (-2 + Pi)/(...) so
+      // the rendered output matches wolframscript's canonical ordering.
+      let var = divide(
+        plus(int(-2), pi()),
+        times(int(2), power(theta, int(2))),
+      );
+      Ok((mean, var))
+    }
     "FrechetDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
