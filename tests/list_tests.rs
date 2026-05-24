@@ -1222,6 +1222,29 @@ mod list_tests {
   }
 
   #[test]
+  fn pareto_median_symbolic() {
+    // Median[ParetoDistribution[k, a]] = k * 2^(1/a).
+    assert_eq!(
+      interpret("Median[ParetoDistribution[k, a]]").unwrap(),
+      "2^a^(-1)*k"
+    );
+  }
+
+  #[test]
+  fn pareto_median_numeric() {
+    // a = 2: Median = k * Sqrt[2].
+    assert_eq!(
+      interpret("Median[ParetoDistribution[3, 2]]").unwrap(),
+      "3*Sqrt[2]"
+    );
+    // a = 1: Median = 2k.
+    assert_eq!(
+      interpret("Median[ParetoDistribution[5, 1]]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
   fn weibull_median_symbolic() {
     // Median[WeibullDistribution[a, b]] = b * Log[2]^(1/a).
     assert_eq!(

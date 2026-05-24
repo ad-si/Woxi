@@ -360,6 +360,27 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[CauchyDistribution[a, b]] = a (symmetric about a)
       Some(dargs[0].clone())
     }
+    "ParetoDistribution" if dargs.len() == 2 => {
+      // Median[ParetoDistribution[k, a]] = k * 2^(1/a)
+      let k = dargs[0].clone();
+      let a = dargs[1].clone();
+      let inv_a = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(a),
+      };
+      let pow_term = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(inv_a),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(k),
+        right: Box::new(pow_term),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "WeibullDistribution" if dargs.len() == 2 => {
       let a = dargs[0].clone();
       let b = dargs[1].clone();
