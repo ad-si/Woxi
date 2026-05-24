@@ -2037,29 +2037,83 @@ pub fn dispatch_math_functions(
     }
     "ToPolarCoordinates" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0]
-        && elems.len() == 2
+        && elems.len() >= 2
       {
-        let x = &elems[0];
-        let y = &elems[1];
-        let r = make_sqrt(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(y.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        });
-        let theta = Expr::FunctionCall {
-          name: "ArcTan".to_string(),
-          args: vec![x.clone(), y.clone()].into(),
+        // 2-D: {Sqrt[x^2 + y^2], ArcTan[x, y]} (special case — full r,
+        // 2-arg ArcTan).
+        if elems.len() == 2 {
+          let x = &elems[0];
+          let y = &elems[1];
+          let r = make_sqrt(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(y.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          });
+          let theta = Expr::FunctionCall {
+            name: "ArcTan".to_string(),
+            args: vec![x.clone(), y.clone()].into(),
+          };
+          let result = Expr::List(vec![r, theta].into());
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+        // n-D (n ≥ 3): hyperspherical coordinates.
+        //   r        = Sqrt[Σ_{i=1..n} x_i^2]
+        //   θ_k      = ArcCos[x_k / Sqrt[Σ_{i=k..n} x_i^2]]   for k < n-1
+        //   θ_{n-1}  = ArcTan[x_{n-1}, x_n]      (2-arg, ranges over (-π,π])
+        let n = elems.len();
+        // Helper: Sqrt[Σ_{i=start..n} x_i^2].
+        let radical = |start: usize| -> Expr {
+          let squares: Vec<Expr> = (start..n)
+            .map(|i| Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(elems[i].clone()),
+              right: Box::new(Expr::Integer(2)),
+            })
+            .collect();
+          let sum = if squares.len() == 1 {
+            squares.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: squares.into(),
+            }
+          };
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![sum].into(),
+          }
         };
-        let result = Expr::List(vec![r, theta].into());
-        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+
+        let r = radical(0);
+        let mut result = Vec::with_capacity(n);
+        result.push(r);
+        for k in 0..(n - 2) {
+          let denom = radical(k);
+          let frac = Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(elems[k].clone()),
+            right: Box::new(denom),
+          };
+          result.push(Expr::FunctionCall {
+            name: "ArcCos".to_string(),
+            args: vec![frac].into(),
+          });
+        }
+        // Final angle: 2-arg ArcTan with the last two coordinates.
+        result.push(Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![elems[n - 2].clone(), elems[n - 1].clone()].into(),
+        });
+        let list = Expr::List(result.into());
+        return Some(crate::evaluator::evaluate_expr_to_expr(&list));
       }
     }
     "FromSphericalCoordinates" if args.len() == 1 => {

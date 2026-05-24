@@ -2237,6 +2237,26 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn to_polar_coordinates_3d() {
+    // ToPolarCoordinates[{x, y, z}] -> {Sqrt[x^2+y^2+z^2],
+    // ArcCos[x/Sqrt[x^2+y^2+z^2]], ArcTan[y, z]}.
+    assert_eq!(
+      interpret("ToPolarCoordinates[{x, y, z}]").unwrap(),
+      "{Sqrt[x^2 + y^2 + z^2], ArcCos[x/Sqrt[x^2 + y^2 + z^2]], ArcTan[y, z]}"
+    );
+  }
+
+  #[test]
+  fn to_polar_coordinates_4d() {
+    // 4-D hyperspherical: r, ArcCos[x/r], ArcCos[y/Sqrt[y²+z²+w²]],
+    // ArcTan[z, w]. Inner radical drops the leading coordinates.
+    assert_eq!(
+      interpret("ToPolarCoordinates[{x, y, z, w}]").unwrap(),
+      "{Sqrt[w^2 + x^2 + y^2 + z^2], ArcCos[x/Sqrt[w^2 + x^2 + y^2 + z^2]], ArcCos[y/Sqrt[w^2 + y^2 + z^2]], ArcTan[z, w]}"
+    );
+  }
+
+  #[test]
   fn from_polar_coordinates_4d() {
     // 4-dim hyperspherical: extra Sin[p] Cos[q] / Sin[p] Sin[q] factors.
     assert_eq!(
