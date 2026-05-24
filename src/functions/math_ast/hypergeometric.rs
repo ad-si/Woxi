@@ -739,6 +739,21 @@ pub fn hypergeometric_2f1_regularized_ast(
   let c = args[2].clone();
   let z = args[3].clone();
 
+  // Non-positive integer c = -m: route through the DLMF identity
+  //   2F1Reg(a, b; -m; z)
+  //     = (a)_{m+1} (b)_{m+1} / (m+1)! · z^{m+1}
+  //       · 2F1(a + m + 1, b + m + 1; m + 2; z)
+  // (https://dlmf.nist.gov/15.4.E1). The plain pFq series in the
+  // general path drops the k ≤ m terms because Γ(c + k) has poles, so
+  // attempting that path with c = -m loses the finite limit.
+  if let Expr::Integer(c_i) = &c
+    && *c_i <= 0
+    && let Some(result) =
+      hypergeometric_2f1_regularized_non_positive_c(&a, &b, *c_i, &z)?
+  {
+    return Ok(result);
+  }
+
   let pfq_args =
     vec![Expr::List(vec![a, b].into()), Expr::List(vec![c].into()), z];
   let result = hypergeometric_pfq_regularized_ast(&pfq_args)?;
@@ -754,6 +769,96 @@ pub fn hypergeometric_2f1_regularized_ast(
   }
 
   Ok(result)
+}
+
+/// 2F1Reg(a, b; -m; z) via the DLMF non-positive-c identity. `c_i` is
+/// the integer value of c (≤ 0, so m = -c_i ≥ 0). Returns `Ok(None)`
+/// if the closed form can't be assembled (e.g. m is unreasonably large),
+/// in which case the caller falls back to the general pFq path.
+fn hypergeometric_2f1_regularized_non_positive_c(
+  a: &Expr,
+  b: &Expr,
+  c_i: i128,
+  z: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  // m = -c, so c = -m. The shift is m + 1.
+  let m = -c_i;
+  // Guard against unreasonable shifts that would balloon the expression.
+  if !(0..=64).contains(&m) {
+    return Ok(None);
+  }
+  let shift = (m + 1) as i128;
+
+  // Pochhammer (a)_{m+1} as a Times product of (a, a+1, ..., a+m).
+  let pochhammer = |x: &Expr| -> Expr {
+    let factors: Vec<Expr> = (0..shift)
+      .map(|k| {
+        if k == 0 {
+          x.clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(x.clone()),
+            right: Box::new(Expr::Integer(k)),
+          }
+        }
+      })
+      .collect();
+    if factors.len() == 1 {
+      factors.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      }
+    }
+  };
+
+  let poch_a = pochhammer(a);
+  let poch_b = pochhammer(b);
+  // (m+1)! as an Integer (m ≤ 64 keeps this in i128 range).
+  let mut factorial: i128 = 1;
+  for k in 1..=shift {
+    factorial = factorial.checked_mul(k).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Hypergeometric2F1Regularized: factorial overflow".into(),
+      )
+    })?;
+  }
+  let inv_factorial = Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(factorial)].into(),
+  };
+
+  // z^{m+1}
+  let z_pow = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(z.clone()),
+    right: Box::new(Expr::Integer(shift)),
+  };
+
+  // 2F1(a + m + 1, b + m + 1; m + 2; z)
+  let inner_a = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(a.clone()),
+    right: Box::new(Expr::Integer(shift)),
+  };
+  let inner_b = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(b.clone()),
+    right: Box::new(Expr::Integer(shift)),
+  };
+  let inner_c = Expr::Integer(shift + 1);
+  let inner_2f1 = Expr::FunctionCall {
+    name: "Hypergeometric2F1".to_string(),
+    args: vec![inner_a, inner_b, inner_c, z.clone()].into(),
+  };
+
+  let product = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![poch_a, poch_b, inv_factorial, z_pow, inner_2f1].into(),
+  };
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
 
 /// Returns Binomial[n, k] / k! as a reduced (numerator, denominator) pair.

@@ -4269,6 +4269,57 @@ mod hypergeometric_2f1_regularized {
       "Hypergeometric2F1Regularized[1, 2, 3]"
     );
   }
+
+  // For non-positive integer c = -m the regularized form has a finite
+  // value through the DLMF identity
+  //   2F1Reg(a, b; -m; z)
+  //     = (a)_{m+1} (b)_{m+1} / (m+1)! · z^{m+1} · 2F1(a+m+1, b+m+1; m+2; z).
+  // (See https://dlmf.nist.gov/15.4.E1.)
+  #[test]
+  fn non_positive_c_audit_case() {
+    // Hypergeometric2F1Regularized[1, 2, -3, 4.5] = 26.768438320767707
+    let result =
+      interpret("Hypergeometric2F1Regularized[1, 2, -3, 4.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 26.768438320767707).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn non_positive_c_m_zero() {
+    // 2F1Reg(1, 2; 0; 1.5) = -24.
+    let result =
+      interpret("Hypergeometric2F1Regularized[1, 2, 0, 1.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val + 24.0).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn non_positive_c_m_one() {
+    // 2F1Reg(1, 2; -1; 0.5) = 24.
+    let result =
+      interpret("Hypergeometric2F1Regularized[1, 2, -1, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 24.0).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn non_positive_c_general() {
+    // 2F1Reg(2, 3; -2; 0.25) = 31.604938271604937 (no a=c shortcut; the
+    // inner 2F1[5, 6; 4; 0.25] is computed directly because |z| < 1).
+    let result =
+      interpret("Hypergeometric2F1Regularized[2, 3, -2, 0.25]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 31.604938271604937).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn non_positive_c_z_zero() {
+    // For z = 0 the formula collapses to 0 because of the z^{m+1} factor.
+    assert_eq!(
+      interpret("Hypergeometric2F1Regularized[1, 2, -3, 0]").unwrap(),
+      "0"
+    );
+  }
 }
 
 mod q_pochhammer {
