@@ -108,6 +108,35 @@ mod area {
       "8"
     );
   }
+
+  #[test]
+  fn unit_sphere() {
+    // Sphere[] is the unit sphere at the origin; surface area = 4*Pi.
+    assert_eq!(interpret("Area[Sphere[]]").unwrap(), "4*Pi");
+  }
+
+  #[test]
+  fn sphere_with_center_and_radius() {
+    // Area[Sphere[{c1, c2, c3}, r]] = 4*Pi*r^2.
+    assert_eq!(
+      interpret("Area[Sphere[{c1, c2, c3}, r]]").unwrap(),
+      "4*Pi*r^2"
+    );
+    // Concrete radius collapses to 4*Pi*r^2 simplified.
+    assert_eq!(
+      interpret("Area[Sphere[{0, 0, 0}, 2]]").unwrap(),
+      "16*Pi"
+    );
+  }
+
+  #[test]
+  fn sphere_origin_default_radius() {
+    // Sphere[p] with a 3-D center defaults to unit radius.
+    assert_eq!(
+      interpret("Area[Sphere[{1, 2, 3}]]").unwrap(),
+      "4*Pi"
+    );
+  }
 }
 
 mod arc_length {

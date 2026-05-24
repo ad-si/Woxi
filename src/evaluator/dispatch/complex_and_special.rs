@@ -4746,6 +4746,58 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Circle has no area (it's 1D)
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      // Sphere[] / Sphere[p] / Sphere[p, r] — 4 Pi r^2 surface area for
+      // a 3-D sphere. p (a 3-element list) is discarded since the
+      // surface area is translation-invariant.
+      "Sphere" => {
+        let radius = match args.len() {
+          0 => Expr::Integer(1),
+          1 => {
+            if let Expr::List(p) = &args[0]
+              && p.len() == 3
+            {
+              Expr::Integer(1)
+            } else {
+              return Ok(Expr::FunctionCall {
+                name: "Area".to_string(),
+                args: vec![expr.clone()].into(),
+              });
+            }
+          }
+          2 => {
+            if let Expr::List(p) = &args[0]
+              && p.len() == 3
+            {
+              args[1].clone()
+            } else {
+              return Ok(Expr::FunctionCall {
+                name: "Area".to_string(),
+                args: vec![expr.clone()].into(),
+              });
+            }
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Area".to_string(),
+              args: vec![expr.clone()].into(),
+            });
+          }
+        };
+        // Area = 4 * Pi * r^2
+        let area = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(4),
+            Expr::Constant("Pi".to_string()),
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![radius, Expr::Integer(2)].into(),
+            },
+          ]
+          .into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&area)
+      }
       // RegularPolygon[n] / [r, n] / [{r, theta}, n] / [{x, y}, rspec, n]
       // Area = (n/2) * r^2 * Sin[2 Pi / n]. Rotation and centre offsets
       // don't change the area, so they're discarded.
