@@ -2254,12 +2254,8 @@ fn try_solve_inverse_function(
       // ArcXxxDegrees[inner] == val → inner == Xxx[val Degree]. The
       // degree-flavoured arc functions invert to ordinary trig functions
       // applied to `val * Degree`.
-      "ArcSinDegrees"
-      | "ArcCosDegrees"
-      | "ArcTanDegrees"
-      | "ArcCotDegrees"
-      | "ArcSecDegrees"
-      | "ArcCscDegrees" => {
+      "ArcSinDegrees" | "ArcCosDegrees" | "ArcTanDegrees" | "ArcCotDegrees"
+      | "ArcSecDegrees" | "ArcCscDegrees" => {
         let inverse_name = match name.as_str() {
           "ArcSinDegrees" => "Sin",
           "ArcCosDegrees" => "Cos",

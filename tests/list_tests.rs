@@ -1168,6 +1168,34 @@ mod list_tests {
   }
 
   #[test]
+  fn arcsin_distribution_median_symbolic() {
+    // Median[ArcSinDistribution[{a, b}]] = (a + b)/2 (the distribution
+    // is symmetric about the midpoint of its support).
+    assert_eq!(
+      interpret("Median[ArcSinDistribution[{a, b}]]").unwrap(),
+      "(a + b)/2"
+    );
+  }
+
+  #[test]
+  fn arcsin_distribution_median_numeric() {
+    // Concrete bounds.
+    assert_eq!(
+      interpret("Median[ArcSinDistribution[{0, 1}]]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Median[ArcSinDistribution[{2, 6}]]").unwrap(),
+      "4"
+    );
+    // Zero-argument form defaults to {0, 1}.
+    assert_eq!(
+      interpret("Median[ArcSinDistribution[]]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
   fn uniform_median_symbolic() {
     // Median[UniformDistribution[{a, b}]] = (a + b)/2.
     assert_eq!(
