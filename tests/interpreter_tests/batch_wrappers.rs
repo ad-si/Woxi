@@ -48,6 +48,50 @@ mod batch_unevaluated_wrappers {
       "BSplineBasis[x, y]"
     );
   }
+
+  #[test]
+  fn bspline_basis_cubic_at_half() {
+    // BSplineBasis[d, x] evaluates the zeroth uniform B-spline of
+    // degree d at x ∈ [0, 1]. For d = 3 the peak is at x = 1/2 with
+    // value 2/3 ≈ 0.6666666666666666 (matches wolframscript).
+    let result = interpret("BSplineBasis[3, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.0 / 3.0).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
+  fn bspline_basis_quadratic_at_half() {
+    // BSplineBasis[2, 0.5] = 3/4 = 0.75.
+    let result = interpret("BSplineBasis[2, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.75).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
+  fn bspline_basis_linear() {
+    // d = 1: triangle peaked at 1/2 with value 1.
+    let result = interpret("BSplineBasis[1, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.0).abs() < 1e-12, "got {}", val);
+    let result = interpret("BSplineBasis[1, 0.25]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.5).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
+  fn bspline_basis_zero_degree() {
+    // d = 0: indicator of [0, 1).
+    let result = interpret("BSplineBasis[0, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.0).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
+  fn bspline_basis_outside_support() {
+    // x outside [0, 1] gives 0.
+    assert_eq!(interpret("BSplineBasis[3, -0.5]").unwrap(), "0");
+    assert_eq!(interpret("BSplineBasis[3, 1.5]").unwrap(), "0");
+  }
   #[test]
   fn parameter_mixture_distribution() {
     assert_eq!(

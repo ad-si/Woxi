@@ -5585,6 +5585,46 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(result.into()));
   }
 
+  // BSplineBasis[d, x] — zeroth uniform B-spline basis function of
+  // degree d, evaluated at x ∈ [0, 1] (Mathematica's convention).
+  // The cardinal B-spline N_d(t) on [0, d+1] is the (d+1)-fold
+  // convolution of the indicator of [0, 1] and has the closed form
+  //   N_d(t) = (1/d!) * Sum_{k=0}^{d+1} (-1)^k C(d+1, k) Max[t-k, 0]^d
+  // BSplineBasis[d, x] = N_d((d+1) * x), so the support shrinks to [0, 1].
+  if name == "BSplineBasis"
+    && args.len() == 2
+    && let Expr::Integer(d) = &args[0]
+    && *d >= 0
+    && let Some(x) =
+      crate::functions::math_ast::try_eval_to_f64(&args[1])
+  {
+    let d = *d as usize;
+    if !(0.0..=1.0).contains(&x) {
+      return Ok(Expr::Integer(0));
+    }
+    let t = (d as f64 + 1.0) * x;
+    // Cardinal B-spline truncated-power formula.
+    let mut binom: Vec<i128> = vec![0; d + 2];
+    binom[0] = 1;
+    for k in 1..=d + 1 {
+      binom[k] = binom[k - 1] * (d as i128 + 1 - k as i128 + 1) / k as i128;
+    }
+    let mut sum = 0.0_f64;
+    for k in 0..=(d + 1) {
+      let diff = t - k as f64;
+      if diff <= 0.0 {
+        break;
+      }
+      let term = (binom[k] as f64) * diff.powi(d as i32);
+      sum += if k % 2 == 0 { term } else { -term };
+    }
+    let mut factd = 1.0_f64;
+    for k in 1..=d {
+      factd *= k as f64;
+    }
+    return Ok(Expr::Real(sum / factd));
+  }
+
   // CirclePoints[n] — n equally spaced points on the unit circle
   // AngleVector[theta] → {Cos[theta], Sin[theta]}
   // AngleVector[{r, theta}] → {r*Cos[theta], r*Sin[theta]}
@@ -5909,7 +5949,6 @@ pub fn evaluate_function_call_ast_inner(
       | "LayeredGraphPlot"
       | "WordCharacter"
       | "ReflectionTransform"
-      | "BSplineBasis"
       | "ParameterMixtureDistribution"
       | "FindDistributionParameters"
       | "FindPath"
