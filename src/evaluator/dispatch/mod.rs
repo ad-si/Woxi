@@ -5522,18 +5522,34 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
-  // MovingAverage[list, r] — simple moving average with window size r
+  // MovingAverage[list, r] — simple moving average with window size r.
+  // MovingAverage[list, {w1, ..., wr}] — weighted moving average with
+  // weights wi over a sliding window; denominator is Sum[wi].
   if name == "MovingAverage"
     && args.len() == 2
-    && let (Expr::List(items), Some(r)) = (
-      &args[0],
-      match &args[1] {
-        Expr::Integer(n) if *n >= 1 => Some(*n as usize),
-        _ => None,
-      },
-    )
+    && let Expr::List(items) = &args[0]
   {
     let n = items.len();
+    let (window, divisor) = match &args[1] {
+      Expr::Integer(r) if *r >= 1 => {
+        // Equivalent to weights {1, 1, ..., 1} of length r.
+        (vec![Expr::Integer(1); *r as usize], Expr::Integer(*r))
+      }
+      Expr::List(weights) if !weights.is_empty() => {
+        let sum = evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: weights.iter().cloned().collect::<Vec<_>>().into(),
+        })?;
+        (weights.iter().cloned().collect::<Vec<_>>(), sum)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    let r = window.len();
     if r > n {
       crate::emit_message(&format!(
         "MovingAverage::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument, or a vector of length less than or equal to the length of the first argument.",
@@ -5546,15 +5562,23 @@ pub fn evaluate_function_call_ast_inner(
     }
     let mut result = Vec::with_capacity(n - r + 1);
     for i in 0..=(n - r) {
-      let window: Vec<Expr> = items[i..i + r].to_vec();
+      // Build Sum[w_j * items[i + j]] for j = 0..r, then divide by divisor.
+      let mut terms: Vec<Expr> = Vec::with_capacity(r);
+      for j in 0..r {
+        terms.push(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(window[j].clone()),
+          right: Box::new(items[i + j].clone()),
+        });
+      }
       let sum = Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: window.into(),
+        args: terms.into(),
       };
       let avg = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(sum),
-        right: Box::new(Expr::Integer(r as i128)),
+        right: Box::new(divisor.clone()),
       };
       result.push(evaluate_expr_to_expr(&avg)?);
     }

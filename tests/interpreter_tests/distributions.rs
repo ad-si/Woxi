@@ -307,6 +307,34 @@ mod moving_average {
   fn window_equals_length() {
     assert_eq!(interpret("MovingAverage[{1, 2, 3}, 3]").unwrap(), "{2}");
   }
+
+  #[test]
+  fn weighted_symbolic() {
+    // MovingAverage[list, {w1, w2}] = weighted average over a sliding
+    // window of width 2; denominator is Sum[wi].
+    assert_eq!(
+      interpret("MovingAverage[{a, b, c, d, e}, {1, 2}]").unwrap(),
+      "{(a + 2*b)/3, (b + 2*c)/3, (c + 2*d)/3, (d + 2*e)/3}"
+    );
+  }
+
+  #[test]
+  fn weighted_numeric() {
+    // Concrete weights and values.
+    assert_eq!(
+      interpret("MovingAverage[{1, 2, 3, 4}, {1, 2}]").unwrap(),
+      "{5/3, 8/3, 11/3}"
+    );
+  }
+
+  #[test]
+  fn weighted_three_taps() {
+    // Three-tap weights {1, 1, 1} matches the unweighted window-3 case.
+    assert_eq!(
+      interpret("MovingAverage[{1, 2, 3, 4, 5}, {1, 1, 1}]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
 }
 
 mod moving_median {
