@@ -1582,6 +1582,7 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     // HankelMatrix[{c1,...,cn}] — Hankel matrix where entry (i,j) = c[i+j-1]
+    // HankelMatrix[n] — n×n integer matrix with column/row 1..n.
     "HankelMatrix" if !args.is_empty() && args.len() <= 2 => {
       if args.len() == 1 {
         if let Expr::List(col) = &args[0] {
@@ -1593,6 +1594,26 @@ pub fn dispatch_linear_algebra_functions(
               let idx = i + j;
               if idx < n {
                 row.push(col[idx].clone());
+              } else {
+                row.push(Expr::Integer(0));
+              }
+            }
+            rows.push(Expr::List(row.into()));
+          }
+          return Some(Ok(Expr::List(rows.into())));
+        }
+        // HankelMatrix[n] — entry (i, j) = i + j - 1 when in bounds, else 0.
+        if let Some(n) = expr_to_i128(&args[0])
+          && n >= 0
+        {
+          let n = n as usize;
+          let mut rows = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut row = Vec::with_capacity(n);
+            for j in 0..n {
+              let idx = i + j;
+              if idx < n {
+                row.push(Expr::Integer((idx + 1) as i128));
               } else {
                 row.push(Expr::Integer(0));
               }

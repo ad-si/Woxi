@@ -3404,6 +3404,26 @@ mod batch_unevaluated_wrappers_2 {
       "{{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
     );
   }
+  #[test]
+  fn hankel_matrix_integer_n() {
+    // HankelMatrix[n] gives the n×n integer Hankel matrix whose first
+    // row/column are 1..n and lower-right triangle zero.
+    assert_eq!(
+      interpret("HankelMatrix[4]").unwrap(),
+      "{{1, 2, 3, 4}, {2, 3, 4, 0}, {3, 4, 0, 0}, {4, 0, 0, 0}}"
+    );
+  }
+  #[test]
+  fn hankel_matrix_integer_one() {
+    assert_eq!(interpret("HankelMatrix[1]").unwrap(), "{{1}}");
+  }
+  #[test]
+  fn hankel_matrix_integer_three() {
+    assert_eq!(
+      interpret("HankelMatrix[3]").unwrap(),
+      "{{1, 2, 3}, {2, 3, 0}, {3, 0, 0}}"
+    );
+  }
 
   // HadamardMatrix
   #[test]
