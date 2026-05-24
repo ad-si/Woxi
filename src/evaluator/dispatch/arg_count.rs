@@ -640,6 +640,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MatrixRank" => Some((1, 1)),
     "Max" => Some((0, usize::MAX)),
     "MaxFilter" => Some((2, 2)),
+    "MedianFilter" => Some((2, 2)),
     "MaximalBy" => Some((1, 3)),
     "Maximize" => Some((2, 3)),
     "MaxLimit" => Some((2, 2)),

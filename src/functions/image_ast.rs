@@ -2281,6 +2281,30 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// arg1 warnings inside their existing list-processing dispatch in
 /// math_functions.rs.)
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // MedianFilter[list, r] — replace each element with the median of its
+  // range-r neighbourhood (window clipped at boundaries).
+  if let (Expr::List(elems), Some(r)) = (
+    &args[0],
+    crate::functions::math_ast::try_eval_to_f64(&args[1])
+      .filter(|v| *v >= 0.0)
+      .map(|v| v as usize),
+  ) {
+    let n = elems.len();
+    let mut result = Vec::with_capacity(n);
+    for i in 0..n {
+      let lo = i.saturating_sub(r);
+      let hi = if i + r < n { i + r } else { n - 1 };
+      let window: Vec<Expr> = elems[lo..=hi].to_vec();
+      let med = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Median".to_string(),
+        args: vec![Expr::List(window.into())].into(),
+      })
+      .unwrap_or_else(|_| elems[i].clone());
+      result.push(med);
+    }
+    return Ok(Expr::List(result.into()));
+  }
+
   let valid = matches!(&args[0], Expr::Image { .. } | Expr::List(_));
   if !valid {
     crate::emit_message(&format!(

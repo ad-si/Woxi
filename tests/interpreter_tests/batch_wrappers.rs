@@ -3068,6 +3068,23 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn median_filter_basic() {
+    // MedianFilter[list, r] replaces each element with the median of
+    // its range-r neighbourhood; boundary windows are clipped.
+    assert_eq!(
+      interpret("MedianFilter[{1, 2, 3, 2, 1}, 1]").unwrap(),
+      "{3/2, 2, 2, 2, 3/2}"
+    );
+  }
+  #[test]
+  fn median_filter_radius_two() {
+    // Window of 5 (clipped at the boundaries).
+    assert_eq!(
+      interpret("MedianFilter[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{2, 5/2, 3, 7/2, 4}"
+    );
+  }
+  #[test]
   fn upsample_basic() {
     assert_eq!(
       interpret("Upsample[{a, b, c}, 2]").unwrap(),
