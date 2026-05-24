@@ -1168,6 +1168,37 @@ mod list_tests {
   }
 
   #[test]
+  fn laplace_median_symbolic() {
+    // Median[LaplaceDistribution[μ, β]] = μ.
+    assert_eq!(
+      interpret("Median[LaplaceDistribution[m, b]]").unwrap(),
+      "m"
+    );
+  }
+
+  #[test]
+  fn laplace_median_numeric() {
+    // Concrete location parameter collapses to the integer.
+    assert_eq!(
+      interpret("Median[LaplaceDistribution[3, 2]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn laplace_zero_arg_form() {
+    // LaplaceDistribution[] defaults to mean 0, scale 1; Mean, Variance,
+    // and Median all collapse to the documented defaults.
+    assert_eq!(
+      interpret("LaplaceDistribution[]").unwrap(),
+      "LaplaceDistribution[0, 1]"
+    );
+    assert_eq!(interpret("Mean[LaplaceDistribution[]]").unwrap(), "0");
+    assert_eq!(interpret("Variance[LaplaceDistribution[]]").unwrap(), "2");
+    assert_eq!(interpret("Median[LaplaceDistribution[]]").unwrap(), "0");
+  }
+
+  #[test]
   fn rayleigh_median_symbolic() {
     // Median[RayleighDistribution[σ]] = σ*Sqrt[Log[4]].
     assert_eq!(

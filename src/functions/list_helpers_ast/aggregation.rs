@@ -348,6 +348,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "LaplaceDistribution" if dargs.len() == 2 => {
+      // Median[LaplaceDistribution[mu, beta]] = mu
+      Some(dargs[0].clone())
+    }
     "RayleighDistribution" if dargs.len() == 1 => {
       let sigma = dargs[0].clone();
       // Median = sigma * Sqrt[Log[4]]

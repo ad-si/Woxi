@@ -269,10 +269,17 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
-    "LaplaceDistribution" if args.len() == 2 => {
+    "LaplaceDistribution" => {
+      let laplace_args = if args.is_empty() {
+        vec![Expr::Integer(0), Expr::Integer(1)]
+      } else if args.len() == 2 {
+        args.to_vec()
+      } else {
+        return None;
+      };
       return Some(Ok(Expr::FunctionCall {
         name: "LaplaceDistribution".to_string(),
-        args: args.to_vec().into(),
+        args: laplace_args.into(),
       }));
     }
     "RayleighDistribution" if args.len() == 1 => {
