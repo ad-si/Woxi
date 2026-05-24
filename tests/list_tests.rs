@@ -709,10 +709,7 @@ mod list_tests {
         .unwrap(),
       "7"
     );
-    assert_eq!(
-      interpret("PermutationLength[Cycles[{}]]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("PermutationLength[Cycles[{}]]").unwrap(), "0");
   }
 
   #[test]
@@ -742,10 +739,7 @@ mod list_tests {
       "30"
     );
     // Identity has order 1.
-    assert_eq!(
-      interpret("PermutationOrder[Cycles[{}]]").unwrap(),
-      "1"
-    );
+    assert_eq!(interpret("PermutationOrder[Cycles[{}]]").unwrap(), "1");
   }
 
   #[test]
@@ -757,10 +751,7 @@ mod list_tests {
       "{1, 2, 4, 5, 6, 7, 9, 10}"
     );
     // Empty Cycles -> empty support.
-    assert_eq!(
-      interpret("PermutationSupport[Cycles[{}]]").unwrap(),
-      "{}"
-    );
+    assert_eq!(interpret("PermutationSupport[Cycles[{}]]").unwrap(), "{}");
   }
 
   #[test]
@@ -1228,6 +1219,26 @@ mod list_tests {
       interpret("Median[ExtremeValueDistribution[1, 2]]").unwrap(),
       "1 - 2*Log[Log[2]]"
     );
+  }
+
+  #[test]
+  fn cauchy_median_symbolic() {
+    // Median[CauchyDistribution[a, b]] = a (Cauchy is symmetric about
+    // its location parameter even though Mean is Indeterminate).
+    assert_eq!(
+      interpret("Median[CauchyDistribution[a, b]]").unwrap(),
+      "a"
+    );
+  }
+
+  #[test]
+  fn cauchy_median_numeric() {
+    assert_eq!(
+      interpret("Median[CauchyDistribution[5, 2]]").unwrap(),
+      "5"
+    );
+    // Zero-arg form defaults to (0, 1).
+    assert_eq!(interpret("Median[CauchyDistribution[]]").unwrap(), "0");
   }
 
   #[test]

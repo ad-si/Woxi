@@ -356,6 +356,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[NormalDistribution[mu, sigma]] = mu (symmetric about mu)
       Some(dargs[0].clone())
     }
+    "CauchyDistribution" if dargs.len() == 2 => {
+      // Median[CauchyDistribution[a, b]] = a (symmetric about a)
+      Some(dargs[0].clone())
+    }
     "LogNormalDistribution" if dargs.len() == 2 => {
       // Median[LogNormalDistribution[mu, sigma]] = E^mu
       let med = Expr::BinaryOp {
