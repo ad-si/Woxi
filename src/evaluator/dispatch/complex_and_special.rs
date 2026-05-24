@@ -4746,6 +4746,74 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Circle has no area (it's 1D)
       "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      // RegularPolygon[n] / [r, n] / [{r, theta}, n] / [{x, y}, rspec, n]
+      // Area = (n/2) * r^2 * Sin[2 Pi / n]. Rotation and centre offsets
+      // don't change the area, so they're discarded.
+      "RegularPolygon" => {
+        let (radius, n_expr) = match args.len() {
+          1 => (Expr::Integer(1), args[0].clone()),
+          2 => {
+            // RegularPolygon[r, n] or RegularPolygon[{r, theta}, n]
+            let r = match &args[0] {
+              Expr::List(items) if items.len() == 2 => items[0].clone(),
+              other => other.clone(),
+            };
+            (r, args[1].clone())
+          }
+          3 => {
+            // RegularPolygon[{x, y}, rspec, n]; rspec is either a scalar
+            // radius or a {radius, theta} list.
+            let r = match &args[1] {
+              Expr::List(items) if items.len() == 2 => items[0].clone(),
+              other => other.clone(),
+            };
+            (r, args[2].clone())
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Area".to_string(),
+              args: vec![expr.clone()].into(),
+            });
+          }
+        };
+        // area = n/2 * r^2 * Sin[2 Pi / n]
+        let half_n = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+            },
+            n_expr.clone(),
+          ]
+          .into(),
+        };
+        let r_squared = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![radius, Expr::Integer(2)].into(),
+        };
+        let two_pi_over_n = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(2),
+            Expr::Constant("Pi".to_string()),
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![n_expr, Expr::Integer(-1)].into(),
+            },
+          ]
+          .into(),
+        };
+        let sin_term = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![two_pi_over_n].into(),
+        };
+        let area = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![half_n, r_squared, sin_term].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&area)
+      }
       _ => Ok(Expr::FunctionCall {
         name: "Area".to_string(),
         args: vec![expr.clone()].into(),

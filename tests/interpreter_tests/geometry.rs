@@ -58,6 +58,56 @@ mod area {
   fn default_triangle() {
     assert_eq!(interpret("Area[Triangle[]]").unwrap(), "1/2");
   }
+
+  #[test]
+  fn regular_polygon_hexagon() {
+    // Area[RegularPolygon[n]] = n/2 * Sin[2 Pi/n]; unit circumradius.
+    assert_eq!(
+      interpret("Area[RegularPolygon[6]]").unwrap(),
+      "(3*Sqrt[3])/2"
+    );
+  }
+
+  #[test]
+  fn regular_polygon_triangle() {
+    assert_eq!(
+      interpret("Area[RegularPolygon[3]]").unwrap(),
+      "(3*Sqrt[3])/4"
+    );
+  }
+
+  #[test]
+  fn regular_polygon_square() {
+    assert_eq!(interpret("Area[RegularPolygon[4]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn regular_polygon_with_radius() {
+    // RegularPolygon[r, n] scales the area by r^2.
+    assert_eq!(
+      interpret("Area[RegularPolygon[r, 6]]").unwrap(),
+      "(3*Sqrt[3]*r^2)/2"
+    );
+    assert_eq!(interpret("Area[RegularPolygon[2, 4]]").unwrap(), "8");
+  }
+
+  #[test]
+  fn regular_polygon_with_rotation() {
+    // RegularPolygon[{r, theta}, n] — rotation doesn't change area.
+    assert_eq!(
+      interpret("Area[RegularPolygon[{2, Pi/4}, 4]]").unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn regular_polygon_with_center() {
+    // RegularPolygon[{x, y}, rspec, n] — translation doesn't change area.
+    assert_eq!(
+      interpret("Area[RegularPolygon[{1, 2}, 2, 4]]").unwrap(),
+      "8"
+    );
+  }
 }
 
 mod arc_length {
