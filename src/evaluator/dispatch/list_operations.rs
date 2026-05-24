@@ -2859,28 +2859,177 @@ pub fn dispatch_list_operations(
       }
     }
 
-    // CenterArray[list, n] — center list within an array of size n, padding with 0
-    "CenterArray" if args.len() >= 2 && args.len() <= 3 => {
-      if let (Expr::List(items), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
-        let n = n as usize;
-        let pad = if args.len() == 3 {
-          args[2].clone()
-        } else {
-          Expr::Integer(0)
-        };
-        let m = items.len();
-        if n <= m {
-          // Take n elements centered: use ceiling division for the offset
-          let start = (m - n).div_ceil(2);
-          return Some(Ok(Expr::List(items[start..start + n].to_vec().into())));
+    // CenterArray[nspec]            ≡ CenterArray[1, nspec]
+    // CenterArray[a, nspec]         centers a within an array of dimensions nspec
+    // CenterArray[a, nspec, pad]    pads with `pad` instead of 0
+    //
+    // a is either a scalar or a nested rectangular list; nspec is an
+    // Integer (1-D) or a list of Integers (multi-D). For each dimension,
+    // left padding is floor((n - k)/2) and right padding is the rest, so
+    // scalars in an even-length dimension sit just left of middle.
+    "CenterArray" if (1..=3).contains(&args.len()) => {
+      // Normalise to (a, nspec, pad).
+      let (a, nspec, pad) = if args.len() == 1 {
+        (Expr::Integer(1), args[0].clone(), Expr::Integer(0))
+      } else if args.len() == 2 {
+        (args[0].clone(), args[1].clone(), Expr::Integer(0))
+      } else {
+        (args[0].clone(), args[1].clone(), args[2].clone())
+      };
+      // Parse nspec into a list of dimension lengths.
+      let dims: Vec<usize> = match &nspec {
+        Expr::Integer(n) if *n >= 0 => vec![*n as usize],
+        Expr::List(items) => {
+          let mut out = Vec::with_capacity(items.len());
+          let mut ok = true;
+          for item in items.iter() {
+            if let Expr::Integer(n) = item
+              && *n >= 0
+            {
+              out.push(*n as usize);
+            } else {
+              ok = false;
+              break;
+            }
+          }
+          if !ok {
+            return None;
+          }
+          out
         }
-        let left_pad = (n - m) / 2;
-        let right_pad = n - m - left_pad;
-        let mut result = vec![pad.clone(); left_pad];
-        result.extend_from_slice(items);
-        result.extend(vec![pad; right_pad]);
-        return Some(Ok(Expr::List(result.into())));
+        _ => return None,
+      };
+      // Inspect the block's shape against the requested rank. A scalar
+      // input is treated as a rank-0 block; lists must be exactly as
+      // deeply nested as `dims` and rectangular at every level.
+      fn block_shape(e: &Expr, depth: usize) -> Option<Vec<usize>> {
+        if depth == 0 {
+          if matches!(e, Expr::List(_)) {
+            return None;
+          }
+          return Some(Vec::new());
+        }
+        let Expr::List(items) = e else {
+          return None;
+        };
+        let mut shape = vec![items.len()];
+        if items.is_empty() {
+          for _ in 1..depth {
+            shape.push(0);
+          }
+          return Some(shape);
+        }
+        let inner_shape = block_shape(&items[0], depth - 1)?;
+        for child in items.iter().skip(1) {
+          if block_shape(child, depth - 1).as_deref() != Some(&inner_shape) {
+            return None;
+          }
+        }
+        shape.extend(inner_shape);
+        Some(shape)
       }
+      // If a is a scalar (non-List), it's a rank-0 block. If a is a
+      // list, we expect its rank to match `dims.len()`.
+      let block_dims: Vec<usize> = if !matches!(a, Expr::List(_)) {
+        vec![1; dims.len()]
+      } else {
+        match block_shape(&a, dims.len()) {
+          Some(s) => s,
+          None => return None,
+        }
+      };
+      // Per-dimension layout: how much to truncate from the block's
+      // front (block_start), the effective block size after truncation
+      // (effective_k), and how many pad cells go before/after the block
+      // along this axis.
+      struct Axis {
+        block_start: usize,
+        effective_k: usize,
+        left_pad: usize,
+      }
+      let axes: Vec<Axis> = dims
+        .iter()
+        .zip(block_dims.iter())
+        .map(|(d, k)| {
+          if *k <= *d {
+            Axis {
+              block_start: 0,
+              effective_k: *k,
+              left_pad: (*d - *k) / 2,
+            }
+          } else {
+            // Truncate the block; div_ceil matches wolframscript on
+            // odd parity (CenterArray[{a,b,c}, 2] == {b, c}).
+            Axis {
+              block_start: (*k - *d).div_ceil(2),
+              effective_k: *d,
+              left_pad: 0,
+            }
+          }
+        })
+        .collect();
+      // Fetch an element of the (possibly nested) block at a multi-index.
+      fn fetch(block: &Expr, idx: &[usize]) -> Expr {
+        if idx.is_empty() {
+          return block.clone();
+        }
+        if let Expr::List(items) = block {
+          return fetch(&items[idx[0]], &idx[1..]);
+        }
+        block.clone()
+      }
+      fn build(
+        dims: &[usize],
+        axes: &[Axis],
+        block: &Expr,
+        pad: &Expr,
+        block_idx: &mut Vec<usize>,
+        is_scalar_block: bool,
+      ) -> Expr {
+        if dims.is_empty() {
+          if is_scalar_block {
+            return block.clone();
+          }
+          return fetch(block, block_idx);
+        }
+        let n = dims[0];
+        let ax = &axes[0];
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+          if i >= ax.left_pad && i < ax.left_pad + ax.effective_k {
+            block_idx.push(ax.block_start + (i - ax.left_pad));
+            out.push(build(
+              &dims[1..],
+              &axes[1..],
+              block,
+              pad,
+              block_idx,
+              is_scalar_block,
+            ));
+            block_idx.pop();
+          } else {
+            out.push(pad_block(&dims[1..], pad));
+          }
+        }
+        Expr::List(out.into())
+      }
+      fn pad_block(dims: &[usize], pad: &Expr) -> Expr {
+        if dims.is_empty() {
+          return pad.clone();
+        }
+        let inner = pad_block(&dims[1..], pad);
+        Expr::List(vec![inner; dims[0]].into())
+      }
+      let is_scalar = !matches!(a, Expr::List(_));
+      let mut block_idx = Vec::with_capacity(dims.len());
+      return Some(Ok(build(
+        &dims,
+        &axes,
+        &a,
+        &pad,
+        &mut block_idx,
+        is_scalar,
+      )));
     }
     // ReverseSortBy[list, f] — sort list in reverse order by applying f
     "ReverseSortBy" if args.len() == 2 => {

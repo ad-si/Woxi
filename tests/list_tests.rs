@@ -912,6 +912,70 @@ mod list_tests {
   }
 
   #[test]
+  fn center_array_scalar() {
+    // Scalar input is centered in a length-n vector; padding split
+    // floor((n-k)/2) left, ceil((n-k)/2) right (so for even n a scalar
+    // sits just left of middle).
+    assert_eq!(
+      interpret("CenterArray[x, 5]").unwrap(),
+      "{0, 0, x, 0, 0}"
+    );
+    assert_eq!(interpret("CenterArray[x, 4]").unwrap(), "{0, x, 0, 0}");
+    assert_eq!(
+      interpret("CenterArray[x, 6]").unwrap(),
+      "{0, 0, x, 0, 0, 0}"
+    );
+    // Custom padding element.
+    assert_eq!(
+      interpret("CenterArray[x, 5, y]").unwrap(),
+      "{y, y, x, y, y}"
+    );
+  }
+
+  #[test]
+  fn center_array_no_arg_defaults_to_1() {
+    // CenterArray[n] is shorthand for CenterArray[1, n].
+    assert_eq!(interpret("CenterArray[5]").unwrap(), "{0, 0, 1, 0, 0}");
+  }
+
+  #[test]
+  fn center_array_list_in_vector() {
+    // Asymmetric padding when (n - k) is odd: 1 left, 2 right.
+    assert_eq!(
+      interpret("CenterArray[{a, b}, 5]").unwrap(),
+      "{0, a, b, 0, 0}"
+    );
+    // Symmetric padding when (n - k) is even.
+    assert_eq!(
+      interpret("CenterArray[{a, b, c}, 7]").unwrap(),
+      "{0, 0, a, b, c, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn center_array_multi_dim_scalar() {
+    // 2D specification with a scalar value.
+    assert_eq!(
+      interpret("CenterArray[x, {5, 5}]").unwrap(),
+      "{{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, x, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}"
+    );
+    // Even dims: scalar sits at row 2, col 2 (1-indexed).
+    assert_eq!(
+      interpret("CenterArray[x, {4, 4}]").unwrap(),
+      "{{0, 0, 0, 0}, {0, x, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn center_array_multi_dim_block() {
+    // 2D centered block.
+    assert_eq!(
+      interpret("CenterArray[{{a, b}, {c, d}}, {4, 4}]").unwrap(),
+      "{{0, 0, 0, 0}, {0, a, b, 0}, {0, c, d, 0}, {0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_matrix() {
     // List-of-lists input → column-wise harmonic mean.
     assert_eq!(
