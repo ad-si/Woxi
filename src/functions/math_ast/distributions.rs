@@ -660,6 +660,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GompertzMakehamDistribution" => cdf_gompertz_makeham(dargs, x),
     "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
     "StableDistribution" => cdf_stable(dargs, x),
+    "StudentTDistribution" => cdf_student_t(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
@@ -3427,6 +3428,38 @@ fn cdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let cond2 = comparison(x, ComparisonOp::GreaterEqual, int(1));
   eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))
+}
+
+/// CDF[StudentTDistribution[nu], x] = Piecewise[
+///   {{BetaRegularized[nu/(nu + x^2), nu/2, 1/2]/2, x <= 0}},
+///   (1 + BetaRegularized[x^2/(nu + x^2), 1/2, nu/2])/2]
+fn cdf_student_t(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "StudentTDistribution expects 1 argument".into(),
+    ));
+  }
+  let nu = dargs[0].clone();
+  let half = divide(int(1), int(2));
+  let nu_over_2 = divide(nu.clone(), int(2));
+  let x_sq = power(x.clone(), int(2));
+  let nu_plus_x_sq = plus(nu.clone(), x_sq.clone());
+  // Left branch: BetaRegularized[nu/(nu + x^2), nu/2, 1/2] / 2
+  let left_arg = divide(nu, nu_plus_x_sq.clone());
+  let left_beta = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![left_arg, nu_over_2.clone(), half.clone()].into(),
+  };
+  let left_value = divide(left_beta, int(2));
+  // Right branch: (1 + BetaRegularized[x^2/(nu + x^2), 1/2, nu/2]) / 2
+  let right_arg = divide(x_sq, nu_plus_x_sq);
+  let right_beta = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![right_arg, half, nu_over_2].into(),
+  };
+  let right_value = divide(plus(int(1), right_beta), int(2));
+  let cond = comparison(x, ComparisonOp::LessEqual, int(0));
+  eval(piecewise(vec![(left_value, cond)], right_value))
 }
 
 /// PDF[StudentTDistribution[nu], x] = (1 + x^2/nu)^(-(1+nu)/2) / (Sqrt[nu] * Beta[nu/2, 1/2])

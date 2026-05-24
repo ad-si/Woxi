@@ -814,6 +814,27 @@ mod cdf {
   }
 
   #[test]
+  fn student_t_symbolic() {
+    // CDF[StudentTDistribution[v], x] = Piecewise[
+    //   {{BetaRegularized[v/(v + x^2), v/2, 1/2]/2, x <= 0}},
+    //   (1 + BetaRegularized[x^2/(v + x^2), 1/2, v/2])/2]
+    assert_eq!(
+      interpret("CDF[StudentTDistribution[v], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[v/(v + x^2), v/2, 1/2]/2, x <= 0}}, (1 + BetaRegularized[x^2/(v + x^2), 1/2, v/2])/2]"
+    );
+  }
+
+  #[test]
+  fn student_t_at_zero() {
+    // x = 0 -> first branch (x <= 0 is True): BetaRegularized[1, v/2, 1/2]/2
+    // = 1/2 by identity.
+    assert_eq!(
+      interpret("CDF[StudentTDistribution[v], 0]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
   fn exponential() {
     assert_eq!(
       interpret("CDF[ExponentialDistribution[1], x]").unwrap(),
