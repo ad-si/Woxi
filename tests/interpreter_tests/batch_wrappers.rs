@@ -3119,6 +3119,26 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn trimmed_variance_asymmetric() {
+    // Asymmetric trim {f1, f2}: drop the lower fraction f1 (0.2 here
+    // drops one element, -10) and keep the upper end intact.
+    // Remaining {1, 1, 1, 1, 20} -> sample variance 361/5.
+    assert_eq!(
+      interpret("TrimmedVariance[{-10, 1, 1, 1, 1, 20}, {0.2, 0}]").unwrap(),
+      "361/5"
+    );
+  }
+  #[test]
+  fn trimmed_variance_default() {
+    // Default form (no fraction) trims 5% from each end. For a 10-element
+    // list floor(0.05 * 10) = 0, so the variance equals the raw sample
+    // variance.
+    assert_eq!(
+      interpret("TrimmedVariance[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]").unwrap(),
+      "55/6"
+    );
+  }
+  #[test]
   fn winsorized_variance_basic() {
     assert_eq!(
       interpret("WinsorizedVariance[{1, 2, 3, 4, 5, 6, 7, 8, 9, 100}, 0.2]")

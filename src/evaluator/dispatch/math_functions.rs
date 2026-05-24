@@ -516,21 +516,46 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "TrimmedVariance" if args.len() == 2 => {
-      // TrimmedVariance[list, frac] — variance of trimmed data
-      if let Expr::List(elems) = &args[0]
-        && let Some(frac) = expr_to_f64(&args[1])
-      {
+    "TrimmedVariance" if (1..=2).contains(&args.len()) => {
+      // TrimmedVariance[list]            ≡ TrimmedVariance[list, 0.05]
+      // TrimmedVariance[list, f]         — drop floor(f*n) from each end
+      // TrimmedVariance[list, {f1, f2}]  — drop floor(f1*n) smallest,
+      //                                    floor(f2*n) largest
+      if let Expr::List(elems) = &args[0] {
         let n = elems.len();
-        let trim = (n as f64 * frac).round() as usize;
-        if 2 * trim < n {
+        let (trim_lo, trim_hi) = match args.get(1) {
+          None => {
+            let t = (n as f64 * 0.05).floor() as usize;
+            (t, t)
+          }
+          Some(Expr::List(fs)) if fs.len() == 2 => {
+            let Some(f1) = expr_to_f64(&fs[0]) else {
+              return None;
+            };
+            let Some(f2) = expr_to_f64(&fs[1]) else {
+              return None;
+            };
+            (
+              (n as f64 * f1).floor() as usize,
+              (n as f64 * f2).floor() as usize,
+            )
+          }
+          Some(other) => {
+            let Some(f) = expr_to_f64(other) else {
+              return None;
+            };
+            let t = (n as f64 * f).floor() as usize;
+            (t, t)
+          }
+        };
+        if trim_lo + trim_hi < n {
           let mut sorted: Vec<Expr> = elems.to_vec();
           sorted.sort_by(|a, b| {
             let fa = expr_to_f64(a).unwrap_or(0.0);
             let fb = expr_to_f64(b).unwrap_or(0.0);
             fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
           });
-          let trimmed: Vec<Expr> = sorted[trim..n - trim].to_vec();
+          let trimmed: Vec<Expr> = sorted[trim_lo..n - trim_hi].to_vec();
           return Some(crate::functions::math_ast::variance_ast(&[
             Expr::List(trimmed.into()),
           ]));
