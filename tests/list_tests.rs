@@ -765,14 +765,49 @@ mod list_tests {
     // matching wolframscript. Without this fix, an outlier at the end of
     // the list would be incorrectly dropped and the mean shifted.
     assert_eq!(
-      interpret("TrimmedMean[{0, 1, 2, 3, 4, 5, 6, 7, 8, 100}, 0.05]")
-        .unwrap(),
+      interpret("TrimmedMean[{0, 1, 2, 3, 4, 5, 6, 7, 8, 100}, 0.05]").unwrap(),
       "68/5"
     );
     // 0.025 * 20 = 0.5 → floor = 0 → no trimming
+    assert_eq!(interpret("TrimmedMean[Range[20], 0.025]").unwrap(), "21/2");
+  }
+
+  #[test]
+  fn take_list_negative_counts() {
+    // Negative counts take from the end of the remaining slice and
+    // remove the taken elements from it.
     assert_eq!(
-      interpret("TrimmedMean[Range[20], 0.025]").unwrap(),
-      "21/2"
+      interpret("TakeList[{a, b, c, d, e, f, g, h}, {-2, -3, -1}]").unwrap(),
+      "{{g, h}, {d, e, f}, {c}}"
+    );
+    // Mixed signs interleave front/back takes.
+    assert_eq!(
+      interpret("TakeList[{a, b, c, d, e, f, g, h}, {-2, 3, -1}]").unwrap(),
+      "{{g, h}, {a, b, c}, {f}}"
+    );
+  }
+
+  #[test]
+  fn take_list_custom_head() {
+    // Custom heads are preserved on each sublist.
+    assert_eq!(
+      interpret("TakeList[h[a, b, c, d, e, f, g], {2, 3, 1}]").unwrap(),
+      "{h[a, b], h[c, d, e], h[f]}"
+    );
+  }
+
+  #[test]
+  fn take_list_all_and_upto() {
+    // All takes everything remaining.
+    assert_eq!(
+      interpret("TakeList[{a, b, c, d, e, f, g, h}, {2, 3, All}]").unwrap(),
+      "{{a, b}, {c, d, e}, {f, g, h}}"
+    );
+    // UpTo[n] takes min(n, remaining); an UpTo past the end yields an
+    // empty trailing sublist instead of an error.
+    assert_eq!(
+      interpret("TakeList[Range[12], {2, 3, UpTo[10], UpTo[5]}]").unwrap(),
+      "{{1, 2}, {3, 4, 5}, {6, 7, 8, 9, 10, 11, 12}, {}}"
     );
   }
 

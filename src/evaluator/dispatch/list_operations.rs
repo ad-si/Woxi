@@ -171,28 +171,108 @@ pub fn dispatch_list_operations(
       }
     }
     "TakeList" if args.len() == 2 => {
-      if let (Expr::List(items), Expr::List(lengths)) = (&args[0], &args[1]) {
-        let mut result = Vec::new();
-        let mut pos = 0;
-        let mut valid = true;
-        for len_expr in lengths {
-          if let Expr::Integer(n) = len_expr {
+      // Pull the children of args[0] and remember its head so each sublist
+      // can be wrapped in the same head (List or any other symbol).
+      let (head, items): (Option<String>, Vec<Expr>) = match &args[0] {
+        Expr::List(xs) => (None, xs.to_vec()),
+        Expr::FunctionCall { name, args: xs } => {
+          (Some(name.clone()), xs.to_vec())
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "TakeList".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      };
+      let Expr::List(specs) = &args[1] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "TakeList".to_string(),
+          args: args.to_vec().into(),
+        }));
+      };
+      let wrap = |slice: Vec<Expr>| -> Expr {
+        match &head {
+          None => Expr::List(slice.into()),
+          Some(h) => Expr::FunctionCall {
+            name: h.clone(),
+            args: slice.into(),
+          },
+        }
+      };
+      // Walk a (start, end) window over `items`, consuming front or back
+      // depending on the sign / form of each spec.
+      let mut start: usize = 0;
+      let mut end: usize = items.len();
+      let mut result: Vec<Expr> = Vec::with_capacity(specs.len());
+      for spec in specs.iter() {
+        let remaining = end - start;
+        match spec {
+          Expr::Integer(n) if *n >= 0 => {
             let n = *n as usize;
-            if pos + n > items.len() {
-              valid = false;
-              break;
+            if n > remaining {
+              crate::emit_message(&format!(
+                "TakeList::take: Cannot take {} elements from a list of length {}.",
+                n, remaining
+              ));
+              return Some(Ok(Expr::FunctionCall {
+                name: "TakeList".to_string(),
+                args: args.to_vec().into(),
+              }));
             }
-            result.push(Expr::List(items[pos..pos + n].to_vec().into()));
-            pos += n;
-          } else {
-            valid = false;
-            break;
+            let chunk: Vec<Expr> = items[start..start + n].to_vec();
+            start += n;
+            result.push(wrap(chunk));
+          }
+          Expr::Integer(n) => {
+            // n < 0: take last |n| of the remaining slice
+            let k = (-*n) as usize;
+            if k > remaining {
+              crate::emit_message(&format!(
+                "TakeList::take: Cannot take {} elements from a list of length {}.",
+                k, remaining
+              ));
+              return Some(Ok(Expr::FunctionCall {
+                name: "TakeList".to_string(),
+                args: args.to_vec().into(),
+              }));
+            }
+            let chunk: Vec<Expr> = items[end - k..end].to_vec();
+            end -= k;
+            result.push(wrap(chunk));
+          }
+          Expr::Identifier(s) if s == "All" => {
+            let chunk: Vec<Expr> = items[start..end].to_vec();
+            start = end;
+            result.push(wrap(chunk));
+          }
+          Expr::FunctionCall {
+            name: upto,
+            args: uargs,
+          } if upto == "UpTo" && uargs.len() == 1 => {
+            let Some(m) = (match &uargs[0] {
+              Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+              _ => None,
+            }) else {
+              return Some(Ok(Expr::FunctionCall {
+                name: "TakeList".to_string(),
+                args: args.to_vec().into(),
+              }));
+            };
+            let take = m.min(remaining);
+            let chunk: Vec<Expr> = items[start..start + take].to_vec();
+            start += take;
+            result.push(wrap(chunk));
+          }
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "TakeList".to_string(),
+              args: args.to_vec().into(),
+            }));
           }
         }
-        if valid {
-          return Some(Ok(Expr::List(result.into())));
-        }
       }
+      return Some(Ok(Expr::List(result.into())));
     }
     "FlattenAt" if args.len() == 1 => {
       // Operator form FlattenAt[pos] — return unevaluated for currying.
