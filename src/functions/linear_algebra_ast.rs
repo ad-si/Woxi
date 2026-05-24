@@ -596,46 +596,51 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast(&combine_name, &diag)
 }
 
-/// IdentityMatrix[n] - n×n identity matrix
+/// IdentityMatrix[n] - n×n identity matrix.
+/// IdentityMatrix[{m, n}] - m×n identity matrix (1s on leading diagonal).
 pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "IdentityMatrix expects exactly 1 argument".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
-    Expr::BigInteger(n) => {
-      use num_traits::ToPrimitive;
-      use num_traits::Zero;
-      if *n >= num_bigint::BigInt::zero() {
-        match n.to_usize() {
-          Some(v) => v,
-          None => {
-            return Ok(Expr::FunctionCall {
-              name: "IdentityMatrix".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
+  fn extract_size(expr: &Expr) -> Option<usize> {
+    match expr {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        use num_traits::Zero;
+        if *n >= num_bigint::BigInt::zero() {
+          n.to_usize()
+        } else {
+          None
         }
-      } else {
-        return Ok(Expr::FunctionCall {
-          name: "IdentityMatrix".to_string(),
-          args: args.to_vec().into(),
-        });
+      }
+      _ => None,
+    }
+  }
+  let unevaluated = || Expr::FunctionCall {
+    name: "IdentityMatrix".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (m, n) = match &args[0] {
+    Expr::List(items) if items.len() == 2 => {
+      match (extract_size(&items[0]), extract_size(&items[1])) {
+        (Some(m), Some(n)) => (m, n),
+        _ => return Ok(unevaluated()),
       }
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "IdentityMatrix".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    other => match extract_size(other) {
+      Some(n) => (n, n),
+      None => return Ok(unevaluated()),
+    },
   };
-  let mut matrix = Vec::new();
-  for i in 0..n {
+  let mut matrix = Vec::with_capacity(m);
+  for i in 0..m {
     let mut row = vec![Expr::Integer(0); n];
-    row[i] = Expr::Integer(1);
+    if i < n {
+      row[i] = Expr::Integer(1);
+    }
     matrix.push(Expr::List(row.into()));
   }
   Ok(Expr::List(matrix.into()))

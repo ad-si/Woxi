@@ -286,6 +286,33 @@ mod identity_matrix {
   fn identity_1() {
     assert_eq!(interpret("IdentityMatrix[1]").unwrap(), "{{1}}");
   }
+
+  #[test]
+  fn identity_rectangular_wide() {
+    // IdentityMatrix[{m, n}] gives the m×n matrix with 1s on the leading
+    // diagonal and 0s elsewhere.
+    assert_eq!(
+      interpret("IdentityMatrix[{2, 3}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}}"
+    );
+  }
+
+  #[test]
+  fn identity_rectangular_tall() {
+    assert_eq!(
+      interpret("IdentityMatrix[{3, 2}]").unwrap(),
+      "{{1, 0}, {0, 1}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn identity_rectangular_square() {
+    // {n, n} matches IdentityMatrix[n].
+    assert_eq!(
+      interpret("IdentityMatrix[{3, 3}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
 }
 
 mod diagonal_matrix {
