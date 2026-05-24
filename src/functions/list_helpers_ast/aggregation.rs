@@ -348,6 +348,24 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "RayleighDistribution" if dargs.len() == 1 => {
+      let sigma = dargs[0].clone();
+      // Median = sigma * Sqrt[Log[4]]
+      let log4 = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![Expr::Integer(4)].into(),
+      };
+      let sqrt_log4 = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![log4].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(sigma),
+        right: Box::new(sqrt_log4),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "DiscreteUniformDistribution" if dargs.len() == 1 => {
       let Expr::List(bounds) = &dargs[0] else {
         return None;

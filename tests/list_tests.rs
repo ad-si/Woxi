@@ -1168,6 +1168,24 @@ mod list_tests {
   }
 
   #[test]
+  fn rayleigh_median_symbolic() {
+    // Median[RayleighDistribution[σ]] = σ*Sqrt[Log[4]].
+    assert_eq!(
+      interpret("Median[RayleighDistribution[s]]").unwrap(),
+      "s*Sqrt[Log[4]]"
+    );
+  }
+
+  #[test]
+  fn rayleigh_median_numeric() {
+    // Concrete σ keeps the symbolic Log[4] factor.
+    assert_eq!(
+      interpret("Median[RayleighDistribution[2]]").unwrap(),
+      "2*Sqrt[Log[4]]"
+    );
+  }
+
+  #[test]
   fn discrete_uniform_median_symbolic() {
     // Median[DiscreteUniformDistribution[{min, max}]]
     //   = -1 + min + Max[1, Ceiling[(1 + max - min)/2]]
