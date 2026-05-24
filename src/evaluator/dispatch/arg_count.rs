@@ -642,6 +642,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Maximize" => Some((2, 3)),
     "MaxLimit" => Some((2, 2)),
     "Mean" => Some((1, 1)),
+    "MeanAround" => Some((1, 1)),
     "MeanDeviation" => Some((1, 1)),
     "Median" => Some((1, 1)),
     "MedianDeviation" => Some((1, 1)),

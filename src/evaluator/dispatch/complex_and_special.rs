@@ -2048,6 +2048,66 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(args[0].clone()));
     }
 
+    // MeanAround[{x1, ..., xn}] = Around[N[Mean], N[StandardDeviation/Sqrt[n]]]
+    "MeanAround" if args.len() == 1 => {
+      let Expr::List(items) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "MeanAround".to_string(),
+          args: args.to_vec().into(),
+        }));
+      };
+      let n = items.len();
+      if n == 0 {
+        return Some(Ok(Expr::FunctionCall {
+          name: "MeanAround".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      // Mean
+      let mean_expr = Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: vec![args[0].clone()].into(),
+      };
+      let mean_n = Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![mean_expr].into(),
+      };
+      // StandardError = StandardDeviation / Sqrt[n]
+      let std_dev = Expr::FunctionCall {
+        name: "StandardDeviation".to_string(),
+        args: vec![args[0].clone()].into(),
+      };
+      let sqrt_n = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(n as i128)].into(),
+      };
+      let std_err = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(std_dev),
+        right: Box::new(sqrt_n),
+      };
+      let std_err_n = Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![std_err].into(),
+      };
+      let mean_val = crate::evaluator::evaluate_expr_to_expr(&mean_n).ok();
+      let err_val = crate::evaluator::evaluate_expr_to_expr(&std_err_n).ok();
+      match (mean_val, err_val) {
+        (Some(m), Some(e)) => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Around".to_string(),
+            args: vec![m, e].into(),
+          }));
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "MeanAround".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      }
+    }
+
     // Around[value, uncertainty] — convert integer value to real when uncertainty is real
     "Around" if args.len() >= 2 => {
       let mut new_args = args.to_vec();

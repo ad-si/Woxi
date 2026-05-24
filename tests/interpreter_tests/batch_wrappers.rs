@@ -5266,7 +5266,30 @@ mod option_symbols_batch {
 
   #[test]
   fn mean_around() {
+    // Non-list arg stays unevaluated.
     assert_eq!(interpret("MeanAround[0]").unwrap(), "MeanAround[0]");
+  }
+
+  #[test]
+  fn mean_around_list() {
+    // MeanAround[{x1, ..., xn}] = Around[N[Mean], N[StdDev/Sqrt[n]]].
+    // For {1, 2, 3, 4, 3, 2, 1}: mean = 16/7, stderr = Sqrt[26/147].
+    assert_eq!(
+      interpret("MeanAround[{1, 2, 3, 4, 3, 2, 1}]").unwrap(),
+      "Around[2.2857142857142856, 0.42056004125370694]"
+    );
+  }
+
+  #[test]
+  fn mean_around_real_list() {
+    // {1., 2., 3.}: mean = 2, stderr = 1/Sqrt[3] ≈ 0.5773502691896258.
+    let result = interpret("MeanAround[{1., 2., 3.}]").unwrap();
+    // Match Wolfram's output Around[2., 0.5773502691896258].
+    assert!(
+      result.starts_with("Around[2.,") && result.contains("0.577350269189"),
+      "got {}",
+      result
+    );
   }
 
   #[test]
