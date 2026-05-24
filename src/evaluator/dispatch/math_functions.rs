@@ -359,22 +359,45 @@ pub fn dispatch_math_functions(
     "Standardize" if !args.is_empty() && args.len() <= 3 => {
       return Some(standardize_ast(args));
     }
-    "TrimmedMean" if args.len() == 2 => {
-      // TrimmedMean[list, frac] — mean after removing frac fraction from each end
-      if let Expr::List(elems) = &args[0]
-        && let Some(frac) = expr_to_f64(&args[1])
-      {
+    "TrimmedMean" if (1..=2).contains(&args.len()) => {
+      // TrimmedMean[list]              ≡ TrimmedMean[list, 0.05]
+      // TrimmedMean[list, f]           — drop floor(f*n) smallest and largest
+      // TrimmedMean[list, {f1, f2}]    — drop floor(f1*n) smallest, floor(f2*n) largest
+      if let Expr::List(elems) = &args[0] {
         let n = elems.len();
-        let trim = (n as f64 * frac).round() as usize;
-        if 2 * trim < n {
-          // Sort elements
+        let (trim_lo, trim_hi) = match args.get(1) {
+          None => {
+            let t = (n as f64 * 0.05).floor() as usize;
+            (t, t)
+          }
+          Some(Expr::List(fs)) if fs.len() == 2 => {
+            let Some(f1) = expr_to_f64(&fs[0]) else {
+              return None;
+            };
+            let Some(f2) = expr_to_f64(&fs[1]) else {
+              return None;
+            };
+            (
+              (n as f64 * f1).floor() as usize,
+              (n as f64 * f2).floor() as usize,
+            )
+          }
+          Some(other) => {
+            let Some(f) = expr_to_f64(other) else {
+              return None;
+            };
+            let t = (n as f64 * f).floor() as usize;
+            (t, t)
+          }
+        };
+        if trim_lo + trim_hi < n {
           let mut sorted: Vec<Expr> = elems.to_vec();
           sorted.sort_by(|a, b| {
             let fa = expr_to_f64(a).unwrap_or(0.0);
             let fb = expr_to_f64(b).unwrap_or(0.0);
             fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
           });
-          let trimmed = &sorted[trim..n - trim];
+          let trimmed = &sorted[trim_lo..n - trim_hi];
           let sum_expr = Expr::FunctionCall {
             name: "Plus".to_string(),
             args: trimmed.to_vec().into(),

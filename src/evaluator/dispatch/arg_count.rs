@@ -1048,7 +1048,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TrigExpand" => Some((1, 1)),
     "TrigReduce" => Some((1, 1)),
     "TrigToExp" => Some((1, 1)),
-    "TrimmedMean" => Some((2, 2)),
+    "TrimmedMean" => Some((1, 2)),
     "TrimmedVariance" => Some((2, 2)),
     "TrueQ" => Some((1, 1)),
     "Tuples" => Some((1, 2)),

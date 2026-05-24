@@ -721,6 +721,62 @@ mod list_tests {
   }
 
   #[test]
+  fn trimmed_mean_asymmetric() {
+    // TrimmedMean[list, {f1, f2}]: floor(f1*n) smallest and floor(f2*n)
+    // largest elements are removed before averaging.
+    assert_eq!(
+      interpret("TrimmedMean[{-10, 1, 1, 1, 1, 20}, {0.2, 0}]").unwrap(),
+      "24/5"
+    );
+    assert_eq!(
+      interpret("TrimmedMean[{-10, 1, 1, 1, 1, 20}, {0, 0.2}]").unwrap(),
+      "-6/5"
+    );
+    // Drop 1 from start (floor(0.1*10)=1) and 3 from end (floor(0.3*10)=3).
+    assert_eq!(
+      interpret("TrimmedMean[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {0.1, 0.3}]")
+        .unwrap(),
+      "9/2"
+    );
+    // {0, 0} drops nothing and falls back to the plain mean.
+    assert_eq!(
+      interpret("TrimmedMean[{1, 2, 3, 4, 5}, {0, 0}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn trimmed_mean_default_fraction() {
+    // TrimmedMean[list] defaults to the 5% trimmed mean, i.e. f=0.05.
+    // For n=10 with f=0.05, floor(0.5)=0 so nothing is trimmed.
+    assert_eq!(
+      interpret("TrimmedMean[{-10, 1, 1, 1, 1, 20}]").unwrap(),
+      "7/3"
+    );
+    assert_eq!(
+      interpret("TrimmedMean[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]").unwrap(),
+      "11/2"
+    );
+  }
+
+  #[test]
+  fn trimmed_mean_floor_rounding() {
+    // Regression: 0.05 * 10 = 0.5 should floor to 0 (not round to 1),
+    // matching wolframscript. Without this fix, an outlier at the end of
+    // the list would be incorrectly dropped and the mean shifted.
+    assert_eq!(
+      interpret("TrimmedMean[{0, 1, 2, 3, 4, 5, 6, 7, 8, 100}, 0.05]")
+        .unwrap(),
+      "68/5"
+    );
+    // 0.025 * 20 = 0.5 → floor = 0 → no trimming
+    assert_eq!(
+      interpret("TrimmedMean[Range[20], 0.025]").unwrap(),
+      "21/2"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_matrix() {
     // List-of-lists input → column-wise harmonic mean.
     assert_eq!(
