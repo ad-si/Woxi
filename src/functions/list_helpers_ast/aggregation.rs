@@ -267,6 +267,11 @@ pub fn group_by_ast(
 /// distributions whose median Woxi cannot express symbolically.
 fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
   match name {
+    "LogisticDistribution" => match dargs.len() {
+      0 => Some(Expr::Integer(0)),
+      2 => Some(dargs[0].clone()),
+      _ => None,
+    },
     "HalfNormalDistribution" if dargs.len() == 1 => {
       let theta = dargs[0].clone();
       // Median = Sqrt[Pi] * InverseErf[1/2] / theta

@@ -1091,6 +1091,51 @@ mod list_tests {
   }
 
   #[test]
+  fn inverse_gaussian_mean_variance() {
+    // Mean = mu; Variance = mu^3 / lambda.
+    assert_eq!(
+      interpret("Mean[InverseGaussianDistribution[m, l]]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Variance[InverseGaussianDistribution[m, l]]").unwrap(),
+      "m^3/l"
+    );
+    // Concrete parameters.
+    assert_eq!(
+      interpret("Mean[InverseGaussianDistribution[2, 3]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Variance[InverseGaussianDistribution[2, 3]]").unwrap(),
+      "8/3"
+    );
+  }
+
+  #[test]
+  fn logistic_mean_variance_median() {
+    // Mean = mu; Variance = beta^2 * Pi^2 / 3; Median = mu.
+    assert_eq!(
+      interpret("Mean[LogisticDistribution[m, b]]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Variance[LogisticDistribution[m, b]]").unwrap(),
+      "(b^2*Pi^2)/3"
+    );
+    assert_eq!(
+      interpret("Median[LogisticDistribution[m, b]]").unwrap(),
+      "m"
+    );
+    // Zero-arg form defaults to mu = 0, beta = 1.
+    assert_eq!(interpret("Mean[LogisticDistribution[]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Variance[LogisticDistribution[]]").unwrap(),
+      "Pi^2/3"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_matrix() {
     // List-of-lists input → column-wise harmonic mean.
     assert_eq!(

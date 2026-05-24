@@ -2505,6 +2505,34 @@ fn distribution_mean_variance(
         divide(plus(int(-2), pi()), times(int(2), power(theta, int(2))));
       Ok((mean, var))
     }
+    "InverseGaussianDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "InverseGaussianDistribution expects 2 arguments".into(),
+        ));
+      }
+      let mu = dargs[0].clone();
+      let lambda = dargs[1].clone();
+      // Mean = mu; Variance = mu^3 / lambda
+      let mean = mu.clone();
+      let var = divide(power(mu, int(3)), lambda);
+      Ok((mean, var))
+    }
+    "LogisticDistribution" => {
+      let (mu, beta) = match dargs.len() {
+        0 => (int(0), int(1)),
+        2 => (dargs[0].clone(), dargs[1].clone()),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "LogisticDistribution expects 0 or 2 arguments".into(),
+          ));
+        }
+      };
+      // Mean = mu; Variance = beta^2 * Pi^2 / 3.
+      let mean = mu;
+      let var = divide(times(power(beta, int(2)), power(pi(), int(2))), int(3));
+      Ok((mean, var))
+    }
     "HypoexponentialDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
