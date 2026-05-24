@@ -989,7 +989,7 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result_denom = sum_numer;
         return Ok(make_rational(result_numer, result_denom));
       }
-      if has_real || !all_int {
+      if has_real {
         // Float path
         let mut vals = Vec::new();
         for item in items {
@@ -1011,16 +1011,85 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sum_recip: f64 = vals.iter().map(|x| 1.0 / x).sum();
         return Ok(num_to_expr(n / sum_recip));
       }
-      Ok(Expr::FunctionCall {
-        name: "HarmonicMean".to_string(),
-        args: args.to_vec().into(),
-      })
+      // List-of-lists (matrix) → column-wise harmonic mean.
+      if items.iter().all(|item| matches!(item, Expr::List(_))) {
+        return harmonic_mean_columnwise(items);
+      }
+      // Symbolic / mixed path: build n / Plus[1/x1, ..., 1/xn] and let
+      // the evaluator simplify it. The output formatter renders 1/x as
+      // x^(-1), which matches wolframscript's display form.
+      harmonic_mean_symbolic(items)
     }
     _ => Ok(Expr::FunctionCall {
       name: "HarmonicMean".to_string(),
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// HarmonicMean for symbolic or mixed numeric+symbolic lists:
+/// builds `n / Plus[1/x1, ..., 1/xn]` and evaluates it. A single-element
+/// list collapses to the element itself.
+fn harmonic_mean_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
+  if items.len() == 1 {
+    return Ok(items[0].clone());
+  }
+  let recips: Vec<Expr> = items
+    .iter()
+    .map(|x| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(x.clone()),
+    })
+    .collect();
+  let sum = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: recips.into(),
+  })?;
+  let n = items.len() as i128;
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::Integer(n)),
+    right: Box::new(sum),
+  })
+}
+
+/// Column-wise HarmonicMean for a list-of-lists (matrix) input.
+fn harmonic_mean_columnwise(
+  rows: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let row_vecs: Vec<&crate::ExprList> = rows
+    .iter()
+    .filter_map(|r| {
+      if let Expr::List(items) = r {
+        Some(items)
+      } else {
+        None
+      }
+    })
+    .collect();
+  if row_vecs.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "HarmonicMean".to_string(),
+      args: vec![Expr::List(rows.to_vec().into())].into(),
+    });
+  }
+  let ncols = row_vecs[0].len();
+  let mut col_means = Vec::with_capacity(ncols);
+  for col in 0..ncols {
+    let col_items: Vec<Expr> = row_vecs
+      .iter()
+      .map(|r| {
+        if col < r.len() {
+          r[col].clone()
+        } else {
+          Expr::Integer(0)
+        }
+      })
+      .collect();
+    col_means.push(harmonic_mean_ast(&[Expr::List(col_items.into())])?);
+  }
+  Ok(Expr::List(col_means.into()))
 }
 
 /// Covariance[list1, list2] - Sample covariance of two numeric lists

@@ -658,12 +658,14 @@ mod list_tests {
     // 3-cycle returns to identity (6 mod 3 = 0) and is dropped; the
     // 4-cycle becomes its square (two swaps).
     assert_eq!(
-      interpret("PermutationPower[Cycles[{{4, 2, 5}, {6, 3, 1, 7}}], 6]").unwrap(),
+      interpret("PermutationPower[Cycles[{{4, 2, 5}, {6, 3, 1, 7}}], 6]")
+        .unwrap(),
       "Cycles[{{1, 6}, {3, 7}}]"
     );
     // Inverse squared on the same permutation.
     assert_eq!(
-      interpret("PermutationPower[Cycles[{{4, 2, 5}, {6, 3, 1, 7}}], -2]").unwrap(),
+      interpret("PermutationPower[Cycles[{{4, 2, 5}, {6, 3, 1, 7}}], -2]")
+        .unwrap(),
       "Cycles[{{1, 6}, {2, 5, 4}, {3, 7}}]"
     );
     // Zeroth power: identity.
@@ -695,6 +697,39 @@ mod list_tests {
     assert_eq!(
       interpret("PermutationPower[Cycles[{}], 5]").unwrap(),
       "Cycles[{}]"
+    );
+  }
+
+  #[test]
+  fn harmonic_mean_symbolic() {
+    // n / Plus[1/x1, ..., 1/xn], with reciprocals printed as x^(-1).
+    assert_eq!(
+      interpret("HarmonicMean[{a, b, c, d}]").unwrap(),
+      "4/(a^(-1) + b^(-1) + c^(-1) + d^(-1))"
+    );
+    assert_eq!(
+      interpret("HarmonicMean[{a, b}]").unwrap(),
+      "2/(a^(-1) + b^(-1))"
+    );
+    // Singleton symbolic list collapses to the single element.
+    assert_eq!(interpret("HarmonicMean[{a}]").unwrap(), "a");
+    // Mixed numeric and symbolic: numeric reciprocals combine into a rational.
+    assert_eq!(
+      interpret("HarmonicMean[{2, 4, x}]").unwrap(),
+      "3/(3/4 + x^(-1))"
+    );
+  }
+
+  #[test]
+  fn harmonic_mean_matrix() {
+    // List-of-lists input → column-wise harmonic mean.
+    assert_eq!(
+      interpret("HarmonicMean[{{1, 2}, {5, 10}, {5, 2}, {4, 8}}]").unwrap(),
+      "{80/33, 160/49}"
+    );
+    assert_eq!(
+      interpret("HarmonicMean[{{a, b}, {c, d}}]").unwrap(),
+      "{2/(a^(-1) + c^(-1)), 2/(b^(-1) + d^(-1))}"
     );
   }
 }
