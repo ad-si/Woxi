@@ -1222,6 +1222,25 @@ mod list_tests {
   }
 
   #[test]
+  fn chi_median_symbolic() {
+    // Median[ChiDistribution[v]] = Sqrt[2]*Sqrt[InverseGammaRegularized[v/2, 0, 1/2]].
+    assert_eq!(
+      interpret("Median[ChiDistribution[v]]").unwrap(),
+      "Sqrt[2]*Sqrt[InverseGammaRegularized[v/2, 0, 1/2]]"
+    );
+  }
+
+  #[test]
+  fn chi_median_numeric() {
+    // Concrete v: collapses the v/2 argument but keeps the special-function
+    // form symbolic since InverseGammaRegularized isn't fully evaluated.
+    assert_eq!(
+      interpret("Median[ChiDistribution[3]]").unwrap(),
+      "Sqrt[2]*Sqrt[InverseGammaRegularized[3/2, 0, 1/2]]"
+    );
+  }
+
+  #[test]
   fn beta_median_symbolic() {
     // Median[BetaDistribution[a, b]] = InverseBetaRegularized[1/2, a, b]
     // (symbolic; the inverse regularized beta has no elementary closed

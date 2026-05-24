@@ -360,6 +360,38 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[CauchyDistribution[a, b]] = a (symmetric about a)
       Some(dargs[0].clone())
     }
+    "ChiDistribution" if dargs.len() == 1 => {
+      // Median[ChiDistribution[v]] =
+      //   Sqrt[2] * Sqrt[InverseGammaRegularized[v/2, 0, 1/2]].
+      let v = dargs[0].clone();
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      let v_half = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(v),
+        right: Box::new(Expr::Integer(2)),
+      };
+      let inv_gamma = Expr::FunctionCall {
+        name: "InverseGammaRegularized".to_string(),
+        args: vec![v_half, Expr::Integer(0), half].into(),
+      };
+      let sqrt_inner = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![inv_gamma].into(),
+      };
+      let sqrt2 = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(2)].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(sqrt2),
+        right: Box::new(sqrt_inner),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "BetaDistribution" if dargs.len() == 2 => {
       // Median[BetaDistribution[a, b]] = InverseBetaRegularized[1/2, a, b].
       let half = Expr::FunctionCall {
