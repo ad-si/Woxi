@@ -1079,6 +1079,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ValueQ" => Some((1, 1)),
     "Values" => Some((1, 1)),
     "Variables" => Some((1, 1)),
+    "TimeValue" => Some((3, 3)),
     "Variance" => Some((1, 1)),
     "VectorAngle" => Some((2, 2)),
     "Volume" => Some((1, 1)),

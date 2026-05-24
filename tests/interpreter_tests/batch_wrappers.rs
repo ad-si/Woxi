@@ -20,6 +20,29 @@ mod batch_unevaluated_wrappers {
     assert_eq!(interpret("TimeValue[x]").unwrap(), "TimeValue[x]");
   }
   #[test]
+  fn time_value_future_value() {
+    // TimeValue[s, i, t] = s * (1 + i)^t. Future value of $1000 at 5%
+    // for 3 periods is 1157.625.
+    let result = interpret("TimeValue[1000, 0.05, 3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1157.6250000000002).abs() < 1e-9, "got {}", val);
+  }
+  #[test]
+  fn time_value_present_value() {
+    // Negative t for present value: 1000 / 1.05^3.
+    let result = interpret("TimeValue[1000, 0.05, -3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 863.837598531476).abs() < 1e-9, "got {}", val);
+  }
+  #[test]
+  fn time_value_exact_rational() {
+    // Exact rational inputs preserve rational arithmetic.
+    assert_eq!(
+      interpret("TimeValue[100, 1/10, 2]").unwrap(),
+      "121"
+    );
+  }
+  #[test]
   fn line_indent() {
     assert_eq!(interpret("LineIndent[x]").unwrap(), "LineIndent[x]");
   }

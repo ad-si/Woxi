@@ -5595,8 +5595,7 @@ pub fn evaluate_function_call_ast_inner(
     && args.len() == 2
     && let Expr::Integer(d) = &args[0]
     && *d >= 0
-    && let Some(x) =
-      crate::functions::math_ast::try_eval_to_f64(&args[1])
+    && let Some(x) = crate::functions::math_ast::try_eval_to_f64(&args[1])
   {
     let d = *d as usize;
     if !(0.0..=1.0).contains(&x) {
@@ -5623,6 +5622,44 @@ pub fn evaluate_function_call_ast_inner(
       factd *= k as f64;
     }
     return Ok(Expr::Real(sum / factd));
+  }
+
+  // TimeValue[s, i, t] — time value of a present sum s at interest rate
+  // i (per period) for t periods. Future value (t > 0) or present value
+  // (t < 0): result = s * (1 + i)^t. Annuity/Cashflow/date-spec and
+  // list-of-rates forms are not yet supported and stay symbolic.
+  if name == "TimeValue" && args.len() == 3 {
+    let (s, i, t) = (&args[0], &args[1], &args[2]);
+    let s_scalar =
+      matches!(s, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+        || matches!(s, Expr::FunctionCall { name, .. } if name == "Rational");
+    let i_scalar =
+      matches!(i, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+        || matches!(i, Expr::FunctionCall { name, .. } if name == "Rational");
+    let t_scalar =
+      matches!(t, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+        || matches!(t, Expr::FunctionCall { name, .. } if name == "Rational");
+    if s_scalar && i_scalar && t_scalar {
+      let value = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          s.clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![Expr::Integer(1), i.clone()].into(),
+              },
+              t.clone(),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      };
+      return evaluate_expr_to_expr(&value);
+    }
   }
 
   // CirclePoints[n] — n equally spaced points on the unit circle
@@ -5944,7 +5981,6 @@ pub fn evaluate_function_call_ast_inner(
       | "TildeTilde"
       | "NotebookClose"
       | "Failure"
-      | "TimeValue"
       | "LineIndent"
       | "LayeredGraphPlot"
       | "WordCharacter"
