@@ -1168,6 +1168,26 @@ mod list_tests {
   }
 
   #[test]
+  fn normal_median_symbolic() {
+    // The normal distribution is symmetric about its mean, so the
+    // median equals mu.
+    assert_eq!(
+      interpret("Median[NormalDistribution[m, s]]").unwrap(),
+      "m"
+    );
+  }
+
+  #[test]
+  fn normal_median_numeric() {
+    assert_eq!(
+      interpret("Median[NormalDistribution[3, 2]]").unwrap(),
+      "3"
+    );
+    // Zero-arg form defaults to mu = 0, sigma = 1.
+    assert_eq!(interpret("Median[NormalDistribution[]]").unwrap(), "0");
+  }
+
+  #[test]
   fn exponential_median_symbolic() {
     // Median[ExponentialDistribution[lambda]] = Log[2]/lambda.
     assert_eq!(
