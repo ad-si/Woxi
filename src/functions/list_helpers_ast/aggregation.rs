@@ -361,6 +361,26 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "ExponentialDistribution" if dargs.len() == 1 => {
+      // Median[ExponentialDistribution[lambda]] = Log[2]/lambda. Reuses
+      // the closed-form Quantile path which already returns -Log[1-p]/lambda.
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      let quantile_call = Expr::FunctionCall {
+        name: "Quantile".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "ExponentialDistribution".to_string(),
+            args: dargs.to_vec().into(),
+          },
+          half,
+        ]
+        .into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&quantile_call).ok()
+    }
     "UniformDistribution" | "ArcSinDistribution" if dargs.len() == 1 => {
       let Expr::List(bounds) = &dargs[0] else {
         return None;

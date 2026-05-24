@@ -1168,6 +1168,28 @@ mod list_tests {
   }
 
   #[test]
+  fn exponential_median_symbolic() {
+    // Median[ExponentialDistribution[lambda]] = Log[2]/lambda.
+    assert_eq!(
+      interpret("Median[ExponentialDistribution[a]]").unwrap(),
+      "Log[2]/a"
+    );
+  }
+
+  #[test]
+  fn exponential_median_numeric() {
+    // Concrete lambda.
+    assert_eq!(
+      interpret("Median[ExponentialDistribution[2]]").unwrap(),
+      "Log[2]/2"
+    );
+    // Numeric rate evaluates to a Real.
+    let result = interpret("Median[ExponentialDistribution[2.]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.3465735902799726).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
   fn lognormal_median_symbolic() {
     // Median[LogNormalDistribution[mu, sigma]] = E^mu (the median of
     // a lognormal is determined entirely by the location parameter).
