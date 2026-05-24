@@ -582,4 +582,56 @@ mod list_tests {
       "2"
     );
   }
+
+  #[test]
+  fn inverse_permutation_list() {
+    assert_eq!(
+      interpret("InversePermutation[{2, 3, 1}]").unwrap(),
+      "{3, 1, 2}"
+    );
+    assert_eq!(
+      interpret("InversePermutation[{2, 3, 1, 4}]").unwrap(),
+      "{3, 1, 2, 4}"
+    );
+    assert_eq!(
+      interpret("InversePermutation[{1, 2, 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn inverse_permutation_cycles() {
+    // Basic two-cycle inversion: each cycle is reversed, then canonicalised
+    // so its smallest element comes first and cycles are sorted by their
+    // smallest element.
+    assert_eq!(
+      interpret("InversePermutation[Cycles[{{3, 2, 5, 1}, {4, 7}}]]").unwrap(),
+      "Cycles[{{1, 5, 2, 3}, {4, 7}}]"
+    );
+    // Involutions are their own inverse.
+    assert_eq!(
+      interpret("InversePermutation[Cycles[{{1, 2}, {3, 4}}]]").unwrap(),
+      "Cycles[{{1, 2}, {3, 4}}]"
+    );
+    // Empty cycle list.
+    assert_eq!(
+      interpret("InversePermutation[Cycles[{}]]").unwrap(),
+      "Cycles[{}]"
+    );
+    // Single longer cycle requiring rotation.
+    assert_eq!(
+      interpret("InversePermutation[Cycles[{{2, 3, 5, 1, 4}}]]").unwrap(),
+      "Cycles[{{1, 5, 3, 2, 4}}]"
+    );
+    // Two-element cycles in canonical order are unchanged.
+    assert_eq!(
+      interpret("InversePermutation[Cycles[{{5, 4, 3, 2, 1}}]]").unwrap(),
+      "Cycles[{{1, 2, 3, 4, 5}}]"
+    );
+    // Multiple cycles get sorted by smallest element after inversion.
+    assert_eq!(
+      interpret("InversePermutation[Cycles[{{1, 3, 2}, {7, 6, 8}}]]").unwrap(),
+      "Cycles[{{1, 2, 3}, {6, 7, 8}}]"
+    );
+  }
 }

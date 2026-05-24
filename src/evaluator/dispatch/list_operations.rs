@@ -280,6 +280,61 @@ pub fn dispatch_list_operations(
           return Some(Ok(Expr::List(inv.into())));
         }
       }
+      // InversePermutation[Cycles[{cycle1, cycle2, ...}]] — reverse each
+      // cycle, rotate so its smallest element is first, drop fixed points,
+      // and sort cycles by their smallest element.
+      if let Expr::FunctionCall {
+        name: cname,
+        args: cargs,
+      } = &args[0]
+        && cname == "Cycles"
+        && cargs.len() == 1
+        && let Expr::List(cycle_list) = &cargs[0]
+      {
+        let mut out_cycles: Vec<Vec<i128>> = Vec::with_capacity(cycle_list.len());
+        let mut valid = true;
+        for cycle in cycle_list.iter() {
+          let Expr::List(c) = cycle else {
+            valid = false;
+            break;
+          };
+          let mut ints: Vec<i128> = Vec::with_capacity(c.len());
+          for e in c.iter() {
+            if let Expr::Integer(n) = e {
+              ints.push(*n);
+            } else {
+              valid = false;
+              break;
+            }
+          }
+          if !valid {
+            break;
+          }
+          if ints.len() < 2 {
+            continue;
+          }
+          ints.reverse();
+          let min_idx = ints
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, v)| *v)
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+          ints.rotate_left(min_idx);
+          out_cycles.push(ints);
+        }
+        if valid {
+          out_cycles.sort_by_key(|c| c[0]);
+          let cycle_exprs: Vec<Expr> = out_cycles
+            .into_iter()
+            .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
+            .collect();
+          return Some(Ok(Expr::FunctionCall {
+            name: "Cycles".to_string(),
+            args: vec![Expr::List(cycle_exprs.into())].into(),
+          }));
+        }
+      }
     }
     "MovingMedian" if args.len() == 2 => {
       if let Expr::List(items) = &args[0]
