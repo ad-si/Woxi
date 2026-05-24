@@ -812,6 +812,54 @@ mod list_tests {
   }
 
   #[test]
+  fn threshold_default() {
+    // Threshold[data] uses 10^-10 as the default threshold and replaces
+    // elements with |x| <= threshold by zero. The zero substituted in is
+    // an integer 0 for integer/rational inputs.
+    assert_eq!(
+      interpret("Threshold[{1, 10^(-1), 10^(-2), 10^(-8), 10^(-11)}]").unwrap(),
+      "{1, 1/10, 1/100, 1/100000000, 0}"
+    );
+  }
+
+  #[test]
+  fn threshold_numeric_list() {
+    // |x| <= t triggers replacement (note the boundary case: |2| <= 2 → 0).
+    assert_eq!(
+      interpret("Threshold[{-3, 1, -2, 0, 2, -1, 0, 1, -3, 3, 2}, 3/2]").unwrap(),
+      "{-3, 0, -2, 0, 2, 0, 0, 0, -3, 3, 2}"
+    );
+    assert_eq!(
+      interpret("Threshold[{-3, 1, -2, 0, 2, -1, 0, 1, -3, 3, 2}, 2]").unwrap(),
+      "{-3, 0, 0, 0, 0, 0, 0, 0, -3, 3, 0}"
+    );
+    // Real input: zeros come back as 0. (Real), not 0 (Integer).
+    assert_eq!(
+      interpret("Threshold[{1.5, -0.5, 0.1, -2.0, 3.0}, 1.0]").unwrap(),
+      "{1.5, 0., 0., -2., 3.}"
+    );
+  }
+
+  #[test]
+  fn threshold_rectangular_array() {
+    // Nested numeric lists are thresholded element-wise.
+    assert_eq!(
+      interpret("Threshold[{{1, 2}, {3, 4}}, 2]").unwrap(),
+      "{{0, 0}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn threshold_non_numeric_returns_unevaluated() {
+    // A non-numeric element should leave the call unevaluated rather
+    // than coerce or silently drop the symbol.
+    assert_eq!(
+      interpret("Threshold[{1, 2, x}, 1]").unwrap(),
+      "Threshold[{1, 2, x}, 1]"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_matrix() {
     // List-of-lists input → column-wise harmonic mean.
     assert_eq!(

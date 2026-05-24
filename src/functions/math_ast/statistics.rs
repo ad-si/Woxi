@@ -1055,9 +1055,7 @@ fn harmonic_mean_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Column-wise HarmonicMean for a list-of-lists (matrix) input.
-fn harmonic_mean_columnwise(
-  rows: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn harmonic_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {

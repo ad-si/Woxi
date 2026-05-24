@@ -2426,10 +2426,17 @@ pub fn color_quantize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Threshold[arg] — stub. Real thresholding (image / array / sound) is not
-/// implemented yet; this stub matches wolframscript's Threshold::wlist
-/// warning for non-image/array input.
+/// Threshold[data]            replaces values with |x| ≤ 10^-10 by zero.
+/// Threshold[data, t]         uses t as the threshold.
+/// Lists of arbitrary nesting depth are walked recursively. Real values
+/// emit a Real 0.; everything else emits an Integer 0, matching
+/// wolframscript. Non-numeric leaves trigger Threshold::nlist and the
+/// call is returned unevaluated.
 pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "Threshold".to_string(),
+    args: args.to_vec().into(),
+  };
   let is_array_like = matches!(
     &args[0],
     Expr::Image { .. } | Expr::List(_) | Expr::FunctionCall { .. }
@@ -2439,11 +2446,130 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Threshold::wlist: Argument {} should be one of rectangular array of any depth, image, sound or sampled sound list.",
       crate::syntax::expr_to_string(&args[0])
     ));
+    return Ok(unevaluated());
   }
-  Ok(Expr::FunctionCall {
-    name: "Threshold".to_string(),
-    args: args.to_vec().into(),
-  })
+  // Image input is still a TODO — leave unevaluated without a message.
+  if matches!(&args[0], Expr::Image { .. }) {
+    return Ok(unevaluated());
+  }
+  let Expr::List(_) = &args[0] else {
+    return Ok(unevaluated());
+  };
+  // Default threshold is 10^-10. When supplied explicitly, the threshold
+  // itself must be numeric (Integer, Rational, or Real); otherwise we
+  // bail out to unevaluated.
+  let threshold: Expr = if args.len() == 2 {
+    if crate::functions::math_ast::try_eval_to_f64(&args[1]).is_none() {
+      return Ok(unevaluated());
+    }
+    args[1].clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(10_000_000_000)].into(),
+    }
+  };
+  // Walk the array recursively. A non-list, non-numeric leaf triggers
+  // the Threshold::nlist message and aborts.
+  fn apply(data: &Expr, t: &Expr) -> Option<Expr> {
+    match data {
+      Expr::List(items) => {
+        if items.is_empty() {
+          // Empty list at the top level was already rejected; nested
+          // empty lists round-trip unchanged.
+          return Some(Expr::List(items.clone()));
+        }
+        let mut out = Vec::with_capacity(items.len());
+        for item in items.iter() {
+          out.push(apply(item, t)?);
+        }
+        Some(Expr::List(out.into()))
+      }
+      x if crate::functions::math_ast::try_eval_to_f64(x).is_some() => {
+        Some(threshold_one(x, t))
+      }
+      _ => None,
+    }
+  }
+  // Empty top-level list is an error, matching wolframscript's nlist.
+  if let Expr::List(top) = &args[0]
+    && top.is_empty()
+  {
+    crate::emit_message(&format!(
+      "Threshold::nlist: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  }
+  match apply(&args[0], &threshold) {
+    Some(result) => Ok(result),
+    None => {
+      crate::emit_message(&format!(
+        "Threshold::nlist: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      Ok(unevaluated())
+    }
+  }
+}
+
+/// Returns x if |x| > t, else a zero of the same kind (Real 0. if x is a
+/// Real, otherwise Integer 0).
+fn threshold_one(x: &Expr, t: &Expr) -> Expr {
+  let zero = if matches!(x, Expr::Real(_)) {
+    Expr::Real(0.0)
+  } else {
+    Expr::Integer(0)
+  };
+  // Prefer exact comparison when both sides are Integer/Rational so that
+  // boundary cases like Threshold[{1/2}, 1/2] don't depend on f64 rounding.
+  if let (Some((xn, xd)), Some((tn, td))) = (as_rational(x), as_rational(t)) {
+    // |xn/xd| <= tn/td  ⇔  |xn| * td <= tn * xd  (all positive denominators)
+    let left = (xn.abs() as i128).checked_mul(td as i128);
+    let right = (tn.abs() as i128).checked_mul(xd as i128);
+    if let (Some(l), Some(r)) = (left, right)
+      && l <= r
+    {
+      return zero;
+    }
+    if left.is_none() || right.is_none() {
+      // Fall through to f64 path on overflow.
+    } else {
+      return x.clone();
+    }
+  }
+  let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
+  let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
+  if xf.abs() <= tf {
+    zero
+  } else {
+    x.clone()
+  }
+}
+
+/// Return (numerator, denominator) for an Integer or Rational, normalised
+/// so the denominator is positive. Real values return None.
+fn as_rational(e: &Expr) -> Option<(i64, i64)> {
+  match e {
+    Expr::Integer(n) => i64::try_from(*n).ok().map(|n| (n, 1)),
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        let p = i64::try_from(*p).ok()?;
+        let q = i64::try_from(*q).ok()?;
+        if q == 0 {
+          return None;
+        }
+        if q < 0 {
+          Some((-p, -q))
+        } else {
+          Some((p, q))
+        }
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
 }
 
 /// ImagePartition[img, n] / [img, n, d] — image tile partition stub.
