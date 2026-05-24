@@ -3162,6 +3162,22 @@ mod cases {
     );
   }
   #[test]
+  fn dice_dissimilarity_boolean() {
+    // Boolean inputs collapse to the same dissimilarity as 1/0 inputs.
+    assert_case(
+      r#"DiceDissimilarity[{True, False, True}, {True, True, False}]"#,
+      r#"1 / 2"#,
+    );
+  }
+  #[test]
+  fn dice_dissimilarity_identical() {
+    // Identical Boolean vectors -> dissimilarity 0.
+    assert_case(
+      r#"DiceDissimilarity[{True, True, True}, {True, True, True}]"#,
+      r#"0"#,
+    );
+  }
+  #[test]
   fn jaccard_dissimilarity() {
     assert_case(
       r#"JaccardDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,

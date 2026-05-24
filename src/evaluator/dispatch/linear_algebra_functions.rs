@@ -2205,26 +2205,24 @@ fn binary_dissimilarity_ast(
   let mut n01: i128 = 0;
   let mut n00: i128 = 0;
 
+  // Accept Integer (0/1) or Boolean (True/False); other entries keep the
+  // call symbolic.
+  fn as_bool(e: &Expr) -> Option<bool> {
+    match e {
+      Expr::Integer(v) => Some(*v != 0),
+      Expr::Identifier(s) if s == "True" => Some(true),
+      Expr::Identifier(s) if s == "False" => Some(false),
+      _ => None,
+    }
+  }
   for (ai, bi) in list_a.iter().zip(list_b.iter()) {
-    let av = match ai {
-      Expr::Integer(v) => *v,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: vec![a.clone(), b.clone()].into(),
-        });
-      }
+    let (Some(av), Some(bv)) = (as_bool(ai), as_bool(bi)) else {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: vec![a.clone(), b.clone()].into(),
+      });
     };
-    let bv = match bi {
-      Expr::Integer(v) => *v,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: vec![a.clone(), b.clone()].into(),
-        });
-      }
-    };
-    match (av != 0, bv != 0) {
+    match (av, bv) {
       (true, true) => n11 += 1,
       (true, false) => n10 += 1,
       (false, true) => n01 += 1,
