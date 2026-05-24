@@ -1171,24 +1171,15 @@ mod list_tests {
   fn student_t_median_symbolic() {
     // The t-distribution is symmetric about 0, so Median = 0 for every ν,
     // even when the Mean (Piecewise) is Indeterminate.
-    assert_eq!(
-      interpret("Median[StudentTDistribution[v]]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("Median[StudentTDistribution[v]]").unwrap(), "0");
   }
 
   #[test]
   fn student_t_median_numeric() {
     // Concrete ν > 1.
-    assert_eq!(
-      interpret("Median[StudentTDistribution[3]]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("Median[StudentTDistribution[3]]").unwrap(), "0");
     // ν = 1 is the Cauchy case; Mean is Indeterminate but Median is still 0.
-    assert_eq!(
-      interpret("Median[StudentTDistribution[1]]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("Median[StudentTDistribution[1]]").unwrap(), "0");
   }
 
   #[test]

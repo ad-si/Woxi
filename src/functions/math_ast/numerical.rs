@@ -2100,10 +2100,24 @@ pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         items.iter().map(|x| unitize_ast(&[x.clone()])).collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Unitize".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      // Numeric-eval fallback: if the argument collapses to a finite
+      // non-zero real, Unitize is 1 (covers Pi, E, EulerGamma,
+      // Sqrt[2], 2*Pi, 3/4, Log[2], ...). Zero numeric results are
+      // already handled because Pi - Pi etc. simplify symbolically
+      // before reaching Unitize.
+      if let Some(v) =
+        crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[0])
+        && v.is_finite()
+        && v != 0.0
+      {
+        return Ok(Expr::Integer(1));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Unitize".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

@@ -2499,6 +2499,31 @@ mod unitize {
     // 1/100 < 1/10, so should be 0
     assert_eq!(interpret("Unitize[1/100, 1/10]").unwrap(), "0");
   }
+
+  #[test]
+  fn unitize_nonzero_constants() {
+    // Numeric mathematical constants are all positive, hence non-zero.
+    assert_eq!(interpret("Unitize[Pi]").unwrap(), "1");
+    assert_eq!(interpret("Unitize[E]").unwrap(), "1");
+    assert_eq!(interpret("Unitize[EulerGamma]").unwrap(), "1");
+    assert_eq!(interpret("Unitize[GoldenRatio]").unwrap(), "1");
+  }
+
+  #[test]
+  fn unitize_nonzero_algebraic() {
+    // Algebraic / closed-form expressions that evaluate to a non-zero
+    // real should also collapse to 1.
+    assert_eq!(interpret("Unitize[Sqrt[2]]").unwrap(), "1");
+    assert_eq!(interpret("Unitize[2 Pi]").unwrap(), "1");
+    assert_eq!(interpret("Unitize[3/4]").unwrap(), "1");
+    assert_eq!(interpret("Unitize[Log[2]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn unitize_symbolic_unchanged() {
+    // Free symbols remain unevaluated.
+    assert_eq!(interpret("Unitize[x]").unwrap(), "Unitize[x]");
+  }
 }
 
 mod ramp {
