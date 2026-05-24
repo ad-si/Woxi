@@ -2223,6 +2223,27 @@ mod batch_unevaluated_wrappers_2 {
       "{Sqrt[2], Sqrt[2]}"
     );
   }
+
+  #[test]
+  fn from_polar_coordinates_3d() {
+    // Hyperspherical {r, t, p}: x1 = r Cos[t], x2 = r Sin[t] Cos[p],
+    // x3 = r Sin[t] Sin[p]. (Woxi's Times canonicalisation orders the
+    // two Sin factors by argument, so Sin[p] precedes Sin[t]; the
+    // expression is identical to wolframscript's r*Sin[t]*Sin[p].)
+    assert_eq!(
+      interpret("FromPolarCoordinates[{r, t, p}]").unwrap(),
+      "{r*Cos[t], r*Cos[p]*Sin[t], r*Sin[p]*Sin[t]}"
+    );
+  }
+
+  #[test]
+  fn from_polar_coordinates_4d() {
+    // 4-dim hyperspherical: extra Sin[p] Cos[q] / Sin[p] Sin[q] factors.
+    assert_eq!(
+      interpret("FromPolarCoordinates[{r, t, p, q}]").unwrap(),
+      "{r*Cos[t], r*Cos[p]*Sin[t], r*Cos[q]*Sin[p]*Sin[t], r*Sin[p]*Sin[q]*Sin[t]}"
+    );
+  }
   #[test]
   fn to_polar_coordinates_symbolic() {
     assert_eq!(
@@ -3735,10 +3756,8 @@ mod batch_unevaluated_wrappers_2 {
   fn find_permutation_custom_head() {
     // FindPermutation accepts any matching head, not just List.
     assert_eq!(
-      interpret(
-        "FindPermutation[head[a, c, d, e, b], head[c, a, b, d, e]]"
-      )
-      .unwrap(),
+      interpret("FindPermutation[head[a, c, d, e, b], head[c, a, b, d, e]]")
+        .unwrap(),
       "Cycles[{{1, 2}, {3, 4, 5}}]"
     );
   }

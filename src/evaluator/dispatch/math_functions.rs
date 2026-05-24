@@ -1988,28 +1988,50 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::parabolic_cylinder_d_ast(args));
     }
     "FromPolarCoordinates" if args.len() == 1 => {
+      // n-dim hyperspherical coordinates: input {r, t_1, ..., t_{n-1}}
+      // gives n Cartesian components where
+      //   x_k = r * Prod_{i<k} Sin[t_i] * Cos[t_k]   (k < n)
+      //   x_n = r * Prod_{i<n} Sin[t_i]
+      // The 2-D case reduces to {r*Cos[t], r*Sin[t]}.
       if let Expr::List(ref elems) = args[0]
-        && elems.len() == 2
+        && elems.len() >= 2
       {
         let r = &elems[0];
-        let theta = &elems[1];
-        let x = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(r.clone()),
-          right: Box::new(Expr::FunctionCall {
-            name: "Cos".to_string(),
-            args: vec![theta.clone()].into(),
-          }),
-        };
-        let y = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(r.clone()),
-          right: Box::new(Expr::FunctionCall {
+        let thetas = &elems[1..];
+        let n = thetas.len() + 1;
+        let sin = |t: &Expr| -> Expr {
+          Expr::FunctionCall {
             name: "Sin".to_string(),
-            args: vec![theta.clone()].into(),
-          }),
+            args: vec![t.clone()].into(),
+          }
         };
-        let result = Expr::List(vec![x, y].into());
+        let cos = |t: &Expr| -> Expr {
+          Expr::FunctionCall {
+            name: "Cos".to_string(),
+            args: vec![t.clone()].into(),
+          }
+        };
+        let mut coords = Vec::with_capacity(n);
+        for k in 0..n {
+          // Build factors r * Sin[t_0] * ... * Sin[t_{k-1}] * (Cos[t_k] if k<n-1, else 1)
+          let mut factors = vec![r.clone()];
+          for t in thetas.iter().take(k) {
+            factors.push(sin(t));
+          }
+          if k < n - 1 {
+            factors.push(cos(&thetas[k]));
+          }
+          let product = if factors.len() == 1 {
+            factors.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: factors.into(),
+            }
+          };
+          coords.push(product);
+        }
+        let result = Expr::List(coords.into());
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
     }
