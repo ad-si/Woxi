@@ -209,10 +209,17 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
-    "ExtremeValueDistribution" if args.len() == 2 => {
+    "ExtremeValueDistribution" => {
+      let evd_args = if args.is_empty() {
+        vec![Expr::Integer(0), Expr::Integer(1)]
+      } else if args.len() == 2 {
+        args.to_vec()
+      } else {
+        return None;
+      };
       return Some(Ok(Expr::FunctionCall {
         name: "ExtremeValueDistribution".to_string(),
-        args: args.to_vec().into(),
+        args: evd_args.into(),
       }));
     }
     "InverseChiSquareDistribution" if args.len() == 1 => {

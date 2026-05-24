@@ -337,7 +337,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ExpToTrig" => Some((1, 1)),
     "ExtendedGCD" => Some((2, usize::MAX)),
     "Extract" => Some((2, 3)),
-    "ExtremeValueDistribution" => Some((2, 2)),
+    "ExtremeValueDistribution" => Some((0, 2)),
     "Factor" => Some((1, 1)),
     "Factorial" => Some((1, 1)),
     "FactorialPower" => Some((2, 3)),

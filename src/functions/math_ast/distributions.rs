@@ -2568,6 +2568,25 @@ fn distribution_mean_variance(
       };
       Ok((mean, var))
     }
+    "ExtremeValueDistribution" => {
+      let (a, b) = match dargs.len() {
+        0 => (int(0), int(1)),
+        2 => (dargs[0].clone(), dargs[1].clone()),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "ExtremeValueDistribution expects 0 or 2 arguments".into(),
+          ));
+        }
+      };
+      // Mean = a + b * EulerGamma
+      let mean = plus(
+        a,
+        times(b.clone(), Expr::Constant("EulerGamma".to_string())),
+      );
+      // Variance = b^2 * Pi^2 / 6
+      let var = divide(times(power(b, int(2)), power(pi(), int(2))), int(6));
+      Ok((mean, var))
+    }
     "FrechetDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

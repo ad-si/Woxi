@@ -1136,6 +1136,62 @@ mod list_tests {
   }
 
   #[test]
+  fn extreme_value_mean_variance_median_symbolic() {
+    // Mean = a + b*EulerGamma; Variance = (b^2 Pi^2)/6;
+    // Median = a - b*Log[Log[2]].
+    assert_eq!(
+      interpret("Mean[ExtremeValueDistribution[a, b]]").unwrap(),
+      "a + b*EulerGamma"
+    );
+    assert_eq!(
+      interpret("Variance[ExtremeValueDistribution[a, b]]").unwrap(),
+      "(b^2*Pi^2)/6"
+    );
+    assert_eq!(
+      interpret("Median[ExtremeValueDistribution[a, b]]").unwrap(),
+      "a - b*Log[Log[2]]"
+    );
+  }
+
+  #[test]
+  fn extreme_value_mean_variance_median_numeric() {
+    // Concrete parameters collapse to closed form.
+    assert_eq!(
+      interpret("Mean[ExtremeValueDistribution[1, 2]]").unwrap(),
+      "1 + 2*EulerGamma"
+    );
+    assert_eq!(
+      interpret("Variance[ExtremeValueDistribution[1, 2]]").unwrap(),
+      "(2*Pi^2)/3"
+    );
+    assert_eq!(
+      interpret("Median[ExtremeValueDistribution[1, 2]]").unwrap(),
+      "1 - 2*Log[Log[2]]"
+    );
+  }
+
+  #[test]
+  fn extreme_value_zero_arg_form() {
+    // Zero-arg form defaults to a = 0, b = 1.
+    assert_eq!(
+      interpret("ExtremeValueDistribution[]").unwrap(),
+      "ExtremeValueDistribution[0, 1]"
+    );
+    assert_eq!(
+      interpret("Mean[ExtremeValueDistribution[]]").unwrap(),
+      "EulerGamma"
+    );
+    assert_eq!(
+      interpret("Variance[ExtremeValueDistribution[]]").unwrap(),
+      "Pi^2/6"
+    );
+    assert_eq!(
+      interpret("Median[ExtremeValueDistribution[]]").unwrap(),
+      "-Log[Log[2]]"
+    );
+  }
+
+  #[test]
   fn harmonic_mean_matrix() {
     // List-of-lists input → column-wise harmonic mean.
     assert_eq!(

@@ -322,6 +322,32 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "ExtremeValueDistribution" => {
+      let (a, b) = match dargs.len() {
+        0 => (Expr::Integer(0), Expr::Integer(1)),
+        2 => (dargs[0].clone(), dargs[1].clone()),
+        _ => return None,
+      };
+      // Median = a - b * Log[Log[2]]
+      let log2 = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![Expr::Integer(2)].into(),
+      };
+      let log_log2 = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![log2].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(a),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(b),
+          right: Box::new(log_log2),
+        }),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     _ => None,
   }
 }
