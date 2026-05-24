@@ -869,6 +869,28 @@ mod cdf {
   }
 
   #[test]
+  fn binormal_pdf_one_arg() {
+    // PDF[BinormalDistribution[rho], {x, y}]
+    //   = E^(-(x^2 - 2 rho x y + y^2) / (2 (1 - rho^2)))
+    //   / (2 Pi Sqrt[1 - rho^2]).
+    // For rho = 1/3 this collapses to (3 E^(9 (-x^2 + (2 x y)/3 - y^2)/16))
+    // / (4 Sqrt[2] Pi).
+    assert_eq!(
+      interpret("PDF[BinormalDistribution[1/3], {x, y}]").unwrap(),
+      "(3*E^((9*(-x^2 + (2*x*y)/3 - y^2))/16))/(4*Sqrt[2]*Pi)"
+    );
+  }
+
+  #[test]
+  fn binormal_pdf_symbolic() {
+    // PDF[BinormalDistribution[rho], {x, y}] with symbolic rho.
+    assert_eq!(
+      interpret("PDF[BinormalDistribution[r], {x, y}]").unwrap(),
+      "E^((-x^2 + 2*r*x*y - y^2)/(2*(1 - r^2)))/(2*Pi*Sqrt[1 - r^2])"
+    );
+  }
+
+  #[test]
   fn exponential() {
     assert_eq!(
       interpret("CDF[ExponentialDistribution[1], x]").unwrap(),

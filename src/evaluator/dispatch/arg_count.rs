@@ -448,6 +448,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HistogramList" => Some((1, 2)),
     "HoldForm" => Some((1, 1)),
     "Hyperfactorial" => Some((1, 1)),
+    "BinormalDistribution" => Some((1, 3)),
     "HypergeometricDistribution" => Some((3, 3)),
     "HypergeometricPFQ" => Some((3, 3)),
     "Hypergeometric1F1Regularized" => Some((3, 3)),

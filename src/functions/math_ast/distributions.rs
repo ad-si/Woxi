@@ -131,6 +131,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
+    "BinormalDistribution" => pdf_binormal(dargs, x),
     "InverseGammaDistribution" => pdf_inverse_gamma(dargs, x),
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
@@ -598,7 +599,10 @@ fn pdf_hypergeometric(
   // can't rely on a subsequent global pass to simplify these.
   let numerator = times(
     binom(ns.clone(), x.clone()),
-    binom(eval(minus(nt.clone(), ns))?, eval(minus(n.clone(), x.clone()))?),
+    binom(
+      eval(minus(nt.clone(), ns))?,
+      eval(minus(n.clone(), x.clone()))?,
+    ),
   );
   let denominator = eval(binom(nt, n.clone()))?;
   let density = eval(divide(numerator, denominator))?;
@@ -608,6 +612,113 @@ fn pdf_hypergeometric(
     operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
   };
   eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// PDF[BinormalDistribution[rho], {x, y}],
+/// PDF[BinormalDistribution[{sigma1, sigma2}, rho], {x, y}],
+/// PDF[BinormalDistribution[{mu1, mu2}, {sigma1, sigma2}, rho], {x, y}]:
+///   PDF = exp(-Q / (2 (1 - rho^2))) / (2 Pi sigma1 sigma2 Sqrt[1 - rho^2])
+/// where Q is the standardised quadratic form
+///   ((x - mu1)/sigma1)^2
+///   - 2 rho ((x - mu1)/sigma1) ((y - mu2)/sigma2)
+///   + ((y - mu2)/sigma2)^2.
+fn pdf_binormal(dargs: &[Expr], xy: Expr) -> Result<Expr, InterpreterError> {
+  let Expr::List(coords) = &xy else {
+    return Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "BinormalDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        xy,
+      ]
+      .into(),
+    });
+  };
+  if coords.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "BinormalDistribution".to_string(),
+          args: dargs.to_vec().into(),
+        },
+        xy,
+      ]
+      .into(),
+    });
+  }
+  let x = coords[0].clone();
+  let y = coords[1].clone();
+  let (mu1, mu2, sigma1, sigma2, rho) = match dargs.len() {
+    1 => (int(0), int(0), int(1), int(1), dargs[0].clone()),
+    2 => {
+      let Expr::List(sigmas) = &dargs[0] else {
+        return Err(InterpreterError::EvaluationError(
+          "BinormalDistribution: expected {sigma1, sigma2}".into(),
+        ));
+      };
+      if sigmas.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BinormalDistribution: expected {sigma1, sigma2}".into(),
+        ));
+      }
+      (
+        int(0),
+        int(0),
+        sigmas[0].clone(),
+        sigmas[1].clone(),
+        dargs[1].clone(),
+      )
+    }
+    3 => {
+      let (Expr::List(mus), Expr::List(sigmas)) = (&dargs[0], &dargs[1]) else {
+        return Err(InterpreterError::EvaluationError(
+          "BinormalDistribution: expected {mu1, mu2}, {sigma1, sigma2}".into(),
+        ));
+      };
+      if mus.len() != 2 || sigmas.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BinormalDistribution: expected {mu1, mu2}, {sigma1, sigma2}".into(),
+        ));
+      }
+      (
+        mus[0].clone(),
+        mus[1].clone(),
+        sigmas[0].clone(),
+        sigmas[1].clone(),
+        dargs[2].clone(),
+      )
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "BinormalDistribution expects 1, 2, or 3 arguments".into(),
+      ));
+    }
+  };
+  // Standardised coordinates u = (x - mu1)/sigma1, v = (y - mu2)/sigma2.
+  let u = divide(minus(x, mu1), sigma1.clone());
+  let v = divide(minus(y, mu2), sigma2.clone());
+  // Q = u^2 - 2 rho u v + v^2
+  let q = plus(
+    minus(power(u.clone(), int(2)), times(int(2), times(rho.clone(), times(u, v.clone())))),
+    power(v, int(2)),
+  );
+  // exponent = -Q / (2 (1 - rho^2))
+  let one_minus_rho_sq = minus(int(1), power(rho.clone(), int(2)));
+  let _ = &rho;
+  let exponent = divide(
+    times(int(-1), q),
+    times(int(2), one_minus_rho_sq.clone()),
+  );
+  // PDF = E^exponent / (2 Pi Sqrt[1 - rho^2] sigma1 sigma2)
+  let denom = times(
+    times(int(2), pi()),
+    times(sqrt(one_minus_rho_sq), times(sigma1, sigma2)),
+  );
+  let numer = power(e(), exponent);
+  eval(divide(numer, denom))
 }
 
 /// PDF[CauchyDistribution[a, b], x] = 1/(Pi*b*(1+((x-a)/b)^2))

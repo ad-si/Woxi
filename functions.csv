@@ -1042,7 +1042,7 @@ InterpolatingPolynomial,Polynomial that interpolates given data points,✅,pure,
 LeafCount,Returns the number of leaves in an expression,✅,pure,1.0,1054
 PrependTo,Prepends an element to a list stored in a variable,✅,stateful,1.0,1054
 AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8.0,1055
-BinormalDistribution,,🚫,,8.0,1056
+BinormalDistribution,Bivariate normal distribution,✅,pure,3.0,1056
 EdgeLabels,,🚫,,8.0,1057
 BarOrigin,,🚫,,7.0,1058
 Label,Label for Goto targets,✅,pure,1.0,1059

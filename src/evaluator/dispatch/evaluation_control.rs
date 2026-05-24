@@ -258,6 +258,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "BinormalDistribution" if (1..=3).contains(&args.len()) => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BinormalDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "CauchyDistribution" => {
       let cauchy_args = if args.is_empty() {
         vec![Expr::Integer(0), Expr::Integer(1)]
