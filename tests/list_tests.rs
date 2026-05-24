@@ -1252,6 +1252,42 @@ mod list_tests {
   }
 
   #[test]
+  fn cycles_canonicalisation() {
+    // Cycles drops length-1 cycles, rotates each cycle so the smallest
+    // element comes first, and sorts cycles by that first element.
+    assert_eq!(
+      interpret("Cycles[{{4, 10, 2, 5}, {9}, {7, 1, 18}}]").unwrap(),
+      "Cycles[{{1, 18, 7}, {2, 5, 4, 10}}]"
+    );
+  }
+
+  #[test]
+  fn cycles_already_canonical() {
+    assert_eq!(
+      interpret("Cycles[{{1, 18, 7}, {2, 5, 4, 10}}]").unwrap(),
+      "Cycles[{{1, 18, 7}, {2, 5, 4, 10}}]"
+    );
+  }
+
+  #[test]
+  fn cycles_drop_singletons() {
+    assert_eq!(interpret("Cycles[{{3}, {4}}]").unwrap(), "Cycles[{}]");
+  }
+
+  #[test]
+  fn cycles_rotate_smallest_first() {
+    // Single cycle: rotate so the smallest is first.
+    assert_eq!(
+      interpret("Cycles[{{3, 1, 2}}]").unwrap(),
+      "Cycles[{{1, 2, 3}}]"
+    );
+    assert_eq!(
+      interpret("Cycles[{{5, 4, 3, 2, 1}}]").unwrap(),
+      "Cycles[{{1, 5, 4, 3, 2}}]"
+    );
+  }
+
+  #[test]
   fn bernoulli_median_symbolic() {
     // Median[BernoulliDistribution[p]] = Piecewise[{{1, p > 1/2}}, 0].
     assert_eq!(

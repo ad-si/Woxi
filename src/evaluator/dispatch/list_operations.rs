@@ -3081,10 +3081,12 @@ pub fn dispatch_list_operations(
     "FindPermutation" if args.len() == 2 => {
       // Pull `&[Expr]` from a List or from a FunctionCall, requiring both
       // sides to share the same head (List vs List, or head[..] vs head[..]).
-      fn elements<'a>(expr: &'a Expr) -> Option<(Option<&'a str>, &'a [Expr])> {
+      fn elements(expr: &Expr) -> Option<(Option<&str>, &[Expr])> {
         match expr {
           Expr::List(items) => Some((None, items)),
-          Expr::FunctionCall { name, args } => Some((Some(name.as_str()), args)),
+          Expr::FunctionCall { name, args } => {
+            Some((Some(name.as_str()), args))
+          }
           _ => None,
         }
       }
@@ -3143,6 +3145,46 @@ pub fn dispatch_list_operations(
         )));
       }
     }
+    // Cycles[{cyc1, ...}] — canonicalise: drop length-1 cycles, rotate
+    // each cycle to start with its smallest element, sort cycles by
+    // that first element. Matches Mathematica's canonical form so
+    // structurally distinct inputs like Cycles[{{4, 10, 2, 5}, {9}}]
+    // and Cycles[{{2, 5, 4, 10}}] compare equal.
+    "Cycles" if args.len() == 1 => {
+      if let Some(cycles) = cycles_arg(&Expr::FunctionCall {
+        name: "Cycles".to_string(),
+        args: args.to_vec().into(),
+      }) {
+        let mut canonical: Vec<Vec<i128>> = Vec::with_capacity(cycles.len());
+        for cycle in cycles.iter() {
+          if cycle.len() <= 1 {
+            continue;
+          }
+          // Rotate so the smallest element comes first.
+          let (min_idx, _) = cycle
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, v)| **v)
+            .unwrap();
+          let mut rotated: Vec<i128> = cycle[min_idx..].to_vec();
+          rotated.extend_from_slice(&cycle[..min_idx]);
+          canonical.push(rotated);
+        }
+        // Sort cycles by their first element.
+        canonical.sort_by_key(|c| c[0]);
+        let cycle_exprs: Vec<Expr> = canonical
+          .into_iter()
+          .map(|c| {
+            Expr::List(c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into())
+          })
+          .collect();
+        return Some(Ok(Expr::FunctionCall {
+          name: "Cycles".to_string(),
+          args: vec![Expr::List(cycle_exprs.into())].into(),
+        }));
+      }
+    }
+
     // PermutationOrder[perm] — order (smallest n such that perm^n = identity)
     "PermutationOrder" if args.len() == 1 => {
       // Cycles[{cycle1, ...}] form: order is LCM of cycle lengths.
