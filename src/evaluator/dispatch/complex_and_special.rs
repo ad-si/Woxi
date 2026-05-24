@@ -4598,6 +4598,107 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
 
 /// Compute the area of a geometric region.
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Cylinder[] / Cylinder[{p1, p2}] / Cylinder[{p1, p2}, r]:
+  //   Volume = Pi * r^2 * Sqrt[Sum_i (p2_i - p1_i)^2].
+  // Default endpoints are {0, 0, -1} and {0, 0, 1}, default radius is 1.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Cylinder"
+  {
+    let (p1_vec, p2_vec, radius) = match args.len() {
+      0 => (
+        vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(-1)],
+        vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)],
+        Expr::Integer(1),
+      ),
+      1 | 2 => {
+        let Expr::List(points) = &args[0] else {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        };
+        if points.len() != 2 {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        }
+        let (Expr::List(p1), Expr::List(p2)) = (&points[0], &points[1]) else {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        };
+        if p1.len() != p2.len() || p1.is_empty() {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        }
+        let radius = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::Integer(1)
+        };
+        (
+          p1.iter().cloned().collect::<Vec<_>>(),
+          p2.iter().cloned().collect::<Vec<_>>(),
+          radius,
+        )
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Volume".to_string(),
+          args: vec![expr.clone()].into(),
+        });
+      }
+    };
+    // Build Sum[(p1_i - p2_i)^2]
+    let squares: Vec<Expr> = p1_vec
+      .iter()
+      .zip(p2_vec.iter())
+      .map(|(a, b)| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              a.clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), b.clone()].into(),
+              },
+            ]
+            .into(),
+          },
+          Expr::Integer(2),
+        ]
+        .into(),
+      })
+      .collect();
+    let sum_sq = if squares.len() == 1 {
+      squares.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: squares.into(),
+      }
+    };
+    let length = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![sum_sq].into(),
+    };
+    let r_squared = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![radius, Expr::Integer(2)].into(),
+    };
+    let volume = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Constant("Pi".to_string()), r_squared, length].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&volume);
+  }
+
   // Cuboid[] / Cuboid[p] are unit hypercubes (Volume = 1).
   // Cuboid[p1, p2] has Volume = Abs[(p2_1 - p1_1) * ... * (p2_n - p1_n)].
   if let Expr::FunctionCall { name, args } = expr

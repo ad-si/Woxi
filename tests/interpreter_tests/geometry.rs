@@ -396,9 +396,43 @@ mod volume {
   fn cuboid_2d() {
     // Lower-dimensional Cuboid (a rectangle) — Volume gives the planar
     // measure, i.e. |d - a| * |e - b| canonicalised by Abs.
+    assert_eq!(interpret("Volume[Cuboid[{0, 0}, {2, 3}]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn cylinder_default() {
+    // Cylinder[] is a unit cylinder from {0, 0, -1} to {0, 0, 1}:
+    // radius 1, length 2 -> volume 2 Pi.
+    assert_eq!(interpret("Volume[Cylinder[]]").unwrap(), "2*Pi");
+  }
+
+  #[test]
+  fn cylinder_with_radius() {
+    // Pi * 2^2 * 5 = 20 Pi.
     assert_eq!(
-      interpret("Volume[Cuboid[{0, 0}, {2, 3}]]").unwrap(),
-      "6"
+      interpret("Volume[Cylinder[{{0, 0, 0}, {0, 0, 5}}, 2]]").unwrap(),
+      "20*Pi"
+    );
+  }
+
+  #[test]
+  fn cylinder_default_radius() {
+    // Default radius is 1: Pi * 1^2 * 5 = 5 Pi.
+    assert_eq!(
+      interpret("Volume[Cylinder[{{0, 0, 0}, {0, 0, 5}}]]").unwrap(),
+      "5*Pi"
+    );
+  }
+
+  #[test]
+  fn cylinder_symbolic() {
+    // Pi * r^2 * Sqrt[Sum[(x2_i - x1_i)^2]] in any orientation.
+    assert_eq!(
+      interpret(
+        "Volume[Cylinder[{{Subscript[x, 1], Subscript[y, 1], Subscript[z, 1]}, {Subscript[x, 2], Subscript[y, 2], Subscript[z, 2]}}, r]]"
+      )
+      .unwrap(),
+      "Pi*r^2*Sqrt[(Subscript[x, 1] - Subscript[x, 2])^2 + (Subscript[y, 1] - Subscript[y, 2])^2 + (Subscript[z, 1] - Subscript[z, 2])^2]"
     );
   }
 }
