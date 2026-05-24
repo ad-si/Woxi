@@ -2355,6 +2355,19 @@ fn distribution_mean_variance(
       let var = times(p.clone(), minus(int(1), p.clone()));
       Ok((p, var))
     }
+    "BinomialDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BinomialDistribution expects 2 arguments".into(),
+        ));
+      }
+      let n = dargs[0].clone();
+      let p = dargs[1].clone();
+      // Mean = n*p, Var = n*(1-p)*p
+      let mean = times(n.clone(), p.clone());
+      let var = times(times(n, minus(int(1), p.clone())), p);
+      Ok((mean, var))
+    }
     "GammaDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -2638,10 +2651,7 @@ fn distribution_mean_variance(
       );
       let var_branch = divide(power(b, int(2)), denom);
       let var = piecewise(
-        vec![(
-          var_branch,
-          comparison(a, ComparisonOp::Greater, int(2)),
-        )],
+        vec![(var_branch, comparison(a, ComparisonOp::Greater, int(2)))],
         indet,
       );
       Ok((mean, var))

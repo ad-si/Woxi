@@ -1168,6 +1168,41 @@ mod list_tests {
   }
 
   #[test]
+  fn binomial_mean_variance_symbolic() {
+    // Mean[BinomialDistribution[n, p]] = n*p.
+    assert_eq!(
+      interpret("Mean[BinomialDistribution[n, p]]").unwrap(),
+      "n*p"
+    );
+    // Variance[BinomialDistribution[n, p]] = n*(1 - p)*p.
+    assert_eq!(
+      interpret("Variance[BinomialDistribution[n, p]]").unwrap(),
+      "n*(1 - p)*p"
+    );
+  }
+
+  #[test]
+  fn binomial_mean_variance_numeric() {
+    // Concrete parameters collapse the Mean and Variance to exact numbers.
+    assert_eq!(
+      interpret("Mean[BinomialDistribution[10, 1/2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Variance[BinomialDistribution[10, 1/2]]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("Mean[BinomialDistribution[10, 0.5]]").unwrap(),
+      "5."
+    );
+    assert_eq!(
+      interpret("Variance[BinomialDistribution[10, 0.5]]").unwrap(),
+      "2.5"
+    );
+  }
+
+  #[test]
   fn inverse_gamma_mean_variance_median_symbolic() {
     // Mean exists only for a > 1; the Piecewise default is Indeterminate.
     assert_eq!(
