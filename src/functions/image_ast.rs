@@ -2540,11 +2540,7 @@ fn threshold_one(x: &Expr, t: &Expr) -> Expr {
   }
   let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
   let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
-  if xf.abs() <= tf {
-    zero
-  } else {
-    x.clone()
-  }
+  if xf.abs() <= tf { zero } else { x.clone() }
 }
 
 /// Return (numerator, denominator) for an Integer or Rational, normalised
@@ -2552,18 +2548,16 @@ fn threshold_one(x: &Expr, t: &Expr) -> Expr {
 fn as_rational(e: &Expr) -> Option<(i64, i64)> {
   match e {
     Expr::Integer(n) => i64::try_from(*n).ok().map(|n| (n, 1)),
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
         let p = i64::try_from(*p).ok()?;
         let q = i64::try_from(*q).ok()?;
         if q == 0 {
           return None;
         }
-        if q < 0 {
-          Some((-p, -q))
-        } else {
-          Some((p, q))
-        }
+        if q < 0 { Some((-p, -q)) } else { Some((p, q)) }
       } else {
         None
       }

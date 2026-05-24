@@ -263,8 +263,46 @@ pub fn group_by_ast(
   Ok(Expr::Association(pairs))
 }
 
+/// Closed-form Median for known distributions. Returns None for
+/// distributions whose median Woxi cannot express symbolically.
+fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
+  match name {
+    "FrechetDistribution" if dargs.len() == 2 => {
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Median = b * Log[2]^(-1/a) ≡ b / Log[2]^(1/a)
+      let log2 = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![Expr::Integer(2)].into(),
+      };
+      let inv_a = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(a),
+      };
+      let denom = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![log2, inv_a].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(b),
+        right: Box::new(denom),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
+    _ => None,
+  }
+}
+
 /// AST-based Median: calculate median of a list.
 pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // Distribution-form input: Median[dist] → quantile at p = 1/2.
+  if let Expr::FunctionCall { name, args } = list
+    && let Some(med) = distribution_median(name, args)
+  {
+    return Ok(med);
+  }
   let items = match list {
     Expr::List(items) => items,
     _ => {

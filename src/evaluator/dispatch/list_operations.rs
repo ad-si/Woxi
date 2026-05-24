@@ -2933,10 +2933,7 @@ pub fn dispatch_list_operations(
       let block_dims: Vec<usize> = if !matches!(a, Expr::List(_)) {
         vec![1; dims.len()]
       } else {
-        match block_shape(&a, dims.len()) {
-          Some(s) => s,
-          None => return None,
-        }
+        block_shape(&a, dims.len())?
       };
       // Per-dimension layout: how much to truncate from the block's
       // front (block_start), the effective block size after truncation

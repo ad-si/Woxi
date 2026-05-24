@@ -916,10 +916,7 @@ mod list_tests {
     // Scalar input is centered in a length-n vector; padding split
     // floor((n-k)/2) left, ceil((n-k)/2) right (so for even n a scalar
     // sits just left of middle).
-    assert_eq!(
-      interpret("CenterArray[x, 5]").unwrap(),
-      "{0, 0, x, 0, 0}"
-    );
+    assert_eq!(interpret("CenterArray[x, 5]").unwrap(), "{0, 0, x, 0, 0}");
     assert_eq!(interpret("CenterArray[x, 4]").unwrap(), "{0, x, 0, 0}");
     assert_eq!(
       interpret("CenterArray[x, 6]").unwrap(),
@@ -972,6 +969,56 @@ mod list_tests {
     assert_eq!(
       interpret("CenterArray[{{a, b}, {c, d}}, {4, 4}]").unwrap(),
       "{{0, 0, 0, 0}, {0, a, b, 0}, {0, c, d, 0}, {0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn frechet_mean_symbolic() {
+    // Mean exists only when shape > 1; the Piecewise default is Infinity.
+    assert_eq!(
+      interpret("Mean[FrechetDistribution[a, b]]").unwrap(),
+      "Piecewise[{{b*Gamma[1 - a^(-1)], 1 < a}}, Infinity]"
+    );
+  }
+
+  #[test]
+  fn frechet_variance_symbolic() {
+    // Variance exists only when shape > 2.
+    assert_eq!(
+      interpret("Variance[FrechetDistribution[a, b]]").unwrap(),
+      "Piecewise[{{b^2*(Gamma[1 - 2/a] - Gamma[1 - a^(-1)]^2), a > 2}}, Infinity]"
+    );
+  }
+
+  #[test]
+  fn frechet_median_symbolic() {
+    // Median is always defined: b * Log[2]^(-1/a).
+    assert_eq!(
+      interpret("Median[FrechetDistribution[a, b]]").unwrap(),
+      "b/Log[2]^a^(-1)"
+    );
+  }
+
+  #[test]
+  fn frechet_mean_numeric_branches() {
+    // Concrete a > 1 collapses the Piecewise into the first branch.
+    assert_eq!(
+      interpret("Mean[FrechetDistribution[2, 3]]").unwrap(),
+      "3*Sqrt[Pi]"
+    );
+    // a ≤ 1 falls through to the default branch (Infinity).
+    assert_eq!(
+      interpret("Mean[FrechetDistribution[0.5, 1.5]]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn frechet_variance_numeric_branches() {
+    // a ≤ 2 → Infinity.
+    assert_eq!(
+      interpret("Variance[FrechetDistribution[2, 3]]").unwrap(),
+      "Infinity"
     );
   }
 

@@ -2490,6 +2490,43 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "FrechetDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "FrechetDistribution expects 2 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Mean = Piecewise[{{b * Gamma[1 - 1/a], 1 < a}}, Infinity]
+      let gamma_1_minus_inv_a = Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![minus(int(1), divide(int(1), a.clone()))].into(),
+      };
+      let mean = piecewise(
+        vec![(
+          times(b.clone(), gamma_1_minus_inv_a.clone()),
+          comparison(int(1), ComparisonOp::Less, a.clone()),
+        )],
+        Expr::Identifier("Infinity".to_string()),
+      );
+      // Var = Piecewise[{{b^2 * (Gamma[1 - 2/a] - Gamma[1 - 1/a]^2), a > 2}}, Infinity]
+      let gamma_1_minus_2_a = Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![minus(int(1), divide(int(2), a.clone()))].into(),
+      };
+      let var = piecewise(
+        vec![(
+          times(
+            power(b, int(2)),
+            minus(gamma_1_minus_2_a, power(gamma_1_minus_inv_a, int(2))),
+          ),
+          comparison(a, ComparisonOp::Greater, int(2)),
+        )],
+        Expr::Identifier("Infinity".to_string()),
+      );
+      Ok((mean, var))
+    }
     "GeometricDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
