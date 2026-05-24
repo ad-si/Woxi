@@ -3363,4 +3363,72 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod import_ppm_tests {
+    use std::io::Write;
+    use woxi::interpret_with_stdout;
+
+    fn write_tmp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+      let path = std::env::temp_dir().join(format!(
+        "woxi_ppm_test_{}_{}",
+        std::process::id(),
+        name
+      ));
+      let mut f = std::fs::File::create(&path).unwrap();
+      f.write_all(bytes).unwrap();
+      path
+    }
+
+    #[test]
+    fn test_import_ppm_invalid_emits_fmterr() {
+      // File present but contents aren't a Netpbm stream — wolframscript
+      // prints `Import::fmterr: Cannot import data as PPM format.` and
+      // returns `$Failed`. Woxi must match.
+      let path = write_tmp("invalid.ppm", b"image");
+      let code = format!(r#"Import["{}","PPM"]"#, path.to_string_lossy());
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "$Failed");
+      assert!(
+        r.stdout
+          .contains("Import::fmterr: Cannot import data as PPM format."),
+        "stdout was: {:?}",
+        r.stdout
+      );
+      let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_import_ppm_missing_file_emits_nffil() {
+      let path = std::env::temp_dir().join(format!(
+        "woxi_ppm_does_not_exist_{}.ppm",
+        std::process::id()
+      ));
+      let _ = std::fs::remove_file(&path);
+      let code = format!(r#"Import["{}","PPM"]"#, path.to_string_lossy());
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "$Failed");
+      assert!(
+        r.stdout.contains("Import::nffil:"),
+        "stdout was: {:?}",
+        r.stdout
+      );
+    }
+
+    #[test]
+    fn test_import_ppm_by_extension_detects_invalid() {
+      // No explicit format argument; .ppm extension alone must trigger
+      // the Netpbm path so the error message still appears.
+      let path = write_tmp("invalid_ext.ppm", b"not a ppm");
+      let code = format!(r#"Import["{}"]"#, path.to_string_lossy());
+      let r = interpret_with_stdout(&code).unwrap();
+      assert_eq!(r.result, "$Failed");
+      assert!(
+        r.stdout
+          .contains("Import::fmterr: Cannot import data as PPM format."),
+        "stdout was: {:?}",
+        r.stdout
+      );
+      let _ = std::fs::remove_file(&path);
+    }
+  }
 }

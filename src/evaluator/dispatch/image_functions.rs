@@ -15,6 +15,57 @@ fn import_extension(path: &str) -> String {
   cleaned.rsplit('.').next().unwrap_or("").to_lowercase()
 }
 
+/// Import a Netpbm (PPM / PGM / PBM / PNM) file.
+///
+/// Matches wolframscript's behaviour for the two common failure modes:
+/// emits `Import::nffil` when the path doesn't exist and `Import::fmterr`
+/// when the file is present but its contents aren't a recognisable Netpbm
+/// stream. Both cases return `$Failed`. The `image` crate isn't built
+/// with the `pnm` feature, so even well-formed PPMs currently return
+/// `$Failed` after the magic-byte check passes — but without the error
+/// message, mirroring wolframscript's silent success on a valid file.
+#[cfg(not(target_arch = "wasm32"))]
+fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
+  if !std::path::Path::new(path).exists() {
+    emit_to_stdout(&format!(
+      "Import::nffil: File {} not found during Import.",
+      path
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+  let bytes = match std::fs::read(path) {
+    Ok(b) => b,
+    Err(_) => {
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+  };
+  // A valid Netpbm stream starts with `P1`..`P6` followed by whitespace.
+  let valid_magic = bytes.len() >= 3
+    && bytes[0] == b'P'
+    && matches!(bytes[1], b'1'..=b'7')
+    && matches!(bytes[2], b' ' | b'\t' | b'\n' | b'\r');
+  if !valid_magic {
+    emit_to_stdout("Import::fmterr: Cannot import data as PPM format.");
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+  // Magic looks plausible but Woxi doesn't yet parse Netpbm pixel data.
+  // Return $Failed silently — matches wolframscript on a valid file when
+  // parsing succeeds (no message; wolframscript returns `Image[…]`).
+  Ok(Expr::Identifier("$Failed".to_string()))
+}
+
+/// Emit a Wolfram-style message and also append it to `CAPTURED_STDOUT`
+/// so that `interpret_with_stdout` (used by the snapshot tests and the
+/// playground) sees the same byte stream wolframscript writes to stdout
+/// in script mode. The format — leading blank line, then `Head::tag: …` —
+/// mirrors wolframscript's exactly.
+fn emit_to_stdout(msg: &str) {
+  crate::emit_message(msg);
+  crate::capture_stdout_raw("\n");
+  crate::capture_stdout_raw(msg);
+  crate::capture_stdout_raw("\n");
+}
+
 pub fn dispatch_image_functions(
   name: &str,
   args: &[Expr],
@@ -342,6 +393,9 @@ pub fn dispatch_image_functions(
           "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" => {
             return Some(crate::functions::image_ast::import_image(&path));
           }
+          "ppm" | "pgm" | "pbm" | "pnm" => {
+            return Some(import_netpbm(&path));
+          }
           _ => {
             return Some(Err(InterpreterError::EvaluationError(format!(
               "Import: unsupported file format \"{}\"",
@@ -471,6 +525,37 @@ pub fn dispatch_image_functions(
           let _ = element;
           return Some(Err(InterpreterError::EvaluationError(
             "Import: txt element import is not available in the browser".into(),
+          )));
+        }
+      }
+
+      // Netpbm family: dispatch via either the file extension or an
+      // explicit `"PPM" | "PGM" | "PBM" | "PNM"` format argument so that
+      // `Import["file.ppm","PPM"]` works even when the extension was
+      // omitted or mis-cased.
+      let explicit_fmt = if let Expr::String(s) = &args[1] {
+        Some(s.to_ascii_lowercase())
+      } else {
+        None
+      };
+      if matches!(ext.as_str(), "ppm" | "pgm" | "pbm" | "pnm")
+        || matches!(
+          explicit_fmt.as_deref(),
+          Some("ppm") | Some("pgm") | Some("pbm") | Some("pnm")
+        )
+      {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          if is_url {
+            // URL imports for netpbm aren't supported yet; fall through.
+          } else {
+            return Some(import_netpbm(&path));
+          }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: local file access is not available in the browser".into(),
           )));
         }
       }
