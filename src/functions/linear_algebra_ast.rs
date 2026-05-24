@@ -1586,6 +1586,73 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(eigs.into()));
   }
 
+  // Generic symbolic 2×2: characteristic polynomial λ^2 − (a+d)λ + (ad−bc)
+  // gives λ = (a + d ± Sqrt[a² − 2 a d + d² + 4 b c]) / 2. wolframscript
+  // returns the minus-branch first, then plus.
+  if n == 2 {
+    let a = matrix[0][0].clone();
+    let b = matrix[0][1].clone();
+    let c = matrix[1][0].clone();
+    let d = matrix[1][1].clone();
+    // discriminant: a² + 4 b c - 2 a d + d²
+    let disc = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![a.clone(), Expr::Integer(2)].into(),
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(4), b.clone(), c.clone()].into(),
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-2), a.clone(), d.clone()].into(),
+        },
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![d.clone(), Expr::Integer(2)].into(),
+        },
+      ]
+      .into(),
+    };
+    let sqrt_disc = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![disc].into(),
+    };
+    let trace = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![a, d].into(),
+    };
+    let lambda_minus = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          trace.clone(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), sqrt_disc.clone()].into(),
+          },
+        ]
+        .into(),
+      }),
+      right: Box::new(Expr::Integer(2)),
+    };
+    let lambda_plus = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![trace, sqrt_disc].into(),
+      }),
+      right: Box::new(Expr::Integer(2)),
+    };
+    let lm = crate::evaluator::evaluate_expr_to_expr(&lambda_minus)?;
+    let lp = crate::evaluator::evaluate_expr_to_expr(&lambda_plus)?;
+    return Ok(Expr::List(vec![lm, lp].into()));
+  }
+
   // Block-diagonal 3×3: split into a 2×2 top-left block and the
   // bottom-right scalar, recurse, sort. Matches case 1337's
   // `Eigenvalues[{{Cos, Sin, 0}, {-Sin, Cos, 0}, {0, 0, 1}}]`.

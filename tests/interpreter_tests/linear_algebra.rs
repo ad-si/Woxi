@@ -673,6 +673,16 @@ mod eigenvalues {
   }
 
   #[test]
+  fn eigenvalues_2x2_symbolic() {
+    // For a fully symbolic 2x2 matrix, the closed-form eigenvalues are
+    // (a + d ± Sqrt[(a - d)^2 + 4*b*c]) / 2.
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {c, d}}]").unwrap(),
+      "{(a + d - Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/2, (a + d + Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/2}"
+    );
+  }
+
+  #[test]
   fn eigenvalues_tiebreak_ascending() {
     // Eigenvalues with equal magnitude (±1 here) tiebreak ascending —
     // {2, -1, 1}, not {2, 1, -1}. Matches wolframscript.
