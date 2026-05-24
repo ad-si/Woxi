@@ -3731,6 +3731,27 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  #[test]
+  fn find_permutation_custom_head() {
+    // FindPermutation accepts any matching head, not just List.
+    assert_eq!(
+      interpret(
+        "FindPermutation[head[a, c, d, e, b], head[c, a, b, d, e]]"
+      )
+      .unwrap(),
+      "Cycles[{{1, 2}, {3, 4, 5}}]"
+    );
+  }
+
+  #[test]
+  fn find_permutation_mixed_heads_unevaluated() {
+    // Different heads should remain unevaluated.
+    assert_eq!(
+      interpret("FindPermutation[head[a, b], List[a, b]]").unwrap(),
+      "FindPermutation[head[a, b], {a, b}]"
+    );
+  }
+
   // KeyMemberQ
   #[test]
   fn key_member_q_true() {

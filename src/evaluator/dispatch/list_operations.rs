@@ -3076,9 +3076,21 @@ pub fn dispatch_list_operations(
         )));
       }
     }
-    // FindPermutation[list1, list2] — find permutation that maps list1 to list2
+    // FindPermutation[e1, e2] — find permutation that maps e1 to e2.
+    // Accepts Lists or any two FunctionCalls with the same head.
     "FindPermutation" if args.len() == 2 => {
-      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+      // Pull `&[Expr]` from a List or from a FunctionCall, requiring both
+      // sides to share the same head (List vs List, or head[..] vs head[..]).
+      fn elements<'a>(expr: &'a Expr) -> Option<(Option<&'a str>, &'a [Expr])> {
+        match expr {
+          Expr::List(items) => Some((None, items)),
+          Expr::FunctionCall { name, args } => Some((Some(name.as_str()), args)),
+          _ => None,
+        }
+      }
+      let (left, right) = (elements(&args[0]), elements(&args[1]));
+      if let (Some((hl, a)), Some((hr, b))) = (left, right)
+        && hl == hr
         && a.len() == b.len()
       {
         let n = a.len();
@@ -3501,7 +3513,11 @@ pub fn dispatch_list_operations(
         support.sort();
         support.dedup();
         return Some(Ok(Expr::List(
-          support.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+          support
+            .into_iter()
+            .map(Expr::Integer)
+            .collect::<Vec<_>>()
+            .into(),
         )));
       }
       if let Expr::List(perm) = &args[0] {
