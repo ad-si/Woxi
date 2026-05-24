@@ -188,6 +188,36 @@ pub fn dispatch_math_functions(
       }
     }
     "InterquartileRange" if args.len() == 1 => {
+      // Distribution heads with a clean closed-form IQR. Without this
+      // bypass the Q3 - Q1 path returns e.g.
+      // Log[4]/λ - Log[4/3]/λ for ExponentialDistribution, because
+      // Woxi doesn't fold Log[a] - Log[b] into Log[a/b] for symbolic
+      // arguments.
+      if let Expr::FunctionCall {
+        name: dist_name,
+        args: dargs,
+      } = &args[0]
+        && dist_name == "ExponentialDistribution"
+        && dargs.len() == 1
+      {
+        let lambda = dargs[0].clone();
+        // Only short-circuit when the rate is symbolic / exact; numeric
+        // rates fall through to the Q3 - Q1 path which already returns
+        // the right Real.
+        if !matches!(&lambda, Expr::Real(_) | Expr::BigFloat(_, _)) {
+          // Log[3]/λ
+          let log3 = Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![Expr::Integer(3)].into(),
+          };
+          let iqr = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(log3),
+            right: Box::new(lambda),
+          };
+          return Some(crate::evaluator::evaluate_expr_to_expr(&iqr));
+        }
+      }
       // InterquartileRange = Q3 - Q1
       // Call the Quartiles logic by dispatching
       if let Some(Ok(Expr::List(ref qs))) =

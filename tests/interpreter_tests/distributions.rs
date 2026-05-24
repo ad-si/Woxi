@@ -419,6 +419,26 @@ mod quartiles {
   }
 
   #[test]
+  fn iqr_exponential_distribution_symbolic() {
+    // InterquartileRange[ExponentialDistribution[λ]] = Log[3]/λ. Naive
+    // subtraction Log[4]/λ - Log[4/3]/λ doesn't collapse symbolically in
+    // Woxi, so this routes through a distribution-aware closed form.
+    assert_eq!(
+      interpret("InterquartileRange[ExponentialDistribution[a]]").unwrap(),
+      "Log[3]/a"
+    );
+  }
+
+  #[test]
+  fn iqr_exponential_distribution_numeric() {
+    // Numerical λ continues to use the Q3 - Q1 path.
+    let result =
+      interpret("InterquartileRange[ExponentialDistribution[2.]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.5493061443340549).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
   fn quantile_exponential_distribution_symbolic() {
     // Direct Quantile calls should produce the same closed form.
     assert_eq!(
