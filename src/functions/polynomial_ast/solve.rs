@@ -2251,6 +2251,34 @@ fn try_solve_inverse_function(
           args: vec![val.clone()].into(),
         }
       }
+      // ArcXxxDegrees[inner] == val → inner == Xxx[val Degree]. The
+      // degree-flavoured arc functions invert to ordinary trig functions
+      // applied to `val * Degree`.
+      "ArcSinDegrees"
+      | "ArcCosDegrees"
+      | "ArcTanDegrees"
+      | "ArcCotDegrees"
+      | "ArcSecDegrees"
+      | "ArcCscDegrees" => {
+        let inverse_name = match name.as_str() {
+          "ArcSinDegrees" => "Sin",
+          "ArcCosDegrees" => "Cos",
+          "ArcTanDegrees" => "Tan",
+          "ArcCotDegrees" => "Cot",
+          "ArcSecDegrees" => "Sec",
+          "ArcCscDegrees" => "Csc",
+          _ => unreachable!(),
+        };
+        let val_deg = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(val.clone()),
+          right: Box::new(Expr::Constant("Degree".to_string())),
+        };
+        Expr::FunctionCall {
+          name: inverse_name.to_string(),
+          args: vec![val_deg].into(),
+        }
+      }
       "Log10" => {
         // Log10[inner] == val → inner == 10^val
         Expr::BinaryOp {

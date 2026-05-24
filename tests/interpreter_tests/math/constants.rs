@@ -228,6 +228,60 @@ mod degree_trig_functions {
   }
 
   #[test]
+  fn solve_arc_sin_degrees() {
+    // Solve[ArcSinDegrees[x] == 60, x] -> x = Sin[60 Degree] = Sqrt[3]/2.
+    assert_eq!(
+      interpret("Solve[ArcSinDegrees[x] == 60, x]").unwrap(),
+      "{{x -> Sqrt[3]/2}}"
+    );
+  }
+
+  #[test]
+  fn solve_arc_cos_degrees() {
+    // Solve[ArcCosDegrees[x] == 60, x] -> x = Cos[60 Degree] = 1/2.
+    assert_eq!(
+      interpret("Solve[ArcCosDegrees[x] == 60, x]").unwrap(),
+      "{{x -> 1/2}}"
+    );
+  }
+
+  #[test]
+  fn solve_arc_tan_degrees() {
+    // Solve[ArcTanDegrees[x] == 60, x] -> x = Tan[60 Degree] = Sqrt[3].
+    assert_eq!(
+      interpret("Solve[ArcTanDegrees[x] == 60, x]").unwrap(),
+      "{{x -> Sqrt[3]}}"
+    );
+  }
+
+  #[test]
+  fn solve_arc_cot_degrees() {
+    // Solve[ArcCotDegrees[x] == 60, x] -> x = Cot[60 Degree] = 1/Sqrt[3].
+    assert_eq!(
+      interpret("Solve[ArcCotDegrees[x] == 60, x]").unwrap(),
+      "{{x -> 1/Sqrt[3]}}"
+    );
+  }
+
+  #[test]
+  fn solve_arc_sec_degrees() {
+    // Solve[ArcSecDegrees[x] == 60, x] -> x = Sec[60 Degree] = 2.
+    assert_eq!(
+      interpret("Solve[ArcSecDegrees[x] == 60, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn solve_arc_csc_degrees() {
+    // Solve[ArcCscDegrees[x] == 60, x] -> x = Csc[60 Degree] = 2/Sqrt[3].
+    assert_eq!(
+      interpret("Solve[ArcCscDegrees[x] == 60, x]").unwrap(),
+      "{{x -> 2/Sqrt[3]}}"
+    );
+  }
+
+  #[test]
   fn degrees_listable() {
     assert_eq!(interpret("SinDegrees[{0, 30, 90}]").unwrap(), "{0, 1/2, 1}");
     assert_eq!(interpret("CosDegrees[{0, 60, 90}]").unwrap(), "{1, 1/2, 0}");
