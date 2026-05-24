@@ -1168,6 +1168,59 @@ mod list_tests {
   }
 
   #[test]
+  fn stable_mean_type_zero_symbolic() {
+    // Type-0 parametrisation: Mean = mu - beta*sigma*Tan[Pi*alpha/2]
+    // when 1 < alpha <= 2; otherwise Indeterminate.
+    assert_eq!(
+      interpret("Mean[StableDistribution[0, a, b, m, s]]").unwrap(),
+      "Piecewise[{{m - b*s*Tan[(a*Pi)/2], Inequality[2, GreaterEqual, a, Greater, 1]}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn stable_mean_type_one_symbolic() {
+    // Type-1 parametrisation: Mean = mu when 1 < alpha <= 2;
+    // otherwise Indeterminate.
+    assert_eq!(
+      interpret("Mean[StableDistribution[1, a, b, m, s]]").unwrap(),
+      "Piecewise[{{m, Inequality[2, GreaterEqual, a, Greater, 1]}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn stable_variance_symbolic() {
+    // Variance is finite only for alpha == 2 (Gaussian limit) for both
+    // type-0 and type-1 parametrisations.
+    assert_eq!(
+      interpret("Variance[StableDistribution[0, a, b, m, s]]").unwrap(),
+      "Piecewise[{{2*s^2, a == 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Variance[StableDistribution[1, a, b, m, s]]").unwrap(),
+      "Piecewise[{{2*s^2, a == 2}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn stable_mean_numeric_branches() {
+    // Concrete alpha > 1, beta = 0, mu = 0 collapses to 0 (or 0.).
+    assert_eq!(
+      interpret("Mean[StableDistribution[0, 1.5, 0, 0, 1]]").unwrap(),
+      "0."
+    );
+    // alpha = 2 (Gaussian) collapses to mu.
+    assert_eq!(
+      interpret("Mean[StableDistribution[0, 2, 0, 0, 1]]").unwrap(),
+      "0"
+    );
+    // alpha <= 1 falls through to Indeterminate.
+    assert_eq!(
+      interpret("Mean[StableDistribution[0, 1/2, 0, 0, 1]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
   fn arcsin_distribution_median_symbolic() {
     // Median[ArcSinDistribution[{a, b}]] = (a + b)/2 (the distribution
     // is symmetric about the midpoint of its support).
@@ -1189,10 +1242,7 @@ mod list_tests {
       "4"
     );
     // Zero-argument form defaults to {0, 1}.
-    assert_eq!(
-      interpret("Median[ArcSinDistribution[]]").unwrap(),
-      "1/2"
-    );
+    assert_eq!(interpret("Median[ArcSinDistribution[]]").unwrap(), "1/2");
   }
 
   #[test]

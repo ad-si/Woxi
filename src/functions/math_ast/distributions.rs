@@ -2625,6 +2625,58 @@ fn distribution_mean_variance(
       let var = divide(times(power(b, int(2)), power(pi(), int(2))), int(6));
       Ok((mean, var))
     }
+    "StableDistribution" => {
+      // Canonical 5-arg form: StableDistribution[type, alpha, beta, mu, sigma].
+      // type ∈ {0, 1} selects between the two standard parametrisations.
+      if dargs.len() != 5 {
+        return Err(InterpreterError::EvaluationError(
+          "StableDistribution expects 5 arguments (canonical form)".into(),
+        ));
+      }
+      let type_ = dargs[0].clone();
+      let alpha = dargs[1].clone();
+      let beta = dargs[2].clone();
+      let mu = dargs[3].clone();
+      let sigma = dargs[4].clone();
+      let indet = Expr::Identifier("Indeterminate".to_string());
+      // Mean exists when 1 < alpha <= 2.
+      // Type 0: Mean = mu - beta * sigma * Tan[Pi * alpha / 2]
+      // Type 1: Mean = mu
+      let mean_branch = match &type_ {
+        Expr::Integer(0) => {
+          let tan_arg = divide(times(alpha.clone(), pi()), int(2));
+          let tan_term = Expr::FunctionCall {
+            name: "Tan".to_string(),
+            args: vec![tan_arg].into(),
+          };
+          minus(mu.clone(), times(times(beta, sigma.clone()), tan_term))
+        }
+        _ => mu.clone(),
+      };
+      let mean = piecewise(
+        vec![(
+          mean_branch,
+          comparison3(
+            int(2),
+            ComparisonOp::GreaterEqual,
+            alpha.clone(),
+            ComparisonOp::Greater,
+            int(1),
+          ),
+        )],
+        indet.clone(),
+      );
+      // Variance is finite only for alpha == 2 (Gaussian limit), where it
+      // is 2 * sigma^2. Holds for both type parametrisations.
+      let var = piecewise(
+        vec![(
+          times(int(2), power(sigma, int(2))),
+          comparison(alpha, ComparisonOp::Equal, int(2)),
+        )],
+        indet,
+      );
+      Ok((mean, var))
+    }
     "InverseGammaDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
