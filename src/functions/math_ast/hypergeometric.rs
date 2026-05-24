@@ -787,7 +787,7 @@ fn hypergeometric_2f1_regularized_non_positive_c(
   if !(0..=64).contains(&m) {
     return Ok(None);
   }
-  let shift = (m + 1) as i128;
+  let shift = m + 1;
 
   // Pochhammer (a)_{m+1} as a Times product of (a, a+1, ..., a+m).
   let pochhammer = |x: &Expr| -> Expr {

@@ -1168,6 +1168,58 @@ mod list_tests {
   }
 
   #[test]
+  fn inverse_gamma_mean_variance_median_symbolic() {
+    // Mean exists only for a > 1; the Piecewise default is Indeterminate.
+    assert_eq!(
+      interpret("Mean[InverseGammaDistribution[a, b]]").unwrap(),
+      "Piecewise[{{b/(-1 + a), a > 1}}, Indeterminate]"
+    );
+    // Variance exists only for a > 2.
+    assert_eq!(
+      interpret("Variance[InverseGammaDistribution[a, b]]").unwrap(),
+      "Piecewise[{{b^2/((-2 + a)*(-1 + a)^2), a > 2}}, Indeterminate]"
+    );
+    // Median is defined for all a > 0 via the regularized inverse gamma.
+    assert_eq!(
+      interpret("Median[InverseGammaDistribution[a, b]]").unwrap(),
+      "b/InverseGammaRegularized[a, 1/2]"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_mean_variance_numeric_branches() {
+    // a = 3 > 2, so both Mean and Variance collapse to the first branch.
+    assert_eq!(
+      interpret("Mean[InverseGammaDistribution[3, 2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Variance[InverseGammaDistribution[3, 2]]").unwrap(),
+      "1"
+    );
+    // a = 1/2 < 1 → Mean falls through to the Indeterminate default.
+    assert_eq!(
+      interpret("Mean[InverseGammaDistribution[1/2, 2]]").unwrap(),
+      "Indeterminate"
+    );
+    // 1 < a = 3/2 < 2 → Variance is Indeterminate even though Mean is finite.
+    assert_eq!(
+      interpret("Variance[InverseGammaDistribution[3/2, 2]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_median_numeric() {
+    // Median stays symbolic because InverseGammaRegularized is itself
+    // symbolic for these arguments.
+    assert_eq!(
+      interpret("Median[InverseGammaDistribution[3, 2]]").unwrap(),
+      "2/InverseGammaRegularized[3, 1/2]"
+    );
+  }
+
+  #[test]
   fn gompertz_makeham_mean_and_median_symbolic() {
     // Gompertz (two-arg) form: Mean = (E^xi*Gamma[0, xi])/lambda;
     // Median = Log[1 + Log[2]/xi]/lambda.

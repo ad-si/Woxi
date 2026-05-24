@@ -348,6 +348,25 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
+    "InverseGammaDistribution" if dargs.len() == 2 => {
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Median = b / InverseGammaRegularized[a, 1/2]
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      };
+      let denom = Expr::FunctionCall {
+        name: "InverseGammaRegularized".to_string(),
+        args: vec![a, half].into(),
+      };
+      let med = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(b),
+        right: Box::new(denom),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&med).ok()
+    }
     "GompertzMakehamDistribution" if dargs.len() == 2 => {
       let lambda = dargs[0].clone();
       let xi = dargs[1].clone();

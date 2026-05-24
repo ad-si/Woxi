@@ -2612,6 +2612,40 @@ fn distribution_mean_variance(
       let var = divide(times(power(b, int(2)), power(pi(), int(2))), int(6));
       Ok((mean, var))
     }
+    "InverseGammaDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "InverseGammaDistribution expects 2 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      let indet = Expr::Identifier("Indeterminate".to_string());
+      // Mean = Piecewise[{{b/(-1 + a), a > 1}}, Indeterminate]
+      let mean_branch = divide(b.clone(), plus(int(-1), a.clone()));
+      let mean = piecewise(
+        vec![(
+          mean_branch,
+          comparison(a.clone(), ComparisonOp::Greater, int(1)),
+        )],
+        indet.clone(),
+      );
+      // Variance = Piecewise[{{b^2/((-2 + a)*(-1 + a)^2), a > 2}},
+      //                      Indeterminate]
+      let denom = times(
+        plus(int(-2), a.clone()),
+        power(plus(int(-1), a.clone()), int(2)),
+      );
+      let var_branch = divide(power(b, int(2)), denom);
+      let var = piecewise(
+        vec![(
+          var_branch,
+          comparison(a, ComparisonOp::Greater, int(2)),
+        )],
+        indet,
+      );
+      Ok((mean, var))
+    }
     "GompertzMakehamDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
