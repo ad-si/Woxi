@@ -1048,13 +1048,45 @@ mod list_tests {
   #[test]
   fn half_normal_numeric_values() {
     // Concrete parameters should collapse to exact rationals.
-    assert_eq!(
-      interpret("Mean[HalfNormalDistribution[2]]").unwrap(),
-      "1/2"
-    );
+    assert_eq!(interpret("Mean[HalfNormalDistribution[2]]").unwrap(), "1/2");
     assert_eq!(
       interpret("Variance[HalfNormalDistribution[2]]").unwrap(),
       "(-2 + Pi)/8"
+    );
+  }
+
+  #[test]
+  fn hypoexponential_mean_symbolic() {
+    // Mean = sum_i 1/lambda_i. Woxi renders reciprocals as x^(-1).
+    assert_eq!(
+      interpret("Mean[HypoexponentialDistribution[{a, b, c}]]").unwrap(),
+      "a^(-1) + b^(-1) + c^(-1)"
+    );
+    assert_eq!(
+      interpret("Mean[HypoexponentialDistribution[{a, b}]]").unwrap(),
+      "a^(-1) + b^(-1)"
+    );
+  }
+
+  #[test]
+  fn hypoexponential_variance_symbolic() {
+    // Variance of independent exponentials is sum_i 1/lambda_i^2.
+    assert_eq!(
+      interpret("Variance[HypoexponentialDistribution[{a, b, c}]]").unwrap(),
+      "a^(-2) + b^(-2) + c^(-2)"
+    );
+  }
+
+  #[test]
+  fn hypoexponential_numeric_values() {
+    // Concrete rates collapse to a single rational.
+    assert_eq!(
+      interpret("Mean[HypoexponentialDistribution[{1, 2, 3}]]").unwrap(),
+      "11/6"
+    );
+    assert_eq!(
+      interpret("Mean[HypoexponentialDistribution[{1, 2}]]").unwrap(),
+      "3/2"
     );
   }
 

@@ -2501,10 +2501,43 @@ fn distribution_mean_variance(
       let mean = divide(int(1), theta.clone());
       // Variance = (Pi - 2) / (2 * theta^2). Built as (-2 + Pi)/(...) so
       // the rendered output matches wolframscript's canonical ordering.
-      let var = divide(
-        plus(int(-2), pi()),
-        times(int(2), power(theta, int(2))),
-      );
+      let var =
+        divide(plus(int(-2), pi()), times(int(2), power(theta, int(2))));
+      Ok((mean, var))
+    }
+    "HypoexponentialDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "HypoexponentialDistribution expects 1 argument".into(),
+        ));
+      }
+      let Expr::List(rates) = &dargs[0] else {
+        return Err(InterpreterError::EvaluationError(
+          "HypoexponentialDistribution: expected a list of rates".into(),
+        ));
+      };
+      if rates.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "HypoexponentialDistribution: rate list cannot be empty".into(),
+        ));
+      }
+      // Mean = sum_i 1/lambda_i; Variance = sum_i 1/lambda_i^2. The
+      // hypoexponential is a sum of independent exponentials, so the
+      // mean and variance add term by term.
+      let mean_terms: Vec<Expr> =
+        rates.iter().map(|r| divide(int(1), r.clone())).collect();
+      let var_terms: Vec<Expr> = rates
+        .iter()
+        .map(|r| divide(int(1), power(r.clone(), int(2))))
+        .collect();
+      let mean = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: mean_terms.into(),
+      };
+      let var = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: var_terms.into(),
+      };
       Ok((mean, var))
     }
     "FrechetDistribution" => {
