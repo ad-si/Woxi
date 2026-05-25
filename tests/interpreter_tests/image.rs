@@ -1510,6 +1510,63 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageCrop[image] with no size argument removes uniform borders.
+  // Pixel precision is preserved (no Byte round-trip).
+  #[test]
+  fn image_crop_no_uniform_border_preserves_pixels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCrop[Image[\
+         {{0.1, 0.2, 0.3}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.0}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}, \
+       {0., 0.5, 0.}, \
+       {0., 0., 0.}}"
+    );
+  }
+
+  // Auto-crop trims a uniform border around the interior content.
+  #[test]
+  fn image_crop_trims_uniform_border() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageCrop[Image[\
+         {{0.0, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.0}}]]]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCrop[Image[\
+         {{0.0, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.0, 0.0, 0.0}}]]]"
+      )
+      .unwrap(),
+      "{{0.5}}"
+    );
+  }
+
+  // A larger central region gets cropped down to just the non-border
+  // bounding box.
+  #[test]
+  fn image_crop_finds_interior_bounding_box() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageCrop[Image[\
+         {{0.0, 0.0, 0.0, 0.0}, \
+         {0.0, 0.5, 0.7, 0.0}, \
+         {0.0, 0.3, 0.4, 0.0}, \
+         {0.0, 0.0, 0.0, 0.0}}]]]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+  }
+
   // ImageApply on an RGB image with a function that returns a scalar
   // collapses each pixel's channel list to that scalar — the result
   // is a 1-channel (grayscale) image.
@@ -1524,10 +1581,8 @@ mod image_processing {
       "{{0.5, 0.8999999761581421}}"
     );
     assert_eq!(
-      interpret(
-        "ImageChannels[ImageApply[Max, Image[{{{0.1, 0.5, 0.2}}}]]]"
-      )
-      .unwrap(),
+      interpret("ImageChannels[ImageApply[Max, Image[{{{0.1, 0.5, 0.2}}}]]]")
+        .unwrap(),
       "1"
     );
   }
@@ -1560,10 +1615,8 @@ mod image_processing {
   fn image_apply_reverse_keeps_three_channels() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[ImageApply[Reverse, Image[{{{0.1, 0.5, 0.2}}}]]]"
-      )
-      .unwrap(),
+      interpret("ImageData[ImageApply[Reverse, Image[{{{0.1, 0.5, 0.2}}}]]]")
+        .unwrap(),
       "{{{0.20000000298023224, 0.5, 0.10000000149011612}}}"
     );
   }

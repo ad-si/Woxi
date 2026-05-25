@@ -1688,31 +1688,120 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      if args.len() == 2 {
-        // Wolfram's ImageCrop[image, size] expects a flat {w,h} size spec.
-        // Nested lists like {{x1,y1},{x2,y2}} are not valid — return unevaluated.
-        return Ok(Expr::FunctionCall {
-          name: "ImageCrop".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-      // Auto-crop: trim uniform border
-      let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
-      let cropped = auto_crop(&dyn_img);
-      Ok(dynamic_image_to_expr(&cropped))
-    }
-    _ => Err(InterpreterError::EvaluationError(
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    return Err(InterpreterError::EvaluationError(
       "ImageCrop: first argument is not an Image".into(),
-    )),
+    ));
+  };
+
+  if args.len() == 2 {
+    // ImageCrop[image, size] isn't implemented yet; return unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "ImageCrop".to_string(),
+      args: args.to_vec().into(),
+    });
   }
+
+  // Auto-crop: trim any uniform border that matches the (0, 0) pixel.
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  if w == 0 || h == 0 {
+    return Ok(args[0].clone());
+  }
+  let corner: Vec<f64> = (0..ch).map(|c| data[c]).collect();
+  // For Real32, allow one f32 ulp of tolerance against the corner.
+  let tol = if matches!(image_type, crate::syntax::ImageType::Real32) {
+    f32::EPSILON as f64
+  } else {
+    0.0
+  };
+  let pixel_matches = |x: usize, y: usize| -> bool {
+    let base = (y * w + x) * ch;
+    (0..ch).all(|c| (data[base + c] - corner[c]).abs() <= tol)
+  };
+  let mut top = h;
+  'top: for y in 0..h {
+    for x in 0..w {
+      if !pixel_matches(x, y) {
+        top = y;
+        break 'top;
+      }
+    }
+  }
+  if top == h {
+    // The whole image matches the corner; return a 1×1 image.
+    return Ok(Expr::Image {
+      width: 1,
+      height: 1,
+      channels: *channels,
+      data: Arc::new(corner),
+      image_type: *image_type,
+    });
+  }
+  let mut bottom = top;
+  for y in (top..h).rev() {
+    let mut found = false;
+    for x in 0..w {
+      if !pixel_matches(x, y) {
+        bottom = y + 1;
+        found = true;
+        break;
+      }
+    }
+    if found {
+      break;
+    }
+  }
+  let mut left = w;
+  'left: for x in 0..w {
+    for y in top..bottom {
+      if !pixel_matches(x, y) {
+        left = x;
+        break 'left;
+      }
+    }
+  }
+  let mut right = left;
+  for x in (left..w).rev() {
+    let mut found = false;
+    for y in top..bottom {
+      if !pixel_matches(x, y) {
+        right = x + 1;
+        found = true;
+        break;
+      }
+    }
+    if found {
+      break;
+    }
+  }
+
+  let new_w = right - left;
+  let new_h = bottom - top;
+  let mut new_data = Vec::with_capacity(new_w * new_h * ch);
+  for y in top..bottom {
+    for x in left..right {
+      let base = (y * w + x) * ch;
+      for c in 0..ch {
+        new_data.push(data[base + c]);
+      }
+    }
+  }
+  Ok(Expr::Image {
+    width: new_w as u32,
+    height: new_h as u32,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// ImageTrim[img, {{x1,y1},{x2,y2}}] - Trim image to a coordinate region.
@@ -1800,80 +1889,6 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
-}
-
-/// Simple auto-crop: trim borders that match the top-left corner pixel
-fn auto_crop(img: &image::DynamicImage) -> image::DynamicImage {
-  use image::GenericImageView;
-  let (w, h) = img.dimensions();
-  if w == 0 || h == 0 {
-    return img.clone();
-  }
-
-  let corner = img.get_pixel(0, 0);
-  let threshold = 10u8;
-
-  let pixel_matches = |x: u32, y: u32| -> bool {
-    let p = img.get_pixel(x, y);
-    p.0
-      .iter()
-      .zip(corner.0.iter())
-      .all(|(a, b)| (*a as i16 - *b as i16).unsigned_abs() <= threshold as u16)
-  };
-
-  // Find top
-  let mut top = 0;
-  'top: for y in 0..h {
-    for x in 0..w {
-      if !pixel_matches(x, y) {
-        top = y;
-        break 'top;
-      }
-    }
-    top = y + 1;
-  }
-
-  // Find bottom
-  let mut bottom = h;
-  'bottom: for y in (0..h).rev() {
-    for x in 0..w {
-      if !pixel_matches(x, y) {
-        bottom = y + 1;
-        break 'bottom;
-      }
-    }
-    bottom = y;
-  }
-
-  // Find left
-  let mut left = 0;
-  'left: for x in 0..w {
-    for y in top..bottom {
-      if !pixel_matches(x, y) {
-        left = x;
-        break 'left;
-      }
-    }
-    left = x + 1;
-  }
-
-  // Find right
-  let mut right = w;
-  'right: for x in (0..w).rev() {
-    for y in top..bottom {
-      if !pixel_matches(x, y) {
-        right = x + 1;
-        break 'right;
-      }
-    }
-    right = x;
-  }
-
-  if left >= right || top >= bottom {
-    return img.clone();
-  }
-
-  img.crop_imm(left, top, right - left, bottom - top)
 }
 
 // ─── Advanced functions (Phase 3) ──────────────────────────────────────────
@@ -2310,9 +2325,7 @@ pub fn image_apply_ast(
   let func = &args[0];
   let apply = |arg: Expr| -> Result<Expr, InterpreterError> {
     let call = match func {
-      Expr::Function { body } => {
-        crate::syntax::substitute_slots(body, &[arg])
-      }
+      Expr::Function { body } => crate::syntax::substitute_slots(body, &[arg]),
       _ => Expr::FunctionCall {
         name: crate::syntax::expr_to_string(func),
         args: vec![arg].into(),
@@ -2381,19 +2394,18 @@ pub fn image_apply_ast(
   }
 
   let mut new_data: Vec<f64> = Vec::with_capacity(num_pixels * out_ch);
-  let push_result = |result: &Expr,
-                     dst: &mut Vec<f64>|
-   -> Result<(), InterpreterError> {
-    match result {
-      Expr::List(vs) => {
-        for v in vs.iter() {
-          dst.push(expr_to_f64(v)?);
+  let push_result =
+    |result: &Expr, dst: &mut Vec<f64>| -> Result<(), InterpreterError> {
+      match result {
+        Expr::List(vs) => {
+          for v in vs.iter() {
+            dst.push(expr_to_f64(v)?);
+          }
         }
+        other => dst.push(expr_to_f64(other)?),
       }
-      other => dst.push(expr_to_f64(other)?),
-    }
-    Ok(())
-  };
+      Ok(())
+    };
   push_result(&first_result, &mut new_data)?;
   for i in 1..num_pixels {
     let base = i * ch;
