@@ -2165,6 +2165,31 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("AngularGauge[x]").unwrap(), "AngularGauge[x]");
   }
   #[test]
+  fn angular_gauge_with_range_renders_graphics() {
+    assert_eq!(
+      interpret("AngularGauge[5.5, {0, 10}]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("Head[AngularGauge[5.5, {0, 10}]]").unwrap(),
+      "Graphics"
+    );
+  }
+  #[test]
+  fn angular_gauge_accepts_options() {
+    // Audit case: ScaleDivisions option on AngularGauge.
+    assert_eq!(
+      interpret("AngularGauge[5.5, {0, 10}, ScaleDivisions -> Automatic]")
+        .unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("AngularGauge[5.5, {0, 10}, ScaleDivisions -> {10, 2}]")
+        .unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
   }

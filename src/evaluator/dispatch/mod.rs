@@ -2900,6 +2900,70 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // AngularGauge[value, {min, max}, opts...] → Graphics dial showing
+  // `value` on a circular scale from `min` to `max`. The gauge sweeps
+  // clockwise from -135° at `min` to 135° at `max`. Options are kept on
+  // the resulting Graphics so wolframscript's `-Graphics-` placeholder
+  // is produced for callers that just check the head.
+  if name == "AngularGauge" && args.len() >= 2 {
+    let value = crate::functions::math_ast::try_eval_to_f64(&args[0]);
+    let (lo, hi) = match &args[1] {
+      Expr::List(items) if items.len() == 2 => (
+        crate::functions::math_ast::try_eval_to_f64(&items[0]),
+        crate::functions::math_ast::try_eval_to_f64(&items[1]),
+      ),
+      _ => (None, None),
+    };
+    let mut primitives: Vec<Expr> = Vec::new();
+    // Outer dial.
+    primitives.push(Expr::FunctionCall {
+      name: "Circle".to_string(),
+      args: vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::Integer(1),
+      ]
+      .into(),
+    });
+    // Needle from center to the angle corresponding to `value`.
+    if let (Some(v), Some(lo), Some(hi)) = (value, lo, hi)
+      && hi != lo
+    {
+      let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+      let start_deg = -135.0f64;
+      let end_deg = 135.0f64;
+      let theta_deg = start_deg + t * (end_deg - start_deg);
+      // Wolfram's angular convention: 0° at top, increasing clockwise.
+      // For SVG-style Graphics axes we use math convention with the dial
+      // rotated by 90°.
+      let theta = (90.0 - theta_deg).to_radians();
+      let nx = theta.cos();
+      let ny = theta.sin();
+      primitives.push(Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(
+          vec![
+            Expr::List(
+              vec![Expr::Integer(0), Expr::Integer(0)].into(),
+            ),
+            Expr::List(vec![Expr::Real(nx), Expr::Real(ny)].into()),
+          ]
+          .into(),
+        )]
+        .into(),
+      });
+    }
+    let mut graphics_args = vec![Expr::List(primitives.into())];
+    for opt in &args[2..] {
+      if matches!(opt, Expr::Rule { .. }) {
+        graphics_args.push(opt.clone());
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graphics".to_string(),
+      args: graphics_args.into(),
+    });
+  }
+
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "VoronoiMesh" && args.len() == 1 {
     return crate::functions::voronoi::voronoi_mesh_ast(args);

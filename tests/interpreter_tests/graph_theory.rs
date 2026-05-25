@@ -127,17 +127,12 @@ mod complete_graph {
   #[test]
   fn cycle_graph_with_options() {
     assert_eq!(
-      interpret(
-        "Head[CycleGraph[5, VertexSize -> {1 -> Medium}]]"
-      )
-      .unwrap(),
+      interpret("Head[CycleGraph[5, VertexSize -> {1 -> Medium}]]").unwrap(),
       "Graph"
     );
     assert_eq!(
-      interpret(
-        "Length[EdgeList[CycleGraph[5, VertexSize -> {1 -> Medium}]]]"
-      )
-      .unwrap(),
+      interpret("Length[EdgeList[CycleGraph[5, VertexSize -> {1 -> Medium}]]]")
+        .unwrap(),
       "5"
     );
   }

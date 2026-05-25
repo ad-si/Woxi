@@ -1827,7 +1827,7 @@ NotebookSave,Save notebook,,unevaluated,3.0,1857
 UpperCaseQ,Tests if a string consists entirely of uppercase letters,✅,pure,2.0,1857
 ListContourPlot3D,3D contour plot from data,,unevaluated,6.0,1858
 ResamplingMethod,Resampling method option,,unevaluated,10.0,1859
-AngularGauge,Angular gauge,,unevaluated,9.0,1860
+AngularGauge,Display a value on a circular dial as a Graphics gauge,✅,pure,9.0,1860
 CopyToClipboard,Copy to clipboard,,unevaluated,8.0,1861
 ColorReplace,Replace colors in image,,unevaluated,9.0,1864
 Format,Display wrapper that formats an expression in a given form,✅,pure,1.0,1864
