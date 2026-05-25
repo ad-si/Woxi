@@ -6002,6 +6002,40 @@ mod cases {
       r#"Sin[x]"#,
     );
   }
+  // MemoryConstrained: returns the evaluated result if its ByteCount
+  // fits within the budget; otherwise $Aborted (2-arg form) or the
+  // supplied fallback (3-arg form). Body is HoldFirst, so it isn't
+  // evaluated before the size budget is checked.
+  #[test]
+  fn memory_constrained_small_result() {
+    assert_case(
+      r#"MemoryConstrained[1 + 2, 1000]"#,
+      r#"3"#,
+    );
+  }
+  #[test]
+  fn memory_constrained_large_result_aborts() {
+    // Range[1000] is a 1000-element list — well over 100 bytes.
+    assert_case(
+      r#"MemoryConstrained[Range[1000], 100]"#,
+      r#"$Aborted"#,
+    );
+  }
+  #[test]
+  fn memory_constrained_fallback_form() {
+    assert_case(
+      r#"MemoryConstrained[Range[1000], 100, $Failed]"#,
+      r#"$Failed"#,
+    );
+  }
+  // Body that fits returns the result even with the fallback form.
+  #[test]
+  fn memory_constrained_fallback_unused_when_fits() {
+    assert_case(
+      r#"MemoryConstrained[1 + 2, 1000, $Failed]"#,
+      r#"3"#,
+    );
+  }
   #[test]
   fn d_22() {
     assert_case(r#"D[{y, -x}[2], {x, y}]"#, r#"D[{y, -x}[2], {x, y}]"#);

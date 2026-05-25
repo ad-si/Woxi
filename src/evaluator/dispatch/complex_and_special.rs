@@ -453,6 +453,35 @@ pub fn dispatch_complex_and_special(
     // fallback]` returns the supplied fallback. wolframscript reaches
     // the fallback by actually exhausting the budget; we'd otherwise
     // return whatever the `;`-discarded body left behind.
+    // MemoryConstrained[body, b] / MemoryConstrained[body, b, fallback]
+    // Woxi cannot intercept allocations as they happen, so we evaluate
+    // the body (HoldFirst) and then compare the result's ByteCount to
+    // the requested budget. On overshoot, return $Aborted (2-arg form)
+    // or the supplied fallback.
+    "MemoryConstrained" if args.len() == 2 || args.len() == 3 => {
+      let limit = match &args[1] {
+        Expr::Real(f) => Some(*f as i128),
+        Expr::Integer(n) => Some(*n),
+        _ => None,
+      };
+      let result = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+      let exceeded = match (&result, limit) {
+        (Ok(r), Some(limit)) => {
+          let bc = crate::functions::predicate_ast::byte_count_ast(
+            std::slice::from_ref(r),
+          );
+          matches!(bc, Ok(Expr::Integer(n)) if n > limit)
+        }
+        _ => false,
+      };
+      if exceeded {
+        if args.len() == 3 {
+          return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
+        }
+        return Some(Ok(Expr::Identifier("$Aborted".to_string())));
+      }
+      return Some(result);
+    }
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),
