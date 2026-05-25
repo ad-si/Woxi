@@ -781,3 +781,44 @@ mod integrate_linear_power {
     );
   }
 }
+
+mod parameter_mixture_distribution {
+  use super::*;
+
+  #[test]
+  fn binomial_beta_reduces_to_beta_binomial() {
+    assert_eq!(
+      interpret(
+        "ParameterMixtureDistribution[BinomialDistribution[n, p], \
+         Distributed[p, BetaDistribution[a, b]]]"
+      )
+      .unwrap(),
+      "BetaBinomialDistribution[a, b, n]"
+    );
+  }
+
+  #[test]
+  fn binomial_beta_with_symbolic_n() {
+    assert_eq!(
+      interpret(
+        "ParameterMixtureDistribution[BinomialDistribution[5, p], \
+         Distributed[p, BetaDistribution[alpha, beta]]]"
+      )
+      .unwrap(),
+      "BetaBinomialDistribution[alpha, beta, 5]"
+    );
+  }
+
+  #[test]
+  fn unknown_mixture_stays_symbolic() {
+    assert_eq!(
+      interpret(
+        "ParameterMixtureDistribution[NormalDistribution[mu, sigma], \
+         Distributed[mu, UniformDistribution[{0, 1}]]]"
+      )
+      .unwrap(),
+      "ParameterMixtureDistribution[NormalDistribution[mu, sigma], \
+       Distributed[mu, UniformDistribution[{0, 1}]]]"
+    );
+  }
+}

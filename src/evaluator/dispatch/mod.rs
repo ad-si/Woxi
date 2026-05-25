@@ -2666,6 +2666,44 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ParameterMixtureDistribution[
+  //   BinomialDistribution[n, p],
+  //   Distributed[p, BetaDistribution[α, β]]]
+  // → BetaBinomialDistribution[α, β, n]
+  if name == "ParameterMixtureDistribution"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: dist_name,
+      args: dist_args,
+    } = &args[0]
+    && dist_name == "BinomialDistribution"
+    && dist_args.len() == 2
+    && let Expr::FunctionCall {
+      name: mix_name,
+      args: mix_args,
+    } = &args[1]
+    && mix_name == "Distributed"
+    && mix_args.len() == 2
+    && let Expr::FunctionCall {
+      name: param_dist_name,
+      args: param_dist_args,
+    } = &mix_args[1]
+    && param_dist_name == "BetaDistribution"
+    && param_dist_args.len() == 2
+    && crate::syntax::expr_to_string(&mix_args[0])
+      == crate::syntax::expr_to_string(&dist_args[1])
+  {
+    return Ok(Expr::FunctionCall {
+      name: "BetaBinomialDistribution".to_string(),
+      args: vec![
+        param_dist_args[0].clone(),
+        param_dist_args[1].clone(),
+        dist_args[0].clone(),
+      ]
+      .into(),
+    });
+  }
+
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "VoronoiMesh" && args.len() == 1 {
     return crate::functions::voronoi::voronoi_mesh_ast(args);
