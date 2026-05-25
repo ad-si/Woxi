@@ -793,6 +793,24 @@ mod correlation {
       "Correlation[{1, 1, 1}, {2, 4, 6}]"
     );
   }
+
+  #[test]
+  fn correlation_symbolic_two_vectors_audit_case() {
+    // Audit case: two symbolic 2-vectors.
+    assert_eq!(
+      interpret("Correlation[{a, b}, {x, y}]").unwrap(),
+      "((a - b)*(Conjugate[x] - Conjugate[y]))/(Sqrt[(a - b)*(Conjugate[a] - Conjugate[b])]*Sqrt[(x - y)*(Conjugate[x] - Conjugate[y])])"
+    );
+  }
+
+  #[test]
+  fn correlation_symbolic_matrix_audit_case() {
+    // Audit case: symbolic 2x2 against 2x1 matrix → 2x1 correlation matrix.
+    assert_eq!(
+      interpret("Correlation[{{a, b}, {c, d}}, {{x}, {y}}]").unwrap(),
+      "{{((a - c)*(Conjugate[x] - Conjugate[y]))/(Sqrt[(a - c)*(Conjugate[a] - Conjugate[c])]*Sqrt[(x - y)*(Conjugate[x] - Conjugate[y])])}, {((b - d)*(Conjugate[x] - Conjugate[y]))/(Sqrt[(b - d)*(Conjugate[b] - Conjugate[d])]*Sqrt[(x - y)*(Conjugate[x] - Conjugate[y])])}}"
+    );
+  }
 }
 
 mod central_moment {

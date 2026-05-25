@@ -1221,6 +1221,35 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
+/// Transpose a rectangular `rows` of `Expr::List` rows into a Vec of columns.
+/// Returns None when rows are ragged.
+fn transpose_rows(rows: &[Expr]) -> Option<Vec<Vec<Expr>>> {
+  let row_vecs: Vec<&crate::ExprList> = rows
+    .iter()
+    .filter_map(|r| {
+      if let Expr::List(items) = r {
+        Some(items)
+      } else {
+        None
+      }
+    })
+    .collect();
+  if row_vecs.len() != rows.len() {
+    return None;
+  }
+  let ncols = row_vecs[0].len();
+  if row_vecs.iter().any(|r| r.len() != ncols) {
+    return None;
+  }
+  let mut cols: Vec<Vec<Expr>> = vec![Vec::with_capacity(rows.len()); ncols];
+  for r in row_vecs {
+    for (i, cell) in r.iter().enumerate() {
+      cols[i].push(cell.clone());
+    }
+  }
+  Some(cols)
+}
+
 /// Correlation[list1, list2] - Pearson correlation coefficient
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -1228,6 +1257,33 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Correlation".to_string(),
       args: args.to_vec().into(),
     });
+  }
+  // Matrix form: Correlation[A, B] for m×n A and m×p B → cross-correlation
+  // matrix R[i, j] = Correlation(column_i(A), column_j(B)).
+  if let (Expr::List(a_rows), Expr::List(b_rows)) = (&args[0], &args[1])
+    && !a_rows.is_empty()
+    && !b_rows.is_empty()
+    && a_rows.len() == b_rows.len()
+    && a_rows.iter().all(|r| matches!(r, Expr::List(_)))
+    && b_rows.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let a_cols = transpose_rows(a_rows);
+    let b_cols = transpose_rows(b_rows);
+    if let (Some(a_cols), Some(b_cols)) = (a_cols, b_cols) {
+      let mut rows: Vec<Expr> = Vec::with_capacity(a_cols.len());
+      for ai in &a_cols {
+        let mut row: Vec<Expr> = Vec::with_capacity(b_cols.len());
+        for bj in &b_cols {
+          let entry = correlation_ast(&[
+            Expr::List(ai.clone().into()),
+            Expr::List(bj.clone().into()),
+          ])?;
+          row.push(entry);
+        }
+        rows.push(Expr::List(row.into()));
+      }
+      return Ok(Expr::List(rows.into()));
+    }
   }
   let (xs, ys) = match (&args[0], &args[1]) {
     (Expr::List(xs), Expr::List(ys))
@@ -1246,6 +1302,55 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_numeric = xs.iter().all(|x| expr_to_num(x).is_some())
     && ys.iter().all(|y| expr_to_num(y).is_some());
   if !all_numeric {
+    // Symbolic two-element vectors collapse to a clean closed form:
+    //   r = (v0-v1)(Conj(w0)-Conj(w1)) /
+    //       (Sqrt[(v0-v1)(Conj(v0)-Conj(v1))] * Sqrt[(w0-w1)(Conj(w0)-Conj(w1))])
+    if xs.len() == 2 && ys.len() == 2 {
+      let v0 = xs[0].clone();
+      let v1 = xs[1].clone();
+      let w0 = ys[0].clone();
+      let w1 = ys[1].clone();
+      let diff = |a: &Expr, b: &Expr| Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
+      };
+      let conj = |e: &Expr| Expr::FunctionCall {
+        name: "Conjugate".to_string(),
+        args: vec![e.clone()].into(),
+      };
+      let times = |a: Expr, b: Expr| Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![a, b].into(),
+      };
+      let conj_diff = |a: &Expr, b: &Expr| Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(conj(a)),
+        right: Box::new(conj(b)),
+      };
+      let v_diff = diff(&v0, &v1);
+      let w_diff = diff(&w0, &w1);
+      let v_conj_diff = conj_diff(&v0, &v1);
+      let w_conj_diff = conj_diff(&w0, &w1);
+      let numer = times(v_diff.clone(), w_conj_diff.clone());
+      let sqrt_v = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![times(v_diff, v_conj_diff)].into(),
+      };
+      let sqrt_w = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![times(w_diff, w_conj_diff)].into(),
+      };
+      let denom = times(sqrt_v, sqrt_w);
+      // Return without re-evaluating to preserve the Times factor order
+      // inside each Sqrt (which Woxi's canonical sort would otherwise
+      // reorder differently than wolframscript for some variable names).
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(numer),
+        right: Box::new(denom),
+      });
+    }
     return Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
       args: args.to_vec().into(),
