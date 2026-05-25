@@ -4217,10 +4217,7 @@ mod fourier_transform {
   fn radial_inverse_sqrt_2d() {
     // FourierTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}] = 1/Sqrt[u^2 + v^2]
     assert_eq!(
-      interpret(
-        "FourierTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}]"
-      )
-      .unwrap(),
+      interpret("FourierTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}]").unwrap(),
       "1/Sqrt[u^2 + v^2]"
     );
   }

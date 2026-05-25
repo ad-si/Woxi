@@ -1162,17 +1162,9 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nu_expr = &args[0];
   let z_expr = &args[1];
 
-  // Extract numeric values
-  let nu_val = match nu_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
-  let z_val = match z_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
+  // Extract numeric values (Integer/Real/Rational).
+  let nu_val = expr_to_f64(nu_expr);
+  let z_val = expr_to_f64(z_expr);
 
   // Special case: AngerJ[n, 0] for integer n
   if matches!(z_expr, Expr::Integer(0))
@@ -1259,16 +1251,8 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nu_expr = &args[0];
   let z_expr = &args[1];
 
-  let nu_val = match nu_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
-  let z_val = match z_expr {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
+  let nu_val = expr_to_f64(nu_expr);
+  let z_val = expr_to_f64(z_expr);
 
   // Special case: WeberE[0, 0] = 0
   if matches!(z_expr, Expr::Integer(0)) && matches!(nu_expr, Expr::Integer(0)) {

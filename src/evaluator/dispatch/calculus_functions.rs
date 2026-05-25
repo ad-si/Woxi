@@ -1819,8 +1819,8 @@ fn fourier_transform_multi(
     return None;
   };
   let normalized = normalize_to_func_calls(expr);
-  let normalized = crate::evaluator::evaluate_expr_to_expr(&normalized)
-    .unwrap_or(normalized);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
 
   // Match 1 / Sqrt[t1² + t2²] in various equivalent forms.
   let is_radial_inv_sqrt = is_inv_sqrt_sum_of_squares(&normalized, t1, t2);
@@ -1830,10 +1830,7 @@ fn fourier_transform_multi(
       make_power(ws[0].clone(), Expr::Integer(2)),
       make_power(ws[1].clone(), Expr::Integer(2)),
     ]);
-    return Some(make_power(
-      make_sqrt(sum_sq),
-      Expr::Integer(-1),
-    ));
+    return Some(make_power(make_sqrt(sum_sq), Expr::Integer(-1)));
   }
   None
 }
@@ -1963,14 +1960,16 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
   {
     // a = 1/coeff
     let a = match &coeff {
-      Expr::Integer(c) if *c > 0 => Some(*c as i128),
+      Expr::Integer(c) if *c > 0 => Some(*c),
       _ => None,
     };
     // If coeff is exactly 1/n for integer n > 0, then a = n.
     let a_from_recip = match &coeff {
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         match (&args[0], &args[1]) {
-          (Expr::Integer(1), Expr::Integer(d)) if *d > 0 => Some(*d as i128),
+          (Expr::Integer(1), Expr::Integer(d)) if *d > 0 => Some(*d),
           _ => None,
         }
       }

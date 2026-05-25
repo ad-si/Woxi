@@ -4797,6 +4797,17 @@ mod anger_j_tests {
     // AngerJ with wrong number of args should return unevaluated
     assert_eq!(interpret("AngerJ[1]").unwrap(), "AngerJ[1]");
   }
+
+  #[test]
+  fn rational_order_audit_case() {
+    // Audit case: AngerJ[1/2, 5.] = -0.2857335081880813
+    let result: f64 = interpret("AngerJ[1/2, 5.]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.2857335081880813)).abs() < 1e-8,
+      "got {}",
+      result
+    );
+  }
 }
 
 #[cfg(test)]
@@ -4873,6 +4884,17 @@ mod weber_e_tests {
   #[test]
   fn wrong_arg_count() {
     assert_eq!(interpret("WeberE[1]").unwrap(), "WeberE[1]");
+  }
+
+  #[test]
+  fn rational_order_audit_case() {
+    // Audit case: WeberE[1/2, 5.] = 0.03336423649491385
+    let result: f64 = interpret("WeberE[1/2, 5.]").unwrap().parse().unwrap();
+    assert!(
+      (result - 0.03336423649491385).abs() < 1e-8,
+      "got {}",
+      result
+    );
   }
 }
 
