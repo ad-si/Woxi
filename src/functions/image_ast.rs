@@ -2158,6 +2158,7 @@ fn pointwise_image_op(
   args: &[Expr],
   name: &str,
   op: fn(f64, f64) -> f64,
+  op32: fn(f32, f32) -> f32,
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(format!(
@@ -2165,6 +2166,16 @@ fn pointwise_image_op(
       name
     )));
   }
+
+  // Real32 images store f32-quantised values in an f64 buffer; perform the
+  // op in f32 so results match wolframscript's f32 image arithmetic.
+  let apply = |a: f64, b: f64, is_real32: bool| -> f64 {
+    if is_real32 {
+      op32(a as f32, b as f32) as f64
+    } else {
+      op(a, b)
+    }
+  };
 
   // (Image, Image) — pointwise on matching dimensions.
   if let (
@@ -2190,10 +2201,11 @@ fn pointwise_image_op(
         name
       )));
     }
+    let is_r32 = matches!(t1, crate::syntax::ImageType::Real32);
     let new_data: Vec<f64> = data1
       .iter()
       .zip(data2.iter())
-      .map(|(&a, &b)| op(a, b))
+      .map(|(&a, &b)| apply(a, b, is_r32))
       .collect();
     return Ok(Expr::Image {
       width: *w1,
@@ -2205,7 +2217,6 @@ fn pointwise_image_op(
   }
 
   // (Image, scalar) — apply `op(pixel, scalar)` to every pixel.
-  // wolframscript: `ImageAdd[i, 0.5]` adds 0.5 to every pixel.
   if let Expr::Image {
     width,
     height,
@@ -2215,7 +2226,9 @@ fn pointwise_image_op(
   } = &args[0]
     && let Some(s) = crate::functions::math_ast::try_eval_to_f64(&args[1])
   {
-    let new_data: Vec<f64> = data.iter().map(|&v| op(v, s)).collect();
+    let is_r32 = matches!(image_type, crate::syntax::ImageType::Real32);
+    let new_data: Vec<f64> =
+      data.iter().map(|&v| apply(v, s, is_r32)).collect();
     return Ok(Expr::Image {
       width: *width,
       height: *height,
@@ -2234,7 +2247,9 @@ fn pointwise_image_op(
   } = &args[1]
     && let Some(s) = crate::functions::math_ast::try_eval_to_f64(&args[0])
   {
-    let new_data: Vec<f64> = data.iter().map(|&v| op(s, v)).collect();
+    let is_r32 = matches!(image_type, crate::syntax::ImageType::Real32);
+    let new_data: Vec<f64> =
+      data.iter().map(|&v| apply(s, v, is_r32)).collect();
     return Ok(Expr::Image {
       width: *width,
       height: *height,
@@ -2263,19 +2278,19 @@ fn pointwise_image_op(
   })
 }
 
-/// ImageAdd[img1, img2] - Pointwise add, clamped [0,1]
+/// ImageAdd[img1, img2] — pointwise addition.
 pub fn image_add_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  pointwise_image_op(args, "ImageAdd", |a, b| a + b)
+  pointwise_image_op(args, "ImageAdd", |a, b| a + b, |a, b| a + b)
 }
 
-/// ImageSubtract[img1, img2] - Pointwise subtract
+/// ImageSubtract[img1, img2] — pointwise subtraction.
 pub fn image_subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  pointwise_image_op(args, "ImageSubtract", |a, b| a - b)
+  pointwise_image_op(args, "ImageSubtract", |a, b| a - b, |a, b| a - b)
 }
 
-/// ImageMultiply[img1, img2] - Pointwise multiply
+/// ImageMultiply[img1, img2] — pointwise multiplication.
 pub fn image_multiply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  pointwise_image_op(args, "ImageMultiply", |a, b| a * b)
+  pointwise_image_op(args, "ImageMultiply", |a, b| a * b, |a, b| a * b)
 }
 
 /// RandomImage[{w, h}] - Random pixel values using crate::with_rng
@@ -2915,11 +2930,7 @@ fn resolve_take_index(
     Ok(((n as usize) - 1).min(total.saturating_sub(1)))
   } else if n < 0 {
     let abs = (-n) as usize;
-    if abs > total {
-      Ok(0)
-    } else {
-      Ok(total - abs)
-    }
+    if abs > total { Ok(0) } else { Ok(total - abs) }
   } else {
     Err(InterpreterError::EvaluationError(
       "ImageTake: index 0 is not valid".into(),

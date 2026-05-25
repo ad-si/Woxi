@@ -1150,6 +1150,56 @@ mod image_advanced {
     assert_eq!(result, "{{-0.30000001192092896}}");
   }
 
+  // For Real32 images, arithmetic must be done in f32 — not f64-then-cast.
+  // 0.6 - 0.2 = 0.4 in f64, but 0.6f32 - 0.2f32 ≈ 0.40000003576278687
+  // (one ulp above 0.4f32); wolframscript reports the latter.
+  #[test]
+  fn image_subtract_uses_f32_arithmetic() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageSubtract[Image[{{0.5, 0.6}, {0.7, 0.8}}], 0.2]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.40000003576278687}, \
+       {0.5, 0.6000000238418579}}"
+    );
+  }
+
+  // Same precision rule for the (Image, Image) form.
+  #[test]
+  fn image_subtract_image_image_uses_f32() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageSubtract[Image[{{0.6}}], Image[{{0.2}}]]]"
+      )
+      .unwrap(),
+      "{{0.40000003576278687}}"
+    );
+  }
+
+  // ImageAdd and ImageMultiply share the precision path.
+  #[test]
+  fn image_add_uses_f32_arithmetic() {
+    clear_state();
+    // 0.1 + 0.2 = 0.30000001 in f32 (vs 0.30000000000000004 in f64).
+    assert_eq!(
+      interpret("ImageData[ImageAdd[Image[{{0.1}}], 0.2]]").unwrap(),
+      "{{0.30000001192092896}}"
+    );
+  }
+
+  #[test]
+  fn image_multiply_uses_f32_arithmetic() {
+    clear_state();
+    // 0.1 * 3 = 0.30000001 in f32 (vs 0.30000000000000004 in f64).
+    assert_eq!(
+      interpret("ImageData[ImageMultiply[Image[{{0.1}}], 3]]").unwrap(),
+      "{{0.30000001192092896}}"
+    );
+  }
+
   #[test]
   fn image_multiply() {
     clear_state();
