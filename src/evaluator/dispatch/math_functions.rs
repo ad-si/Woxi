@@ -1052,6 +1052,9 @@ pub fn dispatch_math_functions(
     "RandomComplex" => {
       return Some(crate::functions::math_ast::random_complex_ast(args));
     }
+    "RandomColor" if args.len() <= 1 => {
+      return Some(crate::functions::math_ast::random_color_ast(args));
+    }
     "Random" => {
       return Some(crate::functions::math_ast::random_ast(args));
     }

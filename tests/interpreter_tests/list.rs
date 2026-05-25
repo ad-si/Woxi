@@ -3192,6 +3192,51 @@ mod random_complex {
   }
 }
 
+mod random_color {
+  use super::*;
+
+  #[test]
+  fn no_args_is_rgb_color() {
+    // RandomColor[] should return RGBColor[r, g, b] with r, g, b in [0, 1).
+    assert_eq!(interpret("Head[RandomColor[]]").unwrap(), "RGBColor");
+  }
+
+  #[test]
+  fn no_args_three_channels_in_unit_range() {
+    // Each of the three RGB channels must lie in [0, 1).
+    assert_eq!(
+      interpret(
+        "AllTrue[Apply[List, RandomColor[]], (0 <= # < 1) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_arg_returns_list_of_n() {
+    assert_eq!(interpret("Length[RandomColor[3]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn n_arg_all_rgb_colors() {
+    // Each element must be an RGBColor with three channels in [0, 1).
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomColor[10], (Head[#] == RGBColor && \
+         AllTrue[Apply[List, #], (0 <= # < 1) &]) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_zero_returns_empty_list() {
+    assert_eq!(interpret("RandomColor[0]").unwrap(), "{}");
+  }
+}
+
 mod random_integer {
   use super::*;
 

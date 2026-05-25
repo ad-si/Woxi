@@ -425,6 +425,49 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// RandomColor[] returns a single `RGBColor[r, g, b]` whose three channels
+/// are independent uniform draws from [0, 1). `RandomColor[n]` returns a
+/// list of `n` such colours.
+pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
+
+  fn one_color() -> Expr {
+    let (r, g, b) = crate::with_rng(|rng| {
+      (
+        rng.gen_range(0.0..1.0),
+        rng.gen_range(0.0..1.0),
+        rng.gen_range(0.0..1.0),
+      )
+    });
+    Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+    }
+  }
+
+  match args.len() {
+    0 => Ok(one_color()),
+    1 => match &args[0] {
+      Expr::Integer(n) if *n >= 0 => {
+        let count = *n as usize;
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+          out.push(one_color());
+        }
+        Ok(Expr::List(out.into()))
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "RandomColor".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
+    _ => Ok(Expr::FunctionCall {
+      name: "RandomColor".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
 /// Random[] or Random[Real] / Random[Integer] / Random[Complex],
 /// optionally followed by a range argument. This is the legacy wrapper
 /// around RandomReal / RandomInteger / RandomComplex.
