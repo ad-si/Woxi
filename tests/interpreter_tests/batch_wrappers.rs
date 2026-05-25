@@ -92,10 +92,9 @@ mod batch_unevaluated_wrappers {
   #[test]
   fn time_value_cashflow_at_future() {
     // Audit case: Cashflow {0,100,200,450,300,580} valued at t=7 at 6%.
-    let result = interpret(
-      "TimeValue[Cashflow[{0, 100, 200, 450, 300, 580}], 0.06, 7]",
-    )
-    .unwrap();
+    let result =
+      interpret("TimeValue[Cashflow[{0, 100, 200, 450, 300, 580}], 0.06, 7]")
+        .unwrap();
     let val: f64 = result.parse().unwrap();
     assert!((val - 1986.6044587456004).abs() < 1e-7, "got {}", val);
   }
@@ -109,6 +108,54 @@ mod batch_unevaluated_wrappers {
     let val: f64 = result.parse().unwrap();
     assert!((val - 1242.2968749999998).abs() < 1e-9, "got {}", val);
   }
+
+  #[test]
+  fn time_value_term_pairs_audit_case() {
+    // Audit case: period-rate pairs with t = -4.
+    // Result = 1000 / ((1+0.04)*(1+0.05)*(1+0.06)*(1+0.07)) = 807.398...
+    let result = interpret(
+      "TimeValue[1000, {{-4, 0.04}, {-3, 0.05}, {-2, 0.06}, {-1, 0.07}}, -4]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 807.3980918276454).abs() < 1e-7, "got {}", val);
+  }
+
+  #[test]
+  fn time_value_term_pairs_partial() {
+    // Same pairs, t = -2: only the two rates for k >= -2 are applied.
+    // 1000 / (1.06 * 1.07).
+    let result = interpret(
+      "TimeValue[1000, {{-4, 0.04}, {-3, 0.05}, {-2, 0.06}, {-1, 0.07}}, -2]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 881.6787162757889).abs() < 1e-7, "got {}", val);
+  }
+
+  #[test]
+  fn time_value_yield_curve_at_exact_node() {
+    // Audit case: rule list as yield curve, {0, 10} discounts by (1+r_10)^10.
+    let result = interpret(
+      "TimeValue[1000, {1 -> 0.02, 2 -> 0.025, 5 -> 0.04, 10 -> 0.055}, {0, 10}]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 585.4305794276072).abs() < 1e-7, "got {}", val);
+  }
+
+  #[test]
+  fn time_value_yield_curve_interpolated() {
+    // T=3 isn't a node: linearly interpolate between t=2 and t=5.
+    // r(3) = 0.025 + 1/3*(0.04 - 0.025) = 0.030; result = 1000/1.030^3.
+    let result = interpret(
+      "TimeValue[1000, {1 -> 0.02, 2 -> 0.025, 5 -> 0.04, 10 -> 0.055}, {0, 3}]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 915.1416593531594).abs() < 1e-7, "got {}", val);
+  }
+
   #[test]
   fn time_value_via_effective_interest() {
     // TimeValue[1000, EffectiveInterest[0.05, 1/4], 10]

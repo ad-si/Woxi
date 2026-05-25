@@ -5760,8 +5760,16 @@ pub fn evaluate_function_call_ast_inner(
           }
         };
         let y = to_f(&parts[0])?;
-        let m = if parts.len() >= 2 { to_f(&parts[1])? } else { 1.0 };
-        let dd = if parts.len() >= 3 { to_f(&parts[2])? } else { 1.0 };
+        let m = if parts.len() >= 2 {
+          to_f(&parts[1])?
+        } else {
+          1.0
+        };
+        let dd = if parts.len() >= 3 {
+          to_f(&parts[2])?
+        } else {
+          1.0
+        };
         // Days from year 0 (rough; only the difference matters).
         Some(y * 365.25 + (m - 1.0) * 30.4375 + (dd - 1.0))
       }
@@ -5898,11 +5906,7 @@ pub fn evaluate_function_call_ast_inner(
       for (k, c) in flows.iter().enumerate() {
         let exp = Expr::FunctionCall {
           name: "Plus".to_string(),
-          args: vec![
-            t.clone(),
-            Expr::Integer(-(k as i128)),
-          ]
-          .into(),
+          args: vec![t.clone(), Expr::Integer(-(k as i128))].into(),
         };
         terms.push(Expr::FunctionCall {
           name: "Times".to_string(),
@@ -5958,6 +5962,140 @@ pub fn evaluate_function_call_ast_inner(
         args: factors.into(),
       };
       return evaluate_expr_to_expr(&prod);
+    }
+
+    // TimeValue[s, {{t_1, r_1}, {t_2, r_2}, ...}, t] — list of per-period
+    // {time, rate} pairs. Each pair {t_k, r_k} says the rate r_k applies
+    // for the period ending at time t_k. Going from t=0 backward to t<0:
+    //   value(t) = s / Product[(1+r_k) for k where t_k > t]
+    if s_scalar
+      && let Expr::List(rates) = i
+      && !rates.is_empty()
+      && rates.iter().all(|r| {
+        if let Expr::List(pair) = r
+          && pair.len() == 2
+        {
+          let ok_t = matches!(&pair[0], Expr::Integer(_) | Expr::Real(_))
+            || matches!(&pair[0], Expr::FunctionCall { name, .. } if name == "Rational");
+          let ok_r = matches!(&pair[1], Expr::Integer(_) | Expr::Real(_))
+            || matches!(&pair[1], Expr::FunctionCall { name, .. } if name == "Rational");
+          ok_t && ok_r
+        } else {
+          false
+        }
+      })
+      && let Some(t_f) = crate::functions::math_ast::try_eval_to_f64(t)
+    {
+      let mut factors: Vec<Expr> = vec![s.clone()];
+      for r in rates.iter() {
+        if let Expr::List(pair) = r {
+          let tk =
+            crate::functions::math_ast::try_eval_to_f64(&pair[0]).unwrap();
+          // Apply this rate's discount factor for every pair whose
+          // period boundary lies within [t, 0], i.e. tk >= t (with
+          // the rate pair {tk, rk} representing the rate active for
+          // the period ending at time tk).
+          if tk >= t_f {
+            factors.push(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![Expr::Integer(1), pair[1].clone()].into(),
+                },
+                Expr::Integer(-1),
+              ]
+              .into(),
+            });
+          }
+        }
+      }
+      let prod = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      return evaluate_expr_to_expr(&prod);
+    }
+
+    // TimeValue[s, {t_1 -> r_1, ...}, {t_start, t_end}] — yield curve as
+    // a rule list (r_k = spot rate at maturity t_k). Result =
+    //   s * (1 + r(t_end - t_start))^-(t_end - t_start)
+    // where r(maturity) is linearly interpolated between adjacent nodes.
+    if s_scalar
+      && let Expr::List(rules) = i
+      && !rules.is_empty()
+      && let Expr::List(span) = t
+      && span.len() == 2
+    {
+      let mut nodes: Vec<(f64, f64)> = Vec::new();
+      let mut ok = true;
+      for r in rules.iter() {
+        match r {
+          Expr::Rule { pattern, replacement } => {
+            let tk = crate::functions::math_ast::try_eval_to_f64(pattern);
+            let rk = crate::functions::math_ast::try_eval_to_f64(replacement);
+            if let (Some(t_v), Some(r_v)) = (tk, rk) {
+              nodes.push((t_v, r_v));
+            } else {
+              ok = false;
+              break;
+            }
+          }
+          _ => {
+            ok = false;
+            break;
+          }
+        }
+      }
+      let t_start = crate::functions::math_ast::try_eval_to_f64(&span[0]);
+      let t_end = crate::functions::math_ast::try_eval_to_f64(&span[1]);
+      if ok && let (Some(t0), Some(t1)) = (t_start, t_end) {
+        nodes.sort_by(|a, b| {
+          a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let maturity = t1 - t0;
+        // Linearly interpolate the spot rate at `maturity` from the nodes.
+        let rate = if let Some(exact) =
+          nodes.iter().find(|n| (n.0 - maturity).abs() < 1e-12)
+        {
+          exact.1
+        } else if maturity <= nodes[0].0 {
+          nodes[0].1
+        } else if maturity >= nodes.last().unwrap().0 {
+          nodes.last().unwrap().1
+        } else {
+          let mut interp = nodes[0].1;
+          for w in nodes.windows(2) {
+            let (ta, ra) = w[0];
+            let (tb, rb) = w[1];
+            if maturity >= ta && maturity <= tb {
+              let frac = (maturity - ta) / (tb - ta);
+              interp = ra + frac * (rb - ra);
+              break;
+            }
+          }
+          interp
+        };
+        let value = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            s.clone(),
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Real(rate)].into(),
+                },
+                Expr::Real(-maturity),
+              ]
+              .into(),
+            },
+          ]
+          .into(),
+        };
+        return evaluate_expr_to_expr(&value);
+      }
     }
   }
 
