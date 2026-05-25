@@ -657,6 +657,23 @@ mod image_processing {
     assert_eq!(result, "{{1., 0.5, 0.}}");
   }
 
+  // Real32 image arithmetic: 1 - v computed in f64 then cast to f32 is
+  // one f32 ulp off from 1f32 - v32 for values where the f64 result
+  // rounds the other way. ColorNegate should match wolframscript by
+  // doing the negation in f32 for Real32 images.
+  #[test]
+  fn color_negate_uses_f32_arithmetic() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ColorNegate[Image[{{0.6}}]]]").unwrap(),
+      "{{0.3999999761581421}}"
+    );
+    assert_eq!(
+      interpret("ImageData[ColorNegate[Image[{{0.8}}]]]").unwrap(),
+      "{{0.19999998807907104}}"
+    );
+  }
+
   #[test]
   fn color_negate_rgb() {
     clear_state();

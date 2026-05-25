@@ -906,20 +906,26 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type,
     } => {
       let ch = *channels as usize;
+      let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+      // For Real32 images, perform the negation in f32 so the result
+      // matches wolframscript's f32 image arithmetic. Other types do
+      // the subtraction in f64 directly.
+      let negate = |v: f64| -> f64 {
+        if is_real32 { (1.0_f32 - v as f32) as f64 } else { 1.0 - v }
+      };
       let mut new_data = Vec::with_capacity(data.len());
-
       if ch == 4 {
         // RGBA: negate R,G,B but keep alpha
         for i in 0..data.len() {
           if i % 4 == 3 {
             new_data.push(data[i]); // alpha unchanged
           } else {
-            new_data.push(1.0 - data[i]);
+            new_data.push(negate(data[i]));
           }
         }
       } else {
         for v in data.iter() {
-          new_data.push(1.0 - v);
+          new_data.push(negate(*v));
         }
       }
 
