@@ -3509,6 +3509,19 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         || is_sqrt(e).is_some()
     };
     if is_power_like(a) && is_power_like(b) {
+      // If both bases are integers, compare them numerically (not lexically).
+      // Wolfram orders Power[2, 1/4] before Power[15, 1/2], but lex string
+      // order treats "2" > "15" because '2' > '1'.
+      let (base_a_pre, _) = extract_base_exponent(a);
+      let (base_b_pre, _) = extract_base_exponent(b);
+      if let (Expr::Integer(ia), Expr::Integer(ib)) = (&base_a_pre, &base_b_pre)
+      {
+        match ia.cmp(ib) {
+          std::cmp::Ordering::Less => return std::cmp::Ordering::Less,
+          std::cmp::Ordering::Greater => return std::cmp::Ordering::Greater,
+          std::cmp::Ordering::Equal => {}
+        }
+      }
       let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
       let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
       let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
@@ -7016,9 +7029,21 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
 
       // Only simplify if we actually extracted something outside,
-      // or if the radical has fewer prime factors than the original
-      // (prevents infinite recursion: 6^(1/3) → 2^(1/3)*3^(1/3) → 6^(1/3) ...)
-      if !has_outside && radical_factors.len() > 1 {
+      // OR the prime factors' reduced exponents differ.
+      // If all factors share the same reduced (leftover/d), splitting them
+      // and recombining would just reproduce the original (e.g. 6^(1/3)
+      // would loop as 2^(1/3)*3^(1/3) → 6^(1/3) → ...).
+      let mut reduced: Vec<(i128, i128)> = radical_factors
+        .iter()
+        .map(|(_, rem_exp)| {
+          let g = gcd_i128(*rem_exp as i128, d as i128);
+          (*rem_exp as i128 / g, d as i128 / g)
+        })
+        .collect();
+      reduced.sort();
+      reduced.dedup();
+      let all_same_reduced_exp = reduced.len() == 1;
+      if !has_outside && radical_factors.len() > 1 && all_same_reduced_exp {
         // No simplification possible, keep original form
         return Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Power,

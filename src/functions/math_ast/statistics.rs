@@ -908,6 +908,10 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "GeometricMean: empty list".into(),
         ));
       }
+      // List-of-lists (matrix) → column-wise geometric mean.
+      if items.iter().all(|item| matches!(item, Expr::List(_))) {
+        return geometric_mean_columnwise(items);
+      }
       let n = items.len() as i128;
       // Exact path: if all elements are exact (integers or rationals),
       // compute product symbolically and return Power[product, 1/n]
@@ -942,6 +946,44 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// Column-wise GeometricMean for a list-of-lists (matrix) input.
+fn geometric_mean_columnwise(
+  rows: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let row_vecs: Vec<&crate::ExprList> = rows
+    .iter()
+    .filter_map(|r| {
+      if let Expr::List(items) = r {
+        Some(items)
+      } else {
+        None
+      }
+    })
+    .collect();
+  if row_vecs.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "GeometricMean".to_string(),
+      args: vec![Expr::List(rows.to_vec().into())].into(),
+    });
+  }
+  let ncols = row_vecs[0].len();
+  let mut col_means = Vec::with_capacity(ncols);
+  for col in 0..ncols {
+    let col_items: Vec<Expr> = row_vecs
+      .iter()
+      .map(|r| {
+        if col < r.len() {
+          r[col].clone()
+        } else {
+          Expr::Integer(0)
+        }
+      })
+      .collect();
+    col_means.push(geometric_mean_ast(&[Expr::List(col_items.into())])?);
+  }
+  Ok(Expr::List(col_means.into()))
 }
 
 /// HarmonicMean[list] - Harmonic mean: n / Sum[1/xi]

@@ -81,6 +81,35 @@ mod geometric_mean {
     let val: f64 = result.parse().unwrap();
     assert!((val - 1.8171205928321397).abs() < 1e-10);
   }
+
+  #[test]
+  fn geometric_mean_matrix_columnwise() {
+    // Audit case: GeometricMean of a list of lists computes column-wise.
+    // Col 1: (5*2*4*12)^(1/4) = 480^(1/4) = 2*30^(1/4)
+    // Col 2: (10*1*3*15)^(1/4) = 450^(1/4) = 2^(1/4)*Sqrt[15]
+    assert_eq!(
+      interpret("GeometricMean[{{5, 10}, {2, 1}, {4, 3}, {12, 15}}]").unwrap(),
+      "{2*30^(1/4), 2^(1/4)*Sqrt[15]}"
+    );
+  }
+
+  #[test]
+  fn geometric_mean_matrix_simple() {
+    // Col 1: (1*4)^(1/2) = 2; Col 2: (2*8)^(1/2) = 4.
+    assert_eq!(
+      interpret("GeometricMean[{{1, 2}, {4, 8}}]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn geometric_mean_matrix_3xn() {
+    // Col 1: (1*2*4)^(1/3) = 2; Col 2: (2*4*8)^(1/3) = 4; Col 3: (3*9*27)^(1/3) = 9.
+    assert_eq!(
+      interpret("GeometricMean[{{1, 2, 3}, {2, 4, 9}, {4, 8, 27}}]").unwrap(),
+      "{2, 4, 9}"
+    );
+  }
 }
 
 mod harmonic_mean {
