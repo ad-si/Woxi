@@ -2714,18 +2714,14 @@ pub fn evaluate_function_call_ast_inner(
         } else {
           unreachable!()
         };
-        let scale = crate::functions::mean_ast(&[
-          abs_diffs,
-        ])?;
+        let scale = crate::functions::mean_ast(&[abs_diffs])?;
         let scale = crate::evaluator::evaluate_expr_to_expr(&scale)?;
         return Ok(Expr::List(
           vec![rule(v1, to_real(median)?), rule(v2, to_real(scale)?)].into(),
         ));
       }
       "NormalDistribution" => {
-        let mean = crate::functions::mean_ast(&[
-          data.clone(),
-        ])?;
+        let mean = crate::functions::mean_ast(&[data.clone()])?;
         let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
         // population variance: sum((x - mean)^2) / n
         let (n, squared_diffs) = if let Expr::List(items) = &data {

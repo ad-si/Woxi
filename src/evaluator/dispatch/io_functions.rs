@@ -89,6 +89,16 @@ pub fn dispatch_io_functions(
         args: args.to_vec().into(),
       }));
     }
+    // GetEnvironment[] — all environment variables as a List of rules.
+    "GetEnvironment" if args.is_empty() => {
+      let rules: Vec<Expr> = std::env::vars()
+        .map(|(k, v)| Expr::Rule {
+          pattern: Box::new(Expr::String(k)),
+          replacement: Box::new(Expr::String(v)),
+        })
+        .collect();
+      return Some(Ok(Expr::List(rules.into())));
+    }
     // GetEnvironment["name"] — return "name" -> "value" rule
     // GetEnvironment[{"n1","n2"}] — list of rules
     "GetEnvironment" if args.len() == 1 => {

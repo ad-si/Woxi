@@ -831,10 +831,8 @@ mod find_distribution_parameters {
   #[test]
   fn unknown_distribution_stays_symbolic() {
     assert_eq!(
-      interpret(
-        "FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]"
-      )
-      .unwrap(),
+      interpret("FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]")
+        .unwrap(),
       "FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]"
     );
   }

@@ -1049,6 +1049,36 @@ mod precision {
   }
 
   #[test]
+  fn get_environment_zero_arg_is_list() {
+    assert_eq!(interpret("Head[GetEnvironment[]]").unwrap(), "List");
+  }
+
+  #[test]
+  fn get_environment_zero_arg_entries_are_rules() {
+    assert_eq!(
+      interpret(
+        "AllTrue[Head /@ GetEnvironment[], # === Rule &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn get_environment_zero_arg_contains_set_var() {
+    interpret("SetEnvironment[\"WOXI_TEST_GETENV_ZERO\" -> \"present\"]")
+      .unwrap();
+    assert_eq!(
+      interpret(
+        "MemberQ[GetEnvironment[], \
+         \"WOXI_TEST_GETENV_ZERO\" -> \"present\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn set_environment_rule_returns_null() {
     interpret("SetEnvironment[\"WOXI_TEST_SET_ENV_VAR_A\" -> \"alpha\"]")
       .unwrap();
