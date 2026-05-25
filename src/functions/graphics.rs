@@ -9087,6 +9087,25 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
           new_items.push(evaluated);
         }
+        // A 2-item spec `{var, range}` whose `range` doesn't reduce to
+        // a concrete numeric value or list (e.g. it still contains a
+        // free symbol like `Range[y]`) is wrapped in Dynamic[…] in
+        // wolframscript's echoed form so the menu updates as the host
+        // variable changes.
+        if new_items.len() == 2
+          && let needs_dynamic = match &new_items[1] {
+            Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
+            Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
+            _ => true,
+          }
+          && needs_dynamic
+        {
+          let range = new_items.pop().unwrap();
+          new_items.push(Expr::FunctionCall {
+            name: "Dynamic".to_string(),
+            args: vec![range].into(),
+          });
+        }
         out_args.push(Expr::List(new_items.into()));
       }
       Expr::List(_) => {
