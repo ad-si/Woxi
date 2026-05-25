@@ -8018,6 +8018,38 @@ fn morphological_op(
   let radius =
     crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize;
 
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = data_expr
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    let mut new_data = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      let mut channel: Vec<Vec<f64>> = (0..h)
+        .map(|y| (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect())
+        .collect();
+      channel = apply_morphological_2d(name, &channel, radius);
+      for y in 0..h {
+        for x in 0..w {
+          new_data[(y * w + x) * ch + c_idx] = channel[y][x];
+        }
+      }
+    }
+    return Some(Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: std::sync::Arc::new(new_data),
+      image_type: *image_type,
+    }));
+  }
+
   match data_expr {
     Expr::List(items) if !items.is_empty() => {
       // Check if it's a 2D matrix or 1D list

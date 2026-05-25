@@ -945,6 +945,67 @@ mod image_processing {
     assert_eq!(result, "{3, 1}");
   }
 
+  // Dilation on an Image: replace each pixel with the max of its
+  // (2r+1)×(2r+1) neighbourhood, clipped at the boundaries. Erosion is
+  // the same with min; Opening / Closing compose the two.
+  #[test]
+  fn dilation_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Dilation[Image[{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}, {0.4, 0.7, 0.6}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.800000011920929, 0.8999999761581421, 0.8999999761581421}, \
+       {0.800000011920929, 0.8999999761581421, 0.8999999761581421}, \
+       {0.800000011920929, 0.8999999761581421, 0.8999999761581421}}"
+    );
+  }
+
+  #[test]
+  fn erosion_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Erosion[Image[{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}, {0.4, 0.7, 0.6}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.10000000149011612, 0.20000000298023224}, \
+       {0.10000000149011612, 0.10000000149011612, 0.20000000298023224}, \
+       {0.30000001192092896, 0.30000001192092896, 0.30000001192092896}}"
+    );
+  }
+
+  // Opening = Erosion then Dilation.
+  #[test]
+  fn opening_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Opening[Image[{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}, {0.4, 0.7, 0.6}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, 0.20000000298023224}, \
+       {0.30000001192092896, 0.30000001192092896, 0.30000001192092896}, \
+       {0.30000001192092896, 0.30000001192092896, 0.30000001192092896}}"
+    );
+  }
+
+  // Closing = Dilation then Erosion.
+  #[test]
+  fn closing_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Closing[Image[{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}, {0.4, 0.7, 0.6}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.800000011920929, 0.800000011920929, 0.8999999761581421}, \
+       {0.800000011920929, 0.800000011920929, 0.8999999761581421}, \
+       {0.800000011920929, 0.800000011920929, 0.8999999761581421}}"
+    );
+  }
+
   // MedianFilter on an Image applies the 2D median filter per channel.
   #[test]
   fn median_filter_image_grayscale() {
