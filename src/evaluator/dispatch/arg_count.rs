@@ -390,7 +390,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FourierSinTransform" => Some((3, 3)),
     "FourierTransform" => Some((3, 3)),
     "FractionalPart" => Some((1, 1)),
-    "FrechetDistribution" => Some((2, 2)),
+    "FrechetDistribution" => Some((2, 3)),
     "FreeQ" => Some((1, 2)),
     "FresnelC" => Some((1, 1)),
     "FresnelS" => Some((1, 1)),

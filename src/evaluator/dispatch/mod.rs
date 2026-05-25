@@ -2118,15 +2118,21 @@ pub fn evaluate_function_call_ast_inner(
         if col < m {
           edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(v as i128), Expr::Integer((v + 1) as i128)]
-              .into(),
+            args: vec![
+              Expr::Integer(v as i128),
+              Expr::Integer((v + 1) as i128),
+            ]
+            .into(),
           });
         }
         if row < n {
           edges.push(Expr::FunctionCall {
             name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(v as i128), Expr::Integer((v + m) as i128)]
-              .into(),
+            args: vec![
+              Expr::Integer(v as i128),
+              Expr::Integer((v + m) as i128),
+            ]
+            .into(),
           });
         }
       }

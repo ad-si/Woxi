@@ -298,10 +298,15 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
-    "FrechetDistribution" if dargs.len() == 2 => {
+    "FrechetDistribution" if dargs.len() == 2 || dargs.len() == 3 => {
       let a = dargs[0].clone();
       let b = dargs[1].clone();
-      // Median = b * Log[2]^(-1/a) ≡ b / Log[2]^(1/a)
+      let mu = if dargs.len() == 3 {
+        Some(dargs[2].clone())
+      } else {
+        None
+      };
+      // Median = μ + b * Log[2]^(-1/a) ≡ μ + b / Log[2]^(1/a)
       let log2 = Expr::FunctionCall {
         name: "Log".to_string(),
         args: vec![Expr::Integer(2)].into(),
@@ -315,10 +320,18 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         name: "Power".to_string(),
         args: vec![log2, inv_a].into(),
       };
-      let med = Expr::BinaryOp {
+      let b_over = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(b),
         right: Box::new(denom),
+      };
+      let med = match mu {
+        Some(m) => Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(m),
+          right: Box::new(b_over),
+        },
+        None => b_over,
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }

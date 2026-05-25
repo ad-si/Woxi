@@ -1234,17 +1234,24 @@ fn cdf_inverse_chi_square(
 }
 
 // PDF[FrechetDistribution[a, b], x] = Piecewise[{{(a*(x/b)^(-1 - a))/(b*E^(x/b)^(-a)), x > 0}}, 0]
+// PDF[FrechetDistribution[a, b, c], x] = Piecewise[{{(a*((x-c)/b)^(-1 - a))/(b*E^((x-c)/b)^(-a)), x > c}}, 0]
 fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
-  if dargs.len() != 2 {
+  if dargs.len() != 2 && dargs.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "FrechetDistribution expects 2 arguments".into(),
+      "FrechetDistribution expects 2 or 3 arguments".into(),
     ));
   }
   let a = dargs[0].clone();
   let b = dargs[1].clone();
+  let (shifted, threshold) = if dargs.len() == 3 {
+    let c = dargs[2].clone();
+    (minus(x.clone(), c.clone()), c)
+  } else {
+    (x.clone(), int(0))
+  };
 
-  let xb = divide(x.clone(), b.clone());
-  // (x/b)^(-1 - a)
+  let xb = divide(shifted, b.clone());
+  // ((x-c)/b)^(-1 - a)
   let xb_part = power(
     xb.clone(),
     Expr::UnaryOp {
@@ -1256,7 +1263,7 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       }),
     },
   );
-  // E^(x/b)^(-a)
+  // E^((x-c)/b)^(-a)
   let exp_part = power(
     e(),
     power(
@@ -1268,26 +1275,33 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ),
   );
   let value = eval(divide(times(a, xb_part), times(b, exp_part)))?;
-  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  let cond = comparison(x, ComparisonOp::Greater, threshold);
   eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 // CDF[FrechetDistribution[a, b], x] = Piecewise[{{E^(-(x/b)^(-a)), x > 0}}, 0]
+// CDF[FrechetDistribution[a, b, c], x] = Piecewise[{{E^(-((x-c)/b)^(-a)), x > c}}, 0]
 fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
-  if dargs.len() != 2 {
+  if dargs.len() != 2 && dargs.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "FrechetDistribution expects 2 arguments".into(),
+      "FrechetDistribution expects 2 or 3 arguments".into(),
     ));
   }
   let a = dargs[0].clone();
   let b = dargs[1].clone();
+  let (shifted, threshold) = if dargs.len() == 3 {
+    let c = dargs[2].clone();
+    (minus(x.clone(), c.clone()), c)
+  } else {
+    (x.clone(), int(0))
+  };
 
   let value = power(
     e(),
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand: Box::new(power(
-        divide(x.clone(), b),
+        divide(shifted, b),
         Expr::UnaryOp {
           op: crate::syntax::UnaryOperator::Minus,
           operand: Box::new(a),
@@ -1296,7 +1310,7 @@ fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     },
   );
   let value = eval(value)?;
-  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  let cond = comparison(x, ComparisonOp::Greater, threshold);
   eval(piecewise(vec![(value, cond)], int(0)))
 }
 
@@ -2893,26 +2907,41 @@ fn distribution_mean_variance(
       Ok((mean, var))
     }
     "FrechetDistribution" => {
-      if dargs.len() != 2 {
+      if dargs.len() != 2 && dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
-          "FrechetDistribution expects 2 arguments".into(),
+          "FrechetDistribution expects 2 or 3 arguments".into(),
         ));
       }
       let a = dargs[0].clone();
       let b = dargs[1].clone();
-      // Mean = Piecewise[{{b * Gamma[1 - 1/a], 1 < a}}, Infinity]
+      let mu = if dargs.len() == 3 {
+        Some(dargs[2].clone())
+      } else {
+        None
+      };
+      // Mean = Piecewise[{{μ + b * Gamma[1 - 1/a], 1 < a}}, Infinity]
       let gamma_1_minus_inv_a = Expr::FunctionCall {
         name: "Gamma".to_string(),
         args: vec![minus(int(1), divide(int(1), a.clone()))].into(),
       };
+      let b_gamma = times(b.clone(), gamma_1_minus_inv_a.clone());
+      let mean_value = match &mu {
+        Some(m) => Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(m.clone()),
+          right: Box::new(b_gamma),
+        },
+        None => b_gamma,
+      };
       let mean = piecewise(
         vec![(
-          times(b.clone(), gamma_1_minus_inv_a.clone()),
+          mean_value,
           comparison(int(1), ComparisonOp::Less, a.clone()),
         )],
         Expr::Identifier("Infinity".to_string()),
       );
       // Var = Piecewise[{{b^2 * (Gamma[1 - 2/a] - Gamma[1 - 1/a]^2), a > 2}}, Infinity]
+      // (Variance is translation-invariant — μ drops out.)
       let gamma_1_minus_2_a = Expr::FunctionCall {
         name: "Gamma".to_string(),
         args: vec![minus(int(1), divide(int(2), a.clone()))].into(),

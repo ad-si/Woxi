@@ -5134,6 +5134,52 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn frechet_distribution_3arg_head() {
+    assert_eq!(
+      interpret("FrechetDistribution[2, 3, 5]").unwrap(),
+      "FrechetDistribution[2, 3, 5]"
+    );
+  }
+
+  #[test]
+  fn frechet_distribution_3arg_mean() {
+    assert_eq!(
+      interpret("Mean[FrechetDistribution[a, b, c]]").unwrap(),
+      "Piecewise[{{c + b*Gamma[1 - a^(-1)], 1 < a}}, Infinity]"
+    );
+  }
+
+  #[test]
+  fn frechet_distribution_3arg_variance() {
+    assert_eq!(
+      interpret("Variance[FrechetDistribution[a, b, c]]").unwrap(),
+      "Piecewise[{{b^2*(Gamma[1 - 2/a] - Gamma[1 - a^(-1)]^2), a > 2}}, Infinity]"
+    );
+  }
+
+  #[test]
+  fn frechet_distribution_3arg_median() {
+    assert_eq!(
+      interpret("Median[FrechetDistribution[a, b, c]]").unwrap(),
+      "c + b/Log[2]^a^(-1)"
+    );
+  }
+
+  #[test]
+  fn frechet_distribution_3arg_pdf() {
+    let result = interpret("PDF[FrechetDistribution[a, b, c], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x > c"));
+  }
+
+  #[test]
+  fn frechet_distribution_3arg_cdf() {
+    let result = interpret("CDF[FrechetDistribution[a, b, c], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x > c"));
+  }
+
+  #[test]
   fn extreme_value_distribution_head() {
     assert_eq!(
       interpret("ExtremeValueDistribution[1, 2]").unwrap(),
