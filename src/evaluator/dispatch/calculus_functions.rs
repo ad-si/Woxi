@@ -713,6 +713,13 @@ pub fn dispatch_calculus_functions(
     }
     // InverseFunction[f] — returns the inverse of known functions
     "InverseFunction" if args.len() == 1 => {
+      // InverseFunction[Function[body]] — invert algebraically via Solve.
+      if let Expr::Function { body } = &args[0]
+        && let Some(inverted) = invert_pure_function(body)
+      {
+        return Some(Ok(inverted));
+      }
+
       if let Expr::Identifier(func_name) = &args[0] {
         let inverse = match func_name.as_str() {
           // Trig -> ArcTrig
@@ -4464,6 +4471,136 @@ fn is_exp_of(expr: &Expr) -> Option<&Expr> {
     }
   }
   None
+}
+
+/// Try to invert a pure-function body `Function[body]`. Returns the inverted
+/// `Function[new_body]` or None if the body isn't algebraically invertible.
+///
+/// Strategy: substitute `Slot[1]` with a fresh variable `x`, solve
+/// `body == y` for `x`, then rewrite the solution rhs by replacing `y` with
+/// `Slot[1]` and wrap the result in `Function[…]`.
+fn invert_pure_function(body: &Expr) -> Option<Expr> {
+  // Substitute Slot[1] in the body with a sentinel identifier `$inv_x$`.
+  let x_name = "$inv_x$";
+  let y_name = "$inv_y$";
+  let x_expr = Expr::Identifier(x_name.to_string());
+  let y_expr = Expr::Identifier(y_name.to_string());
+  let body_x = crate::syntax::substitute_slots(body, &[x_expr.clone()]);
+
+  // Build `Equal[body_x, y]` and solve for x.
+  let eq = Expr::FunctionCall {
+    name: "Equal".to_string(),
+    args: vec![body_x, y_expr.clone()].into(),
+  };
+  let solve_result = crate::functions::polynomial_ast::solve_ast(&[
+    eq,
+    x_expr.clone(),
+  ])
+  .ok()?;
+
+  // Expect `{{x -> rhs}}` or `{{x -> rhs1}, ...}`. Take the first rule's rhs.
+  let solutions = if let Expr::List(outer) = &solve_result {
+    outer
+  } else {
+    return None;
+  };
+  if solutions.is_empty() {
+    return None;
+  }
+  let first = if let Expr::List(rules) = &solutions[0] {
+    rules
+  } else {
+    return None;
+  };
+  if first.is_empty() {
+    return None;
+  }
+  // Rule form: x -> rhs, encoded as `Rule` or `Expr::Rule`.
+  let rhs = extract_rule_rhs(&first[0], x_name)?;
+
+  // Substitute the sentinel y with Slot[1].
+  let rhs_slot = substitute_identifier(&rhs, y_name, &Expr::Slot(1));
+  // If the rhs still references the original x sentinel, give up — the
+  // equation didn't truly solve in closed form.
+  if contains_identifier(&rhs_slot, x_name) {
+    return None;
+  }
+  Some(Expr::Function {
+    body: Box::new(rhs_slot),
+  })
+}
+
+fn extract_rule_rhs(e: &Expr, x_name: &str) -> Option<Expr> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = e
+    && matches!(pattern.as_ref(), Expr::Identifier(s) if s == x_name)
+  {
+    return Some((**replacement).clone());
+  }
+  if let Expr::RuleDelayed {
+    pattern,
+    replacement,
+  } = e
+    && matches!(pattern.as_ref(), Expr::Identifier(s) if s == x_name)
+  {
+    return Some((**replacement).clone());
+  }
+  if let Expr::FunctionCall { name, args } = e
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && matches!(&args[0], Expr::Identifier(s) if s == x_name)
+  {
+    return Some(args[1].clone());
+  }
+  None
+}
+
+fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
+  match expr {
+    Expr::Identifier(s) if s == name => replacement.clone(),
+    Expr::FunctionCall { name: fname, args } => Expr::FunctionCall {
+      name: fname.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_identifier(a, name, replacement))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_identifier(a, name, replacement))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_identifier(left, name, replacement)),
+      right: Box::new(substitute_identifier(right, name, replacement)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_identifier(operand, name, replacement)),
+    },
+    other => other.clone(),
+  }
+}
+
+fn contains_identifier(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(s) => s == name,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| contains_identifier(a, name))
+    }
+    Expr::List(items) => items.iter().any(|a| contains_identifier(a, name)),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_identifier(left, name) || contains_identifier(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => contains_identifier(operand, name),
+    _ => false,
+  }
 }
 
 /// If expr = -a * t where a doesn't depend on t, return a.

@@ -746,6 +746,34 @@ mod inverse_function {
     assert_eq!(interpret("InverseFunction[Sin][1/2]").unwrap(), "Pi/6");
     assert_eq!(interpret("InverseFunction[Exp][5]").unwrap(), "Log[5]");
   }
+
+  #[test]
+  fn pure_function_linear() {
+    // InverseFunction[2*#1 + 3 &] = (-3 + #1)/2 &.
+    assert_eq!(
+      interpret("InverseFunction[2*#1 + 3 &]").unwrap(),
+      "(-3 + #1)/2 & "
+    );
+  }
+
+  #[test]
+  fn pure_function_mobius() {
+    // wolframscript: (-b + d*#1)/(a - c*#1) &. Woxi's Times ordering puts
+    // the slot first within products: (-b + #1*d)/(a - #1*c) — same value.
+    assert_eq!(
+      interpret("InverseFunction[(a*#1 + b)/(c*#1 + d) &]").unwrap(),
+      "(-b + #1*d)/(a - #1*c) & "
+    );
+  }
+
+  #[test]
+  fn pure_function_applied() {
+    // The returned inverse function should evaluate when applied.
+    assert_eq!(
+      interpret("InverseFunction[2*#1 + 3 &][7]").unwrap(),
+      "2"
+    );
+  }
 }
 
 mod cases {
