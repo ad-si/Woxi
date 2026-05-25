@@ -660,6 +660,57 @@ mod region_bounds {
   fn head() {
     assert_eq!(interpret("Head[RegionBounds]").unwrap(), "Symbol");
   }
+
+  #[test]
+  fn half_line_positive_direction() {
+    // wolframscript: {{0, Infinity}, {0, Infinity}}.
+    assert_eq!(
+      interpret("RegionBounds[HalfLine[{{0, 0}, {1, 1}}]]").unwrap(),
+      "{{0, Infinity}, {0, Infinity}}"
+    );
+  }
+
+  #[test]
+  fn half_line_negative_direction() {
+    assert_eq!(
+      interpret("RegionBounds[HalfLine[{{0, 0}, {-1, -1}}]]").unwrap(),
+      "{{-Infinity, 0}, {-Infinity, 0}}"
+    );
+  }
+
+  #[test]
+  fn half_line_axis_aligned() {
+    // y direction is zero — that dimension stays at the start.
+    assert_eq!(
+      interpret("RegionBounds[HalfLine[{{0, 0}, {1, 0}}]]").unwrap(),
+      "{{0, Infinity}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn half_line_offset_start() {
+    assert_eq!(
+      interpret("RegionBounds[HalfLine[{{1, 2}, {3, 5}}]]").unwrap(),
+      "{{1, Infinity}, {2, Infinity}}"
+    );
+  }
+
+  #[test]
+  fn line_two_points() {
+    assert_eq!(
+      interpret("RegionBounds[Line[{{0, 0}, {1, 1}}]]").unwrap(),
+      "{{0, 1}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn line_polyline() {
+    // Multi-vertex line: bounds are componentwise min/max.
+    assert_eq!(
+      interpret("RegionBounds[Line[{{0, 0}, {1, 1}, {2, -1}}]]").unwrap(),
+      "{{0, 2}, {-1, 1}}"
+    );
+  }
 }
 
 mod region_nearest {

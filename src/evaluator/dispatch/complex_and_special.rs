@@ -1855,6 +1855,9 @@ pub fn dispatch_complex_and_special(
     "RegionMeasure" if args.len() == 1 => {
       return Some(compute_region_measure(&args[0]));
     }
+    "RegionBounds" if args.len() == 1 => {
+      return Some(compute_region_bounds(&args[0]));
+    }
     "RegionCentroid" if args.len() == 1 => {
       return Some(compute_region_centroid(&args[0]));
     }
@@ -4673,6 +4676,116 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
     name: "RegionMeasure".to_string(),
     args: vec![expr.clone()].into(),
   })
+}
+
+/// Compute the axis-aligned bounding box of a geometric region as a list of
+/// `{min, max}` pairs, one per dimension.
+fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "RegionBounds".to_string(),
+    args: vec![expr.clone()].into(),
+  };
+  // HalfLine[{p1, p2}] — half-line from p1 toward p2. Each dimension's
+  // bounds depend on the sign of (p2 - p1)[d]:
+  //   positive  → [p1[d], Infinity]
+  //   negative  → [-Infinity, p1[d]]
+  //   zero      → [p1[d], p1[d]]
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "HalfLine"
+    && args.len() == 1
+    && let Expr::List(points) = &args[0]
+    && points.len() == 2
+    && let (Expr::List(p1), Expr::List(p2)) = (&points[0], &points[1])
+    && p1.len() == p2.len()
+  {
+    let inf = || Expr::Identifier("Infinity".to_string());
+    let neg_inf = || Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Identifier("Infinity".to_string())),
+    };
+    let mut bounds = Vec::with_capacity(p1.len());
+    for (a, b) in p1.iter().zip(p2.iter()) {
+      let diff = Expr::FunctionCall {
+        name: "Subtract".to_string(),
+        args: vec![b.clone(), a.clone()].into(),
+      };
+      let diff_eval = crate::evaluator::evaluate_expr_to_expr(&diff)
+        .unwrap_or_else(|_| diff.clone());
+      let sign = match &diff_eval {
+        Expr::Integer(n) => Some(n.cmp(&0)),
+        Expr::Real(f) if *f > 0.0 => Some(std::cmp::Ordering::Greater),
+        Expr::Real(f) if *f < 0.0 => Some(std::cmp::Ordering::Less),
+        Expr::Real(f) if *f == 0.0 => Some(std::cmp::Ordering::Equal),
+        _ => None,
+      };
+      let pair = match sign {
+        Some(std::cmp::Ordering::Greater) => {
+          Expr::List(vec![a.clone(), inf()].into())
+        }
+        Some(std::cmp::Ordering::Less) => {
+          Expr::List(vec![neg_inf(), a.clone()].into())
+        }
+        Some(std::cmp::Ordering::Equal) => {
+          Expr::List(vec![a.clone(), a.clone()].into())
+        }
+        None => return Ok(unevaluated()),
+      };
+      bounds.push(pair);
+    }
+    return Ok(Expr::List(bounds.into()));
+  }
+  // Line[{p1, p2, ..., pk}] — bounded poly-line. Each dim's bounds are the
+  // min/max over all vertices.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Line"
+    && args.len() == 1
+    && let Expr::List(points) = &args[0]
+    && !points.is_empty()
+  {
+    let Expr::List(first) = &points[0] else {
+      return Ok(unevaluated());
+    };
+    let dim = first.len();
+    let mut mins: Vec<Expr> = first.iter().cloned().collect();
+    let mut maxs: Vec<Expr> = first.iter().cloned().collect();
+    for p in points.iter().skip(1) {
+      let Expr::List(coords) = p else {
+        return Ok(unevaluated());
+      };
+      if coords.len() != dim {
+        return Ok(unevaluated());
+      }
+      for (d, c) in coords.iter().enumerate() {
+        let cmp_lt = Expr::FunctionCall {
+          name: "Less".to_string(),
+          args: vec![c.clone(), mins[d].clone()].into(),
+        };
+        if matches!(
+          crate::evaluator::evaluate_expr_to_expr(&cmp_lt),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        ) {
+          mins[d] = c.clone();
+        }
+        let cmp_gt = Expr::FunctionCall {
+          name: "Greater".to_string(),
+          args: vec![c.clone(), maxs[d].clone()].into(),
+        };
+        if matches!(
+          crate::evaluator::evaluate_expr_to_expr(&cmp_gt),
+          Ok(Expr::Identifier(ref s)) if s == "True"
+        ) {
+          maxs[d] = c.clone();
+        }
+      }
+    }
+    let bounds: Vec<Expr> = mins
+      .into_iter()
+      .zip(maxs.into_iter())
+      .map(|(lo, hi)| Expr::List(vec![lo, hi].into()))
+      .collect();
+    return Ok(Expr::List(bounds.into()));
+  }
+  Ok(unevaluated())
 }
 
 fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {

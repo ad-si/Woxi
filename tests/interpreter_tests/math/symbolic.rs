@@ -671,9 +671,6 @@ mod cases {
   #[test]
   fn product_minus_one_over_quartic_finite() {
     // Finite case still uses the standard numeric path.
-    assert_case(
-      r#"Product[1 - 1/i^4, {i, 2, 5}]"#,
-      r#"221/240"#,
-    );
+    assert_case(r#"Product[1 - 1/i^4, {i, 2, 5}]"#, r#"221/240"#);
   }
 }

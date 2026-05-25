@@ -6036,7 +6036,7 @@ pub fn evaluate_function_call_ast_inner(
       | "HypoexponentialDistribution"
       | "FormulaLookup"
       | "GroupOrbits"
-      | "RegionBounds"
+      | "HalfLine"
       | "TensorContract"
       | "LocatorAutoCreate"
       | "LegendFunction"
