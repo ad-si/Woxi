@@ -7377,6 +7377,67 @@ fn rational_to_expr(num: i128, den: i128) -> Expr {
 /// Evaluate Darker[color, amount] or Lighter[color, amount].
 /// `is_darker` = true for Darker, false for Lighter.
 fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let amount: f64 = if args.len() >= 2 {
+      match &args[1] {
+        Expr::Real(f) => *f,
+        Expr::Integer(n) => *n as f64,
+        Expr::FunctionCall { name, args: ra }
+          if name == "Rational" && ra.len() == 2 =>
+        {
+          match (&ra[0], &ra[1]) {
+            (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+              *n as f64 / *d as f64
+            }
+            _ => return None,
+          }
+        }
+        _ => return None,
+      }
+    } else {
+      1.0 / 3.0
+    };
+    let ch = *channels as usize;
+    let has_alpha = ch == 2 || ch == 4;
+    let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+    let new_data: Vec<f64> = data
+      .iter()
+      .enumerate()
+      .map(|(i, &c)| {
+        if has_alpha && (i % ch) == ch - 1 {
+          return c;
+        }
+        if is_real32 {
+          let c32 = (c as f32) as f64;
+          let r = if is_darker {
+            c32 * (1.0 - amount)
+          } else {
+            (c32 * (1.0 + amount)).min(1.0)
+          };
+          (r as f32) as f64
+        } else if is_darker {
+          c * (1.0 - amount)
+        } else {
+          (c * (1.0 + amount)).min(1.0)
+        }
+      })
+      .collect();
+    return Some(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: std::sync::Arc::new(new_data),
+      image_type: *image_type,
+    });
+  }
+
   let rgb = extract_rgb_rational(&args[0])?;
 
   // Default amount is 1/3
