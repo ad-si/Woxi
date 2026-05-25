@@ -6986,9 +6986,10 @@ pub fn evaluate_function_call_ast_inner(
   // Check if the function is a known but unimplemented Wolfram Language function.
   // Some symbolic CAS objects (Root, RootSum, …) intentionally stay
   // unevaluated as their canonical form, so flagging them as
-  // "unimplemented" is a false positive. Exclude that small set.
+  // "unimplemented" is a false positive. Exclude that small set. Image3D
+  // is similar: ImageQ classifies it without full Image3D support.
   if is_known_wolfram_function(name)
-    && !matches!(name, "Root" | "RootSum" | "RootApproximant")
+    && !matches!(name, "Root" | "RootSum" | "RootApproximant" | "Image3D")
   {
     let args_str = args
       .iter()

@@ -267,6 +267,69 @@ mod image_core {
     );
   }
 
+  // Image3D objects pass ImageQ, even though Image3D itself isn't fully
+  // implemented. The shape check accepts a NumericArray of rank 3 or 4,
+  // or a nested list of the same rank.
+  #[test]
+  fn image_q_image3d_numeric_array_byte() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageQ[Image3D[NumericArray[{{{0, 1}, {2, 3}}, {{4, 5}, {6, 7}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Nested-list rank-3 input also passes.
+  #[test]
+  fn image_q_image3d_nested_list_rank3() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageQ[Image3D[{{{0.1, 0.2}, {0.3, 0.4}}, {{0.5, 0.6}, {0.7, 0.8}}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Rank-4 nested list (color 3D image) also passes.
+  #[test]
+  fn image_q_image3d_rank4_color() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageQ[Image3D[{{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}, \
+         {{0.0, 0.0, 1.0}, {1.0, 1.0, 1.0}}}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Invalid Image3D arguments (wrong rank, scalar) return False.
+  #[test]
+  fn image_q_image3d_rejects_invalid_data() {
+    clear_state();
+    assert_eq!(interpret("ImageQ[Image3D[42]]").unwrap(), "False");
+    assert_eq!(
+      interpret("ImageQ[Image3D[{{0, 1}, {2, 3}}]]").unwrap(),
+      "False"
+    );
+  }
+
+  // Image3D[NumericArray[...]] with rank-2 inner data is invalid.
+  #[test]
+  fn image_q_image3d_rejects_low_rank_numeric_array() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageQ[Image3D[NumericArray[{{0, 1}}, \"Byte\"]]]").unwrap(),
+      "False"
+    );
+  }
+
   // wolframscript's structured Image form takes a NumericArray, a type
   // tag, and options like ColorSpace and Interleaving. The options are
   // accepted (currently ignored) so ImageType can recover the type.

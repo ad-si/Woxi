@@ -351,14 +351,58 @@ pub fn image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageQ expects exactly 1 argument".into(),
     ));
   }
+  let is_image = matches!(&args[0], Expr::Image { .. }) || is_valid_image3d(&args[0]);
   Ok(Expr::Identifier(
-    if matches!(&args[0], Expr::Image { .. }) {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
+    if is_image { "True" } else { "False" }.to_string(),
   ))
+}
+
+/// Image3D[arg] is a valid Image when `arg` is a rank-3 or rank-4 nested
+/// list, or a NumericArray of rank 3 or 4. Image3D itself isn't fully
+/// implemented, but ImageQ can still classify it correctly.
+fn is_valid_image3d(e: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = e else {
+    return false;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return false;
+  }
+  let inner = match &args[0] {
+    Expr::FunctionCall {
+      name: na_name,
+      args: na_args,
+    } if na_name == "NumericArray" && !na_args.is_empty() => &na_args[0],
+    other => other,
+  };
+  let rank = nested_list_rank(inner);
+  matches!(rank, Some(3) | Some(4))
+}
+
+/// Depth of a regular nested list (the innermost elements must be
+/// scalars). Returns `None` if rows have inconsistent shape.
+fn nested_list_rank(e: &Expr) -> Option<usize> {
+  match e {
+    Expr::List(items) if !items.is_empty() => {
+      let first = nested_list_rank(&items[0])?;
+      for it in items.iter().skip(1) {
+        if nested_list_rank(it)? != first {
+          return None;
+        }
+      }
+      Some(first + 1)
+    }
+    Expr::List(_) => None,
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => Some(0),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      Some(0)
+    }
+    _ => None,
+  }
 }
 
 /// ImageDimensions[img] - {width, height}

@@ -807,7 +807,7 @@ ConvexHullMesh,Requires external services or GUI infrastructure,🚫,io,10.0,814
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816
 DifferentialD,Differential d notation symbol,✅,none,3.0,819
-Image3D,Requires external services or GUI infrastructure,🚫,io,9.0,819
+Image3D,Three-dimensional image — recognised by ImageQ; full pipeline not implemented,🚧,io,9.0,819
 JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1.0,819
 FractionalPart,Returns the fractional part of a number,✅,pure,3.0,820
 CloudDeploy,Requires external services or GUI infrastructure,🚫,io,10.0,821
