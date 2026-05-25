@@ -1414,6 +1414,32 @@ mod between {
     assert_eq!(interpret("Between[4, {4, 10}]").unwrap(), "True");
     assert_eq!(interpret("Between[10, {4, 10}]").unwrap(), "True");
   }
+
+  #[test]
+  fn symbolic_range_expands_to_conjunction() {
+    // wolframscript: a <= x && x <= b.
+    assert_eq!(
+      interpret("Between[x, {a, b}]").unwrap(),
+      "a <= x && x <= b"
+    );
+  }
+
+  #[test]
+  fn symbolic_multiple_ranges_expand_to_disjunction() {
+    assert_eq!(
+      interpret("Between[x, {{1, 5}, {7, 10}}]").unwrap(),
+      "(1 <= x && x <= 5) || (7 <= x && x <= 10)"
+    );
+  }
+
+  #[test]
+  fn symbolic_lower_numeric_upper() {
+    // Mixed numeric/symbolic still expands.
+    assert_eq!(
+      interpret("Between[x, {0, b}]").unwrap(),
+      "0 <= x && x <= b"
+    );
+  }
 }
 
 mod free_q {

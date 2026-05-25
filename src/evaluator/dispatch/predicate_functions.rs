@@ -540,21 +540,79 @@ pub fn dispatch_predicate_functions(
               .to_string(),
             )));
           }
+          // Symbolic: a <= x && x <= b.
+          let lo_le_x = Expr::Comparison {
+            operands: vec![range[0].clone(), x.clone()],
+            operators: vec![crate::syntax::ComparisonOp::LessEqual],
+          };
+          let x_le_hi = Expr::Comparison {
+            operands: vec![x.clone(), range[1].clone()],
+            operators: vec![crate::syntax::ComparisonOp::LessEqual],
+          };
+          let conjunction = Expr::FunctionCall {
+            name: "And".to_string(),
+            args: vec![lo_le_x, x_le_hi].into(),
+          };
+          return Some(crate::evaluator::evaluate_expr_to_expr(&conjunction));
         } else if is_list_of_ranges {
           // Multiple ranges: Between[x, {{min1, max1}, ...}]
           if let Some(xv) = try_eval_to_f64(x) {
+            let mut all_numeric = true;
             for r in range {
-              if let Expr::List(pair) = r
-                && pair.len() == 2
-                && let (Some(lo), Some(hi)) =
-                  (try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1]))
-                && lo <= xv
-                && xv <= hi
-              {
-                return Some(Ok(Expr::Identifier("True".to_string())));
+              let Expr::List(pair) = r else {
+                all_numeric = false;
+                break;
+              };
+              if pair.len() != 2 {
+                all_numeric = false;
+                break;
+              }
+              let (lo, hi) =
+                (try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1]));
+              if let (Some(lo), Some(hi)) = (lo, hi) {
+                if lo <= xv && xv <= hi {
+                  return Some(Ok(Expr::Identifier("True".to_string())));
+                }
+              } else {
+                all_numeric = false;
+                break;
               }
             }
-            return Some(Ok(Expr::Identifier("False".to_string())));
+            if all_numeric {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          }
+          // Symbolic disjunction over each {min_i, max_i}.
+          let mut clauses: Vec<Expr> = Vec::with_capacity(range.len());
+          let mut shape_ok = true;
+          for r in range {
+            let Expr::List(pair) = r else {
+              shape_ok = false;
+              break;
+            };
+            if pair.len() != 2 {
+              shape_ok = false;
+              break;
+            }
+            let lo_le_x = Expr::Comparison {
+              operands: vec![pair[0].clone(), x.clone()],
+              operators: vec![crate::syntax::ComparisonOp::LessEqual],
+            };
+            let x_le_hi = Expr::Comparison {
+              operands: vec![x.clone(), pair[1].clone()],
+              operators: vec![crate::syntax::ComparisonOp::LessEqual],
+            };
+            clauses.push(Expr::FunctionCall {
+              name: "And".to_string(),
+              args: vec![lo_le_x, x_le_hi].into(),
+            });
+          }
+          if shape_ok {
+            let disj = Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: clauses.into(),
+            };
+            return Some(crate::evaluator::evaluate_expr_to_expr(&disj));
           }
         }
       }

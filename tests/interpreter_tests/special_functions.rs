@@ -655,10 +655,7 @@ mod bessel_j_zero {
   #[test]
   fn bessel_j_at_three_arg_zero_is_zero() {
     // BesselJZero[n, k, x0] is a different zero of J_n; identity still holds.
-    assert_eq!(
-      interpret("BesselJ[2, BesselJZero[2, 1, 4]]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("BesselJ[2, BesselJZero[2, 1, 4]]").unwrap(), "0");
   }
 
   #[test]
