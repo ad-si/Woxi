@@ -4203,6 +4203,27 @@ mod fourier_transform {
       result
     );
   }
+
+  #[test]
+  fn unit_box_half_width() {
+    // FourierTransform[UnitBox[t/2], t, w] = Sqrt[2/Pi] * Sinc[w]
+    assert_eq!(
+      interpret("FourierTransform[UnitBox[t/2], t, w]").unwrap(),
+      "Sqrt[2/Pi]*Sinc[w]"
+    );
+  }
+
+  #[test]
+  fn radial_inverse_sqrt_2d() {
+    // FourierTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}] = 1/Sqrt[u^2 + v^2]
+    assert_eq!(
+      interpret(
+        "FourierTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}]"
+      )
+      .unwrap(),
+      "1/Sqrt[u^2 + v^2]"
+    );
+  }
 }
 
 mod inverse_fourier_transform {

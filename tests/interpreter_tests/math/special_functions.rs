@@ -945,7 +945,8 @@ mod elliptic_nome_q {
   fn numeric_negative_small() {
     // EllipticNomeQ[-0.5] (negative, finite). Should match wolframscript.
     // wolframscript: -0.02531991336628519
-    let result: f64 = interpret("EllipticNomeQ[-0.5]").unwrap().parse().unwrap();
+    let result: f64 =
+      interpret("EllipticNomeQ[-0.5]").unwrap().parse().unwrap();
     assert!((result - (-0.02531991336628519)).abs() < 1e-12);
   }
 }

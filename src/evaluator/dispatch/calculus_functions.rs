@@ -1770,6 +1770,15 @@ fn fourier_transform(
   t_expr: &Expr,
   w_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Multidimensional case: FourierTransform[f, {t1, ...}, {w1, ...}]
+  if let (Expr::List(ts), Expr::List(ws)) = (t_expr, w_expr)
+    && ts.len() == ws.len()
+    && !ts.is_empty()
+    && let Some(result) =
+      fourier_transform_multi(expr, ts.as_ref(), ws.as_ref())
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -1793,6 +1802,99 @@ fn fourier_transform(
       args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
     })
   }
+}
+
+/// Multidimensional Fourier transform — currently only recognises the
+/// 2-D radial identity F[1/Sqrt[x² + y²], {x, y}, {u, v}] = 1/Sqrt[u² + v²].
+fn fourier_transform_multi(
+  expr: &Expr,
+  ts: &[Expr],
+  ws: &[Expr],
+) -> Option<Expr> {
+  if ts.len() != 2 {
+    return None;
+  }
+  // Identifier names for the two variables.
+  let (Expr::Identifier(t1), Expr::Identifier(t2)) = (&ts[0], &ts[1]) else {
+    return None;
+  };
+  let normalized = normalize_to_func_calls(expr);
+  let normalized = crate::evaluator::evaluate_expr_to_expr(&normalized)
+    .unwrap_or(normalized);
+
+  // Match 1 / Sqrt[t1² + t2²] in various equivalent forms.
+  let is_radial_inv_sqrt = is_inv_sqrt_sum_of_squares(&normalized, t1, t2);
+  if is_radial_inv_sqrt {
+    // 1 / Sqrt[w1² + w2²]
+    let sum_sq = make_plus(vec![
+      make_power(ws[0].clone(), Expr::Integer(2)),
+      make_power(ws[1].clone(), Expr::Integer(2)),
+    ]);
+    return Some(make_power(
+      make_sqrt(sum_sq),
+      Expr::Integer(-1),
+    ));
+  }
+  None
+}
+
+/// True when `expr` represents 1/Sqrt[t1² + t2²].
+fn is_inv_sqrt_sum_of_squares(expr: &Expr, t1: &str, t2: &str) -> bool {
+  let is_neg_half = |e: &Expr| -> bool {
+    matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+          && matches!((&args[0], &args[1]), (Expr::Integer(-1), Expr::Integer(2))))
+  };
+  let is_pos_half = |e: &Expr| -> bool {
+    matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+          && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2))))
+  };
+  if let Some((name, args)) = as_func_args(expr)
+    && name == "Power"
+    && args.len() == 2
+  {
+    // (..)^(-1/2)
+    if is_neg_half(args[1]) {
+      return is_sum_of_t1sq_t2sq(args[0], t1, t2);
+    }
+    // Power[Sqrt[..], -1] or Power[Power[.., 1/2], -1]
+    if matches!(args[1], Expr::Integer(-1)) {
+      if let Some(s) = crate::functions::math_ast::is_sqrt(args[0]) {
+        return is_sum_of_t1sq_t2sq(s, t1, t2);
+      }
+      if let Some((pn, pa)) = as_func_args(args[0])
+        && pn == "Power"
+        && pa.len() == 2
+        && is_pos_half(pa[1])
+      {
+        return is_sum_of_t1sq_t2sq(pa[0], t1, t2);
+      }
+    }
+  }
+  false
+}
+
+fn is_sum_of_t1sq_t2sq(expr: &Expr, t1: &str, t2: &str) -> bool {
+  let is_t_sq = |e: &Expr, t: &str| -> bool {
+    if let Some((name, args)) = as_func_args(e)
+      && name == "Power"
+      && args.len() == 2
+      && matches!(args[0], Expr::Identifier(s) if s == t)
+      && matches!(args[1], Expr::Integer(2))
+    {
+      return true;
+    }
+    false
+  };
+  if let Some((name, args)) = as_func_args(expr)
+    && name == "Plus"
+    && args.len() == 2
+  {
+    return (is_t_sq(args[0], t1) && is_t_sq(args[1], t2))
+      || (is_t_sq(args[0], t2) && is_t_sq(args[1], t1));
+  }
+  false
 }
 
 /// Try to compute Fourier transform symbolically. Returns None if not recognized.
@@ -1846,6 +1948,129 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
           },
         ),
       ]));
+    }
+  }
+
+  // F[UnitBox[c*t]] for constant c. Let a = 1/c (the box width in t).
+  // For UnitBox[c*t]: the indicator is non-zero on |c*t| < 1/2, i.e. width 1/a.
+  // Result = (1/|c|) / Sqrt[2*Pi] * Sinc[w / (2|c|)]
+  //       = a/Sqrt[2*Pi] * Sinc[a*w/2]
+  // Wolfram simplifies for even a: a=2k gives k*Sqrt[2/Pi]*Sinc[k*w].
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "UnitBox"
+    && fargs.len() == 1
+    && let Some(coeff) = extract_linear_coeff(fargs[0], t)
+  {
+    // a = 1/coeff
+    let a = match &coeff {
+      Expr::Integer(c) if *c > 0 => Some(*c as i128),
+      _ => None,
+    };
+    // If coeff is exactly 1/n for integer n > 0, then a = n.
+    let a_from_recip = match &coeff {
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(1), Expr::Integer(d)) if *d > 0 => Some(*d as i128),
+          _ => None,
+        }
+      }
+      _ => None,
+    };
+    let inv_a = a; // coeff = a → 1/a in front; w arg w/(2a)
+    if let Some(av) = a_from_recip {
+      // coeff = 1/av, so UnitBox[t/av]. result = av/Sqrt[2π] * Sinc[av*w/2]
+      let half_aw = if av % 2 == 0 {
+        // av*w/2 = (av/2)*w
+        let k = av / 2;
+        if k == 1 {
+          w.clone()
+        } else {
+          make_times(vec![Expr::Integer(k), w.clone()])
+        }
+      } else {
+        // av*w/2 stays as fraction
+        make_times(vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(av), Expr::Integer(2)].into(),
+          },
+          w.clone(),
+        ])
+      };
+      let sinc = Expr::FunctionCall {
+        name: "Sinc".to_string(),
+        args: vec![half_aw].into(),
+      };
+      // Prefactor
+      let prefactor = if av % 2 == 0 {
+        // av/Sqrt[2π] = (av/2) * Sqrt[2/π]
+        let k = av / 2;
+        let sqrt_two_over_pi = make_sqrt(make_times(vec![
+          Expr::Integer(2),
+          make_power(Expr::Constant("Pi".to_string()), Expr::Integer(-1)),
+        ]));
+        if k == 1 {
+          sqrt_two_over_pi
+        } else {
+          make_times(vec![Expr::Integer(k), sqrt_two_over_pi])
+        }
+      } else {
+        // av/Sqrt[2π]
+        let sqrt_2pi = make_sqrt(make_times(vec![
+          Expr::Integer(2),
+          Expr::Constant("Pi".to_string()),
+        ]));
+        let inv_sqrt = make_power(sqrt_2pi, Expr::Integer(-1));
+        if av == 1 {
+          inv_sqrt
+        } else {
+          make_times(vec![Expr::Integer(av), inv_sqrt])
+        }
+      };
+      return Some(make_times(vec![prefactor, sinc]));
+    }
+    if let Some(c_val) = inv_a {
+      // coeff = c (positive integer), UnitBox[c*t].
+      // result = (1/c)/Sqrt[2π] * Sinc[w/(2c)]
+      let arg = if c_val == 1 {
+        // w/2
+        make_times(vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          },
+          w.clone(),
+        ])
+      } else {
+        make_times(vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2 * c_val)].into(),
+          },
+          w.clone(),
+        ])
+      };
+      let sinc = Expr::FunctionCall {
+        name: "Sinc".to_string(),
+        args: vec![arg].into(),
+      };
+      let sqrt_2pi = make_sqrt(make_times(vec![
+        Expr::Integer(2),
+        Expr::Constant("Pi".to_string()),
+      ]));
+      let inv_sqrt = make_power(sqrt_2pi, Expr::Integer(-1));
+      let prefactor = if c_val == 1 {
+        inv_sqrt
+      } else {
+        make_times(vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(c_val)].into(),
+          },
+          inv_sqrt,
+        ])
+      };
+      return Some(make_times(vec![prefactor, sinc]));
     }
   }
 
