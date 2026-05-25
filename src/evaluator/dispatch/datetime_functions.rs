@@ -84,7 +84,7 @@ pub fn dispatch_datetime_functions(
           1 => extra.push(Expr::String("Year".to_string())),
           2 => extra.push(Expr::String("Month".to_string())),
           3 => extra.push(Expr::String("Day".to_string())),
-          4 | 5 | 6 => {
+          4..=6 => {
             let gran = match items.len() {
               4 => "Hour",
               5 => "Minute",

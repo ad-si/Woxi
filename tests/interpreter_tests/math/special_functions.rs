@@ -1149,6 +1149,24 @@ mod polylog {
   }
 
   #[test]
+  fn at_one_half_s2() {
+    // PolyLog[2, 1/2] = Pi^2/12 - Log[2]^2/2
+    assert_eq!(
+      interpret("PolyLog[2, 1/2]").unwrap(),
+      "Pi^2/12 - Log[2]^2/2"
+    );
+  }
+
+  #[test]
+  fn at_one_half_s3() {
+    // Audit case: PolyLog[3, 1/2] = (-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24
+    assert_eq!(
+      interpret("PolyLog[3, 1/2]").unwrap(),
+      "(-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24"
+    );
+  }
+
+  #[test]
   fn numeric_real() {
     let result: f64 = interpret("PolyLog[2, 0.5]").unwrap().parse().unwrap();
     assert!((result - 0.5822405264650125).abs() < 1e-8);
