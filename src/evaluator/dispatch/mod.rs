@@ -7530,6 +7530,11 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
     _ => return None,
   };
 
+  // Image blend: linearly interpolate matching-shape Images per pixel.
+  if colors.iter().all(|c| matches!(c, Expr::Image { .. })) {
+    return blend_images(colors, args.get(1));
+  }
+
   // Check if all colors are GrayLevel (to preserve output type)
   let all_graylevel = colors.iter().all(is_graylevel);
 
@@ -7633,6 +7638,74 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       )
     }
   }
+}
+
+/// Blend a list of Images (already known to be all images) per-pixel.
+/// `weight` is the optional `t` argument: missing means equal average.
+fn blend_images(colors: &[Expr], weight: Option<&Expr>) -> Option<Expr> {
+  let n = colors.len();
+  let (w, h, ch, image_type) = match &colors[0] {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      image_type,
+      ..
+    } => (*width, *height, *channels, *image_type),
+    _ => return None,
+  };
+  for c in colors {
+    let Expr::Image {
+      width,
+      height,
+      channels,
+      ..
+    } = c
+    else {
+      return None;
+    };
+    if *width != w || *height != h || *channels != ch {
+      return None;
+    }
+  }
+  let len = (w as usize) * (h as usize) * (ch as usize);
+  let datas: Vec<&[f64]> = colors
+    .iter()
+    .map(|c| match c {
+      Expr::Image { data, .. } => data.as_slice(),
+      _ => unreachable!(),
+    })
+    .collect();
+
+  let t = match weight {
+    None => None,
+    Some(e) => Some(crate::functions::math_ast::try_eval_to_f64(e)?),
+  };
+
+  // For weight=None: equal average. For weight=t with two images:
+  // (1-t)*img0 + t*img1. For n>2: map t in [0,1] to the segment in
+  // [(i)/(n-1), (i+1)/(n-1)] and interpolate the two adjacent images.
+  let mut new_data = Vec::with_capacity(len);
+  for i in 0..len {
+    let v = match t {
+      None => datas.iter().map(|d| d[i]).sum::<f64>() / n as f64,
+      Some(t) if n == 2 => (1.0 - t) * datas[0][i] + t * datas[1][i],
+      Some(t) => {
+        let pos = t * (n as f64 - 1.0);
+        let seg = (pos.floor() as usize).min(n - 2);
+        let local = pos - seg as f64;
+        (1.0 - local) * datas[seg][i] + local * datas[seg + 1][i]
+      }
+    };
+    new_data.push(v);
+  }
+  Some(Expr::Image {
+    width: w,
+    height: h,
+    channels: ch,
+    data: std::sync::Arc::new(new_data),
+    image_type,
+  })
 }
 
 /// Blend colors with a float weight t. Matches wolframscript's behaviour of

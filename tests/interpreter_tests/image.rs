@@ -1037,6 +1037,69 @@ mod image_processing {
     assert_eq!(result, "{3, 1}");
   }
 
+  // Blend on a list of images linearly interpolates per-pixel.
+  #[test]
+  fn blend_two_images_half() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Blend[{Image[{{0.0}}], Image[{{1.0}}]}, 0.5]]"
+      )
+      .unwrap(),
+      "{{0.5}}"
+    );
+  }
+
+  #[test]
+  fn blend_two_images_with_inner_pixels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Blend[{Image[{{0.0, 0.5}}], Image[{{1.0, 0.5}}]}, 0.25]]"
+      )
+      .unwrap(),
+      "{{0.25, 0.5}}"
+    );
+  }
+
+  // No t argument → equal blend (average).
+  #[test]
+  fn blend_two_images_default_is_average() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Blend[{Image[{{0.0}}], Image[{{1.0}}]}]]").unwrap(),
+      "{{0.5}}"
+    );
+  }
+
+  // Three images at t = 0.25: interpolation lands between images 1 and 2
+  // (positions x = 0, 0.5, 1) at local_t = 0.5 → average of 0 and 0.5.
+  #[test]
+  fn blend_three_images_quarter() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Blend[{Image[{{0.0}}], Image[{{0.5}}], Image[{{1.0}}]}, 0.25]]"
+      )
+      .unwrap(),
+      "{{0.25}}"
+    );
+  }
+
+  // Output dimensions match the inputs (all images must agree in shape).
+  #[test]
+  fn blend_image_preserves_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Blend[{Image[{{0.0, 0.5}, {0.5, 1.0}}], \
+         Image[{{1.0, 0.5}, {0.5, 0.0}}]}, 0.5]]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+  }
+
   // ColorSeparate splits an image into one single-channel image per
   // channel. The returned images preserve width, height and image type.
   #[test]
