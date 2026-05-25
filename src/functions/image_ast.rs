@@ -141,9 +141,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: na_name,
       args: na_args,
-    } if na_name == "NumericArray"
-      && !na_args.is_empty() =>
-    {
+    } if na_name == "NumericArray" && !na_args.is_empty() => {
       if requested_type.is_none()
         && let Some(ty) = na_args.get(1)
       {

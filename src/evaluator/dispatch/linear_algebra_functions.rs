@@ -750,6 +750,65 @@ pub fn dispatch_linear_algebra_functions(
           return Some(Ok(result.unwrap_or(mat.clone())));
         }
       }
+      // Symbolic n with a diagonal matrix: return diag(d_i^n) so common
+      // cases like MatrixPower[{{2, 0}, {0, 3}}, n] reduce instead of
+      // staying unevaluated.
+      if let Expr::List(rows) = &args[0]
+        && !rows.is_empty()
+      {
+        let size = rows.len();
+        let mut diag: Option<Vec<Expr>> = Some(Vec::with_capacity(size));
+        for (i, row) in rows.iter().enumerate() {
+          let Expr::List(cols) = row else {
+            diag = None;
+            break;
+          };
+          if cols.len() != size {
+            diag = None;
+            break;
+          }
+          for (j, entry) in cols.iter().enumerate() {
+            if i == j {
+              diag.as_mut().unwrap().push(entry.clone());
+            } else if !matches!(entry, Expr::Integer(0)) {
+              diag = None;
+              break;
+            }
+          }
+          if diag.is_none() {
+            break;
+          }
+        }
+        if let Some(d) = diag {
+          let n_expr = args[1].clone();
+          let powered: Vec<Expr> = d
+            .into_iter()
+            .map(|di| {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(di),
+                right: Box::new(n_expr.clone()),
+              })
+              .unwrap_or(Expr::Integer(0))
+            })
+            .collect();
+          let result_rows: Vec<Expr> = (0..size)
+            .map(|i| {
+              let row: Vec<Expr> = (0..size)
+                .map(|j| {
+                  if i == j {
+                    powered[i].clone()
+                  } else {
+                    Expr::Integer(0)
+                  }
+                })
+                .collect();
+              Expr::List(row.into())
+            })
+            .collect();
+          return Some(Ok(Expr::List(result_rows.into())));
+        }
+      }
       // Symbolic: return unevaluated
       return Some(Ok(Expr::FunctionCall {
         name: "MatrixPower".to_string(),

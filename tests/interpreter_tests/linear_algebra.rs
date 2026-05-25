@@ -2838,6 +2838,34 @@ mod cases {
     );
   }
   #[test]
+  fn matrix_power_diagonal_symbolic_n() {
+    assert_case(
+      r#"MatrixPower[{{2, 0}, {0, 3}}, n]"#,
+      r#"{{2^n, 0}, {0, 3^n}}"#,
+    );
+  }
+  #[test]
+  fn matrix_power_diagonal_symbolic_entries_and_n() {
+    assert_case(
+      r#"MatrixPower[{{a, 0}, {0, b}}, n]"#,
+      r#"{{a^n, 0}, {0, b^n}}"#,
+    );
+  }
+  #[test]
+  fn matrix_power_3x3_diagonal_symbolic_n() {
+    assert_case(
+      r#"MatrixPower[{{2, 0, 0}, {0, 3, 0}, {0, 0, 5}}, n]"#,
+      r#"{{2^n, 0, 0}, {0, 3^n, 0}, {0, 0, 5^n}}"#,
+    );
+  }
+  #[test]
+  fn matrix_power_non_diagonal_symbolic_n_stays_unevaluated() {
+    assert_case(
+      r#"MatrixPower[{{1, 2}, {3, 4}}, n]"#,
+      r#"MatrixPower[{{1, 2}, {3, 4}}, n]"#,
+    );
+  }
+  #[test]
   fn matrix_rank_1() {
     assert_case(r#"MatrixRank[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#, r#"2"#);
   }
