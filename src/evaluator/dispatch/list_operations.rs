@@ -3769,6 +3769,37 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::Integer(0)
   };
+  let unevaluated = || Expr::FunctionCall {
+    name: "ArrayPad".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Try per-dimension form: {{m1, n1}, {m2, n2}, ...} or {{m1}, {m2}, ...}
+  // where the spec list has length equal to the array's rank.
+  if let Expr::List(spec_items) = &args[1]
+    && spec_items.iter().all(|s| matches!(s, Expr::List(_)))
+    && !spec_items.is_empty()
+  {
+    let mut per_dim: Vec<(i128, i128)> = Vec::with_capacity(spec_items.len());
+    for s in spec_items.iter() {
+      let Expr::List(inner) = s else {
+        return Ok(unevaluated());
+      };
+      let pair = match inner.len() {
+        1 => match &inner[0] {
+          Expr::Integer(n) => (*n, *n),
+          _ => return Ok(unevaluated()),
+        },
+        2 => match (&inner[0], &inner[1]) {
+          (Expr::Integer(l), Expr::Integer(r)) => (*l, *r),
+          _ => return Ok(unevaluated()),
+        },
+        _ => return Ok(unevaluated()),
+      };
+      per_dim.push(pair);
+    }
+    return pad_array_per_dim(arr, &per_dim, &pad_val);
+  }
 
   // Parse padding spec: integer n or {left, right}
   let (left, right) = match &args[1] {
@@ -3779,33 +3810,95 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 2 => {
       let l = match &items[0] {
         Expr::Integer(n) => *n,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "ArrayPad".to_string(),
-            args: args.to_vec().into(),
-          });
-        }
+        _ => return Ok(unevaluated()),
       };
       let r = match &items[1] {
         Expr::Integer(n) => *n,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "ArrayPad".to_string(),
-            args: args.to_vec().into(),
-          });
-        }
+        _ => return Ok(unevaluated()),
       };
       (l, r)
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ArrayPad".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return Ok(unevaluated()),
   };
 
   pad_array(arr, left, right, &pad_val)
+}
+
+/// Apply `(left, right)` padding per outer dimension. `per_dim[0]` pads the
+/// outermost dim; remaining entries pad inner dims. If the spec is shorter
+/// than the array's rank, inner dims are left unchanged.
+fn pad_array_per_dim(
+  arr: &Expr,
+  per_dim: &[(i128, i128)],
+  pad_val: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if per_dim.is_empty() {
+    return Ok(arr.clone());
+  }
+  let (left, right) = per_dim[0];
+  let rest = &per_dim[1..];
+
+  let Expr::List(items) = arr else {
+    return Ok(arr.clone());
+  };
+
+  // First recursively pad each child along the remaining dimensions.
+  let mut padded_children: Vec<Expr> = items
+    .iter()
+    .map(|item| pad_array_per_dim(item, rest, pad_val))
+    .collect::<Result<Vec<_>, _>>()?;
+
+  // Build a pad element for this dimension: a fully-zero block with the
+  // shape of one padded child.
+  let pad_block = if let Some(first) = padded_children.first() {
+    zero_block_like(first, pad_val)
+  } else {
+    pad_val.clone()
+  };
+
+  // Add or trim entries at the front.
+  if left >= 0 {
+    let mut prefix: Vec<Expr> = vec![pad_block.clone(); left as usize];
+    prefix.append(&mut padded_children);
+    padded_children = prefix;
+  } else {
+    let trim = (-left) as usize;
+    if trim < padded_children.len() {
+      padded_children = padded_children[trim..].to_vec();
+    } else {
+      padded_children = vec![];
+    }
+  }
+
+  // Add or trim entries at the back.
+  if right >= 0 {
+    for _ in 0..right {
+      padded_children.push(pad_block.clone());
+    }
+  } else {
+    let trim = (-right) as usize;
+    if trim < padded_children.len() {
+      padded_children.truncate(padded_children.len() - trim);
+    } else {
+      padded_children = vec![];
+    }
+  }
+
+  Ok(Expr::List(padded_children.into()))
+}
+
+/// Build an Expr with the same nested-List shape as `template`, filled with `pad_val`.
+fn zero_block_like(template: &Expr, pad_val: &Expr) -> Expr {
+  match template {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| zero_block_like(it, pad_val))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => pad_val.clone(),
+  }
 }
 
 fn pad_array(

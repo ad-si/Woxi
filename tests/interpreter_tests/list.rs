@@ -6701,6 +6701,48 @@ mod array_pad {
       "{x, 1, 2, x, x, x}"
     );
   }
+
+  #[test]
+  fn per_dimension_short_spec() {
+    // {{m1}, {m2}} — equal padding per dim. 1 row each side, 5 cols each side.
+    assert_eq!(
+      interpret("ArrayPad[{{1, 2}, {3, 4}}, {{1}, {5}}]").unwrap(),
+      "{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0, 3, 4, 0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn per_dimension_asymmetric_spec() {
+    // {{m1, n1}, {m2, n2}} — asymmetric padding per dim.
+    assert_eq!(
+      interpret("ArrayPad[{{1, 2}, {3, 4}}, {{1, 2}, {3, 4}}]").unwrap(),
+      "{{0, 0, 0, 0, 0, 0, 0, 0, 0}, \
+       {0, 0, 0, 1, 2, 0, 0, 0, 0}, \
+       {0, 0, 0, 3, 4, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0, 0, 0, 0, 0}, \
+       {0, 0, 0, 0, 0, 0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn per_dimension_1d_array() {
+    // {{1, 2}} — asymmetric padding on a 1-D array's only dim.
+    assert_eq!(
+      interpret("ArrayPad[{1, 2, 3}, {{1, 2}}]").unwrap(),
+      "{0, 1, 2, 3, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn per_dimension_with_pad_value() {
+    assert_eq!(
+      interpret("ArrayPad[{{1, 2}}, {{1}, {2}}, x]").unwrap(),
+      "{{x, x, x, x, x, x}, {x, x, 1, 2, x, x}, {x, x, x, x, x, x}}"
+    );
+  }
 }
 
 mod array_reshape {

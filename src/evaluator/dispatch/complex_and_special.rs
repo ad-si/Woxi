@@ -2127,8 +2127,7 @@ pub fn dispatch_complex_and_special(
         && sname == "Scaled"
         && sargs.len() == 1
       {
-        let x_num =
-          crate::functions::math_ast::try_eval_to_f64(&new_args[0]);
+        let x_num = crate::functions::math_ast::try_eval_to_f64(&new_args[0]);
         let s_num = crate::functions::math_ast::try_eval_to_f64(&sargs[0]);
         if let (Some(x), Some(s)) = (x_num, s_num) {
           new_args[1] = Expr::Real(x.abs() * s);
