@@ -487,17 +487,12 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
       .single()
       .unwrap_or(now);
-    let span = (next_year_start - year_start)
-      .num_milliseconds()
-      .max(1) as f64;
+    let span = (next_year_start - year_start).num_milliseconds().max(1) as f64;
     let offset_ms = crate::with_rng(|rng| rng.gen_range(0.0..span));
     let total_micros = (offset_ms * 1000.0) as i64;
-    let chosen = year_start
-      + chrono::Duration::microseconds(total_micros);
-    let seconds =
-      chosen.second() as f64 + (chosen.nanosecond() as f64) / 1e9;
-    let tz_offset_hours =
-      chosen.offset().local_minus_utc() as f64 / 3600.0;
+    let chosen = year_start + chrono::Duration::microseconds(total_micros);
+    let seconds = chosen.second() as f64 + (chosen.nanosecond() as f64) / 1e9;
+    let tz_offset_hours = chosen.offset().local_minus_utc() as f64 / 3600.0;
     Expr::FunctionCall {
       name: "DateObject".to_string(),
       args: vec![

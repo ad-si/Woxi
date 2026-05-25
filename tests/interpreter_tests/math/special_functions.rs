@@ -3457,6 +3457,32 @@ mod nproduct {
       "{HoldAll, Protected}"
     );
   }
+
+  #[test]
+  fn infinite_product_with_acceleration() {
+    // Product_{i=1}^∞ (1 + 1/i^2) = Sinh[Pi]/Pi ≈ 3.6760779100585657.
+    // Woxi's finite-term + Wynn-epsilon estimate gets to within 1e-4.
+    let result: f64 = interpret("NProduct[1 + 1/i^2, {i, 1, Infinity}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(
+      (result - 3.6760779100585657).abs() < 1e-3,
+      "expected ≈ 3.6760779, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn infinite_product_geometric() {
+    // Product_{i=1}^∞ (1 - 1/(i+1)^2) = 1/2 (telescoping).
+    let result: f64 =
+      interpret("NProduct[1 - 1/(i+1)^2, {i, 1, Infinity}]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((result - 0.5).abs() < 1e-3, "got {}", result);
+  }
 }
 
 mod lerch_phi {

@@ -3683,6 +3683,98 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Detect `Infinity` upper bound and switch to Wynn-epsilon acceleration
+  // over partial products. The standard `try_eval_to_f64` doesn't recognise
+  // the `Infinity` identifier, so check it explicitly first.
+  let is_infinity_max =
+    matches!(&items[2], Expr::Identifier(s) if s == "Infinity");
+
+  let eval_term = |i: i64| -> Result<Option<f64>, InterpreterError> {
+    let sub_val = Expr::Integer(i as i128);
+    let substituted =
+      crate::syntax::substitute_variable(body, &var_name, &sub_val);
+    let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+    Ok(try_eval_to_f64(&val))
+  };
+
+  if is_infinity_max {
+    // Iterate enough terms to drive the residual small; for products with
+    // O(1/n^2) tail (the common case), 100 000 terms gives ~10 digits.
+    // After collecting the log-partial-sums, apply Wynn-epsilon to the
+    // remaining tail estimates to extract a near-machine-precision limit.
+    let n_terms: usize = 20_000;
+    let mut log_product = 0.0_f64;
+    // Sample log-partial-sums on a geometric schedule so Wynn-epsilon has
+    // enough room to extract the asymptotic constant.
+    let mut samples: Vec<f64> = Vec::with_capacity(64);
+    let mut next_sample = 1usize;
+    let sample_factor = 1.3_f64;
+    for k in 0..n_terms {
+      let i = min_val + k as i64;
+      let term = match eval_term(i)? {
+        Some(f) => f,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "NProduct".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      };
+      if term <= 0.0 || !term.is_finite() {
+        return Ok(Expr::FunctionCall {
+          name: "NProduct".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      log_product += term.ln();
+      if k + 1 >= next_sample {
+        samples.push(log_product);
+        next_sample =
+          ((next_sample as f64) * sample_factor).ceil() as usize + 1;
+      }
+    }
+    if samples.is_empty() {
+      samples.push(log_product);
+    }
+
+    // Apply Wynn's epsilon algorithm to the log-partial-sums.
+    let result_log = {
+      let n = samples.len();
+      if n >= 3 {
+        let mut eps_prev: Vec<f64> = vec![0.0; n + 1];
+        let mut eps_curr: Vec<f64> = samples.clone();
+        let mut best = *samples.last().unwrap();
+        let mut k: usize = 0;
+        while eps_curr.len() >= 2 {
+          let len_next = eps_curr.len() - 1;
+          let mut eps_next: Vec<f64> = vec![0.0; len_next];
+          for j in 0..len_next {
+            let diff = eps_curr[j + 1] - eps_curr[j];
+            if diff.abs() < 1e-300 || !diff.is_finite() {
+              eps_next[j] = f64::INFINITY;
+            } else {
+              eps_next[j] = eps_prev.get(j + 1).copied().unwrap_or(0.0)
+                + 1.0 / diff;
+            }
+          }
+          if k.is_multiple_of(2) && k > 0 {
+            let candidate = eps_curr[0];
+            if candidate.is_finite() {
+              best = candidate;
+            }
+          }
+          eps_prev = eps_curr;
+          eps_curr = eps_next;
+          k += 1;
+        }
+        best
+      } else {
+        log_product
+      }
+    };
+    return Ok(Expr::Real(result_log.exp()));
+  }
+
   let max_val = match try_eval_to_f64(&items[2]) {
     Some(v) => v as i64,
     None => {
@@ -3695,11 +3787,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut product = 1.0_f64;
   for i in min_val..=max_val {
-    let sub_val = Expr::Integer(i as i128);
-    let substituted =
-      crate::syntax::substitute_variable(body, &var_name, &sub_val);
-    let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-    let term = match try_eval_to_f64(&val) {
+    let term = match eval_term(i)? {
       Some(f) => f,
       None => {
         return Ok(Expr::FunctionCall {
