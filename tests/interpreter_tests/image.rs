@@ -1569,6 +1569,93 @@ mod image_processing {
     );
   }
 
+  // ImageConvolve applies a 2D kernel per pixel with replicated
+  // boundary, kernel center at floor(size/2) for each axis.
+  #[test]
+  fn image_convolve_identity_kernel() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageConvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}]]")
+        .unwrap(),
+      "{{0.10000000149011612, 0.5, 0.8999999761581421}}"
+    );
+  }
+
+  // 1D box blur via a 1×3 kernel of {1/3, 1/3, 1/3}. Woxi computes
+  // the convolution in f64 and casts to Real32 on the way out.
+  #[test]
+  fn image_convolve_1d_box_blur() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageConvolve[Image[{{0.1, 0.5, 0.9}}], {{1, 1, 1}}/3]]"
+      )
+      .unwrap(),
+      "{{0.23333333432674408, 0.5, 0.7666666507720947}}"
+    );
+  }
+
+  // Triangular 1D kernel exercises non-uniform weights.
+  #[test]
+  fn image_convolve_triangular_kernel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageConvolve[Image[{{0.1, 0.5, 0.9, 0.5, 0.1}}], {{1, 2, 1}}/4]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224, 0.5, 0.699999988079071, 0.5, 0.20000000298023224}}"
+    );
+  }
+
+  // Even-size kernel: center at index size/2, so {a, b} reads
+  // pixel[i-1] and pixel[i].
+  #[test]
+  fn image_convolve_even_size_kernel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageConvolve[Image[{{0.1, 0.2, 0.3, 0.4, 0.5}}], {{0.5, 0.5}}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.15000000596046448, 0.25, \
+        0.3499999940395355, 0.44999998807907104}}"
+    );
+  }
+
+  // 2D kernel: cross-pattern Laplacian-like with replicated boundary.
+  #[test]
+  fn image_convolve_2d_cross_kernel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageConvolve[Image[{{0.1, 0.2}, {0.3, 0.4}}], \
+         {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}/4]]"
+      )
+      .unwrap(),
+      "{{0.17499999701976776, 0.22499999403953552}, \
+       {0.2750000059604645, 0.32499998807907104}}"
+    );
+  }
+
+  // Channels and image type pass through.
+  #[test]
+  fn image_convolve_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageConvolve[Image[{{{1.0, 0.0, 0.0}}}], {{1}}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageType[ImageConvolve[Image[{{0.1, 0.5}}], {{1}}]]")
+        .unwrap(),
+      "Real32"
+    );
+  }
+
   // Thumbnail returns an Image; with no size argument it caps the
   // longer side at the default thumbnail size (currently 150), and
   // with an integer caps the longer side at that value.
@@ -1576,10 +1663,8 @@ mod image_processing {
   fn thumbnail_default_caps_longer_side() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageDimensions[Thumbnail[Image[Table[0.5, {200}, {200}]]]]"
-      )
-      .unwrap(),
+      interpret("ImageDimensions[Thumbnail[Image[Table[0.5, {200}, {200}]]]]")
+        .unwrap(),
       "{150, 150}"
     );
   }
@@ -1603,10 +1688,8 @@ mod image_processing {
     // 400 wide, 300 tall → longer side 400 → scale 150/400 = 0.375 →
     // 150 × round(0.375 * 300) = 150 × 113.
     assert_eq!(
-      interpret(
-        "ImageDimensions[Thumbnail[Image[Table[0.5, {300}, {400}]]]]"
-      )
-      .unwrap(),
+      interpret("ImageDimensions[Thumbnail[Image[Table[0.5, {300}, {400}]]]]")
+        .unwrap(),
       "{150, 113}"
     );
   }
@@ -1623,10 +1706,8 @@ mod image_processing {
       "3"
     );
     assert_eq!(
-      interpret(
-        "ImageType[Thumbnail[Image[Table[0.5, {50}, {50}]], 20]]"
-      )
-      .unwrap(),
+      interpret("ImageType[Thumbnail[Image[Table[0.5, {50}, {50}]], 20]]")
+        .unwrap(),
       "Real32"
     );
   }

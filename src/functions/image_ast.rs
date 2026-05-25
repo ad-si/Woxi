@@ -3397,19 +3397,101 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// ImageConvolve[img, kernel] — stub. Real convolution is not
-/// implemented; this stub matches wolframscript's imginv warning for
-/// non-image first arg.
+/// ImageConvolve[img, kernel] — 2D convolution per channel with
+/// replicated boundary. The kernel's center is at floor(rows/2,
+/// cols/2). Channels and image_type are preserved. Output values
+/// are not clamped.
 pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !matches!(&args[0], Expr::Image { .. }) {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageConvolve expects exactly 2 arguments".into(),
+    ));
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
     crate::emit_message(&format!(
       "ImageConvolve::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
+    return Ok(Expr::FunctionCall {
+      name: "ImageConvolve".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+
+  // Parse the kernel: a 1D or 2D nested list of numbers.
+  let Expr::List(rows) = &args[1] else {
+    return Ok(Expr::FunctionCall {
+      name: "ImageConvolve".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  if rows.is_empty() {
+    return Ok(args[0].clone());
   }
-  Ok(Expr::FunctionCall {
-    name: "ImageConvolve".to_string(),
-    args: args.to_vec().into(),
+  let krows = rows.len();
+  let kcols = match &rows[0] {
+    Expr::List(items) => items.len(),
+    _ => 0,
+  };
+  if kcols == 0 {
+    return Ok(args[0].clone());
+  }
+  let mut kernel = Vec::with_capacity(krows * kcols);
+  for row in rows.iter() {
+    let Expr::List(items) = row else {
+      return Ok(Expr::FunctionCall {
+        name: "ImageConvolve".to_string(),
+        args: args.to_vec().into(),
+      });
+    };
+    if items.len() != kcols {
+      return Ok(Expr::FunctionCall {
+        name: "ImageConvolve".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    for v in items.iter() {
+      kernel.push(expr_to_f64(v)?);
+    }
+  }
+  let cy = krows / 2;
+  let cx = kcols / 2;
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  let mut new_data = vec![0.0_f64; data.len()];
+  for c_idx in 0..ch {
+    for y in 0..h {
+      for x in 0..w {
+        let mut sum = 0.0;
+        for ky in 0..krows {
+          for kx in 0..kcols {
+            let sy = (y as isize + ky as isize - cy as isize)
+              .clamp(0, h as isize - 1) as usize;
+            let sx = (x as isize + kx as isize - cx as isize)
+              .clamp(0, w as isize - 1) as usize;
+            sum +=
+              kernel[ky * kcols + kx] * data[(sy * w + sx) * ch + c_idx];
+          }
+        }
+        new_data[(y * w + x) * ch + c_idx] = sum;
+      }
+    }
+  }
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
   })
 }
 
