@@ -1616,9 +1616,6 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
 pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // wolframscript checks the image arg before validating the arg
-  // count, so a non-image first arg emits imginv even when extra
-  // options are passed.
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "ImageResize::imginv: Expecting an image or graphics instead of {}.",
@@ -1636,48 +1633,109 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      let (new_w, new_h) = match &args[1] {
-        Expr::List(dims) if dims.len() == 2 => {
-          let w = expr_to_f64(&dims[0])? as u32;
-          let h = expr_to_f64(&dims[1])? as u32;
-          (w, h)
-        }
-        other => {
-          // Single number: set width, scale height proportionally
-          let w = expr_to_f64(other)? as u32;
-          let h =
-            ((w as f64) * (*height as f64) / (*width as f64)).round() as u32;
-          (w, h)
-        }
-      };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    unreachable!()
+  };
+  let src_w = *width as usize;
+  let src_h = *height as usize;
+  let ch = *channels as usize;
 
-      let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
-      let resized = dyn_img.resize_exact(
-        new_w,
-        new_h,
-        image::imageops::FilterType::Lanczos3,
-      );
-      Ok(dynamic_image_to_expr(&resized))
+  // Parse the target size.
+  let is_automatic =
+    |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Automatic");
+  let (new_w, new_h) = match &args[1] {
+    Expr::List(dims) if dims.len() == 2 => {
+      let auto_w = is_automatic(&dims[0]);
+      let auto_h = is_automatic(&dims[1]);
+      let w_opt = if auto_w {
+        None
+      } else {
+        Some(expr_to_f64(&dims[0])? as u32)
+      };
+      let h_opt = if auto_h {
+        None
+      } else {
+        Some(expr_to_f64(&dims[1])? as u32)
+      };
+      match (w_opt, h_opt) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => {
+          let h = ((w as f64) * (src_h as f64) / (src_w as f64)).round() as u32;
+          (w, h.max(1))
+        }
+        (None, Some(h)) => {
+          let w = ((h as f64) * (src_w as f64) / (src_h as f64)).round() as u32;
+          (w.max(1), h)
+        }
+        (None, None) => (*width, *height),
+      }
     }
-    _ => {
-      crate::emit_message(&format!(
-        "ImageResize::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageResize".to_string(),
-        args: args.to_vec().into(),
-      })
+    Expr::List(dims) if dims.len() == 1 => {
+      // {n}: cap the longer side at n, preserve aspect.
+      let n = expr_to_f64(&dims[0])? as f64;
+      let (w, h) = if src_w >= src_h {
+        let h = (n * src_h as f64 / src_w as f64).round().max(1.0) as u32;
+        (n as u32, h)
+      } else {
+        let w = (n * src_w as f64 / src_h as f64).round().max(1.0) as u32;
+        (w, n as u32)
+      };
+      (w, h)
+    }
+    other => {
+      let w = expr_to_f64(other)? as u32;
+      let h = ((w as f64) * (src_h as f64) / (src_w as f64)).round() as u32;
+      (w, h.max(1))
+    }
+  };
+
+  if new_w == 0 || new_h == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageResize: target dimensions must be positive".into(),
+    ));
+  }
+
+  // Bilinear interpolation on the f64 buffer (per channel).
+  let mut new_data = vec![0.0_f64; (new_w as usize) * (new_h as usize) * ch];
+  let scale_x = src_w as f64 / new_w as f64;
+  let scale_y = src_h as f64 / new_h as f64;
+  for ny in 0..new_h as usize {
+    let sy_f = ((ny as f64) + 0.5) * scale_y - 0.5;
+    let sy0 = sy_f.floor().max(0.0) as usize;
+    let sy1 = (sy0 + 1).min(src_h.saturating_sub(1));
+    let fy = (sy_f - sy0 as f64).clamp(0.0, 1.0);
+    for nx in 0..new_w as usize {
+      let sx_f = ((nx as f64) + 0.5) * scale_x - 0.5;
+      let sx0 = sx_f.floor().max(0.0) as usize;
+      let sx1 = (sx0 + 1).min(src_w.saturating_sub(1));
+      let fx = (sx_f - sx0 as f64).clamp(0.0, 1.0);
+      for c in 0..ch {
+        let v00 = data[(sy0 * src_w + sx0) * ch + c];
+        let v01 = data[(sy0 * src_w + sx1) * ch + c];
+        let v10 = data[(sy1 * src_w + sx0) * ch + c];
+        let v11 = data[(sy1 * src_w + sx1) * ch + c];
+        let v0 = v00 * (1.0 - fx) + v01 * fx;
+        let v1 = v10 * (1.0 - fx) + v11 * fx;
+        let v = v0 * (1.0 - fy) + v1 * fy;
+        new_data[(ny * new_w as usize + nx) * ch + c] = v;
+      }
     }
   }
+
+  Ok(Expr::Image {
+    width: new_w,
+    height: new_h,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// ImageCrop[img, {{x1,y1},{x2,y2}}] - Crop to region

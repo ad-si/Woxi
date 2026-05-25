@@ -1510,6 +1510,66 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageResize accepts {Automatic, h} / {w, Automatic} to preserve
+  // the aspect ratio on the auto-side. The audit case has Woxi
+  // erroring on Automatic; this verifies the fix.
+  #[test]
+  fn image_resize_automatic_width() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[{{0.0, 0.5, 1.0}}], {Automatic, 3}]]"
+      )
+      .unwrap(),
+      "{9, 3}"
+    );
+  }
+
+  #[test]
+  fn image_resize_automatic_height() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[{{0.0, 0.5, 1.0}, {0.0, 0.5, 1.0}}], {9, Automatic}]]"
+      )
+      .unwrap(),
+      "{9, 6}"
+    );
+  }
+
+  // {w} (one-element list) caps the longer side at w, preserving aspect.
+  #[test]
+  fn image_resize_max_side() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageResize[Image[{{0.0, 0.5, 1.0}}], {6}]]"
+      )
+      .unwrap(),
+      "{6, 2}"
+    );
+  }
+
+  // ImageType / ImageChannels survive a resize.
+  #[test]
+  fn image_resize_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageResize[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], {4, 2}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[ImageResize[Image[{{0.1, 0.5}}], {4, 2}]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
   // ImageCrop[image] with no size argument removes uniform borders.
   // Pixel precision is preserved (no Byte round-trip).
   #[test]
