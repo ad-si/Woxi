@@ -1244,6 +1244,37 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           re, im,
         ));
       }
+      // Real z with |z| < 1 and non-integer ν: type-2 LegendreQ on the cut.
+      //   Q_ν(z) = (π / (2 sin(νπ))) · [P_ν(z) cos(νπ) − P_ν(−z)]
+      // with P_ν(z) = 2F1(-ν, ν+1; 1; (1-z)/2). The formula is singular at
+      // integer ν, but the integer-ν path is already handled above.
+      if any_inexact
+        && let (Some(nu), Some(xf)) = (
+          crate::functions::math_ast::try_eval_to_f64(&args[0]),
+          crate::functions::math_ast::try_eval_to_f64(&args[1]),
+        )
+        && xf.abs() < 1.0
+      {
+        let pi = std::f64::consts::PI;
+        let sin_nu_pi = (nu * pi).sin();
+        if sin_nu_pi.abs() > 1e-12 {
+          let cos_nu_pi = (nu * pi).cos();
+          let p_z = crate::functions::math_ast::hypergeometric2f1(
+            -nu,
+            nu + 1.0,
+            1.0,
+            (1.0 - xf) / 2.0,
+          );
+          let p_negz = crate::functions::math_ast::hypergeometric2f1(
+            -nu,
+            nu + 1.0,
+            1.0,
+            (1.0 + xf) / 2.0,
+          );
+          let q = pi / (2.0 * sin_nu_pi) * (p_z * cos_nu_pi - p_negz);
+          return Ok(Expr::Real(q));
+        }
+      }
       return Ok(Expr::FunctionCall {
         name: "LegendreQ".to_string(),
         args: args.to_vec().into(),

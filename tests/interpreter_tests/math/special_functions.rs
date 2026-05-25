@@ -1280,6 +1280,42 @@ mod legendre_q {
       s
     );
   }
+
+  #[test]
+  fn fractional_order_real_z_lt_one() {
+    // wolframscript: LegendreQ[1/3, 0.5] ≈ -0.03995329475988949
+    let result: f64 =
+      interpret("LegendreQ[1/3, 0.5]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.03995329475988949)).abs() < 1e-10,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn fractional_order_real_z_half() {
+    // wolframscript: LegendreQ[1/2, 0.5] ≈ -0.26559640763727543
+    let result: f64 =
+      interpret("LegendreQ[1/2, 0.5]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.26559640763727543)).abs() < 1e-10,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn fractional_real_order_real_z_lt_one() {
+    // wolframscript: LegendreQ[2.5, 0.3] ≈ -0.10341858691052352
+    let result: f64 =
+      interpret("LegendreQ[2.5, 0.3]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.10341858691052352)).abs() < 1e-8,
+      "got {}",
+      result
+    );
+  }
 }
 
 mod polygamma {

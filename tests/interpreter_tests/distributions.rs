@@ -109,8 +109,8 @@ mod hypoexponential_distribution {
   fn median_rates_without_log2_root_stays_symbolic() {
     // For {3, 4} the CDF at Log[2] is 5/16 ≠ 1/2, so we don't have a
     // closed form here; Woxi leaves it unevaluated.
-    let result = interpret("Median[HypoexponentialDistribution[{3, 4}]]")
-      .unwrap();
+    let result =
+      interpret("Median[HypoexponentialDistribution[{3, 4}]]").unwrap();
     assert!(
       result.contains("Median"),
       "expected unevaluated, got {}",
