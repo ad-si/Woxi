@@ -5691,6 +5691,28 @@ mod option_symbols_batch {
       "2*x + 3*x^2 + x^3 + 2*y + 4*x*y + 3*y^2 + y^3"
     );
   }
+  #[test]
+  fn tutte_polynomial_two_arg_form() {
+    // wolframscript: TuttePolynomial[CycleGraph[5], {x, y}] = x + x^2 + x^3 + x^4 + y.
+    assert_eq!(
+      interpret("TuttePolynomial[CycleGraph[5], {x, y}]").unwrap(),
+      "x + x^2 + x^3 + x^4 + y"
+    );
+  }
+  #[test]
+  fn tutte_polynomial_two_arg_form_triangle() {
+    assert_eq!(
+      interpret("TuttePolynomial[CycleGraph[3], {x, y}]").unwrap(),
+      "x + x^2 + y"
+    );
+  }
+  #[test]
+  fn tutte_polynomial_two_arg_form_k4() {
+    assert_eq!(
+      interpret("TuttePolynomial[CompleteGraph[4], {x, y}]").unwrap(),
+      "2*x + 3*x^2 + x^3 + 2*y + 4*x*y + 3*y^2 + y^3"
+    );
+  }
 
   #[test]
   fn function_continuous_polynomial() {

@@ -67,7 +67,9 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     && args.len() == 2
     && let Expr::List(pairs) = &args[1]
     && !pairs.is_empty()
-    && pairs.iter().all(|p| matches!(p, Expr::List(inner) if inner.len() == 2))
+    && pairs
+      .iter()
+      .all(|p| matches!(p, Expr::List(inner) if inner.len() == 2))
   {
     let inner_rank = Expr::FunctionCall {
       name: "TensorRank".to_string(),

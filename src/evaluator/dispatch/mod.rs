@@ -4311,6 +4311,23 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // TuttePolynomial[graph, {x, y}] — apply the 1-arg function form to {x, y}.
+  if name == "TuttePolynomial"
+    && args.len() == 2
+    && let Expr::List(xy) = &args[1]
+    && xy.len() == 2
+  {
+    let func = evaluate_function_call_ast(
+      "TuttePolynomial",
+      &[args[0].clone()],
+    )?;
+    let applied = Expr::CurriedCall {
+      func: Box::new(func),
+      args: vec![xy[0].clone(), xy[1].clone()],
+    };
+    return evaluate_expr_to_expr(&applied);
+  }
+
   // TuttePolynomial[graph] — compute the Tutte polynomial via deletion-contraction
   if name == "TuttePolynomial"
     && args.len() == 1
