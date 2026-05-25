@@ -3008,6 +3008,22 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
   }
+  // Symbolic 2-arg form: Multinomial[a, b] = Binomial[a + b, b].
+  // Higher-arity stays unevaluated when any argument is non-numeric
+  // (matches wolframscript).
+  if args.len() == 2
+    && (expr_to_i128(&args[0]).is_none() || expr_to_i128(&args[1]).is_none())
+  {
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![args[0].clone(), args[1].clone()].into(),
+    };
+    let binom = Expr::FunctionCall {
+      name: "Binomial".to_string(),
+      args: vec![sum, args[1].clone()].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&binom);
+  }
   let mut ints = Vec::new();
   for arg in args {
     match expr_to_i128(arg) {

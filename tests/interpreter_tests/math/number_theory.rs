@@ -754,6 +754,33 @@ mod multinomial {
     // Multinomial[1,1,1] = 3! / (1!*1!*1!) = 6
     assert_eq!(interpret("Multinomial[1, 1, 1]").unwrap(), "6");
   }
+
+  #[test]
+  fn two_symbolic_args() {
+    // Multinomial[a, b] = Binomial[a + b, b]
+    assert_eq!(
+      interpret("Multinomial[a, b]").unwrap(),
+      "Binomial[a + b, b]"
+    );
+  }
+
+  #[test]
+  fn two_args_one_numeric() {
+    // Multinomial[3, x] = Binomial[3 + x, x]
+    assert_eq!(
+      interpret("Multinomial[3, x]").unwrap(),
+      "Binomial[3 + x, x]"
+    );
+  }
+
+  #[test]
+  fn three_symbolic_args_stay_unevaluated() {
+    // Higher-arity symbolic forms stay as Multinomial (matches wolframscript).
+    assert_eq!(
+      interpret("Multinomial[a, b, c]").unwrap(),
+      "Multinomial[a, b, c]"
+    );
+  }
 }
 
 mod power_mod {
