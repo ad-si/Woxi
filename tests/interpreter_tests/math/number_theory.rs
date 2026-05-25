@@ -1743,6 +1743,35 @@ mod factorial {
       "Not[Factorial[a]]"
     );
   }
+
+  #[test]
+  fn series_at_zero_order_0() {
+    // x! = 1 + O(x).
+    assert_eq!(
+      interpret("Series[x!, {x, 0, 0}]").unwrap(),
+      "SeriesData[x, 0, {1}, 0, 1, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_order_1() {
+    // x! = 1 - EulerGamma x + O(x^2).
+    assert_eq!(
+      interpret("Series[x!, {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {1, -EulerGamma}, 0, 2, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_order_2() {
+    // wolframscript:
+    //   SeriesData[x, 0, {1, -EulerGamma, (6*EulerGamma^2 + Pi^2)/12}, 0, 3, 1]
+    // Woxi's Plus canonicalisation reorders to (Pi^2 + 6*EulerGamma^2)/12.
+    assert_eq!(
+      interpret("Series[x!, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, -EulerGamma, (Pi^2 + 6*EulerGamma^2)/12}, 0, 3, 1]"
+    );
+  }
 }
 
 mod factorial2 {

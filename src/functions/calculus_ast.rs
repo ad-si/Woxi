@@ -8104,6 +8104,22 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(barnes_g_series_at_zero(&var_name, order));
   }
 
+  // Series[x!, {x, 0, n}] — coefficients involve PolyGamma derivatives at 1
+  // (ψ′(1) = π²/6, etc.) that Woxi does not reduce to closed form. Inject the
+  // known low-order coefficients so the result matches wolframscript.
+  if let Expr::FunctionCall {
+    name: fname,
+    args: fargs,
+  } = &args[0]
+    && fname == "Factorial"
+    && fargs.len() == 1
+    && matches!(&fargs[0], Expr::Identifier(v) if v == &var_name)
+    && matches!(&x0, Expr::Integer(0))
+    && (0..=2).contains(&order)
+  {
+    return Ok(factorial_series_at_zero(&var_name, order));
+  }
+
   // LucasL[n, var] with non-integer n: rewrite using the closed-form
   // first dominant root `((x + Sqrt[x^2 + 4])/2)^n`. Series of this
   // form yields the same coefficients as Wolfram's `Series[LucasL[n, x], …]`
@@ -10826,10 +10842,8 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
   let two_pi = times(vec![int(2), constant("Pi")]);
   let log_2pi = log(two_pi);
   // (-1 + Log[2*Pi]) / 2
-  let half_term = times(vec![
-    rational(1, 2),
-    plus(vec![int(-1), log_2pi.clone()]),
-  ]);
+  let half_term =
+    times(vec![rational(1, 2), plus(vec![int(-1), log_2pi.clone()])]);
 
   match k {
     1 => int(1),
@@ -10845,5 +10859,59 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
       ]
       .into(),
     },
+  }
+}
+
+/// `Series[x!, {x, 0, order}]` — Taylor expansion of Factorial[x] at 0,
+/// expressed with EulerGamma and Pi to match wolframscript's display.
+fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
+  let int = |n: i128| Expr::Integer(n);
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let constant = |s: &str| Expr::Constant(s.to_string());
+  let plus = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: args.into(),
+  };
+  let times = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: args.into(),
+  };
+  let power = |base: Expr, exp: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp].into(),
+  };
+  let rational = |p: i128, q: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![int(p), int(q)].into(),
+  };
+
+  let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
+  for k in 0..=order {
+    let raw = match k {
+      0 => int(1),
+      1 => times(vec![int(-1), sym("EulerGamma")]),
+      2 => {
+        // (6 EulerGamma^2 + Pi^2) / 12.
+        let num = plus(vec![
+          times(vec![int(6), power(sym("EulerGamma"), int(2))]),
+          power(constant("Pi"), int(2)),
+        ]);
+        times(vec![rational(1, 12), num])
+      }
+      _ => unreachable!(),
+    };
+    coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
+  }
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeffs.into()),
+      Expr::Integer(0),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
   }
 }
