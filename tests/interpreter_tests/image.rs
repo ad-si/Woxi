@@ -750,6 +750,40 @@ mod image_processing {
     assert_eq!(result, "{{0, 0, 1}}");
   }
 
+  // The explicit-threshold form uses strict greater-than: a pixel
+  // exactly equal to the threshold is binarized to 0 (matching
+  // wolframscript). Previously Woxi used >= and turned 0.5 into 1.
+  #[test]
+  fn binarize_threshold_is_strict() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Binarize[Image[{{0.5}}], 0.5]]").unwrap(),
+      "{{0}}"
+    );
+    assert_eq!(
+      interpret("ImageData[Binarize[Image[{{0.5}}], 0.4]]").unwrap(),
+      "{{1}}"
+    );
+  }
+
+  // Range threshold: Binarize[image, {t1, t2}] sets a pixel to 1 iff
+  // t1 <= v <= t2 (both endpoints inclusive).
+  #[test]
+  fn binarize_range_threshold() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Binarize[Image[{{0.0, 0.25, 0.5, 0.75, 1.0}}], {0.2, 0.7}]]"
+      )
+      .unwrap(),
+      "{{0, 1, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("ImageData[Binarize[Image[{{0.2, 0.7}}], {0.2, 0.7}]]").unwrap(),
+      "{{1, 1}}"
+    );
+  }
+
   #[test]
   fn image_adjust_rescale() {
     clear_state();

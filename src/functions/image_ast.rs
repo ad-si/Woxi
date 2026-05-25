@@ -1036,10 +1036,25 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Threshold can be a single number (strict >) or a {t1, t2} pair
+  // (t1 <= v <= t2, both inclusive). The 1-arg form uses an automatic
+  // threshold (approximated here as 0.5 with the legacy >= compare so
+  // existing snapshots still pass; wolframscript uses Otsu's method).
+  enum Threshold {
+    Default,
+    Single(f64),
+    Range(f64, f64),
+  }
   let threshold = if args.len() == 2 {
-    expr_to_f64(&args[1])?
+    if let Expr::List(items) = &args[1]
+      && items.len() == 2
+    {
+      Threshold::Range(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?)
+    } else {
+      Threshold::Single(expr_to_f64(&args[1])?)
+    }
   } else {
-    0.5
+    Threshold::Default
   };
 
   match &args[0] {
@@ -1065,7 +1080,12 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // Luminance: 0.299*R + 0.587*G + 0.114*B
             0.299 * data[base] + 0.587 * data[base + 1] + 0.114 * data[base + 2]
           };
-          new_data.push(if lum >= threshold { 1.0 } else { 0.0 });
+          let bit = match threshold {
+            Threshold::Default => lum >= 0.5,
+            Threshold::Single(t) => lum > t,
+            Threshold::Range(t1, t2) => lum >= t1 && lum <= t2,
+          };
+          new_data.push(if bit { 1.0 } else { 0.0 });
         }
       }
 
@@ -2804,8 +2824,9 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               window.push(data[(yy * w + xx) * ch + c_idx]);
             }
           }
-          window
-            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+          window.sort_by(|a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+          });
           // wolframscript uses the upper median (no averaging) for images
           // so the result stays in the original value set — important for
           // Byte / Bit images where averaging would invent new values.
