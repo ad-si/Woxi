@@ -778,8 +778,15 @@ pub fn pixel_value_positions_ast(
     ));
   }
   // wolframscript validates the image argument first and emits `imginv`
-  // before inspecting the target value, so do the same here.
-  if !matches!(&args[0], Expr::Image { .. }) {
+  // before inspecting the target value.
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  } = &args[0]
+  else {
     crate::emit_message(&format!(
       "PixelValuePositions::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
@@ -788,16 +795,43 @@ pub fn pixel_value_positions_ast(
       name: "PixelValuePositions".to_string(),
       args: args.to_vec().into(),
     });
-  }
-  let target = match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
-    Some(v) => v,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "PixelValuePositions".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
   };
+
+  let ch = *channels as usize;
+
+  // Parse the target value: scalar for grayscale, list for multi-channel.
+  let target: Vec<f64> = match &args[1] {
+    Expr::List(items) => {
+      let mut vs = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match crate::functions::math_ast::try_eval_to_f64(it) {
+          Some(v) => vs.push(v),
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "PixelValuePositions".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
+        }
+      }
+      vs
+    }
+    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+      Some(v) => vec![v],
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "PixelValuePositions".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    },
+  };
+
+  // Target rank must match channel count.
+  if target.len() != ch {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+
   let tol = if args.len() == 3 {
     match crate::functions::math_ast::try_eval_to_f64(&args[2]) {
       Some(v) => v,
@@ -811,54 +845,30 @@ pub fn pixel_value_positions_ast(
   } else {
     0.0
   };
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      let w = *width as usize;
-      let h = *height as usize;
-      let ch = *channels as usize;
-      // Only the grayscale path is implemented; multichannel matching
-      // would need Wolfram's `{r, g, b}`-style RGB target value.
-      if ch != 1 {
-        return Ok(Expr::FunctionCall {
-          name: "PixelValuePositions".to_string(),
-          args: args.to_vec().into(),
-        });
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let mut positions: Vec<Expr> = Vec::new();
+  for y in 0..h {
+    for x in 0..w {
+      let base = (y * w + x) * ch;
+      // L∞ (Chebyshev) distance: max channel-wise absolute difference.
+      let max_diff = (0..ch)
+        .map(|c| (data[base + c] - target[c]).abs())
+        .fold(0.0_f64, f64::max);
+      if max_diff <= tol {
+        // Wolfram coords: x' = x+1, y' = h - y (bottom-left origin).
+        positions.push(Expr::List(
+          vec![
+            Expr::Integer((x + 1) as i128),
+            Expr::Integer((h - y) as i128),
+          ]
+          .into(),
+        ));
       }
-      let mut positions: Vec<Expr> = Vec::new();
-      for y in 0..h {
-        for x in 0..w {
-          let v = data[y * w + x];
-          if (v - target).abs() <= tol {
-            // Wolfram coords: x' = x+1, y' = h - y (bottom-left origin).
-            positions.push(Expr::List(
-              vec![
-                Expr::Integer((x + 1) as i128),
-                Expr::Integer((h - y) as i128),
-              ]
-              .into(),
-            ));
-          }
-        }
-      }
-      Ok(Expr::List(positions.into()))
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "PixelValuePositions::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "PixelValuePositions".to_string(),
-        args: args.to_vec().into(),
-      })
     }
   }
+  Ok(Expr::List(positions.into()))
 }
 
 /// ImageColorSpace[img] - "Grayscale" or "RGB"
@@ -1679,7 +1689,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::List(dims) if dims.len() == 1 => {
       // {n}: cap the longer side at n, preserve aspect.
-      let n = expr_to_f64(&dims[0])? as f64;
+      let n = expr_to_f64(&dims[0])?;
       let (w, h) = if src_w >= src_h {
         let h = (n * src_h as f64 / src_w as f64).round().max(1.0) as u32;
         (n as u32, h)

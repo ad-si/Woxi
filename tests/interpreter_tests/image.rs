@@ -1510,6 +1510,67 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // PixelValuePositions on a multi-channel image accepts a list of
+  // target channel values. With no tolerance, only exact matches.
+  #[test]
+  fn pixel_value_positions_rgb_exact() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PixelValuePositions[\
+         Image[{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}}], {1, 0, 0}]"
+      )
+      .unwrap(),
+      "{{1, 1}}"
+    );
+  }
+
+  // Multi-channel comparison uses L∞ (max-abs-channel-diff) for the
+  // tolerance check. With tol=0.2 the (0.85, 0.05, 0.05) pixel matches
+  // (max diff = 0.15 ≤ 0.2) but (0.5, 0.1, 0.1) does not.
+  #[test]
+  fn pixel_value_positions_rgb_with_tolerance() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PixelValuePositions[\
+         Image[{{{1.0, 0.0, 0.0}, {0.5, 0.1, 0.1}, \
+         {0.85, 0.05, 0.05}, {0.0, 1.0, 0.0}}}], {1.0, 0.0, 0.0}, 0.2]"
+      )
+      .unwrap(),
+      "{{1, 1}, {3, 1}}"
+    );
+  }
+
+  // Multiple matching positions are returned in top-down, left-to-right
+  // order; y uses bottom-up coordinates.
+  #[test]
+  fn pixel_value_positions_rgb_multiple_matches() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PixelValuePositions[\
+         Image[{{{1, 0, 0}, {1, 0, 0}, {0, 1, 0}}}], {1, 0, 0}]"
+      )
+      .unwrap(),
+      "{{1, 1}, {2, 1}}"
+    );
+  }
+
+  // A scalar target against a multi-channel image yields no matches
+  // (target rank must match the pixel rank).
+  #[test]
+  fn pixel_value_positions_scalar_target_on_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PixelValuePositions[Image[{{{1.0, 0.0, 0.0}}}], 1.0]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
   // MinFilter / MaxFilter on Images apply a min/max kernel per channel,
   // with the (2r+1)×(2r+1) window clipped at image boundaries.
   #[test]
