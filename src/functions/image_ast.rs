@@ -1234,6 +1234,37 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Thumbnail[image] / Thumbnail[image, n] — return a smaller version
+/// of the image whose longer side is capped at `n` pixels (default
+/// 150). The aspect ratio is preserved. Equivalent to
+/// `ImageResize[image, {n}]` for the down-scaling case.
+pub fn thumbnail_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Thumbnail expects 1 or 2 arguments".into(),
+    ));
+  }
+  if !matches!(&args[0], Expr::Image { .. }) {
+    crate::emit_message(&format!(
+      "Thumbnail::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Thumbnail".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let size_arg = if args.len() == 2 {
+    expr_to_f64(&args[1])? as i64
+  } else {
+    150
+  };
+  image_resize_ast(&[
+    args[0].clone(),
+    Expr::List(vec![Expr::Integer(size_arg as i128)].into()),
+  ])
+}
+
 /// Sharpen[img] / Sharpen[img, r] — unsharp mask on the f64 buffer.
 /// The image is blurred with a separable Gaussian kernel of radius r
 /// (default 2), then combined as `sharpened = 2*original - blurred`.

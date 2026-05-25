@@ -121,6 +121,9 @@ pub fn dispatch_image_functions(
     "Sharpen" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::sharpen_ast(args));
     }
+    "Thumbnail" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::image_ast::thumbnail_ast(args));
+    }
     "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_adjust_ast(args));
     }

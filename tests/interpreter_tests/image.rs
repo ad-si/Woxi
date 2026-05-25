@@ -1569,6 +1569,68 @@ mod image_processing {
     );
   }
 
+  // Thumbnail returns an Image; with no size argument it caps the
+  // longer side at the default thumbnail size (currently 150), and
+  // with an integer caps the longer side at that value.
+  #[test]
+  fn thumbnail_default_caps_longer_side() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Thumbnail[Image[Table[0.5, {200}, {200}]]]]"
+      )
+      .unwrap(),
+      "{150, 150}"
+    );
+  }
+
+  #[test]
+  fn thumbnail_explicit_size_caps_longer_side() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Thumbnail[Image[Table[0.5, {200}, {200}]], 50]]"
+      )
+      .unwrap(),
+      "{50, 50}"
+    );
+  }
+
+  // A larger source preserves the aspect ratio when downsized.
+  #[test]
+  fn thumbnail_preserves_aspect_ratio() {
+    clear_state();
+    // 400 wide, 300 tall → longer side 400 → scale 150/400 = 0.375 →
+    // 150 × round(0.375 * 300) = 150 × 113.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Thumbnail[Image[Table[0.5, {300}, {400}]]]]"
+      )
+      .unwrap(),
+      "{150, 113}"
+    );
+  }
+
+  // Channels and image type are preserved.
+  #[test]
+  fn thumbnail_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[Thumbnail[Image[Table[{0.5, 0.3, 0.7}, {50}, {50}]], 20]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[Thumbnail[Image[Table[0.5, {50}, {50}]], 20]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
   // Sharpen preserves image dimensions, channels, and image type
   // (no Byte round-trip through the image crate).
   #[test]
@@ -1610,8 +1672,8 @@ mod image_processing {
   #[test]
   fn sharpen_center_pixel_invariant_for_symmetric_input() {
     clear_state();
-    let out = interpret("ImageData[Sharpen[Image[{{0.1, 0.5, 0.9}}], 1]]")
-      .unwrap();
+    let out =
+      interpret("ImageData[Sharpen[Image[{{0.1, 0.5, 0.9}}], 1]]").unwrap();
     let middle = out
       .trim_start_matches("{{")
       .trim_end_matches("}}")
