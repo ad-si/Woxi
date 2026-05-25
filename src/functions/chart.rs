@@ -1796,6 +1796,42 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // `DateListPlot[{y1, y2, …}, datespec]` — plain values plus a starting
+  // date. Pair each y_i with start_date + i·step, where the step is
+  // inferred from datespec's granularity (year, month, day, …).
+  if args.len() >= 2
+    && !items.is_empty()
+    && items
+      .iter()
+      .all(|i| matches!(i, Expr::Integer(_) | Expr::Real(_)))
+    && let Some(start) = date_expr_to_absolute_time(&args[1])
+  {
+    let granularity = if let Expr::List(spec_items) = &args[1] {
+      spec_items.len()
+    } else {
+      3
+    };
+    let step_seconds = match granularity {
+      0 | 1 => 365.25 * 86400.0,
+      2 => 30.4375 * 86400.0,
+      3 => 86400.0,
+      4 => 3600.0,
+      5 => 60.0,
+      _ => 1.0,
+    };
+    let pair_items: Vec<Expr> = items
+      .iter()
+      .enumerate()
+      .map(|(i, v)| {
+        let t = start + i as f64 * step_seconds;
+        Expr::List(vec![Expr::Real(t), v.clone()].into())
+      })
+      .collect();
+    let mut new_args = vec![Expr::List(pair_items.into())];
+    new_args.extend(args[2..].iter().cloned());
+    return date_list_plot_ast(&new_args);
+  }
+
   // Detect whether this is multiple datasets or a single dataset.
   // Multiple datasets: {{pair1, pair2, ...}, {pair3, pair4, ...}}
   // Single dataset: {{date1, y1}, {date2, y2}, ...}
