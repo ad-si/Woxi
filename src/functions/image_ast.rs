@@ -1043,8 +1043,12 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// ImageReflect[img] - Flip left-right (default)
-/// ImageReflect[img, Top -> Bottom] for vertical flip
+/// ImageReflect[img] / ImageReflect[img, side] / ImageReflect[img, s1 -> s2].
+/// Default: vertical (top↔bottom) flip. Horizontal / vertical sides reflect
+/// across the perpendicular axis; rules between perpendicular sides do the
+/// same axis flip; rules between adjacent sides reflect across a diagonal
+/// (swapping width and height). Operates directly on the pixel array, so
+/// pixel precision is preserved.
 pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1052,10 +1056,31 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Determine flip direction
-  let vertical = if args.len() == 2 {
-    // Check for Top -> Bottom rule
+  // The five reflection modes Wolfram supports for 2D images.
+  enum Mode {
+    Vertical,     // top↔bottom (default)
+    Horizontal,   // left↔right
+    Diagonal,     // main diagonal, transpose
+    AntiDiagonal, // anti-diagonal, transpose-then-rotate-180
+  }
+
+  let side_axis = |s: &str| -> Option<u8> {
+    match s {
+      "Top" | "Bottom" => Some(0),
+      "Left" | "Right" => Some(1),
+      _ => None,
+    }
+  };
+
+  let mode = if args.len() == 1 {
+    Mode::Vertical
+  } else {
     match &args[1] {
+      Expr::Identifier(s) => match side_axis(s) {
+        Some(0) => Mode::Vertical,
+        Some(1) => Mode::Horizontal,
+        _ => return Ok(args[0].clone()),
+      },
       Expr::Rule {
         pattern,
         replacement,
@@ -1063,17 +1088,30 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       | Expr::RuleDelayed {
         pattern,
         replacement,
-      } => {
-        matches!(
-          (pattern.as_ref(), replacement.as_ref()),
-          (Expr::Identifier(p), Expr::Identifier(r))
-            if p == "Top" && r == "Bottom"
-        )
-      }
-      _ => false,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::Identifier(p), Expr::Identifier(r)) => {
+          let (ap, ar) = (side_axis(p), side_axis(r));
+          match (ap, ar) {
+            (Some(0), Some(0)) => Mode::Vertical,
+            (Some(1), Some(1)) => Mode::Horizontal,
+            (Some(a), Some(b)) if a != b => {
+              if (p == "Top" && r == "Left")
+                || (p == "Left" && r == "Top")
+                || (p == "Bottom" && r == "Right")
+                || (p == "Right" && r == "Bottom")
+              {
+                Mode::Diagonal
+              } else {
+                Mode::AntiDiagonal
+              }
+            }
+            _ => return Ok(args[0].clone()),
+          }
+        }
+        _ => return Ok(args[0].clone()),
+      },
+      _ => return Ok(args[0].clone()),
     }
-  } else {
-    false
   };
 
   match &args[0] {
@@ -1082,19 +1120,59 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels,
       data,
-      ..
+      image_type,
     } => {
-      let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
-      let flipped = if vertical {
-        dyn_img.flipv()
-      } else {
-        dyn_img.fliph()
+      let w = *width as usize;
+      let h = *height as usize;
+      let ch = *channels as usize;
+      let pixel = |r: usize, c: usize| -> &[f64] {
+        let base = (r * w + c) * ch;
+        &data[base..base + ch]
       };
-      Ok(dynamic_image_to_expr(&flipped))
+      let mut new_data = Vec::with_capacity(data.len());
+      let (new_w, new_h) = match mode {
+        Mode::Vertical => {
+          for r in 0..h {
+            for c in 0..w {
+              new_data.extend_from_slice(pixel(h - 1 - r, c));
+            }
+          }
+          (*width, *height)
+        }
+        Mode::Horizontal => {
+          for r in 0..h {
+            for c in 0..w {
+              new_data.extend_from_slice(pixel(r, w - 1 - c));
+            }
+          }
+          (*width, *height)
+        }
+        Mode::Diagonal => {
+          for r in 0..w {
+            for c in 0..h {
+              new_data.extend_from_slice(pixel(c, r));
+            }
+          }
+          (*height, *width)
+        }
+        Mode::AntiDiagonal => {
+          for r in 0..w {
+            for c in 0..h {
+              new_data.extend_from_slice(pixel(h - 1 - c, w - 1 - r));
+            }
+          }
+          (*height, *width)
+        }
+      };
+      Ok(Expr::Image {
+        width: new_w,
+        height: new_h,
+        channels: *channels,
+        data: Arc::new(new_data),
+        image_type: *image_type,
+      })
     }
     _ => {
-      // Note: ImageReflect uses imgvinv (with the extra 'v' for video),
-      // distinct from most image functions which use imginv.
       crate::emit_message(&format!(
         "ImageReflect::imgvinv: Expecting an image, graphics or video instead of {}.",
         crate::syntax::expr_to_string(&args[0])
@@ -2321,7 +2399,9 @@ pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(0.0)
     } else {
       Expr::List(
-        std::iter::repeat_n(Expr::Real(0.0), ch).collect::<Vec<_>>().into(),
+        std::iter::repeat_n(Expr::Real(0.0), ch)
+          .collect::<Vec<_>>()
+          .into(),
       )
     }
   };

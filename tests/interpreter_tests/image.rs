@@ -430,8 +430,6 @@ mod image_processing {
   #[test]
   fn image_reflect_horizontal() {
     clear_state();
-    // After horizontal flip, pixel order in each row is reversed
-    // But since we go through DynamicImage conversion (u8), values get quantized
     let result =
       interpret("ImageDimensions[ImageReflect[Image[{{0, 0.5, 1}}]]]").unwrap();
     assert_eq!(result, "{3, 1}");
@@ -445,6 +443,156 @@ mod image_processing {
     )
     .unwrap();
     assert_eq!(result, "{2, 2}");
+  }
+
+  // Default ImageReflect is top-bottom (vertical) flip — rows reversed.
+  // Pixel precision is preserved (no Byte quantization).
+  #[test]
+  fn image_reflect_default_is_vertical_flip() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}]]]")
+        .unwrap(),
+      "{{0.30000001192092896, 0.4000000059604645}, \
+       {0.10000000149011612, 0.20000000298023224}}"
+    );
+  }
+
+  // ImageReflect[img, Left] / Right swaps left and right columns.
+  #[test]
+  fn image_reflect_left_right_flip() {
+    clear_state();
+    let expected = "{{0.20000000298023224, 0.10000000149011612}, \
+                    {0.4000000059604645, 0.30000001192092896}}";
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Left]]"
+      )
+      .unwrap(),
+      expected
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Right]]"
+      )
+      .unwrap(),
+      expected
+    );
+  }
+
+  // Top/Bottom side argument is the same as the default vertical flip.
+  #[test]
+  fn image_reflect_top_bottom_flip() {
+    clear_state();
+    let expected = "{{0.30000001192092896, 0.4000000059604645}, \
+                    {0.10000000149011612, 0.20000000298023224}}";
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Top]]"
+      )
+      .unwrap(),
+      expected
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Bottom]]"
+      )
+      .unwrap(),
+      expected
+    );
+  }
+
+  // Rule form: Top -> Bottom and Bottom -> Top both vertical flip.
+  #[test]
+  fn image_reflect_rule_vertical() {
+    clear_state();
+    let expected = "{{0.30000001192092896, 0.4000000059604645}, \
+                    {0.10000000149011612, 0.20000000298023224}}";
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Top -> Bottom]]"
+      )
+      .unwrap(),
+      expected
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Bottom -> Top]]"
+      )
+      .unwrap(),
+      expected
+    );
+  }
+
+  // Rule form: Left -> Right and Right -> Left both horizontal flip.
+  #[test]
+  fn image_reflect_rule_horizontal() {
+    clear_state();
+    let expected = "{{0.20000000298023224, 0.10000000149011612}, \
+                    {0.4000000059604645, 0.30000001192092896}}";
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Left -> Right]]"
+      )
+      .unwrap(),
+      expected
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Right -> Left]]"
+      )
+      .unwrap(),
+      expected
+    );
+  }
+
+  // Diagonal reflection: Left -> Top transposes the image; non-square
+  // images have width and height swapped.
+  #[test]
+  fn image_reflect_main_diagonal() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Left -> Top]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.30000001192092896}, \
+       {0.20000000298023224, 0.4000000059604645}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageReflect[Image[{{0, 0, 0}, {1, 1, 1}}], Left -> Top]]"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  // Anti-diagonal reflection: Left -> Bottom / Right -> Top.
+  #[test]
+  fn image_reflect_anti_diagonal() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{0.1, 0.2}, {0.3, 0.4}}], Left -> Bottom]]"
+      )
+      .unwrap(),
+      "{{0.4000000059604645, 0.20000000298023224}, \
+       {0.30000001192092896, 0.10000000149011612}}"
+    );
+  }
+
+  // RGB image keeps channel ordering; only spatial layout changes.
+  #[test]
+  fn image_reflect_rgb_preserves_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageReflect[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], Left]]"
+      )
+      .unwrap(),
+      "{{{0., 1., 0.}, {1., 0., 0.}}}"
+    );
   }
 
   #[test]
@@ -1618,10 +1766,7 @@ mod cases {
       r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {1, 1}]"#,
       r#"0.20000000298023224"#,
     );
-    assert_case(
-      r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {2, 1}]"#,
-      r#"0.5"#,
-    );
+    assert_case(r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {2, 1}]"#, r#"0.5"#);
     assert_case(
       r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {3, 1}]"#,
       r#"0.800000011920929"#,
@@ -1686,10 +1831,7 @@ mod cases {
   // returns the call unevaluated.
   #[test]
   fn pixel_value_non_image_unevaluated() {
-    assert_case(
-      r#"PixelValue[42, {1, 1}]"#,
-      r#"PixelValue[42, {1, 1}]"#,
-    );
+    assert_case(r#"PixelValue[42, {1, 1}]"#, r#"PixelValue[42, {1, 1}]"#);
   }
 
   #[test]
