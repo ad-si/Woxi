@@ -352,6 +352,9 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[LaplaceDistribution[mu, beta]] = mu
       Some(dargs[0].clone())
     }
+    "HypoexponentialDistribution" if dargs.len() == 1 => {
+      hypoexponential_median(&dargs[0])
+    }
     "NormalDistribution" if dargs.len() == 2 => {
       // Median[NormalDistribution[mu, sigma]] = mu (symmetric about mu)
       Some(dargs[0].clone())
@@ -672,6 +675,114 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     }
     _ => None,
   }
+}
+
+/// `Median[HypoexponentialDistribution[{lambda_1, ..., lambda_n}]]`.
+///
+/// The CDF F(x) of a hypoexponential with distinct positive rates is
+///   F(x) = 1 - Σ_i c_i e^(-lambda_i x),  c_i = Π_{j ≠ i} lambda_j/(lambda_j - lambda_i).
+/// The median is the solution of F(x) = 1/2. For a single rate the
+/// distribution collapses to ExponentialDistribution[lambda] (median
+/// Log[2]/lambda). For integer-rate cases we additionally check whether
+/// x = Log[2] (i.e. u = 1/2) is a root — when so, F has the closed-form
+/// median Log[2].
+fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
+  let rates = if let Expr::List(items) = arg {
+    items
+  } else {
+    return None;
+  };
+  if rates.is_empty() {
+    return None;
+  }
+  // Single-rate case: HypoexponentialDistribution[{lambda}] = Exp(lambda).
+  if rates.len() == 1 {
+    let lambda = rates[0].clone();
+    let log2 = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::Integer(2)].into(),
+    };
+    let med = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(log2),
+      right: Box::new(lambda),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&med).ok();
+  }
+
+  // Multi-rate case: only handle distinct positive-integer rates and test
+  // whether u = 1/2 is a root of the CDF polynomial Σ_i c_i u^lambda_i = 1/2.
+  let mut int_rates: Vec<i128> = Vec::with_capacity(rates.len());
+  for r in rates.iter() {
+    let Expr::Integer(n) = r else { return None };
+    if *n <= 0 {
+      return None;
+    }
+    int_rates.push(*n);
+  }
+  // Distinct rates required for the simple partial-fraction formula.
+  let mut sorted = int_rates.clone();
+  sorted.sort();
+  for w in sorted.windows(2) {
+    if w[0] == w[1] {
+      return None;
+    }
+  }
+
+  // Compute Σ_i c_i / 2^lambda_i as an exact rational p/q (with q > 0).
+  // We accumulate as (num, den) in lowest terms.
+  let n = int_rates.len();
+  let mut sum_num: i128 = 0;
+  let mut sum_den: i128 = 1;
+  for i in 0..n {
+    let li = int_rates[i];
+    // c_i = Π_{j ≠ i} lambda_j / (lambda_j - lambda_i).
+    let mut ci_num: i128 = 1;
+    let mut ci_den: i128 = 1;
+    for j in 0..n {
+      if j == i {
+        continue;
+      }
+      let lj = int_rates[j];
+      ci_num = ci_num.checked_mul(lj)?;
+      let diff = lj - li;
+      ci_den = ci_den.checked_mul(diff)?;
+    }
+    // term = c_i / 2^lambda_i = ci_num / (ci_den * 2^li)
+    let pow_two = 1i128.checked_shl(li.try_into().ok()?)?;
+    let term_den = ci_den.checked_mul(pow_two)?;
+    let term_num = ci_num;
+    // Add term_num/term_den to sum_num/sum_den.
+    let new_num =
+      sum_num.checked_mul(term_den)? + term_num.checked_mul(sum_den)?;
+    let new_den = sum_den.checked_mul(term_den)?;
+    let g = gcd_i128(new_num.abs(), new_den.abs()).max(1);
+    sum_num = new_num / g;
+    sum_den = new_den / g;
+    if sum_den < 0 {
+      sum_num = -sum_num;
+      sum_den = -sum_den;
+    }
+  }
+
+  // sum equals 1/2 iff 2 * sum_num == sum_den.
+  if sum_num.checked_mul(2)? == sum_den {
+    return Some(Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::Integer(2)].into(),
+    });
+  }
+  None
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  a
 }
 
 /// AST-based Median: calculate median of a list.

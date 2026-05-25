@@ -77,6 +77,46 @@ mod hypoexponential_distribution {
       "Symbol"
     );
   }
+
+  #[test]
+  fn median_single_rate_collapses_to_exponential() {
+    // HypoexponentialDistribution[{lambda}] = ExponentialDistribution[lambda].
+    assert_eq!(
+      interpret("Median[HypoexponentialDistribution[{2}]]").unwrap(),
+      "Log[2]/2"
+    );
+  }
+
+  #[test]
+  fn median_two_rates_log2() {
+    // For rates {2, 3}, F(Log[2]) = 1/2 exactly, so Median = Log[2].
+    assert_eq!(
+      interpret("Median[HypoexponentialDistribution[{2, 3}]]").unwrap(),
+      "Log[2]"
+    );
+  }
+
+  #[test]
+  fn median_three_rates_log2() {
+    // For rates {3, 4, 5}, the CDF at Log[2] is exactly 1/2.
+    assert_eq!(
+      interpret("Median[HypoexponentialDistribution[{3, 4, 5}]]").unwrap(),
+      "Log[2]"
+    );
+  }
+
+  #[test]
+  fn median_rates_without_log2_root_stays_symbolic() {
+    // For {3, 4} the CDF at Log[2] is 5/16 ≠ 1/2, so we don't have a
+    // closed form here; Woxi leaves it unevaluated.
+    let result = interpret("Median[HypoexponentialDistribution[{3, 4}]]")
+      .unwrap();
+    assert!(
+      result.contains("Median"),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
 }
 
 mod geometric_distribution {
