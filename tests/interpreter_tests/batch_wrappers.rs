@@ -3060,6 +3060,51 @@ mod batch_unevaluated_wrappers_2 {
     assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
   }
 
+  // Symbolic constrained Minimize/Maximize: linear objective on a quadratic
+  // disk constraint has a closed-form solution from Lagrange multipliers.
+  #[test]
+  fn minimize_linear_on_unit_disk_symbolic() {
+    assert_eq!(
+      interpret("Minimize[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap(),
+      "{-Sqrt[5], {x -> -(1/Sqrt[5]), y -> 2/Sqrt[5]}}"
+    );
+  }
+
+  #[test]
+  fn maximize_linear_on_unit_disk_symbolic() {
+    assert_eq!(
+      interpret("Maximize[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap(),
+      "{Sqrt[5], {x -> 1/Sqrt[5], y -> -2/Sqrt[5]}}"
+    );
+  }
+
+  // When a^2 + b^2 is a perfect square, Sqrt simplifies and the result is
+  // rational rather than involving Sqrt.
+  #[test]
+  fn minimize_linear_on_unit_disk_rational() {
+    assert_eq!(
+      interpret("Minimize[{3*x + 4*y, x^2 + y^2 <= 1}, {x, y}]").unwrap(),
+      "{-5, {x -> -3/5, y -> -4/5}}"
+    );
+  }
+
+  #[test]
+  fn maximize_linear_on_unit_disk_rational() {
+    assert_eq!(
+      interpret("Maximize[{3*x + 4*y, x^2 + y^2 <= 1}, {x, y}]").unwrap(),
+      "{5, {x -> 3/5, y -> 4/5}}"
+    );
+  }
+
+  // Larger radius: constraint x^2+y^2 <= 4 gives R = 2 and value 2*Sqrt[5].
+  #[test]
+  fn minimize_linear_on_radius_two_disk() {
+    assert_eq!(
+      interpret("Minimize[{x - 2*y, x^2 + y^2 <= 4}, {x, y}]").unwrap(),
+      "{-2*Sqrt[5], {x -> -2/Sqrt[5], y -> 4/Sqrt[5]}}"
+    );
+  }
+
   #[test]
   fn string_replace_list_basic() {
     assert_eq!(

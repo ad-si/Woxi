@@ -169,6 +169,26 @@ pub fn dispatch_polynomial_functions(
         args, true,
       ));
     }
+    "Minimize" | "Maximize"
+      if args.len() == 2
+        && matches!(
+          &args[0],
+          Expr::List(items) if items.len() == 2
+        )
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 2
+            && items.iter().all(|v| matches!(v, Expr::Identifier(_)))
+        ) =>
+    {
+      if let Some(result) = try_constrained_linear_disk_symbolic(name, args) {
+        return Some(Ok(result));
+      }
+      return Some(crate::functions::polynomial_ast::minimize_ast(
+        args,
+        name == "Maximize",
+      ));
+    }
     "Minimize" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::minimize_ast(args, false));
     }
@@ -574,4 +594,180 @@ fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
     _ => return None,
   };
   Some(result)
+}
+
+/// Symbolic closed form for Minimize/Maximize on a linear objective with a
+/// disk constraint: `{a*v1 + b*v2 + c0, v1^2 + v2^2 <= R^2}`. Returns
+/// `{value, {v1 -> px, v2 -> py}}` evaluated through the AST evaluator so
+/// perfect-square radicals collapse to rationals.
+fn try_constrained_linear_disk_symbolic(
+  name: &str,
+  args: &[Expr],
+) -> Option<Expr> {
+  let (f, cons) = match &args[0] {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => return None,
+  };
+  let (v1, v2) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+      (Expr::Identifier(a), Expr::Identifier(b)) => (a.clone(), b.clone()),
+      _ => return None,
+    },
+    _ => return None,
+  };
+
+  let diff = |expr: &Expr, var: &str| -> Option<Expr> {
+    crate::functions::calculus_ast::differentiate_expr(expr, var).ok()
+  };
+  let zero_at = |expr: &Expr| -> Option<Expr> {
+    let with_v1 =
+      crate::syntax::substitute_variable(expr, &v1, &Expr::Integer(0));
+    let with_v2 =
+      crate::syntax::substitute_variable(&with_v1, &v2, &Expr::Integer(0));
+    crate::evaluator::evaluate_expr_to_expr(&with_v2).ok()
+  };
+
+  // Linearity check on f.
+  let df_dv1 = diff(f, &v1)?;
+  let df_dv2 = diff(f, &v2)?;
+  let d2_11 = diff(&df_dv1, &v1)?;
+  let d2_22 = diff(&df_dv2, &v2)?;
+  let d2_12 = diff(&df_dv1, &v2)?;
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  if !is_zero(&zero_at(&d2_11)?)
+    || !is_zero(&zero_at(&d2_22)?)
+    || !is_zero(&zero_at(&d2_12)?)
+  {
+    return None;
+  }
+  let a_expr = zero_at(&df_dv1)?;
+  let b_expr = zero_at(&df_dv2)?;
+  let c0_expr = zero_at(f)?;
+
+  // Constraint: relational form with rhs equal to R^2.
+  let (g_expr, rhs) = match cons {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && matches!(
+        operators[0],
+        crate::syntax::ComparisonOp::LessEqual
+          | crate::syntax::ComparisonOp::Less
+          | crate::syntax::ComparisonOp::GreaterEqual
+          | crate::syntax::ComparisonOp::Greater
+          | crate::syntax::ComparisonOp::Equal
+      ) =>
+    {
+      (operands[0].clone(), operands[1].clone())
+    }
+    Expr::FunctionCall {
+      name: cn,
+      args: cargs,
+    } if matches!(
+      cn.as_str(),
+      "LessEqual" | "Less" | "GreaterEqual" | "Greater" | "Equal"
+    ) && cargs.len() == 2 =>
+    {
+      (cargs[0].clone(), cargs[1].clone())
+    }
+    _ => return None,
+  };
+
+  // Standard x^2+y^2 form check.
+  let dg_dv1 = diff(&g_expr, &v1)?;
+  let dg_dv2 = diff(&g_expr, &v2)?;
+  let d2g_11 = diff(&dg_dv1, &v1)?;
+  let d2g_22 = diff(&dg_dv2, &v2)?;
+  let d2g_12 = diff(&dg_dv1, &v2)?;
+  let is_two = |e: &Expr| matches!(e, Expr::Integer(2));
+  if !is_two(&zero_at(&d2g_11)?)
+    || !is_two(&zero_at(&d2g_22)?)
+    || !is_zero(&zero_at(&d2g_12)?)
+    || !is_zero(&zero_at(&dg_dv1)?)
+    || !is_zero(&zero_at(&dg_dv2)?)
+    || !is_zero(&zero_at(&g_expr)?)
+  {
+    return None;
+  }
+  let r2_expr = crate::evaluator::evaluate_expr_to_expr(&rhs).ok()?;
+
+  let eval = |e: Expr| -> Expr {
+    crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(Expr::Integer(0))
+  };
+  let plus = |x: Expr, y: Expr| -> Expr {
+    eval(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(x),
+      right: Box::new(y),
+    })
+  };
+  let minus = |x: Expr, y: Expr| -> Expr {
+    eval(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(x),
+      right: Box::new(y),
+    })
+  };
+  let times = |x: Expr, y: Expr| -> Expr {
+    eval(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(x),
+      right: Box::new(y),
+    })
+  };
+  let div = |x: Expr, y: Expr| -> Expr {
+    eval(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(x),
+      right: Box::new(y),
+    })
+  };
+  let neg = |x: Expr| -> Expr {
+    eval(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(0)),
+      right: Box::new(x),
+    })
+  };
+  let square = |x: Expr| -> Expr { times(x.clone(), x) };
+  let sqrt_e = |e: Expr| -> Expr {
+    eval(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![e].into(),
+    })
+  };
+
+  let radius = sqrt_e(r2_expr);
+  let norm_sq = plus(square(a_expr.clone()), square(b_expr.clone()));
+  let norm = sqrt_e(norm_sq);
+  if matches!(&norm, Expr::Integer(0)) {
+    return None;
+  }
+
+  let want_max = name == "Maximize";
+  let r_times_norm = times(radius.clone(), norm.clone());
+  let value = if want_max {
+    plus(c0_expr.clone(), r_times_norm)
+  } else {
+    minus(c0_expr.clone(), r_times_norm)
+  };
+  let r_over_norm = div(radius, norm);
+  let x_coord = times(r_over_norm.clone(), a_expr);
+  let y_coord = times(r_over_norm, b_expr);
+  let (px, py) = if want_max {
+    (x_coord, y_coord)
+  } else {
+    (neg(x_coord), neg(y_coord))
+  };
+
+  let rule = |var: &str, val: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "Rule".to_string(),
+      args: vec![Expr::Identifier(var.to_string()), val].into(),
+    }
+  };
+  let argmap = Expr::List(vec![rule(&v1, px), rule(&v2, py)].into());
+  Some(Expr::List(vec![value, argmap].into()))
 }
