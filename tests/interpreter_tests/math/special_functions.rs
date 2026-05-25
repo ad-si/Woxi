@@ -928,6 +928,79 @@ mod elliptic_nome_q {
   }
 }
 
+mod dedekind_eta {
+  use super::*;
+
+  fn parse_complex(s: &str) -> (f64, f64) {
+    // Parses Wolfram-style complex strings produced by Woxi, e.g.
+    // "0.572 + 0.153*I", "0.572 - 0.153*I", "0.572", "0.153*I".
+    let s = s.trim();
+    if let Some(stripped) = s.strip_suffix("*I") {
+      if let Some(idx) = stripped.rfind(" + ") {
+        let re = stripped[..idx].parse::<f64>().unwrap();
+        let im = stripped[idx + 3..].parse::<f64>().unwrap();
+        return (re, im);
+      } else if let Some(idx) = stripped.rfind(" - ") {
+        let re = stripped[..idx].parse::<f64>().unwrap();
+        let im = stripped[idx + 3..].parse::<f64>().unwrap();
+        return (re, -im);
+      } else {
+        return (0.0, stripped.parse::<f64>().unwrap());
+      }
+    }
+    if s == "I" {
+      return (0.0, 1.0);
+    }
+    (s.parse::<f64>().unwrap(), 0.0)
+  }
+
+  #[test]
+  fn numeric_1_plus_2i() {
+    // DedekindEta[1 + 2.*I] = 0.5721978275379304 + 0.15331994579963126*I
+    let result = interpret("DedekindEta[1 + 2.*I]").unwrap();
+    let (re, im) = parse_complex(&result);
+    assert!((re - 0.5721978275379304).abs() < 1e-10);
+    assert!((im - 0.15331994579963126).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_pure_imag_unit() {
+    // DedekindEta[1.0*I] = 0.7682254223260567
+    let result: f64 = interpret("DedekindEta[1.0*I]").unwrap().parse().unwrap();
+    assert!((result - 0.7682254223260567).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_pure_imag_2() {
+    // DedekindEta[2.0*I] = 0.592382781332416
+    let result: f64 = interpret("DedekindEta[2.0*I]").unwrap().parse().unwrap();
+    assert!((result - 0.592382781332416).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_small_real_part() {
+    // DedekindEta[0.1 + 1.0*I] = 0.7682606134774355 + 0.01926994165837382*I
+    let result = interpret("DedekindEta[0.1 + 1.0*I]").unwrap();
+    let (re, im) = parse_complex(&result);
+    assert!((re - 0.7682606134774355).abs() < 1e-10);
+    assert!((im - 0.01926994165837382).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("DedekindEta[tau]").unwrap(), "DedekindEta[tau]");
+  }
+
+  #[test]
+  fn exact_imag_unit() {
+    // DedekindEta[I] = Gamma[1/4]/(2*Pi^(3/4))
+    assert_eq!(
+      interpret("DedekindEta[I]").unwrap(),
+      "Gamma[1/4]/(2*Pi^(3/4))"
+    );
+  }
+}
+
 mod elliptic_theta {
   use super::*;
 

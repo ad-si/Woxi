@@ -671,3 +671,131 @@ fn elliptic_theta_prime_numeric(a: u32, z: f64, q: f64) -> f64 {
     _ => unreachable!(),
   }
 }
+
+/// DedekindEta[τ] - Dedekind eta modular elliptic function η(τ).
+///
+/// Defined for τ in the upper half-plane (Im(τ) > 0) by
+///   η(τ) = e^(πiτ/12) * Product[(1 - e^(2πinτ)), {n, 1, ∞}].
+///
+/// We also recognise the exact value η(i) = Γ(1/4)/(2*π^(3/4)).
+pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DedekindEta expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Exact case: η(I) = Gamma[1/4] / (2 * Pi^(3/4))
+  if matches!(&args[0], Expr::Identifier(s) if s == "I") {
+    // Construct Gamma[1/4] / (2*Pi^(3/4)) explicitly.
+    let gamma_quarter = Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(4)].into(),
+      }]
+      .into(),
+    };
+    let pi_three_quarters = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::Identifier("Pi".to_string()),
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(3), Expr::Integer(4)].into(),
+        },
+      ]
+      .into(),
+    };
+    let denom = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(pi_three_quarters),
+    };
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(gamma_quarter),
+      right: Box::new(denom),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
+  // Numeric evaluation when τ is a complex number with Im(τ) > 0
+  // AND it contains a floating-point component (otherwise stay symbolic
+  // — e.g. `2*I` should not auto-evaluate numerically).
+  let has_real_part = expr_contains_real(&args[0]);
+  if has_real_part
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im > 0.0
+  {
+    let (eta_re, eta_im) = dedekind_eta_numeric(re, im);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(
+      eta_re, eta_im,
+    ));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "DedekindEta".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+fn expr_contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_real(left) || expr_contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_real),
+    _ => false,
+  }
+}
+
+/// Compute η(τ) for τ = re + im*i, im > 0.
+/// Uses the q-series with q = exp(2πiτ), |q| = exp(-2π*im) < 1.
+fn dedekind_eta_numeric(re: f64, im: f64) -> (f64, f64) {
+  let pi = std::f64::consts::PI;
+
+  // q = exp(2*pi*i*tau) = exp(-2*pi*im) * exp(2*pi*i*re)
+  let q_abs = (-2.0 * pi * im).exp();
+  let q_arg = 2.0 * pi * re;
+  let (q_re, q_im) = (q_abs * q_arg.cos(), q_abs * q_arg.sin());
+
+  // Prefactor exp(pi*i*tau/12) = exp(-pi*im/12) * exp(pi*i*re/12)
+  let pre_abs = (-pi * im / 12.0).exp();
+  let pre_arg = pi * re / 12.0;
+  let (pre_re, pre_im) = (pre_abs * pre_arg.cos(), pre_abs * pre_arg.sin());
+
+  // Product over n = 1 .. of (1 - q^n).
+  // q^n recurrence: q^(n+1) = q^n * q (complex multiplication).
+  let mut prod_re = 1.0;
+  let mut prod_im = 0.0;
+  let mut qn_re = q_re;
+  let mut qn_im = q_im;
+  for _ in 1..500 {
+    // (1 - q^n)
+    let factor_re = 1.0 - qn_re;
+    let factor_im = -qn_im;
+    // prod *= factor
+    let new_re = prod_re * factor_re - prod_im * factor_im;
+    let new_im = prod_re * factor_im + prod_im * factor_re;
+    let delta = (new_re - prod_re).hypot(new_im - prod_im);
+    prod_re = new_re;
+    prod_im = new_im;
+    if delta < 1e-17 * prod_re.hypot(prod_im).max(1e-300) {
+      break;
+    }
+    // q^(n+1) = q^n * q
+    let nqn_re = qn_re * q_re - qn_im * q_im;
+    let nqn_im = qn_re * q_im + qn_im * q_re;
+    qn_re = nqn_re;
+    qn_im = nqn_im;
+  }
+
+  // result = pre * prod
+  let res_re = pre_re * prod_re - pre_im * prod_im;
+  let res_im = pre_re * prod_im + pre_im * prod_re;
+  (res_re, res_im)
+}
