@@ -4265,6 +4265,15 @@ fn color_to_rgb(e: &Expr) -> Option<[f64; 3]> {
 /// Nearest[list, x, n] - find n nearest elements
 /// Nearest[points -> values, x] - return the labels whose points are closest
 fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // View modes for the Rule form `points -> "Index" | "Distance" | "Element"`.
+  #[derive(Clone, Copy, PartialEq)]
+  enum View {
+    Items,
+    Index,
+    Distance,
+    Element,
+  }
+  let mut view = View::Items;
   // Rule form: Nearest[points -> labels, target]. Distances are measured on
   // the `points` list, but the result is drawn from the matching `labels`.
   let (items_owned, labels): (Vec<Expr>, Option<Vec<Expr>>) = match &args[0] {
@@ -4281,16 +4290,40 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         }
       };
-      let lbls = match replacement.as_ref() {
-        Expr::List(v) if v.len() == pts.len() => v.clone(),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Nearest".to_string(),
-            args: args.to_vec().into(),
-          });
+      // String-keyed views: points -> "Index" / "Distance" / "Element".
+      if let Expr::String(s) = replacement.as_ref() {
+        match s.as_str() {
+          "Index" => {
+            view = View::Index;
+            (pts.to_vec(), None)
+          }
+          "Distance" => {
+            view = View::Distance;
+            (pts.to_vec(), None)
+          }
+          "Element" => {
+            view = View::Element;
+            (pts.to_vec(), None)
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Nearest".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
         }
-      };
-      (pts.to_vec(), Some(lbls.to_vec()))
+      } else {
+        let lbls = match replacement.as_ref() {
+          Expr::List(v) if v.len() == pts.len() => v.clone(),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Nearest".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
+        };
+        (pts.to_vec(), Some(lbls.to_vec()))
+      }
     }
     Expr::List(v) => {
       // `{point1 -> label1, point2 -> label2, …}` is the list-of-rules
@@ -4433,10 +4466,15 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => distances.iter().collect(),
   };
 
-  let pick = |i: usize| -> Expr {
-    match &labels {
-      Some(l) => l[i].clone(),
-      None => items[i].clone(),
+  let pick = |i: usize, d: f64| -> Expr {
+    match view {
+      View::Index => Expr::Integer((i + 1) as i128),
+      View::Distance => Expr::Real(d),
+      View::Element => items[i].clone(),
+      View::Items => match &labels {
+        Some(l) => l[i].clone(),
+        None => items[i].clone(),
+      },
     }
   };
 
@@ -4447,20 +4485,24 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result: Vec<Expr> = filtered
         .iter()
         .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
-        .map(|(i, _)| pick(*i))
+        .map(|(i, d)| pick(*i, *d))
         .collect();
       Ok(Expr::List(result.into()))
     }
     // Count limit provided (possibly together with a radius).
     (true, Some(k)) => {
-      let result: Vec<Expr> =
-        filtered.iter().take(k).map(|(i, _)| pick(*i)).collect();
+      let result: Vec<Expr> = filtered
+        .iter()
+        .take(k)
+        .map(|(i, d)| pick(*i, *d))
+        .collect();
       Ok(Expr::List(result.into()))
     }
     // `All` (possibly together with a radius): keep everything that passed
     // the radius filter.
     (true, None) => {
-      let result: Vec<Expr> = filtered.iter().map(|(i, _)| pick(*i)).collect();
+      let result: Vec<Expr> =
+        filtered.iter().map(|(i, d)| pick(*i, *d)).collect();
       Ok(Expr::List(result.into()))
     }
   }

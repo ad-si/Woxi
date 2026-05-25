@@ -3436,6 +3436,45 @@ mod batch_unevaluated_wrappers_2 {
       "{b}"
     );
   }
+
+  // Nearest[points -> "Index", target] returns the 1-based positions
+  // of the nearest points instead of the points themselves.
+  #[test]
+  fn nearest_index_view() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10} -> \"Index\", 4]").unwrap(),
+      "{3}"
+    );
+  }
+
+  // Nearest[points -> "Distance", target] returns the distance(s) to
+  // the nearest point(s).
+  #[test]
+  fn nearest_distance_view() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10} -> \"Distance\", 4]").unwrap(),
+      "{1.}"
+    );
+  }
+
+  // Nearest[points -> "Element", target] is equivalent to the
+  // points-only form (returns the points themselves).
+  #[test]
+  fn nearest_element_view() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10} -> \"Element\", 4]").unwrap(),
+      "{3}"
+    );
+  }
+
+  // Index view honours the `n` argument and ties.
+  #[test]
+  fn nearest_index_with_count() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 10} -> \"Index\", 4, 2]").unwrap(),
+      "{3, 2}"
+    );
+  }
   #[test]
   fn key_sort_by_basic() {
     assert_eq!(
