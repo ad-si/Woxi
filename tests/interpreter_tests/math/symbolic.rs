@@ -291,6 +291,24 @@ mod sum {
   }
 
   #[test]
+  fn sum_indefinite_linear() {
+    // Sum[i, i] = antidifference of i = ∑_{k=1}^{i-1} k = (i-1)*i/2.
+    assert_eq!(interpret("Sum[i, i]").unwrap(), "((-1 + i)*i)/2");
+  }
+
+  #[test]
+  fn sum_indefinite_cubic() {
+    // Sum[i^3, i] = ((i-1)*i/2)^2.
+    assert_eq!(interpret("Sum[i^3, i]").unwrap(), "((-1 + i)^2*i^2)/4");
+  }
+
+  #[test]
+  fn sum_indefinite_constant() {
+    // Sum[1, i] = i - 1.
+    assert_eq!(interpret("Sum[1, i]").unwrap(), "-1 + i");
+  }
+
+  #[test]
   fn sum_real_upper_bound() {
     assert_eq!(interpret("Sum[i, {i, 1, 2.5}]").unwrap(), "3");
   }
