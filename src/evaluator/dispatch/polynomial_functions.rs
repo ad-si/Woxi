@@ -183,6 +183,27 @@ pub fn dispatch_polynomial_functions(
     "NMaximize" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::nminimize_ast(args, true));
     }
+    // NMaxValue/NMinValue/NArgMax/NArgMin/FindArgMax/FindArgMin with a
+    // constrained form: `{f, cons}, {v1, v2}`. Currently only the
+    // closed-form case "linear objective on a unit-disk-like quadratic
+    // constraint" is recognised; other inputs fall through.
+    "NMaxValue" | "NMinValue" | "NArgMax" | "NArgMin" | "FindArgMax"
+    | "FindArgMin"
+      if args.len() == 2
+        && matches!(
+          &args[0],
+          Expr::List(items) if items.len() == 2
+        )
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 2
+            && items.iter().all(|v| matches!(v, Expr::Identifier(_)))
+        ) =>
+    {
+      if let Some(result) = try_constrained_linear_disk(name, args) {
+        return Some(Ok(result));
+      }
+    }
     "FindArgMin" if args.len() == 2 => {
       // FindArgMin[f, x] => calls FindMinimum[f, {x, 0}] and extracts the arg
       if let Expr::Identifier(var) = &args[1] {
@@ -424,4 +445,142 @@ pub fn dispatch_polynomial_functions(
     _ => {}
   }
   None
+}
+
+/// Closed-form solver for `Op[{f, cons}, {v1, v2}]` where:
+///   * f is linear in v1, v2 with numeric coefficients,
+///   * cons is `v1^2 + v2^2 op R^2` (with op being `LessEqual`, `Less`,
+///     `GreaterEqual`, `Greater`, or `Equal`),
+/// returning the optimum value or argument depending on `name`. Linear
+/// objective on a disk has the closed form `R * sqrt(a^2 + b^2)`.
+fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
+  let (f, cons) = match &args[0] {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => return None,
+  };
+  let (v1, v2) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+      (Expr::Identifier(a), Expr::Identifier(b)) => (a.clone(), b.clone()),
+      _ => return None,
+    },
+    _ => return None,
+  };
+
+  // Linearity check: f must have zero second partial derivatives in v1, v2.
+  // Coefficients: a = ∂f/∂v1|origin, b = ∂f/∂v2|origin.
+  let zero_at = |expr: &Expr| -> Option<f64> {
+    let with_v1 = crate::syntax::substitute_variable(
+      expr,
+      &v1,
+      &Expr::Integer(0),
+    );
+    let with_v2 = crate::syntax::substitute_variable(
+      &with_v1,
+      &v2,
+      &Expr::Integer(0),
+    );
+    let evaluated =
+      crate::evaluator::evaluate_expr_to_expr(&with_v2).ok()?;
+    crate::functions::math_ast::expr_to_f64(&evaluated)
+  };
+  let diff = |expr: &Expr, var: &str| -> Option<Expr> {
+    crate::functions::calculus_ast::differentiate_expr(expr, var).ok()
+  };
+  let df_dv1 = diff(f, &v1)?;
+  let df_dv2 = diff(f, &v2)?;
+  let d2f_dv1 = diff(&df_dv1, &v1)?;
+  let d2f_dv2 = diff(&df_dv2, &v2)?;
+  let d2f_mixed = diff(&df_dv1, &v2)?;
+  if zero_at(&d2f_dv1)? != 0.0
+    || zero_at(&d2f_dv2)? != 0.0
+    || zero_at(&d2f_mixed)? != 0.0
+  {
+    return None;
+  }
+  let a = zero_at(&df_dv1)?;
+  let b = zero_at(&df_dv2)?;
+  let c0 = zero_at(f)?;
+
+  // Constraint must be `g op c` where g = v1^2 + v2^2 (plus possible
+  // linear/constant term we leave out for now) and c is a real number.
+  let (g_expr, c_val) = match cons {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && matches!(
+        operators[0],
+        crate::syntax::ComparisonOp::LessEqual
+          | crate::syntax::ComparisonOp::Less
+          | crate::syntax::ComparisonOp::GreaterEqual
+          | crate::syntax::ComparisonOp::Greater
+          | crate::syntax::ComparisonOp::Equal
+      ) =>
+    {
+      let c = crate::functions::math_ast::expr_to_f64(&operands[1])?;
+      (operands[0].clone(), c)
+    }
+    Expr::FunctionCall {
+      name: cn,
+      args: cargs,
+    } if matches!(
+      cn.as_str(),
+      "LessEqual" | "Less" | "GreaterEqual" | "Greater" | "Equal"
+    ) && cargs.len() == 2 =>
+    {
+      let c = crate::functions::math_ast::expr_to_f64(&cargs[1])?;
+      (cargs[0].clone(), c)
+    }
+    _ => return None,
+  };
+  // Quadratic form: ∂²g/∂v1² = 2, ∂²g/∂v2² = 2, mixed = 0,
+  // and g(0,0) = 0, ∂g/∂v1(0,0) = 0, ∂g/∂v2(0,0) = 0.
+  let dg_dv1 = diff(&g_expr, &v1)?;
+  let dg_dv2 = diff(&g_expr, &v2)?;
+  let d2g_dv1 = diff(&dg_dv1, &v1)?;
+  let d2g_dv2 = diff(&dg_dv2, &v2)?;
+  let d2g_mixed = diff(&dg_dv1, &v2)?;
+  if zero_at(&d2g_dv1)? != 2.0
+    || zero_at(&d2g_dv2)? != 2.0
+    || zero_at(&d2g_mixed)? != 0.0
+    || zero_at(&dg_dv1)? != 0.0
+    || zero_at(&dg_dv2)? != 0.0
+    || zero_at(&g_expr)? != 0.0
+  {
+    return None;
+  }
+
+  // c_val is the upper (or lower) bound on g, equal to R^2.
+  if c_val < 0.0 {
+    return None;
+  }
+  let radius = c_val.sqrt();
+  let norm = (a * a + b * b).sqrt();
+  if norm == 0.0 {
+    // Constant objective: every feasible point is optimal; return c0 or {0, 0}.
+    return Some(match name {
+      "NMaxValue" | "NMinValue" => Expr::Real(c0),
+      _ => Expr::List(
+        vec![Expr::Real(0.0), Expr::Real(0.0)].into(),
+      ),
+    });
+  }
+  let max_val = c0 + radius * norm;
+  let min_val = c0 - radius * norm;
+  let max_pt = (radius * a / norm, radius * b / norm);
+  let min_pt = (-max_pt.0, -max_pt.1);
+
+  let result = match name {
+    "NMaxValue" => Expr::Real(max_val),
+    "NMinValue" => Expr::Real(min_val),
+    "NArgMax" | "FindArgMax" => Expr::List(
+      vec![Expr::Real(max_pt.0), Expr::Real(max_pt.1)].into(),
+    ),
+    "NArgMin" | "FindArgMin" => Expr::List(
+      vec![Expr::Real(min_pt.0), Expr::Real(min_pt.1)].into(),
+    ),
+    _ => return None,
+  };
+  Some(result)
 }

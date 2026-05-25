@@ -2924,6 +2924,78 @@ mod batch_unevaluated_wrappers_2 {
   fn find_arg_max_basic() {
     assert_eq!(interpret("FindArgMax[-x^2 + 3*x + 2, x]").unwrap(), "{1.5}");
   }
+
+  #[test]
+  fn nmaxvalue_linear_on_unit_disk() {
+    // Maximize x - 2y on x^2 + y^2 <= 1 → Sqrt[5]
+    let result =
+      interpret("NMaxValue[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 5.0_f64.sqrt()).abs() < 1e-9, "got {}", val);
+  }
+
+  #[test]
+  fn nminvalue_linear_on_unit_disk() {
+    let result =
+      interpret("NMinValue[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val + 5.0_f64.sqrt()).abs() < 1e-9, "got {}", val);
+  }
+
+  #[test]
+  fn nargmax_linear_on_unit_disk() {
+    let result =
+      interpret("NArgMax[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
+    assert!(result.starts_with("{"), "got {}", result);
+    let inner = &result[1..result.len() - 1];
+    let parts: Vec<f64> = inner
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((parts[0] - 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+    assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+  }
+
+  #[test]
+  fn nargmin_linear_on_unit_disk() {
+    let result =
+      interpret("NArgMin[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
+    let inner = &result[1..result.len() - 1];
+    let parts: Vec<f64> = inner
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((parts[0] + 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+    assert!((parts[1] - 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+  }
+
+  #[test]
+  fn findargmax_linear_on_unit_disk() {
+    let result =
+      interpret("FindArgMax[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
+    let inner = &result[1..result.len() - 1];
+    let parts: Vec<f64> = inner
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((parts[0] - 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+    assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+  }
+
+  #[test]
+  fn findargmin_linear_on_unit_disk() {
+    // Audit case: FindArgMin[{-x + 2y, x^2+y^2<=1}, {x, y}] → (0.447, -0.894)
+    let result =
+      interpret("FindArgMin[{-x + 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
+    let inner = &result[1..result.len() - 1];
+    let parts: Vec<f64> = inner
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert!((parts[0] - 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+    assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
+  }
+
   #[test]
   fn string_replace_list_basic() {
     assert_eq!(
