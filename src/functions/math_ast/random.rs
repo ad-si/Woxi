@@ -1351,6 +1351,90 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// RandomGraph[{n, m}] — undirected graph with n vertices and m random edges.
+/// RandomGraph[{n, m}, k] — list of k such graphs.
+pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::seq::SliceRandom;
+
+  let unevaluated = || Expr::FunctionCall {
+    name: "RandomGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  let (n, m) = match &args[0] {
+    Expr::List(items) if items.len() == 2 => {
+      match (
+        crate::functions::math_ast::expr_to_i128(&items[0]),
+        crate::functions::math_ast::expr_to_i128(&items[1]),
+      ) {
+        (Some(n), Some(m)) if n >= 0 && m >= 0 => (n as usize, m as usize),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+
+  // Max number of edges in K_n.
+  let max_edges = n.saturating_mul(n.saturating_sub(1)) / 2;
+  if m > max_edges {
+    return Ok(unevaluated());
+  }
+
+  let k = match args.len() {
+    1 => None,
+    2 => match crate::functions::math_ast::expr_to_i128(&args[1]) {
+      Some(k) if k >= 0 => Some(k as usize),
+      _ => return Ok(unevaluated()),
+    },
+    _ => return Ok(unevaluated()),
+  };
+
+  // Pre-build all possible edges {1≤i<j≤n}. For practical n this fits.
+  let mut all_edges: Vec<(i128, i128)> = Vec::with_capacity(max_edges);
+  for i in 1..=n {
+    for j in (i + 1)..=n {
+      all_edges.push((i as i128, j as i128));
+    }
+  }
+
+  let make_graph = |edges: Vec<(i128, i128)>| -> Expr {
+    let vertex_list: Vec<Expr> =
+      (1..=n).map(|v| Expr::Integer(v as i128)).collect();
+    let edge_list: Vec<Expr> = edges
+      .into_iter()
+      .map(|(a, b)| Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+      })
+      .collect();
+    Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![
+        Expr::List(vertex_list.into()),
+        Expr::List(edge_list.into()),
+      ]
+      .into(),
+    }
+  };
+
+  let one_graph = |all_edges: &[(i128, i128)]| -> Expr {
+    let mut shuffled = all_edges.to_vec();
+    crate::with_rng(|rng| shuffled.shuffle(rng));
+    shuffled.truncate(m);
+    shuffled.sort();
+    make_graph(shuffled)
+  };
+
+  match k {
+    None => Ok(one_graph(&all_edges)),
+    Some(k) => {
+      let graphs: Vec<Expr> =
+        (0..k).map(|_| one_graph(&all_edges)).collect();
+      Ok(Expr::List(graphs.into()))
+    }
+  }
+}
+
 /// Deterministically derive a 64-bit seed from a string. The same string
 /// always maps to the same seed, so `SeedRandom["foo"]` is reproducible
 /// across runs and across platforms.

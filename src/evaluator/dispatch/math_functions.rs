@@ -1067,6 +1067,9 @@ pub fn dispatch_math_functions(
     "RandomChoice" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_choice_ast(args));
     }
+    "RandomGraph" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::math_ast::random_graph_ast(args));
+    }
     "RandomSample" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_sample_ast(args));
     }

@@ -4411,10 +4411,9 @@ mod hypergeometric_pfq_regularized {
     // When a b argument is a non-positive integer, Γ(b) is a pole but the
     // regularized form is still finite (the series simply skips the early
     // n terms where 1/Γ(b + n) = 0). Audit case.
-    let result = interpret(
-      "HypergeometricPFQRegularized[{1/3, 1/3, 1/3}, {-2, -3}, 0.5]",
-    )
-    .unwrap();
+    let result =
+      interpret("HypergeometricPFQRegularized[{1/3, 1/3, 1/3}, {-2, -3}, 0.5]")
+        .unwrap();
     let val: f64 = result.parse().unwrap();
     assert!((val - 15.062110268295829).abs() < 1e-9, "got {}", val);
   }

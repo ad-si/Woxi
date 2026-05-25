@@ -651,7 +651,7 @@ fn try_pfq_regularized_with_b_poles(
     })
     .max()
     .unwrap_or(0)
-    .max(0) as i64;
+    .max(0);
 
   // Compute the first non-zero term at n = min_n directly.
   let mut term: f64 = 1.0;

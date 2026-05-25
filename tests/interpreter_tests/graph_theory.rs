@@ -1291,6 +1291,72 @@ mod two_way_rule {
   }
 }
 
+mod random_graph {
+  use super::*;
+
+  #[test]
+  fn correct_vertex_count() {
+    assert_eq!(
+      interpret("Length[VertexList[RandomGraph[{5, 6}]]]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn correct_edge_count() {
+    assert_eq!(
+      interpret("Length[EdgeList[RandomGraph[{5, 6}]]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn head_is_graph() {
+    assert_eq!(interpret("Head[RandomGraph[{5, 6}]]").unwrap(), "Graph");
+  }
+
+  #[test]
+  fn edges_are_unique() {
+    assert_eq!(
+      interpret(
+        "Length[DeleteDuplicates[EdgeList[RandomGraph[{8, 12}]]]]"
+      )
+      .unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn complete_graph_when_m_equals_max() {
+    // K_4 has 6 edges; RandomGraph[{4, 6}] should yield exactly that set.
+    assert_eq!(
+      interpret("Length[EdgeList[RandomGraph[{4, 6}]]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn too_many_edges_returns_unevaluated() {
+    // K_4 has 6 edges, asking for 100 is impossible.
+    assert_eq!(
+      interpret("RandomGraph[{4, 100}]").unwrap(),
+      "RandomGraph[{4, 100}]"
+    );
+  }
+
+  #[test]
+  fn k_variant_returns_list() {
+    assert_eq!(
+      interpret("Length[RandomGraph[{5, 4}, 3]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Head /@ RandomGraph[{5, 4}, 3]").unwrap(),
+      "{Graph, Graph, Graph}"
+    );
+  }
+}
+
 mod cases {
   use super::super::case_helpers::assert_case;
 
