@@ -4780,7 +4780,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     let bounds: Vec<Expr> = mins
       .into_iter()
-      .zip(maxs.into_iter())
+      .zip(maxs)
       .map(|(lo, hi)| Expr::List(vec![lo, hi].into()))
       .collect();
     return Ok(Expr::List(bounds.into()));

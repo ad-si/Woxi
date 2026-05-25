@@ -558,6 +558,18 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       .or_else(|_| std::env::var("USERPROFILE"))
       .ok()
       .map(Expr::String),
+    // `$UserDocumentsDirectory` points at the user's Documents folder.
+    // Wolfram returns `~/Documents` on macOS/Linux/Windows.
+    #[cfg(not(target_arch = "wasm32"))]
+    "$UserDocumentsDirectory" => {
+      let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+      Some(Expr::String(format!(
+        "{}/Documents",
+        home.trim_end_matches('/')
+      )))
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "$TemporaryDirectory" => {
       // Canonicalize to match wolframscript's output on macOS

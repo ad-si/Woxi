@@ -3494,6 +3494,31 @@ mod set_directory {
       "virtual CWD must reflect SetDirectory, got: {result}"
     );
   }
+
+  #[test]
+  fn user_documents_directory_is_home_documents() {
+    // $UserDocumentsDirectory → $HOME/Documents on macOS/Linux.
+    let home = std::env::var("HOME")
+      .or_else(|_| std::env::var("USERPROFILE"))
+      .unwrap();
+    let expected = format!("{}/Documents", home.trim_end_matches('/'));
+    assert_eq!(interpret("$UserDocumentsDirectory").unwrap(), expected);
+  }
+
+  #[test]
+  fn set_directory_to_user_documents() {
+    // Regression for the audit case: SetDirectory[$UserDocumentsDirectory]
+    // should return the documents path (when that directory exists).
+    let home = std::env::var("HOME").unwrap();
+    let docs = format!("{}/Documents", home.trim_end_matches('/'));
+    if std::path::Path::new(&docs).is_dir() {
+      let result = interpret(
+        r#"Block[{}, d = SetDirectory[$UserDocumentsDirectory]; ResetDirectory[]; d]"#,
+      )
+      .unwrap();
+      assert_eq!(result, docs);
+    }
+  }
 }
 
 mod directory_stack {
