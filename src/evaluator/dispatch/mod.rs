@@ -5660,6 +5660,36 @@ pub fn evaluate_function_call_ast_inner(
       };
       return evaluate_expr_to_expr(&value);
     }
+    // TimeValue[s, {r1, r2, ..., rn}, t] with non-negative integer t and a
+    // flat list of per-period rates: result = s * Prod_{k=1..t} (1 + r_k)
+    // where r_k = rates[min(k, n) - 1] (the last rate is repeated when t > n).
+    if s_scalar
+      && let Expr::List(rates) = i
+      && !rates.is_empty()
+      && rates.iter().all(|r| {
+        matches!(r, Expr::Integer(_) | Expr::Real(_))
+          || matches!(r, Expr::FunctionCall { name, .. } if name == "Rational")
+      })
+      && let Expr::Integer(t_int) = t
+      && *t_int >= 0
+    {
+      let t_usize = *t_int as usize;
+      let n = rates.len();
+      let mut factors: Vec<Expr> = Vec::with_capacity(t_usize + 1);
+      factors.push(s.clone());
+      for k in 1..=t_usize {
+        let idx = (k - 1).min(n - 1);
+        factors.push(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(1), rates[idx].clone()].into(),
+        });
+      }
+      let prod = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      return evaluate_expr_to_expr(&prod);
+    }
   }
 
   // CirclePoints[n] — n equally spaced points on the unit circle

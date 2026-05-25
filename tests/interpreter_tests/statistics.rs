@@ -2193,7 +2193,10 @@ mod group_generators {
 
   #[test]
   fn abelian_group_empty() {
-    assert_eq!(interpret("GroupGenerators[AbelianGroup[{}]]").unwrap(), "{}");
+    assert_eq!(
+      interpret("GroupGenerators[AbelianGroup[{}]]").unwrap(),
+      "{}"
+    );
   }
 }
 
@@ -2202,7 +2205,10 @@ mod group_order {
 
   #[test]
   fn abelian_group_product_of_factors() {
-    assert_eq!(interpret("GroupOrder[AbelianGroup[{2, 2, 3}]]").unwrap(), "12");
+    assert_eq!(
+      interpret("GroupOrder[AbelianGroup[{2, 2, 3}]]").unwrap(),
+      "12"
+    );
     assert_eq!(
       interpret("GroupOrder[AbelianGroup[{2, 3, 5, 7}]]").unwrap(),
       "210"

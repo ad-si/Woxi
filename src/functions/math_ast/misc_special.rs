@@ -2567,3 +2567,69 @@ fn powers_rep_search(
     val += 1;
   }
 }
+
+/// EffectiveInterest[r, p] - effective annual rate from a nominal annual rate
+/// `r` compounded once every period `p` of a year. With p > 0 the formula
+/// is (1 + p*r)^(1/p) - 1; the limit at p = 0 is E^r - 1 (continuous
+/// compounding). Listable in `r`.
+pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "EffectiveInterest".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // Listable on the first argument.
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      out.push(effective_interest_ast(&[item.clone(), args[1].clone()])?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+
+  let r = &args[0];
+  let p = &args[1];
+
+  // p = 0 → E^r - 1 (continuous compounding).
+  let p_is_zero = match p {
+    Expr::Integer(0) => true,
+    Expr::Real(f) => *f == 0.0,
+    _ => false,
+  };
+  if p_is_zero {
+    // -1 + E^r
+    let e_r = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), r.clone()].into(),
+    };
+    let expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(-1), e_r].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&expr);
+  }
+
+  // General form: (1 + p*r)^(1/p) - 1.
+  let pr = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![p.clone(), r.clone()].into(),
+  };
+  let one_plus_pr = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![Expr::Integer(1), pr].into(),
+  };
+  let inv_p = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![p.clone(), Expr::Integer(-1)].into(),
+  };
+  let pow = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![one_plus_pr, inv_p].into(),
+  };
+  let expr = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![Expr::Integer(-1), pow].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
+}

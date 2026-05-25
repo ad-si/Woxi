@@ -2509,7 +2509,7 @@ pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Expr::Integer(n) = &gargs[0]
       && *n >= 1
     {
-      let n = *n as i128;
+      let n = *n;
       return Ok(match name.as_str() {
         "CyclicGroup" => Expr::Integer(n),
         "SymmetricGroup" => Expr::Integer((1..=n).product()),
@@ -2605,7 +2605,7 @@ fn abelian_group_elements(factors: &[usize]) -> Expr {
 /// vec for the identity (k % n == 0).
 fn cyclic_power_cycles(slots: &[i128], k: usize) -> Vec<Vec<i128>> {
   let n = slots.len();
-  if n == 0 || k % n == 0 {
+  if n == 0 || k.is_multiple_of(n) {
     return Vec::new();
   }
   let mut visited = vec![false; n];

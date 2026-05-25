@@ -293,6 +293,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "EdgeDetect" => Some((1, 3)),
     "DamerauLevenshteinDistance" => Some((2, 3)),
     "EditDistance" => Some((2, 3)),
+    "EffectiveInterest" => Some((2, 2)),
     "Eigensystem" => Some((1, 1)),
     "Eigenvalues" => Some((1, 1)),
     "Eigenvectors" => Some((1, 1)),

@@ -415,6 +415,9 @@ pub fn dispatch_math_functions(
     "GroupElements" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
+    "EffectiveInterest" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::effective_interest_ast(args));
+    }
     "Likelihood" if args.len() == 2 => {
       return Some(crate::functions::math_ast::likelihood_ast(args));
     }

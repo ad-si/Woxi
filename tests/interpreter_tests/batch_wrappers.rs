@@ -40,6 +40,103 @@ mod batch_unevaluated_wrappers {
     assert_eq!(interpret("TimeValue[100, 1/10, 2]").unwrap(), "121");
   }
   #[test]
+  fn time_value_list_of_rates_exact_match() {
+    // Five rates over five periods: 1000 * Prod(1 + r_i).
+    let result =
+      interpret("TimeValue[1000, {0.04, 0.05, 0.06, 0.07, 0.08}, 5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1337.6301120000003).abs() < 1e-9, "got {}", val);
+  }
+  #[test]
+  fn time_value_list_of_rates_extends_with_last() {
+    // Fewer rates than periods: the last rate is repeated.
+    // 1000 * 1.04 * 1.05 * 1.05 * 1.05 * 1.05 = 1264.1265.
+    let result = interpret("TimeValue[1000, {0.04, 0.05}, 5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1264.1265).abs() < 1e-9, "got {}", val);
+  }
+  #[test]
+  fn time_value_list_of_rates_truncates() {
+    // More rates than periods: only the first t are used.
+    let result = interpret("TimeValue[1000, {0.04, 0.05, 0.06}, 2]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    // 1000 * 1.04 * 1.05 = 1092.
+    assert!((val - 1092.0).abs() < 1e-9, "got {}", val);
+  }
+  #[test]
+  fn time_value_list_of_rates_zero_t() {
+    // t = 0 → original principal unchanged.
+    assert_eq!(
+      interpret("TimeValue[1000, {0.04, 0.05}, 0]").unwrap(),
+      "1000"
+    );
+  }
+  #[test]
+  fn time_value_via_effective_interest() {
+    // TimeValue[1000, EffectiveInterest[0.05, 1/4], 10]
+    // = 1000 * (1 + (1 + 0.05*0.25)^4 - 1)^10
+    // = 1000 * 1.0125^40 ≈ 1643.6194634870124.
+    let result =
+      interpret("TimeValue[1000, EffectiveInterest[0.05, 1/4], 10]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1643.6194634870124).abs() < 1e-9, "got {}", val);
+  }
+  #[test]
+  fn effective_interest_quarterly() {
+    // Compounded 4 times per year (period = 1/4).
+    let result = interpret("EffectiveInterest[0.05, 1/4]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.050945336914062445).abs() < 1e-12, "got {}", val);
+  }
+  #[test]
+  fn effective_interest_monthly() {
+    // 12 compounding periods per year → period = 1/12.
+    let result = interpret("EffectiveInterest[0.05, 1/12]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.0511618978817332).abs() < 1e-12, "got {}", val);
+  }
+  #[test]
+  fn effective_interest_annual() {
+    // Annual compounding leaves the rate unchanged.
+    let result = interpret("EffectiveInterest[0.05, 1]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.05).abs() < 1e-12, "got {}", val);
+  }
+  #[test]
+  fn effective_interest_continuous() {
+    // Period 0 → continuous compounding: e^r - 1.
+    let result = interpret("EffectiveInterest[0.05, 0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.05127109637602412).abs() < 1e-12, "got {}", val);
+  }
+  #[test]
+  fn effective_interest_symbolic() {
+    // Symbolic form: -1 + (1 + p*r)^(1/p).
+    assert_eq!(
+      interpret("EffectiveInterest[r, p]").unwrap(),
+      "-1 + (1 + p*r)^p^(-1)"
+    );
+  }
+  #[test]
+  fn effective_interest_zero_symbolic() {
+    // Period 0 with symbolic rate: e^r - 1.
+    assert_eq!(interpret("EffectiveInterest[r, 0]").unwrap(), "-1 + E^r");
+  }
+  #[test]
+  fn effective_interest_listable_rate() {
+    // First argument threads over a list of rates.
+    let result = interpret("EffectiveInterest[{0.04, 0.05, 0.06}, 1/2]").unwrap();
+    assert!(result.starts_with("{"), "got {}", result);
+    let stripped = result.trim_start_matches('{').trim_end_matches('}');
+    let vals: Vec<f64> = stripped
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
+    assert!((vals[0] - 0.0404).abs() < 1e-6);
+    assert!((vals[1] - 0.050625).abs() < 1e-6);
+    assert!((vals[2] - 0.0609).abs() < 1e-6);
+  }
+  #[test]
   fn line_indent() {
     assert_eq!(interpret("LineIndent[x]").unwrap(), "LineIndent[x]");
   }

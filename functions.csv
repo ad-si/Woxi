@@ -2224,7 +2224,7 @@ CountsBy,Counts elements grouped by a function,✅,None,10.0,2268
 FoldPairList,Folds a list returning emitted values and new states,✅,None,10.2,2268
 AdjacencyList,Graph operations,🚫,None,9.0,2276
 CloudShare,Cloud service,🚫,None,10.2,2276
-EffectiveInterest,Financial computation,🚫,None,8.0,2276
+EffectiveInterest,Effective annual rate from nominal rate compounded over a period,✅,pure,8.0,2276
 FindHamiltonianCycle,Graph algorithm,🚫,None,8.0,2276
 GumbelDistribution,Probability distribution,🚫,None,6.0,2276
 LimitsPositioning,Typesetting option,🚫,None,3.0,2276
