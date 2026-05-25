@@ -351,7 +351,8 @@ pub fn image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageQ expects exactly 1 argument".into(),
     ));
   }
-  let is_image = matches!(&args[0], Expr::Image { .. }) || is_valid_image3d(&args[0]);
+  let is_image =
+    matches!(&args[0], Expr::Image { .. }) || is_valid_image3d(&args[0]);
   Ok(Expr::Identifier(
     if is_image { "True" } else { "False" }.to_string(),
   ))
@@ -405,33 +406,81 @@ fn nested_list_rank(e: &Expr) -> Option<usize> {
   }
 }
 
-/// ImageDimensions[img] - {width, height}
+/// ImageDimensions[img] — {width, height} for 2D, {width, height, depth}
+/// for Image3D. Image3D[arg] is accepted when `arg` is a rank-3 or
+/// rank-4 nested list (or NumericArray of the same).
 pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ImageDimensions expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Image { width, height, .. } => Ok(Expr::List(
+  if let Expr::Image { width, height, .. } = &args[0] {
+    return Ok(Expr::List(
       vec![
         Expr::Integer(*width as i128),
         Expr::Integer(*height as i128),
       ]
       .into(),
-    )),
-    _ => {
-      // Match wolframscript: emit ImageDimensions::imginv before
-      // returning the unevaluated call.
-      crate::emit_message(&format!(
-        "ImageDimensions::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageDimensions".to_string(),
-        args: args.to_vec().into(),
-      })
-    }
+    ));
+  }
+  if let Some(dims) = image3d_dimensions(&args[0]) {
+    return Ok(Expr::List(
+      dims.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+    ));
+  }
+  // Match wolframscript: emit ImageDimensions::imginv before
+  // returning the unevaluated call.
+  crate::emit_message(&format!(
+    "ImageDimensions::imginv: Expecting an image or graphics instead of {}.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  Ok(Expr::FunctionCall {
+    name: "ImageDimensions".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Extract `{width, height, depth}` for a valid Image3D[arg]. Returns
+/// None if `arg` isn't a rank-3 or rank-4 nested list (peeling through
+/// a NumericArray wrapper).
+fn image3d_dimensions(e: &Expr) -> Option<Vec<i128>> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let inner = match &args[0] {
+    Expr::FunctionCall {
+      name: na_name,
+      args: na_args,
+    } if na_name == "NumericArray" && !na_args.is_empty() => &na_args[0],
+    other => other,
+  };
+  let rank = nested_list_rank(inner)?;
+  if rank != 3 && rank != 4 {
+    return None;
+  }
+  let depth = list_len(inner)?;
+  let slice = list_first(inner)?;
+  let height = list_len(slice)?;
+  let row = list_first(slice)?;
+  let width = list_len(row)?;
+  Some(vec![width as i128, height as i128, depth as i128])
+}
+
+fn list_len(e: &Expr) -> Option<usize> {
+  match e {
+    Expr::List(items) => Some(items.len()),
+    _ => None,
+  }
+}
+
+fn list_first(e: &Expr) -> Option<&Expr> {
+  match e {
+    Expr::List(items) if !items.is_empty() => Some(&items[0]),
+    _ => None,
   }
 }
 

@@ -267,6 +267,58 @@ mod image_core {
     );
   }
 
+  // ImageDimensions on a valid Image3D returns {width, height, depth}.
+  #[test]
+  fn image_dimensions_image3d_rank3_nested_list() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[Image3D[{{{1.0, 0.0}, {0.0, 1.0}}}]]").unwrap(),
+      "{2, 2, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image3D[{{{1.0, 0.0}, {0.0, 1.0}}, {{0.5, 0.5}, {0.5, 0.5}}}]]"
+      )
+      .unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  // Non-square slices and depths give correctly ordered {w, h, d}.
+  #[test]
+  fn image_dimensions_image3d_non_square() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image3D[{{{1, 2, 3}}, {{4, 5, 6}}}]]"
+      )
+      .unwrap(),
+      "{3, 1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image3D[NumericArray[\
+         {{{1, 2, 3, 4}, {5, 6, 7, 8}}, {{9, 10, 11, 12}, {13, 14, 15, 16}}, \
+          {{17, 18, 19, 20}, {21, 22, 23, 24}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "{4, 2, 3}"
+    );
+  }
+
+  // Rank-4 (color) Image3D: innermost is channels and not part of dimensions.
+  #[test]
+  fn image_dimensions_image3d_color_rank4() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image3D[{{{{1.0, 0, 0}, {0, 1.0, 0}, {0, 0, 1.0}}}}]]"
+      )
+      .unwrap(),
+      "{3, 1, 1}"
+    );
+  }
+
   // Image3D objects pass ImageQ, even though Image3D itself isn't fully
   // implemented. The shape check accepts a NumericArray of rank 3 or 4,
   // or a nested list of the same rank.
