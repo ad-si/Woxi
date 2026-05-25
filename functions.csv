@@ -1941,7 +1941,7 @@ PopupWindow,GUI popup window element,🚫,,6.0,1975
 Resultant,Resultant of two polynomials via Sylvester matrix determinant,✅,pure,1.0,1975
 Selectable,GUI option for content selectability,🚫,,3.0,1977
 TableDirections,Option for TableForm display directions,🚫,,2.0,1977
-PermutationGroup,Group theory permutation group representation,🚫,,8.0,1979
+PermutationGroup,Group theory permutation group representation,✅,pure,8.0,1979
 WeightedAdjacencyMatrix,Get weighted adjacency matrix of a graph,🚫,,8.0,1979
 DayName,Return the name of the day of the week for a given date,✅,none,9.0,1981
 SuperPlus,Typesetting notation for superscript plus,🚫,,6.0,1982

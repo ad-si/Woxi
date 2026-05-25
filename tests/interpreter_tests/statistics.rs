@@ -2245,6 +2245,35 @@ mod group_generators {
       "{}"
     );
   }
+
+  #[test]
+  fn permutation_group_round_trips() {
+    // GroupGenerators[PermutationGroup[{gens}]] returns {gens} verbatim.
+    assert_eq!(
+      interpret(
+        "GroupGenerators[PermutationGroup[{Cycles[{{1, 2}}], Cycles[{{1, 3}, {2, 4}}]}]]"
+      )
+      .unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{1, 3}, {2, 4}}]}"
+    );
+  }
+
+  #[test]
+  fn permutation_group_single_generator() {
+    assert_eq!(
+      interpret("GroupGenerators[PermutationGroup[{Cycles[{{1, 2}}]}]]").unwrap(),
+      "{Cycles[{{1, 2}}]}"
+    );
+  }
+
+  #[test]
+  fn permutation_group_stays_symbolic() {
+    // PermutationGroup itself preserves its argument when no operation is applied.
+    assert_eq!(
+      interpret("PermutationGroup[{Cycles[{{1, 2}}]}]").unwrap(),
+      "PermutationGroup[{Cycles[{{1, 2}}]}]"
+    );
+  }
 }
 
 mod group_order {

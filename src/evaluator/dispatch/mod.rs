@@ -1830,6 +1830,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Larger"
     | "ZetaZero"
     | "MixtureDistribution"
+    | "PermutationGroup"
     | "Inactivate"
     | "LegendLabel" => {
       return Ok(Expr::FunctionCall {

@@ -764,6 +764,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PermutationListQ" => Some((1, 1)),
     "PermutationMax" => Some((1, 1)),
     "PermutationMin" => Some((1, 1)),
+    "PermutationGroup" => Some((1, 1)),
     "PermutationOrder" => Some((1, 1)),
     "PermutationPower" => Some((2, 2)),
     "Permutations" => Some((1, 2)),

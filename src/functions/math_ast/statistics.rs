@@ -2427,6 +2427,15 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(abelian_group_generators(&factors));
   }
 
+  // GroupGenerators[PermutationGroup[{gens}]] → the same generator list.
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "PermutationGroup"
+    && gargs.len() == 1
+    && matches!(&gargs[0], Expr::List(_))
+  {
+    return Ok(gargs[0].clone());
+  }
+
   match &args[0] {
     Expr::FunctionCall { name, args: gargs } if gargs.len() == 1 => {
       let n = match &gargs[0] {
