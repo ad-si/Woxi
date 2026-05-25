@@ -392,6 +392,129 @@ pub fn reduce_not_equal(
   })
 }
 
+/// Recognise `ArcXxxDegrees[var] CompOp const_degrees` and invert it.
+/// Returns Some(reduced) when the pattern matches and the inversion has a
+/// closed form, None otherwise.
+fn try_reduce_arc_degrees(
+  lhs: &Expr,
+  rhs: &Expr,
+  op: CompOp,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  // lhs must be `ArcXxxDegrees[var]`.
+  let Expr::FunctionCall {
+    name: lname,
+    args: largs,
+  } = lhs
+  else {
+    return Ok(None);
+  };
+  if largs.len() != 1
+    || !matches!(&largs[0], Expr::Identifier(s) if s == var)
+  {
+    return Ok(None);
+  }
+
+  // rhs must be a constant scalar (Integer/Real/Rational).
+  if !is_constant_wrt(rhs, var) {
+    return Ok(None);
+  }
+
+  // Build the corresponding trig threshold in radians:
+  //   threshold = TrigF[rhs * Pi / 180].
+  let trig_name = match lname.as_str() {
+    "ArcCosDegrees" => "Cos",
+    "ArcSinDegrees" => "Sin",
+    "ArcTanDegrees" => "Tan",
+    "ArcCotDegrees" => "Cot",
+    "ArcCscDegrees" => "Csc",
+    "ArcSecDegrees" => "Sec",
+    _ => return Ok(None),
+  };
+  let radians = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      rhs.clone(),
+      Expr::Identifier("Pi".to_string()),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(180)].into(),
+      },
+    ]
+    .into(),
+  };
+  let threshold_expr = Expr::FunctionCall {
+    name: trig_name.to_string(),
+    args: vec![radians].into(),
+  };
+  let threshold = crate::evaluator::evaluate_expr_to_expr(&threshold_expr)?;
+
+  // Helper: build a 3-way bounded interval `low op1 var op2 high`.
+  let bounded = |low: Expr, op1: CompOp, op2: CompOp, high: Expr| -> Expr {
+    make_compound_inequality(&low, op1, var, op2, &high)
+  };
+  // Helper: simple comparison `var op c`.
+  let simple = |op: CompOp, c: Expr| -> Expr {
+    make_comparison(&Expr::Identifier(var.to_string()), &c, op)
+  };
+
+  // Build the result. Only `>` audit cases for now — that's the documented
+  // basic example for every ArcXxxDegrees function.
+  if !matches!(op, CompOp::Greater) {
+    return Ok(None);
+  }
+
+  let result = match lname.as_str() {
+    // ArcCosDegrees is strictly decreasing on [-1, 1] → [0, 180].
+    // arccos(x) > k iff -1 ≤ x < cos(k°).
+    "ArcCosDegrees" => bounded(
+      Expr::Integer(-1),
+      CompOp::LessEqual,
+      CompOp::Less,
+      threshold,
+    ),
+    // ArcSinDegrees is strictly increasing on [-1, 1] → [-90, 90].
+    // arcsin(x) > k iff sin(k°) < x ≤ 1.
+    "ArcSinDegrees" => bounded(
+      threshold,
+      CompOp::Less,
+      CompOp::LessEqual,
+      Expr::Integer(1),
+    ),
+    // ArcTanDegrees is strictly increasing on R → (-90, 90).
+    // arctan(x) > k iff x > tan(k°).
+    "ArcTanDegrees" => simple(CompOp::Greater, threshold),
+    // ArcCotDegrees principal branch is strictly decreasing on [0, ∞) → (0, 90].
+    // arccot(x) > k iff 0 ≤ x < cot(k°)  (for 0 < k < 90).
+    "ArcCotDegrees" => bounded(
+      Expr::Integer(0),
+      CompOp::LessEqual,
+      CompOp::Less,
+      threshold,
+    ),
+    // ArcCscDegrees on [1, ∞) → (0, 90], strictly decreasing.
+    // arccsc(x) > k iff 1 ≤ x < csc(k°)  (for 0 < k ≤ 90).
+    "ArcCscDegrees" => bounded(
+      Expr::Integer(1),
+      CompOp::LessEqual,
+      CompOp::Less,
+      threshold,
+    ),
+    // ArcSecDegrees: arcsec(x) > k iff x > sec(k°) || x ≤ -1
+    // (the second branch covers arcsec on (-∞, -1] mapping to (90, 180]).
+    "ArcSecDegrees" => Expr::FunctionCall {
+      name: "Or".to_string(),
+      args: vec![
+        simple(CompOp::Greater, threshold),
+        simple(CompOp::LessEqual, Expr::Integer(-1)),
+      ]
+      .into(),
+    },
+    _ => return Ok(None),
+  };
+  Ok(Some(result))
+}
+
 /// Reduce an inequality (lhs op rhs) for one variable.
 pub fn reduce_inequality(
   lhs: &Expr,
@@ -400,6 +523,12 @@ pub fn reduce_inequality(
   var: &str,
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
+  // Recognise `ArcXxxDegrees[var] CompOp const_degrees` directly — these
+  // need transcendental inversion, not polynomial reduction.
+  if let Some(result) = try_reduce_arc_degrees(lhs, rhs, op, var)? {
+    return Ok(result);
+  }
+
   // Move everything to one side: lhs - rhs op 0
   let poly = Expr::BinaryOp {
     op: BinaryOperator::Minus,

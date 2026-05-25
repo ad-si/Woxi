@@ -2863,6 +2863,62 @@ mod reduce {
       "2 < x < 10"
     );
   }
+
+  // ── Inverse trig (degrees) ──
+
+  #[test]
+  fn arc_cos_degrees_greater_than_60() {
+    // arccos(x) > 60° iff -1 <= x < cos(60°) = 1/2.
+    assert_eq!(
+      interpret("Reduce[ArcCosDegrees[x] > 60, x]").unwrap(),
+      "-1 <= x < 1/2"
+    );
+  }
+
+  #[test]
+  fn arc_sin_degrees_greater_than_60() {
+    // arcsin(x) > 60° iff sin(60°) = Sqrt[3]/2 < x <= 1.
+    assert_eq!(
+      interpret("Reduce[ArcSinDegrees[x] > 60, x]").unwrap(),
+      "Sqrt[3]/2 < x <= 1"
+    );
+  }
+
+  #[test]
+  fn arc_tan_degrees_greater_than_60() {
+    // arctan(x) > 60° iff x > tan(60°) = Sqrt[3].
+    assert_eq!(
+      interpret("Reduce[ArcTanDegrees[x] > 60, x]").unwrap(),
+      "x > Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn arc_cot_degrees_greater_than_60() {
+    // arccot(x) > 60° iff 0 <= x < cot(60°) = 1/Sqrt[3].
+    assert_eq!(
+      interpret("Reduce[ArcCotDegrees[x] > 60, x]").unwrap(),
+      "0 <= x < 1/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn arc_csc_degrees_greater_than_60() {
+    // arccsc(x) > 60° iff 1 <= x < csc(60°) = 2/Sqrt[3].
+    assert_eq!(
+      interpret("Reduce[ArcCscDegrees[x] > 60, x]").unwrap(),
+      "1 <= x < 2/Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn arc_sec_degrees_greater_than_60() {
+    // arcsec(x) > 60° iff x > 2 || x <= -1.
+    assert_eq!(
+      interpret("Reduce[ArcSecDegrees[x] > 60, x]").unwrap(),
+      "x > 2 || x <= -1"
+    );
+  }
 }
 
 mod nsolve {
