@@ -902,13 +902,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    let sort_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-      || {
+    let sort_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut clone = sorted_symbolic.clone();
         clone.sort_by(compare_plus_terms);
         clone
-      },
-    ));
+      }));
     std::panic::set_hook(prev_hook);
     sorted_symbolic = match sort_result {
       Ok(v) => v,

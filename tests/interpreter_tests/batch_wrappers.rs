@@ -2449,6 +2449,15 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn continued_fraction_k_infinity_constant_one() {
+    // K_n=1^∞ 1/1 = 1/(1+1/(1+1/(1+...))) is the fixed point of x = 1/(1+x),
+    // which equals -1 + GoldenRatio.
+    assert_eq!(
+      interpret("ContinuedFractionK[1, {n, 1, Infinity}]").unwrap(),
+      "-1 + GoldenRatio"
+    );
+  }
+  #[test]
   fn counts_by_odd_q() {
     assert_eq!(
       interpret("CountsBy[{1, 2, 3, 4, 5}, OddQ]").unwrap(),

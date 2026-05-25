@@ -2269,6 +2269,22 @@ pub fn dispatch_math_functions(
           .unwrap_or_else(|_| spec[1].clone());
         let imax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
           .unwrap_or_else(|_| spec[2].clone());
+        // ContinuedFractionK[1, {n, 1, Infinity}] = -1 + GoldenRatio, the
+        // fixed point of x = 1/(1 + x).
+        if matches!(&args[0], Expr::Integer(1))
+          && matches!(&imin_expr, Expr::Integer(1))
+          && matches!(&imax_expr, Expr::Identifier(s) if s == "Infinity")
+        {
+          let result = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              Expr::Identifier("GoldenRatio".to_string()),
+            ]
+            .into(),
+          };
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
         if let (Expr::Integer(imin), Expr::Integer(imax)) =
           (&imin_expr, &imax_expr)
         {
