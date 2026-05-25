@@ -2235,10 +2235,8 @@ mod tensor_contract {
     // Array[a, {2,2,2,2}] contracted on {{1,2}, {3,4}} → scalar.
     // result = Sum[a[i,i,j,j], i, j].
     assert_eq!(
-      interpret(
-        "TensorContract[Array[a, {2, 2, 2, 2}], {{1, 2}, {3, 4}}]"
-      )
-      .unwrap(),
+      interpret("TensorContract[Array[a, {2, 2, 2, 2}], {{1, 2}, {3, 4}}]")
+        .unwrap(),
       "a[1, 1, 1, 1] + a[1, 1, 2, 2] + a[2, 2, 1, 1] + a[2, 2, 2, 2]"
     );
   }

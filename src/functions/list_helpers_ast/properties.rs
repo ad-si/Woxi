@@ -176,8 +176,7 @@ pub fn tensor_contract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Index slots are 1-indexed; convert to 0-indexed.
   let pair_slots: Vec<(usize, usize)> =
     pairs.iter().map(|(a, b)| (a - 1, b - 1)).collect();
-  let free_slots: Vec<usize> =
-    (0..rank).filter(|i| !used[*i]).collect();
+  let free_slots: Vec<usize> = (0..rank).filter(|i| !used[*i]).collect();
 
   // Build the result by iterating over all free-index combinations.
   let free_dims: Vec<usize> = free_slots.iter().map(|&s| shape[s]).collect();

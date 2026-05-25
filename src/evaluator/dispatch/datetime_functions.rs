@@ -66,14 +66,46 @@ pub fn dispatch_datetime_functions(
     }
     // DateObject is a data container — normalize granularity
     "DateObject" => {
-      // DateObject[{y,m,d}] → DateObject[{y,m,d}, Day]
+      // DateObject[] → current instant (same shape as `Now`)
+      if args.is_empty() {
+        return Some(crate::evaluator::evaluate_expr_to_expr(
+          &Expr::Identifier("Now".to_string()),
+        ));
+      }
+      // DateObject[{y, ...}] adds a granularity tag based on list length.
+      //   1 → Year, 2 → Month, 3 → Day
+      //   4 → Hour, Gregorian, 0., 5 → Minute, Gregorian, 0.,
+      //   6 → Instant, Gregorian, 0.
       if args.len() == 1
         && let Expr::List(items) = &args[0]
-        && items.len() == 3
       {
+        let mut extra: Vec<Expr> = Vec::new();
+        match items.len() {
+          1 => extra.push(Expr::String("Year".to_string())),
+          2 => extra.push(Expr::String("Month".to_string())),
+          3 => extra.push(Expr::String("Day".to_string())),
+          4 | 5 | 6 => {
+            let gran = match items.len() {
+              4 => "Hour",
+              5 => "Minute",
+              _ => "Instant",
+            };
+            extra.push(Expr::String(gran.to_string()));
+            extra.push(Expr::String("Gregorian".to_string()));
+            extra.push(Expr::Real(0.0));
+          }
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "DateObject".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
+        let mut new_args = vec![args[0].clone()];
+        new_args.extend(extra);
         return Some(Ok(Expr::FunctionCall {
           name: "DateObject".to_string(),
-          args: vec![args[0].clone(), Expr::String("Day".to_string())].into(),
+          args: new_args.into(),
         }));
       }
       return Some(Ok(Expr::FunctionCall {

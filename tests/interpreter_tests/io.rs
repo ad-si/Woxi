@@ -74,6 +74,68 @@ mod now {
     let result = interpret("Now === Now").unwrap();
     assert_eq!(result, "False");
   }
+
+  #[test]
+  fn date_object_year_granularity() {
+    // DateObject[{y}] → DateObject[{y}, Year].
+    assert_eq!(
+      interpret("DateObject[{2022}]").unwrap(),
+      "DateObject[{2022}, Year]"
+    );
+  }
+
+  #[test]
+  fn date_object_month_granularity() {
+    // DateObject[{y, m}] → DateObject[{y, m}, Month].
+    assert_eq!(
+      interpret("DateObject[{2022, 12}]").unwrap(),
+      "DateObject[{2022, 12}, Month]"
+    );
+  }
+
+  #[test]
+  fn date_object_day_granularity_remains() {
+    // Existing behaviour: DateObject[{y, m, d}] stays at Day.
+    assert_eq!(
+      interpret("DateObject[{2022, 12, 5}]").unwrap(),
+      "DateObject[{2022, 12, 5}, Day]"
+    );
+  }
+
+  #[test]
+  fn date_object_hour_granularity() {
+    // DateObject[{y, m, d, h}] → DateObject[{y, m, d, h}, Hour, Gregorian, 0.]
+    assert_eq!(
+      interpret("DateObject[{2022, 12, 5, 14}]").unwrap(),
+      "DateObject[{2022, 12, 5, 14}, Hour, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_object_minute_granularity() {
+    assert_eq!(
+      interpret("DateObject[{2022, 12, 5, 14, 30}]").unwrap(),
+      "DateObject[{2022, 12, 5, 14, 30}, Minute, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_object_instant_granularity() {
+    assert_eq!(
+      interpret("DateObject[{2022, 12, 5, 14, 30, 45}]").unwrap(),
+      "DateObject[{2022, 12, 5, 14, 30, 45}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_object_empty_returns_instant() {
+    // DateObject[] returns the current instant — Head must be DateObject and
+    // the granularity slot must be Instant.
+    assert_eq!(interpret("Head[DateObject[]]").unwrap(), "DateObject");
+    assert_eq!(interpret("DateObject[][[2]]").unwrap(), "Instant");
+    assert_eq!(interpret("DateObject[][[3]]").unwrap(), "Gregorian");
+    assert_eq!(interpret("Length[DateObject[][[1]]]").unwrap(), "6");
+  }
 }
 
 mod find {
