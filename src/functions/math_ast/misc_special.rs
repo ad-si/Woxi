@@ -1381,40 +1381,35 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(Expr::Real(result))
   } else {
     // WignerD[{j, m1, m2}, phi, theta, psi]
-    let phi = match try_eval_to_f64(&args[1]) {
-      Some(v) => v,
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "WignerD".to_string(),
-          args: args.to_vec().into(),
-        });
+    // Try numeric path first: all angles must be Real.
+    let phi_n = try_eval_to_f64(&args[1]);
+    let theta_n = try_eval_to_f64(&args[2]);
+    let psi_n = try_eval_to_f64(&args[3]);
+    let all_numeric = matches!(&args[1], Expr::Real(_))
+      || matches!(&args[2], Expr::Real(_))
+      || matches!(&args[3], Expr::Real(_));
+    if !all_numeric || phi_n.is_none() || theta_n.is_none() || psi_n.is_none()
+    {
+      // Symbolic path: build d^j_{m1,m2}(theta) * E^(I*m1*phi) * E^(I*m2*psi).
+      if let Some(result) = wigner_d_symbolic(
+        j_val, m1_val, m2_val, &args[1], &args[2], &args[3],
+      ) {
+        return crate::evaluator::evaluate_expr_to_expr(&result);
       }
-    };
-    let theta = match try_eval_to_f64(&args[2]) {
-      Some(v) => v,
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "WignerD".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-    };
-    let psi = match try_eval_to_f64(&args[3]) {
-      Some(v) => v,
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "WignerD".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-    };
+      return Ok(Expr::FunctionCall {
+        name: "WignerD".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    let phi = phi_n.unwrap();
+    let theta = theta_n.unwrap();
+    let psi = psi_n.unwrap();
     let d = wigner_d_small(j_val, m1_val, m2_val, theta);
-    // D = E^(-I*m1*phi) * d * E^(-I*m2*psi)
-    // For real angles, this is: d * E^(-I*(m1*phi + m2*psi))
-    // = d * (cos(m1*phi+m2*psi) - I*sin(m1*phi+m2*psi))
+    // Mathematica's convention: D = E^(I*m1*phi) * d * E^(I*m2*psi).
+    // For real angles: d * (cos(m1*phi+m2*psi) + I*sin(m1*phi+m2*psi)).
     let phase = m1_val * phi + m2_val * psi;
     let re = d * phase.cos();
-    let im = -d * phase.sin();
+    let im = d * phase.sin();
     if im.abs() < 1e-15 {
       Ok(Expr::Real(re))
     } else {
@@ -1433,6 +1428,203 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Symbolic Wigner D-matrix element with symbolic angles.
+/// D^j_{m1,m2}(phi, theta, psi) = E^(I*m1*phi) * d^j_{m1,m2}(theta) * E^(I*m2*psi)
+fn wigner_d_symbolic(
+  j: f64,
+  m1: f64,
+  m2: f64,
+  phi: &Expr,
+  theta: &Expr,
+  psi: &Expr,
+) -> Option<Expr> {
+  // Require integer/half-integer j, m1, m2 such that j±m_i are integers.
+  let j2 = (2.0 * j).round() as i64;
+  let m1_2 = (2.0 * m1).round() as i64;
+  let m2_2 = (2.0 * m2).round() as i64;
+  if (j2 as f64 - 2.0 * j).abs() > 1e-10
+    || (m1_2 as f64 - 2.0 * m1).abs() > 1e-10
+    || (m2_2 as f64 - 2.0 * m2).abs() > 1e-10
+  {
+    return None;
+  }
+  // j and m_i must have the same parity (in 2x form).
+  if (j2 - m1_2) % 2 != 0 || (j2 - m2_2) % 2 != 0 {
+    return None;
+  }
+  if m1_2.abs() > j2 || m2_2.abs() > j2 {
+    return Some(Expr::Integer(0));
+  }
+  let d = wigner_d_small_symbolic(j2, m1_2, m2_2, theta)?;
+  // Build E^(I*m1*phi) * E^(I*m2*psi).
+  let exp_factor = |coef: f64, ang: &Expr| -> Option<Expr> {
+    if coef == 0.0 {
+      return Some(Expr::Integer(1));
+    }
+    let coef_expr = if coef.fract() == 0.0 {
+      Expr::Integer(coef as i128)
+    } else {
+      // Half-integer case: represent as Rational.
+      let num = (2.0 * coef).round() as i128;
+      Some(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(num), Expr::Integer(2)].into(),
+      })?
+    };
+    let exponent = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Identifier("I".to_string()),
+        coef_expr,
+        ang.clone(),
+      ]
+      .into(),
+    };
+    Some(Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Constant("E".to_string()), exponent].into(),
+    })
+  };
+  let e1 = exp_factor(m1, phi)?;
+  let e2 = exp_factor(m2, psi)?;
+  Some(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![e1, d, e2].into(),
+  })
+}
+
+/// Symbolic small d-matrix d^j_{m1,m2}(theta). `j2 = 2j`, `m1_2 = 2*m1`,
+/// `m2_2 = 2*m2` (so all integers).
+fn wigner_d_small_symbolic(
+  j2: i64,
+  m1_2: i64,
+  m2_2: i64,
+  theta: &Expr,
+) -> Option<Expr> {
+  let jpm1 = (j2 + m1_2) / 2;
+  let jmm1 = (j2 - m1_2) / 2;
+  let jpm2 = (j2 + m2_2) / 2;
+  let jmm2 = (j2 - m2_2) / 2;
+  let m1mm2 = (m1_2 - m2_2) / 2;
+
+  let s_min = 0i64.max(m1mm2);
+  let s_max = jpm1.min(jmm2);
+  if s_min > s_max {
+    return Some(Expr::Integer(0));
+  }
+
+  // Helper: factorial as i128.
+  fn fact(n: i64) -> i128 {
+    let mut r: i128 = 1;
+    for k in 2..=n {
+      r *= k as i128;
+    }
+    r
+  }
+  // Prefactor: Sqrt[(j+m1)!(j-m1)!(j+m2)!(j-m2)!].
+  let pref_under = fact(jpm1) * fact(jmm1) * fact(jpm2) * fact(jmm2);
+  let prefactor = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Integer(pref_under)].into(),
+  };
+
+  // Build half-angle expressions Cos[theta/2], Sin[theta/2].
+  let half_theta = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      },
+      theta.clone(),
+    ]
+    .into(),
+  };
+  let cos_ht = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![half_theta.clone()].into(),
+  };
+  let sin_ht = Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![half_theta].into(),
+  };
+
+  // Build the sum.
+  let mut terms: Vec<Expr> = Vec::new();
+  for s in s_min..=s_max {
+    let cos_exp = j2 + m1_2 / 1 - m2_2 / 1; // (2j+m1-m2-2s) but in 2x form
+    let cos_pow = (2 * j2 + 2 * m1_2 - 2 * m2_2 - 4 * s) / 2; // not quite
+    // Actually exponents are integers when j ± m_i are integers:
+    //   cos_power = 2j + m1 - m2 - 2s = j2 + m1_2/1 - m2_2/1 - 2s
+    //   Wait, 2j + m1 - m2 = j2 + m1_2/2*... no.
+    // Re-derive: cos_power = 2j + m1 - m2 - 2s. With m_i = m_i_2 / 2,
+    //   cos_power = j2 + (m1_2 - m2_2)/2 - 2s = j2 + m1mm2 - 2s.
+    let _ = (cos_exp, cos_pow); // unused, recompute below
+    let cos_power = j2 + m1mm2 - 2 * s;
+    // sin_power = m2 - m1 + 2s = -m1mm2 + 2s.
+    let sin_power = -m1mm2 + 2 * s;
+    if cos_power < 0 || sin_power < 0 {
+      // Should not happen for valid s in range.
+      continue;
+    }
+    let sign_exp = m1mm2 + s;
+    let sign: i128 = if sign_exp.rem_euclid(2) == 0 { 1 } else { -1 };
+    let denom: i128 = fact(jpm1 - s)
+      * fact(s)
+      * fact(s - m1mm2)
+      * fact(jmm2 - s);
+
+    let cos_term = if cos_power == 0 {
+      Expr::Integer(1)
+    } else if cos_power == 1 {
+      cos_ht.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![cos_ht.clone(), Expr::Integer(cos_power as i128)].into(),
+      }
+    };
+    let sin_term = if sin_power == 0 {
+      Expr::Integer(1)
+    } else if sin_power == 1 {
+      sin_ht.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![sin_ht.clone(), Expr::Integer(sin_power as i128)].into(),
+      }
+    };
+    // coefficient = sign / denom (Rational).
+    let coeff = if denom == 1 {
+      Expr::Integer(sign)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(sign), Expr::Integer(denom)].into(),
+      }
+    };
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![coeff, cos_term, sin_term].into(),
+    });
+  }
+
+  let sum = if terms.is_empty() {
+    Expr::Integer(0)
+  } else if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }
+  };
+  Some(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![prefactor, sum].into(),
+  })
 }
 
 /// Compute the Wigner (small) d-matrix element d^j_{m1,m2}(theta).
@@ -1491,7 +1683,15 @@ fn wigner_d_small(j: f64, m1: f64, m2: f64, theta: f64) -> f64 {
     let cos_power = (2.0 * j + m1 - m2 - 2.0 * s as f64) as i64;
     let sin_power = (m2 - m1 + 2.0 * s as f64) as i64;
 
-    let sign = if s % 2 == 0 { 1.0 } else { -1.0 };
+    // Wigner d-matrix sign: (-1)^(m1 - m2 + s). The m1-m2 offset matches
+    // Mathematica's WignerD convention (cf. Edmonds), distinguishing it
+    // from a naive (-1)^s formula.
+    let sign_exp = m1mm2 + s;
+    let sign = if sign_exp.rem_euclid(2) == 0 {
+      1.0
+    } else {
+      -1.0
+    };
     let term =
       sign * cos_ht.powi(cos_power as i32) * sin_ht.powi(sin_power as i32)
         / denom;

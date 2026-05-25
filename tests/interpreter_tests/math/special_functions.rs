@@ -4942,9 +4942,9 @@ mod wigner_d_tests {
 
   #[test]
   fn j_half_off_diag() {
-    // d^{1/2}_{1/2, -1/2}(theta) = -sin(theta/2)
+    // d^{1/2}_{1/2, -1/2}(theta) = sin(theta/2) (Mathematica convention).
     let theta: f64 = 1.0;
-    let expected = -(theta / 2.0).sin();
+    let expected = (theta / 2.0).sin();
     let result: f64 =
       interpret(&format!("WignerD[{{1/2, 1/2, -1/2}}, {}]", theta))
         .unwrap()
@@ -4971,6 +4971,24 @@ mod wigner_d_tests {
     assert_eq!(
       interpret("WignerD[{1, 0, 0}]").unwrap(),
       "WignerD[{1, 0, 0}]"
+    );
+  }
+
+  #[test]
+  fn symbolic_full_audit_case() {
+    // Audit case (with ASCII placeholders for ψ, θ, ϕ):
+    //   WignerD[{1, 0, 1}, p, q, r] = -(Sqrt[2]*E^(I*r)*Cos[q/2]*Sin[q/2])
+    assert_eq!(
+      interpret("WignerD[{1, 0, 1}, p, q, r]").unwrap(),
+      "-(Sqrt[2]*E^(I*r)*Cos[q/2]*Sin[q/2])"
+    );
+  }
+
+  #[test]
+  fn symbolic_full_diagonal() {
+    assert_eq!(
+      interpret("WignerD[{1, 1, 1}, a, b, c]").unwrap(),
+      "E^(I*a + I*c)*Cos[b/2]^2"
     );
   }
 }
