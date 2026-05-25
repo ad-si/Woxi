@@ -10297,6 +10297,152 @@ pub fn asymptotic_integrate_ast(
   let var = &args[1];
   let spec = &args[2];
 
+  // Definite-integral form: AsymptoticIntegrate[f, {t, a, b}, x -> x0]
+  //                        or AsymptoticIntegrate[f, {t, a, b}, {x, x0, n}]
+  // Expand f as a series in x at x0, then integrate over t from a to b.
+  if let Expr::List(int_items) = var
+    && int_items.len() == 3
+    && matches!(&int_items[0], Expr::Identifier(_))
+  {
+    // leading_only = true for `x -> x0`, false for `{x, x0, n}`
+    // For the rule form, expand the series order until a non-zero coefficient
+    // is found (capped to avoid runaway expansion).
+    let (x_var_expr, x0_expr, leading_only, mut order) = match spec {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref().clone(), replacement.as_ref().clone(), true, 1),
+      Expr::FunctionCall { name, args: rargs }
+        if name == "Rule" && rargs.len() == 2 =>
+      {
+        (rargs[0].clone(), rargs[1].clone(), true, 1)
+      }
+      Expr::List(items) if items.len() == 3 => {
+        let n = crate::functions::math_ast::expr_to_i128(&items[2])
+          .unwrap_or(1);
+        (items[0].clone(), items[1].clone(), false, n)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AsymptoticIntegrate".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+
+    let max_order = if leading_only { 20 } else { order };
+    let mut series_result;
+    loop {
+      let series_spec = Expr::List(
+        vec![x_var_expr.clone(), x0_expr.clone(), Expr::Integer(order)].into(),
+      );
+      series_result = series_ast(&[f.clone(), series_spec])?;
+      if !leading_only {
+        break;
+      }
+      // Check if the series is identically zero up to this order; if so,
+      // expand further.
+      let all_zero = match &series_result {
+        Expr::Integer(0) => true,
+        Expr::FunctionCall { name, args: sargs }
+          if name == "SeriesData" && sargs.len() >= 6 =>
+        {
+          if let Expr::List(coeffs) = &sargs[2] {
+            coeffs.iter().all(|c| matches!(c, Expr::Integer(0)))
+          } else {
+            false
+          }
+        }
+        _ => false,
+      };
+      if !all_zero || order >= max_order {
+        break;
+      }
+      order += 1;
+    }
+
+    if let Expr::FunctionCall { name, args: sargs } = &series_result
+      && name == "SeriesData"
+      && sargs.len() >= 6
+      && let Expr::List(coeffs) = &sargs[2]
+    {
+      let nmin =
+        crate::functions::math_ast::expr_to_i128(&sargs[3]).unwrap_or(0);
+      let den =
+        crate::functions::math_ast::expr_to_i128(&sargs[5]).unwrap_or(1);
+
+      let mut terms: Vec<Expr> = Vec::new();
+      for (i, coeff) in coeffs.iter().enumerate() {
+        let integrated = integrate_ast(&[coeff.clone(), var.clone()])?;
+        let integrated_val =
+          crate::evaluator::evaluate_expr_to_expr(&integrated)?;
+        if matches!(integrated_val, Expr::Integer(0)) {
+          continue;
+        }
+        let power_num = nmin + i as i128;
+        let base = if matches!(&x0_expr, Expr::Integer(0)) {
+          x_var_expr.clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(x_var_expr.clone()),
+            right: Box::new(x0_expr.clone()),
+          }
+        };
+        let power_expr = if power_num == 0 {
+          Expr::Integer(1)
+        } else if power_num == den {
+          base
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(base),
+            right: Box::new(crate::functions::math_ast::make_rational(
+              power_num, den,
+            )),
+          }
+        };
+        let term = if matches!(power_expr, Expr::Integer(1)) {
+          integrated_val
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(integrated_val),
+            right: Box::new(power_expr),
+          }
+        };
+        terms.push(crate::evaluator::evaluate_expr_to_expr(&term)?);
+        if leading_only {
+          break;
+        }
+      }
+
+      if terms.is_empty() {
+        return Ok(Expr::Integer(0));
+      }
+      let result = if terms.len() == 1 {
+        terms.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: terms.into(),
+        }
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+
+    // Fallback: series wasn't a SeriesData (e.g. f is constant).
+    // Use Normal -> Integrate path.
+    let polynomial = crate::evaluator::evaluate_expr_to_expr(
+      &Expr::FunctionCall {
+        name: "Normal".to_string(),
+        args: vec![series_result].into(),
+      },
+    )?;
+    let integrated = integrate_ast(&[polynomial, var.clone()])?;
+    return crate::evaluator::evaluate_expr_to_expr(&integrated);
+  }
+
   // spec must be {x, x0, n}
   if !matches!(spec, Expr::List(items) if items.len() == 3) {
     return Ok(Expr::FunctionCall {

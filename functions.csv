@@ -2821,7 +2821,7 @@ PairedSmoothHistogram,,🚫,,9.0,2880
 PrimitiveRootList,List of primitive roots modulo n,✅,none,10.0,2880
 RefreshRate,,🚫,,6.0,2880
 AlphabeticOrder,Compare strings in alphabetical order,✅,none,10.3,2889
-AsymptoticIntegrate,Compute the series expansion of an antiderivative,✅,pure,11.3,2889
+AsymptoticIntegrate,Compute the asymptotic series of an integral or antiderivative,✅,pure,11.3,2889
 DerivativeFilter,,🚫,,8.0,2889
 DifferenceDelta,Compute the forward difference of an expression,✅,pure,7.0,2889
 GraphPeriphery,Vertices with maximum eccentricity,✅,1,8.0,2889

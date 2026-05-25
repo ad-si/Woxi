@@ -4933,6 +4933,51 @@ mod asymptotic_integrate {
       "x^3/3"
     );
   }
+
+  #[test]
+  fn definite_sin_tx_rule_form() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Sin[t*x], {t, 0, 1}, x -> 0]").unwrap(),
+      "x/2"
+    );
+  }
+
+  #[test]
+  fn definite_sin_tx_list_form_order_5() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Sin[t*x], {t, 0, 1}, {x, 0, 5}]")
+        .unwrap(),
+      "x/2 - x^3/24 + x^5/720"
+    );
+  }
+
+  #[test]
+  fn definite_cos_tx_rule_form() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Cos[t*x], {t, 0, 1}, x -> 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn definite_exp_tx_rule_form() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Exp[t*x], {t, 0, 1}, x -> 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn definite_rule_form_expands_until_nonzero() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[(t*x)^2, {t, 0, 1}, x -> 0]").unwrap(),
+      "x^2/3"
+    );
+    assert_eq!(
+      interpret("AsymptoticIntegrate[(t*x)^5, {t, 0, 1}, x -> 0]").unwrap(),
+      "x^5/6"
+    );
+  }
 }
 
 mod max_limit {
