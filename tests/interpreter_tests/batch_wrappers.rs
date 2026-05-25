@@ -3203,6 +3203,32 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn gradient_filter_basic_radius_1() {
+    // 1-D GradientFilter[list, 1]: |central difference| with edge replication.
+    // wolframscript: {0.5, 1., 1., 1., 1.5, 0., 1.5, 1., 1., 1., 0.5}
+    assert_eq!(
+      interpret("GradientFilter[{1, 2, 3, 4, 5, 1, 5, 4, 3, 2, 1}, 1]")
+        .unwrap(),
+      "{0.5, 1., 1., 1., 1.5, 0., 1.5, 1., 1., 1., 0.5}"
+    );
+  }
+  #[test]
+  fn gradient_filter_constant_list() {
+    // Constant input → all zeros.
+    assert_eq!(
+      interpret("GradientFilter[{5, 5, 5, 5}, 1]").unwrap(),
+      "{0., 0., 0., 0.}"
+    );
+  }
+  #[test]
+  fn gradient_filter_unevaluated_for_non_list() {
+    // Non-list, non-image input stays symbolic.
+    assert_eq!(
+      interpret("GradientFilter[x, 1]").unwrap(),
+      "GradientFilter[x, 1]"
+    );
+  }
+  #[test]
   fn upsample_basic() {
     assert_eq!(
       interpret("Upsample[{a, b, c}, 2]").unwrap(),

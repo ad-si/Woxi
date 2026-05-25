@@ -2280,6 +2280,54 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// arg isn't an image or list. (MaxFilter and MinFilter have their own
 /// arg1 warnings inside their existing list-processing dispatch in
 /// math_functions.rs.)
+/// GradientFilter[list, r] — magnitude of the gradient of a 1-D list.
+///
+/// For radius `r = 1` this returns `|central difference|` (edge-replicated
+/// at the boundaries), matching wolframscript's `GradientFilter[list, 1]`
+/// output for purely numeric input. Larger radii or non-list inputs stay
+/// symbolic.
+pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GradientFilter".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  if let (Expr::List(elems), Some(r)) = (
+    &args[0],
+    crate::functions::math_ast::try_eval_to_f64(&args[1])
+      .filter(|v| *v >= 0.0)
+      .map(|v| v as usize),
+  ) && r == 1
+  {
+    let n = elems.len();
+    let mut values: Vec<f64> = Vec::with_capacity(n);
+    for e in elems.iter() {
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(e) else {
+        return Ok(unevaluated());
+      };
+      values.push(v);
+    }
+    if n == 0 {
+      return Ok(Expr::List(Vec::new().into()));
+    }
+    if n == 1 {
+      // Single-element list: gradient is zero.
+      return Ok(Expr::List(vec![Expr::Real(0.0)].into()));
+    }
+    let mut out: Vec<Expr> = Vec::with_capacity(n);
+    for i in 0..n {
+      let left = if i == 0 { values[0] } else { values[i - 1] };
+      let right = if i + 1 >= n { values[n - 1] } else { values[i + 1] };
+      let g = (right - left) / 2.0;
+      out.push(Expr::Real(g.abs()));
+    }
+    return Ok(Expr::List(out.into()));
+  }
+  Ok(unevaluated())
+}
+
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // MedianFilter[list, r] — replace each element with the median of its
   // range-r neighbourhood (window clipped at boundaries).

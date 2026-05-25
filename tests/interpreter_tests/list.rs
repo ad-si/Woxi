@@ -3205,10 +3205,7 @@ mod random_color {
   fn no_args_three_channels_in_unit_range() {
     // Each of the three RGB channels must lie in [0, 1).
     assert_eq!(
-      interpret(
-        "AllTrue[Apply[List, RandomColor[]], (0 <= # < 1) &]"
-      )
-      .unwrap(),
+      interpret("AllTrue[Apply[List, RandomColor[]], (0 <= # < 1) &]").unwrap(),
       "True"
     );
   }
