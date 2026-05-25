@@ -782,6 +782,64 @@ mod integrate_linear_power {
   }
 }
 
+mod find_distribution_parameters {
+  use super::*;
+
+  #[test]
+  fn laplace_mle() {
+    // μ = median = (1.5 + 2.8)/2 = 2.15
+    // σ = mean(|x_i - μ|) = (1.65 + 0.65 + 0.65 + 2.15)/4 = 1.275
+    assert_eq!(
+      interpret(
+        "FindDistributionParameters[{1.5, 2.8, 4.3, 0.5}, \
+         LaplaceDistribution[mu, sigma]]"
+      )
+      .unwrap(),
+      "{mu -> 2.15, sigma -> 1.275}"
+    );
+  }
+
+  #[test]
+  fn normal_mle() {
+    // μ = mean = 2.275
+    // σ = sqrt(variance) with denominator n
+    assert_eq!(
+      interpret(
+        "FindDistributionParameters[{1.5, 2.8, 4.3, 0.5}, \
+         NormalDistribution[mu, sigma]]"
+      )
+      .unwrap(),
+      "{mu -> 2.275, sigma -> 1.4254385290148432}"
+    );
+  }
+
+  #[test]
+  fn laplace_odd_count() {
+    // Median of {1, 2, 3, 4, 5} is 3.
+    // |1-3|+|2-3|+|3-3|+|4-3|+|5-3| = 6. b = 6/5 = 1.2.
+    // wolframscript coerces integer-data results to Real, so check 3.
+    assert_eq!(
+      interpret(
+        "FindDistributionParameters[{1, 2, 3, 4, 5}, \
+         LaplaceDistribution[m, b]]"
+      )
+      .unwrap(),
+      "{m -> 3., b -> 1.2}"
+    );
+  }
+
+  #[test]
+  fn unknown_distribution_stays_symbolic() {
+    assert_eq!(
+      interpret(
+        "FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]"
+      )
+      .unwrap(),
+      "FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]"
+    );
+  }
+}
+
 mod parameter_mixture_distribution {
   use super::*;
 

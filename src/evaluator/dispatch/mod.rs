@@ -2666,6 +2666,109 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // FindDistributionParameters[data, dist[var1, var2]]
+  // Closed-form MLE for known distributions.
+  if name == "FindDistributionParameters"
+    && args.len() == 2
+    && let Expr::List(_) = &args[0]
+    && let Expr::FunctionCall {
+      name: dist_name,
+      args: dist_args,
+    } = &args[1]
+    && dist_args.len() == 2
+  {
+    let data = args[0].clone();
+    let v1 = dist_args[0].clone();
+    let v2 = dist_args[1].clone();
+    // wolframscript always returns MachinePrecision results.
+    let to_real = |v: Expr| -> Result<Expr, InterpreterError> {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![v].into(),
+      })
+    };
+    let rule = |p: Expr, v: Expr| Expr::Rule {
+      pattern: Box::new(p),
+      replacement: Box::new(v),
+    };
+    match dist_name.as_str() {
+      "LaplaceDistribution" => {
+        let median = crate::functions::median_ast(&data)?;
+        let median = crate::evaluator::evaluate_expr_to_expr(&median)?;
+        // mean(|x - median|)
+        let abs_diffs = if let Expr::List(items) = &data {
+          let mut out = Vec::with_capacity(items.len());
+          for x in items.iter() {
+            let diff = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(x.clone()),
+              right: Box::new(median.clone()),
+            };
+            let abs_expr = Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![diff].into(),
+            };
+            out.push(crate::evaluator::evaluate_expr_to_expr(&abs_expr)?);
+          }
+          Expr::List(out.into())
+        } else {
+          unreachable!()
+        };
+        let scale = crate::functions::mean_ast(&[
+          abs_diffs,
+        ])?;
+        let scale = crate::evaluator::evaluate_expr_to_expr(&scale)?;
+        return Ok(Expr::List(
+          vec![rule(v1, to_real(median)?), rule(v2, to_real(scale)?)].into(),
+        ));
+      }
+      "NormalDistribution" => {
+        let mean = crate::functions::mean_ast(&[
+          data.clone(),
+        ])?;
+        let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
+        // population variance: sum((x - mean)^2) / n
+        let (n, squared_diffs) = if let Expr::List(items) = &data {
+          let mut out = Vec::with_capacity(items.len());
+          for x in items.iter() {
+            let diff = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(x.clone()),
+              right: Box::new(mean.clone()),
+            };
+            let sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(diff),
+              right: Box::new(Expr::Integer(2)),
+            };
+            out.push(crate::evaluator::evaluate_expr_to_expr(&sq)?);
+          }
+          (items.len() as i128, Expr::List(out.into()))
+        } else {
+          unreachable!()
+        };
+        let sum_sq = Expr::FunctionCall {
+          name: "Total".to_string(),
+          args: vec![squared_diffs].into(),
+        };
+        let variance = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(sum_sq),
+          right: Box::new(Expr::Integer(n)),
+        };
+        let std_dev = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![variance].into(),
+        };
+        let std_dev = crate::evaluator::evaluate_expr_to_expr(&std_dev)?;
+        return Ok(Expr::List(
+          vec![rule(v1, to_real(mean)?), rule(v2, to_real(std_dev)?)].into(),
+        ));
+      }
+      _ => {}
+    }
+  }
+
   // ParameterMixtureDistribution[
   //   BinomialDistribution[n, p],
   //   Distributed[p, BetaDistribution[α, β]]]
