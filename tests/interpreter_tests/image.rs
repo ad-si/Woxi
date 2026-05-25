@@ -1510,6 +1510,77 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageAssemble on a grid of same-shape images concatenates them
+  // without resizing and preserves pixel precision (no Byte
+  // round-trip).
+  #[test]
+  fn image_assemble_grid_preserves_pixels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAssemble[\
+         {{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}, \
+         {Image[{{0.5, 0.6}}], Image[{{0.7, 0.8}}]}}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, \
+        0.30000001192092896, 0.4000000059604645}, \
+       {0.5, 0.6000000238418579, \
+        0.699999988079071, 0.800000011920929}}"
+    );
+  }
+
+  // Flat-list form assembles into a single row.
+  #[test]
+  fn image_assemble_flat_row() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAssemble[{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, \
+        0.30000001192092896, 0.4000000059604645}}"
+    );
+  }
+
+  // The output preserves channel count and image type for matching inputs.
+  #[test]
+  fn image_assemble_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageAssemble[\
+         {{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[ImageAssemble[\
+         {{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}}]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
+  // ImageDimensions stays additive across cells (no resampling).
+  #[test]
+  fn image_assemble_dimensions_are_additive() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageAssemble[\
+         {{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}, \
+         {Image[{{0.5, 0.6}}], Image[{{0.7, 0.8}}]}}]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+  }
+
   // ImageCompose on same-size images replaces the background with the
   // overlay (no blending unless explicit). The result preserves the
   // background's channel count.

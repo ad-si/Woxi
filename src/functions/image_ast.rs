@@ -911,7 +911,11 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // matches wolframscript's f32 image arithmetic. Other types do
       // the subtraction in f64 directly.
       let negate = |v: f64| -> f64 {
-        if is_real32 { (1.0_f32 - v as f32) as f64 } else { 1.0 - v }
+        if is_real32 {
+          (1.0_f32 - v as f32) as f64
+        } else {
+          1.0 - v
+        }
       };
       let mut new_data = Vec::with_capacity(data.len());
       if ch == 4 {
@@ -4066,6 +4070,103 @@ fn fit_image_to_cell(
   }
 }
 
+/// Fast path for `ImageAssemble[grid]` where every cell is an Image
+/// with the same width, height, channels, and image type. Concatenates
+/// the f64 buffers directly, preserving precision and image type.
+fn try_assemble_same_shape(outer: &[Expr]) -> Option<Expr> {
+  // Normalise to a 2D grid: if any item is a list, all must be lists.
+  let is_2d = outer.iter().all(|e| matches!(e, Expr::List(_)));
+  let rows: Vec<&[Expr]> = if is_2d {
+    let mut out: Vec<&[Expr]> = Vec::with_capacity(outer.len());
+    for r in outer {
+      if let Expr::List(items) = r {
+        out.push(items.as_ref());
+      } else {
+        return None;
+      }
+    }
+    out
+  } else {
+    vec![outer]
+  };
+  if rows.is_empty() || rows[0].is_empty() {
+    return None;
+  }
+  let cols = rows[0].len();
+  if rows.iter().any(|r| r.len() != cols) {
+    return None;
+  }
+
+  // Reference shape: take from the first cell.
+  let (cw, ch_count, image_type, ch_first) = match &rows[0][0] {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      image_type,
+      ..
+    } => (*width, *height, *image_type, *channels),
+    _ => return None,
+  };
+
+  // Every cell must match the reference shape and type.
+  for row in &rows {
+    for cell in row.iter() {
+      let Expr::Image {
+        width,
+        height,
+        channels,
+        image_type: t,
+        ..
+      } = cell
+      else {
+        return None;
+      };
+      if *width != cw
+        || *height != ch_count
+        || *channels != ch_first
+        || *t != image_type
+      {
+        return None;
+      }
+    }
+  }
+
+  let num_rows = rows.len();
+  let num_cols = cols;
+  let cell_w = cw as usize;
+  let cell_h = ch_count as usize;
+  let c = ch_first as usize;
+  let out_w = num_cols * cell_w;
+  let out_h = num_rows * cell_h;
+  let mut out = vec![0.0_f64; out_w * out_h * c];
+
+  for (r, row) in rows.iter().enumerate() {
+    for (col, cell) in row.iter().enumerate() {
+      let Expr::Image { data, .. } = cell else {
+        return None;
+      };
+      for y in 0..cell_h {
+        for x in 0..cell_w {
+          let src = (y * cell_w + x) * c;
+          let dst = ((r * cell_h + y) * out_w + col * cell_w + x) * c;
+          for k in 0..c {
+            out[dst + k] = data[src + k];
+          }
+        }
+      }
+    }
+  }
+
+  Some(Expr::Image {
+    width: out_w as u32,
+    height: out_h as u32,
+    channels: ch_first,
+    data: Arc::new(out),
+    image_type,
+  })
+}
+
 /// ImageAssemble[{{im11,...,im1n},...,{imm1,...,immn}}] — assemble grid.
 /// ImageAssemble[{im1,...,imn}] — assemble as single row.
 /// ImageAssemble[grid, fitting] — with fitting mode.
@@ -4103,6 +4204,15 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ImageAssemble: empty list".into(),
     ));
+  }
+
+  // Fast path: every cell is an Image of the same width, height,
+  // channel count, and image type. Concatenate the f64 buffers
+  // directly without going through the image crate's u8 buffer.
+  if fitting == "None"
+    && let Some(out) = try_assemble_same_shape(outer)
+  {
+    return Ok(out);
   }
 
   // Determine max channels across all input images
