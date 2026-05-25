@@ -2292,7 +2292,11 @@ fn kmeans_colors(
   centers
 }
 
-/// ImageApply[f, img] - Apply function to each pixel value
+/// ImageApply[f, img] — apply f to each pixel. Grayscale images pass
+/// the scalar pixel value as f's single argument. Multi-channel images
+/// pass the channel list (as a List) as f's single argument; if f
+/// returns a list, the output keeps that channel count, otherwise the
+/// output is single-channel (grayscale).
 pub fn image_apply_ast(
   args: &[Expr],
   eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
@@ -2304,71 +2308,112 @@ pub fn image_apply_ast(
   }
 
   let func = &args[0];
+  let apply = |arg: Expr| -> Result<Expr, InterpreterError> {
+    let call = match func {
+      Expr::Function { body } => {
+        crate::syntax::substitute_slots(body, &[arg])
+      }
+      _ => Expr::FunctionCall {
+        name: crate::syntax::expr_to_string(func),
+        args: vec![arg].into(),
+      },
+    };
+    eval_fn(&call)
+  };
 
-  match &args[1] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      image_type,
-    } => {
-      let ch = *channels as usize;
-      let w = *width as usize;
-      let h = *height as usize;
-      let num_pixels = w * h;
-      let mut new_data = Vec::with_capacity(data.len());
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[1]
+  else {
+    return Err(InterpreterError::EvaluationError(
+      "ImageApply: second argument is not an Image".into(),
+    ));
+  };
+  let ch = *channels as usize;
+  let w = *width as usize;
+  let h = *height as usize;
+  let num_pixels = w * h;
 
-      for i in 0..num_pixels {
-        if ch == 1 {
-          // Scalar pixel
-          let pixel_expr = Expr::Real(data[i]);
-          let call = Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(func),
-            args: vec![pixel_expr].into(),
-          };
-          let result = eval_fn(&call)?;
-          new_data.push(expr_to_f64(&result)?);
-        } else {
-          // Vector pixel {r, g, b}
-          let base = i * ch;
-          let pixel_list: Vec<Expr> =
-            (0..ch).map(|c| Expr::Real(data[base + c])).collect();
-          let pixel_expr = Expr::List(pixel_list.into());
-          let call = Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(func),
-            args: vec![pixel_expr].into(),
-          };
-          let mut result = eval_fn(&call)?;
-          match &mut result {
-            Expr::List(vals) => {
-              for v in vals {
-                new_data.push(expr_to_f64(v)?);
-              }
-            }
-            _ => {
-              // If the function returns a scalar, use it for all channels
-              let val = expr_to_f64(&result)?;
-              for _ in 0..ch {
-                new_data.push(val);
-              }
-            }
-          }
+  // For Real32 images, snap pixel values to their f32 representation
+  // before passing them to f. wolframscript's image arithmetic is done
+  // in f32 throughout; without the snap, a function like `#^2 &` would
+  // square the f64 value and round differently on the way back into the
+  // f32 buffer.
+  let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+  let snap = |v: f64| -> f64 { if is_real32 { (v as f32) as f64 } else { v } };
+
+  if ch == 1 {
+    let mut new_data = Vec::with_capacity(data.len());
+    for i in 0..num_pixels {
+      let result = apply(Expr::Real(snap(data[i])))?;
+      new_data.push(expr_to_f64(&result)?);
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: 1,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    });
+  }
+
+  // Multi-channel: probe the first pixel to determine the output
+  // channel count.
+  let first_pixel = Expr::List(
+    (0..ch)
+      .map(|c| Expr::Real(snap(data[c])))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let first_result = apply(first_pixel)?;
+  let out_ch = match &first_result {
+    Expr::List(vs) => vs.len(),
+    _ => 1,
+  };
+  if out_ch == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageApply: function returned an empty list".into(),
+    ));
+  }
+
+  let mut new_data: Vec<f64> = Vec::with_capacity(num_pixels * out_ch);
+  let push_result = |result: &Expr,
+                     dst: &mut Vec<f64>|
+   -> Result<(), InterpreterError> {
+    match result {
+      Expr::List(vs) => {
+        for v in vs.iter() {
+          dst.push(expr_to_f64(v)?);
         }
       }
-
-      Ok(Expr::Image {
-        width: *width,
-        height: *height,
-        channels: *channels,
-        data: Arc::new(new_data),
-        image_type: *image_type,
-      })
+      other => dst.push(expr_to_f64(other)?),
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageApply: second argument is not an Image".into(),
-    )),
+    Ok(())
+  };
+  push_result(&first_result, &mut new_data)?;
+  for i in 1..num_pixels {
+    let base = i * ch;
+    let pixel_list = Expr::List(
+      (0..ch)
+        .map(|c| Expr::Real(snap(data[base + c])))
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let result = apply(pixel_list)?;
+    push_result(&result, &mut new_data)?;
   }
+
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: out_ch as u8,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// Extract `(r, g, b, optional_alpha)` from a color directive (RGBColor

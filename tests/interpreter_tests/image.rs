@@ -1510,6 +1510,64 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageApply on an RGB image with a function that returns a scalar
+  // collapses each pixel's channel list to that scalar — the result
+  // is a 1-channel (grayscale) image.
+  #[test]
+  fn image_apply_max_rgb_returns_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[Max, Image[{{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}}}]]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.8999999761581421}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageApply[Max, Image[{{{0.1, 0.5, 0.2}}}]]]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  // Min has the same channel-collapsing behaviour.
+  #[test]
+  fn image_apply_min_rgb_returns_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[Min, Image[{{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.30000001192092896}}"
+    );
+  }
+
+  // Grayscale passes the scalar pixel directly to f.
+  #[test]
+  fn image_apply_function_to_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageApply[#^2 &, Image[{{0.5, 0.8}}]]]").unwrap(),
+      "{{0.25, 0.64000004529953}}"
+    );
+  }
+
+  // When f returns a list, the result keeps that channel count.
+  #[test]
+  fn image_apply_reverse_keeps_three_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[Reverse, Image[{{{0.1, 0.5, 0.2}}}]]]"
+      )
+      .unwrap(),
+      "{{{0.20000000298023224, 0.5, 0.10000000149011612}}}"
+    );
+  }
+
   // ImageCollage on same-shape images lays them out as a near-square
   // grid without resizing. The matching ws layouts for n=2 and n=4
   // happen to land on cols = ceil(sqrt(n)), rows = ceil(n/cols).
