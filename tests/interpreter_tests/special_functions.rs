@@ -638,6 +638,39 @@ mod bessel_j_zero {
       "0"
     );
   }
+
+  #[test]
+  fn bessel_j_at_matching_zero_is_zero() {
+    // BesselJ[n, BesselJZero[n, k]] = 0 exactly, regardless of n and k.
+    assert_eq!(interpret("BesselJ[0, BesselJZero[0, 1]]").unwrap(), "0");
+    assert_eq!(interpret("BesselJ[3, BesselJZero[3, 5]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn bessel_j_at_symbolic_matching_zero_is_zero() {
+    // Symbolic order matches → identity still holds.
+    assert_eq!(interpret("BesselJ[n, BesselJZero[n, k]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn bessel_j_at_three_arg_zero_is_zero() {
+    // BesselJZero[n, k, x0] is a different zero of J_n; identity still holds.
+    assert_eq!(
+      interpret("BesselJ[2, BesselJZero[2, 1, 4]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn bessel_j_at_mismatched_zero_stays_symbolic() {
+    // J_1 at a zero of J_0 is not generally zero.
+    let result = interpret("BesselJ[1, BesselJZero[0, 1]]").unwrap();
+    assert!(
+      result.contains("BesselJ"),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
 }
 
 mod bessel_y_zero {
@@ -681,6 +714,23 @@ mod bessel_y_zero {
     assert_eq!(
       interpret("Chop[BesselY[0, N[BesselYZero[0, 1]]]]").unwrap(),
       "0"
+    );
+  }
+
+  #[test]
+  fn bessel_y_at_matching_zero_is_zero() {
+    // BesselY[n, BesselYZero[n, k]] = 0 by definition.
+    assert_eq!(interpret("BesselY[0, BesselYZero[0, 1]]").unwrap(), "0");
+    assert_eq!(interpret("BesselY[2, BesselYZero[2, 4]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn bessel_y_at_mismatched_zero_stays_symbolic() {
+    let result = interpret("BesselY[1, BesselYZero[0, 1]]").unwrap();
+    assert!(
+      result.contains("BesselY"),
+      "expected unevaluated, got {}",
+      result
     );
   }
 }

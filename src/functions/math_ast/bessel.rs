@@ -3,6 +3,36 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// True if `z_expr` is `<zero_name>[order, ...]` whose first argument equals
+/// `n_expr`. Used to detect `BesselJ[n, BesselJZero[n, k, ...]] = 0` and
+/// `BesselY[n, BesselYZero[n, k, ...]] = 0`.
+fn is_matching_bessel_zero(
+  n_expr: &Expr,
+  z_expr: &Expr,
+  zero_name: &str,
+) -> bool {
+  if let Expr::FunctionCall { name, args } = z_expr
+    && name == zero_name
+    && !args.is_empty()
+    && exprs_equal_simple(&args[0], n_expr)
+  {
+    return true;
+  }
+  false
+}
+
+/// Conservative structural equality for the order argument: enough to match
+/// the common cases `Integer == Integer`, `Real == Real`, and identical
+/// symbolic forms.
+fn exprs_equal_simple(a: &Expr, b: &Expr) -> bool {
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => x == y,
+    (Expr::Real(x), Expr::Real(y)) => x == y,
+    (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
+    _ => crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b),
+  }
+}
+
 /// BesselJ[n, z] - Bessel function of the first kind
 pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -12,6 +42,11 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n_expr = &args[0];
   let z_expr = &args[1];
+
+  // BesselJ[n, BesselJZero[n, k, ...]] = 0 by definition of the zeros.
+  if is_matching_bessel_zero(n_expr, z_expr, "BesselJZero") {
+    return Ok(Expr::Integer(0));
+  }
 
   // Extract numeric values
   let n_val = match n_expr {
@@ -941,6 +976,11 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n_expr = &args[0];
   let z_expr = &args[1];
+
+  // BesselY[n, BesselYZero[n, k, ...]] = 0 by definition of the zeros.
+  if is_matching_bessel_zero(n_expr, z_expr, "BesselYZero") {
+    return Ok(Expr::Integer(0));
+  }
 
   // BesselY[n, 0]: Y_0(0) = -Infinity, Y_n(0) = ComplexInfinity for n > 0
   if matches!(z_expr, Expr::Integer(0))
