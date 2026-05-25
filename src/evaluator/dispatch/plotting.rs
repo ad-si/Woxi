@@ -429,9 +429,7 @@ pub fn dispatch_plotting(
         ) =>
     {
       Some(quiet_plot(|| {
-        crate::functions::plot3d::graphics3d_ast(&[Expr::List(
-          vec![].into(),
-        )])
+        crate::functions::plot3d::graphics3d_ast(&[Expr::List(vec![].into())])
       }))
     }
     "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {

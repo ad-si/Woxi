@@ -1361,7 +1361,22 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec().into(),
   };
 
-  let (n, m) = match &args[0] {
+  // Split positional args from trailing Rule options.
+  let mut positional: Vec<&Expr> = Vec::new();
+  let mut options: Vec<Expr> = Vec::new();
+  for a in args {
+    if matches!(a, Expr::Rule { .. }) {
+      options.push(a.clone());
+    } else {
+      positional.push(a);
+    }
+  }
+
+  if positional.is_empty() {
+    return Ok(unevaluated());
+  }
+
+  let (n, m) = match positional[0] {
     Expr::List(items) if items.len() == 2 => {
       match (
         crate::functions::math_ast::expr_to_i128(&items[0]),
@@ -1380,9 +1395,9 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
 
-  let k = match args.len() {
+  let k = match positional.len() {
     1 => None,
-    2 => match crate::functions::math_ast::expr_to_i128(&args[1]) {
+    2 => match crate::functions::math_ast::expr_to_i128(positional[1]) {
       Some(k) if k >= 0 => Some(k as usize),
       _ => return Ok(unevaluated()),
     },
@@ -1397,6 +1412,11 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  let opts_list = if options.is_empty() {
+    None
+  } else {
+    Some(Expr::List(options.into()))
+  };
   let make_graph = |edges: Vec<(i128, i128)>| -> Expr {
     let vertex_list: Vec<Expr> =
       (1..=n).map(|v| Expr::Integer(v as i128)).collect();
@@ -1407,10 +1427,14 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
       })
       .collect();
+    let mut graph_args =
+      vec![Expr::List(vertex_list.into()), Expr::List(edge_list.into())];
+    if let Some(opts) = &opts_list {
+      graph_args.push(opts.clone());
+    }
     Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertex_list.into()), Expr::List(edge_list.into())]
-        .into(),
+      args: graph_args.into(),
     }
   };
 

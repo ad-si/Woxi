@@ -1382,6 +1382,35 @@ mod random_graph {
       "{Graph, Graph, Graph}"
     );
   }
+
+  #[test]
+  fn with_options() {
+    // Audit case: trailing Rule options pass through as Graph options.
+    assert_eq!(
+      interpret(
+        "Head[RandomGraph[{10, 20}, VertexLabels -> Placed[Automatic, Center], \
+         VertexSize -> 0.75]]"
+      )
+      .unwrap(),
+      "Graph"
+    );
+    assert_eq!(
+      interpret(
+        "Length[VertexList[RandomGraph[{10, 20}, \
+         VertexLabels -> Placed[Automatic, Center], VertexSize -> 0.75]]]"
+      )
+      .unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret(
+        "Length[EdgeList[RandomGraph[{10, 20}, \
+         VertexLabels -> Placed[Automatic, Center], VertexSize -> 0.75]]]"
+      )
+      .unwrap(),
+      "20"
+    );
+  }
 }
 
 mod cases {
