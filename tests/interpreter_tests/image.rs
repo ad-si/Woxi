@@ -810,10 +810,8 @@ mod image_processing {
   fn image_adjust_negative_contrast() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], -0.5]]"
-      )
-      .unwrap(),
+      interpret("ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], -0.5]]")
+        .unwrap(),
       "{{0.30000001192092896, 0.5, 0.699999988079071}}"
     );
   }
@@ -823,10 +821,8 @@ mod image_processing {
   fn image_adjust_positive_contrast_clamps() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[ImageAdjust[Image[{{0.2, 0.5, 0.7}}], 0.5]]"
-      )
-      .unwrap(),
+      interpret("ImageData[ImageAdjust[Image[{{0.2, 0.5, 0.7}}], 0.5]]")
+        .unwrap(),
       "{{0.05000000447034836, 0.5, 0.7999999523162842}}"
     );
   }
@@ -837,10 +833,8 @@ mod image_processing {
   fn image_adjust_brightness_only() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 2}]]"
-      )
-      .unwrap(),
+      interpret("ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 2}]]")
+        .unwrap(),
       "{{0.30000001192092896, 1., 1.}}"
     );
   }
@@ -850,10 +844,8 @@ mod image_processing {
   fn image_adjust_brightness_then_contrast() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0.5, 0.5}]]"
-      )
-      .unwrap(),
+      interpret("ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0.5, 0.5}]]")
+        .unwrap(),
       "{{0., 0.875, 1.}}"
     );
   }
@@ -1043,6 +1035,88 @@ mod image_processing {
       interpret("ImageDimensions[ImageRotate[Image[{{0, 0.5, 1}}], Pi]]")
         .unwrap();
     assert_eq!(result, "{3, 1}");
+  }
+
+  // ColorSeparate splits an image into one single-channel image per
+  // channel. The returned images preserve width, height and image type.
+  #[test]
+  fn color_separate_rgb_yields_three_grayscales() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[ColorSeparate[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ColorSeparate[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}]][[1]]]"
+      )
+      .unwrap(),
+      "{{1., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ColorSeparate[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}]][[2]]]"
+      )
+      .unwrap(),
+      "{{0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ColorSeparate[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}]][[3]]]"
+      )
+      .unwrap(),
+      "{{0., 0.}}"
+    );
+  }
+
+  // RGBA → 4 images, the last being the alpha channel.
+  #[test]
+  fn color_separate_rgba_yields_four_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[ColorSeparate[Image[{{{1.0, 0.0, 0.0, 0.5}}}]]]"
+      )
+      .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ColorSeparate[Image[{{{1.0, 0.0, 0.0, 0.5}}}]][[4]]]"
+      )
+      .unwrap(),
+      "{{0.5}}"
+    );
+  }
+
+  // Grayscale → one image, the input itself (passes through unchanged).
+  #[test]
+  fn color_separate_grayscale_passthrough() {
+    clear_state();
+    assert_eq!(
+      interpret("Length[ColorSeparate[Image[{{0.1, 0.2}}]]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("ImageData[ColorSeparate[Image[{{0.1, 0.2}}]][[1]]]").unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224}}"
+    );
+  }
+
+  // Each separated image keeps the original spatial dimensions.
+  #[test]
+  fn color_separate_preserves_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ColorSeparate[Image[{{{1.0, 0.0, 0.0}, {0.5, 0.5, 0.5}}}]][[1]]]"
+      )
+      .unwrap(),
+      "{2, 1}"
+    );
   }
 
   // Dilation on an Image: replace each pixel with the max of its

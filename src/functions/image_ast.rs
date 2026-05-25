@@ -1224,10 +1224,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Expr::List(items) = &args[1]
     && items.len() == 2
   {
-    Adjust::BrightnessContrast(
-      expr_to_f64(&items[0])?,
-      expr_to_f64(&items[1])?,
-    )
+    Adjust::BrightnessContrast(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?)
   } else {
     Adjust::Contrast(expr_to_f64(&args[1])?)
   };
@@ -3045,20 +3042,43 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// ColorSeparate[img] — split image into channels stub. Real channel
-/// separation is not implemented yet; this stub matches wolframscript's
-/// imginv warning for non-image input.
+/// ColorSeparate[img] — return one single-channel image per channel
+/// of the input. Grayscale images pass through unchanged (as a list
+/// of one). The output images preserve the input's width, height, and
+/// image type.
 pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !matches!(&args[0], Expr::Image { .. }) {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
     crate::emit_message(&format!(
       "ColorSeparate::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
+    return Ok(Expr::FunctionCall {
+      name: "ColorSeparate".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let ch = *channels as usize;
+  let n = (*width as usize) * (*height as usize);
+  let mut images = Vec::with_capacity(ch);
+  for c_idx in 0..ch {
+    let channel_data: Vec<f64> =
+      (0..n).map(|i| data[i * ch + c_idx]).collect();
+    images.push(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: 1,
+      data: Arc::new(channel_data),
+      image_type: *image_type,
+    });
   }
-  Ok(Expr::FunctionCall {
-    name: "ColorSeparate".to_string(),
-    args: args.to_vec().into(),
-  })
+  Ok(Expr::List(images.into()))
 }
 
 /// ColorQuantize[img, n] — color quantization stub. Real quantization is
