@@ -1193,72 +1193,92 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      image_type,
-    } => {
-      let contrast = if args.len() == 2 {
-        expr_to_f64(&args[1])?
-      } else {
-        0.0
-      };
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageAdjust::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "ImageAdjust".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
 
-      // Find min and max values
-      let mut min_val = f64::MAX;
-      let mut max_val = f64::MIN;
-      for &v in data.iter() {
-        if v < min_val {
-          min_val = v;
-        }
-        if v > max_val {
-          max_val = v;
-        }
-      }
-
-      let range = max_val - min_val;
-      let new_data: Vec<f64> = if range > 0.0 {
-        data
-          .iter()
-          .map(|&v| {
-            let normalized = (v - min_val) / range;
-            // Apply contrast: shift midtones away from 0.5
-            if contrast != 0.0 {
-              let shifted = (normalized - 0.5) * (1.0 + contrast) + 0.5;
-              shifted.clamp(0.0, 1.0)
-            } else {
-              normalized
-            }
-          })
-          .collect()
-      } else {
-        vec![0.5; data.len()]
-      };
-
-      Ok(Expr::Image {
-        width: *width,
-        height: *height,
-        channels: *channels,
-        data: Arc::new(new_data),
-        image_type: *image_type,
-      })
-    }
-    _ => {
-      // Match wolframscript: emit ImageAdjust::imginv and return the
-      // call unevaluated rather than erroring.
-      crate::emit_message(&format!(
-        "ImageAdjust::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageAdjust".to_string(),
-        args: args.to_vec().into(),
-      })
-    }
+  // 1-arg form: rescale to [0, 1] using actual min/max.
+  // 2-arg scalar form: contrast curve, no rescaling.
+  // 2-arg {c, b} form: brightness then contrast.
+  enum Adjust {
+    Rescale,
+    Contrast(f64),
+    BrightnessContrast(f64, f64),
   }
+  let mode = if args.len() == 1 {
+    Adjust::Rescale
+  } else if let Expr::List(items) = &args[1]
+    && items.len() == 2
+  {
+    Adjust::BrightnessContrast(
+      expr_to_f64(&items[0])?,
+      expr_to_f64(&items[1])?,
+    )
+  } else {
+    Adjust::Contrast(expr_to_f64(&args[1])?)
+  };
+
+  // Real32 images store f32-quantised values in an f64 buffer. Round
+  // each pixel to its f32 representation before the computation and
+  // again on the way out so the result matches wolframscript's f32
+  // image arithmetic.
+  let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+  let snap = |v: f64| -> f64 { if is_real32 { (v as f32) as f64 } else { v } };
+  let apply = |v: f64| -> f64 {
+    let v = snap(v);
+    let r = match mode {
+      Adjust::Rescale => unreachable!(),
+      Adjust::Contrast(c) => (0.5 + (1.0 + c) * (v - 0.5)).clamp(0.0, 1.0),
+      Adjust::BrightnessContrast(c, b) => {
+        let after_b = (v * (1.0 + b)).clamp(0.0, 1.0);
+        (0.5 + (1.0 + c) * (after_b - 0.5)).clamp(0.0, 1.0)
+      }
+    };
+    snap(r)
+  };
+
+  let new_data: Vec<f64> = if matches!(mode, Adjust::Rescale) {
+    let mut min_val = f64::MAX;
+    let mut max_val = f64::MIN;
+    for &v in data.iter() {
+      if v < min_val {
+        min_val = v;
+      }
+      if v > max_val {
+        max_val = v;
+      }
+    }
+    let range = max_val - min_val;
+    if range > 0.0 {
+      data.iter().map(|&v| (v - min_val) / range).collect()
+    } else {
+      vec![0.5; data.len()]
+    }
+  } else {
+    data.iter().map(|&v| apply(v)).collect()
+  };
+
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// ImageReflect[img] / ImageReflect[img, side] / ImageReflect[img, s1 -> s2].

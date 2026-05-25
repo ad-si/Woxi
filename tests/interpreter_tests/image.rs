@@ -779,7 +779,8 @@ mod image_processing {
       "{{0, 1, 1, 0, 0}}"
     );
     assert_eq!(
-      interpret("ImageData[Binarize[Image[{{0.2, 0.7}}], {0.2, 0.7}]]").unwrap(),
+      interpret("ImageData[Binarize[Image[{{0.2, 0.7}}], {0.2, 0.7}]]")
+        .unwrap(),
       "{{1, 1}}"
     );
   }
@@ -790,6 +791,71 @@ mod image_processing {
     let result =
       interpret("ImageData[ImageAdjust[Image[{{0.0, 0.5, 1.0}}]]]").unwrap();
     assert_eq!(result, "{{0., 0.5, 1.}}");
+  }
+
+  // ImageAdjust[image, c] applies the contrast curve
+  // v' = 0.5 + (1 + c)*(v - 0.5), clamped to [0, 1]. No rescaling.
+  // c = 0 is the identity, so pixel values pass through unchanged.
+  #[test]
+  fn image_adjust_contrast_zero_is_identity() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], 0]]").unwrap(),
+      "{{0.10000000149011612, 0.5, 0.8999999761581421}}"
+    );
+  }
+
+  // Negative contrast pulls values toward 0.5.
+  #[test]
+  fn image_adjust_negative_contrast() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], -0.5]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.5, 0.699999988079071}}"
+    );
+  }
+
+  // Positive contrast pushes values away from 0.5 and clamps.
+  #[test]
+  fn image_adjust_positive_contrast_clamps() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.2, 0.5, 0.7}}], 0.5]]"
+      )
+      .unwrap(),
+      "{{0.05000000447034836, 0.5, 0.7999999523162842}}"
+    );
+  }
+
+  // ImageAdjust[image, {c, b}] applies brightness (v * (1 + b)) before
+  // the contrast curve. For c = 0 the contrast step is the identity.
+  #[test]
+  fn image_adjust_brightness_only() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 2}]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 1., 1.}}"
+    );
+  }
+
+  // Combined brightness + contrast: brightness applied first.
+  #[test]
+  fn image_adjust_brightness_then_contrast() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0.5, 0.5}]]"
+      )
+      .unwrap(),
+      "{{0., 0.875, 1.}}"
+    );
   }
 
   #[test]
