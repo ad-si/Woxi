@@ -3523,10 +3523,113 @@ pub fn dispatch_math_functions(
         return Some(Ok(Expr::List(roots.into())));
       }
     }
-    // DMSList[degrees] — convert decimal degrees to {d, m, s}
+    // DMSList[degrees] — convert decimal degrees to {d, m, s}.
+    // DMSList[{d, m, s}] — re-normalise an unnormalised DMS triple.
     "DMSList" if args.len() == 1 => {
       let val =
         evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+
+      // List input: combine into decimal degrees first, then re-emit.
+      if let Expr::List(items) = &val
+        && items.len() == 3
+      {
+        // If any component is a Real, route through f64 — the result
+        // carries the same float precision artifacts wolframscript shows
+        // (e.g. `4.999999999997584` for `{11, -30, 5.}`).
+        let any_real = items.iter().any(|e| matches!(e, Expr::Real(_)));
+        if any_real {
+          let d_num =
+            crate::functions::math_ast::try_eval_to_f64(&items[0]);
+          let m_num =
+            crate::functions::math_ast::try_eval_to_f64(&items[1]);
+          let s_num =
+            crate::functions::math_ast::try_eval_to_f64(&items[2]);
+          if let (Some(dv), Some(mv), Some(sv)) = (d_num, m_num, s_num) {
+            let total_deg = dv + mv / 60.0 + sv / 3600.0;
+            let sign = if total_deg < 0.0 { -1.0 } else { 1.0 };
+            let abs_deg = total_deg.abs();
+            let d_part = abs_deg.trunc();
+            let min_total = (abs_deg - d_part) * 60.0;
+            let m_part = min_total.trunc();
+            let s_part = (min_total - m_part) * 60.0;
+            let d_i = (sign * d_part) as i128;
+            let m_i = (sign * m_part) as i128;
+            let s_real = sign * s_part;
+            return Some(Ok(Expr::List(
+              vec![
+                Expr::Integer(d_i),
+                Expr::Integer(m_i),
+                Expr::Real(s_real),
+              ]
+              .into(),
+            )));
+          }
+        }
+        // All-rational input: combine into a rational degree value and
+        // fall through to the existing rational-path conversion below.
+        let parts: Option<Vec<(i128, i128)>> = items
+          .iter()
+          .map(|e| crate::functions::math_ast::expr_to_rational(e))
+          .collect();
+        if let Some(p) = parts
+          && p.len() == 3
+        {
+          // total = d + m/60 + s/3600 expressed as a single (num, den).
+          // Multiply each by 3600 to share a denominator, then sum.
+          let (dn, dd) = p[0];
+          let (mn, md) = p[1];
+          let (sn, sd) = p[2];
+          // num/den = (dn * 3600 * md * sd + mn * 60 * dd * sd + sn * dd * md)
+          //         / (dd * md * sd * 3600)
+          let num: i128 = dn
+            .checked_mul(3600)?
+            .checked_mul(md)?
+            .checked_mul(sd)?
+            .checked_add(
+              mn.checked_mul(60)?
+                .checked_mul(dd)?
+                .checked_mul(sd)?,
+            )?
+            .checked_add(sn.checked_mul(dd)?.checked_mul(md)?)?;
+          let den: i128 =
+            dd.checked_mul(md)?.checked_mul(sd)?.checked_mul(3600)?;
+          let g = gcd_i128(num.abs(), den.abs()).max(1);
+          let (num, den) = (num / g, den / g);
+          // Now emit via the same logic as the scalar-rational path below.
+          let d = num / den;
+          let remainder = num - d * den;
+          let min_num = remainder * 60;
+          let m = min_num / den;
+          let min_rem = min_num - m * den;
+          let sec_num = min_rem * 60;
+          let s = sec_num / den;
+          let sec_rem = sec_num - s * den;
+          if sec_rem == 0 {
+            return Some(Ok(Expr::List(
+              vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)]
+                .into(),
+            )));
+          } else {
+            let g2 = gcd_i128(sec_num.abs(), den.abs());
+            return Some(Ok(Expr::List(
+              vec![
+                Expr::Integer(d),
+                Expr::Integer(m),
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![
+                    Expr::Integer(sec_num / g2),
+                    Expr::Integer(den / g2),
+                  ]
+                  .into(),
+                },
+              ]
+              .into(),
+            )));
+          }
+        }
+      }
+
       if let Some((num, den)) =
         crate::functions::math_ast::expr_to_rational(&val)
       {

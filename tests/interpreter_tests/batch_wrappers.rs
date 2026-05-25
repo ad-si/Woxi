@@ -3666,6 +3666,31 @@ mod batch_unevaluated_wrappers_2 {
   fn dms_list_basic() {
     assert_eq!(interpret("DMSList[72803/1800]").unwrap(), "{40, 26, 46}");
   }
+  #[test]
+  fn dms_list_from_triple_with_negative_minutes() {
+    // wolframscript: DMSList[{11, -30, 5.}] = {10, 30, 4.999999999997584}.
+    assert_eq!(
+      interpret("DMSList[{11, -30, 5.}]").unwrap(),
+      "{10, 30, 4.999999999997584}"
+    );
+  }
+  #[test]
+  fn dms_list_from_integer_triple() {
+    // All-integer input → all-integer output, normalised via rationals.
+    assert_eq!(interpret("DMSList[{10, 30, 5}]").unwrap(), "{10, 30, 5}");
+  }
+  #[test]
+  fn dms_list_from_rational_triple() {
+    assert_eq!(interpret("DMSList[{1, 2, 1/2}]").unwrap(), "{1, 2, 1/2}");
+  }
+  #[test]
+  fn dms_list_from_negative_triple() {
+    // wolframscript: DMSList[{-10, -30, -5.}] = {-10, -30, -4.999999999997584}.
+    assert_eq!(
+      interpret("DMSList[{-10, -30, -5.}]").unwrap(),
+      "{-10, -30, -4.999999999997584}"
+    );
+  }
 
   // WordCount
   #[test]
