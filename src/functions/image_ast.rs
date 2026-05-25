@@ -2854,43 +2854,9 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let h = *height as usize;
       let ch = *channels as usize;
 
-      // Parse row spec
-      let (r1, r2) = match &args[1] {
-        Expr::Integer(n) => {
-          let n = *n as usize;
-          (0usize, n.min(h))
-        }
-        Expr::List(pair) if pair.len() == 2 => {
-          let a = expr_to_f64(&pair[0])? as usize;
-          let b = expr_to_f64(&pair[1])? as usize;
-          // 1-indexed to 0-indexed
-          let r1 = a.saturating_sub(1).min(h);
-          let r2 = b.min(h);
-          (r1, r2)
-        }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "ImageTake: second argument must be n or {r1, r2}".into(),
-          ));
-        }
-      };
-
-      // Parse column spec (optional)
+      let (r1, r2) = parse_take_range(&args[1], h)?;
       let (c1, c2) = if args.len() == 3 {
-        match &args[2] {
-          Expr::List(pair) if pair.len() == 2 => {
-            let a = expr_to_f64(&pair[0])? as usize;
-            let b = expr_to_f64(&pair[1])? as usize;
-            let c1 = a.saturating_sub(1).min(w);
-            let c2 = b.min(w);
-            (c1, c2)
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(
-              "ImageTake: third argument must be {c1, c2}".into(),
-            ));
-          }
-        }
+        parse_take_range(&args[2], w)?
       } else {
         (0, w)
       };
@@ -2932,6 +2898,64 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec().into(),
       })
     }
+  }
+}
+
+/// Resolve a 1-indexed position (positive or negative) to a 0-indexed
+/// offset within `total`. Negative values count from the end.
+fn resolve_take_index(
+  e: &Expr,
+  total: usize,
+) -> Result<usize, InterpreterError> {
+  let n: i128 = match e {
+    Expr::Integer(i) => *i,
+    _ => expr_to_f64(e)? as i128,
+  };
+  if n > 0 {
+    Ok(((n as usize) - 1).min(total.saturating_sub(1)))
+  } else if n < 0 {
+    let abs = (-n) as usize;
+    if abs > total {
+      Ok(0)
+    } else {
+      Ok(total - abs)
+    }
+  } else {
+    Err(InterpreterError::EvaluationError(
+      "ImageTake: index 0 is not valid".into(),
+    ))
+  }
+}
+
+/// Parse one axis of an ImageTake spec into a 0-indexed `[lo, hi)` range.
+/// Supports: `All`, integer (first/last n), `{i}` (single row), `{i, j}`.
+fn parse_take_range(
+  spec: &Expr,
+  total: usize,
+) -> Result<(usize, usize), InterpreterError> {
+  match spec {
+    Expr::Identifier(s) if s == "All" => Ok((0, total)),
+    Expr::Integer(n) => {
+      let n = *n;
+      if n >= 0 {
+        Ok((0, (n as usize).min(total)))
+      } else {
+        let abs = (-n) as usize;
+        Ok((total.saturating_sub(abs), total))
+      }
+    }
+    Expr::List(items) if items.len() == 1 => {
+      let idx = resolve_take_index(&items[0], total)?;
+      Ok((idx, idx + 1))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let lo = resolve_take_index(&items[0], total)?;
+      let hi = resolve_take_index(&items[1], total)? + 1;
+      Ok((lo, hi))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "ImageTake: range must be n, {i}, {i, j}, or All".into(),
+    )),
   }
 }
 

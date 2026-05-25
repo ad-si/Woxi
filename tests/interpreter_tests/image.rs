@@ -808,6 +808,108 @@ mod image_processing {
       "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}}"
     );
   }
+
+  // Negative n means take the last |n| rows.
+  #[test]
+  fn image_take_negative_n_takes_last_rows() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2}, {0.3, 0.4}, {0.5, 0.6}}], -2]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.4000000059604645}, \
+       {0.5, 0.6000000238418579}}"
+    );
+  }
+
+  // {-n} is a single row indexed from the end.
+  #[test]
+  fn image_take_single_negative_row() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2}, {0.3, 0.4}, {0.5, 0.6}}], {-2}]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.4000000059604645}}"
+    );
+  }
+
+  // {r1, r2} with negative endpoints counts from the end.
+  #[test]
+  fn image_take_negative_row_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2}, {0.3, 0.4}, {0.5, 0.6}}], {-2, -1}]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.4000000059604645}, \
+       {0.5, 0.6000000238418579}}"
+    );
+  }
+
+  // All selects every row/column in that axis.
+  #[test]
+  fn image_take_all_rows_and_col_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], All, {1, 2}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224}, \
+       {0.4000000059604645, 0.5}}"
+    );
+  }
+
+  // Column spec accepts integers (first/last n) just like the row spec.
+  #[test]
+  fn image_take_all_rows_negative_col_count() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], All, -2]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224, 0.30000001192092896}, \
+       {0.5, 0.6000000238418579}}"
+    );
+  }
+
+  #[test]
+  fn image_take_all_rows_positive_col_count() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], All, 2]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224}, \
+       {0.4000000059604645, 0.5}}"
+    );
+  }
+
+  // Integer column spec with integer row spec.
+  #[test]
+  fn image_take_int_row_int_col() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2}, {0.3, 0.4}, {0.5, 0.6}}], 2, 1]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612}, {0.30000001192092896}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTake[Image[{{0.1, 0.2}, {0.3, 0.4}, {0.5, 0.6}}], 2, -1]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224}, {0.4000000059604645}}"
+    );
+  }
 }
 
 mod image_advanced {
