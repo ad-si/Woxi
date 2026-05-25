@@ -6391,6 +6391,42 @@ mod batch_inert_symbols_2 {
   }
 
   #[test]
+  fn around_scaled() {
+    // Around[x, Scaled[s]] becomes Around[x, |x|*s].
+    assert_eq!(
+      interpret("Around[4.1836, Scaled[0.05]]").unwrap(),
+      "Around[4.1836, 0.20918000000000003]"
+    );
+  }
+
+  #[test]
+  fn around_scaled_integer_value() {
+    // Around[10, Scaled[0.1]] → Around[10., 1.].
+    assert_eq!(
+      interpret("Around[10, Scaled[0.1]]").unwrap(),
+      "Around[10., 1.]"
+    );
+  }
+
+  #[test]
+  fn around_scaled_negative_value() {
+    // |x| is used so the uncertainty is non-negative.
+    assert_eq!(
+      interpret("Around[-2.0, Scaled[0.25]]").unwrap(),
+      "Around[-2., 0.5]"
+    );
+  }
+
+  #[test]
+  fn around_scaled_symbolic_stays() {
+    // Non-numeric value: Scaled isn't reduced.
+    assert_eq!(
+      interpret("Around[x, Scaled[0.1]]").unwrap(),
+      "Around[x, Scaled[0.1]]"
+    );
+  }
+
+  #[test]
   fn specularity() {
     assert_eq!(
       interpret("Specularity[White, 10]").unwrap(),

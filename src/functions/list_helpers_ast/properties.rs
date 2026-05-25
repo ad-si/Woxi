@@ -114,8 +114,9 @@ pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     matrix.push(cells.iter().collect());
   }
 
-  let is_zero =
-    |e: &Expr| matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0);
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+  };
   let mut all_zero = true;
   for row in &matrix {
     for cell in row {

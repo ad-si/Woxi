@@ -2119,6 +2119,28 @@ pub fn dispatch_complex_and_special(
     // Around[value, uncertainty] — convert integer value to real when uncertainty is real
     "Around" if args.len() >= 2 => {
       let mut new_args = args.to_vec();
+      // Around[x, Scaled[s]] → Around[x, x*s] when both numeric.
+      if let Expr::FunctionCall {
+        name: sname,
+        args: sargs,
+      } = &new_args[1]
+        && sname == "Scaled"
+        && sargs.len() == 1
+      {
+        let x_num =
+          crate::functions::math_ast::try_eval_to_f64(&new_args[0]);
+        let s_num = crate::functions::math_ast::try_eval_to_f64(&sargs[0]);
+        if let (Some(x), Some(s)) = (x_num, s_num) {
+          new_args[1] = Expr::Real(x.abs() * s);
+          if matches!(&new_args[0], Expr::Integer(_)) {
+            new_args[0] = Expr::Real(x);
+          }
+          return Some(Ok(Expr::FunctionCall {
+            name: "Around".to_string(),
+            args: new_args.into(),
+          }));
+        }
+      }
       if let Expr::Integer(n) = &new_args[0] {
         // If any other argument is Real, convert integer to Real
         let has_real = new_args[1..].iter().any(|a| matches!(a, Expr::Real(_)));
