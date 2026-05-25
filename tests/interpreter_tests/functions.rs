@@ -2307,6 +2307,39 @@ mod geo_projection {
   }
 }
 
+mod sound {
+  use super::*;
+
+  #[test]
+  fn renders_as_minus_sound_minus() {
+    // Sound[primitives] formats as -Sound- in the REPL, like Graphics
+    // formats as -Graphics-.
+    assert_eq!(interpret("Sound[SoundNote[0]]").unwrap(), "-Sound-");
+  }
+
+  #[test]
+  fn renders_with_list_of_plays() {
+    assert_eq!(
+      interpret(
+        "Sound[{Play[Sin[1000*t], {t, 0, 0.2}], Play[Sin[500*t], {t, 0, 0.5}]}]"
+      )
+      .unwrap(),
+      "-Sound-"
+    );
+  }
+
+  #[test]
+  fn head_is_sound() {
+    assert_eq!(interpret("Head[Sound[SoundNote[0]]]").unwrap(), "Sound");
+  }
+
+  #[test]
+  fn empty_stays_symbolic() {
+    // Sound[] with no args has nothing to render; stay unevaluated.
+    assert_eq!(interpret("Sound[]").unwrap(), "Sound[]");
+  }
+}
+
 mod sound_volume {
   use super::*;
 

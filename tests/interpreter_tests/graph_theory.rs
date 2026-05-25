@@ -1318,10 +1318,8 @@ mod random_graph {
   #[test]
   fn edges_are_unique() {
     assert_eq!(
-      interpret(
-        "Length[DeleteDuplicates[EdgeList[RandomGraph[{8, 12}]]]]"
-      )
-      .unwrap(),
+      interpret("Length[DeleteDuplicates[EdgeList[RandomGraph[{8, 12}]]]]")
+        .unwrap(),
       "12"
     );
   }
@@ -1346,10 +1344,7 @@ mod random_graph {
 
   #[test]
   fn k_variant_returns_list() {
-    assert_eq!(
-      interpret("Length[RandomGraph[{5, 4}, 3]]").unwrap(),
-      "3"
-    );
+    assert_eq!(interpret("Length[RandomGraph[{5, 4}, 3]]").unwrap(), "3");
     assert_eq!(
       interpret("Head /@ RandomGraph[{5, 4}, 3]").unwrap(),
       "{Graph, Graph, Graph}"

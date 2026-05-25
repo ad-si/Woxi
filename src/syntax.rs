@@ -6423,6 +6423,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Sound[...] always renders as -Sound- (matching wolframscript REPL),
+      // regardless of what primitives it wraps.
+      if name == "Sound" && !args.is_empty() {
+        return "-Sound-".to_string();
+      }
       // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
         if is_output {

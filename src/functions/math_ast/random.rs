@@ -1409,11 +1409,8 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![
-        Expr::List(vertex_list.into()),
-        Expr::List(edge_list.into()),
-      ]
-      .into(),
+      args: vec![Expr::List(vertex_list.into()), Expr::List(edge_list.into())]
+        .into(),
     }
   };
 
@@ -1428,8 +1425,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match k {
     None => Ok(one_graph(&all_edges)),
     Some(k) => {
-      let graphs: Vec<Expr> =
-        (0..k).map(|_| one_graph(&all_edges)).collect();
+      let graphs: Vec<Expr> = (0..k).map(|_| one_graph(&all_edges)).collect();
       Ok(Expr::List(graphs.into()))
     }
   }
