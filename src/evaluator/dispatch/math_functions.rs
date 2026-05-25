@@ -1037,6 +1037,9 @@ pub fn dispatch_math_functions(
     "N" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::n_ast(args));
     }
+    "SetPrecision" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::set_precision_ast(args));
+    }
     "RandomInteger" => {
       return Some(crate::functions::math_ast::random_integer_ast(args));
     }

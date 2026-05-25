@@ -918,21 +918,24 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (0.0, 0.0, 1.0, 1.0, r)
         }
         3 => {
-          let extract_pair = |e: &Expr, label: &str| -> Result<(f64, f64), InterpreterError> {
-            if let Expr::List(items) = e
-              && items.len() == 2
-              && let (Some(a), Some(b)) = (expr_to_num(&items[0]), expr_to_num(&items[1]))
-            {
-              Ok((a, b))
-            } else {
-              Err(InterpreterError::EvaluationError(format!(
-                "BinormalDistribution: invalid {} (expected a 2-element list)",
-                label
-              )))
-            }
-          };
+          let extract_pair =
+            |e: &Expr, label: &str| -> Result<(f64, f64), InterpreterError> {
+              if let Expr::List(items) = e
+                && items.len() == 2
+                && let (Some(a), Some(b)) =
+                  (expr_to_num(&items[0]), expr_to_num(&items[1]))
+              {
+                Ok((a, b))
+              } else {
+                Err(InterpreterError::EvaluationError(format!(
+                  "BinormalDistribution: invalid {} (expected a 2-element list)",
+                  label
+                )))
+              }
+            };
           let (mu1, mu2) = extract_pair(&dargs[0], "mean vector")?;
-          let (sigma1, sigma2) = extract_pair(&dargs[1], "standard deviations")?;
+          let (sigma1, sigma2) =
+            extract_pair(&dargs[1], "standard deviations")?;
           let r = expr_to_num(&dargs[2]).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "BinormalDistribution: invalid correlation".into(),
@@ -990,7 +993,8 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .into(),
         ));
       };
-      let mut marginal_rates: Vec<f64> = Vec::with_capacity(marginals_list.len());
+      let mut marginal_rates: Vec<f64> =
+        Vec::with_capacity(marginals_list.len());
       for item in marginals_list.iter() {
         let mi = expr_to_num(item).ok_or_else(|| {
           InterpreterError::EvaluationError(

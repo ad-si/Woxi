@@ -3436,13 +3436,14 @@ mod random_variate {
   #[test]
   fn binormal_single() {
     // BinormalDistribution[rho] is 2-D standard normal with correlation rho.
-    let result =
-      interpret("RandomVariate[BinormalDistribution[1/2]]").unwrap();
+    let result = interpret("RandomVariate[BinormalDistribution[1/2]]").unwrap();
     assert!(result.starts_with('{'));
     assert!(result.ends_with('}'));
     let inside = &result[1..result.len() - 1];
-    let vals: Vec<f64> =
-      inside.split(',').map(|s| s.trim().parse().unwrap()).collect();
+    let vals: Vec<f64> = inside
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
     assert_eq!(vals.len(), 2);
     assert!(vals[0].is_finite() && vals[1].is_finite());
   }
@@ -3470,10 +3471,9 @@ mod random_variate {
   #[test]
   fn multivariate_poisson_single() {
     // MultivariatePoissonDistribution[1, {2, 3}] → 2-D non-negative integers.
-    let result = interpret(
-      "RandomVariate[MultivariatePoissonDistribution[1, {2, 3}]]",
-    )
-    .unwrap();
+    let result =
+      interpret("RandomVariate[MultivariatePoissonDistribution[1, {2, 3}]]")
+        .unwrap();
     assert!(result.starts_with('{'));
     assert!(result.ends_with('}'));
   }

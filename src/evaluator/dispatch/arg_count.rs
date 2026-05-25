@@ -915,6 +915,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SetAttributes" => Some((2, 2)),
     "SetCoordinates" => Some((0, 1)),
     "SetDirectory" => Some((0, 1)),
+    "SetPrecision" => Some((2, 2)),
     "SetStreamPosition" => Some((2, 2)),
     "Sharpen" => Some((1, 2)),
     "ShearingMatrix" => Some((3, 3)),

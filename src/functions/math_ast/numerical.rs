@@ -557,6 +557,222 @@ pub fn bigfloat_to_string(
   }
 }
 
+/// SetPrecision[expr, precision] — set every numeric leaf of `expr` to a
+/// fixed precision without otherwise evaluating the expression.
+///
+/// Unlike `N`, SetPrecision walks the expression tree symbolically: numeric
+/// leaves are converted to BigFloat (or, with MachinePrecision, demoted to
+/// a machine-precision Real), while symbolic heads and identifiers are
+/// preserved verbatim.
+pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "SetPrecision".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let expr = &args[0];
+  let target = &args[1];
+
+  if matches!(target, Expr::Identifier(s) if s == "MachinePrecision") {
+    return set_precision_machine(expr);
+  }
+
+  let precision_f64 = match target {
+    Expr::Integer(n) if *n > 0 => *n as f64,
+    other => {
+      if let Some(v) = try_eval_to_f64(other)
+        && v > 0.0
+      {
+        v
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "SetPrecision".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  };
+
+  use astro_float::{Consts, RoundingMode};
+  let mut cc = Consts::new().map_err(|e| {
+    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+  })?;
+  let rm = RoundingMode::ToEven;
+  let prec_usize = precision_f64.floor().max(1.0) as usize;
+  let bits = nominal_bits(prec_usize) + 64;
+
+  // Truncate the displayed decimal to the digit count wolframscript uses
+  // for this precision tier (matches N's existing logic).
+  let display_bits = {
+    let b = (precision_f64 * std::f64::consts::LOG2_10).ceil() as usize + 36;
+    ((b + 63) & !63).max(64)
+  };
+  let max_fraction_digits =
+    ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+
+  set_precision_walk(
+    expr,
+    precision_f64,
+    bits,
+    Some(max_fraction_digits),
+    rm,
+    &mut cc,
+  )
+}
+
+/// Walk `expr` and convert every numeric leaf to a BigFloat at `precision`.
+fn set_precision_walk(
+  expr: &Expr,
+  precision: f64,
+  bits: usize,
+  max_fraction_digits: Option<usize>,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => {
+      leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
+    }
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
+    }
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        out.push(set_precision_walk(
+          item,
+          precision,
+          bits,
+          max_fraction_digits,
+          rm,
+          cc,
+        )?);
+      }
+      Ok(Expr::List(out.into()))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut out = Vec::with_capacity(args.len());
+      for a in args.iter() {
+        out.push(set_precision_walk(
+          a,
+          precision,
+          bits,
+          max_fraction_digits,
+          rm,
+          cc,
+        )?);
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: out.into(),
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l =
+        set_precision_walk(left, precision, bits, max_fraction_digits, rm, cc)?;
+      let r =
+        set_precision_walk(right, precision, bits, max_fraction_digits, rm, cc)?;
+      Ok(Expr::BinaryOp {
+        op: *op,
+        left: Box::new(l),
+        right: Box::new(r),
+      })
+    }
+    Expr::UnaryOp { op, operand } => {
+      let o = set_precision_walk(
+        operand,
+        precision,
+        bits,
+        max_fraction_digits,
+        rm,
+        cc,
+      )?;
+      Ok(Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(o),
+      })
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// Convert a numeric leaf to a BigFloat at the requested precision.
+fn leaf_to_bigfloat(
+  expr: &Expr,
+  precision: f64,
+  bits: usize,
+  max_fraction_digits: Option<usize>,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  let bf = expr_to_bigfloat(expr, bits, rm, cc)?;
+  let decimal = bigfloat_to_string(&bf, max_fraction_digits, rm, cc)?;
+  Ok(Expr::BigFloat(decimal, precision))
+}
+
+/// SetPrecision[..., MachinePrecision] — walk the tree and demote numeric
+/// leaves to machine-precision Reals; symbolic parts stay as-is.
+fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
+    Expr::BigInteger(n) => Ok(Expr::Real(
+      n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
+    )),
+    Expr::Real(_) => Ok(expr.clone()),
+    Expr::BigFloat(digits, _) => {
+      Ok(Expr::Real(digits.parse::<f64>().unwrap_or(f64::NAN)))
+    }
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      if let (Some(p), Some(q)) = (
+        try_eval_to_f64(&args[0]),
+        try_eval_to_f64(&args[1]),
+      ) {
+        Ok(Expr::Real(p / q))
+      } else {
+        Ok(expr.clone())
+      }
+    }
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        out.push(set_precision_machine(item)?);
+      }
+      Ok(Expr::List(out.into()))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut out = Vec::with_capacity(args.len());
+      for a in args.iter() {
+        out.push(set_precision_machine(a)?);
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: out.into(),
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l = set_precision_machine(left)?;
+      let r = set_precision_machine(right)?;
+      Ok(Expr::BinaryOp {
+        op: *op,
+        left: Box::new(l),
+        right: Box::new(r),
+      })
+    }
+    Expr::UnaryOp { op, operand } => {
+      let o = set_precision_machine(operand)?;
+      Ok(Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(o),
+      })
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
 /// N[expr, precision] — arbitrary-precision numeric evaluation using BigFloat
 pub fn n_eval_arbitrary(
   expr: &Expr,
