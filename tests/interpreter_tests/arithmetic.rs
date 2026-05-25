@@ -2956,6 +2956,40 @@ mod qfactorial {
   fn four_half() {
     assert_eq!(interpret("QFactorial[4, 1/2]").unwrap(), "315/64");
   }
+
+  #[test]
+  fn series_at_zero_n3() {
+    assert_eq!(
+      interpret("Series[QFactorial[3, q], {q, 0, 3}]").unwrap(),
+      "SeriesData[q, 0, {1, 2, 2, 1}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_n5() {
+    assert_eq!(
+      interpret("Series[QFactorial[5, q], {q, 0, 5}]").unwrap(),
+      "SeriesData[q, 0, {1, 4, 9, 15, 20, 22}, 0, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_n10() {
+    // Audit case: must not time out.
+    assert_eq!(
+      interpret("Series[QFactorial[10, q], {q, 0, 10}]").unwrap(),
+      "SeriesData[q, 0, {1, 9, 44, 155, 440, 1068, 2298, 4489, 8095, 13640, 21670}, 0, 11, 1]"
+    );
+  }
+
+  #[test]
+  fn series_partial_order() {
+    // Lower truncation than the polynomial degree.
+    assert_eq!(
+      interpret("Series[QFactorial[5, q], {q, 0, 2}]").unwrap(),
+      "SeriesData[q, 0, {1, 4, 9}, 0, 3, 1]"
+    );
+  }
 }
 
 mod plus_term_ordering {

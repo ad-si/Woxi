@@ -4318,6 +4318,18 @@ fn qfactorial_ast(
     return Ok(Expr::Integer(1));
   }
 
+  // When q is symbolic (not a numeric value), match wolframscript and keep
+  // `QFactorial[n, q]` unevaluated rather than expanding to a rational
+  // form. The rational form blows up combinatorially for Series and Plot.
+  if crate::functions::math_ast::expr_to_f64(q_expr).is_none()
+    && crate::functions::math_ast::expr_to_rational(q_expr).is_none()
+  {
+    return Ok(Expr::FunctionCall {
+      name: "QFactorial".to_string(),
+      args: vec![n_expr.clone(), q_expr.clone()].into(),
+    });
+  }
+
   // Compute product of [k]_q for k = 1 to n
   let mut factors = Vec::new();
   for k in 1..=n {

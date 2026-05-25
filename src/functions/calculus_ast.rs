@@ -8088,6 +8088,25 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Series[QFactorial[n, q], {q, 0, k}] — expand the q-factorial directly
+  // as the polynomial product (1+q)·(1+q+q²)·…·(1+q+…+q^{n-1}), truncating
+  // at each step. The default Series path tries to expand the rational
+  // form (1-q^n)/(1-q) which blows up combinatorially.
+  if let Expr::FunctionCall {
+    name: qf_name,
+    args: qf_args,
+  } = &args[0]
+    && qf_name == "QFactorial"
+    && qf_args.len() == 2
+    && matches!(&qf_args[1], Expr::Identifier(v) if v == &var_name)
+    && matches!(&x0, Expr::Integer(0))
+    && order >= 0
+    && let Expr::Integer(n) = &qf_args[0]
+    && *n >= 0
+  {
+    return Ok(qfactorial_series_at_zero(&var_name, *n as usize, order));
+  }
+
   // Series[BarnesG[x], {x, 0, n}] — the direct-differentiation path stalls
   // because BarnesG'[0] is formally indeterminate. Inject the closed-form
   // coefficients from the asymptotic expansion at z = 0 instead.
@@ -11014,6 +11033,49 @@ fn dot_product(a: &[Expr], b: &[Expr]) -> Expr {
       name: "Plus".to_string(),
       args: terms.into(),
     }
+  }
+}
+
+/// Compute Series[QFactorial[n, q], {q, 0, order}] as a polynomial.
+/// QFactorial[n, q] = prod_{i=1..n} (1 + q + q^2 + ... + q^{i-1}).
+fn qfactorial_series_at_zero(var_name: &str, n: usize, order: i128) -> Expr {
+  let limit = order.max(0) as usize;
+  // Start with constant polynomial 1.
+  let mut coeffs: Vec<i128> = vec![1];
+  for i in 1..=n {
+    // Multiply by (1 + q + q^2 + ... + q^{i-1}).
+    let factor_len = i;
+    let new_len = (coeffs.len() + factor_len - 1).min(limit + 1);
+    let mut new_coeffs = vec![0i128; new_len];
+    for (a, ca) in coeffs.iter().enumerate() {
+      if *ca == 0 {
+        continue;
+      }
+      for b in 0..factor_len {
+        let idx = a + b;
+        if idx > limit {
+          break;
+        }
+        new_coeffs[idx] += ca;
+      }
+    }
+    coeffs = new_coeffs;
+  }
+  // Ensure the coefficient list has exactly limit+1 entries.
+  coeffs.resize(limit + 1, 0);
+  let coeff_exprs: Vec<Expr> =
+    coeffs.into_iter().map(Expr::Integer).collect();
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeff_exprs.into()),
+      Expr::Integer(0),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
   }
 }
 

@@ -8153,8 +8153,9 @@ fn find_spanning_tree_impl(
 /// matching wolframscript's behavior).
 /// Parse a `Cycles[{{...}, {...}, ...}]` expression into a map from
 /// element to image under the permutation.
-fn cycles_expr_to_map(e: &Expr) -> Option<std::collections::HashMap<i128, i128>>
-{
+fn cycles_expr_to_map(
+  e: &Expr,
+) -> Option<std::collections::HashMap<i128, i128>> {
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
