@@ -4533,6 +4533,99 @@ fn fourier_sin_cos_transform_inner(
     return Some(make_power(make_sqrt(w.clone()), Expr::Integer(-1)));
   }
 
+  // FST[Cos[c*t]/t, t, w] = (Pi - Pi*Sign[c-w]) / (2*Sqrt[2*Pi]) for c > 0.
+  // For numeric Real w, wolframscript materialises the result as
+  // `Real + 0.*I` (a complex zero), so reproduce that form here.
+  if is_sin && let Some(c) = extract_cos_at_over_t(expr, t) {
+    let c_minus_w = make_plus(vec![
+      c.clone(),
+      make_times(vec![Expr::Integer(-1), w.clone()]),
+    ]);
+    // c_num: numeric value of c (or None).
+    let c_num = crate::functions::math_ast::try_eval_to_f64(&c);
+    let w_is_real = matches!(w, Expr::Real(_));
+    let w_num = crate::functions::math_ast::try_eval_to_f64(w);
+    if w_is_real && let (Some(cv), Some(wv)) = (c_num, w_num) {
+      // Numeric Real path → `value + 0.*I`. Compute as Pi/Sqrt[2*Pi] to
+      // match wolframscript's exact f64 (1.2533141373155003), not the
+      // alternative form Sqrt[Pi/2] which rounds to 1.2533141373155001.
+      let pi = std::f64::consts::PI;
+      let value = if (cv - wv).abs() < 1e-15 * cv.abs().max(1.0) {
+        // c == w boundary: Pi/(2*Sqrt[2*Pi])
+        pi / (2.0 * (2.0 * pi).sqrt())
+      } else if wv > cv {
+        // w > c: Pi/Sqrt[2*Pi]
+        pi / (2.0 * pi).sqrt()
+      } else {
+        0.0
+      };
+      return Some(make_plus(vec![
+        Expr::Real(value),
+        make_times(vec![Expr::Real(0.0), Expr::Identifier("I".to_string())]),
+      ]));
+    }
+    // Integer w branch: produce symbolic value.
+    if let Expr::Integer(wi) = w
+      && let Some(cv) = c_num
+    {
+      let wv = *wi as f64;
+      if (cv - wv).abs() < 1e-15 * cv.abs().max(1.0) {
+        // Pi/(2*Sqrt[2*Pi])
+        return Some(make_times(vec![
+          Expr::Constant("Pi".to_string()),
+          make_power(
+            make_times(vec![
+              Expr::Integer(2),
+              make_sqrt(make_times(vec![
+                Expr::Integer(2),
+                Expr::Constant("Pi".to_string()),
+              ])),
+            ]),
+            Expr::Integer(-1),
+          ),
+        ]));
+      } else if wv > cv {
+        // Pi/Sqrt[2*Pi]
+        return Some(make_times(vec![
+          Expr::Constant("Pi".to_string()),
+          make_power(
+            make_sqrt(make_times(vec![
+              Expr::Integer(2),
+              Expr::Constant("Pi".to_string()),
+            ])),
+            Expr::Integer(-1),
+          ),
+        ]));
+      } else {
+        return Some(Expr::Integer(0));
+      }
+    }
+    // Symbolic path: (Pi - Pi*Sign[c-w]) / (2*Sqrt[2*Pi]).
+    let sign = Expr::FunctionCall {
+      name: "Sign".to_string(),
+      args: vec![c_minus_w].into(),
+    };
+    let numer = make_plus(vec![
+      Expr::Constant("Pi".to_string()),
+      make_times(vec![
+        Expr::Integer(-1),
+        Expr::Constant("Pi".to_string()),
+        sign,
+      ]),
+    ]);
+    let denom = make_times(vec![
+      Expr::Integer(2),
+      make_sqrt(make_times(vec![
+        Expr::Integer(2),
+        Expr::Constant("Pi".to_string()),
+      ])),
+    ]);
+    return Some(make_times(vec![
+      numer,
+      make_power(denom, Expr::Integer(-1)),
+    ]));
+  }
+
   // FCT[E^(-a*t^2), t, w] = E^(-w^2/(4a)) / Sqrt[2 a]   for a > 0.
   // (FST has no closed form in elementary functions — uses DawsonF.)
   if !is_sin
@@ -4825,6 +4918,59 @@ fn contains_identifier(expr: &Expr, name: &str) -> bool {
 }
 
 /// If expr = -a * t where a doesn't depend on t, return a.
+/// Recognise `Cos[c*t] / t` (any equivalent form) and return `c`. Returns
+/// `Some(Integer(1))` for the bare `Cos[t]/t` case. `c` must be constant
+/// in `t`.
+fn extract_cos_at_over_t(expr: &Expr, t: &str) -> Option<Expr> {
+  let (name, args) = as_func_args(expr)?;
+  if name != "Times" {
+    return None;
+  }
+  // Find a Cos[...] factor whose argument is c*t or t, and a Power[t, -1]
+  // factor. Everything else must be constant in t.
+  let mut cos_arg: Option<&Expr> = None;
+  let mut has_inv_t = false;
+  let mut other: Vec<Expr> = Vec::new();
+  for a in args {
+    if let Some((fname, fargs)) = as_func_args(a)
+      && fname == "Cos"
+      && fargs.len() == 1
+      && depends_on(fargs[0], t)
+    {
+      if cos_arg.is_some() {
+        return None;
+      }
+      cos_arg = Some(fargs[0]);
+      continue;
+    }
+    if let Some((fname, fargs)) = as_func_args(a)
+      && fname == "Power"
+      && fargs.len() == 2
+      && matches!(fargs[0], Expr::Identifier(v) if v == t)
+      && matches!(fargs[1], Expr::Integer(-1))
+    {
+      has_inv_t = true;
+      continue;
+    }
+    if depends_on(a, t) {
+      return None;
+    }
+    other.push(a.clone());
+  }
+  let arg = cos_arg?;
+  if !has_inv_t {
+    return None;
+  }
+  let c = extract_linear_coeff(arg, t)?;
+  if !other.is_empty() {
+    // Multiply c by the other constant factors.
+    let mut all = vec![c];
+    all.extend(other);
+    return Some(make_times(all));
+  }
+  Some(c)
+}
+
 fn extract_neg_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
   if let Some((fname, fargs)) = as_func_args(expr)
     && fname == "Times"

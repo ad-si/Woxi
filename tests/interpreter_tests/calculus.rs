@@ -4596,6 +4596,52 @@ mod fourier_sin_transform {
       result
     );
   }
+
+  #[test]
+  fn cos_over_t_symbolic() {
+    // FourierSinTransform[Cos[t]/t, t, w] = (Pi - Pi*Sign[1-w])/(2*Sqrt[2*Pi]).
+    clear_state();
+    assert_eq!(
+      interpret("FourierSinTransform[Cos[t]/t, t, w]").unwrap(),
+      "(Pi - Pi*Sign[1 - w])/(2*Sqrt[2*Pi])"
+    );
+  }
+
+  #[test]
+  fn cos_over_t_real_w_above_one_audit_case() {
+    // Audit case: numeric Real w > 1.
+    assert_eq!(
+      interpret("FourierSinTransform[Cos[t]/t, t, 1.2]").unwrap(),
+      "1.2533141373155003 + 0.*I"
+    );
+  }
+
+  #[test]
+  fn cos_over_t_real_w_below_one() {
+    // Numeric Real w < 1 → 0. + 0.*I (matches wolframscript).
+    assert_eq!(
+      interpret("FourierSinTransform[Cos[t]/t, t, 0.5]").unwrap(),
+      "0. + 0.*I"
+    );
+  }
+
+  #[test]
+  fn cos_over_t_integer_w_above_one() {
+    // Integer w > 1 → symbolic Pi/Sqrt[2*Pi].
+    assert_eq!(
+      interpret("FourierSinTransform[Cos[t]/t, t, 2]").unwrap(),
+      "Pi/Sqrt[2*Pi]"
+    );
+  }
+
+  #[test]
+  fn cos_over_t_integer_w_equals_one() {
+    // w = 1 boundary: Pi/(2*Sqrt[2*Pi]).
+    assert_eq!(
+      interpret("FourierSinTransform[Cos[t]/t, t, 1]").unwrap(),
+      "Pi/(2*Sqrt[2*Pi])"
+    );
+  }
 }
 
 mod fourier_cos_transform {

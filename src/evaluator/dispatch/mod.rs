@@ -6031,7 +6031,10 @@ pub fn evaluate_function_call_ast_inner(
       let mut ok = true;
       for r in rules.iter() {
         match r {
-          Expr::Rule { pattern, replacement } => {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
             let tk = crate::functions::math_ast::try_eval_to_f64(pattern);
             let rk = crate::functions::math_ast::try_eval_to_f64(replacement);
             if let (Some(t_v), Some(r_v)) = (tk, rk) {
