@@ -215,6 +215,58 @@ mod image_core {
     );
   }
 
+  // For a Byte-type image, ImageData defaults to Real64 with normalized
+  // values (v/255), matching wolframscript.
+  #[test]
+  fn image_data_normalizes_byte_array() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Image[NumericArray[{{{221, 139, 66}, {217, 135, 64}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "{{{0.8666666666666667, 0.5450980392156862, 0.25882352941176473}, \
+       {0.8509803921568627, 0.5294117647058824, 0.25098039215686274}}}"
+    );
+  }
+
+  // Explicit "Byte" arg returns raw integers 0..255.
+  #[test]
+  fn image_data_byte_arg_returns_integers() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Image[NumericArray[{{{221, 139, 66}}}, \"Byte\"]], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{221, 139, 66}}}"
+    );
+  }
+
+  // `Image[{{...}}, "Byte"]` treats input values as bytes (0..255 range).
+  #[test]
+  fn image_byte_input_values_are_raw_bytes() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[{{255, 128, 0}}, \"Byte\"]]").unwrap(),
+      "{{1., 0.5019607843137255, 0.}}"
+    );
+  }
+
+  // Roundtripping through NumericArray preserves the original byte values
+  // (no [0, 1] vs [0, 255] confusion that would cause overflow).
+  #[test]
+  fn image_byte_roundtrip_preserves_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Image[NumericArray[{{{221, 139, 66}}}, \"Byte\"]], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{221, 139, 66}}}"
+    );
+  }
+
   #[test]
   fn image_from_numeric_array_real64() {
     clear_state();
@@ -1171,10 +1223,8 @@ mod image_advanced {
   fn image_subtract_image_image_uses_f32() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[ImageSubtract[Image[{{0.6}}], Image[{{0.2}}]]]"
-      )
-      .unwrap(),
+      interpret("ImageData[ImageSubtract[Image[{{0.6}}], Image[{{0.2}}]]]")
+        .unwrap(),
       "{{0.40000003576278687}}"
     );
   }

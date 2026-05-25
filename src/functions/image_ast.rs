@@ -200,6 +200,15 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let height = rows.len() as u32;
 
+  // Normalize integer-typed pixel values into the [0, 1] f64 buffer.
+  // Storage is always normalized; image_type only affects display precision
+  // and the implicit /255 (or /65535) applied on input.
+  let divisor: f64 = match requested_type {
+    Some(ImageType::Byte) => 255.0,
+    Some(ImageType::Bit16) => 65535.0,
+    _ => 1.0,
+  };
+
   if is_color {
     // Color image: {{{r,g,b}, ...}, ...}
     let width = first_row.len() as u32;
@@ -253,7 +262,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )));
         }
         for v in pixel_vals {
-          data.push(expr_to_f64(v)?);
+          data.push(expr_to_f64(v)? / divisor);
         }
       }
     }
@@ -290,7 +299,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )));
       }
       for v in row_items {
-        data.push(expr_to_f64(v)?);
+        data.push(expr_to_f64(v)? / divisor);
       }
     }
 
