@@ -3308,6 +3308,18 @@ pub fn dft_core(
     (nf.powf((param_a - 1.0) / 2.0), param_b)
   };
 
+  // For power-of-2 sizes, use Cooley-Tukey FFT (O(n log n)) instead of
+  // the O(n^2) DFT.
+  if n >= 2 && n.is_power_of_two() {
+    let mut x: Vec<(f64, f64)> = data.to_vec();
+    fft_pow2_in_place(&mut x, exp_sign);
+    for (re, im) in &mut x {
+      *re *= scaling;
+      *im *= scaling;
+    }
+    return x;
+  }
+
   let two_pi_over_n = 2.0 * std::f64::consts::PI / nf;
   let mut result = Vec::with_capacity(n);
 
@@ -3325,6 +3337,55 @@ pub fn dft_core(
     result.push((scaling * sum_re, scaling * sum_im));
   }
   result
+}
+
+/// In-place Cooley-Tukey radix-2 FFT. `data.len()` must be a power of 2.
+/// `exp_sign` is +1 or -1, selecting forward vs inverse twiddle direction.
+/// Scaling is left to the caller.
+fn fft_pow2_in_place(data: &mut [(f64, f64)], exp_sign: f64) {
+  let n = data.len();
+  // Bit-reverse permutation.
+  let mut j = 0usize;
+  for i in 1..n {
+    let mut bit = n >> 1;
+    while j & bit != 0 {
+      j ^= bit;
+      bit >>= 1;
+    }
+    j ^= bit;
+    if i < j {
+      data.swap(i, j);
+    }
+  }
+  // Iterative butterflies.
+  let mut size = 2;
+  while size <= n {
+    let half = size / 2;
+    let theta = exp_sign * 2.0 * std::f64::consts::PI / size as f64;
+    let (sin_t, cos_t) = theta.sin_cos();
+    let mut i = 0;
+    while i < n {
+      // Twiddle for this butterfly group.
+      let mut w_re = 1.0_f64;
+      let mut w_im = 0.0_f64;
+      for k in 0..half {
+        let a = data[i + k];
+        let b = data[i + k + half];
+        let t_re = w_re * b.0 - w_im * b.1;
+        let t_im = w_re * b.1 + w_im * b.0;
+        data[i + k] = (a.0 + t_re, a.1 + t_im);
+        data[i + k + half] = (a.0 - t_re, a.1 - t_im);
+        // Advance twiddle.
+        let _ = k;
+        let new_w_re = w_re * cos_t - w_im * sin_t;
+        let new_w_im = w_re * sin_t + w_im * cos_t;
+        w_re = new_w_re;
+        w_im = new_w_im;
+      }
+      i += size;
+    }
+    size <<= 1;
+  }
 }
 
 /// Round a floating-point number to clean up near-integer/near-half values.

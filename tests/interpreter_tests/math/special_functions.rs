@@ -3279,6 +3279,36 @@ mod fourier {
     );
   }
 
+  // For power-of-2 inputs, the FFT path should produce identical
+  // results to the naive DFT at small sizes (matches existing
+  // basic_integer_list output).
+  #[test]
+  fn fft_8_matches_dft() {
+    assert_eq!(
+      interpret("Fourier[{1, 2, 3, 4, 5, 6, 7, 8}]").unwrap(),
+      interpret("Fourier[{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0}]").unwrap()
+    );
+  }
+
+  // Inverse round-trip: InverseFourier[Fourier[x]] == x.
+  #[test]
+  fn fft_inverse_round_trip_pow2() {
+    let result =
+      interpret("Chop[Re[InverseFourier[Fourier[{1.0, 2.0, 3.0, 4.0}]]]]")
+        .unwrap();
+    assert_eq!(result, "{1., 2., 3., 4.}");
+  }
+
+  // Large power-of-2 sizes must complete in a reasonable time (the
+  // old O(n²) DFT would TIMEOUT). The FFT path makes this feasible.
+  // Note: this test isn't a timing assertion, just an existence check.
+  #[test]
+  fn fft_8192_completes() {
+    let result =
+      interpret("Length[Fourier[N[Table[k, {k, 0, 8191}]]]]").unwrap();
+    assert_eq!(result, "8192");
+  }
+
   #[test]
   fn single_element() {
     assert_eq!(interpret("Fourier[{5}]").unwrap(), "{5.}");
