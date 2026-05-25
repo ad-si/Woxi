@@ -5726,8 +5726,7 @@ pub fn evaluate_function_call_ast_inner(
 
   // TimeValue[s, i, t] — time value of a present sum s at interest rate
   // i (per period) for t periods. Future value (t > 0) or present value
-  // (t < 0): result = s * (1 + i)^t. Annuity/Cashflow/date-spec and
-  // list-of-rates forms are not yet supported and stay symbolic.
+  // (t < 0): result = s * (1 + i)^t.
   if name == "TimeValue" && args.len() == 3 {
     let (s, i, t) = (&args[0], &args[1], &args[2]);
     let s_scalar =
@@ -5739,11 +5738,134 @@ pub fn evaluate_function_call_ast_inner(
     let t_scalar =
       matches!(t, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
         || matches!(t, Expr::FunctionCall { name, .. } if name == "Rational");
-    if s_scalar && i_scalar && t_scalar {
+    // TimeValue[s, i, {date_later, date_earlier}] — date_later/date_earlier
+    // are 3-element {y,m,d} lists. Convert to (date_later - date_earlier)
+    // in years (using a simple 365.25-day proxy) and fall through to the
+    // scalar formula.
+    let date_diff_periods: Option<Expr> = if let Expr::List(dates) = t
+      && dates.len() == 2
+    {
+      fn date_to_days(d: &Expr) -> Option<f64> {
+        let Expr::List(parts) = d else {
+          return None;
+        };
+        if parts.is_empty() || parts.len() > 6 {
+          return None;
+        }
+        let to_f = |e: &Expr| -> Option<f64> {
+          match e {
+            Expr::Integer(n) => Some(*n as f64),
+            Expr::Real(f) => Some(*f),
+            _ => None,
+          }
+        };
+        let y = to_f(&parts[0])?;
+        let m = if parts.len() >= 2 { to_f(&parts[1])? } else { 1.0 };
+        let dd = if parts.len() >= 3 { to_f(&parts[2])? } else { 1.0 };
+        // Days from year 0 (rough; only the difference matters).
+        Some(y * 365.25 + (m - 1.0) * 30.4375 + (dd - 1.0))
+      }
+      let d1 = date_to_days(&dates[0]);
+      let d2 = date_to_days(&dates[1]);
+      if let (Some(a), Some(b)) = (d1, d2) {
+        Some(Expr::Real((a - b) / 365.25))
+      } else {
+        None
+      }
+    } else {
+      None
+    };
+    let t_for_formula = date_diff_periods.as_ref().unwrap_or(t);
+    let t_is_usable = matches!(
+      t_for_formula,
+      Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+    ) || matches!(
+      t_for_formula,
+      Expr::FunctionCall { name, .. } if name == "Rational"
+    );
+    if s_scalar && i_scalar && t_is_usable {
       let value = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
           s.clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![Expr::Integer(1), i.clone()].into(),
+              },
+              t_for_formula.clone(),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      };
+      return evaluate_expr_to_expr(&value);
+    }
+
+    // TimeValue[Annuity[pmt, n], i, t] — present value (t = 0) or general
+    // time-shifted value of an n-period level annuity with payment pmt at
+    // each period and interest rate i per period.
+    //   PV  = pmt * (1 - (1+i)^-n) / i   (annuity-immediate)
+    //   V_t = PV * (1+i)^t
+    if let Expr::FunctionCall {
+      name: ann_name,
+      args: ann_args,
+    } = s
+      && ann_name == "Annuity"
+      && ann_args.len() == 2
+      && i_scalar
+      && t_scalar
+    {
+      let pmt = ann_args[0].clone();
+      let n = ann_args[1].clone();
+      // (1 + i)^-n
+      let pow_neg_n = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![Expr::Integer(1), i.clone()].into(),
+          },
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), n].into(),
+          },
+        ]
+        .into(),
+      };
+      // 1 - (1+i)^-n
+      let numer = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), pow_neg_n].into(),
+          },
+        ]
+        .into(),
+      };
+      // PV = pmt * numer / i
+      let pv = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          pmt,
+          numer,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![i.clone(), Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      };
+      // V_t = PV * (1+i)^t
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          pv,
           Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![
@@ -5758,7 +5880,54 @@ pub fn evaluate_function_call_ast_inner(
         ]
         .into(),
       };
-      return evaluate_expr_to_expr(&value);
+      return evaluate_expr_to_expr(&result);
+    }
+
+    // TimeValue[Cashflow[list], i, t] — Sum[c_k * (1+i)^(t-k), {k, 0, len-1}].
+    if let Expr::FunctionCall {
+      name: cf_name,
+      args: cf_args,
+    } = s
+      && cf_name == "Cashflow"
+      && cf_args.len() == 1
+      && i_scalar
+      && t_scalar
+      && let Expr::List(flows) = &cf_args[0]
+    {
+      let mut terms: Vec<Expr> = Vec::with_capacity(flows.len());
+      for (k, c) in flows.iter().enumerate() {
+        let exp = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            t.clone(),
+            Expr::Integer(-(k as i128)),
+          ]
+          .into(),
+        };
+        terms.push(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            c.clone(),
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![Expr::Integer(1), i.clone()].into(),
+                },
+                exp,
+              ]
+              .into(),
+            },
+          ]
+          .into(),
+        });
+      }
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      return evaluate_expr_to_expr(&sum);
     }
     // TimeValue[s, {r1, r2, ..., rn}, t] with non-negative integer t and a
     // flat list of per-period rates: result = s * Prod_{k=1..t} (1 + r_k)
@@ -6110,6 +6279,8 @@ pub fn evaluate_function_call_ast_inner(
       | "TildeTilde"
       | "NotebookClose"
       | "Failure"
+      | "Annuity"
+      | "Cashflow"
       | "LineIndent"
       | "LayeredGraphPlot"
       | "WordCharacter"

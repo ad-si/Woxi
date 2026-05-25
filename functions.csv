@@ -2115,7 +2115,7 @@ GraphDistanceMatrix,Distance matrix of graph,🚫,,8.0,2157
 OrnsteinUhlenbeckProcess,OU stochastic process,🚫,,9.0,2157
 PolynomialQuotientRemainder,Quotient and remainder of polynomial division,✅,1,6.0,2157
 SignificanceLevel,Statistical significance level option,🚫,,8.0,2157
-Annuity,Financial annuity computation,🚫,,8.0,2162
+Annuity,Financial annuity (passthrough used by TimeValue),✅,pure,8.0,2162
 ColorQ,Test whether an expression is a color directive,✅,1,10.0,2162
 CompleteKaryTree,Complete k-ary tree graph,🚫,,8.0,2162
 NotebookObject,Symbolic representation of an open notebook in the front end,🚫,None,3.0,2162
@@ -2353,7 +2353,7 @@ HaarWavelet,wavelet function,🚫,None,8.0,2404
 LineIntegralConvolutionPlot,visualization,🚫,None,7.0,2404
 PolynomialExtendedGCD,Extended GCD for polynomials,🚫,None,6.0,2404
 VertexReplace,graph operation,🚫,None,8.0,2404
-Cashflow,financial computation,🚫,None,8.0,2408
+Cashflow,Financial cashflow stream (passthrough used by TimeValue),✅,pure,8.0,2408
 ChanVeseBinarize,image processing,🚫,None,8.0,2408
 CopulaDistribution,probability distribution,🚫,None,8.0,2408
 ToeplitzMatrix,Generate a symmetric Toeplitz matrix from a list,✅,1,6.0,2408

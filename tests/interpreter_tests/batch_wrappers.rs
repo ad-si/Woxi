@@ -71,6 +71,44 @@ mod batch_unevaluated_wrappers {
       "1000"
     );
   }
+
+  #[test]
+  fn time_value_annuity_pv() {
+    // Audit case: PV of an annuity that pays 100 for 12 periods at 6%.
+    // PMT * (1 - (1+r)^-n) / r = 100 * (1 - 1.06^-12)/0.06 ≈ 838.384...
+    let result = interpret("TimeValue[Annuity[100, 12], 0.06, 0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 838.384394038332).abs() < 1e-9, "got {}", val);
+  }
+
+  #[test]
+  fn time_value_annuity_fv() {
+    // FV at end of term (t=n): PMT * ((1+r)^n - 1) / r.
+    let result = interpret("TimeValue[Annuity[100, 12], 0.06, 12]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1686.994119725919).abs() < 1e-9, "got {}", val);
+  }
+
+  #[test]
+  fn time_value_cashflow_at_future() {
+    // Audit case: Cashflow {0,100,200,450,300,580} valued at t=7 at 6%.
+    let result = interpret(
+      "TimeValue[Cashflow[{0, 100, 200, 450, 300, 580}], 0.06, 7]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1986.6044587456004).abs() < 1e-7, "got {}", val);
+  }
+
+  #[test]
+  fn time_value_date_list() {
+    // Audit case: 1000 from 2010 to 2013 at 7.5% → 1000 * 1.075^3.
+    let result =
+      interpret("TimeValue[1000, 0.075, {{2013, 1, 1}, {2010, 1, 1}}]")
+        .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1242.2968749999998).abs() < 1e-9, "got {}", val);
+  }
   #[test]
   fn time_value_via_effective_interest() {
     // TimeValue[1000, EffectiveInterest[0.05, 1/4], 10]
