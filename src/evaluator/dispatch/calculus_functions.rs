@@ -4299,10 +4299,7 @@ fn fourier_sin_cos_transform_inner(
     && matches!(&fargs[0], Expr::Identifier(v) if v == t)
     && is_neg_half(fargs[1])
   {
-    return Some(make_power(
-      make_sqrt(w.clone()),
-      Expr::Integer(-1),
-    ));
+    return Some(make_power(make_sqrt(w.clone()), Expr::Integer(-1)));
   }
 
   // FCT[E^(-a*t^2), t, w] = E^(-w^2/(4a)) / Sqrt[2 a]   for a > 0.
@@ -4318,7 +4315,8 @@ fn fourier_sin_cos_transform_inner(
       w_sq,
       make_power(four_a, Expr::Integer(-1)),
     ]);
-    let numerator = make_power(Expr::Constant("E".to_string()), neg_w_sq_over_4a);
+    let numerator =
+      make_power(Expr::Constant("E".to_string()), neg_w_sq_over_4a);
     let two_a = make_times(vec![Expr::Integer(2), a]);
     let denom = make_sqrt(two_a);
     return Some(make_times(vec![
@@ -4353,7 +4351,8 @@ fn fourier_cos_transform_2d_radial(
     crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
 
   // Expect Power[Plus[t1^2, t2^2], -1/2].
-  let (pname, pargs) = as_func_args(&normalized).filter(|(n, _)| *n == "Power")?;
+  let (pname, pargs) =
+    as_func_args(&normalized).filter(|(n, _)| *n == "Power")?;
   if !is_neg_half(pargs[1]) {
     return None;
   }

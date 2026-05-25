@@ -4618,12 +4618,14 @@ mod fourier_cos_transform {
     // 2-D radial FCT: 1/Sqrt[x^2 + y^2] → 1/Sqrt[u^2 + v^2].
     clear_state();
     assert_eq!(
-      interpret("FourierCosTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}]").unwrap(),
+      interpret("FourierCosTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}]")
+        .unwrap(),
       "1/Sqrt[u^2 + v^2]"
     );
     // Symmetric in the order of {t1, t2}.
     assert_eq!(
-      interpret("FourierCosTransform[1/Sqrt[y^2 + x^2], {x, y}, {u, v}]").unwrap(),
+      interpret("FourierCosTransform[1/Sqrt[y^2 + x^2], {x, y}, {u, v}]")
+        .unwrap(),
       "1/Sqrt[u^2 + v^2]"
     );
   }

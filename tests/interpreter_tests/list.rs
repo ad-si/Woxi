@@ -3394,6 +3394,111 @@ mod random_variate {
     assert!(result.starts_with('{'));
     assert!(result.ends_with('}'));
   }
+
+  #[test]
+  fn poisson_single_is_non_negative_integer() {
+    let result = interpret("RandomVariate[PoissonDistribution[3]]").unwrap();
+    let val: i64 = result.parse().unwrap();
+    assert!(val >= 0, "Poisson sample must be non-negative, got {}", val);
+  }
+
+  #[test]
+  fn poisson_list_length() {
+    assert_eq!(
+      interpret("Length[RandomVariate[PoissonDistribution[3], 10]]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn poisson_list_all_non_negative_integers() {
+    // All elements must be non-negative integers.
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomVariate[PoissonDistribution[3], 50], (IntegerQ[#] && # >= 0) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn poisson_mean_near_lambda() {
+    // Mean of many Poisson(5) samples should be near 5.
+    let result: f64 =
+      interpret("Mean[N[RandomVariate[PoissonDistribution[5], 2000]]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(result > 4.0 && result < 6.0, "got {}", result);
+  }
+
+  #[test]
+  fn binormal_single() {
+    // BinormalDistribution[rho] is 2-D standard normal with correlation rho.
+    let result =
+      interpret("RandomVariate[BinormalDistribution[1/2]]").unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.ends_with('}'));
+    let inside = &result[1..result.len() - 1];
+    let vals: Vec<f64> =
+      inside.split(',').map(|s| s.trim().parse().unwrap()).collect();
+    assert_eq!(vals.len(), 2);
+    assert!(vals[0].is_finite() && vals[1].is_finite());
+  }
+
+  #[test]
+  fn binormal_list() {
+    // n=5 → 5 lists of length 2.
+    let result =
+      interpret("RandomVariate[BinormalDistribution[1/2], 5]").unwrap();
+    assert!(result.starts_with("{{"));
+    assert_eq!(
+      interpret("Length[RandomVariate[BinormalDistribution[1/2], 5]]").unwrap(),
+      "5"
+    );
+    // Each pair has length 2.
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomVariate[BinormalDistribution[1/2], 5], Length[#] == 2 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn multivariate_poisson_single() {
+    // MultivariatePoissonDistribution[1, {2, 3}] → 2-D non-negative integers.
+    let result = interpret(
+      "RandomVariate[MultivariatePoissonDistribution[1, {2, 3}]]",
+    )
+    .unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.ends_with('}'));
+  }
+
+  #[test]
+  fn multivariate_poisson_list() {
+    assert_eq!(
+      interpret(
+        "Length[RandomVariate[MultivariatePoissonDistribution[1, {2, 3}], 5]]"
+      )
+      .unwrap(),
+      "5"
+    );
+    // Each element has length matching the marginals list.
+    assert_eq!(
+      interpret(
+        "AllTrue[\
+           RandomVariate[MultivariatePoissonDistribution[1, {2, 3}], 20],\
+           (Length[#] == 2 && AllTrue[#, (IntegerQ[#] && # >= 0) &]) &\
+         ]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod seed_random {

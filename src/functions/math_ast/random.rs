@@ -779,6 +779,22 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // Local helpers for the distributions added below.
+  fn sample_poisson(lambda: f64) -> Result<i128, InterpreterError> {
+    use rand_distr::{Distribution, Poisson};
+    let p = Poisson::new(lambda).map_err(|e| {
+      InterpreterError::EvaluationError(format!("PoissonDistribution: {}", e))
+    })?;
+    Ok(crate::with_rng(|rng| p.sample(rng) as i128))
+  }
+  fn sample_binormal(rho: f64) -> (f64, f64) {
+    use rand_distr::{Distribution, Normal};
+    let n01 = Normal::new(0.0, 1.0).unwrap();
+    let (z1, z2) = crate::with_rng(|rng| (n01.sample(rng), n01.sample(rng)));
+    let y = rho * z1 + (1.0 - rho * rho).max(0.0).sqrt() * z2;
+    (z1, y)
+  }
+
   // Determine distribution type and parameters, then sample using with_rng
   match dist {
     Expr::FunctionCall { name, args: dargs }
@@ -860,6 +876,152 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             (0..count).map(|_| Expr::Real(normal.sample(rng))).collect()
           });
           Ok(Expr::List(results.into()))
+        }
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "PoissonDistribution" && dargs.len() == 1 =>
+    {
+      let lambda = expr_to_num(&dargs[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "PoissonDistribution: invalid mean parameter".into(),
+        )
+      })?;
+      if lambda <= 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "PoissonDistribution: mean must be positive".into(),
+        ));
+      }
+      match n {
+        None => Ok(Expr::Integer(sample_poisson(lambda)?)),
+        Some(count) => {
+          let mut out = Vec::with_capacity(count);
+          for _ in 0..count {
+            out.push(Expr::Integer(sample_poisson(lambda)?));
+          }
+          Ok(Expr::List(out.into()))
+        }
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "BinormalDistribution" =>
+    {
+      // BinormalDistribution[rho] uses standard means and unit variances.
+      // BinormalDistribution[{mu1, mu2}, {sigma1, sigma2}, rho] is the full form.
+      let (mu1, mu2, sigma1, sigma2, rho) = match dargs.len() {
+        1 => {
+          let r = expr_to_num(&dargs[0]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "BinormalDistribution: invalid correlation".into(),
+            )
+          })?;
+          (0.0, 0.0, 1.0, 1.0, r)
+        }
+        3 => {
+          let extract_pair = |e: &Expr, label: &str| -> Result<(f64, f64), InterpreterError> {
+            if let Expr::List(items) = e
+              && items.len() == 2
+              && let (Some(a), Some(b)) = (expr_to_num(&items[0]), expr_to_num(&items[1]))
+            {
+              Ok((a, b))
+            } else {
+              Err(InterpreterError::EvaluationError(format!(
+                "BinormalDistribution: invalid {} (expected a 2-element list)",
+                label
+              )))
+            }
+          };
+          let (mu1, mu2) = extract_pair(&dargs[0], "mean vector")?;
+          let (sigma1, sigma2) = extract_pair(&dargs[1], "standard deviations")?;
+          let r = expr_to_num(&dargs[2]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "BinormalDistribution: invalid correlation".into(),
+            )
+          })?;
+          (mu1, mu2, sigma1, sigma2, r)
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "RandomVariate".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      };
+      if !(-1.0..=1.0).contains(&rho) {
+        return Err(InterpreterError::EvaluationError(
+          "BinormalDistribution: correlation must be in [-1, 1]".into(),
+        ));
+      }
+      let sample_pair = || -> (f64, f64) {
+        let (z1, z2) = sample_binormal(rho);
+        (mu1 + sigma1 * z1, mu2 + sigma2 * z2)
+      };
+      let pair_to_list = |p: (f64, f64)| -> Expr {
+        Expr::List(vec![Expr::Real(p.0), Expr::Real(p.1)].into())
+      };
+      match n {
+        None => Ok(pair_to_list(sample_pair())),
+        Some(count) => {
+          let mut out = Vec::with_capacity(count);
+          for _ in 0..count {
+            out.push(pair_to_list(sample_pair()));
+          }
+          Ok(Expr::List(out.into()))
+        }
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "MultivariatePoissonDistribution" && dargs.len() == 2 =>
+    {
+      // MultivariatePoissonDistribution[mu0, {mu1, ..., muk}]:
+      //   X_0 ~ Poisson(mu0) shared across components;
+      //   Y_i ~ Poisson(mu_i) independent;
+      //   sample is (X_0 + Y_1, ..., X_0 + Y_k).
+      let mu0 = expr_to_num(&dargs[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "MultivariatePoissonDistribution: invalid shared rate".into(),
+        )
+      })?;
+      let marginals_list = if let Expr::List(items) = &dargs[1] {
+        items
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "MultivariatePoissonDistribution: expected a list of marginal rates"
+            .into(),
+        ));
+      };
+      let mut marginal_rates: Vec<f64> = Vec::with_capacity(marginals_list.len());
+      for item in marginals_list.iter() {
+        let mi = expr_to_num(item).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "MultivariatePoissonDistribution: invalid marginal rate".into(),
+          )
+        })?;
+        if mi < mu0 {
+          return Err(InterpreterError::EvaluationError(format!(
+            "MultivariatePoissonDistribution: each marginal must be >= mu0 ({} < {})",
+            mi, mu0
+          )));
+        }
+        marginal_rates.push(mi);
+      }
+      let sample_vec = || -> Result<Expr, InterpreterError> {
+        let x0 = sample_poisson(mu0)?;
+        let mut comps = Vec::with_capacity(marginal_rates.len());
+        for &mi in &marginal_rates {
+          let yi = sample_poisson(mi - mu0)?;
+          comps.push(Expr::Integer(x0 + yi));
+        }
+        Ok(Expr::List(comps.into()))
+      };
+      match n {
+        None => sample_vec(),
+        Some(count) => {
+          let mut out = Vec::with_capacity(count);
+          for _ in 0..count {
+            out.push(sample_vec()?);
+          }
+          Ok(Expr::List(out.into()))
         }
       }
     }
