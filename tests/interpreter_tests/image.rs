@@ -1563,12 +1563,63 @@ mod image_processing {
   fn pixel_value_positions_scalar_target_on_rgb() {
     clear_state();
     assert_eq!(
-      interpret(
-        "PixelValuePositions[Image[{{{1.0, 0.0, 0.0}}}], 1.0]"
-      )
-      .unwrap(),
+      interpret("PixelValuePositions[Image[{{{1.0, 0.0, 0.0}}}], 1.0]")
+        .unwrap(),
       "{}"
     );
+  }
+
+  // Sharpen preserves image dimensions, channels, and image type
+  // (no Byte round-trip through the image crate).
+  #[test]
+  fn sharpen_preserves_metadata() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Sharpen[Image[{{0.1, 0.5, 0.9}, {0.3, 0.7, 0.5}}], 1]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[Sharpen[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], 1]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageType[Sharpen[Image[{{0.1, 0.5}}], 1]]").unwrap(),
+      "Real32"
+    );
+  }
+
+  // Radius 0 is the identity — the image is unchanged.
+  #[test]
+  fn sharpen_radius_zero_is_identity() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Sharpen[Image[{{0.1, 0.5, 0.9}}], 0]]").unwrap(),
+      "{{0.10000000149011612, 0.5, 0.8999999761581421}}"
+    );
+  }
+
+  // A symmetric grayscale image leaves the center pixel anchored at
+  // its original value (the unsharp-mask correction is zero there for
+  // symmetric data).
+  #[test]
+  fn sharpen_center_pixel_invariant_for_symmetric_input() {
+    clear_state();
+    let out = interpret("ImageData[Sharpen[Image[{{0.1, 0.5, 0.9}}], 1]]")
+      .unwrap();
+    let middle = out
+      .trim_start_matches("{{")
+      .trim_end_matches("}}")
+      .split(", ")
+      .nth(1)
+      .unwrap();
+    let v: f64 = middle.parse().unwrap();
+    assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {}", v);
   }
 
   // MinFilter / MaxFilter on Images apply a min/max kernel per channel,

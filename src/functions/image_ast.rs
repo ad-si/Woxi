@@ -1234,43 +1234,117 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Sharpen[img] or Sharpen[img, r] - Unsharp mask
+/// Sharpen[img] / Sharpen[img, r] — unsharp mask on the f64 buffer.
+/// The image is blurred with a separable Gaussian kernel of radius r
+/// (default 2), then combined as `sharpened = 2*original - blurred`.
+/// Result preserves dimensions, channels, and image type. Radius 0 is
+/// the identity. Output values aren't clamped, matching wolframscript.
 pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "Sharpen expects 1 or 2 arguments".into(),
     ));
   }
-
-  let sigma = if args.len() == 2 {
-    expr_to_f64(&args[1])? as f32
-  } else {
-    1.0_f32
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "Sharpen::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Sharpen".to_string(),
+      args: args.to_vec().into(),
+    });
   };
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
-      let sharpened = dyn_img.unsharpen(sigma, 1);
-      Ok(dynamic_image_to_expr(&sharpened))
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "Sharpen::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "Sharpen".to_string(),
-        args: args.to_vec().into(),
-      })
+  let radius = if args.len() == 2 {
+    expr_to_f64(&args[1])?
+  } else {
+    2.0
+  };
+  let r = radius.round().max(0.0) as usize;
+  if r == 0 {
+    return Ok(args[0].clone());
+  }
+  let sigma = (radius / 2.0).max(1e-9);
+
+  // Build a 1D Gaussian kernel of radius r, normalised to sum 1.
+  let mut kernel: Vec<f64> = (0..=2 * r)
+    .map(|i| {
+      let x = i as f64 - r as f64;
+      (-(x * x) / (2.0 * sigma * sigma)).exp()
+    })
+    .collect();
+  let ksum: f64 = kernel.iter().sum();
+  for k in &mut kernel {
+    *k /= ksum;
+  }
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  let idx = |y: usize, x: usize, c: usize| -> usize { (y * w + x) * ch + c };
+
+  // Horizontal pass: row-wise blur with boundary renormalisation.
+  let mut tmp = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    for y in 0..h {
+      for x in 0..w {
+        let mut sum = 0.0;
+        let mut wsum = 0.0;
+        for ki in 0..kernel.len() {
+          let kx = x as isize + ki as isize - r as isize;
+          if kx < 0 || kx >= w as isize {
+            continue;
+          }
+          sum += kernel[ki] * data[idx(y, kx as usize, c_idx)];
+          wsum += kernel[ki];
+        }
+        tmp[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
+      }
     }
   }
+
+  // Vertical pass.
+  let mut blurred = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    for x in 0..w {
+      for y in 0..h {
+        let mut sum = 0.0;
+        let mut wsum = 0.0;
+        for ki in 0..kernel.len() {
+          let ky = y as isize + ki as isize - r as isize;
+          if ky < 0 || ky >= h as isize {
+            continue;
+          }
+          sum += kernel[ki] * tmp[idx(ky as usize, x, c_idx)];
+          wsum += kernel[ki];
+        }
+        blurred[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
+      }
+    }
+  }
+
+  // Unsharp mask: sharpened = 2*original - blurred.
+  let new_data: Vec<f64> = data
+    .iter()
+    .zip(blurred.iter())
+    .map(|(&orig, &blur)| 2.0 * orig - blur)
+    .collect();
+
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// ImageAdjust[img] or ImageAdjust[img, contrast]
