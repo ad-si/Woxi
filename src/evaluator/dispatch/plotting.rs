@@ -44,6 +44,52 @@ pub fn dispatch_plotting(
     "Plot" if args.len() >= 2 => {
       Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
     }
+    // ReImPlot[f, {x, xmin, xmax}, opts...] plots Re[f] and Im[f] on the
+    // same axes. We forward to Plot[{Re[f], Im[f]}, …]. When f is a list,
+    // splat the real and imaginary parts across all entries. Falls through
+    // to the symbolic form when the second argument isn't a valid plot
+    // range spec.
+    "ReImPlot"
+      if args.len() >= 2
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        ) =>
+    {
+      let reim_list = match &args[0] {
+        Expr::List(items) => {
+          let mut out: Vec<Expr> = Vec::with_capacity(items.len() * 2);
+          for it in items.iter() {
+            out.push(Expr::FunctionCall {
+              name: "Re".to_string(),
+              args: vec![it.clone()].into(),
+            });
+            out.push(Expr::FunctionCall {
+              name: "Im".to_string(),
+              args: vec![it.clone()].into(),
+            });
+          }
+          Expr::List(out.into())
+        }
+        f => Expr::List(
+          vec![
+            Expr::FunctionCall {
+              name: "Re".to_string(),
+              args: vec![f.clone()].into(),
+            },
+            Expr::FunctionCall {
+              name: "Im".to_string(),
+              args: vec![f.clone()].into(),
+            },
+          ]
+          .into(),
+        ),
+      };
+      let mut new_args = Vec::with_capacity(args.len());
+      new_args.push(reim_list);
+      new_args.extend(args[1..].iter().cloned());
+      Some(quiet_plot(|| crate::functions::plot::plot_ast(&new_args)))
+    }
     // Manipulate holds its arguments (see core_eval.rs) and, in a text
     // front-end, simply echoes itself back with the body and variable
     // specs preserved. A non-list variable spec emits a Manipulate::vsform

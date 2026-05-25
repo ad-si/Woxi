@@ -851,6 +851,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Ratios" => Some((1, 2)),
     "RayleighDistribution" => Some((1, 1)),
     "Re" => Some((1, 1)),
+    "ReImPlot" => Some((2, usize::MAX)),
     "Read" => Some((1, 2)),
     "ReadLine" => Some((1, 1)),
     "ReadList" => Some((1, 3)),

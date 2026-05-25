@@ -1679,7 +1679,7 @@ Multinomial,Returns the multinomial coefficient,✅,pure,1.0,1707
 Primes,Domain of primes,,unevaluated,4.0,1707
 RandomPrime,Random prime number,✅,contextual,6.0,1709
 SuperDagger,Dagger superscript,,unevaluated,6.0,1709
-ReImPlot,Real and imaginary plot,,unevaluated,12.0,1710
+ReImPlot,Plots the real and imaginary parts of a complex function on the same axes,✅,pure,12.0,1710
 ExponentFunction,Exponent display function,,unevaluated,2.0,1712
 SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
 ProductDistribution,Product of distributions,,unevaluated,8.0,1713
