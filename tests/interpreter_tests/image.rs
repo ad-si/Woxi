@@ -272,7 +272,8 @@ mod image_core {
   fn image_dimensions_image3d_rank3_nested_list() {
     clear_state();
     assert_eq!(
-      interpret("ImageDimensions[Image3D[{{{1.0, 0.0}, {0.0, 1.0}}}]]").unwrap(),
+      interpret("ImageDimensions[Image3D[{{{1.0, 0.0}, {0.0, 1.0}}}]]")
+        .unwrap(),
       "{2, 2, 1}"
     );
     assert_eq!(
@@ -289,10 +290,8 @@ mod image_core {
   fn image_dimensions_image3d_non_square() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageDimensions[Image3D[{{{1, 2, 3}}, {{4, 5, 6}}}]]"
-      )
-      .unwrap(),
+      interpret("ImageDimensions[Image3D[{{{1, 2, 3}}, {{4, 5, 6}}}]]")
+        .unwrap(),
       "{3, 1, 2}"
     );
     assert_eq!(
@@ -316,6 +315,96 @@ mod image_core {
       )
       .unwrap(),
       "{3, 1, 1}"
+    );
+  }
+
+  // ImageChannels for Image3D: rank-3 is grayscale (1 channel), rank-4
+  // uses the innermost list length.
+  #[test]
+  fn image_channels_image3d_rank3_is_one() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[Image3D[NumericArray[{{{0, 1}, {2, 3}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("ImageChannels[Image3D[{{{0.1, 0.2}, {0.3, 0.4}}}]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn image_channels_image3d_rank4_uses_inner_size() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageChannels[Image3D[{{{{1.0, 0, 0}, {0, 1.0, 0}}}}]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageChannels[Image3D[{{{{1.0, 0, 0, 0.5}}}}]]").unwrap(),
+      "4"
+    );
+  }
+
+  // ImageType for Image3D: pull the type tag from the NumericArray, or
+  // default to Real32 for a raw nested list.
+  #[test]
+  fn image_type_image3d_with_numeric_array() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageType[Image3D[NumericArray[{{{0, 1}, {2, 3}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "Byte"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[Image3D[NumericArray[{{{1, 2}}}, \"UnsignedInteger16\"]]]"
+      )
+      .unwrap(),
+      "Bit16"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[Image3D[NumericArray[{{{0.5, 0.6}}}, \"Real32\"]]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
+  #[test]
+  fn image_type_image3d_raw_list_defaults_to_real32() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageType[Image3D[{{{0.5, 0.6}}}]]").unwrap(),
+      "Real32"
+    );
+  }
+
+  // ImageAspectRatio for Image3D: height/width as an exact rational.
+  #[test]
+  fn image_aspect_ratio_image3d() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageAspectRatio[Image3D[NumericArray[{{{0, 1}, {2, 3}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "ImageAspectRatio[Image3D[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, \
+         {0, 0, 1}, {0.5, 0.5, 0.5}}}]]"
+      )
+      .unwrap(),
+      "4/3"
     );
   }
 

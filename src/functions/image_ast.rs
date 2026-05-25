@@ -426,7 +426,11 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(dims) = image3d_dimensions(&args[0]) {
     return Ok(Expr::List(
-      dims.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+      dims
+        .into_iter()
+        .map(Expr::Integer)
+        .collect::<Vec<_>>()
+        .into(),
     ));
   }
   // Match wolframscript: emit ImageDimensions::imginv before
@@ -491,63 +495,98 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageAspectRatio expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Image { width, height, .. } => {
-      let w = *width as i128;
-      let h = *height as i128;
-      if w == 0 {
-        return Ok(Expr::FunctionCall {
-          name: "ImageAspectRatio".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-      // Reduce gcd
-      fn gcd(a: i128, b: i128) -> i128 {
-        if b == 0 { a.abs() } else { gcd(b, a % b) }
-      }
-      let g = gcd(h, w);
-      let (num, den) = (h / g, w / g);
-      if den == 1 {
-        Ok(Expr::Integer(num))
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-        })
-      }
+  fn ratio(h: i128, w: i128) -> Expr {
+    fn gcd(a: i128, b: i128) -> i128 {
+      if b == 0 { a.abs() } else { gcd(b, a % b) }
     }
-    _ => {
-      crate::emit_message(&format!(
-        "ImageAspectRatio::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageAspectRatio".to_string(),
-        args: args.to_vec().into(),
-      })
+    let g = gcd(h, w);
+    let (num, den) = (h / g, w / g);
+    if den == 1 {
+      Expr::Integer(num)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+      }
     }
   }
+  if let Expr::Image { width, height, .. } = &args[0] {
+    let (w, h) = (*width as i128, *height as i128);
+    if w == 0 {
+      return Ok(Expr::FunctionCall {
+        name: "ImageAspectRatio".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    return Ok(ratio(h, w));
+  }
+  if let Some(dims) = image3d_dimensions(&args[0])
+    && let [w, h, _] = dims.as_slice()
+    && *w != 0
+  {
+    return Ok(ratio(*h, *w));
+  }
+  crate::emit_message(&format!(
+    "ImageAspectRatio::imginv: Expecting an image or graphics instead of {}.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  Ok(Expr::FunctionCall {
+    name: "ImageAspectRatio".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
-/// ImageChannels[img] - Channel count (1/3/4)
+/// ImageChannels[img] — channel count (1/3/4 for 2D, derived from the
+/// Image3D rank for 3D: rank-3 → 1, rank-4 → innermost length).
 pub fn image_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ImageChannels expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Image { channels, .. } => Ok(Expr::Integer(*channels as i128)),
-    _ => {
-      crate::emit_message(&format!(
-        "ImageChannels::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageChannels".to_string(),
-        args: args.to_vec().into(),
-      })
+  if let Expr::Image { channels, .. } = &args[0] {
+    return Ok(Expr::Integer(*channels as i128));
+  }
+  if let Some(ch) = image3d_channels(&args[0]) {
+    return Ok(Expr::Integer(ch as i128));
+  }
+  crate::emit_message(&format!(
+    "ImageChannels::imginv: Expecting an image or graphics instead of {}.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  Ok(Expr::FunctionCall {
+    name: "ImageChannels".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Channel count for a valid Image3D[arg]; None for invalid shapes.
+fn image3d_channels(e: &Expr) -> Option<usize> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let inner = match &args[0] {
+    Expr::FunctionCall {
+      name: na_name,
+      args: na_args,
+    } if na_name == "NumericArray" && !na_args.is_empty() => &na_args[0],
+    other => other,
+  };
+  let rank = nested_list_rank(inner)?;
+  match rank {
+    3 => Some(1),
+    4 => {
+      // Innermost length: list at depth 0, 1, 2, 3 — depth-3 element is
+      // the per-pixel channel vector.
+      let l1 = list_first(inner)?;
+      let l2 = list_first(l1)?;
+      let l3 = list_first(l2)?;
+      list_len(l3)
     }
+    _ => None,
   }
 }
 
@@ -558,28 +597,64 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageType expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Image { image_type, .. } => {
-      let type_str = match image_type {
-        ImageType::Bit => "Bit",
-        ImageType::Byte => "Byte",
-        ImageType::Bit16 => "Bit16",
-        ImageType::Real32 => "Real32",
-        ImageType::Real64 => "Real64",
-      };
-      Ok(Expr::String(type_str.to_string()))
+  let type_to_str = |t: &ImageType| -> &'static str {
+    match t {
+      ImageType::Bit => "Bit",
+      ImageType::Byte => "Byte",
+      ImageType::Bit16 => "Bit16",
+      ImageType::Real32 => "Real32",
+      ImageType::Real64 => "Real64",
     }
-    _ => {
-      crate::emit_message(&format!(
-        "ImageType::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageType".to_string(),
-        args: args.to_vec().into(),
-      })
-    }
+  };
+  if let Expr::Image { image_type, .. } = &args[0] {
+    return Ok(Expr::String(type_to_str(image_type).to_string()));
   }
+  if let Some(t) = image3d_type(&args[0]) {
+    return Ok(Expr::String(type_to_str(&t).to_string()));
+  }
+  crate::emit_message(&format!(
+    "ImageType::imginv: Expecting an image or graphics instead of {}.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  Ok(Expr::FunctionCall {
+    name: "ImageType".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Resolve the underlying type tag for a valid Image3D[arg]. Defaults
+/// to Real32 if there's no NumericArray wrapper.
+fn image3d_type(e: &Expr) -> Option<ImageType> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let (inner, type_tag) = match &args[0] {
+    Expr::FunctionCall {
+      name: na_name,
+      args: na_args,
+    } if na_name == "NumericArray" && !na_args.is_empty() => {
+      let tag = na_args.get(1).and_then(|t| match t {
+        Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
+        _ => None,
+      });
+      (&na_args[0], tag)
+    }
+    other => (other, None),
+  };
+  let rank = nested_list_rank(inner)?;
+  if rank != 3 && rank != 4 {
+    return None;
+  }
+  Some(match type_tag {
+    Some("Byte") | Some("UnsignedInteger8") => ImageType::Byte,
+    Some("Bit") => ImageType::Bit,
+    Some("Bit16") | Some("UnsignedInteger16") => ImageType::Bit16,
+    Some("Real64") => ImageType::Real64,
+    _ => ImageType::Real32,
+  })
 }
 
 /// ImageData[img] - Extract pixel values as nested List
