@@ -370,10 +370,8 @@ mod image_core {
       "Bit16"
     );
     assert_eq!(
-      interpret(
-        "ImageType[Image3D[NumericArray[{{{0.5, 0.6}}}, \"Real32\"]]]"
-      )
-      .unwrap(),
+      interpret("ImageType[Image3D[NumericArray[{{{0.5, 0.6}}}, \"Real32\"]]]")
+        .unwrap(),
       "Real32"
     );
   }
@@ -945,6 +943,104 @@ mod image_processing {
       interpret("ImageDimensions[ImageRotate[Image[{{0, 0.5, 1}}], Pi]]")
         .unwrap();
     assert_eq!(result, "{3, 1}");
+  }
+
+  // Default ImageRotate[image] is a Pi/2 counter-clockwise rotation.
+  // For a 2x2 image, pixel data is reorganised but precision is
+  // preserved (no Byte quantization round-trip).
+  #[test]
+  fn image_rotate_default_is_pi_over_two_ccw() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{0.1, 0.2}, {0.3, 0.4}}]]]")
+        .unwrap(),
+      "{{0.20000000298023224, 0.4000000059604645}, \
+       {0.10000000149011612, 0.30000001192092896}}"
+    );
+  }
+
+  #[test]
+  fn image_rotate_pi_over_two_square() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[{{0.1, 0.2}, {0.3, 0.4}}], Pi/2]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224, 0.4000000059604645}, \
+       {0.10000000149011612, 0.30000001192092896}}"
+    );
+  }
+
+  #[test]
+  fn image_rotate_3_pi_over_two_square() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[{{0.1, 0.2}, {0.3, 0.4}}], 3*Pi/2]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.10000000149011612}, \
+       {0.4000000059604645, 0.20000000298023224}}"
+    );
+  }
+
+  #[test]
+  fn image_rotate_pi_square() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{0.1, 0.2}, {0.3, 0.4}}], Pi]]")
+        .unwrap(),
+      "{{0.4000000059604645, 0.30000001192092896}, \
+       {0.20000000298023224, 0.10000000149011612}}"
+    );
+  }
+
+  // For a non-square image, Pi/2 swaps width and height.
+  #[test]
+  fn image_rotate_pi_over_two_non_square() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], Pi/2]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.6000000238418579}, \
+       {0.20000000298023224, 0.5}, \
+       {0.10000000149011612, 0.4000000059604645}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageRotate[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], Pi/2]]"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  // 0 and 2*Pi leave the image identical.
+  #[test]
+  fn image_rotate_zero_angle_is_identity() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{0.1, 0.2}, {0.3, 0.4}}], 0]]")
+        .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224}, \
+       {0.30000001192092896, 0.4000000059604645}}"
+    );
+  }
+
+  // RGB images preserve channel ordering across rotation.
+  #[test]
+  fn image_rotate_rgb_preserves_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], Pi/2]]"
+      )
+      .unwrap(),
+      "{{{0., 1., 0.}}, {{1., 0., 0.}}}"
+    );
   }
 
   #[test]

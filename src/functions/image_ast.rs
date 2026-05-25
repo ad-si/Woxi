@@ -1383,10 +1383,16 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// ImageRotate[img, angle] - Rotate by angle in radians
+/// ImageRotate[img] / ImageRotate[img, angle] — counter-clockwise rotation
+/// in radians, snapped to the nearest 90° increment. Default angle is
+/// Pi/2. Operates directly on the f64 pixel buffer so Real32 precision is
+/// preserved (no Byte round-trip).
 pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // wolframscript checks the image arg before arg count, so a non-image
-  // first arg emits imginv regardless of how many extra args are passed.
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ImageRotate expects 1 or 2 arguments".into(),
+    ));
+  }
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "ImageRotate::imginv: Expecting an image or graphics instead of {}.",
@@ -1398,51 +1404,98 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "ImageRotate expects exactly 2 arguments".into(),
-    ));
-  }
+  let pi = std::f64::consts::PI;
+  let angle = if args.len() >= 2 {
+    expr_to_f64(&args[1])?
+  } else {
+    pi / 2.0
+  };
 
-  let angle = expr_to_f64(&args[1])?;
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    unreachable!()
+  };
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
+  let norm = ((angle % (2.0 * pi)) + 2.0 * pi) % (2.0 * pi);
+  let quadrant = if (norm - pi / 2.0).abs() < 0.01 {
+    1
+  } else if (norm - pi).abs() < 0.01 {
+    2
+  } else if (norm - 3.0 * pi / 2.0).abs() < 0.01 {
+    3
+  } else if norm < 0.01 || (norm - 2.0 * pi).abs() < 0.01 {
+    0
+  } else {
+    // Non-90° rotations aren't supported; pass through unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "ImageRotate".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
 
-      // Normalize angle to [0, 2π)
-      let pi = std::f64::consts::PI;
-      let norm = ((angle % (2.0 * pi)) + 2.0 * pi) % (2.0 * pi);
-
-      // Snap to nearest 90° increment
-      let rotated = if (norm - pi / 2.0).abs() < 0.01 {
-        dyn_img.rotate90()
-      } else if (norm - pi).abs() < 0.01 {
-        dyn_img.rotate180()
-      } else if (norm - 3.0 * pi / 2.0).abs() < 0.01 {
-        dyn_img.rotate270()
-      } else if norm < 0.01 || (norm - 2.0 * pi).abs() < 0.01 {
-        dyn_img
-      } else {
-        // For arbitrary angles, we only support 90° increments
-        // Return unevaluated for now
-        return Ok(Expr::FunctionCall {
-          name: "ImageRotate".to_string(),
-          args: args.to_vec().into(),
-        });
-      };
-      Ok(dynamic_image_to_expr(&rotated))
+  let pixel = |r: usize, c: usize| -> &[f64] {
+    let base = (r * w + c) * ch;
+    &data[base..base + ch]
+  };
+  let mut new_data = Vec::with_capacity(w * h * ch);
+  let (new_w, new_h) = match quadrant {
+    0 => {
+      for r in 0..h {
+        for c in 0..w {
+          new_data.extend_from_slice(pixel(r, c));
+        }
+      }
+      (*width, *height)
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageRotate: first argument is not an Image".into(),
-    )),
-  }
+    1 => {
+      // Pi/2 CCW: new dims (H, W); new(r, c) = old(c, W - 1 - r)
+      let nw = h;
+      let nh = w;
+      for r in 0..nh {
+        for c in 0..nw {
+          new_data.extend_from_slice(pixel(c, w - 1 - r));
+        }
+      }
+      (nw as u32, nh as u32)
+    }
+    2 => {
+      // 180°: new(r, c) = old(H - 1 - r, W - 1 - c)
+      for r in 0..h {
+        for c in 0..w {
+          new_data.extend_from_slice(pixel(h - 1 - r, w - 1 - c));
+        }
+      }
+      (*width, *height)
+    }
+    _ => {
+      // 3*Pi/2 CCW (== Pi/2 CW): new dims (H, W); new(r, c) = old(H - 1 - c, r)
+      let nw = h;
+      let nh = w;
+      for r in 0..nh {
+        for c in 0..nw {
+          new_data.extend_from_slice(pixel(h - 1 - c, r));
+        }
+      }
+      (nw as u32, nh as u32)
+    }
+  };
+
+  Ok(Expr::Image {
+    width: new_w,
+    height: new_h,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
