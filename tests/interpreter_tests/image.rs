@@ -1510,6 +1510,83 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageCollage on same-shape images lays them out as a near-square
+  // grid without resizing. The matching ws layouts for n=2 and n=4
+  // happen to land on cols = ceil(sqrt(n)), rows = ceil(n/cols).
+  #[test]
+  fn image_collage_two_images_is_one_row() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCollage[{Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, \
+        0.30000001192092896, 0.4000000059604645}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageCollage[\
+         {Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}]]"
+      )
+      .unwrap(),
+      "{4, 1}"
+    );
+  }
+
+  // Four images of the same shape pack into a 2x2 grid.
+  #[test]
+  fn image_collage_four_images_is_two_by_two() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCollage[\
+         {Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}], \
+         Image[{{0.5, 0.6}}], Image[{{0.7, 0.8}}]}]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, \
+        0.30000001192092896, 0.4000000059604645}, \
+       {0.5, 0.6000000238418579, \
+        0.699999988079071, 0.800000011920929}}"
+    );
+  }
+
+  // Single image: the result is the image itself (dimensions preserved).
+  #[test]
+  fn image_collage_single_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageCollage[{Image[{{0.1, 0.2}, {0.3, 0.4}}]}]]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  // Channels and image type are preserved.
+  #[test]
+  fn image_collage_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageCollage[\
+         {Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[ImageCollage[\
+         {Image[{{0.1, 0.2}}], Image[{{0.3, 0.4}}]}]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
   // ImageAssemble on a grid of same-shape images concatenates them
   // without resizing and preserves pixel precision (no Byte
   // round-trip).

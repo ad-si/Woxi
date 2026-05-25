@@ -3774,6 +3774,81 @@ fn extract_image_weight(
   None
 }
 
+/// Fast path for ImageCollage when every entry is an Image with the
+/// same shape and type. Lays them out in a near-square grid using
+/// cols = ceil(sqrt(n)), rows = ceil(n/cols). The output has the same
+/// channels and image_type as the inputs. Empty cells (when n is not
+/// a perfect rectangle) stay as the buffer's default (0).
+fn try_collage_same_shape(items: &[Expr]) -> Option<Expr> {
+  if items.is_empty() {
+    return None;
+  }
+  let (cw, ch_count, ch_first, image_type) = match &items[0] {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      image_type,
+      ..
+    } => (*width, *height, *channels, *image_type),
+    _ => return None,
+  };
+  for it in items.iter() {
+    let Expr::Image {
+      width,
+      height,
+      channels,
+      image_type: t,
+      ..
+    } = it
+    else {
+      return None;
+    };
+    if *width != cw
+      || *height != ch_count
+      || *channels != ch_first
+      || *t != image_type
+    {
+      return None;
+    }
+  }
+
+  let n = items.len();
+  let cols = (n as f64).sqrt().ceil() as usize;
+  let rows = n.div_ceil(cols);
+  let cell_w = cw as usize;
+  let cell_h = ch_count as usize;
+  let c = ch_first as usize;
+  let out_w = cols * cell_w;
+  let out_h = rows * cell_h;
+  let mut out = vec![0.0_f64; out_w * out_h * c];
+
+  for (i, item) in items.iter().enumerate() {
+    let Expr::Image { data, .. } = item else {
+      return None;
+    };
+    let r = i / cols;
+    let col = i % cols;
+    for y in 0..cell_h {
+      for x in 0..cell_w {
+        let src = (y * cell_w + x) * c;
+        let dst = ((r * cell_h + y) * out_w + col * cell_w + x) * c;
+        for k in 0..c {
+          out[dst + k] = data[src + k];
+        }
+      }
+    }
+  }
+
+  Some(Expr::Image {
+    width: out_w as u32,
+    height: out_h as u32,
+    channels: ch_first,
+    data: Arc::new(out),
+    image_type,
+  })
+}
+
 /// ImageCollage[{img1, img2, ...}] — create a collage from images.
 /// ImageCollage[{w1*img1, w2*img2, ...}] — weighted collage.
 /// ImageCollage[{{img1, w1}, ...}] — paired format.
@@ -3836,6 +3911,17 @@ pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   };
+
+  // Fast path: every item is a plain Image of the same width, height,
+  // channel count, and image type, with no explicit size or fitting
+  // override. Lay them out in a near-square grid (cols = ceil(sqrt(n)),
+  // rows = ceil(n/cols)) and copy pixel data directly without
+  // resampling.
+  if args.len() == 1
+    && let Some(out) = try_collage_same_shape(list)
+  {
+    return Ok(out);
+  }
 
   for item in list {
     // Try direct image/weighted image
