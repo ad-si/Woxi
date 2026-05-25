@@ -2537,7 +2537,11 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// ImageCompose[img1, img2] - Overlay img2 on img1 (centered)
+/// ImageCompose[img, overlay] / ImageCompose[img, {overlay, α}] —
+/// overlay an image on top of img, centered. The output has the same
+/// dimensions, channel count and image type as `img`. With an alpha
+/// argument, the overlapping region is blended as (1 - α)*bg + α*ov;
+/// without one the overlay replaces the background pixels.
 pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2545,41 +2549,90 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match (&args[0], &args[1]) {
-    (
-      Expr::Image {
-        width: w1,
-        height: h1,
-        channels: ch1,
-        data: data1,
-        ..
-      },
-      Expr::Image {
-        width: w2,
-        height: h2,
-        channels: ch2,
-        data: data2,
-        ..
-      },
-    ) => {
-      let dyn1 = expr_to_dynamic_image(*w1, *h1, *ch1, data1);
-      let dyn2 = expr_to_dynamic_image(*w2, *h2, *ch2, data2);
-
-      // Overlay img2 centered on img1
-      let mut base = dyn1.to_rgba8();
-      let overlay = dyn2.to_rgba8();
-      let offset_x = (*w1 as i64 - *w2 as i64) / 2;
-      let offset_y = (*h1 as i64 - *h2 as i64) / 2;
-
-      image::imageops::overlay(&mut base, &overlay, offset_x, offset_y);
-      Ok(dynamic_image_to_expr(&image::DynamicImage::ImageRgba8(
-        base,
-      )))
+  // Parse the overlay spec: either an Image, or {Image, α}.
+  let (overlay_expr, alpha) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => {
+      let a = expr_to_f64(&items[1])?;
+      (&items[0], Some(a))
     }
-    _ => Err(InterpreterError::EvaluationError(
+    _ => (&args[1], None),
+  };
+
+  let (
+    Expr::Image {
+      width: w1,
+      height: h1,
+      channels: ch1,
+      data: data1,
+      image_type,
+    },
+    Expr::Image {
+      width: w2,
+      height: h2,
+      channels: ch2,
+      data: data2,
+      ..
+    },
+  ) = (&args[0], overlay_expr)
+  else {
+    return Err(InterpreterError::EvaluationError(
       "ImageCompose: both arguments must be Images".into(),
-    )),
+    ));
+  };
+
+  let bw = *w1 as i64;
+  let bh = *h1 as i64;
+  let ow = *w2 as i64;
+  let oh = *h2 as i64;
+  let bch = *ch1 as usize;
+  let och = *ch2 as usize;
+
+  // wolframscript centers the overlay; the data buffer is laid out
+  // top-down, but Wolfram positions things in image (bottom-up) y. Use
+  // `floor(bw/2) - floor(ow/2)` for x and `ceil(bh/2) - ceil(oh/2)` for
+  // the top-down y so behavior matches across even/odd sizes.
+  let offset_x = bw / 2 - ow / 2;
+  let offset_y = (bh + 1) / 2 - (oh + 1) / 2;
+
+  // Output starts as a copy of the background; overlapping pixels are
+  // replaced (or alpha-blended) using the overlay's channels.
+  let mut out: Vec<f64> = data1.as_ref().clone();
+  for oy in 0..oh {
+    let by = oy + offset_y;
+    if by < 0 || by >= bh {
+      continue;
+    }
+    for ox in 0..ow {
+      let bx = ox + offset_x;
+      if bx < 0 || bx >= bw {
+        continue;
+      }
+      let base_idx = (by as usize * *w1 as usize + bx as usize) * bch;
+      let over_idx = (oy as usize * *w2 as usize + ox as usize) * och;
+      for c in 0..bch {
+        // Map the overlay's channel: if the overlay has fewer channels
+        // (e.g. grayscale into RGB), broadcast the single value.
+        let ov = if c < och {
+          data2[over_idx + c]
+        } else {
+          data2[over_idx + (och - 1)]
+        };
+        let bg = out[base_idx + c];
+        out[base_idx + c] = match alpha {
+          Some(a) => (1.0 - a) * bg + a * ov,
+          None => ov,
+        };
+      }
+    }
   }
+
+  Ok(Expr::Image {
+    width: *w1,
+    height: *h1,
+    channels: *ch1,
+    data: Arc::new(out),
+    image_type: *image_type,
+  })
 }
 
 /// Helper for pointwise image operations

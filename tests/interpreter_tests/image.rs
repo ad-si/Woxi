@@ -1493,14 +1493,84 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageCompose on same-size images replaces the background with the
+  // overlay (no blending unless explicit). The result preserves the
+  // background's channel count.
+  #[test]
+  fn image_compose_same_size_replaces() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCompose[Image[{{0.1, 0.2}, {0.3, 0.4}}], \
+         Image[{{0.9, 0.8}, {0.7, 0.6}}]]]"
+      )
+      .unwrap(),
+      "{{0.8999999761581421, 0.800000011920929}, \
+       {0.699999988079071, 0.6000000238418579}}"
+    );
+  }
+
+  // Smaller overlay is centered on the background; non-overlapped
+  // pixels keep their original value.
+  #[test]
+  fn image_compose_smaller_overlay_is_centered() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCompose[Image[{{0.1, 0.2, 0.3, 0.4}, \
+         {0.5, 0.6, 0.7, 0.8}}], Image[{{0.9}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, 0.8999999761581421, \
+       0.4000000059604645}, \
+       {0.5, 0.6000000238418579, 0.699999988079071, 0.800000011920929}}"
+    );
+  }
+
+  // ImageCompose[bg, {overlay, α}] alpha-blends: (1-α)*bg + α*overlay
+  // for the overlapping region.
+  #[test]
+  fn image_compose_alpha_blend() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCompose[Image[{{0.1, 0.2}, {0.3, 0.4}}], \
+         {Image[{{0.9, 0.8}, {0.7, 0.6}}], 0.5}]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.5}, {0.5, 0.5}}"
+    );
+  }
+
+  // Output dimensions and channel count match the background.
+  #[test]
+  fn image_compose_preserves_background_shape() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageCompose[Image[{{0.1, 0.2, 0.3, 0.4}, \
+         {0.5, 0.6, 0.7, 0.8}}], Image[{{0.9}}]]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageCompose[Image[{{0.1, 0.2}, {0.3, 0.4}}], \
+         Image[{{0.9, 0.8}, {0.7, 0.6}}]]]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
   // ImageAdd accepts a variadic list of extra terms: each is added in
   // turn (scalar or image), threading through the partial sums.
   #[test]
   fn image_add_three_args() {
     clear_state();
     assert_eq!(
-      interpret("ImageData[ImageAdd[Image[{{0.1, 0.5}}], 0.2, 0.1]]")
-        .unwrap(),
+      interpret("ImageData[ImageAdd[Image[{{0.1, 0.5}}], 0.2, 0.1]]").unwrap(),
       "{{0.4000000059604645, 0.800000011920929}}"
     );
   }
