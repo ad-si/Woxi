@@ -294,7 +294,16 @@ pub fn dispatch_plotting(
         plot_args.push(opt.clone());
       }
       Some(quiet_plot(|| {
-        crate::functions::plot3d::plot3d_ast(&plot_args)
+        match crate::functions::plot3d::plot3d_ast(&plot_args) {
+          Ok(g) => Ok(g),
+          // When the function isn't numerically evaluable (e.g. symbolic
+          // special functions), fall back to an empty Graphics3D so the
+          // caller still gets a placeholder, matching wolframscript's
+          // `-Graphics3D-` output.
+          Err(_) => crate::functions::plot3d::graphics3d_ast(&[Expr::List(
+            vec![].into(),
+          )]),
+        }
       }))
     }
     // ComplexRegionPlot[pred, {z, zmin, zmax}] — plot the region in the
