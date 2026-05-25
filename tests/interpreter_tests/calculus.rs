@@ -4584,6 +4584,63 @@ mod fourier_cos_transform {
       result
     );
   }
+
+  #[test]
+  fn inverse_sqrt() {
+    // FourierCosTransform[1/Sqrt[t], t, w] = 1/Sqrt[w]
+    clear_state();
+    assert_eq!(
+      interpret("FourierCosTransform[1/Sqrt[t], t, w]").unwrap(),
+      "1/Sqrt[w]"
+    );
+  }
+
+  #[test]
+  fn gaussian() {
+    // FourierCosTransform[E^(-t^2), t, w] = 1/(Sqrt[2]*E^(w^2/4))
+    clear_state();
+    assert_eq!(
+      interpret("FourierCosTransform[E^(-t^2), t, w]").unwrap(),
+      "1/(Sqrt[2]*E^(w^2/4))"
+    );
+  }
+
+  #[test]
+  fn gaussian_scaled() {
+    // FourierCosTransform[E^(-a*t^2), t, w] = E^(-w^2/(4 a))/Sqrt[2 a].
+    clear_state();
+    let result = interpret("FourierCosTransform[E^(-2*t^2), t, w]").unwrap();
+    assert_eq!(result, "1/(2*E^(w^2/8))");
+  }
+
+  #[test]
+  fn radial_inverse_distance_2d() {
+    // 2-D radial FCT: 1/Sqrt[x^2 + y^2] → 1/Sqrt[u^2 + v^2].
+    clear_state();
+    assert_eq!(
+      interpret("FourierCosTransform[1/Sqrt[x^2 + y^2], {x, y}, {u, v}]").unwrap(),
+      "1/Sqrt[u^2 + v^2]"
+    );
+    // Symmetric in the order of {t1, t2}.
+    assert_eq!(
+      interpret("FourierCosTransform[1/Sqrt[y^2 + x^2], {x, y}, {u, v}]").unwrap(),
+      "1/Sqrt[u^2 + v^2]"
+    );
+  }
+}
+
+mod fourier_sin_cos_sqrt {
+  use super::*;
+
+  #[test]
+  fn fst_inverse_sqrt() {
+    // FourierSinTransform[1/Sqrt[t], t, w] = 1/Sqrt[w]
+    clear_state();
+    assert_eq!(
+      interpret("FourierSinTransform[1/Sqrt[t], t, w]").unwrap(),
+      "1/Sqrt[w]"
+    );
+  }
 }
 
 mod discrete_convolve {

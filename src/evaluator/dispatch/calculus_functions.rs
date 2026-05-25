@@ -4147,6 +4147,16 @@ fn fourier_cos_transform(
   t_expr: &Expr,
   w_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Multidimensional form: FCT[f, {t1,..,tn}, {w1,..,wn}].
+  // Only the 2-D radial identity is implemented: 1/Sqrt[x^2+y^2] → 1/Sqrt[u^2+v^2].
+  if let (Expr::List(ts), Expr::List(ws)) = (t_expr, w_expr)
+    && ts.len() == 2
+    && ws.len() == 2
+    && let Some(result) = fourier_cos_transform_2d_radial(expr, ts, ws)
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -4281,7 +4291,164 @@ fn fourier_sin_cos_transform_inner(
     ])));
   }
 
+  // FST/FCT[1/Sqrt[t], t, w] = 1/Sqrt[w] (for w > 0)
+  // The unified result follows from ∫_0^∞ t^(-1/2) sin/cos(w t) dt = sqrt(π/(2w)).
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Power"
+    && fargs.len() == 2
+    && matches!(&fargs[0], Expr::Identifier(v) if v == t)
+    && is_neg_half(fargs[1])
+  {
+    return Some(make_power(
+      make_sqrt(w.clone()),
+      Expr::Integer(-1),
+    ));
+  }
+
+  // FCT[E^(-a*t^2), t, w] = E^(-w^2/(4a)) / Sqrt[2 a]   for a > 0.
+  // (FST has no closed form in elementary functions — uses DawsonF.)
+  if !is_sin
+    && let Some(exp_arg) = is_exp_of(expr)
+    && let Some(a) = extract_neg_quadratic_coeff(exp_arg, t)
+  {
+    let four_a = make_times(vec![Expr::Integer(4), a.clone()]);
+    let w_sq = make_power(w.clone(), Expr::Integer(2));
+    let neg_w_sq_over_4a = make_times(vec![
+      Expr::Integer(-1),
+      w_sq,
+      make_power(four_a, Expr::Integer(-1)),
+    ]);
+    let numerator = make_power(Expr::Constant("E".to_string()), neg_w_sq_over_4a);
+    let two_a = make_times(vec![Expr::Integer(2), a]);
+    let denom = make_sqrt(two_a);
+    return Some(make_times(vec![
+      numerator,
+      make_power(denom, Expr::Integer(-1)),
+    ]));
+  }
+
   None
+}
+
+/// Match the 2-D radial identity FCT[1/Sqrt[t1^2 + t2^2], {t1, t2}, {w1, w2}]
+/// → 1/Sqrt[w1^2 + w2^2]. Returns None when the input doesn't fit.
+fn fourier_cos_transform_2d_radial(
+  expr: &Expr,
+  ts: &[Expr],
+  ws: &[Expr],
+) -> Option<Expr> {
+  let t1 = if let Expr::Identifier(n) = &ts[0] {
+    n.as_str()
+  } else {
+    return None;
+  };
+  let t2 = if let Expr::Identifier(n) = &ts[1] {
+    n.as_str()
+  } else {
+    return None;
+  };
+
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+
+  // Expect Power[Plus[t1^2, t2^2], -1/2].
+  let (pname, pargs) = as_func_args(&normalized).filter(|(n, _)| *n == "Power")?;
+  if !is_neg_half(pargs[1]) {
+    return None;
+  }
+  let _ = pname;
+  let (sname, sargs) = as_func_args(pargs[0]).filter(|(n, _)| *n == "Plus")?;
+  if sargs.len() != 2 {
+    return None;
+  }
+  let is_var_sq = |e: &Expr, v: &str| -> bool {
+    if let Some((n, a)) = as_func_args(e)
+      && n == "Power"
+      && a.len() == 2
+      && matches!(a[0], Expr::Identifier(s) if s == v)
+      && matches!(a[1], Expr::Integer(2))
+    {
+      return true;
+    }
+    false
+  };
+  let saw_t1 = is_var_sq(sargs[0], t1) && is_var_sq(sargs[1], t2);
+  let saw_t2 = is_var_sq(sargs[0], t2) && is_var_sq(sargs[1], t1);
+  if !(saw_t1 || saw_t2) {
+    return None;
+  }
+  let _ = sname;
+
+  let w_sum = make_plus(vec![
+    make_power(ws[0].clone(), Expr::Integer(2)),
+    make_power(ws[1].clone(), Expr::Integer(2)),
+  ]);
+  Some(make_power(make_sqrt(w_sum), Expr::Integer(-1)))
+}
+
+/// True if `e` represents the rational -1/2.
+fn is_neg_half(e: &Expr) -> bool {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Rational"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Integer(-1))
+    && matches!(&args[1], Expr::Integer(2))
+  {
+    return true;
+  }
+  false
+}
+
+/// If `expr = -a * t^2` for some `a` independent of `t`, return `a`.
+/// Accepts `Times[-1, Power[t, 2]]` (a=1) and `Times[c, Power[t, 2]]` for
+/// negative numeric `c` (a = -c).
+fn extract_neg_quadratic_coeff(expr: &Expr, t: &str) -> Option<Expr> {
+  let (_, fargs) = as_func_args(expr).filter(|(n, _)| *n == "Times")?;
+
+  let mut has_neg = false;
+  let mut numeric_factor: Option<i128> = None;
+  let mut has_t_sq = false;
+  let mut other: Vec<Expr> = Vec::new();
+  for a in fargs {
+    if let Some((pname, pargs)) = as_func_args(a)
+      && pname == "Power"
+      && pargs.len() == 2
+      && matches!(&pargs[0], Expr::Identifier(v) if v == t)
+      && matches!(&pargs[1], Expr::Integer(2))
+    {
+      has_t_sq = true;
+      continue;
+    }
+    match a {
+      Expr::Integer(-1) => has_neg = true,
+      Expr::Integer(n) if *n < 0 => {
+        has_neg = true;
+        numeric_factor = Some(numeric_factor.unwrap_or(1) * (-*n));
+      }
+      Expr::Integer(n) if *n > 0 => {
+        numeric_factor = Some(numeric_factor.unwrap_or(1) * *n);
+      }
+      _ if !depends_on(a, t) => other.push(a.clone()),
+      _ => return None,
+    }
+  }
+  if !has_t_sq || !has_neg {
+    return None;
+  }
+  // Reassemble the absolute value of the coefficient.
+  let mut parts: Vec<Expr> = Vec::new();
+  if let Some(n) = numeric_factor
+    && n != 1
+  {
+    parts.push(Expr::Integer(n));
+  }
+  parts.extend(other);
+  Some(match parts.len() {
+    0 => Expr::Integer(1),
+    1 => parts.into_iter().next().unwrap(),
+    _ => make_times(parts),
+  })
 }
 
 /// Check if expr is E^(something) or Exp[something], return the exponent.

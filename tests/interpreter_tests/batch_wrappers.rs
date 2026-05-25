@@ -125,7 +125,8 @@ mod batch_unevaluated_wrappers {
   #[test]
   fn effective_interest_listable_rate() {
     // First argument threads over a list of rates.
-    let result = interpret("EffectiveInterest[{0.04, 0.05, 0.06}, 1/2]").unwrap();
+    let result =
+      interpret("EffectiveInterest[{0.04, 0.05, 0.06}, 1/2]").unwrap();
     assert!(result.starts_with("{"), "got {}", result);
     let stripped = result.trim_start_matches('{').trim_end_matches('}');
     let vals: Vec<f64> = stripped
