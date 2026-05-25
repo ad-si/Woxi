@@ -2421,6 +2421,28 @@ mod take_multi_dim {
       "f[a, b, c]"
     );
   }
+
+  #[test]
+  fn drop_up_to_more_than_length() {
+    // Drop[list, UpTo[n]] drops at most n; capped at list length.
+    assert_eq!(interpret("Drop[{a, b, c, d}, UpTo[6]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn drop_up_to_partial() {
+    assert_eq!(
+      interpret("Drop[{a, b, c, d}, UpTo[2]]").unwrap(),
+      "{c, d}"
+    );
+  }
+
+  #[test]
+  fn drop_up_to_zero() {
+    assert_eq!(
+      interpret("Drop[{a, b, c, d}, UpTo[0]]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
 }
 
 mod constant_array {

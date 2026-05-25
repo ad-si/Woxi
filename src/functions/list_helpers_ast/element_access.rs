@@ -774,6 +774,20 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Handle UpTo[n]: drop min(n, len) elements from the front.
+  if let Expr::FunctionCall {
+    name: up_name,
+    args: up_args,
+  } = n
+    && up_name == "UpTo"
+    && up_args.len() == 1
+    && let Some(max_count) = expr_to_i128(&up_args[0])
+    && max_count >= 0
+  {
+    let drop_count = max_count.min(len) as usize;
+    return Ok(wrap_drop(items[drop_count..].to_vec()));
+  }
+
   let count = match expr_to_i128(n) {
     Some(i) => i,
     None => {
