@@ -144,7 +144,7 @@ pub fn dispatch_list_operations(
     "Map" | "ParallelMap" if args.len() == 2 => {
       return Some(list_helpers_ast::map_ast(&args[0], &args[1]));
     }
-    "Map" if args.len() == 3 => {
+    "Map" | "ParallelMap" if args.len() == 3 => {
       return Some(list_helpers_ast::map_with_level_ast(
         &args[0], &args[1], &args[2],
       ));
@@ -4491,11 +4491,8 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Count limit provided (possibly together with a radius).
     (true, Some(k)) => {
-      let result: Vec<Expr> = filtered
-        .iter()
-        .take(k)
-        .map(|(i, d)| pick(*i, *d))
-        .collect();
+      let result: Vec<Expr> =
+        filtered.iter().take(k).map(|(i, d)| pick(*i, *d)).collect();
       Ok(Expr::List(result.into()))
     }
     // `All` (possibly together with a radius): keep everything that passed

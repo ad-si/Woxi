@@ -690,6 +690,36 @@ mod parallel_map {
       "{1, 4, 9}"
     );
   }
+
+  // ParallelMap[f, expr, levelspec] should behave like Map[f, expr,
+  // levelspec] (we don't actually parallelise in Woxi). With levelspec
+  // 2, f is applied at levels 1 AND 2, so the squared leaves get
+  // squared again by the outer mapping into the list.
+  #[test]
+  fn with_level_spec_integer() {
+    assert_eq!(
+      interpret("ParallelMap[#^2 &, {{1, 2}, {3, 4}}, 2]").unwrap(),
+      "{{1, 16}, {81, 256}}"
+    );
+  }
+
+  // Levelspec {1, 2} applies f at level 1 and 2 — same as 2 here.
+  #[test]
+  fn with_level_spec_range() {
+    assert_eq!(
+      interpret("ParallelMap[#^2 &, {{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
+      "{{1, 16}, {81, 256}}"
+    );
+  }
+
+  // Named function shows the nesting clearly.
+  #[test]
+  fn with_level_spec_named_function() {
+    assert_eq!(
+      interpret("ParallelMap[f, {{a, b}, {c, d}}, 2]").unwrap(),
+      "{f[{f[a], f[b]}], f[{f[c], f[d]}]}"
+    );
+  }
 }
 
 mod map_apply_function {
