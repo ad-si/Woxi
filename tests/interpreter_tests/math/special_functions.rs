@@ -5830,6 +5830,37 @@ mod appell_f1 {
       .unwrap();
     assert!((result - 1.38629436111989).abs() < 1e-8);
   }
+
+  #[test]
+  fn c_equals_a_reduction_numeric() {
+    // F1(a, b1, b2; a; x, y) = (1-x)^(-b1) * (1-y)^(-b2)
+    // Audit case: AppellF1[1, 1, 1, 1, 4, z] reduces symbolically; here numeric.
+    // F1(1, 1, 1; 1; 0.5, 0.3) = 1/(0.5 * 0.7) = 1/0.35 = 2.857142857...
+    let result: f64 = interpret("AppellF1[1, 1, 1, 1, 0.5, 0.3]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0 / (0.5 * 0.7)).abs() < 1e-8);
+  }
+
+  #[test]
+  fn c_equals_a_reduction_symbolic_audit_case() {
+    // AppellF1[1, 1, 1, 1, 4, z] = 1/((1-4)^1 * (1-z)^1) = -1/(3*(1-z))
+    // Rendered like wolframscript as `-1/3*1/(1 - z)`.
+    assert_eq!(
+      interpret("AppellF1[1, 1, 1, 1, 4, z]").unwrap(),
+      "-1/3*1/(1 - z)"
+    );
+  }
+
+  #[test]
+  fn c_equals_a_reduction_symbolic_general() {
+    // AppellF1[a, b1, b2, a, x, y] = 1/((1-x)^b1 * (1-y)^b2)
+    assert_eq!(
+      interpret("AppellF1[2, 3, 5, 2, x, y]").unwrap(),
+      "1/((1 - x)^3*(1 - y)^5)"
+    );
+  }
 }
 
 mod appell_f2 {

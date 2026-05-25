@@ -1851,11 +1851,49 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(appell_f1_numeric(a, b1, b2, c, x, y)));
   }
 
+  // Symbolic reduction: F1(a, b1, b2; a; x, y) = 1 / ((1-x)^b1 * (1-y)^b2)
+  if exprs_structurally_equal(&args[0], &args[3]) {
+    let one = Expr::Integer(1);
+    let one_minus_x = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(one.clone()),
+      right: Box::new(args[4].clone()),
+    };
+    let one_minus_y = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(one.clone()),
+      right: Box::new(args[5].clone()),
+    };
+    let factor_x = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![one_minus_x, args[1].clone()].into(),
+    };
+    let factor_y = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![one_minus_y, args[2].clone()].into(),
+    };
+    let denom = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(factor_x),
+      right: Box::new(factor_y),
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(one),
+      right: Box::new(denom),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "AppellF1".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+fn exprs_structurally_equal(a: &Expr, b: &Expr) -> bool {
+  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
 }
 
 /// Compute F1(a, b1, b2; c; x, y) using double series

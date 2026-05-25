@@ -7270,27 +7270,50 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           // When numerator is -1, Wolfram separates the rational
           // from the power term: -1/d*1/base^exp (e.g. -1/2*1/x^2)
           if *n == -1 {
-            let power_str = format!("1/{}", denom_str);
+            let denom_needs_parens = matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+              || matches!(
+                &denom_form,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus
+                    | BinaryOperator::Minus
+                    | BinaryOperator::Times,
+                  ..
+                }
+              );
+            let power_str = if denom_needs_parens {
+              format!("1/({})", denom_str)
+            } else {
+              format!("1/{}", denom_str)
+            };
             return format!("-1/{}*{}", d, power_str);
           }
+          let inner_needs_parens = matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+            || matches!(
+              &denom_form,
+              Expr::BinaryOp {
+                op: BinaryOperator::Plus
+                  | BinaryOperator::Minus
+                  | BinaryOperator::Times,
+                ..
+              }
+            );
+          let denom_str_parened = if inner_needs_parens {
+            format!("({})", denom_str)
+          } else {
+            denom_str
+          };
           if is_output {
             // OutputForm: combine Rational denominator with Power denominator
             if *n == 1 {
-              return format!("1/({}*{})", d, denom_str);
+              return format!("1/({}*{})", d, denom_str_parened);
             }
-            return format!("{}/({}*{})", n, d, denom_str);
+            return format!("{}/({}*{})", n, d, denom_str_parened);
           } else {
             // For other numerators, combine into n/(d*base^exp)
-            let denom_needs_parens = *d > 1
-              || matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times");
             let full_denom = if *d > 1 {
-              if denom_needs_parens {
-                format!("({}*{})", d, denom_str)
-              } else {
-                format!("{}*{}", d, denom_str)
-              }
+              format!("({}*{})", d, denom_str_parened)
             } else {
-              denom_str
+              denom_str_parened
             };
             if *n == 1 {
               return format!("1/{}", full_denom);
