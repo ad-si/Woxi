@@ -2292,6 +2292,38 @@ pub fn image_apply_ast(
   }
 }
 
+/// Extract `(r, g, b, optional_alpha)` from a color directive (RGBColor
+/// or GrayLevel). Returns None for anything else, including named
+/// constants that haven't already been resolved to RGBColor.
+fn color_directive_to_rgb(e: &Expr) -> Option<(f64, f64, f64, Option<f64>)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  let to_f = |x: &Expr| -> Option<f64> {
+    crate::functions::math_ast::try_eval_to_f64(x)
+  };
+  match name.as_str() {
+    "RGBColor" if args.len() == 3 => {
+      Some((to_f(&args[0])?, to_f(&args[1])?, to_f(&args[2])?, None))
+    }
+    "RGBColor" if args.len() == 4 => Some((
+      to_f(&args[0])?,
+      to_f(&args[1])?,
+      to_f(&args[2])?,
+      Some(to_f(&args[3])?),
+    )),
+    "GrayLevel" if args.len() == 1 => {
+      let v = to_f(&args[0])?;
+      Some((v, v, v, None))
+    }
+    "GrayLevel" if args.len() == 2 => {
+      let v = to_f(&args[0])?;
+      Some((v, v, v, Some(to_f(&args[1])?)))
+    }
+    _ => None,
+  }
+}
+
 /// ColorConvert[img, "Grayscale"] - Convert between color spaces
 pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -2309,6 +2341,42 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   };
+
+  // Color directives: RGBColor[r, g, b(, a)] / GrayLevel[v(, a)].
+  // Conversion preserves the alpha channel when present. GrayLevel
+  // input to "Grayscale" stays as the same single value (no luminance
+  // round-trip that would introduce f64 error).
+  let is_graylevel = matches!(
+    &args[0],
+    Expr::FunctionCall { name, .. } if name == "GrayLevel"
+  );
+  if let Some(rgb) = color_directive_to_rgb(&args[0]) {
+    let (r, g, b, alpha) = rgb;
+    match target_space {
+      "Grayscale" => {
+        let lum = if is_graylevel { r } else { 0.299 * r + 0.587 * g + 0.114 * b };
+        let mut gargs = vec![Expr::Real(lum)];
+        if let Some(a) = alpha {
+          gargs.push(Expr::Real(a));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "GrayLevel".to_string(),
+          args: gargs.into(),
+        });
+      }
+      "RGB" => {
+        let mut rargs = vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)];
+        if let Some(a) = alpha {
+          rargs.push(Expr::Real(a));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: rargs.into(),
+        });
+      }
+      _ => {}
+    }
+  }
 
   match &args[0] {
     Expr::Image {
@@ -3068,8 +3136,7 @@ pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = (*width as usize) * (*height as usize);
   let mut images = Vec::with_capacity(ch);
   for c_idx in 0..ch {
-    let channel_data: Vec<f64> =
-      (0..n).map(|i| data[i * ch + c_idx]).collect();
+    let channel_data: Vec<f64> = (0..n).map(|i| data[i * ch + c_idx]).collect();
     images.push(Expr::Image {
       width: *width,
       height: *height,

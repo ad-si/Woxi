@@ -1077,10 +1077,8 @@ mod image_processing {
   fn color_separate_rgba_yields_four_channels() {
     clear_state();
     assert_eq!(
-      interpret(
-        "Length[ColorSeparate[Image[{{{1.0, 0.0, 0.0, 0.5}}}]]]"
-      )
-      .unwrap(),
+      interpret("Length[ColorSeparate[Image[{{{1.0, 0.0, 0.0, 0.5}}}]]]")
+        .unwrap(),
       "4"
     );
     assert_eq!(
@@ -1787,6 +1785,63 @@ mod image_advanced {
       interpret("ImageChannels[ColorConvert[Image[{{0.5, 1.0}}], \"RGB\"]]")
         .unwrap();
     assert_eq!(result, "3");
+  }
+
+  // ColorConvert on color directives: RGBColor → GrayLevel uses the
+  // standard luminance weights (0.299 R + 0.587 G + 0.114 B).
+  #[test]
+  fn color_convert_rgbcolor_to_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorConvert[RGBColor[1, 0, 0], \"Grayscale\"]").unwrap(),
+      "GrayLevel[0.299]"
+    );
+    assert_eq!(
+      interpret("ColorConvert[RGBColor[1.0, 0.5, 0.0], \"Grayscale\"]")
+        .unwrap(),
+      "GrayLevel[0.5925]"
+    );
+  }
+
+  // ColorConvert from a named color: Red is RGBColor[1, 0, 0]; the
+  // luminance evaluates to a Real.
+  #[test]
+  fn color_convert_red_to_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorConvert[Red, \"Grayscale\"]").unwrap(),
+      "GrayLevel[0.299]"
+    );
+  }
+
+  // ColorConvert[RGBColor, "RGB"] forces components to Real.
+  #[test]
+  fn color_convert_rgbcolor_to_rgb_coerces_to_real() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorConvert[RGBColor[1, 0, 0], \"RGB\"]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+  }
+
+  // GrayLevel → RGB broadcasts to all three channels.
+  #[test]
+  fn color_convert_graylevel_to_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorConvert[GrayLevel[0.5], \"RGB\"]").unwrap(),
+      "RGBColor[0.5, 0.5, 0.5]"
+    );
+  }
+
+  // GrayLevel → Grayscale is the identity (with Real coercion).
+  #[test]
+  fn color_convert_graylevel_identity() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorConvert[GrayLevel[0.5], \"Grayscale\"]").unwrap(),
+      "GrayLevel[0.5]"
+    );
   }
 
   #[test]

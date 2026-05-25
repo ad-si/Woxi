@@ -195,7 +195,12 @@ pub fn dispatch_image_functions(
       ));
     }
     "ColorConvert" if args.len() == 2 => {
-      if matches!(&args[0], Expr::Image { .. }) {
+      let is_color_directive = matches!(
+        &args[0],
+        Expr::FunctionCall { name: n, .. }
+          if n == "RGBColor" || n == "GrayLevel"
+      );
+      if matches!(&args[0], Expr::Image { .. }) || is_color_directive {
         return Some(crate::functions::image_ast::color_convert_ast(args));
       }
     }
