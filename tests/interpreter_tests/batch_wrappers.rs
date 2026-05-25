@@ -4157,6 +4157,65 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // PermutationProduct (multi-arg cycle composition)
+  #[test]
+  fn permutation_product_two_swaps() {
+    // Apply Cycles[{{1,2}}] first then Cycles[{{2,3}}].
+    assert_eq!(
+      interpret("PermutationProduct[Cycles[{{1, 2}}], Cycles[{{2, 3}}]]")
+        .unwrap(),
+      "Cycles[{{1, 3, 2}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_product_three_swaps() {
+    assert_eq!(
+      interpret(
+        "PermutationProduct[Cycles[{{1, 2}}], Cycles[{{2, 3}}], \
+         Cycles[{{3, 4}}]]"
+      )
+      .unwrap(),
+      "Cycles[{{1, 4, 3, 2}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_product_identity_via_self_inverse() {
+    // Two copies of the same swap cancel to the identity.
+    assert_eq!(
+      interpret("PermutationProduct[Cycles[{{1, 2}}], Cycles[{{1, 2}}]]")
+        .unwrap(),
+      "Cycles[{}]"
+    );
+  }
+
+  #[test]
+  fn permutation_product_with_identity_cycle() {
+    // Cycles[{}] is the identity.
+    assert_eq!(
+      interpret("PermutationProduct[Cycles[{}], Cycles[{{1, 2}}]]").unwrap(),
+      "Cycles[{{1, 2}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_product_empty_is_identity() {
+    assert_eq!(interpret("PermutationProduct[]").unwrap(), "Cycles[{}]");
+  }
+
+  #[test]
+  fn permutation_product_disjoint_then_merge() {
+    // Cycles[{{1,2,3},{4,5}}] · Cycles[{{1,4}}].
+    assert_eq!(
+      interpret(
+        "PermutationProduct[Cycles[{{1, 2, 3}, {4, 5}}], Cycles[{{1, 4}}]]"
+      )
+      .unwrap(),
+      "Cycles[{{1, 2, 3, 4, 5}}]"
+    );
+  }
+
   // PermutationLength
   #[test]
   fn permutation_length_identity() {

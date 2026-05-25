@@ -6540,9 +6540,15 @@ pub fn evaluate_function_call_ast_inner(
     return function_interpolation_ast(args);
   }
 
-  // Functions that return their single argument unchanged (identity/pass-through)
-  if matches!(name, "PermutationProduct") && args.len() == 1 {
-    return Ok(args[0].clone());
+  // PermutationProduct[Cycles[…], Cycles[…], …]
+  // Compose permutations left-to-right (σ_1 applied first).
+  if name == "PermutationProduct" {
+    if args.len() == 1 {
+      return Ok(args[0].clone());
+    }
+    if let Some(result) = compose_cycles_args(args) {
+      return Ok(result);
+    }
   }
 
   // Functions that return empty list
@@ -8145,6 +8151,115 @@ fn find_spanning_tree_impl(
 /// been installed. The `\`1\``, `\`2\`` placeholders are filled in by the
 /// caller (or printed verbatim when the message is referenced directly,
 /// matching wolframscript's behavior).
+/// Parse a `Cycles[{{...}, {...}, ...}]` expression into a map from
+/// element to image under the permutation.
+fn cycles_expr_to_map(e: &Expr) -> Option<std::collections::HashMap<i128, i128>>
+{
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Cycles" || args.len() != 1 {
+    return None;
+  }
+  let Expr::List(cycle_list) = &args[0] else {
+    return None;
+  };
+  let mut map = std::collections::HashMap::new();
+  for cycle in cycle_list.iter() {
+    let Expr::List(c) = cycle else { return None };
+    let mut ints: Vec<i128> = Vec::with_capacity(c.len());
+    for entry in c.iter() {
+      let Expr::Integer(n) = entry else { return None };
+      ints.push(*n);
+    }
+    if ints.len() < 2 {
+      continue;
+    }
+    let len = ints.len();
+    for i in 0..len {
+      map.insert(ints[i], ints[(i + 1) % len]);
+    }
+  }
+  Some(map)
+}
+
+/// Convert a permutation (as a from→to map, omitting fixed points) into
+/// canonical `Cycles[{{...}, ...}]` form: each cycle starts at its
+/// smallest element, cycles are sorted by that smallest element, and
+/// trivial cycles are dropped.
+fn map_to_cycles_expr(map: &std::collections::HashMap<i128, i128>) -> Expr {
+  let mut visited = std::collections::HashSet::<i128>::new();
+  let mut cycles: Vec<Vec<i128>> = Vec::new();
+  let mut keys: Vec<i128> = map.keys().copied().collect();
+  keys.sort();
+  for &start in &keys {
+    if visited.contains(&start) {
+      continue;
+    }
+    let mut cycle = Vec::new();
+    let mut cur = start;
+    loop {
+      if visited.contains(&cur) {
+        break;
+      }
+      visited.insert(cur);
+      cycle.push(cur);
+      let Some(&next) = map.get(&cur) else { break };
+      if next == start {
+        break;
+      }
+      cur = next;
+    }
+    if cycle.len() >= 2 {
+      let min_idx = cycle
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, v)| *v)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+      cycle.rotate_left(min_idx);
+      cycles.push(cycle);
+    }
+  }
+  cycles.sort_by_key(|c| c[0]);
+  let cycle_exprs: Vec<Expr> = cycles
+    .into_iter()
+    .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
+    .collect();
+  Expr::FunctionCall {
+    name: "Cycles".to_string(),
+    args: vec![Expr::List(cycle_exprs.into())].into(),
+  }
+}
+
+/// Compose a series of `Cycles[...]` permutations left-to-right
+/// (σ₁ applied first, then σ₂, …). Returns None when any argument
+/// is not in `Cycles[…]` form.
+fn compose_cycles_args(args: &[Expr]) -> Option<Expr> {
+  let mut maps: Vec<std::collections::HashMap<i128, i128>> =
+    Vec::with_capacity(args.len());
+  for a in args {
+    maps.push(cycles_expr_to_map(a)?);
+  }
+  let mut domain = std::collections::HashSet::<i128>::new();
+  for m in &maps {
+    for &k in m.keys() {
+      domain.insert(k);
+    }
+  }
+  let mut result = std::collections::HashMap::<i128, i128>::new();
+  for &x in &domain {
+    let mut cur = x;
+    for m in &maps {
+      cur = *m.get(&cur).unwrap_or(&cur);
+    }
+    if cur != x {
+      result.insert(x, cur);
+    }
+  }
+  Some(map_to_cycles_expr(&result))
+}
+
 fn builtin_message_text(sym: &Expr, tag: &Expr) -> Option<&'static str> {
   let sym_name = match sym {
     Expr::Identifier(s) => s.as_str(),
