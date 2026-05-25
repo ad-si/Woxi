@@ -243,6 +243,32 @@ mod bin_counts {
       "BinCounts[x, {0, 10, 1}]"
     );
   }
+
+  #[test]
+  fn bin_counts_explicit_edges() {
+    // {{e1, e2, ..., en}} — bins [e_i, e_{i+1}).
+    assert_eq!(
+      interpret("BinCounts[{1, 3, 2, 1, 4, 5, 6, 2}, {{-Infinity, 2, 5, 7, Infinity}}]")
+        .unwrap(),
+      "{2, 4, 2, 0}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_explicit_edges_finite() {
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3, 4, 5}, {{1, 2, 5}}]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_explicit_edges_real_values() {
+    assert_eq!(
+      interpret("BinCounts[{2.5, 5.0, 5.5}, {{2, 5, 6}}]").unwrap(),
+      "{1, 2}"
+    );
+  }
 }
 
 mod bin_lists {
@@ -286,6 +312,23 @@ mod bin_lists {
     assert_eq!(
       interpret("BinLists[x, {0, 10, 1}]").unwrap(),
       "BinLists[x, {0, 10, 1}]"
+    );
+  }
+
+  #[test]
+  fn bin_lists_explicit_edges() {
+    assert_eq!(
+      interpret("BinLists[{1, 3, 2, 1, 4, 5, 6, 2}, {{-Infinity, 2, 5, 7, Infinity}}]")
+        .unwrap(),
+      "{{1, 1}, {3, 2, 4, 2}, {5, 6}, {}}"
+    );
+  }
+
+  #[test]
+  fn bin_lists_explicit_edges_finite() {
+    assert_eq!(
+      interpret("BinLists[{1, 2, 3, 4, 5}, {{1, 2, 5}}]").unwrap(),
+      "{{1}, {2, 3, 4}}"
     );
   }
 }

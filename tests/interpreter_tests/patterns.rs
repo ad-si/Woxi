@@ -1418,10 +1418,7 @@ mod between {
   #[test]
   fn symbolic_range_expands_to_conjunction() {
     // wolframscript: a <= x && x <= b.
-    assert_eq!(
-      interpret("Between[x, {a, b}]").unwrap(),
-      "a <= x && x <= b"
-    );
+    assert_eq!(interpret("Between[x, {a, b}]").unwrap(), "a <= x && x <= b");
   }
 
   #[test]
@@ -1435,10 +1432,7 @@ mod between {
   #[test]
   fn symbolic_lower_numeric_upper() {
     // Mixed numeric/symbolic still expands.
-    assert_eq!(
-      interpret("Between[x, {0, b}]").unwrap(),
-      "0 <= x && x <= b"
-    );
+    assert_eq!(interpret("Between[x, {0, b}]").unwrap(), "0 <= x && x <= b");
   }
 }
 

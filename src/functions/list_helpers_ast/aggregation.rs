@@ -1433,6 +1433,49 @@ pub fn split_by_ast(
   ))
 }
 
+/// Convert a bin-edge expression to `f64`, accepting `Infinity` / `-Infinity`
+/// in whichever representation the evaluator preserves them.
+fn edge_to_f64(e: &Expr) -> Option<f64> {
+  if let Some(v) = expr_to_f64(e) {
+    return Some(v);
+  }
+  // Bare Infinity symbol → +∞.
+  if matches!(e, Expr::Identifier(s) if s == "Infinity") {
+    return Some(f64::INFINITY);
+  }
+  // DirectedInfinity[1] → +∞, DirectedInfinity[-1] → -∞.
+  if let Expr::FunctionCall { name, args } = e
+    && name == "DirectedInfinity"
+    && args.len() == 1
+  {
+    return match &args[0] {
+      Expr::Integer(1) => Some(f64::INFINITY),
+      Expr::Integer(-1) => Some(f64::NEG_INFINITY),
+      _ => None,
+    };
+  }
+  // Times[-1, +∞] → -∞.
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Times"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Integer(-1))
+  {
+    let inner = edge_to_f64(&args[1])?;
+    return Some(-inner);
+  }
+  // -Infinity is stored as UnaryOp[Minus, Infinity] inside an unevaluated
+  // List (the evaluator leaves it as-is to preserve the surface syntax).
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = e
+  {
+    let inner = edge_to_f64(operand)?;
+    return Some(-inner);
+  }
+  None
+}
+
 /// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
 /// Bins are [min, min+dx), [min+dx, min+2dx), ..., [max-dx, max)
 pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1502,6 +1545,40 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           hi += dx;
         }
         (lo, hi, dx)
+      }
+      // BinCounts[data, {{e1, e2, ..., en}}] — explicit bin-edge form.
+      // Bins are [e_i, e_{i+1}); the result has length n-1.
+      Expr::List(outer)
+        if outer.len() == 1
+          && matches!(&outer[0], Expr::List(edges) if edges.len() >= 2) =>
+      {
+        let Expr::List(edges) = &outer[0] else {
+          unreachable!()
+        };
+        let mut numeric_edges: Vec<f64> = Vec::with_capacity(edges.len());
+        for e in edges.iter() {
+          let v = if let Some(v) = edge_to_f64(e) {
+            v
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "BinCounts".to_string(),
+              args: args.to_vec().into(),
+            });
+          };
+          numeric_edges.push(v);
+        }
+        let mut counts = vec![0i128; numeric_edges.len() - 1];
+        for &v in &values {
+          for i in 0..(numeric_edges.len() - 1) {
+            if numeric_edges[i] <= v && v < numeric_edges[i + 1] {
+              counts[i] += 1;
+              break;
+            }
+          }
+        }
+        let counts_exprs: Vec<Expr> =
+          counts.into_iter().map(Expr::Integer).collect();
+        return Ok(Expr::List(counts_exprs.into()));
       }
       // BinCounts[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {
@@ -1652,6 +1729,40 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           hi += dx;
         }
         (lo, hi, dx)
+      }
+      // BinLists[data, {{e1, e2, ..., en}}] — explicit bin-edge form.
+      Expr::List(outer)
+        if outer.len() == 1
+          && matches!(&outer[0], Expr::List(edges) if edges.len() >= 2) =>
+      {
+        let Expr::List(edges) = &outer[0] else {
+          unreachable!()
+        };
+        let mut numeric_edges: Vec<f64> = Vec::with_capacity(edges.len());
+        for e in edges.iter() {
+          let v = if let Some(v) = edge_to_f64(e) {
+            v
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "BinLists".to_string(),
+              args: args.to_vec().into(),
+            });
+          };
+          numeric_edges.push(v);
+        }
+        let mut bins: Vec<Vec<Expr>> =
+          (0..numeric_edges.len() - 1).map(|_| Vec::new()).collect();
+        for (v, expr) in &values {
+          for i in 0..(numeric_edges.len() - 1) {
+            if numeric_edges[i] <= *v && *v < numeric_edges[i + 1] {
+              bins[i].push((*expr).clone());
+              break;
+            }
+          }
+        }
+        let result_exprs: Vec<Expr> =
+          bins.into_iter().map(|b| Expr::List(b.into())).collect();
+        return Ok(Expr::List(result_exprs.into()));
       }
       Expr::List(spec) if spec.len() == 3 => {
         let min_v = match expr_to_f64(&spec[0]) {
