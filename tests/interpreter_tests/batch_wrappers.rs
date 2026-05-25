@@ -4776,6 +4776,29 @@ mod batch_unevaluated_wrappers_2 {
       "k"
     );
   }
+  #[test]
+  fn chromatic_polynomial_cycle_3() {
+    // C_3 (triangle): k(k-1)(k-2) = k^3 - 3k^2 + 2k.
+    assert_eq!(
+      interpret("ChromaticPolynomial[CycleGraph[3], k]").unwrap(),
+      "2*k - 3*k^2 + k^3"
+    );
+  }
+  #[test]
+  fn chromatic_polynomial_cycle_4() {
+    // C_4: (k-1)^4 + (k-1).
+    assert_eq!(
+      interpret("ChromaticPolynomial[CycleGraph[4], k]").unwrap(),
+      "-3*k + 6*k^2 - 4*k^3 + k^4"
+    );
+  }
+  #[test]
+  fn chromatic_polynomial_cycle_5() {
+    assert_eq!(
+      interpret("ChromaticPolynomial[CycleGraph[5], k]").unwrap(),
+      "4*k - 10*k^2 + 10*k^3 - 5*k^4 + k^5"
+    );
+  }
 
   // ChiDistribution
   #[test]

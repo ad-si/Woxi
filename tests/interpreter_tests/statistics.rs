@@ -248,8 +248,10 @@ mod bin_counts {
   fn bin_counts_explicit_edges() {
     // {{e1, e2, ..., en}} — bins [e_i, e_{i+1}).
     assert_eq!(
-      interpret("BinCounts[{1, 3, 2, 1, 4, 5, 6, 2}, {{-Infinity, 2, 5, 7, Infinity}}]")
-        .unwrap(),
+      interpret(
+        "BinCounts[{1, 3, 2, 1, 4, 5, 6, 2}, {{-Infinity, 2, 5, 7, Infinity}}]"
+      )
+      .unwrap(),
       "{2, 4, 2, 0}"
     );
   }
@@ -318,8 +320,10 @@ mod bin_lists {
   #[test]
   fn bin_lists_explicit_edges() {
     assert_eq!(
-      interpret("BinLists[{1, 3, 2, 1, 4, 5, 6, 2}, {{-Infinity, 2, 5, 7, Infinity}}]")
-        .unwrap(),
+      interpret(
+        "BinLists[{1, 3, 2, 1, 4, 5, 6, 2}, {{-Infinity, 2, 5, 7, Infinity}}]"
+      )
+      .unwrap(),
       "{{1, 1}, {3, 2, 4, 2}, {5, 6}, {}}"
     );
   }

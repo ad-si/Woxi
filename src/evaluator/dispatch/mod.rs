@@ -2059,6 +2059,43 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // CycleGraph[n] → cycle graph: vertices 1..n with edges 1-2, 2-3, ..., n-1.
+  if name == "CycleGraph"
+    && args.len() == 1
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n as usize;
+    if n >= 1 {
+      let vertices: Vec<Expr> =
+        (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+      let mut edges = Vec::new();
+      if n >= 2 {
+        for i in 1..n {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![
+              Expr::Integer(i as i128),
+              Expr::Integer((i + 1) as i128),
+            ]
+            .into(),
+          });
+        }
+        if n >= 3 {
+          // Close the cycle with edge n-1.
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(n as i128), Expr::Integer(1)].into(),
+          });
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
+          .into(),
+      });
+    }
+  }
+
   // StarGraph[n] → star graph with 1 center vertex connected to n-1 outer vertices
   if name == "StarGraph"
     && args.len() == 1
