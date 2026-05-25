@@ -800,11 +800,8 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let fresh_name = format!("$sum_indef_{}_$", var_name);
     let fresh = Expr::Identifier(fresh_name.clone());
-    let body_in_fresh = crate::syntax::substitute_variable(
-      &args[0],
-      var_name,
-      &fresh,
-    );
+    let body_in_fresh =
+      crate::syntax::substitute_variable(&args[0], var_name, &fresh);
     let upper_bound = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
@@ -821,13 +818,10 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // canonicalisation. We build it as `(-1) + var` to be explicit.
     let upper = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())]
-        .into(),
+      args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())].into(),
     };
     let _ = upper_bound;
-    let iter_spec = Expr::List(
-      vec![fresh, Expr::Integer(1), upper].into(),
-    );
+    let iter_spec = Expr::List(vec![fresh, Expr::Integer(1), upper].into());
     return sum_ast(&[body_in_fresh, iter_spec]);
   }
 

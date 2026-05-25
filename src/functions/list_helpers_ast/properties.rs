@@ -60,6 +60,34 @@ pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 /// TensorRank[expr] - rank of a tensor (same as ArrayDepth for concrete lists,
 /// but stays unevaluated for non-list expressions like symbols).
 pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // TensorRank[TensorContract[T, {{s, t}, …}]] = TensorRank[T] - 2 * k, where
+  // k is the number of contraction pairs.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "TensorContract"
+    && args.len() == 2
+    && let Expr::List(pairs) = &args[1]
+    && !pairs.is_empty()
+    && pairs.iter().all(|p| matches!(p, Expr::List(inner) if inner.len() == 2))
+  {
+    let inner_rank = Expr::FunctionCall {
+      name: "TensorRank".to_string(),
+      args: vec![args[0].clone()].into(),
+    };
+    let reduction = Expr::Integer(2 * pairs.len() as i128);
+    let result = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), reduction].into(),
+        },
+        inner_rank,
+      ]
+      .into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   match expr {
     Expr::List(_) => array_depth_ast(expr),
     Expr::Integer(_)

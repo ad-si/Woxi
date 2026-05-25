@@ -1812,6 +1812,23 @@ mod tensor_rank {
     assert_eq!(interpret("TensorRank[x]").unwrap(), "TensorRank[x]");
     assert_eq!(interpret("TensorRank[f[x]]").unwrap(), "TensorRank[f[x]]");
   }
+
+  #[test]
+  fn tensor_contract_single_pair() {
+    // TensorContract[T, {{1, 3}}] reduces the rank by 2.
+    assert_eq!(
+      interpret("TensorRank[TensorContract[T, {{1, 3}}]]").unwrap(),
+      "-2 + TensorRank[T]"
+    );
+  }
+
+  #[test]
+  fn tensor_contract_two_pairs() {
+    assert_eq!(
+      interpret("TensorRank[TensorContract[T, {{1, 3}, {2, 4}}]]").unwrap(),
+      "-4 + TensorRank[T]"
+    );
+  }
 }
 
 mod array_depth {
