@@ -195,6 +195,52 @@ mod image_core {
   }
 
   #[test]
+  fn image_from_numeric_array_byte() {
+    clear_state();
+    // Audit case shape: Image[NumericArray[…, "Byte"]] should still
+    // report ImageType -> "Byte" and have correct dimensions.
+    assert_eq!(
+      interpret(
+        "ImageType[Image[NumericArray[{{{172, 150, 162}, {169, 147, 162}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "Byte"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[NumericArray[{{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{10, 11, 12}, {13, 14, 15}, {16, 17, 18}}}, \"Byte\"]]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn image_from_numeric_array_real64() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageType[Image[NumericArray[{{{0.5, 0.3, 0.1}, {0.4, 0.2, 0.0}}}, \"Real64\"]]]"
+      )
+      .unwrap(),
+      "Real64"
+    );
+  }
+
+  #[test]
+  fn image_from_numeric_array_explicit_type_overrides() {
+    clear_state();
+    // An explicit second arg on Image overrides the NumericArray dtype.
+    assert_eq!(
+      interpret(
+        "ImageType[Image[NumericArray[{{{0.5, 0.3, 0.1}}}, \"Real32\"], \"Real64\"]]"
+      )
+      .unwrap(),
+      "Real64"
+    );
+  }
+
+  #[test]
   fn image_constructor_constant_array() {
     clear_state();
     let result = interpret(

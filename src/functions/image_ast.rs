@@ -119,7 +119,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Parse optional type specifier
-  let requested_type = if args.len() == 2 {
+  let mut requested_type = if args.len() == 2 {
     match &args[1] {
       Expr::String(s) | Expr::Identifier(s) => match s.as_str() {
         "Byte" => Some(ImageType::Byte),
@@ -134,8 +134,39 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // `Image[NumericArray[data, type]]` — unwrap to the nested list and
+  // pick up the dtype if not already given.
+  let unwrapped: Expr;
+  let raw_arg = match &args[0] {
+    Expr::FunctionCall {
+      name: na_name,
+      args: na_args,
+    } if na_name == "NumericArray"
+      && !na_args.is_empty() =>
+    {
+      if requested_type.is_none()
+        && let Some(ty) = na_args.get(1)
+      {
+        let s = match ty {
+          Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
+          _ => None,
+        };
+        requested_type = match s {
+          Some("Byte") | Some("UnsignedInteger8") => Some(ImageType::Byte),
+          Some("Bit16") | Some("UnsignedInteger16") => Some(ImageType::Bit16),
+          Some("Real32") => Some(ImageType::Real32),
+          Some("Real64") => Some(ImageType::Real64),
+          _ => None,
+        };
+      }
+      unwrapped = na_args[0].clone();
+      &unwrapped
+    }
+    other => other,
+  };
+
   // The argument should be a 2D or 3D nested list
-  let rows = match &args[0] {
+  let rows = match raw_arg {
     Expr::List(items) => items,
     _ => {
       return Err(InterpreterError::EvaluationError(
