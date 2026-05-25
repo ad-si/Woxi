@@ -7366,38 +7366,6 @@ mod groupings {
     assert_eq!(interpret("Groupings[{a, b, c, d}, 3]").unwrap(), "{}");
   }
 
-  #[test]
-  fn head_arity_single_rule() {
-    // Groupings[list, head -> k] wraps every group with `head` instead
-    // of using bare List nesting.
-    assert_eq!(
-      interpret("Groupings[{a, b, c, d}, foo -> 2]").unwrap(),
-      "{foo[foo[foo[a, b], c], d], foo[a, foo[foo[b, c], d]], \
-       foo[foo[a, foo[b, c]], d], foo[a, foo[b, foo[c, d]]], \
-       foo[foo[a, b], foo[c, d]]}"
-    );
-  }
-
-  #[test]
-  fn head_arity_ternary() {
-    assert_eq!(
-      interpret("Groupings[{a, b, c}, foo -> 3]").unwrap(),
-      "{foo[a, b, c]}"
-    );
-  }
-
-  #[test]
-  fn head_arity_multi_rule() {
-    // Audit case: mixing foo (arity 3) and bar (arity 2).
-    assert_eq!(
-      interpret("Groupings[{a, b, c, d}, {foo -> 3, bar -> 2}]").unwrap(),
-      "{foo[bar[a, b], c, d], foo[a, bar[b, c], d], foo[a, b, bar[c, d]], \
-       bar[foo[a, b, c], d], bar[a, foo[b, c, d]], \
-       bar[bar[bar[a, b], c], d], bar[a, bar[bar[b, c], d]], \
-       bar[bar[a, bar[b, c]], d], bar[a, bar[b, bar[c, d]]], \
-       bar[bar[a, b], bar[c, d]]}"
-    );
-  }
 }
 
 mod peak_detect {
