@@ -2550,7 +2550,7 @@ LetterCounts,Counts letter occurrences in a string,✅,None,10.1,2605
 NArgMin,Numerical arg min,✅,none,7.0,2605
 VertexOutComponent,Vertices reachable from a vertex,✅,1,8.0,2605
 ViewProjection,,🚫,,11.2,2605
-ArrayMesh,Create a MeshRegion from a binary 2D array,✅,pure,10.4,2611
+ArrayMesh,Create a MeshRegion from a binary 1D or 2D array,✅,pure,10.4,2611
 ForwardBackward,Symbolic value for AnimationDirection option (forward then backward),✅,pure,6.0,2611
 KaryTree,K-ary tree graph,✅,1,8.0,2611
 LogisticDistribution,represents a logistic distribution,✅,Computation,6.0,2611

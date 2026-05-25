@@ -2484,6 +2484,67 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ArrayMesh[vec] → MeshRegion from a binary 1D array (Lines)
+  if name == "ArrayMesh"
+    && args.len() == 1
+    && let Expr::List(cells) = &args[0]
+    && cells.iter().all(|c| matches!(c, Expr::Integer(_)))
+  {
+    let bits: Vec<bool> = cells
+      .iter()
+      .map(|c| !matches!(c, Expr::Integer(0)))
+      .collect();
+    if bits.iter().all(|b| !*b) {
+      return Ok(Expr::FunctionCall {
+        name: "EmptyRegion".to_string(),
+        args: vec![Expr::Integer(1)].into(),
+      });
+    }
+    // Collect needed vertex positions (endpoints of any non-zero cell).
+    let mut needed: std::collections::BTreeSet<i64> =
+      std::collections::BTreeSet::new();
+    for (i, &b) in bits.iter().enumerate() {
+      if b {
+        needed.insert(i as i64);
+        needed.insert(i as i64 + 1);
+      }
+    }
+    let vertex_list: Vec<i64> = needed.into_iter().collect();
+    let position_for: std::collections::HashMap<i64, usize> = vertex_list
+      .iter()
+      .enumerate()
+      .map(|(i, &v)| (v, i + 1))
+      .collect();
+    let vertex_exprs: Vec<Expr> = vertex_list
+      .iter()
+      .map(|&v| Expr::List(vec![Expr::Real(v as f64)].into()))
+      .collect();
+    let mut line_pairs: Vec<Expr> = Vec::new();
+    for (i, &b) in bits.iter().enumerate() {
+      if b {
+        let a = position_for[&(i as i64)];
+        let c = position_for[&(i as i64 + 1)];
+        line_pairs.push(Expr::List(
+          vec![Expr::Integer(a as i128), Expr::Integer(c as i128)].into(),
+        ));
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "MeshRegion".to_string(),
+      args: vec![
+        Expr::List(vertex_exprs.into()),
+        Expr::List(
+          vec![Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(line_pairs.into())].into(),
+          }]
+          .into(),
+        ),
+      ]
+      .into(),
+    });
+  }
+
   // ArrayMesh[matrix] → MeshRegion from a binary 2D array
   if name == "ArrayMesh"
     && args.len() == 1

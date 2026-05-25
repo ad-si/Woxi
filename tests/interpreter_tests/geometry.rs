@@ -1137,6 +1137,36 @@ mod array_mesh {
       "-Graphics-"
     );
   }
+
+  #[test]
+  fn one_d_with_gaps() {
+    assert_eq!(
+      interpret("ArrayMesh[{1, 0, 1, 1, 0, 1}]").unwrap(),
+      "MeshRegion[{{0.}, {1.}, {2.}, {3.}, {4.}, {5.}, {6.}}, \
+       {Line[{{1, 2}, {3, 4}, {4, 5}, {6, 7}}]}]"
+    );
+  }
+
+  #[test]
+  fn one_d_solid() {
+    assert_eq!(
+      interpret("ArrayMesh[{1, 1, 1}]").unwrap(),
+      "MeshRegion[{{0.}, {1.}, {2.}, {3.}}, {Line[{{1, 2}, {2, 3}, {3, 4}}]}]"
+    );
+  }
+
+  #[test]
+  fn one_d_isolated_endpoints() {
+    assert_eq!(
+      interpret("ArrayMesh[{1, 0, 0, 1}]").unwrap(),
+      "MeshRegion[{{0.}, {1.}, {3.}, {4.}}, {Line[{{1, 2}, {3, 4}}]}]"
+    );
+  }
+
+  #[test]
+  fn one_d_all_zeros() {
+    assert_eq!(interpret("ArrayMesh[{0, 0, 0}]").unwrap(), "EmptyRegion[1]");
+  }
 }
 
 mod scaling_transform {

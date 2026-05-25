@@ -4945,8 +4945,7 @@ mod asymptotic_integrate {
   #[test]
   fn definite_sin_tx_list_form_order_5() {
     assert_eq!(
-      interpret("AsymptoticIntegrate[Sin[t*x], {t, 0, 1}, {x, 0, 5}]")
-        .unwrap(),
+      interpret("AsymptoticIntegrate[Sin[t*x], {t, 0, 1}, {x, 0, 5}]").unwrap(),
       "x/2 - x^3/24 + x^5/720"
     );
   }

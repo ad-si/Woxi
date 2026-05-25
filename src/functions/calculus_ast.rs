@@ -10311,15 +10311,20 @@ pub fn asymptotic_integrate_ast(
       Expr::Rule {
         pattern,
         replacement,
-      } => (pattern.as_ref().clone(), replacement.as_ref().clone(), true, 1),
+      } => (
+        pattern.as_ref().clone(),
+        replacement.as_ref().clone(),
+        true,
+        1,
+      ),
       Expr::FunctionCall { name, args: rargs }
         if name == "Rule" && rargs.len() == 2 =>
       {
         (rargs[0].clone(), rargs[1].clone(), true, 1)
       }
       Expr::List(items) if items.len() == 3 => {
-        let n = crate::functions::math_ast::expr_to_i128(&items[2])
-          .unwrap_or(1);
+        let n =
+          crate::functions::math_ast::expr_to_i128(&items[2]).unwrap_or(1);
         (items[0].clone(), items[1].clone(), false, n)
       }
       _ => {
@@ -10433,12 +10438,11 @@ pub fn asymptotic_integrate_ast(
 
     // Fallback: series wasn't a SeriesData (e.g. f is constant).
     // Use Normal -> Integrate path.
-    let polynomial = crate::evaluator::evaluate_expr_to_expr(
-      &Expr::FunctionCall {
+    let polynomial =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Normal".to_string(),
         args: vec![series_result].into(),
-      },
-    )?;
+      })?;
     let integrated = integrate_ast(&[polynomial, var.clone()])?;
     return crate::evaluator::evaluate_expr_to_expr(&integrated);
   }
