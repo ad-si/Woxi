@@ -2273,20 +2273,81 @@ pub fn binary_image_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
-/// PixelValue[img, pos] — pixel-color lookup stub. Real implementation
-/// is left for future work; this stub matches wolframscript's
-/// PixelValue::imginv warning for non-image input.
+/// PixelValue[img, {x, y}] — pixel value at column x (1-indexed from the
+/// left) and row y (1-indexed from the bottom). Out-of-bounds positions
+/// return 0 (or a list of zeros for multi-channel images).
 pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !matches!(&args[0], Expr::Image { .. }) {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
     crate::emit_message(&format!(
       "PixelValue::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
+    return Ok(Expr::FunctionCall {
+      name: "PixelValue".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let Expr::List(pos) = &args[1] else {
+    return Ok(Expr::FunctionCall {
+      name: "PixelValue".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let coord = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => Some(*n as i64),
+      Expr::Real(f) => Some(f.round() as i64),
+      _ => None,
+    }
+  };
+  let ch = *channels as usize;
+  let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+  let to_value = |v: f64| -> Expr {
+    if is_real32 {
+      Expr::Real((v as f32) as f64)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  let make_zero = || -> Expr {
+    if ch == 1 {
+      Expr::Real(0.0)
+    } else {
+      Expr::List(
+        std::iter::repeat_n(Expr::Real(0.0), ch).collect::<Vec<_>>().into(),
+      )
+    }
+  };
+
+  if pos.len() != 2 {
+    return Ok(make_zero());
   }
-  Ok(Expr::FunctionCall {
-    name: "PixelValue".to_string(),
-    args: args.to_vec().into(),
-  })
+  let (Some(x), Some(y)) = (coord(&pos[0]), coord(&pos[1])) else {
+    return Ok(Expr::FunctionCall {
+      name: "PixelValue".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  if x < 1 || y < 1 || x > *width as i64 || y > *height as i64 {
+    return Ok(make_zero());
+  }
+  let row = (*height as i64 - y) as usize;
+  let col = (x - 1) as usize;
+  let base = row * (*width as usize) * ch + col * ch;
+
+  if ch == 1 {
+    Ok(to_value(data[base]))
+  } else {
+    let pixel: Vec<Expr> = (0..ch).map(|c| to_value(data[base + c])).collect();
+    Ok(Expr::List(pixel.into()))
+  }
 }
 
 /// TextRecognize[img] — OCR stub. Real text recognition is not

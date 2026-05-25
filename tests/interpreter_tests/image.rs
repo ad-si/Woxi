@@ -1610,6 +1610,88 @@ mod cases {
       r#"Image[NumericArray[{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}}, "Real32"], "Real32", ColorSpace -> Automatic, Interleaving -> None]"#,
     );
   }
+  // PixelValue[img, {x, y}] uses 1-indexed (x=column from left, y=row from
+  // bottom); out-of-bounds positions return 0 (or {0,...} for multi-channel).
+  #[test]
+  fn pixel_value_grayscale_single_row() {
+    assert_case(
+      r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {1, 1}]"#,
+      r#"0.20000000298023224"#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {2, 1}]"#,
+      r#"0.5"#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{0.2, 0.5, 0.8}}], {3, 1}]"#,
+      r#"0.800000011920929"#,
+    );
+  }
+
+  // y is row counted from the BOTTOM (1-indexed). For a 2x2 image stored
+  // top-row-first, position {1,1} reads the bottom-left pixel.
+  #[test]
+  fn pixel_value_grayscale_y_axis_orientation() {
+    assert_case(
+      r#"PixelValue[Image[{{0.1, 0.2}, {0.3, 0.4}}], {1, 1}]"#,
+      r#"0.30000001192092896"#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{0.1, 0.2}, {0.3, 0.4}}], {1, 2}]"#,
+      r#"0.10000000149011612"#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{0.1, 0.2}, {0.3, 0.4}}], {2, 1}]"#,
+      r#"0.4000000059604645"#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{0.1, 0.2}, {0.3, 0.4}}], {2, 2}]"#,
+      r#"0.20000000298023224"#,
+    );
+  }
+
+  #[test]
+  fn pixel_value_rgb_returns_channel_list() {
+    assert_case(
+      r#"PixelValue[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], {1, 1}]"#,
+      r#"{1., 0., 0.}"#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], {2, 1}]"#,
+      r#"{0., 1., 0.}"#,
+    );
+  }
+
+  #[test]
+  fn pixel_value_out_of_bounds_grayscale() {
+    assert_case(
+      r#"PixelValue[Image[{{0.1, 0.2}, {0.3, 0.4}}], {0, 0}]"#,
+      r#"0."#,
+    );
+    assert_case(
+      r#"PixelValue[Image[{{0.1, 0.2}, {0.3, 0.4}}], {3, 1}]"#,
+      r#"0."#,
+    );
+  }
+
+  #[test]
+  fn pixel_value_out_of_bounds_rgb() {
+    assert_case(
+      r#"PixelValue[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], {3, 1}]"#,
+      r#"{0., 0., 0.}"#,
+    );
+  }
+
+  // Non-image argument: matches wolframscript's PixelValue::imginv warning,
+  // returns the call unevaluated.
+  #[test]
+  fn pixel_value_non_image_unevaluated() {
+    assert_case(
+      r#"PixelValue[42, {1, 1}]"#,
+      r#"PixelValue[42, {1, 1}]"#,
+    );
+  }
+
   #[test]
   fn pixel_value_positions_1() {
     assert_case(
