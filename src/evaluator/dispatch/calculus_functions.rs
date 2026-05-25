@@ -4492,11 +4492,8 @@ fn invert_pure_function(body: &Expr) -> Option<Expr> {
     name: "Equal".to_string(),
     args: vec![body_x, y_expr.clone()].into(),
   };
-  let solve_result = crate::functions::polynomial_ast::solve_ast(&[
-    eq,
-    x_expr.clone(),
-  ])
-  .ok()?;
+  let solve_result =
+    crate::functions::polynomial_ast::solve_ast(&[eq, x_expr.clone()]).ok()?;
 
   // Expect `{{x -> rhs}}` or `{{x -> rhs1}, ...}`. Take the first rule's rhs.
   let solutions = if let Expr::List(outer) = &solve_result {

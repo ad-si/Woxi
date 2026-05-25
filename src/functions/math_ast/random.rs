@@ -468,6 +468,89 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// `RandomDate[]` returns a single `DateObject` at a random instant in the
+/// current calendar year (local time). `RandomDate[n]` returns a list of `n`
+/// such DateObjects.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use chrono::{Datelike, Local, TimeZone, Timelike};
+  use rand::Rng;
+
+  fn one_date() -> Expr {
+    let now = Local::now();
+    let year = now.year();
+    let year_start = Local
+      .with_ymd_and_hms(year, 1, 1, 0, 0, 0)
+      .single()
+      .unwrap_or(now);
+    let next_year_start = Local
+      .with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
+      .single()
+      .unwrap_or(now);
+    let span = (next_year_start - year_start)
+      .num_milliseconds()
+      .max(1) as f64;
+    let offset_ms = crate::with_rng(|rng| rng.gen_range(0.0..span));
+    let total_micros = (offset_ms * 1000.0) as i64;
+    let chosen = year_start
+      + chrono::Duration::microseconds(total_micros);
+    let seconds =
+      chosen.second() as f64 + (chosen.nanosecond() as f64) / 1e9;
+    let tz_offset_hours =
+      chosen.offset().local_minus_utc() as f64 / 3600.0;
+    Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![
+        Expr::List(
+          vec![
+            Expr::Integer(chosen.year() as i128),
+            Expr::Integer(chosen.month() as i128),
+            Expr::Integer(chosen.day() as i128),
+            Expr::Integer(chosen.hour() as i128),
+            Expr::Integer(chosen.minute() as i128),
+            Expr::Real(seconds),
+          ]
+          .into(),
+        ),
+        Expr::String("Instant".to_string()),
+        Expr::String("Gregorian".to_string()),
+        Expr::Real(tz_offset_hours),
+      ]
+      .into(),
+    }
+  }
+
+  match args.len() {
+    0 => Ok(one_date()),
+    1 => match &args[0] {
+      Expr::Integer(n) if *n >= 0 => {
+        let count = *n as usize;
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+          out.push(one_date());
+        }
+        Ok(Expr::List(out.into()))
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "RandomDate".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
+    _ => Ok(Expr::FunctionCall {
+      name: "RandomDate".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(Expr::FunctionCall {
+    name: "RandomDate".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// Random[] or Random[Real] / Random[Integer] / Random[Complex],
 /// optionally followed by a range argument. This is the legacy wrapper
 /// around RandomReal / RandomInteger / RandomComplex.

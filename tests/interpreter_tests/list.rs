@@ -3266,6 +3266,45 @@ mod random_complex {
   }
 }
 
+mod random_date {
+  use super::*;
+
+  #[test]
+  fn no_args_is_date_object() {
+    // RandomDate[] returns a DateObject with structure
+    //   DateObject[{y, m, d, h, mi, s}, "Instant", "Gregorian", offset].
+    assert_eq!(interpret("Head[RandomDate[]]").unwrap(), "DateObject");
+  }
+
+  #[test]
+  fn no_args_in_current_year() {
+    // The chosen year is the system's current year — the first entry of the
+    // DateObject's date list equals `Now`'s year.
+    assert_eq!(
+      interpret("RandomDate[][[1, 1]] == Now[[1, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_arg_returns_list_of_n() {
+    assert_eq!(interpret("Length[RandomDate[5]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn n_arg_all_date_objects() {
+    assert_eq!(
+      interpret("AllTrue[RandomDate[10], Head[#] == DateObject &]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn n_zero_returns_empty_list() {
+    assert_eq!(interpret("RandomDate[0]").unwrap(), "{}");
+  }
+}
+
 mod random_color {
   use super::*;
 

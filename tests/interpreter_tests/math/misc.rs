@@ -769,10 +769,7 @@ mod inverse_function {
   #[test]
   fn pure_function_applied() {
     // The returned inverse function should evaluate when applied.
-    assert_eq!(
-      interpret("InverseFunction[2*#1 + 3 &][7]").unwrap(),
-      "2"
-    );
+    assert_eq!(interpret("InverseFunction[2*#1 + 3 &][7]").unwrap(), "2");
   }
 }
 

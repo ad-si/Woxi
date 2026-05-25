@@ -1055,6 +1055,9 @@ pub fn dispatch_math_functions(
     "RandomColor" if args.len() <= 1 => {
       return Some(crate::functions::math_ast::random_color_ast(args));
     }
+    "RandomDate" if args.len() <= 1 => {
+      return Some(crate::functions::math_ast::random_date_ast(args));
+    }
     "Random" => {
       return Some(crate::functions::math_ast::random_ast(args));
     }
