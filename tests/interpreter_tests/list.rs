@@ -4138,6 +4138,32 @@ mod ranked {
       "17"
     );
   }
+
+  #[test]
+  fn ranked_min_negative_index() {
+    // RankedMin[list, -n] gives the n-th largest element.
+    assert_eq!(
+      interpret("RankedMin[{3, 1, 4, 1, 5, 9, 2}, -2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("RankedMin[{3, 1, 4, 1, 5, 9, 2}, -1]").unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
+  fn ranked_max_negative_index() {
+    // RankedMax[list, -n] gives the n-th smallest element.
+    assert_eq!(
+      interpret("RankedMax[{3, 1, 4, 1, 5, 9, 2}, -1]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("RankedMax[{3, 1, 4, 1, 5, 9, 2}, -3]").unwrap(),
+      "2"
+    );
+  }
 }
 
 mod quantile {

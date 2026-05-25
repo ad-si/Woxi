@@ -39,15 +39,18 @@ pub fn dispatch_math_functions(
     "RankedMax" if args.len() == 2 => {
       if let Expr::List(items) = &args[0] {
         let mut sorted = items.clone();
+        // Ascending sort; positive k picks from the high end, negative k
+        // from the low end. `RankedMax[list, -n]` = n-th smallest.
         sorted.sort_by(|a, b| {
           let fa = crate::functions::math_ast::try_eval_to_f64(a);
           let fb = crate::functions::math_ast::try_eval_to_f64(b);
-          fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+          fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
         });
         if let Some(k) = expr_to_i128(&args[1]) {
-          let idx = (k - 1) as usize;
-          if idx < sorted.len() {
-            return Some(Ok(sorted[idx].clone()));
+          let len = sorted.len() as i128;
+          let idx = if k > 0 { len - k } else { -k - 1 };
+          if (0..len).contains(&idx) {
+            return Some(Ok(sorted[idx as usize].clone()));
           }
         }
       }
@@ -59,15 +62,18 @@ pub fn dispatch_math_functions(
     "RankedMin" if args.len() == 2 => {
       if let Expr::List(items) = &args[0] {
         let mut sorted = items.clone();
+        // Ascending sort; positive k picks from the low end, negative k
+        // from the high end. `RankedMin[list, -n]` = n-th largest.
         sorted.sort_by(|a, b| {
           let fa = crate::functions::math_ast::try_eval_to_f64(a);
           let fb = crate::functions::math_ast::try_eval_to_f64(b);
           fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
         });
         if let Some(k) = expr_to_i128(&args[1]) {
-          let idx = (k - 1) as usize;
-          if idx < sorted.len() {
-            return Some(Ok(sorted[idx].clone()));
+          let len = sorted.len() as i128;
+          let idx = if k > 0 { k - 1 } else { len + k };
+          if (0..len).contains(&idx) {
+            return Some(Ok(sorted[idx as usize].clone()));
           }
         }
       }
