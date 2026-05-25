@@ -726,6 +726,55 @@ mod graph_rendering {
   }
 
   #[test]
+  fn grid_graph_vertex_count() {
+    assert_eq!(
+      interpret("VertexCount[GridGraph[{10, 10}]]").unwrap(),
+      "100"
+    );
+    assert_eq!(interpret("VertexCount[GridGraph[{2, 3}]]").unwrap(), "6");
+    assert_eq!(interpret("VertexCount[GridGraph[{3, 2}]]").unwrap(), "6");
+    assert_eq!(interpret("VertexCount[GridGraph[{1, 1}]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn grid_graph_edge_count() {
+    // {m, n}: horizontal edges = (m-1)*n, vertical edges = m*(n-1)
+    assert_eq!(interpret("EdgeCount[GridGraph[{2, 3}]]").unwrap(), "7");
+    assert_eq!(interpret("EdgeCount[GridGraph[{3, 2}]]").unwrap(), "7");
+    assert_eq!(interpret("EdgeCount[GridGraph[{10, 10}]]").unwrap(), "180");
+    assert_eq!(interpret("EdgeCount[GridGraph[{1, 1}]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn grid_graph_edge_list_2x3() {
+    // GridGraph[{m, n}]: m columns, n rows, row-major numbering.
+    // For each v: if not in last column emit v—(v+1); if not in last row emit v—(v+m).
+    assert_eq!(
+      interpret("EdgeList[GridGraph[{2, 3}]]").unwrap(),
+      format!(
+        "{{1 {ue} 2, 1 {ue} 3, 2 {ue} 4, 3 {ue} 4, 3 {ue} 5, 4 {ue} 6, 5 {ue} 6}}",
+        ue = "\u{f3d4}"
+      )
+    );
+  }
+
+  #[test]
+  fn grid_graph_edge_list_3x2() {
+    assert_eq!(
+      interpret("EdgeList[GridGraph[{3, 2}]]").unwrap(),
+      format!(
+        "{{1 {ue} 2, 1 {ue} 4, 2 {ue} 3, 2 {ue} 5, 3 {ue} 6, 4 {ue} 5, 5 {ue} 6}}",
+        ue = "\u{f3d4}"
+      )
+    );
+  }
+
+  #[test]
+  fn grid_graph_renders() {
+    assert_eq!(interpret("GridGraph[{3, 3}]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
   fn graph_export_string_svg() {
     let result =
       interpret("ExportString[Graph[{1  2, 2  3, 3  1}], \"SVG\"]").unwrap();

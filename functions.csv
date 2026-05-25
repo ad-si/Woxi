@@ -990,7 +990,7 @@ ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12.0,99
 SplitBy,Splits list at boundaries where a function changes value,✅,pure,7.0,1000
 SphericalBesselJ,Spherical Bessel function of the first kind,✅,1,6.0,1001
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8.0,1002
-GridGraph,Requires external services or GUI infrastructure,🚫,io,8.0,1005
+GridGraph,Constructs an m by n grid graph,✅,pure,8.0,1005
 ToUpperCase,Converts a string to uppercase,✅,pure,2.0,1005
 ViewAngle,,🚫,,6.0,1005
 ChartLegends,Specifies legend labels for chart elements,✅,pure,7.0,1006

@@ -2097,6 +2097,47 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // GridGraph[{m, n}] → m×n grid: vertices 1..m*n in row-major order.
+  // For each v: if not in last column emit v—(v+1); if not in last row emit v—(v+m).
+  if name == "GridGraph"
+    && args.len() == 1
+    && let Expr::List(dims) = &args[0]
+    && dims.len() == 2
+    && let (Expr::Integer(mc), Expr::Integer(nc)) = (&dims[0], &dims[1])
+  {
+    let m = *mc as usize;
+    let n = *nc as usize;
+    if m >= 1 && n >= 1 {
+      let total = m * n;
+      let vertices: Vec<Expr> =
+        (1..=total).map(|i| Expr::Integer(i as i128)).collect();
+      let mut edges = Vec::new();
+      for v in 1..=total {
+        let col = ((v - 1) % m) + 1;
+        let row = ((v - 1) / m) + 1;
+        if col < m {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(v as i128), Expr::Integer((v + 1) as i128)]
+              .into(),
+          });
+        }
+        if row < n {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(v as i128), Expr::Integer((v + m) as i128)]
+              .into(),
+          });
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
+          .into(),
+      });
+    }
+  }
+
   // StarGraph[n] → star graph with 1 center vertex connected to n-1 outer vertices
   if name == "StarGraph"
     && args.len() == 1
@@ -4317,10 +4358,8 @@ pub fn evaluate_function_call_ast_inner(
     && let Expr::List(xy) = &args[1]
     && xy.len() == 2
   {
-    let func = evaluate_function_call_ast(
-      "TuttePolynomial",
-      &[args[0].clone()],
-    )?;
+    let func =
+      evaluate_function_call_ast("TuttePolynomial", &[args[0].clone()])?;
     let applied = Expr::CurriedCall {
       func: Box::new(func),
       args: vec![xy[0].clone(), xy[1].clone()],
