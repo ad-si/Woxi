@@ -469,6 +469,71 @@ mod outer_extended {
     );
   }
 
+  // Band[{i, j}] -> v inside a SparseArray rule list expands to the
+  // diagonal of values starting at (i, j), stepping by (1, 1), until
+  // either dimension hits the bound.
+  #[test]
+  fn sparse_array_band_main_diagonal() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{Band[{1, 1}] -> 1}, {3, 3}]]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{Band[{1, 1}] -> x}, {3, 3}]]").unwrap(),
+      "{{x, 0, 0}, {0, x, 0}, {0, 0, x}}"
+    );
+  }
+
+  // A Band starting below the main diagonal fills the subdiagonal until
+  // it hits either edge. Multiple Band rules combine.
+  #[test]
+  fn sparse_array_band_subdiagonal() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}] -> x, Band[{2, 1}] -> y}, {5, 5}]]"
+      )
+      .unwrap(),
+      "{{x, 0, 0, 0, 0}, {y, x, 0, 0, 0}, {0, y, x, 0, 0}, \
+       {0, 0, y, x, 0}, {0, 0, 0, y, x}}"
+    );
+  }
+
+  // Band[{i, j}, {iMax, jMax}] limits the diagonal to the given endpoint.
+  #[test]
+  fn sparse_array_band_with_endpoint() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}, {3, 3}] -> x}, {5, 5}]]"
+      )
+      .unwrap(),
+      "{{x, 0, 0, 0, 0}, {0, x, 0, 0, 0}, {0, 0, x, 0, 0}, \
+       {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}"
+    );
+  }
+
+  // Combining a Band rule with an explicit position rule: the FIRST
+  // rule in the list wins for shared positions (here Band stays).
+  #[test]
+  fn sparse_array_band_with_explicit_rule() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}] -> x, {5, 5} -> 9}, {5, 5}]]"
+      )
+      .unwrap(),
+      "{{x, 0, 0, 0, 0}, {0, x, 0, 0, 0}, {0, 0, x, 0, 0}, \
+       {0, 0, 0, x, 0}, {0, 0, 0, 0, x}}"
+    );
+    // When the explicit rule comes first, it overrides the Band at (5,5).
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{5, 5} -> 9, Band[{1, 1}] -> x}, {5, 5}]]"
+      )
+      .unwrap(),
+      "{{x, 0, 0, 0, 0}, {0, x, 0, 0, 0}, {0, 0, x, 0, 0}, \
+       {0, 0, 0, x, 0}, {0, 0, 0, 0, 9}}"
+    );
+  }
+
   #[test]
   fn sparse_array_with_list() {
     // wolframscript collapses Outer[Times, …SparseArray…] into a single

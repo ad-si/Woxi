@@ -1709,6 +1709,89 @@ fn parse_sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
   }
 }
 
+/// Expand `Band[{i, j}, ...] -> v` rules into concrete `{i+k, j+k} -> v`
+/// rules using `dims`. Other rules pass through unchanged. Returns None
+/// when nothing in `data` references Band (so the caller can use the
+/// original expression).
+fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
+  let Expr::List(items) = data else {
+    return None;
+  };
+  let has_band = items.iter().any(|it| {
+    matches!(it, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::FunctionCall { name, .. } if name == "Band"))
+  });
+  if !has_band {
+    return None;
+  }
+  let mut expanded: Vec<Expr> = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = item
+      && let Expr::FunctionCall { name, args } = pattern.as_ref()
+      && name == "Band"
+      && !args.is_empty()
+    {
+      let Some(start) = list_of_positive_ints(&args[0], dims.len()) else {
+        return None;
+      };
+      let end: Vec<usize> = if args.len() >= 2 {
+        match list_of_positive_ints(&args[1], dims.len()) {
+          Some(e) => e
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| v.min(dims[i]))
+            .collect(),
+          None => return None,
+        }
+      } else {
+        dims.to_vec()
+      };
+      let steps_possible: usize = (0..start.len())
+        .map(|i| {
+          if start[i] > end[i] {
+            0
+          } else {
+            end[i] - start[i] + 1
+          }
+        })
+        .min()
+        .unwrap_or(0);
+      for k in 0..steps_possible {
+        let pos: Vec<Expr> = start
+          .iter()
+          .map(|&s| Expr::Integer((s + k) as i128))
+          .collect();
+        expanded.push(Expr::Rule {
+          pattern: Box::new(Expr::List(pos.into())),
+          replacement: replacement.clone(),
+        });
+      }
+      continue;
+    }
+    expanded.push(item.clone());
+  }
+  Some(Expr::List(expanded.into()))
+}
+
+fn list_of_positive_ints(e: &Expr, rank: usize) -> Option<Vec<usize>> {
+  let Expr::List(items) = e else { return None };
+  if items.len() != rank {
+    return None;
+  }
+  let mut out = Vec::with_capacity(rank);
+  for it in items.iter() {
+    let n = expr_to_i128(it)?;
+    if n < 1 {
+      return None;
+    }
+    out.push(n as usize);
+  }
+  Some(out)
+}
+
 /// Parse a list of position-value rules. Positions may be scalar integers
 /// (1D) or lists of integers (k-D); all rules must share the same rank.
 /// Returns the rules as (position, value) pairs and the max-per-axis dims.
@@ -1875,7 +1958,22 @@ pub fn sparse_array_normalize_ast(
     });
   }
 
-  let data = &args[0];
+  // Band[{i, j}] / Band[{i, j}, {iMax, jMax}] rules need to know the
+  // dimensions to expand into concrete positions. When dims are
+  // explicit, pre-expand and substitute back into args[0].
+  let explicit_dims: Option<Vec<usize>> =
+    args.get(1).and_then(parse_sparse_dims);
+  let expanded_data: Expr;
+  let data: &Expr = if let Some(ref dims) = explicit_dims {
+    if let Some(expanded) = expand_band_rules(&args[0], dims) {
+      expanded_data = expanded;
+      &expanded_data
+    } else {
+      &args[0]
+    }
+  } else {
+    &args[0]
+  };
   let default = if args.len() >= 3 {
     args[2].clone()
   } else {
