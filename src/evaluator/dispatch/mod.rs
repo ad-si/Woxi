@@ -2512,9 +2512,7 @@ pub fn evaluate_function_call_ast_inner(
       let mut vertices: Vec<Expr> = Vec::with_capacity(nc * nc);
       for &x in &coords {
         for &y in &coords {
-          vertices.push(Expr::List(
-            vec![Expr::Real(x), Expr::Real(y)].into(),
-          ));
+          vertices.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
         }
       }
       // 1-based vertex position for grid cell (i_x, i_y).
@@ -2524,14 +2522,8 @@ pub fn evaluate_function_call_ast_inner(
       let seg_indices: Vec<(usize, usize)> = segments
         .iter()
         .map(|(a, b)| {
-          let lo = coords
-            .iter()
-            .position(|c| (*c - *a).abs() < 1e-15)
-            .unwrap();
-          let hi = coords
-            .iter()
-            .position(|c| (*c - *b).abs() < 1e-15)
-            .unwrap();
+          let lo = coords.iter().position(|c| (*c - *a).abs() < 1e-15).unwrap();
+          let hi = coords.iter().position(|c| (*c - *b).abs() < 1e-15).unwrap();
           (lo, hi)
         })
         .collect();

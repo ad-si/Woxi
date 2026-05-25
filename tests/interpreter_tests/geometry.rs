@@ -1004,23 +1004,14 @@ mod cantor_mesh {
   #[test]
   fn level_1_dim_2() {
     assert_eq!(interpret("Head[CantorMesh[1, 2]]").unwrap(), "MeshRegion");
-    assert_eq!(
-      interpret("Length[CantorMesh[1, 2][[1]]]").unwrap(),
-      "16"
-    );
+    assert_eq!(interpret("Length[CantorMesh[1, 2][[1]]]").unwrap(), "16");
     assert_eq!(
       interpret("CantorMesh[1, 2][[2]]").unwrap(),
       "{Polygon[{{1, 5, 6, 2}, {3, 7, 8, 4}, {9, 13, 14, 10}, {11, 15, 16, 12}}]}"
     );
     // First and last vertices.
-    assert_eq!(
-      interpret("CantorMesh[1, 2][[1, 1]]").unwrap(),
-      "{0., 0.}"
-    );
-    assert_eq!(
-      interpret("CantorMesh[1, 2][[1, -1]]").unwrap(),
-      "{1., 1.}"
-    );
+    assert_eq!(interpret("CantorMesh[1, 2][[1, 1]]").unwrap(), "{0., 0.}");
+    assert_eq!(interpret("CantorMesh[1, 2][[1, -1]]").unwrap(), "{1., 1.}");
   }
 
   #[test]

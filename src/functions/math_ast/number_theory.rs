@@ -3005,15 +3005,48 @@ pub fn binomial_coeff(n: i128, k: i128) -> i128 {
 
 /// Multinomial[n1, n2, ...] - Multinomial coefficient (n1+n2+...)! / (n1! * n2! * ...)
 pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() {
+  if args.is_empty() || args.len() == 1 {
     return Ok(Expr::Integer(1));
   }
-  // Symbolic 2-arg form: Multinomial[a, b] = Binomial[a + b, b].
-  // Higher-arity stays unevaluated when any argument is non-numeric
-  // (matches wolframscript).
-  if args.len() == 2
-    && (expr_to_i128(&args[0]).is_none() || expr_to_i128(&args[1]).is_none())
-  {
+
+  let unevaluated = || Expr::FunctionCall {
+    name: "Multinomial".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Fast path: all positive integers → integer arithmetic.
+  let mut int_vals: Option<Vec<i128>> = Some(Vec::with_capacity(args.len()));
+  for a in args {
+    if let Expr::Integer(n) = a {
+      if *n < 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Multinomial: arguments must be non-negative integers".into(),
+        ));
+      }
+      int_vals.as_mut().unwrap().push(*n);
+    } else {
+      int_vals = None;
+      break;
+    }
+  }
+  if let Some(ints) = int_vals {
+    let mut total: i128 = 0;
+    let mut result: i128 = 1;
+    for &n in &ints {
+      total += n;
+      result *= binomial_coeff(total, n);
+    }
+    return Ok(Expr::Integer(result));
+  }
+
+  use crate::functions::math_ast::expr_to_rational;
+  let symbolic_indices: Vec<usize> = (0..args.len())
+    .filter(|&i| expr_to_rational(&args[i]).is_none())
+    .collect();
+
+  // 2-arg symbolic case keeps a single Binomial form for backward
+  // compatibility with the existing convention.
+  if args.len() == 2 && symbolic_indices.len() >= 2 {
     let sum = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![args[0].clone(), args[1].clone()].into(),
@@ -3024,31 +3057,75 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return crate::evaluator::evaluate_expr_to_expr(&binom);
   }
-  let mut ints = Vec::new();
-  for arg in args {
-    match expr_to_i128(arg) {
-      Some(n) if n >= 0 => ints.push(n),
-      Some(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "Multinomial: arguments must be non-negative integers".into(),
-        ));
-      }
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "Multinomial".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+
+  if symbolic_indices.len() >= 2 {
+    return Ok(unevaluated());
+  }
+
+  // From here on: 0 or 1 symbolic, the rest are integers/rationals.
+  if symbolic_indices.len() == 1 {
+    let sym_idx = symbolic_indices[0];
+    let sym = args[sym_idx].clone();
+    let rest: Vec<Expr> = args
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != sym_idx)
+      .map(|(_, e)| e.clone())
+      .collect();
+
+    // Compute Multinomial(rest) — must reduce to a number for us to
+    // factor cleanly.
+    let multi_rest = multinomial_ast(&rest)?;
+    if expr_to_rational(&multi_rest).is_none() {
+      return Ok(unevaluated());
     }
+
+    // Build sum_total = sym + sum(rest) and the leading Binomial.
+    let mut sum_args = Vec::with_capacity(args.len());
+    sum_args.push(sym.clone());
+    sum_args.extend(rest.iter().cloned());
+    let sum_total =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: sum_args.into(),
+      })?;
+    let binom = Expr::FunctionCall {
+      name: "Binomial".to_string(),
+      args: vec![sum_total, sym].into(),
+    };
+    let product = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![binom, multi_rest].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&product);
   }
-  // Compute using iterated binomial coefficients: Multinomial[a,b,c] = C(a+b+c, a) * C(b+c, b)
-  let mut total: i128 = 0;
-  let mut result: i128 = 1;
-  for &ni in &ints {
-    total += ni;
-    result *= binomial_coeff(total, ni);
+
+  // All args are integers/rationals (mixed). Iterate Multinomial as a
+  // product of Binomials, preferring integer args in the k position so
+  // each Binomial reduces.
+  let mut sorted = args.to_vec();
+  sorted.sort_by_key(|a| if matches!(a, Expr::Integer(_)) { 0 } else { 1 });
+  let mut result: Expr = Expr::Integer(1);
+  let mut remaining: Vec<Expr> = sorted;
+  while remaining.len() > 1 {
+    let first = remaining[0].clone();
+    let sum_expr =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: remaining.clone().into(),
+      })?;
+    let binom_expr =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Binomial".to_string(),
+        args: vec![sum_expr, first].into(),
+      })?;
+    result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![result, binom_expr].into(),
+    })?;
+    remaining.remove(0);
   }
-  Ok(Expr::Integer(result))
+  Ok(result)
 }
 
 // ─── PowerMod ──────────────────────────────────────────────────────

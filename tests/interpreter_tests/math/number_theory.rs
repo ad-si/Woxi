@@ -781,6 +781,40 @@ mod multinomial {
       "Multinomial[a, b, c]"
     );
   }
+
+  #[test]
+  fn rational_two_args_exact() {
+    // Multinomial[3, 1/2] = Binomial[7/2, 3] = 35/16 (exact, not 2.1875).
+    assert_eq!(interpret("Multinomial[3, 1/2]").unwrap(), "35/16");
+  }
+
+  #[test]
+  fn one_symbolic_two_integers() {
+    // Multinomial[3, 4, c] = Binomial[c+7, c] * Multinomial[3, 4]
+    //                     = Binomial[7+c, c] * 35
+    assert_eq!(
+      interpret("Multinomial[3, 4, c]").unwrap(),
+      "35*Binomial[7 + c, c]"
+    );
+  }
+
+  #[test]
+  fn one_symbolic_with_rational() {
+    // Multinomial[x, 3, 1/2] = Binomial[x+7/2, x] * Multinomial[3, 1/2]
+    //                       = Binomial[x+7/2, x] * 35/16
+    assert_eq!(
+      interpret("Multinomial[x, 3, 1/2]").unwrap(),
+      "(35*Binomial[7/2 + x, x])/16"
+    );
+  }
+
+  #[test]
+  fn two_symbolic_with_integer_stays_unevaluated() {
+    assert_eq!(
+      interpret("Multinomial[a, 3, b]").unwrap(),
+      "Multinomial[a, 3, b]"
+    );
+  }
 }
 
 mod power_mod {
