@@ -167,6 +167,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ComplexExpand" => Some((1, 2)),
     "ComplexPlot" => Some((2, usize::MAX)),
     "ComplexPlot3D" => Some((2, usize::MAX)),
+    "ComplexRegionPlot" => Some((2, usize::MAX)),
     "ComposeList" => Some((2, 2)),
     "CompositeQ" => Some((1, 1)),
     "Composition" => Some((0, usize::MAX)),

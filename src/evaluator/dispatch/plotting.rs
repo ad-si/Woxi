@@ -230,7 +230,9 @@ pub fn dispatch_plotting(
     {
       let (zvar, z_lo, z_hi) = match &args[1] {
         Expr::List(items) => match &items[0] {
-          Expr::Identifier(name) => (name.clone(), items[1].clone(), items[2].clone()),
+          Expr::Identifier(name) => {
+            (name.clone(), items[1].clone(), items[2].clone())
+          }
           _ => unreachable!(),
         },
         _ => unreachable!(),
@@ -247,8 +249,7 @@ pub fn dispatch_plotting(
           right: Box::new(Expr::Identifier(yv.clone())),
         }),
       };
-      let body =
-        crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
+      let body = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
       let modulus = Expr::FunctionCall {
         name: "Abs".to_string(),
         args: vec![body].into(),
@@ -261,8 +262,7 @@ pub fn dispatch_plotting(
           name: part.to_string(),
           args: vec![e.clone()].into(),
         };
-        crate::evaluator::evaluate_expr_to_expr(&wrapped)
-          .unwrap_or(wrapped)
+        crate::evaluator::evaluate_expr_to_expr(&wrapped).unwrap_or(wrapped)
       };
       let mut plot_args = vec![
         modulus,
@@ -295,6 +295,104 @@ pub fn dispatch_plotting(
       }
       Some(quiet_plot(|| {
         crate::functions::plot3d::plot3d_ast(&plot_args)
+      }))
+    }
+    // ComplexRegionPlot[pred, {z, zmin, zmax}] — plot the region in the
+    // complex plane where pred holds. We substitute z → x + i·y and
+    // forward to RegionPlot. `{z, r}` is treated as `{z, -r - r I, r + r I}`.
+    "ComplexRegionPlot"
+      if args.len() >= 2
+        && matches!(
+          &args[1],
+          Expr::List(items) if (items.len() == 2 || items.len() == 3)
+            && matches!(&items[0], Expr::Identifier(_))
+        ) =>
+    {
+      let (zvar, z_lo, z_hi) = match &args[1] {
+        Expr::List(items) => match &items[0] {
+          Expr::Identifier(name) => {
+            if items.len() == 3 {
+              (name.clone(), items[1].clone(), items[2].clone())
+            } else {
+              // {z, r} → corners (-r - r·I, r + r·I)
+              let r = items[1].clone();
+              let neg_r = Expr::FunctionCall {
+                name: "Minus".to_string(),
+                args: vec![r.clone()].into(),
+              };
+              let corner_lo = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(neg_r.clone()),
+                right: Box::new(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(neg_r.clone()),
+                  right: Box::new(Expr::Identifier("I".to_string())),
+                }),
+              };
+              let corner_hi = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(r.clone()),
+                right: Box::new(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(r),
+                  right: Box::new(Expr::Identifier("I".to_string())),
+                }),
+              };
+              (name.clone(), corner_lo, corner_hi)
+            }
+          }
+          _ => unreachable!(),
+        },
+        _ => unreachable!(),
+      };
+      let xv = "x".to_string();
+      let yv = "y".to_string();
+      let xy_expr = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Identifier(xv.clone())),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Identifier("I".to_string())),
+          right: Box::new(Expr::Identifier(yv.clone())),
+        }),
+      };
+      let pred = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
+      let eval_part = |e: &Expr, part: &str| -> Expr {
+        let wrapped = Expr::FunctionCall {
+          name: part.to_string(),
+          args: vec![e.clone()].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&wrapped).unwrap_or(wrapped)
+      };
+      let mut region_args = vec![
+        pred,
+        Expr::List(
+          vec![
+            Expr::Identifier(xv),
+            eval_part(&z_lo, "Re"),
+            eval_part(&z_hi, "Re"),
+          ]
+          .into(),
+        ),
+        Expr::List(
+          vec![
+            Expr::Identifier(yv),
+            eval_part(&z_lo, "Im"),
+            eval_part(&z_hi, "Im"),
+          ]
+          .into(),
+        ),
+      ];
+      for opt in &args[2..] {
+        if let Expr::Rule { pattern, .. } = opt
+          && matches!(&**pattern, Expr::Identifier(s) if s == "PlotLegends")
+        {
+          continue;
+        }
+        region_args.push(opt.clone());
+      }
+      Some(quiet_plot(|| {
+        crate::functions::field_plot::region_plot_ast(&region_args)
       }))
     }
     "DensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
