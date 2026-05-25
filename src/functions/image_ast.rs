@@ -2319,7 +2319,11 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut out: Vec<Expr> = Vec::with_capacity(n);
     for i in 0..n {
       let left = if i == 0 { values[0] } else { values[i - 1] };
-      let right = if i + 1 >= n { values[n - 1] } else { values[i + 1] };
+      let right = if i + 1 >= n {
+        values[n - 1]
+      } else {
+        values[i + 1]
+      };
       let g = (right - left) / 2.0;
       out.push(Expr::Real(g.abs()));
     }

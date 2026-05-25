@@ -626,6 +626,80 @@ mod map_indexed {
   }
 }
 
+mod tensor_symmetry {
+  use super::*;
+
+  #[test]
+  fn antisymmetric_3x3() {
+    // M[i,j] = -M[j,i]; diagonal zero.
+    assert_eq!(
+      interpret("TensorSymmetry[{{0, 5, 6}, {-5, 0, 3}, {-6, -3, 0}}]")
+        .unwrap(),
+      "Antisymmetric[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn antisymmetric_2x2() {
+    assert_eq!(
+      interpret("TensorSymmetry[{{0, 5}, {-5, 0}}]").unwrap(),
+      "Antisymmetric[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn symmetric_3x3() {
+    assert_eq!(
+      interpret("TensorSymmetry[{{1, 2, 3}, {2, 4, 5}, {3, 5, 6}}]").unwrap(),
+      "Symmetric[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn symmetric_2x2() {
+    assert_eq!(
+      interpret("TensorSymmetry[{{1, 2}, {2, 4}}]").unwrap(),
+      "Symmetric[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn identity_matrix_is_symmetric() {
+    assert_eq!(
+      interpret("TensorSymmetry[IdentityMatrix[3]]").unwrap(),
+      "Symmetric[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn all_zero_matrix() {
+    assert_eq!(
+      interpret("TensorSymmetry[{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}]").unwrap(),
+      "ZeroSymmetric[{}]"
+    );
+  }
+
+  #[test]
+  fn generic_matrix() {
+    // Neither symmetric nor antisymmetric.
+    assert_eq!(
+      interpret("TensorSymmetry[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn non_matrix_stays_symbolic() {
+    // 1-D vector — no rank-2 symmetry classification.
+    let result = interpret("TensorSymmetry[{1, 2, 3}]").unwrap();
+    assert!(
+      result.contains("TensorSymmetry"),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
+}
+
 mod tensor_product {
   use super::*;
 

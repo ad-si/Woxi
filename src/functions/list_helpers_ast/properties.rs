@@ -83,6 +83,123 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// TensorSymmetry[expr] - symmetry classification of a rank-2 tensor (matrix).
+/// Returns:
+///   ZeroSymmetric[{}]      — all entries are zero
+///   Symmetric[{1, 2}]      — M[i,j] = M[j,i] for all i, j (and not all zero)
+///   Antisymmetric[{1, 2}]  — M[i,j] = -M[j,i] for all i, j (and not all zero)
+///   {}                     — generic square matrix with no special symmetry
+///   TensorSymmetry[...]    — for non-matrix or non-square input, stay symbolic
+pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "TensorSymmetry".to_string(),
+    args: vec![expr.clone()].into(),
+  };
+  let Expr::List(rows) = expr else {
+    return Ok(unevaluated());
+  };
+  let n = rows.len();
+  if n == 0 {
+    return Ok(unevaluated());
+  }
+  // Require a square matrix: every row is a list of length n.
+  let mut matrix: Vec<Vec<&Expr>> = Vec::with_capacity(n);
+  for row in rows.iter() {
+    let Expr::List(cells) = row else {
+      return Ok(unevaluated());
+    };
+    if cells.len() != n {
+      return Ok(unevaluated());
+    }
+    matrix.push(cells.iter().collect());
+  }
+
+  let is_zero =
+    |e: &Expr| matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0);
+  let mut all_zero = true;
+  for row in &matrix {
+    for cell in row {
+      if !is_zero(cell) {
+        all_zero = false;
+        break;
+      }
+    }
+    if !all_zero {
+      break;
+    }
+  }
+  if all_zero {
+    return Ok(Expr::FunctionCall {
+      name: "ZeroSymmetric".to_string(),
+      args: vec![Expr::List(Vec::new().into())].into(),
+    });
+  }
+
+  // Equality check on Expr — use canonical evaluation so e.g. (-5) == (-5).
+  let eq = |a: &Expr, b: &Expr| -> bool {
+    let cmp = Expr::FunctionCall {
+      name: "Equal".to_string(),
+      args: vec![a.clone(), b.clone()].into(),
+    };
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&cmp),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
+  };
+  let neg = |e: &Expr| -> Expr {
+    let e = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), e.clone()].into(),
+    };
+    crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or_else(|_| {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), e.clone()].into(),
+      }
+    })
+  };
+
+  let mut is_symmetric = true;
+  let mut is_antisymmetric = true;
+  for i in 0..n {
+    for j in 0..n {
+      let mij = matrix[i][j];
+      let mji = matrix[j][i];
+      if !eq(mij, mji) {
+        is_symmetric = false;
+      }
+      if i == j {
+        if !is_zero(mij) {
+          is_antisymmetric = false;
+        }
+      } else if !eq(mij, &neg(mji)) {
+        is_antisymmetric = false;
+      }
+      if !is_symmetric && !is_antisymmetric {
+        break;
+      }
+    }
+    if !is_symmetric && !is_antisymmetric {
+      break;
+    }
+  }
+
+  let slot_list = Expr::List(vec![Expr::Integer(1), Expr::Integer(2)].into());
+  if is_symmetric {
+    return Ok(Expr::FunctionCall {
+      name: "Symmetric".to_string(),
+      args: vec![slot_list].into(),
+    });
+  }
+  if is_antisymmetric {
+    return Ok(Expr::FunctionCall {
+      name: "Antisymmetric".to_string(),
+      args: vec![slot_list].into(),
+    });
+  }
+  Ok(Expr::List(Vec::new().into()))
+}
+
 /// ArrayQ[expr] - True if expr is a full array (rectangular at all levels).
 pub fn array_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   fn is_full_array(expr: &Expr) -> bool {

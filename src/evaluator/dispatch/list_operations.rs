@@ -2054,6 +2054,9 @@ pub fn dispatch_list_operations(
     "TensorRank" if args.len() == 1 => {
       return Some(list_helpers_ast::tensor_rank_ast(&args[0]));
     }
+    "TensorSymmetry" if args.len() == 1 => {
+      return Some(list_helpers_ast::tensor_symmetry_ast(&args[0]));
+    }
     "ArrayQ" if !args.is_empty() && args.len() <= 3 => {
       let is_array = match list_helpers_ast::array_q_ast(&args[0]) {
         Ok(v) => v,
