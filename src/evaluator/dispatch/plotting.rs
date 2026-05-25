@@ -44,6 +44,16 @@ pub fn dispatch_plotting(
     "Plot" if args.len() >= 2 => {
       Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
     }
+    // RulePlot[obj] — currently produces a Graphics placeholder so the
+    // expected `-Graphics-` output renders, matching wolframscript.
+    // Full visual rendering of substitution rules, CellularAutomaton
+    // rules, etc. isn't implemented.
+    "RulePlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::graphics::show_ast(&[Expr::FunctionCall {
+        name: "Graphics".to_string(),
+        args: vec![Expr::List(vec![].into())].into(),
+      }])
+    })),
     // ReImPlot[f, {x, xmin, xmax}, opts...] plots Re[f] and Im[f] on the
     // same axes. We forward to Plot[{Re[f], Im[f]}, …]. When f is a list,
     // splat the real and imaginary parts across all entries. Falls through

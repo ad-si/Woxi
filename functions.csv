@@ -1626,7 +1626,7 @@ WhittakerM,Whittaker M function,,unevaluated,6.0,1651
 InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
 MathieuGroupM11,Mathieu group M11,,unevaluated,8.0,1656
-RulePlot,Plot rules,,unevaluated,11.0,1656
+RulePlot,Placeholder visualization of a substitution or cellular-automaton rule,✅,pure,11.0,1656
 Overlaps,Overlap specification,,unevaluated,5.1,1658
 Trig,Trigonometric functions option,,unevaluated,2.0,1658
 ItoProcess,Ito stochastic process,,unevaluated,9.0,1659

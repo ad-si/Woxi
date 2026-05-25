@@ -1188,7 +1188,8 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn rule_plot() {
-    assert_eq!(interpret("RulePlot[x]").unwrap(), "RulePlot[x]");
+    // RulePlot now returns a Graphics placeholder.
+    assert_eq!(interpret("RulePlot[x]").unwrap(), "-Graphics-");
   }
   #[test]
   fn mathieu_group_m11() {
