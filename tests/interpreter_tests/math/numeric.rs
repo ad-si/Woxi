@@ -1056,10 +1056,7 @@ mod precision {
   #[test]
   fn get_environment_zero_arg_entries_are_rules() {
     assert_eq!(
-      interpret(
-        "AllTrue[Head /@ GetEnvironment[], # === Rule &]"
-      )
-      .unwrap(),
+      interpret("AllTrue[Head /@ GetEnvironment[], # === Rule &]").unwrap(),
       "True"
     );
   }

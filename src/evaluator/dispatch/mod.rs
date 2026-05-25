@@ -2432,12 +2432,21 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(output.into()));
   }
 
-  // CantorMesh[n] → Cantor set at level n as a MeshRegion
+  // CantorMesh[n]    → 1D Cantor set MeshRegion (Lines)
+  // CantorMesh[n, d] → d-dimensional Cantor set MeshRegion
   if name == "CantorMesh"
-    && args.len() == 1
+    && (args.len() == 1 || args.len() == 2)
     && let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0])
   {
     let n = n as usize;
+    let d = if args.len() == 2 {
+      crate::functions::math_ast::try_eval_to_f64(&args[1]).unwrap_or(1.0)
+        as usize
+    } else {
+      1
+    };
+
+    // 1D Cantor intervals at step n.
     let mut segments: Vec<(f64, f64)> = vec![(0.0, 1.0)];
     for _ in 0..n {
       let mut new_segs = Vec::with_capacity(segments.len() * 2);
@@ -2448,40 +2457,116 @@ pub fn evaluate_function_call_ast_inner(
       }
       segments = new_segs;
     }
-    let mut points: Vec<f64> = Vec::new();
-    for (a, b) in &segments {
-      points.push(*a);
-      points.push(*b);
+
+    if d == 1 {
+      let mut points: Vec<f64> = Vec::new();
+      for (a, b) in &segments {
+        points.push(*a);
+        points.push(*b);
+      }
+      let vertex_exprs: Vec<Expr> = points
+        .iter()
+        .map(|x| Expr::List(vec![Expr::Real(*x)].into()))
+        .collect();
+      let line_pairs: Vec<Expr> = (0..segments.len())
+        .map(|i| {
+          Expr::List(
+            vec![
+              Expr::Integer((2 * i + 1) as i128),
+              Expr::Integer((2 * i + 2) as i128),
+            ]
+            .into(),
+          )
+        })
+        .collect();
+      return Ok(Expr::FunctionCall {
+        name: "MeshRegion".to_string(),
+        args: vec![
+          Expr::List(vertex_exprs.into()),
+          Expr::List(
+            vec![Expr::FunctionCall {
+              name: "Line".to_string(),
+              args: vec![Expr::List(line_pairs.into())].into(),
+            }]
+            .into(),
+          ),
+        ]
+        .into(),
+      });
     }
-    let vertex_exprs: Vec<Expr> = points
-      .iter()
-      .map(|x| Expr::List(vec![Expr::Real(*x)].into()))
-      .collect();
-    let line_pairs: Vec<Expr> = (0..segments.len())
-      .map(|i| {
-        Expr::List(
-          vec![
-            Expr::Integer((2 * i + 1) as i128),
-            Expr::Integer((2 * i + 2) as i128),
-          ]
-          .into(),
-        )
-      })
-      .collect();
-    return Ok(Expr::FunctionCall {
-      name: "MeshRegion".to_string(),
-      args: vec![
-        Expr::List(vertex_exprs.into()),
-        Expr::List(
-          vec![Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![Expr::List(line_pairs.into())].into(),
-          }]
-          .into(),
-        ),
-      ]
-      .into(),
-    });
+
+    if d == 2 {
+      // 1D vertex coordinates: endpoints of all intervals, sorted dedup.
+      let mut coords: Vec<f64> = Vec::with_capacity(segments.len() * 2);
+      for (a, b) in &segments {
+        coords.push(*a);
+        coords.push(*b);
+      }
+      // segments are non-overlapping and given in order, but adjacent
+      // ones don't share endpoints — dedupe to be safe.
+      coords.sort_by(|x, y| x.partial_cmp(y).unwrap());
+      coords.dedup_by(|x, y| (*x - *y).abs() < 1e-15);
+      let nc = coords.len();
+
+      // Vertex list: Cartesian product with x outer, y inner.
+      let mut vertices: Vec<Expr> = Vec::with_capacity(nc * nc);
+      for &x in &coords {
+        for &y in &coords {
+          vertices.push(Expr::List(
+            vec![Expr::Real(x), Expr::Real(y)].into(),
+          ));
+        }
+      }
+      // 1-based vertex position for grid cell (i_x, i_y).
+      let pos = |ix: usize, iy: usize| -> i128 { (ix * nc + iy + 1) as i128 };
+
+      // Find each segment's lo/hi index in the coords list.
+      let seg_indices: Vec<(usize, usize)> = segments
+        .iter()
+        .map(|(a, b)| {
+          let lo = coords
+            .iter()
+            .position(|c| (*c - *a).abs() < 1e-15)
+            .unwrap();
+          let hi = coords
+            .iter()
+            .position(|c| (*c - *b).abs() < 1e-15)
+            .unwrap();
+          (lo, hi)
+        })
+        .collect();
+
+      // Polygons in cell order (i_x outer, i_y inner).
+      let mut polygons: Vec<Expr> = Vec::with_capacity(segments.len().pow(2));
+      for &(x_lo, x_hi) in &seg_indices {
+        for &(y_lo, y_hi) in &seg_indices {
+          polygons.push(Expr::List(
+            vec![
+              Expr::Integer(pos(x_lo, y_lo)),
+              Expr::Integer(pos(x_hi, y_lo)),
+              Expr::Integer(pos(x_hi, y_hi)),
+              Expr::Integer(pos(x_lo, y_hi)),
+            ]
+            .into(),
+          ));
+        }
+      }
+
+      return Ok(Expr::FunctionCall {
+        name: "MeshRegion".to_string(),
+        args: vec![
+          Expr::List(vertices.into()),
+          Expr::List(
+            vec![Expr::FunctionCall {
+              name: "Polygon".to_string(),
+              args: vec![Expr::List(polygons.into())].into(),
+            }]
+            .into(),
+          ),
+        ]
+        .into(),
+      });
+    }
   }
 
   // ArrayMesh[vec] → MeshRegion from a binary 1D array (Lines)

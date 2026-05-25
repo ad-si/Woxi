@@ -986,6 +986,51 @@ mod cantor_mesh {
       "MeshRegion[{{0.}, {0.1111111111111111}, {0.2222222222222222}, {0.3333333333333333}, {0.6666666666666666}, {0.7777777777777778}, {0.8888888888888888}, {1.}}, {Line[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]}]"
     );
   }
+
+  #[test]
+  fn level_0_dim_2() {
+    // 2D MeshRegion renders as -Graphics-, so inspect the structure.
+    assert_eq!(interpret("Head[CantorMesh[0, 2]]").unwrap(), "MeshRegion");
+    assert_eq!(
+      interpret("CantorMesh[0, 2][[1]]").unwrap(),
+      "{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}}"
+    );
+    assert_eq!(
+      interpret("CantorMesh[0, 2][[2]]").unwrap(),
+      "{Polygon[{{1, 3, 4, 2}}]}"
+    );
+  }
+
+  #[test]
+  fn level_1_dim_2() {
+    assert_eq!(interpret("Head[CantorMesh[1, 2]]").unwrap(), "MeshRegion");
+    assert_eq!(
+      interpret("Length[CantorMesh[1, 2][[1]]]").unwrap(),
+      "16"
+    );
+    assert_eq!(
+      interpret("CantorMesh[1, 2][[2]]").unwrap(),
+      "{Polygon[{{1, 5, 6, 2}, {3, 7, 8, 4}, {9, 13, 14, 10}, {11, 15, 16, 12}}]}"
+    );
+    // First and last vertices.
+    assert_eq!(
+      interpret("CantorMesh[1, 2][[1, 1]]").unwrap(),
+      "{0., 0.}"
+    );
+    assert_eq!(
+      interpret("CantorMesh[1, 2][[1, -1]]").unwrap(),
+      "{1., 1.}"
+    );
+  }
+
+  #[test]
+  fn level_1_dim_1_via_two_arg() {
+    // CantorMesh[n, 1] should match CantorMesh[n]
+    assert_eq!(
+      interpret("CantorMesh[1, 1]").unwrap(),
+      "MeshRegion[{{0.}, {0.3333333333333333}, {0.6666666666666666}, {1.}}, {Line[{{1, 2}, {3, 4}}]}]"
+    );
+  }
 }
 
 mod planar_angle {
