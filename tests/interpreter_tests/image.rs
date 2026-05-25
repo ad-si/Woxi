@@ -1569,6 +1569,73 @@ mod image_processing {
     );
   }
 
+  // RecurrenceFilter on a 1D image applies the IIR filter along the
+  // row. With a = {1, -0.5}, b = {1}: y[n] = x[n] + 0.5*y[n-1].
+  #[test]
+  fn recurrence_filter_grayscale_row() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[RecurrenceFilter[{{1, -0.5}, {1}}, Image[{{0.1, 0.5, 0.9}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.550000011920929, 1.1749999523162842}}"
+    );
+  }
+
+  // On a 2D image the filter runs along rows, then along columns.
+  // (Woxi computes the intermediate row pass in f64 before the column
+  // pass; the result agrees with wolframscript to within one f32 ulp
+  // for the off-diagonal pixel.)
+  #[test]
+  fn recurrence_filter_grayscale_2d() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[RecurrenceFilter[{{1, -0.5}, {1}}, \
+         Image[{{0.1, 0.5, 0.9}, {0.2, 0.4, 0.6}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.550000011920929, 1.1749999523162842}, \
+       {0.25, 0.7749999761581421, 1.4375}}"
+    );
+  }
+
+  // RGB: each channel filtered independently.
+  #[test]
+  fn recurrence_filter_rgb_per_channel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[RecurrenceFilter[{{1, -0.5}, {1}}, \
+         Image[{{{1.0, 0.0, 0.0}, {0.5, 0.5, 0.5}}}]]]"
+      )
+      .unwrap(),
+      "{{{1., 0., 0.}, {1., 0.5, 0.5}}}"
+    );
+  }
+
+  // Dimensions, channels and image type pass through.
+  #[test]
+  fn recurrence_filter_preserves_image_metadata() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[RecurrenceFilter[{{1, -0.5}, {1}}, \
+         Image[{{0.1, 0.5, 0.9}, {0.2, 0.4, 0.6}}]]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[RecurrenceFilter[{{1, -0.5}, {1}}, Image[{{0.1, 0.5}}]]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
   // Image[image] is idempotent — wrapping an existing Image in another
   // Image[…] returns the inner image unchanged.
   #[test]
@@ -1580,10 +1647,7 @@ mod image_processing {
        {0.30000001192092896, 0.4000000059604645}}"
     );
     assert_eq!(
-      interpret(
-        "ImageDimensions[Image[Image[{{0.1, 0.2, 0.3}}]]]"
-      )
-      .unwrap(),
+      interpret("ImageDimensions[Image[Image[{{0.1, 0.2, 0.3}}]]]").unwrap(),
       "{3, 1}"
     );
   }

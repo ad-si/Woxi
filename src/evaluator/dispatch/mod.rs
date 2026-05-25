@@ -2397,17 +2397,112 @@ pub fn evaluate_function_call_ast_inner(
   // RecurrenceFilter[{{a0, a1, ...}, {b0, b1, ...}}, data] → IIR filter
   if name == "RecurrenceFilter"
     && args.len() == 2
-    && let (Expr::List(coeffs), Expr::List(data)) = (&args[0], &args[1])
+    && let Expr::List(coeffs) = &args[0]
     && coeffs.len() == 2
     && let (Expr::List(a_coeffs), Expr::List(b_coeffs)) =
       (&coeffs[0], &coeffs[1])
     && !a_coeffs.is_empty()
   {
+    // Image input: apply the filter along rows, then along columns,
+    // per channel. The result preserves dimensions, channels, and
+    // image_type.
+    if let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    } = &args[1]
+    {
+      let w = *width as usize;
+      let h = *height as usize;
+      let ch = *channels as usize;
+      let a_floats: Vec<f64> = a_coeffs
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RecurrenceFilter: a-coefficients must be numeric for an Image input"
+              .into(),
+          )
+        })?;
+      let b_floats: Vec<f64> = b_coeffs
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RecurrenceFilter: b-coefficients must be numeric for an Image input"
+              .into(),
+          )
+        })?;
+      let filter_1d = |seq: &[f64]| -> Vec<f64> {
+        let n = seq.len();
+        let mut out = vec![0.0_f64; n];
+        for i in 0..n {
+          let mut s = 0.0;
+          for (j, bj) in b_floats.iter().enumerate() {
+            if i >= j {
+              s += bj * seq[i - j];
+            }
+          }
+          for (k, ak) in a_floats.iter().enumerate().skip(1) {
+            if i >= k {
+              s -= ak * out[i - k];
+            }
+          }
+          out[i] = s / a_floats[0];
+        }
+        out
+      };
+      let mut tmp = data.as_ref().clone();
+      // Row pass.
+      for c_idx in 0..ch {
+        let mut row_buf = vec![0.0; w];
+        for y in 0..h {
+          for x in 0..w {
+            row_buf[x] = tmp[(y * w + x) * ch + c_idx];
+          }
+          let filtered = filter_1d(&row_buf);
+          for x in 0..w {
+            tmp[(y * w + x) * ch + c_idx] = filtered[x];
+          }
+        }
+      }
+      // Column pass.
+      for c_idx in 0..ch {
+        let mut col_buf = vec![0.0; h];
+        for x in 0..w {
+          for y in 0..h {
+            col_buf[y] = tmp[(y * w + x) * ch + c_idx];
+          }
+          let filtered = filter_1d(&col_buf);
+          for y in 0..h {
+            tmp[(y * w + x) * ch + c_idx] = filtered[y];
+          }
+        }
+      }
+      return Ok(Expr::Image {
+        width: *width,
+        height: *height,
+        channels: *channels,
+        data: std::sync::Arc::new(tmp),
+        image_type: *image_type,
+      });
+    }
+
+    // List input: filter along the flat sequence.
+    let Expr::List(data) = &args[1] else {
+      return Ok(Expr::FunctionCall {
+        name: "RecurrenceFilter".to_string(),
+        args: args.to_vec().into(),
+      });
+    };
     // y[n] = (sum_j b[j]*x[n-j] - sum_i(i>0) a[i]*y[n-i]) / a[0]
     let n = data.len();
     let mut output: Vec<Expr> = Vec::with_capacity(n);
     for i in 0..n {
-      // Feedforward: sum b[j] * x[n-j]
       let mut sum = Expr::Integer(0);
       for (j, bj) in b_coeffs.iter().enumerate() {
         if i >= j {
@@ -2423,7 +2518,6 @@ pub fn evaluate_function_call_ast_inner(
           };
         }
       }
-      // Feedback: subtract a[k]*y[n-k] for k >= 1
       for (k, ak) in a_coeffs.iter().enumerate().skip(1) {
         if i >= k {
           let term = Expr::BinaryOp {
@@ -2438,7 +2532,6 @@ pub fn evaluate_function_call_ast_inner(
           };
         }
       }
-      // Divide by a[0]
       let result = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(sum),
