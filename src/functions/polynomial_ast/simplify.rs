@@ -934,12 +934,24 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if cond_str == assumption_str {
         return refine_expr(&args[0], info, assumption);
       }
+      let refined_args: Vec<Expr> = args
+        .iter()
+        .map(|a| refine_expr(a, info, assumption))
+        .collect();
+      // Cond may have refined to a literal True/False. Collapse:
+      //   ConditionalExpression[v, True]  → v
+      //   ConditionalExpression[v, False] → Undefined
+      if let Some(Expr::Identifier(s)) = refined_args.get(1) {
+        if s == "True" {
+          return refined_args.into_iter().next().unwrap();
+        }
+        if s == "False" {
+          return Expr::Identifier("Undefined".to_string());
+        }
+      }
       Expr::FunctionCall {
         name: name.clone(),
-        args: args
-          .iter()
-          .map(|a| refine_expr(a, info, assumption))
-          .collect(),
+        args: refined_args.into(),
       }
     }
 
@@ -4486,6 +4498,17 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
 /// If $Assumptions negates cond → return Undefined
 /// Otherwise → ConditionalExpression[Simplify[value], cond]
 pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
+  // `cond` may already be a literal True/False (e.g. after Refine reduced it
+  // against the current assumptions). Collapse those before doing further
+  // work.
+  if let Expr::Identifier(s) = cond {
+    if s == "True" {
+      return simplify_expr(value);
+    }
+    if s == "False" {
+      return Expr::Identifier("Undefined".to_string());
+    }
+  }
   let cond_str = expr_to_string(cond);
 
   // Read `$Assumptions` from the environment (default `True`). Keep both

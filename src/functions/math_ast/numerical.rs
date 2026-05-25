@@ -3753,8 +3753,8 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if diff.abs() < 1e-300 || !diff.is_finite() {
               eps_next[j] = f64::INFINITY;
             } else {
-              eps_next[j] = eps_prev.get(j + 1).copied().unwrap_or(0.0)
-                + 1.0 / diff;
+              eps_next[j] =
+                eps_prev.get(j + 1).copied().unwrap_or(0.0) + 1.0 / diff;
             }
           }
           if k.is_multiple_of(2) && k > 0 {

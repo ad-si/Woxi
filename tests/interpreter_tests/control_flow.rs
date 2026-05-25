@@ -809,6 +809,43 @@ mod not_logical {
   }
 
   #[test]
+  fn not_greater() {
+    clear_state();
+    // Not[x > 1] → x <= 1.
+    assert_eq!(interpret("Not[x > 1]").unwrap(), "x <= 1");
+  }
+
+  #[test]
+  fn not_greater_equal() {
+    clear_state();
+    assert_eq!(interpret("Not[x >= 1]").unwrap(), "x < 1");
+  }
+
+  #[test]
+  fn not_less() {
+    clear_state();
+    assert_eq!(interpret("Not[x < 1]").unwrap(), "x >= 1");
+  }
+
+  #[test]
+  fn not_less_equal() {
+    clear_state();
+    assert_eq!(interpret("Not[x <= 1]").unwrap(), "x > 1");
+  }
+
+  #[test]
+  fn not_equal() {
+    clear_state();
+    assert_eq!(interpret("Not[x == 1]").unwrap(), "x != 1");
+  }
+
+  #[test]
+  fn not_unequal() {
+    clear_state();
+    assert_eq!(interpret("Not[x != 1]").unwrap(), "x == 1");
+  }
+
+  #[test]
   fn prefix_not_true() {
     clear_state();
     // !True should parse as Not[True] and evaluate to False

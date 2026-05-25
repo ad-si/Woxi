@@ -73,10 +73,39 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match as_bool(&evaluated) {
     Some(true) => Ok(Expr::Identifier("False".to_string())),
     Some(false) => Ok(Expr::Identifier("True".to_string())),
-    None => Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Not,
-      operand: Box::new(evaluated),
-    }),
+    None => {
+      // Negate a single comparison: Not[a > b] → a <= b, etc.
+      if let Expr::Comparison { operands, operators } = &evaluated
+        && operators.len() == 1
+        && let Some(neg_op) = negate_comparison_op(&operators[0])
+      {
+        return Ok(Expr::Comparison {
+          operands: operands.clone(),
+          operators: vec![neg_op],
+        });
+      }
+      Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Not,
+        operand: Box::new(evaluated),
+      })
+    }
+  }
+}
+
+fn negate_comparison_op(
+  op: &crate::syntax::ComparisonOp,
+) -> Option<crate::syntax::ComparisonOp> {
+  use crate::syntax::ComparisonOp;
+  match op {
+    ComparisonOp::Equal => Some(ComparisonOp::NotEqual),
+    ComparisonOp::NotEqual => Some(ComparisonOp::Equal),
+    ComparisonOp::Less => Some(ComparisonOp::GreaterEqual),
+    ComparisonOp::LessEqual => Some(ComparisonOp::Greater),
+    ComparisonOp::Greater => Some(ComparisonOp::LessEqual),
+    ComparisonOp::GreaterEqual => Some(ComparisonOp::Less),
+    // SameQ/UnsameQ aren't negated via the comparison-op channel; leave
+    // them to fall through to the symbolic `Not[...]` form.
+    _ => None,
   }
 }
 

@@ -3476,11 +3476,10 @@ mod nproduct {
   #[test]
   fn infinite_product_geometric() {
     // Product_{i=1}^∞ (1 - 1/(i+1)^2) = 1/2 (telescoping).
-    let result: f64 =
-      interpret("NProduct[1 - 1/(i+1)^2, {i, 1, Infinity}]")
-        .unwrap()
-        .parse()
-        .unwrap();
+    let result: f64 = interpret("NProduct[1 - 1/(i+1)^2, {i, 1, Infinity}]")
+      .unwrap()
+      .parse()
+      .unwrap();
     assert!((result - 0.5).abs() < 1e-3, "got {}", result);
   }
 }
