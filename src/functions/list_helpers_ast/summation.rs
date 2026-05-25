@@ -263,6 +263,140 @@ fn parse_initial_spec(expr: &Expr) -> Result<(Expr, Expr), InterpreterError> {
 /// produces for that input. Used by the infinite-product closed form
 /// `Product[1 + 1/k², {k, 1, ∞}] = Sinh[π]/π` so we don't depend on the
 /// exact canonical form of the body.
+/// True if `body` represents `1 - 1/var^4` in any canonical AST form Woxi
+/// parses: `Plus[1, Times[-1, Power[var, -4]]]`, `1 + Power[var, -4]*-1`,
+/// `1 - 1/var^4` (BinaryOp), etc.
+fn body_is_one_minus_one_over_var_quartic(body: &Expr, var_name: &str) -> bool {
+  use crate::syntax::BinaryOperator;
+  let is_var_to_neg_four = |e: &Expr| -> bool {
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } = e
+      && matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
+      && matches!(right.as_ref(), Expr::Integer(-4))
+    {
+      return true;
+    }
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Power"
+      && args.len() == 2
+      && matches!(&args[0], Expr::Identifier(s) if s == var_name)
+      && matches!(&args[1], Expr::Integer(-4))
+    {
+      return true;
+    }
+    false
+  };
+  // `var^4` (positive exponent), used in `1 - 1/var^4` BinaryOp form.
+  let is_var_to_four = |e: &Expr| -> bool {
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } = e
+      && matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
+      && matches!(right.as_ref(), Expr::Integer(4))
+    {
+      return true;
+    }
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Power"
+      && args.len() == 2
+      && matches!(&args[0], Expr::Identifier(s) if s == var_name)
+      && matches!(&args[1], Expr::Integer(4))
+    {
+      return true;
+    }
+    false
+  };
+  // Recognise `-1 * var^-4` or `var^-4 * -1`.
+  let is_neg_one_over_var_quartic = |e: &Expr| -> bool {
+    // `Times[-1, var^-4]`.
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Times"
+      && args.len() == 2
+      && ((matches!(&args[0], Expr::Integer(-1))
+        && is_var_to_neg_four(&args[1]))
+        || (matches!(&args[1], Expr::Integer(-1))
+          && is_var_to_neg_four(&args[0])))
+    {
+      return true;
+    }
+    // `-1/var^4` as BinaryOp Times.
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } = e
+      && ((matches!(left.as_ref(), Expr::Integer(-1))
+        && is_var_to_neg_four(right))
+        || (matches!(right.as_ref(), Expr::Integer(-1))
+          && is_var_to_neg_four(left)))
+    {
+      return true;
+    }
+    // `Divide[-1, var^4]`.
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } = e
+      && matches!(left.as_ref(), Expr::Integer(-1))
+      && is_var_to_four(right)
+    {
+      return true;
+    }
+    false
+  };
+  // Match `Plus[1, -1 * var^-4]` in either FunctionCall or BinaryOp form.
+  if let Expr::FunctionCall { name, args } = body
+    && name == "Plus"
+    && args.len() == 2
+  {
+    return (matches!(&args[0], Expr::Integer(1))
+      && is_neg_one_over_var_quartic(&args[1]))
+      || (matches!(&args[1], Expr::Integer(1))
+        && is_neg_one_over_var_quartic(&args[0]));
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left,
+    right,
+  } = body
+  {
+    return (matches!(left.as_ref(), Expr::Integer(1))
+      && is_neg_one_over_var_quartic(right))
+      || (matches!(right.as_ref(), Expr::Integer(1))
+        && is_neg_one_over_var_quartic(left));
+  }
+  // `1 - 1/var^4` BinaryOp Minus.
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left,
+    right,
+  } = body
+    && matches!(left.as_ref(), Expr::Integer(1))
+  {
+    // right side must be `1/var^4`.
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: rl,
+      right: rr,
+    } = right.as_ref()
+      && matches!(rl.as_ref(), Expr::Integer(1))
+      && is_var_to_four(rr)
+    {
+      return true;
+    }
+    if is_var_to_neg_four(right) {
+      return true;
+    }
+  }
+  false
+}
+
 fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
   use crate::syntax::BinaryOperator;
   let is_var_squared = |e: &Expr| -> bool {
@@ -550,6 +684,29 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![Expr::Constant("Pi".to_string())].into(),
               }),
               right: Box::new(Expr::Constant("Pi".to_string())),
+            });
+          }
+
+          // Closed form for ∏_{k=2}^∞ (1 - 1/k⁴) = Sinh[π] / (4 π).
+          // Comes from (1 - x²/k²)(1 + x²/k²) at x = 1 over k ≥ 2: the k = 1
+          // factor is 0, but starting at k = 2 the residual product is
+          // Sinh[π] · sin[π] / π² which is 0/π² = 0 — instead the standard
+          // result is obtained by L'Hôpital at x → 1 of the truncated form.
+          if let Some(2) = min_concrete
+            && matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
+            && body_is_one_minus_one_over_var_quartic(body, &var_name)
+          {
+            return Ok(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![Expr::Constant("Pi".to_string())].into(),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer(4)),
+                right: Box::new(Expr::Constant("Pi".to_string())),
+              }),
             });
           }
 

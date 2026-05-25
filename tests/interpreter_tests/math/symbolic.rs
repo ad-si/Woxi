@@ -660,4 +660,20 @@ mod cases {
   fn product_8() {
     assert_case(r#"Product[1 + 1 / i ^ 2, {i, Infinity}]"#, r#"Sinh[Pi]/Pi"#);
   }
+  #[test]
+  fn product_minus_one_over_quartic_from_two_to_infinity() {
+    // wolframscript: Product[1 - 1/i^4, {i, 2, Infinity}] = Sinh[Pi]/(4*Pi).
+    assert_case(
+      r#"Product[1 - 1/i^4, {i, 2, Infinity}]"#,
+      r#"Sinh[Pi]/(4*Pi)"#,
+    );
+  }
+  #[test]
+  fn product_minus_one_over_quartic_finite() {
+    // Finite case still uses the standard numeric path.
+    assert_case(
+      r#"Product[1 - 1/i^4, {i, 2, 5}]"#,
+      r#"221/240"#,
+    );
+  }
 }
