@@ -8150,6 +8150,28 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(hyperfactorial_series_at_zero(&var_name, order));
   }
 
+  // Series[Pochhammer[x, 1/2], {x, 0, n}] — closed-form low-order expansion.
+  // Pochhammer[x, a] = Gamma[x + a] / Gamma[x] is singular at x = 0, so the
+  // direct-Derivative path produces `Pochhammer[0, 1/2]` and partial
+  // derivatives that Woxi can't reduce. Inject the known coefficients.
+  if let Expr::FunctionCall {
+    name: pname,
+    args: pargs,
+  } = &args[0]
+    && pname == "Pochhammer"
+    && pargs.len() == 2
+    && matches!(&pargs[0], Expr::Identifier(v) if v == &var_name)
+    && matches!(&pargs[1], Expr::FunctionCall { name: rn, args: ra }
+      if rn == "Rational"
+        && ra.len() == 2
+        && matches!(&ra[0], Expr::Integer(1))
+        && matches!(&ra[1], Expr::Integer(2)))
+    && matches!(&x0, Expr::Integer(0))
+    && (0..=2).contains(&order)
+  {
+    return Ok(pochhammer_half_series_at_zero(&var_name, order));
+  }
+
   // Series[FactorialPower[x, n], {x, 0, ord}] — FactorialPower[x, n] with
   // positive integer n is the polynomial x*(x-1)*(x-2)*...*(x-n+1) whose
   // coefficients are signed Stirling numbers of the first kind. The
@@ -11075,6 +11097,48 @@ fn factorial_power_series_at_zero(
 
 /// `Series[Hyperfactorial[x], {x, 0, order}]` — closed-form low-order
 /// Taylor coefficients of `Hyperfactorial[x]` at 0.
+/// `Series[Pochhammer[x, 1/2], {x, 0, order}]` for orders 0..=2.
+///   Pochhammer[x, 1/2] = Sqrt[π] x − Sqrt[π] Log[4] x² + O(x³).
+fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
+  let int = |n: i128| Expr::Integer(n);
+  let constant = |s: &str| Expr::Constant(s.to_string());
+  let times = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: args.into(),
+  };
+  let sqrt_pi = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![constant("Pi")].into(),
+  };
+  let log = |arg: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![arg].into(),
+  };
+
+  // Coefficients starting at x^1 (so SeriesData min = 1).
+  let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize);
+  for k in 1..=order {
+    let raw = match k {
+      1 => sqrt_pi.clone(),
+      2 => times(vec![int(-1), sqrt_pi.clone(), log(int(4))]),
+      _ => unreachable!(),
+    };
+    coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
+  }
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeffs.into()),
+      Expr::Integer(1),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
+  }
+}
+
 fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
   let sym = |s: &str| Expr::Identifier(s.to_string());

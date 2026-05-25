@@ -75,7 +75,10 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(false) => Ok(Expr::Identifier("True".to_string())),
     None => {
       // Negate a single comparison: Not[a > b] → a <= b, etc.
-      if let Expr::Comparison { operands, operators } = &evaluated
+      if let Expr::Comparison {
+        operands,
+        operators,
+      } = &evaluated
         && operators.len() == 1
         && let Some(neg_op) = negate_comparison_op(&operators[0])
       {

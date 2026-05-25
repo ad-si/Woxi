@@ -1896,6 +1896,24 @@ mod pochhammer {
     // When n is also symbolic, stay unevaluated
     assert_eq!(interpret("Pochhammer[a, n]").unwrap(), "Pochhammer[a, n]");
   }
+
+  #[test]
+  fn pochhammer_half_series_order_1() {
+    // Pochhammer[x, 1/2] = Sqrt[Pi] * x + O(x^2).
+    assert_eq!(
+      interpret("Series[Pochhammer[x, 1/2], {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {Sqrt[Pi]}, 1, 2, 1]"
+    );
+  }
+
+  #[test]
+  fn pochhammer_half_series_order_2() {
+    // wolframscript: SeriesData[x, 0, {Sqrt[Pi], -(Sqrt[Pi]*Log[4])}, 1, 3, 1].
+    assert_eq!(
+      interpret("Series[Pochhammer[x, 1/2], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {Sqrt[Pi], -(Sqrt[Pi]*Log[4])}, 1, 3, 1]"
+    );
+  }
 }
 
 mod bell_b {
