@@ -2929,6 +2929,37 @@ mod byte_array_to_string {
     );
   }
 
+  #[test]
+  fn hyperfactorial_series_order_0() {
+    // Hyperfactorial[x] = 1 + O(x) at x = 0.
+    assert_eq!(
+      interpret("Series[Hyperfactorial[x], {x, 0, 0}]").unwrap(),
+      "SeriesData[x, 0, {1}, 0, 1, 1]"
+    );
+  }
+
+  #[test]
+  fn hyperfactorial_series_order_1() {
+    // Hyperfactorial[x] = 1 + (1 - Log[2*Pi])/2 * x + O(x^2).
+    assert_eq!(
+      interpret("Series[Hyperfactorial[x], {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {1, (1 - Log[2*Pi])/2}, 0, 2, 1]"
+    );
+  }
+
+  #[test]
+  fn hyperfactorial_series_order_2() {
+    // wolframscript:
+    //   SeriesData[x, 0,
+    //     {1, (1 - Log[2*Pi])/2,
+    //      (5 - 4*EulerGamma - 2*Log[2*Pi] + Log[2*Pi]^2)/8}, 0, 3, 1]
+    assert_eq!(
+      interpret("Series[Hyperfactorial[x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, (1 - Log[2*Pi])/2, \
+       (5 - 4*EulerGamma - 2*Log[2*Pi] + Log[2*Pi]^2)/8}, 0, 3, 1]"
+    );
+  }
+
   // DeBruijnSequence
   #[test]
   fn debruijn_binary_2() {

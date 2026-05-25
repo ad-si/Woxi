@@ -8135,6 +8135,21 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(factorial2_series_at_zero(&var_name, order));
   }
 
+  // Series[Hyperfactorial[x], {x, 0, n}] — closed-form low-order Taylor
+  // coefficients at 0 involve Log[2*Pi], EulerGamma, and Log[2*Pi]^2.
+  if let Expr::FunctionCall {
+    name: hfname,
+    args: hfargs,
+  } = &args[0]
+    && hfname == "Hyperfactorial"
+    && hfargs.len() == 1
+    && matches!(&hfargs[0], Expr::Identifier(v) if v == &var_name)
+    && matches!(&x0, Expr::Integer(0))
+    && (0..=2).contains(&order)
+  {
+    return Ok(hyperfactorial_series_at_zero(&var_name, order));
+  }
+
   // Series[FactorialPower[x, n], {x, 0, ord}] — FactorialPower[x, n] with
   // positive integer n is the polynomial x*(x-1)*(x-2)*...*(x-n+1) whose
   // coefficients are signed Stirling numbers of the first kind. The
@@ -10986,10 +11001,7 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
         // (-EulerGamma + Log[2]) / 2
         times(vec![
           rational(1, 2),
-          plus(vec![
-            times(vec![int(-1), sym("EulerGamma")]),
-            log(int(2)),
-          ]),
+          plus(vec![times(vec![int(-1), sym("EulerGamma")]), log(int(2))]),
         ])
       }
       2 => {
@@ -11054,6 +11066,76 @@ fn factorial_power_series_at_zero(
       Expr::Integer(0),
       Expr::List(coeffs.into()),
       Expr::Integer(min_idx as i128),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
+  }
+}
+
+/// `Series[Hyperfactorial[x], {x, 0, order}]` — closed-form low-order
+/// Taylor coefficients of `Hyperfactorial[x]` at 0.
+fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
+  let int = |n: i128| Expr::Integer(n);
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let constant = |s: &str| Expr::Constant(s.to_string());
+  let plus = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: args.into(),
+  };
+  let times = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: args.into(),
+  };
+  let power = |base: Expr, exp: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp].into(),
+  };
+  let rational = |p: i128, q: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![int(p), int(q)].into(),
+  };
+  let log = |arg: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![arg].into(),
+  };
+  let two_pi = times(vec![int(2), constant("Pi")]);
+  let log_2pi = log(two_pi);
+
+  let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
+  for k in 0..=order {
+    let raw = match k {
+      0 => int(1),
+      1 => {
+        // (1 - Log[2*Pi]) / 2
+        times(vec![
+          rational(1, 2),
+          plus(vec![int(1), times(vec![int(-1), log_2pi.clone()])]),
+        ])
+      }
+      2 => {
+        // (5 - 4 EulerGamma - 2 Log[2 Pi] + Log[2 Pi]^2) / 8
+        times(vec![
+          rational(1, 8),
+          plus(vec![
+            int(5),
+            times(vec![int(-4), sym("EulerGamma")]),
+            times(vec![int(-2), log_2pi.clone()]),
+            power(log_2pi.clone(), int(2)),
+          ]),
+        ])
+      }
+      _ => unreachable!(),
+    };
+    coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
+  }
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeffs.into()),
+      Expr::Integer(0),
       Expr::Integer(order + 1),
       Expr::Integer(1),
     ]
