@@ -896,6 +896,54 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("PetersenGraph[x]").unwrap(), "PetersenGraph[x]");
   }
   #[test]
+  fn petersen_graph_classic() {
+    // The classic Petersen graph has 10 vertices and 15 edges.
+    assert_eq!(interpret("Head[PetersenGraph[]]").unwrap(), "Graph");
+    assert_eq!(
+      interpret("Length[VertexList[PetersenGraph[]]]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Length[EdgeList[PetersenGraph[]]]").unwrap(),
+      "15"
+    );
+  }
+  #[test]
+  fn petersen_graph_with_options() {
+    // Audit case: PetersenGraph[5, 2, VertexSize -> {1 -> Medium}].
+    assert_eq!(
+      interpret(
+        "Head[PetersenGraph[5, 2, VertexSize -> {1 -> Medium}]]"
+      )
+      .unwrap(),
+      "Graph"
+    );
+  }
+  #[test]
+  fn graph_plot_forwards_to_graph() {
+    assert_eq!(
+      interpret(
+        "GraphPlot[{1 -> 4, 1 -> 5, 2 -> 3, 2 -> 5, 3 -> 5, 4 -> 5, 5 -> 5}]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
+  fn layered_graph_plot_forwards() {
+    assert_eq!(
+      interpret("LayeredGraphPlot[PetersenGraph[]]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret(
+        "LayeredGraphPlot[{1 -> 2, 1 -> 3, 2 -> 3, 1 -> 4, 2 -> 4, 1 -> 5}, Left]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
   fn r_solve_value() {
     assert_eq!(
       interpret("RSolveValue[x, y, z]").unwrap(),

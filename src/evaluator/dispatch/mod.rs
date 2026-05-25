@@ -2900,6 +2900,116 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // PetersenGraph[] / PetersenGraph[n, k] / PetersenGraph[n, k, opts…] —
+  // the generalized Petersen graph GP(n, k): outer ring 1..n joined as
+  // a cycle, inner ring n+1..2n joined by k-step jumps, with spokes
+  // i—(n+i). Defaults are (n=5, k=2), the classic Petersen graph.
+  if name == "PetersenGraph"
+    && (args.is_empty()
+      || matches!(&args[0], Expr::Integer(_))
+        && (args.len() == 1
+          || matches!(&args[1], Expr::Integer(_))
+          || args[1..].iter().all(|a| matches!(a, Expr::Rule { .. }))))
+  {
+    let (n, k, opts_start) = match args.first() {
+      None => (5usize, 2usize, 0),
+      Some(Expr::Integer(n)) if *n > 0 => match args.get(1) {
+        Some(Expr::Integer(k)) if *k > 0 && (*k as usize) < *n as usize => {
+          (*n as usize, *k as usize, 2)
+        }
+        _ => (*n as usize, 2, 1),
+      },
+      _ => return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+    let mut edges: Vec<Expr> = Vec::new();
+    let und = |a: usize, b: usize| Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
+    };
+    // Outer cycle: 1—2—…—n—1.
+    for i in 1..=n {
+      edges.push(und(i, if i == n { 1 } else { i + 1 }));
+    }
+    // Spokes.
+    for i in 1..=n {
+      edges.push(und(i, n + i));
+    }
+    // Inner ring with k-step jumps. Deduplicate undirected edges.
+    let mut seen: std::collections::HashSet<(usize, usize)> =
+      std::collections::HashSet::new();
+    for i in 0..n {
+      let a = n + 1 + i;
+      let b = n + 1 + (i + k) % n;
+      if a == b {
+        continue;
+      }
+      let key = if a < b { (a, b) } else { (b, a) };
+      if seen.insert(key) {
+        edges.push(und(key.0, key.1));
+      }
+    }
+    let vertices: Vec<Expr> =
+      (1..=2 * n).map(|i| Expr::Integer(i as i128)).collect();
+    let mut graph_args =
+      vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+    let opts: Vec<Expr> = args[opts_start..]
+      .iter()
+      .filter(|a| matches!(a, Expr::Rule { .. }))
+      .cloned()
+      .collect();
+    if !opts.is_empty() {
+      graph_args.push(Expr::List(opts.into()));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: graph_args.into(),
+    });
+  }
+
+  // GraphPlot[edges] / GraphPlot[edges, opts…] / GraphPlot[adj_matrix] —
+  // currently a thin alias for Graph that reuses Woxi's existing graph
+  // rendering. LayeredGraphPlot and similar variants forward the same
+  // way so they produce a `-Graphics-` placeholder matching wolframscript.
+  if matches!(
+    name,
+    "GraphPlot" | "LayeredGraphPlot" | "GraphPlot3D" | "TreePlot"
+  ) && !args.is_empty()
+  {
+    // Only forward when args[0] is a list of edges or an already-built
+    // Graph[…]; otherwise keep the symbolic head (matches Woxi's
+    // long-standing "stay unevaluated" wrapper behaviour for opaque
+    // arguments like a bare symbol).
+    let looks_like_graph_input = match &args[0] {
+      Expr::List(_) => true,
+      Expr::FunctionCall { name: n, .. } => {
+        n == "Graph" || n == "SparseArray"
+      }
+      _ => false,
+    };
+    if looks_like_graph_input {
+      let graph_expr = if let Expr::FunctionCall {
+        name: gn,
+        args: gargs,
+      } = &args[0]
+        && gn == "Graph"
+      {
+        Expr::FunctionCall {
+          name: "Graph".to_string(),
+          args: gargs.clone(),
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Graph".to_string(),
+          args: args.to_vec().into(),
+        }
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&graph_expr);
+    }
+  }
+
   // AngularGauge[value, {min, max}, opts...] → Graphics dial showing
   // `value` on a circular scale from `min` to `max`. The gauge sweeps
   // clockwise from -135° at `min` to 135° at `max`. Options are kept on
@@ -2942,9 +3052,7 @@ pub fn evaluate_function_call_ast_inner(
         name: "Line".to_string(),
         args: vec![Expr::List(
           vec![
-            Expr::List(
-              vec![Expr::Integer(0), Expr::Integer(0)].into(),
-            ),
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Real(nx), Expr::Real(ny)].into()),
           ]
           .into(),

@@ -837,7 +837,7 @@ JordanDecomposition,,🚫,,3.0,844
 Inner,Generalized inner product,✅,pure,1.0,845
 ToCharacterCode,Converts characters to their character codes,✅,pure,2.0,846
 Curl,Computes the curl of a vector field,✅,pure,9.0,847
-GraphPlot,Requires external services or GUI infrastructure,🚫,io,6.0,849
+GraphPlot,Forwards to Graph[…] for rendering as Graphics,✅,pure,6.0,849
 Texture,Apply a texture to a surface in graphics,✅,none,8.0,849
 Hypergeometric2F1Regularized,Regularized hypergeometric 2F1 function,✅,pure,3.0,850
 TransformedDistribution,,🚫,,8.0,851
@@ -1591,7 +1591,7 @@ SystemDialogInput,System dialog input,,unevaluated,6.0,1614
 Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
 ImagePartition,Partition an image,,unevaluated,7.0,1617
 RelationGraph,Graph from a relation,,unevaluated,10.2,1617
-PetersenGraph,Petersen graph,,unevaluated,8.0,1620
+PetersenGraph,Generalized Petersen graph GP(n, k) built from outer cycle and inner k-jumps,✅,pure,8.0,1620
 RSolveValue,Solution value of recurrence,,unevaluated,10.0,1621
 ArrayDepth,Returns the depth of a nested array,✅,pure,5.0,1622
 FeatureExtraction,Extract features from data,,unevaluated,11.0,1623
