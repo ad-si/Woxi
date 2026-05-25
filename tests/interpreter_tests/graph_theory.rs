@@ -104,6 +104,43 @@ mod complete_graph {
       "{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}}"
     );
   }
+
+  #[test]
+  fn with_vertex_size_option() {
+    // CompleteGraph now accepts trailing Rule options.
+    assert_eq!(
+      interpret("Head[CompleteGraph[4, VertexSize -> Small]]").unwrap(),
+      "Graph"
+    );
+    assert_eq!(
+      interpret("Length[VertexList[CompleteGraph[4, VertexSize -> Small]]]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Length[EdgeList[CompleteGraph[4, VertexSize -> Small]]]")
+        .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn cycle_graph_with_options() {
+    assert_eq!(
+      interpret(
+        "Head[CycleGraph[5, VertexSize -> {1 -> Medium}]]"
+      )
+      .unwrap(),
+      "Graph"
+    );
+    assert_eq!(
+      interpret(
+        "Length[EdgeList[CycleGraph[5, VertexSize -> {1 -> Medium}]]]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
 }
 
 mod adjacency_matrix {

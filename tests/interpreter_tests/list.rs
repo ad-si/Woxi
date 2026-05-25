@@ -7365,7 +7365,6 @@ mod groupings {
     // 4 elements can't form a ternary tree
     assert_eq!(interpret("Groupings[{a, b, c, d}, 3]").unwrap(), "{}");
   }
-
 }
 
 mod peak_detect {

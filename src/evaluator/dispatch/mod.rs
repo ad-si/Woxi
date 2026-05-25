@@ -2032,8 +2032,8 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // CompleteGraph[n] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}]
-  if name == "CompleteGraph" && args.len() == 1 {
+  // CompleteGraph[n, opts...] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}, {opts}]
+  if name == "CompleteGraph" && !args.is_empty() {
     if let Expr::Integer(n) = &args[0] {
       let n = *n as usize;
       let vertices: Vec<Expr> =
@@ -2048,10 +2048,21 @@ pub fn evaluate_function_call_ast_inner(
           });
         }
       }
+      // Collect any trailing Rule options into a {opts} list as Graph's
+      // third argument, matching wolframscript's representation.
+      let opts: Vec<Expr> = args[1..]
+        .iter()
+        .filter(|a| matches!(a, Expr::Rule { .. }))
+        .cloned()
+        .collect();
+      let mut graph_args =
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+      if !opts.is_empty() {
+        graph_args.push(Expr::List(opts.into()));
+      }
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
-          .into(),
+        args: graph_args.into(),
       });
     }
     return Ok(Expr::FunctionCall {
@@ -2060,9 +2071,9 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // CycleGraph[n] → cycle graph: vertices 1..n with edges 1-2, 2-3, ..., n-1.
+  // CycleGraph[n, opts...] → cycle graph: vertices 1..n with edges 1-2, 2-3, ..., n-1.
   if name == "CycleGraph"
-    && args.len() == 1
+    && !args.is_empty()
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n as usize;
@@ -2089,10 +2100,19 @@ pub fn evaluate_function_call_ast_inner(
           });
         }
       }
+      let opts: Vec<Expr> = args[1..]
+        .iter()
+        .filter(|a| matches!(a, Expr::Rule { .. }))
+        .cloned()
+        .collect();
+      let mut graph_args =
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+      if !opts.is_empty() {
+        graph_args.push(Expr::List(opts.into()));
+      }
       return Ok(Expr::FunctionCall {
         name: "Graph".to_string(),
-        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
-          .into(),
+        args: graph_args.into(),
       });
     }
   }
