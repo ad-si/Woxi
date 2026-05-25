@@ -415,11 +415,8 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut coeffs = vec![0.0f64; degree + 1];
   for d in 0..=degree {
     for term in &terms {
-      if let Some(c) =
-        extract_coefficient_of_power(term, &var, d as i128)
-      {
-        let val =
-          crate::functions::math_ast::try_eval_to_f64(&simplify(c));
+      if let Some(c) = extract_coefficient_of_power(term, &var, d as i128) {
+        let val = crate::functions::math_ast::try_eval_to_f64(&simplify(c));
         match val {
           Some(v) => coeffs[d] += v,
           None => return Ok(unevaluated()),
@@ -449,9 +446,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rhs = if im == 0.0 {
       Expr::Real(re)
     } else {
-      crate::functions::math_ast::build_complex_float_expr_keep_real(
-        re, im,
-      )
+      crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
     };
     conds.push(Expr::Comparison {
       operands: vec![Expr::Identifier(var.clone()), rhs],

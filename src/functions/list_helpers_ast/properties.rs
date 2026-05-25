@@ -120,6 +120,230 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 ///   Antisymmetric[{1, 2}]  — M[i,j] = -M[j,i] for all i, j (and not all zero)
 ///   {}                     — generic square matrix with no special symmetry
 ///   TensorSymmetry[...]    — for non-matrix or non-square input, stay symbolic
+/// TensorContract[T, {{i1, j1}, {i2, j2}, ...}] contracts pairs of indices
+/// of the tensor T. Each pair {i, j} of 1-indexed slots is summed over the
+/// matching dimension, leaving the free indices in their original order.
+pub fn tensor_contract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "TensorContract".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  let Expr::List(pairs_list) = &args[1] else {
+    return Ok(unevaluated());
+  };
+
+  // Extract the tensor's shape and ensure it's a fully rectangular list.
+  let Some(shape) = tensor_shape(&args[0]) else {
+    return Ok(unevaluated());
+  };
+  let rank = shape.len();
+  if rank == 0 {
+    return Ok(unevaluated());
+  }
+
+  // Parse contraction pairs. Each must be a 2-element list of 1-indexed ints.
+  let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(pairs_list.len());
+  let mut used = vec![false; rank];
+  for p in pairs_list.iter() {
+    let Expr::List(ij) = p else {
+      return Ok(unevaluated());
+    };
+    if ij.len() != 2 {
+      return Ok(unevaluated());
+    }
+    let (Some(i), Some(j)) = (expr_as_pos_int(&ij[0]), expr_as_pos_int(&ij[1]))
+    else {
+      return Ok(unevaluated());
+    };
+    if i == j || i == 0 || j == 0 || i > rank || j > rank {
+      return Ok(unevaluated());
+    }
+    if used[i - 1] || used[j - 1] {
+      return Ok(unevaluated());
+    }
+    used[i - 1] = true;
+    used[j - 1] = true;
+    let (a, b) = if i < j { (i, j) } else { (j, i) };
+    if shape[a - 1] != shape[b - 1] {
+      return Ok(unevaluated());
+    }
+    pairs.push((a, b));
+  }
+
+  // Index slots are 1-indexed; convert to 0-indexed.
+  let pair_slots: Vec<(usize, usize)> =
+    pairs.iter().map(|(a, b)| (a - 1, b - 1)).collect();
+  let free_slots: Vec<usize> =
+    (0..rank).filter(|i| !used[*i]).collect();
+
+  // Build the result by iterating over all free-index combinations.
+  let free_dims: Vec<usize> = free_slots.iter().map(|&s| shape[s]).collect();
+  let contracted_dims: Vec<usize> =
+    pair_slots.iter().map(|&(a, _)| shape[a]).collect();
+
+  let result = build_contracted(
+    &args[0],
+    &shape,
+    &pair_slots,
+    &free_slots,
+    &free_dims,
+    &contracted_dims,
+    rank,
+  )?;
+  Ok(result)
+}
+
+/// Build the result of contracting a tensor along the given paired slots.
+fn build_contracted(
+  tensor: &Expr,
+  shape: &[usize],
+  pair_slots: &[(usize, usize)],
+  free_slots: &[usize],
+  free_dims: &[usize],
+  contracted_dims: &[usize],
+  rank: usize,
+) -> Result<Expr, InterpreterError> {
+  // Helper: increment a multi-index `idx` in row-major order against `dims`.
+  // Returns false when we've exhausted all combinations.
+  fn advance(idx: &mut [usize], dims: &[usize]) -> bool {
+    if dims.is_empty() {
+      return false;
+    }
+    let mut k = dims.len();
+    while k > 0 {
+      k -= 1;
+      idx[k] += 1;
+      if idx[k] < dims[k] {
+        return true;
+      }
+      idx[k] = 0;
+    }
+    false
+  }
+
+  // Sum over contracted indices for a fixed assignment of free indices.
+  let sum_for_free = |free_idx: &[usize]| -> Result<Expr, InterpreterError> {
+    let mut terms: Vec<Expr> = Vec::new();
+    let mut c_idx = vec![0usize; contracted_dims.len()];
+    loop {
+      let mut full = vec![0usize; rank];
+      for (k, &s) in free_slots.iter().enumerate() {
+        full[s] = free_idx[k];
+      }
+      for (k, &(a, b)) in pair_slots.iter().enumerate() {
+        full[a] = c_idx[k];
+        full[b] = c_idx[k];
+      }
+      let elem = index_tensor(tensor, &full, shape)?;
+      terms.push(elem);
+      if contracted_dims.is_empty() {
+        break;
+      }
+      if !advance(&mut c_idx, contracted_dims) {
+        break;
+      }
+    }
+    if terms.len() == 1 {
+      return Ok(terms.remove(0));
+    }
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    })
+  };
+
+  if free_slots.is_empty() {
+    // Fully contracted → scalar.
+    return sum_for_free(&[]);
+  }
+
+  // Otherwise, build nested lists matching the shape of free_dims.
+  fn build_nested<F>(
+    free_dims: &[usize],
+    free_idx: &mut Vec<usize>,
+    depth: usize,
+    sum: &F,
+  ) -> Result<Expr, InterpreterError>
+  where
+    F: Fn(&[usize]) -> Result<Expr, InterpreterError>,
+  {
+    if depth == free_dims.len() {
+      return sum(free_idx);
+    }
+    let mut items = Vec::with_capacity(free_dims[depth]);
+    for k in 0..free_dims[depth] {
+      free_idx.push(k);
+      items.push(build_nested(free_dims, free_idx, depth + 1, sum)?);
+      free_idx.pop();
+    }
+    Ok(Expr::List(items.into()))
+  }
+  let mut free_idx: Vec<usize> = Vec::with_capacity(free_dims.len());
+  build_nested(free_dims, &mut free_idx, 0, &sum_for_free)
+}
+
+/// Look up `tensor[idx[0], idx[1], ...]` (0-indexed) on a nested list whose
+/// shape is `shape`.
+fn index_tensor(
+  tensor: &Expr,
+  idx: &[usize],
+  shape: &[usize],
+) -> Result<Expr, InterpreterError> {
+  let mut current = tensor.clone();
+  for (depth, &k) in idx.iter().enumerate() {
+    let Expr::List(items) = &current else {
+      return Err(InterpreterError::EvaluationError(
+        "TensorContract: irregular tensor".into(),
+      ));
+    };
+    if items.len() != shape[depth] {
+      return Err(InterpreterError::EvaluationError(
+        "TensorContract: irregular tensor".into(),
+      ));
+    }
+    if k >= items.len() {
+      return Err(InterpreterError::EvaluationError(
+        "TensorContract: index out of range".into(),
+      ));
+    }
+    current = items[k].clone();
+  }
+  Ok(current)
+}
+
+/// Returns the shape of a fully rectangular nested-list tensor, or None.
+/// A scalar (non-List) has shape `[]`.
+fn tensor_shape(expr: &Expr) -> Option<Vec<usize>> {
+  let Expr::List(items) = expr else {
+    return Some(vec![]);
+  };
+  if items.is_empty() {
+    return Some(vec![0]);
+  }
+  let mut dims = vec![items.len()];
+  let inner_shape = tensor_shape(&items[0])?;
+  for sub in items.iter() {
+    let s = tensor_shape(sub)?;
+    if s != inner_shape {
+      return None;
+    }
+  }
+  dims.extend(inner_shape);
+  Some(dims)
+}
+
+fn expr_as_pos_int(e: &Expr) -> Option<usize> {
+  if let Expr::Integer(n) = e
+    && *n > 0
+  {
+    return Some(*n as usize);
+  }
+  None
+}
+
 pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "TensorSymmetry".to_string(),

@@ -1038,6 +1038,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TautologyQ" => Some((1, 1)),
     "TemplateApply" => Some((2, 2)),
     "TensorProduct" => Some((2, usize::MAX)),
+    "TensorContract" => Some((2, 2)),
     "TensorRank" => Some((1, 1)),
     "TensorSymmetry" => Some((1, 1)),
     "Tetrahedron" => Some((0, 2)),

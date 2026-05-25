@@ -2178,6 +2178,70 @@ mod tensor_contract {
   fn head() {
     assert_eq!(interpret("Head[TensorContract]").unwrap(), "Symbol");
   }
+
+  #[test]
+  fn matrix_trace() {
+    // Contracting the only two indices of a matrix gives its trace.
+    assert_eq!(
+      interpret("TensorContract[{{a, b}, {c, d}}, {{1, 2}}]").unwrap(),
+      "a + d"
+    );
+  }
+
+  #[test]
+  fn rank3_contract_first_third() {
+    // T[i,j,k] contracted on indices 1 and 3 → Sum[T[k, j, k], k].
+    // For T = {{{1,2},{3,4}}, {{5,6},{7,8}}}: result[j] = T[1,j,1] + T[2,j,2]
+    // result[1] = 1 + 6 = 7, result[2] = 3 + 8 = 11.
+    assert_eq!(
+      interpret(
+        "TensorContract[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {{1, 3}}]"
+      )
+      .unwrap(),
+      "{7, 11}"
+    );
+  }
+
+  #[test]
+  fn rank3_contract_first_second() {
+    // T[i,j,k] contracted on indices 1 and 2 → Sum[T[k, k, j], k].
+    // For T = {{{1,2},{3,4}}, {{5,6},{7,8}}}: result[k] = T[1,1,k] + T[2,2,k]
+    // result[1] = 1 + 7 = 8, result[2] = 2 + 8 = 10.
+    assert_eq!(
+      interpret(
+        "TensorContract[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {{1, 2}}]"
+      )
+      .unwrap(),
+      "{8, 10}"
+    );
+  }
+
+  #[test]
+  fn audit_case_rank3_contract_second_third() {
+    // Audit case: a 2x2x2 symbolic tensor contracted on slots 2 and 3.
+    // result[i] = T[i,1,1] + T[i,2,2].
+    let result = interpret(
+      "TensorContract[{{{Subscript[a, 1, 1, 1], Subscript[a, 1, 1, 2]}, {Subscript[a, 1, 2, 1], Subscript[a, 1, 2, 2]}}, {{Subscript[a, 2, 1, 1], Subscript[a, 2, 1, 2]}, {Subscript[a, 2, 2, 1], Subscript[a, 2, 2, 2]}}}, {{2, 3}}]"
+    )
+    .unwrap();
+    assert_eq!(
+      result,
+      "{Subscript[a, 1, 1, 1] + Subscript[a, 1, 2, 2], Subscript[a, 2, 1, 1] + Subscript[a, 2, 2, 2]}"
+    );
+  }
+
+  #[test]
+  fn rank4_contract_two_pairs() {
+    // Array[a, {2,2,2,2}] contracted on {{1,2}, {3,4}} → scalar.
+    // result = Sum[a[i,i,j,j], i, j].
+    assert_eq!(
+      interpret(
+        "TensorContract[Array[a, {2, 2, 2, 2}], {{1, 2}, {3, 4}}]"
+      )
+      .unwrap(),
+      "a[1, 1, 1, 1] + a[1, 1, 2, 2] + a[2, 2, 1, 1] + a[2, 2, 2, 2]"
+    );
+  }
 }
 
 mod clear_system_cache {
