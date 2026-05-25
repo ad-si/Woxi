@@ -2261,7 +2261,8 @@ mod group_generators {
   #[test]
   fn permutation_group_single_generator() {
     assert_eq!(
-      interpret("GroupGenerators[PermutationGroup[{Cycles[{{1, 2}}]}]]").unwrap(),
+      interpret("GroupGenerators[PermutationGroup[{Cycles[{{1, 2}}]}]]")
+        .unwrap(),
       "{Cycles[{{1, 2}}]}"
     );
   }

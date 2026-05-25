@@ -17,6 +17,7 @@ enum Commands {
   /// Evaluate a Wolfram Language expression
   Eval {
     /// The Wolfram Language expression to evaluate
+    #[arg(allow_hyphen_values = true)]
     expression: String,
     /// Suppress Print output to stdout (Print still captured internally)
     #[arg(long)]
