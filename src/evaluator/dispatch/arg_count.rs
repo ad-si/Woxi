@@ -468,7 +468,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "If" => Some((2, 4)),
     "Im" => Some((1, 1)),
     "Image" => Some((1, usize::MAX)),
-    "ImageAdd" => Some((2, 2)),
+    "ImageAdd" => Some((2, usize::MAX)),
     "ImageAdjust" => Some((1, 2)),
     "ImageApply" => Some((2, 2)),
     "ImageAssemble" => Some((1, 2)),
@@ -481,7 +481,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageDimensions" => Some((1, 1)),
     "PixelValuePositions" => Some((2, 3)),
     "ImageAspectRatio" => Some((1, 1)),
-    "ImageMultiply" => Some((2, 2)),
+    "ImageMultiply" => Some((2, usize::MAX)),
     "ImageQ" => Some((1, 1)),
     "ImageReflect" => Some((1, 2)),
     // wolframscript: ImageResize[img, dims, opts...]. Image-arg check
@@ -491,7 +491,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // wolframscript: ImageRotate[img], ImageRotate[img, angle, opts...].
     // Image-arg check fires before arg-count, so widen here.
     "ImageRotate" => Some((1, usize::MAX)),
-    "ImageSubtract" => Some((2, 2)),
+    "ImageSubtract" => Some((2, usize::MAX)),
     "ImageTake" => Some((2, 3)),
     "ImageType" => Some((1, 1)),
     "Implies" => Some((2, 2)),

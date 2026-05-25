@@ -2707,19 +2707,40 @@ fn pointwise_image_op(
   })
 }
 
-/// ImageAdd[img1, img2] — pointwise addition.
+/// ImageAdd[img, x1, x2, …] — pointwise addition, threading through
+/// each additional argument (scalar or image).
 pub fn image_add_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  pointwise_image_op(args, "ImageAdd", |a, b| a + b, |a, b| a + b)
+  fold_pointwise(args, "ImageAdd", |a, b| a + b, |a, b| a + b)
 }
 
-/// ImageSubtract[img1, img2] — pointwise subtraction.
+/// ImageSubtract[img, x1, x2, …] — pointwise subtraction (folded).
 pub fn image_subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  pointwise_image_op(args, "ImageSubtract", |a, b| a - b, |a, b| a - b)
+  fold_pointwise(args, "ImageSubtract", |a, b| a - b, |a, b| a - b)
 }
 
-/// ImageMultiply[img1, img2] — pointwise multiplication.
+/// ImageMultiply[img, x1, x2, …] — pointwise multiplication (folded).
 pub fn image_multiply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  pointwise_image_op(args, "ImageMultiply", |a, b| a * b, |a, b| a * b)
+  fold_pointwise(args, "ImageMultiply", |a, b| a * b, |a, b| a * b)
+}
+
+/// Fold a pointwise binary image op over a list of trailing arguments.
+fn fold_pointwise(
+  args: &[Expr],
+  name: &str,
+  op: fn(f64, f64) -> f64,
+  op32: fn(f32, f32) -> f32,
+) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{} expects at least 2 arguments",
+      name
+    )));
+  }
+  let mut acc = args[0].clone();
+  for next in &args[1..] {
+    acc = pointwise_image_op(&[acc, next.clone()], name, op, op32)?;
+  }
+  Ok(acc)
 }
 
 /// RandomImage[{w, h}] - Random pixel values using crate::with_rng

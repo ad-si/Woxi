@@ -288,13 +288,13 @@ pub fn dispatch_image_functions(
     "ImageCompose" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_compose_ast(args));
     }
-    "ImageAdd" if args.len() == 2 => {
+    "ImageAdd" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_add_ast(args));
     }
-    "ImageSubtract" if args.len() == 2 => {
+    "ImageSubtract" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_subtract_ast(args));
     }
-    "ImageMultiply" if args.len() == 2 => {
+    "ImageMultiply" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_multiply_ast(args));
     }
     "RandomImage" if args.len() <= 2 => {

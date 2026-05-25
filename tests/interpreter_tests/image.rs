@@ -1493,6 +1493,52 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // ImageAdd accepts a variadic list of extra terms: each is added in
+  // turn (scalar or image), threading through the partial sums.
+  #[test]
+  fn image_add_three_args() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageAdd[Image[{{0.1, 0.5}}], 0.2, 0.1]]")
+        .unwrap(),
+      "{{0.4000000059604645, 0.800000011920929}}"
+    );
+  }
+
+  #[test]
+  fn image_add_image_and_scalar() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdd[Image[{{0.1, 0.5}}], Image[{{0.4, 0.3}}], 0.1]]"
+      )
+      .unwrap(),
+      "{{0.6000000238418579, 0.9000000357627869}}"
+    );
+  }
+
+  // ImageSubtract chains: image - 0.1 - 0.05
+  #[test]
+  fn image_subtract_three_args() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageSubtract[Image[{{0.5, 0.8}}], 0.1, 0.05]]")
+        .unwrap(),
+      "{{0.3499999940395355, 0.6499999761581421}}"
+    );
+  }
+
+  // ImageMultiply chains: image * 0.5 * 0.5 = image * 0.25
+  #[test]
+  fn image_multiply_three_args() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageMultiply[Image[{{1.0, 0.5}}], 0.5, 0.5]]")
+        .unwrap(),
+      "{{0.25, 0.125}}"
+    );
+  }
+
   // Blur preserves the channel count and image type (no quantisation
   // round-trip through the image crate's u8 buffer).
   #[test]
@@ -1506,10 +1552,7 @@ mod image_processing {
       "3"
     );
     assert_eq!(
-      interpret(
-        "ImageType[Blur[Image[{{0.1, 0.5, 0.9}}], 1]]"
-      )
-      .unwrap(),
+      interpret("ImageType[Blur[Image[{{0.1, 0.5, 0.9}}], 1]]").unwrap(),
       "Real32"
     );
   }
@@ -1519,10 +1562,8 @@ mod image_processing {
   #[test]
   fn blur_preserves_symmetric_center() {
     clear_state();
-    let out = interpret(
-      "ImageData[Blur[Image[{{0.1, 0.5, 0.9}}], 1]]",
-    )
-    .unwrap();
+    let out =
+      interpret("ImageData[Blur[Image[{{0.1, 0.5, 0.9}}], 1]]").unwrap();
     // Output is { {p0, p1, p2} } — extract the middle pixel.
     let middle = out
       .trim_start_matches("{{")
@@ -1539,10 +1580,8 @@ mod image_processing {
   #[test]
   fn blur_changes_edge_pixels() {
     clear_state();
-    let out = interpret(
-      "ImageData[Blur[Image[{{0.0, 0.5, 1.0}}], 1]]",
-    )
-    .unwrap();
+    let out =
+      interpret("ImageData[Blur[Image[{{0.0, 0.5, 1.0}}], 1]]").unwrap();
     let parts: Vec<f64> = out
       .trim_start_matches("{{")
       .trim_end_matches("}}")
@@ -1568,10 +1607,7 @@ mod image_processing {
   fn blur_radius_zero_is_identity() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[Blur[Image[{{0.1, 0.5, 0.9}}], 0]]"
-      )
-      .unwrap(),
+      interpret("ImageData[Blur[Image[{{0.1, 0.5, 0.9}}], 0]]").unwrap(),
       "{{0.10000000149011612, 0.5, 0.8999999761581421}}"
     );
   }
