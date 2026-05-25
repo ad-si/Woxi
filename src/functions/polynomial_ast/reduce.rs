@@ -409,9 +409,7 @@ fn try_reduce_arc_degrees(
   else {
     return Ok(None);
   };
-  if largs.len() != 1
-    || !matches!(&largs[0], Expr::Identifier(s) if s == var)
-  {
+  if largs.len() != 1 || !matches!(&largs[0], Expr::Identifier(s) if s == var) {
     return Ok(None);
   }
 
@@ -475,31 +473,22 @@ fn try_reduce_arc_degrees(
     ),
     // ArcSinDegrees is strictly increasing on [-1, 1] → [-90, 90].
     // arcsin(x) > k iff sin(k°) < x ≤ 1.
-    "ArcSinDegrees" => bounded(
-      threshold,
-      CompOp::Less,
-      CompOp::LessEqual,
-      Expr::Integer(1),
-    ),
+    "ArcSinDegrees" => {
+      bounded(threshold, CompOp::Less, CompOp::LessEqual, Expr::Integer(1))
+    }
     // ArcTanDegrees is strictly increasing on R → (-90, 90).
     // arctan(x) > k iff x > tan(k°).
     "ArcTanDegrees" => simple(CompOp::Greater, threshold),
     // ArcCotDegrees principal branch is strictly decreasing on [0, ∞) → (0, 90].
     // arccot(x) > k iff 0 ≤ x < cot(k°)  (for 0 < k < 90).
-    "ArcCotDegrees" => bounded(
-      Expr::Integer(0),
-      CompOp::LessEqual,
-      CompOp::Less,
-      threshold,
-    ),
+    "ArcCotDegrees" => {
+      bounded(Expr::Integer(0), CompOp::LessEqual, CompOp::Less, threshold)
+    }
     // ArcCscDegrees on [1, ∞) → (0, 90], strictly decreasing.
     // arccsc(x) > k iff 1 ≤ x < csc(k°)  (for 0 < k ≤ 90).
-    "ArcCscDegrees" => bounded(
-      Expr::Integer(1),
-      CompOp::LessEqual,
-      CompOp::Less,
-      threshold,
-    ),
+    "ArcCscDegrees" => {
+      bounded(Expr::Integer(1), CompOp::LessEqual, CompOp::Less, threshold)
+    }
     // ArcSecDegrees: arcsec(x) > k iff x > sec(k°) || x ≤ -1
     // (the second branch covers arcsec on (-∞, -1] mapping to (90, 180]).
     "ArcSecDegrees" => Expr::FunctionCall {

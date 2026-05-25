@@ -726,6 +726,27 @@ mod tensor_product {
       "{{3, 4}, {6, 8}}"
     );
   }
+
+  #[test]
+  fn operator_short_form() {
+    // The \[TensorProduct] operator (U+F3DA) parses as TensorProduct.
+    assert_eq!(
+      interpret("{a, b} \\[TensorProduct] {c, d}").unwrap(),
+      "{{a*c, a*d}, {b*c, b*d}}"
+    );
+  }
+
+  #[test]
+  fn operator_audit_case() {
+    // Audit case: three-fold TensorProduct via the operator.
+    assert_eq!(
+      interpret(
+        "{2, 3} \\[TensorProduct] {{a, b}, {c, d}} \\[TensorProduct] {x, y}"
+      )
+      .unwrap(),
+      "{{{{2*a*x, 2*a*y}, {2*b*x, 2*b*y}}, {{2*c*x, 2*c*y}, {2*d*x, 2*d*y}}}, {{{3*a*x, 3*a*y}, {3*b*x, 3*b*y}}, {{3*c*x, 3*c*y}, {3*d*x, 3*d*y}}}}"
+    );
+  }
 }
 
 mod ordering {

@@ -518,6 +518,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Distributed" => Some("\u{F3D2}"),
     "Conditioned" => Some("\u{F3D3}"),
     "Cross" => Some("\u{F3C4}"),
+    "TensorProduct" => Some("\u{F3DA}"),
     // Dots
     "Ellipsis" => Some("\u{2026}"),
     "CenterEllipsis" => Some("\u{22EF}"),
@@ -734,6 +735,7 @@ fn named_char_to_expr(s: &str) -> Expr {
     "Distributed" => "\u{F3D2}",
     "Conditioned" => "\u{F3D3}",
     "Cross" => "\u{F3C4}",
+    "TensorProduct" => "\u{F3DA}",
     // Unknown: keep original name as identifier
     _ => return Expr::Identifier(name.to_string()),
   };
@@ -4619,6 +4621,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
+    "\\[TensorProduct]" | "\u{F3DA}" => 12, // TensorProduct (same level as Dot)
     "\\[Cap]" | "\u{2322}" => 12,        // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 12,        // Cup (⌣, infix → Cup[a, b])
     "\\[RightTee]" | "\u{22A2}" => 5, // RightTee (⊢, right-assoc, between -> and ==)
@@ -4880,6 +4883,26 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "Cross".to_string(),
+        args: parts.into(),
+      }
+    }
+    "\\[TensorProduct]" | "\u{F3DA}" => {
+      // TensorProduct is Flat: flatten chains a ⊗ b ⊗ c → TensorProduct[a, b, c].
+      let mut parts = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "TensorProduct" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "TensorProduct" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "TensorProduct".to_string(),
         args: parts.into(),
       }
     }
