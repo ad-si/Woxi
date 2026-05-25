@@ -2419,6 +2419,14 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "AbelianGroup"
+    && gargs.len() == 1
+    && let Some(factors) = abelian_factors(&gargs[0])
+  {
+    return Ok(abelian_group_generators(&factors));
+  }
+
   match &args[0] {
     Expr::FunctionCall { name, args: gargs } if gargs.len() == 1 => {
       let n = match &gargs[0] {
@@ -2446,6 +2454,181 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     }),
   }
+}
+
+/// Extract non-negative-integer factors {n1, n2, ...} from an AbelianGroup arg.
+fn abelian_factors(expr: &Expr) -> Option<Vec<usize>> {
+  if let Expr::List(items) = expr {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      if let Expr::Integer(n) = item
+        && *n >= 1
+      {
+        out.push(*n as usize);
+      } else {
+        return None;
+      }
+    }
+    Some(out)
+  } else {
+    None
+  }
+}
+
+fn abelian_group_generators(factors: &[usize]) -> Expr {
+  let mut gens = Vec::new();
+  let mut start: i128 = 1;
+  for &ni in factors {
+    if ni >= 2 {
+      let slots: Vec<i128> = (start..start + ni as i128).collect();
+      gens.push(make_cycles(slots));
+    }
+    start += ni as i128;
+  }
+  Expr::List(gens.into())
+}
+
+/// GroupOrder[group] - the number of elements in a group.
+pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupOrder".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && gargs.len() == 1
+  {
+    if name == "AbelianGroup"
+      && let Some(factors) = abelian_factors(&gargs[0])
+    {
+      let order: i128 = factors.iter().map(|&n| n as i128).product();
+      return Ok(Expr::Integer(order));
+    }
+    if let Expr::Integer(n) = &gargs[0]
+      && *n >= 1
+    {
+      let n = *n as i128;
+      return Ok(match name.as_str() {
+        "CyclicGroup" => Expr::Integer(n),
+        "SymmetricGroup" => Expr::Integer((1..=n).product()),
+        "AlternatingGroup" => {
+          if n <= 1 {
+            Expr::Integer(1)
+          } else {
+            Expr::Integer((1..=n).product::<i128>() / 2)
+          }
+        }
+        "DihedralGroup" => {
+          if n == 1 {
+            Expr::Integer(2)
+          } else {
+            Expr::Integer(2 * n)
+          }
+        }
+        _ => unevaluated(),
+      });
+    }
+  }
+  Ok(unevaluated())
+}
+
+/// GroupElements[group] - list of all elements in a group as cycle notation.
+pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupElements".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "AbelianGroup"
+    && gargs.len() == 1
+    && let Some(factors) = abelian_factors(&gargs[0])
+  {
+    return Ok(abelian_group_elements(&factors));
+  }
+  Ok(unevaluated())
+}
+
+fn abelian_group_elements(factors: &[usize]) -> Expr {
+  // Slot ranges per factor: slot_starts[i] is the first slot of factor i.
+  let mut slot_starts: Vec<i128> = Vec::with_capacity(factors.len());
+  let mut start: i128 = 1;
+  for &ni in factors {
+    slot_starts.push(start);
+    start += ni as i128;
+  }
+
+  // Iterate (k_1, ..., k_m) in lex order with the rightmost varying fastest.
+  let mut powers = vec![0usize; factors.len()];
+  let mut elements = Vec::new();
+  loop {
+    let mut cycles_for_element: Vec<Vec<i128>> = Vec::new();
+    for (i, &ni) in factors.iter().enumerate() {
+      let k = powers[i];
+      if k == 0 || ni < 2 {
+        continue;
+      }
+      let s = slot_starts[i];
+      let slots: Vec<i128> = (s..s + ni as i128).collect();
+      cycles_for_element.extend(cyclic_power_cycles(&slots, k));
+    }
+    elements.push(make_cycles_multi(cycles_for_element));
+
+    // Increment the odometer from the right.
+    if factors.is_empty() {
+      break;
+    }
+    let mut idx = factors.len();
+    let mut carried = true;
+    while idx > 0 && carried {
+      idx -= 1;
+      powers[idx] += 1;
+      if powers[idx] >= factors[idx] {
+        powers[idx] = 0;
+      } else {
+        carried = false;
+      }
+    }
+    if carried {
+      break;
+    }
+  }
+  Expr::List(elements.into())
+}
+
+/// Compute the disjoint-cycle decomposition of the k-th power of a single
+/// cyclic permutation acting on `slots` (treated in order). Returns an empty
+/// vec for the identity (k % n == 0).
+fn cyclic_power_cycles(slots: &[i128], k: usize) -> Vec<Vec<i128>> {
+  let n = slots.len();
+  if n == 0 || k % n == 0 {
+    return Vec::new();
+  }
+  let mut visited = vec![false; n];
+  let mut cycles = Vec::new();
+  for start in 0..n {
+    if visited[start] {
+      continue;
+    }
+    let mut cycle = Vec::new();
+    let mut i = start;
+    loop {
+      visited[i] = true;
+      cycle.push(slots[i]);
+      i = (i + k) % n;
+      if i == start {
+        break;
+      }
+    }
+    if cycle.len() > 1 {
+      cycles.push(cycle);
+    }
+  }
+  cycles
 }
 
 fn make_cycles(cycle: Vec<i128>) -> Expr {

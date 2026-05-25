@@ -2165,6 +2165,134 @@ mod group_generators {
       "{Cycles[{{1, 2, 3}}], Cycles[{{1, 2, 3, 4, 5}}]}"
     );
   }
+
+  #[test]
+  fn abelian_group_2_2_3() {
+    assert_eq!(
+      interpret("GroupGenerators[AbelianGroup[{2, 2, 3}]]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{3, 4}}], Cycles[{{5, 6, 7}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_5() {
+    assert_eq!(
+      interpret("GroupGenerators[AbelianGroup[{5}]]").unwrap(),
+      "{Cycles[{{1, 2, 3, 4, 5}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_skips_trivial_factors() {
+    // ni = 1 consumes a slot but emits no generator.
+    assert_eq!(
+      interpret("GroupGenerators[AbelianGroup[{1, 2, 3}]]").unwrap(),
+      "{Cycles[{{2, 3}}], Cycles[{{4, 5, 6}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_empty() {
+    assert_eq!(interpret("GroupGenerators[AbelianGroup[{}]]").unwrap(), "{}");
+  }
+}
+
+mod group_order {
+  use super::*;
+
+  #[test]
+  fn abelian_group_product_of_factors() {
+    assert_eq!(interpret("GroupOrder[AbelianGroup[{2, 2, 3}]]").unwrap(), "12");
+    assert_eq!(
+      interpret("GroupOrder[AbelianGroup[{2, 3, 5, 7}]]").unwrap(),
+      "210"
+    );
+    assert_eq!(interpret("GroupOrder[AbelianGroup[{4}]]").unwrap(), "4");
+  }
+
+  #[test]
+  fn abelian_group_empty_is_one() {
+    assert_eq!(interpret("GroupOrder[AbelianGroup[{}]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn cyclic_group_n() {
+    assert_eq!(interpret("GroupOrder[CyclicGroup[5]]").unwrap(), "5");
+    assert_eq!(interpret("GroupOrder[CyclicGroup[1]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symmetric_group_n_factorial() {
+    assert_eq!(interpret("GroupOrder[SymmetricGroup[4]]").unwrap(), "24");
+    assert_eq!(interpret("GroupOrder[SymmetricGroup[5]]").unwrap(), "120");
+  }
+
+  #[test]
+  fn alternating_group_half_factorial() {
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[4]]").unwrap(), "12");
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[5]]").unwrap(), "60");
+  }
+
+  #[test]
+  fn dihedral_group_2n() {
+    assert_eq!(interpret("GroupOrder[DihedralGroup[4]]").unwrap(), "8");
+    assert_eq!(interpret("GroupOrder[DihedralGroup[5]]").unwrap(), "10");
+  }
+}
+
+mod group_elements {
+  use super::*;
+
+  #[test]
+  fn abelian_group_2_2_3() {
+    // 12 elements in lex order (rightmost generator varies fastest).
+    assert_eq!(
+      interpret("GroupElements[AbelianGroup[{2, 2, 3}]]").unwrap(),
+      "{Cycles[{}], Cycles[{{5, 6, 7}}], Cycles[{{5, 7, 6}}], \
+       Cycles[{{3, 4}}], Cycles[{{3, 4}, {5, 6, 7}}], \
+       Cycles[{{3, 4}, {5, 7, 6}}], Cycles[{{1, 2}}], \
+       Cycles[{{1, 2}, {5, 6, 7}}], Cycles[{{1, 2}, {5, 7, 6}}], \
+       Cycles[{{1, 2}, {3, 4}}], Cycles[{{1, 2}, {3, 4}, {5, 6, 7}}], \
+       Cycles[{{1, 2}, {3, 4}, {5, 7, 6}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_3_2() {
+    assert_eq!(
+      interpret("GroupElements[AbelianGroup[{3, 2}]]").unwrap(),
+      "{Cycles[{}], Cycles[{{4, 5}}], Cycles[{{1, 2, 3}}], \
+       Cycles[{{1, 2, 3}, {4, 5}}], Cycles[{{1, 3, 2}}], \
+       Cycles[{{1, 3, 2}, {4, 5}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_single_2() {
+    assert_eq!(
+      interpret("GroupElements[AbelianGroup[{2}]]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_skips_trivial_factors() {
+    // {1, 2, 3} → ni=1 contributes a slot but no element factor.
+    assert_eq!(
+      interpret("GroupElements[AbelianGroup[{1, 2, 3}]]").unwrap(),
+      "{Cycles[{}], Cycles[{{4, 5, 6}}], Cycles[{{4, 6, 5}}], \
+       Cycles[{{2, 3}}], Cycles[{{2, 3}, {4, 5, 6}}], \
+       Cycles[{{2, 3}, {4, 6, 5}}]}"
+    );
+  }
+
+  #[test]
+  fn abelian_group_empty() {
+    assert_eq!(
+      interpret("GroupElements[AbelianGroup[{}]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+  }
 }
 
 mod longitude_latitude {

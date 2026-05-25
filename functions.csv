@@ -1393,7 +1393,7 @@ Discriminant,Polynomial discriminant via resultant,✅,pure,6.0,1410
 FromLetterNumber,Get the nth letter of the English alphabet,✅,pure,10.1,1411
 Here,Current geo location,🚫,io,10.0,1413
 ImageTransformation,Apply geometric transformation to image,🚫,io,8.0,1413
-GroupElements,Elements of a group,🚫,pure,8.0,1414
+GroupElements,Elements of a group,✅,pure,8.0,1414
 EllipticNomeQ,Elliptic nome function,✅,pure,3.0,1415
 Kurtosis,Computes the kurtosis of a list,✅,pure,6.0,1416
 CellAutoOverwrite,Cell auto-overwrite option,🚫,io,3.0,1417
@@ -2083,7 +2083,7 @@ LongShortTermMemoryLayer,LSTM neural network layer,🚫,,11.1,2121
 Entropy,Information entropy,🚫,,7.0,2124
 IntegerExponent,Returns the largest power of a base dividing n,✅,pure,4.0,2124
 PercentForm,Format number as percentage,🚫,,12.0,2124
-GroupOrder,Order of a group,🚫,,8.0,2129
+GroupOrder,Order of a group,✅,pure,8.0,2129
 QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions,🚫,,10.0,2129
 TrackingFunction,Tracking callback option,🚫,,10.0,2129
