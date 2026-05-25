@@ -601,6 +601,107 @@ fn hypergeometric_pfq_numeric(a: &[f64], b: &[f64], z: f64) -> f64 {
   sum
 }
 
+/// Convert an Expr to f64 when it is a real, integer, or exact rational.
+fn expr_to_f64_real(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Real(x) => Some(*x),
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some(*n as f64 / *d as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Numerical evaluation of HypergeometricPFQRegularized when at least one
+/// b_j is a non-positive integer (so Γ(b_j) has a pole, but the regularized
+/// series is still finite). The series 1/Γ(b_j + n) is zero for the first
+/// few n, so we start the sum at `min_n = max(1 - b_j)` over the poles.
+fn try_pfq_regularized_with_b_poles(
+  a_arg: &Expr,
+  b_list: &[Expr],
+  z_arg: &Expr,
+) -> Option<Expr> {
+  let z = expr_to_f64_real(z_arg)?;
+  let a_list = match a_arg {
+    Expr::List(v) => v,
+    _ => return None,
+  };
+  let a_vals: Vec<f64> =
+    a_list.iter().map(expr_to_f64_real).collect::<Option<_>>()?;
+  let b_vals: Vec<f64> =
+    b_list.iter().map(expr_to_f64_real).collect::<Option<_>>()?;
+
+  // For each non-positive integer b_j = -k, 1/Γ(b_j + n) is zero for
+  // n ≤ k and finite from n = k + 1 onward.
+  let min_n = b_vals
+    .iter()
+    .filter_map(|&b| {
+      if b <= 0.0 && b == b.trunc() {
+        Some((1.0 - b) as i64)
+      } else {
+        None
+      }
+    })
+    .max()
+    .unwrap_or(0)
+    .max(0) as i64;
+
+  // Compute the first non-zero term at n = min_n directly.
+  let mut term: f64 = 1.0;
+  for &a in &a_vals {
+    // (a)_min_n = a*(a+1)*...*(a+min_n-1)
+    let mut p = 1.0;
+    for k in 0..min_n {
+      p *= a + k as f64;
+    }
+    term *= p;
+  }
+  for &b in &b_vals {
+    // 1/Γ(b + min_n). For non-pos integer b, b + min_n ≥ 1.
+    term /= gamma_fn(b + min_n as f64);
+  }
+  // z^min_n / min_n!
+  let mut zpow_over_fact = 1.0;
+  for k in 1..=min_n {
+    zpow_over_fact *= z / k as f64;
+  }
+  term *= zpow_over_fact;
+
+  let mut total = term;
+  let max_iter = 200i64;
+  let tol = 1e-16;
+  for k in (min_n + 1)..=(min_n + max_iter) {
+    // term_k = term_{k-1} * z * Π (a_i + k - 1) / k / Π (b_j + k - 1)
+    let mut factor = z / k as f64;
+    for &a in &a_vals {
+      factor *= a + (k - 1) as f64;
+    }
+    for &b in &b_vals {
+      factor /= b + (k - 1) as f64;
+    }
+    term *= factor;
+    let prev = total;
+    total += term;
+    if !total.is_finite() {
+      return None;
+    }
+    if (total - prev).abs() <= tol * total.abs().max(1e-300)
+      && term.abs() <= tol * total.abs().max(1e-300)
+    {
+      break;
+    }
+  }
+
+  Some(Expr::Real(total))
+}
+
 /// HypergeometricPFQRegularized[{a1,...,ap}, {b1,...,bq}, z]
 /// = HypergeometricPFQ[{a1,...,ap}, {b1,...,bq}, z] / (Gamma[b1] * ... * Gamma[bq])
 pub fn hypergeometric_pfq_regularized_ast(
@@ -641,19 +742,35 @@ pub fn hypergeometric_pfq_regularized_ast(
     _ => {}
   }
 
-  // Handle Infinity result
-  if matches!(&pfq_result, Expr::Identifier(s) if s == "Infinity") {
+  // Handle Infinity result (either symbolic `Infinity` or float ∞).
+  let pfq_is_infinity = match &pfq_result {
+    Expr::Identifier(s) if s == "Infinity" => true,
+    Expr::Real(x) if x.is_infinite() => true,
+    _ => false,
+  };
+  if pfq_is_infinity {
     // Check if any denominator Gamma is infinite (non-positive integer b)
+    let mut has_pole = false;
     for b_expr in &b_list {
       if let Some(n) = expr_to_i128(b_expr)
         && n <= 0
       {
-        // Gamma has a pole, so regularized form is finite (indeterminate) - return unevaluated
-        return Ok(Expr::FunctionCall {
-          name: "HypergeometricPFQRegularized".to_string(),
-          args: args.to_vec().into(),
-        });
+        has_pole = true;
+        break;
       }
+    }
+    if has_pole {
+      // The regularized form is a finite limit. Try a direct series sum
+      // starting from the first index where every 1/Γ(b_j + n) is finite.
+      if let Some(result) =
+        try_pfq_regularized_with_b_poles(&args[0], &b_list, &args[2])
+      {
+        return Ok(result);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "HypergeometricPFQRegularized".to_string(),
+        args: args.to_vec().into(),
+      });
     }
     return Ok(Expr::Identifier("Infinity".to_string()));
   }

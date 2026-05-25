@@ -11063,8 +11063,7 @@ fn qfactorial_series_at_zero(var_name: &str, n: usize, order: i128) -> Expr {
   }
   // Ensure the coefficient list has exactly limit+1 entries.
   coeffs.resize(limit + 1, 0);
-  let coeff_exprs: Vec<Expr> =
-    coeffs.into_iter().map(Expr::Integer).collect();
+  let coeff_exprs: Vec<Expr> = coeffs.into_iter().map(Expr::Integer).collect();
   Expr::FunctionCall {
     name: "SeriesData".to_string(),
     args: vec![

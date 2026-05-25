@@ -4405,6 +4405,39 @@ mod hypergeometric_pfq_regularized {
     let val: f64 = result.parse().unwrap();
     assert!((val - 0.09083551648531873).abs() < 1e-8, "got {}", val);
   }
+
+  #[test]
+  fn non_positive_integer_b_finite() {
+    // When a b argument is a non-positive integer, Γ(b) is a pole but the
+    // regularized form is still finite (the series simply skips the early
+    // n terms where 1/Γ(b + n) = 0). Audit case.
+    let result = interpret(
+      "HypergeometricPFQRegularized[{1/3, 1/3, 1/3}, {-2, -3}, 0.5]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 15.062110268295829).abs() < 1e-9, "got {}", val);
+  }
+
+  #[test]
+  fn non_positive_integer_b_simple() {
+    // HypergeometricPFQRegularized[{1, 2}, {-2}, z] = 24*z^3/(1-z)^5
+    // at z = 0.5: 24 * 0.125 / 0.5^5 = 3 / 0.03125 = 96
+    let result =
+      interpret("HypergeometricPFQRegularized[{1, 2}, {-2}, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 96.0).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn non_positive_integer_b_one_a() {
+    // HypergeometricPFQRegularized[{1}, {-2}, z] = z^3 * E^z
+    // at z = 0.5: 0.125 * E^0.5 ≈ 0.20609015883751602
+    let result =
+      interpret("HypergeometricPFQRegularized[{1}, {-2}, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.20609015883751602).abs() < 1e-10, "got {}", val);
+  }
 }
 
 mod hypergeometric_2f1_regularized {
