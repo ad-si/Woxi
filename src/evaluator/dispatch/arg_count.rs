@@ -467,7 +467,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "IdentityMatrix" => Some((1, 1)),
     "If" => Some((2, 4)),
     "Im" => Some((1, 1)),
-    "Image" => Some((1, 2)),
+    "Image" => Some((1, usize::MAX)),
     "ImageAdd" => Some((2, 2)),
     "ImageAdjust" => Some((1, 2)),
     "ImageApply" => Some((2, 2)),

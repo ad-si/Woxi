@@ -267,6 +267,83 @@ mod image_core {
     );
   }
 
+  // wolframscript's structured Image form takes a NumericArray, a type
+  // tag, and options like ColorSpace and Interleaving. The options are
+  // accepted (currently ignored) so ImageType can recover the type.
+  #[test]
+  fn image_constructor_accepts_options() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageType[Image[NumericArray[{{172, 150}}, \"UnsignedInteger8\"], \
+         \"Byte\", ColorSpace -> Automatic, Interleaving -> None]]"
+      )
+      .unwrap(),
+      "Byte"
+    );
+  }
+
+  // Same for Bit16.
+  #[test]
+  fn image_constructor_bit16_with_options() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageType[Image[NumericArray[{{49, 246}}, \"UnsignedInteger16\"], \
+         \"Bit16\", ColorSpace -> Automatic, Interleaving -> None]]"
+      )
+      .unwrap(),
+      "Bit16"
+    );
+  }
+
+  // Bit type is recognised when explicit, even though NumericArray uses
+  // UnsignedInteger8 storage underneath.
+  #[test]
+  fn image_constructor_bit_with_options() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageType[Image[NumericArray[{{0, 1}}, \"UnsignedInteger8\"], \
+         \"Bit\", ColorSpace -> Automatic, Interleaving -> None]]"
+      )
+      .unwrap(),
+      "Bit"
+    );
+  }
+
+  // The Image[data, type] short form (no NumericArray wrapper) also
+  // takes options.
+  #[test]
+  fn image_constructor_short_form_with_options() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageType[Image[{{0.5, 0.6}}, \"Real64\", \
+         ColorSpace -> Automatic, Interleaving -> None]]"
+      )
+      .unwrap(),
+      "Real64"
+    );
+  }
+
+  // ImageColorSpace still falls back to Automatic when the explicit
+  // option isn't tracked through the constructor — at least the call
+  // doesn't error on a 5-arg Image form (regression for the audit case).
+  #[test]
+  fn image_color_space_5arg_form_does_not_error() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageColorSpace[Image[NumericArray[{{{172, 150, 162}}}, \
+         \"UnsignedInteger8\"], \"Byte\", \
+         ColorSpace -> Automatic, Interleaving -> True]]"
+      )
+      .unwrap(),
+      "Automatic"
+    );
+  }
+
   #[test]
   fn image_from_numeric_array_real64() {
     clear_state();

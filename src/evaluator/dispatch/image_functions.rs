@@ -71,7 +71,7 @@ pub fn dispatch_image_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
-    "Image" if !args.is_empty() && args.len() <= 2 => {
+    "Image" if !args.is_empty() => {
       // Invalid image data shouldn't error — return unevaluated so wrapping
       // predicates like ImageQ can still classify it as False.
       let result = crate::functions::image_ast::image_constructor_ast(args);

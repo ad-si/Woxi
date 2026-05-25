@@ -107,32 +107,53 @@ pub fn image_to_html_img(
 
 // ─── Core functions (Phase 1) ──────────────────────────────────────────────
 
-/// Image[data] or Image[data, type] - Construct image from nested lists.
-/// `{{0,0.5,1},{1,0.5,0}}` → grayscale 3x2
-/// `{{{r,g,b},...},...}` → RGB
-/// Optional second arg: "Byte", "Bit16", "Real32", "Real64"
+/// Image[data] / Image[data, type] / Image[data, type, opts…] — construct
+/// an image from nested lists. The optional type argument is one of
+/// "Bit", "Byte", "Bit16", "Real32", "Real64". Extra arguments are
+/// treated as options like `ColorSpace -> ...` and `Interleaving -> ...`;
+/// unknown options are accepted and currently ignored.
 pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "Image expects 1 or 2 arguments".into(),
+      "Image expects at least 1 argument".into(),
     ));
   }
 
-  // Parse optional type specifier
-  let mut requested_type = if args.len() == 2 {
-    match &args[1] {
-      Expr::String(s) | Expr::Identifier(s) => match s.as_str() {
-        "Byte" => Some(ImageType::Byte),
-        "Bit16" => Some(ImageType::Bit16),
-        "Real32" => Some(ImageType::Real32),
-        "Real64" => Some(ImageType::Real64),
-        _ => None,
-      },
+  // The second positional arg is a type tag (string or identifier).
+  // Anything beyond that must be a Rule-form option.
+  let parse_type = |e: &Expr| -> Option<ImageType> {
+    let s = match e {
+      Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
+      _ => None,
+    }?;
+    match s {
+      "Bit" => Some(ImageType::Bit),
+      "Byte" | "UnsignedInteger8" => Some(ImageType::Byte),
+      "Bit16" | "UnsignedInteger16" => Some(ImageType::Bit16),
+      "Real32" => Some(ImageType::Real32),
+      "Real64" => Some(ImageType::Real64),
       _ => None,
     }
-  } else {
-    None
   };
+
+  let mut requested_type: Option<ImageType> = None;
+  let mut opt_start = 1;
+  if let Some(ty) = args.get(1).and_then(parse_type) {
+    requested_type = Some(ty);
+    opt_start = 2;
+  }
+
+  // Treat the remaining args as options. Only Rule/RuleDelayed shapes are
+  // accepted; anything else aborts to keep nonsense calls from sneaking
+  // through.
+  for opt in &args[opt_start..] {
+    if !matches!(opt, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
+      return Err(InterpreterError::EvaluationError(format!(
+        "Image: extra argument is not a Rule option: {}",
+        crate::syntax::expr_to_string(opt)
+      )));
+    }
+  }
 
   // `Image[NumericArray[data, type]]` — unwrap to the nested list and
   // pick up the dtype if not already given.
