@@ -217,6 +217,86 @@ pub fn dispatch_plotting(
     "ComplexPlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::field_plot::complex_plot_ast(args)
     })),
+    // ComplexPlot3D[f, {z, zmin, zmax}] — plot |f(x + i y)| as a 3D
+    // surface over the rectangle in the complex plane. We forward to
+    // Plot3D with f's modulus and reuse its rendering. Falls through
+    // when the iterator isn't a valid `{var, zmin, zmax}` triple.
+    "ComplexPlot3D"
+      if args.len() >= 2
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        ) =>
+    {
+      let (zvar, z_lo, z_hi) = match &args[1] {
+        Expr::List(items) => match &items[0] {
+          Expr::Identifier(name) => (name.clone(), items[1].clone(), items[2].clone()),
+          _ => unreachable!(),
+        },
+        _ => unreachable!(),
+      };
+      let xv = "x".to_string();
+      let yv = "y".to_string();
+      // Substitute z -> x + I*y in f.
+      let xy_expr = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Identifier(xv.clone())),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Identifier("I".to_string())),
+          right: Box::new(Expr::Identifier(yv.clone())),
+        }),
+      };
+      let body =
+        crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
+      let modulus = Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![body].into(),
+      };
+      // Plot ranges: Re(zmin)..Re(zmax) and Im(zmin)..Im(zmax).
+      // Evaluate them to concrete numbers so Plot3D's iterator parser
+      // accepts them.
+      let eval_part = |e: &Expr, part: &str| -> Expr {
+        let wrapped = Expr::FunctionCall {
+          name: part.to_string(),
+          args: vec![e.clone()].into(),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&wrapped)
+          .unwrap_or(wrapped)
+      };
+      let mut plot_args = vec![
+        modulus,
+        Expr::List(
+          vec![
+            Expr::Identifier(xv),
+            eval_part(&z_lo, "Re"),
+            eval_part(&z_hi, "Re"),
+          ]
+          .into(),
+        ),
+        Expr::List(
+          vec![
+            Expr::Identifier(yv),
+            eval_part(&z_lo, "Im"),
+            eval_part(&z_hi, "Im"),
+          ]
+          .into(),
+        ),
+      ];
+      // Drop options like PlotLegends -> Automatic that Plot3D doesn't
+      // model the same way; pass others through.
+      for opt in &args[2..] {
+        if let Expr::Rule { pattern, .. } = opt
+          && matches!(&**pattern, Expr::Identifier(s) if s == "PlotLegends")
+        {
+          continue;
+        }
+        plot_args.push(opt.clone());
+      }
+      Some(quiet_plot(|| {
+        crate::functions::plot3d::plot3d_ast(&plot_args)
+      }))
+    }
     "DensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::density_plot_ast(args)
     })),

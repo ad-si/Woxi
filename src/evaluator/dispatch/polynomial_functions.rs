@@ -469,18 +469,11 @@ fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
   // Linearity check: f must have zero second partial derivatives in v1, v2.
   // Coefficients: a = ∂f/∂v1|origin, b = ∂f/∂v2|origin.
   let zero_at = |expr: &Expr| -> Option<f64> {
-    let with_v1 = crate::syntax::substitute_variable(
-      expr,
-      &v1,
-      &Expr::Integer(0),
-    );
-    let with_v2 = crate::syntax::substitute_variable(
-      &with_v1,
-      &v2,
-      &Expr::Integer(0),
-    );
-    let evaluated =
-      crate::evaluator::evaluate_expr_to_expr(&with_v2).ok()?;
+    let with_v1 =
+      crate::syntax::substitute_variable(expr, &v1, &Expr::Integer(0));
+    let with_v2 =
+      crate::syntax::substitute_variable(&with_v1, &v2, &Expr::Integer(0));
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&with_v2).ok()?;
     crate::functions::math_ast::expr_to_f64(&evaluated)
   };
   let diff = |expr: &Expr, var: &str| -> Option<Expr> {
@@ -561,9 +554,7 @@ fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
     // Constant objective: every feasible point is optimal; return c0 or {0, 0}.
     return Some(match name {
       "NMaxValue" | "NMinValue" => Expr::Real(c0),
-      _ => Expr::List(
-        vec![Expr::Real(0.0), Expr::Real(0.0)].into(),
-      ),
+      _ => Expr::List(vec![Expr::Real(0.0), Expr::Real(0.0)].into()),
     });
   }
   let max_val = c0 + radius * norm;
@@ -574,12 +565,12 @@ fn try_constrained_linear_disk(name: &str, args: &[Expr]) -> Option<Expr> {
   let result = match name {
     "NMaxValue" => Expr::Real(max_val),
     "NMinValue" => Expr::Real(min_val),
-    "NArgMax" | "FindArgMax" => Expr::List(
-      vec![Expr::Real(max_pt.0), Expr::Real(max_pt.1)].into(),
-    ),
-    "NArgMin" | "FindArgMin" => Expr::List(
-      vec![Expr::Real(min_pt.0), Expr::Real(min_pt.1)].into(),
-    ),
+    "NArgMax" | "FindArgMax" => {
+      Expr::List(vec![Expr::Real(max_pt.0), Expr::Real(max_pt.1)].into())
+    }
+    "NArgMin" | "FindArgMin" => {
+      Expr::List(vec![Expr::Real(min_pt.0), Expr::Real(min_pt.1)].into())
+    }
     _ => return None,
   };
   Some(result)

@@ -2948,10 +2948,8 @@ mod batch_unevaluated_wrappers_2 {
       interpret("NArgMax[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
     assert!(result.starts_with("{"), "got {}", result);
     let inner = &result[1..result.len() - 1];
-    let parts: Vec<f64> = inner
-      .split(", ")
-      .map(|s| s.parse().unwrap())
-      .collect();
+    let parts: Vec<f64> =
+      inner.split(", ").map(|s| s.parse().unwrap()).collect();
     assert!((parts[0] - 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
     assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
   }
@@ -2961,10 +2959,8 @@ mod batch_unevaluated_wrappers_2 {
     let result =
       interpret("NArgMin[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
     let inner = &result[1..result.len() - 1];
-    let parts: Vec<f64> = inner
-      .split(", ")
-      .map(|s| s.parse().unwrap())
-      .collect();
+    let parts: Vec<f64> =
+      inner.split(", ").map(|s| s.parse().unwrap()).collect();
     assert!((parts[0] + 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
     assert!((parts[1] - 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
   }
@@ -2974,10 +2970,8 @@ mod batch_unevaluated_wrappers_2 {
     let result =
       interpret("FindArgMax[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
     let inner = &result[1..result.len() - 1];
-    let parts: Vec<f64> = inner
-      .split(", ")
-      .map(|s| s.parse().unwrap())
-      .collect();
+    let parts: Vec<f64> =
+      inner.split(", ").map(|s| s.parse().unwrap()).collect();
     assert!((parts[0] - 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
     assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
   }
@@ -2988,10 +2982,8 @@ mod batch_unevaluated_wrappers_2 {
     let result =
       interpret("FindArgMin[{-x + 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
     let inner = &result[1..result.len() - 1];
-    let parts: Vec<f64> = inner
-      .split(", ")
-      .map(|s| s.parse().unwrap())
-      .collect();
+    let parts: Vec<f64> =
+      inner.split(", ").map(|s| s.parse().unwrap()).collect();
     assert!((parts[0] - 1.0 / 5.0_f64.sqrt()).abs() < 1e-9);
     assert!((parts[1] + 2.0 / 5.0_f64.sqrt()).abs() < 1e-9);
   }
