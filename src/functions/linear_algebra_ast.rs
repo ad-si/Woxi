@@ -1653,6 +1653,49 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![lm, lp].into()));
   }
 
+  // Float-valued n×n matrix (n ≥ 3): compute eigenvalues numerically
+  // via Faddeev–LeVerrier + QR on the companion matrix.
+  if n >= 3 {
+    let mut float_mat: Vec<Vec<f64>> = Vec::with_capacity(n);
+    let mut all_floats = true;
+    for row in &matrix {
+      let mut frow: Vec<f64> = Vec::with_capacity(n);
+      for cell in row {
+        match try_eval_to_f64(cell) {
+          Some(v) => frow.push(v),
+          None => {
+            all_floats = false;
+            break;
+          }
+        }
+      }
+      if !all_floats {
+        break;
+      }
+      float_mat.push(frow);
+    }
+    if all_floats {
+      let any_real_literal = matrix
+        .iter()
+        .flat_map(|r| r.iter())
+        .any(|c| matches!(c, Expr::Real(_)));
+      if any_real_literal {
+        let roots = numeric_eigenvalues(&float_mat, n);
+        if roots.len() == n {
+          let mut out: Vec<Expr> = roots.into_iter().map(Expr::Real).collect();
+          out.sort_by(|a, b| {
+            let av = if let Expr::Real(v) = a { *v } else { 0.0 };
+            let bv = if let Expr::Real(v) = b { *v } else { 0.0 };
+            bv.abs()
+              .partial_cmp(&av.abs())
+              .unwrap_or(std::cmp::Ordering::Equal)
+          });
+          return Ok(Expr::List(out.into()));
+        }
+      }
+    }
+  }
+
   // Block-diagonal 3×3: split into a 2×2 top-left block and the
   // bottom-right scalar, recurse, sort. Matches case 1337's
   // `Eigenvalues[{{Cos, Sin, 0}, {-Sin, Cos, 0}, {0, 0, 1}}]`.

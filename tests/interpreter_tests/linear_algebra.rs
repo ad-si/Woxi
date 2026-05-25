@@ -703,6 +703,45 @@ mod eigenvalues {
                 Inverse[T] . A . T == DiagonalMatrix[Eigenvalues[A]]";
     assert_eq!(interpret(expr).unwrap(), "True");
   }
+
+  #[test]
+  fn eigenvalues_float_3x3_audit_case() {
+    // Audit case: Eigenvalues of a 3x3 float matrix.
+    // Expected (descending magnitude):
+    //   {6.606744130165772, 4.525355330602706, 0.6679005392315176}
+    let result = interpret(
+      "Eigenvalues[{{1.1, 2.2, 3.25}, {0.76, 4.6, 5}, {0.1, 0.1, 6.1}}]",
+    )
+    .unwrap();
+    let stripped = result.trim_start_matches('{').trim_end_matches('}');
+    let vals: Vec<f64> = stripped
+      .split(", ")
+      .map(|s| s.parse::<f64>().unwrap())
+      .collect();
+    let expected = [6.606744130165772, 4.525355330602706, 0.6679005392315176];
+    assert_eq!(vals.len(), 3);
+    for (v, e) in vals.iter().zip(expected.iter()) {
+      assert!((v - e).abs() < 1e-9, "got {} expected {}", v, e);
+    }
+  }
+
+  #[test]
+  fn eigenvalues_float_3x3_simple() {
+    // Simpler diagonal-ish 3x3.
+    let result =
+      interpret("Eigenvalues[{{2.0, 0.0, 0.0}, {0.0, 3.0, 0.0}, {0.0, 0.0, 5.0}}]")
+        .unwrap();
+    // Sorted by descending magnitude: 5, 3, 2
+    let stripped = result.trim_start_matches('{').trim_end_matches('}');
+    let vals: Vec<f64> = stripped
+      .split(", ")
+      .map(|s| s.parse::<f64>().unwrap())
+      .collect();
+    assert_eq!(vals.len(), 3);
+    assert!((vals[0] - 5.0).abs() < 1e-10);
+    assert!((vals[1] - 3.0).abs() < 1e-10);
+    assert!((vals[2] - 2.0).abs() < 1e-10);
+  }
 }
 
 mod conjugate_transpose {
