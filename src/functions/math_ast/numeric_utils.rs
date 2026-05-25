@@ -879,6 +879,35 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
   }
 }
 
+/// Like `build_complex_float_expr` but always shows the real part as `Real(0.)`
+/// when it's zero. Matches wolframscript's NRoots/N output that prints e.g.
+/// `0. + 1.*I` rather than just `I` for pure imaginary numerics.
+pub fn build_complex_float_expr_keep_real(re: f64, im: f64) -> Expr {
+  let i_expr = Expr::Identifier("I".to_string());
+  let im_abs = im.abs();
+  // Always materialise the coefficient as `Real * I` so the |coeff|==1 case
+  // prints as `1.*I` rather than bare `I` — wolframscript's numeric form.
+  let im_term = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Real(im_abs)),
+    right: Box::new(i_expr),
+  };
+  let re_expr = Expr::Real(re);
+  if im >= 0.0 {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(re_expr),
+      right: Box::new(im_term),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(re_expr),
+      right: Box::new(im_term),
+    }
+  }
+}
+
 /// Build a complex number expression from exact rational parts.
 /// Handles special cases: 0 + bi = bi, a + 0i = a, coefficient ±1 elision, etc.
 pub fn build_complex_expr(

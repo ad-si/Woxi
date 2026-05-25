@@ -2405,7 +2405,7 @@ FindArgMin,Find argument that minimizes a function,✅,none,7.0,2462
 HalfNormalDistribution,represents a half-normal distribution with parameter theta,✅,none,6.0,2462
 ImageQ,Tests whether an expression is an image,✅,pure,7.0,2462
 ManhattanDistance,Manhattan (L1) distance between two vectors,✅,pure,6.0,2462
-NRoots,Symbol for numerical root counting,✅,pure,1.0,2462
+NRoots,Numerical roots of a polynomial equation,✅,pure,1.0,2462
 ParallelSum,,🚫,,7.0,2462
 Sharpen,Sharpens an image using unsharp mask,✅,pure,7.0,2462
 SystemsModelSeriesConnect,,🚫,,8.0,2462

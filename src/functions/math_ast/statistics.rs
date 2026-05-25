@@ -949,9 +949,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Column-wise GeometricMean for a list-of-lists (matrix) input.
-fn geometric_mean_columnwise(
-  rows: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn geometric_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   let row_vecs: Vec<&crate::ExprList> = rows
     .iter()
     .filter_map(|r| {

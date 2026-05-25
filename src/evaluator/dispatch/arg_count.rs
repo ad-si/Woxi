@@ -717,6 +717,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NormalMatrixQ" => Some((1, 1)),
     "Not" => Some((1, 1)),
     "NotElement" => Some((2, 2)),
+    "NRoots" => Some((2, 2)),
     "NSolve" => Some((2, 2)),
     "NullSpace" => Some((1, 1)),
     "NumberQ" => Some((1, 1)),

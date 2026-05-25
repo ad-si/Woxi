@@ -2319,6 +2319,104 @@ mod roots {
   }
 }
 
+mod nroots {
+  use super::*;
+
+  // Helper to extract numeric value (Re or Im) from a "k.kkk" or "k.kkk*I" or
+  // "k.kkk + k.kkk*I" string. Returns (re, im).
+  fn parse_root(s: &str) -> (f64, f64) {
+    let s = s.trim();
+    if let Some(stripped) = s.strip_suffix("*I") {
+      if let Some(idx) = stripped.rfind(" + ") {
+        return (
+          stripped[..idx].parse().unwrap(),
+          stripped[idx + 3..].parse().unwrap(),
+        );
+      } else if let Some(idx) = stripped.rfind(" - ") {
+        return (
+          stripped[..idx].parse().unwrap(),
+          -stripped[idx + 3..].parse::<f64>().unwrap(),
+        );
+      } else {
+        return (0.0, stripped.parse().unwrap());
+      }
+    }
+    (s.parse().unwrap(), 0.0)
+  }
+
+  #[test]
+  fn nroots_linear() {
+    assert_eq!(interpret("NRoots[x - 2 == 0, x]").unwrap(), "x == 2.");
+  }
+
+  #[test]
+  fn nroots_quadratic_real() {
+    // x^2 - 2 == 0 → ±Sqrt[2]
+    assert_eq!(
+      interpret("NRoots[x^2 - 2 == 0, x]").unwrap(),
+      "x == -1.4142135623730951 || x == 1.4142135623730951"
+    );
+  }
+
+  #[test]
+  fn nroots_quadratic_imag() {
+    // x^2 + 1 == 0 → ±I
+    assert_eq!(
+      interpret("NRoots[x^2 + 1 == 0, x]").unwrap(),
+      "x == 0. - 1.*I || x == 0. + 1.*I"
+    );
+  }
+
+  #[test]
+  fn nroots_cubic_audit_case() {
+    // Audit case: 1 + 2x + 3x^2 + 4x^3 = 0
+    let result = interpret("NRoots[1 + 2*x + 3*x^2 + 4*x^3 == 0, x]").unwrap();
+    let parts: Vec<&str> = result.split(" || ").collect();
+    assert_eq!(parts.len(), 3);
+    let roots: Vec<(f64, f64)> = parts
+      .iter()
+      .map(|p| {
+        let s = p.strip_prefix("x == ").unwrap();
+        parse_root(s)
+      })
+      .collect();
+    // Real root then two complex conjugates, sorted by (re, im).
+    let expected = [
+      (-0.605829586188268_f64, 0.0_f64),
+      (-0.07208520690586598, -0.6383267351483765),
+      (-0.07208520690586598, 0.6383267351483765),
+    ];
+    for (i, (er, ei)) in expected.iter().enumerate() {
+      assert!((roots[i].0 - er).abs() < 1e-9, "Re mismatch at {}", i);
+      assert!((roots[i].1 - ei).abs() < 1e-9, "Im mismatch at {}", i);
+    }
+  }
+
+  #[test]
+  fn nroots_cubic_unity() {
+    // x^3 - 1 == 0: complex roots first (real -0.5), then real root 1.
+    let result = interpret("NRoots[x^3 - 1 == 0, x]").unwrap();
+    let parts: Vec<&str> = result.split(" || ").collect();
+    assert_eq!(parts.len(), 3);
+    let roots: Vec<(f64, f64)> = parts
+      .iter()
+      .map(|p| {
+        let s = p.strip_prefix("x == ").unwrap();
+        parse_root(s)
+      })
+      .collect();
+    let expected = [
+      (-0.5, -0.8660254037844386),
+      (-0.5, 0.8660254037844386),
+      (1.0, 0.0),
+    ];
+    for (i, (er, ei)) in expected.iter().enumerate() {
+      assert!((roots[i].0 - er).abs() < 1e-9, "Re mismatch at {}", i);
+      assert!((roots[i].1 - ei).abs() < 1e-9, "Im mismatch at {}", i);
+    }
+  }
+}
+
 mod eliminate {
   use super::*;
 

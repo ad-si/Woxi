@@ -335,6 +335,325 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// NRoots[equation, var] — numerical roots of a polynomial equation.
+///
+/// Returns `x == r1 || x == r2 || ...` with all roots (real and complex)
+/// computed numerically via Durand-Kerner iteration on the companion form.
+pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NRoots expects exactly 2 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NRoots".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  // Extract `lhs - rhs`
+  let poly = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Equal" && fargs.len() == 2 =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(fargs[0].clone()),
+        right: Box::new(fargs[1].clone()),
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NRoots".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let unevaluated = || Expr::FunctionCall {
+    name: "NRoots".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Expand and pull out polynomial coefficients in x.
+  let expanded_raw = expand_and_combine(&poly);
+  let expanded = {
+    let together = together_expr(&expanded_raw);
+    match &together {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: numerator,
+        right: _,
+      } => expand_and_combine(numerator),
+      _ => expanded_raw,
+    }
+  };
+  let terms = collect_additive_terms(&expanded);
+  let degree = match max_power_int(&expanded, &var) {
+    Some(d) if d >= 1 => d as usize,
+    _ => return Ok(unevaluated()),
+  };
+
+  // Numeric f64 coefficients (index = degree).
+  let mut coeffs = vec![0.0f64; degree + 1];
+  for d in 0..=degree {
+    for term in &terms {
+      if let Some(c) =
+        extract_coefficient_of_power(term, &var, d as i128)
+      {
+        let val =
+          crate::functions::math_ast::try_eval_to_f64(&simplify(c));
+        match val {
+          Some(v) => coeffs[d] += v,
+          None => return Ok(unevaluated()),
+        }
+      }
+    }
+  }
+  if coeffs[degree].abs() < 1e-300 {
+    return Ok(unevaluated());
+  }
+
+  // Durand-Kerner finds all roots simultaneously.
+  let roots = durand_kerner_roots(&coeffs);
+
+  // Sort by (Re, Im) ascending.
+  let mut roots = roots;
+  roots.sort_by(|a, b| {
+    a.0
+      .partial_cmp(&b.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+
+  // Build x == root_i expressions.
+  let mut conds: Vec<Expr> = Vec::with_capacity(roots.len());
+  for (re, im) in roots {
+    let rhs = if im == 0.0 {
+      Expr::Real(re)
+    } else {
+      crate::functions::math_ast::build_complex_float_expr_keep_real(
+        re, im,
+      )
+    };
+    conds.push(Expr::Comparison {
+      operands: vec![Expr::Identifier(var.clone()), rhs],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    });
+  }
+  if conds.len() == 1 {
+    return Ok(conds.into_iter().next().unwrap());
+  }
+  Ok(Expr::FunctionCall {
+    name: "Or".to_string(),
+    args: conds.into(),
+  })
+}
+
+/// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using
+/// the Durand-Kerner (Weierstrass) method on complex doubles.
+fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
+  let n = coeffs.len() - 1;
+  if n == 0 {
+    return vec![];
+  }
+  if n == 1 {
+    // a0 + a1*x = 0 → x = -a0/a1
+    return vec![(-coeffs[0] / coeffs[1], 0.0)];
+  }
+
+  // Monic form: divide by leading coefficient.
+  let lc = coeffs[n];
+  let mut monic = vec![0.0f64; n + 1];
+  for i in 0..=n {
+    monic[i] = coeffs[i] / lc;
+  }
+  // Evaluate p(z) for complex z using Horner's scheme with FMA.
+  // The FMA-based form is more accurate near a root and helps the polish
+  // step distinguish the correctly-rounded f64 from its neighbour.
+  let eval_p = |zr: f64, zi: f64| -> (f64, f64) {
+    let mut re = monic[n];
+    let mut im = 0.0;
+    for k in (0..n).rev() {
+      // (re + im*i) * (zr + zi*i) + monic[k]
+      // Real part: re*zr - im*zi + monic[k]
+      // Imag part: re*zi + im*zr
+      let neg_im: f64 = -im;
+      let nr = re.mul_add(zr, neg_im.mul_add(zi, monic[k]));
+      let ni = re.mul_add(zi, im * zr);
+      re = nr;
+      im = ni;
+    }
+    (re, im)
+  };
+
+  // Evaluate derivative p'(z) for complex z.
+  let eval_dp = |zr: f64, zi: f64| -> (f64, f64) {
+    if n == 0 {
+      return (0.0, 0.0);
+    }
+    let mut re = (n as f64) * monic[n];
+    let mut im = 0.0;
+    for k in (1..n).rev() {
+      let nr = re * zr - im * zi + (k as f64) * monic[k];
+      let ni = re * zi + im * zr;
+      re = nr;
+      im = ni;
+    }
+    (re, im)
+  };
+
+  // Initialise n distinct roots on a circle.
+  // Use complex base 0.4 + 0.9i as in classic Durand-Kerner.
+  let base_r = 0.4_f64;
+  let base_i = 0.9_f64;
+  let mut roots: Vec<(f64, f64)> = (0..n)
+    .map(|k| {
+      // (base_r + base_i*i)^k via repeated multiplication
+      let mut r = 1.0;
+      let mut i = 0.0;
+      for _ in 0..k {
+        let nr = r * base_r - i * base_i;
+        let ni = r * base_i + i * base_r;
+        r = nr;
+        i = ni;
+      }
+      (r, i)
+    })
+    .collect();
+
+  // Iterate.
+  for _ in 0..2000 {
+    let prev = roots.clone();
+    let mut max_delta: f64 = 0.0;
+    for k in 0..n {
+      let (zr, zi) = prev[k];
+      let (mut dr, mut di) = (1.0, 0.0);
+      for (j, &(jr, ji)) in prev.iter().enumerate() {
+        if j == k {
+          continue;
+        }
+        // (dr + di*i) * (zr - jr + (zi - ji)*i)
+        let ar = zr - jr;
+        let ai = zi - ji;
+        let nr = dr * ar - di * ai;
+        let ni = dr * ai + di * ar;
+        dr = nr;
+        di = ni;
+      }
+      // p(z) / Π
+      let (pr, pi) = eval_p(zr, zi);
+      let denom = dr * dr + di * di;
+      if denom == 0.0 {
+        continue;
+      }
+      let qr = (pr * dr + pi * di) / denom;
+      let qi = (pi * dr - pr * di) / denom;
+      let new_r = zr - qr;
+      let new_i = zi - qi;
+      let delta = (new_r - zr).hypot(new_i - zi);
+      if delta > max_delta {
+        max_delta = delta;
+      }
+      roots[k] = (new_r, new_i);
+    }
+    let scale = 1.0_f64
+      + roots
+        .iter()
+        .map(|&(r, i)| r.hypot(i))
+        .fold(0.0_f64, f64::max);
+    if max_delta < 1e-15 * scale {
+      break;
+    }
+  }
+
+  // Polish each root with Newton steps. Track the iterate with the smallest
+  // |p(z)| since near the root Newton may oscillate between two adjacent
+  // f64 values (both equally good). Pick the best one.
+  for k in 0..roots.len() {
+    let (mut zr, mut zi) = roots[k];
+    let (mut best_zr, mut best_zi) = (zr, zi);
+    let (pr0, pi0) = eval_p(zr, zi);
+    let mut best_err = pr0.hypot(pi0);
+    for _ in 0..30 {
+      let (pr, pi) = eval_p(zr, zi);
+      let (dr, di) = eval_dp(zr, zi);
+      let denom = dr * dr + di * di;
+      if denom < 1e-300 {
+        break;
+      }
+      let qr = (pr * dr + pi * di) / denom;
+      let qi = (pi * dr - pr * di) / denom;
+      let new_r = zr - qr;
+      let new_i = zi - qi;
+      zr = new_r;
+      zi = new_i;
+      let (npr, npi) = eval_p(zr, zi);
+      let err = npr.hypot(npi);
+      if err < best_err {
+        best_err = err;
+        best_zr = zr;
+        best_zi = zi;
+      }
+      if err == 0.0 {
+        break;
+      }
+    }
+    roots[k] = (best_zr, best_zi);
+  }
+
+  // Snap to real / round trailing fp noise.
+  for (r, i) in roots.iter_mut() {
+    let mag = r.hypot(*i).max(1.0);
+    if i.abs() < 1e-12 * mag {
+      *i = 0.0;
+    }
+    if r.abs() < 1e-12 * mag {
+      *r = 0.0;
+    }
+  }
+  // Match conjugate pairs: when two roots have the same real part (within
+  // tolerance) and opposite signs of imag part, make their imag exactly +/-.
+  let snap_eps = 1e-9;
+  for k in 0..roots.len() {
+    for j in (k + 1)..roots.len() {
+      if (roots[k].0 - roots[j].0).abs() < snap_eps
+        && (roots[k].1 + roots[j].1).abs() < snap_eps
+      {
+        let avg = ((roots[k].0) + (roots[j].0)) / 2.0;
+        let mag = (roots[k].1.abs() + roots[j].1.abs()) / 2.0;
+        roots[k].0 = avg;
+        roots[j].0 = avg;
+        if roots[k].1 < 0.0 {
+          roots[k].1 = -mag;
+          roots[j].1 = mag;
+        } else {
+          roots[k].1 = mag;
+          roots[j].1 = -mag;
+        }
+      }
+    }
+  }
+  roots
+}
+
 /// ToRules[eqns] — converts logical combinations of equations to lists of rules.
 /// Takes output from Roots/Reduce (Or/And of equations) and converts to Solve-style rules.
 /// Discards inequalities (!=).
