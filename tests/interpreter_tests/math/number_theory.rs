@@ -1778,6 +1778,37 @@ mod factorial2 {
   use super::*;
 
   #[test]
+  fn series_at_zero_order_0() {
+    // x!! = 1 + O(x).
+    assert_eq!(
+      interpret("Series[x!!, {x, 0, 0}]").unwrap(),
+      "SeriesData[x, 0, {1}, 0, 1, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_order_1() {
+    // x!! = 1 + (-EulerGamma + Log[2])/2 * x + O(x^2).
+    assert_eq!(
+      interpret("Series[x!!, {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {1, (-EulerGamma + Log[2])/2}, 0, 2, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_order_2() {
+    // wolframscript:
+    //   SeriesData[x, 0, {1, (-EulerGamma + Log[2])/2,
+    //                     (6 (EulerGamma - Log[2])^2 + Pi^2 (1 + Log[64] - 6 Log[Pi]))/48}, 0, 3, 1]
+    // Woxi's Plus canonicalisation reorders the numerator terms.
+    assert_eq!(
+      interpret("Series[x!!, {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, (-EulerGamma + Log[2])/2, \
+       (Pi^2*(1 + Log[64] - 6*Log[Pi]) + 6*(EulerGamma - Log[2])^2)/48}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
   fn double_factorial_odd() {
     assert_eq!(interpret("Factorial2[5]").unwrap(), "15");
     assert_eq!(interpret("Factorial2[7]").unwrap(), "105");

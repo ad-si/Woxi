@@ -8120,6 +8120,21 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(factorial_series_at_zero(&var_name, order));
   }
 
+  // Series[x!!, {x, 0, n}] — same issue as Factorial: low-order coefficients
+  // involve closed-form combinations of EulerGamma, Log[2], Log[Pi] and Pi^2.
+  if let Expr::FunctionCall {
+    name: f2name,
+    args: f2args,
+  } = &args[0]
+    && f2name == "Factorial2"
+    && f2args.len() == 1
+    && matches!(&f2args[0], Expr::Identifier(v) if v == &var_name)
+    && matches!(&x0, Expr::Integer(0))
+    && (0..=2).contains(&order)
+  {
+    return Ok(factorial2_series_at_zero(&var_name, order));
+  }
+
   // Series[FactorialPower[x, n], {x, 0, ord}] — FactorialPower[x, n] with
   // positive integer n is the polynomial x*(x-1)*(x-2)*...*(x-n+1) whose
   // coefficients are signed Stirling numbers of the first kind. The
@@ -10917,6 +10932,80 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
           power(constant("Pi"), int(2)),
         ]);
         times(vec![rational(1, 12), num])
+      }
+      _ => unreachable!(),
+    };
+    coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
+  }
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeffs.into()),
+      Expr::Integer(0),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
+  }
+}
+
+/// `Series[x!!, {x, 0, order}]` — Taylor expansion of `Factorial2[x]` at 0.
+/// Coefficients involve EulerGamma, Log[2], Log[Pi], Log[64], and Pi^2.
+fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
+  let int = |n: i128| Expr::Integer(n);
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let constant = |s: &str| Expr::Constant(s.to_string());
+  let plus = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: args.into(),
+  };
+  let times = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: args.into(),
+  };
+  let power = |base: Expr, exp: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp].into(),
+  };
+  let rational = |p: i128, q: i128| Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![int(p), int(q)].into(),
+  };
+  let log = |arg: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![arg].into(),
+  };
+
+  let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
+  for k in 0..=order {
+    let raw = match k {
+      0 => int(1),
+      1 => {
+        // (-EulerGamma + Log[2]) / 2
+        times(vec![
+          rational(1, 2),
+          plus(vec![
+            times(vec![int(-1), sym("EulerGamma")]),
+            log(int(2)),
+          ]),
+        ])
+      }
+      2 => {
+        // (6 (EulerGamma - Log[2])^2 + Pi^2 (1 + Log[64] - 6 Log[Pi])) / 48
+        let eg_minus_log2 =
+          plus(vec![sym("EulerGamma"), times(vec![int(-1), log(int(2))])]);
+        let part_a = times(vec![int(6), power(eg_minus_log2, int(2))]);
+        let part_b = times(vec![
+          power(constant("Pi"), int(2)),
+          plus(vec![
+            int(1),
+            log(int(64)),
+            times(vec![int(-6), log(constant("Pi"))]),
+          ]),
+        ]);
+        times(vec![rational(1, 48), plus(vec![part_a, part_b])])
       }
       _ => unreachable!(),
     };
