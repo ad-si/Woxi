@@ -1716,6 +1716,40 @@ mod partition {
   }
 
   #[test]
+  fn upto_audit_case() {
+    // Audit case: UpTo[n] partitions into chunks of up to n with the last
+    // chunk possibly shorter.
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e, f}, UpTo[4]]").unwrap(),
+      "{{a, b, c, d}, {e, f}}"
+    );
+  }
+
+  #[test]
+  fn upto_smaller_chunks() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, UpTo[2]]").unwrap(),
+      "{{1, 2}, {3, 4}, {5}}"
+    );
+  }
+
+  #[test]
+  fn upto_exact_multiple() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4}, UpTo[2]]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn upto_chunk_larger_than_list() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3}, UpTo[10]]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+
+  #[test]
   fn cyclic_11_basic() {
     // {1, 1} alignment: cyclic wrapping
     assert_eq!(

@@ -845,6 +845,28 @@ pub fn dispatch_list_operations(
       }
     }
     "Partition" if args.len() >= 2 && args.len() <= 5 => {
+      // Partition[list, UpTo[n]] — chunks of up to n, last chunk may be short.
+      if args.len() == 2
+        && let Expr::FunctionCall {
+          name: ut_name,
+          args: ut_args,
+        } = &args[1]
+        && ut_name == "UpTo"
+        && ut_args.len() == 1
+        && let Some(n) = expr_to_i128(&ut_args[0])
+        && n > 0
+        && let Expr::List(items) = &args[0]
+      {
+        let n_usize = n as usize;
+        let mut chunks: Vec<Expr> = Vec::new();
+        let mut i = 0usize;
+        while i < items.len() {
+          let end = (i + n_usize).min(items.len());
+          chunks.push(Expr::List(items[i..end].to_vec().into()));
+          i = end;
+        }
+        return Some(Ok(Expr::List(chunks.into())));
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         let d = if args.len() >= 3 {
           expr_to_i128(&args[2])
