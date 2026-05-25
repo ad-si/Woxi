@@ -2430,10 +2430,7 @@ mod take_multi_dim {
 
   #[test]
   fn drop_up_to_partial() {
-    assert_eq!(
-      interpret("Drop[{a, b, c, d}, UpTo[2]]").unwrap(),
-      "{c, d}"
-    );
+    assert_eq!(interpret("Drop[{a, b, c, d}, UpTo[2]]").unwrap(), "{c, d}");
   }
 
   #[test]

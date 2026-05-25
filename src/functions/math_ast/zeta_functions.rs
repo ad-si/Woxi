@@ -24,6 +24,14 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return hurwitz_zeta_ast(&args[0], &args[1], args);
   }
 
+  // Zeta[ZetaZero[k]] = 0 (by definition of the non-trivial zeros)
+  // Zeta[ZetaZero[k, t]] = 0
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "ZetaZero"
+  {
+    return Ok(Expr::Integer(0));
+  }
+
   match &args[0] {
     Expr::Integer(n) => {
       let n = *n;

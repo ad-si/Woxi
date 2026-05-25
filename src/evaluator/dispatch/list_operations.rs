@@ -3161,11 +3161,8 @@ pub fn dispatch_list_operations(
             continue;
           }
           // Rotate so the smallest element comes first.
-          let (min_idx, _) = cycle
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, v)| **v)
-            .unwrap();
+          let (min_idx, _) =
+            cycle.iter().enumerate().min_by_key(|(_, v)| **v).unwrap();
           let mut rotated: Vec<i128> = cycle[min_idx..].to_vec();
           rotated.extend_from_slice(&cycle[..min_idx]);
           canonical.push(rotated);
@@ -3175,7 +3172,9 @@ pub fn dispatch_list_operations(
         let cycle_exprs: Vec<Expr> = canonical
           .into_iter()
           .map(|c| {
-            Expr::List(c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into())
+            Expr::List(
+              c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+            )
           })
           .collect();
         return Some(Ok(Expr::FunctionCall {

@@ -658,7 +658,8 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Mark the top `limit` elements (by first-appearance index) as chosen,
   // then emit them in input order.
-  let mut chosen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+  let mut chosen: std::collections::HashSet<usize> =
+    std::collections::HashSet::new();
   for (_, _, _, fa) in ranked.iter().take(limit) {
     chosen.insert(*fa);
   }

@@ -1507,6 +1507,22 @@ mod zeta {
       result
     );
   }
+
+  #[test]
+  fn zeta_of_zeta_zero_is_zero() {
+    // ZetaZero[k] denotes the k-th non-trivial zero of zeta, so Zeta[ZetaZero[k]] = 0.
+    assert_eq!(interpret("Zeta[ZetaZero[1]]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[ZetaZero[10]]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[ZetaZero[k]]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[ZetaZero[5, 100]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zeta_zero_stays_symbolic() {
+    // ZetaZero by itself remains symbolic.
+    assert_eq!(interpret("ZetaZero[10]").unwrap(), "ZetaZero[10]");
+    assert_eq!(interpret("ZetaZero[1]").unwrap(), "ZetaZero[1]");
+  }
 }
 
 mod hurwitz_zeta {

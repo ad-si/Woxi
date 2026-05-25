@@ -37,10 +37,7 @@ mod batch_unevaluated_wrappers {
   #[test]
   fn time_value_exact_rational() {
     // Exact rational inputs preserve rational arithmetic.
-    assert_eq!(
-      interpret("TimeValue[100, 1/10, 2]").unwrap(),
-      "121"
-    );
+    assert_eq!(interpret("TimeValue[100, 1/10, 2]").unwrap(), "121");
   }
   #[test]
   fn line_indent() {
