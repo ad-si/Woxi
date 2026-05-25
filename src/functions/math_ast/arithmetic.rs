@@ -889,7 +889,34 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // For alphabetical comparison, strip the leading "-" from negated terms
     // so that -x sorts next to x rather than before everything.
     let mut sorted_symbolic = collected;
-    sorted_symbolic.sort_by(compare_plus_terms);
+    // `compare_plus_terms` is, in rare cases involving deeply nested mixed-
+    // priority expressions, not strictly transitive — Rust's sort then panics
+    // with "comparison function does not correctly implement a total order".
+    // Catch the panic and fall back to a stable string-based sort instead, so
+    // these inputs simply lose the fine-grained Wolfram-flavoured ordering
+    // rather than aborting the program.
+    let fallback_order: Vec<usize> = {
+      let mut idx: Vec<usize> = (0..sorted_symbolic.len()).collect();
+      idx.sort_by_cached_key(|&i| term_sort_key(&sorted_symbolic[i]));
+      idx
+    };
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let sort_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+      || {
+        let mut clone = sorted_symbolic.clone();
+        clone.sort_by(compare_plus_terms);
+        clone
+      },
+    ));
+    std::panic::set_hook(prev_hook);
+    sorted_symbolic = match sort_result {
+      Ok(v) => v,
+      Err(_) => fallback_order
+        .into_iter()
+        .map(|i| sorted_symbolic[i].clone())
+        .collect(),
+    };
 
     // Underflow[] floats ahead of the numeric coefficient too — Wolfram
     // prints `1 - Underflow[]` as `Underflow[] + 1`. Splice any Underflow[]

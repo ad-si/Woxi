@@ -566,6 +566,26 @@ mod differentiate_plus_times {
   }
 
   #[test]
+  fn high_order_derivative_of_x_x_does_not_panic() {
+    // Previously D[x^x, {x, 10}] aborted with a "comparison function does
+    // not correctly implement a total order" panic during Plus sorting.
+    // Now it produces a (long) symbolic result without panicking.
+    let result = interpret("D[x^x, {x, 10}]").unwrap();
+    // Result is a non-empty symbolic expression containing the variable.
+    assert!(
+      result.contains("x") && !result.is_empty(),
+      "expected non-trivial derivative, got {} chars",
+      result.len()
+    );
+  }
+
+  #[test]
+  fn high_order_derivative_of_x_x_order_8() {
+    let result = interpret("D[x^x, {x, 8}]").unwrap();
+    assert!(result.contains("x"));
+  }
+
+  #[test]
   fn d_x_squared_plus_x() {
     assert_eq!(interpret("D[x^2 + x, x]").unwrap(), "1 + 2*x");
   }
