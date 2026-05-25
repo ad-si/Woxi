@@ -4975,6 +4975,9 @@ mod set_precision {
 
   #[test]
   fn machine_precision_integer() {
-    assert_eq!(interpret("SetPrecision[3, MachinePrecision]").unwrap(), "3.");
+    assert_eq!(
+      interpret("SetPrecision[3, MachinePrecision]").unwrap(),
+      "3."
+    );
   }
 }

@@ -637,7 +637,9 @@ fn set_precision_walk(
     | Expr::BigFloat(_, _) => {
       leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
     }
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       leaf_to_bigfloat(expr, precision, bits, max_fraction_digits, rm, cc)
     }
     Expr::List(items) => {
@@ -674,8 +676,14 @@ fn set_precision_walk(
     Expr::BinaryOp { op, left, right } => {
       let l =
         set_precision_walk(left, precision, bits, max_fraction_digits, rm, cc)?;
-      let r =
-        set_precision_walk(right, precision, bits, max_fraction_digits, rm, cc)?;
+      let r = set_precision_walk(
+        right,
+        precision,
+        bits,
+        max_fraction_digits,
+        rm,
+        cc,
+      )?;
       Ok(Expr::BinaryOp {
         op: *op,
         left: Box::new(l),
@@ -726,11 +734,12 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::BigFloat(digits, _) => {
       Ok(Expr::Real(digits.parse::<f64>().unwrap_or(f64::NAN)))
     }
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
-      if let (Some(p), Some(q)) = (
-        try_eval_to_f64(&args[0]),
-        try_eval_to_f64(&args[1]),
-      ) {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Some(p), Some(q)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+      {
         Ok(Expr::Real(p / q))
       } else {
         Ok(expr.clone())

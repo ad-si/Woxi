@@ -6490,6 +6490,26 @@ mod barnes_g {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("BarnesG[x]").unwrap(), "BarnesG[x]");
   }
+
+  #[test]
+  fn series_at_zero_order_2() {
+    // wolframscript:
+    //   SeriesData[x, 0, {1, EulerGamma + (-1 + Log[2*Pi])/2}, 1, 3, 1]
+    // Woxi's Plus canonicalisation reorders the EulerGamma summand.
+    assert_eq!(
+      interpret("Series[BarnesG[x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, (-1 + Log[2*Pi])/2 + EulerGamma}, 1, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_order_1() {
+    // Only the leading linear term: BarnesG[x] = x + O(x^2).
+    assert_eq!(
+      interpret("Series[BarnesG[x], {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {1}, 1, 2, 1]"
+    );
+  }
 }
 
 mod powers_representations {
