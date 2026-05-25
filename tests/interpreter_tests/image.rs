@@ -1569,6 +1569,25 @@ mod image_processing {
     );
   }
 
+  // Image[image] is idempotent — wrapping an existing Image in another
+  // Image[…] returns the inner image unchanged.
+  #[test]
+  fn image_of_image_returns_inner() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[Image[{{0.1, 0.2}, {0.3, 0.4}}]]]").unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224}, \
+       {0.30000001192092896, 0.4000000059604645}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Image[{{0.1, 0.2, 0.3}}]]]"
+      )
+      .unwrap(),
+      "{3, 1}"
+    );
+  }
+
   // ImageConvolve applies a 2D kernel per pixel with replicated
   // boundary, kernel center at floor(size/2) for each axis.
   #[test]

@@ -119,6 +119,16 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Image[image] is idempotent: wolframscript returns the inner image
+  // unchanged. Only honour the shortcut when no extra positional args
+  // are present (an explicit type or option ought to fall through to
+  // the construction path).
+  if args.len() == 1
+    && let Expr::Image { .. } = &args[0]
+  {
+    return Ok(args[0].clone());
+  }
+
   // The second positional arg is a type tag (string or identifier).
   // Anything beyond that must be a Rule-form option.
   let parse_type = |e: &Expr| -> Option<ImageType> {
@@ -3478,8 +3488,7 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .clamp(0, h as isize - 1) as usize;
             let sx = (x as isize + kx as isize - cx as isize)
               .clamp(0, w as isize - 1) as usize;
-            sum +=
-              kernel[ky * kcols + kx] * data[(sy * w + sx) * ch + c_idx];
+            sum += kernel[ky * kcols + kx] * data[(sy * w + sx) * ch + c_idx];
           }
         }
         new_data[(y * w + x) * ch + c_idx] = sum;
