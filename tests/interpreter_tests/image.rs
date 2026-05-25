@@ -1510,6 +1510,51 @@ mod image_processing {
     assert_eq!(result, "{3, 3}");
   }
 
+  // MinFilter / MaxFilter on Images apply a min/max kernel per channel,
+  // with the (2r+1)×(2r+1) window clipped at image boundaries.
+  #[test]
+  fn min_filter_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MinFilter[Image[{{0.5, 0.2, 0.9}, {0.1, 0.6, 0.3}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.10000000149011612, 0.20000000298023224}, \
+       {0.10000000149011612, 0.10000000149011612, 0.20000000298023224}}"
+    );
+  }
+
+  #[test]
+  fn max_filter_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MaxFilter[Image[{{0.5, 0.2, 0.9}, {0.1, 0.6, 0.3}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.6000000238418579, 0.8999999761581421, 0.8999999761581421}, \
+       {0.6000000238418579, 0.8999999761581421, 0.8999999761581421}}"
+    );
+  }
+
+  // Channels and type pass through unchanged.
+  #[test]
+  fn min_filter_image_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[MinFilter[Image[{{{1.0, 0.0, 0.5}, {0.0, 1.0, 0.5}}}], 1]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageType[MinFilter[Image[{{0.1, 0.5}}], 1]]").unwrap(),
+      "Real32"
+    );
+  }
+
   // ImageResize accepts {Automatic, h} / {w, Automatic} to preserve
   // the aspect ratio on the auto-side. The audit case has Woxi
   // erroring on Automatic; this verifies the fix.
@@ -1542,10 +1587,8 @@ mod image_processing {
   fn image_resize_max_side() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageDimensions[ImageResize[Image[{{0.0, 0.5, 1.0}}], {6}]]"
-      )
-      .unwrap(),
+      interpret("ImageDimensions[ImageResize[Image[{{0.0, 0.5, 1.0}}], {6}]]")
+        .unwrap(),
       "{6, 2}"
     );
   }
@@ -1562,10 +1605,7 @@ mod image_processing {
       "3"
     );
     assert_eq!(
-      interpret(
-        "ImageType[ImageResize[Image[{{0.1, 0.5}}], {4, 2}]]"
-      )
-      .unwrap(),
+      interpret("ImageType[ImageResize[Image[{{0.1, 0.5}}], {4, 2}]]").unwrap(),
       "Real32"
     );
   }

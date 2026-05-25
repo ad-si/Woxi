@@ -3116,6 +3116,9 @@ pub fn dispatch_math_functions(
       }
     }
     "MaxFilter" if args.len() == 2 => {
+      if let Some(out) = image_min_max_filter(&args[0], &args[1], false) {
+        return Some(Ok(out));
+      }
       // MaxFilter[list, r] — replace each element with the max in a window of radius r
       if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
         let r = r as usize;
@@ -3148,6 +3151,9 @@ pub fn dispatch_math_functions(
       }
     }
     "MinFilter" if args.len() == 2 => {
+      if let Some(out) = image_min_max_filter(&args[0], &args[1], true) {
+        return Some(Ok(out));
+      }
       if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
         let r = r as usize;
         let n = elems.len();
@@ -6300,6 +6306,67 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
   } else {
     None
   }
+}
+
+/// Apply a per-channel min (`use_min = true`) or max filter to an
+/// Image using a (2r+1)×(2r+1) window clipped at image boundaries.
+/// Returns None when `data` isn't an Image or `radius` isn't a
+/// non-negative integer-like value.
+fn image_min_max_filter(
+  data: &Expr,
+  radius: &Expr,
+  use_min: bool,
+) -> Option<Expr> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data: pixels,
+    image_type,
+  } = data
+  else {
+    return None;
+  };
+  let r = match radius {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    Expr::Real(f) if *f >= 0.0 => f.round() as usize,
+    _ => return None,
+  };
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  let mut new_data = vec![0.0_f64; pixels.len()];
+  for c_idx in 0..ch {
+    for y in 0..h {
+      for x in 0..w {
+        let y0 = y.saturating_sub(r);
+        let y1 = (y + r).min(h - 1);
+        let x0 = x.saturating_sub(r);
+        let x1 = (x + r).min(w - 1);
+        let mut best = pixels[(y0 * w + x0) * ch + c_idx];
+        for yy in y0..=y1 {
+          for xx in x0..=x1 {
+            let v = pixels[(yy * w + xx) * ch + c_idx];
+            if use_min {
+              if v < best {
+                best = v;
+              }
+            } else if v > best {
+              best = v;
+            }
+          }
+        }
+        new_data[(y * w + x) * ch + c_idx] = best;
+      }
+    }
+  }
+  Some(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: std::sync::Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 fn expr_to_f64(expr: &Expr) -> Option<f64> {
