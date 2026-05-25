@@ -573,10 +573,7 @@ mod high_level_functions_tests {
     #[test]
     fn test_digit_sum_mixed_radix_simple() {
       // 42 with bases {2, 5}: digits {4, 0, 2}, sum 6.
-      assert_eq!(
-        interpret("DigitSum[42, MixedRadix[{2, 5}]]").unwrap(),
-        "6"
-      );
+      assert_eq!(interpret("DigitSum[42, MixedRadix[{2, 5}]]").unwrap(), "6");
     }
     #[test]
     fn test_digit_sum_mixed_radix_extra_base() {

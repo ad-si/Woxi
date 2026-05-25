@@ -1468,6 +1468,49 @@ mod reals {
   fn element_complex_not_in_reals() {
     assert_eq!(interpret("Element[2 + 3 I, Reals]").unwrap(), "False");
   }
+
+  #[test]
+  fn element_sum_drops_real_constant() {
+    // wolframscript: Element[x + 5, Reals] → Element[x, Reals].
+    assert_eq!(
+      interpret("Element[x + 5, Reals]").unwrap(),
+      "Element[x, Reals]"
+    );
+  }
+
+  #[test]
+  fn element_sum_drops_multiple_real_constants() {
+    // Integer constants combine first, then drop out of Element[..., Reals].
+    assert_eq!(
+      interpret("Element[x + 2 + 3, Reals]").unwrap(),
+      "Element[x, Reals]"
+    );
+  }
+
+  #[test]
+  fn element_sum_pure_constants() {
+    // No symbolic terms: the sum is fully real → True.
+    assert_eq!(interpret("Element[5 + 3, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_sum_drops_integer_for_integers_domain() {
+    assert_eq!(
+      interpret("Element[x + 1, Integers]").unwrap(),
+      "Element[x, Integers]"
+    );
+  }
+
+  #[test]
+  fn element_sum_unknown_term_stays_symbolic() {
+    // x and 5*I both have unknown / non-real status — no simplification.
+    let result = interpret("Element[x + 5*I, Reals]").unwrap();
+    assert!(
+      result.contains("Element"),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
 }
 
 mod plus_minus {

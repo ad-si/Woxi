@@ -568,6 +568,47 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     return element_ast(&alt_expr, domain);
   }
 
+  // Element[Plus[a, b, c, ...], Reals] / Integers / Rationals: drop any
+  // summands already known to be in the domain — the remainder is in the
+  // domain iff the original sum is. If everything drops out, the result is
+  // True; if a single term remains, re-emit `Element[term, dom]`.
+  if matches!(
+    domain_name,
+    "Reals" | "Integers" | "Rationals" | "Algebraics" | "Complexes"
+  ) && let Expr::FunctionCall { name, args } = x
+    && name == "Plus"
+    && args.len() >= 2
+  {
+    let mut remaining: Vec<Expr> = Vec::new();
+    let mut any_dropped = false;
+    let mut conflict = false;
+    for a in args.iter() {
+      match is_member_of_domain(a, domain_name) {
+        Some(true) => any_dropped = true,
+        Some(false) => {
+          conflict = true;
+          remaining.push(a.clone());
+        }
+        None => remaining.push(a.clone()),
+      }
+    }
+    if !any_dropped && !conflict {
+      // No simplification possible; fall through.
+    } else if remaining.is_empty() {
+      return Ok(Expr::Identifier("True".to_string()));
+    } else if any_dropped && !conflict {
+      let reduced = if remaining.len() == 1 {
+        remaining.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: remaining.into(),
+        }
+      };
+      return element_ast(&reduced, domain);
+    }
+  }
+
   // Simple case: check single element
   match is_member_of_domain(x, domain_name) {
     Some(true) => Ok(Expr::Identifier("True".to_string())),
