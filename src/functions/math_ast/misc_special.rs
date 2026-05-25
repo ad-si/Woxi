@@ -1388,12 +1388,11 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let all_numeric = matches!(&args[1], Expr::Real(_))
       || matches!(&args[2], Expr::Real(_))
       || matches!(&args[3], Expr::Real(_));
-    if !all_numeric || phi_n.is_none() || theta_n.is_none() || psi_n.is_none()
-    {
+    if !all_numeric || phi_n.is_none() || theta_n.is_none() || psi_n.is_none() {
       // Symbolic path: build d^j_{m1,m2}(theta) * E^(I*m1*phi) * E^(I*m2*psi).
-      if let Some(result) = wigner_d_symbolic(
-        j_val, m1_val, m2_val, &args[1], &args[2], &args[3],
-      ) {
+      if let Some(result) =
+        wigner_d_symbolic(j_val, m1_val, m2_val, &args[1], &args[2], &args[3])
+      {
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
       return Ok(Expr::FunctionCall {
@@ -1475,12 +1474,8 @@ fn wigner_d_symbolic(
     };
     let exponent = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![
-        Expr::Identifier("I".to_string()),
-        coef_expr,
-        ang.clone(),
-      ]
-      .into(),
+      args: vec![Expr::Identifier("I".to_string()), coef_expr, ang.clone()]
+        .into(),
     };
     Some(Expr::FunctionCall {
       name: "Power".to_string(),
@@ -1554,7 +1549,7 @@ fn wigner_d_small_symbolic(
   // Build the sum.
   let mut terms: Vec<Expr> = Vec::new();
   for s in s_min..=s_max {
-    let cos_exp = j2 + m1_2 / 1 - m2_2 / 1; // (2j+m1-m2-2s) but in 2x form
+    let cos_exp = j2 + m1_2 - m2_2; // (2j+m1-m2-2s) but in 2x form
     let cos_pow = (2 * j2 + 2 * m1_2 - 2 * m2_2 - 4 * s) / 2; // not quite
     // Actually exponents are integers when j ± m_i are integers:
     //   cos_power = 2j + m1 - m2 - 2s = j2 + m1_2/1 - m2_2/1 - 2s
@@ -1571,10 +1566,8 @@ fn wigner_d_small_symbolic(
     }
     let sign_exp = m1mm2 + s;
     let sign: i128 = if sign_exp.rem_euclid(2) == 0 { 1 } else { -1 };
-    let denom: i128 = fact(jpm1 - s)
-      * fact(s)
-      * fact(s - m1mm2)
-      * fact(jmm2 - s);
+    let denom: i128 =
+      fact(jpm1 - s) * fact(s) * fact(s - m1mm2) * fact(jmm2 - s);
 
     let cos_term = if cos_power == 0 {
       Expr::Integer(1)

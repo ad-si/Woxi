@@ -2410,6 +2410,38 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
   }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
+    // F^-1[Sinc[w]] = (Sqrt[Pi/2] * (Sign[1 - t] + Sign[1 + t])) / 2.
+    // Recovers the indicator of (-1, 1) (mod the Sqrt[2π] normalisation)
+    // since Sinc is the forward transform of UnitBox[t/2].
+    if fname == "Sinc"
+      && fargs.len() == 1
+      && let Expr::Identifier(v) = fargs[0]
+      && v == w
+    {
+      let sqrt_pi_half = make_sqrt(make_times(vec![
+        Expr::Constant("Pi".to_string()),
+        make_power(Expr::Integer(2), Expr::Integer(-1)),
+      ]));
+      let sign_1_minus_t = Expr::FunctionCall {
+        name: "Sign".to_string(),
+        args: vec![make_plus(vec![
+          Expr::Integer(1),
+          make_times(vec![Expr::Integer(-1), t.clone()]),
+        ])]
+        .into(),
+      };
+      let sign_1_plus_t = Expr::FunctionCall {
+        name: "Sign".to_string(),
+        args: vec![make_plus(vec![Expr::Integer(1), t.clone()])].into(),
+      };
+      let sum = make_plus(vec![sign_1_minus_t, sign_1_plus_t]);
+      let numer = make_times(vec![sqrt_pi_half, sum]);
+      return Some(make_times(vec![
+        numer,
+        make_power(Expr::Integer(2), Expr::Integer(-1)),
+      ]));
+    }
+
     // F^-1[E^(-a*w^2)] = E^(-t^2/(4a)) / Sqrt[2a]
     if fname == "Power" && fargs.len() == 2 {
       let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")

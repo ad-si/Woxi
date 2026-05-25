@@ -4259,6 +4259,17 @@ mod inverse_fourier_transform {
       result
     );
   }
+
+  #[test]
+  fn sinc_inverts_to_signs_audit_case() {
+    // Audit case:
+    //   InverseFourierTransform[Sinc[w], w, t]
+    //     = (Sqrt[Pi/2]*(Sign[1 - t] + Sign[1 + t]))/2
+    assert_eq!(
+      interpret("InverseFourierTransform[Sinc[w], w, t]").unwrap(),
+      "(Sqrt[Pi/2]*(Sign[1 - t] + Sign[1 + t]))/2"
+    );
+  }
 }
 
 mod trig_reduce {
