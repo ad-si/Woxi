@@ -8120,6 +8120,26 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(factorial_series_at_zero(&var_name, order));
   }
 
+  // Series[FactorialPower[x, n], {x, 0, ord}] — FactorialPower[x, n] with
+  // positive integer n is the polynomial x*(x-1)*(x-2)*...*(x-n+1) whose
+  // coefficients are signed Stirling numbers of the first kind. The
+  // direct-differentiation path leaves `Derivative[k, 0][FactorialPower]`
+  // placeholders; inject the polynomial coefficients instead.
+  if let Expr::FunctionCall {
+    name: fpname,
+    args: fpargs,
+  } = &args[0]
+    && fpname == "FactorialPower"
+    && fpargs.len() == 2
+    && matches!(&fpargs[0], Expr::Identifier(v) if v == &var_name)
+    && let Expr::Integer(n) = &fpargs[1]
+    && *n >= 0
+    && matches!(&x0, Expr::Integer(0))
+    && order >= 0
+  {
+    return Ok(factorial_power_series_at_zero(&var_name, *n, order));
+  }
+
   // LucasL[n, var] with non-integer n: rewrite using the closed-form
   // first dominant root `((x + Sqrt[x^2 + 4])/2)^n`. Series of this
   // form yields the same coefficients as Wolfram's `Series[LucasL[n, x], …]`
@@ -10914,4 +10934,59 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
     ]
     .into(),
   }
+}
+
+/// `Series[FactorialPower[x, n], {x, 0, order}]` for non-negative integer n.
+///
+/// `FactorialPower[x, n]` is the falling factorial x*(x-1)*...*(x-n+1), a
+/// polynomial whose Taylor coefficients at 0 are the signed Stirling numbers
+/// of the first kind s(n, k). The leading non-zero coefficient is s(n, 1)
+/// at x^1 (or s(0, 0) = 1 when n = 0).
+fn factorial_power_series_at_zero(
+  var_name: &str,
+  n: i128,
+  order: i128,
+) -> Expr {
+  let n_usize = n as usize;
+  let stirling = signed_stirling_first_row(n_usize);
+  let (min_idx, max_idx) = if n == 0 {
+    (0usize, 0usize)
+  } else {
+    (1usize, n_usize)
+  };
+  let upper = max_idx.min(order.max(0) as usize);
+  let coeffs: Vec<Expr> = (min_idx..=upper)
+    .map(|k| Expr::Integer(stirling.get(k).copied().unwrap_or(0)))
+    .collect();
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeffs.into()),
+      Expr::Integer(min_idx as i128),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
+  }
+}
+
+/// Row `n` of the signed Stirling numbers of the first kind.
+/// `out[k] = s(n, k)`, satisfying x(x-1)...(x-n+1) = sum_k s(n, k) x^k.
+fn signed_stirling_first_row(n: usize) -> Vec<i128> {
+  // Start at row 0: s(0, 0) = 1, all other s(0, k) = 0.
+  let mut row = vec![0i128; n + 1];
+  row[0] = 1;
+  // Build up row by row using s(m+1, k) = s(m, k-1) - m * s(m, k).
+  for m in 0..n {
+    let mut next = vec![0i128; n + 1];
+    for k in 0..=(m + 1) {
+      let from_left = if k > 0 { row[k - 1] } else { 0 };
+      let from_above = row.get(k).copied().unwrap_or(0);
+      next[k] = from_left - (m as i128) * from_above;
+    }
+    row = next;
+  }
+  row
 }

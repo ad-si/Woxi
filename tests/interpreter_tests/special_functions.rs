@@ -1347,6 +1347,36 @@ mod factorial_power {
       "FactorialPower[n, 3]"
     );
   }
+
+  #[test]
+  fn series_at_zero_order_5() {
+    // FactorialPower[x, 5] = x*(x-1)*(x-2)*(x-3)*(x-4)
+    //                     = 24 x - 50 x^2 + 35 x^3 - 10 x^4 + x^5.
+    // Series coefficients from x^1 to x^5 are the signed Stirling numbers
+    // of the first kind: {24, -50, 35, -10, 1}.
+    assert_eq!(
+      interpret("Series[FactorialPower[x, 5], {x, 0, 5}]").unwrap(),
+      "SeriesData[x, 0, {24, -50, 35, -10, 1}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_lower_order() {
+    // Truncated to order 3, only the first three coefficients survive.
+    assert_eq!(
+      interpret("Series[FactorialPower[x, 5], {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {24, -50, 35}, 1, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_order_3_for_n_3() {
+    // FactorialPower[x, 3] = x*(x-1)*(x-2) = 2 x - 3 x^2 + x^3.
+    assert_eq!(
+      interpret("Series[FactorialPower[x, 3], {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {2, -3, 1}, 1, 4, 1]"
+    );
+  }
 }
 
 mod recurrence_filter {
