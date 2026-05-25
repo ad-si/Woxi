@@ -1042,10 +1042,8 @@ mod image_processing {
   fn blend_two_images_half() {
     clear_state();
     assert_eq!(
-      interpret(
-        "ImageData[Blend[{Image[{{0.0}}], Image[{{1.0}}]}, 0.5]]"
-      )
-      .unwrap(),
+      interpret("ImageData[Blend[{Image[{{0.0}}], Image[{{1.0}}]}, 0.5]]")
+        .unwrap(),
       "{{0.5}}"
     );
   }
@@ -1493,6 +1491,89 @@ mod image_processing {
     )
     .unwrap();
     assert_eq!(result, "{3, 3}");
+  }
+
+  // Blur preserves the channel count and image type (no quantisation
+  // round-trip through the image crate's u8 buffer).
+  #[test]
+  fn blur_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[Blur[Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}}}], 1]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[Blur[Image[{{0.1, 0.5, 0.9}}], 1]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
+  // Symmetry: the center of a symmetric grayscale input stays at its
+  // central value after blurring.
+  #[test]
+  fn blur_preserves_symmetric_center() {
+    clear_state();
+    let out = interpret(
+      "ImageData[Blur[Image[{{0.1, 0.5, 0.9}}], 1]]",
+    )
+    .unwrap();
+    // Output is { {p0, p1, p2} } — extract the middle pixel.
+    let middle = out
+      .trim_start_matches("{{")
+      .trim_end_matches("}}")
+      .split(", ")
+      .nth(1)
+      .unwrap();
+    let v: f64 = middle.parse().unwrap();
+    assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {}", v);
+  }
+
+  // Edge pixels should not be unchanged (a uniform interior + edge gives
+  // a non-trivial blur).
+  #[test]
+  fn blur_changes_edge_pixels() {
+    clear_state();
+    let out = interpret(
+      "ImageData[Blur[Image[{{0.0, 0.5, 1.0}}], 1]]",
+    )
+    .unwrap();
+    let parts: Vec<f64> = out
+      .trim_start_matches("{{")
+      .trim_end_matches("}}")
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    // Left edge should be strictly between 0.0 and 0.5.
+    assert!(
+      parts[0] > 0.0 && parts[0] < 0.5,
+      "edge pixel out of expected range: {}",
+      parts[0]
+    );
+    // Right edge symmetric.
+    assert!(
+      parts[2] > 0.5 && parts[2] < 1.0,
+      "edge pixel out of expected range: {}",
+      parts[2]
+    );
+  }
+
+  // A zero-radius blur is the identity (no convolution applied).
+  #[test]
+  fn blur_radius_zero_is_identity() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Blur[Image[{{0.1, 0.5, 0.9}}], 0]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.5, 0.8999999761581421}}"
+    );
   }
 
   #[test]

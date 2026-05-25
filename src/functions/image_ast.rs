@@ -1111,38 +1111,107 @@ pub fn blur_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let sigma = if args.len() == 2 {
-    expr_to_f64(&args[1])? as f32
-  } else {
-    1.0_f32
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "Blur::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "Blur".to_string(),
+      args: args.to_vec().into(),
+    });
   };
 
-  match &args[0] {
-    Expr::Image {
-      width,
-      height,
-      channels,
-      data,
-      ..
-    } => {
-      let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
-      let blurred = dyn_img.blur(sigma);
-      Ok(dynamic_image_to_expr(&blurred))
-    }
-    _ => {
-      // Match wolframscript: emit Blur::imginv and return the call
-      // unevaluated rather than erroring out. Unlike DominantColors,
-      // the message does NOT wrap the bad argument in braces.
-      crate::emit_message(&format!(
-        "Blur::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(Expr::FunctionCall {
-        name: "Blur".to_string(),
-        args: args.to_vec().into(),
-      })
+  let radius = if args.len() == 2 {
+    expr_to_f64(&args[1])?
+  } else {
+    2.0
+  };
+  let r = radius.round() as usize;
+  if r == 0 {
+    return Ok(args[0].clone());
+  }
+
+  let sigma = (radius / 2.0).max(1e-9);
+  // Truncated Gaussian kernel of width 2r+1, normalized to sum 1 once
+  // (without boundary truncation). Boundary handling uses renormalization
+  // at the edges.
+  let mut kernel: Vec<f64> = (0..=2 * r)
+    .map(|i| {
+      let x = i as f64 - r as f64;
+      (-(x * x) / (2.0 * sigma * sigma)).exp()
+    })
+    .collect();
+  let ksum: f64 = kernel.iter().sum();
+  for k in &mut kernel {
+    *k /= ksum;
+  }
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+
+  // Separable 1D Gaussian convolution: blur horizontally, then
+  // vertically. Boundary handling renormalises the kernel against the
+  // weights that fall inside the image.
+  let idx = |y: usize, x: usize, c: usize| -> usize { (y * w + x) * ch + c };
+
+  // Horizontal pass (rows).
+  let mut tmp = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    for y in 0..h {
+      for x in 0..w {
+        let mut sum = 0.0;
+        let mut wsum = 0.0;
+        for ki in 0..kernel.len() {
+          let kx = x as isize + ki as isize - r as isize;
+          if kx < 0 || kx >= w as isize {
+            continue;
+          }
+          let v = data[idx(y, kx as usize, c_idx)];
+          sum += kernel[ki] * v;
+          wsum += kernel[ki];
+        }
+        tmp[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
+      }
     }
   }
+
+  // Vertical pass (columns).
+  let mut new_data = vec![0.0; data.len()];
+  for c_idx in 0..ch {
+    for x in 0..w {
+      for y in 0..h {
+        let mut sum = 0.0;
+        let mut wsum = 0.0;
+        for ki in 0..kernel.len() {
+          let ky = y as isize + ki as isize - r as isize;
+          if ky < 0 || ky >= h as isize {
+            continue;
+          }
+          let v = tmp[idx(ky as usize, x, c_idx)];
+          sum += kernel[ki] * v;
+          wsum += kernel[ki];
+        }
+        new_data[idx(y, x, c_idx)] = if wsum > 0.0 { sum / wsum } else { 0.0 };
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// Sharpen[img] or Sharpen[img, r] - Unsharp mask
@@ -2354,7 +2423,11 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (r, g, b, alpha) = rgb;
     match target_space {
       "Grayscale" => {
-        let lum = if is_graylevel { r } else { 0.299 * r + 0.587 * g + 0.114 * b };
+        let lum = if is_graylevel {
+          r
+        } else {
+          0.299 * r + 0.587 * g + 0.114 * b
+        };
         let mut gargs = vec![Expr::Real(lum)];
         if let Some(a) = alpha {
           gargs.push(Expr::Real(a));
