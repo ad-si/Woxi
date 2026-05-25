@@ -2919,10 +2919,12 @@ pub fn evaluate_function_call_ast_inner(
         }
         _ => (*n as usize, 2, 1),
       },
-      _ => return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: args.to_vec().into(),
-      }),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
     };
     let mut edges: Vec<Expr> = Vec::new();
     let und = |a: usize, b: usize| Expr::FunctionCall {
@@ -2984,9 +2986,7 @@ pub fn evaluate_function_call_ast_inner(
     // arguments like a bare symbol).
     let looks_like_graph_input = match &args[0] {
       Expr::List(_) => true,
-      Expr::FunctionCall { name: n, .. } => {
-        n == "Graph" || n == "SparseArray"
-      }
+      Expr::FunctionCall { name: n, .. } => n == "Graph" || n == "SparseArray",
       _ => false,
     };
     if looks_like_graph_input {

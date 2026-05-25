@@ -345,7 +345,7 @@ ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,348
 ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1.0,349
 Tanh,Returns the hyperbolic tangent,✅,pure,1.0,350
 SeedRandom,Seeds the random number generator,✅,stateful,1.0,351
-ContourPlot3D,3D contour plot,🚫,none,6.0,352
+ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,6.0,352
 Catch,Catches a value thrown by Throw,✅,pure,1.0,353
 InputForm,Converts expression to input form,✅,pure,1.0,354
 Sow,Sows an expression for collection by Reap,✅,stateful,5.0,355

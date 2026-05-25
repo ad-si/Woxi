@@ -410,6 +410,30 @@ pub fn dispatch_plotting(
     "ContourPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::contour_plot_ast(args)
     })),
+    // ContourPlot3D[f, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}, opts…] —
+    // returns a placeholder Graphics3D matching wolframscript's
+    // `-Graphics3D-`. The full level-set surface is not yet computed.
+    "ContourPlot3D"
+      if args.len() >= 4
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        )
+        && matches!(
+          &args[2],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        )
+        && matches!(
+          &args[3],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        ) =>
+    {
+      Some(quiet_plot(|| {
+        crate::functions::plot3d::graphics3d_ast(&[Expr::List(
+          vec![].into(),
+        )])
+      }))
+    }
     "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::region_plot_ast(args)
     })),

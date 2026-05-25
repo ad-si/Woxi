@@ -912,10 +912,8 @@ mod batch_unevaluated_wrappers_2 {
   fn petersen_graph_with_options() {
     // Audit case: PetersenGraph[5, 2, VertexSize -> {1 -> Medium}].
     assert_eq!(
-      interpret(
-        "Head[PetersenGraph[5, 2, VertexSize -> {1 -> Medium}]]"
-      )
-      .unwrap(),
+      interpret("Head[PetersenGraph[5, 2, VertexSize -> {1 -> Medium}]]")
+        .unwrap(),
       "Graph"
     );
   }

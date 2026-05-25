@@ -186,6 +186,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ContinuedFraction" => Some((1, 2)),
     "ContinuedFractionK" => Some((2, 2)),
     "ContourPlot" => Some((3, usize::MAX)),
+    "ContourPlot3D" => Some((4, usize::MAX)),
     "Convergents" => Some((1, 2)),
     "CoordinateBounds" => Some((1, 2)),
     "CoordinateBoundsArray" => Some((1, 2)),
