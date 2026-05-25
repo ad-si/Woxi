@@ -3478,6 +3478,22 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn median_filter_2d_uses_square_neighbourhood() {
+    // 2D MedianFilter uses a (2r+1)×(2r+1) window per cell, clipped at
+    // the boundaries — not a per-row 1D window.
+    assert_eq!(
+      interpret("MedianFilter[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]").unwrap(),
+      "{{3, 7/2, 4}, {9/2, 5, 11/2}, {6, 13/2, 7}}"
+    );
+  }
+  #[test]
+  fn median_filter_2d_unsorted_input() {
+    assert_eq!(
+      interpret("MedianFilter[{{1, 5, 2}, {8, 3, 9}, {4, 7, 6}}, 1]").unwrap(),
+      "{{4, 4, 4}, {9/2, 5, 11/2}, {11/2, 13/2, 13/2}}"
+    );
+  }
+  #[test]
   fn gradient_filter_basic_radius_1() {
     // 1-D GradientFilter[list, 1]: |central difference| with edge replication.
     // wolframscript: {0.5, 1., 1., 1., 1.5, 0., 1.5, 1., 1., 1., 0.5}

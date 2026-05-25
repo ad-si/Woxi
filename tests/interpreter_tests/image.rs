@@ -945,6 +945,21 @@ mod image_processing {
     assert_eq!(result, "{3, 1}");
   }
 
+  // MedianFilter on an Image applies the 2D median filter per channel.
+  #[test]
+  fn median_filter_image_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[MedianFilter[Image[{{0.1, 0.5, 0.2}, {0.8, 0.3, 0.9}, {0.4, 0.7, 0.6}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.5, 0.5}, \
+       {0.5, 0.5, 0.6000000238418579}, \
+       {0.699999988079071, 0.699999988079071, 0.699999988079071}}"
+    );
+  }
+
   // Default ImageRotate[image] is a Pi/2 counter-clockwise rotation.
   // For a 2x2 image, pixel data is reorganised but precision is
   // preserved (no Byte quantization round-trip).

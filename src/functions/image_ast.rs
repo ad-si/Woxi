@@ -2769,14 +2769,112 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // MedianFilter[list, r] — replace each element with the median of its
-  // range-r neighbourhood (window clipped at boundaries).
-  if let (Expr::List(elems), Some(r)) = (
-    &args[0],
-    crate::functions::math_ast::try_eval_to_f64(&args[1])
-      .filter(|v| *v >= 0.0)
-      .map(|v| v as usize),
-  ) {
+  let r = crate::functions::math_ast::try_eval_to_f64(&args[1])
+    .filter(|v| *v >= 0.0)
+    .map(|v| v as usize);
+
+  // MedianFilter[Image, r] — apply 2D median filter per channel on the
+  // pixel buffer; result preserves precision and image type.
+  if let (
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    },
+    Some(r),
+  ) = (&args[0], r)
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    let mut new_data = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      let mut window: Vec<f64> = Vec::with_capacity((2 * r + 1) * (2 * r + 1));
+      for y in 0..h {
+        for x in 0..w {
+          window.clear();
+          let y0 = y.saturating_sub(r);
+          let y1 = (y + r).min(h - 1);
+          let x0 = x.saturating_sub(r);
+          let x1 = (x + r).min(w - 1);
+          for yy in y0..=y1 {
+            for xx in x0..=x1 {
+              window.push(data[(yy * w + xx) * ch + c_idx]);
+            }
+          }
+          window
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+          // wolframscript uses the upper median (no averaging) for images
+          // so the result stays in the original value set — important for
+          // Byte / Bit images where averaging would invent new values.
+          let n = window.len();
+          let med = window[n / 2];
+          new_data[(y * w + x) * ch + c_idx] = med;
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    });
+  }
+
+  // MedianFilter[list, r] — flat 1D or 2D nested-list median filter
+  // (window clipped at boundaries).
+  if let (Expr::List(elems), Some(r)) = (&args[0], r) {
+    // 2D path: every element is a List of the same length.
+    if !elems.is_empty()
+      && elems.iter().all(|row| {
+        matches!(row, Expr::List(items) if items.len() == match &elems[0] {
+          Expr::List(first) => first.len(),
+          _ => 0,
+        })
+      })
+    {
+      let h = elems.len();
+      let w = match &elems[0] {
+        Expr::List(items) => items.len(),
+        _ => 0,
+      };
+      let get = |y: usize, x: usize| -> Expr {
+        match &elems[y] {
+          Expr::List(row) => row[x].clone(),
+          _ => unreachable!(),
+        }
+      };
+      let mut rows: Vec<Expr> = Vec::with_capacity(h);
+      for y in 0..h {
+        let mut new_row: Vec<Expr> = Vec::with_capacity(w);
+        for x in 0..w {
+          let y0 = y.saturating_sub(r);
+          let y1 = (y + r).min(h - 1);
+          let x0 = x.saturating_sub(r);
+          let x1 = (x + r).min(w - 1);
+          let mut window: Vec<Expr> =
+            Vec::with_capacity((y1 - y0 + 1) * (x1 - x0 + 1));
+          for yy in y0..=y1 {
+            for xx in x0..=x1 {
+              window.push(get(yy, xx));
+            }
+          }
+          let med =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Median".to_string(),
+              args: vec![Expr::List(window.into())].into(),
+            })
+            .unwrap_or_else(|_| get(y, x));
+          new_row.push(med);
+        }
+        rows.push(Expr::List(new_row.into()));
+      }
+      return Ok(Expr::List(rows.into()));
+    }
+    // 1D path.
     let n = elems.len();
     let mut result = Vec::with_capacity(n);
     for i in 0..n {
