@@ -82,8 +82,16 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let k_1m = elliptic_k(1.0 - *f);
         let q = (-std::f64::consts::PI * k_1m / k_m).exp();
         Ok(Expr::Real(q))
+      } else if *f < 0.0 {
+        // For m < 0, use the identity q(m) = -q(m/(m-1)), with
+        // m' = m/(m-1) ∈ (0, 1).
+        let m_prime = *f / (*f - 1.0);
+        let k_m = elliptic_k(m_prime);
+        let k_1m = elliptic_k(1.0 - m_prime);
+        let q = -(-std::f64::consts::PI * k_1m / k_m).exp();
+        Ok(Expr::Real(q))
       } else {
-        // Outside [0, 1], return unevaluated
+        // m > 1: complex result, return unevaluated for now
         Ok(Expr::FunctionCall {
           name: "EllipticNomeQ".to_string(),
           args: args.to_vec().into(),

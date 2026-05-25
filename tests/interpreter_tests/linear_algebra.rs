@@ -728,9 +728,10 @@ mod eigenvalues {
   #[test]
   fn eigenvalues_float_3x3_simple() {
     // Simpler diagonal-ish 3x3.
-    let result =
-      interpret("Eigenvalues[{{2.0, 0.0, 0.0}, {0.0, 3.0, 0.0}, {0.0, 0.0, 5.0}}]")
-        .unwrap();
+    let result = interpret(
+      "Eigenvalues[{{2.0, 0.0, 0.0}, {0.0, 3.0, 0.0}, {0.0, 0.0, 5.0}}]",
+    )
+    .unwrap();
     // Sorted by descending magnitude: 5, 3, 2
     let stripped = result.trim_start_matches('{').trim_end_matches('}');
     let vals: Vec<f64> = stripped

@@ -926,6 +926,28 @@ mod elliptic_nome_q {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("EllipticNomeQ[m]").unwrap(), "EllipticNomeQ[m]");
   }
+
+  #[test]
+  fn numeric_negative_audit_case() {
+    // EllipticNomeQ[-2.] = -0.06823782774533839 (audit)
+    let result: f64 = interpret("EllipticNomeQ[-2.]").unwrap().parse().unwrap();
+    assert!((result - (-0.06823782774533839)).abs() < 1e-12);
+  }
+
+  #[test]
+  fn numeric_negative_one() {
+    // EllipticNomeQ[-1.] = -EllipticNomeQ[1/2] ≈ -0.04321391826377226
+    let result: f64 = interpret("EllipticNomeQ[-1.]").unwrap().parse().unwrap();
+    assert!((result - (-0.04321391826377226)).abs() < 1e-12);
+  }
+
+  #[test]
+  fn numeric_negative_small() {
+    // EllipticNomeQ[-0.5] (negative, finite). Should match wolframscript.
+    // wolframscript: -0.02531991336628519
+    let result: f64 = interpret("EllipticNomeQ[-0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.02531991336628519)).abs() < 1e-12);
+  }
 }
 
 mod dedekind_eta {
