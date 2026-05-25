@@ -561,6 +561,31 @@ mod high_level_functions_tests {
     fn test_digit_sum_zero() {
       assert_eq!(interpret("DigitSum[0]").unwrap(), "0");
     }
+    #[test]
+    fn test_digit_sum_mixed_radix_hms() {
+      // wolframscript: DigitSum[102341, MixedRadix[{24, 60, 60}]] = 71.
+      // 102341 = 1*86400 + 4*3600 + 25*60 + 41 → digits {1, 4, 25, 41}.
+      assert_eq!(
+        interpret("DigitSum[102341, MixedRadix[{24, 60, 60}]]").unwrap(),
+        "71"
+      );
+    }
+    #[test]
+    fn test_digit_sum_mixed_radix_simple() {
+      // 42 with bases {2, 5}: digits {4, 0, 2}, sum 6.
+      assert_eq!(
+        interpret("DigitSum[42, MixedRadix[{2, 5}]]").unwrap(),
+        "6"
+      );
+    }
+    #[test]
+    fn test_digit_sum_mixed_radix_extra_base() {
+      // Bases {24, 60, 60, 1000} for 102341: digits {1, 42, 341}, sum 384.
+      assert_eq!(
+        interpret("DigitSum[102341, MixedRadix[{24, 60, 60, 1000}]]").unwrap(),
+        "384"
+      );
+    }
   }
 
   mod continued_fraction_tests {

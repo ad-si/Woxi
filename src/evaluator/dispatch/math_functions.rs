@@ -3538,12 +3538,9 @@ pub fn dispatch_math_functions(
         // (e.g. `4.999999999997584` for `{11, -30, 5.}`).
         let any_real = items.iter().any(|e| matches!(e, Expr::Real(_)));
         if any_real {
-          let d_num =
-            crate::functions::math_ast::try_eval_to_f64(&items[0]);
-          let m_num =
-            crate::functions::math_ast::try_eval_to_f64(&items[1]);
-          let s_num =
-            crate::functions::math_ast::try_eval_to_f64(&items[2]);
+          let d_num = crate::functions::math_ast::try_eval_to_f64(&items[0]);
+          let m_num = crate::functions::math_ast::try_eval_to_f64(&items[1]);
+          let s_num = crate::functions::math_ast::try_eval_to_f64(&items[2]);
           if let (Some(dv), Some(mv), Some(sv)) = (d_num, m_num, s_num) {
             let total_deg = dv + mv / 60.0 + sv / 3600.0;
             let sign = if total_deg < 0.0 { -1.0 } else { 1.0 };
@@ -3556,12 +3553,8 @@ pub fn dispatch_math_functions(
             let m_i = (sign * m_part) as i128;
             let s_real = sign * s_part;
             return Some(Ok(Expr::List(
-              vec![
-                Expr::Integer(d_i),
-                Expr::Integer(m_i),
-                Expr::Real(s_real),
-              ]
-              .into(),
+              vec![Expr::Integer(d_i), Expr::Integer(m_i), Expr::Real(s_real)]
+                .into(),
             )));
           }
         }
@@ -3569,7 +3562,7 @@ pub fn dispatch_math_functions(
         // fall through to the existing rational-path conversion below.
         let parts: Option<Vec<(i128, i128)>> = items
           .iter()
-          .map(|e| crate::functions::math_ast::expr_to_rational(e))
+          .map(crate::functions::math_ast::expr_to_rational)
           .collect();
         if let Some(p) = parts
           && p.len() == 3
@@ -3585,11 +3578,7 @@ pub fn dispatch_math_functions(
             .checked_mul(3600)?
             .checked_mul(md)?
             .checked_mul(sd)?
-            .checked_add(
-              mn.checked_mul(60)?
-                .checked_mul(dd)?
-                .checked_mul(sd)?,
-            )?
+            .checked_add(mn.checked_mul(60)?.checked_mul(dd)?.checked_mul(sd)?)?
             .checked_add(sn.checked_mul(dd)?.checked_mul(md)?)?;
           let den: i128 =
             dd.checked_mul(md)?.checked_mul(sd)?.checked_mul(3600)?;
@@ -3606,8 +3595,7 @@ pub fn dispatch_math_functions(
           let sec_rem = sec_num - s * den;
           if sec_rem == 0 {
             return Some(Ok(Expr::List(
-              vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)]
-                .into(),
+              vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)].into(),
             )));
           } else {
             let g2 = gcd_i128(sec_num.abs(), den.abs());

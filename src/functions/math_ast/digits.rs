@@ -100,6 +100,48 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+  // DigitSum[n, MixedRadix[{b1, b2, ..., bk}]]
+  if args.len() == 2
+    && let Expr::FunctionCall {
+      name: mname,
+      args: margs,
+    } = &args[1]
+    && mname == "MixedRadix"
+    && margs.len() == 1
+    && let Expr::List(bases) = &margs[0]
+  {
+    let mut base_vals: Vec<BigInt> = Vec::with_capacity(bases.len());
+    for b in bases.iter() {
+      let Some(bi) = expr_to_i128(b) else {
+        return Ok(Expr::FunctionCall {
+          name: "DigitSum".to_string(),
+          args: args.to_vec().into(),
+        });
+      };
+      if bi < 2 {
+        return Ok(Expr::FunctionCall {
+          name: "DigitSum".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      base_vals.push(BigInt::from(bi));
+    }
+    use num_traits::Zero;
+    let mut sum = BigInt::from(0);
+    let mut val = n;
+    // Right-to-left: rightmost digit uses last base, etc.
+    for b in base_vals.iter().rev() {
+      if val.is_zero() {
+        break;
+      }
+      sum += &val % b;
+      val /= b;
+    }
+    // Any remaining value is the overflow digit (no base constraint).
+    sum += val;
+    return Ok(bigint_to_expr(sum));
+  }
+
   let base = if args.len() == 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
