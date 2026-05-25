@@ -1057,10 +1057,10 @@ mod unimplemented_warnings {
   fn multiple_unimplemented_calls_consolidated_into_single_warning() {
     clear_state();
     let result =
-      interpret_with_stdout("{CityData[1], PetersenGraph[5]}").unwrap();
+      interpret_with_stdout("{CityData[1], MathieuS[1, 1, 1.0]}").unwrap();
     assert_eq!(result.warnings.len(), 1);
     assert!(result.warnings[0].contains("CityData[1]"));
-    assert!(result.warnings[0].contains("PetersenGraph[5]"));
+    assert!(result.warnings[0].contains("MathieuS[1, 1, 1.]"));
     assert!(
       result.warnings[0].contains("are built-in Wolfram Language functions")
     );
