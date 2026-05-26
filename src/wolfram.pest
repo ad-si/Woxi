@@ -28,7 +28,10 @@ PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 // List-based Part extraction is handled by ListExtended
 PartExtract = { (Slot | Identifier) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 
-Integer = @{ ("-")? ~ ASCII_DIGIT+ }
+// `-N^M` should bind as `-(N^M)` (Wolfram's `^` binds tighter than
+// unary `-`), so don't consume the leading `-` when it's followed by
+// digits-then-`^` — let the outer LeadingMinus path handle it.
+Integer = @{ ("-" ~ !(ASCII_DIGIT+ ~ "^"))? ~ ASCII_DIGIT+ }
 // Integer with scientific notation: 5*^3 → 5000, 5*^-13 → Rational[1, 2000000000000]
 IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
 // Real: digits followed by a single `.` (optionally more digits). The `!"."`
@@ -296,7 +299,14 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // `-` (which is PreDecrement) or a digit (which forms a signed literal).
 // Atomic: the `!"-"` lookahead must see the next raw character; we don't want
 // whitespace to hide an intervening `-`.
-LeadingMinus = @{ "-" ~ !ASCII_DIGIT ~ !"-" }
+// `-` at the start of a sub-expression: typically not followed by a
+// digit (so `-3` still parses as a signed Integer literal). The
+// exception is `-N^M`: we want to peel off the unary minus so that
+// `-10^8 = -(10^8) = -100000000` (Wolfram precedence). When the next
+// chars are `digits ^`, treat the `-` as a LeadingMinus regardless of
+// the immediately-following digit — the Integer rule has a matching
+// lookahead to release `digits ^` from its `(-)?` prefix.
+LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(ASCII_DIGIT+ ~ "^")) }
 // LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.

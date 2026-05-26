@@ -1671,6 +1671,53 @@ mod nintegrate {
     assert_approx("NIntegrate[1/x, {x, 1, E}]", 1.0, 1e-10);
   }
 
+  // ─── Narrow-Gaussian fast path ────────────────────────────────────
+  //
+  // Adaptive Simpson can't find the peak of `Exp[-α x²]` once α is
+  // large enough that the spike is much narrower than the initial
+  // sample spacing. NIntegrate detects the Gaussian shape and uses
+  // the closed form
+  //
+  //   ∫_lo^hi Exp[α x²] dx = Sqrt[π/(-α)]·(Erf[hi·Sqrt[-α]] − Erf[lo·Sqrt[-α]])/2
+  //
+  // with `α < 0`. This restores the audit case
+  // `NIntegrate[Exp[(-10^8) x²], {x, -1, 1}, WorkingPrecision -> 20,
+  // MaxRecursion -> 20]` from a timeout to its analytic value.
+  #[test]
+  fn nintegrate_narrow_gaussian_f64() {
+    // The Gaussian's width is ~10⁻⁴ vs an interval [-1, 1]; the spike
+    // would be missed by ordinary adaptive Simpson without the closed
+    // form. Answer ≈ Sqrt[π]/10⁴ ≈ 1.7724538509e-4.
+    assert_approx(
+      "NIntegrate[Exp[(-10^8)*x^2], {x, -1, 1}]",
+      0.00017724538509055160,
+      1e-15,
+    );
+  }
+
+  #[test]
+  fn nintegrate_narrow_gaussian_with_working_precision() {
+    // Audit case: with WorkingPrecision -> 20 the result is returned
+    // as a 20-digit BigFloat. Woxi's closed form is exact:
+    //   Sqrt[π/10^8]·Erf[10^4] = Sqrt[π/10^8]·1 to ~10^-43.
+    let result = interpret(
+      "NIntegrate[Exp[(-10^8)*x^2], {x, -1, 1}, WorkingPrecision -> 20, MaxRecursion -> 20]",
+    )
+    .unwrap();
+    // Result starts with the canonical Sqrt[Pi/10^8] prefix.
+    assert!(
+      result.starts_with("0.000177245385090551602"),
+      "expected Sqrt[Pi/10^8] prefix, got `{}`",
+      result
+    );
+    // 20-digit backtick precision marker.
+    assert!(
+      result.contains("`20."),
+      "expected `20. precision marker, got `{}`",
+      result
+    );
+  }
+
   #[test]
   fn nintegrate_oscillatory() {
     // ∫₀¹⁰ sin(x²) dx ≈ 0.5836708999296233

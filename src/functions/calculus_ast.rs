@@ -6957,10 +6957,7 @@ fn eval_at_infinity_diverges(expr: &Expr, var: &str) -> Option<bool> {
 /// polynomial degrees in `var`) or `Indeterminate` (same polynomial
 /// degree everywhere). Returns `None` if any summand isn't of that
 /// shape — the caller should fall back to its other heuristics.
-fn limit_bounded_oscillating_sum(
-  expr: &Expr,
-  var_name: &str,
-) -> Option<Expr> {
+fn limit_bounded_oscillating_sum(expr: &Expr, var_name: &str) -> Option<Expr> {
   use crate::syntax::BinaryOperator;
   // Collect additive terms.
   let terms: Vec<Expr> = match expr {
@@ -6971,7 +6968,9 @@ fn limit_bounded_oscillating_sum(
     } => {
       let mut v =
         crate::functions::polynomial_ast::collect_additive_terms(left);
-      v.extend(crate::functions::polynomial_ast::collect_additive_terms(right));
+      v.extend(crate::functions::polynomial_ast::collect_additive_terms(
+        right,
+      ));
       v
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -7023,11 +7022,7 @@ fn limit_bounded_oscillating_sum(
   Some(Expr::FunctionCall {
     name: "Interval".to_string(),
     args: vec![Expr::List(
-      vec![
-        Expr::Integer(-bound),
-        Expr::Integer(bound),
-      ]
-      .into(),
+      vec![Expr::Integer(-bound), Expr::Integer(bound)].into(),
     )]
     .into(),
   })
@@ -7037,10 +7032,7 @@ fn limit_bounded_oscillating_sum(
 /// coefficient is the product of factors free of `var_name` and `body`
 /// is the unique remaining factor. Returns None if there isn't exactly
 /// one var-dependent factor.
-fn split_constant_factor(
-  t: &Expr,
-  var_name: &str,
-) -> Option<(Expr, Expr)> {
+fn split_constant_factor(t: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   use crate::syntax::BinaryOperator;
   // Pull out a leading unary minus.
   let (sign, inner) = match t {
@@ -7050,9 +7042,11 @@ fn split_constant_factor(
     } => (-1i128, &**operand),
     _ => (1i128, t),
   };
-  let factors = crate::functions::polynomial_ast::collect_multiplicative_factors(inner);
-  let (const_factors, var_factors): (Vec<Expr>, Vec<Expr>) =
-    factors.into_iter().partition(|f| !contains_var(f, var_name));
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(inner);
+  let (const_factors, var_factors): (Vec<Expr>, Vec<Expr>) = factors
+    .into_iter()
+    .partition(|f| !contains_var(f, var_name));
   if var_factors.len() != 1 {
     return None;
   }
@@ -7084,8 +7078,8 @@ fn split_constant_factor(
 /// bounded-oscillating-sum heuristic where coefficients must be
 /// integer-typed to compose a clean Interval bound.
 fn expr_to_abs_int(expr: &Expr) -> Option<i128> {
-  let evaluated =
-    crate::evaluator::evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr)
+    .unwrap_or_else(|_| expr.clone());
   if let Expr::Integer(n) = evaluated {
     return Some(n.unsigned_abs() as i128);
   }
@@ -7185,9 +7179,7 @@ fn limit_at_infinity(
   // in `var_name` (wolframscript's heuristic for incommensurate
   // oscillation). With all arguments at the same polynomial degree the
   // sum is quasi-periodic and the limit stays Indeterminate.
-  if let Some(result) =
-    limit_bounded_oscillating_sum(expr, var_name)
-  {
+  if let Some(result) = limit_bounded_oscillating_sum(expr, var_name) {
     return Ok(result);
   }
 
@@ -8892,6 +8884,179 @@ fn gcd(a: i128, b: i128) -> i128 {
 }
 
 /// NIntegrate[expr, {var, lo, hi}] - Numerical integration
+/// Detect `Exp[α·var²]` integrand where `α` is constant w.r.t. `var` —
+/// matches `Exp[arg]` (FunctionCall), `E^arg` (BinaryOp::Power), and
+/// `Power[E, arg]` (FunctionCall) shapes. The inner `arg` must
+/// factor as `α · var^2` (any order, optional unary `-` baked into α).
+/// Returns the α coefficient when matched.
+fn detect_gaussian_coefficient(
+  integrand: &Expr,
+  var_name: &str,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  // Peel `Exp[arg]` or `E^arg`.
+  let arg: &Expr = match integrand {
+    Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+      &args[0]
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 =>
+    {
+      if matches!(&args[0], Expr::Identifier(s) if s == "E")
+        || matches!(&args[0], Expr::Constant(s) if s == "E")
+      {
+        &args[1]
+      } else {
+        return None;
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Identifier(s) if s == "E")
+      || matches!(left.as_ref(), Expr::Constant(s) if s == "E") =>
+    {
+      right.as_ref()
+    }
+    _ => return None,
+  };
+
+  // `arg` should be `α · var^2` (possibly with α split into multiple
+  // factors). Collect all multiplicative factors, separate out the
+  // `var^2`, and take the product of everything else as `α`.
+  let factors = crate::functions::polynomial_ast::collect_multiplicative_factors(arg);
+  let mut var_sq_count = 0;
+  let mut alpha_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    let is_var_sq = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
+          && matches!(right.as_ref(), Expr::Integer(2))
+      }
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Identifier(s) if s == var_name)
+          && matches!(&args[1], Expr::Integer(2))
+      }
+      _ => false,
+    };
+    if is_var_sq {
+      var_sq_count += 1;
+      continue;
+    }
+    // Anything that mentions `var` disqualifies the match.
+    if !is_constant_wrt(f, var_name) {
+      return None;
+    }
+    alpha_factors.push(f.clone());
+  }
+  if var_sq_count != 1 {
+    return None;
+  }
+  let alpha = if alpha_factors.is_empty() {
+    Expr::Integer(1)
+  } else if alpha_factors.len() == 1 {
+    alpha_factors.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: alpha_factors.into(),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&alpha).ok()
+}
+
+/// Build `Sqrt[π/(-α)] · (Erf[hi·Sqrt[-α]] − Erf[lo·Sqrt[-α]]) / 2` as
+/// a fully evaluated `Expr`. When `precision` is `Some(p)`, wraps the
+/// result in `N[..., p]` so the output is a `p`-digit BigFloat.
+fn gaussian_closed_form_integral(
+  alpha: &Expr,
+  lo: f64,
+  hi: f64,
+  precision: Option<i128>,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  // Build `-α` and `Sqrt[-α]` as exact expressions so high-precision
+  // evaluation later doesn't suffer f64-to-Real downcasting.
+  let neg_alpha = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), alpha.clone()].into(),
+  };
+  let neg_alpha_eval =
+    crate::evaluator::evaluate_expr_to_expr(&neg_alpha)?;
+  let sqrt_neg_alpha = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![neg_alpha_eval.clone()].into(),
+  };
+  let pi_over_neg_alpha = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::Constant("Pi".to_string())),
+    right: Box::new(neg_alpha_eval.clone()),
+  };
+  let sqrt_pi_over = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![pi_over_neg_alpha].into(),
+  };
+
+  let bound_expr = |v: f64| -> Expr {
+    // Bounds come in as f64; turn integer-valued ones back into exact
+    // Integers (so e.g. lo=-1, hi=1 → exact -1, 1).
+    if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e18 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  let hi_arg = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![bound_expr(hi), sqrt_neg_alpha.clone()].into(),
+  };
+  let lo_arg = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![bound_expr(lo), sqrt_neg_alpha].into(),
+  };
+  let erf_hi = Expr::FunctionCall {
+    name: "Erf".to_string(),
+    args: vec![hi_arg].into(),
+  };
+  let erf_lo = Expr::FunctionCall {
+    name: "Erf".to_string(),
+    args: vec![lo_arg].into(),
+  };
+  let diff = Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(erf_hi),
+    right: Box::new(erf_lo),
+  };
+  let half = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(diff),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let result_symbolic = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![sqrt_pi_over, half].into(),
+  };
+
+  if let Some(p) = precision {
+    let n_call = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![result_symbolic, Expr::Integer(p)].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&n_call);
+  }
+  // No WorkingPrecision: f64.
+  let n_call = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![result_symbolic].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&n_call)
+}
+
 pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -8902,6 +9067,7 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
+  let mut working_precision: Option<i128> = None;
   // Recognised method names — anything else triggers NIntegrate::bdmtd.
   // These are the standard Wolfram NIntegrate strategies; Woxi treats
   // them all as the same adaptive Simpson backend internally for now.
@@ -8956,6 +9122,13 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "MaxRecursion" => {
         if let Some(n) = crate::functions::math_ast::expr_to_i128(opt_value) {
           max_recursion = n.max(1) as u32;
+        }
+      }
+      "WorkingPrecision" => {
+        if let Some(p) = crate::functions::math_ast::expr_to_i128(opt_value)
+          && p > 0
+        {
+          working_precision = Some(p);
         }
       }
       "Method" => {
@@ -9029,6 +9202,24 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let integrand = &args[0];
+
+  // Gaussian fast path: detect `Exp[α x²]` (or `E^(α x²)`) where α is a
+  // numeric constant w.r.t. the integration variable. Use the closed
+  // form `Sqrt[π/(-α)] * (Erf[hi·Sqrt[-α]] − Erf[lo·Sqrt[-α]])/2` so
+  // narrow-peak inputs (e.g. α = -10^8) don't time out in adaptive
+  // Simpson. When WorkingPrecision is set, evaluate via N[...] at that
+  // precision so the output matches Wolfram's BigFloat form.
+  if !lo.is_infinite()
+    && !hi.is_infinite()
+    && let Some(alpha) = detect_gaussian_coefficient(integrand, &var_name)
+  {
+    return gaussian_closed_form_integral(
+      &alpha,
+      lo,
+      hi,
+      working_precision,
+    );
+  }
 
   // Evaluate the integrand at a point
   let eval_at = |x: f64| -> Option<f64> {
