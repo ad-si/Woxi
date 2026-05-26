@@ -6616,6 +6616,31 @@ mod batch_inert_symbols_3 {
   fn cloud_export() {
     assert_eq!(interpret("CloudExport[x]").unwrap(), "CloudExport[x]");
   }
+
+  #[test]
+  fn cloud_export_with_image_and_format() {
+    // Audit case: CloudExport requires a Wolfram Cloud auth + network
+    // round trip that Woxi cannot perform, so we keep the call
+    // symbolic. The image collapses to the standard `-Image-` summary
+    // so the result must not hang on large literals.
+    assert_eq!(
+      interpret("CloudExport[Image[{{{0.5, 0.5, 0.5}, {0.6, 0.6, 0.6}}}], \"JPEG\"]").unwrap(),
+      "CloudExport[-Image-, JPEG]"
+    );
+  }
+
+  #[test]
+  fn cloud_export_with_uri() {
+    // Three-argument form: an explicit destination URI must be carried
+    // through the unevaluated wrapper.
+    assert_eq!(
+      interpret(
+        "CloudExport[Image[{{0.5}}], \"PNG\", \"obj/foo\"]"
+      )
+      .unwrap(),
+      "CloudExport[-Image-, PNG, obj/foo]"
+    );
+  }
 }
 
 mod right_composition {
