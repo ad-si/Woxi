@@ -183,6 +183,13 @@ fn polynomial_term_to_series_data(
 fn try_series_data_plus(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
+  // Nothing to combine if there are 0 or 1 summands total.
+  // Guards against infinite recursion when called on a single SeriesData via
+  // the single-SeriesData lifting branch below (lifted = args = [SD]).
+  if args.len() < 2 {
+    return Ok(None);
+  }
+
   // Collect indices of SeriesData arguments grouped by (var, x0).
   // Different denoms are merged by lcm.
   let series_indices: Vec<usize> = args

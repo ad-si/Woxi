@@ -1005,6 +1005,42 @@ mod series {
     );
   }
 
+  // Regression: Simplify/Expand on a bare SeriesData head with x0 == 0 used
+  // to recurse infinitely through `try_series_data_plus` (a single-arg call
+  // re-entered the same single-SeriesData lifting branch).
+  #[test]
+  fn simplify_series_data_no_stack_overflow() {
+    assert_eq!(
+      interpret("Simplify[SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]]").unwrap(),
+      "SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn full_simplify_series_data_no_stack_overflow() {
+    assert_eq!(
+      interpret("FullSimplify[SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]]")
+        .unwrap(),
+      "SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn expand_series_data_no_stack_overflow() {
+    assert_eq!(
+      interpret("Expand[SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]]").unwrap(),
+      "SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn factor_series_data_no_stack_overflow() {
+    assert_eq!(
+      interpret("Factor[SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]]").unwrap(),
+      "SeriesData[x, 0, {a, b, c, d}, 0, 4, 1]"
+    );
+  }
+
   #[test]
   fn series_exp_two_vars_nested_series_data() {
     assert_eq!(
@@ -6008,18 +6044,12 @@ mod cases {
   // evaluated before the size budget is checked.
   #[test]
   fn memory_constrained_small_result() {
-    assert_case(
-      r#"MemoryConstrained[1 + 2, 1000]"#,
-      r#"3"#,
-    );
+    assert_case(r#"MemoryConstrained[1 + 2, 1000]"#, r#"3"#);
   }
   #[test]
   fn memory_constrained_large_result_aborts() {
     // Range[1000] is a 1000-element list — well over 100 bytes.
-    assert_case(
-      r#"MemoryConstrained[Range[1000], 100]"#,
-      r#"$Aborted"#,
-    );
+    assert_case(r#"MemoryConstrained[Range[1000], 100]"#, r#"$Aborted"#);
   }
   #[test]
   fn memory_constrained_fallback_form() {
@@ -6031,10 +6061,7 @@ mod cases {
   // Body that fits returns the result even with the fallback form.
   #[test]
   fn memory_constrained_fallback_unused_when_fits() {
-    assert_case(
-      r#"MemoryConstrained[1 + 2, 1000, $Failed]"#,
-      r#"3"#,
-    );
+    assert_case(r#"MemoryConstrained[1 + 2, 1000, $Failed]"#, r#"3"#);
   }
   #[test]
   fn d_22() {
