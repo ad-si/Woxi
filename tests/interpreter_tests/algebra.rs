@@ -2527,6 +2527,45 @@ mod reduce {
     assert_eq!(interpret("Reduce[False, x]").unwrap(), "False");
   }
 
+  // Reduce[..., Modulus -> n] enumerates solutions in Z/nZ.
+  #[test]
+  fn reduce_modulus_one_var_quadratic() {
+    assert_eq!(
+      interpret("Reduce[x^2 == 1, x, Modulus -> 5]").unwrap(),
+      "x == 1 || x == 4"
+    );
+  }
+
+  #[test]
+  fn reduce_modulus_one_var_quadratic_mod4() {
+    assert_eq!(
+      interpret("Reduce[x^2 == 1, x, Modulus -> 4]").unwrap(),
+      "x == 1 || x == 3"
+    );
+  }
+
+  // Two-variable polynomial mod 4 (the audit case).
+  #[test]
+  fn reduce_modulus_two_vars() {
+    assert_eq!(
+      interpret(
+        "Reduce[x^5 == y^4 + x*y + 1, {x, y}, Modulus -> 4]"
+      )
+      .unwrap(),
+      "(x == 1 && y == 0) || (x == 1 && y == 3) || (x == 2 && y == 1) || \
+       (x == 2 && y == 3) || (x == 3 && y == 2) || (x == 3 && y == 3)"
+    );
+  }
+
+  // No solutions returns False.
+  #[test]
+  fn reduce_modulus_no_solutions() {
+    assert_eq!(
+      interpret("Reduce[x^2 == 2, x, Modulus -> 4]").unwrap(),
+      "False"
+    );
+  }
+
   // ── Linear equations ──
 
   #[test]

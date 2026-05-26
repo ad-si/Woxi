@@ -135,7 +135,16 @@ pub fn dispatch_polynomial_functions(
     "Cyclotomic" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::cyclotomic_ast(args));
     }
-    "Reduce" if args.len() >= 2 && args.len() <= 3 => {
+    "Reduce" if args.len() == 3 => {
+      // Reduce[expr, vars, Modulus -> n]: brute-force enumerate
+      // solutions in Z/nZ. Falls through to the generic reduce_ast
+      // when the third arg isn't a Modulus rule.
+      if let Some(result) = try_reduce_modulus(&args[0], &args[1], &args[2]) {
+        return Some(Ok(result));
+      }
+      return Some(crate::functions::polynomial_ast::reduce_ast(args));
+    }
+    "Reduce" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }
     "FindInstance" if args.len() >= 2 && args.len() <= 4 => {
@@ -468,6 +477,168 @@ pub fn dispatch_polynomial_functions(
 }
 
 /// Closed-form solver for `Op[{f, cons}, {v1, v2}]` where:
+/// `Reduce[equation, vars, Modulus -> n]` — enumerate all integer
+/// solutions in `[0, n)^k`. The third argument must be a `Modulus -> n`
+/// Rule with a positive integer modulus; otherwise returns None and the
+/// caller falls through to the generic Reduce.
+fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
+  // Parse Modulus -> n option.
+  let modulus = match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      if !matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Modulus") {
+        return None;
+      }
+      match replacement.as_ref() {
+        Expr::Integer(n) if *n >= 2 => *n,
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+
+  // Collect variable names: either a single Identifier or a list of them.
+  let var_names: Vec<String> = match vars {
+    Expr::Identifier(s) => vec![s.clone()],
+    Expr::List(items) => {
+      let mut v = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::Identifier(s) => v.push(s.clone()),
+          _ => return None,
+        }
+      }
+      v
+    }
+    _ => return None,
+  };
+  if var_names.is_empty() || var_names.len() > 4 {
+    // Cap at 4 variables to avoid runaway 256^4 explosions.
+    return None;
+  }
+
+  // The equation must be `lhs == rhs` (Equal). Anything else (And, Or,
+  // inequality) is left for the generic reducer.
+  let (lhs, rhs) = match expr {
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+    {
+      (operands[0].clone(), operands[1].clone())
+    }
+    _ => return None,
+  };
+
+  // Iterate over all assignments in [0, n)^k.
+  let n = modulus as usize;
+  let k = var_names.len();
+  let mut indices = vec![0usize; k];
+  let mut solutions: Vec<Vec<i128>> = Vec::new();
+  loop {
+    // Substitute each variable with its current integer value.
+    let mut sub_lhs = lhs.clone();
+    let mut sub_rhs = rhs.clone();
+    for (i, name) in var_names.iter().enumerate() {
+      sub_lhs = crate::syntax::substitute_variable(
+        &sub_lhs,
+        name,
+        &Expr::Integer(indices[i] as i128),
+      );
+      sub_rhs = crate::syntax::substitute_variable(
+        &sub_rhs,
+        name,
+        &Expr::Integer(indices[i] as i128),
+      );
+    }
+    // Evaluate both sides; require integer results so we can take them mod n.
+    let l_eval = crate::evaluator::evaluate_expr_to_expr(&sub_lhs).ok()?;
+    let r_eval = crate::evaluator::evaluate_expr_to_expr(&sub_rhs).ok()?;
+    let (Expr::Integer(li), Expr::Integer(ri)) = (&l_eval, &r_eval) else {
+      return None;
+    };
+    let l_mod = li.rem_euclid(modulus);
+    let r_mod = ri.rem_euclid(modulus);
+    if l_mod == r_mod {
+      solutions.push(indices.iter().map(|&x| x as i128).collect());
+    }
+    // Increment counters like an odometer: the LAST variable changes
+    // fastest, matching wolframscript's lexicographic enumeration.
+    let mut carry = true;
+    for i in (0..k).rev() {
+      if !carry {
+        break;
+      }
+      indices[i] += 1;
+      if indices[i] < n {
+        carry = false;
+      } else {
+        indices[i] = 0;
+      }
+    }
+    if carry {
+      break;
+    }
+  }
+
+  if solutions.is_empty() {
+    return Some(Expr::Identifier("False".to_string()));
+  }
+
+  // Build (x == v1 && y == w1) || (x == v2 && y == w2) || ...
+  let mut clauses: Vec<Expr> = Vec::with_capacity(solutions.len());
+  for sol in &solutions {
+    let eqs: Vec<Expr> = sol
+      .iter()
+      .zip(var_names.iter())
+      .map(|(v, name)| {
+        if k == 1 {
+          Expr::Comparison {
+            operands: vec![
+              Expr::Identifier(name.clone()),
+              Expr::Integer(*v),
+            ],
+            operators: vec![crate::syntax::ComparisonOp::Equal],
+          }
+        } else {
+          Expr::Comparison {
+            operands: vec![
+              Expr::Identifier(name.clone()),
+              Expr::Integer(*v),
+            ],
+            operators: vec![crate::syntax::ComparisonOp::Equal],
+          }
+        }
+      })
+      .collect();
+    let clause = if eqs.len() == 1 {
+      eqs.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: eqs.into(),
+      }
+    };
+    clauses.push(clause);
+  }
+  let result = if clauses.len() == 1 {
+    clauses.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Or".to_string(),
+      args: clauses.into(),
+    }
+  };
+  Some(result)
+}
+
 ///   * f is linear in v1, v2 with numeric coefficients,
 ///   * cons is `v1^2 + v2^2 op R^2` (with op being `LessEqual`, `Less`,
 ///     `GreaterEqual`, `Greater`, or `Equal`),
