@@ -772,6 +772,88 @@ mod jacobi_zeta {
   }
 }
 
+mod elliptic_exp {
+  use super::*;
+
+  fn parse_pair(s: &str) -> (f64, f64) {
+    let inner = s
+      .trim()
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .trim();
+    let mut parts = inner.split(',');
+    let x: f64 = parts.next().unwrap().trim().parse().unwrap();
+    let y: f64 = parts.next().unwrap().trim().parse().unwrap();
+    (x, y)
+  }
+
+  fn assert_close(got: f64, expected: f64, msg: &str) {
+    let tol = 1e-9 * expected.abs().max(1.0);
+    assert!(
+      (got - expected).abs() < tol,
+      "{msg}: got {got}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn negative_u_audit_case() {
+    // Audit case: EllipticExp[-0.4, {4, 1}] → {5.043827135411493, 15.333640384130709}
+    let result = interpret("EllipticExp[-0.4, {4, 1}]").unwrap();
+    let (x, y) = parse_pair(&result);
+    assert_close(x, 5.043827135411493, "x");
+    assert_close(y, 15.333640384130709, "y");
+  }
+
+  #[test]
+  fn small_negative_u_large_x() {
+    let result = interpret("EllipticExp[-0.1, {4, 1}]").unwrap();
+    let (x, y) = parse_pair(&result);
+    assert_close(x, 98.67528490530962, "x");
+    assert_close(y, 999.9142994129613, "y");
+  }
+
+  #[test]
+  fn larger_negative_u_small_x() {
+    let result = interpret("EllipticExp[-1.0, {4, 1}]").unwrap();
+    let (x, y) = parse_pair(&result);
+    assert_close(x, 0.21791718623082618, "x");
+    assert_close(y, 0.6466971594261198, "y");
+  }
+
+  #[test]
+  fn positive_u_flips_y_sign() {
+    // EllipticExp[u, {a, b}] == {x(|u|), -sign(u) * y(|u|)}
+    let result = interpret("EllipticExp[0.4, {4, 1}]").unwrap();
+    let (x, y) = parse_pair(&result);
+    assert_close(x, 5.043827135411493, "x");
+    assert_close(y, -15.333640384130709, "y");
+  }
+
+  #[test]
+  fn different_curve_parameters() {
+    let result = interpret("EllipticExp[-0.3, {2, 1}]").unwrap();
+    let (x, y) = parse_pair(&result);
+    assert_close(x, 10.450531251495653, "x");
+    assert_close(y, 37.01645463778015, "y");
+  }
+
+  #[test]
+  fn b_greater_than_a() {
+    let result = interpret("EllipticExp[-0.5, {1, 2}]").unwrap();
+    let (x, y) = parse_pair(&result);
+    assert_close(x, 3.58917180413188, "x");
+    assert_close(y, 8.142282396294094, "y");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(
+      interpret("EllipticExp[u, {a, b}]").unwrap(),
+      "EllipticExp[u, {a, b}]"
+    );
+  }
+}
+
 mod elliptic_e_incomplete {
   use super::*;
 
@@ -1769,10 +1851,7 @@ mod cases {
   // rescue the symbol.
   #[test]
   fn six_j_symbol_symbolic_no_support() {
-    assert_case(
-      r#"SixJSymbol[{1, 0, 100}, {1, m, 1}]"#,
-      r#"0"#,
-    );
+    assert_case(r#"SixJSymbol[{1, 0, 100}, {1, m, 1}]"#, r#"0"#);
   }
 
   #[test]

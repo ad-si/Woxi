@@ -307,6 +307,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Element" => Some((2, 2)),
     "Eliminate" => Some((2, 2)),
     "EllipticE" => Some((1, 2)),
+    "EllipticExp" => Some((2, 2)),
     "EllipticF" => Some((2, 2)),
     "EllipticK" => Some((1, 1)),
     "EllipticNomeQ" => Some((1, 1)),

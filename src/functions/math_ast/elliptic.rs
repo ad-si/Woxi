@@ -807,3 +807,203 @@ fn dedekind_eta_numeric(re: f64, im: f64) -> (f64, f64) {
   let res_im = pre_re * prod_im + pre_im * prod_re;
   (res_re, res_im)
 }
+
+// ─── EllipticExp ───────────────────────────────────────────────────────
+//
+// EllipticExp[u, {a, b}] is the inverse of EllipticLog on the elliptic
+// curve y² = x³ + a x² + b x. For real u and real positive-discriminant
+// parameters, return {x, y} numerically.
+//
+// Derivation. Writing the integrand on [x, ∞] and substituting w = 1/√t:
+//     F(x) := ∫_x^∞ dt / (2·√(t³ + a t² + b t))
+//           = ∫_0^{1/√x} dw / √(1 + a w² + b w⁴)   (=: G(τ), τ = 1/√x)
+// G is monotone, well-defined for all τ ≥ 0, and G(0) = 0. We invert it
+// with Newton's method (G′(τ) = 1/√(1 + a τ² + b τ⁴)) and recover
+// x = 1/τ², y = ±√(x³ + a x² + b x). EllipticLog has the sign convention
+// `u < 0 ⇒ y > 0`, so `y = -sign(u)·|y|`.
+
+pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "EllipticExp".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let u = match expr_to_real_f64(&args[0]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "EllipticExp".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let (a, b) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => {
+      match (expr_to_real_f64(&items[0]), expr_to_real_f64(&items[1])) {
+        (Some(a), Some(b)) => (a, b),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "EllipticExp".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "EllipticExp".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  if u == 0.0 {
+    return Ok(Expr::List(
+      vec![
+        Expr::Identifier("ComplexInfinity".to_string()),
+        Expr::Identifier("ComplexInfinity".to_string()),
+      ]
+      .into(),
+    ));
+  }
+  match elliptic_exp_real(u, a, b) {
+    Some((x, y)) => {
+      Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+    }
+    None => Ok(Expr::FunctionCall {
+      name: "EllipticExp".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
+fn expr_to_real_f64(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let n = expr_to_real_f64(&args[0])?;
+      let d = expr_to_real_f64(&args[1])?;
+      Some(n / d)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut prod = 1.0;
+      for a in args.iter() {
+        prod *= expr_to_real_f64(a)?;
+      }
+      Some(prod)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut sum = 0.0;
+      for a in args.iter() {
+        sum += expr_to_real_f64(a)?;
+      }
+      Some(sum)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let base = expr_to_real_f64(&args[0])?;
+      let exp = expr_to_real_f64(&args[1])?;
+      Some(base.powf(exp))
+    }
+    _ => None,
+  }
+}
+
+/// Compute EllipticExp[u, {a, b}] for real u, a, b. Returns None if the
+/// inversion fails (e.g. u out of the real range of EllipticLog).
+fn elliptic_exp_real(u: f64, a: f64, b: f64) -> Option<(f64, f64)> {
+  let target = u.abs();
+  // Newton's method to find τ such that G(τ) = target.
+  // For small target, G(τ) ≈ τ, so τ ≈ target is a good initial guess.
+  let mut tau = target;
+  for _ in 0..200 {
+    let val = elliptic_g(tau, a, b);
+    let deriv = 1.0 / (1.0 + a * tau * tau + b * tau.powi(4)).sqrt();
+    let step = (target - val) / deriv;
+    let mut new_tau = tau + step;
+    if !new_tau.is_finite() || new_tau <= 0.0 {
+      new_tau = tau * 0.5;
+    }
+    if (new_tau - tau).abs() < 1e-15 * (1.0 + tau.abs()) {
+      tau = new_tau;
+      break;
+    }
+    tau = new_tau;
+  }
+  if !tau.is_finite() || tau <= 0.0 {
+    return None;
+  }
+  let x = 1.0 / (tau * tau);
+  let radicand = x * x * x + a * x * x + b * x;
+  if radicand < 0.0 {
+    return None;
+  }
+  let y_abs = radicand.sqrt();
+  let y = if u > 0.0 { -y_abs } else { y_abs };
+  Some((x, y))
+}
+
+/// G(τ) = ∫_0^τ dw / √(1 + a w² + b w⁴), via 64-point Gauss-Legendre
+/// quadrature on [0, τ]. The integrand is smooth (no singularities), so
+/// the rule converges to near machine precision for τ of moderate size.
+fn elliptic_g(tau: f64, a: f64, b: f64) -> f64 {
+  if tau <= 0.0 {
+    return 0.0;
+  }
+  let nodes = elliptic_gl_nodes_weights();
+  let half = tau * 0.5;
+  let mut sum = 0.0;
+  for (t, w) in nodes.iter() {
+    let wval = half * (t + 1.0);
+    let f = 1.0 / (1.0 + a * wval * wval + b * wval.powi(4)).sqrt();
+    sum += w * f;
+  }
+  half * sum
+}
+
+// Cache of Gauss-Legendre 64-point nodes/weights on [-1, 1]. Computed
+// once per process using the same Newton iteration as elsewhere in
+// math_ast/misc_special.rs but kept local so this module does not
+// depend on misc_special's internals.
+fn elliptic_gl_nodes_weights() -> &'static [(f64, f64)] {
+  use std::sync::OnceLock;
+  static NODES: OnceLock<Vec<(f64, f64)>> = OnceLock::new();
+  NODES.get_or_init(compute_gl64)
+}
+
+fn compute_gl64() -> Vec<(f64, f64)> {
+  let n = 64;
+  let mut out = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut x = -(std::f64::consts::PI * (4 * i + 3) as f64
+      / (4 * n + 2) as f64)
+      .cos();
+    for _ in 0..100 {
+      let (p, dp) = legendre_p_and_deriv(n, x);
+      let dx = -p / dp;
+      x += dx;
+      if dx.abs() < 1e-16 {
+        break;
+      }
+    }
+    let (_, dp) = legendre_p_and_deriv(n, x);
+    let w = 2.0 / ((1.0 - x * x) * dp * dp);
+    out.push((x, w));
+  }
+  out
+}
+
+fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
+  let mut p0 = 1.0;
+  let mut p1 = x;
+  for k in 1..n {
+    let pk = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0)
+      / ((k + 1) as f64);
+    p0 = p1;
+    p1 = pk;
+  }
+  let dp = (n as f64) * (x * p1 - p0) / (x * x - 1.0);
+  (p1, dp)
+}

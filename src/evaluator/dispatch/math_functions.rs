@@ -746,6 +746,9 @@ pub fn dispatch_math_functions(
     "EllipticK" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_k_ast(args));
     }
+    "EllipticExp" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::elliptic_exp_ast(args));
+    }
     "EllipticE" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::elliptic_e_ast(args));
     }
