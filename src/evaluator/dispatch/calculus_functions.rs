@@ -1175,6 +1175,29 @@ fn inverse_laplace_transform(
   s_expr: &Expr,
   t_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Multi-variable form `InverseLaplaceTransform[F, {s1, s2, …}, {t1, t2, …}]`:
+  // handle the 2-variable case via a small library of known F(p*q) and
+  // F(p+q) shapes (Efros's theorem). Anything else stays unevaluated.
+  if let (Expr::List(svars), Expr::List(tvars)) = (s_expr, t_expr)
+    && svars.len() == 2
+    && tvars.len() == 2
+    && let (Expr::Identifier(p), Expr::Identifier(q)) = (&svars[0], &svars[1])
+    && let (Expr::Identifier(x), Expr::Identifier(y)) = (&tvars[0], &tvars[1])
+  {
+    let normalized = normalize_to_func_calls(expr);
+    let normalized = crate::evaluator::evaluate_expr_to_expr(&normalized)
+      .unwrap_or(normalized);
+    if let Some(result) =
+      inverse_laplace_2d(&normalized, p, q, x, y)
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+    return Ok(Expr::FunctionCall {
+      name: "InverseLaplaceTransform".to_string(),
+      args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
+    });
+  }
+
   let s = match s_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -1206,6 +1229,233 @@ fn inverse_laplace_transform(
       args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
     })
   }
+}
+
+/// Two-variable inverse Laplace transform L^-1_{p, q}[F](x, y).
+///
+/// We don't implement the general Efros theorem; instead we recognise a
+/// small library of F shapes whose closed-form inverses are documented
+/// in standard references and match wolframscript:
+///
+///   F = 1/(p*q)         → 1
+///   F = 1/(p + q)       → DiracDelta[-x + y]
+///   F = 1/(1 + p*q)     → BesselJ[0, 2*Sqrt[x]*Sqrt[y]]
+///   F = 1/Sqrt[1 + p*q] → Cosh[2*Sqrt[-(x*y)]]/(Pi*Sqrt[x]*Sqrt[y])
+fn inverse_laplace_2d(
+  expr: &Expr,
+  p: &str,
+  q: &str,
+  x: &str,
+  y: &str,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+
+  // F = 1/(p*q): extract num/den and check denominator = p*q.
+  let (num, den) =
+    crate::functions::polynomial_ast::together::extract_num_den(expr);
+
+  let is_product_pq = |e: &Expr| -> bool {
+    // Match p*q or q*p in any AST shape.
+    let extract_factors = |e: &Expr| -> Vec<Expr> {
+      if let Some((fname, fargs)) = as_func_args(e)
+        && fname == "Times"
+      {
+        return fargs.iter().map(|f| (*f).clone()).collect();
+      }
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } = e
+      {
+        return vec![(**left).clone(), (**right).clone()];
+      }
+      vec![e.clone()]
+    };
+    let factors = extract_factors(e);
+    if factors.len() != 2 {
+      return false;
+    }
+    let has_p = factors
+      .iter()
+      .any(|f| matches!(f, Expr::Identifier(n) if n == p));
+    let has_q = factors
+      .iter()
+      .any(|f| matches!(f, Expr::Identifier(n) if n == q));
+    has_p && has_q
+  };
+
+  let is_sum_pq = |e: &Expr| -> bool {
+    let extract_terms = |e: &Expr| -> Vec<Expr> {
+      if let Some((fname, fargs)) = as_func_args(e)
+        && fname == "Plus"
+      {
+        return fargs.iter().map(|f| (*f).clone()).collect();
+      }
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } = e
+      {
+        return vec![(**left).clone(), (**right).clone()];
+      }
+      vec![e.clone()]
+    };
+    let terms = extract_terms(e);
+    if terms.len() != 2 {
+      return false;
+    }
+    let has_p = terms
+      .iter()
+      .any(|f| matches!(f, Expr::Identifier(n) if n == p));
+    let has_q = terms
+      .iter()
+      .any(|f| matches!(f, Expr::Identifier(n) if n == q));
+    has_p && has_q
+  };
+
+  let is_one_plus_pq = |e: &Expr| -> bool {
+    // 1 + p*q in any order.
+    let extract_terms = |e: &Expr| -> Vec<Expr> {
+      if let Some((fname, fargs)) = as_func_args(e)
+        && fname == "Plus"
+      {
+        return fargs.iter().map(|f| (*f).clone()).collect();
+      }
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } = e
+      {
+        return vec![(**left).clone(), (**right).clone()];
+      }
+      vec![e.clone()]
+    };
+    let terms = extract_terms(e);
+    if terms.len() != 2 {
+      return false;
+    }
+    let has_one =
+      terms.iter().any(|t| matches!(t, Expr::Integer(1)));
+    let has_pq = terms.iter().any(is_product_pq);
+    has_one && has_pq
+  };
+
+  let sqrt_x = || Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Identifier(x.to_string())].into(),
+  };
+  let sqrt_y = || Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::Identifier(y.to_string())].into(),
+  };
+
+  // Case 1: F = 1/(p*q) → 1.
+  if matches!(&num, Expr::Integer(1)) && is_product_pq(&den) {
+    return Some(Expr::Integer(1));
+  }
+
+  // Case 2: F = 1/(p + q) → DiracDelta[-x + y].
+  if matches!(&num, Expr::Integer(1)) && is_sum_pq(&den) {
+    return Some(Expr::FunctionCall {
+      name: "DiracDelta".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              Expr::Identifier(x.to_string()),
+            ]
+            .into(),
+          },
+          Expr::Identifier(y.to_string()),
+        ]
+        .into(),
+      }]
+      .into(),
+    });
+  }
+
+  // Case 3: F = 1/(1 + p*q) → BesselJ[0, 2*Sqrt[x]*Sqrt[y]].
+  if matches!(&num, Expr::Integer(1)) && is_one_plus_pq(&den) {
+    return Some(Expr::FunctionCall {
+      name: "BesselJ".to_string(),
+      args: vec![
+        Expr::Integer(0),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(2), sqrt_x(), sqrt_y()].into(),
+        },
+      ]
+      .into(),
+    });
+  }
+
+  // Case 4: F = 1/Sqrt[1 + p*q] → Cosh[2*Sqrt[-(x*y)]] / (Pi*Sqrt[x]*Sqrt[y]).
+  // The denominator after `extract_num_den` peels one (-1) exponent off
+  // Power[1 + p*q, -1/2]; what's left is Sqrt[1 + p*q] (or
+  // (1 + p*q)^(1/2)). Match either form.
+  let is_sqrt_one_plus_pq = |e: &Expr| -> bool {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Sqrt"
+      && args.len() == 1
+    {
+      return is_one_plus_pq(&args[0]);
+    }
+    if let Some((fname, fargs)) = as_func_args(e)
+      && fname == "Power"
+      && fargs.len() == 2
+      && let Expr::FunctionCall { name: rn, args: ra } = &fargs[1]
+      && rn == "Rational"
+      && ra.len() == 2
+      && matches!(&ra[0], Expr::Integer(1))
+      && matches!(&ra[1], Expr::Integer(2))
+    {
+      return is_one_plus_pq(fargs[0]);
+    }
+    false
+  };
+  if matches!(&num, Expr::Integer(1)) && is_sqrt_one_plus_pq(&den) {
+    let neg_xy = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(-1),
+        Expr::Identifier(x.to_string()),
+        Expr::Identifier(y.to_string()),
+      ]
+      .into(),
+    };
+    let cosh_arg = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(2),
+        Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![neg_xy].into(),
+        },
+      ]
+      .into(),
+    };
+    let cosh = Expr::FunctionCall {
+      name: "Cosh".to_string(),
+      args: vec![cosh_arg].into(),
+    };
+    let pi_sqrt_xy = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Constant("Pi".to_string()), sqrt_x(), sqrt_y()].into(),
+    };
+    return Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(cosh),
+      right: Box::new(pi_sqrt_xy),
+    });
+  }
+
+  None
 }
 
 /// Try to compute inverse Laplace transform symbolically.
@@ -3741,13 +3991,13 @@ fn gf_divide(
       right: Box::new(inv_den),
     };
     // Guard: avoid infinite recursion if rewriting produces an equivalent expression
-    if crate::syntax::expr_to_string(&product) == crate::syntax::expr_to_string(
-      &Expr::BinaryOp {
+    if crate::syntax::expr_to_string(&product)
+      == crate::syntax::expr_to_string(&Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(num.clone()),
         right: Box::new(den.clone()),
-      },
-    ) {
+      })
+    {
       return Ok(None);
     }
     return gf_inner(&product, n, x);

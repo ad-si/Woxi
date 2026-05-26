@@ -3572,6 +3572,66 @@ mod inverse_laplace_transform {
       "InverseLaplaceTransform[Log[s], s, t]"
     );
   }
+
+  // ─── Two-variable InverseLaplaceTransform ───────────────────────────
+  // wolframscript:
+  //   InverseLaplaceTransform[1/(p*q), {p, q}, {x, y}]      -> 1
+  //   InverseLaplaceTransform[1/(p + q), {p, q}, {x, y}]    -> DiracDelta[-x + y]
+  //   InverseLaplaceTransform[1/(1 + p*q), {p, q}, {x, y}]  -> BesselJ[0, 2*Sqrt[x]*Sqrt[y]]
+  //   InverseLaplaceTransform[1/Sqrt[1 + p*q], {p, q}, {x, y}]
+  //     -> Cosh[2*Sqrt[-(x*y)]]/(Pi*Sqrt[x]*Sqrt[y])
+  //
+  // These follow Efros's theorem: L^-1_{p,q}[F(p*q)] involves f(τ) (the
+  // 1-var inverse transform of F) convolved with J_0(2*Sqrt[x*y*τ])
+  // over τ. We pattern-match the specific F(p*q) shapes Wolfram lists
+  // as canonical examples.
+
+  #[test]
+  fn two_var_product_reciprocal() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(p*q), {p, q}, {x, y}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn two_var_sum_reciprocal() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(p + q), {p, q}, {x, y}]").unwrap(),
+      "DiracDelta[-x + y]"
+    );
+  }
+
+  #[test]
+  fn two_var_one_plus_pq_reciprocal() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(1 + p*q), {p, q}, {x, y}]")
+        .unwrap(),
+      "BesselJ[0, 2*Sqrt[x]*Sqrt[y]]"
+    );
+  }
+
+  #[test]
+  fn two_var_sqrt_one_plus_pq_reciprocal() {
+    // Audit case: previously returned unevaluated.
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[1 + p*q], {p, q}, {x, y}]")
+        .unwrap(),
+      "Cosh[2*Sqrt[-(x*y)]]/(Pi*Sqrt[x]*Sqrt[y])"
+    );
+  }
+
+  // Unknown 2-var input stays unevaluated.
+  #[test]
+  fn two_var_unevaluated_unknown() {
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Log[1 + p*q], {p, q}, {x, y}]"
+      )
+      .unwrap(),
+      "InverseLaplaceTransform[Log[1 + p*q], {p, q}, {x, y}]"
+    );
+  }
 }
 
 mod laplacian {
