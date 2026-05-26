@@ -4661,9 +4661,8 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for c_idx in 0..ch {
       let mut row_filtered: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
-        let row: Vec<f64> = (0..w)
-          .map(|x| data[(y * w + x) * ch + c_idx])
-          .collect();
+        let row: Vec<f64> =
+          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
         let filtered = convolve_edge_padded(&row, &row_kernel);
         for x in 0..w {
           row_filtered[y * w + x] = filtered[x];
@@ -4742,7 +4741,7 @@ fn bandpass_kernel(n: usize, omega1: f64, omega2: f64) -> Vec<f64> {
 
 /// Convolve data with kernel using edge-padding (repeat boundary values).
 /// Returns output of same length as data.
-fn convolve_edge_padded(data: &[f64], kernel: &[f64]) -> Vec<f64> {
+pub fn convolve_edge_padded(data: &[f64], kernel: &[f64]) -> Vec<f64> {
   let n = kernel.len();
   let len = data.len();
   let left_pad = n / 2;
@@ -5207,9 +5206,8 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for c_idx in 0..ch {
       let mut row_filtered: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
-        let row: Vec<f64> = (0..w)
-          .map(|x| data[(y * w + x) * ch + c_idx])
-          .collect();
+        let row: Vec<f64> =
+          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
         let filtered = convolve_edge_padded(&row, &row_kernel);
         for x in 0..w {
           row_filtered[y * w + x] = filtered[x];

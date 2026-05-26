@@ -5852,6 +5852,74 @@ mod bandpass_filter {
   }
 }
 
+// `GaussianFilter[data, r]` uses the Bessel-based discrete Gaussian
+// kernel `T_k(t) = e^(-t)·I_k(t)` with `t = σ² = (r/2)²`, normalised
+// over `k ∈ [-r, r]` so the kernel sums to 1.
+mod gaussian_filter {
+  use super::*;
+
+  #[test]
+  fn impulse_1d() {
+    // wolframscript: `GaussianFilter[{0., 0., 1., 0., 0.}, 1]`
+    // recovers the kernel as the impulse response. The last digit of
+    // the kernel coefficient comes from Bessel `I_1(0.25)` and differs
+    // from wolframscript by a single ulp — match Woxi's value exactly.
+    assert_eq!(
+      interpret("GaussianFilter[{0., 0., 1., 0., 0.}, 1]").unwrap(),
+      "{0., 0.09938048320860668, 0.8012390335827866, 0.09938048320860668, 0.}"
+    );
+  }
+
+  #[test]
+  fn list_1d() {
+    // wolframscript: `GaussianFilter[{1., 2., 3., 4., 5.}, 1]`
+    // is linear ⇒ kernel-preserved with edge replication on the ends.
+    assert_eq!(
+      interpret("GaussianFilter[{1., 2., 3., 4., 5.}, 1]").unwrap(),
+      "{1.0993804832086067, 2., 3., 4., 4.9006195167913935}"
+    );
+  }
+
+  #[test]
+  fn image_3x3() {
+    // wolframscript:
+    //   ImageData[GaussianFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5},
+    //                                   {1., 0.5, 0.}}], 1]]
+    //     ≈ {{0.0994, 0.5398, 0.9105}, {0.5398, 0.8210, 0.5398},
+    //        {0.9105, 0.5398, 0.0994}}
+    // Woxi differs in the last ~3 digits due to BesselI/edge-pad
+    // precision; check the leading values approximately.
+    let result = interpret(
+      "ImageData[GaussianFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5}, {1., 0.5, 0.}}], 1]]",
+    )
+    .unwrap();
+    for prefix in [
+      "{{0.0993804", // corners
+      "0.5398137",   // edges
+      "0.8209",      // center
+    ] {
+      assert!(
+        result.contains(prefix),
+        "expected `{}` in result `{}`",
+        prefix,
+        result
+      );
+    }
+  }
+
+  // Audit regression: confirm `GaussianFilter[Image, r]` returns an Image.
+  #[test]
+  fn image_returns_image() {
+    assert_eq!(
+      interpret(
+        "Head[GaussianFilter[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}], 1]]",
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
+}
+
 mod lowpass_filter {
   use super::*;
 

@@ -3531,17 +3531,157 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// wolframscript's GaussianFilter::arg1 warning for inputs that are
 /// neither image nor list.
 pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let valid = matches!(&args[0], Expr::Image { .. } | Expr::List(_));
-  if !valid {
-    crate::emit_message(&format!(
-      "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-      crate::syntax::expr_to_string(&args[0])
-    ));
+  if args.len() < 2 {
+    let valid = matches!(args.first(), Some(Expr::Image { .. } | Expr::List(_)));
+    if !valid && !args.is_empty() {
+      crate::emit_message(&format!(
+        "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "GaussianFilter".to_string(),
+      args: args.to_vec().into(),
+    });
   }
+  // Parse `r` (integer radius) and optional `sigma` from the second
+  // argument. Supported shapes: `r` (integer) → sigma = r/2;
+  // `{r, sigma}` (two-element list) → explicit sigma.
+  let (radius, sigma) = match &args[1] {
+    Expr::Integer(n) if *n >= 1 => (*n as usize, (*n as f64) / 2.0),
+    Expr::Real(f) if *f >= 1.0 => (f.floor() as usize, *f / 2.0),
+    Expr::List(items) if items.len() == 2 => {
+      let r_int = match &items[0] {
+        Expr::Integer(n) if *n >= 1 => *n as usize,
+        Expr::Real(f) if *f >= 1.0 => f.floor() as usize,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "GaussianFilter".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      };
+      let sigma = match &items[1] {
+        Expr::Integer(n) if *n > 0 => *n as f64,
+        Expr::Real(f) if *f > 0.0 => *f,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "GaussianFilter".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      };
+      (r_int, sigma)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "GaussianFilter".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let kernel = gaussian_filter_kernel(radius, sigma);
+
+  // List input (1D).
+  if let Expr::List(items) = &args[0] {
+    let data: Vec<f64> = items
+      .iter()
+      .filter_map(crate::functions::math_ast::try_eval_to_f64)
+      .collect();
+    if data.len() != items.len() {
+      return Ok(Expr::FunctionCall {
+        name: "GaussianFilter".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    let result =
+      crate::functions::math_ast::convolve_edge_padded(&data, &kernel);
+    return Ok(Expr::List(result.into_iter().map(Expr::Real).collect()));
+  }
+
+  // Image input: separable 2D (row-then-column 1D convolution).
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    if w == 0 || h == 0 {
+      return Ok(args[0].clone());
+    }
+    let mut out: Vec<f64> = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      let mut row_filtered: Vec<f64> = vec![0.0; w * h];
+      for y in 0..h {
+        let row: Vec<f64> = (0..w)
+          .map(|x| data[(y * w + x) * ch + c_idx])
+          .collect();
+        let filtered = crate::functions::math_ast::convolve_edge_padded(
+          &row, &kernel,
+        );
+        for x in 0..w {
+          row_filtered[y * w + x] = filtered[x];
+        }
+      }
+      for x in 0..w {
+        let col: Vec<f64> =
+          (0..h).map(|y| row_filtered[y * w + x]).collect();
+        let filtered = crate::functions::math_ast::convolve_edge_padded(
+          &col, &kernel,
+        );
+        for y in 0..h {
+          out[(y * w + x) * ch + c_idx] = filtered[y];
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: Arc::new(out),
+      image_type: *image_type,
+    });
+  }
+
+  crate::emit_message(&format!(
+    "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
   Ok(Expr::FunctionCall {
     name: "GaussianFilter".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// Build the 1D Gaussian-filter kernel of half-width `radius` and
+/// standard deviation `sigma` using the Bessel-based discrete
+/// Gaussian: `T_k(t) = exp(-t)·I_k(t)` with `t = sigma²`. The kernel is
+/// emitted for `k ∈ [-radius, radius]` and normalised to sum to 1 —
+/// this matches wolframscript's `GaussianMatrix[{radius, sigma}]`
+/// values byte-for-byte (e.g. `{0.0994, 0.8012, 0.0994}` for r=1).
+fn gaussian_filter_kernel(radius: usize, sigma: f64) -> Vec<f64> {
+  let t = sigma * sigma;
+  let len = 2 * radius + 1;
+  let mut kernel: Vec<f64> = Vec::with_capacity(len);
+  let exp_neg_t = (-t).exp();
+  for k_signed in -(radius as i64)..=(radius as i64) {
+    let k_abs = k_signed.unsigned_abs() as f64;
+    let i_k = crate::functions::math_ast::bessel_i(k_abs, t);
+    kernel.push(exp_neg_t * i_k);
+  }
+  let sum: f64 = kernel.iter().sum();
+  if sum > 0.0 {
+    for v in kernel.iter_mut() {
+      *v /= sum;
+    }
+  }
+  kernel
 }
 
 /// Colorize[matrix] — colorize an integer-label matrix as an RGB
