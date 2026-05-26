@@ -212,6 +212,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Counts" => Some((1, 1)),
     "CountsBy" => Some((1, 2)),
     "Covariance" => Some((2, 2)),
+    "CovarianceFunction" => Some((3, 3)),
     "Cross" => Some((1, 2)),
     "CrossMatrix" => Some((1, 1)),
     "CrossProduct" => Some((2, 2)),

@@ -624,6 +624,9 @@ pub fn dispatch_math_functions(
     "Covariance" if args.len() == 2 => {
       return Some(crate::functions::math_ast::covariance_ast(args));
     }
+    "CovarianceFunction" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::covariance_function_ast(args));
+    }
     "Correlation" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_ast(args));
     }

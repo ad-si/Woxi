@@ -3667,3 +3667,35 @@ mod cases {
     );
   }
 }
+
+mod arma_covariance_function {
+  use super::*;
+
+  #[test]
+  fn ar1_zero_mean() {
+    // CovarianceFunction[ARMAProcess[{a}, {}, σ²], s, t]
+    //   = (a^Abs[s-t] σ²) / (1 - a²)
+    assert_eq!(
+      interpret("CovarianceFunction[ARMAProcess[{a}, {}, s2], s, t]").unwrap(),
+      "(a^Abs[s - t]*s2)/(1 - a^2)"
+    );
+  }
+
+  #[test]
+  fn arma11_zero_mean() {
+    // ARMA(1,1): closed-form Piecewise, matching wolframscript.
+    assert_eq!(
+      interpret("CovarianceFunction[ARMAProcess[{a}, {b}, s2], s, t]").unwrap(),
+      "Piecewise[{{-((a^(-1 + Abs[s - t])*(a + b + a^2*b + a*b^2)*s2)/((-1 + a)*(1 + a))), Abs[s - t] > 0}}, -((b*s2)/a) - ((a + b + a^2*b + a*b^2)*s2)/((-1 + a)*a*(1 + a))]"
+    );
+  }
+
+  #[test]
+  fn arma11_with_constant() {
+    // The audit case: a non-zero constant c does not affect covariance.
+    assert_eq!(
+      interpret("CovarianceFunction[ARMAProcess[c, {a}, {b}, s2], s, t]").unwrap(),
+      "Piecewise[{{-((a^(-1 + Abs[s - t])*(a + b + a^2*b + a*b^2)*s2)/((-1 + a)*(1 + a))), Abs[s - t] > 0}}, -((b*s2)/a) - ((a + b + a^2*b + a*b^2)*s2)/((-1 + a)*a*(1 + a))]"
+    );
+  }
+}

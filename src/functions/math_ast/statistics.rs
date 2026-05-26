@@ -3390,4 +3390,232 @@ fn asymptotic_binomial(
   })
 }
 
+// ─── CovarianceFunction[ARMAProcess[...], s, t] ───────────────────────
+
+/// CovarianceFunction[proc, s, t] gives the autocovariance Cov[X_s, X_t]
+/// for the stochastic process `proc`. This implementation handles
+/// ARMA(p, q) processes for (p, q) ∈ {(1,0), (0,1), (1,1)}, returning
+/// a closed-form expression that matches wolframscript.
+pub fn covariance_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "CovarianceFunction".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  if let Some(result) = arma_covariance(&args[0], &args[1], &args[2]) {
+    // Re-evaluate so the inner Times/Divide combine into canonical
+    // negative-power form. Without this, the printer renders sub-terms
+    // as the parser's literal `Times[-1, x/y]` instead of `-((x*y)/z)`.
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+  Ok(Expr::FunctionCall {
+    name: "CovarianceFunction".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Extract `(ar_list, ma_list, variance)` from an `ARMAProcess[...]` call,
+/// stripping a leading scalar constant if present.
+fn extract_arma_params(proc: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Expr)> {
+  let (name, args) = match proc {
+    Expr::FunctionCall { name, args } => (name.as_str(), args),
+    _ => return None,
+  };
+  if name != "ARMAProcess" {
+    return None;
+  }
+  let a: Vec<Expr> = args.iter().cloned().collect();
+  // Strip optional leading scalar constant: ARMAProcess[c, ar, ma, v, …].
+  let rest: &[Expr] = if !a.is_empty() && matches!(&a[0], Expr::List(_)) {
+    &a[..]
+  } else if a.len() >= 4 && matches!(&a[1], Expr::List(_)) {
+    &a[1..]
+  } else {
+    return None;
+  };
+  if rest.len() < 3 {
+    return None;
+  }
+  let ar = match &rest[0] {
+    Expr::List(xs) => xs.iter().cloned().collect(),
+    _ => return None,
+  };
+  let ma = match &rest[1] {
+    Expr::List(xs) => xs.iter().cloned().collect(),
+    _ => return None,
+  };
+  Some((ar, ma, rest[2].clone()))
+}
+
+fn arma_covariance(proc: &Expr, s: &Expr, t: &Expr) -> Option<Expr> {
+  let (ar, ma, sigma2) = extract_arma_params(proc)?;
+  match (ar.len(), ma.len()) {
+    (1, 0) => Some(cov_ar1(&ar[0], &sigma2, s, t)),
+    (0, 1) => Some(cov_ma1(&ma[0], &sigma2, s, t)),
+    (1, 1) => Some(cov_arma11(&ar[0], &ma[0], &sigma2, s, t)),
+    _ => None,
+  }
+}
+
+/// Evaluate `e` once so Times/Divide chains collapse into the canonical
+/// form Woxi prints. Piecewise leaves unevaluated branches alone when
+/// the condition stays symbolic, so we have to do this before nesting.
+fn eval_once(e: Expr) -> Expr {
+  crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
+}
+
+// ─── AST builder helpers ────────────────────────────────────────────────
+
+fn fc(name: &str, args: Vec<Expr>) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  }
+}
+fn cf_plus(xs: Vec<Expr>) -> Expr {
+  fc("Plus", xs)
+}
+fn cf_times(xs: Vec<Expr>) -> Expr {
+  fc("Times", xs)
+}
+fn cf_pow(b: Expr, e: Expr) -> Expr {
+  fc("Power", vec![b, e])
+}
+fn cf_div(n: Expr, d: Expr) -> Expr {
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(n),
+    right: Box::new(d),
+  }
+}
+fn cf_neg(x: Expr) -> Expr {
+  cf_times(vec![Expr::Integer(-1), x])
+}
+fn cf_abs(x: Expr) -> Expr {
+  fc("Abs", vec![x])
+}
+fn cf_abs_diff(s: &Expr, t: &Expr) -> Expr {
+  cf_abs(cf_plus(vec![s.clone(), cf_neg(t.clone())]))
+}
+
+// ─── AR(1): (a^|s-t| σ²) / (1 - a²) ─────────────────────────────────────
+
+fn cov_ar1(a: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
+  let numerator = cf_times(vec![
+    cf_pow(a.clone(), cf_abs_diff(s, t)),
+    sigma2.clone(),
+  ]);
+  let denominator = cf_plus(vec![
+    Expr::Integer(1),
+    cf_neg(cf_pow(a.clone(), Expr::Integer(2))),
+  ]);
+  cf_div(numerator, denominator)
+}
+
+// ─── MA(1): Piecewise[{{bσ², |s-t|==1}, {(1+b²)σ², |s-t|==0}}, 0] ──────
+
+fn cov_ma1(b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
+  let lag = cf_abs_diff(s, t);
+  let case1 = Expr::List(
+    vec![
+      cf_times(vec![b.clone(), sigma2.clone()]),
+      Expr::Comparison {
+        operands: vec![lag.clone(), Expr::Integer(1)],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      },
+    ]
+    .into(),
+  );
+  let case0 = Expr::List(
+    vec![
+      cf_times(vec![
+        cf_plus(vec![Expr::Integer(1), cf_pow(b.clone(), Expr::Integer(2))]),
+        sigma2.clone(),
+      ]),
+      Expr::Comparison {
+        operands: vec![lag.clone(), Expr::Integer(0)],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      },
+    ]
+    .into(),
+  );
+  fc(
+    "Piecewise",
+    vec![
+      Expr::List(vec![case1, case0].into()),
+      Expr::Integer(0),
+    ],
+  )
+}
+
+// ─── ARMA(1, 1) ─────────────────────────────────────────────────────────
+//
+// γ(h>0) = -((a^(h-1) * (a + b + a²b + ab²) * σ²) / ((a-1)(a+1)))
+// γ(0)   = -(bσ²/a) - ((a + b + a²b + ab²)σ²) / ((a-1) a (a+1))
+
+fn arma11_top_poly(a: &Expr, b: &Expr) -> Expr {
+  // a + b + a^2*b + a*b^2
+  cf_plus(vec![
+    a.clone(),
+    b.clone(),
+    cf_times(vec![cf_pow(a.clone(), Expr::Integer(2)), b.clone()]),
+    cf_times(vec![a.clone(), cf_pow(b.clone(), Expr::Integer(2))]),
+  ])
+}
+
+fn cov_arma11(a: &Expr, b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
+  let lag = cf_abs_diff(s, t);
+  let top_poly = arma11_top_poly(a, b);
+
+  // Nonzero-lag branch numerator: a^(-1 + lag) * top_poly * σ²
+  let nonzero_num = cf_times(vec![
+    cf_pow(
+      a.clone(),
+      cf_plus(vec![Expr::Integer(-1), lag.clone()]),
+    ),
+    top_poly.clone(),
+    sigma2.clone(),
+  ]);
+  // Denominator: (-1 + a) * (1 + a)
+  let nonzero_den = cf_times(vec![
+    cf_plus(vec![Expr::Integer(-1), a.clone()]),
+    cf_plus(vec![Expr::Integer(1), a.clone()]),
+  ]);
+  let nonzero_value = eval_once(cf_neg(cf_div(nonzero_num, nonzero_den)));
+
+  // Zero-lag (default) value: -(bσ²/a) - (top_poly σ²)/((-1+a) a (1+a))
+  let default_term1 = eval_once(cf_neg(cf_div(
+    cf_times(vec![b.clone(), sigma2.clone()]),
+    a.clone(),
+  )));
+  let default_denom = cf_times(vec![
+    cf_plus(vec![Expr::Integer(-1), a.clone()]),
+    a.clone(),
+    cf_plus(vec![Expr::Integer(1), a.clone()]),
+  ]);
+  let default_term2 = eval_once(cf_neg(cf_div(
+    cf_times(vec![top_poly, sigma2.clone()]),
+    default_denom,
+  )));
+  let default_value = eval_once(cf_plus(vec![default_term1, default_term2]));
+
+  let case = Expr::List(
+    vec![
+      nonzero_value,
+      Expr::Comparison {
+        operands: vec![lag, Expr::Integer(0)],
+        operators: vec![crate::syntax::ComparisonOp::Greater],
+      },
+    ]
+    .into(),
+  );
+  fc(
+    "Piecewise",
+    vec![Expr::List(vec![case].into()), default_value],
+  )
+}
+
 // ─── PowerExpand ──────────────────────────────────────────────────────
