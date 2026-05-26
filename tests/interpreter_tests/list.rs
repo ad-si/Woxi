@@ -3460,8 +3460,10 @@ mod random_color {
   }
 
   #[test]
-  fn n_zero_returns_empty_list() {
-    assert_eq!(interpret("RandomColor[0]").unwrap(), "{}");
+  fn n_zero_returns_unevaluated() {
+    // Wolfram reads 0 as a color-model specification (not a count), which
+    // fails with RandomColor::bdmdl and leaves the call unevaluated.
+    assert_eq!(interpret("RandomColor[0]").unwrap(), "RandomColor[0]");
   }
 }
 

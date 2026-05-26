@@ -448,7 +448,10 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(one_color()),
     1 => match &args[0] {
-      Expr::Integer(n) if *n >= 0 => {
+      // Wolfram interprets the lone integer argument as a *count* only when
+      // it is positive; 0 is read as a color-model specification (which fails
+      // with RandomColor::bdmdl, leaving the call unevaluated).
+      Expr::Integer(n) if *n > 0 => {
         let count = *n as usize;
         let mut out = Vec::with_capacity(count);
         for _ in 0..count {
