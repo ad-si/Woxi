@@ -3288,20 +3288,32 @@ pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// TextRecognize[img] — OCR stub. Real text recognition is not
-/// implemented; this stub matches wolframscript's TextRecognize::imgvinv
-/// warning for non-image input.
+/// TextRecognize[img, level?] — OCR stub. Real text recognition is not
+/// implemented; this matches wolframscript's empty-output fallback when
+/// no text is found in the image. For non-image input it emits the
+/// TextRecognize::imgvinv warning and stays unevaluated.
 pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !matches!(&args[0], Expr::Image { .. }) {
+  if !matches!(&args[0], Expr::Image { .. }) && !is_valid_image3d(&args[0]) {
     crate::emit_message(&format!(
       "TextRecognize::imgvinv: Expecting an image, graphics or video instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
+    return Ok(Expr::FunctionCall {
+      name: "TextRecognize".to_string(),
+      args: args.to_vec().into(),
+    });
   }
-  Ok(Expr::FunctionCall {
-    name: "TextRecognize".to_string(),
-    args: args.to_vec().into(),
-  })
+  // Two-arg form with a structural level: `Line`, `Word`, `Character`,
+  // `Block` — wolframscript returns an empty list when no text is
+  // found. Anything else falls back to the empty-string scalar.
+  if args.len() >= 2 {
+    if let Expr::String(s) = &args[1] {
+      if matches!(s.as_str(), "Line" | "Word" | "Character" | "Block") {
+        return Ok(Expr::List(Vec::new().into()));
+      }
+    }
+  }
+  Ok(Expr::String(String::new()))
 }
 
 /// MedianFilter[arg, r] — stub. Emits MedianFilter::arg1 when first

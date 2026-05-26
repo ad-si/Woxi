@@ -1821,6 +1821,26 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("TextRecognize[x]").unwrap(), "TextRecognize[x]");
   }
   #[test]
+  fn text_recognize_image_returns_empty_string() {
+    // Woxi has no OCR backend. For ordinary images wolframscript falls
+    // back to an empty string when no text is recognised; Woxi mirrors
+    // that fallback so the call doesn't stay unevaluated.
+    assert_eq!(interpret("TextRecognize[Image[{{0.5, 0.6}}]]").unwrap(), "");
+  }
+  #[test]
+  fn text_recognize_image_level_returns_empty_list() {
+    // Two-arg form with a level (Line / Word / Character) returns an
+    // empty list when no text is found.
+    assert_eq!(
+      interpret("TextRecognize[Image[{{0.5, 0.6}}], \"Line\"]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("TextRecognize[Image[{{0.5, 0.6}}], \"Word\"]").unwrap(),
+      "{}"
+    );
+  }
+  #[test]
   fn number_signs() {
     assert_eq!(interpret("NumberSigns[x]").unwrap(), "NumberSigns[x]");
   }
