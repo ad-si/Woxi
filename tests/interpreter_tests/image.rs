@@ -1569,6 +1569,53 @@ mod image_processing {
     );
   }
 
+  // ImageTrim crops to a region of interest defined by {{x1, y1}, {x2, y2}}.
+  // Coordinates are 1-indexed with y measured from the bottom. Pixel
+  // precision is preserved (no Byte round-trip).
+  #[test]
+  fn image_trim_preserves_pixels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTrim[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], \
+         {{2, 1}, {3, 2}}]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224, 0.30000001192092896}, \
+       {0.5, 0.6000000238418579}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageTrim[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], \
+         {{2, 1}, {3, 2}}]]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  // Channels and image type pass through.
+  #[test]
+  fn image_trim_preserves_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageTrim[\
+         Image[{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}}], \
+         {{2, 1}, {3, 1}}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ImageType[ImageTrim[Image[{{0.1, 0.5}}], {{1, 1}, {2, 1}}]]"
+      )
+      .unwrap(),
+      "Real32"
+    );
+  }
+
   // RecurrenceFilter on a 1D image applies the IIR filter along the
   // row. With a = {1, -0.5}, b = {1}: y[n] = x[n] + 0.5*y[n-1].
   #[test]

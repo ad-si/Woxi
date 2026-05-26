@@ -2063,9 +2063,31 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let crop_w = last_col - first_col + 1;
       let crop_h = last_row - first_row + 1;
 
-      let dyn_img = expr_to_dynamic_image(w, h, *channels, data);
-      let cropped = dyn_img.crop_imm(first_col, first_row, crop_w, crop_h);
-      Ok(dynamic_image_to_expr(&cropped))
+      let w_us = w as usize;
+      let ch = *channels as usize;
+      let mut new_data =
+        Vec::with_capacity((crop_w as usize) * (crop_h as usize) * ch);
+      for y in first_row..=last_row {
+        for x in first_col..=last_col {
+          let base = ((y as usize) * w_us + (x as usize)) * ch;
+          for c in 0..ch {
+            new_data.push(data[base + c]);
+          }
+        }
+      }
+      // Determine the image type from the first arm; this branch
+      // already requires args[0] to be Expr::Image.
+      let image_type = match &args[0] {
+        Expr::Image { image_type, .. } => *image_type,
+        _ => unreachable!(),
+      };
+      Ok(Expr::Image {
+        width: crop_w,
+        height: crop_h,
+        channels: *channels,
+        data: Arc::new(new_data),
+        image_type,
+      })
     }
     _ => Ok(Expr::FunctionCall {
       name: "ImageTrim".to_string(),
