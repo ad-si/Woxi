@@ -6196,6 +6196,31 @@ mod cases {
       r#"Root[1 + 2*#1 + #1^5 & , 2, 0]"#,
     );
   }
+
+  #[test]
+  fn root_three_argument_form_accepted() {
+    // wolframscript prints Root with an explicit 0 (exact) tag. Calling
+    // Root[f, k, 0] directly should not emit `Root::argrx` and should
+    // come back unchanged (it is already in canonical form).
+    assert_case(
+      r#"Root[1 + 2*#1 + #1^5 & , 1, 0]"#,
+      r#"Root[1 + 2*#1 + #1^5 & , 1, 0]"#,
+    );
+    assert_case(
+      r#"Root[1 + 2*#1 + #1^5 & , 3, 0]"#,
+      r#"Root[1 + 2*#1 + #1^5 & , 3, 0]"#,
+    );
+  }
+
+  #[test]
+  fn solve_unsolvable_quintic_returns_root_list() {
+    // The audit's Root diff case. wolframscript returns five Root
+    // expressions for an irreducible quintic with no radical solution.
+    assert_case(
+      r#"Solve[x^5 + 2*x + 1 == 0, x]"#,
+      r#"{{x -> Root[1 + 2*#1 + #1^5 & , 1, 0]}, {x -> Root[1 + 2*#1 + #1^5 & , 2, 0]}, {x -> Root[1 + 2*#1 + #1^5 & , 3, 0]}, {x -> Root[1 + 2*#1 + #1^5 & , 4, 0]}, {x -> Root[1 + 2*#1 + #1^5 & , 5, 0]}}"#,
+    );
+  }
   #[test]
   fn solve_4() {
     assert_case(r#"Solve[x ^ 2 - 3 x == 4, x]"#, r#"{{x -> -1}, {x -> 4}}"#);

@@ -896,7 +896,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Riffle" => Some((2, 3)),
     "RightComposition" => Some((0, usize::MAX)),
     "RomanNumeral" => Some((1, 1)),
-    "Root" => Some((2, 2)),
+    "Root" => Some((2, 3)),
     "RootMeanSquare" => Some((1, 1)),
     "Roots" => Some((2, 2)),
     "RogersTanimotoDissimilarity" => Some((2, 2)),

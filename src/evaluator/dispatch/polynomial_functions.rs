@@ -111,7 +111,7 @@ pub fn dispatch_polynomial_functions(
     "NRoots" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::nroots_ast(args));
     }
-    "Root" if args.len() == 2 => {
+    "Root" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::root_ast(args));
     }
     "FunctionExpand" if args.len() == 1 => {
@@ -601,18 +601,12 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
       .map(|(v, name)| {
         if k == 1 {
           Expr::Comparison {
-            operands: vec![
-              Expr::Identifier(name.clone()),
-              Expr::Integer(*v),
-            ],
+            operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
             operators: vec![crate::syntax::ComparisonOp::Equal],
           }
         } else {
           Expr::Comparison {
-            operands: vec![
-              Expr::Identifier(name.clone()),
-              Expr::Integer(*v),
-            ],
+            operands: vec![Expr::Identifier(name.clone()), Expr::Integer(*v)],
             operators: vec![crate::syntax::ComparisonOp::Equal],
           }
         }

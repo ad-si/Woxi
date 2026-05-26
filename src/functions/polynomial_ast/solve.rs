@@ -1978,13 +1978,98 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      // Fall back: return unevaluated
+      // Last resort for irreducible polynomials of degree ≥ 3 with
+      // integer/rational coefficients: emit the wolframscript-style
+      // list of Root expressions (`Root[poly &, k, 0]` for k = 1..deg).
+      if let Some(rs) = make_root_solutions(&coeffs, var) {
+        return Ok(rs);
+      }
       Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
         args: args.to_vec().into(),
       })
     }
   }
+}
+
+/// Build `{{var -> Root[poly &, 1, 0]}, …, {var -> Root[poly &, deg, 0]}}`
+/// for a polynomial whose coefficients are exact integers or rationals.
+/// Returns None for non-rational coefficients (so the caller falls back
+/// to leaving the call unevaluated).
+fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
+  if coeffs.len() < 4 {
+    return None;
+  }
+  // Require every coefficient to be an exact rational (integer or
+  // Rational[]). Floats here would mean numerical roots are expected
+  // instead — Root[…] only represents algebraic roots.
+  let is_rational = |c: &Expr| -> bool {
+    match c {
+      Expr::Integer(_) => true,
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+        matches!(args[0], Expr::Integer(_)) && matches!(args[1], Expr::Integer(_))
+      }
+      _ => false,
+    }
+  };
+  if !coeffs.iter().all(is_rational) {
+    return None;
+  }
+  let degree = coeffs.len() - 1;
+  // Build polynomial body in Slot[1], ascending in powers, skipping
+  // zero coefficients. The result is what wolframscript prints inside
+  // Root, e.g. `1 + 2*#1 + #1^5`.
+  let slot = Expr::Slot(1);
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, c) in coeffs.iter().enumerate() {
+    if matches!(c, Expr::Integer(0)) {
+      continue;
+    }
+    let var_pow = match i {
+      0 => None,
+      1 => Some(slot.clone()),
+      _ => Some(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![slot.clone(), Expr::Integer(i as i128)].into(),
+      }),
+    };
+    let term = match (var_pow, c) {
+      (None, c) => c.clone(),
+      (Some(p), Expr::Integer(1)) => p,
+      (Some(p), c) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![c.clone(), p].into(),
+      },
+    };
+    terms.push(term);
+  }
+  let body = match terms.len() {
+    0 => return None,
+    1 => terms.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  };
+  let body = crate::evaluator::evaluate_expr_to_expr(&body).ok()?;
+  let func = Expr::Function {
+    body: Box::new(body),
+  };
+  let mut solutions = Vec::with_capacity(degree);
+  for k in 1..=degree {
+    let root = Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)].into(),
+    };
+    solutions.push(Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var.to_string())),
+        replacement: Box::new(root),
+      }]
+      .into(),
+    ));
+  }
+  Some(Expr::List(solutions.into()))
 }
 
 /// Sort a list of Solve solutions (each is `{var -> val}`) by root value.
@@ -2971,7 +3056,18 @@ pub fn simplify_sqrt_parts(n: i128) -> (i128, i128) {
 /// Roots are ordered: real roots first (ascending), then complex roots
 /// (by imaginary part, negative before positive).
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  // Root[f, k, 0] is the exact form (same as Root[f, k]). Root[f, k, 1]
+  // requests fast numerical evaluation — we leave it symbolic for now,
+  // matching wolframscript's behaviour when it cannot simplify to a
+  // closed form.
+  if args.len() == 3 && !matches!(&args[2], Expr::Integer(0) | Expr::Integer(1)) {
     return Ok(Expr::FunctionCall {
       name: "Root".to_string(),
       args: args.to_vec().into(),
