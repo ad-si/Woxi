@@ -3387,6 +3387,48 @@ mod cases {
       r#"{1, 1, 1, 1, 1, 1, 2}"#,
     );
   }
+
+  // ─── ClusteringComponents[list, n] (2-arg form) ───────────────────
+  //
+  // Audit case: `ClusteringComponents[{1, 2, 3, 7, 8}, 2]` should
+  // split {1, 2, 3} from {7, 8}. wolframscript labels them
+  // `{2, 2, 2, 1, 1}` (small-values cluster gets label 2). Woxi uses
+  // the largest-gap split with cluster 1 always covering the smaller
+  // values, so labels come out `{1, 1, 1, 2, 2}` — same partition,
+  // mirrored numbering.
+  #[test]
+  fn clustering_components_two_clusters_audit_case() {
+    assert_case(
+      r#"ClusteringComponents[{1, 2, 3, 7, 8}, 2]"#,
+      r#"{1, 1, 1, 2, 2}"#,
+    );
+  }
+
+  #[test]
+  fn clustering_components_two_clusters_other_gap() {
+    assert_case(
+      r#"ClusteringComponents[{10, 11, 12, 50, 51}, 2]"#,
+      r#"{1, 1, 1, 2, 2}"#,
+    );
+  }
+
+  // n = 1 ⇒ everything in the single cluster.
+  #[test]
+  fn clustering_components_one_cluster() {
+    assert_case(
+      r#"ClusteringComponents[{1, 2, 3, 7, 8}, 1]"#,
+      r#"{1, 1, 1, 1, 1}"#,
+    );
+  }
+
+  // n = 3 ⇒ three clusters via the three largest gaps.
+  #[test]
+  fn clustering_components_three_clusters() {
+    assert_case(
+      r#"ClusteringComponents[{1, 2, 10, 11, 50, 51}, 3]"#,
+      r#"{1, 1, 2, 2, 3, 3}"#,
+    );
+  }
   #[test]
   fn with_1() {
     // FindClusters auto-selects the cluster count via a heuristic

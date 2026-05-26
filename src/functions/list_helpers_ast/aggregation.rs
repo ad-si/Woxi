@@ -2265,6 +2265,107 @@ pub fn clustering_components_ast(
   Ok(Expr::List(labels.into()))
 }
 
+/// `ClusteringComponents[list, n]` — split a 1-D numeric list into
+/// `n` clusters by cutting at the `n - 1` largest consecutive gaps
+/// in the sorted values, then label each input position by the
+/// cluster index of its value (lower bands = lower labels).
+///
+/// This matches wolframscript's *partition* for the audit cases
+/// (e.g. `{1, 2, 3, 7, 8}` with `n = 2` → `{1, 1, 1, 2, 2}`); the
+/// label *numbering* differs from wolframscript when wolframscript
+/// chooses a non-ascending order — both are valid clusterings of the
+/// same data.
+pub fn clustering_components_n_ast(
+  list: &Expr,
+  n_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match n_expr {
+    Expr::Integer(k) if *k >= 1 => *k as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ClusteringComponents".to_string(),
+        args: vec![list.clone(), n_expr.clone()].into(),
+      });
+    }
+  };
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      crate::emit_message(
+        "ClusteringComponents::nosup: This type of data is not supported.",
+      );
+      return Ok(Expr::FunctionCall {
+        name: "ClusteringComponents".to_string(),
+        args: vec![list.clone(), n_expr.clone()].into(),
+      });
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![].into()));
+  }
+  let mut values: Vec<f64> = Vec::with_capacity(items.len());
+  for item in &items {
+    if let Some(v) = expr_to_f64(item) {
+      values.push(v);
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "ClusteringComponents".to_string(),
+        args: vec![list.clone(), n_expr.clone()].into(),
+      });
+    }
+  }
+
+  // n = 1: everything in cluster 1.
+  if n == 1 {
+    return Ok(Expr::List(vec![Expr::Integer(1); values.len()].into()));
+  }
+  // n ≥ number of unique values: each unique value forms its own
+  // cluster; pad to at most `values.len()` distinct clusters.
+  let max_clusters = values.len().min(n);
+
+  // Sort with original indices so we can find the largest gaps.
+  let mut indexed: Vec<(usize, f64)> = values
+    .iter()
+    .enumerate()
+    .map(|(i, &v)| (i, v))
+    .collect();
+  indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  // Gaps between consecutive sorted values.
+  let mut gaps: Vec<(usize, f64)> = Vec::with_capacity(indexed.len().saturating_sub(1));
+  for i in 0..indexed.len().saturating_sub(1) {
+    gaps.push((i, indexed[i + 1].1 - indexed[i].1));
+  }
+  // Pick the top `max_clusters - 1` gap *positions*. Sort by gap size
+  // descending, take the first `max_clusters - 1`, then re-sort by
+  // position so the cluster boundaries are in left-to-right order.
+  let cuts_needed = max_clusters.saturating_sub(1);
+  gaps.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+  let mut cut_positions: Vec<usize> =
+    gaps.iter().take(cuts_needed).map(|(p, _)| *p).collect();
+  cut_positions.sort_unstable();
+
+  // Assign cluster labels (1-indexed, ascending in value).
+  let mut sorted_labels: Vec<usize> = vec![0; indexed.len()];
+  let mut cluster = 1usize;
+  let mut cut_idx = 0usize;
+  for (i, label) in sorted_labels.iter_mut().enumerate() {
+    if cut_idx < cut_positions.len() && i > cut_positions[cut_idx] {
+      cluster += 1;
+      cut_idx += 1;
+    }
+    *label = cluster;
+  }
+
+  // Map back to original positions.
+  let mut out: Vec<Expr> = vec![Expr::Integer(0); values.len()];
+  for (sorted_pos, label) in sorted_labels.iter().enumerate() {
+    let orig_idx = indexed[sorted_pos].0;
+    out[orig_idx] = Expr::Integer(*label as i128);
+  }
+  Ok(Expr::List(out.into()))
+}
+
 /// Try to read a `FindClusters` input as `keys -> vals` (single rule
 /// whose left/right sides are equal-length lists) or as a list of rules
 /// `{key -> val, …}`. Returns `(keys, values)` on success.
