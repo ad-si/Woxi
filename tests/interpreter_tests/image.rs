@@ -1608,10 +1608,8 @@ mod image_processing {
       "3"
     );
     assert_eq!(
-      interpret(
-        "ImageType[ImageTrim[Image[{{0.1, 0.5}}], {{1, 1}, {2, 1}}]]"
-      )
-      .unwrap(),
+      interpret("ImageType[ImageTrim[Image[{{0.1, 0.5}}], {{1, 1}, {2, 1}}]]")
+        .unwrap(),
       "Real32"
     );
   }
@@ -2999,6 +2997,34 @@ mod image_advanced {
     )
     .unwrap();
     assert_eq!(result, "2");
+  }
+
+  // Grayscale (single-channel) input: wolframscript reports the dominant
+  // shades as `GrayLevel[v]`. The exact centre values come from f64
+  // averaging so we tolerate the standard rounding drift.
+  #[test]
+  fn dominant_colors_grayscale_two() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "DominantColors[Image[{{0.1, 0.2, 0.15, 0.8, 0.9}}], 2]"
+      )
+      .unwrap(),
+      "{GrayLevel[0.15000000000000002], GrayLevel[0.8500000000000001]}"
+    );
+  }
+
+  #[test]
+  fn dominant_colors_grayscale_returns_gray_level_head() {
+    // Audit regression: a single-channel image should produce GrayLevel
+    // colors, not an error. Check the result is a List of length ≥ 1
+    // whose first element has head GrayLevel.
+    clear_state();
+    let result = interpret(
+      "Module[{dc = DominantColors[Image[{{0.1, 0.2, 0.1}, {0.8, 0.9, 0.85}}], 2]}, {Head[dc], Head[dc[[1]]]}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{List, GrayLevel}");
   }
 
   #[test]

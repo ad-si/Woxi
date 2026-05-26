@@ -2410,6 +2410,26 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let w = *width as usize;
       let h = *height as usize;
       let ch = *channels as usize;
+      let num_pixels = w * h;
+
+      // Single-channel (grayscale) image: cluster luminance values and
+      // emit `GrayLevel[v]` per cluster centre.
+      if ch == 1 {
+        let mut grays: Vec<[f64; 1]> = Vec::with_capacity(num_pixels);
+        for i in 0..num_pixels {
+          grays.push([data[i]]);
+        }
+        let k = n.min(num_pixels);
+        let centers = kmeans_1d(&grays, k, 20);
+        let colors: Vec<Expr> = centers
+          .iter()
+          .map(|c| Expr::FunctionCall {
+            name: "GrayLevel".to_string(),
+            args: vec![Expr::Real(c[0])].into(),
+          })
+          .collect();
+        return Ok(Expr::List(colors.into()));
+      }
 
       if ch < 3 {
         return Err(InterpreterError::EvaluationError(
@@ -2418,7 +2438,6 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Collect RGB pixels
-      let num_pixels = w * h;
       let mut pixels: Vec<[f64; 3]> = Vec::with_capacity(num_pixels);
       for i in 0..num_pixels {
         let base = i * ch;
@@ -2443,6 +2462,55 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => unreachable!("non-Image first arg handled above"),
   }
+}
+
+/// 1-D k-means for grayscale `DominantColors`. Centres are sorted in
+/// ascending value order so the output list is deterministic.
+fn kmeans_1d(pixels: &[[f64; 1]], k: usize, max_iters: usize) -> Vec<[f64; 1]> {
+  if pixels.is_empty() || k == 0 {
+    return vec![];
+  }
+  let step = pixels.len().max(1) / k.max(1);
+  let mut centers: Vec<[f64; 1]> = (0..k)
+    .map(|i| pixels[(i * step).min(pixels.len() - 1)])
+    .collect();
+  let mut assignments = vec![0usize; pixels.len()];
+
+  for _ in 0..max_iters {
+    let mut changed = false;
+    for (i, pixel) in pixels.iter().enumerate() {
+      let mut best = 0;
+      let mut best_dist = f64::MAX;
+      for (j, center) in centers.iter().enumerate() {
+        let dist = (pixel[0] - center[0]).powi(2);
+        if dist < best_dist {
+          best_dist = dist;
+          best = j;
+        }
+      }
+      if assignments[i] != best {
+        assignments[i] = best;
+        changed = true;
+      }
+    }
+    if !changed {
+      break;
+    }
+    let mut sums = vec![[0.0_f64; 1]; k];
+    let mut counts = vec![0usize; k];
+    for (i, pixel) in pixels.iter().enumerate() {
+      let c = assignments[i];
+      sums[c][0] += pixel[0];
+      counts[c] += 1;
+    }
+    for j in 0..k {
+      if counts[j] > 0 {
+        centers[j][0] = sums[j][0] / counts[j] as f64;
+      }
+    }
+  }
+  centers.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal));
+  centers
 }
 
 /// Simple k-means for color quantization
@@ -3346,9 +3414,8 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Step 1: smooth along x (rows) into row-smoothed buffer.
       let mut row_smooth: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
-        let row: Vec<f64> = (0..w)
-          .map(|x| data[(y * w + x) * ch + c_idx])
-          .collect();
+        let row: Vec<f64> =
+          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
         let filtered =
           crate::functions::math_ast::convolve_edge_padded(&row, &smooth);
         for x in 0..w {
@@ -3360,10 +3427,8 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut dy: Vec<f64> = vec![0.0; w * h];
       for x in 0..w {
         let col: Vec<f64> = (0..h).map(|y| row_smooth[y * w + x]).collect();
-        let filtered = crate::functions::math_ast::convolve_edge_padded(
-          &col,
-          &derivative,
-        );
+        let filtered =
+          crate::functions::math_ast::convolve_edge_padded(&col, &derivative);
         for y in 0..h {
           dy[y * w + x] = filtered[y];
         }
@@ -3371,10 +3436,10 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Step 3: smooth along y (columns) into column-smoothed buffer.
       let mut col_smooth: Vec<f64> = vec![0.0; w * h];
       for x in 0..w {
-        let col: Vec<f64> = (0..h).map(|y| data[(y * w + x) * ch + c_idx]).collect();
-        let filtered = crate::functions::math_ast::convolve_edge_padded(
-          &col, &smooth,
-        );
+        let col: Vec<f64> =
+          (0..h).map(|y| data[(y * w + x) * ch + c_idx]).collect();
+        let filtered =
+          crate::functions::math_ast::convolve_edge_padded(&col, &smooth);
         for y in 0..h {
           col_smooth[y * w + x] = filtered[y];
         }
@@ -3384,10 +3449,8 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut dx: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
         let row: Vec<f64> = (0..w).map(|x| col_smooth[y * w + x]).collect();
-        let filtered = crate::functions::math_ast::convolve_edge_padded(
-          &row,
-          &derivative,
-        );
+        let filtered =
+          crate::functions::math_ast::convolve_edge_padded(&row, &derivative);
         for x in 0..w {
           dx[y * w + x] = filtered[x];
         }
