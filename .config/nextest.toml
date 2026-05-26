@@ -7,3 +7,11 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 [[profile.default.overrides]]
 filter = 'test(/^script_/)'
 slow-timeout = { period = "180s", terminate-after = 1 }
+
+# `D[x^x, {x, 10}]` is intentionally a heavy regression test for the Plus
+# comparator panic — order 10 matches the originally panicking input. It
+# takes ~10s standalone in debug builds and can brush against the default
+# 20s timeout under full parallel load. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
+slow-timeout = { period = "60s", terminate-after = 1 }
