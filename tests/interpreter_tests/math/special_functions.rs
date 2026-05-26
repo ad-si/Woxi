@@ -5852,6 +5852,63 @@ mod bandpass_filter {
   }
 }
 
+// `GradientFilter[data, r]` returns the magnitude of the Gaussian-
+// smoothed gradient. Uses the same Bessel-based discrete Gaussian as
+// GaussianFilter for the smoothing direction, paired with a derivative
+// kernel `D[k] = -k·T[k] / Σ_j j²·T[j]` normalised so a unit ramp
+// reproduces its slope.
+mod gradient_filter {
+  use super::*;
+
+  #[test]
+  fn impulse_image_3x3() {
+    // wolframscript:
+    //   ImageData[GradientFilter[Image[{{0., 0., 0.}, {0., 1., 0.},
+    //                                   {0., 0., 0.}}], 1]]
+    //     ≈ {{0.0703, 0.4006, 0.0703}, {0.4006, 0., 0.4006},
+    //        {0.0703, 0.4006, 0.0703}}
+    let result = interpret(
+      "ImageData[GradientFilter[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], 1]]",
+    )
+    .unwrap();
+    for prefix in ["0.0702", "0.40061", "0.40061"] {
+      assert!(
+        result.contains(prefix),
+        "expected `{}` in result `{}`",
+        prefix,
+        result
+      );
+    }
+  }
+
+  // Audit regression: confirm `GradientFilter[Image, r]` returns an Image.
+  #[test]
+  fn image_returns_image() {
+    assert_eq!(
+      interpret(
+        "Head[GradientFilter[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}], 1]]",
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
+
+  // A constant image has zero gradient.
+  #[test]
+  fn constant_image_zero_gradient() {
+    let result = interpret(
+      "ImageData[GradientFilter[Image[{{0.5, 0.5, 0.5}, {0.5, 0.5, 0.5}, {0.5, 0.5, 0.5}}], 1]]",
+    )
+    .unwrap();
+    // Every value should be 0 (modulo f32 precision in the Image data).
+    assert!(
+      !result.contains("1.") && !result.contains("0.5"),
+      "expected near-zero values in `{}`",
+      result
+    );
+  }
+}
+
 // `GaussianFilter[data, r]` uses the Bessel-based discrete Gaussian
 // kernel `T_k(t) = e^(-t)·I_k(t)` with `t = σ² = (r/2)²`, normalised
 // over `k ∈ [-r, r]` so the kernel sums to 1.

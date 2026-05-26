@@ -3254,12 +3254,18 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated());
   }
+
+  // 1D list input with radius 1: use the original central-difference
+  // path (matches wolframscript's GradientFilter[{...}, 1] output).
   if let (Expr::List(elems), Some(r)) = (
     &args[0],
     crate::functions::math_ast::try_eval_to_f64(&args[1])
       .filter(|v| *v >= 0.0)
       .map(|v| v as usize),
   ) && r == 1
+    // Restrict to flat numeric lists (not nested-list matrices, which
+    // need the 2D path further down).
+    && !elems.iter().any(|e| matches!(e, Expr::List(_)))
   {
     let n = elems.len();
     let mut values: Vec<f64> = Vec::with_capacity(n);
@@ -3273,7 +3279,6 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(Vec::new().into()));
     }
     if n == 1 {
-      // Single-element list: gradient is zero.
       return Ok(Expr::List(vec![Expr::Real(0.0)].into()));
     }
     let mut out: Vec<Expr> = Vec::with_capacity(n);
@@ -3289,7 +3294,166 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::List(out.into()));
   }
+
+  // Image input (and any other radius spec): use the Bessel-based
+  // discrete-Gaussian gradient. Parse radius / sigma.
+  let (radius, sigma) = match &args[1] {
+    Expr::Integer(n) if *n >= 1 => (*n as usize, (*n as f64) / 2.0),
+    Expr::Real(f) if *f >= 1.0 => (f.floor() as usize, *f / 2.0),
+    Expr::List(items) if items.len() == 2 => {
+      let r_int = match &items[0] {
+        Expr::Integer(n) if *n >= 1 => *n as usize,
+        Expr::Real(f) if *f >= 1.0 => f.floor() as usize,
+        _ => return Ok(unevaluated()),
+      };
+      let sigma = match &items[1] {
+        Expr::Integer(n) if *n > 0 => *n as f64,
+        Expr::Real(f) if *f > 0.0 => *f,
+        _ => return Ok(unevaluated()),
+      };
+      (r_int, sigma)
+    }
+    _ => return Ok(unevaluated()),
+  };
+
+  // Image input: separable 2D gradient.
+  //   1. Build the 1D smooth kernel `T_k = exp(-σ²)·I_k(σ²)`
+  //      (normalised, length 2·radius+1).
+  //   2. Build the 1D derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`
+  //      — chosen so applying D to a unit ramp recovers its slope.
+  //   3. For each pixel compute
+  //        ∂I/∂x = T ⊛_y D ⊛_x I,
+  //        ∂I/∂y = D ⊛_y T ⊛_x I,
+  //      then `|∇I| = √((∂I/∂x)² + (∂I/∂y)²)`.
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    if w == 0 || h == 0 {
+      return Ok(args[0].clone());
+    }
+    let smooth = gradient_filter_smooth_kernel(radius, sigma);
+    let derivative = gradient_filter_derivative_kernel(&smooth);
+    let mut out: Vec<f64> = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      // Step 1: smooth along x (rows) into row-smoothed buffer.
+      let mut row_smooth: Vec<f64> = vec![0.0; w * h];
+      for y in 0..h {
+        let row: Vec<f64> = (0..w)
+          .map(|x| data[(y * w + x) * ch + c_idx])
+          .collect();
+        let filtered =
+          crate::functions::math_ast::convolve_edge_padded(&row, &smooth);
+        for x in 0..w {
+          row_smooth[y * w + x] = filtered[x];
+        }
+      }
+      // Step 2: derivative along y (columns) of the row-smoothed buffer
+      // gives dy.
+      let mut dy: Vec<f64> = vec![0.0; w * h];
+      for x in 0..w {
+        let col: Vec<f64> = (0..h).map(|y| row_smooth[y * w + x]).collect();
+        let filtered = crate::functions::math_ast::convolve_edge_padded(
+          &col,
+          &derivative,
+        );
+        for y in 0..h {
+          dy[y * w + x] = filtered[y];
+        }
+      }
+      // Step 3: smooth along y (columns) into column-smoothed buffer.
+      let mut col_smooth: Vec<f64> = vec![0.0; w * h];
+      for x in 0..w {
+        let col: Vec<f64> = (0..h).map(|y| data[(y * w + x) * ch + c_idx]).collect();
+        let filtered = crate::functions::math_ast::convolve_edge_padded(
+          &col, &smooth,
+        );
+        for y in 0..h {
+          col_smooth[y * w + x] = filtered[y];
+        }
+      }
+      // Step 4: derivative along x (rows) of the column-smoothed buffer
+      // gives dx.
+      let mut dx: Vec<f64> = vec![0.0; w * h];
+      for y in 0..h {
+        let row: Vec<f64> = (0..w).map(|x| col_smooth[y * w + x]).collect();
+        let filtered = crate::functions::math_ast::convolve_edge_padded(
+          &row,
+          &derivative,
+        );
+        for x in 0..w {
+          dx[y * w + x] = filtered[x];
+        }
+      }
+      // Step 5: magnitude.
+      for y in 0..h {
+        for x in 0..w {
+          let dxv = dx[y * w + x];
+          let dyv = dy[y * w + x];
+          out[(y * w + x) * ch + c_idx] = (dxv * dxv + dyv * dyv).sqrt();
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: Arc::new(out),
+      image_type: *image_type,
+    });
+  }
+
   Ok(unevaluated())
+}
+
+/// 1D discrete-Gaussian smooth kernel for the gradient filter — same
+/// shape as the kernel used by `GaussianFilter`.
+fn gradient_filter_smooth_kernel(radius: usize, sigma: f64) -> Vec<f64> {
+  let t = sigma * sigma;
+  let len = 2 * radius + 1;
+  let exp_neg_t = (-t).exp();
+  let mut kernel: Vec<f64> = Vec::with_capacity(len);
+  for k_signed in -(radius as i64)..=(radius as i64) {
+    let k_abs = k_signed.unsigned_abs() as f64;
+    kernel.push(exp_neg_t * crate::functions::math_ast::bessel_i(k_abs, t));
+  }
+  let sum: f64 = kernel.iter().sum();
+  if sum > 0.0 {
+    for v in kernel.iter_mut() {
+      *v /= sum;
+    }
+  }
+  kernel
+}
+
+/// 1D Gaussian derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`. The
+/// denominator normalises the kernel so that applying it to a unit
+/// ramp (`{0, 1, 2, …}`) recovers slope 1 — wolframscript uses the
+/// same normalisation.
+fn gradient_filter_derivative_kernel(smooth: &[f64]) -> Vec<f64> {
+  let len = smooth.len();
+  let radius = (len.saturating_sub(1) / 2) as i64;
+  let mut d: Vec<f64> = Vec::with_capacity(len);
+  let mut denom: f64 = 0.0;
+  for (i, &t_val) in smooth.iter().enumerate() {
+    let k = i as i64 - radius;
+    let kf = k as f64;
+    d.push(-kf * t_val);
+    denom += kf * kf * t_val;
+  }
+  if denom > 0.0 {
+    for v in d.iter_mut() {
+      *v /= denom;
+    }
+  }
+  d
 }
 
 pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -3532,7 +3696,8 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// neither image nor list.
 pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
-    let valid = matches!(args.first(), Some(Expr::Image { .. } | Expr::List(_)));
+    let valid =
+      matches!(args.first(), Some(Expr::Image { .. } | Expr::List(_)));
     if !valid && !args.is_empty() {
       crate::emit_message(&format!(
         "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
@@ -3619,22 +3784,18 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for c_idx in 0..ch {
       let mut row_filtered: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
-        let row: Vec<f64> = (0..w)
-          .map(|x| data[(y * w + x) * ch + c_idx])
-          .collect();
-        let filtered = crate::functions::math_ast::convolve_edge_padded(
-          &row, &kernel,
-        );
+        let row: Vec<f64> =
+          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
+        let filtered =
+          crate::functions::math_ast::convolve_edge_padded(&row, &kernel);
         for x in 0..w {
           row_filtered[y * w + x] = filtered[x];
         }
       }
       for x in 0..w {
-        let col: Vec<f64> =
-          (0..h).map(|y| row_filtered[y * w + x]).collect();
-        let filtered = crate::functions::math_ast::convolve_edge_padded(
-          &col, &kernel,
-        );
+        let col: Vec<f64> = (0..h).map(|y| row_filtered[y * w + x]).collect();
+        let filtered =
+          crate::functions::math_ast::convolve_edge_padded(&col, &kernel);
         for y in 0..h {
           out[(y * w + x) * ch + c_idx] = filtered[y];
         }
