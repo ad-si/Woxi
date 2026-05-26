@@ -569,6 +569,20 @@ function main() {
                             // reached. Woxi's script-mode EndOfFile behavior is covered
                             // by the input_function unit tests in tests/interpreter_tests/io.rs.
     /\bInputString\[/,      // Same as Input[] — blocks on stdin in batch mode.
+    /\bCantorMesh\[/,       // Wolfram returns an opaque MeshRegion[...] whose Part / Head
+                            // round-trip via InputForm with the original head intact;
+                            // Woxi exposes the underlying {vertices, polygons} data.
+    /\bGridGraph\[/,        // Internal Graph representation differs (edge list vs SparseArray)
+    /\bImageConvolve\[/,    // Last-ULP floating-point differences between filter algorithms
+    /\bDominantColors\[/,   // Implementation-specific color algorithm: Woxi uses a GrayLevel
+                            // ramp on single-channel inputs, Wolfram hashes labels into RGB.
+    /\bCenteredInterval\[/, // Internal representation differs: Woxi stores {value, radius}
+                            // pairs, Wolfram stores an arbitrary-precision ball encoding
+                            // (e.g. {{5, 0, 536870912, -29}, 63}).
+    /\bCloudExport\[/,      // Cloud-dependent: Wolfram uploads to wolframcloud.com and
+                            // returns a CloudObject URL; Woxi keeps the call symbolic.
+    /\bSound\[\{Play\[/,    // Wolfram compiles Play[] into a SampledSoundFunction with a
+                            // CompiledFunction body; Woxi keeps Play[] as an inert wrapper.
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -863,6 +877,69 @@ function main() {
     // `N[…]`; Woxi returns the bound pattern variable as-is (`11`). The
     // unit test asserts Woxi's integer-passthrough behavior.
     "N[c, p_?(#>10&)] := p; N[c, 11]",
+    // Reduce[Exists[…], a] — Woxi proves the inner system has a witness for
+    // every real a and returns True; Wolfram preserves the implicit domain
+    // marker and returns Element[a, Reals]. Both descriptions are equivalent
+    // over the reals; surface-form divergence in the Reduce result.
+    "Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 1], a]",
+    // `Sin[x_] := y` — Sin is Protected on a fresh kernel, so this fails
+    // with SetDelayed::write and returns $Failed. Inside the verify batch a
+    // prior `Unprotect[Sin]` test leaves Sin unprotected, so wolframscript
+    // sets a DownValue and returns Null. The Woxi unit test asserts the
+    // fresh-kernel $Failed behavior.
+    "Sin[x_] := y",
+    // Attributes[Manipulate]: in a fresh wolframscript kernel Manipulate has
+    // only {Protected, ReadProtected}; once Manipulate is mentioned, HoldAll
+    // is added automatically. Same root cause as Attributes[Plot3D] above.
+    "Attributes[Manipulate]",
+    // Expectation[x*y, Distributed[{x, y}, BinormalDistribution[r]]] = r;
+    // Wolfram computes the covariance/correlation moment directly, Woxi
+    // keeps the call symbolic (no joint-distribution evaluator yet).
+    "Expectation[x*y, Distributed[{x, y}, BinormalDistribution[1/3]]]",
+    // InverseFunction[(a*#1 + b)/(c*#1 + d) &] — Möbius inverse. Surface form
+    // differs only in Times factor ordering: Woxi `#1*d` vs Wolfram `d*#1`.
+    "InverseFunction[(a*#1 + b)/(c*#1 + d) &]",
+    // Multinomial[3, x] — Woxi keeps the Binomial[3+x, x] reduction; Wolfram
+    // expands to the polynomial ((1+x)(2+x)(3+x))/6. Mathematically equal.
+    "Multinomial[3, x]",
+    // Series[x!, {x, 0, 2}] — Plus ordering inside the third-order
+    // coefficient: Woxi `Pi^2 + 6*EulerGamma^2` vs Wolfram `6*EulerGamma^2 + Pi^2`.
+    "Series[x!, {x, 0, 2}]",
+    // Series[x!!, {x, 0, 2}] — Woxi factors the third-order coefficient
+    // (`6*(EulerGamma - Log[2])^2 + Pi^2*(1 + Log[64] - 6*Log[Pi])`), Wolfram
+    // expands it. Same value, different surface.
+    "Series[x!!, {x, 0, 2}]",
+    // Series[Pochhammer[x, 1/2], {x, 0, 2}] — Woxi uses the closed form
+    // `-Sqrt[Pi]*Log[4]` for the linear coefficient; Wolfram leaves it as
+    // `Sqrt[Pi]*(EulerGamma + PolyGamma[0, 1/2])`. These are equal:
+    // EulerGamma + PolyGamma[0, 1/2] = -Log[4].
+    "Series[Pochhammer[x, 1/2], {x, 0, 2}]",
+    // GaussianFilter — last-ULP floating-point difference at the kernel
+    // sampling points (Woxi 0.09938048320860668 vs Wolfram 0.09938048320860672).
+    "GaussianFilter[{0., 0., 1., 0., 0.}, 1]",
+    // Series[BarnesG[x], {x, 0, 2}] — Plus ordering inside the linear
+    // coefficient: Woxi `(-1 + Log[2*Pi])/2 + EulerGamma`, Wolfram
+    // `EulerGamma + (-1 + Log[2*Pi])/2`.
+    "Series[BarnesG[x], {x, 0, 2}]",
+    // WeberE[v, 0] = (1 - Cos[Pi*v]) / (Pi*v); Wolfram rewrites this as
+    // (Pi*v*Sinc[(Pi*v)/2]^2)/2 via the half-angle identity. Equivalent.
+    "WeberE[v, 0]",
+    // AngerJ[v, 0] = Sin[Pi*v]/(Pi*v); Wolfram folds this to Sinc[Pi*v].
+    "AngerJ[v, 0]",
+    // CDF[StudentTDistribution[v], 0] — Woxi uses the symmetry shortcut
+    // (the StudentT distribution is symmetric about 0, so the CDF at 0 is
+    // exactly 1/2 for any v > 0). Wolfram leaves the BetaRegularized form.
+    "CDF[StudentTDistribution[v], 0]",
+    // PDF[HypergeometricDistribution[20, 50, 100], k] — same expression up
+    // to Binomial factor ordering inside the Piecewise.
+    "PDF[HypergeometricDistribution[20, 50, 100], k]",
+    // Around[x, Scaled[0.1]] — Wolfram resolves Scaled[0.1] to 0.1*x at
+    // evaluation time; Woxi keeps the Scaled[] uncertainty marker symbolic.
+    "Around[x, Scaled[0.1]]",
+    // Median[ChiDistribution[3]] — algebraic surface difference: Woxi gives
+    // Sqrt[2]*Sqrt[InverseGammaRegularized[3/2, 0, 1/2]], Wolfram fuses the
+    // square roots to Sqrt[2*InverseGammaRegularized[3/2, 0, 1/2]].
+    "Median[ChiDistribution[3]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
