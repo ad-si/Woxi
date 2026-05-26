@@ -4578,17 +4578,6 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Extract data list
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BandpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-
   // Extract {omega1, omega2}
   let (omega1, omega2) = match &args[1] {
     Expr::List(freqs) if freqs.len() == 2 => {
@@ -4620,14 +4609,12 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Parse optional order (3rd argument, if numeric) and options (Rule arguments)
-  let mut order = items.len(); // default order = signal length
   let mut sample_rate = 1.0_f64;
-
+  let mut explicit_order: Option<usize> = None;
   for i in 2..args.len() {
     match &args[i] {
       Expr::Integer(n) if *n > 0 => {
-        order = *n as usize;
+        explicit_order = Some(*n as usize);
       }
       Expr::Rule {
         pattern,
@@ -4648,13 +4635,70 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Scale frequencies by sample rate
   let w1 = omega1 / sample_rate;
   let w2 = omega2 / sample_rate;
 
-  // Compute FIR kernel using windowed-sinc with exact Hamming window (alpha = 25/46)
-  let n = order;
-  let kernel = bandpass_kernel(n, w1, w2);
+  // Image input: separable 2D filter (row-then-column 1D passes).
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    if w == 0 || h == 0 {
+      return Ok(args[0].clone());
+    }
+    let row_order = explicit_order.unwrap_or(w);
+    let col_order = explicit_order.unwrap_or(h);
+    let row_kernel = bandpass_kernel(row_order, w1, w2);
+    let col_kernel = bandpass_kernel(col_order, w1, w2);
+    let mut out: Vec<f64> = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      let mut row_filtered: Vec<f64> = vec![0.0; w * h];
+      for y in 0..h {
+        let row: Vec<f64> = (0..w)
+          .map(|x| data[(y * w + x) * ch + c_idx])
+          .collect();
+        let filtered = convolve_edge_padded(&row, &row_kernel);
+        for x in 0..w {
+          row_filtered[y * w + x] = filtered[x];
+        }
+      }
+      for x in 0..w {
+        let col: Vec<f64> = (0..h).map(|y| row_filtered[y * w + x]).collect();
+        let filtered = convolve_edge_padded(&col, &col_kernel);
+        for y in 0..h {
+          out[(y * w + x) * ch + c_idx] = filtered[y];
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: std::sync::Arc::new(out),
+      image_type: *image_type,
+    });
+  }
+
+  // Extract data list
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BandpassFilter".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let order = explicit_order.unwrap_or(items.len());
+  let kernel = bandpass_kernel(order, w1, w2);
 
   // Try numeric path first
   let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
@@ -4998,9 +5042,8 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for c_idx in 0..ch {
       let mut row_filtered: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
-        let row: Vec<f64> = (0..w)
-          .map(|x| data[(y * w + x) * ch + c_idx])
-          .collect();
+        let row: Vec<f64> =
+          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
         let filtered = convolve_edge_padded(&row, &row_kernel);
         for x in 0..w {
           row_filtered[y * w + x] = filtered[x];
@@ -5082,16 +5125,6 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "BandstopFilter".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-
   let (omega1, omega2) = match &args[1] {
     Expr::List(freqs) if freqs.len() == 2 => {
       let o1 = match try_eval_to_f64(&freqs[0]) {
@@ -5122,13 +5155,12 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut order = items.len();
   let mut sample_rate = 1.0_f64;
-
+  let mut explicit_order: Option<usize> = None;
   for i in 2..args.len() {
     match &args[i] {
       Expr::Integer(n) if *n > 0 => {
-        order = *n as usize;
+        explicit_order = Some(*n as usize);
       }
       Expr::Rule {
         pattern,
@@ -5151,6 +5183,65 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let w1 = omega1 / sample_rate;
   let w2 = omega2 / sample_rate;
+
+  // Image input: separable 2D filter (row-then-column 1D passes).
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    if w == 0 || h == 0 {
+      return Ok(args[0].clone());
+    }
+    let row_order = explicit_order.unwrap_or(w);
+    let col_order = explicit_order.unwrap_or(h);
+    let row_kernel = bandstop_kernel(row_order, w1, w2);
+    let col_kernel = bandstop_kernel(col_order, w1, w2);
+    let mut out: Vec<f64> = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      let mut row_filtered: Vec<f64> = vec![0.0; w * h];
+      for y in 0..h {
+        let row: Vec<f64> = (0..w)
+          .map(|x| data[(y * w + x) * ch + c_idx])
+          .collect();
+        let filtered = convolve_edge_padded(&row, &row_kernel);
+        for x in 0..w {
+          row_filtered[y * w + x] = filtered[x];
+        }
+      }
+      for x in 0..w {
+        let col: Vec<f64> = (0..h).map(|y| row_filtered[y * w + x]).collect();
+        let filtered = convolve_edge_padded(&col, &col_kernel);
+        for y in 0..h {
+          out[(y * w + x) * ch + c_idx] = filtered[y];
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: std::sync::Arc::new(out),
+      image_type: *image_type,
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BandstopFilter".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let order = explicit_order.unwrap_or(items.len());
 
   let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {

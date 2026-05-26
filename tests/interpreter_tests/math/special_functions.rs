@@ -5823,6 +5823,33 @@ mod bandpass_filter {
       result
     );
   }
+
+  // Image input: separable 2D filter (row-then-column 1D windowed-sinc
+  // passes). wolframscript reference:
+  //   ImageData[BandpassFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5},
+  //                                   {1., 0.5, 0.}}], {0.3, 0.7}]]
+  #[test]
+  fn image_3x3() {
+    assert_eq!(
+      interpret(
+        "ImageData[BandpassFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5}, {1., 0.5, 0.}}], {0.3, 0.7}]]",
+      )
+      .unwrap(),
+      "{{0.0014151931973174214, 0.011364215053617954, 0.020177505910396576}, {0.011364215053617954, 0.018855467438697815, 0.011364215053617954}, {0.020177505910396576, 0.011364215053617954, 0.0014151931973174214}}"
+    );
+  }
+
+  // Audit regression: confirm `BandpassFilter[Image, spec]` returns an Image.
+  #[test]
+  fn image_returns_image() {
+    assert_eq!(
+      interpret(
+        "Head[BandpassFilter[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}], {0.3, 0.7}]]",
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
 }
 
 mod lowpass_filter {
@@ -5926,6 +5953,30 @@ mod bandstop_filter {
     assert_eq!(
       interpret("BandstopFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}]").unwrap(),
       "{0.8145201761495926, 1.711940552496217, 2.5755081897900203, 3.439075827083824, 4.336496203430448}"
+    );
+  }
+
+  // Image input: separable 2D filter (row-then-column 1D passes).
+  #[test]
+  fn image_3x3() {
+    assert_eq!(
+      interpret(
+        "ImageData[BandstopFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5}, {1., 0.5, 0.}}], {0.3, 0.7}]]",
+      )
+      .unwrap(),
+      "{{-0.008236446417868137, 0.359911173582077, 0.736574649810791}, {0.359911173582077, 0.7449042797088623, 0.359911173582077}, {0.736574649810791, 0.359911173582077, -0.008236446417868137}}"
+    );
+  }
+
+  // Audit regression: confirm `BandstopFilter[Image, spec]` returns an Image.
+  #[test]
+  fn image_returns_image() {
+    assert_eq!(
+      interpret(
+        "Head[BandstopFilter[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}], {0.3, 0.7}]]",
+      )
+      .unwrap(),
+      "Image"
     );
   }
 }
