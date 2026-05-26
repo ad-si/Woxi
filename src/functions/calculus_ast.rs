@@ -8211,6 +8211,32 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(factorial_power_series_at_zero(&var_name, *n, order));
   }
 
+  // Series[WeberE[v, z], {z, 0, n}] and Series[AngerJ[v, z], {z, 0, n}] —
+  // the direct-Derivative path stalls because Woxi can't reduce
+  // `Derivative[0, k][WeberE][v, 0]` symbolically. Inject the closed-form
+  // coefficients (Cos/Sin and (v^2 - j^2) factors) instead. Skip for integer
+  // ν, where the formula has 0/0 indeterminate forms (and AngerJ[n, x] is
+  // BesselJ[n, x] anyway).
+  if let Expr::FunctionCall {
+    name: webname,
+    args: webargs,
+  } = &args[0]
+    && (webname == "WeberE" || webname == "AngerJ")
+    && webargs.len() == 2
+    && matches!(&webargs[1], Expr::Identifier(v) if v == &var_name)
+    && !matches!(&webargs[0], Expr::Integer(_))
+    && matches!(&x0, Expr::Integer(0))
+    && order >= 0
+  {
+    let is_weber = webname == "WeberE";
+    return Ok(weber_anger_series_at_zero(
+      &var_name,
+      &webargs[0],
+      order,
+      is_weber,
+    ));
+  }
+
   // LucasL[n, var] with non-integer n: rewrite using the closed-form
   // first dominant root `((x + Sqrt[x^2 + 4])/2)^n`. Series of this
   // form yields the same coefficients as Wolfram's `Series[LucasL[n, x], …]`
@@ -11183,6 +11209,117 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
       }
       _ => unreachable!(),
     };
+    coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
+  }
+  Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      Expr::Integer(0),
+      Expr::List(coeffs.into()),
+      Expr::Integer(0),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
+  }
+}
+
+/// `Series[WeberE[v, z], {z, 0, order}]` (`is_weber == true`) or
+/// `Series[AngerJ[v, z], {z, 0, order}]` (`is_weber == false`) using their
+/// closed-form Taylor coefficients at z = 0:
+///
+/// WeberE: c_k(v) = (1 - (-1)^k Cos[π v]) / (π * denom_k(v))
+/// AngerJ: c_k(v) = (-1)^k Sin[π v] / (π * denom_k(v))
+///
+/// where denom_k(v) is the product of (v^2 - j^2) over j ∈ {k, k-2, …}
+/// down to 1 (if k odd) or 0 (if k even); j = 0 contributes a bare `v`.
+fn weber_anger_series_at_zero(
+  var_name: &str,
+  nu: &Expr,
+  order: i128,
+  is_weber: bool,
+) -> Expr {
+  let int = |n: i128| Expr::Integer(n);
+  let constant = |s: &str| Expr::Constant(s.to_string());
+  let times = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: args.into(),
+  };
+  let power = |base: Expr, exp: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp].into(),
+  };
+  let plus = |args: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: args.into(),
+  };
+  let divide = |left: Expr, right: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(left),
+    right: Box::new(right),
+  };
+
+  let pi = constant("Pi");
+  let nu_pi = times(vec![nu.clone(), pi.clone()]);
+
+  // Build the numerator for coefficient k:
+  //   WeberE: 1 - (-1)^k * Cos[π v]    (i.e. 1 - Cos[πν] if k even, 1 + Cos[πν] if k odd)
+  //   AngerJ:        (-1)^k * Sin[π v]
+  let make_numerator = |k: i128| -> Expr {
+    let trig = Expr::FunctionCall {
+      name: if is_weber { "Cos" } else { "Sin" }.to_string(),
+      args: vec![nu_pi.clone()].into(),
+    };
+    let k_even = k % 2 == 0;
+    if is_weber {
+      // 1 - sign*Cos where sign = (-1)^k
+      if k_even {
+        plus(vec![int(1), times(vec![int(-1), trig])])
+      } else {
+        plus(vec![int(1), trig])
+      }
+    } else if k_even {
+      trig
+    } else {
+      times(vec![int(-1), trig])
+    }
+  };
+
+  // Build the denominator factors (without the leading π):
+  //   For j = 0: factor is v (just `nu`)
+  //   For j > 0: factor is v^2 - j^2
+  // Returns a single Expr (Times if multiple factors).
+  let make_denom_no_pi = |k: i128| -> Expr {
+    let mut factors: Vec<Expr> = Vec::new();
+    // Collect j values: k, k-2, k-4, ..., down to 0 or 1.
+    let mut j = k;
+    while j >= 0 {
+      if j == 0 {
+        factors.push(nu.clone());
+      } else {
+        // v^2 - j^2
+        factors.push(plus(vec![
+          times(vec![int(-j * j), int(1)]),
+          power(nu.clone(), int(2)),
+        ]));
+      }
+      j -= 2;
+    }
+    factors.reverse();
+    if factors.len() == 1 {
+      factors.remove(0)
+    } else {
+      times(factors)
+    }
+  };
+
+  let mut coeffs: Vec<Expr> = Vec::with_capacity((order.max(0) + 1) as usize);
+  for k in 0..=order {
+    let num = make_numerator(k);
+    let denom_no_pi = make_denom_no_pi(k);
+    let denom = times(vec![pi.clone(), denom_no_pi]);
+    let raw = divide(num, denom);
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
   Expr::FunctionCall {

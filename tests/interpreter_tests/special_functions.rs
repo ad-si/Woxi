@@ -2741,3 +2741,84 @@ mod cases {
     );
   }
 }
+
+mod weber_e_anger_j_series {
+  use super::*;
+
+  // Closed-form series at z=0 for WeberE[ν, z] and AngerJ[ν, z].
+  // wolframscript:
+  //   Series[WeberE[v, z], {z, 0, 2}]
+  //     -> SeriesData[z, 0,
+  //          {(1 - Cos[Pi*v])/(Pi*v),
+  //           (1 + Cos[Pi*v])/(Pi*(-1 + v^2)),
+  //           (1 - Cos[Pi*v])/(Pi*v*(-4 + v^2))},
+  //          0, 3, 1]
+
+  #[test]
+  fn weber_e_series_symbolic_order_2() {
+    assert_eq!(
+      interpret("Series[WeberE[v, z], {z, 0, 2}]").unwrap(),
+      "SeriesData[z, 0, {(1 - Cos[Pi*v])/(Pi*v), (1 + Cos[Pi*v])/(Pi*(-1 + v^2)), (1 - Cos[Pi*v])/(Pi*v*(-4 + v^2))}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn anger_j_series_symbolic_order_2() {
+    assert_eq!(
+      interpret("Series[AngerJ[v, z], {z, 0, 2}]").unwrap(),
+      "SeriesData[z, 0, {Sin[Pi*v]/(Pi*v), -(Sin[Pi*v]/(Pi*(-1 + v^2))), Sin[Pi*v]/(Pi*v*(-4 + v^2))}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn weber_e_half_full_simplify_order_4() {
+    // Audit case: stack overflow → closed form.
+    assert_eq!(
+      interpret("FullSimplify[Series[WeberE[1/2, x], {x, 0, 4}]]").unwrap(),
+      "SeriesData[x, 0, {2/Pi, -4/(3*Pi), -8/(15*Pi), 16/(105*Pi), 32/(945*Pi)}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn anger_j_half_full_simplify_order_4() {
+    assert_eq!(
+      interpret("FullSimplify[Series[AngerJ[1/2, x], {x, 0, 4}]]").unwrap(),
+      "SeriesData[x, 0, {2/Pi, 4/(3*Pi), -8/(15*Pi), -16/(105*Pi), 32/(945*Pi)}, 0, 5, 1]"
+    );
+  }
+
+  // Value at z=0 reduces by the closed form for symbolic ν.
+  #[test]
+  fn weber_e_at_zero_symbolic() {
+    assert_eq!(
+      interpret("WeberE[v, 0]").unwrap(),
+      "(1 - Cos[Pi*v])/(Pi*v)"
+    );
+  }
+
+  #[test]
+  fn anger_j_at_zero_symbolic() {
+    assert_eq!(interpret("AngerJ[v, 0]").unwrap(), "Sin[Pi*v]/(Pi*v)");
+  }
+
+  // Rational ν simplifies fully.
+  #[test]
+  fn weber_e_half_at_zero() {
+    assert_eq!(interpret("WeberE[1/2, 0]").unwrap(), "2/Pi");
+  }
+
+  #[test]
+  fn anger_j_half_at_zero() {
+    assert_eq!(interpret("AngerJ[1/2, 0]").unwrap(), "2/Pi");
+  }
+
+  #[test]
+  fn weber_e_three_halves_at_zero() {
+    assert_eq!(interpret("WeberE[3/2, 0]").unwrap(), "2/(3*Pi)");
+  }
+
+  #[test]
+  fn weber_e_neg_half_at_zero() {
+    assert_eq!(interpret("WeberE[-1/2, 0]").unwrap(), "-2/Pi");
+  }
+}

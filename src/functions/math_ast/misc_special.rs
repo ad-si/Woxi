@@ -1177,6 +1177,13 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
+  // AngerJ[ν, 0] for non-integer (symbolic or rational) ν:
+  //   AngerJ[ν, 0] = Sin[ν*Pi] / (ν*Pi)
+  if matches!(z_expr, Expr::Integer(0)) && !matches!(nu_expr, Expr::Integer(_)) {
+    let sym_form = anger_j_at_zero_symbolic(nu_expr);
+    return crate::evaluator::evaluate_expr_to_expr(&sym_form);
+  }
+
   // For integer nu, AngerJ[n, z] = BesselJ[n, z]
   if let Expr::Integer(_) = nu_expr {
     return bessel_j_ast(args);
@@ -1259,6 +1266,16 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // WeberE[n, 0] = 0 for any non-zero integer n (Sin[n*Pi/2]^2 path collapses
+  // to 0 for even n; the closed form below covers odd n separately, but Woxi
+  // returns the symbolic value for integer ν via the closed form too).
+  // WeberE[ν, 0] = (1 - Cos[ν*Pi]) / (ν*Pi) for any non-zero ν.
+  if matches!(z_expr, Expr::Integer(0)) && !matches!(nu_expr, Expr::Integer(0))
+  {
+    let sym_form = weber_e_at_zero_symbolic(nu_expr);
+    return crate::evaluator::evaluate_expr_to_expr(&sym_form);
+  }
+
   // Numeric evaluation when both args are numeric and at least one is Real
   let is_numeric_eval = nu_val.is_some()
     && z_val.is_some()
@@ -1276,6 +1293,49 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "WeberE".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).
+pub fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
+  let pi = Expr::Constant("Pi".to_string());
+  let nu_pi = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(nu.clone()),
+    right: Box::new(pi.clone()),
+  };
+  let sin_nu_pi = Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![nu_pi.clone()].into(),
+  };
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(sin_nu_pi),
+    right: Box::new(nu_pi),
+  }
+}
+
+/// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
+pub fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
+  let pi = Expr::Constant("Pi".to_string());
+  let nu_pi = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(nu.clone()),
+    right: Box::new(pi.clone()),
+  };
+  let cos_nu_pi = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![nu_pi.clone()].into(),
+  };
+  let one_minus_cos = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(Expr::Integer(1)),
+    right: Box::new(cos_nu_pi),
+  };
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(one_minus_cos),
+    right: Box::new(nu_pi),
+  }
 }
 
 /// Compute WeberE[nu, z] numerically using Gauss-Legendre quadrature.
