@@ -2294,11 +2294,253 @@ fn int_coeffs_to_canonical_expr(coeffs: &[i128], var: &str) -> Expr {
 
 // ─── Multivariate Factoring (Kronecker Substitution) ────────────────
 
+/// Match the AST of a^n ± b^n where a, b are distinct identifiers and n ≥ 2.
+/// Returns `(a_name, b_name, n, is_minus)` where `is_minus == true` means
+/// the second term carries a minus sign (i.e. a^n - b^n). The first variable
+/// is whichever side carries the positive sign; for a^n + b^n the order from
+/// the source is preserved.
+fn match_homogeneous_binomial(expr: &Expr) -> Option<(String, String, u64, bool)>
+{
+  // Extract ±var^n from a single term. Returns (var, n, positive).
+  fn extract_term(t: &Expr) -> Option<(String, u64, bool)> {
+    match t {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        let v = match left.as_ref() {
+          Expr::Identifier(s) => s.clone(),
+          _ => return None,
+        };
+        let n = match right.as_ref() {
+          Expr::Integer(k) if *k >= 2 => *k as u64,
+          _ => return None,
+        };
+        Some((v, n, true))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        let v = match &args[0] {
+          Expr::Identifier(s) => s.clone(),
+          _ => return None,
+        };
+        let n = match &args[1] {
+          Expr::Integer(k) if *k >= 2 => *k as u64,
+          _ => return None,
+        };
+        Some((v, n, true))
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        let (v, n, _) = extract_term(operand)?;
+        Some((v, n, false))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Integer(-1)) => {
+        let (v, n, _) = extract_term(right)?;
+        Some((v, n, false))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Times"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1)) =>
+      {
+        let (v, n, _) = extract_term(&args[1])?;
+        Some((v, n, false))
+      }
+      _ => None,
+    }
+  }
+
+  let (t1, t2) = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      // a^n - b^n form
+      let (v1, n1, sign1) = extract_term(left)?;
+      let (v2, n2, _) = extract_term(right)?;
+      if !sign1 || v1 == v2 || n1 != n2 {
+        return None;
+      }
+      return Some((v1, v2, n1, true));
+    }
+    _ => return None,
+  };
+
+  let (v1, n1, sign1) = extract_term(t1)?;
+  let (v2, n2, sign2) = extract_term(t2)?;
+  if v1 == v2 || n1 != n2 {
+    return None;
+  }
+  match (sign1, sign2) {
+    (true, false) => Some((v1, v2, n1, true)),
+    (false, true) => Some((v2, v1, n1, true)),
+    (true, true) => Some((v1, v2, n1, false)),
+    (false, false) => None,
+  }
+}
+
+/// Build the homogeneous d-th cyclotomic polynomial Φ_d(a, b) as an Expr.
+/// Φ_d(a, b) = sum_k c_k * a^k * b^(φ_d - k) where c_k is the coefficient
+/// of x^k in the univariate Φ_d(x).
+fn homogeneous_cyclotomic(d: u64, a: &str, b: &str) -> Expr {
+  let coeffs = cyclotomic_poly(d);
+  let deg = coeffs.len() - 1;
+  let mut terms: Vec<Expr> = Vec::with_capacity(coeffs.len());
+  for (k, &c) in coeffs.iter().enumerate() {
+    if c == 0 {
+      continue;
+    }
+    let a_pow = match k {
+      0 => None,
+      1 => Some(Expr::Identifier(a.to_string())),
+      _ => Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(a.to_string())),
+        right: Box::new(Expr::Integer(k as i128)),
+      }),
+    };
+    let b_exp = deg - k;
+    let b_pow = match b_exp {
+      0 => None,
+      1 => Some(Expr::Identifier(b.to_string())),
+      _ => Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(b.to_string())),
+        right: Box::new(Expr::Integer(b_exp as i128)),
+      }),
+    };
+    let mut factors: Vec<Expr> = Vec::new();
+    if c.abs() != 1 {
+      factors.push(Expr::Integer(c.abs()));
+    }
+    if let Some(p) = a_pow {
+      factors.push(p);
+    }
+    if let Some(p) = b_pow {
+      factors.push(p);
+    }
+    let body = if factors.is_empty() {
+      Expr::Integer(1)
+    } else if factors.len() == 1 {
+      factors.remove(0)
+    } else {
+      build_product(factors)
+    };
+    let signed = if c < 0 {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(body),
+      }
+    } else {
+      body
+    };
+    terms.push(signed);
+  }
+  let sum = if terms.len() == 1 {
+    terms.remove(0)
+  } else {
+    build_sum(terms)
+  };
+  // Canonicalise term order via expand_and_combine (no actual expansion happens
+  // since terms are already monomials).
+  expand_and_combine(&sum)
+}
+
+/// Fast path for `Factor[a^n ± b^n]` via cyclotomic decomposition:
+///   a^n - b^n = ∏_{d | n}            Φ_d(a, b)
+///   a^n + b^n = ∏_{d | 2n, d ∤ n}    Φ_d(a, b)
+/// Returns `None` if the input doesn't match the homogeneous binomial pattern
+/// or if the result has only one factor (i.e. already irreducible).
+fn try_factor_homogeneous_binomial(expr: &Expr) -> Option<Expr> {
+  let (a, b, n, is_minus) = match_homogeneous_binomial(expr)?;
+
+  let ds: Vec<u64> = if is_minus {
+    divisors_of(n)
+  } else {
+    let dvs2n = divisors_of(2 * n);
+    let dvsn: std::collections::HashSet<u64> =
+      divisors_of(n).into_iter().collect();
+    dvs2n.into_iter().filter(|d| !dvsn.contains(d)).collect()
+  };
+
+  if ds.len() < 2 {
+    return None;
+  }
+
+  let mut factors: Vec<Expr> = ds
+    .into_iter()
+    .map(|d| homogeneous_cyclotomic(d, &a, &b))
+    .collect();
+
+  // Sort factors to match wolframscript's display order:
+  //   degree ASC, then term count ASC, then min coefficient ASC.
+  // This puts smaller-degree factors first, then within a degree the
+  // shorter polynomials, then ones whose terms include negatives.
+  factors.sort_by(|x, y| {
+    let dx = factor_degree(x);
+    let dy = factor_degree(y);
+    if dx != dy {
+      return dx.cmp(&dy);
+    }
+    let tx = factor_term_count(x);
+    let ty = factor_term_count(y);
+    if tx != ty {
+      return tx.cmp(&ty);
+    }
+    let mx = min_term_coefficient(x);
+    let my = min_term_coefficient(y);
+    mx.cmp(&my)
+  });
+
+  if factors.len() == 1 {
+    return Some(factors.remove(0));
+  }
+  Some(build_product(factors))
+}
+
+/// Minimum integer coefficient across all additive terms of `expr`.
+/// Used by the homogeneous-binomial fast path to order Phi_3 / Phi_6
+/// style factors (which tie on degree and term count but differ in
+/// sign pattern of the middle term).
+fn min_term_coefficient(expr: &Expr) -> i128 {
+  collect_additive_terms(expr)
+    .iter()
+    .map(term_integer_coeff)
+    .min()
+    .unwrap_or(0)
+}
+
 /// Factor a multivariate polynomial expression using Kronecker substitution.
 fn factor_multivariate(
   expanded: &Expr,
   vars: std::collections::HashSet<String>,
 ) -> Result<Expr, InterpreterError> {
+  // Fast path: a^n ± b^n decomposes directly via cyclotomic polynomials.
+  // Skips the expensive Kronecker substitution path, which was effectively
+  // hanging on inputs like `Factor[x^10 - y^10]` (degree-110 sparse trial
+  // divisions).
+  if let Some(result) = try_factor_homogeneous_binomial(expanded) {
+    return Ok(result);
+  }
+
   let mut sorted_vars: Vec<String> = vars.into_iter().collect();
   sorted_vars.sort();
 

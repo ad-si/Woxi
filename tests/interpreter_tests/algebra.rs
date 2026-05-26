@@ -703,6 +703,60 @@ mod factor_multivariate {
       "a*x == (b + c)*x"
     );
   }
+
+  // Regression: Factor[x^10 - y^10] used to time out (Kronecker
+  // substitution produced a degree-110 sparse polynomial that
+  // factor_integer_poly tried every cyclotomic divisor against). The
+  // homogeneous-binomial fast path emits the cyclotomic decomposition
+  // directly.
+  #[test]
+  fn x10_minus_y10_homogeneous() {
+    assert_eq!(
+      interpret("Factor[x^10 - y^10]").unwrap(),
+      "(x - y)*(x + y)*(x^4 - x^3*y + x^2*y^2 - x*y^3 + y^4)*(x^4 + x^3*y + x^2*y^2 + x*y^3 + y^4)"
+    );
+  }
+
+  #[test]
+  fn x6_minus_y6_homogeneous() {
+    assert_eq!(
+      interpret("Factor[x^6 - y^6]").unwrap(),
+      "(x - y)*(x + y)*(x^2 - x*y + y^2)*(x^2 + x*y + y^2)"
+    );
+  }
+
+  #[test]
+  fn x4_minus_y4_homogeneous() {
+    assert_eq!(
+      interpret("Factor[x^4 - y^4]").unwrap(),
+      "(x - y)*(x + y)*(x^2 + y^2)"
+    );
+  }
+
+  #[test]
+  fn x8_minus_y8_homogeneous() {
+    assert_eq!(
+      interpret("Factor[x^8 - y^8]").unwrap(),
+      "(x - y)*(x + y)*(x^2 + y^2)*(x^4 + y^4)"
+    );
+  }
+
+  #[test]
+  fn x12_minus_y12_homogeneous() {
+    assert_eq!(
+      interpret("Factor[x^12 - y^12]").unwrap(),
+      "(x - y)*(x + y)*(x^2 + y^2)*(x^2 - x*y + y^2)*(x^2 + x*y + y^2)*(x^4 - x^2*y^2 + y^4)"
+    );
+  }
+
+  // x^n + y^n should still factor for composite n (e.g. n = 6).
+  #[test]
+  fn x6_plus_y6_homogeneous() {
+    assert_eq!(
+      interpret("Factor[x^6 + y^6]").unwrap(),
+      "(x^2 + y^2)*(x^4 - x^2*y^2 + y^4)"
+    );
+  }
 }
 
 mod factor_list {
@@ -2548,10 +2602,7 @@ mod reduce {
   #[test]
   fn reduce_modulus_two_vars() {
     assert_eq!(
-      interpret(
-        "Reduce[x^5 == y^4 + x*y + 1, {x, y}, Modulus -> 4]"
-      )
-      .unwrap(),
+      interpret("Reduce[x^5 == y^4 + x*y + 1, {x, y}, Modulus -> 4]").unwrap(),
       "(x == 1 && y == 0) || (x == 1 && y == 3) || (x == 2 && y == 1) || \
        (x == 2 && y == 3) || (x == 3 && y == 2) || (x == 3 && y == 3)"
     );
