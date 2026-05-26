@@ -502,10 +502,8 @@ mod outer_extended {
   #[test]
   fn sparse_array_band_with_endpoint() {
     assert_eq!(
-      interpret(
-        "Normal[SparseArray[{Band[{1, 1}, {3, 3}] -> x}, {5, 5}]]"
-      )
-      .unwrap(),
+      interpret("Normal[SparseArray[{Band[{1, 1}, {3, 3}] -> x}, {5, 5}]]")
+        .unwrap(),
       "{{x, 0, 0, 0, 0}, {0, x, 0, 0, 0}, {0, 0, x, 0, 0}, \
        {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}"
     );
@@ -7429,6 +7427,70 @@ mod groupings {
   fn ternary_impossible() {
     // 4 elements can't form a ternary tree
     assert_eq!(interpret("Groupings[{a, b, c, d}, 3]").unwrap(), "{}");
+  }
+
+  // ─── Named operator form: Groupings[list, f -> k] ─────────────────
+
+  #[test]
+  fn named_op_binary_three() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c}, f -> 2]").unwrap(),
+      "{f[f[a, b], c], f[a, f[b, c]]}"
+    );
+  }
+
+  #[test]
+  fn named_op_binary_four() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c, d}, f -> 2]").unwrap(),
+      "{f[f[f[a, b], c], d], f[a, f[f[b, c], d]], f[f[a, f[b, c]], d], f[a, f[b, f[c, d]]], f[f[a, b], f[c, d]]}"
+    );
+  }
+
+  #[test]
+  fn named_op_ternary_five() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c, d, e}, f -> 3]").unwrap(),
+      "{f[f[a, b, c], d, e], f[a, f[b, c, d], e], f[a, b, f[c, d, e]]}"
+    );
+  }
+
+  #[test]
+  fn named_op_integer_form() {
+    assert_eq!(
+      interpret("Groupings[3, f -> 2]").unwrap(),
+      "{f[f[1, 2], 3], f[1, f[2, 3]]}"
+    );
+  }
+
+  // Singleton list form `{f -> k}` behaves like `f -> k`.
+  #[test]
+  fn named_op_singleton_list() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c}, {f -> 2}]").unwrap(),
+      "{f[f[a, b], c], f[a, f[b, c]]}"
+    );
+  }
+
+  // ─── Multi-operator form ──────────────────────────────────────────
+
+  #[test]
+  fn multi_op_two_ops_three_elements() {
+    // n = 3 fits g (arity 3) as a single application; f (arity 2) gives
+    // the two binary trees.
+    assert_eq!(
+      interpret("Groupings[{a, b, c}, {f -> 2, g -> 3}]").unwrap(),
+      "{g[a, b, c], f[f[a, b], c], f[a, f[b, c]]}"
+    );
+  }
+
+  #[test]
+  fn multi_op_audit_case() {
+    // Audit case: Groupings[{a, b, c, d}, {foo -> 3, bar -> 2}].
+    assert_eq!(
+      interpret("Groupings[{a, b, c, d}, {foo -> 3, bar -> 2}]").unwrap(),
+      "{foo[bar[a, b], c, d], foo[a, bar[b, c], d], foo[a, b, bar[c, d]], bar[foo[a, b, c], d], bar[a, foo[b, c, d]], bar[bar[bar[a, b], c], d], bar[a, bar[bar[b, c], d]], bar[bar[a, bar[b, c]], d], bar[a, bar[b, bar[c, d]]], bar[bar[a, b], bar[c, d]]}"
+    );
   }
 }
 

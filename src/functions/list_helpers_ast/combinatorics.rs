@@ -488,8 +488,79 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Groupings ──────────────────────────────────────────────────────
 
-/// Groupings[n, k] or Groupings[list, k]
-/// Generate all ways to group elements using an operator of arity k.
+/// A grouping operator: either an anonymous arity (head = `List`) or a
+/// named head `f` with the specified arity.
+#[derive(Clone, Debug)]
+struct GroupingOp {
+  /// Head used when wrapping children. `None` means use `Expr::List`
+  /// (the integer-arity form `Groupings[list, k]`).
+  head: Option<String>,
+  arity: usize,
+}
+
+impl GroupingOp {
+  fn wrap(&self, children: Vec<Expr>) -> Expr {
+    match &self.head {
+      Some(name) => Expr::FunctionCall {
+        name: name.clone(),
+        args: children.into(),
+      },
+      None => Expr::List(children.into()),
+    }
+  }
+}
+
+/// Parse the second argument of `Groupings` into a list of operators.
+/// Returns `None` if the argument doesn't match any recognised form.
+fn parse_grouping_ops(arg: &Expr) -> Option<Vec<GroupingOp>> {
+  match arg {
+    // Plain integer k -> single anonymous arity-k operator.
+    Expr::Integer(k) if *k >= 2 => Some(vec![GroupingOp {
+      head: None,
+      arity: *k as usize,
+    }]),
+    // Single Rule `f -> k`.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => parse_single_rule(pattern, replacement).map(|op| vec![op]),
+    // List of Rules `{f -> k, ...}` or singleton `{f -> k}`.
+    Expr::List(items) if !items.is_empty() => {
+      let mut ops = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = it
+        {
+          ops.push(parse_single_rule(pattern, replacement)?);
+        } else {
+          return None;
+        }
+      }
+      Some(ops)
+    }
+    _ => None,
+  }
+}
+
+fn parse_single_rule(pattern: &Expr, replacement: &Expr) -> Option<GroupingOp> {
+  let head = match pattern {
+    Expr::Identifier(s) => s.clone(),
+    _ => return None,
+  };
+  let arity = match replacement {
+    Expr::Integer(k) if *k >= 2 => *k as usize,
+    _ => return None,
+  };
+  Some(GroupingOp {
+    head: Some(head),
+    arity,
+  })
+}
+
+/// Groupings[n, k], Groupings[list, k], Groupings[list, f -> k],
+/// Groupings[list, {f -> k, ...}].
 pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -497,9 +568,9 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let arity = match &args[1] {
-    Expr::Integer(k) if *k >= 2 => *k as usize,
-    _ => {
+  let ops = match parse_grouping_ops(&args[1]) {
+    Some(ops) => ops,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "Groupings".to_string(),
         args: args.to_vec().into(),
@@ -518,21 +589,211 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Single anonymous arity: use the existing optimised path so the
+  // canonical output of `Groupings[list, k]` is byte-identical.
+  if ops.len() == 1 && ops[0].head.is_none() {
+    let arity = ops[0].arity;
+    let results = groupings_recursive(&elements, arity);
+    return Ok(Expr::List(results.into()));
+  }
+
+  // Single named operator: reuse the anonymous path, then rewrap each
+  // List as the named head.
+  if ops.len() == 1
+    && let Some(head) = &ops[0].head
+  {
+    let arity = ops[0].arity;
+    let results = groupings_recursive(&elements, arity);
+    let rewrapped: Vec<Expr> =
+      results.into_iter().map(|t| rewrap_lists(&t, head)).collect();
+    return Ok(Expr::List(rewrapped.into()));
+  }
+
+  // General multi-operator case.
+  Ok(Expr::List(groupings_multi(&elements, &ops).into()))
+}
+
+/// Recursively replace every `Expr::List` with `head[...]`. Leaves all
+/// other AST nodes untouched. Used to lift the integer-arity output to a
+/// named-operator output.
+fn rewrap_lists(expr: &Expr, head: &str) -> Expr {
+  match expr {
+    Expr::List(items) => {
+      let new_items: Vec<Expr> =
+        items.iter().map(|i| rewrap_lists(i, head)).collect();
+      Expr::FunctionCall {
+        name: head.to_string(),
+        args: new_items.into(),
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Generate all groupings of `elements` using any of the operators in
+/// `ops` at each internal node. Returns one entry per distinct tree.
+///
+/// Operators are tried at the root in descending-arity order so that
+/// higher-arity ops (used at most once in shallow trees) emit before
+/// lower-arity ones; this matches wolframscript's canonical output
+/// regardless of the order rules were written in.
+fn groupings_multi(elements: &[Expr], ops: &[GroupingOp]) -> Vec<Expr> {
   let n = elements.len();
-  let results = groupings_recursive(&elements, arity);
-  Ok(Expr::List(
-    results
-      .into_iter()
-      .map(|g| {
-        if n == 1 {
-          // Single element: return just the element (not wrapped in list)
-          g
-        } else {
-          g
+  if n == 1 {
+    return vec![elements[0].clone()];
+  }
+
+  let mut sorted_ops: Vec<&GroupingOp> = ops.iter().collect();
+  sorted_ops.sort_by(|a, b| b.arity.cmp(&a.arity));
+
+  let mut results = Vec::new();
+  for op in &sorted_ops {
+    if n < op.arity {
+      continue;
+    }
+    let op_trees = groupings_op_at_root(elements, op, ops);
+    results.extend(op_trees);
+  }
+  results
+}
+
+/// All trees that have `op` at the root, with subtrees built from any
+/// operator in `all_ops`.
+///
+/// The split compositions are grouped by their partition (sorted
+/// descending) and the partitions are visited by descending max element;
+/// within each partition the compositions are taken in decreasing-lex
+/// order. Trees from compositions sharing a partition are then
+/// interleaved shape-major / composition-minor: the i-th tree from each
+/// composition is emitted before the (i+1)-th. This reproduces
+/// wolframscript's canonical ordering on the documented examples.
+fn groupings_op_at_root(
+  elements: &[Expr],
+  op: &GroupingOp,
+  all_ops: &[GroupingOp],
+) -> Vec<Expr> {
+  let n = elements.len();
+  let k = op.arity;
+
+  let mut compositions = generate_compositions(n, k);
+  // Sort: by partition (max-element descending), then by composition
+  // (lex descending).
+  compositions.sort_by(|a, b| {
+    let pa = partition_key(a);
+    let pb = partition_key(b);
+    pb.cmp(&pa).then_with(|| b.cmp(a))
+  });
+
+  // Group consecutive compositions sharing the same partition.
+  let mut groups: Vec<Vec<&Vec<usize>>> = Vec::new();
+  for c in &compositions {
+    let pk = partition_key(c);
+    if let Some(last) = groups.last_mut()
+      && partition_key(last[0]) == pk
+    {
+      last.push(c);
+    } else {
+      groups.push(vec![c]);
+    }
+  }
+
+  let mut results = Vec::new();
+  for group in groups {
+    // For each composition in the group, build all its child-cross-product
+    // trees in row-major order.
+    let mut per_comp: Vec<Vec<Expr>> = Vec::with_capacity(group.len());
+    for comp in &group {
+      per_comp.push(build_trees_for_composition(elements, comp, op, all_ops));
+    }
+    // Interleave: take the i-th tree from each composition (in order)
+    // before the (i+1)-th. Lengths may differ if children of compositions
+    // in the same partition produce different numbers of inner shapes —
+    // skip empties.
+    let max_len = per_comp.iter().map(|v| v.len()).max().unwrap_or(0);
+    for i in 0..max_len {
+      for trees in &per_comp {
+        if i < trees.len() {
+          results.push(trees[i].clone());
         }
-      })
-      .collect(),
-  ))
+      }
+    }
+  }
+
+  results
+}
+
+/// All trees for a single composition: cross product of the children's
+/// groupings, ordered row-major over the child positions.
+fn build_trees_for_composition(
+  elements: &[Expr],
+  comp: &[usize],
+  op: &GroupingOp,
+  all_ops: &[GroupingOp],
+) -> Vec<Expr> {
+  // Children's groupings in slice order.
+  let mut start = 0;
+  let mut child_groupings: Vec<Vec<Expr>> = Vec::with_capacity(comp.len());
+  for &sz in comp {
+    let slice = &elements[start..start + sz];
+    child_groupings.push(groupings_multi(slice, all_ops));
+    start += sz;
+  }
+  // If any child has no valid groupings, this composition contributes
+  // nothing.
+  if child_groupings.iter().any(|v| v.is_empty()) {
+    return Vec::new();
+  }
+
+  // Row-major cross product.
+  let mut acc: Vec<Vec<Expr>> = vec![Vec::new()];
+  for child_list in &child_groupings {
+    let mut next: Vec<Vec<Expr>> = Vec::with_capacity(acc.len() * child_list.len());
+    for prefix in &acc {
+      for child in child_list {
+        let mut new_prefix = prefix.clone();
+        new_prefix.push(child.clone());
+        next.push(new_prefix);
+      }
+    }
+    acc = next;
+  }
+  acc.into_iter().map(|kids| op.wrap(kids)).collect()
+}
+
+/// The "partition" of a composition: its parts sorted descending.
+fn partition_key(comp: &[usize]) -> Vec<usize> {
+  let mut v = comp.to_vec();
+  v.sort_unstable_by(|a, b| b.cmp(a));
+  v
+}
+
+/// All compositions of `n` into `k` positive parts (each ≥ 1), in lex
+/// order.
+fn generate_compositions(n: usize, k: usize) -> Vec<Vec<usize>> {
+  let mut out = Vec::new();
+  let mut cur = vec![0usize; k];
+  fn recurse(
+    cur: &mut Vec<usize>,
+    idx: usize,
+    remaining: usize,
+    k: usize,
+    out: &mut Vec<Vec<usize>>,
+  ) {
+    if idx == k - 1 {
+      if remaining >= 1 {
+        cur[idx] = remaining;
+        out.push(cur.clone());
+      }
+      return;
+    }
+    let max = remaining.saturating_sub(k - 1 - idx);
+    for v in 1..=max {
+      cur[idx] = v;
+      recurse(cur, idx + 1, remaining - v, k, out);
+    }
+  }
+  recurse(&mut cur, 0, n, k, &mut out);
+  out
 }
 
 /// Check if n elements can form a valid k-ary tree
