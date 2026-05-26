@@ -1195,11 +1195,180 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Analytic continuation for real z > 1, integer s ≥ 1, real a.
+  // The series Σ z^k/(k+a)^s diverges, but the value is well-defined via
+  // PV integral plus the iπ·residue at t = ln z. Wolfram's convention
+  // for the recurrence uses `|a|^(-s)` (rather than `a^(-s)`) so that
+  // both even- and odd-s cases line up with their numerical output.
+  if let (Some(zf), Some(sf), Some(af)) =
+    (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))
+    && zf > 1.0
+    && (sf - sf.round()).abs() < 1e-12
+    && sf >= 1.0
+    && sf <= 30.0
+  {
+    let s_int = sf.round() as i32;
+    if let Some((re, im)) = lerch_phi_z_gt_1(zf, s_int, af) {
+      return Ok(complex_real(re, im));
+    }
+  }
+
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "LerchPhi".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// Build a `Plus[Real, Times[Real, I]]` for downstream formatting.
+fn complex_real(re: f64, im: f64) -> Expr {
+  if im == 0.0 {
+    return Expr::Real(re);
+  }
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::Real(re),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
+      },
+    ]
+    .into(),
+  }
+}
+
+/// LerchPhi(z, s, a) for real z > 1, integer s ≥ 1, real a (and a + k
+/// non-zero for all integers k ≥ 0). Returns the (real, imaginary)
+/// pair Wolfram prints.
+fn lerch_phi_z_gt_1(z: f64, s: i32, a: f64) -> Option<(f64, f64)> {
+  if z <= 1.0 || s < 1 {
+    return None;
+  }
+  // Walk a up by integer steps until it lands strictly inside (0, 1].
+  // Each shift contributes `|a + k|^(-s) · z^k` to the boundary sum.
+  let target_a = 1.0 - (1.0 - a).fract();
+  let mut shifts = 0i32;
+  let mut a_shift = a;
+  let mut boundary_real = 0.0_f64;
+  let mut z_pow = 1.0_f64;
+  while a_shift <= 0.0 {
+    if a_shift.fract().abs() < 1e-12 {
+      // Hit a non-positive integer pole — undefined.
+      return None;
+    }
+    boundary_real += z_pow * a_shift.abs().powi(-s);
+    a_shift += 1.0;
+    z_pow *= z;
+    shifts += 1;
+    if shifts > 50 {
+      return None;
+    }
+  }
+  // a_shift is now > 0. Compute LerchPhi(z, s, a_shift) via PV
+  // integral + iπ·residue.
+  let (re_pos, im_pos) = lerch_phi_pv(z, s, a_shift)?;
+  let re = boundary_real + z_pow * re_pos;
+  let im = z_pow * im_pos;
+  // Eat the synthesized variable so rustc doesn't complain about `target_a`.
+  let _ = target_a;
+  Some((re, im))
+}
+
+/// LerchPhi(z, s, a) with a > 0, z > 1 real, integer s. Returns the
+/// principal-value integral as the real part and the residue
+/// contribution as the imaginary part.
+fn lerch_phi_pv(z: f64, s: i32, a: f64) -> Option<(f64, f64)> {
+  if a <= 0.0 || z <= 1.0 || s < 1 {
+    return None;
+  }
+  let ln_z = z.ln();
+  let gamma_s = (1..s).map(|i| i as f64).product::<f64>().max(1.0);
+  // The integrand has a simple pole at t = ln(z) with residue
+  //   h(ln z) = (ln z)^(s−1) · e^(−a·ln z) = (ln z)^(s−1) · z^(−a).
+  let h = |t: f64| t.powi(s - 1) * (-a * t).exp();
+  let h_lnz = h(ln_z);
+  // Subtract the singular part: g(t) = integrand(t) - h(ln z)/(t - ln z).
+  // g is smooth at t = ln z (use Taylor expansion in a small window).
+  let h_prime_lnz = (-a * ln_z).exp()
+    * ln_z.powi(s - 2)
+    * (((s - 1) as f64) - a * ln_z);
+  let g = |t: f64| -> f64 {
+    let delta = t - ln_z;
+    if delta.abs() < 1e-4 {
+      // 1/(1 − z e^(−t)) = 1/[(t − ln z)(1 − (t − ln z)/2 + …)]
+      //                 = 1/(t − ln z) + 1/2 + (t − ln z)/12 + …
+      // ⇒ integrand − h(ln z)/(t − ln z)
+      //   = (h(t) − h(ln z))/(t − ln z) + h(t)·(1/2 + (t − ln z)/12 + …)
+      //   → h'(ln z) + h(ln z)/2 as t → ln z.
+      h_prime_lnz + h_lnz / 2.0
+    } else {
+      let denom = 1.0 - z * (-t).exp();
+      h(t) / denom - h_lnz / delta
+    }
+  };
+  let t_max = (50.0 + 10.0 / a).min(200.0);
+  let int_g = gauss_legendre_integrate_lerch(0.0, t_max, &g);
+  let re =
+    (int_g + h_lnz * ((t_max - ln_z) / ln_z).ln()) / gamma_s;
+  let im = -std::f64::consts::PI * ln_z.powi(s - 1) * z.powf(-a) / gamma_s;
+  Some((re, im))
+}
+
+/// 64-point Gauss-Legendre on `[lo, hi]`, with a fixed local node table.
+fn gauss_legendre_integrate_lerch<F: Fn(f64) -> f64>(
+  lo: f64,
+  hi: f64,
+  f: &F,
+) -> f64 {
+  let nodes = lerch_gl_nodes();
+  let half = (hi - lo) * 0.5;
+  let mid = (lo + hi) * 0.5;
+  let mut sum = 0.0;
+  for (t, w) in nodes.iter() {
+    let x = mid + half * t;
+    sum += w * f(x);
+  }
+  half * sum
+}
+
+fn lerch_gl_nodes() -> &'static [(f64, f64)] {
+  use std::sync::OnceLock;
+  static NODES: OnceLock<Vec<(f64, f64)>> = OnceLock::new();
+  NODES.get_or_init(|| {
+    let n = 64;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+      let mut x = -(std::f64::consts::PI * (4 * i + 3) as f64
+        / (4 * n + 2) as f64)
+        .cos();
+      for _ in 0..100 {
+        let (p, dp) = legendre_p_dp(n, x);
+        let dx = -p / dp;
+        x += dx;
+        if dx.abs() < 1e-16 {
+          break;
+        }
+      }
+      let (_, dp) = legendre_p_dp(n, x);
+      let w = 2.0 / ((1.0 - x * x) * dp * dp);
+      out.push((x, w));
+    }
+    out
+  })
+}
+
+fn legendre_p_dp(n: usize, x: f64) -> (f64, f64) {
+  let mut p0 = 1.0;
+  let mut p1 = x;
+  for k in 1..n {
+    let pk = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0)
+      / ((k + 1) as f64);
+    p0 = p1;
+    p1 = pk;
+  }
+  let dp = (n as f64) * (x * p1 - p0) / (x * x - 1.0);
+  (p1, dp)
 }
 
 /// Compute LerchPhi numerically via series: Σ z^k / (k+a)^s

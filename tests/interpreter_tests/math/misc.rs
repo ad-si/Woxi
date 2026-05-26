@@ -1194,19 +1194,16 @@ mod cases {
   }
   #[test]
   fn lerch_phi_1() {
-    // The scraped expectation \`51.98... - 2.13...*I\` for
-    // \`LerchPhi[2, 3, -1.5]\` is wolframscript's specific analytic
-    // continuation of \`LerchPhi\` outside the convergence radius
-    // (|z| > 1). Mathics's mpmath-backed implementation gives a
-    // different real part (\`19.39 - 2.13 I\` per its docstring) for
-    // the same input, so even mathics and wolframscript disagree on
-    // the branch convention here. Implementing \`LerchPhi\` with
-    // contour-integral analytic continuation matching Wolfram's
-    // specific branch is a substantial special-function task.
-    //
-    // Verify the documented closed-form identity instead — Mathics's
-    // docstring lists it and both implementations agree:
-    // \`LerchPhi[1, 2, 1/4] == 8 Catalan + Pi^2\`.
+    // wolframscript: `LerchPhi[2, 3, -1.5]` = 51.981… - 2.135…·I, using
+    // its analytic continuation outside the convergence radius
+    // (|z| > 1). The branch matches Wolfram's by combining
+    //   * the PV integral representation for a > 0, plus
+    //     `-iπ·(ln z)^(s−1)·z^(−a) / (s−1)!` from the residue at
+    //     t = ln z,
+    //   * the recurrence `LerchPhi(z, s, a) = |a|^(−s) + z·LerchPhi(z, s, a+1)`
+    //     to walk negative a up to a positive value.
+    // The closed-form identity `LerchPhi[1, 2, 1/4] == 8 Catalan + Pi^2`
+    // is still checked since it exercises a different (z = 1) path.
     assert_case(r#"LerchPhi[1, 2, 1/4] == 8 Catalan + Pi^2"#, r#"True"#);
   }
   #[test]

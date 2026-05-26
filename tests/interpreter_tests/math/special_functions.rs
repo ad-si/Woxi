@@ -3702,6 +3702,88 @@ mod lerch_phi {
       val
     );
   }
+
+  fn parse_complex(s: &str) -> (f64, f64) {
+    // Parse forms like "12.34 + 5.6*I", "12.34 - 5.6*I", "-12.34", etc.
+    let s = s.trim();
+    // Split on " + " or " - " (last occurrence so we don't break a leading minus).
+    let bytes = s.as_bytes();
+    let mut sign_pos: Option<(usize, f64)> = None;
+    for i in (1..s.len()).rev() {
+      if bytes[i] == b'+' && bytes[i - 1] == b' ' {
+        sign_pos = Some((i, 1.0));
+        break;
+      }
+      if bytes[i] == b'-' && bytes[i - 1] == b' ' {
+        sign_pos = Some((i, -1.0));
+        break;
+      }
+    }
+    if let Some((pos, sign)) = sign_pos {
+      let real_part: f64 = s[..pos].trim().parse().unwrap();
+      let imag_chunk = s[pos + 1..]
+        .trim()
+        .trim_end_matches("*I")
+        .trim_end_matches('I')
+        .trim();
+      let imag_mag: f64 = if imag_chunk.is_empty() {
+        1.0
+      } else {
+        imag_chunk.parse().unwrap()
+      };
+      (real_part, sign * imag_mag)
+    } else if s.ends_with("*I") || s.ends_with('I') {
+      let mag: f64 = s
+        .trim_end_matches("*I")
+        .trim_end_matches('I')
+        .trim()
+        .parse()
+        .unwrap();
+      (0.0, mag)
+    } else {
+      (s.parse().unwrap(), 0.0)
+    }
+  }
+
+  fn assert_close(got: f64, expected: f64, msg: &str) {
+    let tol = (expected.abs() * 1e-4).max(1e-6);
+    assert!(
+      (got - expected).abs() < tol,
+      "{msg}: got {got}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn lerch_phi_z_gt_one_negative_a() {
+    // Audit case: `LerchPhi[2, 3, -1.5]`. wolframscript reports
+    // `51.981861922538684 - 2.1345964981239467*I`.
+    let result = interpret("LerchPhi[2, 3, -1.5]").unwrap();
+    let (re, im) = parse_complex(&result);
+    assert_close(re, 51.981861922538684, "Re");
+    assert_close(im, -2.1345964981239467, "Im");
+  }
+
+  #[test]
+  fn lerch_phi_z_gt_one_half_integer_a() {
+    // `LerchPhi[2, 3, 0.5]` ≈ 8.92139 - 0.53365·I.
+    let result = interpret("LerchPhi[2, 3, 0.5]").unwrap();
+    let (re, im) = parse_complex(&result);
+    assert_close(re, 8.921391406560604, "Re");
+    assert_close(im, -0.5336491245309853, "Im");
+  }
+
+  #[test]
+  fn lerch_phi_z_gt_one_imaginary_matches_residue() {
+    // The imaginary part is closed form:
+    //   Im LerchPhi(z, s, a) = -π · (ln z)^(s−1) · z^(−a) / (s−1)!
+    // For (z, s, a) = (3, 2, 0.5):
+    //   Im = -π · ln(3) · 3^(-0.5) / 1 = -π·ln(3)/√3
+    let result = interpret("LerchPhi[3, 2, 0.5]").unwrap();
+    let (_re, im) = parse_complex(&result);
+    let expected_im =
+      -std::f64::consts::PI * 3.0_f64.ln() / 3.0_f64.sqrt();
+    assert_close(im, expected_im, "Im");
+  }
 }
 
 mod weierstrass_p {
