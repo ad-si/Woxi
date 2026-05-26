@@ -750,63 +750,18 @@ pub fn dispatch_linear_algebra_functions(
           return Some(Ok(result.unwrap_or(mat.clone())));
         }
       }
-      // Symbolic n with a diagonal matrix: return diag(d_i^n) so common
-      // cases like MatrixPower[{{2, 0}, {0, 3}}, n] reduce instead of
-      // staying unevaluated.
+      // Symbolic n with a matrix that splits (after a row/column
+      // permutation) into multiple connected components: handle each
+      // block independently. Blocks of size 1 reduce to `entry^n`;
+      // size-2 blocks use the closed form for 2×2 powers. Single-
+      // block matrices fall through to the unevaluated head.
       if let Expr::List(rows) = &args[0]
         && !rows.is_empty()
       {
-        let size = rows.len();
-        let mut diag: Option<Vec<Expr>> = Some(Vec::with_capacity(size));
-        for (i, row) in rows.iter().enumerate() {
-          let Expr::List(cols) = row else {
-            diag = None;
-            break;
-          };
-          if cols.len() != size {
-            diag = None;
-            break;
-          }
-          for (j, entry) in cols.iter().enumerate() {
-            if i == j {
-              diag.as_mut().unwrap().push(entry.clone());
-            } else if !matches!(entry, Expr::Integer(0)) {
-              diag = None;
-              break;
-            }
-          }
-          if diag.is_none() {
-            break;
-          }
-        }
-        if let Some(d) = diag {
-          let n_expr = args[1].clone();
-          let powered: Vec<Expr> = d
-            .into_iter()
-            .map(|di| {
-              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
-                left: Box::new(di),
-                right: Box::new(n_expr.clone()),
-              })
-              .unwrap_or(Expr::Integer(0))
-            })
-            .collect();
-          let result_rows: Vec<Expr> = (0..size)
-            .map(|i| {
-              let row: Vec<Expr> = (0..size)
-                .map(|j| {
-                  if i == j {
-                    powered[i].clone()
-                  } else {
-                    Expr::Integer(0)
-                  }
-                })
-                .collect();
-              Expr::List(row.into())
-            })
-            .collect();
-          return Some(Ok(Expr::List(result_rows.into())));
+        if let Some(result) =
+          matrix_power_block_symbolic(rows, &args[1])
+        {
+          return Some(Ok(result));
         }
       }
       // Symbolic: return unevaluated
@@ -2312,4 +2267,311 @@ fn binary_dissimilarity_ast(
   }
 
   Ok(crate::functions::math_ast::make_rational(num, den))
+}
+
+/// `MatrixPower[m, n]` with a symbolic exponent `n` on a matrix that
+/// splits — after a row/column permutation — into multiple connected
+/// blocks. Returns `Some(result)` only when *every* block has size 1
+/// (entry ↦ entry^n) or size 2 (closed form via eigenvalues). Single-
+/// block matrices (size ≥ 2) return `None` so the caller falls through
+/// to the unevaluated head.
+fn matrix_power_block_symbolic(
+  rows: &[Expr],
+  n_expr: &Expr,
+) -> Option<Expr> {
+  let size = rows.len();
+  // Validate the matrix is square.
+  let matrix: Vec<Vec<Expr>> = {
+    let mut m = Vec::with_capacity(size);
+    for row in rows {
+      let cols = if let Expr::List(c) = row {
+        c
+      } else {
+        return None;
+      };
+      if cols.len() != size {
+        return None;
+      }
+      m.push(cols.to_vec());
+    }
+    m
+  };
+
+  // Build adjacency: index i and j are connected iff M[i][j] != 0 OR
+  // M[j][i] != 0. Self-loops (i == j) don't create edges; an isolated
+  // index forms a size-1 component.
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); size];
+  for i in 0..size {
+    for j in 0..size {
+      if i == j {
+        continue;
+      }
+      if !matches!(&matrix[i][j], Expr::Integer(0))
+        || !matches!(&matrix[j][i], Expr::Integer(0))
+      {
+        adj[i].push(j);
+      }
+    }
+  }
+
+  // Find connected components by BFS.
+  let mut comp_of: Vec<Option<usize>> = vec![None; size];
+  let mut components: Vec<Vec<usize>> = Vec::new();
+  for start in 0..size {
+    if comp_of[start].is_some() {
+      continue;
+    }
+    let cid = components.len();
+    let mut comp: Vec<usize> = Vec::new();
+    let mut queue: Vec<usize> = vec![start];
+    while let Some(u) = queue.pop() {
+      if comp_of[u].is_some() {
+        continue;
+      }
+      comp_of[u] = Some(cid);
+      comp.push(u);
+      for &v in &adj[u] {
+        if comp_of[v].is_none() {
+          queue.push(v);
+        }
+      }
+    }
+    comp.sort_unstable();
+    components.push(comp);
+  }
+
+  // Single-component matrix of size ≥ 2: leave to the caller (stays
+  // unevaluated). A 1×1 single component (size = 1) is also handled
+  // here as `M[0][0]^n`.
+  if components.len() == 1 && size > 1 {
+    return None;
+  }
+
+  // Bail out unless every block has size 1 or 2.
+  if components.iter().any(|c| c.len() > 2) {
+    return None;
+  }
+
+  // Build the result matrix, initialised to zero.
+  let zero = Expr::Integer(0);
+  let mut result: Vec<Vec<Expr>> = vec![vec![zero.clone(); size]; size];
+
+  for comp in &components {
+    match comp.len() {
+      1 => {
+        let i = comp[0];
+        let entry = matrix[i][i].clone();
+        result[i][i] = match crate::evaluator::evaluate_expr_to_expr(
+          &Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(entry),
+            right: Box::new(n_expr.clone()),
+          },
+        ) {
+          Ok(v) => v,
+          Err(_) => return None,
+        };
+      }
+      2 => {
+        let i = comp[0];
+        let j = comp[1];
+        let block = [
+          [matrix[i][i].clone(), matrix[i][j].clone()],
+          [matrix[j][i].clone(), matrix[j][j].clone()],
+        ];
+        let block_n = matrix_power_2x2_symbolic_block(&block, n_expr)?;
+        result[i][i] = block_n[0][0].clone();
+        result[i][j] = block_n[0][1].clone();
+        result[j][i] = block_n[1][0].clone();
+        result[j][j] = block_n[1][1].clone();
+      }
+      _ => unreachable!(),
+    }
+  }
+
+  // Assemble into nested-List Expr.
+  let result_rows: Vec<Expr> = result
+    .into_iter()
+    .map(|row| Expr::List(row.into()))
+    .collect();
+  Some(Expr::List(result_rows.into()))
+}
+
+/// Closed form for `M^n` of a 2×2 matrix with distinct eigenvalues
+/// via the diagonalisation `M^n = c_1·λ_1^n + c_2·λ_2^n` where
+/// `c_1 = (M − λ_2 I)/(λ_1 − λ_2)` and `c_2 = (λ_1 I − M)/(λ_1 − λ_2)`.
+///
+/// Only handles 2×2 integer-entry blocks with a negative discriminant
+/// `trace² − 4·det < 0` whose eigenvalues are `μ ± k·I` for some
+/// integer `k`. Real-eigenvalue blocks (positive disc) are left
+/// unevaluated — wolframscript's output there involves `Sqrt[disc]^n`
+/// terms that Woxi doesn't reduce to wolframscript's canonical form.
+fn matrix_power_2x2_symbolic_block(
+  m: &[[Expr; 2]; 2],
+  n_expr: &Expr,
+) -> Option<[[Expr; 2]; 2]> {
+  use crate::syntax::BinaryOperator;
+  // Extract integer entries.
+  let a = crate::functions::math_ast::expr_to_i128(&m[0][0])?;
+  let b = crate::functions::math_ast::expr_to_i128(&m[0][1])?;
+  let c = crate::functions::math_ast::expr_to_i128(&m[1][0])?;
+  let d = crate::functions::math_ast::expr_to_i128(&m[1][1])?;
+
+  let trace = a + d;
+  let det = a * d - b * c;
+  let disc = trace * trace - 4 * det;
+  if disc >= 0 {
+    // Real eigenvalues or repeated eigenvalue: leave unevaluated.
+    return None;
+  }
+  let pos = -disc;
+  // We need 4·det − trace² to be a perfect square so the eigenvalues
+  // are `(trace ± k·I)/2` with `k` an integer. (Audit case: trace = 0,
+  // det = 1, pos = 4, k = 2.)
+  let k = (pos as f64).sqrt().round() as i128;
+  if k * k != pos {
+    return None;
+  }
+  // Both `trace + k` and `trace − k` must be even so the eigenvalues
+  // have integer real and imaginary parts after halving.
+  if (trace + k).rem_euclid(2) != 0 || (trace - k).rem_euclid(2) != 0 {
+    return None;
+  }
+  // λ_1 = (trace + k·I)/2 = re_part + im_part·I
+  // λ_2 = (trace − k·I)/2 = re_part − im_part·I
+  let re_part = trace / 2;
+  let im_part = k / 2;
+  if re_part * 2 != trace || im_part * 2 != k {
+    // Half-integer real or imaginary part — out of scope.
+    return None;
+  }
+
+  // Build `Power[Complex[re, im], n]` directly so Woxi doesn't
+  // canonicalise it through `Power[Times[-1, I], n] → Times[-1,
+  // Power[I, n]]`, which is mathematically wrong for symbolic n.
+  let lam_power = |re: i128, im: i128| -> Expr {
+    let base = if re == 0 && im == 1 {
+      Expr::Identifier("I".to_string())
+    } else if re == 0 {
+      Expr::FunctionCall {
+        name: "Complex".to_string(),
+        args: vec![Expr::Integer(0), Expr::Integer(im)].into(),
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "Complex".to_string(),
+        args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(n_expr.clone()),
+    }
+  };
+  let lam1_n = lam_power(re_part, im_part);
+  let lam2_n = lam_power(re_part, -im_part);
+
+  // `λ_1 − λ_2 = k·I`. Use Complex form for the same reason as above.
+  let lambda_diff = if k == 1 {
+    Expr::Identifier("I".to_string())
+  } else {
+    Expr::FunctionCall {
+      name: "Complex".to_string(),
+      args: vec![Expr::Integer(0), Expr::Integer(k)].into(),
+    }
+  };
+  // For each scalar Complex factor `q = (a + b·I) / (k·I)` we'd build
+  // and evaluate. Instead, compute the coefficient matrices c_1, c_2
+  // numerically (each entry is a Complex rational), then assemble the
+  // result via Plus of scalar·Power terms.
+
+  let lambda_1 = Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![Expr::Integer(re_part), Expr::Integer(im_part)].into(),
+  };
+  let lambda_2 = Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![Expr::Integer(re_part), Expr::Integer(-im_part)].into(),
+  };
+  let mat_expr = |ai: i128| Expr::Integer(ai);
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+
+  // c1_ij = (M[i,j] − λ_2·δ_ij) / (λ_1 − λ_2)
+  // c2_ij = (λ_1·δ_ij − M[i,j]) / (λ_1 − λ_2)
+  let build_entry = |entry_int: i128, is_diag: bool| -> Option<Expr> {
+    let entry = mat_expr(entry_int);
+    let c1_num_raw = if is_diag {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(entry.clone()),
+        right: Box::new(lambda_2.clone()),
+      }
+    } else {
+      entry.clone()
+    };
+    let c2_num_raw = if is_diag {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(lambda_1.clone()),
+        right: Box::new(entry.clone()),
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), entry.clone()].into(),
+      }
+    };
+    let c1 = eval(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(c1_num_raw),
+      right: Box::new(lambda_diff.clone()),
+    })
+    .ok()?;
+    let c2 = eval(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(c2_num_raw),
+      right: Box::new(lambda_diff.clone()),
+    })
+    .ok()?;
+    // Build `c1 * λ_1^n + c2 * λ_2^n` without evaluating the Power
+    // sub-expressions (so `(-I)^n` survives intact).
+    let t1 = if matches!(&c1, Expr::Integer(1)) {
+      lam1_n.clone()
+    } else if matches!(&c1, Expr::Integer(0)) {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![c1, lam1_n.clone()].into(),
+      }
+    };
+    let t2 = if matches!(&c2, Expr::Integer(1)) {
+      lam2_n.clone()
+    } else if matches!(&c2, Expr::Integer(0)) {
+      Expr::Integer(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![c2, lam2_n.clone()].into(),
+      }
+    };
+    let sum = if matches!(&t1, Expr::Integer(0)) {
+      t2
+    } else if matches!(&t2, Expr::Integer(0)) {
+      t1
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![t1, t2].into(),
+      }
+    };
+    eval(&sum).ok()
+  };
+
+  let m00 = build_entry(a, true)?;
+  let m01 = build_entry(b, false)?;
+  let m10 = build_entry(c, false)?;
+  let m11 = build_entry(d, true)?;
+  Some([[m00, m01], [m10, m11]])
 }

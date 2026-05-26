@@ -2860,9 +2860,68 @@ mod cases {
   }
   #[test]
   fn matrix_power_non_diagonal_symbolic_n_stays_unevaluated() {
+    // 2x2 single-block input with messy eigenvalues stays unevaluated:
+    // wolframscript closes it with Sqrt[33] terms, which the block
+    // fast path below intentionally avoids.
     assert_case(
       r#"MatrixPower[{{1, 2}, {3, 4}}, n]"#,
       r#"MatrixPower[{{1, 2}, {3, 4}}, n]"#,
+    );
+  }
+
+  // ─── Block-decomposable MatrixPower with symbolic n ───────────────
+  //
+  // A square matrix that splits into multiple connected components
+  // (i.e. is block-diagonal after a row/column permutation) can be
+  // raised to a symbolic power by handling each block independently:
+  //
+  //   - size-1 blocks: entry ↦ entry^n
+  //   - size-2 blocks: closed-form
+  //       M^n[i,j] = M[i,j] · (λ_1^n − λ_2^n) / (λ_1 − λ_2)   (i ≠ j)
+  //       M^n[i,i] = (M[i,i] − λ_2)·λ_1^n / (λ_1 − λ_2)
+  //                + (λ_1 − M[i,i])·λ_2^n / (λ_1 − λ_2)
+
+  #[test]
+  fn matrix_power_audit_3x3_block_symbolic_n() {
+    // Audit case: 1×1 block at index 1 (eigenvalue 2) and a 2×2 block
+    // {{0, 1}, {-1, 0}} on indices 0, 2 (eigenvalues ±I).
+    //
+    // Woxi's terms are logically equivalent to wolframscript's
+    // (`I*I^n = I^(n+1)`, Plus-term ordering differs cosmetically) but
+    // not byte-identical, so test against Woxi's canonical form.
+    assert_case(
+      r#"MatrixPower[{{0, 0, 1}, {0, 2, 0}, {-1, 0, 0}}, n]"#,
+      r#"{{I^n/2 + (-I)^n/2, 0, -1/2*I^(1 + n) + I/2*(-I)^n}, {0, 2^n, 0}, {I^(1 + n)/2 - I/2*(-I)^n, 0, I^n/2 + (-I)^n/2}}"#,
+    );
+  }
+
+  #[test]
+  fn matrix_power_block_2x2_2x2_symbolic_n() {
+    // Two disjoint 2×2 blocks at indices {0, 1} and {2, 3}.
+    // Each 2×2 has trace 0, det 1 ⇒ eigenvalues ±I, same closed form.
+    assert_case(
+      r#"MatrixPower[{{0, 1, 0, 0}, {-1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, -1, 0}}, n]"#,
+      r#"{{I^n/2 + (-I)^n/2, -1/2*I^(1 + n) + I/2*(-I)^n, 0, 0}, {I^(1 + n)/2 - I/2*(-I)^n, I^n/2 + (-I)^n/2, 0, 0}, {0, 0, I^n/2 + (-I)^n/2, -1/2*I^(1 + n) + I/2*(-I)^n}, {0, 0, I^(1 + n)/2 - I/2*(-I)^n, I^n/2 + (-I)^n/2}}"#,
+    );
+  }
+
+  // Verifying that substituting integer values into the symbolic result
+  // gives the same answer as `MatrixPower` with that integer directly.
+  // This sanity-checks that the closed-form formula is correct even when
+  // its display differs from wolframscript's.
+  #[test]
+  fn matrix_power_audit_consistent_at_n_4() {
+    assert_case(
+      r#"r = MatrixPower[{{0, 0, 1}, {0, 2, 0}, {-1, 0, 0}}, n]; r /. n -> 4"#,
+      r#"{{1, 0, 0}, {0, 16, 0}, {0, 0, 1}}"#,
+    );
+  }
+
+  #[test]
+  fn matrix_power_audit_consistent_at_n_5() {
+    assert_case(
+      r#"r = MatrixPower[{{0, 0, 1}, {0, 2, 0}, {-1, 0, 0}}, n]; r /. n -> 5"#,
+      r#"{{0, 0, 1}, {0, 32, 0}, {-1, 0, 0}}"#,
     );
   }
   #[test]

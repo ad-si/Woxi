@@ -11639,13 +11639,54 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
 
 /// Render a base expression for Power, adding parens if needed for precedence.
 fn expr_to_textbox_base(expr: &Expr) -> TextBox {
+  // Wrap the Power base in parens when the base would otherwise bind
+  // less tightly than the implicit superscript: Plus/Minus, negative
+  // numeric literals, and unary `-x` all need parens so that e.g.
+  // `Power[-I, n]` prints as `(-I)^n`, not `-I^n` (the latter parses
+  // as `-(I^n)`).
+  // Also wrap `Complex[0, neg]` since wolframscript prints it as `-I`
+  // (or `-k*I`) which has the same ambiguity.
+  let complex_neg_im = matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Complex"
+      && args.len() == 2
+      && (matches!(&args[1], Expr::Integer(n) if *n < 0)
+        || matches!(&args[1], Expr::Real(f) if *f < 0.0)));
+  // Times with a leading negative coefficient (e.g. `Times[-1, I]`,
+  // which prints as `-I` and needs to be parenthesised before `^n`).
+  let times_neg_leading = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      matches!(&args[0], Expr::Integer(n) if *n < 0)
+        || matches!(&args[0], Expr::Real(f) if *f < 0.0)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      ..
+    } => {
+      matches!(left.as_ref(), Expr::Integer(n) if *n < 0)
+        || matches!(left.as_ref(), Expr::Real(f) if *f < 0.0)
+    }
+    _ => false,
+  };
   let needs_parens = matches!(
     expr,
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       ..
+    } | Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      ..
+    } | Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
     }
-  ) || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus");
+  ) || matches!(expr, Expr::Integer(n) if *n < 0)
+    || matches!(expr, Expr::Real(f) if *f < 0.0)
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
+    || complex_neg_im
+    || times_neg_leading;
 
   if needs_parens {
     let inner = expr_to_textbox(expr);
