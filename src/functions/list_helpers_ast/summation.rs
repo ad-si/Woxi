@@ -793,8 +793,14 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Indefinite sum: Sum[f[i], i] → ∑_{k=1}^{i-1} f[k] (the antidifference).
-  // wolframscript: Sum[i, i] = ((-1 + i)*i)/2, Sum[i^3, i] = ((-1+i)^2*i^2)/4.
+  // Indefinite sum: Sum[f[i], i] → ∑_{k=0}^{i-1} f[k] (the antidifference F
+  // where F(i+1) - F(i) = f(i), with F(0) = 0).
+  // wolframscript: Sum[1, i] = i, Sum[i, i] = ((-1 + i)*i)/2,
+  // Sum[i^3, i] = ((-1+i)^2*i^2)/4.
+  //
+  // Implementation: compute ∑_{k=1}^{i-1} f[k] (the path with proven symbolic
+  // support) and add f(0). For f=1 this gives 1 + (i-1) = i; for f=i it gives
+  // 0 + i(i-1)/2 = i(i-1)/2.
   if args.len() == 2
     && let Expr::Identifier(var_name) = &args[1]
   {
@@ -802,27 +808,19 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let fresh = Expr::Identifier(fresh_name.clone());
     let body_in_fresh =
       crate::syntax::substitute_variable(&args[0], var_name, &fresh);
-    let upper_bound = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())]
-            .into(),
-        },
-        args[1].clone(),
-      ]
-      .into(),
-    };
-    // The bound expression `var - 1` becomes `-1 + var` after Plus
-    // canonicalisation. We build it as `(-1) + var` to be explicit.
+    // Upper bound: var - 1, built as `(-1) + var` for canonical Plus form.
     let upper = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())].into(),
     };
-    let _ = upper_bound;
-    let iter_spec = Expr::List(vec![fresh, Expr::Integer(1), upper].into());
-    return sum_ast(&[body_in_fresh, iter_spec]);
+    let iter_spec =
+      Expr::List(vec![fresh.clone(), Expr::Integer(1), upper].into());
+    let inner_sum = sum_ast(&[body_in_fresh, iter_spec])?;
+    // Evaluate f(0)
+    let f_at_zero =
+      crate::syntax::substitute_variable(&args[0], var_name, &Expr::Integer(0));
+    let f_at_zero_eval = crate::evaluator::evaluate_expr_to_expr(&f_at_zero)?;
+    return crate::functions::math_ast::plus_ast(&[f_at_zero_eval, inner_sum]);
   }
 
   // Multi-dimensional Sum: Sum[expr, {i,...}, {j,...}, ...] => Sum[Sum[expr, {j,...}], {i,...}]

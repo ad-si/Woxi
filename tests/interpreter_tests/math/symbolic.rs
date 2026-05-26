@@ -304,8 +304,8 @@ mod sum {
 
   #[test]
   fn sum_indefinite_constant() {
-    // Sum[1, i] = i - 1.
-    assert_eq!(interpret("Sum[1, i]").unwrap(), "-1 + i");
+    // Sum[1, i] = i (antidifference of 1).
+    assert_eq!(interpret("Sum[1, i]").unwrap(), "i");
   }
 
   #[test]
