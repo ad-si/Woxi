@@ -3,9 +3,10 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
-/// True if `z_expr` is `<zero_name>[order, ...]` whose first argument equals
-/// `n_expr`. Used to detect `BesselJ[n, BesselJZero[n, k, ...]] = 0` and
-/// `BesselY[n, BesselYZero[n, k, ...]] = 0`.
+/// True if `z_expr` is `<zero_name>[order, k, ...]` whose first argument equals
+/// `n_expr` AND both `order` and `k` are concrete positive integers — the only
+/// case where wolframscript simplifies `BesselJ[n, BesselJZero[n, k, ...]]` to
+/// 0. For symbolic n or k, the simplification is not applied.
 fn is_matching_bessel_zero(
   n_expr: &Expr,
   z_expr: &Expr,
@@ -13,8 +14,10 @@ fn is_matching_bessel_zero(
 ) -> bool {
   if let Expr::FunctionCall { name, args } = z_expr
     && name == zero_name
-    && !args.is_empty()
+    && args.len() >= 2
     && exprs_equal_simple(&args[0], n_expr)
+    && matches!(n_expr, Expr::Integer(n) if *n >= 0)
+    && matches!(&args[1], Expr::Integer(k) if *k >= 1)
   {
     return true;
   }
@@ -366,11 +369,13 @@ fn wrap_with_sqrt_factor(
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
-/// BesselJZero[n, k] — k-th positive zero of the Bessel function J_n
+/// BesselJZero[n, k] — k-th positive zero of the Bessel function J_n.
+/// BesselJZero[n, k, x0] — same, with an initial-guess hint x0 (Wolfram
+/// accepts this 3-arg form and leaves it unevaluated until used numerically).
 pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "BesselJZero expects exactly 2 arguments".into(),
+      "BesselJZero expects 2 or 3 arguments".into(),
     ));
   }
 

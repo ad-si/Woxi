@@ -661,9 +661,13 @@ mod bessel_j_zero {
   }
 
   #[test]
-  fn bessel_j_at_symbolic_matching_zero_is_zero() {
-    // Symbolic order matches → identity still holds.
-    assert_eq!(interpret("BesselJ[n, BesselJZero[n, k]]").unwrap(), "0");
+  fn bessel_j_at_symbolic_matching_zero_stays_symbolic() {
+    // Wolfram only simplifies BesselJ[n, BesselJZero[n, k]] when BOTH n and k
+    // are concrete positive integers. For symbolic args, it stays unevaluated.
+    assert_eq!(
+      interpret("BesselJ[n, BesselJZero[n, k]]").unwrap(),
+      "BesselJ[n, BesselJZero[n, k]]"
+    );
   }
 
   #[test]
