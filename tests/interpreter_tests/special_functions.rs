@@ -389,6 +389,20 @@ mod generating_function {
   }
 
   #[test]
+  fn reciprocal_factorial_squared() {
+    // Regression: 1/n!^2 used to cause a stack overflow via infinite recursion
+    // in gf_divide → gf_inner → extract_num_den → gf_divide.
+    assert_eq!(
+      interpret("GeneratingFunction[1/n!^2, n, x]").unwrap(),
+      "BesselI[0, 2*Sqrt[x]]"
+    );
+    assert_eq!(
+      interpret("GeneratingFunction[1/Factorial[n]^2, n, x]").unwrap(),
+      "BesselI[0, 2*Sqrt[x]]"
+    );
+  }
+
+  #[test]
   fn binomial_n_2() {
     // Binomial[n,2] evaluates to ((-1+n)*n)/2 which expands into GF terms
     assert_eq!(

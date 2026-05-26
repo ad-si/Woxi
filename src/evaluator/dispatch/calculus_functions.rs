@@ -3718,6 +3718,17 @@ fn gf_divide(
 
   // General: numerator / denominator — try to handle as num * den^(-1)
   if !depends_on(num, n) && depends_on(den, n) {
+    // 1/Power[base, k] => Power[base, -k] (avoid infinite recursion in gf_inner)
+    if matches!(num, Expr::Integer(1))
+      && let Some((dname, dargs)) = as_func_args(den)
+      && dname == "Power"
+      && dargs.len() == 2
+      && let Expr::Integer(k) = dargs[1]
+      && *k > 0
+    {
+      return gf_power(dargs[0], &Expr::Integer(-*k), n, x);
+    }
+
     // const / f(n) — rewrite as const * f(n)^(-1) and try
     let inv_den = Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -3729,6 +3740,16 @@ fn gf_divide(
       left: Box::new(num.clone()),
       right: Box::new(inv_den),
     };
+    // Guard: avoid infinite recursion if rewriting produces an equivalent expression
+    if crate::syntax::expr_to_string(&product) == crate::syntax::expr_to_string(
+      &Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num.clone()),
+        right: Box::new(den.clone()),
+      },
+    ) {
+      return Ok(None);
+    }
     return gf_inner(&product, n, x);
   }
 
