@@ -1971,7 +1971,7 @@ PixelValue,Get pixel value from image (image processing),✅,,8.0,2005
 WaveletPsi,Wavelet function (signal processing),🚫,,8.0,2006
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7.0,2008
 Shallow,Control output depth display (notebook display),🚫,,2.0,2008
-BooleanCountingFunction,Boolean function from count specification (requires BDD),🚫,,7.0,2012
+BooleanCountingFunction,Boolean function from a count specification (DNF over true-variable counts),✅,pure,7.0,2012
 DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
 Downsample,Take every n-th element from a list,✅,none,9.0,2012
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012

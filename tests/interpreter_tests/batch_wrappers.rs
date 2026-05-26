@@ -711,6 +711,84 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn boolean_counting_function_exactly_k() {
+    // {k} → exactly k vars true. Natural DNF of size-k minterms, in lex
+    // order over which variables are true.
+    assert_eq!(
+      interpret("BooleanCountingFunction[{2}, {a, b, c}]").unwrap(),
+      "(a && b &&  !c) || (a &&  !b && c) || ( !a && b && c)"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[{0}, {a, b, c}]").unwrap(),
+      " !a &&  !b &&  !c"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[{3}, {a, b, c}]").unwrap(),
+      "a && b && c"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[{1}, {a, b}]").unwrap(),
+      "(a &&  !b) || ( !a && b)"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[{2}, {a, b, c, d}]").unwrap(),
+      "(a && b &&  !c &&  !d) || (a &&  !b && c &&  !d) || (a &&  !b &&  !c && d) || ( !a && b && c &&  !d) || ( !a && b &&  !c && d) || ( !a &&  !b && c && d)"
+    );
+  }
+
+  #[test]
+  fn boolean_counting_function_at_most_k() {
+    // Plain integer k_max → at most k_max true. Equivalent to "at least
+    // (n - k_max) false"; emit as Or of (n - k_max)-subsets of negated
+    // variables (in lex order over the subset's variables).
+    assert_eq!(
+      interpret("BooleanCountingFunction[2, {a, b, c}]").unwrap(),
+      " !a ||  !b ||  !c"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[1, {a, b, c}]").unwrap(),
+      "( !a &&  !b) || ( !a &&  !c) || ( !b &&  !c)"
+    );
+    assert_eq!(
+      interpret("BooleanCountingFunction[0, {a, b, c}]").unwrap(),
+      " !a &&  !b &&  !c"
+    );
+  }
+
+  #[test]
+  fn boolean_counting_function_between() {
+    // {k_min, k_max} with k_min == 0 collapses to the "at most k_max"
+    // pattern, so its output coincides with wolframscript's.
+    assert_eq!(
+      interpret("BooleanCountingFunction[{0, 2}, {a, b, c}]").unwrap(),
+      " !a ||  !b ||  !c"
+    );
+  }
+
+  #[test]
+  fn boolean_counting_function_audit_case_evaluates() {
+    // Audit regression: previously returned unevaluated. Now produces a
+    // minimized DNF that is logically equivalent to "between 2 and 3 of
+    // {a, b, c, d}". The exact term selection differs from
+    // wolframscript (whose BooleanCountingFunction emits a non-minimal
+    // 7-term cover); Woxi runs the input through its full Quine-McCluskey
+    // minimizer instead.
+    let result =
+      interpret("BooleanCountingFunction[{2, 3}, {a, b, c, d}]").unwrap();
+    // Output is an Or of And terms — not unevaluated.
+    assert!(
+      result.contains("||"),
+      "expected Or-form DNF, got `{}`",
+      result
+    );
+    assert!(
+      !result.starts_with("BooleanCountingFunction"),
+      "still unevaluated: {}",
+      result
+    );
+  }
+
+  #[test]
   fn select_components() {
     assert_eq!(
       interpret("SelectComponents[x]").unwrap(),

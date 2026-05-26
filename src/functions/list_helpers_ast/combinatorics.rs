@@ -604,8 +604,10 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let arity = ops[0].arity;
     let results = groupings_recursive(&elements, arity);
-    let rewrapped: Vec<Expr> =
-      results.into_iter().map(|t| rewrap_lists(&t, head)).collect();
+    let rewrapped: Vec<Expr> = results
+      .into_iter()
+      .map(|t| rewrap_lists(&t, head))
+      .collect();
     return Ok(Expr::List(rewrapped.into()));
   }
 
@@ -747,7 +749,8 @@ fn build_trees_for_composition(
   // Row-major cross product.
   let mut acc: Vec<Vec<Expr>> = vec![Vec::new()];
   for child_list in &child_groupings {
-    let mut next: Vec<Vec<Expr>> = Vec::with_capacity(acc.len() * child_list.len());
+    let mut next: Vec<Vec<Expr>> =
+      Vec::with_capacity(acc.len() * child_list.len());
     for prefix in &acc {
       for child in child_list {
         let mut new_prefix = prefix.clone();

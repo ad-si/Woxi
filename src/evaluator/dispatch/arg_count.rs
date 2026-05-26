@@ -113,6 +113,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Blur" => Some((1, 2)),
     "Boole" => Some((1, 1)),
     "BooleanConvert" => Some((1, 2)),
+    "BooleanCountingFunction" => Some((2, 2)),
     "BooleanMinimize" => Some((1, 1)),
     "BooleanQ" => Some((1, 1)),
     "BooleanTable" => Some((2, 2)),

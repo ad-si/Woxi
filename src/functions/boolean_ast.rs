@@ -2050,6 +2050,336 @@ fn implicants_to_expr(
   }
 }
 
+/// BooleanCountingFunction[spec, vars] — build a Boolean expression
+/// (DNF) that is True iff the count of True variables in `vars` matches
+/// `spec`. Supported `spec` shapes:
+///
+///   k                   — at most k (counts {0, 1, …, k})
+///   {k}                 — exactly k
+///   {kmin, kmax}        — between kmin and kmax inclusive
+///   {kmin, kmax, step}  — counts {kmin, kmin+step, …} ≤ kmax
+///
+/// Wolfram emits a specific (sometimes non-minimal) form for each
+/// spec shape. We match wolframscript byte-for-byte for the
+/// "exactly k" and "at most k" patterns, where the structure is simple
+/// and unambiguous. For other shapes the result is a logically
+/// equivalent DNF produced by running the sum-of-minterms through
+/// `BooleanMinimize` — it may differ from wolframscript's particular
+/// term selection but is guaranteed to be correct.
+pub fn boolean_counting_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "BooleanCountingFunction".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let vars: Vec<String> = match &args[1] {
+    Expr::List(items) => {
+      let mut out = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        if let Expr::Identifier(s) = it {
+          out.push(s.clone());
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "BooleanCountingFunction".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      }
+      out
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BooleanCountingFunction".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let n = vars.len();
+  if n == 0 {
+    return Ok(Expr::FunctionCall {
+      name: "BooleanCountingFunction".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  let count_set: Vec<usize> = match parse_counting_spec(&args[0], n) {
+    Some(cs) => cs,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "BooleanCountingFunction".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  // Trivial extremes.
+  if count_set.is_empty() {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+  if count_set.len() == n + 1 {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // "Exactly k" — natural sum-of-minterms in lex order over which
+  // variables are true.
+  if count_set.len() == 1 {
+    return Ok(exactly_k_dnf(&vars, count_set[0]));
+  }
+
+  // "At most k" — Or over (n-k)-subsets of negated variables.
+  // Detected as count_set = {0, 1, …, kmax}.
+  if let Some(kmax) = detect_at_most(&count_set)
+    && kmax < n
+  {
+    return Ok(at_most_k_dnf(&vars, kmax));
+  }
+
+  // General case: emit sum-of-minterms and minimize.
+  let dnf = minterms_to_dnf(&vars, &count_set);
+  boolean_minimize_ast(&[dnf])
+}
+
+/// Parse the first argument of `BooleanCountingFunction` into the set of
+/// true-counts that should produce True. Returns None for unrecognized
+/// shapes; counts outside [0, n] are dropped so out-of-range specs
+/// degrade to False gracefully.
+fn parse_counting_spec(spec: &Expr, n: usize) -> Option<Vec<usize>> {
+  let in_range = |k: i128| -> Option<usize> {
+    if (0..=n as i128).contains(&k) {
+      Some(k as usize)
+    } else {
+      None
+    }
+  };
+  match spec {
+    // `k_max` — at most k_max true.
+    Expr::Integer(k) if *k >= 0 => {
+      let kmax = (*k as usize).min(n);
+      Some((0..=kmax).collect())
+    }
+    Expr::List(items) => match items.len() {
+      // {k} — exactly k.
+      1 => {
+        if let Expr::Integer(k) = &items[0] {
+          in_range(*k).map(|v| vec![v])
+        } else {
+          None
+        }
+      }
+      // {kmin, kmax} — between kmin and kmax inclusive.
+      2 => {
+        if let (Expr::Integer(a), Expr::Integer(b)) = (&items[0], &items[1])
+          && *a >= 0
+          && *b >= *a
+        {
+          let kmin = (*a as usize).min(n);
+          let kmax = (*b as usize).min(n);
+          Some((kmin..=kmax).collect())
+        } else {
+          None
+        }
+      }
+      // {kmin, kmax, step} — counts {kmin, kmin+step, …} ≤ kmax.
+      3 => {
+        if let (
+          Expr::Integer(a),
+          Expr::Integer(b),
+          Expr::Integer(s),
+        ) = (&items[0], &items[1], &items[2])
+          && *a >= 0
+          && *b >= *a
+          && *s >= 1
+        {
+          let kmin = *a as usize;
+          let kmax = *b as usize;
+          let step = *s as usize;
+          let mut out = Vec::new();
+          let mut k = kmin;
+          while k <= kmax {
+            if k <= n {
+              out.push(k);
+            }
+            k += step;
+          }
+          Some(out)
+        } else {
+          None
+        }
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Detect the "at most k" pattern: count_set == {0, 1, …, kmax}.
+fn detect_at_most(count_set: &[usize]) -> Option<usize> {
+  if count_set.is_empty() || count_set[0] != 0 {
+    return None;
+  }
+  for (i, &v) in count_set.iter().enumerate() {
+    if v != i {
+      return None;
+    }
+  }
+  Some(*count_set.last().unwrap())
+}
+
+/// "Exactly k" DNF: Or over all k-subsets `S` of `vars` of
+/// `AND_{v in S} v && AND_{v not in S} !v`. Subsets are emitted in
+/// the lex order returned by `subsets_in_lex_order` (matches Wolfram's
+/// output).
+fn exactly_k_dnf(vars: &[String], k: usize) -> Expr {
+  let n = vars.len();
+  if k > n {
+    return Expr::Identifier("False".to_string());
+  }
+  let subsets = subsets_in_lex_order(n, k);
+  let mut terms: Vec<Expr> = Vec::with_capacity(subsets.len());
+  for s in &subsets {
+    let mut literals: Vec<Expr> = Vec::with_capacity(n);
+    for (i, name) in vars.iter().enumerate() {
+      let var = Expr::Identifier(name.clone());
+      if s.contains(&i) {
+        literals.push(var);
+      } else {
+        literals.push(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Not,
+          operand: Box::new(var),
+        });
+      }
+    }
+    terms.push(if literals.len() == 1 {
+      literals.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: literals.into(),
+      }
+    });
+  }
+  or_of(terms)
+}
+
+/// "At most k_max" DNF: Or over (n - k_max)-subsets `S` of `vars` of
+/// `AND_{v in S} !v`. Subsets are in lex order.
+fn at_most_k_dnf(vars: &[String], kmax: usize) -> Expr {
+  let n = vars.len();
+  let neg_count = n.saturating_sub(kmax);
+  if neg_count == 0 {
+    return Expr::Identifier("True".to_string());
+  }
+  let subsets = subsets_in_lex_order(n, neg_count);
+  let mut terms: Vec<Expr> = Vec::with_capacity(subsets.len());
+  for s in &subsets {
+    let mut literals: Vec<Expr> = Vec::with_capacity(s.len());
+    for &i in s {
+      literals.push(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Not,
+        operand: Box::new(Expr::Identifier(vars[i].clone())),
+      });
+    }
+    terms.push(if literals.len() == 1 {
+      literals.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: literals.into(),
+      }
+    });
+  }
+  or_of(terms)
+}
+
+/// Sum-of-minterms DNF for the given count set, in lex order over
+/// which variables are true.
+fn minterms_to_dnf(vars: &[String], count_set: &[usize]) -> Expr {
+  let n = vars.len();
+  let mut count_set: Vec<usize> = count_set.to_vec();
+  count_set.sort_unstable();
+  let mut terms: Vec<Expr> = Vec::new();
+  for &k in &count_set {
+    let subsets = subsets_in_lex_order(n, k);
+    for s in &subsets {
+      let mut literals: Vec<Expr> = Vec::with_capacity(n);
+      for (i, name) in vars.iter().enumerate() {
+        let var = Expr::Identifier(name.clone());
+        if s.contains(&i) {
+          literals.push(var);
+        } else {
+          literals.push(Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Not,
+            operand: Box::new(var),
+          });
+        }
+      }
+      terms.push(if literals.len() == 1 {
+        literals.remove(0)
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: literals.into(),
+        }
+      });
+    }
+  }
+  or_of(terms)
+}
+
+/// All k-subsets of {0, 1, …, n-1} in lex order. Each subset is a
+/// strictly increasing Vec<usize>.
+fn subsets_in_lex_order(n: usize, k: usize) -> Vec<Vec<usize>> {
+  let mut out = Vec::new();
+  if k > n {
+    return out;
+  }
+  let mut cur: Vec<usize> = (0..k).collect();
+  if k == 0 {
+    out.push(Vec::new());
+    return out;
+  }
+  loop {
+    out.push(cur.clone());
+    // Find the rightmost index that can be incremented.
+    let mut i = k;
+    while i > 0 {
+      i -= 1;
+      if cur[i] < n - (k - i) {
+        cur[i] += 1;
+        for j in i + 1..k {
+          cur[j] = cur[j - 1] + 1;
+        }
+        break;
+      }
+      if i == 0 {
+        return out;
+      }
+    }
+    // Termination check: when no index could be incremented we've
+    // emitted the last subset (n-k, n-k+1, …, n-1).
+    if cur[0] > n - k {
+      return out;
+    }
+  }
+}
+
+/// Wrap `terms` in an `Or` head, or unwrap if there's only one.
+fn or_of(mut terms: Vec<Expr>) -> Expr {
+  if terms.is_empty() {
+    return Expr::Identifier("False".to_string());
+  }
+  if terms.len() == 1 {
+    return terms.remove(0);
+  }
+  Expr::FunctionCall {
+    name: "Or".to_string(),
+    args: terms.into(),
+  }
+}
+
 /// VectorLess[{v1, v2, ...}] - componentwise strict less-than comparison
 /// Returns True if for each consecutive pair, every component is strictly less.
 pub fn vector_less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
