@@ -4848,9 +4848,8 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Row-wise pass: into a (h × w) scratch buffer.
       let mut row_filtered: Vec<f64> = vec![0.0; w * h];
       for y in 0..h {
-        let row: Vec<f64> = (0..w)
-          .map(|x| data[(y * w + x) * ch + c_idx])
-          .collect();
+        let row: Vec<f64> =
+          (0..w).map(|x| data[(y * w + x) * ch + c_idx]).collect();
         let filtered = convolve_edge_padded(&row, &row_kernel);
         for x in 0..w {
           row_filtered[y * w + x] = filtered[x];
@@ -4938,16 +4937,6 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "HighpassFilter".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-
   let omega_c = match try_eval_to_f64(&args[1]) {
     Some(v) => v,
     None => {
@@ -4958,13 +4947,12 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut order = items.len();
   let mut sample_rate = 1.0_f64;
-
+  let mut explicit_order: Option<usize> = None;
   for i in 2..args.len() {
     match &args[i] {
       Expr::Integer(n) if *n > 0 => {
-        order = *n as usize;
+        explicit_order = Some(*n as usize);
       }
       Expr::Rule {
         pattern,
@@ -4986,6 +4974,65 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let wc = omega_c / sample_rate;
+
+  // Image input: separable 2D filter (row-then-column 1D passes).
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    if w == 0 || h == 0 {
+      return Ok(args[0].clone());
+    }
+    let row_order = explicit_order.unwrap_or(w);
+    let col_order = explicit_order.unwrap_or(h);
+    let row_kernel = highpass_kernel(row_order, wc);
+    let col_kernel = highpass_kernel(col_order, wc);
+    let mut out: Vec<f64> = vec![0.0; data.len()];
+    for c_idx in 0..ch {
+      let mut row_filtered: Vec<f64> = vec![0.0; w * h];
+      for y in 0..h {
+        let row: Vec<f64> = (0..w)
+          .map(|x| data[(y * w + x) * ch + c_idx])
+          .collect();
+        let filtered = convolve_edge_padded(&row, &row_kernel);
+        for x in 0..w {
+          row_filtered[y * w + x] = filtered[x];
+        }
+      }
+      for x in 0..w {
+        let col: Vec<f64> = (0..h).map(|y| row_filtered[y * w + x]).collect();
+        let filtered = convolve_edge_padded(&col, &col_kernel);
+        for y in 0..h {
+          out[(y * w + x) * ch + c_idx] = filtered[y];
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: std::sync::Arc::new(out),
+      image_type: *image_type,
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HighpassFilter".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let order = explicit_order.unwrap_or(items.len());
 
   let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {

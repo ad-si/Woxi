@@ -5889,6 +5889,33 @@ mod highpass_filter {
       "{0.7198793058278876, 1.565448565047395, 2.359894452882456, 3.154340340717517, 3.999909599937024}"
     );
   }
+
+  // Image input: separable 2D filter (row-then-column 1D windowed-sinc
+  // passes). wolframscript reference:
+  //   ImageData[HighpassFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5},
+  //                                    {1., 0.5, 0.}}], 0.5]]
+  #[test]
+  fn image_3x3() {
+    assert_eq!(
+      interpret(
+        "ImageData[HighpassFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5}, {1., 0.5, 0.}}], 0.5]]",
+      )
+      .unwrap(),
+      "{{-0.010805889032781124, 0.3259671926498413, 0.6740744709968567}, {0.3259671926498413, 0.6850564479827881, 0.3259671926498413}, {0.6740744709968567, 0.3259671926498413, -0.010805889032781124}}"
+    );
+  }
+
+  // Audit regression: confirm `HighpassFilter[Image, ωc]` returns an Image.
+  #[test]
+  fn image_returns_image() {
+    assert_eq!(
+      interpret(
+        "Head[HighpassFilter[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}], 0.5]]",
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
 }
 
 mod bandstop_filter {
