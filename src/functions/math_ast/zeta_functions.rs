@@ -24,12 +24,21 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return hurwitz_zeta_ast(&args[0], &args[1], args);
   }
 
-  // Zeta[ZetaZero[k]] = 0 (by definition of the non-trivial zeros)
-  // Zeta[ZetaZero[k, t]] = 0
-  if let Expr::FunctionCall { name, .. } = &args[0]
+  // Zeta[ZetaZero[k]] = 0 (by definition of the non-trivial zeros), but only
+  // when k is a concrete positive integer. For symbolic k, Wolfram leaves
+  // Zeta[ZetaZero[k]] unevaluated. Zeta[ZetaZero[k, t]] = 0 still holds even
+  // for symbolic k because the second argument fixes a unique zero.
+  if let Expr::FunctionCall {
+    name,
+    args: zz_args,
+  } = &args[0]
     && name == "ZetaZero"
   {
-    return Ok(Expr::Integer(0));
+    let k_is_pos_int =
+      matches!(zz_args.first(), Some(Expr::Integer(n)) if *n > 0);
+    if zz_args.len() >= 2 || k_is_pos_int {
+      return Ok(Expr::Integer(0));
+    }
   }
 
   match &args[0] {

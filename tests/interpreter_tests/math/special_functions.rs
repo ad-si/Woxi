@@ -1660,10 +1660,12 @@ mod zeta {
 
   #[test]
   fn zeta_of_zeta_zero_is_zero() {
-    // ZetaZero[k] denotes the k-th non-trivial zero of zeta, so Zeta[ZetaZero[k]] = 0.
+    // ZetaZero[k] denotes the k-th non-trivial zero of zeta, so
+    // Zeta[ZetaZero[k]] = 0 — but only when k is a concrete positive integer.
+    // For symbolic k, the simplification doesn't apply (matches wolframscript).
     assert_eq!(interpret("Zeta[ZetaZero[1]]").unwrap(), "0");
     assert_eq!(interpret("Zeta[ZetaZero[10]]").unwrap(), "0");
-    assert_eq!(interpret("Zeta[ZetaZero[k]]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[ZetaZero[k]]").unwrap(), "Zeta[ZetaZero[k]]");
     assert_eq!(interpret("Zeta[ZetaZero[5, 100]]").unwrap(), "0");
   }
 
