@@ -2577,6 +2577,35 @@ mod reduce {
   }
 
   #[test]
+  fn reduce_exists_quadratic_linear_audit_case() {
+    // Audit case: find conditions on `a` such that some (x, y) satisfies
+    // x² + a·y² ≤ 1 ∧ x − y ≥ 2. Lagrange max of (x − y) over the
+    // ellipse-or-strip is `sqrt(1 + 1/a)` for a > 0 and unbounded for
+    // a ≤ 0, so the system is satisfiable iff `a <= 1/3`.
+    assert_eq!(
+      interpret(
+        "Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 2], a]"
+      )
+      .unwrap(),
+      "a <= 1/3"
+    );
+  }
+
+  #[test]
+  fn reduce_exists_quadratic_linear_unit_circle_lower_bound() {
+    // Same shape but tighter linear bound: x − y ≥ 1 (instead of 2).
+    // 1/a ≥ 1²/1 - 1 = 0, so a > 0 always works and a ≤ 0 trivially
+    // works as well — the system is satisfiable for every real `a`.
+    assert_eq!(
+      interpret(
+        "Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 1], a]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn reduce_false() {
     assert_eq!(interpret("Reduce[False, x]").unwrap(), "False");
   }

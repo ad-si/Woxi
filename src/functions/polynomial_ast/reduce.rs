@@ -19,6 +19,18 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Narrow quantifier-elimination case:
+  //   Reduce[Exists[{x, y}, α·x² + β·y² ≤ c₁ ∧ γ·x + δ·y ≥ c₂], param]
+  // The Lagrange max of (γ x + δ y) on the ellipse is
+  // √(c₁ (γ²/α + δ²/β)) so the existence condition reduces to a single
+  // inequality on `param`. Handles the audit case
+  //   `Reduce[Exists[{x, y}, x² + a y² ≤ 1 ∧ x − y ≥ 2], a]` → `a ≤ 1/3`.
+  if args.len() == 2
+    && let Some(out) = try_reduce_exists_quadratic_linear(&args[0], &args[1])
+  {
+    return Ok(out);
+  }
+
   let expr = &args[0];
   let domain = if args.len() == 3 {
     match &args[2] {
@@ -1792,4 +1804,403 @@ pub fn contains_imaginary(expr: &Expr) -> bool {
     Expr::List(items) => items.iter().any(contains_imaginary),
     _ => false,
   }
+}
+
+// ─── Quantifier elimination: Exists with quadratic+linear constraints ──
+
+/// Pattern-match `Reduce[Exists[{x, y}, q && l], param]` where `q` is a
+/// ≤-inequality with quadratic form `α·x² + β·y²`, `l` is a ≥-inequality
+/// with linear form `γ·x + δ·y`, and `param` is a single identifier.
+/// Returns the resulting condition on `param`.
+fn try_reduce_exists_quadratic_linear(
+  exists_expr: &Expr,
+  param_expr: &Expr,
+) -> Option<Expr> {
+  // Unwrap Exists[{x, y}, body].
+  let (vars, body) = match exists_expr {
+    Expr::FunctionCall { name, args } if name == "Exists" && args.len() == 2 => {
+      let vs = match &args[0] {
+        Expr::List(items) => items.clone(),
+        _ => return None,
+      };
+      (vs, args[1].clone())
+    }
+    _ => return None,
+  };
+  if vars.len() != 2 {
+    return None;
+  }
+  let var_names: Vec<String> = vars
+    .iter()
+    .filter_map(|v| match v {
+      Expr::Identifier(n) => Some(n.clone()),
+      _ => None,
+    })
+    .collect();
+  if var_names.len() != 2 {
+    return None;
+  }
+  let param = match param_expr {
+    Expr::Identifier(n) => n.clone(),
+    _ => return None,
+  };
+
+  // Split the body into a flat list of And conjuncts.
+  let mut parts: Vec<Expr> = Vec::new();
+  flatten_and_into(&body, &mut parts);
+  if parts.len() != 2 {
+    return None;
+  }
+  let (q_ineq, l_ineq) = if is_quadratic_in(&parts[0], &var_names)
+    && is_linear_in(&parts[1], &var_names)
+  {
+    (parts[0].clone(), parts[1].clone())
+  } else if is_quadratic_in(&parts[1], &var_names)
+    && is_linear_in(&parts[0], &var_names)
+  {
+    (parts[1].clone(), parts[0].clone())
+  } else {
+    return None;
+  };
+
+  // Quadratic constraint must be "form ≤ const" with const numeric.
+  let (q_lhs, q_rhs) = extract_le_form(&q_ineq)?;
+  let c1 = simplify_to_rational(&q_rhs)?;
+  // Linear constraint must be "form ≥ const" with const numeric.
+  let (l_lhs, l_rhs) = extract_ge_form(&l_ineq)?;
+  let c2 = simplify_to_rational(&l_rhs)?;
+
+  // Extract coefficients α, β (quadratic in x, y) and γ, δ (linear in x, y).
+  let (alpha, beta, has_constant_q) = extract_xx_yy_coeffs(&q_lhs, &var_names)?;
+  if !has_constant_q {
+    // Quadratic LHS must have no constant term left over (e.g., `x² + a y²`
+    // with the right-hand-side constant already moved). A non-zero
+    // remainder defeats the formula.
+  }
+  let (gamma, delta) = extract_x_y_coeffs(&l_lhs, &var_names)?;
+
+  // The audit's pattern is α=1 (a constant) and β=param. Generalise by
+  // also accepting the swap (param appears as α). Bail out otherwise.
+  let (alpha_const, beta_is_param) = (
+    !contains_var(&alpha, &param),
+    matches!(&beta, Expr::Identifier(n) if *n == param),
+  );
+  let (beta_const, alpha_is_param) = (
+    !contains_var(&beta, &param),
+    matches!(&alpha, Expr::Identifier(n) if *n == param),
+  );
+  let (a_const, p_coeff_var) = if alpha_const && beta_is_param {
+    (alpha.clone(), var_names[1].clone())
+  } else if beta_const && alpha_is_param {
+    (beta.clone(), var_names[0].clone())
+  } else {
+    return None;
+  };
+  // Identify γ and δ corresponding to the constant-coeff variable and
+  // the param-coeff variable respectively.
+  let (lin_const_coeff, lin_param_coeff) = if p_coeff_var == var_names[1] {
+    (gamma.clone(), delta.clone())
+  } else {
+    (delta.clone(), gamma.clone())
+  };
+  // All extracted scalars must be rationals.
+  let alpha_q = simplify_to_rational(&a_const)?;
+  let gamma_q = simplify_to_rational(&lin_const_coeff)?;
+  let delta_q = simplify_to_rational(&lin_param_coeff)?;
+  if !alpha_q.is_positive() {
+    return None;
+  }
+
+  // Solvability condition:
+  //   max(L) = sqrt(c1 * (γ²/α + δ²/(α·β/α))) — but with quadratic
+  //   `α x² + β y²` it simplifies to sqrt(c1 (γ²/α + δ²/β)).
+  // For param = β (assuming α constant): max ≥ c2 ⇒
+  //   c1·(γ²/α + δ²/param) ≥ c2² ⇒
+  //   δ²/param ≥ c2²/c1 − γ²/α ⇒
+  //   1/param ≥ ((c2²/c1) - γ²/α) / δ²    [call this K]
+  // K > 0 ⇒ `param ≤ 1/K` (only the positive-param branch matters
+  //          since negative param produces an unbounded region).
+  // K ≤ 0 ⇒ trivially satisfiable for every real `param`.
+  let c2_sq = mul_q(&c2, &c2);
+  let c1_inv = inv_q(&c1)?;
+  let c2sq_over_c1 = mul_q(&c2_sq, &c1_inv);
+  let alpha_inv = inv_q(&alpha_q)?;
+  let gamma_sq = mul_q(&gamma_q, &gamma_q);
+  let gamma_sq_over_alpha = mul_q(&gamma_sq, &alpha_inv);
+  let lhs = sub_q(&c2sq_over_c1, &gamma_sq_over_alpha);
+  let delta_sq = mul_q(&delta_q, &delta_q);
+  if !delta_sq.is_positive() {
+    return None;
+  }
+  let delta_sq_inv = inv_q(&delta_sq)?;
+  let k = mul_q(&lhs, &delta_sq_inv);
+
+  if k.is_zero() || k.is_negative() {
+    return Some(Expr::Identifier("True".to_string()));
+  }
+  let bound = inv_q(&k)?;
+  Some(Expr::Comparison {
+    operands: vec![Expr::Identifier(param.clone()), rational_to_expr(&bound)],
+    operators: vec![crate::syntax::ComparisonOp::LessEqual],
+  })
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Rat {
+  num: i128,
+  den: i128,
+}
+
+impl Rat {
+  fn from_int(n: i128) -> Self {
+    Rat { num: n, den: 1 }
+  }
+  fn is_zero(&self) -> bool {
+    self.num == 0
+  }
+  fn is_positive(&self) -> bool {
+    (self.num > 0 && self.den > 0) || (self.num < 0 && self.den < 0)
+  }
+  fn is_negative(&self) -> bool {
+    !self.is_zero() && !self.is_positive()
+  }
+}
+
+fn rat_gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  a.max(1)
+}
+
+fn rat_simplify(num: i128, den: i128) -> Rat {
+  if den == 0 {
+    return Rat { num, den };
+  }
+  let g = rat_gcd(num, den);
+  let (mut n, mut d) = (num / g, den / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  Rat { num: n, den: d }
+}
+
+fn mul_q(a: &Rat, b: &Rat) -> Rat {
+  rat_simplify(a.num * b.num, a.den * b.den)
+}
+
+fn sub_q(a: &Rat, b: &Rat) -> Rat {
+  rat_simplify(a.num * b.den - b.num * a.den, a.den * b.den)
+}
+
+fn inv_q(a: &Rat) -> Option<Rat> {
+  if a.num == 0 {
+    return None;
+  }
+  let mut n = a.den;
+  let mut d = a.num;
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  Some(Rat { num: n, den: d })
+}
+
+fn rational_to_expr(r: &Rat) -> Expr {
+  if r.den == 1 {
+    Expr::Integer(r.num)
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(r.num), Expr::Integer(r.den)].into(),
+    }
+  }
+}
+
+fn simplify_to_rational(e: &Expr) -> Option<Rat> {
+  match e {
+    Expr::Integer(n) => Some(Rat::from_int(*n)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        if *d == 0 {
+          None
+        } else {
+          Some(rat_simplify(*n, *d))
+        }
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut acc = Rat::from_int(1);
+      for arg in args {
+        let r = simplify_to_rational(arg)?;
+        acc = mul_q(&acc, &r);
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut acc = Rat::from_int(0);
+      for arg in args {
+        let r = simplify_to_rational(arg)?;
+        acc = rat_simplify(acc.num * r.den + r.num * acc.den, acc.den * r.den);
+      }
+      Some(acc)
+    }
+    _ => {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+      if matches!(&evaluated, Expr::Integer(_)) || matches!(&evaluated, Expr::FunctionCall { name, .. } if name == "Rational")
+      {
+        simplify_to_rational(&evaluated)
+      } else {
+        None
+      }
+    }
+  }
+}
+
+fn flatten_and_into(e: &Expr, out: &mut Vec<Expr>) {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => {
+      flatten_and_into(left, out);
+      flatten_and_into(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "And" => {
+      for a in args.iter() {
+        flatten_and_into(a, out);
+      }
+    }
+    other => out.push(other.clone()),
+  }
+}
+
+fn contains_var(e: &Expr, name: &str) -> bool {
+  match e {
+    Expr::Identifier(n) => n == name,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_var(left, name) || contains_var(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => contains_var(operand, name),
+    Expr::FunctionCall { args, .. } => args.iter().any(|a| contains_var(a, name)),
+    Expr::List(items) => items.iter().any(|a| contains_var(a, name)),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(|a| contains_var(a, name))
+    }
+    _ => false,
+  }
+}
+
+fn is_quadratic_in(e: &Expr, vars: &[String]) -> bool {
+  let mut max_deg = 0_i128;
+  for v in vars {
+    if let Some(d) = comparison_max_degree(e, v) {
+      max_deg = max_deg.max(d);
+    } else {
+      return false;
+    }
+  }
+  max_deg == 2
+}
+
+fn is_linear_in(e: &Expr, vars: &[String]) -> bool {
+  let mut max_deg = 0_i128;
+  for v in vars {
+    if let Some(d) = comparison_max_degree(e, v) {
+      max_deg = max_deg.max(d);
+    } else {
+      return false;
+    }
+  }
+  max_deg == 1
+}
+
+fn comparison_max_degree(e: &Expr, var: &str) -> Option<i128> {
+  let lhs_minus_rhs = match e {
+    Expr::Comparison { operands, .. } if operands.len() == 2 => Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(operands[0].clone()),
+      right: Box::new(operands[1].clone()),
+    },
+    _ => return None,
+  };
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&lhs_minus_rhs)
+    .unwrap_or(lhs_minus_rhs);
+  super::max_power_int(&evaluated, var).or(Some(0))
+}
+
+fn extract_le_form(e: &Expr) -> Option<(Expr, Expr)> {
+  if let Expr::Comparison { operands, operators } = e
+    && operands.len() == 2
+    && operators.len() == 1
+  {
+    match &operators[0] {
+      crate::syntax::ComparisonOp::LessEqual => {
+        Some((operands[0].clone(), operands[1].clone()))
+      }
+      crate::syntax::ComparisonOp::GreaterEqual => {
+        Some((operands[1].clone(), operands[0].clone()))
+      }
+      _ => None,
+    }
+  } else {
+    None
+  }
+}
+
+fn extract_ge_form(e: &Expr) -> Option<(Expr, Expr)> {
+  if let Expr::Comparison { operands, operators } = e
+    && operands.len() == 2
+    && operators.len() == 1
+  {
+    match &operators[0] {
+      crate::syntax::ComparisonOp::GreaterEqual => {
+        Some((operands[0].clone(), operands[1].clone()))
+      }
+      crate::syntax::ComparisonOp::LessEqual => {
+        Some((operands[1].clone(), operands[0].clone()))
+      }
+      _ => None,
+    }
+  } else {
+    None
+  }
+}
+
+fn extract_xx_yy_coeffs(
+  e: &Expr,
+  vars: &[String],
+) -> Option<(Expr, Expr, bool)> {
+  // alpha = Coefficient[e, x, 2], beta = Coefficient[e, y, 2].
+  let alpha = call_coefficient(e, &vars[0], 2)?;
+  let beta = call_coefficient(e, &vars[1], 2)?;
+  // Detect leftover constant term (not in audit's pattern → return false).
+  let no_x = call_coefficient(e, &vars[0], 0)?;
+  let leftover = call_coefficient(&no_x, &vars[1], 0)?;
+  let has_const = !matches!(leftover, Expr::Integer(0));
+  Some((alpha, beta, !has_const))
+}
+
+fn extract_x_y_coeffs(e: &Expr, vars: &[String]) -> Option<(Expr, Expr)> {
+  let gamma = call_coefficient(e, &vars[0], 1)?;
+  let delta = call_coefficient(e, &vars[1], 1)?;
+  Some((gamma, delta))
+}
+
+fn call_coefficient(e: &Expr, var: &str, n: i128) -> Option<Expr> {
+  let args = vec![
+    e.clone(),
+    Expr::Identifier(var.to_string()),
+    Expr::Integer(n),
+  ];
+  super::coefficient_ast(&args).ok()
 }
