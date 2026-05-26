@@ -1995,6 +1995,19 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // Additively-separable expectations against a multivariate
+  // distribution with known marginals reduce to a sum of univariate
+  // expectations. Each term in the Plus must touch at most one of the
+  // distribution variables (constants pass through, mixed terms like
+  // `x*y` keep the call symbolic).
+  if vars.len() >= 2
+    && let Some(marginals) = multivariate_marginals(dist_name, dargs, &vars)
+    && let Some(result) =
+      try_separable_multivariate_expectation(expr, &vars, &marginals)?
+  {
+    return Ok(result);
+  }
+
   // For unsupported parameterizations (e.g. list-of-vars over a standard
   // distribution) just return unevaluated.
   if vars.len() != 1 {
@@ -2027,8 +2040,111 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return eval(result);
   }
 
+  // MGF identity: E[c · Exp[t·x]] = c · MGF_X(t). Recognised for normal
+  // distributions where MGF(t) = exp(μ t + σ² t²/2), giving exact
+  // symbolic results like `3 Sqrt[E]` instead of numerical surrogates.
+  if dist_name == "NormalDistribution"
+    && let Some((c, t)) = extract_mgf_pattern(expr, &var_name)
+  {
+    let mu = mean.clone();
+    let sigma_sq = variance.clone();
+    // exponent = μ t + σ² t² / 2
+    let mu_t = times(mu, t.clone());
+    let half = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+    };
+    let sigma_sq_t_sq_half = times(
+      times(sigma_sq, power(t.clone(), int(2))),
+      half,
+    );
+    let exponent = plus(mu_t, sigma_sq_t_sq_half);
+    let mgf = power(Expr::Identifier("E".to_string()), exponent);
+    return eval(times(c, mgf));
+  }
+
   // For more complex expressions, use numerical integration
   expectation_numerical(expr, &var_name, dist_name, dargs)
+}
+
+/// Match expressions of the form `c · Exp[t·x]` (with `c`, `t`
+/// constant w.r.t. `x`) and return `(c, t)`. Handles bare `Exp[x]`
+/// (c = 1, t = 1) and `Exp[x]^k` shapes too via the parser's standard
+/// `E^…` rewrites.
+fn extract_mgf_pattern(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  // Strip a leading constant multiplier: extract `c` and remainder.
+  let (c, rest) = strip_constant_multiplier(expr, var);
+  // `rest` should now be `Exp[t · x]` (i.e. `Power[E, t·x]`).
+  let exponent = match &rest {
+    Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+      args[0].clone()
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let base_is_e = matches!(&args[0], Expr::Identifier(n) | Expr::Constant(n) if n == "E");
+      if !base_is_e {
+        return None;
+      }
+      args[1].clone()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base_is_e = matches!(left.as_ref(), Expr::Identifier(n) | Expr::Constant(n) if n == "E");
+      if !base_is_e {
+        return None;
+      }
+      *right.clone()
+    }
+    _ => return None,
+  };
+  // exponent must be linear in `var`: a·var + b with b independent of var.
+  let (a, b) = extract_linear(&exponent, var)?;
+  // We only handle the homogeneous case b = 0; otherwise the factor
+  // exp(b) would multiply through and that's better folded into `c`.
+  let b_is_zero =
+    matches!(&b, Expr::Integer(0)) || matches!(&b, Expr::Real(v) if v.abs() < 1e-300);
+  if !b_is_zero {
+    return None;
+  }
+  Some((c, a))
+}
+
+/// Split `expr` into `(c, rest)` where `c` is constant w.r.t. `var`.
+/// Pulls out a single Times-factor or returns `(1, expr)`.
+fn strip_constant_multiplier(expr: &Expr, var: &str) -> (Expr, Expr) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut consts: Vec<Expr> = Vec::new();
+      let mut rest: Vec<Expr> = Vec::new();
+      for arg in args.iter() {
+        if contains_variable(arg, var) {
+          rest.push(arg.clone());
+        } else {
+          consts.push(arg.clone());
+        }
+      }
+      let c = match consts.len() {
+        0 => Expr::Integer(1),
+        1 => consts.remove(0),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: consts.into(),
+        },
+      };
+      let r = match rest.len() {
+        0 => Expr::Integer(1),
+        1 => rest.remove(0),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: rest.into(),
+        },
+      };
+      (c, r)
+    }
+    other => (Expr::Integer(1), other.clone()),
+  }
 }
 
 /// Compute `Probability[event, x \[Distributed] ProbabilityDistribution[pdf, {x, lo, hi}]]`
@@ -4204,13 +4320,13 @@ fn pdf_multivariate_poisson(
   let y_minus_x_canon = eval(minus(yv.clone(), xv.clone()))?;
   let mu2_pow_y_minus_x = power(mu2.clone(), y_minus_x_canon);
   let neg_x = times(int(-1), xv.clone());
-  let one_minus_x_plus_y =
-    plus(minus(int(1), xv.clone()), yv.clone());
+  let one_minus_x_plus_y = plus(minus(int(1), xv.clone()), yv.clone());
   let hypergeometric_u = Expr::FunctionCall {
     name: "HypergeometricU".to_string(),
     args: vec![neg_x, one_minus_x_plus_y, neg_mu1_mu2_over_mu0].into(),
   };
-  let numerator = times(times(neg_mu0_pow_x, mu2_pow_y_minus_x), hypergeometric_u);
+  let numerator =
+    times(times(neg_mu0_pow_x, mu2_pow_y_minus_x), hypergeometric_u);
 
   // Denominator: E^(μ_0+μ_1+μ_2) · x! · y!
   let exp_sum = power(Expr::Constant("E".to_string()), sum_mu_eval);
@@ -5042,5 +5158,151 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       ))
     }
     _ => eval(cdf_val),
+  }
+}
+
+/// Return the per-variable marginal distribution for a known
+/// multivariate distribution. Standard `BinormalDistribution[ρ]` and
+/// `BinormalDistribution[{μ₁, μ₂}, {σ₁, σ₂}, ρ]` are supported (both
+/// yield Normal marginals).
+fn multivariate_marginals(
+  dist_name: &str,
+  dargs: &[Expr],
+  vars: &[String],
+) -> Option<Vec<Expr>> {
+  let _ = vars; // matched only on dist shape currently
+  match dist_name {
+    "BinormalDistribution" => match dargs.len() {
+      // BinormalDistribution[ρ]: standard normals with correlation ρ.
+      1 => Some(vec![standard_normal(), standard_normal()]),
+      // BinormalDistribution[{μ₁, μ₂}, {σ₁, σ₂}, ρ].
+      3 => {
+        let means = match &dargs[0] {
+          Expr::List(items) if items.len() == 2 => items.clone(),
+          _ => return None,
+        };
+        let sigmas = match &dargs[1] {
+          Expr::List(items) if items.len() == 2 => items.clone(),
+          _ => return None,
+        };
+        Some(vec![
+          normal_distribution(&means[0], &sigmas[0]),
+          normal_distribution(&means[1], &sigmas[1]),
+        ])
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+fn standard_normal() -> Expr {
+  normal_distribution(&Expr::Integer(0), &Expr::Integer(1))
+}
+
+fn normal_distribution(mu: &Expr, sigma: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "NormalDistribution".to_string(),
+    args: vec![mu.clone(), sigma.clone()].into(),
+  }
+}
+
+/// Collect the additive terms of `expr` and dispatch each to a
+/// univariate Expectation against its marginal. Returns `None` when
+/// any term touches two or more distribution variables (since that
+/// requires the joint pdf — not yet implemented).
+fn try_separable_multivariate_expectation(
+  expr: &Expr,
+  vars: &[String],
+  marginals: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let terms = additive_terms(expr);
+  let mut acc: Vec<Expr> = Vec::new();
+  for term in terms {
+    let var_hits: Vec<usize> = vars
+      .iter()
+      .enumerate()
+      .filter(|(_, v)| contains_variable(&term, v))
+      .map(|(i, _)| i)
+      .collect();
+    if var_hits.len() > 1 {
+      return Ok(None);
+    }
+    let contrib = if var_hits.is_empty() {
+      term
+    } else {
+      let i = var_hits[0];
+      let inner = expectation_ast(&[
+        term,
+        Expr::FunctionCall {
+          name: "Distributed".to_string(),
+          args: vec![Expr::Identifier(vars[i].clone()), marginals[i].clone()]
+            .into(),
+        },
+      ])?;
+      // If the inner call returned unevaluated, the whole separable
+      // path can't simplify cleanly — back out so the caller leaves
+      // the outer Expectation symbolic.
+      if matches!(
+        &inner,
+        Expr::FunctionCall { name, .. } if name == "Expectation"
+      ) {
+        return Ok(None);
+      }
+      inner
+    };
+    acc.push(contrib);
+  }
+  if acc.is_empty() {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  let summed = if acc.len() == 1 {
+    acc.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: acc.into(),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&summed).map(Some)
+}
+
+fn additive_terms(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut out = Vec::new();
+      for arg in args.iter() {
+        out.extend(additive_terms(arg));
+      }
+      out
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut out = additive_terms(left);
+      out.extend(additive_terms(right));
+      out
+    }
+    other => vec![other.clone()],
+  }
+}
+
+fn contains_variable(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == var,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| contains_variable(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_variable(left, var) || contains_variable(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_variable(operand, var),
+    Expr::List(items) => items.iter().any(|a| contains_variable(a, var)),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(|a| contains_variable(a, var))
+    }
+    _ => false,
   }
 }

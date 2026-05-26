@@ -7371,6 +7371,59 @@ mod expectation {
   fn unevaluated_wrong_args() {
     assert_eq!(interpret("Expectation[x]").unwrap(), "Expectation[x]");
   }
+
+  #[test]
+  fn binormal_additively_separable() {
+    // Audit case: `Expectation[x^2 + 3 E^y, Distributed[{x, y},
+    // BinormalDistribution[1/3]]] == 1 + 3 Sqrt[E]`.
+    // The two terms only touch one variable each, so the bivariate
+    // expectation collapses to the sum of two univariate
+    // expectations against standard normal marginals.
+    assert_eq!(
+      interpret(
+        "Expectation[x^2 + 3*E^y, Distributed[{x, y}, BinormalDistribution[1/3]]]"
+      )
+      .unwrap(),
+      "1 + 3*Sqrt[E]"
+    );
+  }
+
+  #[test]
+  fn binormal_marginal_variance() {
+    // E[x^2] under standard BinormalDistribution: 1 (Var + Mean²).
+    assert_eq!(
+      interpret(
+        "Expectation[x^2, Distributed[{x, y}, BinormalDistribution[1/3]]]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn binormal_separable_constant_term() {
+    // Adding a pure constant: E[c + f(x)] = c + E[f(x)].
+    assert_eq!(
+      interpret(
+        "Expectation[5 + y, Distributed[{x, y}, BinormalDistribution[1/3]]]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn binormal_cross_term_unevaluated() {
+    // x*y carries correlation. Leave it symbolic for now rather than
+    // silently returning a wrong answer.
+    assert_eq!(
+      interpret(
+        "Expectation[x*y, Distributed[{x, y}, BinormalDistribution[1/3]]]"
+      )
+      .unwrap(),
+      "Expectation[x*y, Distributed[{x, y}, BinormalDistribution[1/3]]]"
+    );
+  }
 }
 
 mod groupings {
