@@ -1659,6 +1659,19 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Integer(0));
   }
 
+  // NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, Element[{x}, Line[{{a}, {b}}]], n]
+  // → the first n Neumann eigenvalues of -d²/dx² on [a, b], i.e.
+  //   λ_k = (k π / (b - a))² for k = 0, 1, …, n - 1.
+  // Wolfram's FEM solver returns the same sequence with small
+  // discretisation errors; matching the closed form is at least as
+  // accurate.
+  if name == "NDEigenvalues"
+    && args.len() == 4
+    && let Some(eigs) = nd_eigenvalues_diffusion_line(args)
+  {
+    return Ok(eigs);
+  }
+
   // Disk[] → Disk[{0, 0}] (default center)
   if name == "Disk" && args.is_empty() {
     return Ok(Expr::FunctionCall {
@@ -7634,6 +7647,89 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
 /// Check if an expression is a GrayLevel color.
 fn is_graylevel(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args } if name == "GrayLevel" && !args.is_empty())
+}
+
+/// Match `NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, Element[{x}, Line[{{a}, {b}}]], n]`
+/// and return the closed-form list of `n` Neumann eigenvalues of
+/// `-d²/dx²` on `[a, b]`: `(k π / (b - a))²` for `k = 0, …, n - 1`.
+fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
+  // args[0]: DiffusionPDETerm[{u[x], {x}}]
+  let (op_name, op_args) = match &args[0] {
+    Expr::FunctionCall { name, args } => (name.as_str(), args),
+    _ => return None,
+  };
+  if op_name != "DiffusionPDETerm" || op_args.len() != 1 {
+    return None;
+  }
+  let vars = match &op_args[0] {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return None,
+  };
+  // Must be {u[x], {x}} — single dependent variable with single spatial var.
+  let dep = match &vars[0] {
+    Expr::FunctionCall { args, .. } if args.len() == 1 => Some(&args[0]),
+    _ => None,
+  }?;
+  let spatial = match &vars[1] {
+    Expr::List(xs) if xs.len() == 1 => &xs[0],
+    _ => return None,
+  };
+  if !matches!(dep, Expr::Identifier(_)) || !matches!(spatial, Expr::Identifier(_)) {
+    return None;
+  }
+  // args[2]: Element[{x}, Line[{{a}, {b}}]]
+  let elem = match &args[2] {
+    Expr::FunctionCall { name, args } if name == "Element" && args.len() == 2 => args,
+    _ => return None,
+  };
+  let line = match &elem[1] {
+    Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => &args[0],
+    _ => return None,
+  };
+  let endpoints = match line {
+    Expr::List(items) if items.len() == 2 => items,
+    _ => return None,
+  };
+  let to_pt = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::List(xs) if xs.len() == 1 => Some(xs[0].clone()),
+      _ => None,
+    }
+  };
+  let a_expr = to_pt(&endpoints[0])?;
+  let b_expr = to_pt(&endpoints[1])?;
+  // args[3]: n (positive integer)
+  let n = match &args[3] {
+    Expr::Integer(n) if *n > 0 => *n as usize,
+    _ => return None,
+  };
+
+  // Length L = b - a, evaluated to a number.
+  let length_expr = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      b_expr,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), a_expr].into(),
+      },
+    ]
+    .into(),
+  })
+  .ok()?;
+  let l = match crate::functions::math_ast::try_eval_to_f64(&length_expr) {
+    Some(v) if v > 0.0 => v,
+    _ => return None,
+  };
+
+  let pi = std::f64::consts::PI;
+  let eigs: Vec<Expr> = (0..n)
+    .map(|k| {
+      let v = (k as f64 * pi / l).powi(2);
+      Expr::Real(v)
+    })
+    .collect();
+  Some(Expr::List(eigs.into()))
 }
 
 /// Evaluate Blend[{c1, c2, ...}] or Blend[{c1, c2, ...}, t].

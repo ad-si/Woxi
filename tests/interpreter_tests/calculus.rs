@@ -6489,3 +6489,73 @@ Options[Integrate] := {Assumptions :> $Assumptions, GenerateConditions -> Automa
     );
   }
 }
+
+mod ndeigenvalues_diffusion_line {
+  use super::*;
+
+  // For 1D Laplacian (DiffusionPDETerm) on Line[{{a}, {b}}] with the
+  // default Neumann boundary condition, the eigenvalues are (kπ/L)²
+  // for k = 0, 1, 2, … where L = b - a. Wolfram's finite-element
+  // solver returns these with small discretisation errors; Woxi
+  // returns the analytic values directly.
+
+  fn parse_list(s: &str) -> Vec<f64> {
+    s.trim()
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|p| p.trim().parse().unwrap())
+      .collect()
+  }
+
+  fn assert_close(got: f64, expected: f64, msg: &str) {
+    let tol = (expected.abs() * 1e-3).max(1e-9);
+    assert!(
+      (got - expected).abs() < tol,
+      "{msg}: got {got}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn unit_interval_three_modes() {
+    let result = interpret(
+      "NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, \
+       Element[{x}, Line[{{0}, {1}}]], 3]",
+    )
+    .unwrap();
+    let xs = parse_list(&result);
+    assert_eq!(xs.len(), 3);
+    let pi_sq = std::f64::consts::PI.powi(2);
+    assert_close(xs[0], 0.0, "λ_0");
+    assert_close(xs[1], pi_sq, "λ_1 = π²");
+    assert_close(xs[2], 4.0 * pi_sq, "λ_2 = 4π²");
+  }
+
+  #[test]
+  fn double_interval_three_modes() {
+    let result = interpret(
+      "NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, \
+       Element[{x}, Line[{{0}, {2}}]], 3]",
+    )
+    .unwrap();
+    let xs = parse_list(&result);
+    let pi = std::f64::consts::PI;
+    assert_close(xs[0], 0.0, "λ_0");
+    assert_close(xs[1], (pi / 2.0).powi(2), "λ_1 = (π/2)²");
+    assert_close(xs[2], pi.powi(2), "λ_2 = π²");
+  }
+
+  #[test]
+  fn pi_interval_four_modes() {
+    let result = interpret(
+      "NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, \
+       Element[{x}, Line[{{0}, {Pi}}]], 4]",
+    )
+    .unwrap();
+    let xs = parse_list(&result);
+    assert_close(xs[0], 0.0, "λ_0");
+    assert_close(xs[1], 1.0, "λ_1 = 1");
+    assert_close(xs[2], 4.0, "λ_2 = 4");
+    assert_close(xs[3], 9.0, "λ_3 = 9");
+  }
+}
