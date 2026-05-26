@@ -1538,6 +1538,84 @@ mod limit {
       "E^(-1)"
     );
   }
+
+  // ─── Bounded oscillating sums at infinity → Interval ────────────────
+  //
+  // When the limit at infinity is undefined but the expression is a sum
+  // of trig terms whose polynomial arguments have *different* degrees
+  // in the limit variable, the accumulation set densely fills
+  // [-bound, bound] where `bound` = Σ|coefficients|. wolframscript
+  // returns the closed Interval; sums of trig terms whose arguments all
+  // have the same polynomial degree stay Indeterminate.
+
+  #[test]
+  fn osc_sum_sin_x_plus_sin_x2() {
+    // Audit case.
+    assert_eq!(
+      interpret("Limit[Sin[x] + Sin[x^2], x -> Infinity]").unwrap(),
+      "Interval[{-2, 2}]"
+    );
+  }
+
+  #[test]
+  fn osc_sum_cos_x_plus_cos_x2() {
+    assert_eq!(
+      interpret("Limit[Cos[x] + Cos[x^2], x -> Infinity]").unwrap(),
+      "Interval[{-2, 2}]"
+    );
+  }
+
+  #[test]
+  fn osc_sum_mixed_sin_cos() {
+    assert_eq!(
+      interpret("Limit[Sin[x] + Cos[x^2], x -> Infinity]").unwrap(),
+      "Interval[{-2, 2}]"
+    );
+  }
+
+  #[test]
+  fn osc_sum_three_terms_distinct_degrees() {
+    assert_eq!(
+      interpret("Limit[Sin[x] + Sin[x^2] + Sin[x^3], x -> Infinity]").unwrap(),
+      "Interval[{-3, 3}]"
+    );
+  }
+
+  #[test]
+  fn osc_sum_three_terms_same_degree_pair_then_distinct() {
+    // Two same-degree terms get "broken" by a third at a different degree;
+    // the bound is the literal count of trig summands.
+    assert_eq!(
+      interpret("Limit[Sin[x] + Cos[x] + Sin[x^2], x -> Infinity]").unwrap(),
+      "Interval[{-3, 3}]"
+    );
+  }
+
+  #[test]
+  fn osc_sum_with_coefficients() {
+    assert_eq!(
+      interpret("Limit[2*Sin[x] + Sin[x^2], x -> Infinity]").unwrap(),
+      "Interval[{-3, 3}]"
+    );
+    assert_eq!(
+      interpret("Limit[3*Sin[x] + Sin[x^2], x -> Infinity]").unwrap(),
+      "Interval[{-4, 4}]"
+    );
+  }
+
+  // Counterexample: all trig args at the same polynomial degree → stays
+  // Indeterminate (matches wolframscript).
+  #[test]
+  fn osc_sum_same_degree_stays_indeterminate() {
+    assert_eq!(
+      interpret("Limit[Sin[x] + Cos[x], x -> Infinity]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Limit[Sin[x] + Sin[2*x], x -> Infinity]").unwrap(),
+      "Indeterminate"
+    );
+  }
 }
 
 mod nintegrate {
@@ -3625,10 +3703,8 @@ mod inverse_laplace_transform {
   #[test]
   fn two_var_unevaluated_unknown() {
     assert_eq!(
-      interpret(
-        "InverseLaplaceTransform[Log[1 + p*q], {p, q}, {x, y}]"
-      )
-      .unwrap(),
+      interpret("InverseLaplaceTransform[Log[1 + p*q], {p, q}, {x, y}]")
+        .unwrap(),
       "InverseLaplaceTransform[Log[1 + p*q], {p, q}, {x, y}]"
     );
   }

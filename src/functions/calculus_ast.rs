@@ -6952,6 +6952,159 @@ fn eval_at_infinity_diverges(expr: &Expr, var: &str) -> Option<bool> {
   None
 }
 
+/// Classify a sum of `c_i * trig[poly_i(var)]` summands as
+/// `Interval[{-bound, bound}]` (if any two arguments have different
+/// polynomial degrees in `var`) or `Indeterminate` (same polynomial
+/// degree everywhere). Returns `None` if any summand isn't of that
+/// shape — the caller should fall back to its other heuristics.
+fn limit_bounded_oscillating_sum(
+  expr: &Expr,
+  var_name: &str,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  // Collect additive terms.
+  let terms: Vec<Expr> = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut v =
+        crate::functions::polynomial_ast::collect_additive_terms(left);
+      v.extend(crate::functions::polynomial_ast::collect_additive_terms(right));
+      v
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut v = Vec::new();
+      for a in args.iter() {
+        v.extend(crate::functions::polynomial_ast::collect_additive_terms(a));
+      }
+      v
+    }
+    _ => return None,
+  };
+  // At least two terms needed.
+  if terms.len() < 2 {
+    return None;
+  }
+
+  // For each term, extract (|coefficient|, argument-degree).
+  // Sin/Cos accepts arbitrary polynomial in `var_name`. A trig argument
+  // that doesn't depend on `var_name` is treated as constant (term
+  // doesn't oscillate) and disqualifies the heuristic.
+  let mut coeffs_abs: Vec<i128> = Vec::with_capacity(terms.len());
+  let mut degrees: Vec<i128> = Vec::with_capacity(terms.len());
+  for t in &terms {
+    let (coeff_expr, body) = split_constant_factor(t, var_name)?;
+    let trig_arg = match &body {
+      Expr::FunctionCall { name, args }
+        if (name == "Sin" || name == "Cos") && args.len() == 1 =>
+      {
+        &args[0]
+      }
+      _ => return None,
+    };
+    if !contains_var(trig_arg, var_name) {
+      return None;
+    }
+    let deg =
+      crate::functions::polynomial_ast::max_power_int(trig_arg, var_name)?;
+    let abs_coeff = expr_to_abs_int(&coeff_expr)?;
+    coeffs_abs.push(abs_coeff);
+    degrees.push(deg);
+  }
+
+  // All same degree → Indeterminate. Otherwise → Interval[{-bound, bound}].
+  let all_same_degree = degrees.windows(2).all(|w| w[0] == w[1]);
+  if all_same_degree {
+    return Some(Expr::Identifier("Indeterminate".to_string()));
+  }
+  let bound: i128 = coeffs_abs.iter().sum();
+  Some(Expr::FunctionCall {
+    name: "Interval".to_string(),
+    args: vec![Expr::List(
+      vec![
+        Expr::Integer(-bound),
+        Expr::Integer(bound),
+      ]
+      .into(),
+    )]
+    .into(),
+  })
+}
+
+/// Split an additive term `t` into `(coefficient, body)` where the
+/// coefficient is the product of factors free of `var_name` and `body`
+/// is the unique remaining factor. Returns None if there isn't exactly
+/// one var-dependent factor.
+fn split_constant_factor(
+  t: &Expr,
+  var_name: &str,
+) -> Option<(Expr, Expr)> {
+  use crate::syntax::BinaryOperator;
+  // Pull out a leading unary minus.
+  let (sign, inner) = match t {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => (-1i128, &**operand),
+    _ => (1i128, t),
+  };
+  let factors = crate::functions::polynomial_ast::collect_multiplicative_factors(inner);
+  let (const_factors, var_factors): (Vec<Expr>, Vec<Expr>) =
+    factors.into_iter().partition(|f| !contains_var(f, var_name));
+  if var_factors.len() != 1 {
+    return None;
+  }
+  let coeff = if const_factors.is_empty() {
+    Expr::Integer(sign)
+  } else {
+    let product = if const_factors.len() == 1 {
+      const_factors.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: const_factors.into(),
+      }
+    };
+    if sign == -1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(product),
+      }
+    } else {
+      product
+    }
+  };
+  Some((coeff, var_factors.into_iter().next().unwrap()))
+}
+
+/// Try to evaluate an Expr to its absolute integer value. Used by the
+/// bounded-oscillating-sum heuristic where coefficients must be
+/// integer-typed to compose a clean Interval bound.
+fn expr_to_abs_int(expr: &Expr) -> Option<i128> {
+  let evaluated =
+    crate::evaluator::evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  if let Expr::Integer(n) = evaluated {
+    return Some(n.unsigned_abs() as i128);
+  }
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = &evaluated
+    && let Expr::Integer(n) = **operand
+  {
+    return Some(n.unsigned_abs() as i128);
+  }
+  None
+}
+
+/// Cheap test: does `expr` mention `var_name` anywhere?
+fn contains_var(expr: &Expr, var_name: &str) -> bool {
+  !is_constant_wrt(expr, var_name)
+}
+
 /// Handle limits at infinity.
 /// Strategies:
 /// 1. If expr is constant wrt var, return it directly
@@ -7024,6 +7177,18 @@ fn limit_at_infinity(
     && arg_name == var_name
   {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  // Bounded oscillating sum at infinity: a sum of Sin/Cos terms with
+  // polynomial arguments accumulates densely in [-bound, bound] when at
+  // least one pair of trig arguments has different polynomial degrees
+  // in `var_name` (wolframscript's heuristic for incommensurate
+  // oscillation). With all arguments at the same polynomial degree the
+  // sum is quasi-periodic and the limit stays Indeterminate.
+  if let Some(result) =
+    limit_bounded_oscillating_sum(expr, var_name)
+  {
+    return Ok(result);
   }
 
   // Handle f^g form (e.g., (1 + 1/n)^n -> E, or E^(-m/(m+1)) -> E^(-1))
