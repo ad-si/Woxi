@@ -1663,6 +1663,56 @@ mod cases {
       r#"True"#,
     );
   }
+  // ─── ClebschGordan with one symbolic projection ───────────────────
+  //
+  // When exactly one m_i is a free symbol, the selection rule
+  // `m1 + m2 = m3` pins it to a single integer value; the coefficient
+  // is then non-zero only on that point. wolframscript wraps the
+  // result in a `Piecewise[{{value, m == k}}, 0]`. Woxi emits the
+  // simplified value (with m substituted by its forced value) rather
+  // than wolframscript's symbolic `(-1)^m * <const>` form — both are
+  // logically equivalent on the support.
+  #[test]
+  fn clebsch_gordan_symbolic_m2() {
+    // Audit case: ClebschGordan[{5,0},{4,m},{1,0}]
+    // Forced m = 0 from m1 + m2 = m3 → CG[{5,0},{4,0},{1,0}] = Sqrt[5/33].
+    assert_case(
+      r#"ClebschGordan[{5, 0}, {4, m}, {1, 0}]"#,
+      r#"Piecewise[{{Sqrt[5 / 33], m == 0}}, 0]"#,
+    );
+  }
+
+  #[test]
+  fn clebsch_gordan_symbolic_m_forces_nonzero() {
+    // m1 + m2 = m3 → m + 0 = 1 → m = 1.
+    // CG[{1, 1}, {1, 0}, {1, 1}] = 1/Sqrt[2].
+    assert_case(
+      r#"ClebschGordan[{1, m}, {1, 0}, {1, 1}]"#,
+      r#"Piecewise[{{1/Sqrt[2], m == 1}}, 0]"#,
+    );
+  }
+
+  #[test]
+  fn clebsch_gordan_symbolic_m1() {
+    // CG[{j1, m1}, {1, 1}, {2, 1}] with j1 = 1: m1 + 1 = 1 → m1 = 0.
+    // CG[{1, 0}, {1, 1}, {2, 1}] = 1/Sqrt[2].
+    assert_case(
+      r#"ClebschGordan[{1, m}, {1, 1}, {2, 1}]"#,
+      r#"Piecewise[{{1/Sqrt[2], m == 0}}, 0]"#,
+    );
+  }
+
+  // When the forced value is out of range for j_i (|m_i| > j_i), the
+  // Piecewise has no support → always 0.
+  #[test]
+  fn clebsch_gordan_symbolic_out_of_range() {
+    // CG[{1, m}, {1, 0}, {1, 5}]: m1+m2 = 5 → m = 5 but |m| > 1 = j1 → 0.
+    assert_case(
+      r#"ClebschGordan[{1, m}, {1, 0}, {1, 5}]"#,
+      r#"0"#,
+    );
+  }
+
   #[test]
   fn six_j_symbol_1() {
     assert_case(r#"SixJSymbol[{1, 2, 3}, {1, 2, 3}]"#, r#"1 / 105"#);
@@ -2790,10 +2840,7 @@ mod weber_e_anger_j_series {
   // Value at z=0 reduces by the closed form for symbolic ν.
   #[test]
   fn weber_e_at_zero_symbolic() {
-    assert_eq!(
-      interpret("WeberE[v, 0]").unwrap(),
-      "(1 - Cos[Pi*v])/(Pi*v)"
-    );
+    assert_eq!(interpret("WeberE[v, 0]").unwrap(), "(1 - Cos[Pi*v])/(Pi*v)");
   }
 
   #[test]

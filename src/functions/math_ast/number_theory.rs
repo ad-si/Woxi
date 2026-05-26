@@ -7181,6 +7181,9 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut two_j = [0i128; 3];
   let mut two_m = [0i128; 3];
+  // Track which `m_i` (if any) is symbolic so we can fall through to the
+  // Piecewise path below.
+  let mut symbolic_m: Option<(usize, String)> = None;
   for (i, arg) in args.iter().enumerate() {
     let Expr::List(items) = arg else {
       return Ok(unchanged());
@@ -7188,17 +7191,78 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if items.len() != 2 {
       return Ok(unchanged());
     }
-    let (Some(tj), Some(tm)) =
-      (two_half_int(&items[0]), two_half_int_signed(&items[1]))
-    else {
+    let Some(tj) = two_half_int(&items[0]) else {
       return Ok(unchanged());
     };
     if tj < 0 {
       return Ok(unchanged());
     }
     two_j[i] = tj;
-    two_m[i] = tm;
+    if let Some(tm) = two_half_int_signed(&items[1]) {
+      two_m[i] = tm;
+    } else if let Expr::Identifier(name) = &items[1] {
+      // Symbolic m_i — only allow exactly one.
+      if symbolic_m.is_some() {
+        return Ok(unchanged());
+      }
+      symbolic_m = Some((i, name.clone()));
+      // Placeholder until we solve the constraint below.
+      two_m[i] = i128::MIN;
+    } else {
+      return Ok(unchanged());
+    }
   }
+
+  // Symbolic-m branch: solve m1 + m2 = m3 for the missing projection,
+  // then emit a Piecewise wrapping the concrete CG at that value.
+  if let Some((idx, sym_name)) = symbolic_m {
+    // Solve for the missing two_m[idx].
+    two_m[idx] = match idx {
+      0 => two_m[2] - two_m[1],          // m1 = m3 - m2
+      1 => two_m[2] - two_m[0],          // m2 = m3 - m1
+      2 => two_m[0] + two_m[1],          // m3 = m1 + m2
+      _ => unreachable!(),
+    };
+    // The forced m_idx is in 2m-units; the externally-visible m is
+    // half of that. If 2m is odd we need a half-integer Rational; the
+    // condition itself stays `m == forced` regardless.
+    let forced_m_expr = if two_m[idx].rem_euclid(2) == 0 {
+      Expr::Integer(two_m[idx] / 2)
+    } else {
+      crate::functions::math_ast::make_rational_pub(two_m[idx], 2)
+    };
+    // Build the concrete-m args and recurse so all the existing
+    // selection-rule machinery runs.
+    let mut concrete_args: Vec<Expr> = args.to_vec();
+    if let Expr::List(items) = &concrete_args[idx]
+      && items.len() == 2
+    {
+      let mut new_items: Vec<Expr> = items.to_vec();
+      new_items[1] = forced_m_expr.clone();
+      concrete_args[idx] = Expr::List(new_items.into());
+    }
+    let value = clebsch_gordan_ast(&concrete_args)?;
+    // If the concrete CG evaluates to a literal 0 (i.e. the forced m
+    // violates |m_i| ≤ j_i or some other rule), the Piecewise has no
+    // non-zero branch — just return 0.
+    if matches!(&value, Expr::Integer(0)) {
+      return Ok(Expr::Integer(0));
+    }
+    let condition = Expr::Comparison {
+      operands: vec![
+        Expr::Identifier(sym_name.clone()),
+        forced_m_expr,
+      ],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
+    let branch = Expr::List(vec![value, condition].into());
+    let pw_args = Expr::List(vec![branch].into());
+    return Ok(Expr::FunctionCall {
+      name: "Piecewise".to_string(),
+      args: vec![pw_args, Expr::Integer(0)].into(),
+    });
+  }
+
   let (j1, j2, j3) = (two_j[0], two_j[1], two_j[2]);
   let (m1, m2, m3) = (two_m[0], two_m[1], two_m[2]);
 
