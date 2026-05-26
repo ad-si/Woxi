@@ -1412,6 +1412,39 @@ mod random_graph {
       "20"
     );
   }
+
+  #[test]
+  fn bernoulli_graph_distribution_returns_graph() {
+    // RandomGraph[BernoulliGraphDistribution[n, p]] is an Erdős–Rényi
+    // G(n, p) sample: each of the n·(n−1)/2 possible edges is included
+    // independently with probability p. The result is a `Graph` with
+    // exactly n vertices.
+    assert_eq!(
+      interpret("Head[RandomGraph[BernoulliGraphDistribution[6, 0.4]]]")
+        .unwrap(),
+      "Graph"
+    );
+    assert_eq!(
+      interpret("Length[VertexList[RandomGraph[BernoulliGraphDistribution[6, 0.4]]]]")
+        .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn bernoulli_graph_distribution_edge_count_in_range() {
+    // p=1 forces all edges; p=0 forbids them.
+    assert_eq!(
+      interpret("Length[EdgeList[RandomGraph[BernoulliGraphDistribution[5, 1]]]]")
+        .unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Length[EdgeList[RandomGraph[BernoulliGraphDistribution[5, 0]]]]")
+        .unwrap(),
+      "0"
+    );
+  }
 }
 
 mod cases {

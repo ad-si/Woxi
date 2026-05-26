@@ -1355,6 +1355,7 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// RandomGraph[{n, m}, k] — list of k such graphs.
 pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::seq::SliceRandom;
+  use rand::Rng;
 
   let unevaluated = || Expr::FunctionCall {
     name: "RandomGraph".to_string(),
@@ -1374,6 +1375,50 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if positional.is_empty() {
     return Ok(unevaluated());
+  }
+
+  // RandomGraph[BernoulliGraphDistribution[n, p]] — Erdős–Rényi G(n, p):
+  // each potential edge is independently included with probability p.
+  if let Expr::FunctionCall { name, args: bargs } = positional[0]
+    && name == "BernoulliGraphDistribution"
+    && bargs.len() == 2
+  {
+    let n = match crate::functions::math_ast::expr_to_i128(&bargs[0]) {
+      Some(n) if n >= 0 => n as usize,
+      _ => return Ok(unevaluated()),
+    };
+    let p = match crate::functions::math_ast::try_eval_to_f64(&bargs[1]) {
+      Some(p) if (0.0..=1.0).contains(&p) => p,
+      _ => return Ok(unevaluated()),
+    };
+    let mut edges: Vec<(i128, i128)> = Vec::new();
+    crate::with_rng(|rng| {
+      for i in 1..=n {
+        for j in (i + 1)..=n {
+          if rng.gen_bool(p) {
+            edges.push((i as i128, j as i128));
+          }
+        }
+      }
+    });
+    let vertex_list: Vec<Expr> =
+      (1..=n).map(|v| Expr::Integer(v as i128)).collect();
+    let edge_list: Vec<Expr> = edges
+      .into_iter()
+      .map(|(a, b)| Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+      })
+      .collect();
+    let mut graph_args =
+      vec![Expr::List(vertex_list.into()), Expr::List(edge_list.into())];
+    if !options.is_empty() {
+      graph_args.push(Expr::List(options.into()));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: graph_args.into(),
+    });
   }
 
   let (n, m) = match positional[0] {

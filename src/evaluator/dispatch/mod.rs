@@ -7117,7 +7117,12 @@ pub fn evaluate_function_call_ast_inner(
   if is_known_wolfram_function(name)
     && !matches!(
       name,
-      "Root" | "RootSum" | "RootApproximant" | "Image3D" | "CenteredInterval"
+      "Root"
+        | "RootSum"
+        | "RootApproximant"
+        | "Image3D"
+        | "CenteredInterval"
+        | "BernoulliGraphDistribution"
     )
   {
     let args_str = args
