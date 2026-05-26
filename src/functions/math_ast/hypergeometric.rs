@@ -1599,6 +1599,75 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // Special case: HypergeometricU[-n, b, z] for non-negative integer n
+  // evaluates to a polynomial of degree n in z. Closed form (DLMF 13.2.7):
+  //
+  //   U(-n, b, z) = (-1)^n · (b)_n · M(-n, b, z)
+  //              = Σ_{k=0}^n (-1)^(n+k) · C(n, k) · (b+k)_(n-k) · z^k
+  //
+  // The inner `(b+k)_(n-k)` is the rising-factorial `(b+k)(b+k+1)…(b+n-1)`.
+  // For symbolic b this stays symbolic; for integer b it collapses.
+  if let Expr::Integer(neg_n) = &args[0]
+    && *neg_n < 0
+  {
+    let n = (-*neg_n) as usize;
+    let b = &args[1];
+    let z = &args[2];
+    let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
+    // Local binomial helper (small n, fits in i128).
+    fn cnk(n: usize, k: usize) -> i128 {
+      let k = k.min(n - k);
+      let mut acc: i128 = 1;
+      for i in 0..k {
+        acc = acc * (n - i) as i128 / (i + 1) as i128;
+      }
+      acc
+    }
+    for k in 0..=n {
+      let coeff_sign: i128 = if (n + k) % 2 == 0 { 1 } else { -1 };
+      let binom = cnk(n, k);
+      // (b+k)_(n-k): product b+k, b+k+1, …, b+n-1.
+      let mut rising_factors: Vec<Expr> = Vec::new();
+      for j in k..n {
+        rising_factors.push(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![b.clone(), Expr::Integer(j as i128)].into(),
+        });
+      }
+      let rising = if rising_factors.is_empty() {
+        Expr::Integer(1)
+      } else if rising_factors.len() == 1 {
+        rising_factors.remove(0)
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: rising_factors.into(),
+        }
+      };
+      let coeff_int = coeff_sign * (binom as i128);
+      let z_pow = if k == 0 {
+        Expr::Integer(1)
+      } else if k == 1 {
+        z.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![z.clone(), Expr::Integer(k as i128)].into(),
+        }
+      };
+      let term = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(coeff_int), rising, z_pow].into(),
+      };
+      terms.push(term);
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sum);
+  }
+
   // Numeric evaluation when at least one argument is Real and all are numeric.
   // Skip this fast-path when integer (a, b) match a symbolic closed-form
   // pattern below — the recurrence stays exact at machine precision, while

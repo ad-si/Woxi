@@ -2609,6 +2609,55 @@ mod multivariate_poisson_distribution {
       "{a + b, a + c}"
     );
   }
+
+  // ─── PDF for the bivariate Poisson distribution ───────────────────
+  //
+  // PDF[MultivariatePoissonDistribution[μ_0, {μ_1, μ_2}], {x, y}] has
+  // the closed form (for non-negative integer x, y):
+  //
+  //   (-μ_0)^x · μ_2^(y-x) · HypergeometricU[-x, 1-x+y, -μ_1·μ_2/μ_0]
+  //   ───────────────────────────────────────────────────────────────
+  //              E^(μ_0+μ_1+μ_2) · x! · y!
+  //
+  // Wolfram wraps it in `Piecewise[{{<formula>, x >= 0 && y >= 0}}, 0]`.
+  #[test]
+  fn pdf_symbolic_audit_case() {
+    // Audit case.
+    assert_eq!(
+      interpret("PDF[MultivariatePoissonDistribution[1, {2, 3}], {x, y}]")
+        .unwrap(),
+      "Piecewise[{{((-1)^x*3^(-x + y)*HypergeometricU[-x, 1 - x + y, -6])/(E^6*x!*y!), x >= 0 && y >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic_different_params() {
+    assert_eq!(
+      interpret("PDF[MultivariatePoissonDistribution[1, {4, 3}], {x, y}]")
+        .unwrap(),
+      "Piecewise[{{((-1)^x*3^(-x + y)*HypergeometricU[-x, 1 - x + y, -12])/(E^8*x!*y!), x >= 0 && y >= 0}}, 0]"
+    );
+  }
+
+  // Concrete (x, y) evaluates to the correct numeric closed form
+  // (Wolfram prints `E^(-6)` rather than `1/E^6`).
+  #[test]
+  fn pdf_concrete_at_origin() {
+    assert_eq!(
+      interpret("PDF[MultivariatePoissonDistribution[1, {2, 3}], {0, 0}]")
+        .unwrap(),
+      "E^(-6)"
+    );
+  }
+
+  #[test]
+  fn pdf_concrete_at_2_3() {
+    assert_eq!(
+      interpret("PDF[MultivariatePoissonDistribution[1, {2, 3}], {2, 3}]")
+        .unwrap(),
+      "39/(2*E^6)"
+    );
+  }
 }
 
 mod arcsin_distribution {

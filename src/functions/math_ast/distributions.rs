@@ -147,6 +147,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
+    "MultivariatePoissonDistribution" => pdf_multivariate_poisson(dargs, x),
     "HalfNormalDistribution" => pdf_half_normal(dargs, x),
     "ChiDistribution" => pdf_chi(dargs, x),
     "LogisticDistribution" => pdf_logistic(dargs, x),
@@ -4128,6 +4129,118 @@ fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   eval(piecewise(vec![(pdf_val, combined_cond)], int(0)))
+}
+
+/// PDF[MultivariatePoissonDistribution[μ_0, {μ_1, μ_2}], {x, y}] for the
+/// bivariate case. The closed form (Wolfram's choice):
+///
+///   (-μ_0)^x · μ_2^(y-x) · HypergeometricU[-x, 1-x+y, -μ_1·μ_2/μ_0]
+///   ───────────────────────────────────────────────────────────────
+///              E^(μ_0+μ_1+μ_2) · x! · y!
+///
+/// with support x ≥ 0 ∧ y ≥ 0; outside the support the PDF is 0.
+fn pdf_multivariate_poisson(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MultivariatePoissonDistribution expects 2 arguments".into(),
+    ));
+  }
+  let mu0 = dargs[0].clone();
+  let (mu1, mu2) = match &dargs[1] {
+    Expr::List(items) if items.len() == 2 => {
+      (items[0].clone(), items[1].clone())
+    }
+    // The closed form below is only for the bivariate case; defer
+    // higher-dimensional inputs to the unevaluated form by erroring out
+    // and letting `pdf_ast` swallow the error… simpler to short-circuit
+    // here with an unchanged head.
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "MultivariatePoissonDistribution".to_string(),
+            args: dargs.to_vec().into(),
+          },
+          x,
+        ]
+        .into(),
+      });
+    }
+  };
+  let (xv, yv) = match &x {
+    Expr::List(items) if items.len() == 2 => {
+      (items[0].clone(), items[1].clone())
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "PDF[MultivariatePoissonDistribution[...], x]: x must be a 2-element list"
+          .into(),
+      ));
+    }
+  };
+
+  // Pre-evaluate the numeric-parameter subexpressions so the final
+  // Piecewise doesn't leak unsimplified literals (`E^(1 + 2 + 3)` etc).
+  // The symbolic `x`, `y` are kept intact.
+  let neg_mu0 = eval(times(int(-1), mu0.clone()))?;
+  let neg_mu1_mu2_over_mu0 = eval(times(
+    int(-1),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(times(mu1.clone(), mu2.clone())),
+      right: Box::new(mu0.clone()),
+    },
+  ))?;
+  let sum_mu_eval = eval(plus(plus(mu0.clone(), mu1.clone()), mu2.clone()))?;
+
+  // Numerator: (-μ_0)^x · μ_2^(y - x) · HypergeometricU[-x, 1 - x + y, -μ_1·μ_2/μ_0]
+  let neg_mu0_pow_x = power(neg_mu0, xv.clone());
+  // Canonicalise `y - x` to its Plus form (`-x + y`) so the final
+  // Piecewise matches wolframscript's display.
+  let y_minus_x_canon = eval(minus(yv.clone(), xv.clone()))?;
+  let mu2_pow_y_minus_x = power(mu2.clone(), y_minus_x_canon);
+  let neg_x = times(int(-1), xv.clone());
+  let one_minus_x_plus_y =
+    plus(minus(int(1), xv.clone()), yv.clone());
+  let hypergeometric_u = Expr::FunctionCall {
+    name: "HypergeometricU".to_string(),
+    args: vec![neg_x, one_minus_x_plus_y, neg_mu1_mu2_over_mu0].into(),
+  };
+  let numerator = times(times(neg_mu0_pow_x, mu2_pow_y_minus_x), hypergeometric_u);
+
+  // Denominator: E^(μ_0+μ_1+μ_2) · x! · y!
+  let exp_sum = power(Expr::Constant("E".to_string()), sum_mu_eval);
+  let x_fact = Expr::FunctionCall {
+    name: "Factorial".to_string(),
+    args: vec![xv.clone()].into(),
+  };
+  let y_fact = Expr::FunctionCall {
+    name: "Factorial".to_string(),
+    args: vec![yv.clone()].into(),
+  };
+  let denominator = times(times(exp_sum, x_fact), y_fact);
+
+  let pdf_val = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(numerator),
+    right: Box::new(denominator),
+  };
+
+  // Condition: x >= 0 && y >= 0.
+  let cond = Expr::FunctionCall {
+    name: "And".to_string(),
+    args: vec![
+      comparison(xv, ComparisonOp::GreaterEqual, int(0)),
+      comparison(yv, ComparisonOp::GreaterEqual, int(0)),
+    ]
+    .into(),
+  };
+
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
 }
 
 /// Returns (Mean list, Variance list) for MultinomialDistribution
