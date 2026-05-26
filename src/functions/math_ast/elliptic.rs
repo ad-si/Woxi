@@ -867,9 +867,7 @@ pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match elliptic_exp_real(u, a, b) {
-    Some((x, y)) => {
-      Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-    }
+    Some((x, y)) => Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())),
     None => Ok(Expr::FunctionCall {
       name: "EllipticExp".to_string(),
       args: args.to_vec().into(),
@@ -977,9 +975,8 @@ fn compute_gl64() -> Vec<(f64, f64)> {
   let n = 64;
   let mut out = Vec::with_capacity(n);
   for i in 0..n {
-    let mut x = -(std::f64::consts::PI * (4 * i + 3) as f64
-      / (4 * n + 2) as f64)
-      .cos();
+    let mut x =
+      -(std::f64::consts::PI * (4 * i + 3) as f64 / (4 * n + 2) as f64).cos();
     for _ in 0..100 {
       let (p, dp) = legendre_p_and_deriv(n, x);
       let dx = -p / dp;
@@ -999,8 +996,7 @@ fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
   let mut p0 = 1.0;
   let mut p1 = x;
   for k in 1..n {
-    let pk = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0)
-      / ((k + 1) as f64);
+    let pk = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0) / ((k + 1) as f64);
     p0 = p1;
     p1 = pk;
   }

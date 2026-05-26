@@ -3,4 +3,3 @@ source: tests/script_snapshot_tests.rs
 expression: stdout
 ---
 
-Import::fmterr: Cannot import data as PPM format.

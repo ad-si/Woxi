@@ -2299,8 +2299,9 @@ fn int_coeffs_to_canonical_expr(coeffs: &[i128], var: &str) -> Expr {
 /// the second term carries a minus sign (i.e. a^n - b^n). The first variable
 /// is whichever side carries the positive sign; for a^n + b^n the order from
 /// the source is preserved.
-fn match_homogeneous_binomial(expr: &Expr) -> Option<(String, String, u64, bool)>
-{
+fn match_homogeneous_binomial(
+  expr: &Expr,
+) -> Option<(String, String, u64, bool)> {
   // Extract ±var^n from a single term. Returns (var, n, positive).
   fn extract_term(t: &Expr) -> Option<(String, u64, bool)> {
     match t {

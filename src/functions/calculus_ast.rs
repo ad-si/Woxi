@@ -8899,15 +8899,13 @@ fn detect_gaussian_coefficient(
     Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
       &args[0]
     }
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 =>
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && (matches!(&args[0], Expr::Identifier(s) if s == "E")
+          || matches!(&args[0], Expr::Constant(s) if s == "E")) =>
     {
-      if matches!(&args[0], Expr::Identifier(s) if s == "E")
-        || matches!(&args[0], Expr::Constant(s) if s == "E")
-      {
-        &args[1]
-      } else {
-        return None;
-      }
+      &args[1]
     }
     Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -8924,7 +8922,8 @@ fn detect_gaussian_coefficient(
   // `arg` should be `α · var^2` (possibly with α split into multiple
   // factors). Collect all multiplicative factors, separate out the
   // `var^2`, and take the product of everything else as `α`.
-  let factors = crate::functions::polynomial_ast::collect_multiplicative_factors(arg);
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(arg);
   let mut var_sq_count = 0;
   let mut alpha_factors: Vec<Expr> = Vec::new();
   for f in &factors {
@@ -8937,7 +8936,8 @@ fn detect_gaussian_coefficient(
         matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
           && matches!(right.as_ref(), Expr::Integer(2))
       }
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 =>
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
       {
         matches!(&args[0], Expr::Identifier(s) if s == var_name)
           && matches!(&args[1], Expr::Integer(2))
@@ -8986,8 +8986,7 @@ fn gaussian_closed_form_integral(
     name: "Times".to_string(),
     args: vec![Expr::Integer(-1), alpha.clone()].into(),
   };
-  let neg_alpha_eval =
-    crate::evaluator::evaluate_expr_to_expr(&neg_alpha)?;
+  let neg_alpha_eval = crate::evaluator::evaluate_expr_to_expr(&neg_alpha)?;
   let sqrt_neg_alpha = Expr::FunctionCall {
     name: "Sqrt".to_string(),
     args: vec![neg_alpha_eval.clone()].into(),
@@ -9213,12 +9212,7 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !hi.is_infinite()
     && let Some(alpha) = detect_gaussian_coefficient(integrand, &var_name)
   {
-    return gaussian_closed_form_integral(
-      &alpha,
-      lo,
-      hi,
-      working_precision,
-    );
+    return gaussian_closed_form_integral(&alpha, lo, hi, working_precision);
   }
 
   // Evaluate the integrand at a point

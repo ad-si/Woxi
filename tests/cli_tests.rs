@@ -113,10 +113,6 @@ fn eval_stdin_handles_large_image_input() {
   matrix.push('}');
   let expression = format!("Head[Image[{}]]", matrix);
   let (stdout, stderr, ok) = run_eval_stdin(&expression);
-  assert!(
-    ok,
-    "woxi eval - on large image failed: stderr={}",
-    stderr
-  );
+  assert!(ok, "woxi eval - on large image failed: stderr={}", stderr);
   assert_eq!(stdout.trim(), "Image");
 }

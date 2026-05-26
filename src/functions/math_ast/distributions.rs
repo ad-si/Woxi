@@ -2054,10 +2054,8 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
     };
-    let sigma_sq_t_sq_half = times(
-      times(sigma_sq, power(t.clone(), int(2))),
-      half,
-    );
+    let sigma_sq_t_sq_half =
+      times(times(sigma_sq, power(t.clone(), int(2))), half);
     let exponent = plus(mu_t, sigma_sq_t_sq_half);
     let mgf = power(Expr::Identifier("E".to_string()), exponent);
     return eval(times(c, mgf));
@@ -2080,7 +2078,8 @@ fn extract_mgf_pattern(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       args[0].clone()
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      let base_is_e = matches!(&args[0], Expr::Identifier(n) | Expr::Constant(n) if n == "E");
+      let base_is_e =
+        matches!(&args[0], Expr::Identifier(n) | Expr::Constant(n) if n == "E");
       if !base_is_e {
         return None;
       }
@@ -2103,8 +2102,8 @@ fn extract_mgf_pattern(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let (a, b) = extract_linear(&exponent, var)?;
   // We only handle the homogeneous case b = 0; otherwise the factor
   // exp(b) would multiply through and that's better folded into `c`.
-  let b_is_zero =
-    matches!(&b, Expr::Integer(0)) || matches!(&b, Expr::Real(v) if v.abs() < 1e-300);
+  let b_is_zero = matches!(&b, Expr::Integer(0))
+    || matches!(&b, Expr::Real(v) if v.abs() < 1e-300);
   if !b_is_zero {
     return None;
   }

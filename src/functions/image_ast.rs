@@ -3306,12 +3306,11 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Two-arg form with a structural level: `Line`, `Word`, `Character`,
   // `Block` — wolframscript returns an empty list when no text is
   // found. Anything else falls back to the empty-string scalar.
-  if args.len() >= 2 {
-    if let Expr::String(s) = &args[1] {
-      if matches!(s.as_str(), "Line" | "Word" | "Character" | "Block") {
-        return Ok(Expr::List(Vec::new().into()));
-      }
-    }
+  if args.len() >= 2
+    && let Expr::String(s) = &args[1]
+    && matches!(s.as_str(), "Line" | "Word" | "Character" | "Block")
+  {
+    return Ok(Expr::List(Vec::new().into()));
   }
   Ok(Expr::String(String::new()))
 }

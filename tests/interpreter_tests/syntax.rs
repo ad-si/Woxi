@@ -6624,7 +6624,10 @@ mod batch_inert_symbols_3 {
     // symbolic. The image collapses to the standard `-Image-` summary
     // so the result must not hang on large literals.
     assert_eq!(
-      interpret("CloudExport[Image[{{{0.5, 0.5, 0.5}, {0.6, 0.6, 0.6}}}], \"JPEG\"]").unwrap(),
+      interpret(
+        "CloudExport[Image[{{{0.5, 0.5, 0.5}, {0.6, 0.6, 0.6}}}], \"JPEG\"]"
+      )
+      .unwrap(),
       "CloudExport[-Image-, JPEG]"
     );
   }
@@ -6634,10 +6637,7 @@ mod batch_inert_symbols_3 {
     // Three-argument form: an explicit destination URI must be carried
     // through the unevaluated wrapper.
     assert_eq!(
-      interpret(
-        "CloudExport[Image[{{0.5}}], \"PNG\", \"obj/foo\"]"
-      )
-      .unwrap(),
+      interpret("CloudExport[Image[{{0.5}}], \"PNG\", \"obj/foo\"]").unwrap(),
       "CloudExport[-Image-, PNG, obj/foo]"
     );
   }

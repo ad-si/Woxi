@@ -2184,11 +2184,8 @@ fn parse_counting_spec(spec: &Expr, n: usize) -> Option<Vec<usize>> {
       }
       // {kmin, kmax, step} — counts {kmin, kmin+step, …} ≤ kmax.
       3 => {
-        if let (
-          Expr::Integer(a),
-          Expr::Integer(b),
-          Expr::Integer(s),
-        ) = (&items[0], &items[1], &items[2])
+        if let (Expr::Integer(a), Expr::Integer(b), Expr::Integer(s)) =
+          (&items[0], &items[1], &items[2])
           && *a >= 0
           && *b >= *a
           && *s >= 1

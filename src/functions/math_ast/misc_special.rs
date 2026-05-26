@@ -1179,7 +1179,8 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // AngerJ[ν, 0] for non-integer (symbolic or rational) ν:
   //   AngerJ[ν, 0] = Sin[ν*Pi] / (ν*Pi)
-  if matches!(z_expr, Expr::Integer(0)) && !matches!(nu_expr, Expr::Integer(_)) {
+  if matches!(z_expr, Expr::Integer(0)) && !matches!(nu_expr, Expr::Integer(_))
+  {
     let sym_form = anger_j_at_zero_symbolic(nu_expr);
     return crate::evaluator::evaluate_expr_to_expr(&sym_form);
   }

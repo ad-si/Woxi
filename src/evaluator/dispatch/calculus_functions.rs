@@ -1187,9 +1187,7 @@ fn inverse_laplace_transform(
     let normalized = normalize_to_func_calls(expr);
     let normalized = crate::evaluator::evaluate_expr_to_expr(&normalized)
       .unwrap_or(normalized);
-    if let Some(result) =
-      inverse_laplace_2d(&normalized, p, q, x, y)
-    {
+    if let Some(result) = inverse_laplace_2d(&normalized, p, q, x, y) {
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     return Ok(Expr::FunctionCall {
@@ -1337,8 +1335,7 @@ fn inverse_laplace_2d(
     if terms.len() != 2 {
       return false;
     }
-    let has_one =
-      terms.iter().any(|t| matches!(t, Expr::Integer(1)));
+    let has_one = terms.iter().any(|t| matches!(t, Expr::Integer(1)));
     let has_pq = terms.iter().any(is_product_pq);
     has_one && has_pq
   };
@@ -1366,11 +1363,8 @@ fn inverse_laplace_2d(
         args: vec![
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(-1),
-              Expr::Identifier(x.to_string()),
-            ]
-            .into(),
+            args: vec![Expr::Integer(-1), Expr::Identifier(x.to_string())]
+              .into(),
           },
           Expr::Identifier(y.to_string()),
         ]

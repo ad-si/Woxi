@@ -2013,11 +2013,13 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `None` for non-polynomial equations or when `var` does not appear.
 fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
   let lhs_minus_rhs = match eq {
-    Expr::Comparison { operands, .. } if operands.len() == 2 => Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(operands[0].clone()),
-      right: Box::new(operands[1].clone()),
-    },
+    Expr::Comparison { operands, .. } if operands.len() == 2 => {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
       Expr::BinaryOp {
         op: BinaryOperator::Minus,
@@ -2027,7 +2029,8 @@ fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
     }
     other => other.clone(),
   };
-  let expanded = crate::evaluator::evaluate_expr_to_expr(&lhs_minus_rhs).ok()?;
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&lhs_minus_rhs).ok()?;
   crate::functions::polynomial_ast::max_power_int(&expanded, var)
 }
 
@@ -2045,8 +2048,11 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
   let is_rational = |c: &Expr| -> bool {
     match c {
       Expr::Integer(_) => true,
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
-        matches!(args[0], Expr::Integer(_)) && matches!(args[1], Expr::Integer(_))
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        matches!(args[0], Expr::Integer(_))
+          && matches!(args[1], Expr::Integer(_))
       }
       _ => false,
     }
@@ -2098,7 +2104,8 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
   for k in 1..=degree {
     let root = Expr::FunctionCall {
       name: "Root".to_string(),
-      args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)].into(),
+      args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)]
+        .into(),
     };
     solutions.push(Expr::List(
       vec![Expr::Rule {
@@ -3106,7 +3113,8 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // requests fast numerical evaluation — we leave it symbolic for now,
   // matching wolframscript's behaviour when it cannot simplify to a
   // closed form.
-  if args.len() == 3 && !matches!(&args[2], Expr::Integer(0) | Expr::Integer(1)) {
+  if args.len() == 3 && !matches!(&args[2], Expr::Integer(0) | Expr::Integer(1))
+  {
     return Ok(Expr::FunctionCall {
       name: "Root".to_string(),
       args: args.to_vec().into(),

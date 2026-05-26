@@ -1148,7 +1148,10 @@ mod eigenvectors {
     let code = format!(
       "Module[{{m = {m}, vs, ls}}, vs = Eigenvectors[m]; ls = Eigenvalues[m]; Simplify[Table[m . vs[[i]] - ls[[i]] * vs[[i]], {{i, 1, 3}}]]]"
     );
-    assert_eq!(interpret(&code).unwrap(), "{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}");
+    assert_eq!(
+      interpret(&code).unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}"
+    );
   }
 }
 

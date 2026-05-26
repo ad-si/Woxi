@@ -2324,15 +2324,14 @@ pub fn clustering_components_n_ast(
   let max_clusters = values.len().min(n);
 
   // Sort with original indices so we can find the largest gaps.
-  let mut indexed: Vec<(usize, f64)> = values
-    .iter()
-    .enumerate()
-    .map(|(i, &v)| (i, v))
-    .collect();
-  indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+  let mut indexed: Vec<(usize, f64)> =
+    values.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+  indexed
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
   // Gaps between consecutive sorted values.
-  let mut gaps: Vec<(usize, f64)> = Vec::with_capacity(indexed.len().saturating_sub(1));
+  let mut gaps: Vec<(usize, f64)> =
+    Vec::with_capacity(indexed.len().saturating_sub(1));
   for i in 0..indexed.len().saturating_sub(1) {
     gaps.push((i, indexed[i + 1].1 - indexed[i].1));
   }
@@ -2340,7 +2339,8 @@ pub fn clustering_components_n_ast(
   // descending, take the first `max_clusters - 1`, then re-sort by
   // position so the cluster boundaries are in left-to-right order.
   let cuts_needed = max_clusters.saturating_sub(1);
-  gaps.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+  gaps
+    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
   let mut cut_positions: Vec<usize> =
     gaps.iter().take(cuts_needed).map(|(p, _)| *p).collect();
   cut_positions.sort_unstable();

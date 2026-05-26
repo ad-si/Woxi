@@ -1425,8 +1425,10 @@ mod random_graph {
       "Graph"
     );
     assert_eq!(
-      interpret("Length[VertexList[RandomGraph[BernoulliGraphDistribution[6, 0.4]]]]")
-        .unwrap(),
+      interpret(
+        "Length[VertexList[RandomGraph[BernoulliGraphDistribution[6, 0.4]]]]"
+      )
+      .unwrap(),
       "6"
     );
   }
@@ -1435,13 +1437,17 @@ mod random_graph {
   fn bernoulli_graph_distribution_edge_count_in_range() {
     // p=1 forces all edges; p=0 forbids them.
     assert_eq!(
-      interpret("Length[EdgeList[RandomGraph[BernoulliGraphDistribution[5, 1]]]]")
-        .unwrap(),
+      interpret(
+        "Length[EdgeList[RandomGraph[BernoulliGraphDistribution[5, 1]]]]"
+      )
+      .unwrap(),
       "10"
     );
     assert_eq!(
-      interpret("Length[EdgeList[RandomGraph[BernoulliGraphDistribution[5, 0]]]]")
-        .unwrap(),
+      interpret(
+        "Length[EdgeList[RandomGraph[BernoulliGraphDistribution[5, 0]]]]"
+      )
+      .unwrap(),
       "0"
     );
   }

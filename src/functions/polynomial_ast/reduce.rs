@@ -1818,7 +1818,9 @@ fn try_reduce_exists_quadratic_linear(
 ) -> Option<Expr> {
   // Unwrap Exists[{x, y}, body].
   let (vars, body) = match exists_expr {
-    Expr::FunctionCall { name, args } if name == "Exists" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Exists" && args.len() == 2 =>
+    {
       let vs = match &args[0] {
         Expr::List(items) => items.clone(),
         _ => return None,
@@ -2055,7 +2057,8 @@ fn simplify_to_rational(e: &Expr) -> Option<Rat> {
     }
     _ => {
       let evaluated = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
-      if matches!(&evaluated, Expr::Integer(_)) || matches!(&evaluated, Expr::FunctionCall { name, .. } if name == "Rational")
+      if matches!(&evaluated, Expr::Integer(_))
+        || matches!(&evaluated, Expr::FunctionCall { name, .. } if name == "Rational")
       {
         simplify_to_rational(&evaluated)
       } else {
@@ -2091,7 +2094,9 @@ fn contains_var(e: &Expr, name: &str) -> bool {
       contains_var(left, name) || contains_var(right, name)
     }
     Expr::UnaryOp { operand, .. } => contains_var(operand, name),
-    Expr::FunctionCall { args, .. } => args.iter().any(|a| contains_var(a, name)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| contains_var(a, name))
+    }
     Expr::List(items) => items.iter().any(|a| contains_var(a, name)),
     Expr::Comparison { operands, .. } => {
       operands.iter().any(|a| contains_var(a, name))
@@ -2126,11 +2131,13 @@ fn is_linear_in(e: &Expr, vars: &[String]) -> bool {
 
 fn comparison_max_degree(e: &Expr, var: &str) -> Option<i128> {
   let lhs_minus_rhs = match e {
-    Expr::Comparison { operands, .. } if operands.len() == 2 => Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(operands[0].clone()),
-      right: Box::new(operands[1].clone()),
-    },
+    Expr::Comparison { operands, .. } if operands.len() == 2 => {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
     _ => return None,
   };
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&lhs_minus_rhs)
@@ -2139,7 +2146,10 @@ fn comparison_max_degree(e: &Expr, var: &str) -> Option<i128> {
 }
 
 fn extract_le_form(e: &Expr) -> Option<(Expr, Expr)> {
-  if let Expr::Comparison { operands, operators } = e
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = e
     && operands.len() == 2
     && operators.len() == 1
   {
@@ -2158,7 +2168,10 @@ fn extract_le_form(e: &Expr) -> Option<(Expr, Expr)> {
 }
 
 fn extract_ge_form(e: &Expr) -> Option<(Expr, Expr)> {
-  if let Expr::Comparison { operands, operators } = e
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = e
     && operands.len() == 2
     && operators.len() == 1
   {

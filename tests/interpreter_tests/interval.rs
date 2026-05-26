@@ -344,10 +344,8 @@ fn centered_interval_intersection_real() {
 fn centered_interval_union_real() {
   // Smallest centred interval containing both: span [4, 9] → centre 13/2, radius 5/2.
   assert_eq!(
-    interpret(
-      "IntervalUnion[CenteredInterval[5, 1], CenteredInterval[7, 2]]"
-    )
-    .unwrap(),
+    interpret("IntervalUnion[CenteredInterval[5, 1], CenteredInterval[7, 2]]")
+      .unwrap(),
     "CenteredInterval[13/2, 5/2]"
   );
 }

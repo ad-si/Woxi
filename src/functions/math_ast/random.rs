@@ -1357,8 +1357,8 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// RandomGraph[{n, m}] — undirected graph with n vertices and m random edges.
 /// RandomGraph[{n, m}, k] — list of k such graphs.
 pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::seq::SliceRandom;
   use rand::Rng;
+  use rand::seq::SliceRandom;
 
   let unevaluated = || Expr::FunctionCall {
     name: "RandomGraph".to_string(),

@@ -3694,7 +3694,8 @@ mod arma_covariance_function {
   fn arma11_with_constant() {
     // The audit case: a non-zero constant c does not affect covariance.
     assert_eq!(
-      interpret("CovarianceFunction[ARMAProcess[c, {a}, {b}, s2], s, t]").unwrap(),
+      interpret("CovarianceFunction[ARMAProcess[c, {a}, {b}, s2], s, t]")
+        .unwrap(),
       "Piecewise[{{-((a^(-1 + Abs[s - t])*(a + b + a^2*b + a*b^2)*s2)/((-1 + a)*(1 + a))), Abs[s - t] > 0}}, -((b*s2)/a) - ((a + b + a^2*b + a*b^2)*s2)/((-1 + a)*a*(1 + a))]"
     );
   }

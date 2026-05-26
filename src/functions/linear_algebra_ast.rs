@@ -5474,7 +5474,7 @@ pub fn smith_decomposition_ast(
       // this trivially; non-integer rationals would otherwise need a
       // denominator-clearing step Woxi doesn't yet do).
       crate::emit_message(
-        "SmithDecomposition::latm: Matrix contains an entry that is not rational."
+        "SmithDecomposition::latm: Matrix contains an entry that is not rational.",
       );
       return Ok(Expr::FunctionCall {
         name: "SmithDecomposition".to_string(),

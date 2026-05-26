@@ -2583,10 +2583,8 @@ mod reduce {
     // ellipse-or-strip is `sqrt(1 + 1/a)` for a > 0 and unbounded for
     // a ≤ 0, so the system is satisfiable iff `a <= 1/3`.
     assert_eq!(
-      interpret(
-        "Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 2], a]"
-      )
-      .unwrap(),
+      interpret("Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 2], a]")
+        .unwrap(),
       "a <= 1/3"
     );
   }
@@ -2597,10 +2595,8 @@ mod reduce {
     // 1/a ≥ 1²/1 - 1 = 0, so a > 0 always works and a ≤ 0 trivially
     // works as well — the system is satisfiable for every real `a`.
     assert_eq!(
-      interpret(
-        "Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 1], a]"
-      )
-      .unwrap(),
+      interpret("Reduce[Exists[{x, y}, x^2 + a*y^2 <= 1 && x - y >= 1], a]")
+        .unwrap(),
       "True"
     );
   }

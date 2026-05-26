@@ -8055,15 +8055,15 @@ mod mathieu_s {
   #[test]
   fn mathieu_s_zero_at_origin() {
     let val = parse_real(&interpret("MathieuS[2, 1, 0]").unwrap());
-    assert!(val.abs() < 1e-12, "MathieuS(2, 1, 0) should be 0, got {val}");
+    assert!(
+      val.abs() < 1e-12,
+      "MathieuS(2, 1, 0) should be 0, got {val}"
+    );
   }
 
   #[test]
   fn mathieu_s_symbolic_passthrough() {
-    assert_eq!(
-      interpret("MathieuS[a, q, z]").unwrap(),
-      "MathieuS[a, q, z]"
-    );
+    assert_eq!(interpret("MathieuS[a, q, z]").unwrap(), "MathieuS[a, q, z]");
     assert_eq!(
       interpret("MathieuSPrime[a, q, z]").unwrap(),
       "MathieuSPrime[a, q, z]"

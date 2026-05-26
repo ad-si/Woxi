@@ -768,7 +768,6 @@ pub fn try_interval_compare(
   }
 }
 
-
 // ─── CenteredInterval helpers ───────────────────────────────────────────
 
 /// Box operations on CenteredInterval inputs (treated as axis-aligned
@@ -786,9 +785,7 @@ fn centered_interval_extract_is_some(e: &Expr) -> bool {
 
 /// Split `e` into ((re_c, im_c), (re_r, im_r)) where `e` is
 /// `CenteredInterval[c, r]` with arithmetic-evaluable `c` and `r`.
-fn centered_interval_box(
-  e: &Expr,
-) -> Option<((Expr, Expr), (Expr, Expr))> {
+fn centered_interval_box(e: &Expr) -> Option<((Expr, Expr), (Expr, Expr))> {
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
@@ -814,16 +811,12 @@ fn split_real_imag(e: &Expr) -> Option<(Expr, Expr)> {
   if is_real_atom {
     return Some((e.clone(), Expr::Integer(0)));
   }
-  let re_expr = crate::evaluator::evaluate_function_call_ast(
-    "Re",
-    std::slice::from_ref(e),
-  )
-  .ok()?;
-  let im_expr = crate::evaluator::evaluate_function_call_ast(
-    "Im",
-    std::slice::from_ref(e),
-  )
-  .ok()?;
+  let re_expr =
+    crate::evaluator::evaluate_function_call_ast("Re", std::slice::from_ref(e))
+      .ok()?;
+  let im_expr =
+    crate::evaluator::evaluate_function_call_ast("Im", std::slice::from_ref(e))
+      .ok()?;
   Some((re_expr, im_expr))
 }
 

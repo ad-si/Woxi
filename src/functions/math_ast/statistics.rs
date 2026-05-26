@@ -3504,10 +3504,8 @@ fn cf_abs_diff(s: &Expr, t: &Expr) -> Expr {
 // ─── AR(1): (a^|s-t| σ²) / (1 - a²) ─────────────────────────────────────
 
 fn cov_ar1(a: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
-  let numerator = cf_times(vec![
-    cf_pow(a.clone(), cf_abs_diff(s, t)),
-    sigma2.clone(),
-  ]);
+  let numerator =
+    cf_times(vec![cf_pow(a.clone(), cf_abs_diff(s, t)), sigma2.clone()]);
   let denominator = cf_plus(vec![
     Expr::Integer(1),
     cf_neg(cf_pow(a.clone(), Expr::Integer(2))),
@@ -3544,10 +3542,7 @@ fn cov_ma1(b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
   );
   fc(
     "Piecewise",
-    vec![
-      Expr::List(vec![case1, case0].into()),
-      Expr::Integer(0),
-    ],
+    vec![Expr::List(vec![case1, case0].into()), Expr::Integer(0)],
   )
 }
 
@@ -3572,10 +3567,7 @@ fn cov_arma11(a: &Expr, b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
 
   // Nonzero-lag branch numerator: a^(-1 + lag) * top_poly * σ²
   let nonzero_num = cf_times(vec![
-    cf_pow(
-      a.clone(),
-      cf_plus(vec![Expr::Integer(-1), lag.clone()]),
-    ),
+    cf_pow(a.clone(), cf_plus(vec![Expr::Integer(-1), lag.clone()])),
     top_poly.clone(),
     sigma2.clone(),
   ]);

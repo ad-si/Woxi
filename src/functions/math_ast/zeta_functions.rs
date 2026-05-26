@@ -1213,8 +1213,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))
     && zf > 1.0
     && (sf - sf.round()).abs() < 1e-12
-    && sf >= 1.0
-    && sf <= 30.0
+    && (1.0..=30.0).contains(&sf)
   {
     let s_int = sf.round() as i32;
     if let Some((re, im)) = lerch_phi_z_gt_1(zf, s_int, af) {
@@ -1299,9 +1298,8 @@ fn lerch_phi_pv(z: f64, s: i32, a: f64) -> Option<(f64, f64)> {
   let h_lnz = h(ln_z);
   // Subtract the singular part: g(t) = integrand(t) - h(ln z)/(t - ln z).
   // g is smooth at t = ln z (use Taylor expansion in a small window).
-  let h_prime_lnz = (-a * ln_z).exp()
-    * ln_z.powi(s - 2)
-    * (((s - 1) as f64) - a * ln_z);
+  let h_prime_lnz =
+    (-a * ln_z).exp() * ln_z.powi(s - 2) * (((s - 1) as f64) - a * ln_z);
   let g = |t: f64| -> f64 {
     let delta = t - ln_z;
     if delta.abs() < 1e-4 {
@@ -1318,8 +1316,7 @@ fn lerch_phi_pv(z: f64, s: i32, a: f64) -> Option<(f64, f64)> {
   };
   let t_max = (50.0 + 10.0 / a).min(200.0);
   let int_g = gauss_legendre_integrate_lerch(0.0, t_max, &g);
-  let re =
-    (int_g + h_lnz * ((t_max - ln_z) / ln_z).ln()) / gamma_s;
+  let re = (int_g + h_lnz * ((t_max - ln_z) / ln_z).ln()) / gamma_s;
   let im = -std::f64::consts::PI * ln_z.powi(s - 1) * z.powf(-a) / gamma_s;
   Some((re, im))
 }
@@ -1348,9 +1345,8 @@ fn lerch_gl_nodes() -> &'static [(f64, f64)] {
     let n = 64;
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
-      let mut x = -(std::f64::consts::PI * (4 * i + 3) as f64
-        / (4 * n + 2) as f64)
-        .cos();
+      let mut x =
+        -(std::f64::consts::PI * (4 * i + 3) as f64 / (4 * n + 2) as f64).cos();
       for _ in 0..100 {
         let (p, dp) = legendre_p_dp(n, x);
         let dx = -p / dp;
@@ -1371,8 +1367,7 @@ fn legendre_p_dp(n: usize, x: f64) -> (f64, f64) {
   let mut p0 = 1.0;
   let mut p1 = x;
   for k in 1..n {
-    let pk = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0)
-      / ((k + 1) as f64);
+    let pk = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0) / ((k + 1) as f64);
     p0 = p1;
     p1 = pk;
   }

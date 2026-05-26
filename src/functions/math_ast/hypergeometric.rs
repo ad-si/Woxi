@@ -1624,7 +1624,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       acc
     }
     for k in 0..=n {
-      let coeff_sign: i128 = if (n + k) % 2 == 0 { 1 } else { -1 };
+      let coeff_sign: i128 = if (n + k).is_multiple_of(2) { 1 } else { -1 };
       let binom = cnk(n, k);
       // (b+k)_(n-k): product b+k, b+k+1, …, b+n-1.
       let mut rising_factors: Vec<Expr> = Vec::new();
@@ -1644,7 +1644,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: rising_factors.into(),
         }
       };
-      let coeff_int = coeff_sign * (binom as i128);
+      let coeff_int = coeff_sign * binom;
       let z_pow = if k == 0 {
         Expr::Integer(1)
       } else if k == 1 {

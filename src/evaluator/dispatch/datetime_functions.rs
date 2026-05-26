@@ -74,36 +74,35 @@ pub fn dispatch_datetime_functions(
       }
       // DateObject[n] — n is absolute seconds since Wolfram's epoch
       // (1900-01-01 00:00:00 UTC). Convert to a calendar instant.
-      if args.len() == 1 {
-        if let Some(secs) = match &args[0] {
+      if args.len() == 1
+        && let Some(secs) = match &args[0] {
           Expr::Integer(n) => Some(*n as f64),
           Expr::Real(r) => Some(*r),
           _ => None,
-        } {
-          let (y, mo, d, h, mi, s) =
-            wolfram_seconds_to_ymdhms(secs);
-          let date_list = Expr::List(
-            vec![
-              Expr::Integer(y as i128),
-              Expr::Integer(mo as i128),
-              Expr::Integer(d as i128),
-              Expr::Integer(h as i128),
-              Expr::Integer(mi as i128),
-              Expr::Integer(s as i128),
-            ]
-            .into(),
-          );
-          return Some(Ok(Expr::FunctionCall {
-            name: "DateObject".to_string(),
-            args: vec![
-              date_list,
-              Expr::String("Instant".to_string()),
-              Expr::String("Gregorian".to_string()),
-              Expr::Real(0.0),
-            ]
-            .into(),
-          }));
         }
+      {
+        let (y, mo, d, h, mi, s) = wolfram_seconds_to_ymdhms(secs);
+        let date_list = Expr::List(
+          vec![
+            Expr::Integer(y as i128),
+            Expr::Integer(mo as i128),
+            Expr::Integer(d as i128),
+            Expr::Integer(h as i128),
+            Expr::Integer(mi as i128),
+            Expr::Integer(s as i128),
+          ]
+          .into(),
+        );
+        return Some(Ok(Expr::FunctionCall {
+          name: "DateObject".to_string(),
+          args: vec![
+            date_list,
+            Expr::String("Instant".to_string()),
+            Expr::String("Gregorian".to_string()),
+            Expr::Real(0.0),
+          ]
+          .into(),
+        }));
       }
       // DateObject[{y, ...}] adds a granularity tag based on list length.
       //   1 → Year, 2 → Month, 3 → Day
@@ -184,9 +183,10 @@ fn wolfram_seconds_to_ymdhms(secs: f64) -> (i64, u32, u32, u32, u32, u32) {
   const WOLFRAM_EPOCH_TO_UNIX: f64 = 2_208_988_800.0;
   let unix_secs = secs - WOLFRAM_EPOCH_TO_UNIX;
   let total = unix_secs.round() as i64;
-  let dt = Utc.timestamp_opt(total, 0).single().unwrap_or_else(|| {
-    Utc.timestamp_opt(0, 0).single().unwrap()
-  });
+  let dt = Utc
+    .timestamp_opt(total, 0)
+    .single()
+    .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
   (
     dt.year() as i64,
     dt.month(),

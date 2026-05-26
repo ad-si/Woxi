@@ -7147,8 +7147,11 @@ fn six_j_symbol_symbolic(
   for tri in &triangles {
     for &pos in &[tri.0, tri.1, tri.2] {
       if pos == sym_pos {
-        let others: Vec<usize> =
-          [tri.0, tri.1, tri.2].iter().copied().filter(|&p| p != sym_pos).collect();
+        let others: Vec<usize> = [tri.0, tri.1, tri.2]
+          .iter()
+          .copied()
+          .filter(|&p| p != sym_pos)
+          .collect();
         upper_bound = upper_bound.max(two_j[others[0]] + two_j[others[1]]);
       }
     }
