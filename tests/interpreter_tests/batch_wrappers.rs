@@ -4339,6 +4339,30 @@ mod batch_unevaluated_wrappers_2 {
       "{{1/Sqrt[2], 1/Sqrt[2]}, {1/Sqrt[2], -(1/Sqrt[2])}}"
     );
   }
+  #[test]
+  fn fourier_matrix_4_dimensions() {
+    // For n = 4 a 4x4 matrix should be materialised.
+    let result = interpret("Dimensions[FourierMatrix[4]]").unwrap();
+    assert_eq!(result, "{4, 4}");
+  }
+  #[test]
+  fn fourier_matrix_large_does_not_materialize() {
+    // wolframscript: FourierMatrix[800] is too large to materialise and
+    // is returned as a `FourierMatrix[StructuredArray\`StructuredData[...]]`
+    // placeholder. Woxi must not time out by trying to enumerate 640k
+    // symbolic entries; it leaves the call unevaluated instead.
+    let result = interpret("Head[FourierMatrix[800]]").unwrap();
+    assert_eq!(result, "FourierMatrix");
+  }
+  #[test]
+  fn fourier_matrix_boundary_materializes() {
+    // n = 100 is well below the materialisation threshold and must
+    // produce a concrete 100×100 list.
+    assert_eq!(
+      interpret("Dimensions[FourierMatrix[100]]").unwrap(),
+      "{100, 100}"
+    );
+  }
 
   // Symmetrize: wolframscript returns SymmetrizedArray with the upper
   // triangle of (M + M^T)/2.
@@ -5258,7 +5282,7 @@ mod batch_unevaluated_wrappers_2 {
     // Single-row matrix: Smith form is {{gcd(2,4,4), 0, 0}} == {{2, 0, 0}}.
     let verify = interpret(
       "Module[{m = {{2, 4, 4}}, d = SmithDecomposition[{{2, 4, 4}}]}, \
-       {d[[1]].m.d[[3]] == d[[2]], d[[2]][[1, 1]]}]"
+       {d[[1]].m.d[[3]] == d[[2]], d[[2]][[1, 1]]}]",
     )
     .unwrap();
     assert_eq!(verify, "{True, 2}");

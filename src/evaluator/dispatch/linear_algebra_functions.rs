@@ -757,12 +757,9 @@ pub fn dispatch_linear_algebra_functions(
       // block matrices fall through to the unevaluated head.
       if let Expr::List(rows) = &args[0]
         && !rows.is_empty()
+        && let Some(result) = matrix_power_block_symbolic(rows, &args[1])
       {
-        if let Some(result) =
-          matrix_power_block_symbolic(rows, &args[1])
-        {
-          return Some(Ok(result));
-        }
+        return Some(Ok(result));
       }
       // Symbolic: return unevaluated
       return Some(Ok(Expr::FunctionCall {
@@ -1775,6 +1772,19 @@ pub fn dispatch_linear_algebra_functions(
       if let Some(n) = expr_to_i128(&args[0])
         && n > 0
       {
+        // wolframscript materialises FourierMatrix for n up to about
+        // 600 and switches to a lazy StructuredArray placeholder above
+        // that. Woxi enumerates each (j, k) entry symbolically, so the
+        // 640k symbolic Cos/Sin calls for n=800 would otherwise time
+        // out. Match wolframscript by leaving the call unevaluated for
+        // n > 600.
+        const FOURIER_MATRIX_MAX_MATERIALIZE: i128 = 600;
+        if n > FOURIER_MATRIX_MAX_MATERIALIZE {
+          return Some(Ok(Expr::FunctionCall {
+            name: "FourierMatrix".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
         let n = n as usize;
         let inv_sqrt_n = Expr::FunctionCall {
           name: "Power".to_string(),
@@ -2275,10 +2285,7 @@ fn binary_dissimilarity_ast(
 /// (entry ↦ entry^n) or size 2 (closed form via eigenvalues). Single-
 /// block matrices (size ≥ 2) return `None` so the caller falls through
 /// to the unevaluated head.
-fn matrix_power_block_symbolic(
-  rows: &[Expr],
-  n_expr: &Expr,
-) -> Option<Expr> {
+fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
   let size = rows.len();
   // Validate the matrix is square.
   let matrix: Vec<Vec<Expr>> = {
@@ -2361,16 +2368,15 @@ fn matrix_power_block_symbolic(
       1 => {
         let i = comp[0];
         let entry = matrix[i][i].clone();
-        result[i][i] = match crate::evaluator::evaluate_expr_to_expr(
-          &Expr::BinaryOp {
+        result[i][i] =
+          match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Power,
             left: Box::new(entry),
             right: Box::new(n_expr.clone()),
-          },
-        ) {
-          Ok(v) => v,
-          Err(_) => return None,
-        };
+          }) {
+            Ok(v) => v,
+            Err(_) => return None,
+          };
       }
       2 => {
         let i = comp[0];
