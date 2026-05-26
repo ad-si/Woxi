@@ -5843,6 +5843,40 @@ mod lowpass_filter {
       "{1., 1., 1., 1., 1.}"
     );
   }
+
+  // ─── Image input ──────────────────────────────────────────────────
+  //
+  // Wolfram applies LowpassFilter to images by filtering each row with
+  // the 1D windowed-sinc kernel and then each column of the result with
+  // the same kernel. Verify via ImageData rather than printing the
+  // -Image- head.
+
+  #[test]
+  fn image_3x3() {
+    // Match wolframscript's `ImageData[LowpassFilter[Image[{{0., 0.5, 1.},
+    // {0.5, 1., 0.5}, {1., 0.5, 0.}}], 0.5]]`.
+    assert_eq!(
+      interpret(
+        "ImageData[LowpassFilter[Image[{{0., 0.5, 1.}, {0.5, 1., 0.5}, {1., 0.5, 0.}}], 0.5]]",
+      )
+      .unwrap(),
+      "{{0.07146164774894714, 0.5306240320205688, 0.9336451292037964}, {0.5306240320205688, 0.8672902584075928, 0.5306240320205688}, {0.9336451292037964, 0.5306240320205688, 0.07146164774894714}}"
+    );
+  }
+
+  // Audit regression: the test harness's huge-image input timed out;
+  // confirm here at small size that `LowpassFilter[Image, ωc]` returns
+  // an Image (not the unevaluated head).
+  #[test]
+  fn image_returns_image() {
+    assert_eq!(
+      interpret(
+        "Head[LowpassFilter[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}], 0.5]]",
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
 }
 
 mod highpass_filter {
