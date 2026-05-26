@@ -1121,6 +1121,35 @@ mod eigenvectors {
       "{{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}"
     );
   }
+
+  #[test]
+  fn rank_deficient_3x3_returns_three_vectors() {
+    // {{1,2,3},{4,5,6},{7,8,9}}: rank-deficient integer matrix with
+    // eigenvalues {(15+3 Sqrt[33])/2, (15-3 Sqrt[33])/2, 0}. Previously
+    // returned unevaluated; now must return three eigenvectors with the
+    // zero-eigenvalue kernel as `{1, -2, 1}`.
+    let result =
+      interpret("Eigenvectors[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap();
+    assert!(
+      !result.starts_with("Eigenvectors["),
+      "still unevaluated: {result}"
+    );
+    assert!(
+      result.ends_with("{1, -2, 1}}"),
+      "missing zero-eigenvalue kernel {{1, -2, 1}}: {result}"
+    );
+  }
+
+  #[test]
+  fn rank_deficient_3x3_eigenvector_relation() {
+    // For each eigenvector v_i with eigenvalue λ_i, A . v_i == λ_i v_i.
+    // After Simplify, the residual A.v - λ v must vanish to {0, 0, 0}.
+    let m = "{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}";
+    let code = format!(
+      "Module[{{m = {m}, vs, ls}}, vs = Eigenvectors[m]; ls = Eigenvalues[m]; Simplify[Table[m . vs[[i]] - ls[[i]] * vs[[i]], {{i, 1, 3}}]]]"
+    );
+    assert_eq!(interpret(&code).unwrap(), "{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}");
+  }
 }
 
 mod eigensystem {

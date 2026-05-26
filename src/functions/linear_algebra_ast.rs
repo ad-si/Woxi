@@ -2000,8 +2000,21 @@ fn integer_eigenvectors(
     });
   }
 
+  if !all_integer && n == 3 {
+    let vecs = eigenvectors_3x3_symbolic(matrix, &eigenvalues);
+    if !vecs.is_empty() {
+      return Ok(Expr::List(
+        vecs.into_iter().map(|v| Expr::List(v.into())).collect(),
+      ));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Eigenvectors".to_string(),
+      args: vec![matrix_to_expr(matrix.to_vec())].into(),
+    });
+  }
+
   if !all_integer {
-    // Can't handle symbolic eigenvalues for n > 2
+    // Can't handle symbolic eigenvalues for n > 3
     return Ok(Expr::FunctionCall {
       name: "Eigenvectors".to_string(),
       args: vec![matrix_to_expr(matrix.to_vec())].into(),
@@ -2180,6 +2193,133 @@ fn eigenvectors_2x2_symbolic(int_matrix: &[Vec<i128>]) -> Vec<Vec<Expr>> {
   } else {
     vec![]
   }
+}
+
+/// Compute eigenvectors for a 3×3 matrix with symbolic eigenvalues (e.g.
+/// containing `Sqrt[d]`). For each eigenvalue λ, takes the cross product
+/// of two rows of A-λI; if the result is non-zero it spans the (1-D) null
+/// space. The last non-zero entry is normalized to 1.
+fn eigenvectors_3x3_symbolic(
+  matrix: &[Vec<Expr>],
+  eigenvalues: &[Expr],
+) -> Vec<Vec<Expr>> {
+  let mut out = Vec::new();
+  for lambda in eigenvalues {
+    let r0 = vec![
+      eval_sub(&matrix[0][0], lambda),
+      matrix[0][1].clone(),
+      matrix[0][2].clone(),
+    ];
+    let r1 = vec![
+      matrix[1][0].clone(),
+      eval_sub(&matrix[1][1], lambda),
+      matrix[1][2].clone(),
+    ];
+    let r2 = vec![
+      matrix[2][0].clone(),
+      matrix[2][1].clone(),
+      eval_sub(&matrix[2][2], lambda),
+    ];
+    // Try row pairs in the order wolframscript appears to prefer:
+    // rows 1×2 first, then 0×2, then 0×1.
+    let mut v = simplify_vec(cross_product_3d(&r1, &r2));
+    if is_zero_expr_vec(&v) {
+      v = simplify_vec(cross_product_3d(&r0, &r2));
+    }
+    if is_zero_expr_vec(&v) {
+      v = simplify_vec(cross_product_3d(&r0, &r1));
+    }
+    if is_zero_expr_vec(&v) {
+      return vec![];
+    }
+    out.push(normalize_symbolic_eigenvector(v));
+  }
+  out
+}
+
+fn cross_product_3d(a: &[Expr], b: &[Expr]) -> Vec<Expr> {
+  vec![
+    eval_sub(&eval_mul(&a[1], &b[2]), &eval_mul(&a[2], &b[1])),
+    eval_sub(&eval_mul(&a[2], &b[0]), &eval_mul(&a[0], &b[2])),
+    eval_sub(&eval_mul(&a[0], &b[1]), &eval_mul(&a[1], &b[0])),
+  ]
+}
+
+fn simplify_vec(v: Vec<Expr>) -> Vec<Expr> {
+  v.into_iter()
+    .map(|e| {
+      let evaluated = evaluate_expr_to_expr(&e).unwrap_or(e);
+      simplify_via_full_simplify(&evaluated)
+    })
+    .collect()
+}
+
+fn simplify_via_full_simplify(e: &Expr) -> Expr {
+  crate::functions::polynomial_ast::simplify_ast(&[e.clone()])
+    .unwrap_or_else(|_| e.clone())
+}
+
+fn is_zero_symbolic(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(0) => true,
+    Expr::Real(x) => x.abs() < 1e-14,
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      matches!(&args[0], Expr::Integer(0))
+    }
+    _ => false,
+  }
+}
+
+fn is_zero_expr_vec(v: &[Expr]) -> bool {
+  v.iter().all(is_zero_symbolic)
+}
+
+/// Normalize a symbolic eigenvector. If all components are integers,
+/// reduce by GCD with a sign chosen so the leading non-zero entry is
+/// positive. Otherwise divide each entry by the last non-zero entry so
+/// that the last coordinate becomes 1.
+fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
+  let all_int = v.iter().all(|e| matches!(e, Expr::Integer(_)));
+  if all_int {
+    let ints: Vec<i128> = v
+      .iter()
+      .filter_map(|e| {
+        if let Expr::Integer(x) = e {
+          Some(*x)
+        } else {
+          None
+        }
+      })
+      .collect();
+    let g = ints.iter().fold(0i128, |acc, &x| gcd_i128(acc.abs(), x.abs()));
+    if g == 0 {
+      return v;
+    }
+    let leading_neg = ints.iter().find(|&&x| x != 0).map(|&x| x < 0).unwrap_or(false);
+    let sign: i128 = if leading_neg { -1 } else { 1 };
+    return ints
+      .into_iter()
+      .map(|x| Expr::Integer(sign * (x / g)))
+      .collect();
+  }
+  // Symbolic: divide by the last non-zero entry.
+  let last_nz = (0..v.len()).rev().find(|&i| !is_zero_symbolic(&v[i]));
+  if let Some(idx) = last_nz {
+    let divisor = v[idx].clone();
+    return v
+      .iter()
+      .enumerate()
+      .map(|(i, e)| {
+        if i == idx {
+          Expr::Integer(1)
+        } else {
+          let q = eval_divide(e, &divisor);
+          evaluate_expr_to_expr(&q).unwrap_or(q)
+        }
+      })
+      .collect();
+  }
+  v
 }
 
 /// Compute eigenvectors for a numeric (f64) matrix.
