@@ -16,7 +16,9 @@ struct Cli {
 enum Commands {
   /// Evaluate a Wolfram Language expression
   Eval {
-    /// The Wolfram Language expression to evaluate
+    /// The Wolfram Language expression to evaluate. Pass `-` to read
+    /// the expression from stdin instead — useful for inputs that
+    /// exceed the shell's ARG_MAX (e.g. huge image NumericArrays).
     #[arg(allow_hyphen_values = true)]
     expression: String,
     /// Suppress Print output to stdout (Print still captured internally)
@@ -101,6 +103,21 @@ fn main() {
         woxi::set_quiet_print(true);
       }
       woxi::set_messages_to_stdout(true);
+      // Read from stdin when expression is `-`. Lets callers pass
+      // huge inputs that would otherwise hit the shell's ARG_MAX
+      // (the `Argument list too long` errors seen for some
+      // image-heavy audit cases).
+      let expression: String = if expression == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+          eprintln!("Error: failed to read stdin: {}", e);
+          std::process::exit(1);
+        }
+        buf
+      } else {
+        expression
+      };
       match interpret(&expression) {
         Ok(result) => {
           // "\0" is a sentinel for suppressed output (Null symbol, trailing semicolon,
