@@ -394,9 +394,12 @@ mod volume {
 
   #[test]
   fn cuboid_2d() {
-    // Lower-dimensional Cuboid (a rectangle) — Volume gives the planar
-    // measure, i.e. |d - a| * |e - b| canonicalised by Abs.
-    assert_eq!(interpret("Volume[Cuboid[{0, 0}, {2, 3}]]").unwrap(), "6");
+    // Volume[Cuboid[2D]] is Undefined — Volume is only the n-dim measure
+    // when n == 3. Use Area or RegionMeasure for 2D Cuboids.
+    assert_eq!(
+      interpret("Volume[Cuboid[{0, 0}, {2, 3}]]").unwrap(),
+      "Undefined"
+    );
   }
 
   #[test]

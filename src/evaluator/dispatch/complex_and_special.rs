@@ -4928,13 +4928,30 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&volume);
   }
 
-  // Cuboid[] / Cuboid[p] are unit hypercubes (Volume = 1).
-  // Cuboid[p1, p2] has Volume = Abs[(p2_1 - p1_1) * ... * (p2_n - p1_n)].
+  // Cuboid[] / Cuboid[p] are unit hypercubes (Volume = 1 when 3D).
+  // Cuboid[p1, p2] has Volume = Abs[(p2_1 - p1_1) * ... * (p2_n - p1_n)]
+  // *only when n == 3*; for any other dimensionality Volume is Undefined
+  // (use Area for 2D, RegionMeasure for the n-dim measure).
   if let Expr::FunctionCall { name, args } = expr
     && name == "Cuboid"
   {
     return match args.len() {
-      0 | 1 => Ok(Expr::Integer(1)),
+      0 => Ok(Expr::Integer(1)),
+      1 => {
+        // Cuboid[{x,y,z}] is a unit hypercube at that corner; Volume only
+        // defined when the point is 3D.
+        let Expr::List(p) = &args[0] else {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        };
+        if p.len() == 3 {
+          Ok(Expr::Integer(1))
+        } else {
+          Ok(Expr::Identifier("Undefined".to_string()))
+        }
+      }
       2 => {
         let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) else {
           return Ok(Expr::FunctionCall {
@@ -4947,6 +4964,9 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
             name: "Volume".to_string(),
             args: vec![expr.clone()].into(),
           });
+        }
+        if p1.len() != 3 {
+          return Ok(Expr::Identifier("Undefined".to_string()));
         }
         // Build (p2_i - p1_i) for each dimension and take Abs of the product.
         let diffs: Vec<Expr> = p1
