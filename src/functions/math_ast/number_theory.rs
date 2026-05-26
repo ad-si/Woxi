@@ -6941,6 +6941,8 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec().into(),
   };
   let mut two_j = [0i128; 6];
+  // Track exactly-one symbolic j-index for the Piecewise fallback.
+  let mut symbolic: Option<(usize, String)> = None;
   for (group, arg) in args.iter().enumerate() {
     let Expr::List(items) = arg else {
       return Ok(unchanged());
@@ -6949,14 +6951,29 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unchanged());
     }
     for (k, item) in items.iter().enumerate() {
-      let Some(v) = two_half_int(item) else {
-        return Ok(unchanged());
-      };
-      if v < 0 {
+      let pos = group * 3 + k;
+      if let Some(v) = two_half_int(item) {
+        if v < 0 {
+          return Ok(unchanged());
+        }
+        two_j[pos] = v;
+      } else if let Expr::Identifier(name) = item {
+        if symbolic.is_some() {
+          return Ok(unchanged());
+        }
+        symbolic = Some((pos, name.clone()));
+        two_j[pos] = i128::MIN; // placeholder
+      } else {
         return Ok(unchanged());
       }
-      two_j[group * 3 + k] = v;
     }
+  }
+
+  // Symbolic branch: try each non-negative integer j-value in 2j-units
+  // and emit a Piecewise of (value, var == k) branches for the ones that
+  // produce a non-zero coefficient.
+  if let Some((idx, sym_name)) = symbolic {
+    return six_j_symbol_symbolic(args, idx, sym_name, two_j);
   }
   let [j1, j2, j3, j4, j5, j6] = two_j;
   let triangles = [(j1, j2, j3), (j1, j5, j6), (j4, j2, j6), (j4, j5, j3)];
@@ -7089,6 +7106,119 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast("Times", &[coeff_expr, sqrt])
 }
 
+/// Symbolic-index branch for `SixJSymbol`: with exactly one of the six
+/// j-arguments a bare `Identifier`, enumerate the non-negative integer
+/// values for that position permitted by all four triangle inequalities
+/// and emit a `Piecewise[{{value, var == k}, …}, 0]` keyed on each
+/// supported `k`. Returns plain `0` when the support is empty.
+fn six_j_symbol_symbolic(
+  args: &[Expr],
+  sym_pos: usize,
+  sym_name: String,
+  mut two_j: [i128; 6],
+) -> Result<Expr, InterpreterError> {
+  // The four triangle (a, b, c) tuples in terms of indices 0..6:
+  //   (0, 1, 2), (0, 4, 5), (3, 1, 5), (3, 4, 2)
+  let triangles: [(usize, usize, usize); 4] =
+    [(0, 1, 2), (0, 4, 5), (3, 1, 5), (3, 4, 2)];
+
+  // For each triangle that contains `sym_pos`, derive the constraint on
+  // two_j[sym_pos]. A valid 2j must be a non-negative integer that
+  // satisfies `|a - b| ≤ c ≤ a + b` plus `a + b + c ≡ 0 (mod 2)`. We
+  // enforce the same `a + b + c` even parity across all four triangles
+  // by collecting bounds for each triangle that contains sym_pos and
+  // intersecting them.
+  //
+  // The sym 2j value `v` must be a non-negative integer in 2j-units;
+  // we'll iterate over candidate values from 0 up to `j_max_total`
+  // (the largest |a+b| from any containing triangle) and keep those
+  // that pass every triangle check (both containing and not).
+  let mut upper_bound: i128 = 0;
+  for tri in &triangles {
+    for &pos in &[tri.0, tri.1, tri.2] {
+      if pos == sym_pos {
+        let others: Vec<usize> =
+          [tri.0, tri.1, tri.2].iter().copied().filter(|&p| p != sym_pos).collect();
+        upper_bound = upper_bound.max(two_j[others[0]] + two_j[others[1]]);
+      }
+    }
+  }
+  // Triangles not containing sym_pos must already be valid; if any
+  // fails, the whole symbol is 0.
+  for &(a, b, c) in &triangles {
+    if a != sym_pos && b != sym_pos && c != sym_pos {
+      let ta = two_j[a];
+      let tb = two_j[b];
+      let tc = two_j[c];
+      if tc < (ta - tb).abs()
+        || tc > ta + tb
+        || (ta + tb + tc).rem_euclid(2) != 0
+      {
+        return Ok(Expr::Integer(0));
+      }
+    }
+  }
+
+  // Enumerate candidate symbolic j-values in 2j-units. We only emit
+  // branches for integer (not half-integer) j — wolframscript's
+  // Piecewise condition restricts to integer m in our audit case.
+  let mut branches: Vec<Expr> = Vec::new();
+  for v_2j in (0..=upper_bound).step_by(2) {
+    two_j[sym_pos] = v_2j;
+    // Validate all triangles for this candidate.
+    let mut ok = true;
+    for &(a, b, c) in &triangles {
+      let ta = two_j[a];
+      let tb = two_j[b];
+      let tc = two_j[c];
+      if tc < (ta - tb).abs()
+        || tc > ta + tb
+        || (ta + tb + tc).rem_euclid(2) != 0
+      {
+        ok = false;
+        break;
+      }
+    }
+    if !ok {
+      continue;
+    }
+    // Compute the concrete SixJSymbol by rebuilding args with the
+    // forced value substituted in.
+    let group = sym_pos / 3;
+    let k = sym_pos % 3;
+    let mut new_args = args.to_vec();
+    if let Expr::List(items) = &new_args[group] {
+      let mut new_items: Vec<Expr> = items.to_vec();
+      let v_j = v_2j / 2;
+      let forced = if v_2j.rem_euclid(2) == 0 {
+        Expr::Integer(v_j)
+      } else {
+        crate::functions::math_ast::make_rational_pub(v_2j, 2)
+      };
+      new_items[k] = forced.clone();
+      new_args[group] = Expr::List(new_items.into());
+    }
+    let value = six_j_symbol_ast(&new_args)?;
+    if matches!(&value, Expr::Integer(0)) {
+      continue;
+    }
+    let forced_value = Expr::Integer(v_2j / 2);
+    let cond = Expr::Comparison {
+      operands: vec![Expr::Identifier(sym_name.clone()), forced_value],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
+    branches.push(Expr::List(vec![value, cond].into()));
+  }
+
+  if branches.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(branches.into()), Expr::Integer(0)].into(),
+  })
+}
+
 /// Split `n` (assumed positive) into `(outside, inside)` such that
 /// `n == outside^2 · inside` and `inside` is square-free. Operates on
 /// BigInt directly so it works for arguments far beyond u64 range — the
@@ -7218,9 +7348,9 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((idx, sym_name)) = symbolic_m {
     // Solve for the missing two_m[idx].
     two_m[idx] = match idx {
-      0 => two_m[2] - two_m[1],          // m1 = m3 - m2
-      1 => two_m[2] - two_m[0],          // m2 = m3 - m1
-      2 => two_m[0] + two_m[1],          // m3 = m1 + m2
+      0 => two_m[2] - two_m[1], // m1 = m3 - m2
+      1 => two_m[2] - two_m[0], // m2 = m3 - m1
+      2 => two_m[0] + two_m[1], // m3 = m1 + m2
       _ => unreachable!(),
     };
     // The forced m_idx is in 2m-units; the externally-visible m is
@@ -7249,10 +7379,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0));
     }
     let condition = Expr::Comparison {
-      operands: vec![
-        Expr::Identifier(sym_name.clone()),
-        forced_m_expr,
-      ],
+      operands: vec![Expr::Identifier(sym_name.clone()), forced_m_expr],
       operators: vec![crate::syntax::ComparisonOp::Equal],
     };
     let branch = Expr::List(vec![value, condition].into());

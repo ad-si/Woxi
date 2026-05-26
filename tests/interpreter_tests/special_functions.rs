@@ -1707,10 +1707,7 @@ mod cases {
   #[test]
   fn clebsch_gordan_symbolic_out_of_range() {
     // CG[{1, m}, {1, 0}, {1, 5}]: m1+m2 = 5 → m = 5 but |m| > 1 = j1 → 0.
-    assert_case(
-      r#"ClebschGordan[{1, m}, {1, 0}, {1, 5}]"#,
-      r#"0"#,
-    );
+    assert_case(r#"ClebschGordan[{1, m}, {1, 0}, {1, 5}]"#, r#"0"#);
   }
 
   #[test]
@@ -1745,6 +1742,39 @@ mod cases {
       r#"True"#,
     );
   }
+  // ─── SixJSymbol with one symbolic j-index ─────────────────────────
+  //
+  // The Wigner 6-j symbol is non-zero only inside the four triangle
+  // intersections; when a single index is symbolic those four
+  // triangles collapse to an integer range for it. wolframscript wraps
+  // the answer in a `Piecewise` keyed on an `Inequality` against the
+  // explicit closed-form expression (in terms of the symbol). Woxi
+  // emits one branch per valid integer value with the concrete CG
+  // there — logically equivalent on the support.
+  #[test]
+  fn six_j_symbol_symbolic_5() {
+    // Audit case: SixJSymbol[{1, 2, 3}, {2, m, 2}] is non-zero for
+    // m ∈ {1, 2, 3}. Concrete values:
+    //   m=1 → 1/(5*Sqrt[21])
+    //   m=2 → -2/(5*Sqrt[14])
+    //   m=3 → (4*Sqrt[3/2])/35
+    assert_case(
+      r#"SixJSymbol[{1, 2, 3}, {2, m, 2}]"#,
+      r#"Piecewise[{{1/(5*Sqrt[21]), m == 1}, {-2/(5*Sqrt[14]), m == 2}, {(4*Sqrt[3/2])/35, m == 3}}, 0]"#,
+    );
+  }
+
+  // No valid m → reduces to plain 0. Here the triangle that doesn't
+  // contain m (`{1, 0, 100}`) already fails, so no candidate value can
+  // rescue the symbol.
+  #[test]
+  fn six_j_symbol_symbolic_no_support() {
+    assert_case(
+      r#"SixJSymbol[{1, 0, 100}, {1, m, 1}]"#,
+      r#"0"#,
+    );
+  }
+
   #[test]
   fn three_j_symbol() {
     assert_case(r#"ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]"#, r#"Sqrt[5/143]"#);
