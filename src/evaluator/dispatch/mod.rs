@@ -7115,7 +7115,10 @@ pub fn evaluate_function_call_ast_inner(
   // "unimplemented" is a false positive. Exclude that small set. Image3D
   // is similar: ImageQ classifies it without full Image3D support.
   if is_known_wolfram_function(name)
-    && !matches!(name, "Root" | "RootSum" | "RootApproximant" | "Image3D")
+    && !matches!(
+      name,
+      "Root" | "RootSum" | "RootApproximant" | "Image3D" | "CenteredInterval"
+    )
   {
     let args_str = args
       .iter()
@@ -7674,16 +7677,24 @@ fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
     Expr::List(xs) if xs.len() == 1 => &xs[0],
     _ => return None,
   };
-  if !matches!(dep, Expr::Identifier(_)) || !matches!(spatial, Expr::Identifier(_)) {
+  if !matches!(dep, Expr::Identifier(_))
+    || !matches!(spatial, Expr::Identifier(_))
+  {
     return None;
   }
   // args[2]: Element[{x}, Line[{{a}, {b}}]]
   let elem = match &args[2] {
-    Expr::FunctionCall { name, args } if name == "Element" && args.len() == 2 => args,
+    Expr::FunctionCall { name, args }
+      if name == "Element" && args.len() == 2 =>
+    {
+      args
+    }
     _ => return None,
   };
   let line = match &elem[1] {
-    Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => &args[0],
+    Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => {
+      &args[0]
+    }
     _ => return None,
   };
   let endpoints = match line {
@@ -7705,18 +7716,19 @@ fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
   };
 
   // Length L = b - a, evaluated to a number.
-  let length_expr = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      b_expr,
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), a_expr].into(),
-      },
-    ]
-    .into(),
-  })
-  .ok()?;
+  let length_expr =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        b_expr,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), a_expr].into(),
+        },
+      ]
+      .into(),
+    })
+    .ok()?;
   let l = match crate::functions::math_ast::try_eval_to_f64(&length_expr) {
     Some(v) if v > 0.0 => v,
     _ => return None,

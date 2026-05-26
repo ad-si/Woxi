@@ -173,6 +173,14 @@ pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// IntervalUnion[i1, i2, ...] — union of intervals.
 pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // CenteredInterval inputs: combine into the smallest enclosing
+  // axis-aligned box (a CenteredInterval is itself such a box, even
+  // when c and r are complex). Wolfram returns a CenteredInterval with
+  // a precision-tracked internal representation — we return the same
+  // bounding box in surface form.
+  if args.iter().all(centered_interval_extract_is_some) {
+    return Ok(centered_interval_box_op(args, BoxOp::Union));
+  }
   let mut all_spans = Vec::new();
   for arg in args {
     if let Some(spans) = is_interval(arg) {
@@ -200,6 +208,12 @@ pub fn interval_intersection_ast(
       name: "Interval".to_string(),
       args: vec![].into(),
     });
+  }
+
+  // CenteredInterval inputs: take the per-axis intersection of the
+  // bounding boxes. If any axis is empty, return Interval[].
+  if args.iter().all(centered_interval_extract_is_some) {
+    return Ok(centered_interval_box_op(args, BoxOp::Intersection));
   }
 
   // Start with spans of first argument
@@ -752,4 +766,186 @@ pub fn try_interval_compare(
     }
     _ => None,
   }
+}
+
+
+// ─── CenteredInterval helpers ───────────────────────────────────────────
+
+/// Box operations on CenteredInterval inputs (treated as axis-aligned
+/// rectangles in C — real centre and radius produce a degenerate
+/// rectangle on the real axis).
+#[derive(Copy, Clone)]
+enum BoxOp {
+  Union,
+  Intersection,
+}
+
+fn centered_interval_extract_is_some(e: &Expr) -> bool {
+  centered_interval_box(e).is_some()
+}
+
+/// Split `e` into ((re_c, im_c), (re_r, im_r)) where `e` is
+/// `CenteredInterval[c, r]` with arithmetic-evaluable `c` and `r`.
+fn centered_interval_box(
+  e: &Expr,
+) -> Option<((Expr, Expr), (Expr, Expr))> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "CenteredInterval" || args.len() != 2 {
+    return None;
+  }
+  let (cr, ci) = split_real_imag(&args[0])?;
+  let (rr, ri) = split_real_imag(&args[1])?;
+  Some(((cr, ci), (rr, ri)))
+}
+
+/// Split a numeric/complex expression into its real and imaginary
+/// parts as separate Expr values. Symbolic terms inside Plus/Times are
+/// preserved; the integers / rationals split cleanly so that
+/// `Re[2 + 3 I]` etc. survive output without further simplification.
+fn split_real_imag(e: &Expr) -> Option<(Expr, Expr)> {
+  // Real-only fast path.
+  let is_real_atom = matches!(e, Expr::Integer(_) | Expr::Real(_))
+    || matches!(
+      e,
+      Expr::FunctionCall { name, .. } if name == "Rational"
+    );
+  if is_real_atom {
+    return Some((e.clone(), Expr::Integer(0)));
+  }
+  let re_expr = crate::evaluator::evaluate_function_call_ast(
+    "Re",
+    std::slice::from_ref(e),
+  )
+  .ok()?;
+  let im_expr = crate::evaluator::evaluate_function_call_ast(
+    "Im",
+    std::slice::from_ref(e),
+  )
+  .ok()?;
+  Some((re_expr, im_expr))
+}
+
+fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
+  // Collect (Re_lo, Re_hi, Im_lo, Im_hi) per box.
+  let mut re_lo_lst: Vec<Expr> = Vec::new();
+  let mut re_hi_lst: Vec<Expr> = Vec::new();
+  let mut im_lo_lst: Vec<Expr> = Vec::new();
+  let mut im_hi_lst: Vec<Expr> = Vec::new();
+  for arg in args {
+    let Some(((cr, ci), (rr, ri))) = centered_interval_box(arg) else {
+      return Expr::FunctionCall {
+        name: match op {
+          BoxOp::Union => "IntervalUnion".to_string(),
+          BoxOp::Intersection => "IntervalIntersection".to_string(),
+        },
+        args: args.to_vec().into(),
+      };
+    };
+    re_lo_lst.push(eval_sub(&cr, &rr));
+    re_hi_lst.push(eval_add(&cr, &rr));
+    im_lo_lst.push(eval_sub(&ci, &ri));
+    im_hi_lst.push(eval_add(&ci, &ri));
+  }
+  let (re_lo, re_hi) = match op {
+    BoxOp::Union => (extremum(&re_lo_lst, false), extremum(&re_hi_lst, true)),
+    BoxOp::Intersection => {
+      (extremum(&re_lo_lst, true), extremum(&re_hi_lst, false))
+    }
+  };
+  let (im_lo, im_hi) = match op {
+    BoxOp::Union => (extremum(&im_lo_lst, false), extremum(&im_hi_lst, true)),
+    BoxOp::Intersection => {
+      (extremum(&im_lo_lst, true), extremum(&im_hi_lst, false))
+    }
+  };
+  if matches!(op, BoxOp::Intersection) {
+    // Empty on any axis ⇒ empty interval.
+    if compare_numeric(&re_lo, &re_hi) == Some(Ordering::Greater)
+      || compare_numeric(&im_lo, &im_hi) == Some(Ordering::Greater)
+    {
+      return Expr::FunctionCall {
+        name: "Interval".to_string(),
+        args: vec![].into(),
+      };
+    }
+  }
+  let two = Expr::Integer(2);
+  let cre = eval_divide(&eval_add(&re_lo, &re_hi), &two);
+  let cim = eval_divide(&eval_add(&im_lo, &im_hi), &two);
+  let rre = eval_divide(&eval_sub(&re_hi, &re_lo), &two);
+  let rim = eval_divide(&eval_sub(&im_hi, &im_lo), &two);
+  let centre = combine_complex(&cre, &cim);
+  let radius = combine_complex(&rre, &rim);
+  Expr::FunctionCall {
+    name: "CenteredInterval".to_string(),
+    args: vec![centre, radius].into(),
+  }
+}
+
+fn extremum(xs: &[Expr], maximum: bool) -> Expr {
+  let mut iter = xs.iter().cloned();
+  let mut best = iter.next().expect("non-empty list");
+  for x in iter {
+    let ord = compare_numeric(&x, &best);
+    let pick_x = matches!(
+      (ord, maximum),
+      (Some(Ordering::Greater), true) | (Some(Ordering::Less), false)
+    );
+    if pick_x {
+      best = x;
+    }
+  }
+  best
+}
+
+fn combine_complex(re: &Expr, im: &Expr) -> Expr {
+  let is_zero = matches!(im, Expr::Integer(0))
+    || matches!(im, Expr::Real(v) if v.abs() < 1e-300);
+  if is_zero {
+    return re.clone();
+  }
+  let im_term = eval_mul(im, &Expr::Identifier("I".to_string()));
+  eval_add(re, &im_term)
+}
+
+fn eval_add(a: &Expr, b: &Expr) -> Expr {
+  crate::evaluator::evaluate_function_call_ast("Plus", &[a.clone(), b.clone()])
+    .unwrap_or_else(|_| Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![a.clone(), b.clone()].into(),
+    })
+}
+
+fn eval_sub(a: &Expr, b: &Expr) -> Expr {
+  let neg_b = crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[Expr::Integer(-1), b.clone()],
+  )
+  .unwrap_or_else(|_| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), b.clone()].into(),
+  });
+  eval_add(a, &neg_b)
+}
+
+fn eval_mul(a: &Expr, b: &Expr) -> Expr {
+  crate::evaluator::evaluate_function_call_ast("Times", &[a.clone(), b.clone()])
+    .unwrap_or_else(|_| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![a.clone(), b.clone()].into(),
+    })
+}
+
+fn eval_divide(num: &Expr, den: &Expr) -> Expr {
+  let inv = crate::evaluator::evaluate_function_call_ast(
+    "Power",
+    &[den.clone(), Expr::Integer(-1)],
+  )
+  .unwrap_or_else(|_| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![den.clone(), Expr::Integer(-1)].into(),
+  });
+  eval_mul(num, &inv)
 }

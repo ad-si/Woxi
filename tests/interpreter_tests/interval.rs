@@ -315,3 +315,81 @@ fn interval_greater_equal_true() {
     "True"
   );
 }
+
+// ─── CenteredInterval intersection/union ────────────────────────────────
+
+#[test]
+fn centered_interval_real_passthrough() {
+  // CenteredInterval[c, r] with real c, r is just the inert wrapper:
+  // Woxi must not emit the "not yet implemented" warning anymore.
+  assert_eq!(
+    interpret("CenteredInterval[5, 1]").unwrap(),
+    "CenteredInterval[5, 1]"
+  );
+}
+
+#[test]
+fn centered_interval_intersection_real() {
+  // Real centered intervals: [4, 6] ∩ [5, 9] = [5, 6] → centre 11/2, radius 1/2.
+  assert_eq!(
+    interpret(
+      "IntervalIntersection[CenteredInterval[5, 1], CenteredInterval[7, 2]]"
+    )
+    .unwrap(),
+    "CenteredInterval[11/2, 1/2]"
+  );
+}
+
+#[test]
+fn centered_interval_union_real() {
+  // Smallest centred interval containing both: span [4, 9] → centre 13/2, radius 5/2.
+  assert_eq!(
+    interpret(
+      "IntervalUnion[CenteredInterval[5, 1], CenteredInterval[7, 2]]"
+    )
+    .unwrap(),
+    "CenteredInterval[13/2, 5/2]"
+  );
+}
+
+#[test]
+fn centered_interval_complex_intersection_audit_case() {
+  // The audit case: rectangular centred intervals in the complex plane.
+  //   B₁: c=2+3i, r=1+i  → Re∈[1, 3], Im∈[2, 4]
+  //   B₂: c=1+i,  r=2+2i → Re∈[-1, 3], Im∈[-1, 3]
+  // Intersection: Re∈[1, 3], Im∈[2, 3] → centre 2 + 5/2·i, radii (1, 1/2).
+  assert_eq!(
+    interpret(
+      "IntervalIntersection[CenteredInterval[2 + 3*I, 1 + I], \
+       CenteredInterval[1 + I, 2 + 2*I]]"
+    )
+    .unwrap(),
+    "CenteredInterval[2 + (5*I)/2, 1 + I/2]"
+  );
+}
+
+#[test]
+fn centered_interval_complex_union_audit_case() {
+  // Smallest axis-aligned box covering both:
+  //   Re∈[-1, 3], Im∈[-1, 4] → centre 1 + 3/2·i, radii (2, 5/2).
+  assert_eq!(
+    interpret(
+      "IntervalUnion[CenteredInterval[2 + 3*I, 1 + I], \
+       CenteredInterval[1 + I, 2 + 2*I]]"
+    )
+    .unwrap(),
+    "CenteredInterval[1 + (3*I)/2, 2 + (5*I)/2]"
+  );
+}
+
+#[test]
+fn centered_interval_intersection_disjoint_returns_empty() {
+  // Disjoint real intervals → empty Interval[].
+  assert_eq!(
+    interpret(
+      "IntervalIntersection[CenteredInterval[0, 1], CenteredInterval[10, 1]]"
+    )
+    .unwrap(),
+    "Interval[]"
+  );
+}
