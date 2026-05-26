@@ -88,6 +88,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BernoulliDistribution" => Some((1, 1)),
     "BesselI" => Some((2, 2)),
     "BesselJ" => Some((2, 2)),
+    "MathieuS" => Some((3, 3)),
+    "MathieuSPrime" => Some((3, 3)),
     "BesselJZero" => Some((2, 2)),
     "BesselK" => Some((2, 2)),
     "BesselY" => Some((2, 2)),

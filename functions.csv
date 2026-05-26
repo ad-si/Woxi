@@ -1921,7 +1921,7 @@ MultinomialDistribution,Multivariate discrete distribution for modeling outcomes
 NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1.0,1954
 BooleanFunction,Represents a Boolean function using Binary Decision Diagrams,🚫,,7.0,1956
 ViewVector,3D graphics option for specifying the view direction,🚫,,6.0,1956
-MathieuS,Even periodic Mathieu function,🚫,,3.0,1960
+MathieuS,Odd Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
 NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2.0,1960
 OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1.0,1960
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6.0,1960

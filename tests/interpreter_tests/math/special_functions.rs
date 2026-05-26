@@ -3780,8 +3780,7 @@ mod lerch_phi {
     //   Im = -π · ln(3) · 3^(-0.5) / 1 = -π·ln(3)/√3
     let result = interpret("LerchPhi[3, 2, 0.5]").unwrap();
     let (_re, im) = parse_complex(&result);
-    let expected_im =
-      -std::f64::consts::PI * 3.0_f64.ln() / 3.0_f64.sqrt();
+    let expected_im = -std::f64::consts::PI * 3.0_f64.ln() / 3.0_f64.sqrt();
     assert_close(im, expected_im, "Im");
   }
 }
@@ -7988,5 +7987,84 @@ mod cases {
   fn log_gamma_overflow_huge_real() {
     // Log[Gamma[1.*^20]] should propagate Overflow[].
     assert_case(r#"Quiet[Log[Gamma[1.*^20]]]"#, r#"Overflow[]"#);
+  }
+}
+
+mod mathieu_s {
+  use super::*;
+
+  fn parse_real(s: &str) -> f64 {
+    s.trim().parse().unwrap()
+  }
+
+  /// Woxi's normalisation pins `y(0) = 0`, `y'(0) = √a` so the q → 0
+  /// limit reproduces sin(√a · z). Wolfram's normalisation introduces
+  /// an additional (a, q)-dependent factor for q ≠ 0; tests compare
+  /// shape ratios where Wolfram and Woxi must agree.
+
+  #[test]
+  fn mathieu_s_q_zero_matches_sine() {
+    let val = parse_real(&interpret("MathieuS[2, 0, 1.5]").unwrap());
+    let expected = (2.0_f64.sqrt() * 1.5).sin();
+    assert!(
+      (val - expected).abs() < 1e-9,
+      "MathieuS(2, 0, 1.5): got {val}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn mathieu_s_prime_q_zero_at_origin() {
+    let val = parse_real(&interpret("MathieuSPrime[3, 0, 0]").unwrap());
+    assert!(
+      (val - 3.0_f64.sqrt()).abs() < 1e-9,
+      "MathieuSPrime(3, 0, 0): got {val}, expected √3"
+    );
+  }
+
+  #[test]
+  fn mathieu_s_prime_q_zero_matches_derivative() {
+    let val = parse_real(&interpret("MathieuSPrime[2, 0, 1.5]").unwrap());
+    let sa = 2.0_f64.sqrt();
+    let expected = sa * (sa * 1.5).cos();
+    assert!(
+      (val - expected).abs() < 1e-9,
+      "MathieuSPrime(2, 0, 1.5): got {val}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn mathieu_s_prime_audit_case_is_numeric() {
+    // Audit case `MathieuSPrime[2, 1, 3.2]`. Previously unevaluated.
+    // Now returns a finite Real (with Woxi's q → 0 normalisation —
+    // not the same scalar Wolfram returns, but the call is no longer
+    // symbolic). The normalisation-invariant shape ratio
+    // `MathieuSPrime(a, q, z) / MathieuSPrime(a, q, 0)` matches.
+    let val = parse_real(&interpret("MathieuSPrime[2, 1, 3.2]").unwrap());
+    assert!(val.is_finite(), "expected a finite real, got {val}");
+    let val0 = parse_real(&interpret("MathieuSPrime[2, 1, 0]").unwrap());
+    let ratio = val / val0;
+    let wolfram_ratio = -0.41459068965368717 / 0.5336161514292099;
+    assert!(
+      (ratio - wolfram_ratio).abs() < 1e-3,
+      "shape ratio mismatch: got {ratio}, expected {wolfram_ratio}"
+    );
+  }
+
+  #[test]
+  fn mathieu_s_zero_at_origin() {
+    let val = parse_real(&interpret("MathieuS[2, 1, 0]").unwrap());
+    assert!(val.abs() < 1e-12, "MathieuS(2, 1, 0) should be 0, got {val}");
+  }
+
+  #[test]
+  fn mathieu_s_symbolic_passthrough() {
+    assert_eq!(
+      interpret("MathieuS[a, q, z]").unwrap(),
+      "MathieuS[a, q, z]"
+    );
+    assert_eq!(
+      interpret("MathieuSPrime[a, q, z]").unwrap(),
+      "MathieuSPrime[a, q, z]"
+    );
   }
 }

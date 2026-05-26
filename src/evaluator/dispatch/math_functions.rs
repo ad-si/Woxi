@@ -686,6 +686,12 @@ pub fn dispatch_math_functions(
     "BesselJ" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_j_ast(args));
     }
+    "MathieuS" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::mathieu_s_ast(args));
+    }
+    "MathieuSPrime" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::mathieu_s_prime_ast(args));
+    }
     "BesselY" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_y_ast(args));
     }
