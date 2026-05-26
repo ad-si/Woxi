@@ -2110,11 +2110,18 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Graph" && args.len() >= 2 =>
     {
-      if let Ok(rendered) = functions::graph::graph_ast(args) {
-        rendered
-      } else {
-        expr
+      // wolframscript summarises Graph as `Graph[<n>, <m>]` instead of
+      // the `-Graphics-` placeholder. Render the SVG (so jupyter/HTML
+      // surfaces still get it via capture_graphics) but keep the Expr
+      // as the original FunctionCall so expr_to_string can print the
+      // summary. ExportString[Graph[…], "SVG"] re-invokes graph_ast
+      // directly, so it does not depend on this auto-render step.
+      if let Ok(rendered) = functions::graph::graph_ast(args)
+        && let syntax::Expr::Graphics { ref svg, .. } = rendered
+      {
+        capture_graphics(svg);
       }
+      expr
     }
     syntax::Expr::FunctionCall { name, args }
       if name == "MeshRegion" && args.len() == 2 =>

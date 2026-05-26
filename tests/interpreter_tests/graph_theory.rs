@@ -618,9 +618,10 @@ mod graph_rendering {
 
   #[test]
   fn undirected_graph_renders() {
+    // Graph summarises as `<vertex_count>, <edge_count>`.
     assert_eq!(
       interpret("Graph[{1  2, 2  3, 3  1}]").unwrap(),
-      "-Graphics-"
+      "Graph[<3>, <3>]"
     );
   }
 
@@ -628,7 +629,7 @@ mod graph_rendering {
   fn directed_graph_renders() {
     assert_eq!(
       interpret("Graph[{1  2, 2  3, 3  1}]").unwrap(),
-      "-Graphics-"
+      "Graph[<3>, <3>]"
     );
   }
 
@@ -749,12 +750,12 @@ mod graph_rendering {
 
   #[test]
   fn complete_graph_renders() {
-    assert_eq!(interpret("CompleteGraph[4]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("CompleteGraph[4]").unwrap(), "Graph[<4>, <6>]");
   }
 
   #[test]
   fn star_graph_renders() {
-    assert_eq!(interpret("StarGraph[5]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("StarGraph[5]").unwrap(), "Graph[<5>, <4>]");
   }
 
   #[test]
@@ -803,7 +804,7 @@ mod graph_rendering {
 
   #[test]
   fn grid_graph_renders() {
-    assert_eq!(interpret("GridGraph[{3, 3}]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("GridGraph[{3, 3}]").unwrap(), "Graph[<9>, <12>]");
   }
 
   #[test]
@@ -827,7 +828,7 @@ mod graph_rendering {
     // Should render without error with Medium vertex size
     assert_eq!(
       interpret("Graph[{1  2}, VertexSize -> Medium]").unwrap(),
-      "-Graphics-"
+      "Graph[<2>, <1>]"
     );
   }
 

@@ -3099,7 +3099,27 @@ pub fn evaluate_function_call_ast_inner(
           args: args.to_vec().into(),
         }
       };
-      return crate::evaluator::evaluate_expr_to_expr(&graph_expr);
+      // Evaluate the embedded Graph so any rules/edges are normalised
+      // into the canonical {vertex_list, edge_list, opts…} form, then
+      // explicitly render to Graphics. Unlike plain `Graph[…]`, the
+      // GraphPlot family is a visualisation primitive and so should
+      // print as the `-Graphics-` placeholder rather than the
+      // `Graph[<n>, <m>]` data-structure summary.
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&graph_expr)?;
+      if let Expr::FunctionCall {
+        name: en,
+        args: eargs,
+      } = &evaluated
+        && en == "Graph"
+        && eargs.len() >= 2
+        && let Ok(rendered) = crate::functions::graph::graph_ast(eargs)
+      {
+        if let Expr::Graphics { svg, .. } = &rendered {
+          crate::capture_graphics(svg);
+        }
+        return Ok(rendered);
+      }
+      return Ok(evaluated);
     }
   }
 

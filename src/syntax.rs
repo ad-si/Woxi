@@ -6428,6 +6428,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "Sound" && !args.is_empty() {
         return "-Sound-".to_string();
       }
+      // Graph[vertices, edges, opts...] — wolframscript prints the
+      // summary `Graph[<n>, <m>]` (vertex count, edge count).
+      if name == "Graph" && args.len() >= 2 {
+        if let (Expr::List(verts), Expr::List(edges)) = (&args[0], &args[1]) {
+          return format!("Graph[<{}>, <{}>]", verts.len(), edges.len());
+        }
+      }
       // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
         if is_output {

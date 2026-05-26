@@ -5681,10 +5681,11 @@ mod planar_graph {
 
   #[test]
   fn from_rules_with_layout() {
-    // PlanarGraph renders as -Graphics- since Graph now renders visually
+    // PlanarGraph evaluates to a Graph and prints the same `<n>, <m>`
+    // summary (wolframscript: `Graph[<3>, <3>]`).
     assert_eq!(
       interpret("PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
-      "-Graphics-"
+      "Graph[<3>, <3>]"
     );
     // Verify the graph structure via VertexList/EdgeList
     assert_eq!(
