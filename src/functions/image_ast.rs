@@ -888,24 +888,22 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageColorSpace expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Image { .. } => {
-      // Wolfram returns Automatic for ImageColorSpace (matching wolframscript)
-      Ok(Expr::Identifier("Automatic".to_string()))
-    }
-    other => {
-      // Matches wolframscript: emit ImageColorSpace::imginv and return
-      // unevaluated instead of erroring out.
-      crate::emit_message(&format!(
-        "ImageColorSpace::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(other)
-      ));
-      Ok(Expr::FunctionCall {
-        name: "ImageColorSpace".to_string(),
-        args: args.to_vec().into(),
-      })
-    }
+  // wolframscript treats both Image and Image3D as valid inputs and
+  // returns Automatic when no explicit colour space is set on the
+  // image (the common case for inputs built from raw NumericArrays).
+  if matches!(&args[0], Expr::Image { .. }) || is_valid_image3d(&args[0]) {
+    return Ok(Expr::Identifier("Automatic".to_string()));
   }
+  // Matches wolframscript: emit ImageColorSpace::imginv and return
+  // unevaluated instead of erroring out.
+  crate::emit_message(&format!(
+    "ImageColorSpace::imginv: Expecting an image or graphics instead of {}.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  Ok(Expr::FunctionCall {
+    name: "ImageColorSpace".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 // ─── Processing functions (Phase 2) ────────────────────────────────────────
@@ -2509,7 +2507,9 @@ fn kmeans_1d(pixels: &[[f64; 1]], k: usize, max_iters: usize) -> Vec<[f64; 1]> {
       }
     }
   }
-  centers.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal));
+  centers.sort_by(|a, b| {
+    a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal)
+  });
   centers
 }
 

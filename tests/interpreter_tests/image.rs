@@ -624,6 +624,32 @@ mod image_core {
   }
 
   #[test]
+  fn image_color_space_image3d_returns_automatic() {
+    // wolframscript treats Image3D as a valid image for ImageColorSpace
+    // and returns Automatic. Previously Woxi rejected Image3D with the
+    // generic ImageColorSpace::imginv message.
+    clear_state();
+    let result = interpret(
+      "ImageColorSpace[Image3D[{{{0, 0, 0}, {1, 1, 1}}, \
+       {{0.5, 0.5, 0.5}, {0.3, 0.3, 0.3}}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Automatic");
+  }
+
+  #[test]
+  fn image_color_space_image3d_numericarray() {
+    // wolframscript also accepts Image3D[NumericArray[...]] wrappers.
+    clear_state();
+    let result = interpret(
+      "ImageColorSpace[Image3D[NumericArray[{{{0, 128}, {255, 64}}, \
+       {{32, 16}, {200, 100}}}, \"UnsignedInteger8\"]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Automatic");
+  }
+
+  #[test]
   fn image_data_roundtrip() {
     clear_state();
     let result = interpret(
@@ -3006,10 +3032,8 @@ mod image_advanced {
   fn dominant_colors_grayscale_two() {
     clear_state();
     assert_eq!(
-      interpret(
-        "DominantColors[Image[{{0.1, 0.2, 0.15, 0.8, 0.9}}], 2]"
-      )
-      .unwrap(),
+      interpret("DominantColors[Image[{{0.1, 0.2, 0.15, 0.8, 0.9}}], 2]")
+        .unwrap(),
       "{GrayLevel[0.15000000000000002], GrayLevel[0.8500000000000001]}"
     );
   }
