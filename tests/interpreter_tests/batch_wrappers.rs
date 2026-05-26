@@ -5239,6 +5239,59 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(verify, "True");
   }
 
+  #[test]
+  fn smith_decomposition_destructured_module_pattern() {
+    // The pattern shown in the SmithDecomposition usage docs: bind the
+    // result, then check that u . m . v == r.
+    assert_eq!(
+      interpret(
+        "Module[{m, u, r, v}, m = {{1, 2}, {3, 4}}; \
+         {u, r, v} = SmithDecomposition[m]; u . m . v == r]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn smith_decomposition_non_square() {
+    // Single-row matrix: Smith form is {{gcd(2,4,4), 0, 0}} == {{2, 0, 0}}.
+    let verify = interpret(
+      "Module[{m = {{2, 4, 4}}, d = SmithDecomposition[{{2, 4, 4}}]}, \
+       {d[[1]].m.d[[3]] == d[[2]], d[[2]][[1, 1]]}]"
+    )
+    .unwrap();
+    assert_eq!(verify, "{True, 2}");
+  }
+
+  #[test]
+  fn smith_decomposition_singular_3x3() {
+    // {{5,0,0},{0,0,0},{0,0,7}} is rank 2 with elementary divisors gcd=1
+    // and lcm=35; the trailing diagonal entry must be 0.
+    let verify = interpret(
+      "Module[{m = {{5, 0, 0}, {0, 0, 0}, {0, 0, 7}}, \
+         d = SmithDecomposition[{{5, 0, 0}, {0, 0, 0}, {0, 0, 7}}]}, \
+         {d[[1]].m.d[[3]] == d[[2]], d[[2]][[1, 1]], d[[2]][[2, 2]], d[[2]][[3, 3]]}]"
+    )
+    .unwrap();
+    assert_eq!(verify, "{True, 1, 35, 0}");
+  }
+
+  #[test]
+  fn smith_decomposition_non_rational_emits_latm() {
+    // wolframscript: `SmithDecomposition::latm: Matrix contains an entry
+    // that is not rational.` Woxi must surface the same message and leave
+    // the call unevaluated.
+    let result =
+      interpret("SmithDecomposition[{{Sqrt[2], 1}, {0, 1}}]").unwrap();
+    assert_eq!(result, "SmithDecomposition[{{Sqrt[2], 1}, {0, 1}}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("SmithDecomposition::latm")),
+      "expected SmithDecomposition::latm warning, got: {msgs:?}"
+    );
+  }
+
   // ChromaticPolynomial
   #[test]
   fn chromatic_polynomial_complete_4() {

@@ -2263,7 +2263,9 @@ fn is_zero_symbolic(e: &Expr) -> bool {
   match e {
     Expr::Integer(0) => true,
     Expr::Real(x) => x.abs() < 1e-14,
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       matches!(&args[0], Expr::Integer(0))
     }
     _ => false,
@@ -2291,11 +2293,17 @@ fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
         }
       })
       .collect();
-    let g = ints.iter().fold(0i128, |acc, &x| gcd_i128(acc.abs(), x.abs()));
+    let g = ints
+      .iter()
+      .fold(0i128, |acc, &x| gcd_i128(acc.abs(), x.abs()));
     if g == 0 {
       return v;
     }
-    let leading_neg = ints.iter().find(|&&x| x != 0).map(|&x| x < 0).unwrap_or(false);
+    let leading_neg = ints
+      .iter()
+      .find(|&&x| x != 0)
+      .map(|&x| x < 0)
+      .unwrap_or(false);
     let sign: i128 = if leading_neg { -1 } else { 1 };
     return ints
       .into_iter()
@@ -5461,6 +5469,13 @@ pub fn smith_decomposition_ast(
   let int_matrix = match matrix_to_i128(&matrix) {
     Some(m) => m,
     None => {
+      // Matches wolframscript: emit SmithDecomposition::latm when an
+      // entry isn't a rational (integer-coefficient matrices satisfy
+      // this trivially; non-integer rationals would otherwise need a
+      // denominator-clearing step Woxi doesn't yet do).
+      crate::emit_message(
+        "SmithDecomposition::latm: Matrix contains an entry that is not rational."
+      );
       return Ok(Expr::FunctionCall {
         name: "SmithDecomposition".to_string(),
         args: args.to_vec().into(),
