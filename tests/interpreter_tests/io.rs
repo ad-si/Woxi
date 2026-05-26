@@ -136,6 +136,45 @@ mod now {
     assert_eq!(interpret("DateObject[][[3]]").unwrap(), "Gregorian");
     assert_eq!(interpret("Length[DateObject[][[1]]]").unwrap(), "6");
   }
+
+  #[test]
+  fn date_object_epoch_seconds_zero() {
+    // wolframscript: `DateObject[0]` is the absolute-seconds epoch
+    // (1900-01-01 00:00:00).
+    assert_eq!(
+      interpret("DateObject[0]").unwrap(),
+      "DateObject[{1900, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_object_epoch_seconds_100() {
+    // 100 seconds after epoch → 00:01:40 on 1900-01-01.
+    assert_eq!(
+      interpret("DateObject[100]").unwrap(),
+      "DateObject[{1900, 1, 1, 0, 1, 40}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_object_audit_case() {
+    // Audit case: DateObject[3865673600] = 2022-07-01 14:13:20 UTC.
+    assert_eq!(
+      interpret("DateObject[3865673600]").unwrap(),
+      "DateObject[{2022, 7, 1, 14, 13, 20}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn date_object_y2k_seconds() {
+    // 100 Julian years from 1900-01-01 to 2000-01-01 is 3155760000s in
+    // wolframscript's count, putting that point at 2000-01-02 00:00:00
+    // (the 25-leap-year adjustment vs 100×365×86400 = 3153600000s).
+    assert_eq!(
+      interpret("DateObject[3155760000]").unwrap(),
+      "DateObject[{2000, 1, 2, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
 }
 
 mod find {
