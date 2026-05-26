@@ -3004,10 +3004,20 @@ pub fn binomial_coeff(n: i128, k: i128) -> i128 {
 // ─── Multinomial ───────────────────────────────────────────────────
 
 /// Multinomial[n1, n2, ...] - Multinomial coefficient (n1+n2+...)! / (n1! * n2! * ...)
+///
+/// Multinomial has the `Orderless` attribute in Wolfram, so arguments are
+/// canonically sorted before evaluation. Numbers sort before symbols, and
+/// symbols sort lexicographically.
 pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() == 1 {
     return Ok(Expr::Integer(1));
   }
+
+  // Orderless: sort args canonically (numbers first, then symbolic by sort key).
+  let mut sorted_args = args.to_vec();
+  sorted_args
+    .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  let args = sorted_args.as_slice();
 
   let unevaluated = || Expr::FunctionCall {
     name: "Multinomial".to_string(),

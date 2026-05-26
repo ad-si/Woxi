@@ -179,6 +179,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       "Protected",
       "ReadProtected",
     ],
+    "Multinomial" => {
+      vec!["Listable", "NumericFunction", "Orderless", "Protected"]
+    }
 
     // Listable + Protected (non-numeric)
     "Range" | "IntegerDigits" | "RealDigits" | "Rationalize"

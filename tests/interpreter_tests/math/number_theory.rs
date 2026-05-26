@@ -810,9 +810,10 @@ mod multinomial {
 
   #[test]
   fn two_symbolic_with_integer_stays_unevaluated() {
+    // Orderless: args are canonically sorted (integers before symbols).
     assert_eq!(
       interpret("Multinomial[a, 3, b]").unwrap(),
-      "Multinomial[a, 3, b]"
+      "Multinomial[3, a, b]"
     );
   }
 }
