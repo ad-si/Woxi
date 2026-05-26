@@ -1066,6 +1066,23 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = solve_linear_symbolic(eqs, &var_names) {
         return Ok(result);
       }
+      // High-degree coupled systems (e.g. a quintic in x plus a quintic
+      // in y with x-dependent coefficients) blow up in the
+      // Reduce-based path because Woxi has no multivariate Root form.
+      // Detect them and bail out unevaluated rather than hang.
+      if eqs.len() >= 2
+        && var_names.len() >= 2
+        && eqs.iter().any(|e| {
+          var_names
+            .iter()
+            .any(|v| max_degree_of_var(e, v).unwrap_or(0) >= 3)
+        })
+      {
+        return Ok(Expr::FunctionCall {
+          name: "Solve".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
       // Fall back to Reduce's multi-variable elimination for nonlinear systems
       let constraints: Vec<Expr> = eqs.clone();
       let reduce_result =
@@ -1990,6 +2007,28 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Highest power of `var` in `eq` (treated as `lhs - rhs`). Returns
+/// `None` for non-polynomial equations or when `var` does not appear.
+fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
+  let lhs_minus_rhs = match eq {
+    Expr::Comparison { operands, .. } if operands.len() == 2 => Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(operands[0].clone()),
+      right: Box::new(operands[1].clone()),
+    },
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(args[0].clone()),
+        right: Box::new(args[1].clone()),
+      }
+    }
+    other => other.clone(),
+  };
+  let expanded = crate::evaluator::evaluate_expr_to_expr(&lhs_minus_rhs).ok()?;
+  crate::functions::polynomial_ast::max_power_int(&expanded, var)
 }
 
 /// Build `{{var -> Root[poly &, 1, 0]}, …, {var -> Root[poly &, deg, 0]}}`
