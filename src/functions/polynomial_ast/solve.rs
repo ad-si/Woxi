@@ -5018,20 +5018,50 @@ fn minimize_try_ilp(
 ) -> Result<Option<Expr>, InterpreterError> {
   use std::collections::HashSet;
 
-  // Separate Element[x, Integers] from actual constraints
+  // Walk an `Element[…, Integers]` subject and collect identifier leaves.
+  // `Element` may carry the symbols as: a single Identifier, a List, an
+  // `Alternatives` FunctionCall, or the BinaryOp Alternatives chain that
+  // `x | y | z` parses to.
+  fn collect_element_symbols(e: &Expr, out: &mut HashSet<String>) {
+    match e {
+      Expr::Identifier(var) => {
+        out.insert(var.clone());
+      }
+      Expr::List(items) => {
+        for a in items.iter() {
+          collect_element_symbols(a, out);
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Alternatives" || name == "List" =>
+      {
+        for a in args.iter() {
+          collect_element_symbols(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Alternatives,
+        left,
+        right,
+      } => {
+        collect_element_symbols(left, out);
+        collect_element_symbols(right, out);
+      }
+      _ => {}
+    }
+  }
+
+  // Separate Element[x, Integers] from actual constraints.
   let mut integer_vars: HashSet<String> = HashSet::new();
   let mut actual_constraints: Vec<&Expr> = Vec::new();
   for c in constraints {
     match c {
       Expr::FunctionCall { name, args }
-        if name == "Element" && args.len() == 2 =>
+        if name == "Element"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Identifier(d) if d == "Integers") =>
       {
-        if let (Expr::Identifier(var), Expr::Identifier(dom)) =
-          (&args[0], &args[1])
-          && dom == "Integers"
-        {
-          integer_vars.insert(var.clone());
-        }
+        collect_element_symbols(&args[0], &mut integer_vars);
         // Don't add to actual_constraints
       }
       _ => actual_constraints.push(c),

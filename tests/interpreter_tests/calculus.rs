@@ -2530,6 +2530,54 @@ mod minimize {
     );
   }
 
+  // Regression: with 3+ variables, the ILP path previously bailed because
+  // `minimize_try_ilp` only recognized `Element[Identifier, Integers]` —
+  // not the post-evaluation shapes `Element[{v1, …, vn}, Integers]` or
+  // `Element[v1 | v2 | … | vn, Integers]` (BinaryOp Alternatives chain).
+  // The fallback dropped into `minimize_lp_2d`, which called
+  // `minimize_try_f64` on the third symbol, which re-dispatched `N[c]`
+  // back into `n_eval` forever — exhausting WASM's 1 MB stack before the
+  // RECURSION_LIMIT guard tripped.
+  #[test]
+  fn ilp_3var_list_domain() {
+    assert_eq!(
+      interpret(
+        "Minimize[{x + y + z, x + y + z == 5, x >= 0, y >= 0, z >= 0, Element[{x, y, z}, Integers]}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{5, {x -> 5, y -> 0, z -> 0}}"
+    );
+  }
+
+  #[test]
+  fn ilp_3var_alternatives_domain() {
+    // `Element[x | y | z, Integers]` parses to a BinaryOp Alternatives
+    // chain — different shape from the FunctionCall Alternatives variant.
+    assert_eq!(
+      interpret(
+        "Minimize[{x + y + z, x + y + z == 5, x >= 0, y >= 0, z >= 0, Element[x | y | z, Integers]}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{5, {x -> 5, y -> 0, z -> 0}}"
+    );
+  }
+
+  #[test]
+  fn ilp_euro_coins_8var() {
+    // The original report: 8 Array-style variables, dot-product equality,
+    // and `Element[vars, Integers]`. Must match wolframscript:
+    // 10 × 2€ (85.0 g) + 2 × 1€ (15.0 g) = 100.0 g in 12 coins.
+    assert_eq!(
+      interpret(
+        "coins = {\"a\" -> 8.50, \"b\" -> 7.50, \"c\" -> 7.80, \"d\" -> 5.74, \"e\" -> 4.10, \"f\" -> 3.92, \"g\" -> 3.06, \"h\" -> 2.30}; \
+         vars = Array[n, 8]; \
+         constraints = Join[{Round[Values[coins]*100] . vars == 10000}, Thread[vars >= 0]]; \
+         Minimize[{Total[vars], And @@ constraints, Element[vars, Integers]}, vars]"
+      ).unwrap(),
+      "{12, {n[1] -> 10, n[2] -> 2, n[3] -> 0, n[4] -> 0, n[5] -> 0, n[6] -> 0, n[7] -> 0, n[8] -> 0}}"
+    );
+  }
+
   // --- Maximize ---
 
   #[test]

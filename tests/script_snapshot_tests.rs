@@ -295,6 +295,7 @@ script_test!(
   "electron-deflection-tube.wls"
 );
 script_test!(script_euro_coins_100g_3, "euro_coins_100g_3.wls");
+script_test!(script_euro_coins_100g_4, "euro_coins_100g_4.wls");
 script_test!(script_rolldice, "rolldice.wls");
 script_test!(script_spring_damper_system, "spring_damper_system.wl");
 
