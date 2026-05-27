@@ -1,5 +1,0 @@
----
-source: tests/script_snapshot_tests.rs
-expression: stdout
----
-division by 0
