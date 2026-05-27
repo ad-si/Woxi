@@ -59,6 +59,7 @@ fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
 /// playground) sees the same byte stream wolframscript writes to stdout
 /// in script mode. The format — leading blank line, then `Head::tag: …` —
 /// mirrors wolframscript's exactly.
+#[cfg(not(target_arch = "wasm32"))]
 fn emit_to_stdout(msg: &str) {
   crate::emit_message(msg);
   crate::capture_stdout_raw("\n");
