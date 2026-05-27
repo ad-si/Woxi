@@ -74,6 +74,7 @@ pub fn dispatch_datetime_functions(
       }
       // DateObject[n] — n is absolute seconds since Wolfram's epoch
       // (1900-01-01 00:00:00 UTC). Convert to a calendar instant.
+      #[cfg(feature = "cli")]
       if args.len() == 1
         && let Some(secs) = match &args[0] {
           Expr::Integer(n) => Some(*n as f64),
@@ -178,6 +179,7 @@ pub fn dispatch_datetime_functions(
 /// `(year, month, day, hour, minute, second)` tuple in UTC. Uses
 /// `chrono` via the Unix-epoch offset (Wolfram epoch is 70 calendar
 /// years and 17 leap days before Unix epoch — 2_208_988_800 seconds).
+#[cfg(feature = "cli")]
 fn wolfram_seconds_to_ymdhms(secs: f64) -> (i64, u32, u32, u32, u32, u32) {
   use chrono::{Datelike, TimeZone, Timelike, Utc};
   const WOLFRAM_EPOCH_TO_UNIX: f64 = 2_208_988_800.0;
