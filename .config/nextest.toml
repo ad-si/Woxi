@@ -15,3 +15,12 @@ slow-timeout = { period = "180s", terminate-after = 1 }
 [[profile.default.overrides]]
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
+
+# Two RosettaCode scripts run close to the 180s ceiling standalone in
+# debug builds (~90s and ~120s) and reliably exceed it under full
+# parallel load with 17k+ tests competing for CPU. Give them a wider
+# window; release builds are ~10x faster, so this only affects `make
+# test`.
+[[profile.default.overrides]]
+filter = 'test(script_arithmetic_geometric_mean_calculate_pi) + test(script_largest_number_divisible_by_its_digits)'
+slow-timeout = { period = "360s", terminate-after = 1 }
