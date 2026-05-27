@@ -272,7 +272,15 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       // No built-in numeric value for this symbol — try to invoke
       // `N[expr]` so any user-installed `N[a] = 10.9` style DownValue
       // gets a chance to fire (matching Wolfram's NValues lookup).
-      // Compare string forms to detect the "no rule" echo path.
+      // Skip when no user `N` DownValues exist: the built-in dispatch for
+      // `N` is `n_ast`, which would call back into `n_eval` here — an
+      // infinite loop that exhausts WASM's smaller stack before the
+      // RECURSION_LIMIT guard trips.
+      let has_user_n_rules = crate::FUNC_DEFS
+        .with(|m| m.borrow().get("N").is_some_and(|v| !v.is_empty()));
+      if !has_user_n_rules {
+        return Ok(expr.clone());
+      }
       let original_str = crate::syntax::expr_to_string(expr);
       let n_call_str = format!("N[{}]", original_str);
       match crate::evaluator::evaluate_function_call_ast("N", &[expr.clone()]) {
