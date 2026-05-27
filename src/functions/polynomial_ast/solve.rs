@@ -1019,6 +1019,13 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     if dom == "Integers" {
+      // Bounded linear systems: enumerate integer solutions directly.
+      // Handles cases like Solve[{15n+17m==200, n>=0, m>=0}, {n,m}, Integers]
+      // where filtering real solutions wouldn't terminate or would lose
+      // discrete answers buried in a parametric form.
+      if let Some(result) = try_solve_integer_bounded(&args[0], &args[1]) {
+        return Ok(result);
+      }
       // Filter to only integer solutions
       if let Expr::List(solutions) = &base_solutions {
         let filtered: Vec<Expr> = solutions
@@ -4925,6 +4932,197 @@ fn minimize_multi_var(
   Ok(Expr::List(
     vec![result_val, Expr::List(rules.into())].into(),
   ))
+}
+
+/// Enumerate integer solutions of a bounded linear system for Solve[..., Integers].
+///
+/// Returns Some(list-of-solutions) when the system reduces to a finite integer
+/// box (after deriving implicit upper bounds from equalities with non-negative
+/// coefficients). Returns None when the structure isn't supported, letting the
+/// caller fall back to filter-by-integer-replacement.
+fn try_solve_integer_bounded(
+  constraints_arg: &Expr,
+  vars_arg: &Expr,
+) -> Option<Expr> {
+  let vars_exprs = if let Expr::List(v) = vars_arg {
+    v
+  } else {
+    return None;
+  };
+  let vars: Vec<String> = vars_exprs
+    .iter()
+    .filter_map(|v| {
+      if let Expr::Identifier(name) = v {
+        Some(name.clone())
+      } else {
+        None
+      }
+    })
+    .collect();
+  if vars.len() != vars_exprs.len() || vars.len() < 2 {
+    return None;
+  }
+
+  let raw = match constraints_arg {
+    Expr::List(items) => items.iter().cloned().collect::<Vec<_>>(),
+    _ => vec![constraints_arg.clone()],
+  };
+  let constraints = flatten_and_constraints(&raw);
+
+  let mut equalities: Vec<(Vec<f64>, f64)> = Vec::new();
+  let mut other_ineqs: Vec<(Vec<f64>, f64, i32)> = Vec::new();
+  let mut lb: Vec<f64> = vec![f64::NEG_INFINITY; vars.len()];
+  let mut ub: Vec<f64> = vec![f64::INFINITY; vars.len()];
+
+  for con in &constraints {
+    let (coeffs, rhs, sense) = minimize_extract_linear_constraint(con, &vars)?;
+    let nonzero: Vec<usize> = coeffs
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.abs() > 1e-12)
+      .map(|(i, _)| i)
+      .collect();
+    match sense {
+      0 => equalities.push((coeffs, rhs)),
+      1 if nonzero.len() == 1 => {
+        let i = nonzero[0];
+        let bound = rhs / coeffs[i];
+        if coeffs[i] > 0.0 {
+          if bound > lb[i] {
+            lb[i] = bound;
+          }
+        } else if bound < ub[i] {
+          ub[i] = bound;
+        }
+      }
+      -1 if nonzero.len() == 1 => {
+        let i = nonzero[0];
+        let bound = rhs / coeffs[i];
+        if coeffs[i] > 0.0 {
+          if bound < ub[i] {
+            ub[i] = bound;
+          }
+        } else if bound > lb[i] {
+          lb[i] = bound;
+        }
+      }
+      _ => other_ineqs.push((coeffs, rhs, sense)),
+    }
+  }
+
+  if equalities.is_empty() {
+    return None;
+  }
+
+  // Derive implicit upper bounds: for an equality sum(c_i * x_i) == T with all
+  // c_i >= 0, all lb_i >= 0, and T >= 0, each x_i with c_i > 0 satisfies
+  // x_i <= T / c_i.
+  for (coeffs, rhs) in &equalities {
+    if coeffs.iter().all(|&c| c >= 0.0)
+      && lb.iter().all(|&b| b >= 0.0)
+      && *rhs >= 0.0
+    {
+      for (i, &c) in coeffs.iter().enumerate() {
+        if c > 0.0 {
+          let bound = rhs / c;
+          if bound < ub[i] {
+            ub[i] = bound;
+          }
+        }
+      }
+    }
+  }
+
+  if lb.iter().any(|&b| b.is_infinite()) || ub.iter().any(|&b| b.is_infinite())
+  {
+    return None;
+  }
+
+  let lb_int: Vec<i64> = lb.iter().map(|&b| b.ceil() as i64).collect();
+  let ub_int: Vec<i64> = ub.iter().map(|&b| b.floor() as i64).collect();
+
+  // Bound the enumeration size to avoid pathological inputs.
+  let mut total: i128 = 1;
+  for i in 0..vars.len() {
+    let range = (ub_int[i] - lb_int[i] + 1) as i128;
+    if range <= 0 {
+      return Some(Expr::List(Vec::new().into()));
+    }
+    total = total.saturating_mul(range);
+    if total > 1_000_000 {
+      return None;
+    }
+  }
+
+  let satisfies = |x: &[i64]| -> bool {
+    for (coeffs, rhs) in &equalities {
+      let sum: f64 = coeffs
+        .iter()
+        .zip(x.iter())
+        .map(|(&c, &xi)| c * xi as f64)
+        .sum();
+      if (sum - rhs).abs() > 1e-6 {
+        return false;
+      }
+    }
+    for (coeffs, rhs, sense) in &other_ineqs {
+      let sum: f64 = coeffs
+        .iter()
+        .zip(x.iter())
+        .map(|(&c, &xi)| c * xi as f64)
+        .sum();
+      let ok = match sense {
+        1 => sum >= *rhs - 1e-6,
+        -1 => sum <= *rhs + 1e-6,
+        _ => true,
+      };
+      if !ok {
+        return false;
+      }
+    }
+    true
+  };
+
+  // Lexicographic enumeration with the first variable as the slowest index,
+  // matching Wolfram's solution ordering.
+  let n = vars.len();
+  let mut current = lb_int.clone();
+  let mut solutions: Vec<Vec<i64>> = Vec::new();
+  loop {
+    if satisfies(&current) {
+      solutions.push(current.clone());
+    }
+    let mut i = n;
+    let mut carried_out = true;
+    while i > 0 {
+      i -= 1;
+      current[i] += 1;
+      if current[i] <= ub_int[i] {
+        carried_out = false;
+        break;
+      }
+      current[i] = lb_int[i];
+    }
+    if carried_out {
+      break;
+    }
+  }
+
+  let sol_exprs: Vec<Expr> = solutions
+    .into_iter()
+    .map(|sol| {
+      let rules: Vec<Expr> = vars
+        .iter()
+        .zip(sol.iter())
+        .map(|(v, &val)| Expr::Rule {
+          pattern: Box::new(Expr::Identifier(v.clone())),
+          replacement: Box::new(Expr::Integer(val as i128)),
+        })
+        .collect();
+      Expr::List(rules.into())
+    })
+    .collect();
+  Some(Expr::List(sol_exprs.into()))
 }
 
 /// Flatten And[a, b, c, ...] recursively into a flat list of constraints.

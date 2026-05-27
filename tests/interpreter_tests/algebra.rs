@@ -3455,6 +3455,37 @@ mod solve_with_domain {
   fn integers_no_solutions() {
     assert_eq!(interpret("Solve[x^4 == 4, x, Integers]").unwrap(), "{}");
   }
+
+  #[test]
+  fn integers_bounded_linear_two_vars_unique() {
+    assert_eq!(
+      interpret(
+        "Solve[{15 n + 17 m == 200, n >= 0, m >= 0}, {n, m}, Integers]"
+      )
+      .unwrap(),
+      "{{n -> 2, m -> 10}}"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_linear_two_vars_multi() {
+    assert_eq!(
+      interpret("Solve[{x + y == 5, x >= 0, y >= 0}, {x, y}, Integers]")
+        .unwrap(),
+      "{{x -> 0, y -> 5}, {x -> 1, y -> 4}, {x -> 2, y -> 3}, {x -> 3, y -> 2}, {x -> 4, y -> 1}, {x -> 5, y -> 0}}"
+    );
+  }
+
+  #[test]
+  fn integers_bounded_linear_with_upper_bounds() {
+    assert_eq!(
+      interpret(
+        "Solve[{x + y == 10, x >= 0, y >= 0, x <= 5, y <= 5}, {x, y}, Integers]"
+      )
+      .unwrap(),
+      "{{x -> 5, y -> 5}}"
+    );
+  }
 }
 
 mod solve_always {
