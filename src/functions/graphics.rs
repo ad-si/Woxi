@@ -8473,17 +8473,56 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
-  let row_height = font_size + pad_y;
+  let text_row_height = font_size + pad_y;
   let gap = spacing_ems * font_size;
 
-  // Compute column width from widest item
-  let col_width: f64 = items
+  // An item is either a pre-rendered SVG (e.g. nested TableForm/Framed/Grid)
+  // or a plain expression rendered as a single text line.
+  enum Cell {
+    Svg {
+      svg: String,
+      width: f64,
+      height: f64,
+    },
+    Text(Expr),
+  }
+
+  let cells: Vec<Cell> = items
     .iter()
-    .map(|item| estimate_display_width(item) * char_width + pad_x)
+    .map(|item| match item {
+      Expr::Graphics { svg, .. } => {
+        let (w, h) = parse_svg_wh(svg);
+        Cell::Svg {
+          svg: svg.clone(),
+          width: w,
+          height: h,
+        }
+      }
+      _ => Cell::Text(item.clone()),
+    })
+    .collect();
+
+  // Compute column width from widest item
+  let col_width: f64 = cells
+    .iter()
+    .map(|c| match c {
+      Cell::Svg { width, .. } => *width,
+      Cell::Text(e) => estimate_display_width(e) * char_width + pad_x,
+    })
     .fold(0.0_f64, f64::max);
 
-  let n = items.len() as f64;
-  let total_height = row_height * n + gap * (n - 1.0);
+  // Per-row heights
+  let row_heights: Vec<f64> = cells
+    .iter()
+    .map(|c| match c {
+      Cell::Svg { height, .. } => *height,
+      Cell::Text(_) => text_row_height,
+    })
+    .collect();
+
+  let n = cells.len();
+  let total_height: f64 =
+    row_heights.iter().sum::<f64>() + gap * (n.saturating_sub(1) as f64);
   let total_width = col_width;
 
   let svg_w = total_width.ceil() as u32;
@@ -8503,12 +8542,35 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   };
 
   let text_fill = theme().text_primary;
-  for (i, item) in items.iter().enumerate() {
-    let cy = i as f64 * (row_height + gap) + row_height / 2.0;
-    svg.push_str(&format!(
-      "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
-      expr_to_svg_markup(item)
-    ));
+  let mut y_cursor: f64 = 0.0;
+  for (i, cell) in cells.iter().enumerate() {
+    let h = row_heights[i];
+    match cell {
+      Cell::Text(expr) => {
+        let cy = y_cursor + h / 2.0;
+        svg.push_str(&format!(
+          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
+          expr_to_svg_markup(expr)
+        ));
+      }
+      Cell::Svg {
+        svg: child,
+        width: cw,
+        height: ch,
+      } => {
+        let x_off: f64 = match alignment {
+          "middle" => (total_width - cw) / 2.0,
+          "end" => total_width - cw,
+          _ => 0.0,
+        };
+        svg.push_str(&format!(
+          "<svg x=\"{x_off:.1}\" y=\"{y_cursor:.1}\" width=\"{cw:.1}\" height=\"{ch:.1}\">\n"
+        ));
+        svg.push_str(strip_svg_wrapper(child));
+        svg.push_str("</svg>\n");
+      }
+    }
+    y_cursor += h + gap;
   }
 
   svg.push_str("</svg>");

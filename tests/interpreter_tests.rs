@@ -224,6 +224,60 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_column_with_tableform_and_headings_full_example() {
+    // Regression test for the playground rendering of a Column that mixes
+    // text headings, a TableForm with column headings, and trailing text.
+    clear_state();
+    let r = interpret_with_stdout(
+      "names = {\"2\\[Euro]\", \"1\\[Euro]\", \"50c\", \"20c\"};\n\
+       weights = {8.50, 7.50, 7.80, 5.74};\n\
+       best = {10, 2, 0, 0};\n\
+       Column[{\n\
+         \"=== Fewest Euro coins to make exactly 100 g ===\",\n\
+         TableForm[\n\
+           Select[Transpose[{names, best, best * weights}], #[[2]] > 0 &],\n\
+           TableHeadings -> {None, {\"Coin\", \"Count\", \"Weight (g)\"}}\n\
+         ],\n\
+         \"Total coins\"\n\
+       }]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(svg.matches("<svg").count() >= 2);
+    assert!(!svg.contains("TableForm["));
+    assert!(svg.contains("Fewest Euro coins"));
+    assert!(svg.contains("Coin"));
+  }
+
+  #[test]
+  fn test_column_with_nested_tableform_renders_as_graphics() {
+    // In visual mode (playground / woxi-studio), a Column containing a
+    // TableForm must pre-render the table as a sub-SVG instead of falling
+    // back to the literal `TableForm[…]` text echo.
+    clear_state();
+    let r =
+      interpret_with_stdout("Column[{\"hello\", TableForm[{{1, 2}, {3, 4}}]}]")
+        .unwrap();
+    let svg = r.graphics.expect("Column should produce a graphics SVG");
+    // A nested <svg> child is the marker that the TableForm got embedded
+    // as a sub-SVG (vs. being stringified as plain text).
+    assert!(
+      svg.matches("<svg").count() >= 2,
+      "Column SVG should embed the TableForm as a nested <svg>:\n{svg}"
+    );
+    // The text item is still rendered as a <text> element.
+    assert!(
+      svg.contains(">hello<"),
+      "Column SVG missing text item:\n{svg}"
+    );
+    // The fall-back stringified table should NOT appear.
+    assert!(
+      !svg.contains("TableForm["),
+      "Column SVG should not contain raw TableForm[…] text:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_comment_then_expression() {
     // Comment followed by expression should evaluate the expression
     clear_state();

@@ -1999,13 +1999,46 @@ fn render_traditionalform_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// Pre-render display wrappers (TableForm, MatrixForm, Grid, Framed, Row,
+/// nested Column, Dataset, …) inside an arbitrary expression so they appear
+/// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
+/// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
+/// unchanged.
+fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
+  // The top-level pipeline transformations don't recurse into nested
+  // wrapper arguments, so we apply the relevant ones here for a single
+  // sub-expression.
+  let expr = render_grid_if_needed(expr);
+  let expr = render_dataset_if_needed(expr);
+  let expr = render_tabular_if_needed(expr);
+  let expr = render_tableform_if_needed(expr);
+  let expr = render_matrixform_if_needed(expr);
+  let expr = render_traditionalform_list_if_needed(expr);
+  let expr = render_column_if_needed(expr);
+  let expr = render_row_if_needed(expr);
+  let expr = render_treeform_if_needed(expr);
+  render_framed_if_needed(expr)
+}
+
 /// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
 fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Column" && !args.is_empty() =>
     {
-      if let Some(svg) = functions::graphics::column_to_svg(args) {
+      // Pre-render display wrappers inside the column's items so e.g.
+      // `Column[{"hi", TableForm[{{1,2},{3,4}}]}]` shows an actual grid
+      // rather than the raw `TableForm[…]` text.
+      let mut new_args: Vec<syntax::Expr> = args.to_vec();
+      if let syntax::Expr::List(items) = &args[0] {
+        let new_items: Vec<syntax::Expr> = items
+          .iter()
+          .cloned()
+          .map(render_inline_display_wrapper)
+          .collect();
+        new_args[0] = syntax::Expr::List(new_items.into());
+      }
+      if let Some(svg) = functions::graphics::column_to_svg(&new_args) {
         graphics_result(svg)
       } else {
         expr
