@@ -1835,7 +1835,7 @@ GraphPlot3D,3D graph plot,,unevaluated,6.0,1864
 InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,1865
 ButtonFunction,Button function option,,unevaluated,3.0,1866
 SystemOptions,System options,,unevaluated,6.0,1867
-FrobeniusSolve,Frobenius equation solver,,unevaluated,6.0,1869
+FrobeniusSolve,Returns non-negative integer solutions to a Frobenius equation,✅,pure,6.0,1869
 Sunday,Sunday day name,,unevaluated,9.0,1869
 PrintTemporary,Print temporary expression,,unevaluated,6.0,1870
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1.0,1873

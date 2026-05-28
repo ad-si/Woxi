@@ -4004,6 +4004,125 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(max_n - a0 as i128))
 }
 
+/// FrobeniusSolve[{a1, ..., an}, b] - All non-negative integer solutions
+/// (x1, ..., xn) to a1*x1 + ... + an*xn == b.
+///
+/// FrobeniusSolve[{a1, ..., an}, b, m] returns at most m solutions (m a
+/// positive integer or `All`).
+pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "FrobeniusSolve".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  // First argument: a non-empty list of positive integers.
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FrobeniusSolve".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let coef_err = || {
+    crate::emit_message(&format!(
+      "FrobeniusSolve::coef: The first argument {} of FrobeniusSolve should be a nonempty list of positive integers.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok::<Expr, InterpreterError>(Expr::FunctionCall {
+      name: "FrobeniusSolve".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if items.is_empty() {
+    return coef_err();
+  }
+  let mut coeffs: Vec<i128> = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    match expr_to_i128(item) {
+      Some(n) if n > 0 => coeffs.push(n),
+      _ => return coef_err(),
+    }
+  }
+
+  // Second argument: a non-negative integer target.
+  let target = match expr_to_i128(&args[1]) {
+    Some(n) if n >= 0 => n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FrobeniusSolve".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  // Third argument: positive integer limit or `All`.
+  let limit: Option<usize> = if args.len() == 3 {
+    match &args[2] {
+      Expr::Identifier(s) if s == "All" => None,
+      e => match expr_to_i128(e) {
+        Some(n) if n > 0 => Some(n as usize),
+        _ => {
+          crate::emit_message(&format!(
+            "FrobeniusSolve::nsol: The number {} of requested solutions should be a positive integer.",
+            crate::syntax::expr_to_string(&args[2])
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "FrobeniusSolve".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      },
+    }
+  } else {
+    None
+  };
+
+  // Enumerate solutions in lexicographic order. The recursion fixes x1, then
+  // x2, ..., so iterating x_i = 0, 1, ... yields lex-sorted solutions.
+  fn enumerate(
+    coeffs: &[i128],
+    target: i128,
+    current: &mut Vec<Expr>,
+    results: &mut Vec<Expr>,
+    limit: Option<usize>,
+  ) -> bool {
+    if limit.is_some_and(|l| results.len() >= l) {
+      return true;
+    }
+    if coeffs.len() == 1 {
+      let c = coeffs[0];
+      if target % c == 0 {
+        let k = target / c;
+        current.push(Expr::Integer(k));
+        results.push(Expr::List(current.clone().into()));
+        current.pop();
+      }
+      return limit.is_some_and(|l| results.len() >= l);
+    }
+    let c0 = coeffs[0];
+    let max_x = target / c0;
+    for x in 0..=max_x {
+      current.push(Expr::Integer(x));
+      let stop =
+        enumerate(&coeffs[1..], target - x * c0, current, results, limit);
+      current.pop();
+      if stop {
+        return true;
+      }
+    }
+    false
+  }
+
+  let mut results: Vec<Expr> = Vec::new();
+  let mut current: Vec<Expr> = Vec::with_capacity(coeffs.len());
+  enumerate(&coeffs, target, &mut current, &mut results, limit);
+  Ok(Expr::List(results.into()))
+}
+
 /// PartitionsP[n] - Number of unrestricted partitions of the integer n
 pub fn partitions_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

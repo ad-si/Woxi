@@ -1060,6 +1060,72 @@ mod high_level_functions_tests {
     }
   }
 
+  // ─── FrobeniusSolve ──────────────────────────────────────────────────
+  mod frobenius_solve_tests {
+    use super::*;
+    #[test]
+    fn test_frobenius_solve_basic() {
+      assert_eq!(
+        interpret("FrobeniusSolve[{2, 3, 4}, 10]").unwrap(),
+        "{{0, 2, 1}, {1, 0, 2}, {2, 2, 0}, {3, 0, 1}, {5, 0, 0}}"
+      );
+      assert_eq!(
+        interpret("FrobeniusSolve[{2, 3, 5}, 7]").unwrap(),
+        "{{1, 0, 1}, {2, 1, 0}}"
+      );
+    }
+    #[test]
+    fn test_frobenius_solve_no_solution() {
+      assert_eq!(interpret("FrobeniusSolve[{2, 4}, 7]").unwrap(), "{}");
+    }
+    #[test]
+    fn test_frobenius_solve_zero_target() {
+      assert_eq!(interpret("FrobeniusSolve[{2, 4}, 0]").unwrap(), "{{0, 0}}");
+      assert_eq!(interpret("FrobeniusSolve[{3}, 0]").unwrap(), "{{0}}");
+    }
+    #[test]
+    fn test_frobenius_solve_count_large() {
+      // Same input as the user's example - count must match wolframscript.
+      assert_eq!(
+        interpret(
+          "Length[FrobeniusSolve[{230, 306, 392, 410, 574, 780, 750, 850}, 10000]]"
+        )
+        .unwrap(),
+        "4674"
+      );
+    }
+    #[test]
+    fn test_frobenius_solve_limit() {
+      assert_eq!(
+        interpret("FrobeniusSolve[{2, 3, 4}, 10, 2]").unwrap(),
+        "{{0, 2, 1}, {1, 0, 2}}"
+      );
+      assert_eq!(
+        interpret("FrobeniusSolve[{2, 3, 4}, 10, All]").unwrap(),
+        "{{0, 2, 1}, {1, 0, 2}, {2, 2, 0}, {3, 0, 1}, {5, 0, 0}}"
+      );
+    }
+    #[test]
+    fn test_frobenius_solve_bad_input() {
+      assert_eq!(
+        interpret("FrobeniusSolve[{}, 5]").unwrap(),
+        "FrobeniusSolve[{}, 5]"
+      );
+      assert_eq!(
+        interpret("FrobeniusSolve[{0, 3}, 6]").unwrap(),
+        "FrobeniusSolve[{0, 3}, 6]"
+      );
+      assert_eq!(
+        interpret("FrobeniusSolve[{2, -3}, 6]").unwrap(),
+        "FrobeniusSolve[{2, -3}, 6]"
+      );
+      assert_eq!(
+        interpret("FrobeniusSolve[{2, 3, 4}, 10, 0]").unwrap(),
+        "FrobeniusSolve[{2, 3, 4}, 10, 0]"
+      );
+    }
+  }
+
   // ─── Catch/Throw ───────────────────────────────────────────────────
   mod catch_throw_tests {
     use super::*;

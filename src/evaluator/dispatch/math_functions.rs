@@ -2002,6 +2002,9 @@ pub fn dispatch_math_functions(
     "FrobeniusNumber" if args.len() == 1 => {
       return Some(crate::functions::math_ast::frobenius_number_ast(args));
     }
+    "FrobeniusSolve" if (2..=3).contains(&args.len()) => {
+      return Some(crate::functions::math_ast::frobenius_solve_ast(args));
+    }
     "HarmonicNumber" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::harmonic_number_ast(args));
     }

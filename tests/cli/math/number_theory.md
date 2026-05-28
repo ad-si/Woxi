@@ -40,6 +40,7 @@ Prime numbers, integer decompositions, and combinatorial sequences.
 - [`DigitSum`](number_theory/DigitSum.md)
 - [`DivisorSum`](number_theory/DivisorSum.md)
 - [`FrobeniusNumber`](number_theory/FrobeniusNumber.md)
+- [`FrobeniusSolve`](number_theory/FrobeniusSolve.md)
 - [`FromContinuedFraction`](number_theory/FromContinuedFraction.md)
 - [`IntegerLength`](number_theory/IntegerLength.md)
 - [`KroneckerSymbol`](number_theory/KroneckerSymbol.md)

@@ -406,6 +406,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FresnelS" => Some((1, 1)),
     "FrenetSerretSystem" => Some((2, 2)),
     "FrobeniusNumber" => Some((1, 1)),
+    "FrobeniusSolve" => Some((2, 3)),
     "FromCharacterCode" => Some((1, 2)),
     "FromCoefficientRules" => Some((2, 2)),
     "FromContinuedFraction" => Some((1, 1)),
