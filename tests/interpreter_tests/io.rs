@@ -4341,28 +4341,28 @@ mod cases {
   #[test]
   fn file_print_1() {
     assert_case(
-      r#"Put[50!, "factorials"]; FilePrint["factorials"]"#,
+      r#"f = FileNameJoin[{$TemporaryDirectory, "woxi_factorials_1"}]; Put[50!, f]; FilePrint[f]"#,
       r#"Null"#,
     );
   }
   #[test]
   fn file_print_2() {
     assert_case(
-      r#"Put[50!, "factorials"]; FilePrint["factorials"]; PutAppend[10!, 20!, 30!, "factorials"]; FilePrint["factorials"]"#,
+      r#"f = FileNameJoin[{$TemporaryDirectory, "woxi_factorials_2"}]; Put[50!, f]; FilePrint[f]; PutAppend[10!, 20!, 30!, f]; FilePrint[f]"#,
       r#"Null"#,
     );
   }
   #[test]
   fn file_print_3() {
     assert_case(
-      r#"Put[50!, "factorials"]; FilePrint["factorials"]; PutAppend[10!, 20!, 30!, "factorials"]; FilePrint["factorials"]; 60! >>> "factorials"; FilePrint["factorials"]"#,
+      r#"f = FileNameJoin[{$TemporaryDirectory, "woxi_factorials_3"}]; Put[50!, f]; FilePrint[f]; PutAppend[10!, 20!, 30!, f]; FilePrint[f]; 60! >>> f; FilePrint[f]"#,
       r#"Null"#,
     );
   }
   #[test]
   fn file_print_4() {
     assert_case(
-      r#"Put[50!, "factorials"]; FilePrint["factorials"]; PutAppend[10!, 20!, 30!, "factorials"]; FilePrint["factorials"]; 60! >>> "factorials"; FilePrint["factorials"]; "string" >>> factorials; FilePrint["factorials"]"#,
+      r#"f = FileNameJoin[{$TemporaryDirectory, "woxi_factorials_4"}]; Put[50!, f]; FilePrint[f]; PutAppend[10!, 20!, 30!, f]; FilePrint[f]; 60! >>> f; FilePrint[f]; "string" >>> f; FilePrint[f]"#,
       r#"Null"#,
     );
   }
@@ -4620,14 +4620,14 @@ mod cases {
   #[test]
   fn file_print_6() {
     assert_case(
-      r#"ExampleExporter1[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char = data}, WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat1", ExampleExporter1]; Export["sample.txt", "Encode this string!", "ExampleFormat1"]; FilePrint["sample.txt"]"#,
+      r#"ExampleExporter1[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char = data}, WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat1", ExampleExporter1]; p = FileNameJoin[{$TemporaryDirectory, "woxi_sample_6.txt"}]; Export[p, "Encode this string!", "ExampleFormat1"]; FilePrint[p]"#,
       r#"Null"#,
     );
   }
   #[test]
   fn file_print_7() {
     assert_case(
-      r#"ExampleExporter1[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char = data}, WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat1", ExampleExporter1]; Export["sample.txt", "Encode this string!", "ExampleFormat1"]; FilePrint["sample.txt"]; DeleteFile["sample.txt"]; ExampleExporter2[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char}, (* TODO: Check data *) char = FromCharacterCode[Mod[ToCharacterCode[data] - 84, 26] + 97]; WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat2", ExampleExporter2]; Export["sample.txt", "encodethisstring", "ExampleFormat2"]; FilePrint["sample.txt"]"#,
+      r#"ExampleExporter1[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char = data}, WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat1", ExampleExporter1]; p = FileNameJoin[{$TemporaryDirectory, "woxi_sample_7.txt"}]; Export[p, "Encode this string!", "ExampleFormat1"]; FilePrint[p]; DeleteFile[p]; ExampleExporter2[filename_, data_, opts___] := Module[{strm = OpenWrite[filename], char}, (* TODO: Check data *) char = FromCharacterCode[Mod[ToCharacterCode[data] - 84, 26] + 97]; WriteString[strm, char]; Close[strm]]; ImportExport`RegisterExport["ExampleFormat2", ExampleExporter2]; Export[p, "encodethisstring", "ExampleFormat2"]; FilePrint[p]"#,
       r#"Null"#,
     );
   }

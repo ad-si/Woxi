@@ -1,1 +1,1 @@
-Export["file.ppm",image,"PPM"]
+Export[FileNameJoin[{$TemporaryDirectory, "woxi_bitmap_write.ppm"}], image, "PPM"]
