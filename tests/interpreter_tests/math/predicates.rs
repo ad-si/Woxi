@@ -194,6 +194,48 @@ mod element {
   }
 
   #[test]
+  fn one_not_in_primes() {
+    // 1 is not prime
+    assert_eq!(interpret("Element[1, Primes]").unwrap(), "False");
+  }
+
+  #[test]
+  fn negative_not_in_primes() {
+    assert_eq!(interpret("Element[-3, Primes]").unwrap(), "False");
+  }
+
+  #[test]
+  fn real_not_in_primes() {
+    assert_eq!(interpret("Element[3.5, Primes]").unwrap(), "False");
+  }
+
+  #[test]
+  fn symbolic_in_primes_stays_unevaluated() {
+    assert_eq!(
+      interpret("Element[x, Primes]").unwrap(),
+      "Element[x, Primes]"
+    );
+  }
+
+  #[test]
+  fn prime_list_in_primes() {
+    // All members → True
+    assert_eq!(interpret("Element[{2, 3, 5}, Primes]").unwrap(), "True");
+  }
+
+  #[test]
+  fn mixed_list_in_primes() {
+    // 4 is not prime → False
+    assert_eq!(interpret("Element[{2, 3, 4}, Primes]").unwrap(), "False");
+  }
+
+  #[test]
+  fn primes_symbol_unevaluated() {
+    // The domain constant itself stays symbolic
+    assert_eq!(interpret("Primes").unwrap(), "Primes");
+  }
+
+  #[test]
   fn pi_in_reals() {
     assert_eq!(interpret("Element[Pi, Reals]").unwrap(), "True");
   }
