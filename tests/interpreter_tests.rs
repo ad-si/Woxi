@@ -444,6 +444,19 @@ mod interpreter_tests {
     assert_eq!(interpret("+x^2").unwrap(), "x^2");
   }
 
+  #[test]
+  fn test_circle_minus() {
+    clear_state();
+    // CircleMinus is a symbolic operator displayed with the ⊖ glyph
+    assert_eq!(interpret("CircleMinus[a, b]").unwrap(), "a \u{2296} b");
+    assert_eq!(
+      interpret("CircleMinus[a, b, c]").unwrap(),
+      "a \u{2296} b \u{2296} c"
+    );
+    // Single argument stays in CircleMinus[...] form, matching wolframscript
+    assert_eq!(interpret("CircleMinus[5]").unwrap(), "CircleMinus[5]");
+  }
+
   mod case_helpers;
 
   mod algebra;

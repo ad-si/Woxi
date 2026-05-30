@@ -7131,6 +7131,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{2295} ");
       }
+      // CircleMinus[a, b, ...] displays as a ⊖ b ⊖ ...
+      if name == "CircleMinus" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{2296} ");
+      }
       // Subset[a, b] displays as a ⊂ b
       if name == "Subset" && args.len() == 2 {
         return format!("{} \u{2282} {}", fmt(&args[0]), fmt(&args[1]));
@@ -9902,6 +9907,12 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2295} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CircleMinus" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2296} ")
     }
     Expr::FunctionCall { name, args }
       if name == "Subset" && args.len() == 2 =>
