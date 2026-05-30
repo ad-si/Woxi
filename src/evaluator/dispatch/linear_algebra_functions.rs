@@ -895,6 +895,9 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec().into(),
       }));
     }
+    "EulerMatrix" if args.len() == 1 || args.len() == 2 => {
+      return Some(euler_matrix_ast(args));
+    }
     "LUDecomposition" if args.len() == 1 => {
       return Some(lu_decomposition_ast(&args[0]));
     }
@@ -2580,4 +2583,103 @@ fn matrix_power_2x2_symbolic_block(
   let m10 = build_entry(c, false)?;
   let m11 = build_entry(d, true)?;
   Some([[m00, m01], [m10, m11]])
+}
+
+/// Builds an elementary 3x3 active rotation matrix about the given Cartesian
+/// axis (1 = x, 2 = y, 3 = z) by `angle`.
+fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
+  let c = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![angle.clone()].into(),
+  };
+  let s = Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![angle.clone()].into(),
+  };
+  let neg_s = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), s.clone()].into(),
+  };
+  let zero = Expr::Integer(0);
+  let one = Expr::Integer(1);
+  let rows: [[Expr; 3]; 3] = match axis {
+    1 => [
+      [one.clone(), zero.clone(), zero.clone()],
+      [zero.clone(), c.clone(), neg_s.clone()],
+      [zero.clone(), s.clone(), c.clone()],
+    ],
+    2 => [
+      [c.clone(), zero.clone(), s.clone()],
+      [zero.clone(), one.clone(), zero.clone()],
+      [neg_s.clone(), zero.clone(), c.clone()],
+    ],
+    // axis 3 (z) is the default for any other value
+    _ => [
+      [c.clone(), neg_s.clone(), zero.clone()],
+      [s.clone(), c.clone(), zero.clone()],
+      [zero.clone(), zero.clone(), one.clone()],
+    ],
+  };
+  Expr::List(
+    rows
+      .into_iter()
+      .map(|r| Expr::List(r.to_vec().into()))
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// EulerMatrix[{a, b, c}] - rotation matrix R(a).R(b).R(c) using the default
+/// {3, 2, 3} (ZYZ) axis convention. EulerMatrix[{a, b, c}, {n1, n2, n3}]
+/// uses the explicitly given axis sequence.
+pub fn euler_matrix_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let angles = match &args[0] {
+    Expr::List(items) if items.len() == 3 => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "EulerMatrix".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let axes: [i128; 3] = if args.len() == 2 {
+    match &args[1] {
+      Expr::List(items) if items.len() == 3 => {
+        let mut out = [3i128; 3];
+        for (i, item) in items.iter().enumerate() {
+          match item {
+            Expr::Integer(n) => out[i] = *n,
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "EulerMatrix".to_string(),
+                args: args.to_vec().into(),
+              });
+            }
+          }
+        }
+        out
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "EulerMatrix".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  } else {
+    // Wolfram's default Euler angle convention is {3, 2, 3} (ZYZ).
+    [3, 2, 3]
+  };
+
+  let r1 = elementary_rotation(axes[0], &angles[0]);
+  let r2 = elementary_rotation(axes[1], &angles[1]);
+  let r3 = elementary_rotation(axes[2], &angles[2]);
+
+  // R(axes[0], a) . R(axes[1], b) . R(axes[2], c)
+  let r12 = crate::functions::linear_algebra_ast::dot_ast(&[r1, r2])?;
+  let r123 = crate::functions::linear_algebra_ast::dot_ast(&[r12, r3])?;
+  evaluate_expr_to_expr(&r123)
 }

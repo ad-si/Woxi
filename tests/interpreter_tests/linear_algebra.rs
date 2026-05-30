@@ -3515,3 +3515,57 @@ mod cases {
     );
   }
 }
+
+mod euler_matrix {
+  use super::*;
+
+  #[test]
+  fn zero_angles_identity() {
+    assert_eq!(
+      interpret("EulerMatrix[{0, 0, 0}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn default_zyz_convention() {
+    // Default axis sequence is {3, 2, 3} (ZYZ).
+    assert_eq!(
+      interpret("EulerMatrix[{Pi/2, 0, 0}]").unwrap(),
+      "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn explicit_xyz_convention() {
+    assert_eq!(
+      interpret("EulerMatrix[{a, b, c}, {1, 2, 3}]").unwrap(),
+      "{{Cos[b]*Cos[c], -(Cos[b]*Sin[c]), Sin[b]}, \
+       {Cos[a]*Sin[c] + Cos[c]*Sin[a]*Sin[b], \
+       Cos[a]*Cos[c] - Sin[a]*Sin[b]*Sin[c], -(Cos[b]*Sin[a])}, \
+       {-(Cos[a]*Cos[c]*Sin[b]) + Sin[a]*Sin[c], \
+       Cos[c]*Sin[a] + Cos[a]*Sin[b]*Sin[c], Cos[a]*Cos[b]}}"
+    );
+  }
+
+  #[test]
+  fn explicit_zxz_convention() {
+    assert_eq!(
+      interpret("EulerMatrix[{a, b, c}, {3, 1, 3}]").unwrap(),
+      "{{Cos[a]*Cos[c] - Cos[b]*Sin[a]*Sin[c], \
+       -(Cos[a]*Sin[c]) - Cos[b]*Cos[c]*Sin[a], Sin[a]*Sin[b]}, \
+       {Cos[c]*Sin[a] + Cos[a]*Cos[b]*Sin[c], \
+       Cos[a]*Cos[b]*Cos[c] - Sin[a]*Sin[c], -(Cos[a]*Sin[b])}, \
+       {Sin[b]*Sin[c], Cos[c]*Sin[b], Cos[b]}}"
+    );
+  }
+
+  #[test]
+  fn numeric_z_rotation() {
+    // Rotation by Pi about z (axis 3): diag-ish with -1 on first two diagonal.
+    assert_eq!(
+      interpret("EulerMatrix[{Pi, 0, 0}]").unwrap(),
+      "{{-1, 0, 0}, {0, -1, 0}, {0, 0, 1}}"
+    );
+  }
+}
