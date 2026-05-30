@@ -1783,4 +1783,58 @@ mod list_tests {
       "{2/(a^(-1) + c^(-1)), 2/(b^(-1) + d^(-1))}"
     );
   }
+
+  #[test]
+  fn permutation_replace() {
+    // Single point under a cycle.
+    assert_eq!(
+      interpret("PermutationReplace[3, Cycles[{{1, 2, 3}}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("PermutationReplace[1, Cycles[{{1, 2, 3}}]]").unwrap(),
+      "2"
+    );
+    // Point not moved by the permutation stays fixed.
+    assert_eq!(
+      interpret("PermutationReplace[5, Cycles[{{1, 2, 3}}]]").unwrap(),
+      "5"
+    );
+    // List of points mapped element-wise.
+    assert_eq!(
+      interpret("PermutationReplace[{1, 2, 3, 4}, Cycles[{{1, 2, 3}}]]")
+        .unwrap(),
+      "{2, 3, 1, 4}"
+    );
+    // Permutation given as a list: point i maps to list[[i]].
+    assert_eq!(interpret("PermutationReplace[2, {3, 1, 2}]").unwrap(), "1");
+    assert_eq!(
+      interpret("PermutationReplace[{1, 2, 3}, {3, 1, 2}]").unwrap(),
+      "{3, 1, 2}"
+    );
+    // Index beyond the permutation list length is fixed.
+    assert_eq!(interpret("PermutationReplace[4, {3, 1, 2}]").unwrap(), "4");
+    // Non-integer points are left unchanged.
+    assert_eq!(
+      interpret("PermutationReplace[{a, b}, Cycles[{{1, 2}}]]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("PermutationReplace[x, Cycles[{{1, 2}}]]").unwrap(),
+      "x"
+    );
+    // Nested lists are mapped recursively; multiple cycles.
+    assert_eq!(
+      interpret("PermutationReplace[{{1, 2}, {3, 4}}, Cycles[{{1, 2, 3}}]]")
+        .unwrap(),
+      "{{2, 3}, {1, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "PermutationReplace[{1, 2, 3, 4, 5}, Cycles[{{1, 2}, {3, 4, 5}}]]"
+      )
+      .unwrap(),
+      "{2, 1, 4, 5, 3}"
+    );
+  }
 }

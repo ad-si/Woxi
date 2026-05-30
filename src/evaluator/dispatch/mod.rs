@@ -2045,6 +2045,88 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // PermutationReplace[expr, perm] — replace each point by its image under perm.
+  // perm may be Cycles[{...}] or a permutation list {p1, p2, ...}.
+  if name == "PermutationReplace" && args.len() == 2 {
+    // Build the image map: point -> image. Points absent from the map are fixed.
+    let mut images: std::collections::HashMap<i128, i128> =
+      std::collections::HashMap::new();
+    let mut valid_perm = false;
+    match &args[1] {
+      Expr::FunctionCall {
+        name: cname,
+        args: cargs,
+      } if cname == "Cycles"
+        && cargs.len() == 1
+        && matches!(&cargs[0], Expr::List(_)) =>
+      {
+        if let Expr::List(cycle_list) = &cargs[0] {
+          valid_perm = true;
+          for cycle in cycle_list.iter() {
+            if let Expr::List(c) = cycle {
+              let indices: Vec<i128> = c
+                .iter()
+                .filter_map(|e| {
+                  if let Expr::Integer(n) = e {
+                    Some(*n)
+                  } else {
+                    None
+                  }
+                })
+                .collect();
+              if indices.len() != c.len() {
+                valid_perm = false;
+                break;
+              }
+              if indices.len() >= 2 {
+                for i in 0..indices.len() - 1 {
+                  images.insert(indices[i], indices[i + 1]);
+                }
+                images.insert(indices[indices.len() - 1], indices[0]);
+              }
+            } else {
+              valid_perm = false;
+              break;
+            }
+          }
+        }
+      }
+      Expr::List(perm) => {
+        valid_perm = true;
+        for (i, p) in perm.iter().enumerate() {
+          if let Expr::Integer(val) = p {
+            images.insert((i + 1) as i128, *val);
+          } else {
+            valid_perm = false;
+            break;
+          }
+        }
+      }
+      _ => {}
+    }
+
+    if valid_perm {
+      // Map a single expr: integers get their image (default: identity);
+      // lists are mapped element-wise (recursively); other exprs unchanged.
+      fn map_point(e: &Expr, images: &std::collections::HashMap<i128, i128>) -> Expr {
+        match e {
+          Expr::Integer(n) => {
+            Expr::Integer(*images.get(n).unwrap_or(n))
+          }
+          Expr::List(items) => Expr::List(
+            items.iter().map(|it| map_point(it, images)).collect(),
+          ),
+          other => other.clone(),
+        }
+      }
+      return Ok(map_point(&args[0], &images));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // CompleteGraph[n, opts...] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}, {opts}]
   if name == "CompleteGraph" && !args.is_empty() {
     if let Expr::Integer(n) = &args[0] {

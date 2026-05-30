@@ -1786,7 +1786,7 @@ WordFrequencyData,,🚫,,10.4,1815
 CharacteristicFunction,Characteristic function,,unevaluated,6.0,1817
 FactorTerms,Pulls out the greatest common numerical factor from terms,✅,pure,1.0,1817
 DiscreteVariables,Discrete variables option,,unevaluated,9.0,1819
-PermutationReplace,Replace by permutation,,unevaluated,8.0,1819
+PermutationReplace,Replaces each point in an expression by its image under a permutation given as Cycles or a permutation list,✅,pure,8.0,1819
 Standardize,Standardizes data by subtracting the mean and dividing by the standard deviation,✅,pure,7.0,1822
 StripOnInput,Strip on input option,,unevaluated,6.0,1822
 SubMinus,Subscript minus,,unevaluated,6.0,1822
