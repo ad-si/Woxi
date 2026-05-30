@@ -30,6 +30,9 @@ pub fn dispatch_math_functions(
     "Power" if args.len() == 2 => {
       return Some(crate::functions::math_ast::power_ast(args));
     }
+    "Entropy" => {
+      return Some(crate::functions::math_ast::entropy_ast(args));
+    }
     "Max" => {
       return Some(crate::functions::math_ast::max_ast(args));
     }

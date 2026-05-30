@@ -3,6 +3,68 @@ use woxi::interpret;
 mod high_level_functions_tests {
   use super::*;
 
+  mod entropy_tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_symbolic() {
+      // Shannon entropy in nats; exact symbolic form.
+      assert_eq!(
+        interpret("Entropy[{a,b,b,c,c,c}]").unwrap(),
+        "(-2*Log[2] - 3*Log[3])/6 + Log[6]"
+      );
+    }
+
+    #[test]
+    fn test_two_classes() {
+      assert_eq!(interpret("Entropy[{a,a,b,b}]").unwrap(), "-Log[2] + Log[4]");
+    }
+
+    #[test]
+    fn test_all_distinct() {
+      assert_eq!(interpret("Entropy[{1,2,3,4}]").unwrap(), "Log[4]");
+    }
+
+    #[test]
+    fn test_single_element() {
+      assert_eq!(interpret("Entropy[{x}]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_all_same() {
+      assert_eq!(interpret("Entropy[{1,1,1}]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_empty_list() {
+      assert_eq!(interpret("Entropy[{}]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_explicit_base_2() {
+      assert_eq!(
+        interpret("Entropy[2,{a,b,b,c,c,c}]").unwrap(),
+        "(-2 - (3*Log[3])/Log[2])/6 + Log[6]/Log[2]"
+      );
+    }
+
+    #[test]
+    fn test_base_e_matches_default() {
+      assert_eq!(
+        interpret("Entropy[E,{a,b,b,c,c,c}]").unwrap(),
+        "(-2*Log[2] - 3*Log[3])/6 + Log[6]"
+      );
+    }
+
+    #[test]
+    fn test_numeric() {
+      assert_eq!(
+        interpret("N[Entropy[{a,b,b,c,c,c}]]").unwrap(),
+        "1.0114042647073518"
+      );
+    }
+  }
+
   mod evenq_tests {
     use super::*;
     #[test]

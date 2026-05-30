@@ -2909,3 +2909,82 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
+
+/// Entropy[list] — Shannon entropy (in nats) of the categorical
+/// distribution of the elements of `list`.
+/// Entropy[b, list] — Shannon entropy using logarithm base `b`.
+///
+/// For distinct elements with counts c_i and total n:
+///   Entropy[list]    = Log[n] + (1/n) Sum[-c_i Log[c_i]]
+///   Entropy[b, list] = Log[n]/Log[b] + (1/n) Sum[-c_i Log[c_i]/Log[b]]
+/// The result is returned in exact symbolic form (matching wolframscript).
+pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Determine the base expression (None = natural log) and the list.
+  let (base, list): (Option<&Expr>, &Expr) = match args.len() {
+    1 => (None, &args[0]),
+    2 => (Some(&args[0]), &args[1]),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Entropy".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Entropy".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  // Empty list -> 0 (matches wolframscript).
+  if items.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Count occurrences of each distinct element, preserving first-seen order.
+  use std::collections::HashMap;
+  let mut counts: HashMap<String, i128> = HashMap::new();
+  let mut order: Vec<String> = Vec::new();
+  for item in items.iter() {
+    let key = crate::syntax::expr_to_string(item);
+    if let Some(c) = counts.get_mut(&key) {
+      *c += 1;
+    } else {
+      order.push(key.clone());
+      counts.insert(key, 1);
+    }
+  }
+  let n = items.len() as i128;
+  let base_str = base.map(crate::syntax::expr_to_string);
+
+  // Build: Log[n] + (1/n) Sum[-c_i Log[c_i]], dividing each Log by Log[base]
+  // when an explicit base is supplied.
+  let log = |x: String| -> String {
+    match &base_str {
+      Some(b) => format!("Log[{}]/Log[{}]", x, b),
+      None => format!("Log[{}]", x),
+    }
+  };
+
+  let sum_terms: Vec<String> = order
+    .iter()
+    .map(|k| {
+      let c = counts[k];
+      format!("-{}*{}", c, log(c.to_string()))
+    })
+    .collect();
+
+  let code = format!(
+    "{} + (1/{})*({})",
+    log(n.to_string()),
+    n,
+    sum_terms.join(" + ")
+  );
+
+  crate::interpret_to_expr(&code)
+}
