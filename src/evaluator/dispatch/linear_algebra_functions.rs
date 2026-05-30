@@ -935,6 +935,121 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec().into(),
       }));
     }
+    // RescalingTransform[{{min,max},...}] → maps the bounding box to the unit cube.
+    // RescalingTransform[{{min,max},...}, {{ymin,ymax},...}] → maps to the target box.
+    // Built as a TransformationFunction with an (n+1)x(n+1) augmented affine matrix:
+    //   out_i = ymin_i + (ymax_i - ymin_i)/(max_i - min_i) * (x_i - min_i)
+    // i.e. diagonal scale s_i = (ymax_i - ymin_i)/(max_i - min_i) and
+    //      translation t_i = ymin_i - min_i * s_i.
+    "RescalingTransform" if args.len() == 1 || args.len() == 2 => {
+      let src = if let Expr::List(v) = &args[0] {
+        v
+      } else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "RescalingTransform".to_string(),
+          args: args.to_vec().into(),
+        }));
+      };
+      // Optional target box.
+      let tgt = if args.len() == 2 {
+        if let Expr::List(v) = &args[1] {
+          if v.len() != src.len() {
+            return Some(Ok(Expr::FunctionCall {
+              name: "RescalingTransform".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+          Some(v)
+        } else {
+          return Some(Ok(Expr::FunctionCall {
+            name: "RescalingTransform".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      } else {
+        None
+      };
+      let n = src.len();
+      // Each source/target entry must be a 2-element {lo, hi} list.
+      let pair = |e: &Expr| -> Option<(Expr, Expr)> {
+        if let Expr::List(p) = e {
+          if p.len() == 2 {
+            return Some((p[0].clone(), p[1].clone()));
+          }
+        }
+        None
+      };
+      let mut scales: Vec<Expr> = Vec::with_capacity(n);
+      let mut translates: Vec<Expr> = Vec::with_capacity(n);
+      for i in 0..n {
+        let (min_i, max_i) = match pair(&src[i]) {
+          Some(p) => p,
+          None => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "RescalingTransform".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        };
+        let (ymin_i, ymax_i) = match &tgt {
+          Some(t) => match pair(&t[i]) {
+            Some(p) => p,
+            None => {
+              return Some(Ok(Expr::FunctionCall {
+                name: "RescalingTransform".to_string(),
+                args: args.to_vec().into(),
+              }));
+            }
+          },
+          None => (Expr::Integer(0), Expr::Integer(1)),
+        };
+        // scale = (ymax - ymin)/(max - min)
+        let num = Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![ymax_i.clone(), ymin_i.clone()].into(),
+        };
+        let den = Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![max_i.clone(), min_i.clone()].into(),
+        };
+        let scale = Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![num, den].into(),
+        };
+        // translate = ymin - min * scale
+        let translate = Expr::FunctionCall {
+          name: "Subtract".to_string(),
+          args: vec![
+            ymin_i,
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![min_i, scale.clone()].into(),
+            },
+          ]
+          .into(),
+        };
+        scales.push(scale);
+        translates.push(translate);
+      }
+      // Assemble the (n+1)x(n+1) augmented matrix.
+      let mut rows = Vec::with_capacity(n + 1);
+      for i in 0..n {
+        let mut row = vec![Expr::Integer(0); n + 1];
+        row[i] = scales[i].clone();
+        row[n] = translates[i].clone();
+        rows.push(Expr::List(row.into()));
+      }
+      let mut last_row = vec![Expr::Integer(0); n + 1];
+      last_row[n] = Expr::Integer(1);
+      rows.push(Expr::List(last_row.into()));
+      let matrix = Expr::List(rows.into());
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix].into(),
+        },
+      ));
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     "RotationTransform" if args.len() == 1 || args.len() == 2 => {

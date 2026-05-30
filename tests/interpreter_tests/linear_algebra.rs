@@ -3626,4 +3626,58 @@ mod affine_transform {
       "{3, 7}"
     );
   }
+
+  #[test]
+  fn rescaling_transform_applied_to_point() {
+    // (5-0)/10 = 1/2, (5-0)/5 = 1.
+    assert_eq!(
+      interpret("RescalingTransform[{{0, 10}, {0, 5}}][{5, 5}]").unwrap(),
+      "{1/2, 1}"
+    );
+  }
+
+  #[test]
+  fn rescaling_transform_nonzero_min() {
+    assert_eq!(
+      interpret("RescalingTransform[{{1, 3}, {2, 6}, {0, 4}}][{2, 4, 1}]")
+        .unwrap(),
+      "{1/2, 1/2, 1/4}"
+    );
+  }
+
+  #[test]
+  fn rescaling_transform_builds_unit_matrix() {
+    assert_eq!(
+      interpret("RescalingTransform[{{0, 10}, {0, 5}}]").unwrap(),
+      "TransformationFunction[{{1/10, 0, 0}, {0, 1/5, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn rescaling_transform_with_target_box_matrix() {
+    assert_eq!(
+      interpret("RescalingTransform[{{0, 10}, {0, 5}}, {{2, 4}, {0, 100}}]")
+        .unwrap(),
+      "TransformationFunction[{{1/5, 0, 2}, {0, 20, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn rescaling_transform_with_target_box_applied() {
+    assert_eq!(
+      interpret(
+        "RescalingTransform[{{0, 10}, {0, 5}}, {{2, 4}, {0, 100}}][{5, 5}]"
+      )
+      .unwrap(),
+      "{3, 100}"
+    );
+  }
+
+  #[test]
+  fn rescaling_transform_real_inputs() {
+    assert_eq!(
+      interpret("RescalingTransform[{{0., 10.}, {0., 5.}}][{5, 5}]").unwrap(),
+      "{0.5, 1.}"
+    );
+  }
 }
