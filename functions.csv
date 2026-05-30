@@ -2290,7 +2290,7 @@ AnimationDirection,animation option,🚫,None,3.0,2338
 ClipPlanes,3D graphics option,🚫,None,10.0,2338
 FinancialIndicator,financial data,🚫,None,8.0,2338
 FourierCosCoefficient,symbolic Fourier integral,🚫,None,7.0,2338
-SequenceHold,evaluation control (complex),🚫,None,3.0,2338
+SequenceHold,Attribute that prevents Sequence objects in a function's arguments from being flattened/spliced,✅,None,3.0,2338
 BoundaryMesh,mesh generation,🚫,None,10.0,2344
 ImageCorrelate,image processing,🚫,None,7.0,2344
 ParameterEstimator,statistical estimation,🚫,None,8.0,2344

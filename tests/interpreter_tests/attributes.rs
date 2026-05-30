@@ -926,6 +926,14 @@ mod cases {
     );
   }
   #[test]
+  fn sequence_hold_contrast() {
+    // With SequenceHold, Sequence args are NOT spliced; without it they are.
+    assert_case(
+      r#"SetAttributes[g, SequenceHold]; {g[Sequence[1, 2]], h[Sequence[1, 2]]}"#,
+      r#"{g[Sequence[1, 2]], h[1, 2]}"#,
+    );
+  }
+  #[test]
   fn attributes_11() {
     assert_case(r#"SetAttributes[f, Flat]; Attributes[f]"#, r#"{Flat}"#);
   }
