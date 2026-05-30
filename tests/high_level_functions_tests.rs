@@ -448,6 +448,75 @@ mod high_level_functions_tests {
     }
   }
 
+  mod word_boundary_tests {
+    use super::*;
+    #[test]
+    fn test_word_boundary_basic() {
+      assert_eq!(
+        interpret(r#"StringReplace["the cat", WordBoundary -> "|"]"#).unwrap(),
+        "|the| |cat|"
+      );
+    }
+    #[test]
+    fn test_word_boundary_multiple_words() {
+      assert_eq!(
+        interpret(r#"StringReplace["the cat sat", WordBoundary -> "X"]"#)
+          .unwrap(),
+        "XtheX XcatX XsatX"
+      );
+    }
+    #[test]
+    fn test_word_boundary_single_char() {
+      assert_eq!(
+        interpret(r#"StringReplace["a", WordBoundary -> "|"]"#).unwrap(),
+        "|a|"
+      );
+    }
+    #[test]
+    fn test_word_boundary_empty_string() {
+      assert_eq!(
+        interpret(r#"StringReplace["", WordBoundary -> "|"]"#).unwrap(),
+        ""
+      );
+    }
+    #[test]
+    fn test_word_boundary_punctuation() {
+      // Digits and letters are word characters; the dot is not.
+      assert_eq!(
+        interpret(r#"StringReplace["the.cat", WordBoundary -> "|"]"#).unwrap(),
+        "|the|.|cat|"
+      );
+      assert_eq!(
+        interpret(r#"StringReplace["one2three", WordBoundary -> "|"]"#).unwrap(),
+        "|one2three|"
+      );
+    }
+    #[test]
+    fn test_word_boundary_in_string_expression() {
+      assert_eq!(
+        interpret(r#"StringReplace["foo bar", WordBoundary ~~ "b" -> "X"]"#)
+          .unwrap(),
+        "foo Xar"
+      );
+    }
+    #[test]
+    fn test_word_boundary_string_cases() {
+      assert_eq!(
+        interpret(r#"StringCases["the cat", WordBoundary ~~ LetterCharacter]"#)
+          .unwrap(),
+        "{t, c}"
+      );
+    }
+    #[test]
+    fn test_word_boundary_max_replacements() {
+      assert_eq!(
+        interpret(r#"StringReplace["the cat sat", WordBoundary -> "|", 3]"#)
+          .unwrap(),
+        "|the| |cat sat"
+      );
+    }
+  }
+
   // ─── List Functions ────────────────────────────────────────────────
   mod delete_adjacent_duplicates_tests {
     use super::*;

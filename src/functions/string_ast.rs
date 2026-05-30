@@ -944,10 +944,40 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut result = String::new();
     let mut count = 0usize;
     let mut i = 0;
+    // Try the zero-width (empty) regex matches anchored at position `pos`.
+    // Returns Some(replacement) for the first rule that matches empty there.
+    // These are assertions like WordBoundary (\b), StartOfString, etc. that
+    // consume no characters but still trigger a replacement.
+    fn zero_width_match<'a>(
+      s: &str,
+      rules: &'a [ReplaceRule],
+      pos: usize,
+    ) -> Option<&'a str> {
+      for rule in rules {
+        if let ReplaceRule::Regex { regex, replacement } = rule
+          && let Some(m) = regex.find_at(s, pos)
+          && m.start() == pos
+          && m.as_str().is_empty()
+        {
+          return Some(replacement.as_str());
+        }
+      }
+      None
+    }
     while i < s.len() {
       if max.is_some() && count >= max.unwrap() {
         result.push_str(&s[i..]);
         break;
+      }
+      // Zero-width assertion matches (e.g. WordBoundary) are emitted before
+      // the character at the current position, without consuming it.
+      if let Some(replacement) = zero_width_match(s, rules, i) {
+        result.push_str(replacement);
+        count += 1;
+        if max.is_some() && count >= max.unwrap() {
+          result.push_str(&s[i..]);
+          break;
+        }
       }
       let mut matched = false;
       for rule in rules {
@@ -1014,6 +1044,16 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let ch = s[i..].chars().next().unwrap();
         result.push(ch);
         i += ch.len_utf8();
+      }
+    }
+    // Zero-width assertions can also match at the very end of the string
+    // (e.g. WordBoundary after the final word character). The main loop
+    // stops at `i == s.len()`, so check that final position here. Honour the
+    // replacement limit so we don't exceed `max`.
+    if max.map_or(true, |m| count < m) && zero_width_match(s, rules, s.len()).is_some()
+    {
+      if let Some(replacement) = zero_width_match(s, rules, s.len()) {
+        result.push_str(replacement);
       }
     }
     Ok(result)

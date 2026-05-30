@@ -1652,7 +1652,7 @@ ContentSize,Content size option,,unevaluated,7.0,1679
 HazardFunction,Hazard function,,unevaluated,8.0,1679
 HornerForm,Converts a polynomial to Horner (nested) form,✅,pure,6.0,1682
 NExpectation,Numerical expectation,,unevaluated,8.0,1682
-WordBoundary,Word boundary pattern,,unevaluated,5.1,1682
+WordBoundary,Represents a word boundary in string patterns (like regex \b),✅,pure,5.1,1682
 Mouseover,Mouseover display,,unevaluated,6.0,1683
 AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
 LogLikelihood,Log-likelihood function,,unevaluated,8.0,1687
