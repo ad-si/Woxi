@@ -1817,6 +1817,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Ball"
     | "PlusMinus"
     | "CircleTimes"
+    | "CircleDot"
     | "Wedge"
     | "Del"
     | "Dispatch"

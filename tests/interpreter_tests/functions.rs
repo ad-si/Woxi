@@ -1544,6 +1544,50 @@ mod circle_times {
   }
 }
 
+mod circle_dot {
+  use super::*;
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("CircleDot[a, b]").unwrap(), "a \u{2299} b");
+  }
+
+  #[test]
+  fn ternary() {
+    assert_eq!(
+      interpret("CircleDot[a, b, c]").unwrap(),
+      "a \u{2299} b \u{2299} c"
+    );
+  }
+
+  #[test]
+  fn numbers() {
+    assert_eq!(interpret("CircleDot[1, 2]").unwrap(), "1 \u{2299} 2");
+  }
+
+  // Single and zero argument forms stay in function notation,
+  // matching wolframscript.
+  #[test]
+  fn single_arg_unevaluated() {
+    assert_eq!(interpret("CircleDot[a]").unwrap(), "CircleDot[a]");
+  }
+
+  #[test]
+  fn zero_args_unevaluated() {
+    assert_eq!(interpret("CircleDot[]").unwrap(), "CircleDot[]");
+  }
+
+  // A nested CircleDot argument is parenthesized:
+  // CircleDot[a, CircleDot[b, c]] -> a ⊙ (b ⊙ c)
+  #[test]
+  fn nested_parenthesized() {
+    assert_eq!(
+      interpret("CircleDot[a, CircleDot[b, c]]").unwrap(),
+      "a \u{2299} (b \u{2299} c)"
+    );
+  }
+}
+
 mod wedge {
   use super::*;
 

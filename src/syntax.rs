@@ -7096,6 +7096,27 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{2297} ");
       }
+      // CircleDot[a, b, ...] displays as a ⊙ b ⊙ ...
+      // A nested CircleDot argument is parenthesized, matching
+      // wolframscript: CircleDot[a, CircleDot[b, c]] -> a ⊙ (b ⊙ c)
+      if name == "CircleDot" && args.len() >= 2 {
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let s = fmt(a);
+            if matches!(
+              a,
+              Expr::FunctionCall { name: n, args: ia }
+                if n == "CircleDot" && ia.len() >= 2
+            ) {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect();
+        return parts.join(" \u{2299} ");
+      }
       // Wedge[a, b, ...] displays as a ∧ b ∧ ...
       if name == "Wedge" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
@@ -9848,6 +9869,26 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2297} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CircleDot" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args
+        .iter()
+        .map(|a| {
+          let s = expr_to_input_form(a);
+          if matches!(
+            a,
+            Expr::FunctionCall { name: n, args: ia }
+              if n == "CircleDot" && ia.len() >= 2
+          ) {
+            format!("({})", s)
+          } else {
+            s
+          }
+        })
+        .collect();
+      parts.join(" \u{2299} ")
     }
     Expr::FunctionCall { name, args } if name == "Wedge" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
