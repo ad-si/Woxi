@@ -3569,3 +3569,61 @@ mod euler_matrix {
     );
   }
 }
+
+mod affine_transform {
+  use super::*;
+
+  #[test]
+  fn matrix_only_builds_transformation_function() {
+    // AffineTransform[m] augments m with a zero translation column.
+    assert_eq!(
+      interpret("AffineTransform[{{1, 2}, {3, 4}}]").unwrap(),
+      "TransformationFunction[{{1, 2, 0}, {3, 4, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn matrix_and_vector_builds_transformation_function() {
+    // AffineTransform[{m, v}] puts v into the last column.
+    assert_eq!(
+      interpret("AffineTransform[{{{1, 2}, {3, 4}}, {5, 6}}]").unwrap(),
+      "TransformationFunction[{{1, 2, 5}, {3, 4, 6}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn three_by_three_matrix() {
+    assert_eq!(
+      interpret("AffineTransform[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "TransformationFunction[\
+       {{1, 2, 3, 0}, {4, 5, 6, 0}, {7, 8, 9, 0}, {0, 0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn identity_with_translation_applied_to_origin() {
+    // AffineTransform[{I, v}] applied to the origin yields v.
+    assert_eq!(
+      interpret("AffineTransform[{{{1, 0}, {0, 1}}, {2, 3}}][{0, 0}]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn applied_to_point_computes_m_dot_p_plus_v() {
+    // {{2,0},{0,3}}.{4,5} + {1,1} = {8,15} + {1,1} = {9,16}
+    assert_eq!(
+      interpret("AffineTransform[{{{2, 0}, {0, 3}}, {1, 1}}][{4, 5}]").unwrap(),
+      "{9, 16}"
+    );
+  }
+
+  #[test]
+  fn matrix_only_applied_to_point() {
+    // {{1,2},{3,4}}.{1,1} = {3, 7}
+    assert_eq!(
+      interpret("AffineTransform[{{1, 2}, {3, 4}}][{1, 1}]").unwrap(),
+      "{3, 7}"
+    );
+  }
+}

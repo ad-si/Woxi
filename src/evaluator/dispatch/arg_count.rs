@@ -12,6 +12,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Activate" => Some((1, 2)),
     "AddSides" => Some((2, 2)),
     "Adjugate" => Some((1, 1)),
+    "AffineTransform" => Some((1, 1)),
     "AiryAi" => Some((1, 1)),
     "AiryAiPrime" => Some((1, 1)),
     "AiryAiZero" => Some((1, 1)),

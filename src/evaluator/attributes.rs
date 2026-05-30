@@ -286,6 +286,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GeneratingFunction"
     | "ExponentialGeneratingFunction"
     | "ScalingTransform"
+    | "AffineTransform"
     | "NetGraph"
     | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]

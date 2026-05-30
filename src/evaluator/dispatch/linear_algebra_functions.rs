@@ -1011,6 +1011,83 @@ pub fn dispatch_linear_algebra_functions(
         });
       return Some(evaluated);
     }
+    // AffineTransform[m] or AffineTransform[{m, v}] →
+    //   TransformationFunction[ (n+1)x(n+1) augmented matrix ]
+    // where the top-left nxn block is m, the first n entries of the last
+    // column are the translation vector v (default zero), and the last row
+    // is {0, ..., 0, 1}. Applied to a point p it computes m.p + v.
+    "AffineTransform" if args.len() == 1 => {
+      // Helper: is `e` a matrix (list of lists)?
+      fn is_matrix(e: &Expr) -> bool {
+        matches!(e, Expr::List(rows)
+          if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))))
+      }
+      // Helper: is `e` a flat vector (list of non-lists)?
+      fn is_vector(e: &Expr) -> bool {
+        matches!(e, Expr::List(items)
+          if items.iter().all(|i| !matches!(i, Expr::List(_))))
+      }
+
+      // Determine the matrix m and optional translation vector v.
+      let (m_rows, v_opt): (&[Expr], Option<&[Expr]>) = match &args[0] {
+        // {m, v} form: 2-element list, first a matrix, second a vector.
+        Expr::List(outer)
+          if outer.len() == 2
+            && is_matrix(&outer[0])
+            && is_vector(&outer[1]) =>
+        {
+          if let (Expr::List(m), Expr::List(v)) = (&outer[0], &outer[1]) {
+            (m.as_ref(), Some(v.as_ref()))
+          } else {
+            unreachable!()
+          }
+        }
+        // Plain matrix m form.
+        Expr::List(m) if is_matrix(&args[0]) => (m.as_ref(), None),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "AffineTransform".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      };
+
+      let n = m_rows.len();
+      // Validate that m is square (n x n) and v (if present) has length n.
+      let m_ok = m_rows.iter().all(|r| matches!(r, Expr::List(c) if c.len() == n));
+      let v_ok = v_opt.map(|v| v.len() == n).unwrap_or(true);
+      if !m_ok || !v_ok {
+        return Some(Ok(Expr::FunctionCall {
+          name: "AffineTransform".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+
+      // Build the (n+1)x(n+1) augmented matrix.
+      let mut rows = Vec::with_capacity(n + 1);
+      for i in 0..n {
+        let mut row = match &m_rows[i] {
+          Expr::List(c) => c.to_vec(),
+          _ => unreachable!(),
+        };
+        // Append the translation entry for this row (default 0).
+        let t = v_opt
+          .map(|v| v[i].clone())
+          .unwrap_or(Expr::Integer(0));
+        row.push(t);
+        rows.push(Expr::List(row.into()));
+      }
+      let mut last_row = vec![Expr::Integer(0); n + 1];
+      last_row[n] = Expr::Integer(1);
+      rows.push(Expr::List(last_row.into()));
+      let matrix = Expr::List(rows.into());
+      let evaluated =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix].into(),
+        });
+      return Some(evaluated);
+    }
     // ScalingTransform[{s1, s2, ...}] or ScalingTransform[{s1, s2, ...}, {c1, c2, ...}]
     "ScalingTransform" if args.len() == 1 || args.len() == 2 => {
       if let Expr::List(scales) = &args[0] {

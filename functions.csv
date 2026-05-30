@@ -1604,7 +1604,7 @@ ImageIdentify,Identify objects in images,,unevaluated,10.1,1629
 DiscreteDelta,Discrete delta function,✅,computation,4.0,1632
 LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7.0,1632
 WindowMargins,Window margin specification,,unevaluated,3.0,1632
-AffineTransform,Affine geometric transformation,,unevaluated,6.0,1633
+AffineTransform,Build a TransformationFunction for an affine map x -> m.x + v,✅,none,6.0,1633
 CellGroupData,,🚫,,3.0,1635
 RadioButton,Radio button control,,unevaluated,6.0,1635
 LegendMarkers,Legend marker specification,,unevaluated,9.0,1637
