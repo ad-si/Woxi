@@ -501,6 +501,7 @@
       - [`Cartesian`](math/linear_algebra/Cartesian.md)
       - [`CellularAutomaton`](math/linear_algebra/CellularAutomaton.md)
       - [`CharacteristicPolynomial`](math/linear_algebra/CharacteristicPolynomial.md)
+      - [`CholeskyDecomposition`](math/linear_algebra/CholeskyDecomposition.md)
       - [`ConjugateTranspose`](math/linear_algebra/ConjugateTranspose.md)
       - [`Coordinates`](math/linear_algebra/Coordinates.md)
       - [`CoordinatesFromCartesian`](math/linear_algebra/CoordinatesFromCartesian.md)

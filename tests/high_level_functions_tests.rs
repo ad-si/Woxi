@@ -3676,4 +3676,84 @@ mod high_level_functions_tests {
       let _ = std::fs::remove_file(&path);
     }
   }
+
+  mod cholesky_decomposition_tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_integer() {
+      // A = U^*.U with U upper triangular; exact integer result.
+      assert_eq!(
+        interpret("CholeskyDecomposition[{{4,2},{2,2}}]").unwrap(),
+        "{{2, 1}, {0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_radical_diagonal() {
+      assert_eq!(
+        interpret("CholeskyDecomposition[{{4,2},{2,3}}]").unwrap(),
+        "{{2, 1}, {0, Sqrt[2]}}"
+      );
+    }
+
+    #[test]
+    fn test_three_by_three_integer() {
+      assert_eq!(
+        interpret(
+          "CholeskyDecomposition[{{25,15,-5},{15,18,0},{-5,0,11}}]"
+        )
+        .unwrap(),
+        "{{5, 3, -1}, {0, 3, 1}, {0, 0, 3}}"
+      );
+    }
+
+    #[test]
+    fn test_four_by_four_radicals() {
+      assert_eq!(
+        interpret(
+          "CholeskyDecomposition[{{6,3,4,8},{3,6,5,1},{4,5,10,7},{8,1,7,25}}]"
+        )
+        .unwrap(),
+        "{{Sqrt[6], Sqrt[3/2], 2*Sqrt[2/3], 4*Sqrt[2/3]}, \
+         {0, 3/Sqrt[2], Sqrt[2], -Sqrt[2]}, \
+         {0, 0, 4/Sqrt[3], 11/(4*Sqrt[3])}, \
+         {0, 0, 0, Sqrt[157]/4}}"
+      );
+    }
+
+    #[test]
+    fn test_numeric_real_zero_below_diagonal() {
+      // Machine-precision input: the strictly-lower zero is `0.`.
+      assert_eq!(
+        interpret("CholeskyDecomposition[{{2.0,1.0},{1.0,2.0}}]").unwrap(),
+        "{{1.4142135623730951, 0.7071067811865475}, {0., 1.224744871391589}}"
+      );
+    }
+
+    #[test]
+    fn test_one_by_one() {
+      assert_eq!(
+        interpret("CholeskyDecomposition[{{2}}]").unwrap(),
+        "{{Sqrt[2]}}"
+      );
+    }
+
+    #[test]
+    fn test_not_positive_definite_returns_unevaluated() {
+      // wolframscript emits npdef and returns the expression unevaluated.
+      assert_eq!(
+        interpret("CholeskyDecomposition[{{1,2},{2,1}}]").unwrap(),
+        "CholeskyDecomposition[{{1, 2}, {2, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_non_square_returns_unevaluated() {
+      assert_eq!(
+        interpret("CholeskyDecomposition[{{1,2,3},{4,5,6}}]").unwrap(),
+        "CholeskyDecomposition[{{1, 2, 3}, {4, 5, 6}}]"
+      );
+    }
+  }
 }

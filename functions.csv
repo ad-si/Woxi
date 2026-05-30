@@ -2026,7 +2026,7 @@ Atom,Basic building block,🚫,,12.0,2065
 InverseSeries,Symbol for computing inverse of a power series,✅,pure,1.0,2065
 RootMeanSquare,Returns the root mean square of a list,✅,pure,6.0,2065
 SquareMatrixQ,Test if an expression is a square matrix,✅,none,10.0,2065
-CholeskyDecomposition,Cholesky factorization of positive-definite matrix,🚫,,5.0,2067
+CholeskyDecomposition,Returns the upper-triangular Cholesky factor U of a Hermitian positive-definite matrix such that ConjugateTranspose[U].U equals the input,✅,None,5.0,2067
 IntegerReverse,Reverses the digits of an integer,✅,pure,10.3,2067
 ColorDistance,Distance between colors,🚫,,10.0,2071
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071

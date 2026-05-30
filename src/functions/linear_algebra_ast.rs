@@ -4780,6 +4780,103 @@ pub fn fitted_model_normal(
 }
 
 /// QRDecomposition[m] - returns {Q^T, R} where m = Q^T . R
+/// `CholeskyDecomposition[A]` — Cholesky factorization of a Hermitian
+/// positive-definite matrix `A`, returning the upper-triangular `U` such
+/// that `A == ConjugateTranspose[U].U`. Works symbolically over exact
+/// numbers (radicals kept as `Sqrt[...]`) and numerically over reals.
+pub fn cholesky_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  let unevaluated = || Expr::FunctionCall {
+    name: "CholeskyDecomposition".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      crate::emit_message(&format!(
+        "CholeskyDecomposition::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated());
+    }
+  };
+
+  let n = matrix.len();
+  if n == 0 || matrix.iter().any(|row| row.len() != n) {
+    crate::emit_message(&format!(
+      "CholeskyDecomposition::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  }
+
+  // U is upper triangular; A = U^* . U, so for j <= i:
+  //   U[j][j] = Sqrt(A[j][j] - sum_{k<j} U[k][j]^2)
+  //   U[j][i] = (A[j][i] - sum_{k<j} U[k][j] U[k][i]) / U[j][j]   (i > j)
+  // For a machine-precision (Real) matrix the strictly-lower zeros are the
+  // machine zero `0.`, matching wolframscript; otherwise they are exact 0.
+  let is_real = matrix
+    .iter()
+    .any(|row| row.iter().any(|e| matches!(e, Expr::Real(_))));
+  let zero = if is_real {
+    Expr::Real(0.0)
+  } else {
+    Expr::Integer(0)
+  };
+  let mut u = vec![vec![zero; n]; n];
+
+  for j in 0..n {
+    // Diagonal: radicand = A[j][j] - sum_{k<j} U[k][j]^2
+    let mut radicand = matrix[j][j].clone();
+    for k in 0..j {
+      let sq = eval_mul(&u[k][j], &u[k][j]);
+      radicand = eval_sub(&radicand, &sq);
+    }
+    let radicand = eval_expr(&radicand)?;
+
+    // Reject non-positive-definite matrices: the diagonal radicand must
+    // be a positive number.
+    if let Some(v) = try_eval_to_f64(&radicand) {
+      if v <= 0.0 {
+        crate::emit_message(&format!(
+          "CholeskyDecomposition::npdef: The matrix {} is not positive definite.",
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Ok(unevaluated());
+      }
+    }
+
+    let diag = eval_expr(&make_sqrt(radicand))?;
+    u[j][j] = diag.clone();
+
+    // Off-diagonal entries in row j to the right of the diagonal.
+    for i in (j + 1)..n {
+      let mut numer = matrix[j][i].clone();
+      for k in 0..j {
+        let prod = eval_mul(&u[k][j], &u[k][i]);
+        numer = eval_sub(&numer, &prod);
+      }
+      let entry = eval_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(numer),
+        right: Box::new(diag.clone()),
+      })?;
+      u[j][i] = entry;
+    }
+  }
+
+  let result = Expr::List(
+    u.iter()
+      .map(|row| Expr::List(row.iter().map(simplify_radical_factor).collect()))
+      .collect(),
+  );
+  Ok(result)
+}
+
 pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::syntax::BinaryOperator;
 

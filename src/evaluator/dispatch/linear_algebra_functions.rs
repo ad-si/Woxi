@@ -1315,6 +1315,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "CholeskyDecomposition" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::cholesky_decomposition_ast(args),
+      );
+    }
     "SingularValueDecomposition" if args.len() == 1 => {
       return Some(
         crate::functions::linear_algebra_ast::singular_value_decomposition_ast(
