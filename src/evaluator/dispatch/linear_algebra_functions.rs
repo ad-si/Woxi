@@ -24,6 +24,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "DistanceMatrix" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::list_helpers_ast::distance_matrix_ast(
+        args,
+      ));
+    }
     "LinearSolve" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::linear_solve_ast(
         args,

@@ -1837,4 +1837,45 @@ mod list_tests {
       "{2, 1, 4, 5, 3}"
     );
   }
+
+  #[test]
+  fn distance_matrix() {
+    // Default EuclideanDistance: symmetric matrix with zero diagonal.
+    assert_eq!(
+      interpret("DistanceMatrix[{{0, 0}, {3, 0}, {0, 4}}]").unwrap(),
+      "{{0, 3, 4}, {3, 0, 5}, {4, 5, 0}}"
+    );
+    // Symbolic Euclidean distances are kept exact.
+    assert_eq!(
+      interpret("DistanceMatrix[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]").unwrap(),
+      "{{0, 2*Sqrt[2], 4*Sqrt[2], 6*Sqrt[2]}, \
+{2*Sqrt[2], 0, 2*Sqrt[2], 4*Sqrt[2]}, \
+{4*Sqrt[2], 2*Sqrt[2], 0, 2*Sqrt[2]}, \
+{6*Sqrt[2], 4*Sqrt[2], 2*Sqrt[2], 0}}"
+    );
+    // One-dimensional points.
+    assert_eq!(
+      interpret("DistanceMatrix[{{1}, {4}, {9}}]").unwrap(),
+      "{{0, 3, 8}, {3, 0, 5}, {8, 5, 0}}"
+    );
+    // Single point.
+    assert_eq!(interpret("DistanceMatrix[{{0, 0}}]").unwrap(), "{{0}}");
+    // DistanceFunction option.
+    assert_eq!(
+      interpret(
+        "DistanceMatrix[{{0, 0}, {3, 0}, {0, 4}}, \
+         DistanceFunction -> ManhattanDistance]"
+      )
+      .unwrap(),
+      "{{0, 3, 4}, {3, 0, 7}, {4, 7, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "DistanceMatrix[{{1, 2}, {3, 4}}, \
+         DistanceFunction -> SquaredEuclideanDistance]"
+      )
+      .unwrap(),
+      "{{0, 8}, {8, 0}}"
+    );
+  }
 }

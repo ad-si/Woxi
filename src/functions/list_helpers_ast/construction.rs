@@ -2409,3 +2409,67 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result.into_iter().map(wrap).collect()))
 }
+
+/// DistanceMatrix[{v1, v2, ...}] - matrix of pairwise distances.
+///
+/// Returns a symmetric matrix with a zero diagonal where entry (i, j) is the
+/// distance between vi and vj. The default distance is EuclideanDistance.
+/// An optional `DistanceFunction -> f` rule selects a different distance
+/// function (e.g. ManhattanDistance, SquaredEuclideanDistance, or any binary
+/// function f).
+pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Return the unevaluated form for any argument shape that DistanceMatrix
+  // cannot process (matching wolframscript, which leaves it symbolic).
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DistanceMatrix".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+
+  let points = match &args[0] {
+    Expr::List(items) => items.clone(),
+    _ => return unevaluated(),
+  };
+
+  // Determine the distance function: default EuclideanDistance, or the
+  // replacement of an optional `DistanceFunction -> f` rule.
+  let mut dist_fn = Expr::Identifier("EuclideanDistance".to_string());
+  if let Some(opt) = args.get(1) {
+    match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(
+        pattern.as_ref(),
+        Expr::Identifier(name) if name == "DistanceFunction"
+      ) =>
+      {
+        dist_fn = (**replacement).clone();
+      }
+      _ => return unevaluated(),
+    }
+  }
+
+  let n = points.len();
+  let mut rows: Vec<Expr> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row: Vec<Expr> = Vec::with_capacity(n);
+    for j in 0..n {
+      if i == j {
+        row.push(Expr::Integer(0));
+        continue;
+      }
+      let dist =
+        apply_func_to_two_args(&dist_fn, &points[i], &points[j])?;
+      row.push(dist);
+    }
+    rows.push(Expr::List(row.into()));
+  }
+
+  Ok(Expr::List(rows.into()))
+}

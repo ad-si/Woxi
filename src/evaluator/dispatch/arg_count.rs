@@ -325,6 +325,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "InverseErf" => Some((1, 1)),
     "InverseErfc" => Some((1, 1)),
     "EuclideanDistance" => Some((2, 2)),
+    "DistanceMatrix" => Some((1, 2)),
     "EulerAngles" => Some((1, 1)),
     "EulerE" => Some((1, 2)),
     "EulerMatrix" => Some((1, 2)),
