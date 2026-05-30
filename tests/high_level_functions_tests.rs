@@ -3756,4 +3756,80 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod shearing_transform_tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_2d() {
+      // ShearingTransform[Pi/4, {1,0}, {0,1}] → unit horizontal shear.
+      assert_eq!(
+        interpret("ShearingTransform[Pi/4, {1,0}, {0,1}]").unwrap(),
+        "TransformationFunction[{{1, 1, 0}, {0, 1, 0}, {0, 0, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_apply_to_point() {
+      // Applying the shear maps {2,3} → {2 + 3, 3} = {5, 3}.
+      assert_eq!(
+        interpret("ShearingTransform[Pi/4, {1,0}, {0,1}][{2,3}]").unwrap(),
+        "{5, 3}"
+      );
+    }
+
+    #[test]
+    fn test_direction_is_normalized() {
+      // Non-unit direction/normal vectors are normalized: same as {1,0},{0,1}.
+      assert_eq!(
+        interpret("ShearingTransform[Pi/4, {2,0}, {0,3}]").unwrap(),
+        "TransformationFunction[{{1, 1, 0}, {0, 1, 0}, {0, 0, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_perpendicular_direction_and_normal() {
+      // e={1,1}, n={1,-1} are perpendicular; both normalized by Sqrt[2].
+      assert_eq!(
+        interpret("ShearingTransform[Pi/4, {1,1}, {1,-1}]").unwrap(),
+        "TransformationFunction[{{3/2, -1/2, 0}, {1/2, 1/2, 0}, {0, 0, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_only_perpendicular_component_used() {
+      // e={3,4} has a component along n={0,1}; only the perpendicular part
+      // ({3,0}→{1,0}) drives the shear, giving Tan[Pi/6] = 1/Sqrt[3].
+      assert_eq!(
+        interpret("ShearingTransform[Pi/6, {3,4}, {0,1}]").unwrap(),
+        "TransformationFunction[{{1, 1/Sqrt[3], 0}, {0, 1, 0}, {0, 0, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_3d() {
+      assert_eq!(
+        interpret("ShearingTransform[Pi/3, {1,2,0}, {0,0,1}]").unwrap(),
+        "TransformationFunction[{{1, 0, Sqrt[3/5], 0}, \
+         {0, 1, 2*Sqrt[3/5], 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_symbolic_angle() {
+      assert_eq!(
+        interpret("ShearingTransform[t, {1,0}, {0,1}]").unwrap(),
+        "TransformationFunction[{{1, Tan[t], 0}, {0, 1, 0}, {0, 0, 1}}]"
+      );
+    }
+
+    #[test]
+    fn test_inexact_input_promotes_matrix() {
+      assert_eq!(
+        interpret("ShearingTransform[0.5, {1,0}, {0,1}]").unwrap(),
+        "TransformationFunction[{{1., 0.5463024898437905, 0.}, \
+         {0., 1., 0.}, {0., 0., 1.}}]"
+      );
+    }
+  }
 }

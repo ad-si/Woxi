@@ -2165,7 +2165,7 @@ ImageFilter,Applies a filter function to an image,🚫,None,7.0,2205
 LightBrown,Named light color evaluating to RGBColor[0.94 0.91 0.88],✅,pure,6.0,2205
 DropoutLayer,Represents a dropout layer in a neural network,🚫,None,11.0,2208
 RegionQ,Geometric region predicate,🚫,None,10.0,2208
-ShearingTransform,Returns TransformationFunction wrapper,🚫,None,6.0,2208
+ShearingTransform,Represent a shear transformation by an angle along a direction relative to a normal,✅,pure,6.0,2208
 ComplexContourPlot,Visualization,🚫,None,12.1,2210
 GreenFunction,Differential equation Green's function,🚫,None,10.4,2210
 ContinuedFractionK,Evaluates a generalized continued fraction,✅,None,7.0,2212

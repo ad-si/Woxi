@@ -70,6 +70,7 @@ normalised to `##` in this file.
 - [`ScalingMatrix`](linear_algebra/ScalingMatrix.md)
 - [`ScalingTransform`](linear_algebra/ScalingTransform.md)
 - [`SetCoordinates`](linear_algebra/SetCoordinates.md)
+- [`ShearingTransform`](linear_algebra/ShearingTransform.md)
 - [`SmithDecomposition`](linear_algebra/SmithDecomposition.md)
 - [`SymmetricMatrixQ`](linear_algebra/SymmetricMatrixQ.md)
 - [`Symmetrize`](linear_algebra/Symmetrize.md)

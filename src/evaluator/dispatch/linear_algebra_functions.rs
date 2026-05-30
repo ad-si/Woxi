@@ -1258,6 +1258,145 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec().into(),
       }));
     }
+    // ShearingTransform[phi, e, n] → TransformationFunction[ homogeneous shear ]
+    // A point x is mapped to x + Tan[phi] (nhat·x) ep, where nhat = n/Norm[n]
+    // is the unit normal and ep is the unit vector along the component of the
+    // direction e perpendicular to n (i.e. e with its n-component removed,
+    // then normalized). The shear matrix is therefore I + Tan[phi] (ep ⊗ nhat),
+    // augmented to an (d+1)x(d+1) homogeneous matrix.
+    "ShearingTransform" if args.len() == 3 => {
+      if let (Expr::List(e), Expr::List(n)) = (&args[1], &args[2])
+        && e.len() == n.len()
+        && !e.is_empty()
+      {
+        let phi = &args[0];
+        let d = e.len();
+        // Norm[v] = Sqrt[Plus @@ (v^2)]
+        let norm = |v: &[Expr]| -> Expr {
+          let squares: Vec<Expr> = v
+            .iter()
+            .map(|c| Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![c.clone(), Expr::Integer(2)].into(),
+            })
+            .collect();
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: squares.into(),
+            }]
+            .into(),
+          }
+        };
+        let times = |factors: Vec<Expr>| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors.into(),
+        };
+        let recip = |x: Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![x, Expr::Integer(-1)].into(),
+        };
+        // nhat = n / Norm[n]
+        let norm_n = norm(n);
+        let nhat: Vec<Expr> = n
+          .iter()
+          .map(|c| times(vec![c.clone(), recip(norm_n.clone())]))
+          .collect();
+        // e·nhat
+        let e_dot_nhat = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: e
+            .iter()
+            .zip(nhat.iter())
+            .map(|(ei, ni)| times(vec![ei.clone(), ni.clone()]))
+            .collect::<Vec<_>>()
+            .into(),
+        };
+        // eperp = e - (e·nhat) nhat ; ep = eperp / Norm[eperp]
+        let eperp: Vec<Expr> = e
+          .iter()
+          .zip(nhat.iter())
+          .map(|(ei, ni)| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              ei.clone(),
+              times(vec![
+                Expr::Integer(-1),
+                e_dot_nhat.clone(),
+                ni.clone(),
+              ]),
+            ]
+            .into(),
+          })
+          .collect();
+        let norm_eperp = norm(&eperp);
+        let ep: Vec<Expr> = eperp
+          .iter()
+          .map(|c| times(vec![c.clone(), recip(norm_eperp.clone())]))
+          .collect();
+        let tan_phi = Expr::FunctionCall {
+          name: "Tan".to_string(),
+          args: vec![phi.clone()].into(),
+        };
+        // Build (d+1)x(d+1) homogeneous matrix.
+        let mut rows = Vec::with_capacity(d + 1);
+        for i in 0..d {
+          let mut row = Vec::with_capacity(d + 1);
+          for j in 0..d {
+            // off[i][j] = Tan[phi] * ep[i] * nhat[j]
+            let off =
+              times(vec![tan_phi.clone(), ep[i].clone(), nhat[j].clone()]);
+            let entry = if i == j {
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![Expr::Integer(1), off].into(),
+              }
+            } else {
+              off
+            };
+            // Simplify so that e.g. 1 + (-1/2) collapses to 1/2 (matching
+            // Wolfram), while symbolic forms like Sqrt[3/5] are preserved.
+            row.push(Expr::FunctionCall {
+              name: "Simplify".to_string(),
+              args: vec![entry].into(),
+            });
+          }
+          row.push(Expr::Integer(0)); // zero translation column
+          rows.push(Expr::List(row.into()));
+        }
+        let mut last_row = vec![Expr::Integer(0); d + 1];
+        last_row[d] = Expr::Integer(1);
+        rows.push(Expr::List(last_row.into()));
+        let mut matrix = Expr::List(rows.into());
+        // If any input is inexact (contains a Real), the whole matrix is
+        // numeric in Wolfram — promote every entry to machine precision.
+        fn is_inexact(e: &Expr) -> bool {
+          match e {
+            Expr::Real(_) | Expr::BigFloat(_, _) => true,
+            Expr::List(items) => items.iter().any(is_inexact),
+            Expr::FunctionCall { args, .. } => args.iter().any(is_inexact),
+            _ => false,
+          }
+        }
+        if args.iter().any(is_inexact) {
+          matrix = Expr::FunctionCall {
+            name: "N".to_string(),
+            args: vec![matrix].into(),
+          };
+        }
+        let evaluated =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "TransformationFunction".to_string(),
+            args: vec![matrix].into(),
+          });
+        return Some(evaluated);
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "ShearingTransform".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "Adjugate" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
