@@ -854,6 +854,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RandomDate" => Some((0, 1)),
     "RandomGraph" => Some((1, usize::MAX)),
     "RandomImage" => Some((0, 2)),
+    "RandomPermutation" => Some((1, 2)),
     "RandomSample" => Some((1, 2)),
     "RandomVariate" => Some((1, 2)),
     "Range" => Some((1, 3)),

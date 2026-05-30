@@ -1878,4 +1878,47 @@ mod list_tests {
       "{{0, 8}, {8, 0}}"
     );
   }
+
+  #[test]
+  fn test_random_permutation() {
+    // Head is always Cycles, regardless of the drawn permutation.
+    assert_eq!(interpret("Head[RandomPermutation[6]]").unwrap(), "Cycles");
+
+    // n = 0 and n = 1 have only the identity permutation.
+    assert_eq!(interpret("RandomPermutation[0]").unwrap(), "Cycles[{}]");
+    assert_eq!(interpret("RandomPermutation[1]").unwrap(), "Cycles[{}]");
+
+    // n = 2 has exactly two permutations: identity Cycles[{}] and the swap.
+    let p2 = interpret("RandomPermutation[2]").unwrap();
+    assert!(
+      p2 == "Cycles[{}]" || p2 == "Cycles[{{1, 2}}]",
+      "unexpected RandomPermutation[2]: {p2}"
+    );
+
+    // {n} is equivalent to n.
+    assert_eq!(interpret("Head[RandomPermutation[{4}]]").unwrap(), "Cycles");
+
+    // The result is always a valid permutation of 1..n (its list form,
+    // padded to length n, sorts back to 1..n).
+    assert_eq!(
+      interpret("Sort[PermutationList[RandomPermutation[8], 8]]").unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8}"
+    );
+    assert_eq!(
+      interpret("PermutationListQ[PermutationList[RandomPermutation[7], 7]]")
+        .unwrap(),
+      "True"
+    );
+
+    // RandomPermutation[n, k] returns a length-k list of Cycles objects.
+    assert_eq!(
+      interpret("Length[RandomPermutation[5, 3]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Map[Head, RandomPermutation[5, 3]]").unwrap(),
+      "{Cycles, Cycles, Cycles}"
+    );
+    assert_eq!(interpret("RandomPermutation[4, 0]").unwrap(), "{}");
+  }
 }

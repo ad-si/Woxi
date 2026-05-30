@@ -883,6 +883,103 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Build a single random permutation of the points `1..=n` (via a
+/// Fisher–Yates shuffle) and return it in canonical `Cycles[{...}]` form:
+/// fixed points are dropped, each cycle is rotated to start with its
+/// smallest element, and cycles are sorted by that first element.
+fn random_permutation_cycles(n: usize) -> Expr {
+  use rand::seq::SliceRandom;
+
+  // perm[i] is the image of point (i + 1) under the permutation.
+  let mut perm: Vec<usize> = (1..=n).collect();
+  crate::with_rng(|rng| perm.shuffle(rng));
+
+  // Decompose the permutation into disjoint cycles.
+  let mut visited = vec![false; n + 1];
+  let mut cycles: Vec<Vec<i128>> = Vec::new();
+  for start in 1..=n {
+    if visited[start] || perm[start - 1] == start {
+      visited[start] = true;
+      continue;
+    }
+    let mut cycle: Vec<i128> = Vec::new();
+    let mut j = start;
+    while !visited[j] {
+      visited[j] = true;
+      cycle.push(j as i128);
+      j = perm[j - 1];
+    }
+    if cycle.len() >= 2 {
+      // Rotate so the smallest element comes first.
+      let (min_idx, _) =
+        cycle.iter().enumerate().min_by_key(|(_, v)| **v).unwrap();
+      let mut rotated = cycle[min_idx..].to_vec();
+      rotated.extend_from_slice(&cycle[..min_idx]);
+      cycles.push(rotated);
+    }
+  }
+  // Sort cycles by their first element.
+  cycles.sort_by_key(|c| c[0]);
+
+  let cycle_exprs: Vec<Expr> = cycles
+    .into_iter()
+    .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into()))
+    .collect();
+  Expr::FunctionCall {
+    name: "Cycles".to_string(),
+    args: vec![Expr::List(cycle_exprs.into())].into(),
+  }
+}
+
+/// RandomPermutation[n] — a random permutation of `n` points as a `Cycles`
+/// object. RandomPermutation[n, k] — a list of `k` such permutations.
+/// RandomPermutation[{n}, ...] is equivalent to RandomPermutation[n, ...].
+pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RandomPermutation expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // First argument: number of points. Accept `n` or `{n}`.
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    Expr::List(items) if items.len() == 1 => match &items[0] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "RandomPermutation".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    },
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RandomPermutation".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  match args.len() {
+    1 => Ok(random_permutation_cycles(n)),
+    _ => {
+      let k = match &args[1] {
+        Expr::Integer(k) if *k >= 0 => *k as usize,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "RandomPermutation".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      };
+      let perms: Vec<Expr> =
+        (0..k).map(|_| random_permutation_cycles(n)).collect();
+      Ok(Expr::List(perms.into()))
+    }
+  }
+}
+
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

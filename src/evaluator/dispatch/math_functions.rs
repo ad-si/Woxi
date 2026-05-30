@@ -1094,6 +1094,9 @@ pub fn dispatch_math_functions(
     "RandomSample" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_sample_ast(args));
     }
+    "RandomPermutation" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::math_ast::random_permutation_ast(args));
+    }
     "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_variate_ast(args));
     }
