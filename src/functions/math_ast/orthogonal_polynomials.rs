@@ -3418,3 +3418,286 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     _ => expr.clone(),
   }
 }
+
+/// ZernikeR[n, m, x] - radial Zernike polynomial R_n^m(x).
+///
+/// Defined for non-negative integers n, m. When (n - m) is odd or n < m
+/// the polynomial is identically zero. Otherwise
+///   R_n^m(x) = Sum_{k=0}^{(n-m)/2}
+///       (-1)^k (n-k)! /
+///         (k! * ((n+m)/2 - k)! * ((n-m)/2 - k)!) * x^(n-2k).
+/// For symbolic x wolframscript returns the form x^m * (poly in x^2);
+/// for numeric x the polynomial is evaluated exactly (rational) or as a
+/// machine-precision real.
+pub fn zernike_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ZernikeR expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let (n, m) = match (&args[0], &args[1]) {
+    (Expr::Integer(n), Expr::Integer(m)) if *n >= 0 && *m >= 0 => {
+      (*n as i128, *m as i128)
+    }
+    // Negative / non-integer orders are left unevaluated by wolframscript.
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ZernikeR".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  // (n - m) odd or n < m  =>  identically zero (R_n^m == 0).
+  if n < m || (n - m) % 2 != 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Coefficients as (power, integer-coefficient) for the *full* polynomial
+  // Sum c_k x^(n-2k). Returns None on i128 overflow so we stay symbolic.
+  let coeffs = match zernike_r_coefficients(n, m) {
+    Some(c) => c,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "ZernikeR".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  match &args[2] {
+    Expr::Integer(x) => Ok(zernike_eval_rational(&coeffs, (*x, 1))),
+    Expr::FunctionCall { name, args: ra }
+      if name == "Rational" && ra.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
+        Ok(zernike_eval_rational(&coeffs, (*p, *q)))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "ZernikeR".to_string(),
+          args: args.to_vec().into(),
+        })
+      }
+    }
+    Expr::Real(f) => Ok(Expr::Real(zernike_eval_f64(&coeffs, *f))),
+    other => Ok(zernike_r_polynomial_symbolic(&coeffs, m, other)),
+  }
+}
+
+/// Coefficients of R_n^m(x) as (power, integer coefficient) pairs ordered by
+/// ascending power (lowest power = m, step 2). Returns None on overflow.
+fn zernike_r_coefficients(n: i128, m: i128) -> Option<Vec<(i128, i128)>> {
+  let s = (n - m) / 2; // number of terms minus one
+  // c_0 corresponds to power n (k = 0); recurrence:
+  //   c_k = c_{k-1} * (-1) * ((n+m)/2 - k + 1) * ((n-m)/2 - k + 1)
+  //                  / ((n - k + 1) * k)
+  // c_0 = n! / (((n+m)/2)! * ((n-m)/2)!) = C(n, (n-m)/2) * C((n+m)/2, ...)
+  // Compute c_0 = multinomial n! / (a! b!) with a=(n+m)/2, b=(n-m)/2.
+  let a = (n + m) / 2;
+  let b = (n - m) / 2;
+  let mut c0 = zernike_multinomial(n, a, b)?;
+
+  let mut out: Vec<(i128, i128)> = Vec::with_capacity((s + 1) as usize);
+  // k = 0 term: power n.
+  out.push((n, c0));
+  let mut prev = c0;
+  for k in 1..=s {
+    // numerator factors
+    let num = prev
+      .checked_mul(a - k + 1)?
+      .checked_mul(b - k + 1)?
+      .checked_neg()?;
+    let den = (n - k + 1).checked_mul(k)?;
+    // Result is guaranteed integer.
+    c0 = num.checked_div(den)?;
+    out.push((n - 2 * k, c0));
+    prev = c0;
+  }
+  // Return ascending power order (lowest first).
+  out.reverse();
+  Some(out)
+}
+
+/// n! / (a! * b!) for non-negative a, b with a + b = n. Integer result via
+/// incremental product to limit overflow. Returns None on i128 overflow.
+fn zernike_multinomial(n: i128, a: i128, b: i128) -> Option<i128> {
+  // n! / (a! b!) = C(n, a) * (n - a)! / b!  = C(n, a) since b = n - a.
+  // a + b == n here, so this is just the binomial coefficient C(n, a).
+  let _ = b;
+  let k = a.min(n - a);
+  let mut result: i128 = 1;
+  for i in 0..k {
+    result = result.checked_mul(n - i)?;
+    result = result.checked_div(i + 1)?;
+  }
+  Some(result)
+}
+
+/// Evaluate Sum c_k x^power at rational x = p/q, returning an exact Expr.
+fn zernike_eval_rational(coeffs: &[(i128, i128)], x: (i128, i128)) -> Expr {
+  let (xp, xq) = x;
+  // Accumulate as a single rational num/den.
+  let mut acc_n: i128 = 0;
+  let mut acc_d: i128 = 1;
+  let mut overflow = false;
+  for (power, coeff) in coeffs {
+    // term = coeff * (xp/xq)^power = coeff * xp^power / xq^power
+    let tn = match pow_i128(xp, *power as u32).and_then(|v| v.checked_mul(*coeff))
+    {
+      Some(v) => v,
+      None => {
+        overflow = true;
+        break;
+      }
+    };
+    let td = match pow_i128(xq, *power as u32) {
+      Some(v) => v,
+      None => {
+        overflow = true;
+        break;
+      }
+    };
+    // acc = acc + tn/td
+    let new_n = match acc_n
+      .checked_mul(td)
+      .and_then(|a| tn.checked_mul(acc_d).map(|b| a + b))
+    {
+      Some(v) => v,
+      None => {
+        overflow = true;
+        break;
+      }
+    };
+    let new_d = match acc_d.checked_mul(td) {
+      Some(v) => v,
+      None => {
+        overflow = true;
+        break;
+      }
+    };
+    let g = gcd(new_n.abs(), new_d.abs());
+    if g > 0 {
+      acc_n = new_n / g;
+      acc_d = new_d / g;
+    } else {
+      acc_n = new_n;
+      acc_d = new_d;
+    }
+  }
+  if overflow {
+    // Fall back to floating point if exact arithmetic overflows.
+    return Expr::Real(zernike_eval_f64(coeffs, xp as f64 / xq as f64));
+  }
+  make_rational(acc_n, acc_d)
+}
+
+fn pow_i128(base: i128, exp: u32) -> Option<i128> {
+  let mut result: i128 = 1;
+  for _ in 0..exp {
+    result = result.checked_mul(base)?;
+  }
+  Some(result)
+}
+
+/// Evaluate the polynomial at a floating-point x.
+fn zernike_eval_f64(coeffs: &[(i128, i128)], x: f64) -> f64 {
+  let mut acc = 0.0;
+  for (power, coeff) in coeffs {
+    acc += (*coeff as f64) * x.powi(*power as i32);
+  }
+  acc
+}
+
+/// Build the symbolic form x^m * (polynomial in x), matching wolframscript.
+fn zernike_r_polynomial_symbolic(
+  coeffs: &[(i128, i128)],
+  m: i128,
+  x: &Expr,
+) -> Expr {
+  // Factor out x^m: each term has power >= m, write inner power as (power - m).
+  let mut terms: Vec<Expr> = Vec::new();
+  for (power, coeff) in coeffs {
+    if *coeff == 0 {
+      continue;
+    }
+    let inner = power - m;
+    let x_power = if inner == 0 {
+      None
+    } else if inner == 1 {
+      Some(x.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(inner)),
+      })
+    };
+    let term = match (*coeff, x_power) {
+      (c, None) => Expr::Integer(c),
+      (1, Some(xp)) => xp,
+      (-1, Some(xp)) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), xp].into(),
+      },
+      (c, Some(xp)) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(c)),
+        right: Box::new(xp),
+      },
+    };
+    terms.push(term);
+  }
+
+  // Build the inner sum (ascending powers, as wolframscript prints them).
+  let inner_sum = if terms.is_empty() {
+    Expr::Integer(0)
+  } else if terms.len() == 1 {
+    terms.pop().unwrap()
+  } else {
+    let mut result = terms[0].clone();
+    for t in terms.iter().skip(1) {
+      result = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(result),
+        right: Box::new(t.clone()),
+      };
+    }
+    result
+  };
+
+  if m == 0 {
+    return inner_sum;
+  }
+
+  // When the inner polynomial collapses to the constant 1 (e.g. R_n^n = x^n),
+  // the result is just x^m without a redundant `*1`.
+  if matches!(inner_sum, Expr::Integer(1)) {
+    return if m == 1 {
+      x.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(m)),
+      }
+    };
+  }
+
+  // x^m factor.
+  let x_m = if m == 1 {
+    x.clone()
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(x.clone()),
+      right: Box::new(Expr::Integer(m)),
+    }
+  };
+
+  Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(x_m),
+    right: Box::new(inner_sum),
+  }
+}

@@ -2285,7 +2285,7 @@ TimeSeriesWindow,time series,🚫,None,10.0,2329
 Bra,quantum notation,🚫,None,13.3,2333
 CellContext,notebook UI,🚫,None,6.0,2333
 ComposeList,Returns list of successive function compositions,✅,pure,2.0,2333
-ZernikeR,Zernike polynomial (complex special function),🚫,None,6.0,2333
+ZernikeR,Radial Zernike polynomial R_n^m(x) for non-negative integer orders,✅,pure,1.0,2333
 AnimationDirection,animation option,🚫,None,3.0,2338
 ClipPlanes,3D graphics option,🚫,None,10.0,2338
 FinancialIndicator,financial data,🚫,None,8.0,2338

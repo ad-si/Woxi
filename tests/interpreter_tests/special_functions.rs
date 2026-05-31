@@ -3155,3 +3155,70 @@ mod whittaker_w {
     );
   }
 }
+
+mod zernike_r {
+  use super::*;
+
+  #[test]
+  fn symbolic_basic() {
+    assert_eq!(
+      interpret("ZernikeR[5, 1, x]").unwrap(),
+      "x*(3 - 12*x^2 + 10*x^4)"
+    );
+    assert_eq!(interpret("ZernikeR[4, 2, x]").unwrap(), "x^2*(-3 + 4*x^2)");
+    assert_eq!(
+      interpret("ZernikeR[7, 3, x]").unwrap(),
+      "x^3*(10 - 30*x^2 + 21*x^4)"
+    );
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("ZernikeR[0, 0, x]").unwrap(), "1");
+    assert_eq!(
+      interpret("ZernikeR[4, 0, x]").unwrap(),
+      "1 - 6*x^2 + 6*x^4"
+    );
+    assert_eq!(
+      interpret("ZernikeR[8, 0, x]").unwrap(),
+      "1 - 20*x^2 + 90*x^4 - 140*x^6 + 70*x^8"
+    );
+  }
+
+  #[test]
+  fn r_n_n_is_x_pow_n() {
+    assert_eq!(interpret("ZernikeR[1, 1, x]").unwrap(), "x");
+    assert_eq!(interpret("ZernikeR[2, 2, x]").unwrap(), "x^2");
+    assert_eq!(interpret("ZernikeR[3, 3, x]").unwrap(), "x^3");
+  }
+
+  #[test]
+  fn zero_cases() {
+    // n < m -> 0
+    assert_eq!(interpret("ZernikeR[2, 4, x]").unwrap(), "0");
+    // (n - m) odd -> 0
+    assert_eq!(interpret("ZernikeR[4, 1, x]").unwrap(), "0");
+    assert_eq!(interpret("ZernikeR[5, 2, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_exact() {
+    assert_eq!(interpret("ZernikeR[6, 2, 1/2]").unwrap(), "31/64");
+    assert_eq!(interpret("ZernikeR[3, 1, 0.5]").unwrap(), "-0.625");
+    assert_eq!(interpret("ZernikeR[5, 1, 0.5]").unwrap(), "0.3125");
+    assert_eq!(interpret("N[ZernikeR[6, 2, 1/2]]").unwrap(), "0.484375");
+  }
+
+  #[test]
+  fn unevaluated_for_symbolic_or_negative_orders() {
+    assert_eq!(interpret("ZernikeR[n, m, x]").unwrap(), "ZernikeR[n, m, x]");
+    assert_eq!(
+      interpret("ZernikeR[3, -1, x]").unwrap(),
+      "ZernikeR[3, -1, x]"
+    );
+    assert_eq!(
+      interpret("ZernikeR[-2, 0, x]").unwrap(),
+      "ZernikeR[-2, 0, x]"
+    );
+  }
+}
