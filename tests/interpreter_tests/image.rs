@@ -1297,6 +1297,81 @@ mod image_processing {
     );
   }
 
+  // MeanFilter[list, r] on a 1D list averages a clipped neighborhood,
+  // keeping exact rational results.
+  #[test]
+  fn mean_filter_1d_rational() {
+    clear_state();
+    assert_eq!(
+      interpret("MeanFilter[{1, 2, 3, 4, 5}, 1]").unwrap(),
+      "{3/2, 2, 3, 4, 9/2}"
+    );
+    assert_eq!(
+      interpret("MeanFilter[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{2, 5/2, 3, 7/2, 4}"
+    );
+    // r = 0 is the identity; large r averages everything.
+    assert_eq!(
+      interpret("MeanFilter[{1, 2, 3, 4, 5}, 0]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("MeanFilter[{1, 2, 3, 4, 5}, 10]").unwrap(),
+      "{3, 3, 3, 3, 3}"
+    );
+  }
+
+  // A negative integer radius is treated as its absolute value.
+  #[test]
+  fn mean_filter_negative_radius_is_abs() {
+    clear_state();
+    assert_eq!(
+      interpret("MeanFilter[{1, 2, 3}, -1]").unwrap(),
+      "{3/2, 2, 5/2}"
+    );
+  }
+
+  // Symbolic and Real element handling.
+  #[test]
+  fn mean_filter_symbolic_and_real() {
+    clear_state();
+    assert_eq!(
+      interpret("MeanFilter[{a, b, c}, 1]").unwrap(),
+      "{(a + b)/2, (a + b + c)/3, (b + c)/2}"
+    );
+    // Real elements stay Real even when the mean is a whole number (2.).
+    assert_eq!(
+      interpret("MeanFilter[{1.0, 2.0, 3.0, 4.0, 5.0}, 1]").unwrap(),
+      "{1.5, 2., 3., 4., 4.5}"
+    );
+    // Edge cases.
+    assert_eq!(interpret("MeanFilter[{}, 1]").unwrap(), "{}");
+    assert_eq!(interpret("MeanFilter[{7}, 1]").unwrap(), "{7}");
+  }
+
+  // MeanFilter on a 2D rectangular array uses a square clipped window.
+  #[test]
+  fn mean_filter_2d() {
+    clear_state();
+    assert_eq!(
+      interpret("MeanFilter[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]").unwrap(),
+      "{{3, 7/2, 4}, {9/2, 5, 11/2}, {6, 13/2, 7}}"
+    );
+    assert_eq!(
+      interpret("MeanFilter[{{1, 2, 3, 4}, {5, 6, 7, 8}}, 1]").unwrap(),
+      "{{7/2, 4, 5, 11/2}, {7/2, 4, 5, 11/2}}"
+    );
+  }
+
+  // Regression: Mean of Real elements summing to a whole number must
+  // display with a trailing dot, matching wolframscript.
+  #[test]
+  fn mean_real_whole_keeps_dot() {
+    clear_state();
+    assert_eq!(interpret("Mean[{1.0, 2.0, 3.0}]").unwrap(), "2.");
+    assert_eq!(interpret("Mean[{1, 2, 3}]").unwrap(), "2");
+  }
+
   // Default ImageRotate[image] is a Pi/2 counter-clockwise rotation.
   // For a 2x2 image, pixel data is reorganised but precision is
   // preserved (no Byte quantization round-trip).

@@ -1952,7 +1952,7 @@ TautologyQ,Tests whether a boolean expression is a tautology,✅,pure,7.0,1986
 CheckAbort,Evaluate expression and catch aborts,✅,pure,2.0,1991
 DayRange,Generate date range between two dates (requires calendar system),🚫,,9.0,1991
 ImageSizeAction,Option controlling image size behavior,🚫,,6.0,1991
-MeanFilter,Signal processing mean filter,🚫,,7.0,1991
+MeanFilter,Replace each element by the mean of values in a clipped neighborhood of radius r (1D/2D lists),✅,,7.0,1991
 PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11.0,1991
 OrderlessPatternSequence,Pattern matching construct for orderless sequences,🚫,,10.1,1992
 Character,Symbol used in string patterns to represent a single character,✅,pure,1.0,1993

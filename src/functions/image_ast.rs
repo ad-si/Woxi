@@ -3667,6 +3667,104 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// MeanFilter[arg, r] — replace every element by the mean of the values
+/// in a neighborhood of radius `r` (window clipped at boundaries).
+/// Supports flat 1D lists and rectangular 2D nested lists. A negative
+/// integer radius is treated as its absolute value (matching
+/// wolframscript). Non-integer radii emit MeanFilter::bdrad and the
+/// expression is returned unevaluated.
+pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Parse the radius. Must be an integer (negative is taken as abs).
+  let rval = crate::functions::math_ast::try_eval_to_f64(&args[1]);
+  let r: Option<usize> = match rval {
+    Some(v) if v.fract() == 0.0 => Some(v.abs() as usize),
+    _ => None,
+  };
+
+  if let (Expr::List(elems), Some(r)) = (&args[0], r) {
+    // 2D path: every element is a List of the same (non-zero) length.
+    if !elems.is_empty()
+      && elems.iter().all(|row| {
+        matches!(row, Expr::List(items) if items.len() == match &elems[0] {
+          Expr::List(first) => first.len(),
+          _ => 0,
+        })
+      })
+      && matches!(&elems[0], Expr::List(items) if !items.is_empty())
+    {
+      let h = elems.len();
+      let w = match &elems[0] {
+        Expr::List(items) => items.len(),
+        _ => 0,
+      };
+      let get = |y: usize, x: usize| -> Expr {
+        match &elems[y] {
+          Expr::List(row) => row[x].clone(),
+          _ => unreachable!(),
+        }
+      };
+      let mut rows: Vec<Expr> = Vec::with_capacity(h);
+      for y in 0..h {
+        let mut new_row: Vec<Expr> = Vec::with_capacity(w);
+        for x in 0..w {
+          let y0 = y.saturating_sub(r);
+          let y1 = (y + r).min(h - 1);
+          let x0 = x.saturating_sub(r);
+          let x1 = (x + r).min(w - 1);
+          let mut window: Vec<Expr> =
+            Vec::with_capacity((y1 - y0 + 1) * (x1 - x0 + 1));
+          for yy in y0..=y1 {
+            for xx in x0..=x1 {
+              window.push(get(yy, xx));
+            }
+          }
+          let mean =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Mean".to_string(),
+              args: vec![Expr::List(window.into())].into(),
+            })
+            .unwrap_or_else(|_| get(y, x));
+          new_row.push(mean);
+        }
+        rows.push(Expr::List(new_row.into()));
+      }
+      return Ok(Expr::List(rows.into()));
+    }
+    // 1D path.
+    let n = elems.len();
+    let mut result = Vec::with_capacity(n);
+    for i in 0..n {
+      let lo = i.saturating_sub(r);
+      let hi = if i + r < n { i + r } else { n - 1 };
+      let window: Vec<Expr> = elems[lo..=hi].to_vec();
+      let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: vec![Expr::List(window.into())].into(),
+      })
+      .unwrap_or_else(|_| elems[i].clone());
+      result.push(mean);
+    }
+    return Ok(Expr::List(result.into()));
+  }
+
+  // Non-integer radius: emit the bdrad message.
+  if r.is_none() && matches!(&args[0], Expr::List(_)) {
+    crate::emit_message(&format!(
+      "MeanFilter::bdrad: {} is not a valid neighborhood range specification.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+  } else if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
+    crate::emit_message(&format!(
+      "MeanFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "MeanFilter".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// ImageConvolve[img, kernel] — 2D convolution per channel with
 /// replicated boundary. The kernel's center is at floor(rows/2,
 /// cols/2). Channels and image_type are preserved. Output values

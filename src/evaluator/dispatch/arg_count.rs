@@ -675,6 +675,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MaxFilter" => Some((2, 2)),
     "GradientFilter" => Some((2, 2)),
     "MedianFilter" => Some((2, 2)),
+    "MeanFilter" => Some((2, 2)),
     "MaximalBy" => Some((1, 3)),
     "Maximize" => Some((2, 3)),
     "MaxLimit" => Some((2, 2)),

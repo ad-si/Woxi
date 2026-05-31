@@ -272,7 +272,9 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         }
-        Ok(num_to_expr(sum / items.len() as f64))
+        // Always keep a Real result (machine precision) even when the
+        // mean is a whole number, matching wolframscript (e.g. 2.).
+        Ok(Expr::Real(sum / items.len() as f64))
       } else {
         // Check for list-of-lists (matrix) → compute column-wise mean
         if items.iter().all(|item| matches!(item, Expr::List(_))) {

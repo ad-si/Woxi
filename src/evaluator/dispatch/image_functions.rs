@@ -173,6 +173,9 @@ pub fn dispatch_image_functions(
     "MedianFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::median_filter_ast(args));
     }
+    "MeanFilter" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::mean_filter_ast(args));
+    }
     "GradientFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gradient_filter_ast(args));
     }
