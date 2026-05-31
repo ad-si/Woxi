@@ -80,6 +80,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Hypergeometric2F1"
     | "HypergeometricU"
     | "WhittakerM"
+    | "WhittakerW"
     | "BesselJ"
     | "BesselY"
     | "BesselI"

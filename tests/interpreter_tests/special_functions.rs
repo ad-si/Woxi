@@ -3065,3 +3065,93 @@ mod whittaker_m {
     );
   }
 }
+
+mod whittaker_w {
+  use super::*;
+
+  // Exact, non-special arguments stay symbolic (matches wolframscript).
+  #[test]
+  fn symbolic_exact() {
+    assert_eq!(
+      interpret("WhittakerW[1, 1/2, 2]").unwrap(),
+      "WhittakerW[1, 1/2, 2]"
+    );
+  }
+
+  // Real (machine-precision) z evaluates numerically.
+  #[test]
+  fn numeric_real() {
+    assert_eq!(
+      interpret("WhittakerW[1, 1/2, 2.0]").unwrap(),
+      "0.7357588823428847"
+    );
+  }
+
+  // N[...] forces numeric evaluation of an exact-integer call.
+  #[test]
+  fn numeric_via_n() {
+    assert_eq!(
+      interpret("N[WhittakerW[1, 1/2, 2]]").unwrap(),
+      "0.7357588823428847"
+    );
+  }
+
+  // a = m - k + 1/2 a non-positive integer ⇒ U is a terminating polynomial.
+  #[test]
+  fn numeric_polynomial_u() {
+    assert_eq!(
+      interpret("N[WhittakerW[2, 1/2, 3]]").unwrap(),
+      "0.6693904804452895"
+    );
+  }
+
+  // Negative real z (a = 0 ⇒ U = 1) gives a real result.
+  #[test]
+  fn numeric_negative_z() {
+    assert_eq!(
+      interpret("WhittakerW[1, 1/2, -2.0]").unwrap(),
+      "-5.43656365691809"
+    );
+  }
+
+  // Listable: threads over a list in the z slot.
+  #[test]
+  fn listable_over_z() {
+    assert_eq!(
+      interpret("N[WhittakerW[1, 1/2, {2.0, 3.0}]]").unwrap(),
+      "{0.7357588823428847, 0.6693904804452895}"
+    );
+  }
+
+  // z = 0, Re(m) ∈ (-1/2, 1/2) -> 0.
+  #[test]
+  fn zero_z_small_m() {
+    assert_eq!(interpret("WhittakerW[1, 0, 0]").unwrap(), "0");
+  }
+
+  // z = 0, m = 1/2: value = 1/Γ(1-k). k = 0 -> 1, k = -2 -> 1/2.
+  #[test]
+  fn zero_z_m_half() {
+    assert_eq!(interpret("WhittakerW[0, 1/2, 0]").unwrap(), "1");
+    assert_eq!(interpret("WhittakerW[-2, 1/2, 0]").unwrap(), "1/2");
+    // k >= 1 -> 1/Γ(1-k) = 0.
+    assert_eq!(interpret("WhittakerW[1, 1/2, 0]").unwrap(), "0");
+  }
+
+  // z = 0, Re(m) > 1/2 -> ComplexInfinity, unless m - k + 1/2 ≤ 0 integer.
+  #[test]
+  fn zero_z_large_m() {
+    assert_eq!(interpret("WhittakerW[1, 1, 0]").unwrap(), "ComplexInfinity");
+    // m - k + 1/2 = 3/2 - 2 + 1/2 = 0 -> 0.
+    assert_eq!(interpret("WhittakerW[2, 3/2, 0]").unwrap(), "0");
+  }
+
+  // z = 0, Re(m) < -1/2 -> ComplexInfinity.
+  #[test]
+  fn zero_z_negative_m() {
+    assert_eq!(
+      interpret("WhittakerW[1, -3/4, 0]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+}

@@ -1506,6 +1506,119 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Accurate real U(a, b, z) for `b` a positive integer (b = n + 1, n ≥ 0)
+/// and `z > 0`, using the cancellation-free Tricomi logarithmic series
+/// (DLMF 13.2.9). The general connection formula
+/// `hypergeometric_u_nonint` suffers catastrophic cancellation at integer
+/// `b`; this series does not.
+///
+/// Returns `None` when the assumptions (positive-integer `b`, `z > 0`) do
+/// not hold, so callers can fall back to the general routine.
+fn hypergeometric_u_pos_int_b(a: f64, b: f64, z: f64) -> Option<f64> {
+  let n_round = (b - 1.0).round();
+  if (b - 1.0 - n_round).abs() > 1e-9 || n_round < 0.0 || z <= 0.0 {
+    return None;
+  }
+  let n = n_round as i64; // b = n + 1
+
+  // Polynomial case: a is a non-positive integer → U is a finite sum, exact.
+  // Handled by the general series below as well, but the log-series needs
+  // ψ(a+k) which is singular when a is a non-positive integer, so route
+  // those through the Kummer-based closed form instead.
+  let a_is_nonpos_int = (a - a.round()).abs() < 1e-12 && a <= 0.0;
+
+  if a_is_nonpos_int {
+    // a = -mm (mm ≥ 0): U(-mm, n+1, z) = (-1)^mm · mm! · L_mm^{(n)}(z),
+    // a finite polynomial (no cancellation):
+    //   L_mm^{(n)}(z) = Σ_{j=0}^{mm} (-1)^j C(mm+n, mm-j) z^j / j!
+    let mm = (-a).round() as i64;
+    let binom = |top: i64, bot: i64| -> f64 {
+      if bot < 0 || bot > top {
+        return 0.0;
+      }
+      let mut r = 1.0;
+      for i in 0..bot {
+        r = r * (top - i) as f64 / (i + 1) as f64;
+      }
+      r
+    };
+    let mut laguerre = 0.0;
+    let mut zj = 1.0; // z^j
+    let mut jfact = 1.0; // j!
+    for j in 0..=mm {
+      let sign = if j % 2 == 0 { 1.0 } else { -1.0 };
+      laguerre += sign * binom(mm + n, mm - j) * zj / jfact;
+      zj *= z;
+      jfact *= (j + 1) as f64;
+    }
+    let mut mm_fact = 1.0;
+    for i in 1..=mm {
+      mm_fact *= i as f64;
+    }
+    let sgn = if mm % 2 == 0 { 1.0 } else { -1.0 };
+    return Some(sgn * mm_fact * laguerre);
+  }
+
+  let lnz = z.ln();
+  // First (logarithmic) sum:
+  //   S1 = Σ_{k≥0} (a)_k / (k! (n+1)_k) z^k
+  //        · (ln z + ψ(a+k) − ψ(1+k) − ψ(1+n+k))
+  // Prefactor: (-1)^{n+1} / (n! Γ(a-n)).
+  let mut s1 = 0.0;
+  // term_k = (a)_k z^k / (k! (n+1)_k)
+  let mut term = 1.0;
+  for k in 0..2000 {
+    let kf = k as f64;
+    let psi = digamma(a + kf) - digamma(1.0 + kf) - digamma(1.0 + n as f64 + kf);
+    let contrib = term * (lnz + psi);
+    s1 += contrib;
+    // advance term: multiply by (a+k) z / ((k+1)(n+1+k))
+    term *= (a + kf) * z / ((kf + 1.0) * (n as f64 + 1.0 + kf));
+    if term.abs() < 1e-18 * s1.abs().max(1e-300) && k > 5 {
+      break;
+    }
+  }
+  let gamma_a_minus_n = gamma_fn(a - n as f64);
+  let n_fact = {
+    let mut f = 1.0;
+    for i in 1..=n {
+      f *= i as f64;
+    }
+    f
+  };
+  let sign = if (n + 1) % 2 == 0 { 1.0 } else { -1.0 };
+  let part1 = sign / (n_fact * gamma_a_minus_n) * s1;
+
+  // Second (finite) sum (only for n ≥ 1):
+  //   S2 = Σ_{k=0}^{n-1} (a-n)_k / ((1-n)_k k!) z^{k-n}
+  //   prefactor (n-1)! / Γ(a)
+  let mut part2 = 0.0;
+  if n >= 1 {
+    let mut s2 = 0.0;
+    let mut t = z.powf(-(n as f64)); // k=0 term base z^{0-n}, (a-n)_0/((1-n)_0 0!) = 1
+    for k in 0..n {
+      let kf = k as f64;
+      s2 += t;
+      // advance: multiply by (a-n+k)/((1-n+k)(k+1)) · z
+      let denom = (1.0 - n as f64 + kf) * (kf + 1.0);
+      if denom == 0.0 {
+        break;
+      }
+      t *= (a - n as f64 + kf) / denom * z;
+    }
+    let nm1_fact = {
+      let mut f = 1.0;
+      for i in 1..=(n - 1) {
+        f *= i as f64;
+      }
+      f
+    };
+    part2 = nm1_fact / gamma_fn(a) * s2;
+  }
+
+  Some(part1 + part2)
+}
+
 /// Compute 1F1(a, b; z) = Σ (a)_n z^n / ((b)_n n!)
 pub fn hypergeometric_1f1(a: f64, b: f64, z: f64) -> f64 {
   let mut sum = 1.0;
@@ -2773,6 +2886,302 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "WhittakerM".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// WhittakerW[k, m, z] - Whittaker W function.
+///
+/// Definition:
+///   WhittakerW[k, m, z]
+///     = E^(-z/2) · z^(m + 1/2) · HypergeometricU[m - k + 1/2, 2 m + 1, z]
+///
+/// Numeric arguments are evaluated in double-precision complex arithmetic.
+/// Exact symbolic arguments are left unevaluated, except the closed form at
+/// `z = 0`, which depends on Re(m):
+///   * Re(m) ∈ (-1/2, 1/2)  -> 0
+///   * Re(m) = 1/2          -> Γ(2 m) / Γ(m - k + 1/2)   ( = 1/Γ(1-k) )
+///   * Re(m) > 1/2          -> ComplexInfinity, unless m - k + 1/2 is a
+///                             non-positive integer (Γ pole), giving 0
+///   * Re(m) < -1/2         -> ComplexInfinity
+///   * Re(m) = -1/2         -> stays symbolic
+pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "WhittakerW expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // z = 0 closed form.
+  if is_expr_zero(&args[2]) {
+    if let Some((m_re, m_im)) = try_extract_complex_float(&args[1]) {
+      // Only handle real m (m_im == 0) in closed form; complex m at z=0
+      // stays symbolic in wolframscript.
+      if m_im == 0.0 {
+        if m_re > -0.5 && m_re < 0.5 {
+          return Ok(Expr::Integer(0));
+        } else if m_re < -0.5 {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        } else if m_re > 0.5 {
+          // ComplexInfinity unless m - k + 1/2 is a non-positive integer.
+          if let Some((k_re, k_im)) = try_extract_complex_float(&args[0])
+            && k_im == 0.0
+          {
+            let a = m_re - k_re + 0.5;
+            let a_round = a.round();
+            if (a - a_round).abs() < 1e-9 && a_round <= 0.0 {
+              return Ok(Expr::Integer(0));
+            }
+          }
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        }
+        // m_re == 1/2: value = Γ(2 m) / Γ(m - k + 1/2) = 1/Γ(1 - k).
+        if let Some((k_re, k_im)) = try_extract_complex_float(&args[0])
+          && k_im == 0.0
+        {
+          let denom = gamma_fn(1.0 - k_re);
+          if denom.is_infinite() {
+            return Ok(Expr::Integer(0));
+          }
+          let value = 1.0 / denom;
+          // Prefer an exact integer/rational when the inputs are exact.
+          let all_exact = !args.iter().any(|a| {
+            matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+          });
+          if all_exact {
+            // 1/Γ(1-k) for integer k is exact:
+            //   k >= 1  -> Γ(1-k) = ∞  -> 0
+            //   k <= 0  -> Γ(1-k) = (-k)!  -> 1/(-k)!
+            if (k_re - k_re.round()).abs() < 1e-9 {
+              let ki = k_re.round() as i128;
+              if ki >= 1 {
+                return Ok(Expr::Integer(0));
+              }
+              let mut fact: i128 = 1;
+              for n in 1..=(-ki) {
+                fact *= n;
+              }
+              return Ok(crate::functions::math_ast::make_rational_pub(1, fact));
+            }
+            let rounded = value.round();
+            if (value - rounded).abs() < 1e-12 {
+              return Ok(Expr::Integer(rounded as i128));
+            }
+          }
+          return Ok(Expr::Real(value));
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "WhittakerW".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  // Numeric evaluation: an argument is "inexact" when it carries a
+  // machine-precision Real or a non-zero imaginary part.
+  let any_inexact = args.iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
+  });
+
+  if any_inexact
+    && let (Some(k), Some(m), Some(z)) = (
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+      try_extract_complex_float(&args[2]),
+    )
+  {
+    // All-real with z > 0: stay on the real axis. Non-integer b uses the
+    // stable 1F1 connection formula; positive-integer b uses the
+    // cancellation-free Tricomi log-series.
+    if k.1 == 0.0 && m.1 == 0.0 && z.1 == 0.0 && z.0 > 0.0 {
+      let a = m.0 - k.0 + 0.5;
+      let b_real = 2.0 * m.0 + 1.0;
+      let u = hypergeometric_u_pos_int_b(a, b_real, z.0)
+        .unwrap_or_else(|| hypergeometric_u_nonint(a, b_real, z.0));
+      let value = (-z.0 / 2.0).exp() * z.0.powf(m.0 + 0.5) * u;
+      return Ok(Expr::Real(value));
+    }
+
+    let (mut re, mut im) = whittaker_w_complex(k, m, z);
+    let scale = (re * re + im * im).sqrt().max(1.0);
+    if re.abs() <= 1e-12 * scale {
+      re = 0.0;
+    }
+    if im.abs() <= 1e-12 * scale {
+      im = 0.0;
+    }
+    if im == 0.0 {
+      return Ok(crate::functions::math_ast::build_complex_float_expr(re, 0.0));
+    }
+    return Ok(crate::functions::math_ast::build_complex_float_expr_keep_real(
+      re, im,
+    ));
+  }
+
+  // Unevaluated symbolic form.
+  Ok(Expr::FunctionCall {
+    name: "WhittakerW".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Evaluate WhittakerW[k, m, z] in double-precision complex arithmetic.
+/// Inputs are `(re, im)` pairs; returns `(re, im)`.
+fn whittaker_w_complex(
+  k: (f64, f64),
+  m: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cexp = |(r, i): (f64, f64)| {
+    let e = r.exp();
+    (e * i.cos(), e * i.sin())
+  };
+  let cpow = |w: (f64, f64), p: (f64, f64)| {
+    let r = (w.0 * w.0 + w.1 * w.1).sqrt();
+    if r == 0.0 {
+      return (0.0, 0.0);
+    }
+    let log_w = (r.ln(), w.1.atan2(w.0));
+    cexp(cmul(p, log_w))
+  };
+
+  // a = m - k + 1/2, b = 2 m + 1
+  let a = (m.0 - k.0 + 0.5, m.1 - k.1);
+  let b = (2.0 * m.0 + 1.0, 2.0 * m.1);
+
+  let u = hypergeometric_u_complex(a, b, z);
+
+  let exp_part = cexp((-z.0 / 2.0, -z.1 / 2.0));
+  let z_pow = cpow(z, (m.0 + 0.5, m.1));
+
+  cmul(cmul(exp_part, z_pow), u)
+}
+
+/// HypergeometricU[a, b, z] in double-precision complex arithmetic.
+/// Uses the connection formula in terms of two 1F1 series:
+///   U(a,b,z) = Γ(1-b)/Γ(a-b+1) · 1F1(a, b, z)
+///            + Γ(b-1)/Γ(a) · z^(1-b) · 1F1(a-b+1, 2-b, z)
+/// For (near-)integer b the formula is singular, so we average over b ± h
+/// to take the removable limit (mirrors the real `hypergeometric_u_f64`).
+fn hypergeometric_u_complex(
+  a: (f64, f64),
+  b: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  // Analytic shortcuts that are exact and avoid any near-pole cancellation.
+  // U(0, b, z) = 1.
+  if a.0 == 0.0 && a.1 == 0.0 {
+    return (1.0, 0.0);
+  }
+  // U(-mm, b, z) for a a non-positive integer (real): terminating polynomial
+  //   U(-mm, b, z) = (-1)^mm Σ_{j=0}^{mm} C(mm, j) (b+j)_{mm-j} (-z)^j
+  if a.1 == 0.0 && (a.0 - a.0.round()).abs() < 1e-12 && a.0 < 0.0 {
+    let mm = (-a.0).round() as i64;
+    let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+      (ar * br - ai * bi, ar * bi + ai * br)
+    };
+    let binom = |top: i64, bot: i64| -> f64 {
+      let mut r = 1.0;
+      for i in 0..bot {
+        r = r * (top - i) as f64 / (i + 1) as f64;
+      }
+      r
+    };
+    let mut sum = (0.0, 0.0);
+    for j in 0..=mm {
+      // (b + j)_{mm - j} as a complex Pochhammer rising product
+      let mut poch = (1.0, 0.0);
+      for t in 0..(mm - j) {
+        poch = cmul(poch, (b.0 + j as f64 + t as f64, b.1));
+      }
+      // (-z)^j
+      let mut zpow = (1.0, 0.0);
+      for _ in 0..j {
+        zpow = cmul(zpow, (-z.0, -z.1));
+      }
+      let coeff = binom(mm, j);
+      let term = cmul((coeff, 0.0), cmul(poch, zpow));
+      sum = (sum.0 + term.0, sum.1 + term.1);
+    }
+    let sgn = if mm % 2 == 0 { 1.0 } else { -1.0 };
+    return (sgn * sum.0, sgn * sum.1);
+  }
+
+  let b_int = b.0.round();
+  let is_b_near_integer = b.1.abs() < 1e-12 && (b.0 - b_int).abs() < 1e-9;
+  if is_b_near_integer {
+    // Integer b is a removable singularity of the connection formula (the two
+    // Γ terms have cancelling poles). Real-axis evaluation at b ± h suffers
+    // catastrophic cancellation. Instead perturb b OFF the real axis into the
+    // complex plane: U(a, b, z) is analytic in b, so evaluating at the pair
+    // b₀ ± i·ε and averaging gives the real limit with error O(ε²) and no
+    // pole-driven cancellation. Richardson-extrapolate over ε to remove the
+    // O(ε²) term.
+    let bi = b.0.round();
+    let eval = |eps: f64| {
+      let u1 = hypergeometric_u_complex_nonint(a, (bi, eps), z);
+      let u2 = hypergeometric_u_complex_nonint(a, (bi, -eps), z);
+      ((u1.0 + u2.0) / 2.0, (u1.1 + u2.1) / 2.0)
+    };
+    let e1 = eval(1e-3);
+    let e2 = eval(2e-3);
+    // U(ε) = U + c·ε² + O(ε⁴); U = (4·U(ε) − U(2ε)) / 3.
+    return (
+      (4.0 * e1.0 - e2.0) / 3.0,
+      (4.0 * e1.1 - e2.1) / 3.0,
+    );
+  }
+  hypergeometric_u_complex_nonint(a, b, z)
+}
+
+fn hypergeometric_u_complex_nonint(
+  a: (f64, f64),
+  b: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let cexp = |(r, i): (f64, f64)| {
+    let e = r.exp();
+    (e * i.cos(), e * i.sin())
+  };
+  let cpow = |w: (f64, f64), p: (f64, f64)| {
+    let r = (w.0 * w.0 + w.1 * w.1).sqrt();
+    if r == 0.0 {
+      return (0.0, 0.0);
+    }
+    let log_w = (r.ln(), w.1.atan2(w.0));
+    cexp(cmul(p, log_w))
+  };
+
+  // Γ(1-b)/Γ(a-b+1) · 1F1(a, b, z)
+  let g_1mb = gamma_complex(1.0 - b.0, -b.1);
+  let g_amb1 = gamma_complex(a.0 - b.0 + 1.0, a.1 - b.1);
+  let coeff1 = cdiv(g_1mb, g_amb1);
+  let h1 = hypergeometric_1f1_complex(a, b, z);
+  let term1 = cmul(coeff1, h1);
+
+  // Γ(b-1)/Γ(a) · z^(1-b) · 1F1(a-b+1, 2-b, z)
+  let g_bm1 = gamma_complex(b.0 - 1.0, b.1);
+  let g_a = gamma_complex(a.0, a.1);
+  let coeff2 = cdiv(g_bm1, g_a);
+  let zpow = cpow(z, (1.0 - b.0, -b.1));
+  let h2 = hypergeometric_1f1_complex(
+    (a.0 - b.0 + 1.0, a.1 - b.1),
+    (2.0 - b.0, -b.1),
+    z,
+  );
+  let term2 = cmul(cmul(coeff2, zpow), h2);
+
+  (term1.0 + term2.0, term1.1 + term2.1)
 }
 
 /// Evaluate WhittakerM[k, m, z] in double-precision complex arithmetic.

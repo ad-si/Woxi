@@ -875,6 +875,9 @@ pub fn dispatch_math_functions(
     "WhittakerM" if args.len() == 3 => {
       return Some(crate::functions::math_ast::whittaker_m_ast(args));
     }
+    "WhittakerW" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::whittaker_w_ast(args));
+    }
     "AppellF1" if args.len() == 6 => {
       return Some(crate::functions::math_ast::appell_f1_ast(args));
     }

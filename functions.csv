@@ -1709,7 +1709,7 @@ PoolingLayer,Neural net pooling layer,,unevaluated,11.0,1737
 FindFormula,Find formula fitting data,,unevaluated,10.2,1740
 Graph3D,3D graph visualization,,unevaluated,10.0,1740
 NotebookDelete,Delete notebook cells,,unevaluated,3.0,1740
-WhittakerW,Whittaker W function,,unevaluated,6.0,1741
+WhittakerW,Whittaker W function E^(-z/2) z^(m+1/2) HypergeometricU[m-k+1/2 2m+1 z],✅,pure,6.0,1741
 GeometricScene,Geometric scene,,unevaluated,12.0,1743
 MaxDetect,Detect local maxima,,unevaluated,8.0,1743
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1.0,1745
