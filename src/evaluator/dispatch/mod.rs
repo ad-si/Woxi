@@ -5054,6 +5054,108 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // WeightedAdjacencyMatrix[Graph[{vertices}, {edges}, EdgeWeight -> {w...}]]
+  // — n×n matrix whose (i,j) entry is the sum of the weights of all edges
+  // from vertex i to vertex j (0 when no edge connects them). Directed edges
+  // (Rule u->v or DirectedEdge[u,v]) contribute only to entry (u,v);
+  // undirected edges (UndirectedEdge[u,v]) contribute to both (u,v) and (v,u),
+  // except self-loops which contribute once. When EdgeWeight is absent (or has
+  // fewer entries than edges) the missing weights default to 1, matching
+  // wolframscript. Weights may be numbers or symbolic expressions; parallel
+  // edges have their weights summed. wolframscript returns a SparseArray here;
+  // Woxi mirrors AdjacencyMatrix and returns the dense (Normal) list of lists.
+  if name == "WeightedAdjacencyMatrix" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      let vertex_index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (expr_to_string(v), i))
+        .collect();
+
+      // Extract the EdgeWeight option from the Graph options (gargs[2..]).
+      let mut weights: Vec<Expr> = Vec::new();
+      for opt in &gargs[2..] {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "EdgeWeight")
+          && let Expr::List(ws) = replacement.as_ref()
+        {
+          weights = ws.to_vec();
+        }
+      }
+
+      // Accumulate the list of weight expressions contributed to each cell.
+      let mut cells: Vec<Vec<Vec<Expr>>> = vec![vec![Vec::new(); n]; n];
+      for (ei, edge) in edges.iter().enumerate() {
+        // Default weight is 1 when EdgeWeight is absent or too short.
+        let w = weights.get(ei).cloned().unwrap_or(Expr::Integer(1));
+        // Determine (from, to, directed?) for both edge spellings.
+        let endpoints = match edge {
+          Expr::FunctionCall {
+            name: ename,
+            args: eargs,
+          } if eargs.len() == 2 => Some((
+            expr_to_string(&eargs[0]),
+            expr_to_string(&eargs[1]),
+            ename == "DirectedEdge",
+          )),
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((
+            expr_to_string(pattern),
+            expr_to_string(replacement),
+            true, // Rules are directed
+          )),
+          _ => None,
+        };
+        if let Some((from_str, to_str, directed)) = endpoints
+          && let (Some(&fi), Some(&ti)) =
+            (vertex_index.get(&from_str), vertex_index.get(&to_str))
+        {
+          cells[fi][ti].push(w.clone());
+          if !directed && fi != ti {
+            cells[ti][fi].push(w);
+          }
+        }
+      }
+
+      // Collapse each cell's weight list into a single Expr: 0 when empty,
+      // the lone weight when one edge, or a summed Plus[...] otherwise.
+      let mut matrix: Vec<Expr> = Vec::with_capacity(n);
+      for row in cells {
+        let mut out_row: Vec<Expr> = Vec::with_capacity(n);
+        for ws in row {
+          let entry = match ws.len() {
+            0 => Expr::Integer(0),
+            1 => ws.into_iter().next().unwrap(),
+            _ => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: ws.into(),
+            })?,
+          };
+          out_row.push(entry);
+        }
+        matrix.push(Expr::List(out_row.into()));
+      }
+      return Ok(Expr::List(matrix.into()));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // IncidenceMatrix[Graph[{vertices}, {edges}]] — vertex-by-edge incidence matrix.
   // Rows are vertices (in vertex order), columns are edges (in edge order).
   // Undirected edge {u,v}: both endpoints get +1 (a self-loop yields 2).

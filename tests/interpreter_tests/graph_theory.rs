@@ -1945,3 +1945,113 @@ mod vertex_out_degree {
     );
   }
 }
+
+mod weighted_adjacency_matrix {
+  use super::*;
+
+  #[test]
+  fn directed_with_weights() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, EdgeWeight -> {5, 10}]]"
+      )
+      .unwrap(),
+      "{{0, 5, 0}, {0, 0, 10}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn undirected_with_weights() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2, 3}, {1 <-> 2, 2 <-> 3, 1 <-> 3}, \
+         EdgeWeight -> {5, 10, 2}]]"
+      )
+      .unwrap(),
+      "{{0, 5, 2}, {5, 0, 10}, {2, 10, 0}}"
+    );
+  }
+
+  #[test]
+  fn implicit_vertices() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1 <-> 2, 2 <-> 3}, EdgeWeight -> {5, 10}]]"
+      )
+      .unwrap(),
+      "{{0, 5, 0}, {5, 0, 10}, {0, 10, 0}}"
+    );
+  }
+
+  #[test]
+  fn default_weight_is_one() {
+    assert_eq!(
+      interpret("WeightedAdjacencyMatrix[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 1}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn directed_self_loop() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 -> 1, 1 -> 2}, EdgeWeight -> {7, 3}]]"
+      )
+      .unwrap(),
+      "{{7, 3}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn undirected_self_loop_counts_once() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 <-> 1, 1 <-> 2}, EdgeWeight -> {7, 3}]]"
+      )
+      .unwrap(),
+      "{{7, 3}, {3, 0}}"
+    );
+  }
+
+  #[test]
+  fn parallel_edges_sum_weights() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2, 3}, {1 -> 2, 1 -> 2, 2 -> 3}, \
+         EdgeWeight -> {5, 4, 10}]]"
+      )
+      .unwrap(),
+      "{{0, 9, 0}, {0, 0, 10}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_weight() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 <-> 2}, EdgeWeight -> {x}]]"
+      )
+      .unwrap(),
+      "{{0, x}, {x, 0}}"
+    );
+  }
+
+  #[test]
+  fn real_weight() {
+    assert_eq!(
+      interpret(
+        "WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 <-> 2}, EdgeWeight -> {2.5}]]"
+      )
+      .unwrap(),
+      "{{0, 2.5}, {2.5, 0}}"
+    );
+  }
+}

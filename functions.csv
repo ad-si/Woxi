@@ -1942,7 +1942,7 @@ Resultant,Resultant of two polynomials via Sylvester matrix determinant,✅,pure
 Selectable,GUI option for content selectability,🚫,,3.0,1977
 TableDirections,Option for TableForm display directions,🚫,,2.0,1977
 PermutationGroup,Group theory permutation group representation,✅,pure,8.0,1979
-WeightedAdjacencyMatrix,Get weighted adjacency matrix of a graph,🚫,,8.0,1979
+WeightedAdjacencyMatrix,Builds the weighted adjacency matrix from a graph with EdgeWeight,✅,none,8.0,1979
 DayName,Return the name of the day of the week for a given date,✅,none,9.0,1981
 SuperPlus,Typesetting notation for superscript plus,🚫,,6.0,1982
 CommonName,Entity common name lookup,🚫,,10.0,1986
