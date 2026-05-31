@@ -288,6 +288,20 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     }
     Expr::List(items) => items.iter().any(contains_pattern),
     Expr::UnaryOp { operand, .. } => contains_pattern(operand),
+    // Patterns can appear inside Rule/RuleDelayed operands (e.g. the
+    // `x_` in `KeyValuePattern[{"a" -> x_}]`) and inside Association
+    // key/value pairs; recurse so these are detected.
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_pattern(pattern) || contains_pattern(replacement),
+    Expr::Association(pairs) => pairs
+      .iter()
+      .any(|(k, v)| contains_pattern(k) || contains_pattern(v)),
     _ => false,
   }
 }
@@ -2622,6 +2636,97 @@ pub fn match_pattern(
   })
 }
 
+/// Implements `KeyValuePattern[arg]` matching.
+///
+/// `arg` is normalized to a list of `key -> value` rules (a single rule or a
+/// list of rules). The subject `expr` must be either an `Association` or a list
+/// whose every element is a rule; otherwise the match fails. Each required rule
+/// `ki -> vi` must find some (key, value) pair in the subject where `ki` matches
+/// the key and `vi` matches the value (both as patterns). Matching is
+/// order-independent and the subject may contain additional pairs.
+fn match_key_value_pattern(
+  expr: &Expr,
+  arg: &Expr,
+) -> Option<Vec<(String, Expr)>> {
+  // Normalize the pattern argument into a list of (key_pattern, value_pattern).
+  let required: Vec<(Expr, Expr)> = match arg {
+    Expr::List(items) => {
+      let mut reqs = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => reqs.push(((**pattern).clone(), (**replacement).clone())),
+          // A non-rule element can never be found among the subject's
+          // key/value pairs, so the pattern can never match.
+          _ => return None,
+        }
+      }
+      reqs
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![((**pattern).clone(), (**replacement).clone())],
+    _ => return None,
+  };
+
+  // Collect the subject's (key, value) pairs. The subject must be an
+  // Association or a list whose every element is a rule.
+  let subject: Vec<(Expr, Expr)> = match expr {
+    Expr::Association(pairs) => pairs.clone(),
+    Expr::List(items) => {
+      let mut pairs = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => pairs.push(((**pattern).clone(), (**replacement).clone())),
+          _ => return None,
+        }
+      }
+      pairs
+    }
+    _ => return None,
+  };
+
+  // For each required rule, find a subject pair whose key and value both match.
+  let mut bindings: Vec<(String, Expr)> = Vec::new();
+  for (key_pat, val_pat) in &required {
+    let mut found = false;
+    for (k, v) in &subject {
+      if let Some(kb) = match_pattern(k, key_pat) {
+        if let Some(vb) = match_pattern(v, val_pat) {
+          let mut trial = bindings.clone();
+          if merge_bindings(&mut trial, kb) && merge_bindings(&mut trial, vb) {
+            bindings = trial;
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    if !found {
+      return None;
+    }
+  }
+  Some(bindings)
+}
+
 /// Try every way of choosing `missing` positions from `opt_positions` to
 /// skip (take default value for); align the remaining pattern positions to
 /// the expression args in order. Returns bindings on first successful match.
@@ -2904,6 +3009,16 @@ fn match_pattern_impl(
       } else {
         None
       }
+    }
+    // KeyValuePattern[{k1 -> v1, ...}] - matches an Association or a list of
+    // rules that contains, for each rule `ki -> vi`, a key matching `ki` whose
+    // value matches the pattern `vi`. Order-independent, subset (extra keys are
+    // allowed). The single-rule form `KeyValuePattern[k -> v]` is also accepted.
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "KeyValuePattern" && pat_args.len() == 1 => {
+      match_key_value_pattern(expr, &pat_args[0])
     }
     Expr::FunctionCall {
       name: pat_name,

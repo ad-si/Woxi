@@ -3365,4 +3365,145 @@ Options[r] := {Opt -> 3}"#,
       r#"LetterCharacter"#,
     );
   }
+
+  mod key_value_pattern {
+    use woxi::interpret;
+
+    #[test]
+    fn symbolic_form_stays_unevaluated() {
+      // KeyValuePattern is a pattern object; on its own it stays symbolic.
+      assert_eq!(
+        interpret(r#"KeyValuePattern[{"a" -> 1}]"#).unwrap(),
+        r#"KeyValuePattern[{a -> 1}]"#
+      );
+      assert_eq!(
+        interpret(r#"KeyValuePattern["a" -> 1]"#).unwrap(),
+        r#"KeyValuePattern[a -> 1]"#
+      );
+    }
+
+    #[test]
+    fn matches_association_subset() {
+      // Subset match: extra keys are allowed, order does not matter.
+      assert_eq!(
+        interpret(r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> 1}]]"#)
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"b" -> 2, "a" -> 1}]]"#
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn rejects_wrong_value_or_missing_key() {
+      assert_eq!(
+        interpret(r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> 3}]]"#)
+          .unwrap(),
+        "False"
+      );
+      assert_eq!(
+        interpret(r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"c" -> _}]]"#)
+          .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn value_patterns_are_supported() {
+      assert_eq!(
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> _, "b" -> _}]]"#
+        )
+        .unwrap(),
+        "True"
+      );
+      // Repeated pattern variable: both values must be equal.
+      assert_eq!(
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> x_, "b" -> x_}]]"#
+        )
+        .unwrap(),
+        "False"
+      );
+      assert_eq!(
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 1|>, KeyValuePattern[{"a" -> x_, "b" -> x_}]]"#
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn empty_pattern_matches_any_association_or_rule_list() {
+      assert_eq!(
+        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern[{}]]"#).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(r#"MatchQ[{"a" -> 1}, KeyValuePattern[{}]]"#).unwrap(),
+        "True"
+      );
+      // A plain list of non-rules is not a key-value structure.
+      assert_eq!(
+        interpret(r#"MatchQ[{1, 2, 3}, KeyValuePattern[{}]]"#).unwrap(),
+        "False"
+      );
+      // A non-list, non-association atom never matches.
+      assert_eq!(
+        interpret(r#"MatchQ[5, KeyValuePattern[{"a" -> 1}]]"#).unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn matches_list_of_rules() {
+      assert_eq!(
+        interpret(r#"MatchQ[{"a" -> 1, "b" -> 2}, KeyValuePattern[{"a" -> 1}]]"#)
+          .unwrap(),
+        "True"
+      );
+      // Mixed list (some non-rule elements) is not a key-value structure.
+      assert_eq!(
+        interpret(r#"MatchQ[{a, b -> 2}, KeyValuePattern[{}]]"#).unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn single_rule_argument_form() {
+      assert_eq!(
+        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern["a" -> 1]]"#).unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern["a" -> 3]]"#).unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn works_with_cases_and_replace() {
+      assert_eq!(
+        interpret(
+          r#"Cases[{<|"a" -> 1|>, <|"a" -> 2, "b" -> 3|>, <|"b" -> 5|>}, KeyValuePattern[{"a" -> _}]]"#
+        )
+        .unwrap(),
+        "{<|a -> 1|>, <|a -> 2, b -> 3|>}"
+      );
+      // Replace with a captured value pattern.
+      assert_eq!(
+        interpret(
+          r#"Replace[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> x_}] :> x]"#
+        )
+        .unwrap(),
+        "1"
+      );
+    }
+  }
 }

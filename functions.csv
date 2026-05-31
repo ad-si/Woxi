@@ -2274,7 +2274,7 @@ GeoGridLines,geographic visualization,🚫,None,10.0,2320
 NArgMax,numeric optimization,✅,None,7.0,2320
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6.0,2320
 ControllerLinking,dynamic interaction,🚫,None,6.0,2321
-KeyValuePattern,pattern matching extension,🚫,None,10.4,2324
+KeyValuePattern,Pattern object matching an association or list of rules that contains the given key-value rules (order-independent subset),✅,pure,10.4,2324
 Parallelepiped,3D geometric primitive,🚫,None,10.0,2324
 SendMail,email sending,🚫,None,7.0,2324
 FourierSinCoefficient,symbolic Fourier integral,🚫,None,7.0,2329
