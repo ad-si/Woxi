@@ -214,6 +214,67 @@ pub fn dispatch_polynomial_functions(
     "Maximize" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::minimize_ast(args, true));
     }
+    // ArgMax[f, x] / ArgMin[f, x] — exact (symbolic) optimizing argument(s).
+    // Delegates to the same exact optimizer as Maximize/Minimize and then
+    // extracts the argument value(s) from the returned `{value, {x -> a, ...}}`
+    // structure. A single variable yields a bare scalar; multiple variables
+    // yield a list `{a1, a2, ...}`.
+    "ArgMax" | "ArgMin"
+      if args.len() == 2 || args.len() == 3 =>
+    {
+      let maximize = name == "ArgMax";
+      // Determine how many variables were requested, so we know whether to
+      // return a scalar (single variable) or a list (multiple variables).
+      let single_var = matches!(&args[1], Expr::Identifier(_));
+      // Reuse the exact optimizer used by Maximize/Minimize. For the
+      // constrained `{f, cons}, {v1, v2}` form, the same closed-form
+      // disk/linear path that Maximize uses is tried first.
+      let opt_name = if maximize { "Maximize" } else { "Minimize" };
+      let optimized = if args.len() == 2
+        && matches!(&args[0], Expr::List(items) if items.len() == 2)
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 2
+            && items.iter().all(|v| matches!(v, Expr::Identifier(_)))
+        ) {
+        if let Some(result) = try_constrained_linear_disk_symbolic(opt_name, args)
+        {
+          Ok(result)
+        } else {
+          crate::functions::polynomial_ast::minimize_ast(args, maximize)
+        }
+      } else {
+        crate::functions::polynomial_ast::minimize_ast(args, maximize)
+      };
+      match optimized {
+        Ok(Expr::List(ref result)) if result.len() == 2 => {
+          if let Expr::List(rules) = &result[1] {
+            let arg_vals: Vec<Expr> = rules
+              .iter()
+              .filter_map(|r| match r {
+                Expr::Rule { replacement, .. } => {
+                  Some(replacement.as_ref().clone())
+                }
+                Expr::FunctionCall { name, args }
+                  if name == "Rule" && args.len() == 2 =>
+                {
+                  Some(args[1].clone())
+                }
+                _ => None,
+              })
+              .collect();
+            if arg_vals.len() == rules.len() && !arg_vals.is_empty() {
+              if single_var && arg_vals.len() == 1 {
+                return Some(Ok(arg_vals.into_iter().next().unwrap()));
+              }
+              return Some(Ok(Expr::List(arg_vals.into())));
+            }
+          }
+          // Optimizer did not produce extractable rules; stay symbolic.
+        }
+        _ => {}
+      }
+    }
     "NMinimize" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::nminimize_ast(
         args, false,

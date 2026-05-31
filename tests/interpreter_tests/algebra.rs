@@ -5444,6 +5444,39 @@ mod cases {
     assert_case(r#"Minimize[2 x^2 - 3 x + 5, x]"#, r#"{31/8, {x -> 3/4}}"#);
   }
   #[test]
+  fn arg_max_unconstrained() {
+    // ArgMax[f, x] returns the bare argument maximizing f (scalar for a
+    // single variable). Matches wolframscript `2`.
+    assert_case(r#"ArgMax[-(x^2) + 4 x + 1, x]"#, r#"2"#);
+  }
+  #[test]
+  fn arg_min_unconstrained() {
+    assert_case(r#"ArgMin[x^2 + 2 x + 5, x]"#, r#"-1"#);
+  }
+  #[test]
+  fn arg_max_box_constraint() {
+    assert_case(r#"ArgMax[{x^2, -1 <= x <= 3}, x]"#, r#"3"#);
+  }
+  #[test]
+  fn arg_max_interval_objective() {
+    assert_case(r#"ArgMax[{x (10 - x), 0 <= x <= 10}, x]"#, r#"5"#);
+  }
+  #[test]
+  fn arg_max_disk_multivar() {
+    // Multiple variables yield a list of the optimizing arguments.
+    assert_case(
+      r#"ArgMax[{x + y, x^2 + y^2 <= 1}, {x, y}]"#,
+      r#"{1/Sqrt[2], 1/Sqrt[2]}"#,
+    );
+  }
+  #[test]
+  fn arg_min_equality_multivar() {
+    assert_case(
+      r#"ArgMin[{x^2 + y^2, x + y == 1}, {x, y}]"#,
+      r#"{1/2, 1/2}"#,
+    );
+  }
+  #[test]
   fn apart_1() {
     assert_case(
       r#"Apart[1 / (x^2 + 5x + 6)]"#,

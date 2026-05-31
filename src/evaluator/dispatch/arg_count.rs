@@ -63,6 +63,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ArcTanh" => Some((1, 1)),
     "Area" => Some((1, 1)),
     "Arg" => Some((1, 1)),
+    "ArgMax" => Some((2, 3)),
+    "ArgMin" => Some((2, 3)),
     "ArithmeticGeometricMean" => Some((2, 2)),
     "Around" => Some((2, usize::MAX)),
     "Array" => Some((2, 4)),

@@ -1689,7 +1689,7 @@ TogglerBar,Toggler bar control,,unevaluated,6.0,1716
 GeoElevationData,,🚫,,10.0,1717
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1.0,1718
 FeatureExtractor,Feature extractor,,unevaluated,11.0,1719
-ArgMax,Position of maximum,,unevaluated,7.0,1721
+ArgMax,Exact argument that maximizes an expression (optionally subject to constraints),✅,None,7.0,1721
 VertexNormals,Vertex normal vectors,,unevaluated,6.0,1721
 CorrelationFunction,Correlation function,,unevaluated,9.0,1723
 RandomImage,Generates a random image with given dimensions,✅,pure,8.0,1723
@@ -2099,7 +2099,7 @@ SectorChart,Creates a sector chart from data,✅,pure,7.0,2138
 InexactNumberQ,Tests if an expression is an inexact real number,✅,pure,4.0,2141
 RootSum,Sum over polynomial roots,✅,,3.0,2141
 ServiceExecute,Execute external service,🚫,,10.0,2141
-ArgMin,Find argument minimizing expression,🚫,,7.0,2144
+ArgMin,Exact argument that minimizes an expression (optionally subject to constraints),✅,None,7.0,2144
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144
 Underscript,Typesetting subscript,🚫,,6.0,2144
 EntityProperties,Lists properties available for an entity type,✅,pure,10.0,2147
