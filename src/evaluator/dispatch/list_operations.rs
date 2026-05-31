@@ -2078,6 +2078,9 @@ pub fn dispatch_list_operations(
     "ArrayDepth" if args.len() == 1 => {
       return Some(list_helpers_ast::array_depth_ast(&args[0]));
     }
+    "ArrayComponents" if !args.is_empty() && args.len() <= 3 => {
+      return Some(list_helpers_ast::array_components_ast(args));
+    }
     "TensorRank" if args.len() == 1 => {
       return Some(list_helpers_ast::tensor_rank_ast(&args[0]));
     }

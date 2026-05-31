@@ -57,6 +57,160 @@ pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(compute_depth(list)))
 }
 
+/// ArrayComponents[array] / [array, level] / [array, level, rules]
+///
+/// Replaces every distinct element of `array` with an integer index. Identical
+/// elements (compared structurally) get the same index. Indices are assigned by
+/// order of first appearance, using the smallest positive integer not already
+/// claimed by an explicit rule. The integer `0` maps to `0` by default (it acts
+/// as the background/zero element) unless overridden by a rule.
+///
+/// `level` (a positive integer, default Infinity) controls how deep the labeling
+/// descends. Elements shallower than `level` (atoms reached before the target
+/// level) are labeled as whole units; the structure above `level` is preserved.
+///
+/// `rules` is a rule or list of rules mapping original elements to explicit
+/// labels. Elements not covered by a rule are auto-numbered with the smallest
+/// positive integers not used by any rule.
+pub fn array_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Return the expression unevaluated (matching wolframscript, which emits a
+  // message and leaves ArrayComponents[...] in place).
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ArrayComponents".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Argument 1 must be a list.
+  if args.is_empty() || !matches!(&args[0], Expr::List(_)) {
+    return unevaluated();
+  }
+
+  // Parse the level argument (default: effectively infinite).
+  let target_level: i128 = if args.len() >= 2 {
+    match expr_to_i128(&args[1]) {
+      Some(n) if n >= 1 => n,
+      _ => return unevaluated(),
+    }
+  } else {
+    i128::MAX
+  };
+
+  // Parse the rules argument: map from structural-key -> explicit label Expr.
+  // Preserve the set of labels already claimed so auto-numbering can avoid them.
+  let mut rule_map: std::collections::HashMap<String, Expr> =
+    std::collections::HashMap::new();
+  // Default rule: integer 0 -> 0.
+  rule_map.insert(
+    crate::syntax::expr_to_string(&Expr::Integer(0)),
+    Expr::Integer(0),
+  );
+  if args.len() >= 3 {
+    let rule_list: Vec<Expr> = match &args[2] {
+      Expr::List(rs) => rs.to_vec(),
+      single => vec![single.clone()],
+    };
+    for r in &rule_list {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = r
+      {
+        rule_map.insert(
+          crate::syntax::expr_to_string(pattern.as_ref()),
+          replacement.as_ref().clone(),
+        );
+      }
+    }
+  }
+
+  // Collect integer labels that explicit rules already claim, so that
+  // auto-numbering skips them.
+  let mut claimed: std::collections::HashSet<i128> = std::collections::HashSet::new();
+  for v in rule_map.values() {
+    if let Some(n) = expr_to_i128(v) {
+      claimed.insert(n);
+    }
+  }
+
+  // State shared across the recursive walk.
+  let mut label_for_key: std::collections::HashMap<String, Expr> = rule_map;
+  let mut next_index: i128 = 1;
+
+  // Determine the next auto-assigned label: the smallest positive integer not
+  // already claimed by a rule and not yet used.
+  fn alloc_label(
+    next_index: &mut i128,
+    claimed: &std::collections::HashSet<i128>,
+  ) -> Expr {
+    while claimed.contains(next_index) {
+      *next_index += 1;
+    }
+    let v = *next_index;
+    *next_index += 1;
+    Expr::Integer(v)
+  }
+
+  // Label a "unit" expression, reusing an existing label for identical units.
+  fn label_unit(
+    expr: &Expr,
+    label_for_key: &mut std::collections::HashMap<String, Expr>,
+    next_index: &mut i128,
+    claimed: &std::collections::HashSet<i128>,
+  ) -> Expr {
+    let key = crate::syntax::expr_to_string(expr);
+    if let Some(existing) = label_for_key.get(&key) {
+      return existing.clone();
+    }
+    let label = alloc_label(next_index, claimed);
+    label_for_key.insert(key, label.clone());
+    label
+  }
+
+  // Recursively walk to `target_level`. `cur_level` is the level of `expr`
+  // itself (top-level list elements are at level 1, so the outer list is at
+  // level 0).
+  fn walk(
+    expr: &Expr,
+    cur_level: i128,
+    target_level: i128,
+    label_for_key: &mut std::collections::HashMap<String, Expr>,
+    next_index: &mut i128,
+    claimed: &std::collections::HashSet<i128>,
+  ) -> Expr {
+    match expr {
+      Expr::List(items) if cur_level < target_level => Expr::List(
+        items
+          .iter()
+          .map(|item| {
+            walk(
+              item,
+              cur_level + 1,
+              target_level,
+              label_for_key,
+              next_index,
+              claimed,
+            )
+          })
+          .collect(),
+      ),
+      // Either an atom, or a node at the target level: label as a unit.
+      _ => label_unit(expr, label_for_key, next_index, claimed),
+    }
+  }
+
+  let result = walk(
+    &args[0],
+    0,
+    target_level,
+    &mut label_for_key,
+    &mut next_index,
+    &claimed,
+  );
+  Ok(result)
+}
+
 /// TensorRank[expr] - rank of a tensor (same as ArrayDepth for concrete lists,
 /// but stays unevaluated for non-list expressions like symbols).
 pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {

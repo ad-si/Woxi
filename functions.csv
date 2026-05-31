@@ -2120,7 +2120,7 @@ ColorQ,Test whether an expression is a color directive,✅,1,10.0,2162
 CompleteKaryTree,Complete k-ary tree graph with n levels (default branching k=2),✅,1,8.0,2162
 NotebookObject,Symbolic representation of an open notebook in the front end,🚫,None,3.0,2162
 Simplex,Simplex geometric region,🚫,,10.0,2162
-ArrayComponents,Connected component labeling on arbitrary arrays,🚫,None,8.0,2165
+ArrayComponents,Replaces identical array elements with integer component indices (with optional level and label rules),✅,pure,8.0,2165
 MorphologicalTransform,Applies morphological operations to binary images,🚫,None,8.0,2165
 WebImageSearch,Searches the web for images matching a query,🚫,None,11.1,2165
 EventData,,🚫,,9.0,2167

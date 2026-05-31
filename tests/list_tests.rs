@@ -1918,4 +1918,98 @@ mod list_tests {
     );
     assert_eq!(interpret("RandomPermutation[4, 0]").unwrap(), "{}");
   }
+
+  #[test]
+  fn array_components() {
+    // Identical elements get the same index, by order of first appearance.
+    assert_eq!(
+      interpret("ArrayComponents[{a, b, a, c, a, b}]").unwrap(),
+      "{1, 2, 1, 3, 1, 2}"
+    );
+    // Works for any element type; structural equality.
+    assert_eq!(
+      interpret("ArrayComponents[{5, 7, 5, 9, 5, 7}]").unwrap(),
+      "{1, 2, 1, 3, 1, 2}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{{a, b}, {b, a}}]").unwrap(),
+      "{{1, 2}, {2, 1}}"
+    );
+
+    // Integer 0 is the background element: mapped to 0 by default.
+    assert_eq!(
+      interpret("ArrayComponents[{7, 0, 7, 3, 0}]").unwrap(),
+      "{1, 0, 1, 2, 0}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{0, 0, 0}]").unwrap(),
+      "{0, 0, 0}"
+    );
+    // Only integer 0 is special; real 0. is an ordinary element.
+    assert_eq!(
+      interpret("ArrayComponents[{0., a}]").unwrap(),
+      "{1, 2}"
+    );
+
+    // Level argument controls labeling depth.
+    assert_eq!(
+      interpret("ArrayComponents[{{a, b}, {c, a}}, 1]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{{a, b}, {c, a}}, 2]").unwrap(),
+      "{{1, 2}, {3, 1}}"
+    );
+    // Default level descends to the leaves.
+    assert_eq!(
+      interpret("ArrayComponents[{{{a}, {b}}, {{a}, {c}}}]").unwrap(),
+      "{{{1}, {2}}, {{1}, {3}}}"
+    );
+    // Elements shallower than the target level are labeled as units.
+    assert_eq!(
+      interpret("ArrayComponents[{{a, b}, c, {a, b}}, 2]").unwrap(),
+      "{{1, 2}, 3, {1, 2}}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{a, {b, c}}, 1]").unwrap(),
+      "{1, 2}"
+    );
+
+    // Rules give explicit labels; the rest auto-number with smallest unused.
+    assert_eq!(
+      interpret("ArrayComponents[{a, b, a, c}, 1, {a -> 99}]").unwrap(),
+      "{99, 1, 99, 2}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{a, b, c, d, e}, 1, {c -> 1}]").unwrap(),
+      "{2, 3, 1, 4, 5}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{a, b, c, d}, 1, {a -> 10, b -> 2}]")
+        .unwrap(),
+      "{10, 2, 1, 3}"
+    );
+    // A rule can override the default 0 -> 0, or map elements to 0.
+    assert_eq!(
+      interpret("ArrayComponents[{0, a, b}, 1, {0 -> 5}]").unwrap(),
+      "{5, 1, 2}"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{x, 0, y}, 1, {x -> 0}]").unwrap(),
+      "{0, 0, 1}"
+    );
+
+    // Empty list.
+    assert_eq!(interpret("ArrayComponents[{}]").unwrap(), "{}");
+
+    // Invalid inputs stay unevaluated (matching wolframscript).
+    assert_eq!(
+      interpret("ArrayComponents[foo]").unwrap(),
+      "ArrayComponents[foo]"
+    );
+    assert_eq!(
+      interpret("ArrayComponents[{a, b}, {1}]").unwrap(),
+      "ArrayComponents[{a, b}, {1}]"
+    );
+  }
 }
