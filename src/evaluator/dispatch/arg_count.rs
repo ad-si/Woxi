@@ -954,6 +954,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SequenceCases" => Some((2, 2)),
     "SequenceCount" => Some((2, 2)),
     "SequencePosition" => Some((2, 2)),
+    "SequenceReplace" => Some((2, 3)),
     "Series" => Some((2, usize::MAX)),
     "SeriesCoefficient" => Some((2, 2)),
     "Set" => Some((2, 2)),

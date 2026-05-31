@@ -56,6 +56,65 @@ fn has_sequence_pattern(expr: &Expr) -> bool {
   }
 }
 
+/// A single SequenceReplace rule: the full match pattern (kept so bindings flow
+/// through `match_pattern`), the inner list pattern elements (for length
+/// calculation), and the optional replacement RHS.
+struct SeqRule<'a> {
+  match_pat: &'a Expr,
+  sub: &'a [Expr],
+  replacement: Option<&'a Expr>,
+}
+
+/// Extract the list-pattern elements and replacement from a `lhs -> rhs` or
+/// `lhs :> rhs` rule. Returns `None` if `arg` is not a rule whose LHS is a list
+/// pattern (or a Pattern/Condition-wrapped list pattern).
+fn parse_seq_rule(arg: &Expr) -> Option<SeqRule<'_>> {
+  let (match_pat, replacement) = match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), Some(replacement.as_ref())),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      (&args[0], Some(&args[1]))
+    }
+    _ => return None,
+  };
+
+  // Unwrap `Pattern[name, inner]` and `Condition[inner, test]` to reach the
+  // underlying list pattern for length calculations.
+  let mut list_pat = match_pat;
+  loop {
+    match list_pat {
+      Expr::FunctionCall { name, args } if name == "Pattern" && args.len() == 2 => {
+        list_pat = &args[1];
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Condition" && args.len() == 2 =>
+      {
+        list_pat = &args[0];
+      }
+      _ => break,
+    }
+  }
+
+  let sub = match list_pat {
+    Expr::List(items) => items.as_ref(),
+    _ => return None,
+  };
+
+  Some(SeqRule {
+    match_pat,
+    sub,
+    replacement,
+  })
+}
+
 /// Parse `ExcludedForms -> {pat1, pat2, ...}` into the list of patterns.
 /// Returns `None` if the argument is not an `ExcludedForms` rule.
 fn parse_excluded_forms(arg: &Expr) -> Option<Vec<Expr>> {
@@ -2914,6 +2973,148 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(Expr::Integer(count)));
       }
+    }
+    // SequenceReplace[list, rule] / SequenceReplace[list, rule, n] —
+    // replace non-overlapping subsequences matching the rule LHS with its RHS.
+    // `rule` may be a single Rule/RuleDelayed or a list of them (tried in order).
+    "SequenceReplace" if args.len() == 2 || args.len() == 3 => {
+      if !matches!(&args[0], Expr::List(_)) {
+        crate::emit_message(&format!(
+          "SequenceReplace::list: List expected at position 1 in {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "SequenceReplace".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "SequenceReplace".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+
+      // Optional max-replacement count.
+      let max_reps: Option<usize> = if args.len() == 3 {
+        match &args[2] {
+          Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+          // Infinity / All → unlimited (None below). Anything else → bail out.
+          Expr::Identifier(s) if s == "Infinity" || s == "All" => None,
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "SequenceReplace".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
+      } else {
+        None
+      };
+
+      // Collect the rules: either a list of rules, or a single rule.
+      let rule_exprs: Vec<&Expr> = match &args[1] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|it| {
+              matches!(
+                it,
+                Expr::Rule { .. } | Expr::RuleDelayed { .. }
+              ) || matches!(
+                it,
+                Expr::FunctionCall { name, args }
+                  if (name == "Rule" || name == "RuleDelayed") && args.len() == 2
+              )
+            }) =>
+        {
+          items.iter().collect()
+        }
+        single => vec![single],
+      };
+
+      let rules: Vec<SeqRule> =
+        rule_exprs.iter().filter_map(|r| parse_seq_rule(r)).collect();
+
+      // If no parseable rules, return unevaluated.
+      if rules.is_empty() {
+        return Some(Ok(Expr::FunctionCall {
+          name: "SequenceReplace".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+
+      let list = match &args[0] {
+        Expr::List(l) => l,
+        _ => unreachable!(),
+      };
+
+      let mut result: Vec<Expr> = Vec::new();
+      let mut reps_done: usize = 0;
+      let mut i = 0;
+      while i < list.len() {
+        let mut matched = false;
+        if max_reps.map_or(true, |m| reps_done < m) {
+          'rules: for rule in &rules {
+            // Empty list pattern never matches (WL leaves the list unchanged).
+            if rule.sub.is_empty() {
+              continue;
+            }
+            let has_seq = rule.sub.iter().any(has_sequence_pattern);
+            let has_pat = rule.sub.iter().any(has_pattern_element);
+            let remaining = list.len() - i;
+            let min_len = if has_seq { 1 } else { rule.sub.len() };
+            let max_len = if has_seq {
+              remaining
+            } else {
+              rule.sub.len().min(remaining)
+            };
+            if remaining < min_len {
+              continue;
+            }
+            // Greedy: try the longest subsequence first.
+            for len in (min_len..=max_len).rev() {
+              let subseq = Expr::List(list[i..i + len].to_vec().into());
+              let bindings = if has_pat {
+                crate::evaluator::pattern_matching::match_pattern(
+                  &subseq,
+                  rule.match_pat,
+                )
+              } else {
+                // Literal subsequence: compare element-by-element.
+                if len == rule.sub.len()
+                  && (0..len).all(|j| {
+                    expr_to_string(&list[i + j]) == expr_to_string(&rule.sub[j])
+                  })
+                {
+                  Some(Vec::new())
+                } else {
+                  None
+                }
+              };
+              if let Some(bindings) = bindings {
+                let replaced = match rule.replacement {
+                  Some(repl) => {
+                    match crate::evaluator::pattern_matching::apply_bindings(
+                      repl, &bindings,
+                    ) {
+                      Ok(r) => evaluate_expr_to_expr(&r).unwrap_or(subseq),
+                      Err(_) => subseq,
+                    }
+                  }
+                  None => subseq,
+                };
+                result.push(replaced);
+                i += len;
+                reps_done += 1;
+                matched = true;
+                break 'rules;
+              }
+            }
+          }
+        }
+        if !matched {
+          result.push(list[i].clone());
+          i += 1;
+        }
+      }
+      return Some(Ok(Expr::List(result.into())));
     }
     // KeySortBy[assoc, f] — sort association by applying f to keys
     "KeySortBy" if args.len() == 2 => {

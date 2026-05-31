@@ -2274,4 +2274,73 @@ mod list_tests {
       "TensorTranspose[{1, 2, 3}]"
     );
   }
+
+  #[test]
+  fn test_sequence_replace() {
+    // Literal subsequence replacement (non-overlapping, left to right).
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 3, 4, 5}, {2, 3} -> \"X\"]").unwrap(),
+      "{1, X, 4, 5}"
+    );
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 1, 2, 3, 1, 2}, {1, 2} -> \"X\"]")
+        .unwrap(),
+      "{X, X, 3, X}"
+    );
+    // Pattern variables with delayed rule; trailing unmatched element passes through.
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 3, 4, 5}, {a_, b_} :> a + b]").unwrap(),
+      "{3, 7, 5}"
+    );
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 3, 4, 5, 6}, {a_, b_} :> a + b]")
+        .unwrap(),
+      "{3, 7, 11}"
+    );
+    // Condition guard.
+    assert_eq!(
+      interpret("SequenceReplace[{2, 1, 5, 3, 1, 4}, {x_, y_} /; x > y :> xy]")
+        .unwrap(),
+      "{xy, xy, 1, 4}"
+    );
+    // Empty list pattern leaves the list unchanged.
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 3}, {} -> \"X\"]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Multiple rules tried in order; longer match wins at a given position.
+    assert_eq!(
+      interpret(
+        "SequenceReplace[{1, 2, 3, 4, 5, 6}, {{1, 2} -> \"A\", {3, 4} -> \"B\"}]"
+      )
+      .unwrap(),
+      "{A, B, 5, 6}"
+    );
+    assert_eq!(
+      interpret(
+        "SequenceReplace[{1, 2, 3, 1, 2}, {{1, 2, 3} -> \"T\", {1, 2} -> \"D\"}]"
+      )
+      .unwrap(),
+      "{T, D}"
+    );
+    // Max-replacement count argument.
+    assert_eq!(
+      interpret("SequenceReplace[{0, 1, 0, 0, 1, 1}, {0, 0} -> \"X\", 1]")
+        .unwrap(),
+      "{0, 1, X, 1, 1}"
+    );
+    // BlankSequence is greedy.
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 3, 4, 5}, {a__, b_} :> {a, b}]")
+        .unwrap(),
+      "{{1, 2, 3, 4, 5}}"
+    );
+    // Empty input list.
+    assert_eq!(interpret("SequenceReplace[{}, {1} -> 0]").unwrap(), "{}");
+    // Single-element pattern with evaluated RHS.
+    assert_eq!(
+      interpret("SequenceReplace[{5, 6, 7}, {x_} :> x^2]").unwrap(),
+      "{25, 36, 49}"
+    );
+  }
 }
