@@ -1739,3 +1739,72 @@ mod vertex_in_degree {
     );
   }
 }
+
+mod vertex_out_degree {
+  use super::*;
+
+  #[test]
+  fn directed_edge_list() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]").unwrap(),
+      "{2, 1, 1}"
+    );
+  }
+
+  #[test]
+  fn graph_with_explicit_vertices() {
+    assert_eq!(
+      interpret("VertexOutDegree[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}]]").unwrap(),
+      "{1, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn directed_self_loop_counts_once() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 -> 1, 1 -> 2, 2 -> 1}]").unwrap(),
+      "{2, 1}"
+    );
+  }
+
+  #[test]
+  fn pure_undirected_counts_both_endpoints() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 <-> 2, 2 <-> 3, 3 <-> 1}]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn undirected_self_loop_counts_twice() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 <-> 1, 1 <-> 2}]").unwrap(),
+      "{3, 1}"
+    );
+  }
+
+  #[test]
+  fn mixed_graph_ignores_undirected_edges() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 -> 2, 2 <-> 3, 3 -> 1}]").unwrap(),
+      "{1, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn single_vertex_query() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}, 1]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn unknown_vertex_stays_unevaluated() {
+    assert_eq!(
+      interpret("VertexOutDegree[{1 -> 2, 2 -> 3}, 5]").unwrap(),
+      "VertexOutDegree[{1 -> 2, 2 -> 3}, 5]"
+    );
+  }
+}

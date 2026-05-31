@@ -5170,6 +5170,107 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // VertexOutDegree[g] or VertexOutDegree[g, v] — number of outgoing edges per
+  // vertex. Accepts either a Graph[...] or a raw edge list {a -> b, ...}.
+  // Directed edges (Rule / DirectedEdge) contribute to the out-degree of their
+  // source only (a self-loop a -> a counts once). Undirected edges
+  // (TwoWayRule / UndirectedEdge) contribute to the out-degree of both
+  // endpoints (an undirected self-loop a <-> a counts twice). Vertices are
+  // ordered as in VertexList[g].
+  if name == "VertexOutDegree" && (args.len() == 1 || args.len() == 2) {
+    // Resolve (ordered vertices, edges) from a Graph[...] or a raw edge list.
+    let resolved: Option<(Vec<Expr>, Vec<Expr>)> = match &args[0] {
+      Expr::FunctionCall {
+        name: gname,
+        args: gargs,
+      } if gname == "Graph"
+        && gargs.len() >= 2
+        && matches!(&gargs[0], Expr::List(_))
+        && matches!(&gargs[1], Expr::List(_)) =>
+      {
+        if let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1]) {
+          Some((verts.to_vec(), edges.to_vec()))
+        } else {
+          None
+        }
+      }
+      Expr::List(edges) => {
+        // Raw edge list: derive vertices in first-appearance order.
+        let mut verts: Vec<Expr> = Vec::new();
+        let push = |v: &Expr, set: &mut Vec<Expr>| {
+          if !set.iter().any(|e| {
+            crate::evaluator::pattern_matching::expr_equal(e, v)
+          }) {
+            set.push(v.clone());
+          }
+        };
+        let mut ok = !edges.is_empty();
+        for e in edges.iter() {
+          match edge_endpoints(e) {
+            Some((src, dst)) => {
+              push(&src, &mut verts);
+              push(&dst, &mut verts);
+            }
+            None => {
+              ok = false;
+              break;
+            }
+          }
+        }
+        if ok { Some((verts, edges.to_vec())) } else { None }
+      }
+      _ => None,
+    };
+
+    if let Some((verts, edges)) = resolved {
+      let mut outdeg = vec![0i128; verts.len()];
+      let vidx = |v: &Expr| -> Option<usize> {
+        verts.iter().position(|x| {
+          crate::evaluator::pattern_matching::expr_equal(x, v)
+        })
+      };
+      // In a mixed/directed graph (at least one directed edge) only directed
+      // edges contribute to out-degree; undirected edges contribute nothing.
+      // In a purely undirected graph every undirected edge contributes to the
+      // out-degree of both endpoints (a self-loop counts twice).
+      let has_directed = edges
+        .iter()
+        .any(|e| matches!(edge_endpoints_dir(e), Some((_, _, true))));
+      for e in &edges {
+        if let Some((src, dst, directed)) = edge_endpoints_dir(e) {
+          if directed {
+            if let Some(i) = vidx(&src) {
+              outdeg[i] += 1;
+            }
+          } else if !has_directed {
+            if crate::evaluator::pattern_matching::expr_equal(&src, &dst) {
+              if let Some(i) = vidx(&src) {
+                outdeg[i] += 2;
+              }
+            } else {
+              if let Some(i) = vidx(&src) {
+                outdeg[i] += 1;
+              }
+              if let Some(i) = vidx(&dst) {
+                outdeg[i] += 1;
+              }
+            }
+          }
+        }
+      }
+      if args.len() == 2 {
+        if let Some(i) = vidx(&args[1]) {
+          return Ok(Expr::Integer(outdeg[i]));
+        }
+        // Vertex not in graph — leave unevaluated, like wolframscript.
+      } else {
+        return Ok(Expr::List(
+          outdeg.into_iter().map(Expr::Integer).collect(),
+        ));
+      }
+    }
+  }
+
   // FindGraphIsomorphism[g1, g2] — find vertex mapping between isomorphic graphs
   if name == "FindGraphIsomorphism"
     && (args.len() == 2 || args.len() == 3)

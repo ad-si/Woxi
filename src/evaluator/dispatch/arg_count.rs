@@ -1126,6 +1126,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "VectorQ" => Some((1, 1)),
     "VertexEccentricity" => Some((2, 2)),
     "VertexInDegree" => Some((1, 2)),
+    "VertexOutDegree" => Some((1, 2)),
     "WeberE" => Some((2, 2)),
     "WeibullDistribution" => Some((2, 2)),
     "WeierstrassP" => Some((2, 2)),
