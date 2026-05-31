@@ -2002,7 +2002,7 @@ UndirectedGraph,Create undirected graph,🚫,,8.0,2038
 DegreeGraphDistribution,Degree-based graph distribution,🚫,,8.0,2039
 NyquistPlot,Nyquist stability plot,🚫,,8.0,2040
 FlattenLayer,Neural network flatten layer,🚫,,11.0,2042
-VertexInDegree,In-degree of a vertex in a directed graph,🚫,,8.0,2042
+VertexInDegree,Number of incoming edges per vertex of a graph or edge list,✅,none,8.0,2042
 NotebookEventActions,Actions for notebook events,🚫,,6.0,2045
 RescalingTransform,Affine TransformationFunction mapping a bounding box to the unit cube or a target box,✅,pure,6.0,2045
 Wednesday,Day of the week symbol,🚫,,9.0,2045

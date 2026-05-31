@@ -1625,3 +1625,117 @@ mod cases {
     assert_case(r#"UndirectedEdge[x, y, z]; a <-> b"#, r#"a <-> b"#);
   }
 }
+
+mod vertex_in_degree {
+  use super::*;
+
+  #[test]
+  fn directed_edge_list() {
+    assert_eq!(
+      interpret("VertexInDegree[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]").unwrap(),
+      "{1, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn vertex_order_follows_first_appearance() {
+    assert_eq!(
+      interpret("VertexInDegree[{3 -> 2, 1 -> 3, 2 -> 1}]").unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+
+  #[test]
+  fn graph_with_explicit_vertices() {
+    assert_eq!(
+      interpret(
+        "VertexInDegree[Graph[{a, b, c, d}, \
+         {a -> b, b -> c, c -> a, a -> c, d -> a}]]"
+      )
+      .unwrap(),
+      "{2, 1, 2, 0}"
+    );
+  }
+
+  #[test]
+  fn directed_self_loop_counts_once() {
+    assert_eq!(
+      interpret("VertexInDegree[{1 -> 1, 1 -> 2, 2 -> 1}]").unwrap(),
+      "{2, 1}"
+    );
+  }
+
+  #[test]
+  fn pure_undirected_counts_both_endpoints() {
+    assert_eq!(
+      interpret("VertexInDegree[{1 <-> 2, 2 <-> 3, 3 <-> 1}]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn undirected_self_loop_counts_twice() {
+    assert_eq!(
+      interpret("VertexInDegree[{1 <-> 1, 1 <-> 2}]").unwrap(),
+      "{3, 1}"
+    );
+  }
+
+  #[test]
+  fn mixed_graph_ignores_undirected_edges() {
+    // A graph with any directed edge is a mixed graph: undirected edges
+    // contribute nothing to in-degree.
+    assert_eq!(
+      interpret("VertexInDegree[{1 -> 2, 2 <-> 3, 3 -> 1}]").unwrap(),
+      "{1, 1, 0}"
+    );
+    assert_eq!(
+      interpret("VertexInDegree[{1 <-> 2, 2 <-> 3, 3 <-> 1, 1 -> 2}]")
+        .unwrap(),
+      "{0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn directed_and_undirected_edge_heads() {
+    assert_eq!(
+      interpret(
+        "VertexInDegree[{DirectedEdge[a, b], \
+         UndirectedEdge[b, c], DirectedEdge[c, a]}]"
+      )
+      .unwrap(),
+      "{1, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn single_vertex_query() {
+    assert_eq!(
+      interpret("VertexInDegree[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}, 1]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "VertexInDegree[Graph[{a, b, c}, {a -> b, b -> c, c -> a, a -> c}], c]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn no_edges() {
+    assert_eq!(
+      interpret("VertexInDegree[Graph[{1, 2, 3}, {}]]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn unknown_vertex_stays_unevaluated() {
+    assert_eq!(
+      interpret("VertexInDegree[{1 -> 2, 2 -> 3}, 5]").unwrap(),
+      "VertexInDegree[{1 -> 2, 2 -> 3}, 5]"
+    );
+  }
+}

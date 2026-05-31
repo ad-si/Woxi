@@ -501,6 +501,44 @@ fn extract_rule_pair(rule: &Expr) -> Option<(String, Expr)> {
   }
 }
 
+/// Unwrap a possibly Labeled-wrapped graph edge and return its two endpoints,
+/// regardless of direction. Handles Rule (`a -> b`), DirectedEdge,
+/// UndirectedEdge and TwoWayRule (`a <-> b`).
+fn edge_endpoints(edge: &Expr) -> Option<(Expr, Expr)> {
+  edge_endpoints_dir(edge).map(|(s, d, _)| (s, d))
+}
+
+/// Like `edge_endpoints` but also reports whether the edge is directed.
+/// Rule and DirectedEdge are directed; TwoWayRule and UndirectedEdge are not.
+fn edge_endpoints_dir(edge: &Expr) -> Option<(Expr, Expr, bool)> {
+  // Peel a Labeled[edge, label] wrapper if present.
+  let inner = match edge {
+    Expr::FunctionCall { name, args }
+      if name == "Labeled" && args.len() == 2 =>
+    {
+      &args[0]
+    }
+    _ => edge,
+  };
+  match inner {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some(((**pattern).clone(), (**replacement).clone(), true)),
+    Expr::FunctionCall { name, args } if args.len() == 2 => match name.as_str()
+    {
+      "DirectedEdge" | "Rule" => {
+        Some((args[0].clone(), args[1].clone(), true))
+      }
+      "UndirectedEdge" | "TwoWayRule" => {
+        Some((args[0].clone(), args[1].clone(), false))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 pub fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -5028,6 +5066,107 @@ pub fn evaluate_function_call_ast_inner(
       }
     } else {
       return Ok(Expr::List(degrees.into_iter().map(Expr::Integer).collect()));
+    }
+  }
+
+  // VertexInDegree[g] or VertexInDegree[g, v] — number of incoming edges per
+  // vertex. Accepts either a Graph[...] or a raw edge list {a -> b, ...}.
+  // Directed edges (Rule / DirectedEdge) contribute to the in-degree of their
+  // target only (a self-loop a -> a counts once). Undirected edges
+  // (TwoWayRule / UndirectedEdge) contribute to the in-degree of both
+  // endpoints (an undirected self-loop a <-> a counts twice). Vertices are
+  // ordered as in VertexList[g].
+  if name == "VertexInDegree" && (args.len() == 1 || args.len() == 2) {
+    // Resolve (ordered vertices, edges) from a Graph[...] or a raw edge list.
+    let resolved: Option<(Vec<Expr>, Vec<Expr>)> = match &args[0] {
+      Expr::FunctionCall {
+        name: gname,
+        args: gargs,
+      } if gname == "Graph"
+        && gargs.len() >= 2
+        && matches!(&gargs[0], Expr::List(_))
+        && matches!(&gargs[1], Expr::List(_)) =>
+      {
+        if let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1]) {
+          Some((verts.to_vec(), edges.to_vec()))
+        } else {
+          None
+        }
+      }
+      Expr::List(edges) => {
+        // Raw edge list: derive vertices in first-appearance order.
+        let mut verts: Vec<Expr> = Vec::new();
+        let push = |v: &Expr, set: &mut Vec<Expr>| {
+          if !set.iter().any(|e| {
+            crate::evaluator::pattern_matching::expr_equal(e, v)
+          }) {
+            set.push(v.clone());
+          }
+        };
+        let mut ok = !edges.is_empty();
+        for e in edges.iter() {
+          match edge_endpoints(e) {
+            Some((src, dst)) => {
+              push(&src, &mut verts);
+              push(&dst, &mut verts);
+            }
+            None => {
+              ok = false;
+              break;
+            }
+          }
+        }
+        if ok { Some((verts, edges.to_vec())) } else { None }
+      }
+      _ => None,
+    };
+
+    if let Some((verts, edges)) = resolved {
+      let mut indeg = vec![0i128; verts.len()];
+      let vidx = |v: &Expr| -> Option<usize> {
+        verts.iter().position(|x| {
+          crate::evaluator::pattern_matching::expr_equal(x, v)
+        })
+      };
+      // In a mixed/directed graph (at least one directed edge) only directed
+      // edges contribute to in-degree; undirected edges contribute nothing.
+      // In a purely undirected graph every undirected edge contributes to the
+      // in-degree of both endpoints (a self-loop counts twice).
+      let has_directed = edges
+        .iter()
+        .any(|e| matches!(edge_endpoints_dir(e), Some((_, _, true))));
+      for e in &edges {
+        if let Some((src, dst, directed)) = edge_endpoints_dir(e) {
+          if directed {
+            if let Some(i) = vidx(&dst) {
+              indeg[i] += 1;
+            }
+          } else if !has_directed {
+            if crate::evaluator::pattern_matching::expr_equal(&src, &dst) {
+              if let Some(i) = vidx(&src) {
+                indeg[i] += 2;
+              }
+            } else {
+              if let Some(i) = vidx(&src) {
+                indeg[i] += 1;
+              }
+              if let Some(i) = vidx(&dst) {
+                indeg[i] += 1;
+              }
+            }
+          }
+        }
+      }
+      if args.len() == 2 {
+        if let Some(i) = vidx(&args[1]) {
+          return Ok(Expr::Integer(indeg[i]));
+        }
+        // Vertex not in graph — leave unevaluated, like wolframscript.
+      } else {
+        return Ok(Expr::List(
+          indeg.into_iter().map(Expr::Integer).collect(),
+        ));
+      }
     }
   }
 
