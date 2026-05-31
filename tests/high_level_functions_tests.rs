@@ -4108,6 +4108,58 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_edge_add() {
+      // Single undirected edge introducing a new vertex: edge appended,
+      // new vertex added at the end of the vertex list.
+      assert_eq!(
+        interpret(
+          "g = EdgeAdd[CompleteGraph[3], 1 <-> 4]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4}, {1 \u{F3D4} 2, 1 \u{F3D4} 3, 2 \u{F3D4} 3, \
+         1 \u{F3D4} 4}}"
+      );
+      // A list adds several edges, adding new vertices in order.
+      assert_eq!(
+        interpret(
+          "g = EdgeAdd[CompleteGraph[3], {3 <-> 4, 4 <-> 5}]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4, 5}, {1 \u{F3D4} 2, 1 \u{F3D4} 3, 2 \u{F3D4} 3, \
+         3 \u{F3D4} 4, 4 \u{F3D4} 5}}"
+      );
+      // Directed edge (Rule form) is stored as DirectedEdge.
+      assert_eq!(
+        interpret(
+          "g = EdgeAdd[Graph[{1 -> 2, 2 -> 3}], 3 -> 1]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 2, 3}, {1 \u{F3D5} 2, 2 \u{F3D5} 3, 3 \u{F3D5} 1}}"
+      );
+      // Re-adding an existing edge yields a multigraph (edge kept twice).
+      assert_eq!(
+        interpret("EdgeList[EdgeAdd[CompleteGraph[3], 1 <-> 2]]").unwrap(),
+        "{1 \u{F3D4} 2, 1 \u{F3D4} 3, 2 \u{F3D4} 3, 1 \u{F3D4} 2}"
+      );
+      // DirectedEdge / UndirectedEdge spellings are accepted.
+      assert_eq!(
+        interpret(
+          "EdgeList[EdgeAdd[Graph[{1 -> 2}], DirectedEdge[2, 3]]]"
+        )
+        .unwrap(),
+        "{1 \u{F3D5} 2, 2 \u{F3D5} 3}"
+      );
+      // An invalid edge argument leaves the expression unevaluated.
+      assert_eq!(
+        interpret("EdgeAdd[CompleteGraph[3], 5]").unwrap(),
+        "EdgeAdd[Graph[<3>, <3>], 5]"
+      );
+    }
+
+    #[test]
     fn test_single_source_distances() {
       // Two-arg form returns distances to every vertex, in VertexList order.
       assert_eq!(

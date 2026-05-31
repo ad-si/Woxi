@@ -1956,7 +1956,7 @@ MeanFilter,Signal processing mean filter,🚫,,7.0,1991
 PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11.0,1991
 OrderlessPatternSequence,Pattern matching construct for orderless sequences,🚫,,10.1,1992
 Character,Symbol used in string patterns to represent a single character,✅,pure,1.0,1993
-EdgeAdd,Add edges to a graph (graph theory),🚫,,8.0,1995
+EdgeAdd,Add one or more edges to a graph adding any new endpoint vertices,✅,pure,8.0,1995
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7.0,1995
 DeclarePackage,Declare package for autoloading (package management),🚫,,2.0,1997
 FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6.0,1997

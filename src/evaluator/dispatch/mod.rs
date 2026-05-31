@@ -3704,6 +3704,111 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // EdgeAdd[Graph[vertices, edges], e | {e1, e2, ...}] →
+  //   append the given edge(s) to the graph and add any new endpoint
+  //   vertices (in order of first appearance). A directed edge a -> b
+  //   (Rule / DirectedEdge) is stored as DirectedEdge[a, b]; an undirected
+  //   edge a <-> b (TwoWayRule / UndirectedEdge) is stored as
+  //   UndirectedEdge[a, b]. Existing edges are kept, so re-adding an edge
+  //   yields a multigraph (matching Wolfram).
+  if name == "EdgeAdd" && args.len() == 2 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(vertices) = &gargs[0]
+      && let Expr::List(edges) = &gargs[1]
+    {
+      use crate::evaluator::pattern_matching::expr_equal;
+      // Normalize an edge specification to its canonical stored form,
+      // returning the canonical edge and its two endpoints. Returns None
+      // for anything that is not a valid edge specification.
+      fn ea_canonical(e: &Expr) -> Option<(Expr, Expr, Expr)> {
+        match e {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((
+            Expr::FunctionCall {
+              name: "DirectedEdge".to_string(),
+              args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+            },
+            (**pattern).clone(),
+            (**replacement).clone(),
+          )),
+          Expr::FunctionCall { name, args }
+            if name == "DirectedEdge" && args.len() == 2 =>
+          {
+            Some((e.clone(), args[0].clone(), args[1].clone()))
+          }
+          Expr::FunctionCall { name, args }
+            if (name == "UndirectedEdge" || name == "TwoWayRule")
+              && args.len() == 2 =>
+          {
+            Some((
+              Expr::FunctionCall {
+                name: "UndirectedEdge".to_string(),
+                args: vec![args[0].clone(), args[1].clone()].into(),
+              },
+              args[0].clone(),
+              args[1].clone(),
+            ))
+          }
+          _ => None,
+        }
+      }
+      // A List second argument denotes several edges to add; any other
+      // expression denotes a single edge.
+      let to_add: Vec<Expr> = match &args[1] {
+        Expr::List(es) => es.iter().cloned().collect(),
+        other => vec![other.clone()],
+      };
+      // Every requested edge must be a valid edge specification, otherwise
+      // emit the EdgeAdd::inv message and leave the expression unevaluated.
+      if to_add.iter().any(|e| ea_canonical(e).is_none()) {
+        crate::emit_message(&format!(
+          "EdgeAdd::inv: The argument {} in {} is not a valid edge.",
+          expr_to_string(&args[1]),
+          expr_to_string(&Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      let mut new_vertices: Vec<Expr> = vertices.iter().cloned().collect();
+      let mut new_edges: Vec<Expr> = edges.iter().cloned().collect();
+      for e in &to_add {
+        let (canon, a, b) = ea_canonical(e).unwrap();
+        for v in [a, b] {
+          if !new_vertices.iter().any(|x| expr_equal(x, &v)) {
+            new_vertices.push(v);
+          }
+        }
+        new_edges.push(canon);
+      }
+      let mut result_args = vec![
+        Expr::List(new_vertices.into()),
+        Expr::List(new_edges.into()),
+      ];
+      // Preserve any trailing graph options.
+      result_args.extend(gargs[2..].iter().cloned());
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: result_args.into(),
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // EdgeDelete[Graph[vertices, edges], e | {e1, e2, ...}] →
   //   remove the given edges (one matching occurrence per requested edge).
   //   Vertices are preserved. A directed edge a -> b (or DirectedEdge[a, b])
