@@ -2198,4 +2198,80 @@ mod list_tests {
       "ArrayComponents[{a, b}, {1}]"
     );
   }
+
+  #[test]
+  fn test_tensor_transpose() {
+    // Matrix transpose via explicit permutation.
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2}, {3, 4}}, {2, 1}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    // Non-square matrix.
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2, 3}, {4, 5, 6}}, {2, 1}]").unwrap(),
+      "{{1, 4}, {2, 5}, {3, 6}}"
+    );
+    // Default permutation swaps the first two levels (same as Transpose).
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{{1, 4}, {2, 5}, {3, 6}}"
+    );
+    // Rank-3 tensor: cycle the levels {2, 3, 1}.
+    assert_eq!(
+      interpret("Dimensions[TensorTranspose[Array[a, {2, 3, 4}], {2, 3, 1}]]")
+        .unwrap(),
+      "{4, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Dimensions[TensorTranspose[Array[a, {2, 3, 4}], {3, 1, 2}]]")
+        .unwrap(),
+      "{3, 4, 2}"
+    );
+    // Default permutation on a rank-3 tensor only swaps the first two levels.
+    assert_eq!(
+      interpret("Dimensions[TensorTranspose[Array[a, {2, 3, 4}]]]").unwrap(),
+      "{3, 2, 4}"
+    );
+    // A partial permutation shorter than the rank leaves trailing levels fixed.
+    assert_eq!(
+      interpret("Dimensions[TensorTranspose[Array[a, {2, 3, 4}], {2, 1}]]")
+        .unwrap(),
+      "{3, 2, 4}"
+    );
+    // Identity permutation returns the tensor unchanged.
+    assert_eq!(
+      interpret("TensorTranspose[{1, 2, 3}, {1}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Empty permutation on a scalar is the identity.
+    assert_eq!(interpret("TensorTranspose[5, {}]").unwrap(), "5");
+
+    // A spot-check of an actual element permutation on a rank-3 tensor.
+    assert_eq!(
+      interpret(
+        "TensorTranspose[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {3, 2, 1}]"
+      )
+      .unwrap(),
+      "{{{1, 5}, {3, 7}}, {{2, 6}, {4, 8}}}"
+    );
+
+    // Error: not a valid permutation of 1..Length[perm] (symmperm).
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2}, {3, 4}}, {1, 1}]").unwrap(),
+      "TensorTranspose[{{1, 2}, {3, 4}}, {1, 1}]"
+    );
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2}, {3, 4}}, {3, 1}]").unwrap(),
+      "TensorTranspose[{{1, 2}, {3, 4}}, {3, 1}]"
+    );
+    // Error: valid permutation but moves slots beyond tensor rank (ttrank).
+    assert_eq!(
+      interpret("TensorTranspose[{1, 2, 3}, {2, 1}]").unwrap(),
+      "TensorTranspose[{1, 2, 3}, {2, 1}]"
+    );
+    assert_eq!(
+      interpret("TensorTranspose[{1, 2, 3}]").unwrap(),
+      "TensorTranspose[{1, 2, 3}]"
+    );
+  }
 }

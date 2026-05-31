@@ -849,6 +849,83 @@ pub fn transpose_perm_ast(
   }))
 }
 
+/// Outcome of a `TensorTranspose` call: either the transposed tensor or a
+/// validation failure that the dispatcher turns into the matching WL message.
+pub enum TensorTransposeResult {
+  Ok(Expr),
+  /// Permutation moves slots beyond the tensor rank (`TensorTranspose::ttrank`).
+  RankError { rank: usize },
+  /// The second argument is not a valid permutation
+  /// (`TensorTranspose::symmperm`).
+  SymmPerm,
+}
+
+/// `TensorTranspose[t, perm]` — transpose the levels of tensor `t` according to
+/// the permutation `perm`. Unlike `Transpose`, `perm` must be a full
+/// permutation of `1..rank`. With no `perm`, the first two levels are swapped.
+pub fn tensor_transpose_ast(
+  list: &Expr,
+  perm: Option<&[Expr]>,
+) -> TensorTransposeResult {
+  let dims = tensor_dims(list);
+  let rank = dims.len();
+
+  // Build the partial permutation as 1-based slot indices. It may be shorter
+  // than the rank, in which case the trailing levels are left untouched.
+  let partial: Vec<usize> = match perm {
+    Some(perm) => {
+      let mut s = Vec::with_capacity(perm.len());
+      for p in perm {
+        match p {
+          Expr::Integer(n) if *n >= 1 => s.push(*n as usize),
+          _ => return TensorTransposeResult::SymmPerm,
+        }
+      }
+      s
+    }
+    // Default permutation swaps the first two levels: {2, 1}.
+    None => vec![2, 1],
+  };
+
+  // The given permutation must be a bijection of {1, ..., k} where k is its
+  // length; otherwise it is not a valid permutation (symmperm).
+  let k = partial.len();
+  let mut seen = vec![false; k];
+  for &s in &partial {
+    if s < 1 || s > k || seen[s - 1] {
+      return TensorTransposeResult::SymmPerm;
+    }
+    seen[s - 1] = true;
+  }
+
+  // A valid permutation that touches more slots than the tensor has (ttrank).
+  if k > rank {
+    return TensorTransposeResult::RankError { rank };
+  }
+
+  // Extend the partial permutation to the full rank: trailing slots are fixed.
+  let sigma: Vec<usize> =
+    partial.iter().copied().chain((k + 1)..=rank).collect();
+
+  // Identity permutation → return the tensor unchanged.
+  if sigma.iter().enumerate().all(|(idx, &n)| idx + 1 == n) {
+    return TensorTransposeResult::Ok(list.clone());
+  }
+
+  // Result axis t corresponds to list axis sigma^-1(t).
+  let mut inv = vec![0usize; rank];
+  for (idx, &n) in sigma.iter().enumerate() {
+    inv[n - 1] = idx + 1;
+  }
+  let result_shape: Vec<usize> = (0..rank).map(|t| dims[inv[t] - 1]).collect();
+
+  TensorTransposeResult::Ok(tensor_build(&result_shape, &mut |j| {
+    // Original index i_s = j_{sigma(s)} = j_{sigma[s-1] - 1}
+    let i: Vec<usize> = (0..rank).map(|s| j[sigma[s] - 1]).collect();
+    tensor_get(list, &i)
+  }))
+}
+
 pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let rows = match list {
     Expr::List(items) => items,

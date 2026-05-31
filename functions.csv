@@ -2344,7 +2344,7 @@ CayleyGraph,group theory graph,🚫,None,8.0,2394
 CellFrameMargins,notebook styling,🚫,None,3.0,2394
 ChromaticityPlot,color visualization,🚫,None,10.0,2394
 GeoPositionXYZ,geographic coordinates,🚫,None,7.0,2394
-TensorTranspose,tensor algebra,🚫,None,9.0,2394
+TensorTranspose,Transposes the levels of a tensor according to a permutation,✅,pure,9.0,2394
 CircleThrough,Finds the circumscribed circle through given points,✅,None,12.0,2399
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1.0,2399
 ReshapeLayer,neural network,🚫,None,11.0,2399

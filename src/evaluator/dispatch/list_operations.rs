@@ -1639,6 +1639,62 @@ pub fn dispatch_list_operations(
         return Some(list_helpers_ast::transpose_perm_ast(&args[0], perm));
       }
     }
+    "TensorTranspose" if args.len() == 1 || args.len() == 2 => {
+      use list_helpers_ast::TensorTransposeResult;
+      let perm: Option<Vec<Expr>> = if args.len() == 2 {
+        match &args[1] {
+          Expr::List(perm) => Some(perm.to_vec()),
+          // A non-list permutation argument is invalid.
+          _ => {
+            crate::emit_message(&format!(
+              "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
+              crate::syntax::expr_to_string(&args[1])
+            ));
+            return Some(Ok(Expr::FunctionCall {
+              name: "TensorTranspose".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
+      } else {
+        None
+      };
+      let result = list_helpers_ast::tensor_transpose_ast(
+        &args[0],
+        perm.as_deref(),
+      );
+      return Some(Ok(match result {
+        TensorTransposeResult::Ok(e) => e,
+        TensorTransposeResult::RankError { rank } => {
+          let perm_str = match perm {
+            Some(p) => crate::syntax::expr_to_string(&Expr::List(p.into())),
+            None => "{2, 1}".to_string(),
+          };
+          crate::emit_message(&format!(
+            "TensorTranspose::ttrank: Permutation {} moves slots beyond tensor rank {}.",
+            perm_str, rank
+          ));
+          Expr::FunctionCall {
+            name: "TensorTranspose".to_string(),
+            args: args.to_vec().into(),
+          }
+        }
+        TensorTransposeResult::SymmPerm => {
+          let perm_str = match perm {
+            Some(p) => crate::syntax::expr_to_string(&Expr::List(p.into())),
+            None => "{2, 1}".to_string(),
+          };
+          crate::emit_message(&format!(
+            "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
+            perm_str
+          ));
+          Expr::FunctionCall {
+            name: "TensorTranspose".to_string(),
+            args: args.to_vec().into(),
+          }
+        }
+      }));
+    }
     "Diagonal" if args.len() == 1 || args.len() == 2 => {
       let offset = if args.len() == 2 {
         match &args[1] {
