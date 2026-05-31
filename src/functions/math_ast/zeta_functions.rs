@@ -1603,6 +1603,29 @@ pub fn riemann_siegel_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// RiemannSiegelTheta[t] — the Riemann-Siegel theta function for real t.
+pub fn riemann_siegel_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RiemannSiegelTheta expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Only evaluate for real numeric (Real) input; keep exact/symbolic
+  // arguments unevaluated to mirror wolframscript.
+  if let Expr::Real(t) = &args[0] {
+    let v = riemann_siegel_theta_numeric(*t);
+    // Normalise negative zero to positive zero (theta(0) = 0).
+    let v = if v == 0.0 { 0.0 } else { v };
+    return Ok(Expr::Real(v));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "RiemannSiegelTheta".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// DirichletEta[s] — the Dirichlet eta function: (1 - 2^(1-s)) * Zeta[s]
 pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

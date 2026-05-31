@@ -1702,7 +1702,7 @@ Deployed,Deployed option,,unevaluated,6.0,1730
 FindGeometricTransform,Find geometric transformation,,unevaluated,8.0,1730
 DirichletDistribution,Dirichlet distribution,,unevaluated,8.0,1733
 StringDelete,Deletes all occurrences of a substring,✅,pure,10.1,1733
-RiemannSiegelTheta,Riemann-Siegel theta function,,unevaluated,2.0,1734
+RiemannSiegelTheta,Riemann-Siegel theta function on the critical line for real numeric arguments,✅,pure,2.0,1734
 RandomInstance,Random geometric instance,,unevaluated,12.0,1736
 TrigFactor,Factor trigonometric expressions,,unevaluated,3.0,1736
 PoolingLayer,Neural net pooling layer,,unevaluated,11.0,1737

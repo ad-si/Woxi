@@ -788,6 +788,9 @@ pub fn dispatch_math_functions(
     "RiemannSiegelZ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::riemann_siegel_z_ast(args));
     }
+    "RiemannSiegelTheta" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::riemann_siegel_theta_ast(args));
+    }
     "PolyGamma" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::polygamma_ast(args));
     }

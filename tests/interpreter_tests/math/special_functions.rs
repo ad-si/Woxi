@@ -8128,3 +8128,69 @@ mod riemann_siegel_z {
     assert_eq!(interpret("RiemannSiegelZ[2]").unwrap(), "RiemannSiegelZ[2]");
   }
 }
+
+mod riemann_siegel_theta {
+  use super::*;
+
+  fn val(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  #[test]
+  fn numeric_small() {
+    // wolframscript: RiemannSiegelTheta[1.0] = -1.7675479528122908
+    assert!(
+      (val("RiemannSiegelTheta[1.0]") - (-1.7675479528122908)).abs() < 1e-10
+    );
+    // wolframscript: RiemannSiegelTheta[10.0] = -3.067074396289898
+    assert!(
+      (val("RiemannSiegelTheta[10.0]") - (-3.067074396289898)).abs() < 1e-10
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    // wolframscript: RiemannSiegelTheta[0.0] = 0.
+    assert_eq!(interpret("RiemannSiegelTheta[0.0]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn negative_argument() {
+    // theta is odd: theta(-t) = -theta(t).
+    let a = val("RiemannSiegelTheta[5.0]");
+    let b = val("RiemannSiegelTheta[-5.0]");
+    assert!((a + b).abs() < 1e-10);
+    // wolframscript: RiemannSiegelTheta[-5.0] = 3.4596203753634622
+    assert!((b - 3.4596203753634622).abs() < 1e-10);
+  }
+
+  #[test]
+  fn larger_argument() {
+    // wolframscript: RiemannSiegelTheta[100.0] = 87.97216523178722
+    assert!(
+      (val("RiemannSiegelTheta[100.0]") - 87.97216523178722).abs() < 1e-8
+    );
+  }
+
+  #[test]
+  fn n_of_exact() {
+    // N forces a Real argument, so the numeric branch fires.
+    // wolframscript: N[RiemannSiegelTheta[1]] = -1.7675479528122908
+    assert!(
+      (val("N[RiemannSiegelTheta[1]]") - (-1.7675479528122908)).abs() < 1e-10
+    );
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(
+      interpret("RiemannSiegelTheta[t]").unwrap(),
+      "RiemannSiegelTheta[t]"
+    );
+    // Exact integer argument stays unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("RiemannSiegelTheta[2]").unwrap(),
+      "RiemannSiegelTheta[2]"
+    );
+  }
+}
