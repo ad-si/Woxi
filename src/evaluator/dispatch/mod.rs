@@ -5054,6 +5054,85 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // IncidenceMatrix[Graph[{vertices}, {edges}]] — vertex-by-edge incidence matrix.
+  // Rows are vertices (in vertex order), columns are edges (in edge order).
+  // Undirected edge {u,v}: both endpoints get +1 (a self-loop yields 2).
+  // Directed edge u->v: source gets -1, target gets +1; a directed self-loop
+  // yields -2 (matching Wolfram's convention).
+  if name == "IncidenceMatrix" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      let e = edges.len();
+      let vertex_index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (expr_to_string(v), i))
+        .collect();
+      // n×e zero matrix (rows = vertices, cols = edges)
+      let mut matrix = vec![vec![0i128; e]; n];
+      for (col, edge) in edges.iter().enumerate() {
+        // Extract (from, to, directed?) for both edge spellings:
+        // DirectedEdge/UndirectedEdge[u,v] and the directed Rule u->v.
+        let endpoints = match edge {
+          Expr::FunctionCall {
+            name: ename,
+            args: eargs,
+          } if eargs.len() == 2 => Some((
+            expr_to_string(&eargs[0]),
+            expr_to_string(&eargs[1]),
+            ename == "DirectedEdge",
+          )),
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((
+            expr_to_string(pattern),
+            expr_to_string(replacement),
+            true, // Rules are directed
+          )),
+          _ => None,
+        };
+        if let Some((from_str, to_str, directed)) = endpoints
+          && let (Some(&fi), Some(&ti)) =
+            (vertex_index.get(&from_str), vertex_index.get(&to_str))
+        {
+          if directed {
+            if fi == ti {
+              // directed self-loop
+              matrix[fi][col] = -2;
+            } else {
+              matrix[fi][col] = -1;
+              matrix[ti][col] = 1;
+            }
+          } else {
+            // undirected edge (a self-loop naturally yields 2)
+            matrix[fi][col] += 1;
+            matrix[ti][col] += 1;
+          }
+        }
+      }
+      return Ok(Expr::List(
+        matrix
+          .into_iter()
+          .map(|row| {
+            Expr::List(row.into_iter().map(Expr::Integer).collect())
+          })
+          .collect(),
+      ));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // ConnectedGraphQ[graph] — True if the graph is connected.
   // For undirected graphs this means a single connected component;
   // for directed graphs it means a single strongly connected component.

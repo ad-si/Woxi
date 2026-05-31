@@ -1846,7 +1846,7 @@ PlotRegion,Plot region option,,unevaluated,2.0,1875
 DensityHistogram,Density histogram,,unevaluated,8.0,1877
 DigitCount,Counts occurrences of each digit in a number,✅,pure,4.0,1877
 DistributionChart,Distribution chart,,unevaluated,8.0,1880
-IncidenceMatrix,Graph incidence matrix,,unevaluated,8.0,1880
+IncidenceMatrix,Builds the vertex-by-edge incidence matrix of a graph,✅,none,8.0,1880
 InverseZTransform,Inverse Z-transform,,unevaluated,4.0,1880
 Notebooks,List open notebooks,,unevaluated,3.0,1883
 ZTransform,Z-transform,,unevaluated,4.0,1883

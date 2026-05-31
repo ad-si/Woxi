@@ -263,6 +263,63 @@ mod adjacency_matrix {
   }
 }
 
+mod incidence_matrix {
+  use super::*;
+
+  #[test]
+  fn undirected_complete() {
+    // Rows = vertices, columns = edges; both endpoints get +1.
+    assert_eq!(
+      interpret("IncidenceMatrix[CompleteGraph[3]]").unwrap(),
+      "{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn undirected_path() {
+    assert_eq!(
+      interpret("IncidenceMatrix[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{{1, 0, 0}, {1, 1, 0}, {0, 1, 1}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn directed_cycle() {
+    // Directed edge: source -1, target +1.
+    assert_eq!(
+      interpret("IncidenceMatrix[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap(),
+      "{{-1, 0, 1}, {1, -1, 0}, {0, 1, -1}}"
+    );
+  }
+
+  #[test]
+  fn single_directed_edge() {
+    assert_eq!(
+      interpret("IncidenceMatrix[Graph[{1, 2, 3}, {1 -> 2}]]").unwrap(),
+      "{{-1}, {1}, {0}}"
+    );
+  }
+
+  #[test]
+  fn directed_self_loop() {
+    // A directed self-loop yields -2 (Wolfram convention).
+    assert_eq!(
+      interpret("IncidenceMatrix[Graph[{1, 2}, {1 -> 1, 1 -> 2}]]").unwrap(),
+      "{{-2, -1}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn undirected_self_loop() {
+    // An undirected self-loop yields 2.
+    assert_eq!(
+      interpret("IncidenceMatrix[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]").unwrap(),
+      "{{2, 1}, {0, 1}}"
+    );
+  }
+}
+
 mod adjacency_graph_from_matrix {
   use super::*;
 
