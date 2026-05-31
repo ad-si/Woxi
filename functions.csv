@@ -2600,7 +2600,7 @@ SelfLoopStyle,option for self-loop style in graphs,✅,Symbolic,6.0,2656
 StringPart,Extracts characters from a string by index,✅,pure,11.0,2656
 TransformationFunction,Represents a geometric transformation as a matrix,✅,pure,6.0,2656
 DatabinAdd,,🚫,,10.0,2662
-DihedralGroup,Dihedral group of order 2n,,unevaluated,8.0,2662
+DihedralGroup,Symbolic dihedral group of order 2n; stays unevaluated and is consumed by GroupOrder/GroupGenerators/GroupElements,✅,unevaluated,8.0,2662
 DistributedContexts,,🚫,,8.0,2662
 FunctionContinuous,Test whether a function is continuous,✅,1,12.2,2662
 ScaleDivisions,option for scale divisions,✅,Symbolic,9.0,2662

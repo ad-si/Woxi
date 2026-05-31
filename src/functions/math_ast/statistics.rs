@@ -2712,7 +2712,98 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(abelian_group_elements(&factors));
   }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "DihedralGroup"
+    && gargs.len() == 1
+    && let Expr::Integer(n) = &gargs[0]
+    && *n >= 1
+  {
+    return Ok(dihedral_group_elements(*n as usize));
+  }
   Ok(unevaluated())
+}
+
+/// Convert a permutation given as an image list (`image[i-1]` is the image of
+/// point `i`, 1-based values) into canonical `Cycles[{...}]` form: each cycle
+/// starts at its smallest element, cycles are ordered by that smallest element,
+/// and fixed points are dropped.
+fn images_to_cycles(image: &[i128]) -> Expr {
+  let n = image.len();
+  let mut visited = vec![false; n];
+  let mut cycles: Vec<Vec<i128>> = Vec::new();
+  for start in 0..n {
+    if visited[start] {
+      continue;
+    }
+    let mut cycle = Vec::new();
+    let mut cur = start;
+    loop {
+      visited[cur] = true;
+      cycle.push((cur + 1) as i128);
+      cur = (image[cur] - 1) as usize;
+      if cur == start {
+        break;
+      }
+    }
+    if cycle.len() >= 2 {
+      cycles.push(cycle);
+    }
+  }
+  // Each cycle already starts at its smallest element (we enter cycles at the
+  // smallest unvisited point) and cycles are produced in ascending order.
+  make_cycles_multi(cycles)
+}
+
+/// GroupElements[DihedralGroup[n]] - all 2n symmetries of a regular n-gon as
+/// permutations of {1, ..., m}, in canonical cycle notation, ordered exactly
+/// as wolframscript does (lexicographically by image list).
+fn dihedral_group_elements(n: usize) -> Expr {
+  // Point set and base permutations match wolframscript's conventions:
+  // - DihedralGroup[1] acts on 2 points: identity and the swap (1 2).
+  // - DihedralGroup[2] acts on 4 points: the Klein four-group {e,(12),(34),(12)(34)}.
+  // - DihedralGroup[n>=3] acts on n points as the symmetries of a regular n-gon.
+  let mut elements: Vec<Vec<i128>> = Vec::new();
+  if n == 1 {
+    elements.push(vec![1, 2]); // identity
+    elements.push(vec![2, 1]); // reflection
+  } else if n == 2 {
+    // Klein four-group acting on {1,2,3,4}.
+    for image in [
+      vec![1, 2, 3, 4],
+      vec![2, 1, 3, 4],
+      vec![1, 2, 4, 3],
+      vec![2, 1, 4, 3],
+    ] {
+      elements.push(image);
+    }
+  } else {
+    // Rotation r: i -> (i mod n) + 1. Reflection s: fixes 1, reverses 2..n.
+    let rotate = |image: &[i128]| -> Vec<i128> {
+      // Apply r after the given permutation: r(image[i]).
+      image.iter().map(|&v| (v % n as i128) + 1).collect()
+    };
+    // Build identity image.
+    let identity: Vec<i128> = (1..=n as i128).collect();
+    // Reflection image: s(1)=1, s(i)=n+2-i for i>=2.
+    let reflection: Vec<i128> = (1..=n as i128)
+      .map(|i| if i == 1 { 1 } else { n as i128 + 2 - i })
+      .collect();
+    // Rotations r^k and reflections r^k . s for k = 0..n-1.
+    let mut cur_rot = identity.clone();
+    let mut cur_ref = reflection.clone();
+    for _ in 0..n {
+      elements.push(cur_rot.clone());
+      elements.push(cur_ref.clone());
+      cur_rot = rotate(&cur_rot);
+      cur_ref = rotate(&cur_ref);
+    }
+  }
+  // Sort elements lexicographically by their image list (wolframscript order).
+  elements.sort();
+  elements.dedup();
+  let cycle_exprs: Vec<Expr> =
+    elements.iter().map(|img| images_to_cycles(img)).collect();
+  Expr::List(cycle_exprs.into())
 }
 
 fn abelian_group_elements(factors: &[usize]) -> Expr {
@@ -2843,7 +2934,8 @@ fn cyclic_group_generators(n: usize) -> Expr {
 
 fn dihedral_group_generators(n: usize) -> Expr {
   if n <= 1 {
-    return Expr::List(vec![make_cycles_multi(vec![])].into());
+    // DihedralGroup[1] has order 2: a single reflection swapping points 1 and 2.
+    return Expr::List(vec![make_cycles(vec![1, 2])].into());
   }
   if n == 2 {
     return Expr::List(

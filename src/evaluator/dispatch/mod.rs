@@ -8530,6 +8530,9 @@ pub fn evaluate_function_call_ast_inner(
         // stays unevaluated (matching wolframscript). It is consumed by
         // GroupOrder/GroupGenerators/etc., so it is not "unimplemented".
         | "SymmetricGroup"
+        // DihedralGroup[n] is likewise a symbolic group object consumed by
+        // GroupOrder/GroupGenerators/GroupElements.
+        | "DihedralGroup"
     )
   {
     let args_str = args

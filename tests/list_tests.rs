@@ -670,6 +670,61 @@ mod list_tests {
   }
 
   #[test]
+  fn dihedral_group() {
+    // DihedralGroup[n] is a symbolic group object that stays unevaluated as
+    // its canonical form (matching wolframscript), with no spurious
+    // "not yet implemented" warning.
+    assert_eq!(interpret("DihedralGroup[4]").unwrap(), "DihedralGroup[4]");
+    assert_eq!(interpret("Head[DihedralGroup[4]]").unwrap(), "DihedralGroup");
+
+    // GroupOrder[DihedralGroup[n]] == 2n (with DihedralGroup[1] of order 2).
+    assert_eq!(interpret("GroupOrder[DihedralGroup[1]]").unwrap(), "2");
+    assert_eq!(interpret("GroupOrder[DihedralGroup[3]]").unwrap(), "6");
+    assert_eq!(interpret("GroupOrder[DihedralGroup[4]]").unwrap(), "8");
+    assert_eq!(interpret("GroupOrder[DihedralGroup[5]]").unwrap(), "10");
+
+    // GroupGenerators[DihedralGroup[n]].
+    assert_eq!(
+      interpret("GroupGenerators[DihedralGroup[1]]").unwrap(),
+      "{Cycles[{{1, 2}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[DihedralGroup[2]]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{3, 4}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[DihedralGroup[4]]").unwrap(),
+      "{Cycles[{{1, 4}, {2, 3}}], Cycles[{{1, 2, 3, 4}}]}"
+    );
+
+    // GroupElements[DihedralGroup[n]] - all 2n elements, ordered exactly as
+    // wolframscript does (lexicographically by image list).
+    assert_eq!(
+      interpret("GroupElements[DihedralGroup[1]]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[DihedralGroup[2]]").unwrap(),
+      "{Cycles[{}], Cycles[{{3, 4}}], Cycles[{{1, 2}}], Cycles[{{1, 2}, {3, 4}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[DihedralGroup[3]]").unwrap(),
+      "{Cycles[{}], Cycles[{{2, 3}}], Cycles[{{1, 2}}], \
+       Cycles[{{1, 2, 3}}], Cycles[{{1, 3, 2}}], Cycles[{{1, 3}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[DihedralGroup[4]]").unwrap(),
+      "{Cycles[{}], Cycles[{{2, 4}}], Cycles[{{1, 2}, {3, 4}}], \
+       Cycles[{{1, 2, 3, 4}}], Cycles[{{1, 3}}], Cycles[{{1, 3}, {2, 4}}], \
+       Cycles[{{1, 4, 3, 2}}], Cycles[{{1, 4}, {2, 3}}]}"
+    );
+    assert_eq!(
+      interpret("Length[GroupElements[DihedralGroup[5]]]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
   fn permutation_power_list() {
     // List-form permutations (regression coverage for existing behaviour).
     assert_eq!(
