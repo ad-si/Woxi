@@ -320,6 +320,86 @@ mod incidence_matrix {
   }
 }
 
+mod kirchhoff_matrix {
+  use super::*;
+
+  #[test]
+  fn complete_graph() {
+    // L = D - A; the complete graph K_n has diagonal n-1 and -1 off-diagonal.
+    assert_eq!(
+      interpret("KirchhoffMatrix[CompleteGraph[3]]").unwrap(),
+      "{{2, -1, -1}, {-1, 2, -1}, {-1, -1, 2}}"
+    );
+    assert_eq!(
+      interpret("KirchhoffMatrix[CompleteGraph[4]]").unwrap(),
+      "{{3, -1, -1, -1}, {-1, 3, -1, -1}, \
+       {-1, -1, 3, -1}, {-1, -1, -1, 3}}"
+    );
+  }
+
+  #[test]
+  fn undirected_path() {
+    assert_eq!(
+      interpret("KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4}]]")
+        .unwrap(),
+      "{{1, -1, 0, 0}, {-1, 2, -1, 0}, {0, -1, 2, -1}, {0, 0, -1, 1}}"
+    );
+  }
+
+  #[test]
+  fn directed_chain() {
+    // Directed edges count toward both the source's out-degree and the
+    // target's in-degree on the diagonal, with -A on the off-diagonal.
+    assert_eq!(
+      interpret("KirchhoffMatrix[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}]]").unwrap(),
+      "{{1, -1, 0}, {0, 2, -1}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn isolated_vertices() {
+    assert_eq!(
+      interpret("KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2}]]").unwrap(),
+      "{{1, -1, 0, 0}, {-1, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn directed_self_loop_ignored() {
+    // Self-loops contribute nothing to the Kirchhoff matrix.
+    assert_eq!(
+      interpret("KirchhoffMatrix[Graph[{1, 2}, {1 -> 1, 1 -> 2}]]").unwrap(),
+      "{{1, -1}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn undirected_self_loop_ignored() {
+    assert_eq!(
+      interpret("KirchhoffMatrix[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]").unwrap(),
+      "{{1, -1}, {-1, 1}}"
+    );
+  }
+
+  #[test]
+  fn parallel_edges_collapsed() {
+    // Parallel edges collapse to a simple graph for the Kirchhoff matrix.
+    assert_eq!(
+      interpret("KirchhoffMatrix[Graph[{1, 2, 3}, {1 <-> 2, 1 <-> 2, 2 <-> 3}]]")
+        .unwrap(),
+      "{{1, -1, 0}, {-1, 2, -1}, {0, -1, 1}}"
+    );
+  }
+
+  #[test]
+  fn non_graph_stays_symbolic() {
+    assert_eq!(
+      interpret("KirchhoffMatrix[5]").unwrap(),
+      "KirchhoffMatrix[5]"
+    );
+  }
+}
+
 mod adjacency_graph_from_matrix {
   use super::*;
 

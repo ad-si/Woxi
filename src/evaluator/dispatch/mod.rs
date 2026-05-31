@@ -5133,6 +5133,111 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // KirchhoffMatrix[Graph[{vertices}, {edges}]] — the Laplacian (Kirchhoff)
+  // matrix L = D - A, where D is the diagonal degree matrix (VertexDegree, i.e.
+  // in-degree + out-degree for directed graphs) and A is the (directed)
+  // adjacency matrix. For undirected edges {u,v} both endpoints contribute to
+  // the degree and the adjacency entries A[u][v] and A[v][u]; for directed
+  // edges u->v only the source's out-degree and A[u][v] are incremented while
+  // the target still gains an in-degree count on the diagonal. wolframscript
+  // returns a SparseArray here; Woxi mirrors AdjacencyMatrix and returns the
+  // dense (Normal) list of lists.
+  if name == "KirchhoffMatrix" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      let vertex_index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (expr_to_string(v), i))
+        .collect();
+      // adjacency[i][j] = 1 if an edge connects i to j (symmetric for
+      // undirected edges). Parallel edges are collapsed, mirroring Woxi's
+      // AdjacencyMatrix and wolframscript's KirchhoffMatrix on multigraphs.
+      let mut adjacency = vec![vec![0i128; n]; n];
+      let mut degree = vec![0i128; n];
+      for edge in edges {
+        // Extract (from, to, directed?) for both edge spellings:
+        // DirectedEdge/UndirectedEdge[u,v] and the directed Rule u->v.
+        let endpoints = match edge {
+          Expr::FunctionCall {
+            name: ename,
+            args: eargs,
+          } if eargs.len() == 2 => Some((
+            expr_to_string(&eargs[0]),
+            expr_to_string(&eargs[1]),
+            ename == "DirectedEdge",
+          )),
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((
+            expr_to_string(pattern),
+            expr_to_string(replacement),
+            true, // Rules are directed
+          )),
+          _ => None,
+        };
+        if let Some((from_str, to_str, directed)) = endpoints
+          && let (Some(&fi), Some(&ti)) =
+            (vertex_index.get(&from_str), vertex_index.get(&to_str))
+        {
+          // Self-loops do not contribute to the Kirchhoff matrix at all
+          // (wolframscript ignores them for both degree and adjacency).
+          if fi == ti {
+            continue;
+          }
+          // Collapse parallel edges: only the first edge between an ordered
+          // pair contributes to the degree, mirroring wolframscript's
+          // KirchhoffMatrix on multigraphs.
+          if directed {
+            if adjacency[fi][ti] == 0 {
+              adjacency[fi][ti] = 1;
+              // A directed edge adds out-degree to the source and
+              // in-degree to the target.
+              degree[fi] += 1;
+              degree[ti] += 1;
+            }
+          } else if adjacency[fi][ti] == 0 {
+            adjacency[fi][ti] = 1;
+            adjacency[ti][fi] = 1;
+            // An undirected edge contributes one to each endpoint's degree.
+            degree[fi] += 1;
+            degree[ti] += 1;
+          }
+        }
+      }
+      let mut matrix = vec![vec![0i128; n]; n];
+      for i in 0..n {
+        for j in 0..n {
+          if i == j {
+            matrix[i][j] = degree[i];
+          } else {
+            matrix[i][j] = -adjacency[i][j];
+          }
+        }
+      }
+      return Ok(Expr::List(
+        matrix
+          .into_iter()
+          .map(|row| {
+            Expr::List(row.into_iter().map(Expr::Integer).collect())
+          })
+          .collect(),
+      ));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // ConnectedGraphQ[graph] — True if the graph is connected.
   // For undirected graphs this means a single connected component;
   // for directed graphs it means a single strongly connected component.

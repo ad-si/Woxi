@@ -2307,7 +2307,7 @@ MixedUnit,unit system,🚫,None,10.4,2355
 RankedMax,k-th largest element,✅,pure,8.0,2355
 WindowFrame,notebook UI,🚫,None,3.0,2355
 FindProcessParameters,stochastic process fitting,🚫,None,9.0,2360
-KirchhoffMatrix,graph theory matrix,🚫,None,8.0,2360
+KirchhoffMatrix,Builds the Kirchhoff (Laplacian) matrix of a graph,✅,none,8.0,2360
 ListPlay,audio playback,🚫,None,2.0,2360
 SmoothHistogram3D,3D visualization,🚫,None,8.0,2360
 SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
