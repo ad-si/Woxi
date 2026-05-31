@@ -1590,7 +1590,7 @@ DiscreteWaveletTransform,Discrete wavelet transform,,unevaluated,8.0,1614
 SystemDialogInput,System dialog input,,unevaluated,6.0,1614
 Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
 ImagePartition,Partition an image,,unevaluated,7.0,1617
-RelationGraph,Graph from a relation,,unevaluated,10.2,1617
+RelationGraph,Builds a graph whose edges connect vertex pairs satisfying a binary relation,✅,pure,10.2,1617
 PetersenGraph,Generalized Petersen graph GP(n k) built from outer cycle and inner k-jumps,✅,pure,8.0,1620
 RSolveValue,Solution value of recurrence,,unevaluated,10.0,1621
 ArrayDepth,Returns the depth of a nested array,✅,pure,5.0,1622

@@ -3949,6 +3949,83 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_relation_graph() {
+      // Asymmetric relation → directed graph with an edge for every ordered
+      // pair (i, j) where the relation holds.
+      assert_eq!(
+        interpret(
+          "Apply[List, EdgeList[RelationGraph[Less, {1, 2, 3}]], {1}]"
+        )
+        .unwrap(),
+        "{{1, 2}, {1, 3}, {2, 3}}"
+      );
+      assert_eq!(
+        interpret(
+          "Head /@ EdgeList[RelationGraph[Less, {1, 2, 3}]]"
+        )
+        .unwrap(),
+        "{DirectedEdge, DirectedEdge, DirectedEdge}"
+      );
+      assert_eq!(
+        interpret("DirectedGraphQ[RelationGraph[Less, {1, 2, 3}]]").unwrap(),
+        "True"
+      );
+
+      // Symmetric relation → undirected graph with one edge per unordered pair.
+      assert_eq!(
+        interpret(
+          "Apply[List, EdgeList[RelationGraph[#1 != #2 &, {1, 2, 3}]], {1}]"
+        )
+        .unwrap(),
+        "{{1, 2}, {1, 3}, {2, 3}}"
+      );
+      assert_eq!(
+        interpret(
+          "Head /@ EdgeList[RelationGraph[#1 != #2 &, {1, 2, 3}]]"
+        )
+        .unwrap(),
+        "{UndirectedEdge, UndirectedEdge, UndirectedEdge}"
+      );
+      assert_eq!(
+        interpret("DirectedGraphQ[RelationGraph[#1 != #2 &, {1, 2, 3}]]")
+          .unwrap(),
+        "False"
+      );
+
+      // Symmetric relation that holds on the diagonal → undirected self-loops.
+      assert_eq!(
+        interpret(
+          "Apply[List, EdgeList[RelationGraph[#1 == #2 &, {1, 2, 3}]], {1}]"
+        )
+        .unwrap(),
+        "{{1, 1}, {2, 2}, {3, 3}}"
+      );
+
+      // Asymmetric relation that holds on the diagonal → directed self-loops,
+      // edges enumerated in lexicographic (i, j) order.
+      assert_eq!(
+        interpret(
+          "Apply[List, EdgeList[RelationGraph[#1 >= #2 &, {1, 2, 3}]], {1}]"
+        )
+        .unwrap(),
+        "{{1, 1}, {2, 1}, {2, 2}, {3, 1}, {3, 2}, {3, 3}}"
+      );
+
+      // Vertices are preserved verbatim, including non-integer vertices.
+      assert_eq!(
+        interpret("VertexList[RelationGraph[Less, {1, 2, 3}]]").unwrap(),
+        "{1, 2, 3}"
+      );
+      assert_eq!(
+        interpret(
+          "EdgeList[RelationGraph[False &, {1, 2, 3}]]"
+        )
+        .unwrap(),
+        "{}"
+      );
+    }
+
+    #[test]
     fn test_vertex_index() {
       // 1-based position of a vertex in VertexList order.
       assert_eq!(

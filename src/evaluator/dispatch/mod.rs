@@ -2168,6 +2168,90 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // RelationGraph[f, {v1, ..., vn}, opts...] → Graph whose edge i->j exists
+  // whenever f[vi, vj] evaluates to True. The graph is undirected when the
+  // relation is symmetric over every pair (f[vi,vj] == f[vj,vi]), otherwise
+  // directed. Self-loops are included when f[vi, vi] is True.
+  if name == "RelationGraph" && args.len() >= 2 {
+    if let Expr::List(verts) = &args[1] {
+      let f = &args[0];
+      let vertices: Vec<Expr> = verts.to_vec();
+      let n = vertices.len();
+
+      // rel[i][j] = whether f[vi, vj] is True.
+      let mut rel = vec![vec![false; n]; n];
+      for i in 0..n {
+        for j in 0..n {
+          let res = crate::functions::list_helpers_ast::apply_func_to_two_args(
+            f,
+            &vertices[i],
+            &vertices[j],
+          )?;
+          rel[i][j] = matches!(&res, Expr::Identifier(s) if s == "True");
+        }
+      }
+
+      // Symmetric iff rel[i][j] == rel[j][i] for all i < j.
+      let mut symmetric = true;
+      'sym: for i in 0..n {
+        for j in (i + 1)..n {
+          if rel[i][j] != rel[j][i] {
+            symmetric = false;
+            break 'sym;
+          }
+        }
+      }
+
+      let mut edges = Vec::new();
+      if symmetric {
+        // One undirected edge per unordered pair (i <= j) where the relation holds.
+        for i in 0..n {
+          for j in i..n {
+            if rel[i][j] {
+              edges.push(Expr::FunctionCall {
+                name: "UndirectedEdge".to_string(),
+                args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+              });
+            }
+          }
+        }
+      } else {
+        // One directed edge per ordered pair (i, j) where the relation holds.
+        for i in 0..n {
+          for j in 0..n {
+            if rel[i][j] {
+              edges.push(Expr::FunctionCall {
+                name: "DirectedEdge".to_string(),
+                args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+              });
+            }
+          }
+        }
+      }
+
+      let opts: Vec<Expr> = args[2..]
+        .iter()
+        .filter(|a| matches!(a, Expr::Rule { .. }))
+        .cloned()
+        .collect();
+      let mut graph_args = vec![
+        Expr::List(vertices.into()),
+        Expr::List(edges.into()),
+      ];
+      if !opts.is_empty() {
+        graph_args.push(Expr::List(opts.into()));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: graph_args.into(),
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // CompleteGraph[n, opts...] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}, {opts}]
   if name == "CompleteGraph" && !args.is_empty() {
     if let Expr::Integer(n) = &args[0] {

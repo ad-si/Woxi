@@ -891,6 +891,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RegionWithin" => Some((2, 2)),
     "RegularExpression" => Some((1, 1)),
     "ReIm" => Some((1, 1)),
+    "RelationGraph" => Some((2, usize::MAX)),
     "ReleaseHold" => Some((1, 1)),
     "RemoveDiacritics" => Some((1, 1)),
     "Replace" => Some((2, 4)),
