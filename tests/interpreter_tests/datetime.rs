@@ -941,4 +941,53 @@ mod cases {
   fn absolute_time_5() {
     assert_case(r#"AbsoluteTime[1000]"#, r#"1000"#);
   }
+
+  #[test]
+  fn day_range_basic() {
+    assert_case(
+      r#"DayRange[{2020, 1, 1}, {2020, 1, 5}]"#,
+      r#"{DateObject[{2020, 1, 1}, Day], DateObject[{2020, 1, 2}, Day], DateObject[{2020, 1, 3}, Day], DateObject[{2020, 1, 4}, Day], DateObject[{2020, 1, 5}, Day]}"#,
+    );
+  }
+
+  #[test]
+  fn day_range_single() {
+    assert_case(
+      r#"DayRange[{2020, 1, 1}, {2020, 1, 1}]"#,
+      r#"{DateObject[{2020, 1, 1}, Day]}"#,
+    );
+  }
+
+  #[test]
+  fn day_range_month_boundary() {
+    assert_case(
+      r#"DayRange[{2020, 1, 30}, {2020, 2, 2}]"#,
+      r#"{DateObject[{2020, 1, 30}, Day], DateObject[{2020, 1, 31}, Day], DateObject[{2020, 2, 1}, Day], DateObject[{2020, 2, 2}, Day]}"#,
+    );
+  }
+
+  #[test]
+  fn day_range_year_boundary() {
+    assert_case(
+      r#"DayRange[{2019, 12, 30}, {2020, 1, 2}]"#,
+      r#"{DateObject[{2019, 12, 30}, Day], DateObject[{2019, 12, 31}, Day], DateObject[{2020, 1, 1}, Day], DateObject[{2020, 1, 2}, Day]}"#,
+    );
+  }
+
+  // Reversed range is normalized to ascending order (matches wolframscript).
+  #[test]
+  fn day_range_reversed() {
+    assert_case(
+      r#"DayRange[{2020, 1, 3}, {2020, 1, 1}]"#,
+      r#"{DateObject[{2020, 1, 1}, Day], DateObject[{2020, 1, 2}, Day], DateObject[{2020, 1, 3}, Day]}"#,
+    );
+  }
+
+  #[test]
+  fn day_range_date_object_inputs() {
+    assert_case(
+      r#"DayRange[DateObject[{2020, 1, 1}], DateObject[{2020, 1, 3}]]"#,
+      r#"{DateObject[{2020, 1, 1}, Day], DateObject[{2020, 1, 2}, Day], DateObject[{2020, 1, 3}, Day]}"#,
+    );
+  }
 }

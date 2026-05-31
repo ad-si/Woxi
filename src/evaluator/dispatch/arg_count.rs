@@ -236,6 +236,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DayCount" => Some((2, 2)),
     "DayName" => Some((1, 1)),
     "DayPlus" => Some((2, 3)),
+    "DayRange" => Some((2, 2)),
     "Decapitalize" => Some((1, 1)),
     "Decompose" => Some((2, 2)),
     "DeBruijnSequence" => Some((2, 2)),

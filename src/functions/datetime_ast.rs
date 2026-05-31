@@ -1520,3 +1520,81 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into(),
   })
 }
+
+// ─── DayRange ───────────────────────────────────────────────────────
+
+/// DayRange[date1, date2] — list of DateObject "Day" values from date1 to date2.
+/// If date1 > date2 the order is normalized so the range is always ascending.
+///
+/// Note: the three-argument day-type form (e.g. "BusinessDay") is intentionally
+/// left unevaluated. wolframscript's day-type filtering is holiday-aware (it
+/// consults CalendarData, so e.g. New Year's Day is excluded from
+/// "BusinessDay"), which cannot be reproduced without that data. Producing a
+/// non-holiday-aware result would diverge from wolframscript.
+pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "DayRange".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  let start_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let end_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
+
+  let start_comp = match extract_date_components(&start_arg) {
+    Some(c) if c.len() >= 3 => c,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DayRange".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let end_comp = match extract_date_components(&end_arg) {
+    Some(c) if c.len() >= 3 => c,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DayRange".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let mut abs_start = date_to_absolute_days(
+    start_comp[0] as i64,
+    start_comp[1] as i64,
+    start_comp[2] as i64,
+  );
+  let mut abs_end =
+    date_to_absolute_days(end_comp[0] as i64, end_comp[1] as i64, end_comp[2] as i64);
+
+  // Normalize so the range is always ascending.
+  if abs_start > abs_end {
+    std::mem::swap(&mut abs_start, &mut abs_end);
+  }
+
+  let mut result = Vec::new();
+  let mut abs = abs_start;
+  while abs <= abs_end {
+    let (y, m, d) = absolute_days_to_date(abs);
+    result.push(Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![
+        Expr::List(
+          vec![
+            Expr::Integer(y as i128),
+            Expr::Integer(m as i128),
+            Expr::Integer(d as i128),
+          ]
+          .into(),
+        ),
+        Expr::String("Day".to_string()),
+      ]
+      .into(),
+    });
+    abs += 1;
+  }
+
+  Ok(Expr::List(result.into()))
+}
