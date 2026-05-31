@@ -2106,7 +2106,7 @@ EntityProperties,Lists properties available for an entity type,✅,pure,10.0,214
 KeyTake,Takes specified keys from an association,✅,pure,10.0,2147
 Paneled,Panel wrapper for display,🚫,,6.0,2147
 BinLists,Group data points into equal-width bins,✅,pure,6.0,2149
-VertexIndex,Index of vertex in graph,🚫,,8.0,2149
+VertexIndex,Returns the 1-based position of a vertex in VertexList of a graph,✅,none,8.0,2149
 BoxMatrix,Creates a matrix of ones with given radius,✅,pure,7.0,2152
 CircleMinus,Symbolic circle-minus operator displayed with the Unicode glyph,✅,1,3.0,2152
 DiscreteLimit,Discrete limit of sequence,🚫,,11.2,2152

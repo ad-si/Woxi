@@ -3544,7 +3544,8 @@ pub fn evaluate_function_call_ast_inner(
             }
           }
         }
-        vertex_set.sort_by(crate::functions::canonical_cmp);
+        // Vertices are kept in first-appearance order (matching
+        // wolframscript's VertexList), not sorted.
         let mut result_args =
           vec![Expr::List(vertex_set.into()), Expr::List(out_edges.into())];
         result_args.extend(trailing_options);
@@ -3604,6 +3605,39 @@ pub fn evaluate_function_call_ast_inner(
       && let Expr::List(_) = &gargs[0]
     {
       return Ok(gargs[0].clone());
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  // VertexIndex[Graph[vertices, edges], v] → 1-based position of v in VertexList[g]
+  if name == "VertexIndex" && args.len() == 2 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(vertices) = &gargs[0]
+    {
+      let target = expr_to_string(&args[1]);
+      if let Some(pos) = vertices
+        .iter()
+        .position(|v| expr_to_string(v) == target)
+      {
+        return Ok(Expr::Integer(pos as i128 + 1));
+      }
+      // Vertex not present: emit message and return unevaluated.
+      crate::emit_message(&format!(
+        "VertexIndex::inv: The argument {} in {} is not a valid vertex.",
+        target,
+        expr_to_string(&Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        })
+      ));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),

@@ -3949,6 +3949,40 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_vertex_index() {
+      // 1-based position of a vertex in VertexList order.
+      assert_eq!(
+        interpret("VertexIndex[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 2]")
+          .unwrap(),
+        "2"
+      );
+      // Insertion order is preserved, not sorted.
+      assert_eq!(
+        interpret("VertexIndex[Graph[{3 -> 1, 1 -> 2}], 3]").unwrap(),
+        "1"
+      );
+      // String vertices.
+      assert_eq!(
+        interpret(
+          "VertexIndex[Graph[{\"a\" -> \"b\", \"b\" -> \"c\"}], \"c\"]"
+        )
+        .unwrap(),
+        "3"
+      );
+      // CompleteGraph form.
+      assert_eq!(
+        interpret("VertexIndex[CompleteGraph[4], 3]").unwrap(),
+        "3"
+      );
+      // Invalid vertex returns unevaluated.
+      assert_eq!(
+        interpret("VertexIndex[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 5]")
+          .unwrap(),
+        "VertexIndex[Graph[<3>, <3>], 5]"
+      );
+    }
+
+    #[test]
     fn test_single_source_distances() {
       // Two-arg form returns distances to every vertex, in VertexList order.
       assert_eq!(
