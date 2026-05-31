@@ -3983,6 +3983,66 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_vertex_delete() {
+      // Single vertex: removes the vertex and every incident edge.
+      assert_eq!(
+        interpret(
+          "g = VertexDelete[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 2]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 3}, {3 \u{F3D5} 1}}"
+      );
+      // A list deletes multiple vertices.
+      assert_eq!(
+        interpret(
+          "g = VertexDelete[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}], \
+           {1, 2}]; {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{3}, {}}"
+      );
+      // Undirected edges are handled too.
+      assert_eq!(
+        interpret(
+          "g = VertexDelete[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1}], \
+           3]; {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 2, 4}, {1 \u{F3D4} 2, 4 \u{F3D4} 1}}"
+      );
+      // Explicit vertex/edge form keeps isolated vertices.
+      assert_eq!(
+        interpret(
+          "g = VertexDelete[Graph[{1, 2, 3, 4}, {1 -> 2, 2 -> 3}], 2]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 3, 4}, {}}"
+      );
+      // A singleton list behaves like a single vertex.
+      assert_eq!(
+        interpret(
+          "g = VertexDelete[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], {2}]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 3}, {3 \u{F3D5} 1}}"
+      );
+      // Invalid vertex leaves the expression unevaluated.
+      assert_eq!(
+        interpret("VertexDelete[Graph[{1 -> 2, 2 -> 3}], 5]").unwrap(),
+        "VertexDelete[Graph[<3>, <2>], 5]"
+      );
+      // If any vertex in the list is invalid, nothing is deleted.
+      assert_eq!(
+        interpret("VertexDelete[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], {2, 9}]")
+          .unwrap(),
+        "VertexDelete[Graph[<3>, <3>], {2, 9}]"
+      );
+    }
+
+    #[test]
     fn test_single_source_distances() {
       // Two-arg form returns distances to every vertex, in VertexList order.
       assert_eq!(

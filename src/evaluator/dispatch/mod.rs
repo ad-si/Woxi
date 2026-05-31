@@ -3612,6 +3612,98 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // VertexDelete[Graph[vertices, edges], v | {v1, v2, ...}] →
+  //   remove the given vertices and every edge incident to them.
+  if name == "VertexDelete" && args.len() == 2 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(vertices) = &gargs[0]
+      && let Expr::List(edges) = &gargs[1]
+    {
+      use crate::evaluator::pattern_matching::expr_equal;
+      // A List second argument denotes several vertices to delete; any
+      // other expression denotes a single vertex (which may itself be a
+      // list-valued vertex name).
+      let to_delete: Vec<Expr> = match &args[1] {
+        Expr::List(vs) => vs.iter().cloned().collect(),
+        other => vec![other.clone()],
+      };
+      // Every requested vertex must be present, otherwise emit the
+      // VertexDelete::inv message (showing the original second argument)
+      // and leave the expression unevaluated.
+      let all_valid = to_delete
+        .iter()
+        .all(|d| vertices.iter().any(|v| expr_equal(v, d)));
+      if !all_valid {
+        crate::emit_message(&format!(
+          "VertexDelete::inv: The argument {} in {} is not a valid vertex.",
+          expr_to_string(&args[1]),
+          expr_to_string(&Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      let is_deleted = |v: &Expr| to_delete.iter().any(|d| expr_equal(v, d));
+      // Helper: extract the two endpoints of an edge (possibly Labeled).
+      fn vd_edge_vertices(e: &Expr) -> Option<(&Expr, &Expr)> {
+        let inner = match e {
+          Expr::FunctionCall { name, args }
+            if name == "Labeled" && args.len() == 2 =>
+          {
+            &args[0]
+          }
+          _ => e,
+        };
+        match inner {
+          Expr::FunctionCall { args: eargs, .. } if eargs.len() == 2 => {
+            Some((&eargs[0], &eargs[1]))
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((pattern.as_ref(), replacement.as_ref())),
+          _ => None,
+        }
+      }
+      let new_vertices: Vec<Expr> = vertices
+        .iter()
+        .filter(|v| !is_deleted(v))
+        .cloned()
+        .collect();
+      let new_edges: Vec<Expr> = edges
+        .iter()
+        .filter(|e| match vd_edge_vertices(e) {
+          Some((a, b)) => !is_deleted(a) && !is_deleted(b),
+          None => true,
+        })
+        .cloned()
+        .collect();
+      let mut result_args = vec![
+        Expr::List(new_vertices.into()),
+        Expr::List(new_edges.into()),
+      ];
+      // Preserve any trailing graph options.
+      result_args.extend(gargs[2..].iter().cloned());
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: result_args.into(),
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // VertexIndex[Graph[vertices, edges], v] → 1-based position of v in VertexList[g]
   if name == "VertexIndex" && args.len() == 2 {
     if let Expr::FunctionCall {
