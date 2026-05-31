@@ -3196,6 +3196,37 @@ mod high_level_functions_tests {
         "{123}"
       );
     }
+
+    #[test]
+    fn test_punctuation_character() {
+      // Letters, digits and spaces are not punctuation; ASCII punctuation is.
+      assert_eq!(
+        interpret(
+          r#"StringMatchQ[{"a", "1", " ", ".", "!", ",", "?", "@"}, PunctuationCharacter]"#
+        )
+        .unwrap(),
+        "{False, False, False, True, True, True, True, True}"
+      );
+      // ASCII symbols Wolfram treats as punctuation.
+      assert_eq!(
+        interpret(
+          r#"StringMatchQ[{"+", "=", "<", ">", "$", "^", "|", "~"}, PunctuationCharacter]"#
+        )
+        .unwrap(),
+        "{True, True, True, True, True, True, True, True}"
+      );
+      // StringCases extracts punctuation characters.
+      assert_eq!(
+        interpret(r#"StringCases["Hello, world!", PunctuationCharacter]"#).unwrap(),
+        "{,, !}"
+      );
+      // Unicode dash (U+2013) is punctuation.
+      assert_eq!(
+        interpret(r#"StringMatchQ[FromCharacterCode[{8211}], PunctuationCharacter]"#)
+          .unwrap(),
+        "True"
+      );
+    }
   }
 
   mod collect_multi_variable_tests {

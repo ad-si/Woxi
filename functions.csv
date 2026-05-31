@@ -2338,7 +2338,7 @@ ChineseRemainder,Solves a system of modular congruences,✅,pure,6.0,2389
 ContentPadding,UI styling,🚫,None,8.0,2389
 FromSphericalCoordinates,Converts spherical coordinates to Cartesian,✅,None,10.1,2389
 IntervalSlider,UI widget,🚫,None,10.0,2389
-PunctuationCharacter,character class,🚫,None,10.3,2389
+PunctuationCharacter,String pattern matching a single punctuation character,✅,pure,10.3,2389
 TransformedProcess,stochastic process,🚫,None,10.0,2389
 CayleyGraph,group theory graph,🚫,None,8.0,2394
 CellFrameMargins,notebook styling,🚫,None,3.0,2394

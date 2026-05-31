@@ -1789,6 +1789,14 @@ fn string_pattern_to_regex_inner(
       // (verified by `StringMatchQ["ö", WordCharacter]` → False), so don't
       // include the broader `\p{L}` Unicode-letter class here.
       "WordCharacter" => Some("[a-zA-Z0-9]".to_string()),
+      // PunctuationCharacter matches any Unicode punctuation character
+      // (general category P) plus the ASCII symbol characters
+      // `$ + < = > ^ ` | ~` (which Unicode classifies as symbols, not
+      // punctuation, but Wolfram treats as punctuation). Verified against
+      // wolframscript across the BMP.
+      "PunctuationCharacter" => {
+        Some("(?:\\p{P}|[$+<=>^`|~])".to_string())
+      }
       "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
       "NumberString" => Some("[0-9]+(?:\\.[0-9]*)?".to_string()),
       "_" => Some(".".to_string()), // Blank: any single character
