@@ -8526,6 +8526,10 @@ pub fn evaluate_function_call_ast_inner(
         | "Image3D"
         | "CenteredInterval"
         | "BernoulliGraphDistribution"
+        // SymmetricGroup[n] is a symbolic group object whose canonical form
+        // stays unevaluated (matching wolframscript). It is consumed by
+        // GroupOrder/GroupGenerators/etc., so it is not "unimplemented".
+        | "SymmetricGroup"
     )
   {
     let args_str = args

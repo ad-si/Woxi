@@ -636,6 +636,40 @@ mod list_tests {
   }
 
   #[test]
+  fn symmetric_group() {
+    // SymmetricGroup[n] is a symbolic group object that stays unevaluated
+    // as its canonical form (matching wolframscript), with no spurious
+    // "not yet implemented" warning.
+    assert_eq!(interpret("SymmetricGroup[3]").unwrap(), "SymmetricGroup[3]");
+    assert_eq!(interpret("SymmetricGroup[5]").unwrap(), "SymmetricGroup[5]");
+    assert_eq!(interpret("Head[SymmetricGroup[3]]").unwrap(), "SymmetricGroup");
+
+    // GroupOrder[SymmetricGroup[n]] == n! (including the n = 0 trivial case).
+    assert_eq!(interpret("GroupOrder[SymmetricGroup[0]]").unwrap(), "1");
+    assert_eq!(interpret("GroupOrder[SymmetricGroup[1]]").unwrap(), "1");
+    assert_eq!(interpret("GroupOrder[SymmetricGroup[4]]").unwrap(), "24");
+    assert_eq!(interpret("GroupOrder[SymmetricGroup[5]]").unwrap(), "120");
+
+    // GroupGenerators[SymmetricGroup[n]]:
+    //   n <= 1 -> {}; n == 2 -> single transposition;
+    //   n >= 3 -> transposition (1 2) plus the n-cycle.
+    assert_eq!(interpret("GroupGenerators[SymmetricGroup[0]]").unwrap(), "{}");
+    assert_eq!(interpret("GroupGenerators[SymmetricGroup[1]]").unwrap(), "{}");
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[2]]").unwrap(),
+      "{Cycles[{{1, 2}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[3]]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{1, 2, 3}}]}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[4]]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{1, 2, 3, 4}}]}"
+    );
+  }
+
+  #[test]
   fn permutation_power_list() {
     // List-form permutations (regression coverage for existing behaviour).
     assert_eq!(
