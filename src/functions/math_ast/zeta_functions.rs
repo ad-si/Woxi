@@ -1502,6 +1502,107 @@ fn mobius(n: usize) -> i32 {
   if num_factors % 2 == 0 { 1 } else { -1 }
 }
 
+/// Riemann-Siegel theta function θ(t) for real t:
+///   θ(t) = arg(Γ(1/4 + i t/2)) − (t/2) log(π)
+/// computed as Im(LogGamma(1/4 + i t/2)) − (t/2) log(π).
+fn riemann_siegel_theta_numeric(t: f64) -> f64 {
+  use std::f64::consts::PI;
+  let (_re, im) = log_gamma_complex(0.25, t / 2.0);
+  im - (t / 2.0) * PI.ln()
+}
+
+/// High-accuracy ζ(1/2 + i t) via Euler-Maclaurin summation with the
+/// number of direct terms N scaled with t. For the critical line the
+/// truncation error of the Euler-Maclaurin tail decays like N^{-(2p+1/2)}
+/// while the imaginary part of the argument forces N ≳ t for the direct
+/// sum to dominate the Bernoulli corrections. We pick N = max(30, t) and
+/// include Bernoulli terms up to B_20.
+fn zeta_half_plus_it(t: f64) -> (f64, f64) {
+  let s_re = 0.5_f64;
+  let s_im = t;
+
+  let n: usize = (t.abs().ceil() as usize).max(30);
+  let nf = n as f64;
+
+  let mut sum = (0.0_f64, 0.0_f64);
+  for k in 1..n {
+    let term = cpow((k as f64, 0.0), (-s_re, -s_im));
+    sum.0 += term.0;
+    sum.1 += term.1;
+  }
+
+  // Integral correction: N^{1-s} / (s-1)
+  let n1s = cpow((nf, 0.0), (1.0 - s_re, -s_im));
+  let int_c = cdiv(n1s, (s_re - 1.0, s_im));
+  sum.0 += int_c.0;
+  sum.1 += int_c.1;
+
+  // Endpoint correction: N^{-s} / 2
+  let ns = cpow((nf, 0.0), (-s_re, -s_im));
+  sum.0 += 0.5 * ns.0;
+  sum.1 += 0.5 * ns.1;
+
+  let bof: [f64; 10] = [
+    1.0 / 12.0,
+    -1.0 / 720.0,
+    1.0 / 30240.0,
+    -1.0 / 1209600.0,
+    1.0 / 47900160.0,
+    -691.0 / 1307674368000.0,
+    7.0 / 523069747200.0,
+    -3617.0 / 10670622842880000.0,
+    43867.0 / 5109094217170944000.0,
+    -174611.0 / 802857662698291200000.0,
+  ];
+  for (p_idx, &coeff) in bof.iter().enumerate() {
+    let two_p = 2 * (p_idx + 1);
+    let mut rising = (1.0, 0.0);
+    for j in 0..(two_p - 1) {
+      rising = cmul(rising, (s_re + j as f64, s_im));
+    }
+    let pow = cpow((nf, 0.0), (-(s_re + (two_p - 1) as f64), -s_im));
+    let term = cmul(rising, pow);
+    sum.0 += coeff * term.0;
+    sum.1 += coeff * term.1;
+  }
+
+  sum
+}
+
+/// Riemann-Siegel Z function Z(t) for real t:
+///   Z(t) = e^{i θ(t)} ζ(1/2 + i t)
+/// which is real-valued for real t. Z is even: Z(-t) = Z(t).
+fn riemann_siegel_z_numeric(t: f64) -> f64 {
+  let t = t.abs(); // Z is even
+  let theta = riemann_siegel_theta_numeric(t);
+  let (zre, zim) = zeta_half_plus_it(t);
+  // Re(e^{i θ} ζ) = cos θ · Re(ζ) − sin θ · Im(ζ)
+  theta.cos() * zre - theta.sin() * zim
+}
+
+/// RiemannSiegelZ[t] — the Riemann-Siegel Z function.
+pub fn riemann_siegel_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RiemannSiegelZ expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Only evaluate for real numeric (Real) input; keep exact/symbolic
+  // arguments unevaluated to mirror wolframscript.
+  if let Some(t) = match &args[0] {
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  } {
+    return Ok(Expr::Real(riemann_siegel_z_numeric(t)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "RiemannSiegelZ".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// DirichletEta[s] — the Dirichlet eta function: (1 - 2^(1-s)) * Zeta[s]
 pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

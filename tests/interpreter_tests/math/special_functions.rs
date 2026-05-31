@@ -8070,3 +8070,61 @@ mod mathieu_s {
     );
   }
 }
+
+mod riemann_siegel_z {
+  use super::*;
+
+  fn val(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  #[test]
+  fn numeric_small() {
+    // wolframscript: RiemannSiegelZ[2.0] = -0.5396331256461437
+    assert!((val("RiemannSiegelZ[2.0]") - (-0.5396331256461437)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn at_zero() {
+    // wolframscript: RiemannSiegelZ[0.0] = -1.460354508809588
+    assert!((val("RiemannSiegelZ[0.0]") - (-1.460354508809588)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn even_function() {
+    // Z is even: Z[-t] = Z[t]
+    let a = val("RiemannSiegelZ[3.5]");
+    let b = val("RiemannSiegelZ[-3.5]");
+    assert!((a - b).abs() < 1e-12);
+    // wolframscript: RiemannSiegelZ[3.5] = -0.5688748138132947
+    assert!((a - (-0.5688748138132947)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn larger_argument() {
+    // wolframscript: RiemannSiegelZ[50.0] = -0.3407350059550225
+    assert!(
+      (val("RiemannSiegelZ[50.0]") - (-0.3407350059550225)).abs() < 1e-9
+    );
+    // wolframscript: RiemannSiegelZ[100.0] = 2.6926970566644393
+    assert!(
+      (val("RiemannSiegelZ[100.0]") - 2.6926970566644393).abs() < 1e-8
+    );
+  }
+
+  #[test]
+  fn near_first_zero() {
+    // First nontrivial zero near t = 14.134725; |Z| is tiny there.
+    // Output uses Wolfram scientific notation ("*^-7"); normalize to "e".
+    let s = interpret("RiemannSiegelZ[14.134725]").unwrap();
+    let v: f64 = s.replace("*^", "e").parse().unwrap();
+    assert!(v.abs() < 1e-6);
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("RiemannSiegelZ[t]").unwrap(), "RiemannSiegelZ[t]");
+    // Exact integer argument stays unevaluated (matches wolframscript).
+    assert_eq!(interpret("RiemannSiegelZ[2]").unwrap(), "RiemannSiegelZ[2]");
+  }
+}

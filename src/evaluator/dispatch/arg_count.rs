@@ -263,6 +263,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DigitSum" => Some((1, 2)),
     "Dimensions" => Some((1, 2)),
     "DirichletEta" => Some((1, 1)),
+    "RiemannSiegelZ" => Some((1, 1)),
     "DirectedInfinity" => Some((0, 1)),
     "DirectoryName" => Some((1, 2)),
     "NotebookDirectory" => Some((0, 0)),
