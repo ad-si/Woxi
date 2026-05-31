@@ -467,6 +467,7 @@
       - [`LogIntegral`](math/special/LogIntegral.md)
       - [`LogisticSigmoid`](math/special/LogisticSigmoid.md)
       - [`MeijerG`](math/special/MeijerG.md)
+      - [`MittagLefflerE`](math/special/MittagLefflerE.md)
       - [`MultiplySides`](math/special/MultiplySides.md)
       - [`Pochhammer`](math/special/Pochhammer.md)
       - [`PolyGamma`](math/special/PolyGamma.md)

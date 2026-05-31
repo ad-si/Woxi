@@ -478,6 +478,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Hypergeometric1F1Regularized" => Some((3, 3)),
     "HypergeometricPFQRegularized" => Some((3, 3)),
     "HypergeometricU" => Some((3, 3)),
+    "MittagLefflerE" => Some((2, 3)),
     "WhittakerM" => Some((3, 3)),
     "WhittakerW" => Some((3, 3)),
     "Identity" => Some((1, 1)),

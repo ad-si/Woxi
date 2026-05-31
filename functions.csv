@@ -2181,7 +2181,7 @@ Masking,Image processing masking option,🚫,None,8.0,2223
 OverscriptBox,Low-level box construct for overscript display,✅,pure,3.0,2223
 PermutationList,Converts cycle notation to permutation list,✅,none,8.0,2223
 EmbeddedHTML,Web embedding,🚫,None,10.0,2225
-MittagLefflerE,Special function,🚫,None,9.0,2225
+MittagLefflerE,Mittag-Leffler function E_alpha(z) or E_{alpha beta}(z) summed via Sum[z^k/Gamma[alpha k + beta]],✅,pure,9.0,2225
 NProduct,Numerical product of a sequence,✅,none,1.0,2229
 SimpleGraph,Graph construction,🚫,None,8.0,2229
 Threshold,Image processing thresholding,✅,None,8.0,2229

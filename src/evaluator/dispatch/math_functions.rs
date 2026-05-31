@@ -752,6 +752,9 @@ pub fn dispatch_math_functions(
     "HypergeometricU" if args.len() == 3 => {
       return Some(crate::functions::math_ast::hypergeometric_u_ast(args));
     }
+    "MittagLefflerE" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::mittag_leffler_e_ast(args));
+    }
     "EllipticK" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_k_ast(args));
     }

@@ -3222,3 +3222,142 @@ mod zernike_r {
     );
   }
 }
+
+mod mittag_leffler_e {
+  use super::*;
+
+  // Closed forms for exact integer alpha in {0, 1, 2} (two-arg form).
+  // E_0(z) = 1/(1 - z), E_1(z) = E^z, E_2(z) = Cosh[Sqrt[z]].
+
+  #[test]
+  fn alpha_zero_closed_form() {
+    // 1/(1 - z)
+    assert_eq!(interpret("MittagLefflerE[0, z]").unwrap(), "(1 - z)^(-1)");
+    assert_eq!(interpret("MittagLefflerE[0, 1/2]").unwrap(), "2");
+  }
+
+  #[test]
+  fn alpha_one_closed_form() {
+    // E^z
+    assert_eq!(interpret("MittagLefflerE[1, x]").unwrap(), "E^x");
+    assert_eq!(interpret("MittagLefflerE[1, 1]").unwrap(), "E");
+  }
+
+  #[test]
+  fn alpha_two_closed_form() {
+    // Cosh[Sqrt[z]]
+    assert_eq!(
+      interpret("MittagLefflerE[2, z]").unwrap(),
+      "Cosh[Sqrt[z]]"
+    );
+    assert_eq!(interpret("MittagLefflerE[2, 1]").unwrap(), "Cosh[1]");
+    assert_eq!(
+      interpret("MittagLefflerE[2, 1/2]").unwrap(),
+      "Cosh[1/Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn three_arg_beta_one_reduces_to_two_arg() {
+    // MittagLefflerE[a, 1, z] == MittagLefflerE[a, z]
+    assert_eq!(interpret("MittagLefflerE[2, 1, 1]").unwrap(), "Cosh[1]");
+    assert_eq!(interpret("MittagLefflerE[1, 1, x]").unwrap(), "E^x");
+    assert_eq!(
+      interpret("MittagLefflerE[2, 1, z]").unwrap(),
+      "Cosh[Sqrt[z]]"
+    );
+  }
+
+  #[test]
+  fn arbitrary_precision_via_closed_form() {
+    // N[MittagLefflerE[2, 1], 20] == N[Cosh[1], 20]
+    assert_eq!(
+      interpret("N[MittagLefflerE[2, 1], 20]").unwrap(),
+      "1.5430806348152437784779056207570616826`20."
+    );
+  }
+
+  // Two-arg numeric series for non-{0,1,2}-integer alpha. The Mittag-Leffler
+  // function is E_alpha(z) = Sum[z^k / Gamma(alpha*k + 1), {k, 0, Infinity}].
+  // f64 Gamma drifts in the last digit, so compare with a tolerance.
+
+  #[test]
+  fn numeric_alpha_half() {
+    // MittagLefflerE[0.5, 1.0] ≈ 5.008980080762283
+    let v: f64 = interpret("MittagLefflerE[0.5, 1.0]").unwrap().parse().unwrap();
+    assert!((v - 5.008980080762283).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_alpha_two_point_five() {
+    // MittagLefflerE[2.5, 1.0] ≈ 1.3093059741717625
+    let v: f64 = interpret("MittagLefflerE[2.5, 1.0]").unwrap().parse().unwrap();
+    assert!((v - 1.3093059741717625).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_alpha_three() {
+    // MittagLefflerE[3, 1.0] ≈ 1.1680583133759184
+    let v: f64 = interpret("MittagLefflerE[3, 1.0]").unwrap().parse().unwrap();
+    assert!((v - 1.1680583133759184).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_z() {
+    // MittagLefflerE[2, -1.0] ≈ 0.5403023058681398 (= Cos[1])
+    let v: f64 = interpret("MittagLefflerE[2, -1.0]").unwrap().parse().unwrap();
+    assert!((v - 0.5403023058681398).abs() < 1e-10);
+  }
+
+  // Three-arg numeric series:
+  // E_{alpha,beta}(z) = Sum[z^k / Gamma(alpha*k + beta), {k, 0, Infinity}].
+
+  #[test]
+  fn three_arg_numeric() {
+    // MittagLefflerE[2.0, 0.5, 1.0] ≈ 1.4059598567786786
+    let v: f64 = interpret("MittagLefflerE[2.0, 0.5, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 1.4059598567786786).abs() < 1e-10);
+  }
+
+  #[test]
+  fn three_arg_numeric_fractional_alpha() {
+    // MittagLefflerE[1.5, 2.0, 3.0] ≈ 2.3898171221059172
+    let v: f64 = interpret("MittagLefflerE[1.5, 2.0, 3.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 2.3898171221059172).abs() < 1e-10);
+  }
+
+  #[test]
+  fn zero_argument() {
+    // E_alpha(0) = 1 for any alpha; Real argument gives `1.`.
+    assert_eq!(interpret("MittagLefflerE[a, 0]").unwrap(), "1");
+    assert_eq!(interpret("MittagLefflerE[2, 0]").unwrap(), "1");
+    assert_eq!(interpret("MittagLefflerE[2, 0.0]").unwrap(), "1.");
+    assert_eq!(interpret("MittagLefflerE[2.0, 0]").unwrap(), "1.");
+    // E_{alpha,beta}(0) = 1/Gamma[beta].
+    assert_eq!(
+      interpret("MittagLefflerE[a, b, 0]").unwrap(),
+      "Gamma[b]^(-1)"
+    );
+    assert_eq!(interpret("MittagLefflerE[2, 3, 0]").unwrap(), "1/2");
+    assert_eq!(interpret("MittagLefflerE[a, 2, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    // Non-numeric arguments with no closed form stay symbolic.
+    assert_eq!(
+      interpret("MittagLefflerE[a, z]").unwrap(),
+      "MittagLefflerE[a, z]"
+    );
+    assert_eq!(
+      interpret("MittagLefflerE[a, b, z]").unwrap(),
+      "MittagLefflerE[a, b, z]"
+    );
+  }
+}

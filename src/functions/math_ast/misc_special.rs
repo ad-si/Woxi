@@ -75,6 +75,220 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(result)
 }
 
+/// Return Some(n) when `e` is an exact integer (Integer, or a Rational that
+/// reduces to an integer). Real values like `2.0` are deliberately rejected so
+/// the symbolic closed forms only fire for exact integer parameters, matching
+/// wolframscript (`MittagLefflerE[2.0, 1.0]` uses the numeric series, not the
+/// `Cosh[Sqrt[z]]` closed form).
+fn exact_integer_value(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(n) => Some(*n),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
+        && *d != 0
+        && n % d == 0
+      {
+        Some(n / d)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// MittagLefflerE[alpha, z] (two-arg) and MittagLefflerE[alpha, beta, z]
+/// (three-arg) — the Mittag-Leffler function.
+///
+/// Two-arg:  E_alpha(z)        = Σ_{k≥0} z^k / Γ(alpha·k + 1)
+/// Three-arg: E_{alpha,beta}(z) = Σ_{k≥0} z^k / Γ(alpha·k + beta)
+///
+/// For exact integer alpha ∈ {0, 1, 2} the two-arg form has the closed forms
+///   E_0(z) = 1/(1 − z),  E_1(z) = E^z,  E_2(z) = Cosh[√z]
+/// which wolframscript returns symbolically (and which also yield the correct
+/// machine-precision value when z is Real). For other parameters with a Real
+/// argument the series is summed in f64. Otherwise the call stays symbolic.
+pub fn mittag_leffler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args.len() {
+    2 => mittag_leffler_two_arg(&args[0], &args[1]),
+    3 => {
+      // E_{alpha,beta=1}(z) == E_alpha(z): delegate to the two-arg form so the
+      // closed forms apply (e.g. MittagLefflerE[2, 1, z] -> Cosh[Sqrt[z]]).
+      if exact_integer_value(&args[1]) == Some(1) {
+        return mittag_leffler_two_arg(&args[0], &args[2]);
+      }
+      mittag_leffler_three_arg(&args[0], &args[1], &args[2])
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "MittagLefflerE expects 2 or 3 arguments".into(),
+    )),
+  }
+}
+
+fn mittag_leffler_unevaluated(args: Vec<Expr>) -> Expr {
+  Expr::FunctionCall {
+    name: "MittagLefflerE".to_string(),
+    args: args.into(),
+  }
+}
+
+fn mittag_leffler_two_arg(
+  alpha: &Expr,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // E_alpha(0) = 1 for any alpha (only the k = 0 term survives). A Real
+  // argument makes the result a machine-precision `1.`.
+  if is_expr_zero(z) {
+    if matches!(alpha, Expr::Real(_)) || matches!(z, Expr::Real(_)) {
+      return Ok(Expr::Real(1.0));
+    }
+    return Ok(Expr::Integer(1));
+  }
+
+  // Closed forms for exact integer alpha ∈ {0, 1, 2}.
+  if let Some(a) = exact_integer_value(alpha)
+    && (0..=2).contains(&a)
+  {
+    // With a Real argument the closed form reduces to a machine-precision
+    // value computed directly in f64 (so e.g. E_2(-1.0) = Cos[1] evaluates
+    // rather than getting stuck as Cosh[Sqrt[-1.]]).
+    if let Expr::Real(zv) = z {
+      let v = match a {
+        0 => 1.0 / (1.0 - zv),
+        1 => zv.exp(),
+        // E_2(z) = Cosh[√z] = Cos[√(−z)] for z < 0.
+        _ if *zv >= 0.0 => zv.sqrt().cosh(),
+        _ => (-zv).sqrt().cos(),
+      };
+      return Ok(Expr::Real(v));
+    }
+    match a {
+      0 => {
+        // 1/(1 - z)
+        let one_minus_z = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::Integer(1),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), z.clone()].into(),
+            },
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![one_minus_z, Expr::Integer(-1)].into(),
+        });
+      }
+      1 => {
+        // E^z
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Identifier("E".to_string()), z.clone()].into(),
+        });
+      }
+      2 => {
+        // Cosh[Sqrt[z]]
+        let sqrt_z = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![z.clone()].into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Cosh".to_string(),
+          args: vec![sqrt_z].into(),
+        });
+      }
+      _ => {}
+    }
+  }
+
+  // Numeric series when a Real argument forces machine-precision evaluation.
+  if (matches!(alpha, Expr::Real(_)) || matches!(z, Expr::Real(_)))
+    && let (Some(a), Some(zv)) = (try_eval_to_f64(alpha), try_eval_to_f64(z))
+    && let Some(v) = mittag_leffler_series_f64(a, 1.0, zv)
+  {
+    return Ok(Expr::Real(v));
+  }
+
+  Ok(mittag_leffler_unevaluated(vec![alpha.clone(), z.clone()]))
+}
+
+fn mittag_leffler_three_arg(
+  alpha: &Expr,
+  beta: &Expr,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // E_{alpha,beta}(0) = 1/Γ(beta) (only the k = 0 term survives).
+  if is_expr_zero(z) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![beta.clone()].into(),
+        },
+        Expr::Integer(-1),
+      ]
+      .into(),
+    });
+  }
+
+  // Numeric series when a Real argument forces machine-precision evaluation.
+  if (matches!(alpha, Expr::Real(_))
+    || matches!(beta, Expr::Real(_))
+    || matches!(z, Expr::Real(_)))
+    && let (Some(a), Some(b), Some(zv)) =
+      (try_eval_to_f64(alpha), try_eval_to_f64(beta), try_eval_to_f64(z))
+    && let Some(v) = mittag_leffler_series_f64(a, b, zv)
+  {
+    return Ok(Expr::Real(v));
+  }
+
+  Ok(mittag_leffler_unevaluated(vec![
+    alpha.clone(),
+    beta.clone(),
+    z.clone(),
+  ]))
+}
+
+/// Sum E_{alpha,beta}(z) = Σ_{k≥0} z^k / Γ(alpha·k + beta) in f64.
+/// Returns None when alpha ≤ 0 (the series does not converge as written) so
+/// the caller can leave the expression symbolic.
+fn mittag_leffler_series_f64(alpha: f64, beta: f64, z: f64) -> Option<f64> {
+  // Require alpha > 0 for convergence; reject NaN / non-positive alpha.
+  if !matches!(alpha.partial_cmp(&0.0), Some(std::cmp::Ordering::Greater)) {
+    return None;
+  }
+  let mut sum = 0.0_f64;
+  let mut comp = 0.0_f64; // Kahan compensation
+  let mut z_pow = 1.0_f64; // z^k
+  for k in 0..2000 {
+    let g = gamma_fn(alpha * k as f64 + beta);
+    // Γ poles (non-positive integers) contribute a zero term.
+    let term = if g.is_finite() && g != 0.0 {
+      z_pow / g
+    } else {
+      0.0
+    };
+    // Kahan compensated addition for improved precision.
+    let y = term - comp;
+    let t = sum + y;
+    comp = (t - sum) - y;
+    sum = t;
+    if k > 5 && term.abs() < 1e-18 * sum.abs().max(1e-300) {
+      break;
+    }
+    z_pow *= z;
+    if !z_pow.is_finite() {
+      break;
+    }
+  }
+  if sum.is_finite() { Some(sum) } else { None }
+}
+
 /// ProductLog[z] - Lambert W function (principal branch)
 pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

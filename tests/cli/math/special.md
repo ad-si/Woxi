@@ -99,6 +99,7 @@ Gamma, Beta, Zeta, Bessel, orthogonal polynomials, and elliptic integrals.
 - [`LogIntegral`](special/LogIntegral.md)
 - [`LogisticSigmoid`](special/LogisticSigmoid.md)
 - [`MeijerG`](special/MeijerG.md)
+- [`MittagLefflerE`](special/MittagLefflerE.md)
 - [`MultiplySides`](special/MultiplySides.md)
 - [`Pochhammer`](special/Pochhammer.md)
 - [`PolyGamma`](special/PolyGamma.md)
