@@ -631,6 +631,7 @@
       - [`CorrelationDistance`](math/utility/CorrelationDistance.md)
       - [`Covariance`](math/utility/Covariance.md)
       - [`CubeRoot`](math/utility/CubeRoot.md)
+      - [`Cumulant`](math/utility/Cumulant.md)
       - [`DiceDissimilarity`](math/utility/DiceDissimilarity.md)
       - [`DiracDelta`](math/utility/DiracDelta.md)
       - [`DMSList`](math/utility/DMSList.md)

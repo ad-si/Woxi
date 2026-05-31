@@ -1494,6 +1494,109 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
+/// Cumulant[list, r] - the r-th (sample) cumulant of the data in `list`.
+///
+/// Computed from the raw moments mu'_j = (1/n) Sum[x_i^j] via the standard
+/// moment-cumulant recursion:
+///     k_n = mu'_n - Sum_{m=1}^{n-1} Binomial[n-1, m-1] k_m mu'_{n-m}
+/// All arithmetic is carried out symbolically so exact rational results are
+/// preserved.
+pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let symbolic = || {
+    Ok(Expr::FunctionCall {
+      name: "Cumulant".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return symbolic();
+  }
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return symbolic(),
+  };
+  let r = match expr_to_num(&args[1]) {
+    Some(r) if r >= 0.0 && r.fract() == 0.0 => r as usize,
+    _ => return symbolic(),
+  };
+  // Only numeric data is handled (matching CentralMoment's convention).
+  if !items.iter().all(|item| expr_to_num(item).is_some()) {
+    return symbolic();
+  }
+  if r == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  let n = items.len() as i128;
+
+  // raw_moment(j) = (1/n) Sum[x_i^j], evaluated symbolically/exactly.
+  let raw_moment = |j: usize| -> Result<Expr, InterpreterError> {
+    let mut terms = Vec::with_capacity(items.len());
+    for item in items {
+      let powered = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(item.clone()),
+        right: Box::new(Expr::Integer(j as i128)),
+      };
+      terms.push(crate::evaluator::evaluate_expr_to_expr(&powered)?);
+    }
+    let sum_expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    let div = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(sum_expr),
+      right: Box::new(Expr::Integer(n)),
+    };
+    crate::evaluator::evaluate_expr_to_expr(&div)
+  };
+
+  // Precompute raw moments mu'_1 .. mu'_r.
+  let mut mu = Vec::with_capacity(r + 1);
+  mu.push(Expr::Integer(0)); // index 0 unused
+  for j in 1..=r {
+    mu.push(raw_moment(j)?);
+  }
+
+  // k[0] unused; build k[1..=r] via the recursion.
+  let mut k: Vec<Expr> = Vec::with_capacity(r + 1);
+  k.push(Expr::Integer(0));
+  for nn in 1..=r {
+    // start with mu'_nn
+    let mut acc = mu[nn].clone();
+    for m in 1..nn {
+      let binom = binomial_i128((nn - 1) as i128, (m - 1) as i128);
+      let term = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()].into(),
+      };
+      acc = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(acc),
+        right: Box::new(term),
+      };
+      acc = crate::evaluator::evaluate_expr_to_expr(&acc)?;
+    }
+    k.push(acc);
+  }
+
+  Ok(k[r].clone())
+}
+
+/// Binomial coefficient C(n, kk) for small non-negative arguments.
+fn binomial_i128(n: i128, kk: i128) -> i128 {
+  if kk < 0 || kk > n {
+    return 0;
+  }
+  let kk = kk.min(n - kk);
+  let mut result: i128 = 1;
+  for i in 0..kk {
+    result = result * (n - i) / (i + 1);
+  }
+  result
+}
+
 /// Kurtosis[list] - CentralMoment[list, 4] / CentralMoment[list, 2]^2
 pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

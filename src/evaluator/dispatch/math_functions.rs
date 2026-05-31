@@ -636,6 +636,9 @@ pub fn dispatch_math_functions(
     "CentralMoment" if args.len() == 2 => {
       return Some(crate::functions::math_ast::central_moment_ast(args));
     }
+    "Cumulant" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::cumulant_ast(args));
+    }
     "Kurtosis" if args.len() == 1 => {
       return Some(crate::functions::math_ast::kurtosis_ast(args));
     }

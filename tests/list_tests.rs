@@ -1183,6 +1183,45 @@ mod list_tests {
   }
 
   #[test]
+  fn cumulant_basic() {
+    // First cumulant is the mean.
+    assert_eq!(interpret("Cumulant[{1, 2, 3, 4, 5}, 1]").unwrap(), "3");
+    // Second cumulant is the (population) variance.
+    assert_eq!(interpret("Cumulant[{1, 2, 3, 4, 5}, 2]").unwrap(), "2");
+    // Third cumulant equals the third central moment (zero for symmetric data).
+    assert_eq!(interpret("Cumulant[{1, 2, 3, 4, 5}, 3]").unwrap(), "0");
+    // Fourth cumulant: m4 - 3 m2^2 = -26/5.
+    assert_eq!(interpret("Cumulant[{1, 2, 3, 4, 5}, 4]").unwrap(), "-26/5");
+    // Order 0 is always 0.
+    assert_eq!(interpret("Cumulant[{1, 2, 3, 4, 5}, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cumulant_higher_order_exact() {
+    // Exact rational results for higher orders (verified against wolframscript).
+    assert_eq!(
+      interpret("Cumulant[{1, 2, 3, 5, 8, 13, 21}, 5]").unwrap(),
+      "-1139161500/16807"
+    );
+    assert_eq!(
+      interpret("Cumulant[{1, 2, 3, 5, 8, 13, 21}, 6]").unwrap(),
+      "-96518711318/117649"
+    );
+  }
+
+  #[test]
+  fn cumulant_numeric_and_unevaluated() {
+    // Real-valued data yields a machine-precision result.
+    assert_eq!(interpret("Cumulant[{1.0, 2, 3, 4, 5}, 2]").unwrap(), "2.");
+    assert_eq!(interpret("N[Cumulant[{1, 2, 3, 4, 5}, 4]]").unwrap(), "-5.2");
+    // Non-numeric data stays unevaluated.
+    assert_eq!(
+      interpret("Cumulant[{a, b, c}, 2]").unwrap(),
+      "Cumulant[{a, b, c}, 2]"
+    );
+  }
+
+  #[test]
   fn frechet_variance_symbolic() {
     // Variance exists only when shape > 2.
     assert_eq!(
