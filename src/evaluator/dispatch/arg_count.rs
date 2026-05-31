@@ -371,6 +371,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Find" => Some((2, 2)),
     "FindArgMax" => Some((2, 2)),
     "FindArgMin" => Some((2, 2)),
+    "FindCycle" => Some((1, 3)),
     "FiniteAbelianGroupCount" => Some((1, 1)),
     "FiniteGroupCount" => Some((1, 1)),
     "FindFit" => Some((4, 4)),

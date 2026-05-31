@@ -3948,6 +3948,144 @@ mod high_level_functions_tests {
       );
     }
 
+    // FindCycle: returns cycles in a (di)graph. Each cycle is a list of edges.
+    // Output forms below are verified to match wolframscript exactly. Cycle
+    // edges are rendered with Apply[List, ..., {2}] (so {a, b} stands for the
+    // edge a->b) since the raw DirectedEdge/UndirectedEdge glyphs are awkward
+    // to assert on.
+    mod find_cycle_tests {
+      use super::*;
+
+      #[test]
+      fn test_directed_triangle_default() {
+        // Default returns a single cycle.
+        assert_eq!(
+          interpret("Apply[List, FindCycle[{1->2, 2->3, 3->1}], {2}]")
+            .unwrap(),
+          "{{{1, 2}, {2, 3}, {3, 1}}}"
+        );
+      }
+
+      #[test]
+      fn test_no_cycle_returns_empty() {
+        assert_eq!(
+          interpret("FindCycle[{1->2, 2->3, 3->4}]").unwrap(),
+          "{}"
+        );
+      }
+
+      #[test]
+      fn test_self_loop_not_a_cycle() {
+        // A length-1 self-loop is not reported as a cycle.
+        assert_eq!(
+          interpret("FindCycle[{1->1}, Infinity, All]").unwrap(),
+          "{}"
+        );
+      }
+
+      #[test]
+      fn test_directed_edge_heads() {
+        assert_eq!(
+          interpret("Head /@ FindCycle[{1->2, 2->3, 3->1}][[1]]").unwrap(),
+          "{DirectedEdge, DirectedEdge, DirectedEdge}"
+        );
+      }
+
+      #[test]
+      fn test_all_cycles_sorted_by_length() {
+        // Three nested cycles through vertex 1, all of length 2/3/4, returned
+        // shortest first.
+        assert_eq!(
+          interpret(
+            "Apply[List, FindCycle[\
+               {1->2, 2->3, 3->1, 3->4, 4->1, 1->5, 5->1}, Infinity, All], \
+             {2}]"
+          )
+          .unwrap(),
+          "{{{1, 5}, {5, 1}}, {{1, 2}, {2, 3}, {3, 1}}, \
+           {{1, 2}, {2, 3}, {3, 4}, {4, 1}}}"
+        );
+      }
+
+      #[test]
+      fn test_count_limits_number_of_cycles() {
+        // Default (no count) returns the first cycle found by DFS.
+        assert_eq!(
+          interpret(
+            "Apply[List, \
+               FindCycle[{1->2, 2->3, 3->1, 3->4, 4->1, 1->5, 5->1}], {2}]"
+          )
+          .unwrap(),
+          "{{{1, 2}, {2, 3}, {3, 1}}}"
+        );
+      }
+
+      #[test]
+      fn test_disjoint_cycles_reverse_root_order() {
+        // Two independent 2-cycles: All lists them in reverse vertex order.
+        assert_eq!(
+          interpret(
+            "Apply[List, \
+               FindCycle[{1->2, 2->1, 3->4, 4->3}, Infinity, All], {2}]"
+          )
+          .unwrap(),
+          "{{{3, 4}, {4, 3}}, {{1, 2}, {2, 1}}}"
+        );
+      }
+
+      #[test]
+      fn test_kspec_max_length() {
+        // A single integer second argument bounds the maximum cycle length.
+        assert_eq!(
+          interpret(
+            "Apply[List, \
+               FindCycle[{1->2, 2->3, 3->1, 1->4, 4->1}, 2, All], {2}]"
+          )
+          .unwrap(),
+          "{{{1, 4}, {4, 1}}}"
+        );
+      }
+
+      #[test]
+      fn test_undirected_triangle() {
+        // A two-way (undirected) cycle uses UndirectedEdge in the result.
+        assert_eq!(
+          interpret(
+            "Apply[List, FindCycle[{1<->2, 2<->3, 3<->1}, Infinity, All], {2}]"
+          )
+          .unwrap(),
+          "{{{1, 2}, {2, 3}, {3, 1}}}"
+        );
+        assert_eq!(
+          interpret("Head /@ FindCycle[{1<->2, 2<->3, 3<->1}][[1]]").unwrap(),
+          "{UndirectedEdge, UndirectedEdge, UndirectedEdge}"
+        );
+      }
+
+      #[test]
+      fn test_single_undirected_edge_is_not_a_cycle() {
+        // One undirected edge cannot be traversed back along itself.
+        assert_eq!(
+          interpret("FindCycle[{1<->2}, Infinity, All]").unwrap(),
+          "{}"
+        );
+      }
+
+      #[test]
+      fn test_findcycle_on_graph_object() {
+        // Accepts a Graph[...] wrapper and honours its vertex order.
+        assert_eq!(
+          interpret(
+            "Apply[List, \
+               FindCycle[Graph[{2, 3, 1}, {1->2, 2->3, 3->1}], Infinity, All], \
+             {2}]"
+          )
+          .unwrap(),
+          "{{{2, 3}, {3, 1}, {1, 2}}}"
+        );
+      }
+    }
+
     #[test]
     fn test_relation_graph() {
       // Asymmetric relation → directed graph with an edge for every ordered

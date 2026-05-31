@@ -1780,7 +1780,7 @@ PadeApproximant,Pade approximant,,unevaluated,6.0,1809
 FillingTransform,Morphological filling,,unevaluated,8.0,1810
 SamplingPeriod,Sampling period option,,unevaluated,8.0,1811
 Cube,Cube primitive,,unevaluated,12.0,1815
-FindCycle,Find graph cycles,,unevaluated,10.0,1815
+FindCycle,Find cycles in a graph or list of edges returning each cycle as a list of edges,✅,pure,10.0,1815
 TimeSeriesForecast,Time series forecast,,unevaluated,9.0,1815
 WordFrequencyData,,🚫,,10.4,1815
 CharacteristicFunction,Characteristic function,,unevaluated,6.0,1817

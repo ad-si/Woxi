@@ -3659,6 +3659,11 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // FindCycle[graph | edgeList, kspec, n] → list of cycles (each a list of edges)
+  if name == "FindCycle" && (1..=3).contains(&args.len()) {
+    return crate::functions::graph::find_cycle_ast(args);
+  }
+
   // EdgeList[Graph[vertices, edges]] → edges list
   if name == "EdgeList" && args.len() == 1 {
     if let Expr::FunctionCall {

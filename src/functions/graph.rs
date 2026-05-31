@@ -1076,6 +1076,362 @@ fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
   (expr, color)
 }
 
+// ---------------------------------------------------------------------------
+// FindCycle
+// ---------------------------------------------------------------------------
+
+/// A directed arc derived from an input edge. `edge_id` is shared between the
+/// two arcs that come from a single undirected edge so a cycle can never reuse
+/// the same undirected edge twice. `directed` records whether the originating
+/// edge was directed (controls the head used when rendering the result).
+#[derive(Clone)]
+struct Arc {
+  dst: usize,
+  edge_id: usize,
+  directed: bool,
+}
+
+/// Extract the innermost edge expression, peeling Labeled/Style wrappers.
+fn fc_unwrap_edge(e: &Expr) -> &Expr {
+  unwrap_edge_wrappers(e).0
+}
+
+/// Parse the FindCycle input (first argument) into a vertex list (in first-
+/// appearance order, matching VertexList) and the raw edge expressions.
+/// Accepts either `Graph[{verts}, {edges}]` or a bare list of edges/rules.
+fn fc_parse_input(arg: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let raw_edges: Vec<Expr> = match arg {
+    Expr::FunctionCall { name, args }
+      if name == "Graph" && args.len() >= 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::List(_v), Expr::List(e)) => e.iter().cloned().collect(),
+        _ => return None,
+      }
+    }
+    Expr::List(edges) => edges.iter().cloned().collect(),
+    _ => return None,
+  };
+
+  // If the input was a Graph with an explicit vertex list, honour that order.
+  if let Expr::FunctionCall { name, args } = arg
+    && name == "Graph"
+    && args.len() >= 2
+    && let Expr::List(v) = &args[0]
+  {
+    let verts: Vec<Expr> = v.iter().cloned().collect();
+    if !verts.is_empty() {
+      return Some((verts, raw_edges));
+    }
+  }
+
+  // Otherwise derive the vertex list from edge endpoints, in first-appearance
+  // order (this matches wolframscript's VertexList of an edge list).
+  let mut seen: Vec<String> = Vec::new();
+  let mut verts: Vec<Expr> = Vec::new();
+  let push = |v: &Expr, seen: &mut Vec<String>, verts: &mut Vec<Expr>| {
+    let key = expr_to_string(v);
+    if !seen.contains(&key) {
+      seen.push(key);
+      verts.push(v.clone());
+    }
+  };
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    match inner {
+      Expr::FunctionCall { args: eargs, .. } if eargs.len() == 2 => {
+        push(&eargs[0], &mut seen, &mut verts);
+        push(&eargs[1], &mut seen, &mut verts);
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        push(pattern, &mut seen, &mut verts);
+        push(replacement, &mut seen, &mut verts);
+      }
+      _ => {}
+    }
+  }
+  Some((verts, raw_edges))
+}
+
+/// Parse the (optional) kspec second argument into an inclusive length range.
+/// Returns (kmin, kmax). `Infinity` (the default) maps to usize::MAX.
+fn fc_parse_kspec(arg: Option<&Expr>) -> Option<(usize, usize)> {
+  match arg {
+    None => Some((1, usize::MAX)),
+    Some(Expr::Identifier(s)) if s == "Infinity" => Some((1, usize::MAX)),
+    Some(Expr::Integer(k)) if *k >= 1 => Some((1, *k as usize)),
+    Some(Expr::List(items)) => match items.len() {
+      1 => match &items[0] {
+        Expr::Integer(k) if *k >= 1 => Some((*k as usize, *k as usize)),
+        _ => None,
+      },
+      2 => {
+        let lo = match &items[0] {
+          Expr::Integer(k) if *k >= 1 => *k as usize,
+          _ => return None,
+        };
+        let hi = match &items[1] {
+          Expr::Integer(k) if *k >= 1 => *k as usize,
+          Expr::Identifier(s) if s == "Infinity" => usize::MAX,
+          _ => return None,
+        };
+        Some((lo, hi))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Parse the (optional) count third argument: number of cycles to return.
+/// `All` maps to usize::MAX, default (None) is 1.
+fn fc_parse_count(arg: Option<&Expr>) -> Option<usize> {
+  match arg {
+    None => Some(1),
+    Some(Expr::Identifier(s)) if s == "All" || s == "Infinity" => {
+      Some(usize::MAX)
+    }
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    _ => None,
+  }
+}
+
+/// Core FindCycle implementation. Returns a list of cycles, each cycle being a
+/// list of edge expressions (DirectedEdge / UndirectedEdge).
+pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "FindCycle".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  if args.is_empty() || args.len() > 3 {
+    return unevaluated();
+  }
+
+  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
+    Some(p) => p,
+    None => return unevaluated(),
+  };
+  let (kmin, kmax) = match fc_parse_kspec(args.get(1)) {
+    Some(k) => k,
+    None => return unevaluated(),
+  };
+  let max_count = match fc_parse_count(args.get(2)) {
+    Some(n) => n,
+    None => return unevaluated(),
+  };
+
+  let n = vertices.len();
+  if n == 0 || max_count == 0 {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  // Map vertex key -> rank (index in vertex list).
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+
+  // Build the arc adjacency list. Each input edge gets a unique edge_id; an
+  // undirected edge contributes two arcs that share that id.
+  let mut adj: Vec<Vec<Arc>> = vec![Vec::new(); n];
+  let mut next_edge_id = 0usize;
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (src, dst, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        let d = name != "UndirectedEdge" && name != "TwoWayRule";
+        (&eargs[0], &eargs[1], d)
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => continue,
+    };
+    let (si, di) = match (
+      rank.get(&expr_to_string(src)),
+      rank.get(&expr_to_string(dst)),
+    ) {
+      (Some(&s), Some(&d)) => (s, d),
+      _ => continue,
+    };
+    let id = next_edge_id;
+    next_edge_id += 1;
+    adj[si].push(Arc {
+      dst: di,
+      edge_id: id,
+      directed,
+    });
+    if !directed {
+      adj[di].push(Arc {
+        dst: si,
+        edge_id: id,
+        directed,
+      });
+    }
+  }
+
+  // Render an edge (src, dst, directed) as the appropriate Expr.
+  let render_edge = |s: usize, d: usize, directed: bool| -> Expr {
+    Expr::FunctionCall {
+      name: if directed {
+        "DirectedEdge".to_string()
+      } else {
+        "UndirectedEdge".to_string()
+      },
+      args: vec![vertices[s].clone(), vertices[d].clone()].into(),
+    }
+  };
+
+  // Collect cycles in DFS discovery order. Each cycle is rooted at its minimum
+  // rank vertex (the DFS root), and only explores vertices of rank >= root so
+  // each undirected/directed simple cycle is enumerated exactly once.
+  // Each entry carries (root_rank, edges).
+  let mut cycles: Vec<(usize, Vec<Expr>)> = Vec::new();
+  // path of (src_vertex, arc) describing edges taken so far.
+  let mut path_edges: Vec<(usize, Arc)> = Vec::new();
+  let mut on_path = vec![false; n];
+  let mut used_edge: HashMap<usize, bool> = HashMap::new();
+  // Sorted edge-id sets of undirected cycles already emitted, used to avoid
+  // reporting the same undirected cycle in its reverse orientation.
+  let mut seen_undirected: std::collections::HashSet<Vec<usize>> =
+    std::collections::HashSet::new();
+
+  // We stop early once we have collected enough cycles. For the default count
+  // (1) and small/medium counts this avoids enumerating the whole graph; for
+  // All (usize::MAX) we enumerate everything.
+  for root in 0..n {
+    if cycles.len() >= max_count {
+      break;
+    }
+    // Explicit recursion via a helper closure is awkward in Rust, so use an
+    // iterative-style recursive fn defined locally.
+    #[allow(clippy::too_many_arguments)]
+    fn dfs(
+      cur: usize,
+      root: usize,
+      adj: &[Vec<Arc>],
+      on_path: &mut [bool],
+      path_edges: &mut Vec<(usize, Arc)>,
+      used_edge: &mut HashMap<usize, bool>,
+      kmin: usize,
+      kmax: usize,
+      cycles: &mut Vec<(usize, Vec<Expr>)>,
+      seen_undirected: &mut std::collections::HashSet<Vec<usize>>,
+      max_count: usize,
+      render_edge: &dyn Fn(usize, usize, bool) -> Expr,
+    ) {
+      if cycles.len() >= max_count {
+        return;
+      }
+      for arc in &adj[cur] {
+        if cycles.len() >= max_count {
+          return;
+        }
+        if arc.dst < root {
+          continue; // keep root as the minimum-rank vertex of the cycle
+        }
+        if *used_edge.get(&arc.edge_id).unwrap_or(&false) {
+          continue; // don't reuse the same input edge
+        }
+        if arc.dst == root {
+          // Completed a cycle back to the root. A length-1 cycle is a
+          // self-loop, which FindCycle does not report.
+          let len = path_edges.len() + 1;
+          if len >= 2 && len >= kmin && len <= kmax {
+            // If every edge of the cycle is undirected, the reverse traversal
+            // describes the same cycle. Deduplicate by the (sorted) set of
+            // originating edge ids so each undirected cycle is reported once,
+            // keeping the orientation that DFS discovers first.
+            let all_undirected =
+              !arc.directed && path_edges.iter().all(|(_, a)| !a.directed);
+            let keep = if all_undirected {
+              let mut ids: Vec<usize> =
+                path_edges.iter().map(|(_, a)| a.edge_id).collect();
+              ids.push(arc.edge_id);
+              ids.sort_unstable();
+              seen_undirected.insert(ids)
+            } else {
+              true
+            };
+            if keep {
+              let mut cyc: Vec<Expr> = path_edges
+                .iter()
+                .map(|(s, a)| render_edge(*s, a.dst, a.directed))
+                .collect();
+              cyc.push(render_edge(cur, arc.dst, arc.directed));
+              cycles.push((root, cyc));
+              if cycles.len() >= max_count {
+                return;
+              }
+            }
+          }
+          continue;
+        }
+        if on_path[arc.dst] {
+          continue; // simple cycle: no repeated intermediate vertex
+        }
+        if path_edges.len() + 1 >= kmax {
+          continue; // can't extend further and still close within kmax
+        }
+        on_path[arc.dst] = true;
+        used_edge.insert(arc.edge_id, true);
+        path_edges.push((cur, arc.clone()));
+        dfs(
+          arc.dst, root, adj, on_path, path_edges, used_edge, kmin, kmax,
+          cycles, seen_undirected, max_count, render_edge,
+        );
+        path_edges.pop();
+        used_edge.insert(arc.edge_id, false);
+        on_path[arc.dst] = false;
+      }
+    }
+
+    on_path[root] = true;
+    dfs(
+      root,
+      root,
+      &adj,
+      &mut on_path,
+      &mut path_edges,
+      &mut used_edge,
+      kmin,
+      kmax,
+      &mut cycles,
+      &mut seen_undirected,
+      max_count,
+      &render_edge,
+    );
+    on_path[root] = false;
+  }
+
+  // Selection happens in DFS-discovery order (already truncated to max_count by
+  // the search). wolframscript then orders the returned cycles by length
+  // ascending, breaking ties by descending root rank and, finally, by reverse
+  // discovery order. Reversing the vector first and using a stable sort yields
+  // that reverse-discovery tiebreak for cycles that are otherwise equal.
+  cycles.reverse();
+  cycles.sort_by(|a, b| {
+    a.1
+      .len()
+      .cmp(&b.1.len())
+      .then_with(|| b.0.cmp(&a.0))
+  });
+
+  Ok(Expr::List(
+    cycles
+      .into_iter()
+      .map(|(_, c)| Expr::List(c.into()))
+      .collect(),
+  ))
+}
+
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
