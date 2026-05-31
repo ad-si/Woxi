@@ -972,10 +972,10 @@ pub fn dispatch_linear_algebra_functions(
       let n = src.len();
       // Each source/target entry must be a 2-element {lo, hi} list.
       let pair = |e: &Expr| -> Option<(Expr, Expr)> {
-        if let Expr::List(p) = e {
-          if p.len() == 2 {
-            return Some((p[0].clone(), p[1].clone()));
-          }
+        if let Expr::List(p) = e
+          && p.len() == 2
+        {
+          return Some((p[0].clone(), p[1].clone()));
         }
         None
       };
@@ -1174,7 +1174,9 @@ pub fn dispatch_linear_algebra_functions(
 
       let n = m_rows.len();
       // Validate that m is square (n x n) and v (if present) has length n.
-      let m_ok = m_rows.iter().all(|r| matches!(r, Expr::List(c) if c.len() == n));
+      let m_ok = m_rows
+        .iter()
+        .all(|r| matches!(r, Expr::List(c) if c.len() == n));
       let v_ok = v_opt.map(|v| v.len() == n).unwrap_or(true);
       if !m_ok || !v_ok {
         return Some(Ok(Expr::FunctionCall {
@@ -1191,9 +1193,7 @@ pub fn dispatch_linear_algebra_functions(
           _ => unreachable!(),
         };
         // Append the translation entry for this row (default 0).
-        let t = v_opt
-          .map(|v| v[i].clone())
-          .unwrap_or(Expr::Integer(0));
+        let t = v_opt.map(|v| v[i].clone()).unwrap_or(Expr::Integer(0));
         row.push(t);
         rows.push(Expr::List(row.into()));
       }
@@ -1321,11 +1321,7 @@ pub fn dispatch_linear_algebra_functions(
             name: "Plus".to_string(),
             args: vec![
               ei.clone(),
-              times(vec![
-                Expr::Integer(-1),
-                e_dot_nhat.clone(),
-                ni.clone(),
-              ]),
+              times(vec![Expr::Integer(-1), e_dot_nhat.clone(), ni.clone()]),
             ]
             .into(),
           })
@@ -2973,9 +2969,7 @@ fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
 /// EulerMatrix[{a, b, c}] - rotation matrix R(a).R(b).R(c) using the default
 /// {3, 2, 3} (ZYZ) axis convention. EulerMatrix[{a, b, c}, {n1, n2, n3}]
 /// uses the explicitly given axis sequence.
-pub fn euler_matrix_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn euler_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let angles = match &args[0] {
     Expr::List(items) if items.len() == 3 => items,
     _ => {

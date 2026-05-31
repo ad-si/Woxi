@@ -4840,14 +4840,14 @@ pub fn cholesky_decomposition_ast(
 
     // Reject non-positive-definite matrices: the diagonal radicand must
     // be a positive number.
-    if let Some(v) = try_eval_to_f64(&radicand) {
-      if v <= 0.0 {
-        crate::emit_message(&format!(
-          "CholeskyDecomposition::npdef: The matrix {} is not positive definite.",
-          crate::syntax::expr_to_string(&args[0])
-        ));
-        return Ok(unevaluated());
-      }
+    if let Some(v) = try_eval_to_f64(&radicand)
+      && v <= 0.0
+    {
+      crate::emit_message(&format!(
+        "CholeskyDecomposition::npdef: The matrix {} is not positive definite.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated());
     }
 
     let diag = eval_expr(&make_sqrt(radicand))?;

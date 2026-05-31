@@ -2110,14 +2110,15 @@ pub fn evaluate_function_call_ast_inner(
     if valid_perm {
       // Map a single expr: integers get their image (default: identity);
       // lists are mapped element-wise (recursively); other exprs unchanged.
-      fn map_point(e: &Expr, images: &std::collections::HashMap<i128, i128>) -> Expr {
+      fn map_point(
+        e: &Expr,
+        images: &std::collections::HashMap<i128, i128>,
+      ) -> Expr {
         match e {
-          Expr::Integer(n) => {
-            Expr::Integer(*images.get(n).unwrap_or(n))
+          Expr::Integer(n) => Expr::Integer(*images.get(n).unwrap_or(n)),
+          Expr::List(items) => {
+            Expr::List(items.iter().map(|it| map_point(it, images)).collect())
           }
-          Expr::List(items) => Expr::List(
-            items.iter().map(|it| map_point(it, images)).collect(),
-          ),
           other => other.clone(),
         }
       }

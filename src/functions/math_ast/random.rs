@@ -923,7 +923,9 @@ fn random_permutation_cycles(n: usize) -> Expr {
 
   let cycle_exprs: Vec<Expr> = cycles
     .into_iter()
-    .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into()))
+    .map(|c| {
+      Expr::List(c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into())
+    })
     .collect();
   Expr::FunctionCall {
     name: "Cycles".to_string(),

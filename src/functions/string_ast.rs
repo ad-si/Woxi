@@ -1050,11 +1050,11 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (e.g. WordBoundary after the final word character). The main loop
     // stops at `i == s.len()`, so check that final position here. Honour the
     // replacement limit so we don't exceed `max`.
-    if max.map_or(true, |m| count < m) && zero_width_match(s, rules, s.len()).is_some()
+    if max.is_none_or(|m| count < m)
+      && zero_width_match(s, rules, s.len()).is_some()
+      && let Some(replacement) = zero_width_match(s, rules, s.len())
     {
-      if let Some(replacement) = zero_width_match(s, rules, s.len()) {
-        result.push_str(replacement);
-      }
+      result.push_str(replacement);
     }
     Ok(result)
   }

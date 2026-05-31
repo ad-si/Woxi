@@ -2464,8 +2464,7 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         row.push(Expr::Integer(0));
         continue;
       }
-      let dist =
-        apply_func_to_two_args(&dist_fn, &points[i], &points[j])?;
+      let dist = apply_func_to_two_args(&dist_fn, &points[i], &points[j])?;
       row.push(dist);
     }
     rows.push(Expr::List(row.into()));

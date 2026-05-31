@@ -487,7 +487,8 @@ mod high_level_functions_tests {
         "|the|.|cat|"
       );
       assert_eq!(
-        interpret(r#"StringReplace["one2three", WordBoundary -> "|"]"#).unwrap(),
+        interpret(r#"StringReplace["one2three", WordBoundary -> "|"]"#)
+          .unwrap(),
         "|one2three|"
       );
     }
@@ -3700,10 +3701,8 @@ mod high_level_functions_tests {
     #[test]
     fn test_three_by_three_integer() {
       assert_eq!(
-        interpret(
-          "CholeskyDecomposition[{{25,15,-5},{15,18,0},{-5,0,11}}]"
-        )
-        .unwrap(),
+        interpret("CholeskyDecomposition[{{25,15,-5},{15,18,0},{-5,0,11}}]")
+          .unwrap(),
         "{{5, 3, -1}, {0, 3, 1}, {0, 0, 3}}"
       );
     }

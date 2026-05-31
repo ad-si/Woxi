@@ -1911,10 +1911,7 @@ mod list_tests {
     );
 
     // RandomPermutation[n, k] returns a length-k list of Cycles objects.
-    assert_eq!(
-      interpret("Length[RandomPermutation[5, 3]]").unwrap(),
-      "3"
-    );
+    assert_eq!(interpret("Length[RandomPermutation[5, 3]]").unwrap(), "3");
     assert_eq!(
       interpret("Map[Head, RandomPermutation[5, 3]]").unwrap(),
       "{Cycles, Cycles, Cycles}"
