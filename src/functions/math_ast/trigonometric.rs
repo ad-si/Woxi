@@ -1462,6 +1462,96 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// DawsonF[x] = exp(-x^2) * integral_0^x exp(t^2) dt
+/// = (sqrt(pi)/2) exp(-x^2) erfi(x). Odd function; DawsonF[0] = 0,
+/// DawsonF[Infinity] = 0.
+pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DawsonF expects 1 argument".into(),
+    ));
+  }
+  // Helper: compute -DawsonF[inner] by evaluating then negating.
+  let negate = |inner: Expr| -> Result<Expr, InterpreterError> {
+    let inner_result = dawson_f_ast(&[inner])?;
+    Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(inner_result),
+    })
+  };
+  match &args[0] {
+    // DawsonF[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // DawsonF[Infinity] = 0
+    Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
+    // DawsonF[-x] = -DawsonF[x] (UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => negate(*operand.clone()),
+    // DawsonF[Times[-1, x]] = -DawsonF[x]
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times" && fargs.len() == 2 =>
+    {
+      if matches!(&fargs[0], Expr::Integer(-1)) {
+        return negate(fargs[1].clone());
+      }
+      if matches!(&fargs[1], Expr::Integer(-1)) {
+        return negate(fargs[0].clone());
+      }
+      if let Expr::Integer(n) = &fargs[0]
+        && *n < 0
+      {
+        let pos_arg = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-*n), fargs[1].clone()].into(),
+        };
+        return negate(pos_arg);
+      }
+      Ok(Expr::FunctionCall {
+        name: "DawsonF".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    // BinaryOp::Times form: -1 * x
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Integer(-1)) {
+        return negate(*right.clone());
+      }
+      if matches!(right.as_ref(), Expr::Integer(-1)) {
+        return negate(*left.clone());
+      }
+      if let Expr::Integer(n) = left.as_ref()
+        && *n < 0
+      {
+        let pos_arg = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-*n)),
+          right: right.clone(),
+        };
+        return negate(pos_arg);
+      }
+      Ok(Expr::FunctionCall {
+        name: "DawsonF".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    // DawsonF[-n] for negative integer
+    Expr::Integer(n) if *n < 0 => negate(Expr::Integer(-*n)),
+    // Numeric evaluation for Real arguments
+    Expr::Real(f) => Ok(Expr::Real(dawson_f64(*f))),
+    // Otherwise symbolic
+    _ => Ok(Expr::FunctionCall {
+      name: "DawsonF".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
 pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(

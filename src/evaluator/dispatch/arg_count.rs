@@ -320,6 +320,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "EllipticThetaPrime" => Some((3, 3)),
     "EqualTo" => Some((1, 1)),
     "Equivalent" => Some((0, usize::MAX)),
+    "DawsonF" => Some((1, 1)),
     "Erf" => Some((1, 2)),
     "Erfc" => Some((1, 1)),
     "Erfi" => Some((1, 1)),

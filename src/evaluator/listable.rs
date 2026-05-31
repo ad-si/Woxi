@@ -65,6 +65,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Erf"
       | "Erfc"
       | "Erfi"
+      | "DawsonF"
       | "InverseErf"
       | "InverseErfc"
       | "Prime"

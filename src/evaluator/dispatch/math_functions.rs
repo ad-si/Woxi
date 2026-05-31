@@ -1401,6 +1401,9 @@ pub fn dispatch_math_functions(
     "Erfi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::erfi_ast(args));
     }
+    "DawsonF" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::dawson_f_ast(args));
+    }
     "InverseErf" if args.len() == 1 => {
       return Some(crate::functions::math_ast::inverse_erf_ast(args));
     }

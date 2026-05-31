@@ -4568,4 +4568,97 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod dawson_f_tests {
+    use super::*;
+
+    fn approx(code: &str, expected: f64) {
+      let out = interpret(code).unwrap();
+      let val: f64 = out
+        .parse()
+        .unwrap_or_else(|_| panic!("not a number: {out} (from {code})"));
+      assert!(
+        (val - expected).abs() < 1e-12,
+        "{code} => {val}, expected ~{expected}"
+      );
+    }
+
+    #[test]
+    fn test_dawson_zero() {
+      // DawsonF[0] is exact.
+      assert_eq!(interpret("DawsonF[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_dawson_infinity() {
+      // DawsonF[Infinity] = 0.
+      assert_eq!(interpret("DawsonF[Infinity]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_dawson_symbolic() {
+      assert_eq!(interpret("DawsonF[x]").unwrap(), "DawsonF[x]");
+    }
+
+    #[test]
+    fn test_dawson_odd_symmetry() {
+      // DawsonF[-2] stays symbolic as -DawsonF[2] (matches wolframscript).
+      assert_eq!(interpret("DawsonF[-2]").unwrap(), "-DawsonF[2]");
+    }
+
+    #[test]
+    fn test_dawson_numeric_one() {
+      // wolframscript: N[DawsonF[1]] == 0.5380795069127684
+      approx("N[DawsonF[1]]", 0.538_079_506_912_768_4);
+    }
+
+    #[test]
+    fn test_dawson_numeric_two() {
+      // wolframscript: N[DawsonF[2]] == 0.3013403889237921
+      approx("N[DawsonF[2]]", 0.301_340_388_923_792_1);
+    }
+
+    #[test]
+    fn test_dawson_numeric_three() {
+      // wolframscript: N[DawsonF[3]] == 0.17827103061055843
+      approx("N[DawsonF[3]]", 0.178_271_030_610_558_43);
+    }
+
+    #[test]
+    fn test_dawson_numeric_half() {
+      // wolframscript: DawsonF[0.5] == 0.4244363835020223
+      approx("DawsonF[0.5]", 0.424_436_383_502_022_3);
+    }
+
+    #[test]
+    fn test_dawson_numeric_negative_real() {
+      // wolframscript: N[DawsonF[-1.5]] == -0.4282490710853987
+      approx("DawsonF[-1.5]", -0.428_249_071_085_398_7);
+    }
+
+    #[test]
+    fn test_dawson_numeric_large() {
+      // wolframscript: N[DawsonF[10]] == 0.05025384718759881
+      approx("N[DawsonF[10]]", 0.050_253_847_187_598_81);
+    }
+
+    #[test]
+    fn test_dawson_listable() {
+      // DawsonF threads over lists (Listable attribute).
+      let out = interpret("DawsonF[{0.5, 1.0, 2.0}]").unwrap();
+      assert!(out.starts_with('{') && out.ends_with('}'), "{out}");
+      let inner = &out[1..out.len() - 1];
+      let nums: Vec<f64> =
+        inner.split(", ").map(|s| s.parse().unwrap()).collect();
+      let expected = [
+        0.424_436_383_502_022_3,
+        0.538_079_506_912_768_4,
+        0.301_340_388_923_792_1,
+      ];
+      assert_eq!(nums.len(), 3);
+      for (a, b) in nums.iter().zip(expected.iter()) {
+        assert!((a - b).abs() < 1e-12, "{a} vs {b}");
+      }
+    }
+  }
 }

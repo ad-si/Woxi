@@ -2142,7 +2142,7 @@ QRDecomposition,Computes the QR decomposition of a matrix,✅,None,2.0,2181
 QuantityArray,Represents an array of quantities with units,🚫,None,10.1,2184
 SetStreamPosition,Sets the current position in an open stream,✅,io,2.0,2184
 VertexShape,Option specifying the shape used to render graph vertices,🚫,None,8.0,2184
-DawsonF,Dawson integral special function,🚫,None,7.0,2187
+DawsonF,Returns the Dawson integral exp(-x^2) times integral of exp(t^2),✅,pure,7.0,2187
 FromPolarCoordinates,Converts polar coordinates to Cartesian,✅,None,10.1,2187
 GeneralizedLinearModelFit,Fits a generalized linear model to data,🚫,None,7.0,2187
 OpenAppend,Opens a file for appending,✅,effectful,1.0,2188

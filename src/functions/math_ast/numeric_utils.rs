@@ -165,6 +165,70 @@ pub fn erfi_f64(x: f64) -> f64 {
   sign * sum * 2.0 / std::f64::consts::PI.sqrt()
 }
 
+/// Compute Dawson's integral F(x) = exp(-x^2) * integral_0^x exp(t^2) dt.
+/// Equivalent to (sqrt(pi)/2) * exp(-x^2) * erfi(x).
+/// For small |x| a Taylor series is used; for larger |x| the stable
+/// product form via erfi is used (erfi grows like exp(x^2), so the
+/// exp(-x^2) factor keeps the result finite). For very large |x| the
+/// asymptotic expansion F(x) ~ 1/(2x) + 1/(4x^3) + ... is used.
+pub fn dawson_f64(x: f64) -> f64 {
+  // Dawson's function is odd.
+  let sign = if x < 0.0 { -1.0 } else { 1.0 };
+  let ax = x.abs();
+
+  if ax < 1.0 {
+    // Taylor series: F(x) = sum_{n=0}^inf (-1)^n 2^n x^(2n+1) / (2n+1)!!
+    // where (2n+1)!! = 1*3*5*...*(2n+1). Converges fast and without
+    // cancellation problems for small |x|.
+    let mut term = ax; // n = 0 term: x / 1!! = x
+    let mut sum = term;
+    let x2 = ax * ax;
+    for n in 0..200 {
+      // term_{n+1} = term_n * (-2 x^2) / (2n+3)
+      term *= -2.0 * x2 / (2 * n + 3) as f64;
+      sum += term;
+      if term.abs() < 1e-17 * sum.abs() {
+        break;
+      }
+    }
+    return sign * sum;
+  }
+
+  if ax < 6.0 {
+    // Stable product form: F(x) = (sqrt(pi)/2) exp(-x^2) erfi(x).
+    // Compute erfi via its series scaled by exp(-x^2) to avoid overflow.
+    // erfi(x) = (2/sqrt(pi)) sum x^(2n+1)/(n!(2n+1)); multiply by
+    // (sqrt(pi)/2) exp(-x^2): F = exp(-x^2) sum x^(2n+1)/(n!(2n+1)).
+    let x2 = ax * ax;
+    let mut term = ax;
+    let mut sum = term;
+    for n in 1..400 {
+      term *= x2 / n as f64;
+      let contribution = term / (2 * n + 1) as f64;
+      sum += contribution;
+      if contribution.abs() < 1e-18 * sum.abs() {
+        break;
+      }
+    }
+    return sign * (-x2).exp() * sum;
+  }
+
+  // Asymptotic expansion for large |x|:
+  // F(x) ~ 1/(2x) [ 1 + 1/(2x^2) + 3/(2x^2)^2 + 15/(2x^2)^3 + ... ]
+  // with coefficient ratio (2k-1)/(2x^2).
+  let inv = 1.0 / (2.0 * ax * ax);
+  let mut term = 1.0;
+  let mut sum = 1.0;
+  for k in 1..40 {
+    term *= (2 * k - 1) as f64 * inv;
+    sum += term;
+    if term.abs() < 1e-17 * sum.abs() {
+      break;
+    }
+  }
+  sign * sum / (2.0 * ax)
+}
+
 /// Recursively try to evaluate any expression to f64.
 /// This handles constants (Pi, E, Degree), arithmetic operations, and known functions.
 /// Used by N[], comparisons, and anywhere a numeric value is needed from a symbolic expression.
@@ -280,6 +344,9 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
       }
       "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
+      "DawsonF" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(dawson_f64)
+      }
       "FresnelS" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(super::fresnel_s_numeric_pub)
       }
