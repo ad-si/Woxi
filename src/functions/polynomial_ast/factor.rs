@@ -939,6 +939,90 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// IrreduciblePolynomialQ[poly] - test whether `poly` is irreducible over
+/// the rationals (the default coefficient domain). A polynomial is
+/// irreducible when, after stripping the constant (variable-free) content,
+/// it factors into exactly one non-constant factor that appears to the
+/// first power. Pure constants (numbers, Pi, E, ...) are not irreducible
+/// polynomials and return False.
+pub fn irreducible_polynomial_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "IrreduciblePolynomialQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  // A factor is "constant" if it contains no free variables. Numbers and
+  // built-in constants such as Pi/E/I all count as constant. Named
+  // constants are stored as `Expr::Constant`, which `collect_variables`
+  // would otherwise treat as a variable, so check for them explicitly.
+  fn has_variable(expr: &Expr) -> bool {
+    match expr {
+      Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::String(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+      | Expr::Constant(_) => false,
+      Expr::Identifier(s) => !matches!(
+        s.as_str(),
+        "True"
+          | "False"
+          | "Null"
+          | "Pi"
+          | "E"
+          | "I"
+          | "Infinity"
+          | "ComplexInfinity"
+          | "Indeterminate"
+      ),
+      Expr::List(items) => items.iter().any(has_variable),
+      Expr::BinaryOp { left, right, .. } => {
+        has_variable(left) || has_variable(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_variable(operand),
+      Expr::FunctionCall { args, .. } => args.iter().any(has_variable),
+      _ => true,
+    }
+  }
+  let is_constant_factor = |expr: &Expr| -> bool { !has_variable(expr) };
+
+  // Use FactorList to obtain the {factor, exponent} decomposition, then
+  // count the non-constant irreducible factors.
+  let list = match factor_list_ast(args) {
+    Ok(l) => l,
+    Err(_) => {
+      return Ok(Expr::Identifier("False".to_string()));
+    }
+  };
+
+  let Expr::List(ref entries) = list else {
+    return Ok(Expr::Identifier("False".to_string()));
+  };
+
+  let mut non_constant_count = 0usize;
+  let mut has_higher_power = false;
+  for entry in entries.iter() {
+    if let Expr::List(pair) = entry
+      && pair.len() == 2
+      && !is_constant_factor(&pair[0])
+    {
+      non_constant_count += 1;
+      // Exponent must be 1 for an irreducible polynomial.
+      if !matches!(&pair[1], Expr::Integer(1)) {
+        has_higher_power = true;
+      }
+    }
+  }
+
+  let irreducible = non_constant_count == 1 && !has_higher_power;
+  Ok(Expr::Identifier(
+    if irreducible { "True" } else { "False" }.to_string(),
+  ))
+}
+
 /// Decompose a factored expression into {factor, exponent} pairs.
 /// Handles Times[...], Power[base, exp], and literal factors.
 pub fn decompose_product(

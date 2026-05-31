@@ -6486,3 +6486,80 @@ mod cases {
     );
   }
 }
+
+mod irreducible_polynomial_q {
+  use super::*;
+
+  #[test]
+  fn irreducible_univariate() {
+    // Irreducible over the rationals.
+    assert_eq!(interpret("IrreduciblePolynomialQ[x^2 + 1]").unwrap(), "True");
+    assert_eq!(interpret("IrreduciblePolynomialQ[x^4 + 1]").unwrap(), "True");
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^2 + x + 1]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^6 + x^3 + 1]").unwrap(),
+      "True"
+    );
+    // Linear polynomials are irreducible.
+    assert_eq!(interpret("IrreduciblePolynomialQ[x]").unwrap(), "True");
+    assert_eq!(interpret("IrreduciblePolynomialQ[x + 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn reducible_univariate() {
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^2 - 1]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^3 - x]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^4 - 1]").unwrap(),
+      "False"
+    );
+    // Repeated factor (x+1)^2 — not irreducible.
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^2 + 2 x + 1]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn constant_content_is_ignored() {
+    // 2 (x^2 + 1) — the numeric content does not count as a factor.
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[2 x^2 + 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("IrreduciblePolynomialQ[3 x + 6]").unwrap(), "True");
+    // Rational coefficients are allowed.
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^2/4 + 1]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn multivariate() {
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^2 + y^2]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("IrreduciblePolynomialQ[x*y]").unwrap(), "False");
+  }
+
+  #[test]
+  fn constants_are_not_irreducible() {
+    assert_eq!(interpret("IrreduciblePolynomialQ[5]").unwrap(), "False");
+    assert_eq!(interpret("IrreduciblePolynomialQ[6]").unwrap(), "False");
+    assert_eq!(interpret("IrreduciblePolynomialQ[0]").unwrap(), "False");
+    assert_eq!(interpret("IrreduciblePolynomialQ[1]").unwrap(), "False");
+    assert_eq!(interpret("IrreduciblePolynomialQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("IrreduciblePolynomialQ[E]").unwrap(), "False");
+  }
+}

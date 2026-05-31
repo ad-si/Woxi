@@ -548,6 +548,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "InverseLaplaceTransform" => Some((3, 3)),
     "InversePermutation" => Some((1, 1)),
     "InverseWeierstrassP" => Some((2, 2)),
+    "IrreduciblePolynomialQ" => Some((1, 1)),
     "JacobiAmplitude" => Some((2, 2)),
     "JacobiCD" => Some((2, 2)),
     "JacobiCN" => Some((2, 2)),

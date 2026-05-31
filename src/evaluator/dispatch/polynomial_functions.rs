@@ -67,6 +67,11 @@ pub fn dispatch_polynomial_functions(
     "FactorList" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::factor_list_ast(args));
     }
+    "IrreduciblePolynomialQ" if args.len() == 1 => {
+      return Some(
+        crate::functions::polynomial_ast::irreducible_polynomial_q_ast(args),
+      );
+    }
     "Simplify" if !args.is_empty() => {
       return Some(crate::functions::polynomial_ast::simplify_ast(args));
     }
