@@ -4043,6 +4043,71 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_edge_delete() {
+      // Single directed edge: removes the edge, keeps all vertices.
+      assert_eq!(
+        interpret(
+          "g = EdgeDelete[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 1 -> 2]; \
+           {VertexList[g], EdgeList[g]}"
+        )
+        .unwrap(),
+        "{{1, 2, 3}, {2 \u{F3D5} 3, 3 \u{F3D5} 1}}"
+      );
+      // A list deletes multiple edges (one occurrence each).
+      assert_eq!(
+        interpret(
+          "EdgeList[EdgeDelete[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], \
+           {1 -> 2, 2 -> 3}]]"
+        )
+        .unwrap(),
+        "{3 \u{F3D5} 1}"
+      );
+      // Duplicate edges: only one matching occurrence is removed.
+      assert_eq!(
+        interpret(
+          "EdgeList[EdgeDelete[Graph[{1 -> 2, 1 -> 2, 2 -> 3}], 1 -> 2]]"
+        )
+        .unwrap(),
+        "{1 \u{F3D5} 2, 2 \u{F3D5} 3}"
+      );
+      // Undirected edges match regardless of endpoint order.
+      assert_eq!(
+        interpret(
+          "EdgeList[EdgeDelete[Graph[{1 <-> 2, 2 <-> 3}], 2 <-> 1]]"
+        )
+        .unwrap(),
+        "{2 \u{F3D4} 3}"
+      );
+      // DirectedEdge form is accepted as the edge argument.
+      assert_eq!(
+        interpret(
+          "EdgeList[EdgeDelete[Graph[{1 -> 2, 2 -> 3}], DirectedEdge[1, 2]]]"
+        )
+        .unwrap(),
+        "{2 \u{F3D5} 3}"
+      );
+      // Isolated vertices are preserved.
+      assert_eq!(
+        interpret(
+          "VertexList[EdgeDelete[Graph[{1, 2, 3, 4}, {1 -> 2, 2 -> 3}], \
+           1 -> 2]]"
+        )
+        .unwrap(),
+        "{1, 2, 3, 4}"
+      );
+      // A non-existent edge leaves the expression unevaluated.
+      assert_eq!(
+        interpret("EdgeDelete[Graph[{1 -> 2, 2 -> 3}], 1 -> 3]").unwrap(),
+        "EdgeDelete[Graph[<3>, <2>], 1 -> 3]"
+      );
+      // An undirected edge does not match a directed one.
+      assert_eq!(
+        interpret("EdgeDelete[Graph[{1 -> 2, 2 -> 3}], 1 <-> 2]").unwrap(),
+        "EdgeDelete[Graph[<3>, <2>], 1 <-> 2]"
+      );
+    }
+
+    #[test]
     fn test_single_source_distances() {
       // Two-arg form returns distances to every vertex, in VertexList order.
       assert_eq!(

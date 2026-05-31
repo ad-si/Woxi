@@ -2128,7 +2128,7 @@ TensorExpand,Symbolic tensor algebra expansion,🚫,None,9.0,2167
 StringStartsQ,Checks if a string starts with a specific substring,✅,pure,10.1,2168
 BubbleChart3D,Creates a 3D bubble chart visualization,🚫,None,7.0,2170
 OverwriteTarget,Option specifying whether to overwrite an existing target file,🚫,None,11.0,2170
-EdgeDelete,Graph data structure operations,🚫,None,8.0,2172
+EdgeDelete,Delete one or more edges from a graph while keeping all vertices,✅,pure,8.0,2172
 ImageValuePositions,Returns positions of pixels with a specified value in an image,🚫,None,9.0,2172
 ImageHistogram,Plots the histogram of pixel values in an image,🚫,None,7.0,2174
 PasteButton,Represents a button that pastes content when clicked,🚫,None,6.0,2174
