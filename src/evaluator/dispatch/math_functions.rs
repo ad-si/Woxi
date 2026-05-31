@@ -1431,6 +1431,9 @@ pub fn dispatch_math_functions(
     "Log2" if args.len() == 1 => {
       return Some(crate::functions::math_ast::log2_ast(args));
     }
+    "RealExponent" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::math_ast::real_exponent_ast(args));
+    }
     "ArcSin" if args.len() == 1 => {
       return Some(crate::functions::math_ast::arcsin_ast(args));
     }

@@ -8194,3 +8194,81 @@ mod riemann_siegel_theta {
     );
   }
 }
+
+mod real_exponent {
+  use super::*;
+
+  fn val(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  #[test]
+  fn integer_base_two() {
+    // RealExponent[x, b] = Log[b, Abs[x]] as a machine real.
+    assert_eq!(interpret("RealExponent[8, 2]").unwrap(), "3.");
+    assert_eq!(interpret("RealExponent[1/8, 2]").unwrap(), "-3.");
+    assert_eq!(interpret("RealExponent[81, 3]").unwrap(), "4.");
+    // wolframscript: RealExponent[12, 2] = 3.584962500721156
+    assert!((val("RealExponent[12, 2]") - 3.584962500721156).abs() < 1e-12);
+  }
+
+  #[test]
+  fn default_base_ten() {
+    // RealExponent[x] defaults to base 10.
+    assert_eq!(interpret("RealExponent[100]").unwrap(), "2.");
+    assert_eq!(interpret("RealExponent[1000]").unwrap(), "3.");
+    // wolframscript: RealExponent[8] = 0.9030899869919436
+    assert!((val("RealExponent[8]") - 0.9030899869919436).abs() < 1e-12);
+  }
+
+  #[test]
+  fn negative_uses_magnitude() {
+    // RealExponent uses Abs, so negative inputs give the same result.
+    assert!(
+      (val("RealExponent[-8]") - val("RealExponent[8]")).abs() < 1e-15
+    );
+  }
+
+  #[test]
+  fn complex_uses_modulus() {
+    // RealExponent[3 + 4 I] = Log[10, Abs[3+4I]] = Log[10, 5].
+    // wolframscript: 0.6989700043360187
+    assert!(
+      (val("RealExponent[3 + 4 I]") - 0.6989700043360187).abs() < 1e-12
+    );
+    // RealExponent[3 + 4 I, 5] = Log[5, 5] = 1.
+    assert_eq!(interpret("RealExponent[3 + 4 I, 5]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn real_base() {
+    // wolframscript: RealExponent[100, 2.5] = 5.025883189464119
+    assert_eq!(interpret("RealExponent[100, 2.5]").unwrap(), "5.025883189464119");
+  }
+
+  #[test]
+  fn zero_is_negative_infinity() {
+    assert_eq!(interpret("RealExponent[0]").unwrap(), "-Infinity");
+    assert_eq!(interpret("RealExponent[0, 2]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    // Symbolic argument stays unevaluated.
+    assert_eq!(interpret("RealExponent[x]").unwrap(), "RealExponent[x]");
+  }
+
+  #[test]
+  fn invalid_base_passthrough() {
+    // Base must be a real number greater than 1; otherwise unevaluated
+    // (matches wolframscript, which additionally prints a message).
+    assert_eq!(
+      interpret("RealExponent[8, 1/2]").unwrap(),
+      "RealExponent[8, 1/2]"
+    );
+    assert_eq!(
+      interpret("RealExponent[8, 1]").unwrap(),
+      "RealExponent[8, 1]"
+    );
+  }
+}

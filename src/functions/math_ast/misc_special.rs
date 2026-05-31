@@ -3202,3 +3202,65 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   crate::interpret_to_expr(&code)
 }
+
+/// RealExponent[x] gives the base-10 real exponent of x, i.e. Log[10, Abs[x]].
+/// RealExponent[x, b] gives the base-b real exponent, i.e. Log[b, Abs[x]].
+///
+/// The result is returned as a machine-precision real number. The base b must
+/// be a real number greater than 1; otherwise the expression is left
+/// unevaluated (matching wolframscript, which additionally prints a message).
+/// An exact zero magnitude yields -Infinity.
+pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "RealExponent".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  let unevaluated = || Expr::FunctionCall {
+    name: "RealExponent".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Determine the base. Default is 10. The base must be a real number > 1.
+  let base: f64 = if args.len() == 2 {
+    match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
+      Some(b) if b.is_finite() && b > 1.0 => b,
+      _ => return Ok(unevaluated()),
+    }
+  } else {
+    10.0
+  };
+
+  // Compute the magnitude Abs[x] and reduce it to a real number.
+  let abs_expr =
+    crate::evaluator::evaluate_function_call_ast("Abs", &[args[0].clone()])?;
+
+  // Exact-zero magnitude → -Infinity.
+  if matches!(&abs_expr, Expr::Integer(0))
+    || matches!(&abs_expr, Expr::Real(f) if *f == 0.0)
+  {
+    return Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Identifier("Infinity".to_string())),
+    });
+  }
+
+  let magnitude = match crate::functions::math_ast::try_eval_to_f64(&abs_expr) {
+    Some(m) if m.is_finite() && m > 0.0 => m,
+    _ => return Ok(unevaluated()),
+  };
+
+  // Log[b, Abs[x]] as a machine real, using the most direct primitive
+  // available for common bases to best match wolframscript's output.
+  let result = if base == 10.0 {
+    magnitude.log10()
+  } else if base == 2.0 {
+    magnitude.log2()
+  } else {
+    magnitude.log2() / base.log2()
+  };
+
+  Ok(Expr::Real(result))
+}
