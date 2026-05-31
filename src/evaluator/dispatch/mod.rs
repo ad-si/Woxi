@@ -2416,6 +2416,57 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // WheelGraph[n] → wheel graph: hub vertex 1 connected to the rim
+  // vertices 2..n, plus a cycle on the rim vertices 2..n.
+  // Matches wolframscript's vertex/edge ordering, including the degenerate
+  // small cases (n=2 self-loop, n=3 double edge).
+  if name == "WheelGraph"
+    && args.len() == 1
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n as usize;
+    if n >= 1 {
+      let vertices: Vec<Expr> =
+        (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+      let mk_edge = |a: usize, b: usize| Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
+      };
+      let mut edges = Vec::new();
+      // Hub (vertex 1) connected to every rim vertex.
+      for i in 2..=n {
+        edges.push(mk_edge(1, i));
+      }
+      // Cycle on the rim vertices 2..n. `m` rim vertices.
+      let m = n.saturating_sub(1);
+      if m == 1 {
+        // Single rim vertex → self-loop (CycleGraph of one vertex).
+        edges.push(mk_edge(2, 2));
+      } else if m == 2 {
+        // Two rim vertices → double edge (CycleGraph of two vertices).
+        edges.push(mk_edge(2, 3));
+        edges.push(mk_edge(2, 3));
+      } else if m >= 3 {
+        // Canonical cycle edges, sorted lexicographically by (min, max).
+        let mut cyc: Vec<(usize, usize)> = Vec::new();
+        for i in 2..n {
+          cyc.push((i, i + 1));
+        }
+        // Closing edge between the first and last rim vertices.
+        cyc.push((2, n));
+        cyc.sort();
+        for (a, b) in cyc {
+          edges.push(mk_edge(a, b));
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
+          .into(),
+      });
+    }
+  }
+
   // CirculantGraph[n, {j1, j2, ...}] — circulant graph
   if name == "CirculantGraph"
     && args.len() == 2

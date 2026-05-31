@@ -3948,6 +3948,68 @@ mod high_level_functions_tests {
       );
     }
 
+    // WheelGraph[n]: hub vertex 1 joined to rim vertices 2..n, plus a cycle
+    // on the rim. Vertex/edge ordering verified against wolframscript.
+    #[test]
+    fn test_wheel_graph_default_render() {
+      assert_eq!(interpret("WheelGraph[5]").unwrap(), "Graph[<5>, <8>]");
+    }
+
+    #[test]
+    fn test_wheel_graph_vertices_and_edges() {
+      assert_eq!(
+        interpret(
+          "g = WheelGraph[6]; Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4, 5, 6}, \
+         {{1, 2}, {1, 3}, {1, 4}, {1, 5}, {1, 6}, \
+         {2, 3}, {2, 6}, {3, 4}, {4, 5}, {5, 6}}}"
+      );
+    }
+
+    #[test]
+    fn test_wheel_graph_n4() {
+      assert_eq!(
+        interpret(
+          "g = WheelGraph[4]; Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4}, {{1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}}}"
+      );
+    }
+
+    // Degenerate small cases must mirror wolframscript exactly.
+    #[test]
+    fn test_wheel_graph_n3_double_edge() {
+      assert_eq!(
+        interpret(
+          "g = WheelGraph[3]; Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2, 3}, {{1, 2}, {1, 3}, {2, 3}, {2, 3}}}"
+      );
+    }
+
+    #[test]
+    fn test_wheel_graph_n2_self_loop() {
+      assert_eq!(
+        interpret(
+          "g = WheelGraph[2]; Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2}, {{1, 2}, {2, 2}}}"
+      );
+    }
+
+    #[test]
+    fn test_wheel_graph_n1() {
+      assert_eq!(
+        interpret("g = WheelGraph[1]; {VertexList[g], EdgeList[g]}").unwrap(),
+        "{{1}, {}}"
+      );
+    }
+
     // FindCycle: returns cycles in a (di)graph. Each cycle is a list of edges.
     // Output forms below are verified to match wolframscript exactly. Cycle
     // edges are rendered with Apply[List, ..., {2}] (so {a, b} stands for the
