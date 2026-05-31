@@ -3541,6 +3541,109 @@ pub fn inverse_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fourier_impl("InverseFourier", args, true)
 }
 
+/// Core discrete cosine transform of a real list `u`.
+/// `m` selects the DCT method: 1, 2 (default), 3, or 4.
+/// Mirrors the normalisation used by Wolfram's `FourierDCT`.
+fn dct_core(u: &[f64], m: i64) -> Vec<f64> {
+  let n = u.len();
+  let nf = n as f64;
+  let pi = std::f64::consts::PI;
+  let mut out = Vec::with_capacity(n);
+  for s in 0..n {
+    let sf = s as f64;
+    let mut acc = 0.0;
+    match m {
+      1 => {
+        if n == 1 {
+          acc = u[0];
+        } else {
+          for (r, &ur) in u.iter().enumerate() {
+            let w = if r == 0 || r == n - 1 { 0.5 } else { 1.0 };
+            acc += w * ur * (pi * (r as f64) * sf / (nf - 1.0)).cos();
+          }
+          acc *= (2.0 / (nf - 1.0)).sqrt();
+        }
+      }
+      3 => {
+        for (r, &ur) in u.iter().enumerate() {
+          let w = if r == 0 { 0.5 } else { 1.0 };
+          acc += w * ur * (pi * (2.0 * sf + 1.0) * (r as f64) / (2.0 * nf)).cos();
+        }
+        acc *= 2.0 / nf.sqrt();
+      }
+      4 => {
+        for (r, &ur) in u.iter().enumerate() {
+          acc += ur
+            * (pi * (2.0 * (r as f64) + 1.0) * (2.0 * sf + 1.0) / (4.0 * nf))
+              .cos();
+        }
+        acc *= (2.0 / nf).sqrt();
+      }
+      // default: type 2
+      _ => {
+        for (r, &ur) in u.iter().enumerate() {
+          acc +=
+            ur * (pi * (2.0 * (r as f64) + 1.0) * sf / (2.0 * nf)).cos();
+        }
+        acc /= nf.sqrt();
+      }
+    }
+    out.push(acc);
+  }
+  out
+}
+
+/// FourierDCT[list] or FourierDCT[list, m] — discrete cosine transform.
+/// `m` (1..4) selects the DCT method; default is 2.
+pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FourierDCT expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let unevaluated = || {
+    crate::emit_message(&format!(
+      "FourierDCT::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "FourierDCT".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return unevaluated(),
+  };
+
+  // Extract real numeric values. Any non-real entry leaves it unevaluated.
+  let mut data: Vec<f64> = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    match try_extract_complex_float(item) {
+      Some((re, im)) if im == 0.0 => data.push(re),
+      _ => return unevaluated(),
+    }
+  }
+
+  // Optional method argument (1..4); default 2.
+  let m = if args.len() == 2 {
+    match try_eval_to_f64(&args[1]) {
+      Some(v) if (v - v.round()).abs() < 1e-12 && (1.0..=4.0).contains(&v) => {
+        v.round() as i64
+      }
+      _ => return unevaluated(),
+    }
+  } else {
+    2
+  };
+
+  let result = dct_core(&data, m);
+  let exprs: Vec<Expr> = result.iter().map(|&x| Expr::Real(x)).collect();
+  Ok(Expr::List(exprs.into()))
+}
+
 /// Wynn epsilon algorithm for series acceleration.
 /// Takes a sequence of partial sums and returns an accelerated estimate.
 /// Polynomial extrapolation using Neville's algorithm.

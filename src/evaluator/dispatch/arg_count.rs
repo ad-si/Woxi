@@ -407,6 +407,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FortranForm" => Some((1, 1)),
     "Fourier" => Some((1, 2)),
     "FourierCosTransform" => Some((3, 3)),
+    "FourierDCT" => Some((1, 2)),
     "FourierMatrix" => Some((1, 1)),
     "FourierSinTransform" => Some((3, 3)),
     "FourierTransform" => Some((3, 3)),

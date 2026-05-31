@@ -3393,6 +3393,120 @@ mod fourier {
   }
 }
 
+mod fourier_dct {
+  use super::*;
+
+  // Machine-precision DCT results differ from wolframscript only in the
+  // last 1-2 ulps (no algorithm reproduces Wolfram's proprietary FFT-DCT
+  // rounding bit-for-bit). The values agree with wolframscript to ~15
+  // significant digits, so the tests round to 10 digits, which matches
+  // wolframscript exactly.
+
+  #[test]
+  fn dct2_default_integer_list() {
+    // wolframscript: FourierDCT[{1, 2, 3, 4}]
+    //   = {5., -1.577161014949475, 0., -0.11208538229199139}
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2, 3, 4}]]").unwrap(),
+      "{50000000000, -15771610149, 0, -1120853823}"
+    );
+  }
+
+  #[test]
+  fn dct1() {
+    // wolframscript: FourierDCT[{1, 2, 3, 4}, 1]
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2, 3, 4}, 1]]").unwrap(),
+      "{61237243570, -16329931619, 0, -4082482905}"
+    );
+  }
+
+  #[test]
+  fn dct2_explicit() {
+    // FourierDCT[{1, 2, 3, 4}, 2] equals the default form.
+    assert_eq!(
+      interpret("FourierDCT[{1, 2, 3, 4}, 2]").unwrap(),
+      interpret("FourierDCT[{1, 2, 3, 4}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn dct3() {
+    // wolframscript: FourierDCT[{1, 2, 3, 4}, 3]
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2, 3, 4}, 3]]").unwrap(),
+      "{59998131380, -45514716089, 13088309218, -7571724509}"
+    );
+  }
+
+  #[test]
+  fn dct4() {
+    // wolframscript: FourierDCT[{1, 2, 3, 4}, 4]
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2, 3, 4}, 4]]").unwrap(),
+      "{35997367212, -33399112628, 17714079076, -16580115558}"
+    );
+  }
+
+  #[test]
+  fn odd_length() {
+    // wolframscript: FourierDCT[{1, 2, 3}]
+    //   = {3.4641016151377553, -1.0000000000000002, -1.6653345369377348*^-16}
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2, 3}]]").unwrap(),
+      "{34641016151, -10000000000, 0}"
+    );
+  }
+
+  #[test]
+  fn dct3_odd_length() {
+    // wolframscript: FourierDCT[{1, 2, 3}, 3]
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2, 3}, 3]]").unwrap(),
+      "{43094010768, -28867513459, 3094010768}"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    // wolframscript: FourierDCT[{1}] = {1.}
+    assert_eq!(interpret("FourierDCT[{1}]").unwrap(), "{1.}");
+  }
+
+  #[test]
+  fn dct1_two_elements() {
+    // wolframscript: FourierDCT[{1, 2}, 1]
+    //   = {2.1213203435596424, -0.7071067811865475}
+    assert_eq!(
+      interpret("Round[10^10 FourierDCT[{1, 2}, 1]]").unwrap(),
+      "{21213203436, -7071067812}"
+    );
+  }
+
+  #[test]
+  fn real_valued_input() {
+    // Real machine-precision input gives the same result as integer input.
+    assert_eq!(
+      interpret("FourierDCT[{1., 2., 3., 4.}]").unwrap(),
+      interpret("FourierDCT[{1, 2, 3, 4}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    // wolframscript leaves non-numeric input unevaluated (with a message).
+    assert_eq!(
+      interpret("FourierDCT[{a, b, c}]").unwrap(),
+      "FourierDCT[{a, b, c}]"
+    );
+  }
+
+  #[test]
+  fn empty_list_returns_unevaluated() {
+    assert_eq!(interpret("FourierDCT[{}]").unwrap(), "FourierDCT[{}]");
+  }
+}
+
 mod inverse_fourier {
   use super::*;
 

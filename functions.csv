@@ -1959,7 +1959,7 @@ Character,Symbol used in string patterns to represent a single character,✅,pur
 EdgeAdd,Add one or more edges to a graph adding any new endpoint vertices,✅,pure,8.0,1995
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7.0,1995
 DeclarePackage,Declare package for autoloading (package management),🚫,,2.0,1997
-FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6.0,1997
+FourierDCT,Discrete cosine transform of a real list (DCT types 1-4; default type 2),✅,pure,6.0,1997
 SqrtBox,Low-level box construct for square root display,✅,pure,3.0,1999
 Sunrise,Compute sunrise time for location (astronomical computation),🚫,,10.0,1999
 BlockMap,Apply a function to non-overlapping or sliding blocks of a list,✅,none,10.2,2002
