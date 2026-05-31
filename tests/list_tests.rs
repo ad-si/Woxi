@@ -1353,6 +1353,39 @@ mod list_tests {
   }
 
   #[test]
+  fn gaussian_matrix() {
+    // (2r+1)×(2r+1) discrete-Gaussian matrix.
+    assert_eq!(
+      interpret("Dimensions[GaussianMatrix[3]]").unwrap(),
+      "{7, 7}"
+    );
+    assert_eq!(
+      interpret("Dimensions[GaussianMatrix[{2, 1}]]").unwrap(),
+      "{5, 5}"
+    );
+    // Weights normalise to 1.
+    assert_eq!(
+      interpret("Round[Total[Flatten[GaussianMatrix[2]]]]").unwrap(),
+      "1"
+    );
+    // GaussianMatrix[r] uses sigma = r/2, so it equals the {r, r/2} form.
+    assert_eq!(
+      interpret("GaussianMatrix[2] === GaussianMatrix[{2, 1}]").unwrap(),
+      "True"
+    );
+    // Rounded values match wolframscript byte-for-byte.
+    assert_eq!(
+      interpret("Round[GaussianMatrix[1] * 10^6]").unwrap(),
+      "{{9876, 79628, 9876}, {79628, 641984, 79628}, {9876, 79628, 9876}}"
+    );
+    // Non-numeric / invalid arguments stay symbolic.
+    assert_eq!(
+      interpret("GaussianMatrix[x]").unwrap(),
+      "GaussianMatrix[x]"
+    );
+  }
+
+  #[test]
   fn logistic_mean_variance_median() {
     // Mean = mu; Variance = beta^2 * Pi^2 / 3; Median = mu.
     assert_eq!(interpret("Mean[LogisticDistribution[m, b]]").unwrap(), "m");

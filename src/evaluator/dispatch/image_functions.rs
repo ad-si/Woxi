@@ -164,6 +164,9 @@ pub fn dispatch_image_functions(
     "GaussianFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::gaussian_filter_ast(args));
     }
+    "GaussianMatrix" if args.len() == 1 => {
+      return Some(crate::functions::image_ast::gaussian_matrix_ast(args));
+    }
     "ImageConvolve" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_convolve_ast(args));
     }

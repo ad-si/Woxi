@@ -3919,6 +3919,71 @@ fn gaussian_filter_kernel(radius: usize, sigma: f64) -> Vec<f64> {
   kernel
 }
 
+/// GaussianMatrix[r] / GaussianMatrix[{r, sigma}] — produce the
+/// (2r+1)×(2r+1) discrete Gaussian matrix. The matrix is the outer
+/// product of the 1D discrete-Gaussian kernel (`gaussian_filter_kernel`)
+/// with itself, matching wolframscript byte-for-byte. With the integer
+/// form `GaussianMatrix[r]`, the standard deviation defaults to `r/2`.
+pub fn gaussian_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Resolve radius and sigma from the single argument.
+  let (radius, sigma): (usize, f64) = match &args[0] {
+    // GaussianMatrix[{r, sigma}]
+    Expr::List(spec) if spec.len() == 2 => {
+      let r = match expr_to_f64_opt(&spec[0]) {
+        Some(v) if v >= 0.0 && v.fract() == 0.0 => v as usize,
+        _ => return symbolic_gaussian_matrix(args),
+      };
+      let s = match expr_to_f64_opt(&spec[1]) {
+        Some(v) if v > 0.0 => v,
+        _ => return symbolic_gaussian_matrix(args),
+      };
+      (r, s)
+    }
+    // GaussianMatrix[r] with integer r; sigma defaults to r/2.
+    other => match expr_to_f64_opt(other) {
+      Some(v) if v >= 0.0 && v.fract() == 0.0 => (v as usize, v / 2.0),
+      _ => return symbolic_gaussian_matrix(args),
+    },
+  };
+
+  if sigma <= 0.0 {
+    return symbolic_gaussian_matrix(args);
+  }
+
+  let kernel = gaussian_filter_kernel(radius, sigma);
+  let rows: Vec<Expr> = kernel
+    .iter()
+    .map(|&a| {
+      Expr::List(
+        kernel
+          .iter()
+          .map(|&b| Expr::Real(a * b))
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect::<Vec<_>>();
+  Ok(Expr::List(rows.into()))
+}
+
+/// Best-effort numeric extraction shared by GaussianMatrix's argument
+/// parsing. Returns `None` for non-numeric expressions so the caller can
+/// keep the call symbolic.
+fn expr_to_f64_opt(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    _ => None,
+  }
+}
+
+fn symbolic_gaussian_matrix(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(Expr::FunctionCall {
+    name: "GaussianMatrix".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 /// Colorize[matrix] — colorize an integer-label matrix as an RGB
 /// image. wolframscript prints the result as `-Image-`. A real
 /// renderer would consult `ColorFunction -> …` and evaluate the
