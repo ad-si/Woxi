@@ -3918,4 +3918,80 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod graph_distance_tests {
+    use super::*;
+
+    #[test]
+    fn test_path_distance() {
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3,4},{1<->2,2<->3,3<->4}],1,4]")
+          .unwrap(),
+        "3"
+      );
+    }
+
+    #[test]
+    fn test_self_distance_is_zero() {
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3,4},{1<->2,2<->3,3<->4}],1,1]")
+          .unwrap(),
+        "0"
+      );
+    }
+
+    #[test]
+    fn test_complete_graph() {
+      assert_eq!(
+        interpret("GraphDistance[CompleteGraph[4],1,3]").unwrap(),
+        "1"
+      );
+    }
+
+    #[test]
+    fn test_single_source_distances() {
+      // Two-arg form returns distances to every vertex, in VertexList order.
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3,4},{1<->2,2<->3,3<->4}],1]")
+          .unwrap(),
+        "{0, 1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn test_unreachable_is_infinity() {
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3,4},{1<->2}],1,4]").unwrap(),
+        "Infinity"
+      );
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3,4},{1<->2}],3]").unwrap(),
+        "{Infinity, Infinity, 0, Infinity}"
+      );
+    }
+
+    #[test]
+    fn test_directed_edges_honoured() {
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3},{1->2,2->3}],1,3]").unwrap(),
+        "2"
+      );
+      // No path against the edge direction.
+      assert_eq!(
+        interpret("GraphDistance[Graph[{1,2,3},{1->2,2->3}],3,1]").unwrap(),
+        "Infinity"
+      );
+    }
+
+    #[test]
+    fn test_string_vertices() {
+      assert_eq!(
+        interpret(
+          "GraphDistance[Graph[{\"a\",\"b\",\"c\"},{\"a\"<->\"b\",\"b\"<->\"c\"}],\"a\",\"c\"]"
+        )
+        .unwrap(),
+        "2"
+      );
+    }
+  }
 }

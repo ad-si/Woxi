@@ -424,6 +424,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FunctionExpand" => Some((1, 1)),
     "FunctionDomain" => Some((2, 3)),
     "Gamma" => Some((1, 2)),
+    "GraphDistance" => Some((2, 3)),
     "GammaDistribution" => Some((2, 2)),
     "GammaRegularized" => Some((2, 2)),
     "Gather" => Some((1, 1)),

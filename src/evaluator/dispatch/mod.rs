@@ -3960,6 +3960,98 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
+  // GraphDistance[g, s, t] — length of the shortest path from s to t.
+  // GraphDistance[g, s] — list of distances from s to every vertex,
+  //   ordered as in VertexList[g].
+  // Unreachable vertices yield Infinity. Directed edges are honoured;
+  // undirected edges are traversable in both directions. If any vertex
+  // argument is not a vertex of the graph, the call stays unevaluated.
+  if name == "GraphDistance" && (args.len() == 2 || args.len() == 3) {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      let vertex_strs: Vec<String> =
+        vertices.iter().map(expr_to_string).collect();
+      let index_of = |v: &Expr| -> Option<usize> {
+        let s = expr_to_string(v);
+        vertex_strs.iter().position(|x| x == &s)
+      };
+
+      // Build a directed adjacency list. Undirected edges (UndirectedEdge or
+      // a 2-arg edge that is not DirectedEdge/Rule) go both ways; directed
+      // edges (DirectedEdge or Rule) go one way only.
+      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+      for edge in edges.iter() {
+        let (directed, src, dst) = match edge {
+          Expr::FunctionCall {
+            name: ename,
+            args: eargs,
+          } if eargs.len() == 2 => {
+            (ename == "DirectedEdge", &eargs[0], &eargs[1])
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => (true, pattern.as_ref(), replacement.as_ref()),
+          _ => continue,
+        };
+        if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
+          adj[si].push(di);
+          if !directed {
+            adj[di].push(si);
+          }
+        }
+      }
+
+      // BFS over unit-weight edges from `start`, returning distances
+      // (-1 == unreachable).
+      let bfs = |start: usize| -> Vec<i128> {
+        let mut dist = vec![-1i128; n];
+        let mut queue = std::collections::VecDeque::new();
+        dist[start] = 0;
+        queue.push_back(start);
+        while let Some(u) = queue.pop_front() {
+          for &w in &adj[u] {
+            if dist[w] == -1 {
+              dist[w] = dist[u] + 1;
+              queue.push_back(w);
+            }
+          }
+        }
+        dist
+      };
+
+      let dist_to_expr = |d: i128| -> Expr {
+        if d < 0 {
+          Expr::Identifier("Infinity".to_string())
+        } else {
+          Expr::Integer(d)
+        }
+      };
+
+      let start_idx = index_of(&args[1]);
+      if args.len() == 3 {
+        let target_idx = index_of(&args[2]);
+        if let (Some(s), Some(t)) = (start_idx, target_idx) {
+          let dist = bfs(s);
+          return Ok(dist_to_expr(dist[t]));
+        }
+      } else if let Some(s) = start_idx {
+        let dist = bfs(s);
+        return Ok(Expr::List(
+          dist.into_iter().map(dist_to_expr).collect(),
+        ));
+      }
+      // Fall through to unevaluated when a vertex argument is invalid.
+    }
+  }
+
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
   if (name == "GraphDiameter"
     || name == "VertexEccentricity"
