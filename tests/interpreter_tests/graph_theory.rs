@@ -1453,6 +1453,69 @@ mod random_graph {
   }
 }
 
+mod graph_q {
+  use super::*;
+
+  #[test]
+  fn true_for_edge_list_graph() {
+    assert_eq!(interpret("GraphQ[Graph[{1->2, 2->3}]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_for_complete_graph() {
+    assert_eq!(interpret("GraphQ[CompleteGraph[4]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_for_path_graph() {
+    assert_eq!(interpret("GraphQ[PathGraph[{1, 2, 3}]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_for_vertices_and_rule_edges() {
+    assert_eq!(
+      interpret("GraphQ[Graph[{1, 2, 3}, {1 -> 2}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn true_for_empty_edge_list() {
+    assert_eq!(interpret("GraphQ[Graph[{1, 2}, {}]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn false_for_number() {
+    assert_eq!(interpret("GraphQ[5]").unwrap(), "False");
+  }
+
+  #[test]
+  fn false_for_string() {
+    assert_eq!(interpret(r#"GraphQ["abc"]"#).unwrap(), "False");
+  }
+
+  #[test]
+  fn false_for_bare_edge_list() {
+    assert_eq!(interpret("GraphQ[{1 -> 2}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn false_for_invalid_edge() {
+    assert_eq!(
+      interpret(r#"GraphQ[Graph[{1, 2, 3}, {1 -> 2, "x"}]]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn false_for_non_edge_in_edge_list() {
+    assert_eq!(
+      interpret("GraphQ[Graph[{1, 2, 3}, {1, 2}]]").unwrap(),
+      "False"
+    );
+  }
+}
+
 mod cases {
   use super::super::case_helpers::assert_case;
 

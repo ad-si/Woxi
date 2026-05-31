@@ -3756,6 +3756,48 @@ pub fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // GraphQ[expr] — True iff expr is a valid Graph object
+  if name == "GraphQ" && args.len() == 1 {
+    // A valid edge is a 2-argument UndirectedEdge / DirectedEdge / Rule.
+    fn is_valid_edge(e: &Expr) -> bool {
+      match e {
+        Expr::FunctionCall { name, args }
+          if (name == "UndirectedEdge"
+            || name == "DirectedEdge"
+            || name == "Rule")
+            && args.len() == 2 =>
+        {
+          true
+        }
+        // `a -> b` (parsed as a Rule node) denotes a directed edge.
+        Expr::Rule { .. } => true,
+        _ => false,
+      }
+    }
+    let is_graph = if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      gname == "Graph"
+        && match gargs.as_slice() {
+          // Graph[edges] — single list of valid edges
+          [Expr::List(edges)] => edges.iter().all(is_valid_edge),
+          // Graph[vertices, edges, ...] — vertices and edges lists,
+          // every edge must be a valid edge expression
+          [Expr::List(_vertices), Expr::List(edges), ..] => {
+            edges.iter().all(is_valid_edge)
+          }
+          _ => false,
+        }
+    } else {
+      false
+    };
+    return Ok(Expr::Identifier(
+      if is_graph { "True" } else { "False" }.to_string(),
+    ));
+  }
+
   // Graph analysis helper: extract adjacency list from graph
   // UndirectedGraphQ[graph] — True if all edges are undirected
   if name == "UndirectedGraphQ" && args.len() == 1 {
