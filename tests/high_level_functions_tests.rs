@@ -3831,4 +3831,91 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod polynomial_extended_gcd_tests {
+    use super::*;
+
+    #[test]
+    fn test_basic() {
+      // {g, {s, t}} with s*p + t*q == g, g monic.
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[x^2 - 1, x^2 - 3 x + 2, x]").unwrap(),
+        "{-1 + x, {1/3, -1/3}}"
+      );
+    }
+
+    #[test]
+    fn test_linear_gcd() {
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[x^2 + 7 x + 6, x^2 - 5 x - 6, x]")
+          .unwrap(),
+        "{1 + x, {1/12, -1/12}}"
+      );
+    }
+
+    #[test]
+    fn test_polynomial_cofactor() {
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[x^4 - 1, x^3 - 1, x]").unwrap(),
+        "{-1 + x, {1, -x}}"
+      );
+    }
+
+    #[test]
+    fn test_divisor_pair() {
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[(x - 1)^2, x - 1, x]").unwrap(),
+        "{-1 + x, {0, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_coprime_collapses_denominator() {
+      // Coprime: g == 1, cofactors share a common denominator that
+      // wolframscript collapses into a single factor.
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[x^2 + 1, x + 1, x]").unwrap(),
+        "{1, {1/2, (1 - x)/2}}"
+      );
+    }
+
+    #[test]
+    fn test_coprime_quadratic_cofactor() {
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[x^3 + 1, x^2 + 1, x]").unwrap(),
+        "{1, {(1 + x)/2, (1 - x - x^2)/2}}"
+      );
+    }
+
+    #[test]
+    fn test_content_is_normalized_to_monic() {
+      // PolynomialGCD keeps content; the extended GCD is monic.
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[2 x^2 - 2, 2 x^2 - 6 x + 4, x]")
+          .unwrap(),
+        "{-1 + x, {1/6, -1/6}}"
+      );
+    }
+
+    #[test]
+    fn test_constant_arguments() {
+      // Over a field both are units: g == 1, s == 1/p1, t == 0.
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[6, 9, x]").unwrap(),
+        "{1, {1/6, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_zero_argument() {
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[x^2 - 1, 0, x]").unwrap(),
+        "{-1 + x^2, {1, 0}}"
+      );
+      assert_eq!(
+        interpret("PolynomialExtendedGCD[0, x - 1, x]").unwrap(),
+        "{-1 + x, {0, 1}}"
+      );
+    }
+  }
 }
