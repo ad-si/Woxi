@@ -118,6 +118,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Hypergeometric1F1Regularized"
       | "Hypergeometric2F1"
       | "HypergeometricU"
+      | "WhittakerM"
       | "Unitize"
       | "Hyperfactorial"
       | "FiniteGroupCount"

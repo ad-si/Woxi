@@ -1622,7 +1622,7 @@ Multicolumn,Multi-column layout,,unevaluated,10.0,1648
 Record,Record data structure,,unevaluated,2.0,1648
 FlattenAt,Flatten at specific positions,✅,computation,2.0,1649
 InversePermutation,Inverse of a permutation,✅,computation,8.0,1650
-WhittakerM,Whittaker M function,,unevaluated,6.0,1651
+WhittakerM,Whittaker M function E^(-z/2) z^(m+1/2) Hypergeometric1F1[m-k+1/2 2m+1 z],✅,pure,6.0,1651
 InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
 MathieuGroupM11,Mathieu group M11,,unevaluated,8.0,1656

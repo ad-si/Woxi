@@ -2982,3 +2982,86 @@ mod weber_e_anger_j_series {
     assert_eq!(interpret("WeberE[-1/2, 0]").unwrap(), "-2/Pi");
   }
 }
+
+mod whittaker_m {
+  use super::*;
+
+  // Exact, non-special integer arguments stay symbolic.
+  #[test]
+  fn symbolic_integers() {
+    assert_eq!(
+      interpret("WhittakerM[1, 2, 3]").unwrap(),
+      "WhittakerM[1, 2, 3]"
+    );
+  }
+
+  // Real (machine-precision) z evaluates numerically.
+  #[test]
+  fn numeric_real() {
+    assert_eq!(
+      interpret("WhittakerM[1, 2, 3.0]").unwrap(),
+      "10.176051520426409"
+    );
+  }
+
+  // N[...] forces numeric evaluation of an exact-integer call.
+  #[test]
+  fn numeric_via_n() {
+    assert_eq!(
+      interpret("N[WhittakerM[1, 2, 3]]").unwrap(),
+      "10.176051520426409"
+    );
+  }
+
+  // Negative k, positive real z.
+  #[test]
+  fn numeric_negative_k() {
+    assert_eq!(
+      interpret("WhittakerM[-1, 3, 4.0]").unwrap(),
+      "279.00933466204526"
+    );
+  }
+
+  // Negative real z gives a purely imaginary result; the negligible real
+  // part is snapped to `0.`.
+  #[test]
+  fn numeric_negative_z_imaginary() {
+    assert_eq!(
+      interpret("WhittakerM[1, 2, -3.0]").unwrap(),
+      "0. + 32.64568570332712*I"
+    );
+  }
+
+  // Listable: threads over a list in the z slot.
+  #[test]
+  fn listable_over_z() {
+    assert_eq!(
+      interpret("WhittakerM[1, 2, {3.0, 4.0}]").unwrap(),
+      "{10.176051520426409, 19.710826043624312}"
+    );
+  }
+
+  // z = 0 with Re(m + 1/2) > 0 -> 0.
+  #[test]
+  fn zero_z_positive_m() {
+    assert_eq!(interpret("WhittakerM[1, 1, 0]").unwrap(), "0");
+  }
+
+  // z = 0 with Re(m + 1/2) < 0 -> ComplexInfinity.
+  #[test]
+  fn zero_z_negative_m() {
+    assert_eq!(
+      interpret("WhittakerM[1, -1, 0]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  // z = 0 with m = -1/2 (Re(m + 1/2) == 0) stays symbolic.
+  #[test]
+  fn zero_z_half_boundary() {
+    assert_eq!(
+      interpret("WhittakerM[1, -1/2, 0]").unwrap(),
+      "WhittakerM[1, -1/2, 0]"
+    );
+  }
+}

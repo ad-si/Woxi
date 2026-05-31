@@ -872,6 +872,9 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::hypergeometric_1f1_regularized_ast(args),
       );
     }
+    "WhittakerM" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::whittaker_m_ast(args));
+    }
     "AppellF1" if args.len() == 6 => {
       return Some(crate::functions::math_ast::appell_f1_ast(args));
     }

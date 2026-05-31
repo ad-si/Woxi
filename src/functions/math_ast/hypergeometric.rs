@@ -2682,3 +2682,134 @@ pub fn hypergeometric_1f1_regularized_ast(
     args: args.to_vec().into(),
   })
 }
+
+/// WhittakerM[k, m, z] - Whittaker M function.
+///
+/// Definition:
+///   WhittakerM[k, m, z]
+///     = E^(-z/2) · z^(m + 1/2) · Hypergeometric1F1[m - k + 1/2, 2 m + 1, z]
+///
+/// Numeric arguments are evaluated in double-precision complex arithmetic.
+/// Exact symbolic arguments are left unevaluated, except the closed form at
+/// `z = 0`, which depends on Re(m + 1/2):
+///   * Re(m + 1/2) > 0  -> 0
+///   * Re(m + 1/2) = 0  -> stays symbolic (m = -1/2 case)
+///   * Re(m + 1/2) < 0  -> ComplexInfinity
+pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "WhittakerM expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // z = 0 closed form, governed by the z^(m + 1/2) factor.
+  if is_expr_zero(&args[2]) {
+    // m + 1/2 as a complex float (real part is what matters here).
+    if let Some((m_re, _m_im)) = try_extract_complex_float(&args[1]) {
+      let re = m_re + 0.5;
+      if re > 0.0 {
+        // z^(m+1/2) -> 0. Return 0. (or 0 for exact args).
+        return Ok(Expr::Integer(0));
+      } else if re < 0.0 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      // re == 0 (m = -1/2): no closed-form simplification, fall through.
+    }
+    return Ok(Expr::FunctionCall {
+      name: "WhittakerM".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
+  // Numeric evaluation: complex double precision covers real & complex args.
+  // An argument is "inexact" when it carries a machine-precision Real or a
+  // non-zero imaginary part — that triggers numeric output (matching
+  // wolframscript, which keeps all-exact input symbolic).
+  let any_inexact = args.iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
+  });
+
+  if any_inexact
+    && let (Some(k), Some(m), Some(z)) = (
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+      try_extract_complex_float(&args[2]),
+    )
+  {
+    // All-real, with z > 0: use the real series and real-valued power so
+    // the result tracks wolframscript's precision (z^(m+1/2) is real and
+    // the 1F1 sum stays on the real axis).
+    if k.1 == 0.0 && m.1 == 0.0 && z.1 == 0.0 && z.0 > 0.0 {
+      let a = m.0 - k.0 + 0.5;
+      let b = 2.0 * m.0 + 1.0;
+      let h = hypergeometric_1f1(a, b, z.0);
+      let value = (-z.0 / 2.0).exp() * z.0.powf(m.0 + 0.5) * h;
+      return Ok(Expr::Real(value));
+    }
+
+    let (mut re, mut im) = whittaker_m_complex(k, m, z);
+    // Snap a part to exact zero when it is negligible relative to the
+    // magnitude — this clears floating-point roundoff (e.g. a ~1e-14 real
+    // part on a purely imaginary result) so the display matches
+    // wolframscript's `0. + b*I` / plain-real forms.
+    let scale = (re * re + im * im).sqrt().max(1.0);
+    if re.abs() <= 1e-12 * scale {
+      re = 0.0;
+    }
+    if im.abs() <= 1e-12 * scale {
+      im = 0.0;
+    }
+    if im == 0.0 {
+      return Ok(crate::functions::math_ast::build_complex_float_expr(re, 0.0));
+    }
+    return Ok(crate::functions::math_ast::build_complex_float_expr_keep_real(
+      re, im,
+    ));
+  }
+
+  // Unevaluated symbolic form.
+  Ok(Expr::FunctionCall {
+    name: "WhittakerM".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
+/// Evaluate WhittakerM[k, m, z] in double-precision complex arithmetic.
+/// Inputs are `(re, im)` pairs; returns `(re, im)`.
+fn whittaker_m_complex(
+  k: (f64, f64),
+  m: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  // Complex exponential: exp(re + i·im).
+  let cexp = |(r, i): (f64, f64)| {
+    let e = r.exp();
+    (e * i.cos(), e * i.sin())
+  };
+  // Principal complex power w^p = exp(p · Log[w]).
+  let cpow = |w: (f64, f64), p: (f64, f64)| {
+    let r = (w.0 * w.0 + w.1 * w.1).sqrt();
+    if r == 0.0 {
+      return (0.0, 0.0);
+    }
+    let log_w = (r.ln(), w.1.atan2(w.0));
+    cexp(cmul(p, log_w))
+  };
+
+  // a = m - k + 1/2, b = 2 m + 1
+  let a = (m.0 - k.0 + 0.5, m.1 - k.1);
+  let b = (2.0 * m.0 + 1.0, 2.0 * m.1);
+
+  let h = hypergeometric_1f1_complex(a, b, z);
+
+  // E^(-z/2)
+  let exp_part = cexp((-z.0 / 2.0, -z.1 / 2.0));
+  // z^(m + 1/2)
+  let z_pow = cpow(z, (m.0 + 0.5, m.1));
+
+  cmul(cmul(exp_part, z_pow), h)
+}
