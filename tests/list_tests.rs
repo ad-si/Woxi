@@ -725,6 +725,64 @@ mod list_tests {
   }
 
   #[test]
+  fn alternating_group() {
+    // AlternatingGroup[n] is a symbolic group object that stays unevaluated as
+    // its canonical form (matching wolframscript), with no spurious
+    // "not yet implemented" warning.
+    assert_eq!(
+      interpret("AlternatingGroup[4]").unwrap(),
+      "AlternatingGroup[4]"
+    );
+    assert_eq!(
+      interpret("Head[AlternatingGroup[4]]").unwrap(),
+      "AlternatingGroup"
+    );
+
+    // GroupOrder[AlternatingGroup[n]] == n!/2 (with order 1 for n <= 1).
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[0]]").unwrap(), "1");
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[1]]").unwrap(), "1");
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[3]]").unwrap(), "3");
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[4]]").unwrap(), "12");
+    assert_eq!(interpret("GroupOrder[AlternatingGroup[5]]").unwrap(), "60");
+
+    // GroupGenerators[AlternatingGroup[n]].
+    assert_eq!(
+      interpret("GroupGenerators[AlternatingGroup[4]]").unwrap(),
+      "{Cycles[{{1, 2, 3}}], Cycles[{{2, 3, 4}}]}"
+    );
+
+    // GroupElements[AlternatingGroup[n]] - all even permutations, ordered
+    // lexicographically by image list (matching wolframscript).
+    assert_eq!(
+      interpret("GroupElements[AlternatingGroup[0]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[AlternatingGroup[1]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[AlternatingGroup[2]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[AlternatingGroup[3]]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2, 3}}], Cycles[{{1, 3, 2}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[AlternatingGroup[4]]").unwrap(),
+      "{Cycles[{}], Cycles[{{2, 3, 4}}], Cycles[{{2, 4, 3}}], \
+       Cycles[{{1, 2}, {3, 4}}], Cycles[{{1, 2, 3}}], Cycles[{{1, 2, 4}}], \
+       Cycles[{{1, 3, 2}}], Cycles[{{1, 3, 4}}], Cycles[{{1, 3}, {2, 4}}], \
+       Cycles[{{1, 4, 2}}], Cycles[{{1, 4, 3}}], Cycles[{{1, 4}, {2, 3}}]}"
+    );
+    assert_eq!(
+      interpret("Length[GroupElements[AlternatingGroup[5]]]").unwrap(),
+      "60"
+    );
+  }
+
+  #[test]
   fn permutation_power_list() {
     // List-form permutations (regression coverage for existing behaviour).
     assert_eq!(

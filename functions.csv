@@ -2763,7 +2763,7 @@ ImageDistance,,🚫,,9.0,2821
 Modal,,🚫,,6.0,2821
 StackedListPlot,,🚫,,11.2,2821
 AlphabeticSort,Sorts strings in case-insensitive alphabetical order,✅,pure,10.3,2828
-AlternatingGroup,Alternating group of degree n,,unevaluated,8.0,2828
+AlternatingGroup,Symbolic alternating group A_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators/GroupElements,✅,unevaluated,8.0,2828
 BoundedRegionQ,,🚫,,10.0,2828
 CloudObjects,,🚫,,10.0,2828
 Pruning,,🚫,,8.0,2828

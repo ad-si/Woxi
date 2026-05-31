@@ -2720,7 +2720,83 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(dihedral_group_elements(*n as usize));
   }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "AlternatingGroup"
+    && gargs.len() == 1
+    && let Expr::Integer(n) = &gargs[0]
+    && *n >= 0
+  {
+    return Ok(alternating_group_elements(*n as usize));
+  }
   Ok(unevaluated())
+}
+
+/// GroupElements[AlternatingGroup[n]] - all even permutations of {1, ..., n}
+/// in canonical cycle notation, ordered lexicographically by their image list
+/// (i.e. by PermutationList), matching wolframscript.
+fn alternating_group_elements(n: usize) -> Expr {
+  // n <= 1: the trivial group, just the identity Cycles[{}].
+  if n <= 1 {
+    return Expr::List(vec![make_cycles_multi(Vec::new())].into());
+  }
+  // Enumerate all permutations of {1, ..., n} in lexicographic image order,
+  // keeping only the even ones (sign +1).
+  let mut image: Vec<i128> = (1..=n as i128).collect();
+  let mut elements: Vec<Expr> = Vec::new();
+  loop {
+    if permutation_is_even(&image) {
+      elements.push(images_to_cycles(&image));
+    }
+    if !next_permutation(&mut image) {
+      break;
+    }
+  }
+  Expr::List(elements.into())
+}
+
+/// Whether the permutation given as a 1-based image list is even (sign +1).
+fn permutation_is_even(image: &[i128]) -> bool {
+  let n = image.len();
+  let mut visited = vec![false; n];
+  let mut transpositions = 0usize;
+  for start in 0..n {
+    if visited[start] {
+      continue;
+    }
+    let mut len = 0usize;
+    let mut cur = start;
+    while !visited[cur] {
+      visited[cur] = true;
+      cur = (image[cur] - 1) as usize;
+      len += 1;
+    }
+    // A cycle of length L contributes (L - 1) transpositions.
+    transpositions += len - 1;
+  }
+  transpositions % 2 == 0
+}
+
+/// In-place next lexicographic permutation of `image`; returns false when the
+/// sequence is already the last (descending) permutation.
+fn next_permutation(image: &mut [i128]) -> bool {
+  let n = image.len();
+  if n < 2 {
+    return false;
+  }
+  let mut i = n - 1;
+  while i > 0 && image[i - 1] >= image[i] {
+    i -= 1;
+  }
+  if i == 0 {
+    return false;
+  }
+  let mut j = n - 1;
+  while image[j] <= image[i - 1] {
+    j -= 1;
+  }
+  image.swap(i - 1, j);
+  image[i..].reverse();
+  true
 }
 
 /// Convert a permutation given as an image list (`image[i-1]` is the image of
