@@ -3948,6 +3948,48 @@ mod high_level_functions_tests {
       );
     }
 
+    // CompleteKaryTree[n] / CompleteKaryTree[n, k]: complete k-ary tree with
+    // n levels (depth n-1, default branching factor k=2). Vertices are
+    // numbered breadth-first. Outputs verified against wolframscript.
+    #[test]
+    fn test_complete_kary_tree() {
+      assert_eq!(interpret("CompleteKaryTree[3]").unwrap(), "Graph[<7>, <6>]");
+      assert_eq!(
+        interpret(
+          "g = CompleteKaryTree[3]; Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4, 5, 6, 7}, \
+         {{1, 2}, {1, 3}, {2, 4}, {2, 5}, {3, 6}, {3, 7}}}"
+      );
+      // Branching factor k = 3, n = 3 levels -> 13 vertices.
+      assert_eq!(
+        interpret(
+          "g = CompleteKaryTree[3, 3]; \
+           Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}, \
+         {{1, 2}, {1, 3}, {1, 4}, {2, 5}, {2, 6}, {2, 7}, \
+         {3, 8}, {3, 9}, {3, 10}, {4, 11}, {4, 12}, {4, 13}}}"
+      );
+      // k = 1 degenerates to a path on n vertices.
+      assert_eq!(
+        interpret(
+          "g = CompleteKaryTree[4, 1]; \
+           Apply[List, {VertexList[g], EdgeList[g]}, {2}]"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4}, {{1, 2}, {2, 3}, {3, 4}}}"
+      );
+      // Single level: one isolated vertex, no edges.
+      assert_eq!(
+        interpret("g = CompleteKaryTree[1]; {VertexList[g], EdgeList[g]}")
+          .unwrap(),
+        "{{1}, {}}"
+      );
+    }
+
     // WheelGraph[n]: hub vertex 1 joined to rim vertices 2..n, plus a cycle
     // on the rim. Vertex/edge ordering verified against wolframscript.
     #[test]

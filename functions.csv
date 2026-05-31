@@ -2117,7 +2117,7 @@ PolynomialQuotientRemainder,Quotient and remainder of polynomial division,✅,1,
 SignificanceLevel,Statistical significance level option,🚫,,8.0,2157
 Annuity,Financial annuity (passthrough used by TimeValue),✅,pure,8.0,2162
 ColorQ,Test whether an expression is a color directive,✅,1,10.0,2162
-CompleteKaryTree,Complete k-ary tree graph,🚫,,8.0,2162
+CompleteKaryTree,Complete k-ary tree graph with n levels (default branching k=2),✅,1,8.0,2162
 NotebookObject,Symbolic representation of an open notebook in the front end,🚫,None,3.0,2162
 Simplex,Simplex geometric region,🚫,,10.0,2162
 ArrayComponents,Connected component labeling on arbitrary arrays,🚫,None,8.0,2165

@@ -2546,6 +2546,68 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // CompleteKaryTree[n] or CompleteKaryTree[n, k] — complete k-ary tree
+  // with n levels (depth n-1, default branching factor k=2).
+  if name == "CompleteKaryTree"
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n;
+    let k = if args.len() == 2 {
+      if let Expr::Integer(kv) = &args[1] {
+        *kv
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    } else {
+      2
+    };
+    // Both n (levels) and k (branching) must be positive integers.
+    if n >= 1 && k >= 1 {
+      let n = n as usize;
+      let k = k as usize;
+      // Total vertices for a complete k-ary tree with n levels.
+      let num_vertices: usize = if k == 1 {
+        n
+      } else {
+        // (k^n - 1) / (k - 1)
+        let mut sum = 0usize;
+        let mut pow = 1usize;
+        for _ in 0..n {
+          sum += pow;
+          pow *= k;
+        }
+        sum
+      };
+      let vertices: Vec<Expr> =
+        (1..=num_vertices).map(|i| Expr::Integer(i as i128)).collect();
+      let mut edges = Vec::new();
+      for i in 1..=num_vertices {
+        for c in 0..k {
+          let child = k * (i - 1) + c + 2;
+          if child <= num_vertices {
+            edges.push(Expr::FunctionCall {
+              name: "UndirectedEdge".to_string(),
+              args: vec![
+                Expr::Integer(i as i128),
+                Expr::Integer(child as i128),
+              ]
+              .into(),
+            });
+          }
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
+          .into(),
+      });
+    }
+  }
+
   // HypercubeGraph[n] — n-dimensional hypercube graph
   if name == "HypercubeGraph"
     && args.len() == 1
