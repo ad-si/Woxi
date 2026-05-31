@@ -2111,7 +2111,7 @@ BoxMatrix,Creates a matrix of ones with given radius,✅,pure,7.0,2152
 CircleMinus,Symbolic circle-minus operator displayed with the Unicode glyph,✅,1,3.0,2152
 DiscreteLimit,Discrete limit of sequence,🚫,,11.2,2152
 FixedOrder,Fixed ordering pattern constraint,🚫,,10.1,2157
-GraphDistanceMatrix,Distance matrix of graph,🚫,,8.0,2157
+GraphDistanceMatrix,Matrix of shortest-path distances between all pairs of graph vertices,✅,1,8.0,2157
 OrnsteinUhlenbeckProcess,OU stochastic process,🚫,,9.0,2157
 PolynomialQuotientRemainder,Quotient and remainder of polynomial division,✅,1,6.0,2157
 SignificanceLevel,Statistical significance level option,🚫,,8.0,2157

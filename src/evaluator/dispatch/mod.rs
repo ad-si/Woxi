@@ -4052,6 +4052,88 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // GraphDistanceMatrix[g] — matrix whose (i, j) entry is the shortest-path
+  // distance from vertex i to vertex j (both ordered as in VertexList[g]).
+  // Unreachable pairs yield Infinity; the diagonal is 0. Directed edges are
+  // honoured; undirected edges are traversable in both directions. An empty
+  // graph stays unevaluated (matching wolframscript).
+  if name == "GraphDistanceMatrix" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+      && !vertices.is_empty()
+    {
+      let n = vertices.len();
+      let vertex_strs: Vec<String> =
+        vertices.iter().map(expr_to_string).collect();
+      let index_of = |v: &Expr| -> Option<usize> {
+        let s = expr_to_string(v);
+        vertex_strs.iter().position(|x| x == &s)
+      };
+
+      // Build a directed adjacency list. Undirected edges go both ways;
+      // directed edges (DirectedEdge or Rule) go one way only.
+      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+      for edge in edges.iter() {
+        let (directed, src, dst) = match edge {
+          Expr::FunctionCall {
+            name: ename,
+            args: eargs,
+          } if eargs.len() == 2 => {
+            (ename == "DirectedEdge", &eargs[0], &eargs[1])
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => (true, pattern.as_ref(), replacement.as_ref()),
+          _ => continue,
+        };
+        if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
+          adj[si].push(di);
+          if !directed {
+            adj[di].push(si);
+          }
+        }
+      }
+
+      // BFS over unit-weight edges from `start` (-1 == unreachable).
+      let bfs = |start: usize| -> Vec<i128> {
+        let mut dist = vec![-1i128; n];
+        let mut queue = std::collections::VecDeque::new();
+        dist[start] = 0;
+        queue.push_back(start);
+        while let Some(u) = queue.pop_front() {
+          for &w in &adj[u] {
+            if dist[w] == -1 {
+              dist[w] = dist[u] + 1;
+              queue.push_back(w);
+            }
+          }
+        }
+        dist
+      };
+
+      let dist_to_expr = |d: i128| -> Expr {
+        if d < 0 {
+          Expr::Identifier("Infinity".to_string())
+        } else {
+          Expr::Integer(d)
+        }
+      };
+
+      let rows = (0..n)
+        .map(|s| {
+          Expr::List(bfs(s).into_iter().map(dist_to_expr).collect())
+        })
+        .collect();
+      return Ok(Expr::List(rows));
+    }
+  }
+
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
   if (name == "GraphDiameter"
     || name == "VertexEccentricity"

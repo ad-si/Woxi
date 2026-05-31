@@ -3994,4 +3994,48 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod graph_distance_matrix_tests {
+    use super::*;
+
+    #[test]
+    fn test_complete_graph() {
+      assert_eq!(
+        interpret("GraphDistanceMatrix[CompleteGraph[3]]").unwrap(),
+        "{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_path_graph() {
+      assert_eq!(
+        interpret("GraphDistanceMatrix[PathGraph[{1,2,3,4}]]").unwrap(),
+        "{{0, 1, 2, 3}, {1, 0, 1, 2}, {2, 1, 0, 1}, {3, 2, 1, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_cycle_graph() {
+      assert_eq!(
+        interpret("GraphDistanceMatrix[CycleGraph[4]]").unwrap(),
+        "{{0, 1, 2, 1}, {1, 0, 1, 2}, {2, 1, 0, 1}, {1, 2, 1, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_directed_edges_yield_infinity() {
+      assert_eq!(
+        interpret("GraphDistanceMatrix[Graph[{1->2,2->3}]]").unwrap(),
+        "{{0, 1, 2}, {Infinity, 0, 1}, {Infinity, Infinity, 0}}"
+      );
+    }
+
+    #[test]
+    fn test_disconnected_components() {
+      assert_eq!(
+        interpret("GraphDistanceMatrix[Graph[{1,2,3},{1<->2}]]").unwrap(),
+        "{{0, 1, Infinity}, {1, 0, Infinity}, {Infinity, Infinity, 0}}"
+      );
+    }
+  }
 }
