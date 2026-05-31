@@ -70,6 +70,95 @@ mod connected_components {
   }
 }
 
+mod connected_graph_q {
+  use super::*;
+
+  // A directed path is not strongly connected.
+  #[test]
+  fn directed_path_not_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "False"
+    );
+  }
+
+  // A directed cycle is strongly connected.
+  #[test]
+  fn directed_cycle_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn directed_bidirectional_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1 -> 2, 2 -> 1}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn undirected_path_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1 <-> 2, 2 <-> 3}]]").unwrap(),
+      "True"
+    );
+  }
+
+  // Two disconnected undirected components.
+  #[test]
+  fn undirected_two_components_not_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  // An isolated vertex makes the graph disconnected.
+  #[test]
+  fn isolated_vertex_not_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1, 2, 3}, {UndirectedEdge[1, 2]}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn complete_graph_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[CompleteGraph[4]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_vertex_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{1}, {}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn empty_graph_connected() {
+    assert_eq!(
+      interpret("ConnectedGraphQ[Graph[{}, {}]]").unwrap(),
+      "True"
+    );
+  }
+
+  // Non-graph arguments yield False (not unevaluated).
+  #[test]
+  fn non_graph_is_false() {
+    assert_eq!(interpret("ConnectedGraphQ[5]").unwrap(), "False");
+    assert_eq!(interpret(r#"ConnectedGraphQ["hello"]"#).unwrap(), "False");
+  }
+}
+
 mod complete_graph {
   use super::*;
 

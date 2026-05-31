@@ -4493,6 +4493,31 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ConnectedGraphQ[graph] — True if the graph is connected.
+  // For undirected graphs this means a single connected component;
+  // for directed graphs it means a single strongly connected component.
+  // An empty graph (no vertices) is considered connected. Non-graph
+  // arguments yield False.
+  if name == "ConnectedGraphQ" && args.len() == 1 {
+    let is_graph = matches!(&args[0], Expr::FunctionCall { name: gname, args: gargs }
+      if gname == "Graph"
+        && gargs.len() >= 2
+        && matches!(gargs[0], Expr::List(_))
+        && matches!(gargs[1], Expr::List(_)));
+    if is_graph {
+      // A graph is connected iff ConnectedComponents returns one component
+      // (or zero components for the empty graph).
+      let comps = evaluate_function_call_ast_inner("ConnectedComponents", args)?;
+      if let Expr::List(comp_lists) = &comps {
+        let connected = comp_lists.len() <= 1;
+        return Ok(Expr::Identifier(
+          if connected { "True" } else { "False" }.to_string(),
+        ));
+      }
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
   // ConnectedComponents[Graph[{vertices}, {edges}]]
   // For undirected graphs: finds connected components (union-find)
   // For directed graphs: finds strongly connected components (Tarjan's)

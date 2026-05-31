@@ -2048,7 +2048,7 @@ FactorialPower,Falling factorial n*(n-1)*...*(n-k+1),✅,none,7.0,2085
 SuperMinus,Typesetting notation for superscript minus,🚫,,6.0,2087
 Symmetric,Symmetric tensor symmetry,🚫,,9.0,2087
 AbortProtect,Protect computation from abort,🚫,,2.0,2089
-ConnectedGraphQ,Test if graph is connected,🚫,,8.0,2089
+ConnectedGraphQ,Test whether a graph is connected (strongly connected for directed graphs),✅,pure,8.0,2089
 PowerSpectralDensity,Power spectral density of signal,🚫,,9.0,2091
 Thursday,Day of the week symbol,🚫,,9.0,2091
 GeoEntities,Geographic entities lookup,🚫,,10.0,2094
