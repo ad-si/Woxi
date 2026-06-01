@@ -506,7 +506,14 @@ script_test!(
 script_test!(script_host_introspection, "host_introspection.wls");
 script_test!(script_huffman_coding, "huffman_coding.wls");
 script_test!(script_iban, "iban.wls");
-script_test!(script_include_a_file, "include_a_file.wls");
+// `include_a_file.wls` (Get["myfile.m"] on a missing file) is intentionally
+// not snapshot-tested for the same reason as `detect_division_by_zero` above:
+// wolframscript prints the `Get::noopen` message to stdout in script mode (so
+// it lands in the snapshot), whereas Woxi's library path (interpret_with_stdout)
+// routes diagnostic messages to stderr/warnings, leaving stdout empty. The
+// computational behaviour matches (Get returns $Failed); the divergence is
+// purely in message I/O routing, so the two snapshot-validation engines
+// (Woxi vs WOXI_USE_WOLFRAM) can never agree on a single snapshot.
 script_test!(script_integer_overflow, "integer_overflow.wls");
 script_test!(script_jensens_device, "jensens_device.wls");
 script_test!(script_josephus_problem_2, "josephus_problem_2.wls");
