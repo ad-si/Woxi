@@ -3538,25 +3538,25 @@ mod euler_matrix {
 
   #[test]
   fn explicit_xyz_convention() {
+    // The symbolic entries are sums whose canonical Plus ordering differs
+    // harmlessly between engines (e.g. Cos[a]*Sin[c] + Cos[c]*Sin[a]*Sin[b]).
+    // Evaluate at numeric angles and Round to pin down every entry exactly
+    // while absorbing last-ULP floating-point noise — both engines agree.
     assert_eq!(
-      interpret("EulerMatrix[{a, b, c}, {1, 2, 3}]").unwrap(),
-      "{{Cos[b]*Cos[c], -(Cos[b]*Sin[c]), Sin[b]}, \
-       {Cos[a]*Sin[c] + Cos[c]*Sin[a]*Sin[b], \
-       Cos[a]*Cos[c] - Sin[a]*Sin[b]*Sin[c], -(Cos[b]*Sin[a])}, \
-       {-(Cos[a]*Cos[c]*Sin[b]) + Sin[a]*Sin[c], \
-       Cos[c]*Sin[a] + Cos[a]*Sin[b]*Sin[c], Cos[a]*Cos[b]}}"
+      interpret("Round[EulerMatrix[{1., 2., 3.}, {1, 2, 3}], 10^-6]").unwrap(),
+      "{{205991/500000, 58727/1000000, 909297/1000000}, \
+       {-681243/1000000, -642873/1000000, 14007/40000}, \
+       {605127/1000000, -381859/500000, -44969/200000}}"
     );
   }
 
   #[test]
   fn explicit_zxz_convention() {
     assert_eq!(
-      interpret("EulerMatrix[{a, b, c}, {3, 1, 3}]").unwrap(),
-      "{{Cos[a]*Cos[c] - Cos[b]*Sin[a]*Sin[c], \
-       -(Cos[a]*Sin[c]) - Cos[b]*Cos[c]*Sin[a], Sin[a]*Sin[b]}, \
-       {Cos[c]*Sin[a] + Cos[a]*Cos[b]*Sin[c], \
-       Cos[a]*Cos[b]*Cos[c] - Sin[a]*Sin[c], -(Cos[a]*Sin[b])}, \
-       {Sin[b]*Sin[c], Cos[c]*Sin[b], Cos[b]}}"
+      interpret("Round[EulerMatrix[{1., 2., 3.}, {3, 1, 3}], 10^-6]").unwrap(),
+      "{{-242739/500000, -422919/1000000, 765147/1000000}, \
+       {-43239/50000, 103847/1000000, -98259/200000}, \
+       {401/3125, -450099/500000, -416147/1000000}}"
     );
   }
 

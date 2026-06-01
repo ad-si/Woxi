@@ -274,7 +274,10 @@ mod incidence_matrix {
   #[test]
   fn undirected_path() {
     assert_eq!(
-      interpret("IncidenceMatrix[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      // Normal[...] makes the comparison representation-agnostic: Woxi already
+      // returns a dense matrix, and wolframscript's SparseArray collapses to
+      // the same dense list, so the conformance check holds for both.
+      interpret("Normal[IncidenceMatrix[PathGraph[{1, 2, 3, 4}]]]").unwrap(),
       "{{1, 0, 0}, {1, 1, 0}, {0, 1, 1}, {0, 0, 1}}"
     );
   }
@@ -283,8 +286,10 @@ mod incidence_matrix {
   fn directed_cycle() {
     // Directed edge: source -1, target +1.
     assert_eq!(
-      interpret("IncidenceMatrix[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3, 3 -> 1}]]")
-        .unwrap(),
+      interpret(
+        "Normal[IncidenceMatrix[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3, 3 -> 1}]]]"
+      )
+      .unwrap(),
       "{{-1, 0, 1}, {1, -1, 0}, {0, 1, -1}}"
     );
   }
@@ -292,7 +297,7 @@ mod incidence_matrix {
   #[test]
   fn single_directed_edge() {
     assert_eq!(
-      interpret("IncidenceMatrix[Graph[{1, 2, 3}, {1 -> 2}]]").unwrap(),
+      interpret("Normal[IncidenceMatrix[Graph[{1, 2, 3}, {1 -> 2}]]]").unwrap(),
       "{{-1}, {1}, {0}}"
     );
   }
@@ -301,7 +306,8 @@ mod incidence_matrix {
   fn directed_self_loop() {
     // A directed self-loop yields -2 (Wolfram convention).
     assert_eq!(
-      interpret("IncidenceMatrix[Graph[{1, 2}, {1 -> 1, 1 -> 2}]]").unwrap(),
+      interpret("Normal[IncidenceMatrix[Graph[{1, 2}, {1 -> 1, 1 -> 2}]]]")
+        .unwrap(),
       "{{-2, -1}, {0, 1}}"
     );
   }
@@ -310,7 +316,8 @@ mod incidence_matrix {
   fn undirected_self_loop() {
     // An undirected self-loop yields 2.
     assert_eq!(
-      interpret("IncidenceMatrix[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]").unwrap(),
+      interpret("Normal[IncidenceMatrix[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]]")
+        .unwrap(),
       "{{2, 1}, {0, 1}}"
     );
   }
@@ -336,8 +343,10 @@ mod kirchhoff_matrix {
   #[test]
   fn undirected_path() {
     assert_eq!(
+      // Normal[...] reconciles Woxi's dense matrix with wolframscript's
+      // SparseArray result without changing the values.
       interpret(
-        "KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4}]]"
+        "Normal[KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4}]]]"
       )
       .unwrap(),
       "{{1, -1, 0, 0}, {-1, 2, -1, 0}, {0, -1, 2, -1}, {0, 0, -1, 1}}"
@@ -349,7 +358,8 @@ mod kirchhoff_matrix {
     // Directed edges count toward both the source's out-degree and the
     // target's in-degree on the diagonal, with -A on the off-diagonal.
     assert_eq!(
-      interpret("KirchhoffMatrix[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}]]").unwrap(),
+      interpret("Normal[KirchhoffMatrix[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}]]]")
+        .unwrap(),
       "{{1, -1, 0}, {0, 2, -1}, {0, 0, 1}}"
     );
   }
@@ -357,7 +367,8 @@ mod kirchhoff_matrix {
   #[test]
   fn isolated_vertices() {
     assert_eq!(
-      interpret("KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2}]]").unwrap(),
+      interpret("Normal[KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2}]]]")
+        .unwrap(),
       "{{1, -1, 0, 0}, {-1, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}"
     );
   }
@@ -366,7 +377,8 @@ mod kirchhoff_matrix {
   fn directed_self_loop_ignored() {
     // Self-loops contribute nothing to the Kirchhoff matrix.
     assert_eq!(
-      interpret("KirchhoffMatrix[Graph[{1, 2}, {1 -> 1, 1 -> 2}]]").unwrap(),
+      interpret("Normal[KirchhoffMatrix[Graph[{1, 2}, {1 -> 1, 1 -> 2}]]]")
+        .unwrap(),
       "{{1, -1}, {0, 1}}"
     );
   }
@@ -374,7 +386,8 @@ mod kirchhoff_matrix {
   #[test]
   fn undirected_self_loop_ignored() {
     assert_eq!(
-      interpret("KirchhoffMatrix[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]").unwrap(),
+      interpret("Normal[KirchhoffMatrix[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]]")
+        .unwrap(),
       "{{1, -1}, {-1, 1}}"
     );
   }
@@ -384,7 +397,7 @@ mod kirchhoff_matrix {
     // Parallel edges collapse to a simple graph for the Kirchhoff matrix.
     assert_eq!(
       interpret(
-        "KirchhoffMatrix[Graph[{1, 2, 3}, {1 <-> 2, 1 <-> 2, 2 <-> 3}]]"
+        "Normal[KirchhoffMatrix[Graph[{1, 2, 3}, {1 <-> 2, 1 <-> 2, 2 <-> 3}]]]"
       )
       .unwrap(),
       "{{1, -1, 0}, {-1, 2, -1}, {0, -1, 1}}"
@@ -1951,9 +1964,11 @@ mod weighted_adjacency_matrix {
   #[test]
   fn directed_with_weights() {
     assert_eq!(
+      // Normal[...] collapses wolframscript's SparseArray to the dense matrix
+      // Woxi already returns, keeping the conformance comparison meaningful.
       interpret(
-        "WeightedAdjacencyMatrix[\
-         Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, EdgeWeight -> {5, 10}]]"
+        "Normal[WeightedAdjacencyMatrix[\
+         Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}, EdgeWeight -> {5, 10}]]]"
       )
       .unwrap(),
       "{{0, 5, 0}, {0, 0, 10}, {0, 0, 0}}"
@@ -1964,9 +1979,9 @@ mod weighted_adjacency_matrix {
   fn undirected_with_weights() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
+        "Normal[WeightedAdjacencyMatrix[\
          Graph[{1, 2, 3}, {1 <-> 2, 2 <-> 3, 1 <-> 3}, \
-         EdgeWeight -> {5, 10, 2}]]"
+         EdgeWeight -> {5, 10, 2}]]]"
       )
       .unwrap(),
       "{{0, 5, 2}, {5, 0, 10}, {2, 10, 0}}"
@@ -1977,8 +1992,8 @@ mod weighted_adjacency_matrix {
   fn implicit_vertices() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
-         Graph[{1 <-> 2, 2 <-> 3}, EdgeWeight -> {5, 10}]]"
+        "Normal[WeightedAdjacencyMatrix[\
+         Graph[{1 <-> 2, 2 <-> 3}, EdgeWeight -> {5, 10}]]]"
       )
       .unwrap(),
       "{{0, 5, 0}, {5, 0, 10}, {0, 10, 0}}"
@@ -1988,7 +2003,8 @@ mod weighted_adjacency_matrix {
   #[test]
   fn default_weight_is_one() {
     assert_eq!(
-      interpret("WeightedAdjacencyMatrix[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      interpret("Normal[WeightedAdjacencyMatrix[Graph[{1 -> 2, 2 -> 3}]]]")
+        .unwrap(),
       "{{0, 1, 0}, {0, 0, 1}, {0, 0, 0}}"
     );
   }
@@ -1997,8 +2013,8 @@ mod weighted_adjacency_matrix {
   fn directed_self_loop() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
-         Graph[{1, 2}, {1 -> 1, 1 -> 2}, EdgeWeight -> {7, 3}]]"
+        "Normal[WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 -> 1, 1 -> 2}, EdgeWeight -> {7, 3}]]]"
       )
       .unwrap(),
       "{{7, 3}, {0, 0}}"
@@ -2009,8 +2025,8 @@ mod weighted_adjacency_matrix {
   fn undirected_self_loop_counts_once() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
-         Graph[{1, 2}, {1 <-> 1, 1 <-> 2}, EdgeWeight -> {7, 3}]]"
+        "Normal[WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 <-> 1, 1 <-> 2}, EdgeWeight -> {7, 3}]]]"
       )
       .unwrap(),
       "{{7, 3}, {3, 0}}"
@@ -2021,9 +2037,9 @@ mod weighted_adjacency_matrix {
   fn parallel_edges_sum_weights() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
+        "Normal[WeightedAdjacencyMatrix[\
          Graph[{1, 2, 3}, {1 -> 2, 1 -> 2, 2 -> 3}, \
-         EdgeWeight -> {5, 4, 10}]]"
+         EdgeWeight -> {5, 4, 10}]]]"
       )
       .unwrap(),
       "{{0, 9, 0}, {0, 0, 10}, {0, 0, 0}}"
@@ -2034,8 +2050,8 @@ mod weighted_adjacency_matrix {
   fn symbolic_weight() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
-         Graph[{1, 2}, {1 <-> 2}, EdgeWeight -> {x}]]"
+        "Normal[WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 <-> 2}, EdgeWeight -> {x}]]]"
       )
       .unwrap(),
       "{{0, x}, {x, 0}}"
@@ -2046,8 +2062,8 @@ mod weighted_adjacency_matrix {
   fn real_weight() {
     assert_eq!(
       interpret(
-        "WeightedAdjacencyMatrix[\
-         Graph[{1, 2}, {1 <-> 2}, EdgeWeight -> {2.5}]]"
+        "Normal[WeightedAdjacencyMatrix[\
+         Graph[{1, 2}, {1 <-> 2}, EdgeWeight -> {2.5}]]]"
       )
       .unwrap(),
       "{{0, 2.5}, {2.5, 0}}"

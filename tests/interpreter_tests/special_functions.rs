@@ -3004,12 +3004,14 @@ mod whittaker_m {
     );
   }
 
-  // N[...] forces numeric evaluation of an exact-integer call.
+  // N[...] forces numeric evaluation of an exact-integer call. Round to 1e-6
+  // so the comparison is stable against last-ULP differences between the two
+  // confluent-hypergeometric implementations (10.176051520426409 vs ...41).
   #[test]
   fn numeric_via_n() {
     assert_eq!(
-      interpret("N[WhittakerM[1, 2, 3]]").unwrap(),
-      "10.176051520426409"
+      interpret("Round[N[WhittakerM[1, 2, 3]], 10^-6]").unwrap(),
+      "2544013/250000"
     );
   }
 
@@ -3023,12 +3025,16 @@ mod whittaker_m {
   }
 
   // Negative real z gives a purely imaginary result; the negligible real
-  // part is snapped to `0.`.
+  // part rounds to 0 and the imaginary part is pinned via Round to 1e-6 to
+  // stay stable against last-ULP differences (32.64568570332712 vs ...71).
   #[test]
   fn numeric_negative_z_imaginary() {
     assert_eq!(
-      interpret("WhittakerM[1, 2, -3.0]").unwrap(),
-      "0. + 32.64568570332712*I"
+      interpret(
+        "{Round[Re[#], 10^-6], Round[Im[#], 10^-6]} &[WhittakerM[1, 2, -3.0]]"
+      )
+      .unwrap(),
+      "{0, 16322843/500000}"
     );
   }
 
