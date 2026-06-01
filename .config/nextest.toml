@@ -2,11 +2,18 @@
 # Fail any individual test that takes longer than 20 seconds.
 slow-timeout = { period = "20s", terminate-after = 1 }
 
-# Some script_snapshot_tests run heavy RosettaCode programs that take
-# tens of seconds in debug builds. Give them a generous budget.
+# NOTE: nextest applies the FIRST matching override for a given setting.
+# The most specific overrides must therefore come BEFORE the broad
+# `/^script_/` rule below, or they will be shadowed by it.
+
+# Two RosettaCode scripts run close to the 180s ceiling standalone in
+# debug builds (~80s and ~120s) and reliably exceed it under full
+# parallel load with 17k+ tests competing for CPU. Give them a wider
+# window; release builds are ~10x faster, so this only affects `make
+# test`.
 [[profile.default.overrides]]
-filter = 'test(/^script_/)'
-slow-timeout = { period = "180s", terminate-after = 1 }
+filter = 'test(script_arithmetic_geometric_mean_calculate_pi) + test(script_largest_number_divisible_by_its_digits)'
+slow-timeout = { period = "360s", terminate-after = 1 }
 
 # `D[x^x, {x, 10}]` is intentionally a heavy regression test for the Plus
 # comparator panic — order 10 matches the originally panicking input. It
@@ -16,11 +23,8 @@ slow-timeout = { period = "180s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
-# Two RosettaCode scripts run close to the 180s ceiling standalone in
-# debug builds (~90s and ~120s) and reliably exceed it under full
-# parallel load with 17k+ tests competing for CPU. Give them a wider
-# window; release builds are ~10x faster, so this only affects `make
-# test`.
+# Some script_snapshot_tests run heavy RosettaCode programs that take
+# tens of seconds in debug builds. Give them a generous budget.
 [[profile.default.overrides]]
-filter = 'test(script_arithmetic_geometric_mean_calculate_pi) + test(script_largest_number_divisible_by_its_digits)'
-slow-timeout = { period = "360s", terminate-after = 1 }
+filter = 'test(/^script_/)'
+slow-timeout = { period = "180s", terminate-after = 1 }
