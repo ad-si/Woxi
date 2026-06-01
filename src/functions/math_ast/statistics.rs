@@ -1521,10 +1521,6 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(r) if r >= 0.0 && r.fract() == 0.0 => r as usize,
     _ => return symbolic(),
   };
-  // Only numeric data is handled (matching CentralMoment's convention).
-  if !items.iter().all(|item| expr_to_num(item).is_some()) {
-    return symbolic();
-  }
   if r == 0 {
     return Ok(Expr::Integer(0));
   }

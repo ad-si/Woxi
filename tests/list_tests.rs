@@ -1229,10 +1229,14 @@ mod list_tests {
       interpret("N[Cumulant[{1, 2, 3, 4, 5}, 4]]").unwrap(),
       "-5.2"
     );
-    // Non-numeric data stays unevaluated.
+    // Symbolic data evaluates via the moment-cumulant recursion. Woxi returns
+    // the (population) variance in raw-moment form while wolframscript returns
+    // the algebraically-equal central-moment form, so assert the value at a
+    // concrete substitution (the population variance of {1, 2, 5} = 26/9),
+    // which both engines agree on.
     assert_eq!(
-      interpret("Cumulant[{a, b, c}, 2]").unwrap(),
-      "Cumulant[{a, b, c}, 2]"
+      interpret("Cumulant[{a, b, c}, 2] /. {a -> 1, b -> 2, c -> 5}").unwrap(),
+      "26/9"
     );
   }
 
