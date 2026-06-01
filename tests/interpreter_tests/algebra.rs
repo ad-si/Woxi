@@ -6526,8 +6526,14 @@ mod irreducible_polynomial_q {
   #[test]
   fn irreducible_univariate() {
     // Irreducible over the rationals.
-    assert_eq!(interpret("IrreduciblePolynomialQ[x^2 + 1]").unwrap(), "True");
-    assert_eq!(interpret("IrreduciblePolynomialQ[x^4 + 1]").unwrap(), "True");
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^2 + 1]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[x^4 + 1]").unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("IrreduciblePolynomialQ[x^2 + x + 1]").unwrap(),
       "True"
@@ -6569,7 +6575,10 @@ mod irreducible_polynomial_q {
       interpret("IrreduciblePolynomialQ[2 x^2 + 2]").unwrap(),
       "True"
     );
-    assert_eq!(interpret("IrreduciblePolynomialQ[3 x + 6]").unwrap(), "True");
+    assert_eq!(
+      interpret("IrreduciblePolynomialQ[3 x + 6]").unwrap(),
+      "True"
+    );
     // Rational coefficients are allowed.
     assert_eq!(
       interpret("IrreduciblePolynomialQ[x^2/4 + 1]").unwrap(),

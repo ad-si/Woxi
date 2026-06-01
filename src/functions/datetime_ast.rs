@@ -1566,8 +1566,11 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     start_comp[1] as i64,
     start_comp[2] as i64,
   );
-  let mut abs_end =
-    date_to_absolute_days(end_comp[0] as i64, end_comp[1] as i64, end_comp[2] as i64);
+  let mut abs_end = date_to_absolute_days(
+    end_comp[0] as i64,
+    end_comp[1] as i64,
+    end_comp[2] as i64,
+  );
 
   // Normalize so the range is always ascending.
   if abs_start > abs_end {

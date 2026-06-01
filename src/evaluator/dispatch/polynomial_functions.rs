@@ -219,9 +219,7 @@ pub fn dispatch_polynomial_functions(
     // extracts the argument value(s) from the returned `{value, {x -> a, ...}}`
     // structure. A single variable yields a bare scalar; multiple variables
     // yield a list `{a1, a2, ...}`.
-    "ArgMax" | "ArgMin"
-      if args.len() == 2 || args.len() == 3 =>
-    {
+    "ArgMax" | "ArgMin" if args.len() == 2 || args.len() == 3 => {
       let maximize = name == "ArgMax";
       // Determine how many variables were requested, so we know whether to
       // return a scalar (single variable) or a list (multiple variables).
@@ -237,7 +235,8 @@ pub fn dispatch_polynomial_functions(
           Expr::List(items) if items.len() == 2
             && items.iter().all(|v| matches!(v, Expr::Identifier(_)))
         ) {
-        if let Some(result) = try_constrained_linear_disk_symbolic(opt_name, args)
+        if let Some(result) =
+          try_constrained_linear_disk_symbolic(opt_name, args)
         {
           Ok(result)
         } else {

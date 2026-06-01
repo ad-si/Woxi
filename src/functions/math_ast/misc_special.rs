@@ -240,8 +240,11 @@ fn mittag_leffler_three_arg(
   if (matches!(alpha, Expr::Real(_))
     || matches!(beta, Expr::Real(_))
     || matches!(z, Expr::Real(_)))
-    && let (Some(a), Some(b), Some(zv)) =
-      (try_eval_to_f64(alpha), try_eval_to_f64(beta), try_eval_to_f64(z))
+    && let (Some(a), Some(b), Some(zv)) = (
+      try_eval_to_f64(alpha),
+      try_eval_to_f64(beta),
+      try_eval_to_f64(z),
+    )
     && let Some(v) = mittag_leffler_series_f64(a, b, zv)
   {
     return Ok(Expr::Real(v));

@@ -854,7 +854,9 @@ pub fn transpose_perm_ast(
 pub enum TensorTransposeResult {
   Ok(Expr),
   /// Permutation moves slots beyond the tensor rank (`TensorTranspose::ttrank`).
-  RankError { rank: usize },
+  RankError {
+    rank: usize,
+  },
   /// The second argument is not a valid permutation
   /// (`TensorTranspose::symmperm`).
   SymmPerm,

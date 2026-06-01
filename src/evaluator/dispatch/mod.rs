@@ -527,9 +527,7 @@ fn edge_endpoints_dir(edge: &Expr) -> Option<(Expr, Expr, bool)> {
     } => Some(((**pattern).clone(), (**replacement).clone(), true)),
     Expr::FunctionCall { name, args } if args.len() == 2 => match name.as_str()
     {
-      "DirectedEdge" | "Rule" => {
-        Some((args[0].clone(), args[1].clone(), true))
-      }
+      "DirectedEdge" | "Rule" => Some((args[0].clone(), args[1].clone(), true)),
       "UndirectedEdge" | "TwoWayRule" => {
         Some((args[0].clone(), args[1].clone(), false))
       }
@@ -2234,10 +2232,8 @@ pub fn evaluate_function_call_ast_inner(
         .filter(|a| matches!(a, Expr::Rule { .. }))
         .cloned()
         .collect();
-      let mut graph_args = vec![
-        Expr::List(vertices.into()),
-        Expr::List(edges.into()),
-      ];
+      let mut graph_args =
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
       if !opts.is_empty() {
         graph_args.push(Expr::List(opts.into()));
       }
@@ -2582,8 +2578,9 @@ pub fn evaluate_function_call_ast_inner(
         }
         sum
       };
-      let vertices: Vec<Expr> =
-        (1..=num_vertices).map(|i| Expr::Integer(i as i128)).collect();
+      let vertices: Vec<Expr> = (1..=num_vertices)
+        .map(|i| Expr::Integer(i as i128))
+        .collect();
       let mut edges = Vec::new();
       for i in 1..=num_vertices {
         for c in 0..k {
@@ -4110,12 +4107,9 @@ pub fn evaluate_function_call_ast_inner(
           args: args.to_vec().into(),
         });
       }
-      let new_edges: Vec<Expr> =
-        remaining.into_iter().flatten().collect();
-      let mut result_args = vec![
-        Expr::List(vertices.clone()),
-        Expr::List(new_edges.into()),
-      ];
+      let new_edges: Vec<Expr> = remaining.into_iter().flatten().collect();
+      let mut result_args =
+        vec![Expr::List(vertices.clone()), Expr::List(new_edges.into())];
       // Preserve any trailing graph options.
       result_args.extend(gargs[2..].iter().cloned());
       return Ok(Expr::FunctionCall {
@@ -4140,9 +4134,8 @@ pub fn evaluate_function_call_ast_inner(
       && let Expr::List(vertices) = &gargs[0]
     {
       let target = expr_to_string(&args[1]);
-      if let Some(pos) = vertices
-        .iter()
-        .position(|v| expr_to_string(v) == target)
+      if let Some(pos) =
+        vertices.iter().position(|v| expr_to_string(v) == target)
       {
         return Ok(Expr::Integer(pos as i128 + 1));
       }
@@ -4555,90 +4548,88 @@ pub fn evaluate_function_call_ast_inner(
   // Unreachable vertices yield Infinity. Directed edges are honoured;
   // undirected edges are traversable in both directions. If any vertex
   // argument is not a vertex of the graph, the call stays unevaluated.
-  if name == "GraphDistance" && (args.len() == 2 || args.len() == 3) {
-    if let Expr::FunctionCall {
+  if name == "GraphDistance"
+    && (args.len() == 2 || args.len() == 3)
+    && let Expr::FunctionCall {
       name: gname,
       args: gargs,
     } = &args[0]
-      && gname == "Graph"
-      && gargs.len() >= 2
-      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
-    {
-      let n = vertices.len();
-      let vertex_strs: Vec<String> =
-        vertices.iter().map(expr_to_string).collect();
-      let index_of = |v: &Expr| -> Option<usize> {
-        let s = expr_to_string(v);
-        vertex_strs.iter().position(|x| x == &s)
-      };
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let vertex_strs: Vec<String> =
+      vertices.iter().map(expr_to_string).collect();
+    let index_of = |v: &Expr| -> Option<usize> {
+      let s = expr_to_string(v);
+      vertex_strs.iter().position(|x| x == &s)
+    };
 
-      // Build a directed adjacency list. Undirected edges (UndirectedEdge or
-      // a 2-arg edge that is not DirectedEdge/Rule) go both ways; directed
-      // edges (DirectedEdge or Rule) go one way only.
-      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-      for edge in edges.iter() {
-        let (directed, src, dst) = match edge {
-          Expr::FunctionCall {
-            name: ename,
-            args: eargs,
-          } if eargs.len() == 2 => {
-            (ename == "DirectedEdge", &eargs[0], &eargs[1])
-          }
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => (true, pattern.as_ref(), replacement.as_ref()),
-          _ => continue,
-        };
-        if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
-          adj[si].push(di);
-          if !directed {
-            adj[di].push(si);
-          }
+    // Build a directed adjacency list. Undirected edges (UndirectedEdge or
+    // a 2-arg edge that is not DirectedEdge/Rule) go both ways; directed
+    // edges (DirectedEdge or Rule) go one way only.
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for edge in edges.iter() {
+      let (directed, src, dst) = match edge {
+        Expr::FunctionCall {
+          name: ename,
+          args: eargs,
+        } if eargs.len() == 2 => {
+          (ename == "DirectedEdge", &eargs[0], &eargs[1])
+        }
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => (true, pattern.as_ref(), replacement.as_ref()),
+        _ => continue,
+      };
+      if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
+        adj[si].push(di);
+        if !directed {
+          adj[di].push(si);
         }
       }
-
-      // BFS over unit-weight edges from `start`, returning distances
-      // (-1 == unreachable).
-      let bfs = |start: usize| -> Vec<i128> {
-        let mut dist = vec![-1i128; n];
-        let mut queue = std::collections::VecDeque::new();
-        dist[start] = 0;
-        queue.push_back(start);
-        while let Some(u) = queue.pop_front() {
-          for &w in &adj[u] {
-            if dist[w] == -1 {
-              dist[w] = dist[u] + 1;
-              queue.push_back(w);
-            }
-          }
-        }
-        dist
-      };
-
-      let dist_to_expr = |d: i128| -> Expr {
-        if d < 0 {
-          Expr::Identifier("Infinity".to_string())
-        } else {
-          Expr::Integer(d)
-        }
-      };
-
-      let start_idx = index_of(&args[1]);
-      if args.len() == 3 {
-        let target_idx = index_of(&args[2]);
-        if let (Some(s), Some(t)) = (start_idx, target_idx) {
-          let dist = bfs(s);
-          return Ok(dist_to_expr(dist[t]));
-        }
-      } else if let Some(s) = start_idx {
-        let dist = bfs(s);
-        return Ok(Expr::List(
-          dist.into_iter().map(dist_to_expr).collect(),
-        ));
-      }
-      // Fall through to unevaluated when a vertex argument is invalid.
     }
+
+    // BFS over unit-weight edges from `start`, returning distances
+    // (-1 == unreachable).
+    let bfs = |start: usize| -> Vec<i128> {
+      let mut dist = vec![-1i128; n];
+      let mut queue = std::collections::VecDeque::new();
+      dist[start] = 0;
+      queue.push_back(start);
+      while let Some(u) = queue.pop_front() {
+        for &w in &adj[u] {
+          if dist[w] == -1 {
+            dist[w] = dist[u] + 1;
+            queue.push_back(w);
+          }
+        }
+      }
+      dist
+    };
+
+    let dist_to_expr = |d: i128| -> Expr {
+      if d < 0 {
+        Expr::Identifier("Infinity".to_string())
+      } else {
+        Expr::Integer(d)
+      }
+    };
+
+    let start_idx = index_of(&args[1]);
+    if args.len() == 3 {
+      let target_idx = index_of(&args[2]);
+      if let (Some(s), Some(t)) = (start_idx, target_idx) {
+        let dist = bfs(s);
+        return Ok(dist_to_expr(dist[t]));
+      }
+    } else if let Some(s) = start_idx {
+      let dist = bfs(s);
+      return Ok(Expr::List(dist.into_iter().map(dist_to_expr).collect()));
+    }
+    // Fall through to unevaluated when a vertex argument is invalid.
   }
 
   // GraphDistanceMatrix[g] — matrix whose (i, j) entry is the shortest-path
@@ -4646,81 +4637,79 @@ pub fn evaluate_function_call_ast_inner(
   // Unreachable pairs yield Infinity; the diagonal is 0. Directed edges are
   // honoured; undirected edges are traversable in both directions. An empty
   // graph stays unevaluated (matching wolframscript).
-  if name == "GraphDistanceMatrix" && args.len() == 1 {
-    if let Expr::FunctionCall {
+  if name == "GraphDistanceMatrix"
+    && args.len() == 1
+    && let Expr::FunctionCall {
       name: gname,
       args: gargs,
     } = &args[0]
-      && gname == "Graph"
-      && gargs.len() >= 2
-      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
-      && !vertices.is_empty()
-    {
-      let n = vertices.len();
-      let vertex_strs: Vec<String> =
-        vertices.iter().map(expr_to_string).collect();
-      let index_of = |v: &Expr| -> Option<usize> {
-        let s = expr_to_string(v);
-        vertex_strs.iter().position(|x| x == &s)
-      };
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    && !vertices.is_empty()
+  {
+    let n = vertices.len();
+    let vertex_strs: Vec<String> =
+      vertices.iter().map(expr_to_string).collect();
+    let index_of = |v: &Expr| -> Option<usize> {
+      let s = expr_to_string(v);
+      vertex_strs.iter().position(|x| x == &s)
+    };
 
-      // Build a directed adjacency list. Undirected edges go both ways;
-      // directed edges (DirectedEdge or Rule) go one way only.
-      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-      for edge in edges.iter() {
-        let (directed, src, dst) = match edge {
-          Expr::FunctionCall {
-            name: ename,
-            args: eargs,
-          } if eargs.len() == 2 => {
-            (ename == "DirectedEdge", &eargs[0], &eargs[1])
-          }
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => (true, pattern.as_ref(), replacement.as_ref()),
-          _ => continue,
-        };
-        if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
-          adj[si].push(di);
-          if !directed {
-            adj[di].push(si);
+    // Build a directed adjacency list. Undirected edges go both ways;
+    // directed edges (DirectedEdge or Rule) go one way only.
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for edge in edges.iter() {
+      let (directed, src, dst) = match edge {
+        Expr::FunctionCall {
+          name: ename,
+          args: eargs,
+        } if eargs.len() == 2 => {
+          (ename == "DirectedEdge", &eargs[0], &eargs[1])
+        }
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => (true, pattern.as_ref(), replacement.as_ref()),
+        _ => continue,
+      };
+      if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
+        adj[si].push(di);
+        if !directed {
+          adj[di].push(si);
+        }
+      }
+    }
+
+    // BFS over unit-weight edges from `start` (-1 == unreachable).
+    let bfs = |start: usize| -> Vec<i128> {
+      let mut dist = vec![-1i128; n];
+      let mut queue = std::collections::VecDeque::new();
+      dist[start] = 0;
+      queue.push_back(start);
+      while let Some(u) = queue.pop_front() {
+        for &w in &adj[u] {
+          if dist[w] == -1 {
+            dist[w] = dist[u] + 1;
+            queue.push_back(w);
           }
         }
       }
+      dist
+    };
 
-      // BFS over unit-weight edges from `start` (-1 == unreachable).
-      let bfs = |start: usize| -> Vec<i128> {
-        let mut dist = vec![-1i128; n];
-        let mut queue = std::collections::VecDeque::new();
-        dist[start] = 0;
-        queue.push_back(start);
-        while let Some(u) = queue.pop_front() {
-          for &w in &adj[u] {
-            if dist[w] == -1 {
-              dist[w] = dist[u] + 1;
-              queue.push_back(w);
-            }
-          }
-        }
-        dist
-      };
+    let dist_to_expr = |d: i128| -> Expr {
+      if d < 0 {
+        Expr::Identifier("Infinity".to_string())
+      } else {
+        Expr::Integer(d)
+      }
+    };
 
-      let dist_to_expr = |d: i128| -> Expr {
-        if d < 0 {
-          Expr::Identifier("Infinity".to_string())
-        } else {
-          Expr::Integer(d)
-        }
-      };
-
-      let rows = (0..n)
-        .map(|s| {
-          Expr::List(bfs(s).into_iter().map(dist_to_expr).collect())
-        })
-        .collect();
-      return Ok(Expr::List(rows));
-    }
+    let rows = (0..n)
+      .map(|s| Expr::List(bfs(s).into_iter().map(dist_to_expr).collect()))
+      .collect();
+    return Ok(Expr::List(rows));
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
@@ -5341,10 +5330,12 @@ pub fn evaluate_function_call_ast_inner(
           let entry = match ws.len() {
             0 => Expr::Integer(0),
             1 => ws.into_iter().next().unwrap(),
-            _ => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: ws.into(),
-            })?,
+            _ => {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: ws.into(),
+              })?
+            }
           };
           out_row.push(entry);
         }
@@ -5425,9 +5416,7 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(Expr::List(
         matrix
           .into_iter()
-          .map(|row| {
-            Expr::List(row.into_iter().map(Expr::Integer).collect())
-          })
+          .map(|row| Expr::List(row.into_iter().map(Expr::Integer).collect()))
           .collect(),
       ));
     }
@@ -5530,9 +5519,7 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(Expr::List(
         matrix
           .into_iter()
-          .map(|row| {
-            Expr::List(row.into_iter().map(Expr::Integer).collect())
-          })
+          .map(|row| Expr::List(row.into_iter().map(Expr::Integer).collect()))
           .collect(),
       ));
     }
@@ -5556,7 +5543,8 @@ pub fn evaluate_function_call_ast_inner(
     if is_graph {
       // A graph is connected iff ConnectedComponents returns one component
       // (or zero components for the empty graph).
-      let comps = evaluate_function_call_ast_inner("ConnectedComponents", args)?;
+      let comps =
+        evaluate_function_call_ast_inner("ConnectedComponents", args)?;
       if let Expr::List(comp_lists) = &comps {
         let connected = comp_lists.len() <= 1;
         return Ok(Expr::Identifier(
@@ -5934,9 +5922,10 @@ pub fn evaluate_function_call_ast_inner(
         // Raw edge list: derive vertices in first-appearance order.
         let mut verts: Vec<Expr> = Vec::new();
         let push = |v: &Expr, set: &mut Vec<Expr>| {
-          if !set.iter().any(|e| {
-            crate::evaluator::pattern_matching::expr_equal(e, v)
-          }) {
+          if !set
+            .iter()
+            .any(|e| crate::evaluator::pattern_matching::expr_equal(e, v))
+          {
             set.push(v.clone());
           }
         };
@@ -5953,7 +5942,11 @@ pub fn evaluate_function_call_ast_inner(
             }
           }
         }
-        if ok { Some((verts, edges.to_vec())) } else { None }
+        if ok {
+          Some((verts, edges.to_vec()))
+        } else {
+          None
+        }
       }
       _ => None,
     };
@@ -5961,9 +5954,9 @@ pub fn evaluate_function_call_ast_inner(
     if let Some((verts, edges)) = resolved {
       let mut indeg = vec![0i128; verts.len()];
       let vidx = |v: &Expr| -> Option<usize> {
-        verts.iter().position(|x| {
-          crate::evaluator::pattern_matching::expr_equal(x, v)
-        })
+        verts
+          .iter()
+          .position(|x| crate::evaluator::pattern_matching::expr_equal(x, v))
       };
       // In a mixed/directed graph (at least one directed edge) only directed
       // edges contribute to in-degree; undirected edges contribute nothing.
@@ -6000,9 +5993,7 @@ pub fn evaluate_function_call_ast_inner(
         }
         // Vertex not in graph — leave unevaluated, like wolframscript.
       } else {
-        return Ok(Expr::List(
-          indeg.into_iter().map(Expr::Integer).collect(),
-        ));
+        return Ok(Expr::List(indeg.into_iter().map(Expr::Integer).collect()));
       }
     }
   }
@@ -6035,9 +6026,10 @@ pub fn evaluate_function_call_ast_inner(
         // Raw edge list: derive vertices in first-appearance order.
         let mut verts: Vec<Expr> = Vec::new();
         let push = |v: &Expr, set: &mut Vec<Expr>| {
-          if !set.iter().any(|e| {
-            crate::evaluator::pattern_matching::expr_equal(e, v)
-          }) {
+          if !set
+            .iter()
+            .any(|e| crate::evaluator::pattern_matching::expr_equal(e, v))
+          {
             set.push(v.clone());
           }
         };
@@ -6054,7 +6046,11 @@ pub fn evaluate_function_call_ast_inner(
             }
           }
         }
-        if ok { Some((verts, edges.to_vec())) } else { None }
+        if ok {
+          Some((verts, edges.to_vec()))
+        } else {
+          None
+        }
       }
       _ => None,
     };
@@ -6062,9 +6058,9 @@ pub fn evaluate_function_call_ast_inner(
     if let Some((verts, edges)) = resolved {
       let mut outdeg = vec![0i128; verts.len()];
       let vidx = |v: &Expr| -> Option<usize> {
-        verts.iter().position(|x| {
-          crate::evaluator::pattern_matching::expr_equal(x, v)
-        })
+        verts
+          .iter()
+          .position(|x| crate::evaluator::pattern_matching::expr_equal(x, v))
       };
       // In a mixed/directed graph (at least one directed edge) only directed
       // edges contribute to out-degree; undirected edges contribute nothing.
@@ -6101,9 +6097,7 @@ pub fn evaluate_function_call_ast_inner(
         }
         // Vertex not in graph — leave unevaluated, like wolframscript.
       } else {
-        return Ok(Expr::List(
-          outdeg.into_iter().map(Expr::Integer).collect(),
-        ));
+        return Ok(Expr::List(outdeg.into_iter().map(Expr::Integer).collect()));
       }
     }
   }

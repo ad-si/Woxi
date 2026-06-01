@@ -3386,8 +3386,10 @@ Options[r] := {Opt -> 3}"#,
     fn matches_association_subset() {
       // Subset match: extra keys are allowed, order does not matter.
       assert_eq!(
-        interpret(r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> 1}]]"#)
-          .unwrap(),
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> 1}]]"#
+        )
+        .unwrap(),
         "True"
       );
       assert_eq!(
@@ -3402,13 +3404,17 @@ Options[r] := {Opt -> 3}"#,
     #[test]
     fn rejects_wrong_value_or_missing_key() {
       assert_eq!(
-        interpret(r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> 3}]]"#)
-          .unwrap(),
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"a" -> 3}]]"#
+        )
+        .unwrap(),
         "False"
       );
       assert_eq!(
-        interpret(r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"c" -> _}]]"#)
-          .unwrap(),
+        interpret(
+          r#"MatchQ[<|"a" -> 1, "b" -> 2|>, KeyValuePattern[{"c" -> _}]]"#
+        )
+        .unwrap(),
         "False"
       );
     }
@@ -3464,8 +3470,10 @@ Options[r] := {Opt -> 3}"#,
     #[test]
     fn matches_list_of_rules() {
       assert_eq!(
-        interpret(r#"MatchQ[{"a" -> 1, "b" -> 2}, KeyValuePattern[{"a" -> 1}]]"#)
-          .unwrap(),
+        interpret(
+          r#"MatchQ[{"a" -> 1, "b" -> 2}, KeyValuePattern[{"a" -> 1}]]"#
+        )
+        .unwrap(),
         "True"
       );
       // Mixed list (some non-rule elements) is not a key-value structure.
@@ -3478,11 +3486,13 @@ Options[r] := {Opt -> 3}"#,
     #[test]
     fn single_rule_argument_form() {
       assert_eq!(
-        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern["a" -> 1]]"#).unwrap(),
+        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern["a" -> 1]]"#)
+          .unwrap(),
         "True"
       );
       assert_eq!(
-        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern["a" -> 3]]"#).unwrap(),
+        interpret(r#"MatchQ[<|"a" -> 1|>, KeyValuePattern["a" -> 3]]"#)
+          .unwrap(),
         "False"
       );
     }

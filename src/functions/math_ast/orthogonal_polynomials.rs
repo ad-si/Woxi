@@ -3437,9 +3437,7 @@ pub fn zernike_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (n, m) = match (&args[0], &args[1]) {
-    (Expr::Integer(n), Expr::Integer(m)) if *n >= 0 && *m >= 0 => {
-      (*n as i128, *m as i128)
-    }
+    (Expr::Integer(n), Expr::Integer(m)) if *n >= 0 && *m >= 0 => ((*n), (*m)),
     // Negative / non-integer orders are left unevaluated by wolframscript.
     _ => {
       return Ok(Expr::FunctionCall {
@@ -3543,14 +3541,14 @@ fn zernike_eval_rational(coeffs: &[(i128, i128)], x: (i128, i128)) -> Expr {
   let mut overflow = false;
   for (power, coeff) in coeffs {
     // term = coeff * (xp/xq)^power = coeff * xp^power / xq^power
-    let tn = match pow_i128(xp, *power as u32).and_then(|v| v.checked_mul(*coeff))
-    {
-      Some(v) => v,
-      None => {
-        overflow = true;
-        break;
-      }
-    };
+    let tn =
+      match pow_i128(xp, *power as u32).and_then(|v| v.checked_mul(*coeff)) {
+        Some(v) => v,
+        None => {
+          overflow = true;
+          break;
+        }
+      };
     let td = match pow_i128(xq, *power as u32) {
       Some(v) => v,
       None => {

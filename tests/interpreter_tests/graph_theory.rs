@@ -111,8 +111,7 @@ mod connected_graph_q {
   #[test]
   fn undirected_two_components_not_connected() {
     assert_eq!(
-      interpret("ConnectedGraphQ[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}]]")
-        .unwrap(),
+      interpret("ConnectedGraphQ[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}]]").unwrap(),
       "False"
     );
   }
@@ -145,10 +144,7 @@ mod connected_graph_q {
 
   #[test]
   fn empty_graph_connected() {
-    assert_eq!(
-      interpret("ConnectedGraphQ[Graph[{}, {}]]").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("ConnectedGraphQ[Graph[{}, {}]]").unwrap(), "True");
   }
 
   // Non-graph arguments yield False (not unevaluated).
@@ -340,8 +336,10 @@ mod kirchhoff_matrix {
   #[test]
   fn undirected_path() {
     assert_eq!(
-      interpret("KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4}]]")
-        .unwrap(),
+      interpret(
+        "KirchhoffMatrix[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
       "{{1, -1, 0, 0}, {-1, 2, -1, 0}, {0, -1, 2, -1}, {0, 0, -1, 1}}"
     );
   }
@@ -385,8 +383,10 @@ mod kirchhoff_matrix {
   fn parallel_edges_collapsed() {
     // Parallel edges collapse to a simple graph for the Kirchhoff matrix.
     assert_eq!(
-      interpret("KirchhoffMatrix[Graph[{1, 2, 3}, {1 <-> 2, 1 <-> 2, 2 <-> 3}]]")
-        .unwrap(),
+      interpret(
+        "KirchhoffMatrix[Graph[{1, 2, 3}, {1 <-> 2, 1 <-> 2, 2 <-> 3}]]"
+      )
+      .unwrap(),
       "{{1, -1, 0}, {-1, 2, -1}, {0, -1, 1}}"
     );
   }
@@ -1827,8 +1827,7 @@ mod vertex_in_degree {
       "{1, 1, 0}"
     );
     assert_eq!(
-      interpret("VertexInDegree[{1 <-> 2, 2 <-> 3, 3 <-> 1, 1 -> 2}]")
-        .unwrap(),
+      interpret("VertexInDegree[{1 <-> 2, 2 <-> 3, 3 <-> 1, 1 -> 2}]").unwrap(),
       "{0, 1, 0}"
     );
   }

@@ -1794,9 +1794,7 @@ fn string_pattern_to_regex_inner(
       // `$ + < = > ^ ` | ~` (which Unicode classifies as symbols, not
       // punctuation, but Wolfram treats as punctuation). Verified against
       // wolframscript across the BMP.
-      "PunctuationCharacter" => {
-        Some("(?:\\p{P}|[$+<=>^`|~])".to_string())
-      }
+      "PunctuationCharacter" => Some("(?:\\p{P}|[$+<=>^`|~])".to_string()),
       "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
       "NumberString" => Some("[0-9]+(?:\\.[0-9]*)?".to_string()),
       "_" => Some(".".to_string()), // Blank: any single character

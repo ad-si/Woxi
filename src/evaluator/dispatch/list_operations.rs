@@ -91,7 +91,9 @@ fn parse_seq_rule(arg: &Expr) -> Option<SeqRule<'_>> {
   let mut list_pat = match_pat;
   loop {
     match list_pat {
-      Expr::FunctionCall { name, args } if name == "Pattern" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Pattern" && args.len() == 2 =>
+      {
         list_pat = &args[1];
       }
       Expr::FunctionCall { name, args }
@@ -1718,10 +1720,8 @@ pub fn dispatch_list_operations(
       } else {
         None
       };
-      let result = list_helpers_ast::tensor_transpose_ast(
-        &args[0],
-        perm.as_deref(),
-      );
+      let result =
+        list_helpers_ast::tensor_transpose_ast(&args[0], perm.as_deref());
       return Some(Ok(match result {
         TensorTransposeResult::Ok(e) => e,
         TensorTransposeResult::RankError { rank } => {
@@ -3029,8 +3029,10 @@ pub fn dispatch_list_operations(
         single => vec![single],
       };
 
-      let rules: Vec<SeqRule> =
-        rule_exprs.iter().filter_map(|r| parse_seq_rule(r)).collect();
+      let rules: Vec<SeqRule> = rule_exprs
+        .iter()
+        .filter_map(|r| parse_seq_rule(r))
+        .collect();
 
       // If no parseable rules, return unevaluated.
       if rules.is_empty() {
@@ -3050,7 +3052,7 @@ pub fn dispatch_list_operations(
       let mut i = 0;
       while i < list.len() {
         let mut matched = false;
-        if max_reps.map_or(true, |m| reps_done < m) {
+        if max_reps.is_none_or(|m| reps_done < m) {
           'rules: for rule in &rules {
             // Empty list pattern never matches (WL leaves the list unchanged).
             if rule.sub.is_empty() {

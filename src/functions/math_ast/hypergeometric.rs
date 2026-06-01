@@ -1569,7 +1569,8 @@ fn hypergeometric_u_pos_int_b(a: f64, b: f64, z: f64) -> Option<f64> {
   let mut term = 1.0;
   for k in 0..2000 {
     let kf = k as f64;
-    let psi = digamma(a + kf) - digamma(1.0 + kf) - digamma(1.0 + n as f64 + kf);
+    let psi =
+      digamma(a + kf) - digamma(1.0 + kf) - digamma(1.0 + n as f64 + kf);
     let contrib = term * (lnz + psi);
     s1 += contrib;
     // advance term: multiply by (a+k) z / ((k+1)(n+1+k))
@@ -2874,11 +2875,13 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im = 0.0;
     }
     if im == 0.0 {
-      return Ok(crate::functions::math_ast::build_complex_float_expr(re, 0.0));
+      return Ok(crate::functions::math_ast::build_complex_float_expr(
+        re, 0.0,
+      ));
     }
-    return Ok(crate::functions::math_ast::build_complex_float_expr_keep_real(
-      re, im,
-    ));
+    return Ok(
+      crate::functions::math_ast::build_complex_float_expr_keep_real(re, im),
+    );
   }
 
   // Unevaluated symbolic form.
@@ -2943,9 +2946,9 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           let value = 1.0 / denom;
           // Prefer an exact integer/rational when the inputs are exact.
-          let all_exact = !args.iter().any(|a| {
-            matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-          });
+          let all_exact = !args
+            .iter()
+            .any(|a| matches!(a, Expr::Real(_) | Expr::BigFloat(_, _)));
           if all_exact {
             // 1/Γ(1-k) for integer k is exact:
             //   k >= 1  -> Γ(1-k) = ∞  -> 0
@@ -2959,7 +2962,9 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               for n in 1..=(-ki) {
                 fact *= n;
               }
-              return Ok(crate::functions::math_ast::make_rational_pub(1, fact));
+              return Ok(crate::functions::math_ast::make_rational_pub(
+                1, fact,
+              ));
             }
             let rounded = value.round();
             if (value - rounded).abs() < 1e-12 {
@@ -3011,11 +3016,13 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im = 0.0;
     }
     if im == 0.0 {
-      return Ok(crate::functions::math_ast::build_complex_float_expr(re, 0.0));
+      return Ok(crate::functions::math_ast::build_complex_float_expr(
+        re, 0.0,
+      ));
     }
-    return Ok(crate::functions::math_ast::build_complex_float_expr_keep_real(
-      re, im,
-    ));
+    return Ok(
+      crate::functions::math_ast::build_complex_float_expr_keep_real(re, im),
+    );
   }
 
   // Unevaluated symbolic form.
@@ -3129,10 +3136,7 @@ fn hypergeometric_u_complex(
     let e1 = eval(1e-3);
     let e2 = eval(2e-3);
     // U(ε) = U + c·ε² + O(ε⁴); U = (4·U(ε) − U(2ε)) / 3.
-    return (
-      (4.0 * e1.0 - e2.0) / 3.0,
-      (4.0 * e1.1 - e2.1) / 3.0,
-    );
+    return ((4.0 * e1.0 - e2.0) / 3.0, (4.0 * e1.1 - e2.1) / 3.0);
   }
   hypergeometric_u_complex_nonint(a, b, z)
 }

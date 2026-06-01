@@ -1101,9 +1101,7 @@ fn fc_unwrap_edge(e: &Expr) -> &Expr {
 /// Accepts either `Graph[{verts}, {edges}]` or a bare list of edges/rules.
 fn fc_parse_input(arg: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
   let raw_edges: Vec<Expr> = match arg {
-    Expr::FunctionCall { name, args }
-      if name == "Graph" && args.len() >= 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
       match (&args[0], &args[1]) {
         (Expr::List(_v), Expr::List(e)) => e.iter().cloned().collect(),
         _ => return None,
@@ -1384,8 +1382,18 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         used_edge.insert(arc.edge_id, true);
         path_edges.push((cur, arc.clone()));
         dfs(
-          arc.dst, root, adj, on_path, path_edges, used_edge, kmin, kmax,
-          cycles, seen_undirected, max_count, render_edge,
+          arc.dst,
+          root,
+          adj,
+          on_path,
+          path_edges,
+          used_edge,
+          kmin,
+          kmax,
+          cycles,
+          seen_undirected,
+          max_count,
+          render_edge,
         );
         path_edges.pop();
         used_edge.insert(arc.edge_id, false);
@@ -1417,12 +1425,7 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // discovery order. Reversing the vector first and using a stable sort yields
   // that reverse-discovery tiebreak for cycles that are otherwise equal.
   cycles.reverse();
-  cycles.sort_by(|a, b| {
-    a.1
-      .len()
-      .cmp(&b.1.len())
-      .then_with(|| b.0.cmp(&a.0))
-  });
+  cycles.sort_by(|a, b| a.1.len().cmp(&b.1.len()).then_with(|| b.0.cmp(&a.0)));
 
   Ok(Expr::List(
     cycles

@@ -1571,7 +1571,8 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let binom = binomial_i128((nn - 1) as i128, (m - 1) as i128);
       let term = Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()].into(),
+        args: vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()]
+          .into(),
       };
       acc = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Minus,
@@ -2878,7 +2879,7 @@ fn permutation_is_even(image: &[i128]) -> bool {
     // A cycle of length L contributes (L - 1) transpositions.
     transpositions += len - 1;
   }
-  transpositions % 2 == 0
+  transpositions.is_multiple_of(2)
 }
 
 /// In-place next lexicographic permutation of `image`; returns false when the

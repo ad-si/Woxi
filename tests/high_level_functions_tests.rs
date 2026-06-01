@@ -3217,13 +3217,16 @@ mod high_level_functions_tests {
       );
       // StringCases extracts punctuation characters.
       assert_eq!(
-        interpret(r#"StringCases["Hello, world!", PunctuationCharacter]"#).unwrap(),
+        interpret(r#"StringCases["Hello, world!", PunctuationCharacter]"#)
+          .unwrap(),
         "{,, !}"
       );
       // Unicode dash (U+2013) is punctuation.
       assert_eq!(
-        interpret(r#"StringMatchQ[FromCharacterCode[{8211}], PunctuationCharacter]"#)
-          .unwrap(),
+        interpret(
+          r#"StringMatchQ[FromCharacterCode[{8211}], PunctuationCharacter]"#
+        )
+        .unwrap(),
         "True"
       );
     }
@@ -4095,18 +4098,14 @@ mod high_level_functions_tests {
       fn test_directed_triangle_default() {
         // Default returns a single cycle.
         assert_eq!(
-          interpret("Apply[List, FindCycle[{1->2, 2->3, 3->1}], {2}]")
-            .unwrap(),
+          interpret("Apply[List, FindCycle[{1->2, 2->3, 3->1}], {2}]").unwrap(),
           "{{{1, 2}, {2, 3}, {3, 1}}}"
         );
       }
 
       #[test]
       fn test_no_cycle_returns_empty() {
-        assert_eq!(
-          interpret("FindCycle[{1->2, 2->3, 3->4}]").unwrap(),
-          "{}"
-        );
+        assert_eq!(interpret("FindCycle[{1->2, 2->3, 3->4}]").unwrap(), "{}");
       }
 
       #[test]
@@ -4226,17 +4225,12 @@ mod high_level_functions_tests {
       // Asymmetric relation → directed graph with an edge for every ordered
       // pair (i, j) where the relation holds.
       assert_eq!(
-        interpret(
-          "Apply[List, EdgeList[RelationGraph[Less, {1, 2, 3}]], {1}]"
-        )
-        .unwrap(),
+        interpret("Apply[List, EdgeList[RelationGraph[Less, {1, 2, 3}]], {1}]")
+          .unwrap(),
         "{{1, 2}, {1, 3}, {2, 3}}"
       );
       assert_eq!(
-        interpret(
-          "Head /@ EdgeList[RelationGraph[Less, {1, 2, 3}]]"
-        )
-        .unwrap(),
+        interpret("Head /@ EdgeList[RelationGraph[Less, {1, 2, 3}]]").unwrap(),
         "{DirectedEdge, DirectedEdge, DirectedEdge}"
       );
       assert_eq!(
@@ -4253,10 +4247,8 @@ mod high_level_functions_tests {
         "{{1, 2}, {1, 3}, {2, 3}}"
       );
       assert_eq!(
-        interpret(
-          "Head /@ EdgeList[RelationGraph[#1 != #2 &, {1, 2, 3}]]"
-        )
-        .unwrap(),
+        interpret("Head /@ EdgeList[RelationGraph[#1 != #2 &, {1, 2, 3}]]")
+          .unwrap(),
         "{UndirectedEdge, UndirectedEdge, UndirectedEdge}"
       );
       assert_eq!(
@@ -4290,10 +4282,7 @@ mod high_level_functions_tests {
         "{1, 2, 3}"
       );
       assert_eq!(
-        interpret(
-          "EdgeList[RelationGraph[False &, {1, 2, 3}]]"
-        )
-        .unwrap(),
+        interpret("EdgeList[RelationGraph[False &, {1, 2, 3}]]").unwrap(),
         "{}"
       );
     }
@@ -4302,8 +4291,7 @@ mod high_level_functions_tests {
     fn test_vertex_index() {
       // 1-based position of a vertex in VertexList order.
       assert_eq!(
-        interpret("VertexIndex[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 2]")
-          .unwrap(),
+        interpret("VertexIndex[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 2]").unwrap(),
         "2"
       );
       // Insertion order is preserved, not sorted.
@@ -4320,14 +4308,10 @@ mod high_level_functions_tests {
         "3"
       );
       // CompleteGraph form.
-      assert_eq!(
-        interpret("VertexIndex[CompleteGraph[4], 3]").unwrap(),
-        "3"
-      );
+      assert_eq!(interpret("VertexIndex[CompleteGraph[4], 3]").unwrap(), "3");
       // Invalid vertex returns unevaluated.
       assert_eq!(
-        interpret("VertexIndex[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 5]")
-          .unwrap(),
+        interpret("VertexIndex[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 5]").unwrap(),
         "VertexIndex[Graph[<3>, <3>], 5]"
       );
     }
@@ -4422,10 +4406,8 @@ mod high_level_functions_tests {
       );
       // Undirected edges match regardless of endpoint order.
       assert_eq!(
-        interpret(
-          "EdgeList[EdgeDelete[Graph[{1 <-> 2, 2 <-> 3}], 2 <-> 1]]"
-        )
-        .unwrap(),
+        interpret("EdgeList[EdgeDelete[Graph[{1 <-> 2, 2 <-> 3}], 2 <-> 1]]")
+          .unwrap(),
         "{2 \u{F3D4} 3}"
       );
       // DirectedEdge form is accepted as the edge argument.
@@ -4496,10 +4478,8 @@ mod high_level_functions_tests {
       );
       // DirectedEdge / UndirectedEdge spellings are accepted.
       assert_eq!(
-        interpret(
-          "EdgeList[EdgeAdd[Graph[{1 -> 2}], DirectedEdge[2, 3]]]"
-        )
-        .unwrap(),
+        interpret("EdgeList[EdgeAdd[Graph[{1 -> 2}], DirectedEdge[2, 3]]]")
+          .unwrap(),
         "{1 \u{F3D5} 2, 2 \u{F3D5} 3}"
       );
       // An invalid edge argument leaves the expression unevaluated.

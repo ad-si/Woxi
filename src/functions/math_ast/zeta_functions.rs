@@ -1604,7 +1604,9 @@ pub fn riemann_siegel_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// RiemannSiegelTheta[t] — the Riemann-Siegel theta function for real t.
-pub fn riemann_siegel_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn riemann_siegel_theta_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "RiemannSiegelTheta expects exactly 1 argument".into(),

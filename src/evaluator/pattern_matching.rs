@@ -2709,14 +2709,14 @@ fn match_key_value_pattern(
   for (key_pat, val_pat) in &required {
     let mut found = false;
     for (k, v) in &subject {
-      if let Some(kb) = match_pattern(k, key_pat) {
-        if let Some(vb) = match_pattern(v, val_pat) {
-          let mut trial = bindings.clone();
-          if merge_bindings(&mut trial, kb) && merge_bindings(&mut trial, vb) {
-            bindings = trial;
-            found = true;
-            break;
-          }
+      if let Some(kb) = match_pattern(k, key_pat)
+        && let Some(vb) = match_pattern(v, val_pat)
+      {
+        let mut trial = bindings.clone();
+        if merge_bindings(&mut trial, kb) && merge_bindings(&mut trial, vb) {
+          bindings = trial;
+          found = true;
+          break;
         }
       }
     }

@@ -3175,10 +3175,7 @@ mod zernike_r {
   #[test]
   fn m_zero() {
     assert_eq!(interpret("ZernikeR[0, 0, x]").unwrap(), "1");
-    assert_eq!(
-      interpret("ZernikeR[4, 0, x]").unwrap(),
-      "1 - 6*x^2 + 6*x^4"
-    );
+    assert_eq!(interpret("ZernikeR[4, 0, x]").unwrap(), "1 - 6*x^2 + 6*x^4");
     assert_eq!(
       interpret("ZernikeR[8, 0, x]").unwrap(),
       "1 - 20*x^2 + 90*x^4 - 140*x^6 + 70*x^8"
@@ -3246,10 +3243,7 @@ mod mittag_leffler_e {
   #[test]
   fn alpha_two_closed_form() {
     // Cosh[Sqrt[z]]
-    assert_eq!(
-      interpret("MittagLefflerE[2, z]").unwrap(),
-      "Cosh[Sqrt[z]]"
-    );
+    assert_eq!(interpret("MittagLefflerE[2, z]").unwrap(), "Cosh[Sqrt[z]]");
     assert_eq!(interpret("MittagLefflerE[2, 1]").unwrap(), "Cosh[1]");
     assert_eq!(
       interpret("MittagLefflerE[2, 1/2]").unwrap(),
@@ -3284,28 +3278,40 @@ mod mittag_leffler_e {
   #[test]
   fn numeric_alpha_half() {
     // MittagLefflerE[0.5, 1.0] ≈ 5.008980080762283
-    let v: f64 = interpret("MittagLefflerE[0.5, 1.0]").unwrap().parse().unwrap();
+    let v: f64 = interpret("MittagLefflerE[0.5, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
     assert!((v - 5.008980080762283).abs() < 1e-10);
   }
 
   #[test]
   fn numeric_alpha_two_point_five() {
     // MittagLefflerE[2.5, 1.0] ≈ 1.3093059741717625
-    let v: f64 = interpret("MittagLefflerE[2.5, 1.0]").unwrap().parse().unwrap();
+    let v: f64 = interpret("MittagLefflerE[2.5, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
     assert!((v - 1.3093059741717625).abs() < 1e-10);
   }
 
   #[test]
   fn numeric_alpha_three() {
     // MittagLefflerE[3, 1.0] ≈ 1.1680583133759184
-    let v: f64 = interpret("MittagLefflerE[3, 1.0]").unwrap().parse().unwrap();
+    let v: f64 = interpret("MittagLefflerE[3, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
     assert!((v - 1.1680583133759184).abs() < 1e-10);
   }
 
   #[test]
   fn numeric_negative_z() {
     // MittagLefflerE[2, -1.0] ≈ 0.5403023058681398 (= Cos[1])
-    let v: f64 = interpret("MittagLefflerE[2, -1.0]").unwrap().parse().unwrap();
+    let v: f64 = interpret("MittagLefflerE[2, -1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
     assert!((v - 0.5403023058681398).abs() < 1e-10);
   }
 

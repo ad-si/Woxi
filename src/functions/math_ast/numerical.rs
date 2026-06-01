@@ -3567,7 +3567,8 @@ fn dct_core(u: &[f64], m: i64) -> Vec<f64> {
       3 => {
         for (r, &ur) in u.iter().enumerate() {
           let w = if r == 0 { 0.5 } else { 1.0 };
-          acc += w * ur * (pi * (2.0 * sf + 1.0) * (r as f64) / (2.0 * nf)).cos();
+          acc +=
+            w * ur * (pi * (2.0 * sf + 1.0) * (r as f64) / (2.0 * nf)).cos();
         }
         acc *= 2.0 / nf.sqrt();
       }
@@ -3582,8 +3583,7 @@ fn dct_core(u: &[f64], m: i64) -> Vec<f64> {
       // default: type 2
       _ => {
         for (r, &ur) in u.iter().enumerate() {
-          acc +=
-            ur * (pi * (2.0 * (r as f64) + 1.0) * sf / (2.0 * nf)).cos();
+          acc += ur * (pi * (2.0 * (r as f64) + 1.0) * sf / (2.0 * nf)).cos();
         }
         acc /= nf.sqrt();
       }

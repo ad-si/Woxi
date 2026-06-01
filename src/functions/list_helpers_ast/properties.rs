@@ -127,7 +127,8 @@ pub fn array_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Collect integer labels that explicit rules already claim, so that
   // auto-numbering skips them.
-  let mut claimed: std::collections::HashSet<i128> = std::collections::HashSet::new();
+  let mut claimed: std::collections::HashSet<i128> =
+    std::collections::HashSet::new();
   for v in rule_map.values() {
     if let Some(n) = expr_to_i128(v) {
       claimed.insert(n);

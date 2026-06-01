@@ -8217,13 +8217,9 @@ mod riemann_siegel_z {
   #[test]
   fn larger_argument() {
     // wolframscript: RiemannSiegelZ[50.0] = -0.3407350059550225
-    assert!(
-      (val("RiemannSiegelZ[50.0]") - (-0.3407350059550225)).abs() < 1e-9
-    );
+    assert!((val("RiemannSiegelZ[50.0]") - (-0.3407350059550225)).abs() < 1e-9);
     // wolframscript: RiemannSiegelZ[100.0] = 2.6926970566644393
-    assert!(
-      (val("RiemannSiegelZ[100.0]") - 2.6926970566644393).abs() < 1e-8
-    );
+    assert!((val("RiemannSiegelZ[100.0]") - 2.6926970566644393).abs() < 1e-8);
   }
 
   #[test]
@@ -8338,18 +8334,14 @@ mod real_exponent {
   #[test]
   fn negative_uses_magnitude() {
     // RealExponent uses Abs, so negative inputs give the same result.
-    assert!(
-      (val("RealExponent[-8]") - val("RealExponent[8]")).abs() < 1e-15
-    );
+    assert!((val("RealExponent[-8]") - val("RealExponent[8]")).abs() < 1e-15);
   }
 
   #[test]
   fn complex_uses_modulus() {
     // RealExponent[3 + 4 I] = Log[10, Abs[3+4I]] = Log[10, 5].
     // wolframscript: 0.6989700043360187
-    assert!(
-      (val("RealExponent[3 + 4 I]") - 0.6989700043360187).abs() < 1e-12
-    );
+    assert!((val("RealExponent[3 + 4 I]") - 0.6989700043360187).abs() < 1e-12);
     // RealExponent[3 + 4 I, 5] = Log[5, 5] = 1.
     assert_eq!(interpret("RealExponent[3 + 4 I, 5]").unwrap(), "1.");
   }
@@ -8357,7 +8349,10 @@ mod real_exponent {
   #[test]
   fn real_base() {
     // wolframscript: RealExponent[100, 2.5] = 5.025883189464119
-    assert_eq!(interpret("RealExponent[100, 2.5]").unwrap(), "5.025883189464119");
+    assert_eq!(
+      interpret("RealExponent[100, 2.5]").unwrap(),
+      "5.025883189464119"
+    );
   }
 
   #[test]

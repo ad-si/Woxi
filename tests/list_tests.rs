@@ -642,7 +642,10 @@ mod list_tests {
     // "not yet implemented" warning.
     assert_eq!(interpret("SymmetricGroup[3]").unwrap(), "SymmetricGroup[3]");
     assert_eq!(interpret("SymmetricGroup[5]").unwrap(), "SymmetricGroup[5]");
-    assert_eq!(interpret("Head[SymmetricGroup[3]]").unwrap(), "SymmetricGroup");
+    assert_eq!(
+      interpret("Head[SymmetricGroup[3]]").unwrap(),
+      "SymmetricGroup"
+    );
 
     // GroupOrder[SymmetricGroup[n]] == n! (including the n = 0 trivial case).
     assert_eq!(interpret("GroupOrder[SymmetricGroup[0]]").unwrap(), "1");
@@ -653,8 +656,14 @@ mod list_tests {
     // GroupGenerators[SymmetricGroup[n]]:
     //   n <= 1 -> {}; n == 2 -> single transposition;
     //   n >= 3 -> transposition (1 2) plus the n-cycle.
-    assert_eq!(interpret("GroupGenerators[SymmetricGroup[0]]").unwrap(), "{}");
-    assert_eq!(interpret("GroupGenerators[SymmetricGroup[1]]").unwrap(), "{}");
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[0]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[1]]").unwrap(),
+      "{}"
+    );
     assert_eq!(
       interpret("GroupGenerators[SymmetricGroup[2]]").unwrap(),
       "{Cycles[{{1, 2}}]}"
@@ -675,7 +684,10 @@ mod list_tests {
     // its canonical form (matching wolframscript), with no spurious
     // "not yet implemented" warning.
     assert_eq!(interpret("DihedralGroup[4]").unwrap(), "DihedralGroup[4]");
-    assert_eq!(interpret("Head[DihedralGroup[4]]").unwrap(), "DihedralGroup");
+    assert_eq!(
+      interpret("Head[DihedralGroup[4]]").unwrap(),
+      "DihedralGroup"
+    );
 
     // GroupOrder[DihedralGroup[n]] == 2n (with DihedralGroup[1] of order 2).
     assert_eq!(interpret("GroupOrder[DihedralGroup[1]]").unwrap(), "2");
@@ -1213,7 +1225,10 @@ mod list_tests {
   fn cumulant_numeric_and_unevaluated() {
     // Real-valued data yields a machine-precision result.
     assert_eq!(interpret("Cumulant[{1.0, 2, 3, 4, 5}, 2]").unwrap(), "2.");
-    assert_eq!(interpret("N[Cumulant[{1, 2, 3, 4, 5}, 4]]").unwrap(), "-5.2");
+    assert_eq!(
+      interpret("N[Cumulant[{1, 2, 3, 4, 5}, 4]]").unwrap(),
+      "-5.2"
+    );
     // Non-numeric data stays unevaluated.
     assert_eq!(
       interpret("Cumulant[{a, b, c}, 2]").unwrap(),
@@ -1379,10 +1394,7 @@ mod list_tests {
       "{{9876, 79628, 9876}, {79628, 641984, 79628}, {9876, 79628, 9876}}"
     );
     // Non-numeric / invalid arguments stay symbolic.
-    assert_eq!(
-      interpret("GaussianMatrix[x]").unwrap(),
-      "GaussianMatrix[x]"
-    );
+    assert_eq!(interpret("GaussianMatrix[x]").unwrap(), "GaussianMatrix[x]");
   }
 
   #[test]
@@ -2165,10 +2177,7 @@ mod list_tests {
       "{0, 0, 0}"
     );
     // Only integer 0 is special; real 0. is an ordinary element.
-    assert_eq!(
-      interpret("ArrayComponents[{0., a}]").unwrap(),
-      "{1, 2}"
-    );
+    assert_eq!(interpret("ArrayComponents[{0., a}]").unwrap(), "{1, 2}");
 
     // Level argument controls labeling depth.
     assert_eq!(
@@ -2204,8 +2213,7 @@ mod list_tests {
       "{2, 3, 1, 4, 5}"
     );
     assert_eq!(
-      interpret("ArrayComponents[{a, b, c, d}, 1, {a -> 10, b -> 2}]")
-        .unwrap(),
+      interpret("ArrayComponents[{a, b, c, d}, 1, {a -> 10, b -> 2}]").unwrap(),
       "{10, 2, 1, 3}"
     );
     // A rule can override the default 0 -> 0, or map elements to 0.
