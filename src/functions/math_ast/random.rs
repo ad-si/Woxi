@@ -935,7 +935,10 @@ fn random_permutation_cycles(n: usize) -> Expr {
 
 /// RandomPermutation[n] — a random permutation of `n` points as a `Cycles`
 /// object. RandomPermutation[n, k] — a list of `k` such permutations.
-/// RandomPermutation[{n}, ...] is equivalent to RandomPermutation[n, ...].
+///
+/// A non-integer first argument (e.g. a list like `{4}`) is not a valid point
+/// count or permutation group, so the call stays unevaluated — matching
+/// wolframscript, which emits `RandomPermutation::grp` and returns the input.
 pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -943,18 +946,9 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // First argument: number of points. Accept `n` or `{n}`.
+  // First argument: number of points. Only a non-negative integer is valid.
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
-    Expr::List(items) if items.len() == 1 => match &items[0] {
-      Expr::Integer(n) if *n >= 0 => *n as usize,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "RandomPermutation".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-    },
     _ => {
       return Ok(Expr::FunctionCall {
         name: "RandomPermutation".to_string(),

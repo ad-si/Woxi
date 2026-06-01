@@ -2126,8 +2126,12 @@ mod list_tests {
       "unexpected RandomPermutation[2]: {p2}"
     );
 
-    // {n} is equivalent to n.
-    assert_eq!(interpret("Head[RandomPermutation[{4}]]").unwrap(), "Cycles");
+    // A list like {4} is not a valid point count / permutation group, so the
+    // call stays unevaluated (matching wolframscript's RandomPermutation::grp).
+    assert_eq!(
+      interpret("Head[RandomPermutation[{4}]]").unwrap(),
+      "RandomPermutation"
+    );
 
     // The result is always a valid permutation of 1..n (its list form,
     // padded to length n, sorts back to 1..n).
