@@ -155,6 +155,34 @@ mod date_plus {
     );
   }
   #[test]
+  fn date_plus_multi_unit_applies_every_increment() {
+    // Regression: a multi-increment spec must apply ALL pairs in order, not
+    // just the first. {+1 Month, -1 Day} from the 1st is the month's last day.
+    assert_eq!(
+      interpret("DatePlus[{2013, 8}, {{1, \"Month\"}, {-1, \"Day\"}}]")
+        .unwrap(),
+      "{2013, 8, 31}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2013, 2}, {{1, \"Month\"}, {-1, \"Day\"}}]")
+        .unwrap(),
+      "{2013, 2, 28}"
+    );
+  }
+  #[test]
+  fn date_plus_single_month_pair() {
+    // Regression: a single {n, "unit"} pair (not wrapped in a list) must be
+    // applied; Jan 31 + 1 month clamps to Feb 29 in a leap year.
+    assert_eq!(
+      interpret("DatePlus[{2020, 1, 31}, {1, \"Month\"}]").unwrap(),
+      "{2020, 2, 29}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2013, 12, 15}, {1, \"Year\"}]").unwrap(),
+      "{2014, 12, 15}"
+    );
+  }
+  #[test]
   fn date_plus_quantity_days() {
     assert_eq!(
       interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[7, \"Days\"]]]")

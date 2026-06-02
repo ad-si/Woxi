@@ -719,62 +719,82 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => *n as i64,
     Expr::Real(f) => *f as i64,
     Expr::List(items) => {
-      // List of {n, "unit"} pairs
-      let mut total = 0i64;
-      for item in items {
-        if let Expr::List(pair) = item
-          && pair.len() == 2
-        {
-          let n = match &pair[0] {
-            Expr::Integer(n) => *n as i64,
-            Expr::Real(f) => *f as i64,
-            _ => 0,
-          };
-          let unit = match &pair[1] {
-            Expr::String(s) => s.clone(),
-            Expr::Identifier(s) => s.clone(),
-            _ => String::new(),
-          };
-          total += match unit.as_str() {
-            "Day" => n,
-            "Week" => n * 7,
-            "Month" => {
-              // Add months by adjusting the date
-              let mut new_month = month + n;
-              let mut new_year = year;
-              while new_month > 12 {
-                new_month -= 12;
-                new_year += 1;
-              }
-              while new_month < 1 {
-                new_month += 12;
-                new_year -= 1;
-              }
-              let new_day = day.min(days_in_month(new_year, new_month));
-              return Ok(make_date_result(
-                new_year,
-                new_month,
-                new_day,
-                input_len,
-                input_is_date_object,
-              ));
+      // A delta is either a single {n, "unit"} pair or a list of such pairs
+      // ({{1, "Month"}, {-1, "Day"}}). Normalize to a list of pairs, then
+      // apply each in order to a running date so that, e.g.,
+      // {{1, "Month"}, {-1, "Day"}} adds a month then subtracts a day (the
+      // last day of the month). Month/Year increments adjust calendar fields
+      // (clamping the day to the new month length); Day/Week increments shift
+      // by absolute days.
+      let unit_of = |e: &Expr| -> Option<String> {
+        match e {
+          Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+          _ => None,
+        }
+      };
+      let pairs: Vec<(i64, String)> = if items.len() == 2
+        && matches!(&items[0], Expr::Integer(_) | Expr::Real(_))
+        && unit_of(&items[1]).is_some()
+      {
+        // Single {n, "unit"} pair.
+        let n = match &items[0] {
+          Expr::Integer(n) => *n as i64,
+          Expr::Real(f) => *f as i64,
+          _ => 0,
+        };
+        vec![(n, unit_of(&items[1]).unwrap())]
+      } else {
+        // List of {n, "unit"} pairs.
+        items
+          .iter()
+          .filter_map(|item| match item {
+            Expr::List(pair) if pair.len() == 2 => {
+              let n = match &pair[0] {
+                Expr::Integer(n) => *n as i64,
+                Expr::Real(f) => *f as i64,
+                _ => 0,
+              };
+              unit_of(&pair[1]).map(|u| (n, u))
             }
-            "Year" => {
-              let new_year = year + n;
-              let new_day = day.min(days_in_month(new_year, month));
-              return Ok(make_date_result(
-                new_year,
-                month,
-                new_day,
-                input_len,
-                input_is_date_object,
-              ));
+            _ => None,
+          })
+          .collect()
+      };
+
+      let mut y = year;
+      let mut m = month;
+      let mut d = day;
+      for (n, unit) in &pairs {
+        let n = *n;
+        match unit.as_str() {
+          "Day" | "Week" => {
+            let shift = if unit == "Week" { n * 7 } else { n };
+            let abs = date_to_absolute_days(y, m, d) + shift;
+            let (ny, nm, nd) = absolute_days_to_date(abs);
+            y = ny;
+            m = nm;
+            d = nd;
+          }
+          "Month" => {
+            m += n;
+            while m > 12 {
+              m -= 12;
+              y += 1;
             }
-            _ => n,
-          };
+            while m < 1 {
+              m += 12;
+              y -= 1;
+            }
+            d = d.min(days_in_month(y, m));
+          }
+          "Year" => {
+            y += n;
+            d = d.min(days_in_month(y, m));
+          }
+          _ => {}
         }
       }
-      total
+      return Ok(make_date_result(y, m, d, input_len, input_is_date_object));
     }
     // Quantity[n, "unit"] — treat as a single {n, "unit"} pair
     Expr::FunctionCall {
