@@ -4295,15 +4295,17 @@ mod cases {
   }
   #[test]
   fn get_1() {
+    // Use a test-unique filename: get_1 and get_2 otherwise both write to
+    // `$TemporaryDirectory/example_file` and race under parallel test runs.
     assert_case(
-      r#"filename = $TemporaryDirectory <> "/example_file"; Put[x + y, filename]; Get[filename]"#,
+      r#"filename = $TemporaryDirectory <> "/example_file_get1"; Put[x + y, filename]; Get[filename]"#,
       r#"x + y"#,
     );
   }
   #[test]
   fn get_2() {
     assert_case(
-      r#"filename = $TemporaryDirectory <> "/example_file"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "/example_file"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#,
+      r#"filename = $TemporaryDirectory <> "/example_file_get2"; Put[x + y, filename]; Get[filename]; filename = $TemporaryDirectory <> "/example_file_get2"; Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]; Get[filename]"#,
       r#"Cos[x] + I*Sin[x]"#,
     );
   }
