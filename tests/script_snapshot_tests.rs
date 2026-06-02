@@ -1157,6 +1157,9 @@ script_test!(
   "terminal_control_unicode_output.wls"
 );
 
+// === Unlocked by Part-assignment descending into Associations ===
+script_test!(script_deepcopy, "deepcopy.wls");
+
 script_test!(
   script_case_sensitivity_of_identifiers,
   "case-sensitivity_of_identifiers.wls"

@@ -782,28 +782,49 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Evaluate the RHS
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
-    // Single-index association assignment: myHash[["key"]] = value
-    if eval_indices.len() == 1 {
-      let is_assoc = crate::ENV.with(|e| {
+    // Part assignment into a variable bound to an Association (stored in the
+    // string-keyed `StoredValue::Association` form). Convert it to an
+    // `Expr::Association`, apply the assignment via `set_part_deep` — which
+    // handles integer positions, keys, and deeply-nested targets uniformly —
+    // then store the result back. This covers `myHash[["key"]] = v`,
+    // `myHash[[1]] = v` (n-th value by position), and deep paths such as
+    // `a[["x", "n"]] = v`.
+    let is_assoc = crate::ENV.with(|e| {
+      let env = e.borrow();
+      matches!(env.get(&var_name), Some(StoredValue::Association(_)))
+    });
+    if is_assoc {
+      let mut assoc_expr = crate::ENV.with(|e| {
         let env = e.borrow();
-        matches!(env.get(&var_name), Some(StoredValue::Association(_)))
-      });
-      if is_assoc {
-        // Use expr_to_string to match the storage format (preserves string quotes)
-        let key = expr_to_string(&eval_indices[0]);
-        crate::ENV.with(|e| {
-          let mut env = e.borrow_mut();
-          if let Some(StoredValue::Association(pairs)) = env.get_mut(&var_name)
-          {
-            if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
-              pair.1 = expr_to_string(&rhs_value);
-            } else {
-              pairs.push((key, expr_to_string(&rhs_value)));
-            }
+        match env.get(&var_name) {
+          Some(StoredValue::Association(items)) => {
+            let pairs: Vec<(Expr, Expr)> = items
+              .iter()
+              .map(|(k, v)| {
+                (
+                  string_to_expr(k).unwrap_or_else(|_| Expr::String(k.clone())),
+                  string_to_expr(v).unwrap_or_else(|_| Expr::String(v.clone())),
+                )
+              })
+              .collect();
+            Expr::Association(pairs)
           }
-        });
-        return Ok(rhs_value);
-      }
+          _ => unreachable!("is_assoc guarantees a stored Association"),
+        }
+      });
+      set_part_deep(&mut assoc_expr, &eval_indices, &rhs_value)?;
+      let new_value = match &assoc_expr {
+        Expr::Association(items) => StoredValue::Association(
+          items
+            .iter()
+            .map(|(k, v)| (expr_to_string(k), expr_to_string(v)))
+            .collect(),
+        ),
+        // The whole association was replaced by a non-association value.
+        other => StoredValue::ExprVal(other.clone()),
+      };
+      crate::ENV.with(|e| e.borrow_mut().insert(var_name.clone(), new_value));
+      return Ok(rhs_value);
     }
 
     // General Part assignment: modify in-place if ExprVal, otherwise parse/modify/store

@@ -1097,6 +1097,51 @@ pub fn set_part_deep(
     return Ok(());
   }
 
+  // Association assignment: an integer position selects the n-th value
+  // (mirroring the Part read semantics), while a key selects the value for
+  // that key (appending a new entry when the key is absent).
+  if let Expr::Association(pairs) = expr {
+    use num_traits::ToPrimitive;
+    let pos = match &indices[0] {
+      Expr::Integer(n) => Some(*n as i64),
+      Expr::BigInteger(n) => n.to_i64(),
+      _ => None,
+    };
+    if let Some(n) = pos {
+      let len = pairs.len() as i64;
+      let actual_idx = if n < 0 { len + n } else { n - 1 };
+      if actual_idx < 0 || actual_idx >= len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Part::partw: Part {} of association does not exist.",
+          n
+        )));
+      }
+      return set_part_deep(
+        &mut pairs[actual_idx as usize].1,
+        &indices[1..],
+        value,
+      );
+    }
+    // Key-based index: match on the string form (quote-insensitive).
+    let key_cmp = expr_to_string(&indices[0]).trim_matches('"').to_string();
+    if let Some(pair) = pairs
+      .iter_mut()
+      .find(|(k, _)| expr_to_string(k).trim_matches('"') == key_cmp)
+    {
+      return set_part_deep(&mut pair.1, &indices[1..], value);
+    }
+    // Absent key: append it when this is the final index; descending deeper
+    // into a key that does not exist is an error (matching wolframscript).
+    if indices.len() == 1 {
+      pairs.push((indices[0].clone(), value.clone()));
+      return Ok(());
+    }
+    return Err(InterpreterError::EvaluationError(format!(
+      "Part::partw: Part {} of association does not exist.",
+      key_cmp
+    )));
+  }
+
   let idx = match &indices[0] {
     Expr::Integer(n) => *n as i64,
     Expr::BigInteger(n) => {

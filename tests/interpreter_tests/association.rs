@@ -114,6 +114,39 @@ mod association_part_assignment {
       interpret(r#"myHash = <|"A" -> 1|>; myHash[["B"]] = 2; myHash"#).unwrap();
     assert_eq!(result, "<|A -> 1, B -> 2|>");
   }
+
+  #[test]
+  fn association_assign_by_integer_position() {
+    // a[[n]] = v selects the n-th value by position (not a new "n" key).
+    let result =
+      interpret(r#"a = <|"x" -> 1, "y" -> 2|>; a[[1]] = 9; a"#).unwrap();
+    assert_eq!(result, "<|x -> 9, y -> 2|>");
+  }
+
+  #[test]
+  fn association_assign_by_negative_position() {
+    let result =
+      interpret(r#"a = <|"x" -> 1, "y" -> 2|>; a[[-1]] = 9; a"#).unwrap();
+    assert_eq!(result, "<|x -> 1, y -> 9|>");
+  }
+
+  #[test]
+  fn association_assign_deep_key_path() {
+    // Deep Part assignment descending through a nested association by key.
+    let result =
+      interpret(r#"a = <|"x" -> <|"n" -> 5|>|>; a[["x", "n"]] = 7; a"#)
+        .unwrap();
+    assert_eq!(result, "<|x -> <|n -> 7|>|>");
+  }
+
+  #[test]
+  fn association_assign_nested_in_list() {
+    // Regression for the `deepcopy` Rosetta task: Part assignment that
+    // descends a list, into an association value, then into a nested list.
+    let result =
+      interpret(r#"a = {<|"k" -> {10, 20}|>}; a[[1, 1, 2]] = 99; a"#).unwrap();
+    assert_eq!(result, "{<|k -> {10, 99}|>}");
+  }
 }
 
 mod association_literal_access {
