@@ -449,6 +449,17 @@ mod streams {
     let result = interpret(r#"WriteString["stdout", "Hola"]"#).unwrap();
     assert_eq!(result, "\0");
   }
+
+  // `WriteString[$Output, …]` writes to stdout and, unlike the raw print!
+  // path, is captured by `interpret_with_stdout` (no trailing newline).
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_dollar_output_captured() {
+    let result =
+      interpret_with_stdout(r#"WriteString[$Output, "Goodbye, World!"]"#)
+        .unwrap();
+    assert_eq!(result.stdout, "Goodbye, World!");
+  }
 }
 
 mod find_file {

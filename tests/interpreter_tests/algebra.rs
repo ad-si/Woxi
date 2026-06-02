@@ -5092,6 +5092,24 @@ mod find_sequence_function {
   }
 
   #[test]
+  fn operator_form_applied() {
+    // One-argument operator form: FindSequenceFunction[seq][k] is the k-th term.
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 4, 9, 16, 25}][6]").unwrap(),
+      "36"
+    );
+  }
+
+  #[test]
+  fn operator_form_mapped() {
+    // Operator form composes with Map (`/@`).
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 2, 4, 7, 11}] /@ Range[6]").unwrap(),
+      "{1, 2, 4, 7, 11, 16}"
+    );
+  }
+
+  #[test]
   fn cubes() {
     assert_eq!(
       interpret("FindSequenceFunction[{1, 8, 27, 64, 125}, n]").unwrap(),

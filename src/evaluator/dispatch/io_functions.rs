@@ -1923,20 +1923,31 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "WriteString" if args.len() >= 2 => {
       let stream = &args[0];
-      // Special-case the standard stream names so `WriteString["stdout", …]`
-      // writes to the process's stdout, matching wolframscript.
-      if let Expr::String(name) = stream
-        && (name == "stdout" || name == "stderr")
-      {
+      // Special-case the standard streams so `WriteString["stdout", …]` and
+      // `WriteString[$Output, …]` write to the process's stdout, matching
+      // wolframscript. `$Output`/`"stdout"` map to stdout, `$Messages`/
+      // `"stderr"` to stderr. Stdout writes also go through the captured
+      // buffer (like Print) so they appear in `interpret_with_stdout`.
+      let std_target = match stream {
+        Expr::String(name) if name == "stdout" => Some(true),
+        Expr::String(name) if name == "stderr" => Some(false),
+        Expr::Identifier(name) if name == "$Output" => Some(true),
+        Expr::Identifier(name) if name == "$Messages" => Some(false),
+        _ => None,
+      };
+      if let Some(is_stdout) = std_target {
         use std::io::Write;
         for arg in &args[1..] {
           let text = match arg {
             Expr::String(s) => s.clone(),
             other => crate::syntax::expr_to_string(other),
           };
-          if name == "stdout" {
-            print!("{}", text);
-            let _ = std::io::stdout().flush();
+          if is_stdout {
+            if !crate::is_quiet_print() {
+              print!("{}", text);
+              let _ = std::io::stdout().flush();
+            }
+            crate::capture_stdout_raw(&text);
           } else {
             eprint!("{}", text);
             let _ = std::io::stderr().flush();

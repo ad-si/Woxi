@@ -1,0 +1,1 @@
+WriteString[$Output, "Goodbye, World!"]

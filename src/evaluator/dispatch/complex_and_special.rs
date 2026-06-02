@@ -2008,6 +2008,40 @@ pub fn dispatch_complex_and_special(
     "FindSequenceFunction" if args.len() == 2 => {
       return Some(find_sequence_function(&args[0], &args[1]));
     }
+    // Operator form: `FindSequenceFunction[seq]` returns a pure function such
+    // that `FindSequenceFunction[seq][k]` is the k-th term. We build the
+    // formula over a temporary variable and rewrite it to a `#1`-slot
+    // function so it composes with Map etc.
+    "FindSequenceFunction" if args.len() == 1 => {
+      let formula = match find_sequence_function(
+        &args[0],
+        &Expr::Identifier("\u{f3a7}fsfvar".to_string()),
+      ) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      // If the formula couldn't be found it comes back as the unevaluated
+      // 2-arg call; keep the operator form unevaluated in that case.
+      if let Expr::FunctionCall {
+        name: fname,
+        args: _,
+      } = &formula
+        && fname == "FindSequenceFunction"
+      {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FindSequenceFunction".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      let body = crate::syntax::substitute_variable(
+        &formula,
+        "\u{f3a7}fsfvar",
+        &Expr::Slot(1),
+      );
+      return Some(Ok(Expr::Function {
+        body: Box::new(body),
+      }));
+    }
     // Activate[expr] — replace Inactive[f][args...] with f[args...] and evaluate
     "Activate" if args.len() == 1 || args.len() == 2 => {
       let filter: Option<Vec<String>> = if args.len() == 2 {

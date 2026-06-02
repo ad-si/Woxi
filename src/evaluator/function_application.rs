@@ -426,6 +426,17 @@ pub fn apply_function_to_arg(
       evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall { name, args } => {
+      // Operator forms that evaluate to an actual function: evaluate the head
+      // first, then apply the result. `FindSequenceFunction[seq]` becomes a
+      // pure function, so `FindSequenceFunction[seq][k]` must apply it rather
+      // than flatten to the (erroring) 2-arg `FindSequenceFunction[seq, k]`.
+      if name == "FindSequenceFunction" && args.len() == 1 {
+        let evaluated = evaluate_function_call_ast(name, args)?;
+        if !matches!(&evaluated, Expr::FunctionCall { name: n, .. } if n == name)
+        {
+          return apply_function_to_arg(&evaluated, arg);
+        }
+      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)

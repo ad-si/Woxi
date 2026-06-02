@@ -18,7 +18,7 @@ pub fn dispatch_datetime_functions(
     "DayPlus" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::datetime_ast::day_plus_ast(args));
     }
-    "DayRange" if args.len() == 2 => {
+    "DayRange" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::datetime_ast::day_range_ast(args));
     }
     "DateDifference" if args.len() >= 2 => {

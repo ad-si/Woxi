@@ -1531,34 +1531,90 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// consults CalendarData, so e.g. New Year's Day is excluded from
 /// "BusinessDay"), which cannot be reproduced without that data. Producing a
 /// non-holiday-aware result would diverge from wolframscript.
+/// Map a weekday symbol name to `day_of_week`'s index (0=Monday … 6=Sunday).
+fn weekday_index(name: &str) -> Option<i64> {
+  match name {
+    "Monday" => Some(0),
+    "Tuesday" => Some(1),
+    "Wednesday" => Some(2),
+    "Thursday" => Some(3),
+    "Friday" => Some(4),
+    "Saturday" => Some(5),
+    "Sunday" => Some(6),
+    _ => None,
+  }
+}
+
 pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "DayRange".to_string(),
       args: args.to_vec().into(),
     });
   }
 
+  // Optional 3rd argument: a weekday (or list of weekdays) to keep, e.g.
+  // `DayRange[start, end, Sunday]`.
+  let weekday_filter: Option<Vec<i64>> = if args.len() == 3 {
+    let spec = crate::evaluator::evaluate_expr_to_expr(&args[2])?;
+    let names: Vec<&Expr> = match &spec {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    let mut idxs = Vec::new();
+    for e in names {
+      match e {
+        Expr::Identifier(n) | Expr::Constant(n) => match weekday_index(n) {
+          Some(i) => idxs.push(i),
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "DayRange".to_string(),
+              args: args.to_vec().into(),
+            });
+          }
+        },
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "DayRange".to_string(),
+            args: args.to_vec().into(),
+          });
+        }
+      }
+    }
+    Some(idxs)
+  } else {
+    None
+  };
+
   let start_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   let end_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
 
-  let start_comp = match extract_date_components(&start_arg) {
-    Some(c) if c.len() >= 3 => c,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DayRange".to_string(),
-        args: args.to_vec().into(),
-      });
+  // Accept partial date specs: `{y}` and `{y, m}` default the missing month
+  // and day to 1, matching wolframscript (`DayRange[{2013, 1}, …]`).
+  let pad_date = |c: Vec<f64>| -> Option<Vec<f64>> {
+    if c.is_empty() {
+      return None;
     }
+    let mut out = c;
+    while out.len() < 3 {
+      out.push(1.0);
+    }
+    Some(out)
   };
-  let end_comp = match extract_date_components(&end_arg) {
-    Some(c) if c.len() >= 3 => c,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DayRange".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DayRange".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  let start_comp = match extract_date_components(&start_arg).and_then(pad_date) {
+    Some(c) => c,
+    None => return unevaluated(),
+  };
+  let end_comp = match extract_date_components(&end_arg).and_then(pad_date) {
+    Some(c) => c,
+    None => return unevaluated(),
   };
 
   let mut abs_start = date_to_absolute_days(
@@ -1581,21 +1637,27 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut abs = abs_start;
   while abs <= abs_end {
     let (y, m, d) = absolute_days_to_date(abs);
-    result.push(Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![
-        Expr::List(
-          vec![
-            Expr::Integer(y as i128),
-            Expr::Integer(m as i128),
-            Expr::Integer(d as i128),
-          ]
-          .into(),
-        ),
-        Expr::String("Day".to_string()),
-      ]
-      .into(),
-    });
+    let keep = match &weekday_filter {
+      Some(idxs) => idxs.contains(&day_of_week(y, m, d)),
+      None => true,
+    };
+    if keep {
+      result.push(Expr::FunctionCall {
+        name: "DateObject".to_string(),
+        args: vec![
+          Expr::List(
+            vec![
+              Expr::Integer(y as i128),
+              Expr::Integer(m as i128),
+              Expr::Integer(d as i128),
+            ]
+            .into(),
+          ),
+          Expr::String("Day".to_string()),
+        ]
+        .into(),
+      });
+    }
     abs += 1;
   }
 

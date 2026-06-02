@@ -959,6 +959,16 @@ mod cases {
   }
 
   #[test]
+  fn day_range_weekday_filter() {
+    // 3-argument form keeps only the given weekday; `{2013, 1}` defaults the
+    // day to 1.
+    assert_case(
+      r#"DayRange[{2013, 1}, {2013, 1, 31}, Sunday]"#,
+      r#"{DateObject[{2013, 1, 6}, Day], DateObject[{2013, 1, 13}, Day], DateObject[{2013, 1, 20}, Day], DateObject[{2013, 1, 27}, Day]}"#,
+    );
+  }
+
+  #[test]
   fn day_range_month_boundary() {
     assert_case(
       r#"DayRange[{2020, 1, 30}, {2020, 2, 2}]"#,

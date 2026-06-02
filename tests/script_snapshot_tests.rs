@@ -1163,6 +1163,14 @@ script_test!(script_deepcopy, "deepcopy.wls");
 // === Unlocked by script-mode Column rendering as `Column[{…}]` ===
 script_test!(script_twelve_statements, "twelve_statements.wls");
 
+// === Unlocked by the FindSequenceFunction operator form (`f[seq][k]`) ===
+script_test!(script_floyds_triangle, "floyds_triangle.wls");
+// === Unlocked by WriteString[$Output, …] writing to captured stdout ===
+script_test!(
+  script_hello_world_newline_omission,
+  "hello_world_newline_omission.wls"
+);
+
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===
 script_test!(script_bitwise_operations, "bitwise_operations.wls");
