@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{{1, 3 - 4*I}, {-2*I, 5}, {3, -I}}

@@ -1163,6 +1163,18 @@ script_test!(script_deepcopy, "deepcopy.wls");
 // === Unlocked by script-mode Column rendering as `Column[{…}]` ===
 script_test!(script_twelve_statements, "twelve_statements.wls");
 
+// === RosettaCode tasks curated from the _tasks_ source dumps into a single
+//     runnable solution (output verified identical to wolframscript) ===
+script_test!(script_bitwise_operations, "bitwise_operations.wls");
+script_test!(script_compound_data_type, "compound_data_type.wls");
+script_test!(script_conjugate_transpose, "conjugate_transpose.wls");
+script_test!(script_literals_integer, "literals_integer.wls");
+script_test!(script_sort_disjoint_sublist, "sort_disjoint_sublist.wls");
+script_test!(
+  script_sorting_algorithms_merge_sort,
+  "sorting_algorithms_merge_sort.wls"
+);
+
 script_test!(
   script_case_sensitivity_of_identifiers,
   "case-sensitivity_of_identifiers.wls"
