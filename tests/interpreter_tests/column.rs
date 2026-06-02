@@ -6,14 +6,17 @@ mod column_text_mode {
   #[test]
   fn column_basic_list() {
     clear_state();
-    // Column displays each element on a new line in OutputForm
-    assert_eq!(interpret("Column[{1, 2, 3}]").unwrap(), "1\n2\n3");
+    // Without a front-end (CLI / script mode, matching wolframscript) Column
+    // has no built-up typeset form and prints verbatim as `Column[{…}]`.
+    // The vertical-stacking layout is only produced in visual mode (see
+    // `column_visual_mode` below).
+    assert_eq!(interpret("Column[{1, 2, 3}]").unwrap(), "Column[{1, 2, 3}]");
   }
 
   #[test]
   fn column_symbolic() {
     clear_state();
-    assert_eq!(interpret("Column[{a, b, c}]").unwrap(), "a\nb\nc");
+    assert_eq!(interpret("Column[{a, b, c}]").unwrap(), "Column[{a, b, c}]");
   }
 
   #[test]
@@ -31,20 +34,29 @@ mod column_text_mode {
   #[test]
   fn column_with_center_alignment() {
     clear_state();
-    // Alignment is a display hint; text mode still shows newlines
-    assert_eq!(interpret("Column[{1, 2, 3}, Center]").unwrap(), "1\n2\n3");
+    // Alignment is carried along in the verbatim form in text mode.
+    assert_eq!(
+      interpret("Column[{1, 2, 3}, Center]").unwrap(),
+      "Column[{1, 2, 3}, Center]"
+    );
   }
 
   #[test]
   fn column_with_left_alignment() {
     clear_state();
-    assert_eq!(interpret("Column[{1, 2, 3}, Left]").unwrap(), "1\n2\n3");
+    assert_eq!(
+      interpret("Column[{1, 2, 3}, Left]").unwrap(),
+      "Column[{1, 2, 3}, Left]"
+    );
   }
 
   #[test]
   fn column_with_right_alignment() {
     clear_state();
-    assert_eq!(interpret("Column[{1, 2, 3}, Right]").unwrap(), "1\n2\n3");
+    assert_eq!(
+      interpret("Column[{1, 2, 3}, Right]").unwrap(),
+      "Column[{1, 2, 3}, Right]"
+    );
   }
 
   #[test]
@@ -56,16 +68,18 @@ mod column_text_mode {
   #[test]
   fn column_evaluates_args() {
     clear_state();
-    assert_eq!(interpret("Column[{1 + 1, 2 + 2}]").unwrap(), "2\n4");
+    assert_eq!(
+      interpret("Column[{1 + 1, 2 + 2}]").unwrap(),
+      "Column[{2, 4}]"
+    );
   }
 
   #[test]
   fn column_nested_in_list() {
     clear_state();
-    // Inside a list, Column renders with newlines
     assert_eq!(
       interpret("{Column[{1, 2}], Column[{3, 4}]}").unwrap(),
-      "{1\n2, 3\n4}"
+      "{Column[{1, 2}], Column[{3, 4}]}"
     );
   }
 
@@ -74,7 +88,7 @@ mod column_text_mode {
     clear_state();
     assert_eq!(
       interpret("Column[{1, 2, 3}, Center, 4]").unwrap(),
-      "1\n2\n3"
+      "Column[{1, 2, 3}, Center, 4]"
     );
   }
 }
@@ -140,8 +154,9 @@ mod column_visual_mode {
   fn column_empty_list_passthrough() {
     clear_state();
     let result = interpret_with_stdout("Column[{}]").unwrap();
-    // Empty list renders as empty string
-    assert_eq!(result.result, "");
+    // An empty column has no visual form and prints verbatim (matching
+    // wolframscript's `Column[{}]`).
+    assert_eq!(result.result, "Column[{}]");
   }
 
   #[test]

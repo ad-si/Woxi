@@ -7251,15 +7251,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // wrapper in both InputForm and OutputForm — Wolfram substitutes only
       // when the user explicitly calls ToString. Fall through to the
       // general FunctionCall renderer below.
-      // OutputForm-only: Column[{exprs...}] displays each element on a new line
-      if is_output
-        && name == "Column"
-        && !args.is_empty()
-        && let Expr::List(items) = &args[0]
-      {
-        let parts: Vec<String> = items.iter().map(&fmt).collect();
-        return parts.join("\n");
-      }
+      // `Column[{…}]` has no plain-text typeset form without a front-end:
+      // wolframscript's script mode prints it verbatim as `Column[{…}]`.
+      // (Visual contexts render it as an SVG earlier, via
+      // `render_column_if_needed`.) Fall through to the FunctionCall renderer.
       // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
       if is_output
         && name == "Row"

@@ -1160,6 +1160,9 @@ script_test!(
 // === Unlocked by Part-assignment descending into Associations ===
 script_test!(script_deepcopy, "deepcopy.wls");
 
+// === Unlocked by script-mode Column rendering as `Column[{…}]` ===
+script_test!(script_twelve_statements, "twelve_statements.wls");
+
 script_test!(
   script_case_sensitivity_of_identifiers,
   "case-sensitivity_of_identifiers.wls"
