@@ -3124,6 +3124,75 @@ fn match_pattern_impl(
       name: pat_name,
       args: pat_args,
     } => {
+      // Head-pattern: the pattern's head is itself a blank/pattern, e.g.
+      // `a_[b__]`. A symbol head never contains `_`, so this only fires for
+      // genuine patterns. Bind the head pattern to the expression's head,
+      // then match the argument patterns (sequences included). The subject is
+      // either a `FunctionCall` (symbol head) or a single-level `CurriedCall`
+      // (non-symbol head, e.g. the integer-headed `2[4, 5]`).
+      let head_subject: Option<(Expr, &[Expr])> = match expr {
+        Expr::FunctionCall { name, args } => {
+          Some((Expr::Identifier(name.clone()), args.as_slice()))
+        }
+        Expr::CurriedCall { func, args }
+          if !matches!(func.as_ref(), Expr::CurriedCall { .. }) =>
+        {
+          Some(((**func).clone(), args.as_slice()))
+        }
+        _ => None,
+      };
+      if pat_name.contains('_')
+        && let Some((expr_head, expr_args)) = head_subject
+      {
+        // Build a proper Pattern node from the head string so any head
+        // constraint (e.g. `b_Integer`) is honoured, not just the name.
+        let (hp_name, hp_head, hp_blank) =
+          crate::evaluator::assignment::extract_pattern_info(
+            &Expr::Identifier(pat_name.clone()),
+          );
+        let head_pattern = Expr::Pattern {
+          name: hp_name,
+          head: hp_head,
+          blank_type: hp_blank,
+        };
+        if let Some(mut bindings) = match_pattern(&expr_head, &head_pattern) {
+          let arg_bindings = if pat_args
+            .iter()
+            .any(|p| get_sequence_info(p).is_some())
+          {
+            match_args_with_sequences(expr_args, pat_args)
+          } else if pat_args.len() == expr_args.len() {
+            let mut bs: Vec<(String, Expr)> = Vec::new();
+            let mut ok = true;
+            for (e, p) in expr_args.iter().zip(pat_args.iter()) {
+              push_match_context(&bs);
+              let r = match_pattern(e, p);
+              pop_match_context();
+              match r {
+                Some(b) => {
+                  if !merge_bindings(&mut bs, b) {
+                    ok = false;
+                    break;
+                  }
+                }
+                None => {
+                  ok = false;
+                  break;
+                }
+              }
+            }
+            if ok { Some(bs) } else { None }
+          } else {
+            None
+          };
+          if let Some(ab) = arg_bindings
+            && merge_bindings(&mut bindings, ab)
+          {
+            return Some(bindings);
+          }
+        }
+        return None;
+      }
       if let Expr::FunctionCall {
         name: expr_name,
         args: expr_args,

@@ -3756,3 +3756,45 @@ f[x_] := x^2"#,
     );
   }
 }
+
+mod curried_and_head_patterns {
+  use super::*;
+
+  #[test]
+  fn subvalue_curried_definition() {
+    // `f[a, b][x] := …` (a SubValue) fires when the curried form is applied.
+    assert_eq!(
+      interpret("compose[f_, g_][x_] := f[g[x]]; compose[Sin, Cos][r]")
+        .unwrap(),
+      "Sin[Cos[r]]"
+    );
+  }
+
+  #[test]
+  fn head_pattern_definition_symbol_head() {
+    // `f[a_[b__]] := …` binds the head pattern and the argument sequence.
+    assert_eq!(
+      interpret("f[a_[b__]] := {a, b}; f[g[1, 2, 3]]").unwrap(),
+      "{g, 1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn integer_head_application_parses() {
+    // A numeric literal used as a head: `1[2, 3]` is a valid expression.
+    assert_eq!(interpret("Head[1[2, 3]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn head_pattern_with_integer_head() {
+    // Head pattern matching descends into an integer-headed expression.
+    assert_eq!(
+      interpret(
+        "pre[a_Integer] := a; pre[a_[b__]] := Flatten@{a, pre /@ {b}}; \
+         pre[1[2[4[7], 5], 3[6[8, 9]]]]"
+      )
+      .unwrap(),
+      "{1, 2, 4, 7, 5, 3, 6, 8, 9}"
+    );
+  }
+}

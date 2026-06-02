@@ -961,6 +961,38 @@ pub fn apply_curried_call(
           evaluate_expr_to_expr(&substituted)
         }
       } else {
+        // Try SubValue rules registered via `f[a][b] := …`. Reconstruct the
+        // full curried call and match it against each stored rule keyed by the
+        // outermost head; on a match, substitute the bindings into the body.
+        let outer_head = {
+          let mut inner: &Expr = func;
+          loop {
+            match inner {
+              Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
+              Expr::FunctionCall { name, .. } => break Some(name.clone()),
+              _ => break None,
+            }
+          }
+        };
+        if let Some(head) = outer_head {
+          let rules = crate::evaluator::assignment::SUB_VALUES
+            .with(|m| m.borrow().get(&head).cloned());
+          if let Some(rules) = rules {
+            let actual = Expr::CurriedCall {
+              func: Box::new(func.clone()),
+              args: args.to_vec(),
+            };
+            for (lhs, body) in &rules {
+              if let Some(bindings) =
+                crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
+              {
+                return crate::evaluator::pattern_matching::apply_bindings(
+                  body, &bindings,
+                );
+              }
+            }
+          }
+        }
         // Unknown/symbolic curried call: preserve the CurriedCall form
         // e.g. f[g][x] stays as f[g][x], not f[g, x]
         Ok(Expr::CurriedCall {

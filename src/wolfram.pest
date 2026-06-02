@@ -116,6 +116,10 @@ SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Id
 // Optional BracketArgs allow direct calls: If[# > 0, #, 0]&[5]
 // ListCall handles List used as a function head: {f, g}[x] → applies each element to args
 ListCall = { List ~ BracketArgs+ }
+// NumericCall handles a numeric literal used as a function head, e.g.
+// `1[2, 3]` (an expression with an integer head, used for labelled trees).
+// Restricted to numeric literals (not Constants) and mirrors `(1)[2, 3]`.
+NumericCall = { (Real | IntegerScientific | Integer) ~ BracketArgs+ }
 // ListExtended merges List, ListCall, and List-based PartExtract into a single
 // rule to avoid exponential backtracking. Parses List ONCE, then checks for
 // optional Part or Call suffixes.
@@ -431,6 +435,7 @@ Term = _{
   | String
   | ListExtended
   | DerivativeNumeric
+  | NumericCall
   | NumericValue
   | PreIncrement
   | PreDecrement
@@ -486,6 +491,7 @@ TermNoImplicit = _{
   | String
   | ListExtended
   | DerivativeNumeric
+  | NumericCall
   | NumericValue
   | PreIncrement
   | PreDecrement

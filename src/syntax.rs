@@ -3441,6 +3441,37 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
       result
     }
+    Rule::NumericCall => {
+      // 1[2, 3] → CurriedCall with the numeric literal as the func (matches
+      // the structure of `(1)[2, 3]`).
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let head_expr = pair_to_expr(inner_pairs[0].clone());
+      let bracket_sequences: Vec<Vec<Expr>> = inner_pairs[1..]
+        .iter()
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| {
+          bracket
+            .clone()
+            .into_inner()
+            .filter(|p| {
+              p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+            })
+            .map(pair_to_expr)
+            .collect()
+        })
+        .collect();
+      let mut result = Expr::CurriedCall {
+        func: Box::new(head_expr),
+        args: bracket_sequences[0].clone(),
+      };
+      for args in bracket_sequences.into_iter().skip(1) {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args,
+        };
+      }
+      result
+    }
     Rule::RuleAnonymousFunction => {
       // Anonymous function with Rule body: {#, First@#2} -> "Q" &
       let inner = pair.into_inner().next().unwrap(); // The ReplacementRule

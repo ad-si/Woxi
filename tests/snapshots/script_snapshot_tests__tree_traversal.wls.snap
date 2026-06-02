@@ -2,4 +2,6 @@
 source: tests/script_snapshot_tests.rs
 expression: stdout
 ---
-
+{1, 2, 4, 7, 5, 3, 6, 8, 9}
+{7, 4, 2, 5, 1, 8, 6, 9, 3}
+{7, 4, 5, 2, 8, 9, 6, 3, 1}
