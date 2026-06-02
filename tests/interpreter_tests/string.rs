@@ -78,6 +78,14 @@ mod string_join_with_list {
   }
 
   #[test]
+  fn string_join_no_args() {
+    // StringJoin[] is the empty string (matches wolframscript); this also
+    // lets `StringJoin @@ {}` fold to "" instead of erroring.
+    assert_eq!(interpret("StringJoin[]").unwrap(), "");
+    assert_eq!(interpret("StringJoin @@ {}").unwrap(), "");
+  }
+
+  #[test]
   fn string_join_multiple_args() {
     assert_eq!(
       interpret("StringJoin[\"hello\", \" \", \"world\"]").unwrap(),

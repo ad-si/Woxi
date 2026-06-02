@@ -326,10 +326,10 @@ pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringJoin[s1, s2, ...] or StringJoin[{s1, s2, ...}] - concatenates strings
 pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // StringJoin[] with no arguments is the empty string (matches wolframscript);
+  // this also lets `StringJoin @@ {}` fold cleanly to "".
   if args.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "StringJoin expects at least 1 argument".into(),
-    ));
+    return Ok(Expr::String(String::new()));
   }
 
   // Validate: every leaf must be a string; lists of strings are flattened.

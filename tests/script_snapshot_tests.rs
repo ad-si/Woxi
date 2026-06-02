@@ -1175,6 +1175,12 @@ script_test!(
   "sorting_algorithms_merge_sort.wls"
 );
 
+// === Unlocked by StringJoin[] -> "" (empty StringJoin @@ {} folds cleanly) ===
+script_test!(
+  script_old_lady_swallowed_a_fly,
+  "old_lady_swallowed_a_fly.wls"
+);
+
 script_test!(
   script_case_sensitivity_of_identifiers,
   "case-sensitivity_of_identifiers.wls"
