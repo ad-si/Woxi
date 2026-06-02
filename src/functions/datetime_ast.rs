@@ -1608,7 +1608,8 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   };
 
-  let start_comp = match extract_date_components(&start_arg).and_then(pad_date) {
+  let start_comp = match extract_date_components(&start_arg).and_then(pad_date)
+  {
     Some(c) => c,
     None => return unevaluated(),
   };

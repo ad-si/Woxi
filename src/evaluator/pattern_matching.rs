@@ -3156,35 +3156,33 @@ fn match_pattern_impl(
           blank_type: hp_blank,
         };
         if let Some(mut bindings) = match_pattern(&expr_head, &head_pattern) {
-          let arg_bindings = if pat_args
-            .iter()
-            .any(|p| get_sequence_info(p).is_some())
-          {
-            match_args_with_sequences(expr_args, pat_args)
-          } else if pat_args.len() == expr_args.len() {
-            let mut bs: Vec<(String, Expr)> = Vec::new();
-            let mut ok = true;
-            for (e, p) in expr_args.iter().zip(pat_args.iter()) {
-              push_match_context(&bs);
-              let r = match_pattern(e, p);
-              pop_match_context();
-              match r {
-                Some(b) => {
-                  if !merge_bindings(&mut bs, b) {
+          let arg_bindings =
+            if pat_args.iter().any(|p| get_sequence_info(p).is_some()) {
+              match_args_with_sequences(expr_args, pat_args)
+            } else if pat_args.len() == expr_args.len() {
+              let mut bs: Vec<(String, Expr)> = Vec::new();
+              let mut ok = true;
+              for (e, p) in expr_args.iter().zip(pat_args.iter()) {
+                push_match_context(&bs);
+                let r = match_pattern(e, p);
+                pop_match_context();
+                match r {
+                  Some(b) => {
+                    if !merge_bindings(&mut bs, b) {
+                      ok = false;
+                      break;
+                    }
+                  }
+                  None => {
                     ok = false;
                     break;
                   }
                 }
-                None => {
-                  ok = false;
-                  break;
-                }
               }
-            }
-            if ok { Some(bs) } else { None }
-          } else {
-            None
-          };
+              if ok { Some(bs) } else { None }
+            } else {
+              None
+            };
           if let Some(ab) = arg_bindings
             && merge_bindings(&mut bindings, ab)
           {
