@@ -1176,6 +1176,11 @@ script_test!(
   script_find_the_last_sunday_of_each_month,
   "find_the_last_sunday_of_each_month.wls"
 );
+// === Unlocked by RealDigits padding exact values with 0 (not Indeterminate) ===
+script_test!(
+  script_decimal_floating_point_number_to_binary,
+  "decimal_floating_point_number_to_binary.wls"
+);
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===

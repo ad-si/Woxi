@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+NumberForm[23.34375, {9, 5}] => 10111.01011
+NumberForm[1011.11101, {9, 5}] => NumberForm[11.90625, {9, 5}]

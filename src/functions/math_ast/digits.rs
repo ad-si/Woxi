@@ -1666,10 +1666,11 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else if matches!(&args[0], Expr::Real(_)) && base != 10 {
-    // For machine-precision Reals in a non-decimal base, produce roughly
-    // as many significant digits as 16 decimal digits would take in the
-    // target base: ceil(16 * log10(10) / log10(base)).
-    let ratio = 16.0_f64 / (base as f64).log10();
+    // A machine-precision Real carries ~53 bits of information; express that
+    // as a digit count in the target base: ceil(53 / log2(base)). For base 2
+    // that's 53 (matching wolframscript); for base 10 the decimal path's 16
+    // is used instead.
+    let ratio = 53.0_f64 / (base as f64).log2();
     (ratio.ceil() as usize).max(1)
   } else {
     // Default: use machine-precision (~16 digits)
@@ -1808,11 +1809,13 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      // Machine-precision cap: a Real input carries only ~16 significant
-      // decimal digits of information. Any digit beyond that is unknowable
-      // and wolframscript marks it `Indeterminate`.
+      // Machine-precision cap: a Real input carries ~53 bits of information,
+      // i.e. ceil(53 / log2(base)) digits in the target base (≈16 for base
+      // 10). Any digit beyond that whose value isn't pinned down by an exact
+      // (terminating) expansion is unknowable, and wolframscript marks it
+      // `Indeterminate`.
       let precision_cap = if rational_from_real.is_some() {
-        Some(16usize)
+        Some(((53.0_f64 / (base as f64).log2()).ceil() as usize).max(1))
       } else {
         None
       };
@@ -1861,7 +1864,10 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       let mut digit_exprs: Vec<Expr> =
         digits.iter().map(|&dig| Expr::Integer(dig)).collect();
-      // Pad beyond machine precision with Indeterminate.
+      // Pad beyond machine precision with Indeterminate. (Digits within the
+      // precision cap that are 0 because the value terminated were already
+      // emitted as 0 by the loop above; this only fires when the caller
+      // explicitly requests more digits than the precision supports.)
       while digit_exprs.len() < num_digits {
         digit_exprs.push(Expr::Identifier("Indeterminate".to_string()));
       }

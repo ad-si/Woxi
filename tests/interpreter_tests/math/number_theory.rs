@@ -1453,6 +1453,20 @@ mod real_digits {
   }
 
   #[test]
+  fn real_digits_base2_exact_dyadic_pads_with_zero() {
+    // A machine Real carries ~53 bits, i.e. 53 base-2 digits. 23.34375 is an
+    // exact dyadic (10111.01011), so the remaining digits are genuinely 0
+    // (not Indeterminate), and the point sits after 5 digits. Regression for
+    // RealDigits padding exact values with Indeterminate in non-decimal bases.
+    assert_eq!(
+      interpret("RealDigits[23.34375, 2]").unwrap(),
+      "{{1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
+       0, 0, 0, 0, 0, 0, 0}, 5}"
+    );
+  }
+
+  #[test]
   fn integer_ten() {
     // RealDigits[10] yields digits {1, 0} with exponent 2.
     assert_eq!(interpret("RealDigits[10]").unwrap(), "{{1, 0}, 2}");
