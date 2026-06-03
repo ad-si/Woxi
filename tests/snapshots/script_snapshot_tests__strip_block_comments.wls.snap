@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+
+function f() {
+  x = 1; 
+}

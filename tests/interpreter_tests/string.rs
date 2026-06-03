@@ -386,6 +386,19 @@ mod string_replace {
   use super::*;
 
   #[test]
+  fn blank_pattern_matches_across_newlines() {
+    // Blanks (`___`/`__`/`_`) in string patterns match newlines too (dotall),
+    // matching Wolfram — e.g. a block comment spanning lines.
+    assert_eq!(
+      interpret(
+        "StringReplace[\"a/*x\\ny*/b\", \"/*\" ~~ ___ ~~ \"*/\" -> \"\"]"
+      )
+      .unwrap(),
+      "ab"
+    );
+  }
+
+  #[test]
   fn single_rule() {
     assert_eq!(
       interpret(r#"StringReplace["hello world", "world" -> "planet"]"#)

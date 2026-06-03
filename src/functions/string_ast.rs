@@ -1715,7 +1715,10 @@ fn string_pattern_to_regex_with_state(
 ) -> Option<(String, Vec<(String, String)>)> {
   let mut state = PatternState::new();
   let regex = string_pattern_to_regex_inner(expr, &mut state)?;
-  Some((regex, state.constraints))
+  // Enable the "dot matches newline" flag so blanks (`.`, `.+`, `.*`) and `*`
+  // span newlines, matching Wolfram string patterns — e.g. Shortest[___]
+  // stripping a multi-line block comment.
+  Some((format!("(?s){}", regex), state.constraints))
 }
 
 /// Wrap a regex body in a named capture group. On a repeated name, reuse the
