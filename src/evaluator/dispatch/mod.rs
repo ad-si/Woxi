@@ -537,6 +537,20 @@ fn edge_endpoints_dir(edge: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// True if `s` is a plain Wolfram symbol name (letters/digits/`$`/context
+/// backtick, not starting with a digit). A FunctionCall whose head is *not*
+/// identifier-like is really a stringified expression (e.g. a pure function
+/// `#1 > 0 &` used as a `?test`) that must be re-parsed before it can apply.
+fn is_identifier_like(s: &str) -> bool {
+  let mut chars = s.chars();
+  match chars.next() {
+    Some(c) if c.is_alphabetic() || c == '$' => {
+      s.chars().all(|c| c.is_alphanumeric() || c == '$' || c == '`')
+    }
+    _ => false,
+  }
+}
+
 pub fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -1256,13 +1270,30 @@ pub fn evaluate_function_call_ast_inner(
             }
             let substituted_cond =
               crate::syntax::substitute_variables(cond_expr, &all_bindings);
-            // Evaluate the condition - it must return True
-            match evaluate_expr_to_expr(&substituted_cond) {
-              Ok(Expr::Identifier(ref s)) if s == "True" => {} // condition met
-              _ => {
-                conditions_met = false;
-                break;
-              }
+            // Evaluate the condition - it must return True. A `?test` whose
+            // test is a pure function can be stored as a FunctionCall whose
+            // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
+            // which doesn't reduce as a call; if the direct evaluation leaves
+            // it unapplied, re-parse the string form (which yields a proper
+            // application) and evaluate that — same approach MatchQ uses.
+            let mut cond_ok = matches!(
+              evaluate_expr_to_expr(&substituted_cond),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            );
+            if !cond_ok
+              && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
+                if !is_identifier_like(name))
+            {
+              cond_ok = matches!(
+                crate::interpret(&crate::syntax::expr_to_string(
+                  &substituted_cond
+                )),
+                Ok(ref s) if s == "True"
+              );
+            }
+            if !cond_ok {
+              conditions_met = false;
+              break;
             }
           }
         }

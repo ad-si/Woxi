@@ -1,5 +1,27 @@
 use super::*;
 
+mod pattern_test_conditions {
+  use super::*;
+
+  #[test]
+  fn pure_function_test_in_definition_fires() {
+    // A definition pattern `x_?(purefn)` must fire during dispatch (the test
+    // was previously stored as a stringified head that never re-applied).
+    assert_eq!(
+      interpret("g[c_?(# > 0 &)] := \"pos\"; {g[5], g[-1]}").unwrap(),
+      "{pos, g[-1]}"
+    );
+    assert_eq!(
+      interpret(
+        "h[c_?(Function[v, StringFreeQ[v, {\"A\"}]])] := \"ok\"; \
+         {h[\"710889\"], h[\"BAD\"]}"
+      )
+      .unwrap(),
+      "{ok, h[BAD]}"
+    );
+  }
+}
+
 mod user_defined_functions {
   use super::*;
 
