@@ -3003,6 +3003,17 @@ mod cases {
     );
   }
   #[test]
+  fn pseudo_inverse_wide_matrix() {
+    // Regression: a wide (ncols > nrows) full-row-rank matrix used the right
+    // one-sided formula M^T (M M^T)^{-1}. Previously the left formula ran
+    // first, inverting the singular ncols×ncols product — yielding all
+    // Indeterminate (and hanging for large ncols).
+    assert_case(
+      r#"PseudoInverse[{{1, 0, 0}, {0, 1, 0}}]"#,
+      r#"{{1, 0}, {0, 1}, {0, 0}}"#,
+    );
+  }
+  #[test]
   fn pseudo_inverse_2() {
     assert_case(
       r#"PseudoInverse[{{1, 2}, {2, 3}, {3, 4}}]; PseudoInverse[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]"#,

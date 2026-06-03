@@ -45,7 +45,25 @@ fn mat_mul(a: &[Vec<Expr>], b: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
 fn try_invert(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<Expr>>> {
   let expr = matrix_to_expr(matrix.to_vec());
   match inverse_ast(&[expr]) {
-    Ok(result) => expr_to_matrix(&result),
+    Ok(result) => {
+      let inv = expr_to_matrix(&result)?;
+      // `try_invert` is only used on the numeric M^T·M / M·M^T products, so a
+      // genuine inverse has finite numeric entries. A singular matrix instead
+      // yields division-by-zero artifacts (`9./0.`, Indeterminate,
+      // ComplexInfinity, …); treat any non-finite-numeric entry as
+      // non-invertible so PseudoInverse falls through to the other formula.
+      let is_finite_number = |e: &Expr| match e {
+        Expr::Integer(_) | Expr::BigInteger(_) => true,
+        Expr::Real(x) => x.is_finite(),
+        Expr::FunctionCall { name, .. } => name == "Rational",
+        _ => false,
+      };
+      if inv.iter().flatten().all(is_finite_number) {
+        Some(inv)
+      } else {
+        None
+      }
+    }
     Err(_) => None,
   }
 }
@@ -95,20 +113,29 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mt = transpose_matrix(&matrix);
 
-  // Try left pseudoinverse: (M^T M)^{-1} M^T
-  // Works when M has full column rank (ncols <= nrows)
-  let mtm = mat_mul(&mt, &matrix);
-  if let Some(mtm_inv) = try_invert(&mtm) {
-    let result = mat_mul(&mtm_inv, &mt);
-    return Ok(matrix_to_expr(result));
-  }
-
-  // Try right pseudoinverse: M^T (M M^T)^{-1}
-  // Works when M has full row rank (nrows <= ncols)
-  let mmt = mat_mul(&matrix, &mt);
-  if let Some(mmt_inv) = try_invert(&mmt) {
-    let result = mat_mul(&mt, &mmt_inv);
-    return Ok(matrix_to_expr(result));
+  // Two one-sided formulas, each needing one matrix inverse:
+  //   left:  (M^T M)^{-1} M^T   — invert the ncols×ncols product (full column rank)
+  //   right: M^T (M M^T)^{-1}   — invert the nrows×nrows product (full row rank)
+  // Invert whichever product is smaller first: for a wide matrix (ncols >
+  // nrows) M^T M is the large, rank-deficient one, so inverting it is both
+  // wrong and potentially very slow — prefer the right formula there, and
+  // vice-versa for a tall matrix.
+  let left = || {
+    let mtm = mat_mul(&mt, &matrix);
+    try_invert(&mtm).map(|mtm_inv| matrix_to_expr(mat_mul(&mtm_inv, &mt)))
+  };
+  let right = || {
+    let mmt = mat_mul(&matrix, &mt);
+    try_invert(&mmt).map(|mmt_inv| matrix_to_expr(mat_mul(&mt, &mmt_inv)))
+  };
+  let (first, second): (&dyn Fn() -> Option<Expr>, &dyn Fn() -> Option<Expr>) =
+    if ncols <= nrows {
+      (&left, &right)
+    } else {
+      (&right, &left)
+    };
+  if let Some(result) = first().or_else(second) {
+    return Ok(result);
   }
 
   // For rank-deficient matrices, return unevaluated
