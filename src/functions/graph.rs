@@ -1471,9 +1471,7 @@ fn parse_vertex_style(
 /// `Method -> …` option is accepted and ignored (the result is method-
 /// independent). Edge weights come from the graph's `EdgeWeight` option
 /// (default 1 per edge); undirected edges are traversable both ways.
-pub fn find_shortest_path_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let inert = || {
     Ok(Expr::FunctionCall {
       name: "FindShortestPath".to_string(),
@@ -1537,9 +1535,10 @@ pub fn find_shortest_path_ast(
         (args[0].clone(), args[1].clone(), name == "DirectedEdge")
       }
       _ => match e {
-        Expr::Rule { pattern, replacement } => {
-          ((**pattern).clone(), (**replacement).clone(), true)
-        }
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone(), true),
         _ => continue,
       },
     };
@@ -1564,11 +1563,17 @@ pub fn find_shortest_path_ast(
   use std::collections::BinaryHeap;
   let mut dist: HashMap<String, f64> = HashMap::new();
   let mut prev: HashMap<String, String> = HashMap::new();
-  let mut heap: BinaryHeap<(std::cmp::Reverse<ordered_f64::OrderedF64>, String)> =
-    BinaryHeap::new();
+  let mut heap: BinaryHeap<(
+    std::cmp::Reverse<ordered_f64::OrderedF64>,
+    String,
+  )> = BinaryHeap::new();
   dist.insert(start.clone(), 0.0);
-  heap.push((std::cmp::Reverse(ordered_f64::OrderedF64(0.0)), start.clone()));
-  while let Some((std::cmp::Reverse(ordered_f64::OrderedF64(d)), u)) = heap.pop()
+  heap.push((
+    std::cmp::Reverse(ordered_f64::OrderedF64(0.0)),
+    start.clone(),
+  ));
+  while let Some((std::cmp::Reverse(ordered_f64::OrderedF64(d)), u)) =
+    heap.pop()
   {
     if d > *dist.get(&u).unwrap_or(&f64::INFINITY) {
       continue;
@@ -1582,7 +1587,8 @@ pub fn find_shortest_path_ast(
         if nd < *dist.get(v).unwrap_or(&f64::INFINITY) {
           dist.insert(v.clone(), nd);
           prev.insert(v.clone(), u.clone());
-          heap.push((std::cmp::Reverse(ordered_f64::OrderedF64(nd)), v.clone()));
+          heap
+            .push((std::cmp::Reverse(ordered_f64::OrderedF64(nd)), v.clone()));
         }
       }
     }
@@ -1604,8 +1610,7 @@ pub fn find_shortest_path_ast(
     }
   }
   path_keys.reverse();
-  let path: Vec<Expr> =
-    path_keys.iter().map(|k| vexpr[k].clone()).collect();
+  let path: Vec<Expr> = path_keys.iter().map(|k| vexpr[k].clone()).collect();
   Ok(Expr::List(path.into()))
 }
 
@@ -1621,7 +1626,10 @@ mod ordered_f64 {
   }
   impl Ord for OrderedF64 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-      self.0.partial_cmp(&other.0).unwrap_or(std::cmp::Ordering::Equal)
+      self
+        .0
+        .partial_cmp(&other.0)
+        .unwrap_or(std::cmp::Ordering::Equal)
     }
   }
 }

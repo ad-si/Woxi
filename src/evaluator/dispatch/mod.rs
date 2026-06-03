@@ -544,9 +544,9 @@ fn edge_endpoints_dir(edge: &Expr) -> Option<(Expr, Expr, bool)> {
 fn is_identifier_like(s: &str) -> bool {
   let mut chars = s.chars();
   match chars.next() {
-    Some(c) if c.is_alphabetic() || c == '$' => {
-      s.chars().all(|c| c.is_alphanumeric() || c == '$' || c == '`')
-    }
+    Some(c) if c.is_alphabetic() || c == '$' => s
+      .chars()
+      .all(|c| c.is_alphanumeric() || c == '$' || c == '`'),
     _ => false,
   }
 }
