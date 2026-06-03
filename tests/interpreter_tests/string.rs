@@ -931,6 +931,15 @@ mod letter_number {
   }
 
   #[test]
+  fn named_minus_union_intersection_render_to_wolfram_codepoints() {
+    // \[Minus] is the minus sign (U+2212); \[Union]/\[Intersection] are the
+    // n-ary forms ⋃/⋂ (U+22C3/U+22C2), not the binary ∪/∩.
+    assert_eq!(interpret("\"\\[Minus]\"").unwrap(), "\u{2212}");
+    assert_eq!(interpret("\"\\[Union]\"").unwrap(), "\u{22C3}");
+    assert_eq!(interpret("\"\\[Intersection]\"").unwrap(), "\u{22C2}");
+  }
+
+  #[test]
   fn greek_alpha_omega() {
     assert_eq!(interpret("LetterNumber[\"α\", \"Greek\"]").unwrap(), "1");
     assert_eq!(interpret("LetterNumber[\"ω\", \"Greek\"]").unwrap(), "24");

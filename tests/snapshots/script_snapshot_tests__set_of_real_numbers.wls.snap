@@ -1,0 +1,19 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Inequality[0, Less, x, LessEqual, 1] || Inequality[0, LessEqual, x, Less, 2]
+First trial set, (0, 1] ⋃ [0, 2) , testing for {0,1,2}:
+{True, True, False}
+
+Inequality[0, LessEqual, x, Less, 2] && Inequality[1, Less, x, LessEqual, 2]
+Second trial set, [0, 2) ⋂ (1, 2], testing for {0,1,2}:
+{False, False, False}
+
+Inequality[0, LessEqual, x, Less, 3] &&  !0 < x < 1
+Third trial set, [0, 3) − (0, 1), testing for {0,1,2}
+{True, True, True}
+
+Inequality[0, LessEqual, x, Less, 3] &&  !0 <= x <= 1
+Fourth trial set, [0,3)−[0,1], testing for {0,1,2}:
+{False, False, True}

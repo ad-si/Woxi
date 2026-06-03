@@ -1181,6 +1181,8 @@ script_test!(
   script_decimal_floating_point_number_to_binary,
   "decimal_floating_point_number_to_binary.wls"
 );
+// === Unlocked by named-character rendering (\[Union]/\[Intersection]/\[Minus]) ===
+script_test!(script_set_of_real_numbers, "set_of_real_numbers.wls");
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===

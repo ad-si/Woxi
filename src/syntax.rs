@@ -489,8 +489,11 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Superset" => Some("\u{2283}"),
     "SubsetEqual" => Some("\u{2286}"),
     "SupersetEqual" => Some("\u{2287}"),
-    "Union" => Some("\u{222A}"),
-    "Intersection" => Some("\u{2229}"),
+    // Wolfram's `\[Union]`/`\[Intersection]` are the n-ary forms (⋃/⋂,
+    // U+22C3/U+22C2), not the binary ∪/∩ (U+222A/U+2229).
+    "Union" => Some("\u{22C3}"),
+    "Intersection" => Some("\u{22C2}"),
+    "Minus" => Some("\u{2212}"),
     "PlusMinus" => Some("\u{00B1}"),
     "MinusPlus" => Some("\u{2213}"),
     "Times" => Some("\u{00D7}"),
