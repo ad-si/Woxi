@@ -1190,6 +1190,8 @@ script_test!(
 );
 // === Unlocked by string patterns matching across newlines (dotall) ===
 script_test!(script_strip_block_comments, "strip_block_comments.wls");
+// === Unlocked by Map of a named Function + Part-result application a[[i]][] ===
+script_test!(script_closures_value_capture, "closures_value_capture.wls");
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===

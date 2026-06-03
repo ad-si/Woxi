@@ -3501,14 +3501,29 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::PartExtract => {
       let mut inner = pair.into_inner();
       let base_expr = pair_to_expr(inner.next().unwrap());
-      // Chain multiple indices as nested Part: a[[1,2,3]] -> Part[Part[Part[a,1],2],3]
+      // Chain multiple indices as nested Part: a[[1,2,3]] -> Part[Part[Part[a,1],2],3].
+      // A trailing call suffix applies the Part result: a[[i]][x] -> (a[[i]])[x].
       let mut result = base_expr;
-      for idx_pair in inner {
-        let index = pair_to_expr(idx_pair);
-        result = Expr::Part {
-          expr: Box::new(result),
-          index: Box::new(index),
-        };
+      for p in inner {
+        if matches!(p.as_rule(), Rule::BracketArgs) {
+          let args: Vec<Expr> = p
+            .into_inner()
+            .filter(|c| {
+              c.as_str() != "[" && c.as_str() != "]" && c.as_str() != ","
+            })
+            .map(pair_to_expr)
+            .collect();
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        } else {
+          let index = pair_to_expr(p);
+          result = Expr::Part {
+            expr: Box::new(result),
+            index: Box::new(index),
+          };
+        }
       }
       result
     }

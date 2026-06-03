@@ -437,6 +437,14 @@ pub fn apply_function_to_arg(
           return apply_function_to_arg(&evaluated, arg);
         }
       }
+      // A `Function[params, body]` written as a FunctionCall (e.g. the named
+      // form `Function[i, body]`) must be *applied* to the argument — binding
+      // its parameters — not have the argument appended as another part.
+      // This is what makes `Function[i, body] /@ list` work (Map applies the
+      // function to each element).
+      if name == "Function" && args.len() >= 2 {
+        return apply_curried_call(func, std::slice::from_ref(arg));
+      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)

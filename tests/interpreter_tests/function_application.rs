@@ -1,5 +1,33 @@
 use super::*;
 
+mod map_and_part_application {
+  use super::*;
+
+  #[test]
+  fn map_named_function() {
+    // Map of a named Function must apply it (bind the parameter), not append
+    // the element as another argument. The closure `i^2 &` captures i.
+    assert_eq!(
+      interpret("Function[i, i^2 &] /@ Range[3]").unwrap(),
+      "{1^2 & , 2^2 & , 3^2 & }"
+    );
+    assert_eq!(
+      interpret("Function[x, x*2] /@ {10, 20}").unwrap(),
+      "{20, 40}"
+    );
+  }
+
+  #[test]
+  fn apply_part_result() {
+    // A Part result can be applied as a function: a[[i]][args].
+    assert_eq!(
+      interpret("fs = {1^2 &, 2^2 &, 3^2 &}; fs[[2]][]").unwrap(),
+      "4"
+    );
+    assert_eq!(interpret("g = {f, h}; g[[1]][3]").unwrap(), "f[3]");
+  }
+}
+
 mod anonymous_function_call {
   use super::*;
 
