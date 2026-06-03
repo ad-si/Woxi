@@ -1553,15 +1553,39 @@ fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
   }
 }
 
+/// Convert a bare (top-level) string pattern using Wolfram's metacharacter
+/// shorthand: `*` matches any sequence and `@` matches one-or-more
+/// non-uppercase characters. Every other character is matched literally.
+fn bare_string_metachars_to_regex(s: &str) -> String {
+  let mut result = String::new();
+  for ch in s.chars() {
+    match ch {
+      '*' => result.push_str(".*"),
+      '@' => result.push_str("[^A-Z]+"),
+      _ => result.push_str(&regex::escape(&ch.to_string())),
+    }
+  }
+  result
+}
+
 /// Append `?` to every greedy quantifier in `regex` so repetition matches
-/// the shortest substring. Skips quantifiers that are already lazy, and
-/// leaves a standalone `?` (optional) untouched.
+/// the shortest substring. Skips quantifiers that are already lazy, leaves a
+/// standalone `?` (optional) untouched, and never touches escaped literals
+/// (e.g. `\*` / `\+`, which are literal characters, not quantifiers).
 fn make_non_greedy(regex: &str) -> String {
   let bytes = regex.as_bytes();
   let mut out = String::with_capacity(bytes.len() + 4);
   let mut i = 0;
   while i < bytes.len() {
     let b = bytes[i];
+    if b == b'\\' && i + 1 < bytes.len() {
+      // Escaped character: copy the backslash and its target verbatim; the
+      // escaped char is a literal, never a quantifier.
+      out.push('\\');
+      out.push(bytes[i + 1] as char);
+      i += 2;
+      continue;
+    }
     out.push(b as char);
     let next = bytes.get(i + 1).copied();
     let make_lazy = match b {
@@ -1714,7 +1738,15 @@ fn string_pattern_to_regex_with_state(
   expr: &Expr,
 ) -> Option<(String, Vec<(String, String)>)> {
   let mut state = PatternState::new();
-  let regex = string_pattern_to_regex_inner(expr, &mut state)?;
+  // A bare string pattern uses Wolfram's metacharacter shorthand (`*` matches
+  // any run, `@` matches one-or-more non-uppercase). Strings nested inside a
+  // compound pattern (StringExpression via `~~`, Shortest, …) match literally,
+  // so this only fires when the whole pattern is a single string.
+  let regex = if let Expr::String(s) = expr {
+    bare_string_metachars_to_regex(s)
+  } else {
+    string_pattern_to_regex_inner(expr, &mut state)?
+  };
   // Enable the "dot matches newline" flag so blanks (`.`, `.+`, `.*`) and `*`
   // span newlines, matching Wolfram string patterns — e.g. Shortest[___]
   // stripping a multi-line block comment.
@@ -1766,21 +1798,11 @@ fn string_pattern_to_regex_inner(
   seen: &mut PatternState,
 ) -> Option<String> {
   match expr {
-    // String literal patterns — convert Wolfram metacharacters (* and @)
-    // to regex equivalents before escaping the rest.
-    // In Wolfram Language string patterns, `*` matches any sequence
-    // (including empty) and `@` matches one or more non-uppercase characters.
-    Expr::String(s) => {
-      let mut result = String::new();
-      for ch in s.chars() {
-        match ch {
-          '*' => result.push_str(".*"),
-          '@' => result.push_str("[^A-Z]+"),
-          _ => result.push_str(&regex::escape(&ch.to_string())),
-        }
-      }
-      Some(result)
-    }
+    // A string literal nested inside a compound pattern matches literally —
+    // the `*`/`@` metacharacter shorthand only applies to a bare top-level
+    // string (handled in `string_pattern_to_regex_with_state`). So e.g.
+    // `"/*" ~~ Shortest[___] ~~ "*/"` matches a literal `/*…*/`.
+    Expr::String(s) => Some(regex::escape(s)),
 
     // Character class patterns and blank patterns
     Expr::Identifier(name) => match name.as_str() {

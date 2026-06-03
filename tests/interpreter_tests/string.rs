@@ -386,6 +386,32 @@ mod string_replace {
   use super::*;
 
   #[test]
+  fn shortest_in_string_expression_is_lazy() {
+    // Shortest[___] in the middle of a StringExpression must match lazily, so
+    // each /*…*/ is stripped separately (not first /* to last */).
+    assert_eq!(
+      interpret(
+        "StringReplace[\"x/*a*/y/*b*/z\", \"/*\" ~~ Shortest[___] ~~ \"*/\" -> \"\"]"
+      )
+      .unwrap(),
+      "xyz"
+    );
+  }
+
+  #[test]
+  fn literal_star_inside_string_expression() {
+    // `*` is a wildcard only in a bare string; inside `~~` it is literal.
+    // "xAAy" has no literal `*`, so nothing is replaced.
+    assert_eq!(
+      interpret("StringReplace[\"xAAy\", \"x\" ~~ \"*\" ~~ \"y\" -> \"Z\"]")
+        .unwrap(),
+      "xAAy"
+    );
+    // A bare string keeps the `*` wildcard shorthand.
+    assert_eq!(interpret("StringMatchQ[\"aXXb\", \"a*b\"]").unwrap(), "True");
+  }
+
+  #[test]
   fn blank_pattern_matches_across_newlines() {
     // Blanks (`___`/`__`/`_`) in string patterns match newlines too (dotall),
     // matching Wolfram — e.g. a block comment spanning lines.
