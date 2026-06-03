@@ -2070,3 +2070,35 @@ mod weighted_adjacency_matrix {
     );
   }
 }
+
+mod find_shortest_path {
+  use super::*;
+
+  #[test]
+  fn weighted_directed_dijkstra() {
+    // Shortest weighted path a -> e in the RosettaCode Dijkstra example.
+    assert_eq!(
+      interpret(
+        "FindShortestPath[Graph[{\"a\" \\[DirectedEdge] \"b\", \
+         \"a\" \\[DirectedEdge] \"c\", \"b\" \\[DirectedEdge] \"c\", \
+         \"b\" \\[DirectedEdge] \"d\", \"c\" \\[DirectedEdge] \"d\", \
+         \"d\" \\[DirectedEdge] \"e\", \"a\" \\[DirectedEdge] \"f\", \
+         \"c\" \\[DirectedEdge] \"f\", \"e\" \\[DirectedEdge] \"f\"}, \
+         EdgeWeight -> {7, 9, 10, 15, 11, 6, 14, 2, 9}], \"a\", \"e\"]"
+      )
+      .unwrap(),
+      "{a, c, d, e}"
+    );
+  }
+
+  #[test]
+  fn unreachable_returns_empty() {
+    assert_eq!(
+      interpret(
+        "FindShortestPath[Graph[{\"a\" \\[DirectedEdge] \"b\"}], \"b\", \"a\"]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+}

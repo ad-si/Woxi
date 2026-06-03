@@ -1465,3 +1465,163 @@ fn parse_vertex_style(
 
   (fill_color, edge_form)
 }
+
+/// FindShortestPath[graph, src, dst] — shortest weighted path from `src` to
+/// `dst` as a list of vertices (empty list if unreachable). A trailing
+/// `Method -> …` option is accepted and ignored (the result is method-
+/// independent). Edge weights come from the graph's `EdgeWeight` option
+/// (default 1 per edge); undirected edges are traversable both ways.
+pub fn find_shortest_path_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let inert = || {
+    Ok(Expr::FunctionCall {
+      name: "FindShortestPath".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() < 3 {
+    return inert();
+  }
+
+  // Locate the edge list and the EdgeWeight option inside the Graph.
+  let graph_args = match &args[0] {
+    Expr::FunctionCall { name, args } if name == "Graph" => args.as_slice(),
+    _ => return inert(),
+  };
+  let is_edge = |e: &Expr| {
+    let (inner, _, _) = unwrap_edge_wrappers(e);
+    matches!(inner, Expr::FunctionCall { name, args }
+      if (name == "DirectedEdge" || name == "UndirectedEdge") && args.len() == 2)
+      || matches!(e, Expr::Rule { .. })
+  };
+  let edges: &[Expr] = match graph_args.iter().find_map(|a| match a {
+    Expr::List(items) if !items.is_empty() && items.iter().all(is_edge) => {
+      Some(items.as_slice())
+    }
+    _ => None,
+  }) {
+    Some(e) => e,
+    None => return inert(),
+  };
+  let weights: Vec<f64> = graph_args
+    .iter()
+    .find_map(|a| match a {
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "EdgeWeight") =>
+      {
+        if let Expr::List(ws) = replacement.as_ref() {
+          Some(
+            ws.iter()
+              .map(|w| {
+                crate::functions::math_ast::try_eval_to_f64(w).unwrap_or(1.0)
+              })
+              .collect::<Vec<_>>(),
+          )
+        } else {
+          None
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+
+  // Build the adjacency list keyed by the vertex string form, remembering the
+  // original vertex Expr for each key so the output preserves it.
+  let mut adj: HashMap<String, Vec<(String, f64)>> = HashMap::new();
+  let mut vexpr: HashMap<String, Expr> = HashMap::new();
+  for (i, e) in edges.iter().enumerate() {
+    let (inner, _, _) = unwrap_edge_wrappers(e);
+    let (s, d, directed) = match inner {
+      Expr::FunctionCall { name, args } if args.len() == 2 => {
+        (args[0].clone(), args[1].clone(), name == "DirectedEdge")
+      }
+      _ => match e {
+        Expr::Rule { pattern, replacement } => {
+          ((**pattern).clone(), (**replacement).clone(), true)
+        }
+        _ => continue,
+      },
+    };
+    let w = weights.get(i).copied().unwrap_or(1.0);
+    let sk = expr_to_string(&s);
+    let dk = expr_to_string(&d);
+    vexpr.entry(sk.clone()).or_insert_with(|| s.clone());
+    vexpr.entry(dk.clone()).or_insert_with(|| d.clone());
+    adj.entry(sk.clone()).or_default().push((dk.clone(), w));
+    if !directed {
+      adj.entry(dk).or_default().push((sk, w));
+    }
+  }
+
+  let start = expr_to_string(&args[1]);
+  let goal = expr_to_string(&args[2]);
+  if !vexpr.contains_key(&start) || !vexpr.contains_key(&goal) {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  // Dijkstra with a binary min-heap (costs are non-negative).
+  use std::collections::BinaryHeap;
+  let mut dist: HashMap<String, f64> = HashMap::new();
+  let mut prev: HashMap<String, String> = HashMap::new();
+  let mut heap: BinaryHeap<(std::cmp::Reverse<ordered_f64::OrderedF64>, String)> =
+    BinaryHeap::new();
+  dist.insert(start.clone(), 0.0);
+  heap.push((std::cmp::Reverse(ordered_f64::OrderedF64(0.0)), start.clone()));
+  while let Some((std::cmp::Reverse(ordered_f64::OrderedF64(d)), u)) = heap.pop()
+  {
+    if d > *dist.get(&u).unwrap_or(&f64::INFINITY) {
+      continue;
+    }
+    if u == goal {
+      break;
+    }
+    if let Some(neighbors) = adj.get(&u) {
+      for (v, w) in neighbors {
+        let nd = d + w;
+        if nd < *dist.get(v).unwrap_or(&f64::INFINITY) {
+          dist.insert(v.clone(), nd);
+          prev.insert(v.clone(), u.clone());
+          heap.push((std::cmp::Reverse(ordered_f64::OrderedF64(nd)), v.clone()));
+        }
+      }
+    }
+  }
+
+  if !dist.contains_key(&goal) {
+    return Ok(Expr::List(vec![].into()));
+  }
+  // Reconstruct the path goal → start, then reverse.
+  let mut path_keys = vec![goal.clone()];
+  let mut cur = goal;
+  while cur != start {
+    match prev.get(&cur) {
+      Some(p) => {
+        path_keys.push(p.clone());
+        cur = p.clone();
+      }
+      None => return Ok(Expr::List(vec![].into())),
+    }
+  }
+  path_keys.reverse();
+  let path: Vec<Expr> =
+    path_keys.iter().map(|k| vexpr[k].clone()).collect();
+  Ok(Expr::List(path.into()))
+}
+
+/// Total-order wrapper for f64 Dijkstra costs (all non-negative, finite).
+mod ordered_f64 {
+  #[derive(PartialEq)]
+  pub struct OrderedF64(pub f64);
+  impl Eq for OrderedF64 {}
+  impl PartialOrd for OrderedF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+      Some(self.cmp(other))
+    }
+  }
+  impl Ord for OrderedF64 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+      self.0.partial_cmp(&other.0).unwrap_or(std::cmp::Ordering::Equal)
+    }
+  }
+}

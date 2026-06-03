@@ -3805,6 +3805,12 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_cycle_ast(args);
   }
 
+  // FindShortestPath[graph, src, dst, opts...] → list of vertices on a
+  // shortest weighted path (Dijkstra).
+  if name == "FindShortestPath" && args.len() >= 3 {
+    return crate::functions::graph::find_shortest_path_ast(args);
+  }
+
   // EdgeList[Graph[vertices, edges]] → edges list
   if name == "EdgeList" && args.len() == 1 {
     if let Expr::FunctionCall {

@@ -1172,7 +1172,7 @@ Monitor,,🚫,,6.0,1183
 ImagePad,,🚫,,7.0,1184
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6.0,1186
 ListInterpolation,Creates interpolation from uniformly spaced data,✅,pure,3.0,1186
-FindShortestPath,,🚫,,8.0,1187
+FindShortestPath,Find a shortest weighted path between two vertices of a graph,✅,pure,8.0,1187
 LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6.0,1188
 SetSystemOptions,,🚫,,6.0,1189
 GeoRange,,🚫,,10.0,1190
