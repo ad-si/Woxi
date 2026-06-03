@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{DateObject[{2013, 1, 27}, Day], DateObject[{2013, 2, 24}, Day], DateObject[{2013, 3, 31}, Day], DateObject[{2013, 4, 28}, Day], DateObject[{2013, 5, 26}, Day], DateObject[{2013, 6, 30}, Day], DateObject[{2013, 7, 28}, Day], DateObject[{2013, 8, 25}, Day], DateObject[{2013, 9, 29}, Day], DateObject[{2013, 10, 27}, Day], DateObject[{2013, 11, 24}, Day], DateObject[{2013, 12, 29}, Day]}

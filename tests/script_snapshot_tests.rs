@@ -1170,6 +1170,12 @@ script_test!(
   script_hello_world_newline_omission,
   "hello_world_newline_omission.wls"
 );
+// === Unlocked by the DayRange weekday filter + DatePlus multi-unit fix
+//     (uses a warm-up shim to swallow wolframscript's CalendarData init Print) ===
+script_test!(
+  script_find_the_last_sunday_of_each_month,
+  "find_the_last_sunday_of_each_month.wls"
+);
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===
