@@ -408,7 +408,10 @@ mod string_replace {
       "xAAy"
     );
     // A bare string keeps the `*` wildcard shorthand.
-    assert_eq!(interpret("StringMatchQ[\"aXXb\", \"a*b\"]").unwrap(), "True");
+    assert_eq!(
+      interpret("StringMatchQ[\"aXXb\", \"a*b\"]").unwrap(),
+      "True"
+    );
   }
 
   #[test]
