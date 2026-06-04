@@ -703,7 +703,15 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
   let has_bigint = flat_args.iter().any(needs_bigint_arithmetic);
 
-  if has_bigint {
+  // The integer-only fast path below cannot combine Rational terms (it would
+  // drop them into the symbolic list). When any rational is present, fall
+  // through to the general exact path, which is BigInt-aware via expr_to_coeff.
+  let has_rational = flat_args.iter().any(|a| {
+    matches!(a, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
+  });
+
+  if has_bigint && !has_rational {
     use num_bigint::BigInt;
     let mut big_sum = BigInt::from(0);
     let mut all_int = true;
@@ -746,12 +754,15 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match arg {
       Expr::Real(_) => has_real = true,
       Expr::BigFloat(_, _) => has_bigfloat = true,
-      Expr::Integer(_) => {}
+      Expr::Integer(_) | Expr::BigInteger(_) => {}
+      // Rational with Integer or BigInteger numerator/denominator (the
+      // BigInteger case arises once denominators exceed i128, e.g. Egyptian
+      // fraction expansions). expr_to_coeff handles both exactly.
       Expr::FunctionCall { name, args: rargs }
         if name == "Rational"
           && rargs.len() == 2
-          && matches!(rargs[0], Expr::Integer(_))
-          && matches!(rargs[1], Expr::Integer(_)) => {}
+          && matches!(rargs[0], Expr::Integer(_) | Expr::BigInteger(_))
+          && matches!(rargs[1], Expr::Integer(_) | Expr::BigInteger(_)) => {}
       _ => {
         all_numeric = false;
       }
@@ -763,8 +774,8 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if all_numeric && !has_real && !has_bigfloat {
     let mut sum = Coeff::Exact(0, 1);
     for arg in &flat_args {
-      if let Some((n, d)) = expr_to_rational(arg) {
-        sum = sum.add(&Coeff::Exact(n, d));
+      if let Some(c) = expr_to_coeff(arg) {
+        sum = sum.add(&c);
       }
     }
     return Ok(sum.to_expr());
@@ -795,9 +806,9 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut has_real_term = false;
 
     for arg in &flat_args {
-      if let Some((n, d)) = expr_to_rational(arg) {
+      if let Some(c) = expr_to_coeff(arg) {
         // Coeff::add promotes to BigInt on i128 overflow.
-        exact_sum = exact_sum.add(&Coeff::Exact(n, d));
+        exact_sum = exact_sum.add(&c);
         has_exact = true;
       } else if let Expr::Real(f) = arg {
         real_sum += f;
@@ -1336,6 +1347,31 @@ impl Coeff {
       }
       Self::Real(f) => Expr::Real(*f),
     }
+  }
+}
+
+/// Extract an exact `Coeff` (BigInt-aware) from a numeric expression:
+/// `Integer`, `BigInteger`, or `Rational[…]` whose parts are Integer or
+/// BigInteger. Unlike `expr_to_rational` (which is limited to i128) this
+/// preserves rationals whose numerator/denominator exceed i128, so Plus and
+/// friends can combine them instead of leaving them as symbolic summands.
+pub fn expr_to_coeff(arg: &Expr) -> Option<Coeff> {
+  use num_bigint::BigInt;
+  match arg {
+    Expr::Integer(n) => Some(Coeff::Exact(*n, 1)),
+    Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some(Coeff::Exact(*n, *d))
+      } else {
+        let n = crate::functions::math_ast::expr_to_bigint(&args[0])?;
+        let d = crate::functions::math_ast::expr_to_bigint(&args[1])?;
+        Some(Coeff::BigExact(n, d))
+      }
+    }
+    _ => None,
   }
 }
 
