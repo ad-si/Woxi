@@ -4260,6 +4260,21 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // Exact numeric product: when every factor is an Integer, BigInteger, or
+  // Rational, multiply them with BigInt-aware Coeff arithmetic and return a
+  // single reduced number. Without this, a product of rationals whose parts
+  // exceed i128 was left as an unreduced Times — both wrong and a formatter
+  // panic (denominator_form on a non-Power factor). Mirrors plus_ast.
+  if args.iter().all(|a| expr_to_coeff(a).is_some()) {
+    let mut prod = Coeff::Exact(1, 1);
+    for a in args {
+      if let Some(c) = expr_to_coeff(a) {
+        prod = prod.mul(&c);
+      }
+    }
+    return Ok(prod.to_expr());
+  }
+
   // SeriesData[var, x0, coeffs, nmin, nmax, denom] times var^k (k integer
   // or rational): shift the series exponent range by k. With k = p/q,
   // pick a common denominator d = lcm(denom, q) and scale all exponents
