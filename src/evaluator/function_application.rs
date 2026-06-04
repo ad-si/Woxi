@@ -445,6 +445,16 @@ pub fn apply_function_to_arg(
       if name == "Function" && args.len() >= 2 {
         return apply_curried_call(func, std::slice::from_ref(arg));
       }
+      // Composition[f, g, …][x] = f[g[…[x]]] and the left-to-right
+      // RightComposition variant. apply_curried_call already reduces these;
+      // without this, the generic fallback below would append the argument
+      // (producing the unreduced Composition[f, g, x]), so e.g.
+      // `Map[Length@*Union, …]` or `MaximalBy[…, Length@*Union]` failed.
+      if (name == "Composition" || name == "RightComposition")
+        && !args.is_empty()
+      {
+        return apply_curried_call(func, std::slice::from_ref(arg));
+      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)
