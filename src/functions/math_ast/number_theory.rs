@@ -222,7 +222,7 @@ fn bigint_lcm(a: BigInt, b: BigInt) -> BigInt {
 
 /// Reduce numerator/denominator and emit either an Integer (when the
 /// denominator is 1) or a `Rational[p, q]` Expr.
-fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
+pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
   use num_traits::{One, Zero};
   if den.is_zero() {
     // Wolfram returns ComplexInfinity for 1/0 — preserve that here so
@@ -703,26 +703,33 @@ pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  // Get divisors via O(√n) trial division (the naïve O(n) loop hangs on
-  // 12-digit inputs like 15355717786080 from RosettaCode's
-  // aliquot-sequence-classifications).
+  // Get divisors via fast factorization (the O(√n) trial-division path hangs
+  // on the ~10^20 terms of RosettaCode's aliquot-sequence-classifications,
+  // even though those terms have very few divisors).
   let n_u = n as u128;
-  let sqrt_n = (n_u as f64).sqrt() as u128;
-  let mut small_divs: Vec<u128> = Vec::new();
-  let mut large_divs: Vec<u128> = Vec::new();
-  for i in 1..=sqrt_n {
-    if n_u.is_multiple_of(i) {
-      small_divs.push(i);
-      if i != n_u / i {
-        large_divs.push(n_u / i);
+  let divs: Vec<i128> = match divisors_u128(n_u) {
+    Some(d) => d.into_iter().map(|x| x as i128).collect(),
+    None => {
+      // Fallback: O(√n) trial division.
+      let sqrt_n = (n_u as f64).sqrt() as u128;
+      let mut small_divs: Vec<u128> = Vec::new();
+      let mut large_divs: Vec<u128> = Vec::new();
+      for i in 1..=sqrt_n {
+        if n_u.is_multiple_of(i) {
+          small_divs.push(i);
+          if i != n_u / i {
+            large_divs.push(n_u / i);
+          }
+        }
       }
+      large_divs.reverse();
+      let mut divs: Vec<i128> =
+        Vec::with_capacity(small_divs.len() + large_divs.len());
+      divs.extend(small_divs.iter().map(|&x| x as i128));
+      divs.extend(large_divs.iter().map(|&x| x as i128));
+      divs
     }
-  }
-  large_divs.reverse();
-  let mut divs: Vec<i128> =
-    Vec::with_capacity(small_divs.len() + large_divs.len());
-  divs.extend(small_divs.iter().map(|&x| x as i128));
-  divs.extend(large_divs.iter().map(|&x| x as i128));
+  };
 
   // Apply function to each divisor and sum, filtering by cond if present
   let mut sum = Expr::Integer(0);
@@ -2426,6 +2433,57 @@ fn generate_partitions_restricted_signed(
   }
 }
 
+/// Prime factorization of `n` as `(prime, exponent)` pairs, using the fast
+/// integer factorizer (Pollard's rho for large `n`). Returns `None` if `n`
+/// doesn't fit `i128` or can't be parsed. Far faster than O(√n) trial
+/// division for highly-composite or large inputs (e.g. the ~10^20 terms of an
+/// aliquot sequence): the cost is factorization + d(n), not √n.
+fn prime_factorization_u128(n: u128) -> Option<Vec<(u128, u32)>> {
+  if n == 1 {
+    return Some(Vec::new());
+  }
+  let ni = i128::try_from(n).ok()?;
+  let factored = factor_integer_i128(ni).ok()?;
+  let Expr::List(pairs) = &factored else {
+    return None;
+  };
+  let mut out = Vec::with_capacity(pairs.len());
+  for pair in pairs.iter() {
+    let Expr::List(pv) = pair else { return None };
+    if pv.len() != 2 {
+      return None;
+    }
+    let (p, e) = (expr_to_i128(&pv[0])?, expr_to_i128(&pv[1])?);
+    if p == 1 {
+      continue; // FactorInteger[1] yields {{1, 1}}
+    }
+    if p < 2 || e < 1 {
+      return None;
+    }
+    out.push((p as u128, e as u32));
+  }
+  Some(out)
+}
+
+/// All divisors of `n` (sorted ascending), via fast factorization. Returns
+/// `None` to signal the caller should fall back (only on un-factorable input).
+fn divisors_u128(n: u128) -> Option<Vec<u128>> {
+  let factors = prime_factorization_u128(n)?;
+  let mut divs = vec![1u128];
+  for &(p, e) in &factors {
+    let base = divs.clone();
+    let mut pk = 1u128;
+    for _ in 0..e {
+      pk = pk.checked_mul(p)?;
+      for &d in &base {
+        divs.push(d.checked_mul(pk)?);
+      }
+    }
+  }
+  divs.sort_unstable();
+  Some(divs)
+}
+
 pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -2450,19 +2508,24 @@ pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut divs = Vec::new();
-  let sqrt_n = (n as f64).sqrt() as u128;
-
-  for i in 1..=sqrt_n {
-    if n % i == 0 {
-      divs.push(i);
-      if i != n / i {
-        divs.push(n / i);
+  let divs = match divisors_u128(n) {
+    Some(d) => d,
+    None => {
+      // Fallback: O(√n) trial division.
+      let mut divs = Vec::new();
+      let sqrt_n = (n as f64).sqrt() as u128;
+      for i in 1..=sqrt_n {
+        if n % i == 0 {
+          divs.push(i);
+          if i != n / i {
+            divs.push(n / i);
+          }
+        }
       }
+      divs.sort_unstable();
+      divs
     }
-  }
-
-  divs.sort();
+  };
   Ok(Expr::List(
     divs.into_iter().map(|d| Expr::Integer(d as i128)).collect(),
   ))
@@ -2500,14 +2563,23 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let sqrt_n = (n as f64).sqrt() as u128;
   let mut sum: u128 = 0;
-
-  for i in 1..=sqrt_n {
-    if n % i == 0 {
-      sum += i.pow(k);
-      if i != n / i {
-        sum += (n / i).pow(k);
+  match divisors_u128(n) {
+    Some(divs) => {
+      for d in divs {
+        sum += d.pow(k);
+      }
+    }
+    None => {
+      // Fallback: O(√n) trial division.
+      let sqrt_n = (n as f64).sqrt() as u128;
+      for i in 1..=sqrt_n {
+        if n % i == 0 {
+          sum += i.pow(k);
+          if i != n / i {
+            sum += (n / i).pow(k);
+          }
+        }
       }
     }
   }

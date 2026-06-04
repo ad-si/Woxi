@@ -1201,6 +1201,11 @@ script_test!(
   script_parsing_shunting_yard_algorithm,
   "parsing_shunting-yard_algorithm.wls"
 );
+// === Unlocked by factorization-based Divisors/DivisorSum/DivisorSigma ===
+script_test!(
+  script_aliquot_sequence_classifications,
+  "aliquot_sequence_classifications.wls"
+);
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===

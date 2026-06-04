@@ -5914,6 +5914,29 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // Rational[n, d] ^ integer k — compute exactly with big integers so it works
+  // for BigInteger components. Without this, `(1/big)^(-1)` (a reciprocal with
+  // a large denominator) stayed unevaluated, so e.g. IntegerQ[1/(1/big)] was
+  // wrongly False. k < 0 takes the reciprocal.
+  if let Expr::FunctionCall { name, args: rargs } = base
+    && name == "Rational"
+    && rargs.len() == 2
+    && let Expr::Integer(k) = exp
+    && let (Some(n), Some(d)) = (
+      crate::functions::math_ast::expr_to_bigint(&rargs[0]),
+      crate::functions::math_ast::expr_to_bigint(&rargs[1]),
+    )
+  {
+    let absk = k.unsigned_abs() as u32;
+    let np = n.pow(absk);
+    let dp = d.pow(absk);
+    return Ok(if *k >= 0 {
+      crate::functions::math_ast::number_theory::make_rational_expr(np, dp)
+    } else {
+      crate::functions::math_ast::number_theory::make_rational_expr(dp, np)
+    });
+  }
+
   // (-I)^(p/q) → -(-1)^((2q - p)/(2q) mod 2). Wolfram canonicalises a
   // negative-imaginary base raised to a rational power into a sign · (-1)^y
   // form by lining up the principal branch
