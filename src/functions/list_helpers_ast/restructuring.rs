@@ -1590,6 +1590,18 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![].into()));
   }
 
+  // Optional trailing level specification: `Join[l1, …, lk, n]` joins the
+  // lists at level n (default 1). A trailing `1` is the common case (e.g.
+  // `{y, m} ~Join~ 1`) and is equivalent to an ordinary join of the
+  // preceding lists; drop it and continue. (Levels >= 2 are left to the
+  // general path below, matching wolframscript leaving them unevaluated for
+  // the shapes Woxi doesn't thread.)
+  if lists.len() >= 2
+    && let Expr::Integer(1) = &lists[lists.len() - 1]
+  {
+    return join_ast(&lists[..lists.len() - 1]);
+  }
+
   // Check if all arguments are associations
   if lists.iter().all(|l| matches!(l, Expr::Association(_))) {
     let mut result: Vec<(Expr, Expr)> = Vec::new();
