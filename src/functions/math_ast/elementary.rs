@@ -1118,6 +1118,57 @@ fn floor_via_bigfloat(
 }
 
 /// Floor[x] - Floor function
+/// Exact integer Floor/Ceiling of an `Integer`, `BigInteger`, or
+/// `Rational[…]` whose parts are Integer/BigInteger. Computed with BigInt
+/// arithmetic so it stays correct for magnitudes beyond f64 range — the f64
+/// path would convert such rationals to ±inf and then saturate `as i128` to
+/// i128::MAX (e.g. Egyptian-fraction denominators around 1e300). Returns None
+/// for non-exact arguments (Real, symbolic, complex), which fall through.
+fn exact_floor_ceil(arg: &Expr, is_floor: bool) -> Option<Expr> {
+  use crate::functions::math_ast::{bigint_to_expr, expr_to_bigint};
+  use num_bigint::Sign;
+  use num_traits::Zero;
+  // Plain integers are already integral.
+  if let Some(n) = expr_to_bigint(arg) {
+    return Some(bigint_to_expr(n));
+  }
+  if let Expr::FunctionCall { name, args } = arg
+    && name == "Rational"
+    && args.len() == 2
+  {
+    let num = expr_to_bigint(&args[0])?;
+    let den = expr_to_bigint(&args[1])?;
+    if den.is_zero() {
+      return None;
+    }
+    // Normalize so the denominator is positive.
+    let (num, den) = if den.sign() == Sign::Minus {
+      (-num, -den)
+    } else {
+      (num, den)
+    };
+    // BigInt `/` truncates toward zero; correct toward -inf (floor) or
+    // +inf (ceiling) when the division has a remainder.
+    let q = &num / &den;
+    let r = &num - &q * &den;
+    let adjusted = if r.is_zero() {
+      q
+    } else if is_floor {
+      if num.sign() == Sign::Minus {
+        q - 1
+      } else {
+        q
+      }
+    } else if num.sign() == Sign::Minus {
+      q
+    } else {
+      q + 1
+    };
+    return Some(bigint_to_expr(adjusted));
+  }
+  None
+}
+
 pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1126,6 +1177,9 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 2 {
     return floor_ceil_two_arg(&args[0], &args[1], true);
+  }
+  if let Some(result) = exact_floor_ceil(&args[0], true) {
+    return Ok(result);
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     // i128 fits ~38 decimal digits; beyond that, `.floor() as i128` saturates
@@ -1182,6 +1236,9 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 2 {
     return floor_ceil_two_arg(&args[0], &args[1], false);
+  }
+  if let Some(result) = exact_floor_ceil(&args[0], false) {
+    return Ok(result);
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     // f64 has ~15-16 digits of integer precision, so any magnitude beyond
