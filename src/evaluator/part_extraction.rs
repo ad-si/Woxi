@@ -99,7 +99,11 @@ fn extract_span_from_items(
   } else {
     // An end one before the start is a valid empty span: `{x}[[;; -2]]` →
     // `{}` (end normalizes to 0). The empty-result branch below handles it.
-    let e = if end_raw < 0 { len + end_raw + 1 } else { end_raw };
+    let e = if end_raw < 0 {
+      len + end_raw + 1
+    } else {
+      end_raw
+    };
     if e == start - 1 {
       e
     } else {

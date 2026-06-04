@@ -1306,10 +1306,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // dedicated builtin lookups read them directly; routing those aside would
     // break NumericQ value declarations, usage messages, etc. The memoization
     // idiom (`f[x_] := f[x] = …`) only ever applies to user functions.
-    let is_builtin_head = !crate::evaluator::attributes::get_builtin_attributes(
-      func_name.as_str(),
-    )
-    .is_empty();
+    let is_builtin_head =
+      !crate::evaluator::attributes::get_builtin_attributes(func_name.as_str())
+        .is_empty();
     let all_literal_sameq = !is_builtin_head
       && !conditions.is_empty()
       && conditions.iter().all(|c| {

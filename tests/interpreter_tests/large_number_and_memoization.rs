@@ -37,10 +37,7 @@ mod large_number_and_memoization {
 
     #[test]
     fn clear_resets_memoized_values() {
-      assert_eq!(
-        interpret("h[2] = 5; Clear[h]; h[2]").unwrap(),
-        "h[2]"
-      );
+      assert_eq!(interpret("h[2] = 5; Clear[h]; h[2]").unwrap(), "h[2]");
     }
 
     #[test]
@@ -55,9 +52,8 @@ mod large_number_and_memoization {
     // cache) alongside the pattern rule.
     #[test]
     fn downvalues_reports_memoized_entries() {
-      let out =
-        interpret("k[n_] := k[n] = n + 1; k[5]; Length[DownValues[k]]")
-          .unwrap();
+      let out = interpret("k[n_] := k[n] = n + 1; k[5]; Length[DownValues[k]]")
+        .unwrap();
       // One pattern rule + one memoized value for k[5].
       assert_eq!(out, "2");
     }
@@ -71,8 +67,7 @@ mod large_number_and_memoization {
     #[test]
     fn small_plus_big_denominator() {
       assert_eq!(
-        interpret("1/3 + 1/170141183460469231731687303715884105729")
-          .unwrap(),
+        interpret("1/3 + 1/170141183460469231731687303715884105729").unwrap(),
         "56713727820156410577229101238628035244/\
          170141183460469231731687303715884105729"
       );
@@ -95,8 +90,7 @@ mod large_number_and_memoization {
     #[test]
     fn integer_plus_big_rational() {
       assert_eq!(
-        interpret("5 + 1/100000000000000000000000000000000000000")
-          .unwrap(),
+        interpret("5 + 1/100000000000000000000000000000000000000").unwrap(),
         "500000000000000000000000000000000000001/\
          100000000000000000000000000000000000000"
       );
@@ -146,8 +140,10 @@ mod large_number_and_memoization {
     #[test]
     fn sort_orders_huge_integers() {
       assert_eq!(
-        interpret("Sort[{10^320, 10^310, 10^330}] === {10^310, 10^320, 10^330}")
-          .unwrap(),
+        interpret(
+          "Sort[{10^320, 10^310, 10^330}] === {10^310, 10^320, 10^330}"
+        )
+        .unwrap(),
         "True"
       );
     }

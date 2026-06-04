@@ -1154,11 +1154,7 @@ fn exact_floor_ceil(arg: &Expr, is_floor: bool) -> Option<Expr> {
     let adjusted = if r.is_zero() {
       q
     } else if is_floor {
-      if num.sign() == Sign::Minus {
-        q - 1
-      } else {
-        q
-      }
+      if num.sign() == Sign::Minus { q - 1 } else { q }
     } else if num.sign() == Sign::Minus {
       q
     } else {
