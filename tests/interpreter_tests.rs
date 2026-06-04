@@ -491,6 +491,7 @@ mod interpreter_tests {
   mod patterns;
   mod property;
   mod quantity;
+  mod rosetta_script_fixes;
   mod row;
   mod special_functions;
   mod statistics;

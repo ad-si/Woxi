@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Appended record: xyz:x:1003:1000:X Yz,Room 1003,(234)555-8913,(234)555-0033,xyz@rosettacode.org:/home/xyz:/bin/bash

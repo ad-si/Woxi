@@ -1212,6 +1212,19 @@ script_test!(
 //     slow-timeout override in .config/nextest.toml. ===
 script_test!(script_egyptian_fractions, "egyptian_fractions.wls");
 
+// === RosettaCode tasks that already matched wolframscript verbatim ===
+script_test!(script_delegates, "delegates.wls");
+script_test!(
+  script_parsing_rpn_calculator_algorithm,
+  "parsing_rpn_calculator_algorithm.wls"
+);
+
+// === Unlocked by the Association-as-Map-function fix ===
+script_test!(
+  script_append_a_record_to_the_end_of_a_text_file,
+  "append_a_record_to_the_end_of_a_text_file.wls"
+);
+
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===
 script_test!(script_bitwise_operations, "bitwise_operations.wls");
