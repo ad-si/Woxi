@@ -140,6 +140,39 @@ fn is_infinity_expr(e: &Expr) -> Option<i8> {
   }
 }
 
+/// Exact ordering for real exact numbers (`Integer`, `BigInteger`, and
+/// `Rational[…]` with integer parts), via BigInt cross-multiplication. Used
+/// ahead of the f64 comparison in `canonical_cmp`, which collapses magnitudes
+/// beyond ~1.8e308 to ±inf and reports distinct values as equal — breaking
+/// Sort/MaximalBy on very large BigIntegers (e.g. Egyptian-fraction
+/// denominators). Returns None unless both arguments are exact real numbers,
+/// so Reals, complex values, and symbolic terms fall through unchanged.
+fn exact_real_cmp(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  use num_bigint::{BigInt, Sign};
+  fn as_ratio(e: &Expr) -> Option<(BigInt, BigInt)> {
+    match e {
+      Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
+      Expr::BigInteger(n) => Some((n.clone(), BigInt::from(1))),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        let n = crate::functions::math_ast::expr_to_bigint(&args[0])?;
+        let d = crate::functions::math_ast::expr_to_bigint(&args[1])?;
+        match d.sign() {
+          Sign::NoSign => None,
+          Sign::Minus => Some((-n, -d)),
+          Sign::Plus => Some((n, d)),
+        }
+      }
+      _ => None,
+    }
+  }
+  let (an, ad) = as_ratio(a)?;
+  let (bn, bd) = as_ratio(b)?;
+  // a/ad vs b/bd  ⇔  an*bd vs bn*ad  (both denominators positive).
+  Some((an * &bd).cmp(&(bn * &ad)))
+}
+
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Handle Infinity/-Infinity separately: they sort after all finite numbers
   let a_inf = is_infinity_expr(a);
@@ -152,6 +185,12 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (Some(_), None) => return std::cmp::Ordering::Greater, // Infinity after everything
     (None, Some(_)) => return std::cmp::Ordering::Less,
     (None, None) => {}
+  }
+
+  // Exact comparison for large integers/rationals before falling back to the
+  // f64 path (which loses precision and collapses values beyond f64 range).
+  if let Some(ord) = exact_real_cmp(a, b) {
+    return ord;
   }
 
   // Try numeric comparison (including complex numbers)
@@ -431,6 +470,13 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Comparator for *By key expressions: numeric when possible, lexicographic fallback.
 fn by_key_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Exact ordering for integer/rational keys first: parsing them as f64
+  // (below) collapses any magnitude beyond ~1.8e308 to inf, so e.g. a
+  // 1348-digit and a 2847-digit denominator would compare equal — making
+  // MaximalBy/MinimalBy pick the wrong element on huge BigIntegers.
+  if let Some(ord) = exact_real_cmp(a, b) {
+    return ord;
+  }
   let ka = crate::syntax::expr_to_string(a);
   let kb = crate::syntax::expr_to_string(b);
   if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
