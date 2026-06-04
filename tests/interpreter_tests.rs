@@ -483,6 +483,7 @@ mod interpreter_tests {
   mod image;
   mod interval;
   mod io;
+  mod large_number_and_memoization;
   mod linear_algebra;
   mod list;
   mod machine_specific;

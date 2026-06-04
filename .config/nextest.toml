@@ -23,6 +23,16 @@ slow-timeout = { period = "360s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# The Egyptian-fractions task builds the 99- and 999-denominator tables —
+# ~500k memoized fraction expansions plus two MaximalBy scans over the full
+# 999 table. It runs ~40s in release but ~270s standalone in debug, and more
+# under full parallel load, so it needs a wider window than the broad script
+# rule below. (The algorithm itself is linear; the time is raw list/Expr
+# allocation throughput over half a million expansions.)
+[[profile.default.overrides]]
+filter = 'test(script_egyptian_fractions)'
+slow-timeout = { period = "600s", terminate-after = 1 }
+
 # Some script_snapshot_tests run heavy RosettaCode programs that take
 # tens of seconds in debug builds. Give them a generous budget.
 [[profile.default.overrides]]

@@ -1206,6 +1206,11 @@ script_test!(
   script_aliquot_sequence_classifications,
   "aliquot_sequence_classifications.wls"
 );
+// === Unlocked by O(1) memoization dispatch + BigInt-correct Plus, Floor/
+//     Ceiling, and Sort/MaximalBy comparison. Heavy: builds the 99- and
+//     999-denominator tables (~500k memoized fractions), so it gets a wide
+//     slow-timeout override in .config/nextest.toml. ===
+script_test!(script_egyptian_fractions, "egyptian_fractions.wls");
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===
