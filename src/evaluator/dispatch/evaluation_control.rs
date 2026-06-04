@@ -581,8 +581,12 @@ pub fn dispatch_evaluation_control(
       if let Some(sym) = head_name {
         let has_value = ENV.with(|e| e.borrow().contains_key(sym));
         let has_func = crate::FUNC_DEFS.with(|m| m.borrow().contains_key(sym));
+        // Memoized literal definitions (e.g. `Foo[5] = "five"`) live in
+        // MEMO_VALUES, not FUNC_DEFS, but still count as a DownValue.
+        let has_memo =
+          crate::MEMO_VALUES.with(|m| m.borrow().contains_key(sym));
         return Some(Ok(Expr::Identifier(
-          if has_value || has_func {
+          if has_value || has_func || has_memo {
             "True"
           } else {
             "False"

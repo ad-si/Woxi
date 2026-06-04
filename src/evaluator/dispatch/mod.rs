@@ -727,6 +727,27 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // Fast path: memoized literal-argument value (`f[x_] := f[x] = …`). These
+  // are stored in MEMO_VALUES keyed by the joined argument string instead of
+  // as FUNC_DEFS overloads, so lookup is O(1) rather than a linear scan over
+  // every accumulated value. Checked before pattern overloads so memoized
+  // base cases take priority, matching the literal-before-pattern ordering.
+  if let Some(v) = crate::MEMO_VALUES.with(|m| {
+    let map = m.borrow();
+    let cache = map.get(name)?;
+    if cache.is_empty() {
+      return None;
+    }
+    let key = args
+      .iter()
+      .map(crate::syntax::expr_to_string)
+      .collect::<Vec<_>>()
+      .join("\u{1}");
+    cache.get(&key).map(|(_, v)| v.clone())
+  }) {
+    return Ok(v);
+  }
+
   // Check for user-defined functions (before built-in dispatch, so user
   // overrides take precedence — matching Wolfram Language semantics)
   // Clone overloads to avoid holding the borrow across evaluate calls.
@@ -1650,6 +1671,7 @@ pub fn evaluate_function_call_ast_inner(
       if let Expr::Identifier(sym) = arg {
         crate::ENV.with(|e| e.borrow_mut().remove(sym));
         crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+        crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
         crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));

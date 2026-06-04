@@ -32,6 +32,13 @@ thread_local! {
     //            name         Vec of (param_names, conditions, defaults, head_constraints, blank_types, body_AST) for multi-arity + condition + optional support
     //            blank_types: 1=Blank, 2=BlankSequence, 3=BlankNullSequence
     static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, Vec<u8>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    // Memoized literal-argument definitions (the `f[x_] := f[x] = …` idiom):
+    // function name -> (joined argument key -> (arg Exprs, stored value)).
+    // Kept separate from FUNC_DEFS so dispatch is O(1) per memoized value
+    // instead of linearly scanning thousands of accumulated literal DownValues
+    // (which made memoization O(n²)). The arg Exprs are retained so the
+    // entries can be reconstructed as rules for DownValues introspection.
+    pub static MEMO_VALUES: RefCell<HashMap<String, HashMap<String, (Vec<syntax::Expr>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
     // Builtin attributes that have been explicitly removed (via Unprotect,
@@ -888,11 +895,80 @@ pub fn packages_list() -> Vec<String> {
   out
 }
 
+/// DownValues for `sym` as stored 6-tuples, merging the literal-argument
+/// memoizations (kept in MEMO_VALUES, not FUNC_DEFS) back in as if they were
+/// ordinary literal DownValues — synthesizing the same shape `set_ast` would
+/// have produced. Memoized entries come first (literal definitions precede
+/// pattern ones, matching specificity ordering) and are sorted by key for a
+/// deterministic order. Returns None only when the symbol has neither.
+/// Used by Definition / Information so they still report `f[0] = 42`-style
+/// literal definitions after the memoization fast-path routed them aside.
+#[allow(clippy::type_complexity)]
+pub fn down_values_with_memo(
+  sym: &str,
+) -> Option<
+  Vec<(
+    Vec<String>,
+    Vec<Option<syntax::Expr>>,
+    Vec<Option<syntax::Expr>>,
+    Vec<Option<String>>,
+    Vec<u8>,
+    syntax::Expr,
+  )>,
+> {
+  let memo_entries = MEMO_VALUES.with(|m| {
+    m.borrow().get(sym).map(|cache| {
+      let mut entries: Vec<_> = cache.iter().collect();
+      entries.sort_by(|a, b| a.0.cmp(b.0));
+      entries
+        .into_iter()
+        .map(|(_key, (arg_exprs, value))| {
+          let n = arg_exprs.len();
+          let params: Vec<String> =
+            (0..n).map(|i| format!("_dv{}", i)).collect();
+          let conditions: Vec<Option<syntax::Expr>> = arg_exprs
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+              Some(syntax::Expr::Comparison {
+                operands: vec![
+                  syntax::Expr::Identifier(format!("_dv{}", i)),
+                  a.clone(),
+                ],
+                operators: vec![syntax::ComparisonOp::SameQ],
+              })
+            })
+            .collect();
+          (
+            params,
+            conditions,
+            vec![None; n],
+            vec![None; n],
+            vec![1u8; n],
+            value.clone(),
+          )
+        })
+        .collect::<Vec<_>>()
+    })
+  });
+  let func_defs = FUNC_DEFS.with(|m| m.borrow().get(sym).cloned());
+  match (memo_entries, func_defs) {
+    (None, None) => None,
+    (Some(m), None) => Some(m),
+    (None, Some(f)) => Some(f),
+    (Some(mut m), Some(f)) => {
+      m.extend(f);
+      Some(m)
+    }
+  }
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {
   ENV.with(|e| e.borrow_mut().clear());
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
+  MEMO_VALUES.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS_DELAYED.with(|m| m.borrow_mut().clear());

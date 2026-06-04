@@ -221,11 +221,13 @@ pub fn dispatch_attributes(
           Expr::Identifier(sym) | Expr::Constant(sym) => {
             ENV.with(|e| e.borrow_mut().remove(sym));
             crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+            crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(sym));
           }
           Expr::String(pattern) => {
             for sym in matching_user_symbols(pattern) {
               ENV.with(|e| e.borrow_mut().remove(&sym));
               crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(&sym));
+              crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(&sym));
             }
           }
           _ => {}
@@ -237,6 +239,7 @@ pub fn dispatch_attributes(
       let clear_one = |sym: &str| {
         ENV.with(|e| e.borrow_mut().remove(sym));
         crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+        crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_OPTIONS_DELAYED.with(|m| {

@@ -561,10 +561,7 @@ pub fn dispatch_complex_and_special(
           let env = e.borrow();
           env.get(sym).cloned()
         });
-        let down_values = crate::FUNC_DEFS.with(|m| {
-          let defs = m.borrow();
-          defs.get(sym).cloned()
-        });
+        let down_values = crate::down_values_with_memo(sym);
         let user_attrs =
           crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
 
@@ -606,8 +603,7 @@ pub fn dispatch_complex_and_special(
         && !sym.contains('*')
       {
         let own_value = crate::ENV.with(|e| e.borrow().get(sym).cloned());
-        let down_values =
-          crate::FUNC_DEFS.with(|m| m.borrow().get(sym).cloned());
+        let down_values = crate::down_values_with_memo(sym);
         let user_attrs =
           crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
         return Some(Ok(format_user_information(
@@ -797,10 +793,7 @@ pub fn dispatch_complex_and_special(
         let down_values = if read_protected {
           None
         } else {
-          crate::FUNC_DEFS.with(|m| {
-            let defs = m.borrow();
-            defs.get(sym).cloned()
-          })
+          crate::down_values_with_memo(sym)
         };
         if let Some(overloads) = down_values {
           for (params, conds, _defaults, heads, _blank_types, body) in
@@ -1135,10 +1128,7 @@ pub fn dispatch_complex_and_special(
             lines.push(format!("{} = {}", sym, val_str));
           }
 
-          let down_values = crate::FUNC_DEFS.with(|m| {
-            let defs = m.borrow();
-            defs.get(sym).cloned()
-          });
+          let down_values = crate::down_values_with_memo(sym);
           if let Some(overloads) = down_values {
             for (params, conds, _defaults, heads, _blank_types, body) in
               &overloads
@@ -1246,10 +1236,7 @@ pub fn dispatch_complex_and_special(
           }
 
           // DownValues bodies
-          let down_values = crate::FUNC_DEFS.with(|m| {
-            let defs = m.borrow();
-            defs.get(sym).cloned()
-          });
+          let down_values = crate::down_values_with_memo(sym);
           if let Some(overloads) = down_values {
             for (_params, _conds, _defaults, _heads, _blank_types, body) in
               overloads

@@ -1295,6 +1295,53 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       }
     });
 
+    // Pure literal-argument definition `f[lit, …] = value` (every argument is
+    // a literal matched by SameQ, no pattern blanks) — the memoization idiom
+    // `f[x_] := f[x] = …`. Store it in the O(1) MEMO_VALUES cache rather than
+    // accumulating thousands of FUNC_DEFS overloads (which made memoized
+    // recursion O(n²) under linear dispatch). DownValues merges these back.
+    // Only divert genuine user-defined functions to the memoization cache.
+    // Builtin heads (NumericQ[a]=True, MessageName/`f::usage`, Format, Default,
+    // Options, N, …) keep their literal definitions in FUNC_DEFS, where the
+    // dedicated builtin lookups read them directly; routing those aside would
+    // break NumericQ value declarations, usage messages, etc. The memoization
+    // idiom (`f[x_] := f[x] = …`) only ever applies to user functions.
+    let is_builtin_head = !crate::evaluator::attributes::get_builtin_attributes(
+      func_name.as_str(),
+    )
+    .is_empty();
+    let all_literal_sameq = !is_builtin_head
+      && !conditions.is_empty()
+      && conditions.iter().all(|c| {
+        matches!(c, Some(Expr::Comparison { operators, .. })
+          if operators.len() == 1
+            && operators[0] == crate::syntax::ComparisonOp::SameQ)
+      });
+    if all_literal_sameq {
+      let mut arg_exprs = Vec::with_capacity(conditions.len());
+      for c in &conditions {
+        if let Some(Expr::Comparison { operands, .. }) = c
+          && operands.len() == 2
+        {
+          arg_exprs.push(operands[1].clone());
+        }
+      }
+      if arg_exprs.len() == conditions.len() {
+        let key = arg_exprs
+          .iter()
+          .map(crate::syntax::expr_to_string)
+          .collect::<Vec<_>>()
+          .join("\u{1}");
+        crate::MEMO_VALUES.with(|m| {
+          m.borrow_mut()
+            .entry(func_name.clone())
+            .or_default()
+            .insert(key, (arg_exprs, rhs_value.clone()));
+        });
+        return Ok(rhs_value);
+      }
+    }
+
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);

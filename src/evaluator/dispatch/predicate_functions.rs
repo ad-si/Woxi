@@ -960,7 +960,31 @@ pub fn dispatch_predicate_functions(
       if let Expr::Identifier(sym) = &args[0] {
         let func_defs = crate::FUNC_DEFS
           .with(|m| m.borrow().get(sym).cloned().unwrap_or_default());
-        if func_defs.is_empty() {
+        // Memoized literal-argument values (stored in MEMO_VALUES, not
+        // FUNC_DEFS) are reconstructed here as HoldPattern[f[args]] :> value
+        // rules so DownValues still reports them.
+        let memo_rules: Vec<Expr> = crate::MEMO_VALUES.with(|m| {
+          m.borrow()
+            .get(sym)
+            .map(|cache| {
+              cache
+                .values()
+                .map(|(arg_exprs, value)| Expr::RuleDelayed {
+                  pattern: Box::new(Expr::FunctionCall {
+                    name: "HoldPattern".to_string(),
+                    args: vec![Expr::FunctionCall {
+                      name: sym.clone(),
+                      args: arg_exprs.clone().into(),
+                    }]
+                    .into(),
+                  }),
+                  replacement: Box::new(value.clone()),
+                })
+                .collect()
+            })
+            .unwrap_or_default()
+        });
+        if func_defs.is_empty() && memo_rules.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
         }
         // TagSet/TagSetDelayed definitions are also stored in FUNC_DEFS so
@@ -1025,6 +1049,8 @@ pub fn dispatch_predicate_functions(
             }
           })
           .collect();
+        let mut rules = rules;
+        rules.extend(memo_rules);
         return Some(Ok(Expr::List(rules.into())));
       }
       return Some(Ok(Expr::List(vec![].into())));

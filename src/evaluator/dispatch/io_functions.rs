@@ -2071,11 +2071,9 @@ pub fn dispatch_io_functions(
           ));
         }
 
-        // 2. DownValues (function definitions)
-        let down_values = crate::FUNC_DEFS.with(|m| {
-          let defs = m.borrow();
-          defs.get(sym).cloned()
-        });
+        // 2. DownValues (function definitions). Includes literal-argument
+        // memoizations (e.g. `f[1] = 42`), which live in MEMO_VALUES.
+        let down_values = crate::down_values_with_memo(sym);
         if let Some(overloads) = down_values {
           for (params, conditions, defaults, heads, _blank_types, body) in
             &overloads
