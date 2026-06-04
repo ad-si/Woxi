@@ -493,6 +493,13 @@ pub fn apply_function_to_arg(
         evaluate_function_call_ast(name, &new_args)
       }
     }
+    Expr::Association(_) => {
+      // An association used as a function is a key lookup: `assoc[key]`.
+      // Needed when an association is the function in Map etc.
+      // (`assoc /@ {k1, k2}` → {assoc[k1], assoc[k2]}). apply_curried_call
+      // already implements the lookup (and Missing[…] for absent keys).
+      apply_curried_call(func, std::slice::from_ref(arg))
+    }
     _ => {
       // Fallback: create a function call expression
       let func_str = expr_to_string(func);
