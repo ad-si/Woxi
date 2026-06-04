@@ -4691,7 +4691,8 @@ fn operator_precedence(op: &str) -> u8 {
     "." => 12, // Dot (higher than arithmetic)
     "@@@" | "@@" => 13, // Apply/MapApply
     "/@" => 14, // Map (higher than Apply)
-    "@*" | "/*" => 14, // Composition/RightComposition (same level as Map)
+    "@*" | "/*" => 15, // Composition/RightComposition (binds tighter than Map:
+    // `Length@*f /@ list` parses as `(Length@*f) /@ list`)
     "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
     "^" | "^_NEG" => 16, // Power (`^_NEG` is `a^-b` with negated right operand)
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
