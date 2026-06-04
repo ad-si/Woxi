@@ -1372,6 +1372,17 @@ mod map_at {
   }
 
   #[test]
+  fn empty_span_beyond_length() {
+    // A start one past the end, or an end one before the start, is a valid
+    // empty span (matching wolfram) — not a Part::take error. These are what
+    // let stack-shrinking loops like `s = s[[;; -2]]` terminate.
+    assert_eq!(interpret("{a}[[2 ;;]]").unwrap(), "{}");
+    assert_eq!(interpret("{a, b, c}[[4 ;;]]").unwrap(), "{}");
+    assert_eq!(interpret("{x}[[;; -2]]").unwrap(), "{}");
+    assert_eq!(interpret("{a, b, c}[[;; -2]]").unwrap(), "{a, b}");
+  }
+
+  #[test]
   fn top_level_span_bare() {
     // Regression: bare `;;` used to fail parsing at the statement level.
     // wolframscript's REPL preserves the `FullForm` wrapper for Span,

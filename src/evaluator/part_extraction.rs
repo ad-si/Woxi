@@ -85,6 +85,11 @@ fn extract_span_from_items(
 
   let start = if let Some(v) = normalize_span_pos(start_raw, len) {
     v
+  } else if start_raw == len + 1 {
+    // A start one past the end is a valid empty span: `{a}[[2;;]]` → `{}`,
+    // `{a,b,c}[[4;;]]` → `{}` (matching wolfram). The empty-result branch
+    // below (end == start - 1) then yields the empty list.
+    len + 1
   } else {
     part_take_warn(expr, start_raw, end_raw);
     return Ok(part_take_unevaluated(expr, index));
@@ -92,8 +97,15 @@ fn extract_span_from_items(
   let end = if let Some(v) = normalize_span_pos(end_raw, len) {
     v
   } else {
-    part_take_warn(expr, start_raw, end_raw);
-    return Ok(part_take_unevaluated(expr, index));
+    // An end one before the start is a valid empty span: `{x}[[;; -2]]` →
+    // `{}` (end normalizes to 0). The empty-result branch below handles it.
+    let e = if end_raw < 0 { len + end_raw + 1 } else { end_raw };
+    if e == start - 1 {
+      e
+    } else {
+      part_take_warn(expr, start_raw, end_raw);
+      return Ok(part_take_unevaluated(expr, index));
+    }
   };
 
   if (step > 0 && start > end) || (step < 0 && start < end) {

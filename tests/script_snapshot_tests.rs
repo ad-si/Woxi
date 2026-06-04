@@ -1196,6 +1196,11 @@ script_test!(script_closures_value_capture, "closures_value_capture.wls");
 script_test!(script_sedols, "sedols.wls");
 // === Unlocked by FindShortestPath (Dijkstra on a weighted Graph) ===
 script_test!(script_dijkstras_algorithm, "dijkstras_algorithm.wls");
+// === Unlocked by empty Span parts (a[[n;;]] / a[[;;-2]] beyond length → {}) ===
+script_test!(
+  script_parsing_shunting_yard_algorithm,
+  "parsing_shunting-yard_algorithm.wls"
+);
 
 // === RosettaCode tasks curated from the _tasks_ source dumps into a single
 //     runnable solution (output verified identical to wolframscript) ===
