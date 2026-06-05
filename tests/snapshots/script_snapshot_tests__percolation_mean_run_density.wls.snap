@@ -1,0 +1,5 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Mean run density: 0.3333333333333333

@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Original sum: 45
+After transfers: {3, 6, 4, 1, 3, 2, 13, 4, 7, 2}
+Final sum: 45

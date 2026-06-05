@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Cards in deck: 52
+Deal three: {{Ace, Diamonds}, {Ace, Clubs}, {Ace, Hearts}}

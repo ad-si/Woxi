@@ -1415,6 +1415,44 @@ script_test!(
   "luhn_test_of_credit_card_numbers.wls"
 );
 
+// === RNG/parallel/timing RosettaCode tasks, hardcoded to deterministic values ===
+// These originally used Random*/ParallelDo/ScheduledTask constructs whose output
+// can't be reproduced against wolframscript: the two engines' seeded RNG streams
+// differ, and parallel/timing ordering is non-deterministic. The random (or
+// parallel/timed) part is replaced with a fixed value — see the comment in each
+// script — and the output is verified identical to wolframscript.
+script_test!(script_pick_random_element, "pick_random_element.wls");
+script_test!(script_random_numbers, "random_numbers.wls");
+script_test!(script_create_an_html_table, "create_an_html_table.wls");
+script_test!(script_concurrent_computing, "concurrent_computing.wls");
+script_test!(
+  script_sorting_algorithms_sleep_sort,
+  "sorting_algorithms_sleep_sort.wls"
+);
+script_test!(
+  script_sorting_algorithms_bogosort,
+  "sorting_algorithms_bogosort.wls"
+);
+script_test!(
+  script_generate_chess960_starting_position,
+  "generate_chess960_starting_position.wls"
+);
+script_test!(script_playing_cards, "playing_cards.wls");
+script_test!(
+  script_trabb_pardo_knuth_algorithm,
+  "trabb_pardo%E2%80%93knuth_algorithm.wls"
+);
+script_test!(
+  script_permutations_rank_of_a_permutation,
+  "permutations_rank_of_a_permutation.wls"
+);
+script_test!(script_average_loop_length, "average_loop_length.wls");
+script_test!(
+  script_percolation_mean_run_density,
+  "percolation_mean_run_density.wls"
+);
+script_test!(script_atomic_updates, "atomic_updates.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);
