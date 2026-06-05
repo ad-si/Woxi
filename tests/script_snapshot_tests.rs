@@ -1,8 +1,54 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use woxi::{
   clear_state, interpret_with_stdout, set_script_command_line, without_shebang,
 };
+
+/// Serializes the process-wide current-directory swap used to sandbox the
+/// woxi interpreter. The working directory is global state, so concurrent
+/// tests (e.g. plain `cargo test` without per-test processes) must not race
+/// on it. Under `cargo nextest` each test is its own process and never
+/// contends, so the lock is essentially free there.
+static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+/// Monotonic counter giving every sandbox directory a unique name without
+/// relying on randomness or the clock.
+static SANDBOX_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Create a fresh, empty working directory under the system temp dir so a
+/// script that writes relative-path files (e.g. `OpenWrite["output.txt"]`)
+/// can never pollute the repository. The directory and its contents are
+/// removed when the returned guard is dropped.
+struct Sandbox {
+  dir: PathBuf,
+}
+
+impl Sandbox {
+  fn new(name: &str) -> Self {
+    let seq = SANDBOX_SEQ.fetch_add(1, Ordering::Relaxed);
+    let safe: String = name
+      .chars()
+      .map(|c| if c.is_alphanumeric() { c } else { '_' })
+      .collect();
+    let dir = std::env::temp_dir().join(format!(
+      "woxi_script_{}_{}_{}",
+      std::process::id(),
+      seq,
+      safe
+    ));
+    fs::create_dir_all(&dir)
+      .unwrap_or_else(|e| panic!("Failed to create sandbox {dir:?}: {e}"));
+    Sandbox { dir }
+  }
+}
+
+impl Drop for Sandbox {
+  fn drop(&mut self) {
+    let _ = fs::remove_dir_all(&self.dir);
+  }
+}
 
 /// Run a script and snapshot its Print[] output.
 ///
@@ -21,9 +67,14 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
     .join(name);
   let use_wolfram = std::env::var("WOXI_USE_WOLFRAM").as_deref() == Ok("true");
 
+  // Run every script inside a throwaway working directory so any relative
+  // file writes stay out of the repository. Tests must be fully encapsulated.
+  let sandbox = Sandbox::new(name);
+
   let stdout = if use_wolfram {
     let mut cmd = std::process::Command::new("wolframscript");
     cmd.arg("-file").arg(&path);
+    cmd.current_dir(&sandbox.dir);
     for arg in args {
       cmd.arg(arg);
     }
@@ -50,10 +101,26 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
     let content = fs::read_to_string(&path).unwrap();
     let code = without_shebang(&content);
 
-    let result = interpret_with_stdout(&code)
-      .unwrap_or_else(|e| panic!("Script {} failed: {}", name, e));
+    // The interpreter resolves relative paths against the process working
+    // directory, so swap it for the sandbox while evaluating. The lock keeps
+    // this safe even if tests share a process.
+    let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let prev_dir = std::env::current_dir().ok();
+    std::env::set_current_dir(&sandbox.dir).unwrap_or_else(|e| {
+      panic!("Failed to enter sandbox {:?}: {}", sandbox.dir, e)
+    });
 
-    result.stdout
+    let result = interpret_with_stdout(&code);
+
+    // Restore the working directory before any potential panic so the
+    // sandbox can be cleaned up and other tests are unaffected.
+    if let Some(prev) = prev_dir {
+      let _ = std::env::set_current_dir(prev);
+    }
+
+    result
+      .unwrap_or_else(|e| panic!("Script {} failed: {}", name, e))
+      .stdout
   };
 
   insta::assert_snapshot!(name, stdout);
