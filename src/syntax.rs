@@ -4683,7 +4683,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Function]" | "\u{F4A1}" => 1,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
-    "~~" => 8,           // StringExpression (lower than Alternatives)
+    "~~" => 8,          // StringExpression (lower than Alternatives)
     "|" => 9, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 10, // Plus/Minus
     "*" | "/" => 11, // Times/Divide
