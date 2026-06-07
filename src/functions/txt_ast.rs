@@ -57,7 +57,7 @@ fn token_to_expr(tok: &str) -> Expr {
 /// the caller can fall back to returning the expression unevaluated.
 ///
 /// Supported elements (matching wolframscript):
-/// - `"Plaintext"` / `"String"` → full file content (trailing `\n` stripped).
+/// - `"Plaintext"` / `"String"` / `"Text"` → full file content (trailing `\n` stripped).
 /// - `"Lines"` → list of line strings.
 /// - `"Words"` → flat list of whitespace-separated tokens.
 /// - `"Data"`  → if every non-empty line has the same whitespace-token
@@ -67,7 +67,7 @@ fn token_to_expr(tok: &str) -> Expr {
 ///               regardless of whether the rows are uniform in length.
 pub fn import_element(content: &str, element: &str) -> Option<Expr> {
   match element {
-    "Plaintext" | "String" => {
+    "Plaintext" | "String" | "Text" => {
       Some(Expr::String(strip_trailing_newline(content.to_string())))
     }
     "Lines" => {

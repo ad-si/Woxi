@@ -557,12 +557,12 @@ ConditionOp = @{
   | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "<" | ">"       // Order comparison, ≤, ≥
-  | "+" | "-" | "*" | "/" | "^"   // Arithmetic
-  | "&&" | "||"                   // Logical
-  | "/@"                          // Map (must be before @)
+  | "/@"                          // Map (must be before the bare "/" of Arithmetic)
   | "@@@"                         // MapApply (must be before @@)
   | "@@"                          // Apply (must be before @)
   | "@"                           // Prefix application
+  | "+" | "-" | "*" | "/" | "^"   // Arithmetic
+  | "&&" | "||"                   // Logical
   | "|"                           // Alternatives
   | "~~"                          // StringExpression
   | "." ~ !ASCII_DIGIT ~ !"."    // Dot operator

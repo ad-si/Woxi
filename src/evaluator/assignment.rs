@@ -682,7 +682,23 @@ fn expr_references_identifier(expr: &Expr, name: &str) -> bool {
 }
 
 /// AST-based Set implementation to handle Part assignment on associations and lists
+/// `Symbol["x"]` on the left-hand side of an assignment denotes the symbol
+/// `x` itself, so rewrite it to a plain `Identifier` before storing. This
+/// lets `Set[Symbol["x"], v]` (and `Symbol["x"] = v`) bind the same `x` that a
+/// later bare `x` lookup resolves, matching wolframscript.
+fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = lhs
+    && name == "Symbol"
+    && args.len() == 1
+    && let Expr::String(s) = &args[0]
+  {
+    return Expr::Identifier(s.clone());
+  }
+  lhs.clone()
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
+  let lhs = &normalize_symbol_lhs(lhs);
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
   // Set[Condition[f[x_], test], body]. Extract the pattern and condition.
   let (lhs, _lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
@@ -1482,6 +1498,7 @@ pub fn set_delayed_ast(
   lhs: &Expr,
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  let lhs = &normalize_symbol_lhs(lhs);
   // Early reject: `a + b := c` / `a * b := c` / `a^b := c` etc.
   // attempt to install DownValues on the corresponding built-in
   // (`Plus`, `Times`, `Power`, …) which are Protected.

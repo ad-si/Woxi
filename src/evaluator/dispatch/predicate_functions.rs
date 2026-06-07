@@ -390,7 +390,13 @@ pub fn dispatch_predicate_functions(
     // Symbol["name"] - Convert string to symbol identifier
     "Symbol" if args.len() == 1 => {
       if let Expr::String(name) = &args[0] {
-        return Some(Ok(Expr::Identifier(name.clone())));
+        // `Symbol["x"]` yields the symbol `x`; re-evaluate it so that an
+        // existing OwnValue resolves (matching wolframscript, where
+        // `x = 7; Symbol["x"]` returns 7). An unbound symbol evaluates to
+        // itself.
+        return Some(crate::evaluator::evaluate_expr_to_expr(
+          &Expr::Identifier(name.clone()),
+        ));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Symbol".to_string(),

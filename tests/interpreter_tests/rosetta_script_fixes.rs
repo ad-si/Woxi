@@ -108,4 +108,79 @@ mod rosetta_script_fixes {
       );
     }
   }
+
+  // In a rule/condition context (the RHS of `->`, `/.`, or a List item) the
+  // Map operator `/@` must be recognised before the bare arithmetic `/`,
+  // otherwise `b /@ c` is mis-parsed as `b / (@c)` and the parse fails.
+  // (ranking_methods)
+  mod map_in_rule_context {
+    use super::*;
+
+    #[test]
+    fn map_on_rule_rhs() {
+      assert_eq!(
+        interpret("{1, 2, 3} /. x_List :> (# + 1 & /@ x)").unwrap(),
+        "{2, 3, 4}"
+      );
+    }
+
+    #[test]
+    fn map_inside_list_rule() {
+      assert_eq!(
+        interpret("f[x_] := x + 10; {a -> f /@ {1, 2}}").unwrap(),
+        "{a -> {11, 12}}"
+      );
+    }
+
+    #[test]
+    fn map_on_replaceall_rhs() {
+      assert_eq!(
+        interpret("g[x_] := 2 x; 5 /. n_ :> Total[g /@ {n, n}]").unwrap(),
+        "20"
+      );
+    }
+  }
+
+  // `Symbol["name"]` denotes the symbol `name` itself, so it must unify with
+  // a plain `name` for both assignment and lookup. (dynamic_variable_names)
+  mod symbol_from_string {
+    use super::*;
+
+    #[test]
+    fn assign_via_symbol_then_read_bare() {
+      assert_eq!(interpret("Set[Symbol[\"xy\"], 99]; xy").unwrap(), "99");
+    }
+
+    #[test]
+    fn read_via_symbol_after_bare_assign() {
+      assert_eq!(interpret("xy = 7; Symbol[\"xy\"]").unwrap(), "7");
+    }
+
+    #[test]
+    fn unbound_symbol_returns_itself() {
+      assert_eq!(interpret("Symbol[\"neverset\"]").unwrap(), "neverset");
+    }
+  }
+
+  // `Import[file, "Text"]` returns the file contents as a string, the same
+  // element wolframscript accepts. (letter_frequency, globally_replace_…)
+  mod import_text_element {
+    use super::*;
+
+    #[test]
+    fn text_element_reads_full_contents() {
+      let path = std::env::temp_dir()
+        .join("woxi_import_text_element.txt")
+        .to_string_lossy()
+        .into_owned();
+      let _ = std::fs::remove_file(&path);
+      let script = format!(
+        "Export[\"{path}\", \"hello world\", \"Text\"]; \
+         Print[Import[\"{path}\", \"Text\"]]"
+      );
+      let out = interpret_with_stdout(&script).unwrap().stdout;
+      let _ = std::fs::remove_file(&path);
+      assert_eq!(out, "hello world\n");
+    }
+  }
 }
