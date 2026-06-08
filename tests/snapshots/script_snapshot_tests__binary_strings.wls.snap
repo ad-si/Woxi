@@ -1,0 +1,13 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+s1 = {12, 56, 82, 65}
+s2 = {83, 12, 56, 65}
+s1 === s2: False
+clone s3 = {12, 56, 82, 65}
+s3 empty: False
+append: {12, 56, 82, 65, 22}
+substring: {56, 82, 65, 22}
+replace: {12, 56, 82, 65, 33, 44}
+join: {12, 56, 82, 65, 83, 12, 56, 65}

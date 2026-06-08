@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Keys: {2, sometext}
+Values: {string, 23}
+  2 -> string
+  sometext -> 23

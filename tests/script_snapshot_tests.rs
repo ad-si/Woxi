@@ -1452,6 +1452,32 @@ script_test!(
   "percolation_mean_run_density.wls"
 );
 script_test!(script_atomic_updates, "atomic_updates.wls");
+script_test!(script_best_shuffle, "best_shuffle.wls");
+script_test!(script_count_in_octal, "count_in_octal.wls");
+script_test!(script_queue_usage, "queue_usage.wls");
+script_test!(
+  script_associative_array_iteration,
+  "associative_array_iteration.wls"
+);
+script_test!(script_pascals_triangle, "pascals_triangle.wls");
+script_test!(script_binary_strings, "binary_strings.wls");
+script_test!(script_ranking_methods, "ranking_methods.wls");
+script_test!(script_read_entire_file, "read_entire_file.wls");
+script_test!(script_letter_frequency, "letter_frequency.wls");
+script_test!(
+  script_globally_replace_text_in_several_files,
+  "globally_replace_text_in_several_files.wls"
+);
+script_test!(
+  script_read_a_specific_line_from_a_file,
+  "read_a_specific_line_from_a_file.wls"
+);
+script_test!(script_input_loop, "input_loop.wls");
+script_test!(script_a_b, "a_b.wls");
+script_test!(script_dynamic_variable_names, "dynamic_variable_names.wls");
+script_test!(script_mad_libs, "mad_libs.wls");
+script_test!(script_guess_the_number, "guess_the_number.wls");
+script_test!(script_align_columns, "align_columns.wls");
 
 #[test]
 fn script_cli_args() {

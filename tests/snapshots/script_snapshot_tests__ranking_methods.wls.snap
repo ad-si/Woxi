@@ -1,0 +1,9 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+standard: {1, 3, 3, 6, 6, 6, 7}
+modified: {1, 2, 2, 4, 4, 4, 7}
+dense: {4, 3, 3, 2, 2, 2, 1}
+ordinal: {1, 3, 2, 6, 5, 4, 7}
+fractional: {1, 2.5, 2.5, 5, 5, 5, 7}

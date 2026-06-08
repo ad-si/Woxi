@@ -1,0 +1,13 @@
+s1 = {12, 56, 82, 65};
+s2 = {83, 12, 56, 65};
+Print["s1 = ", s1];
+Print["s2 = ", s2];
+Print["s1 === s2: ", s1 === s2];
+s3 = s1;
+Print["clone s3 = ", s3];
+Print["s3 empty: ", s3 === {}];
+AppendTo[s3, 22];
+Print["append: ", s3];
+Print["substring: ", Take[s3, {2, 5}]];
+Print["replace: ", s3 /. {22 -> Sequence[33, 44]}];
+Print["join: ", Join[s1, s2]];

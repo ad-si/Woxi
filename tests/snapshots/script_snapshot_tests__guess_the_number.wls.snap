@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Guess: 3
+Guess: 9
+Guess: 7
+Well guessed!

@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Given      a          text       file       of         many       lines      
+are        delineated by         a          single     char       
+write      a          program

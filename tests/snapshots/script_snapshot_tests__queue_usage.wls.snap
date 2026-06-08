@@ -1,0 +1,13 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+True
+{1, 2, 3}
+False
+1
+2
+{3}
+3
+False
+True

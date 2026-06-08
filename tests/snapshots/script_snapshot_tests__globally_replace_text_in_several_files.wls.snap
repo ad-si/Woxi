@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+a.txt: Hello New York!
+b.txt: Hello New York!
+c.txt: Hello New York!

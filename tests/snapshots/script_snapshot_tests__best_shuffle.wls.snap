@@ -1,0 +1,10 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+abracadabra,baabacadrar,(0)
+seesaw,assewe,(0)
+elk,kel,(0)
+grrrrrr,rgrrrrr,(5)
+up,pu,(0)
+a,a,(1)
