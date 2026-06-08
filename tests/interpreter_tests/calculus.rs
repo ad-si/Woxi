@@ -1618,6 +1618,86 @@ mod limit {
   }
 }
 
+mod residue {
+  use super::*;
+
+  #[test]
+  fn simple_pole_at_zero() {
+    assert_eq!(interpret("Residue[1/z, {z, 0}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn simple_pole_shifted() {
+    assert_eq!(interpret("Residue[1/(z - 2), {z, 2}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn simple_pole_of_rational() {
+    // 1/(z^2-1) has simple poles at ±1, residue 1/2 at z = 1.
+    assert_eq!(interpret("Residue[1/(z^2 - 1), {z, 1}]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn removable_singularity_is_simple_pole() {
+    // Sin[z]/z^2 = 1/z - z/6 + ... — a simple pole with residue 1.
+    assert_eq!(interpret("Residue[Sin[z]/z^2, {z, 0}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn double_pole_residue_zero() {
+    // 1/z^2 has no 1/z term, so the residue is 0.
+    assert_eq!(interpret("Residue[1/z^2, {z, 0}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn higher_order_pole() {
+    // Exp[z]/z^3 = (1 + z + z^2/2 + ...)/z^3, coefficient of 1/z is 1/2.
+    assert_eq!(interpret("Residue[Exp[z]/z^3, {z, 0}]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn second_order_pole_with_numerator() {
+    assert_eq!(interpret("Residue[(z + 1)/(z - 1)^2, {z, 1}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn regular_point_residue_zero() {
+    // No singularity at z = 0, so the residue is 0.
+    assert_eq!(interpret("Residue[z^2, {z, 0}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cotangent_residue() {
+    assert_eq!(interpret("Residue[Cot[z], {z, 0}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn complex_pole() {
+    // 1/(z^2+1) has poles at ±I; residue at z = I is -I/2.
+    assert_eq!(interpret("Residue[1/(z^2 + 1), {z, I}]").unwrap(), "-1/2*I");
+  }
+
+  #[test]
+  fn symbolic_pole_location() {
+    assert_eq!(interpret("Residue[1/(z - a), {z, a}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic_double_pole_residue_zero() {
+    assert_eq!(interpret("Residue[b/(z - a)^2, {z, a}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn quartic_simple_pole() {
+    assert_eq!(interpret("Residue[1/(z^4 - 1), {z, 1}]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn complex_pole_with_numerator() {
+    assert_eq!(interpret("Residue[z/(z^2 + 1), {z, I}]").unwrap(), "1/2");
+  }
+}
+
 mod nintegrate {
   use super::*;
 

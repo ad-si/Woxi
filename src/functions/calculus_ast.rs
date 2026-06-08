@@ -7845,6 +7845,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
               return result;
             }
+            // Accept a finite complex-number constant (e.g. -I/2). Direct
+            // substitution at a point where the expression is continuous is
+            // exactly the limit; for complex points the result is a pure
+            // numeric-complex form that try_eval_to_f64 can't see.
+            if is_numeric_complex_constant(val) {
+              return result;
+            }
             // Return unevaluated if substitution doesn't yield a clean result
           }
         }
@@ -7925,6 +7932,198 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Limit".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// Returns true if a (resolved) limit result is a finite value — i.e. it is
+/// not Infinity / ComplexInfinity / Indeterminate / DirectedInfinity[...] and
+/// is not an unresolved `Limit[...]` wrapper. Used by `residue_ast` to detect
+/// the order of a pole.
+fn is_finite_limit_value(expr: &Expr) -> bool {
+  fn scan(expr: &Expr) -> bool {
+    match expr {
+      Expr::Identifier(s) => {
+        !matches!(s.as_str(), "Infinity" | "ComplexInfinity" | "Indeterminate")
+      }
+      Expr::FunctionCall { name, args } => {
+        if matches!(name.as_str(), "DirectedInfinity" | "Limit" | "Indeterminate")
+        {
+          return false;
+        }
+        args.iter().all(scan)
+      }
+      Expr::BinaryOp { left, right, .. } => scan(left) && scan(right),
+      Expr::UnaryOp { operand, .. } => scan(operand),
+      Expr::List(items) => items.iter().all(scan),
+      _ => true,
+    }
+  }
+  scan(expr)
+}
+
+/// Returns true if `expr` is a finite complex (or real) number constant — i.e.
+/// built only from numeric atoms and the imaginary unit `I` combined with
+/// arithmetic operators, containing no free variables and no infinities.
+fn is_numeric_complex_constant(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) => true,
+    Expr::Identifier(s) => s == "I",
+    Expr::Constant(_) => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Rational" | "Complex" | "Times" | "Plus" | "Power")
+        && args.iter().all(is_numeric_complex_constant)
+    }
+    Expr::BinaryOp { op, left, right } => {
+      matches!(
+        op,
+        crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus
+          | crate::syntax::BinaryOperator::Times
+          | crate::syntax::BinaryOperator::Divide
+          | crate::syntax::BinaryOperator::Power
+      ) && is_numeric_complex_constant(left)
+        && is_numeric_complex_constant(right)
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_numeric_complex_constant(operand),
+    _ => false,
+  }
+}
+
+/// Residue[expr, {z, z0}] — the residue of `expr` at the point `z = z0`, i.e.
+/// the coefficient of `(z - z0)^(-1)` in the Laurent expansion.
+///
+/// Strategy: find the order `m` of the pole as the smallest `m >= 1` for which
+/// `Limit[(z - z0)^m expr, z -> z0]` is finite, then apply the standard formula
+///   Res = 1/(m-1)! * Limit[ d^(m-1)/dz^(m-1) ((z - z0)^m expr), z -> z0 ].
+/// If no finite `m` is found within the search bound (e.g. an essential
+/// singularity), the call is returned unevaluated.
+pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Residue".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  if args.len() != 2 {
+    return unevaluated();
+  }
+
+  let expr = &args[0];
+  let (var_name, z0) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => match &items[0] {
+      Expr::Identifier(n) => (n.clone(), items[1].clone()),
+      _ => return unevaluated(),
+    },
+    _ => return unevaluated(),
+  };
+
+  let rule = |point: &Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(var_name.clone())),
+    replacement: Box::new(point.clone()),
+  };
+
+  // Build g = (z - z0)^m * expr.
+  let build_g = |m: i128| -> Expr {
+    let shift = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Identifier(var_name.clone())),
+      right: Box::new(z0.clone()),
+    };
+    let powered = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(shift),
+      right: Box::new(Expr::Integer(m)),
+    };
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(powered),
+      right: Box::new(expr.clone()),
+    }
+  };
+
+  // Fully simplify via the `Simplify` builtin (the internal `simplify` helper
+  // does not cancel `(z - z0)^m * p / (z - z0)^m` the way the builtin does;
+  // differentiating an uncancelled form would create spurious ∞ − ∞ limits).
+  let simplify_full = |e: Expr| -> Expr {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Simplify".to_string(),
+      args: vec![e].into(),
+    })
+    .unwrap_or_else(|_| Expr::Identifier("Indeterminate".to_string()))
+  };
+
+  const MAX_ORDER: i128 = 12;
+  for m in 1..=MAX_ORDER {
+    let g = simplify_full(build_g(m));
+    let base_limit = limit_ast(&[g.clone(), rule(&z0)])?;
+    if !is_finite_limit_value(&base_limit) {
+      continue;
+    }
+
+    // Pole of order m. For a simple pole (m == 1) the residue is just the
+    // limit itself; otherwise differentiate m-1 times before taking the limit.
+    let to_limit = if m == 1 {
+      g
+    } else {
+      let mut deriv = g;
+      for _ in 0..(m - 1) {
+        deriv = differentiate_expr(&deriv, &var_name)?;
+      }
+      deriv
+    };
+
+    let limit_val = limit_ast(&[to_limit, rule(&z0)])?;
+    if !is_finite_limit_value(&limit_val) {
+      // Differentiation/limit didn't resolve cleanly — give up.
+      return unevaluated();
+    }
+
+    // Divide by (m-1)! (a no-op for a simple pole, where (m-1)! == 1).
+    let mut fact: i128 = 1;
+    for k in 2..m {
+      fact *= k;
+    }
+    let result = if fact == 1 {
+      simplify_full(limit_val)
+    } else {
+      simplify_full(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(limit_val),
+        right: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(fact)].into(),
+        }),
+      })
+    };
+
+    // Only emit exact results. A floating-point value means the underlying
+    // limit was resolved numerically (e.g. a 0·∞ trig form) and would not
+    // match the exact symbolic residue — return unevaluated instead.
+    if contains_real(&result) {
+      return unevaluated();
+    }
+    return Ok(result);
+  }
+
+  unevaluated()
+}
+
+/// Returns true if `expr` contains any floating-point (`Real`) atom.
+fn contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_real)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_real(left) || contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_real(operand),
+    _ => false,
+  }
 }
 
 /// Rational arithmetic helpers for coefficient-based series computation

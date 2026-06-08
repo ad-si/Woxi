@@ -486,6 +486,9 @@ pub fn dispatch_calculus_functions(
     "Limit" if (2..=3).contains(&args.len()) => {
       return Some(crate::functions::calculus_ast::limit_ast(args));
     }
+    "Residue" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::residue_ast(args));
+    }
     // DiscreteLimit[expr, n -> val] / DiscreteLimit[expr, {m -> ..., n -> ...}]
     // For smooth rational sequences this matches the continuous Limit;
     // delegate to Limit, and for a list of substitutions apply them
