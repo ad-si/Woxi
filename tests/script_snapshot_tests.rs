@@ -1478,6 +1478,23 @@ script_test!(script_dynamic_variable_names, "dynamic_variable_names.wls");
 script_test!(script_mad_libs, "mad_libs.wls");
 script_test!(script_guess_the_number, "guess_the_number.wls");
 script_test!(script_align_columns, "align_columns.wls");
+script_test!(
+  script_combinations_and_permutations,
+  "combinations_and_permutations.wls"
+);
+script_test!(
+  script_find_palindromic_numbers_in_both_binary_and_ternary_bases,
+  "find_palindromic_numbers_in_both_binary_and_ternary_bases.wls"
+);
+script_test!(
+  script_last_friday_of_each_month,
+  "last_friday_of_each_month.wls"
+);
+script_test!(script_loops_break, "loops_break.wls");
+script_test!(
+  script_self_referential_sequence,
+  "self-referential_sequence.wls"
+);
 
 #[test]
 fn script_cli_args() {
