@@ -183,4 +183,37 @@ mod rosetta_script_fixes {
       assert_eq!(out, "hello world\n");
     }
   }
+
+  // Implicit multiplication where a factor carries a `!`/`!!`/`..` suffix must
+  // work even when the first factor is a function call. The grammar captured
+  // the suffix inside FunctionCallImplicitSuffix, but pair_to_expr's
+  // implicit-factor loop ignored it and re-parsed the bare "!" as its own
+  // expression, raising a spurious parse error. (combinations_and_permutations)
+  mod implicit_times_factor_suffix_after_call {
+    use super::*;
+
+    #[test]
+    fn factorial_after_function_call() {
+      assert_eq!(interpret("Binomial[5, 2] 2!").unwrap(), "20");
+    }
+
+    #[test]
+    fn factorial_on_symbol_after_call() {
+      assert_eq!(interpret("f[1] x!").unwrap(), "f[1]*x!");
+    }
+
+    #[test]
+    fn double_factorial_after_call() {
+      // 4!! = 4*2 = 8, times Sin[1] kept symbolic.
+      assert_eq!(interpret("Sin[1] 4!!").unwrap(), "8*Sin[1]");
+    }
+
+    #[test]
+    fn implicit_factorial_in_function_body() {
+      assert_eq!(
+        interpret("perm[n_, k_] := Binomial[n, k] k!; perm[5, 2]").unwrap(),
+        "20"
+      );
+    }
+  }
 }

@@ -2637,6 +2637,39 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
                   right: Box::new(exponent),
                 });
               }
+            } else if inners[i].as_rule() == Rule::FactorialSuffix {
+              // `!` / `!!` postfix wraps the previous factor in
+              // `Factorial[…]` / `Factorial2[…]`, so `f[x] n!` parses as
+              // `Times[f[x], Factorial[n]]`.
+              if let Some(base) = factors.pop() {
+                let func_name = if inners[i].as_str() == "!!" {
+                  "Factorial2"
+                } else {
+                  "Factorial"
+                };
+                factors.push(Expr::FunctionCall {
+                  name: func_name.to_string(),
+                  args: vec![base].into(),
+                });
+              }
+            } else if matches!(
+              inners[i].as_rule(),
+              Rule::RepeatedSuffix | Rule::RepeatedNullSuffix
+            ) {
+              // `..` / `...` postfix wraps the previous factor in
+              // `Repeated[…]` / `RepeatedNull[…]`.
+              if let Some(base) = factors.pop() {
+                let func_name =
+                  if inners[i].as_rule() == Rule::RepeatedNullSuffix {
+                    "RepeatedNull"
+                  } else {
+                    "Repeated"
+                  };
+                factors.push(Expr::FunctionCall {
+                  name: func_name.to_string(),
+                  args: vec![base].into(),
+                });
+              }
             } else {
               factors.push(pair_to_expr(inners[i].clone()));
             }
