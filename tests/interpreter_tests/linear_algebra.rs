@@ -3692,3 +3692,71 @@ mod affine_transform {
     );
   }
 }
+
+mod orthogonalize {
+  use super::*;
+
+  #[test]
+  fn already_orthogonal_pair() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 0}, {1, 1}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn rational_orthonormal_pair() {
+    assert_eq!(
+      interpret("Orthogonalize[{{3, 4}, {1, 0}}]").unwrap(),
+      "{{3/5, 4/5}, {4/5, -3/5}}"
+    );
+  }
+
+  #[test]
+  fn radical_orthonormal_pair() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 1}, {1, 0}}]").unwrap(),
+      "{{1/Sqrt[2], 1/Sqrt[2]}, {1/Sqrt[2], -(1/Sqrt[2])}}"
+    );
+  }
+
+  #[test]
+  fn linearly_dependent_collapses_to_zero() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 1}, {2, 2}}]").unwrap(),
+      "{{1/Sqrt[2], 1/Sqrt[2]}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn three_dimensional_pair() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 2, 2}, {2, 1, 2}}]").unwrap(),
+      "{{1/3, 2/3, 2/3}, {10/(3*Sqrt[17]), -7/(3*Sqrt[17]), 2/(3*Sqrt[17])}}"
+    );
+  }
+
+  #[test]
+  fn radical_pair_in_three_d() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 1, 0}, {0, 1, 1}}]").unwrap(),
+      "{{1/Sqrt[2], 1/Sqrt[2], 0}, {-(1/Sqrt[6]), 1/Sqrt[6], Sqrt[2/3]}}"
+    );
+  }
+
+  #[test]
+  fn zero_vector_stays_zero() {
+    assert_eq!(
+      interpret("Orthogonalize[{{0, 0}, {1, 0}}]").unwrap(),
+      "{{0, 0}, {1, 0}}"
+    );
+  }
+
+  #[test]
+  fn axis_aligned_basis_is_identity() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+}

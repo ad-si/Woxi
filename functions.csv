@@ -1176,7 +1176,7 @@ FindShortestPath,Find a shortest weighted path between two vertices of a graph,�
 LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6.0,1188
 SetSystemOptions,,🚫,,6.0,1189
 GeoRange,,🚫,,10.0,1190
-Orthogonalize,,🚫,,6.0,1191
+Orthogonalize,Orthonormalizes a set of vectors via Gram-Schmidt,✅,pure,6.0,1191
 AnatomyData,,🚫,,10.3,1192
 FresnelS,Returns the Fresnel sine integral,✅,pure,3.0,1193
 CometData,,🚫,,10.0,1195

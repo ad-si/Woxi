@@ -145,6 +145,103 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Orthogonalize[{v1, v2, ...}] — orthonormalize a set of vectors with the
+/// (default) normalized Gram-Schmidt process and the standard dot-product
+/// inner product. Linearly dependent vectors collapse to a zero vector in
+/// their position, matching wolframscript. Coefficients are kept exact, so
+/// the result may contain radicals (e.g. 1/Sqrt[2]).
+pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Orthogonalize".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Only the default 1-argument form (standard inner product) is handled.
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => return unevaluated(),
+  };
+
+  let simplify = |e: Expr| evaluate_expr_to_expr(&e).unwrap_or(e);
+  // Normalized components can accumulate nested radicals (e.g. combinations of
+  // 1/Sqrt[6] and Sqrt[2/3]) that plain evaluation leaves un-reduced; run the
+  // Simplify builtin so they collapse to canonical radicals.
+  let simplify_full = |e: Expr| -> Expr {
+    let s = Expr::FunctionCall {
+      name: "Simplify".to_string(),
+      args: vec![e].into(),
+    };
+    evaluate_expr_to_expr(&s).unwrap_or_else(|_| Expr::Integer(0))
+  };
+  let is_rational =
+    |e: &Expr| matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational");
+
+  let mut result: Vec<Vec<Expr>> = Vec::new();
+  for v in &matrix {
+    // Subtract the projections onto the previously produced orthonormal
+    // vectors: w = v - sum_e (v . e) e.
+    let mut w = v.clone();
+    for e in &result {
+      let mut dot = Expr::Integer(0);
+      for i in 0..v.len() {
+        dot = eval_add(&dot, &eval_mul(&v[i], &e[i]));
+      }
+      let dot = simplify(dot);
+      if matches!(dot, Expr::Integer(0)) {
+        continue;
+      }
+      for i in 0..w.len() {
+        w[i] = simplify(eval_sub(&w[i], &eval_mul(&dot, &e[i])));
+      }
+    }
+
+    // normsq = w . w
+    let mut normsq = Expr::Integer(0);
+    for wi in &w {
+      normsq = eval_add(&normsq, &eval_mul(wi, wi));
+    }
+    let normsq = simplify(normsq);
+
+    if matches!(normsq, Expr::Integer(0)) {
+      // Linearly dependent (or zero) vector → zero vector of the same length.
+      result.push(vec![Expr::Integer(0); v.len()]);
+    } else {
+      // When the squared norm is rational, plain evaluation already yields the
+      // canonical radical form (e.g. -(1/Sqrt[2])); only fall back to Simplify
+      // for an irrational norm, where components carry nested radicals.
+      let norm_rational = is_rational(&normsq);
+      // e = w / Sqrt[normsq] = w * normsq^(-1/2).
+      let inv_norm = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          normsq,
+          crate::functions::math_ast::make_rational_pub(-1, 2),
+        ]
+        .into(),
+      };
+      let e: Vec<Expr> = w
+        .iter()
+        .map(|wi| {
+          let prod = eval_mul(wi, &inv_norm);
+          if norm_rational {
+            simplify(prod)
+          } else {
+            simplify_full(prod)
+          }
+        })
+        .collect();
+      result.push(e);
+    }
+  }
+
+  Ok(matrix_to_expr(result))
+}
+
 /// Helper: extract a matrix (list of lists) from an Expr.
 /// Returns None if it's not a valid matrix.
 fn expr_to_matrix(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
