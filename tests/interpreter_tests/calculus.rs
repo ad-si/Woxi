@@ -1818,6 +1818,93 @@ mod inverse_series {
   }
 }
 
+mod compose_series {
+  use super::*;
+
+  #[test]
+  fn exp_of_sin() {
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[Exp[x], {x, 0, 3}], Series[Sin[x], {x, 0, 3}]]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {1, 1, 1/2}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn exp_of_polynomial() {
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[Exp[y], {y, 0, 4}], Series[x + x^2, {x, 0, 4}]]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {1, 1, 3/2, 7/6, 25/24}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn geometric_of_square_truncates_by_outer() {
+    // Inner has nmin = 2; result order M = nmin2 + nmax1 - 1 = 2 + 3 - 1 = 4.
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[1/(1-y), {y, 0, 2}], Series[x^2, {x, 0, 5}]]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {1, 0, 1}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn truncation_capped_by_inner_accuracy() {
+    // Outer is known to high order but the inner Sin is only known to order 2,
+    // so the result is capped at the inner truncation (nmax2 = 3).
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[1/(1-y), {y, 0, 5}], Series[Sin[x], {x, 0, 2}]]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {1, 1, 1}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn outer_with_no_constant_term() {
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[Log[1+y], {y, 0, 4}], Series[x + x^3, {x, 0, 4}]]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {1, -1/2, 4/3, -5/4}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn nary_composition() {
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[Exp[x], {x, 0, 3}], \
+         Series[Sin[y], {y, 0, 3}], Series[z^1, {z, 0, 3}]]"
+      )
+      .unwrap(),
+      "SeriesData[z, 0, {1, 1, 1/2}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn symbolic_outer_coefficients() {
+    assert_eq!(
+      interpret(
+        "ComposeSeries[Series[f[y], {y, 0, 3}], Series[x + x^2, {x, 0, 3}]]"
+      )
+      .unwrap(),
+      "SeriesData[x, 0, {f[0], Derivative[1][f][0], \
+       Derivative[1][f][0] + Derivative[2][f][0]/2, \
+       Derivative[2][f][0] + Derivative[3][f][0]/6}, 0, 4, 1]"
+    );
+  }
+}
+
 mod nintegrate {
   use super::*;
 

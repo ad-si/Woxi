@@ -1554,19 +1554,16 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                     .into(),
                 }
               };
-              let term = crate::functions::math_ast::times_ast(&[
-                factor,
-                c.clone(),
-              ])
-              .unwrap_or(Expr::Integer(0));
+              let term =
+                crate::functions::math_ast::times_ast(&[factor, c.clone()])
+                  .unwrap_or(Expr::Integer(0));
               dcoeffs.push(simplify(term));
             }
             let mut new_nmin = nmin_val - den_val;
             let new_nmax = nmax_val - den_val;
             // Trim leading zero coefficients (bumping nmin) — e.g. the
             // constant term differentiates to a zero at the lowest power.
-            while !dcoeffs.is_empty()
-              && matches!(&dcoeffs[0], Expr::Integer(0))
+            while !dcoeffs.is_empty() && matches!(&dcoeffs[0], Expr::Integer(0))
             {
               dcoeffs.remove(0);
               new_nmin += 1;
@@ -8355,6 +8352,202 @@ pub fn inverse_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]
     .into(),
   })
+}
+
+/// Parsed integer-power SeriesData: variable, center, coefficients (lowest to
+/// highest), nmin, nmax. Only `den == 1` series are accepted.
+struct ParsedSeries {
+  var: Expr,
+  center: Expr,
+  coeffs: Vec<Expr>,
+  nmin: i128,
+  nmax: i128,
+}
+
+fn parse_integer_series(e: &Expr) -> Option<ParsedSeries> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "SeriesData"
+    && args.len() == 6
+    && let Expr::List(coeffs) = &args[2]
+  {
+    let nmin = crate::functions::math_ast::expr_to_i128(&args[3])?;
+    let nmax = crate::functions::math_ast::expr_to_i128(&args[4])?;
+    let den = crate::functions::math_ast::expr_to_i128(&args[5])?;
+    if den != 1 {
+      return None;
+    }
+    return Some(ParsedSeries {
+      var: args[0].clone(),
+      center: args[1].clone(),
+      coeffs: coeffs.to_vec(),
+      nmin,
+      nmax,
+    });
+  }
+  None
+}
+
+/// Truncated product of two power→coefficient maps, dropping terms at power
+/// `>= max_power`. Coefficients are arbitrary expressions.
+fn series_poly_mul(
+  a: &std::collections::BTreeMap<i128, Expr>,
+  b: &std::collections::BTreeMap<i128, Expr>,
+  max_power: i128,
+) -> std::collections::BTreeMap<i128, Expr> {
+  let mut out: std::collections::BTreeMap<i128, Vec<Expr>> =
+    std::collections::BTreeMap::new();
+  for (pa, ca) in a {
+    for (pb, cb) in b {
+      let p = pa + pb;
+      if p >= max_power {
+        continue;
+      }
+      let term = crate::functions::math_ast::times_ast(&[
+        ca.clone(),
+        cb.clone(),
+      ])
+      .unwrap_or(Expr::Integer(0));
+      out.entry(p).or_default().push(term);
+    }
+  }
+  out
+    .into_iter()
+    .map(|(p, terms)| {
+      let summed = crate::functions::math_ast::plus_ast(&terms)
+        .unwrap_or(Expr::Integer(0));
+      let canon =
+        crate::evaluator::evaluate_expr_to_expr(&summed).unwrap_or(summed);
+      (p, canon)
+    })
+    .collect()
+}
+
+/// Compose two integer-power series: `outer(inner(x))`. The inner series must
+/// have a zero constant term (nmin >= 1) and the outer must be expanded about
+/// 0. Returns None for forms outside this scope.
+fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
+  let s1 = parse_integer_series(outer)?;
+  let s2 = parse_integer_series(inner)?;
+
+  // Inner must have zero constant term; outer must be expanded about 0.
+  if s2.nmin < 1 || !matches!(&s1.center, Expr::Integer(0)) {
+    return None;
+  }
+
+  // h(x) = inner, as a power→coefficient map (all powers >= 1).
+  let mut h_map: std::collections::BTreeMap<i128, Expr> =
+    std::collections::BTreeMap::new();
+  for (idx, c) in s2.coeffs.iter().enumerate() {
+    h_map.insert(s2.nmin + idx as i128, c.clone());
+  }
+  let nmin_h = s2.nmin;
+
+  // Result truncation order: M = min(nmin_h + nmax1 - 1, nmax2).
+  let big_m = (nmin_h + s1.nmax - 1).min(s2.nmax);
+
+  // Accumulate sum_i A_i * h^i, with A_i the coefficient of u^i in the outer
+  // series. hpow tracks h^i (starting at h^0 = 1).
+  let mut result: std::collections::BTreeMap<i128, Vec<Expr>> =
+    std::collections::BTreeMap::new();
+  let mut hpow: std::collections::BTreeMap<i128, Expr> =
+    std::collections::BTreeMap::new();
+  hpow.insert(0, Expr::Integer(1));
+
+  for i in 0..s1.nmax {
+    if i >= s1.nmin {
+      let a_idx = (i - s1.nmin) as usize;
+      if a_idx < s1.coeffs.len() {
+        let a_i = &s1.coeffs[a_idx];
+        if !matches!(a_i, Expr::Integer(0)) {
+          for (p, c) in &hpow {
+            if *p < big_m {
+              let term = crate::functions::math_ast::times_ast(&[
+                a_i.clone(),
+                c.clone(),
+              ])
+              .unwrap_or(Expr::Integer(0));
+              result.entry(*p).or_default().push(term);
+            }
+          }
+        }
+      }
+    }
+    // Prepare h^(i+1); stop once its lowest power leaves the truncation.
+    if (i + 1) * nmin_h >= big_m {
+      break;
+    }
+    hpow = series_poly_mul(&hpow, &h_map, big_m);
+  }
+
+  // Collapse each power's term list to a single canonical coefficient.
+  let mut coeff_map: std::collections::BTreeMap<i128, Expr> =
+    std::collections::BTreeMap::new();
+  for (p, terms) in result {
+    let summed =
+      crate::functions::math_ast::plus_ast(&terms).unwrap_or(Expr::Integer(0));
+    let canon =
+      crate::evaluator::evaluate_expr_to_expr(&summed).unwrap_or(summed);
+    coeff_map.insert(p, canon);
+  }
+
+  // Determine the coefficient range and build a dense list, trimming leading
+  // and trailing zeros (matching wolframscript) while keeping nmax = M.
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  let mut nmin_r = match coeff_map.iter().find(|(_, c)| !is_zero(c)) {
+    Some((p, _)) => *p,
+    None => big_m, // all zero
+  };
+  let mut dense: Vec<Expr> = Vec::new();
+  if nmin_r < big_m {
+    let mut hi = big_m - 1;
+    while hi > nmin_r
+      && coeff_map.get(&hi).map(|c| is_zero(c)).unwrap_or(true)
+    {
+      hi -= 1;
+    }
+    for p in nmin_r..=hi {
+      dense.push(coeff_map.get(&p).cloned().unwrap_or(Expr::Integer(0)));
+    }
+  } else {
+    nmin_r = big_m;
+  }
+
+  Some(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      s2.var.clone(),
+      s2.center.clone(),
+      Expr::List(dense.into()),
+      Expr::Integer(nmin_r),
+      Expr::Integer(big_m),
+      Expr::Integer(1),
+    ]
+    .into(),
+  })
+}
+
+/// ComposeSeries[s1, s2, ...] — substitute each series into the previous one,
+/// i.e. s1(s2(s3(...))). Inner series must have a zero constant term and the
+/// outer ones must be expanded about 0; otherwise the call is unevaluated.
+pub fn compose_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ComposeSeries".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() < 2 {
+    return unevaluated();
+  }
+  // Fold from the right: a(b(c)) = compose(a, compose(b, c)).
+  let mut acc = args[args.len() - 1].clone();
+  for outer in args[..args.len() - 1].iter().rev() {
+    match compose_series_pair(outer, &acc) {
+      Some(r) => acc = r,
+      None => return unevaluated(),
+    }
+  }
+  Ok(acc)
 }
 
 /// Rational arithmetic helpers for coefficient-based series computation

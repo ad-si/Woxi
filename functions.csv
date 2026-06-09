@@ -3360,7 +3360,7 @@ UnsavedVariables,,,,8.0,3440
 VertexConnectivity,,,,9.0,3440
 BiorthogonalSplineWavelet,,🚫,,8.0,3462
 CanonicalGraph,,,,10.0,3462
-ComposeSeries,,,,3.0,3462
+ComposeSeries,Composes power series by substituting one series into another,✅,pure,1.0,3462
 ConstantRegionQ,,,,10.0,3462
 ConvectionPDETerm,,,,12.2,3462
 DynamicEvaluationTimeout,,🚫,,8.0,3462
