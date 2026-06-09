@@ -489,6 +489,9 @@ pub fn dispatch_calculus_functions(
     "Residue" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::residue_ast(args));
     }
+    "InverseSeries" if (1..=2).contains(&args.len()) => {
+      return Some(crate::functions::calculus_ast::inverse_series_ast(args));
+    }
     // DiscreteLimit[expr, n -> val] / DiscreteLimit[expr, {m -> ..., n -> ...}]
     // For smooth rational sequences this matches the continuous Limit;
     // delegate to Limit, and for a list of substitutions apply them

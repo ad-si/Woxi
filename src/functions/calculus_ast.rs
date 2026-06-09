@@ -7945,8 +7945,10 @@ fn is_finite_limit_value(expr: &Expr) -> bool {
         !matches!(s.as_str(), "Infinity" | "ComplexInfinity" | "Indeterminate")
       }
       Expr::FunctionCall { name, args } => {
-        if matches!(name.as_str(), "DirectedInfinity" | "Limit" | "Indeterminate")
-        {
+        if matches!(
+          name.as_str(),
+          "DirectedInfinity" | "Limit" | "Indeterminate"
+        ) {
           return false;
         }
         args.iter().all(scan)
@@ -7969,8 +7971,10 @@ fn is_numeric_complex_constant(expr: &Expr) -> bool {
     Expr::Identifier(s) => s == "I",
     Expr::Constant(_) => true,
     Expr::FunctionCall { name, args } => {
-      matches!(name.as_str(), "Rational" | "Complex" | "Times" | "Plus" | "Power")
-        && args.iter().all(is_numeric_complex_constant)
+      matches!(
+        name.as_str(),
+        "Rational" | "Complex" | "Times" | "Plus" | "Power"
+      ) && args.iter().all(is_numeric_complex_constant)
     }
     Expr::BinaryOp { op, left, right } => {
       matches!(
@@ -8124,6 +8128,166 @@ fn contains_real(expr: &Expr) -> bool {
     Expr::UnaryOp { operand, .. } => contains_real(operand),
     _ => false,
   }
+}
+
+/// Parse a series coefficient expression into an exact rational `(num, den)`.
+/// Returns None for symbolic (non-rational) coefficients.
+fn series_coeff_to_rat(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => series_coeff_to_rat(operand).map(|(n, d)| (-n, d)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          Some(rat_reduce(*n, *d))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Truncated product of two rational coefficient vectors (indexed by power),
+/// keeping terms up to and including order `n`.
+fn poly_mul_trunc(
+  a: &[(i128, i128)],
+  b: &[(i128, i128)],
+  n: usize,
+) -> Vec<(i128, i128)> {
+  let mut out = vec![(0i128, 1i128); n + 1];
+  for (i, &ai) in a.iter().enumerate() {
+    if i > n || ai == (0, 1) {
+      continue;
+    }
+    for (j, &bj) in b.iter().enumerate() {
+      if i + j > n {
+        break;
+      }
+      out[i + j] = rat_add(out[i + j], rat_mul(ai, bj));
+    }
+  }
+  out
+}
+
+/// InverseSeries[s] — power-series reversion. Given a `SeriesData` for
+/// `y = a1 x + a2 x^2 + ...` (expanded about 0, with `a1 != 0` and no constant
+/// term), returns the `SeriesData` for the inverse `x = b1 y + b2 y^2 + ...`
+/// such that the composition is the identity.
+///
+/// The coefficients are found order by order: requiring `[y^n] f(g(y)) = 0`
+/// for `n >= 2` isolates `b_n` linearly, since only the `m = 1` term `a1 b_n`
+/// involves the unknown — every `g^m` with `m >= 2` reaches `b_n` only at order
+/// `> n`. Only series with exact rational coefficients and integer step
+/// (`den == 1`) are handled; anything else is returned unevaluated.
+pub fn inverse_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "InverseSeries".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+
+  let (var, x0, coeffs, nmax, den) = match &args[0] {
+    Expr::FunctionCall { name, args: sd }
+      if name == "SeriesData" && sd.len() == 6 =>
+    {
+      let coeffs = match &sd[2] {
+        Expr::List(c) => c.clone(),
+        _ => return unevaluated(),
+      };
+      let nmin = match crate::functions::math_ast::expr_to_i128(&sd[3]) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      let nmax = match crate::functions::math_ast::expr_to_i128(&sd[4]) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      let den = match crate::functions::math_ast::expr_to_i128(&sd[5]) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      // Reversion about 0 requires f(0)=0 (no constant term) and a present
+      // linear term, i.e. the series starts exactly at x^1.
+      if nmin != 1 || den != 1 || !matches!(&sd[1], Expr::Integer(0)) {
+        return unevaluated();
+      }
+      (sd[0].clone(), sd[1].clone(), coeffs, nmax, den)
+    }
+    _ => return unevaluated(),
+  };
+  let _ = den;
+
+  let hi = (nmax - 1) as usize; // highest tracked order (coeff of x^hi)
+  if hi == 0 {
+    return unevaluated();
+  }
+
+  // a[k] = coefficient of x^k (a[0] unused). coeffs[i] is the order-(1+i) term.
+  let mut a = vec![(0i128, 1i128); hi + 1];
+  for (i, c) in coeffs.iter().enumerate() {
+    let order = 1 + i;
+    if order > hi {
+      break;
+    }
+    match series_coeff_to_rat(c) {
+      Some(r) => a[order] = r,
+      None => return unevaluated(),
+    }
+  }
+  if a[1] == (0, 1) {
+    return unevaluated();
+  }
+
+  // b[k] = coefficient of y^k in the inverse series.
+  let mut b = vec![(0i128, 1i128); hi + 1];
+  b[1] = rat_div((1, 1), a[1]);
+  for n in 2..=hi {
+    // S = sum_{m=2}^{n} a[m] * [y^n] g^m, using only b[1..n-1].
+    let mut gv = vec![(0i128, 1i128); n + 1];
+    gv[1..n].copy_from_slice(&b[1..n]);
+    let mut gpow = gv.clone(); // g^1
+    let mut s = (0i128, 1i128);
+    for m in 2..=n {
+      gpow = poly_mul_trunc(&gpow, &gv, n); // g^m
+      if a[m] != (0, 1) {
+        s = rat_add(s, rat_mul(a[m], gpow[n]));
+      }
+    }
+    // 0 = a[1] * b[n] + S  =>  b[n] = -S / a[1].
+    b[n] = rat_div((-s.0, s.1), a[1]);
+  }
+
+  // Drop trailing zero coefficients (as wolframscript does) while keeping the
+  // truncation order nmax unchanged.
+  let mut last = hi;
+  while last > 1 && b[last] == (0, 1) {
+    last -= 1;
+  }
+  let out_coeffs: Vec<Expr> = (1..=last).map(|k| rat_to_expr(b[k])).collect();
+  // The optional second argument renames the series variable in the result.
+  let out_var = if args.len() == 2 { args[1].clone() } else { var };
+  Ok(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      out_var,
+      x0,
+      Expr::List(out_coeffs.into()),
+      Expr::Integer(1),
+      Expr::Integer(nmax),
+      Expr::Integer(1),
+    ]
+    .into(),
+  })
 }
 
 /// Rational arithmetic helpers for coefficient-based series computation

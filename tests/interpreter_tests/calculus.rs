@@ -1657,7 +1657,10 @@ mod residue {
 
   #[test]
   fn second_order_pole_with_numerator() {
-    assert_eq!(interpret("Residue[(z + 1)/(z - 1)^2, {z, 1}]").unwrap(), "1");
+    assert_eq!(
+      interpret("Residue[(z + 1)/(z - 1)^2, {z, 1}]").unwrap(),
+      "1"
+    );
   }
 
   #[test]
@@ -1695,6 +1698,70 @@ mod residue {
   #[test]
   fn complex_pole_with_numerator() {
     assert_eq!(interpret("Residue[z/(z^2 + 1), {z, I}]").unwrap(), "1/2");
+  }
+}
+
+mod inverse_series {
+  use super::*;
+
+  #[test]
+  fn arcsin_from_sin() {
+    // Reversion of Sin gives the ArcSin series x + x^3/6 + 3 x^5/40.
+    assert_eq!(
+      interpret("InverseSeries[Series[Sin[x], {x, 0, 5}]]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 1/6, 0, 3/40}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn log1p_from_expm1() {
+    // Reversion of Exp[x]-1 gives Log[1+x] = x - x^2/2 + x^3/3 - x^4/4.
+    assert_eq!(
+      interpret("InverseSeries[Series[Exp[x] - 1, {x, 0, 4}]]").unwrap(),
+      "SeriesData[x, 0, {1, -1/2, 1/3, -1/4}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn arctan_from_tan_trims_trailing_zero() {
+    // Reversion of Tan gives ArcTan; the order-6 term is 0 and is dropped
+    // while the truncation order (nmax = 7) is preserved.
+    assert_eq!(
+      interpret("InverseSeries[Series[Tan[x], {x, 0, 6}]]").unwrap(),
+      "SeriesData[x, 0, {1, 0, -1/3, 0, 1/5}, 1, 7, 1]"
+    );
+  }
+
+  #[test]
+  fn polynomial_reversion_catalan() {
+    assert_eq!(
+      interpret("InverseSeries[Series[x + x^2, {x, 0, 5}]]").unwrap(),
+      "SeriesData[x, 0, {1, -1, 2, -5, 14}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn leading_coefficient_not_one() {
+    assert_eq!(
+      interpret("InverseSeries[Series[2 x + 3 x^2, {x, 0, 4}]]").unwrap(),
+      "SeriesData[x, 0, {1/2, -3/8, 9/16, -135/128}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn two_arg_form_renames_variable() {
+    assert_eq!(
+      interpret("InverseSeries[Series[Sin[x], {x, 0, 5}], y]").unwrap(),
+      "SeriesData[y, 0, {1, 0, 1/6, 0, 3/40}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn normal_of_inverse_series() {
+    assert_eq!(
+      interpret("Normal[InverseSeries[Series[Sin[x], {x, 0, 5}]]]").unwrap(),
+      "x + x^3/6 + (3*x^5)/40"
+    );
   }
 }
 
