@@ -495,6 +495,9 @@ pub fn dispatch_calculus_functions(
     "ComposeSeries" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::compose_series_ast(args));
     }
+    "PadeApproximant" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::pade_approximant_ast(args));
+    }
     // DiscreteLimit[expr, n -> val] / DiscreteLimit[expr, {m -> ..., n -> ...}]
     // For smooth rational sequences this matches the continuous Limit;
     // delegate to Limit, and for a list of substitutions apply them

@@ -1776,7 +1776,7 @@ InverseWaveletTransform,Inverse wavelet transform,,unevaluated,8.0,1806
 RayleighDistribution,Rayleigh distribution,✅,computation,6.0,1806
 SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
 TreeGraph,Tree graph from directed edges with tree layout visualization,✅,pure,8.0,1808
-PadeApproximant,Pade approximant,,unevaluated,6.0,1809
+PadeApproximant,Rational (Pade) approximation from a power series,✅,pure,6.0,1809
 FillingTransform,Morphological filling,,unevaluated,8.0,1810
 SamplingPeriod,Sampling period option,,unevaluated,8.0,1811
 Cube,Cube primitive,,unevaluated,12.0,1815

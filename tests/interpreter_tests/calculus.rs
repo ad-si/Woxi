@@ -1963,6 +1963,84 @@ mod compose_series {
   }
 }
 
+mod pade_approximant {
+  use super::*;
+
+  #[test]
+  fn exp_two_two() {
+    assert_eq!(
+      interpret("PadeApproximant[Exp[x], {x, 0, {2, 2}}]").unwrap(),
+      "(1 + x/2 + x^2/12)/(1 - x/2 + x^2/12)"
+    );
+  }
+
+  #[test]
+  fn exp_one_one() {
+    assert_eq!(
+      interpret("PadeApproximant[Exp[x], {x, 0, {1, 1}}]").unwrap(),
+      "(1 + x/2)/(1 - x/2)"
+    );
+  }
+
+  #[test]
+  fn exp_three_two_unequal_degrees() {
+    assert_eq!(
+      interpret("PadeApproximant[Exp[x], {x, 0, {3, 2}}]").unwrap(),
+      "(1 + (3*x)/5 + (3*x^2)/20 + x^3/60)/(1 - (2*x)/5 + x^2/20)"
+    );
+  }
+
+  #[test]
+  fn cosine_even_function() {
+    assert_eq!(
+      interpret("PadeApproximant[Cos[x], {x, 0, {2, 2}}]").unwrap(),
+      "(1 - (5*x^2)/12)/(1 + x^2/12)"
+    );
+  }
+
+  #[test]
+  fn log_with_zero_constant_term() {
+    assert_eq!(
+      interpret("PadeApproximant[Log[1 + x], {x, 0, {2, 2}}]").unwrap(),
+      "(x + x^2/2)/(1 + x + x^2/6)"
+    );
+  }
+
+  #[test]
+  fn sqrt_rational_coefficients() {
+    assert_eq!(
+      interpret("PadeApproximant[Sqrt[1 + x], {x, 0, {1, 1}}]").unwrap(),
+      "(1 + (3*x)/4)/(1 + x/4)"
+    );
+  }
+
+  #[test]
+  fn arctan_three_two() {
+    assert_eq!(
+      interpret("PadeApproximant[ArcTan[x], {x, 0, {3, 2}}]").unwrap(),
+      "(x + (4*x^3)/15)/(1 + (3*x^2)/5)"
+    );
+  }
+
+  #[test]
+  fn zero_denominator_degree_is_taylor_polynomial() {
+    assert_eq!(
+      interpret("PadeApproximant[Exp[x], {x, 0, {2, 0}}]").unwrap(),
+      "1 + x + x^2/2"
+    );
+  }
+
+  #[test]
+  fn degenerate_rational_input_stays_unevaluated() {
+    // The denominator system is singular for an already-rational function;
+    // Woxi leaves it unevaluated rather than guessing the minimal-degree form.
+    assert_eq!(
+      interpret("PadeApproximant[1/(1 - x), {x, 0, {2, 2}}]").unwrap(),
+      "PadeApproximant[(1 - x)^(-1), {x, 0, {2, 2}}]"
+    );
+  }
+}
+
 mod nintegrate {
   use super::*;
 

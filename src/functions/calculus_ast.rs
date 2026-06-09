@@ -8213,6 +8213,231 @@ fn series_coeff_to_rat(e: &Expr) -> Option<(i128, i128)> {
   }
 }
 
+/// Solve a square rational linear system `A x = b` by Gaussian elimination.
+/// Returns None if the matrix is singular.
+fn rat_linear_solve(
+  mut a: Vec<Vec<(i128, i128)>>,
+  mut b: Vec<(i128, i128)>,
+) -> Option<Vec<(i128, i128)>> {
+  let n = b.len();
+  for col in 0..n {
+    // Find a pivot row with a nonzero entry in this column.
+    let pivot = (col..n).find(|&r| a[r][col] != (0, 1))?;
+    a.swap(col, pivot);
+    b.swap(col, pivot);
+    let inv_pivot = rat_div((1, 1), a[col][col]);
+    // Normalise the pivot row.
+    for j in col..n {
+      a[col][j] = rat_mul(a[col][j], inv_pivot);
+    }
+    b[col] = rat_mul(b[col], inv_pivot);
+    // Eliminate this column from every other row.
+    for r in 0..n {
+      if r == col || a[r][col] == (0, 1) {
+        continue;
+      }
+      let factor = a[r][col];
+      for j in col..n {
+        a[r][j] = rat_add(a[r][j], (-factor.0 * a[col][j].0, factor.1 * a[col][j].1));
+        a[r][j] = rat_reduce(a[r][j].0, a[r][j].1);
+      }
+      b[r] = rat_reduce(
+        b[r].0 * (factor.1 * b[col].1) - factor.0 * b[col].0 * b[r].1,
+        b[r].1 * (factor.1 * b[col].1),
+      );
+    }
+  }
+  Some(b)
+}
+
+/// PadeApproximant[f, {x, x0, {m, n}}] — the [m/n] Padé approximant of `f`
+/// about `x = x0`: the rational function P(x)/Q(x) with deg P <= m, deg Q <= n,
+/// Q(x0) = 1, whose Taylor series agrees with `f` through order m+n.
+///
+/// Only Padé approximants with exact rational Taylor coefficients and a
+/// non-singular denominator system are handled; degenerate (singular) systems
+/// — e.g. the Padé of an already-rational function — return unevaluated.
+pub fn pade_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PadeApproximant".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  // Parse {x, x0, {m, n}}.
+  let spec = match &args[1] {
+    Expr::List(items) if items.len() == 3 => items,
+    _ => return unevaluated(),
+  };
+  let var = match &spec[0] {
+    Expr::Identifier(v) => v.clone(),
+    _ => return unevaluated(),
+  };
+  let x0 = spec[1].clone();
+  let (m, n) = match &spec[2] {
+    Expr::List(mn) if mn.len() == 2 => {
+      match (
+        crate::functions::math_ast::expr_to_i128(&mn[0]),
+        crate::functions::math_ast::expr_to_i128(&mn[1]),
+      ) {
+        (Some(m), Some(n)) if m >= 0 && n >= 0 => (m, n),
+        _ => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  let order = (m + n) as usize;
+
+  // Taylor coefficients c_0 .. c_{m+n} (of (x - x0)) via Series.
+  let series = series_ast(&[
+    args[0].clone(),
+    Expr::List(
+      vec![
+        Expr::Identifier(var.clone()),
+        x0.clone(),
+        Expr::Integer(m + n),
+      ]
+      .into(),
+    ),
+  ])?;
+  let mut c = vec![(0i128, 1i128); order + 1];
+  match &series {
+    Expr::FunctionCall { name, args: sd }
+      if name == "SeriesData" && sd.len() == 6 =>
+    {
+      let coeffs = match &sd[2] {
+        Expr::List(c) => c,
+        _ => return unevaluated(),
+      };
+      let nmin = match crate::functions::math_ast::expr_to_i128(&sd[3]) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      let den = match crate::functions::math_ast::expr_to_i128(&sd[5]) {
+        Some(v) => v,
+        None => return unevaluated(),
+      };
+      if den != 1 {
+        return unevaluated();
+      }
+      for (i, cf) in coeffs.iter().enumerate() {
+        let k = nmin + i as i128;
+        if k < 0 {
+          return unevaluated(); // Laurent terms — out of scope.
+        }
+        if (k as usize) <= order {
+          match series_coeff_to_rat(cf) {
+            Some(r) => c[k as usize] = r,
+            None => return unevaluated(),
+          }
+        }
+      }
+    }
+    // Series returned a bare value (f free of the variable): constant function.
+    other => match series_coeff_to_rat(other) {
+      Some(r) => c[0] = r,
+      None => return unevaluated(),
+    },
+  }
+
+  let cval = |i: i128| -> (i128, i128) {
+    if i < 0 || i as usize > order {
+      (0, 1)
+    } else {
+      c[i as usize]
+    }
+  };
+
+  // Denominator coefficients q_1..q_n solve  sum_j c_{m+k-j} q_j = -c_{m+k}.
+  let nn = n as usize;
+  let mut q_full = vec![(0i128, 1i128); nn + 1];
+  q_full[0] = (1, 1);
+  if nn > 0 {
+    let mut amat = vec![vec![(0i128, 1i128); nn]; nn];
+    let mut bvec = vec![(0i128, 1i128); nn];
+    for r in 0..nn {
+      for s in 0..nn {
+        amat[r][s] = cval(m + r as i128 - s as i128);
+      }
+      let rhs = cval(m + r as i128 + 1);
+      bvec[r] = (-rhs.0, rhs.1);
+    }
+    match rat_linear_solve(amat, bvec) {
+      Some(sol) => {
+        for (s, &qv) in sol.iter().enumerate() {
+          q_full[s + 1] = qv;
+        }
+      }
+      None => return unevaluated(),
+    }
+  }
+
+  // Numerator p_k = sum_{j=0}^{min(k,n)} q_j c_{k-j}, k = 0..m.
+  let mut p = vec![(0i128, 1i128); (m + 1) as usize];
+  for (k, pk) in p.iter_mut().enumerate() {
+    let mut acc = (0i128, 1i128);
+    for j in 0..=nn.min(k) {
+      acc = rat_add(acc, rat_mul(q_full[j], cval(k as i128 - j as i128)));
+    }
+    *pk = acc;
+  }
+
+  // Build polynomial expressions in the base (x - x0).
+  let base = if matches!(&x0, Expr::Integer(0)) {
+    Expr::Identifier(var.clone())
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Identifier(var.clone())),
+      right: Box::new(x0.clone()),
+    }
+  };
+  let build_poly = |coeffs: &[(i128, i128)]| -> Expr {
+    let mut terms: Vec<Expr> = Vec::new();
+    for (k, &coef) in coeffs.iter().enumerate() {
+      if coef == (0, 1) {
+        continue;
+      }
+      let power = match k {
+        0 => Expr::Integer(1),
+        1 => base.clone(),
+        _ => Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(base.clone()),
+          right: Box::new(Expr::Integer(k as i128)),
+        },
+      };
+      let term = crate::functions::math_ast::times_ast(&[
+        rat_to_expr(coef),
+        power,
+      ])
+      .unwrap_or(Expr::Integer(0));
+      terms.push(term);
+    }
+    if terms.is_empty() {
+      return Expr::Integer(0);
+    }
+    let sum = crate::functions::math_ast::plus_ast(&terms)
+      .unwrap_or(Expr::Integer(0));
+    crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
+  };
+
+  let p_expr = build_poly(&p);
+  let q_expr = build_poly(&q_full);
+
+  // Result P/Q. Building Times[P, Power[Q, -1]] keeps the displayed form as a
+  // ratio of the two polynomials (Woxi does not auto-combine it).
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(p_expr),
+    right: Box::new(q_expr),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).or_else(|_| unevaluated())
+}
+
 /// Truncated product of two rational coefficient vectors (indexed by power),
 /// keeping terms up to and including order `n`.
 fn poly_mul_trunc(
