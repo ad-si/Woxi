@@ -3415,6 +3415,70 @@ mod polynomial_remainder {
   }
 }
 
+mod polynomial_reduce {
+  use super::*;
+
+  #[test]
+  fn single_divisor() {
+    // x^2 + 1 = (x - 1)(x + 1) + 2.
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 + 1, {x + 1}, x]").unwrap(),
+      "{{-1 + x}, 2}"
+    );
+  }
+
+  #[test]
+  fn two_divisors_exact() {
+    // x^3 + 2x + 1 = x(x^2 + 1) + 1(x + 1).
+    assert_eq!(
+      interpret("PolynomialReduce[x^3 + 2 x + 1, {x^2 + 1, x + 1}, x]")
+        .unwrap(),
+      "{{x, 1}, 0}"
+    );
+  }
+
+  #[test]
+  fn geometric_quotient() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^3, {x - 1}, x]").unwrap(),
+      "{{1 + x + x^2}, 1}"
+    );
+  }
+
+  #[test]
+  fn rational_coefficients() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^2, {3 x + 1}, x]").unwrap(),
+      "{{-1/9 + x/3}, 1/9}"
+    );
+  }
+
+  #[test]
+  fn divisor_degree_exceeds_dividend() {
+    // No reduction possible; the whole polynomial is the remainder.
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 + 1, {x^3 + 1}, x]").unwrap(),
+      "{{0}, 1 + x^2}"
+    );
+  }
+
+  #[test]
+  fn constant_dividend() {
+    assert_eq!(
+      interpret("PolynomialReduce[5, {x + 1}, x]").unwrap(),
+      "{{0}, 5}"
+    );
+  }
+
+  #[test]
+  fn variable_as_single_element_list() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 + 1, {x + 1}, {x}]").unwrap(),
+      "{{-1 + x}, 2}"
+    );
+  }
+}
+
 mod solve_expression_target {
   use super::*;
 

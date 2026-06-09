@@ -74,6 +74,145 @@ pub fn polynomial_quotient_remainder_ast(
   Ok(Expr::List(vec![q, r].into()))
 }
 
+/// PolynomialReduce[poly, {p1, p2, ...}, x] — reduce `poly` modulo the
+/// polynomials `pi` in the single variable `x`. Returns `{{a1, a2, ...}, b}`
+/// where `a1 p1 + a2 p2 + ... + b == poly` and `b` is the (minimal) remainder.
+///
+/// Only the single-variable case is handled; a multivariable variable list is
+/// returned unevaluated.
+pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PolynomialReduce".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 3 {
+    return unevaluated();
+  }
+  let divisors: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.to_vec(),
+    _ => return unevaluated(),
+  };
+  let var = match &args[2] {
+    Expr::Identifier(v) => v.clone(),
+    Expr::List(vs) if vs.len() == 1 => match &vs[0] {
+      Expr::Identifier(v) => v.clone(),
+      _ => return unevaluated(),
+    },
+    _ => return unevaluated(),
+  };
+
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let var_id = Expr::Identifier(var.clone());
+  let expand = |e: &Expr| -> Expr {
+    eval(Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![e.clone()].into(),
+    })
+    .unwrap_or_else(|_| e.clone())
+  };
+  let exponent = |e: &Expr| -> Option<i128> {
+    match eval(Expr::FunctionCall {
+      name: "Exponent".to_string(),
+      args: vec![e.clone(), var_id.clone()].into(),
+    }) {
+      Ok(Expr::Integer(n)) => Some(n),
+      _ => None,
+    }
+  };
+  let coeff = |e: &Expr, d: i128| -> Expr {
+    eval(Expr::FunctionCall {
+      name: "Coefficient".to_string(),
+      args: vec![e.clone(), var_id.clone(), Expr::Integer(d)].into(),
+    })
+    .unwrap_or(Expr::Integer(0))
+  };
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  let var_pow = |d: i128| -> Expr {
+    if d == 0 {
+      Expr::Integer(1)
+    } else if d == 1 {
+      var_id.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![var_id.clone(), Expr::Integer(d)].into(),
+      }
+    }
+  };
+
+  // Precompute divisor leading data: (degree, leading_coeff, expanded_divisor).
+  let mut div_info: Vec<Option<(i128, Expr, Expr)>> = Vec::new();
+  for d in &divisors {
+    let de = expand(d);
+    if is_zero(&de) {
+      div_info.push(None);
+      continue;
+    }
+    match exponent(&de) {
+      Some(deg) => {
+        let lc = coeff(&de, deg);
+        div_info.push(Some((deg, lc, de)));
+      }
+      None => return unevaluated(), // not a polynomial in `var`
+    }
+  }
+
+  let k = divisors.len();
+  let mut quotients = vec![Expr::Integer(0); k];
+  let mut remainder = Expr::Integer(0);
+  let mut p = expand(&args[0]);
+
+  let mut guard = 0usize;
+  while !is_zero(&p) {
+    guard += 1;
+    if guard > 100_000 {
+      return unevaluated();
+    }
+    let dp = match exponent(&p) {
+      Some(d) => d,
+      None => return unevaluated(),
+    };
+    let lcp = coeff(&p, dp);
+
+    // Find the first divisor whose leading term divides the leading term of p.
+    let mut reduced = false;
+    for (i, info) in div_info.iter().enumerate() {
+      let Some((ddeg, dlc, de)) = info else { continue };
+      if *ddeg <= dp {
+        // t = (lcp / dlc) * x^(dp - ddeg)
+        let ratio = build_div(&lcp, dlc);
+        let t = eval(build_mul(&ratio, &var_pow(dp - ddeg)))
+          .unwrap_or_else(|_| build_mul(&ratio, &var_pow(dp - ddeg)));
+        quotients[i] = eval(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![quotients[i].clone(), t.clone()].into(),
+        })
+        .unwrap_or_else(|_| quotients[i].clone());
+        p = expand(&build_sub(&p, &build_mul(&t, de)));
+        reduced = true;
+        break;
+      }
+    }
+    if !reduced {
+      // Move the leading term of p into the remainder.
+      let lt = eval(build_mul(&lcp, &var_pow(dp)))
+        .unwrap_or_else(|_| build_mul(&lcp, &var_pow(dp)));
+      remainder = eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![remainder.clone(), lt.clone()].into(),
+      })
+      .unwrap_or_else(|_| remainder.clone());
+      p = expand(&build_sub(&p, &lt));
+    }
+  }
+
+  Ok(Expr::List(
+    vec![Expr::List(quotients.into()), remainder].into(),
+  ))
+}
+
 /// Perform polynomial long division p / q in variable var.
 /// Returns (quotient, remainder) as expressions.
 pub fn poly_divide_symbolic(

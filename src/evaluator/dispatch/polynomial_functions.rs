@@ -32,6 +32,11 @@ pub fn dispatch_polynomial_functions(
     "PolynomialGCD" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::polynomial_gcd_ast(args));
     }
+    "PolynomialReduce" if args.len() == 3 => {
+      return Some(crate::functions::polynomial_ast::polynomial_reduce_ast(
+        args,
+      ));
+    }
     "PolynomialExtendedGCD" if args.len() == 3 => {
       return Some(
         crate::functions::polynomial_ast::polynomial_extended_gcd_ast(args),

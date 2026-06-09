@@ -1548,7 +1548,7 @@ CopyFile,Copies a file to a new location,✅,filesystem,2.0,1571
 EstimatedProcess,Estimated stochastic process,,unevaluated,9.0,1571
 Animator,Animated control element,,unevaluated,6.0,1573
 HighlightMesh,Highlight mesh elements,,unevaluated,10.0,1573
-PolynomialReduce,Reduce polynomial modulo ideal,,unevaluated,3.0,1574
+PolynomialReduce,Reduce a polynomial modulo a list of polynomials (single variable),✅,pure,3.0,1574
 AutoScroll,Auto-scrolling option,,unevaluated,3.0,1578
 CoefficientRules,Coefficient rules for polynomials,✅,pure,7.0,1578
 ConfidenceLevel,Confidence level specification,,unevaluated,7.0,1578
