@@ -4574,6 +4574,58 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // PermutationProduct with permutation-list (image-list) arguments composes
+  // left to right and returns a permutation list: result[i] = p2[p1[i]].
+  #[test]
+  fn permutation_product_lists_basic() {
+    assert_eq!(
+      interpret("PermutationProduct[{2, 1, 3}, {1, 3, 2}]").unwrap(),
+      "{3, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn permutation_product_lists_three_cycle_cubed_is_identity() {
+    assert_eq!(
+      interpret("PermutationProduct[{2, 3, 1}, {2, 3, 1}, {2, 3, 1}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn permutation_product_lists_length_four() {
+    assert_eq!(
+      interpret("PermutationProduct[{2, 3, 1, 4}, {1, 2, 4, 3}]").unwrap(),
+      "{2, 4, 1, 3}"
+    );
+  }
+
+  #[test]
+  fn permutation_product_lists_single_arg() {
+    assert_eq!(
+      interpret("PermutationProduct[{2, 1, 3}]").unwrap(),
+      "{2, 1, 3}"
+    );
+  }
+
+  #[test]
+  fn permutation_product_lists_different_lengths() {
+    // The shorter permutation fixes points beyond its length.
+    assert_eq!(
+      interpret("PermutationProduct[{2, 1}, {2, 3, 1}]").unwrap(),
+      "{3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn permutation_product_invalid_list_unevaluated() {
+    // {2, 1, 4} is not a permutation of {1, 2, 3}.
+    assert_eq!(
+      interpret("PermutationProduct[{2, 1, 4}, {1, 3, 2}]").unwrap(),
+      "PermutationProduct[{2, 1, 4}, {1, 3, 2}]"
+    );
+  }
+
   // PermutationLength
   #[test]
   fn permutation_length_identity() {

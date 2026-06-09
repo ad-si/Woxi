@@ -8320,6 +8320,11 @@ pub fn evaluate_function_call_ast_inner(
     if args.len() == 1 {
       return Ok(args[0].clone());
     }
+    // Permutation-list arguments compose to a permutation list; Cycles
+    // arguments compose to a Cycles object.
+    if let Some(result) = compose_permutation_lists(args) {
+      return Ok(result);
+    }
     if let Some(result) = compose_cycles_args(args) {
       return Ok(result);
     }
@@ -10288,6 +10293,53 @@ fn map_to_cycles_expr(map: &std::collections::HashMap<i128, i128>) -> Expr {
 /// Compose a series of `Cycles[...]` permutations left-to-right
 /// (σ₁ applied first, then σ₂, …). Returns None when any argument
 /// is not in `Cycles[…]` form.
+/// Compose permutations given as permutation lists (image lists). Returns
+/// `Some(list)` only when every argument is a valid permutation list (a flat
+/// list whose entries are exactly {1, ..., len}); otherwise `None` so the
+/// caller can fall back to the `Cycles` path. Permutations are applied left to
+/// right: `result[i] = pk[...p2[p1[i]]]`. Lists of differing lengths are
+/// extended by fixed points beyond their length.
+fn compose_permutation_lists(args: &[Expr]) -> Option<Expr> {
+  // Empty input is the identity; leave it to the Cycles path (-> Cycles[{}]).
+  if args.is_empty() {
+    return None;
+  }
+  let mut perms: Vec<Vec<i128>> = Vec::with_capacity(args.len());
+  for a in args {
+    let Expr::List(items) = a else { return None };
+    let mut p: Vec<i128> = Vec::with_capacity(items.len());
+    for it in items.iter() {
+      match it {
+        Expr::Integer(n) if *n >= 1 => p.push(*n),
+        _ => return None,
+      }
+    }
+    if p.is_empty() {
+      return None;
+    }
+    // Must be a permutation of {1, ..., len}.
+    let mut sorted = p.clone();
+    sorted.sort_unstable();
+    if sorted.iter().enumerate().any(|(i, &v)| v != (i as i128) + 1) {
+      return None;
+    }
+    perms.push(p);
+  }
+  let n = perms.iter().map(|p| p.len()).max().unwrap_or(0);
+  let mut result: Vec<Expr> = Vec::with_capacity(n);
+  for i in 1..=n as i128 {
+    let mut cur = i;
+    for p in &perms {
+      if cur >= 1 && (cur as usize) <= p.len() {
+        cur = p[(cur - 1) as usize];
+      }
+      // Beyond this permutation's length the point is fixed.
+    }
+    result.push(Expr::Integer(cur));
+  }
+  Some(Expr::List(result.into()))
+}
+
 fn compose_cycles_args(args: &[Expr]) -> Option<Expr> {
   let mut maps: Vec<std::collections::HashMap<i128, i128>> =
     Vec::with_capacity(args.len());
