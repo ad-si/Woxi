@@ -1533,6 +1533,69 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           };
           let center = &args[1];
 
+          // If `var` is the series variable itself, apply the term-by-term
+          // power rule for the truncated series:
+          //   d/dv [ c_i (v - x0)^((nmin+i)/den) ]
+          //     = c_i (nmin+i)/den (v - x0)^((nmin+i-den)/den).
+          // The exponents shift down by one integer power, so nmin and nmax
+          // each drop by `den` and every coefficient is scaled by its
+          // exponent. (Coefficients of a valid SeriesData never depend on the
+          // expansion variable, so there is no coefficient-wise term here.)
+          if matches!(&args[0], Expr::Identifier(v) if v == var) {
+            let mut dcoeffs: Vec<Expr> = Vec::with_capacity(coeffs.len());
+            for (i, c) in coeffs.iter().enumerate() {
+              let exp_num = nmin_val + i as i128;
+              let factor = if den_val == 1 {
+                Expr::Integer(exp_num)
+              } else {
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(exp_num), Expr::Integer(den_val)]
+                    .into(),
+                }
+              };
+              let term = crate::functions::math_ast::times_ast(&[
+                factor,
+                c.clone(),
+              ])
+              .unwrap_or(Expr::Integer(0));
+              dcoeffs.push(simplify(term));
+            }
+            let mut new_nmin = nmin_val - den_val;
+            let new_nmax = nmax_val - den_val;
+            // Trim leading zero coefficients (bumping nmin) — e.g. the
+            // constant term differentiates to a zero at the lowest power.
+            while !dcoeffs.is_empty()
+              && matches!(&dcoeffs[0], Expr::Integer(0))
+            {
+              dcoeffs.remove(0);
+              new_nmin += 1;
+            }
+            // Trim trailing zero coefficients while keeping nmax.
+            while dcoeffs.len() > 1
+              && matches!(dcoeffs.last(), Some(Expr::Integer(0)))
+            {
+              dcoeffs.pop();
+            }
+            let (out_nmin, out_coeffs) = if dcoeffs.is_empty() {
+              (new_nmax, Vec::new())
+            } else {
+              (new_nmin, dcoeffs)
+            };
+            return Ok(Expr::FunctionCall {
+              name: "SeriesData".to_string(),
+              args: vec![
+                args[0].clone(),
+                args[1].clone(),
+                Expr::List(out_coeffs.into()),
+                Expr::Integer(out_nmin),
+                Expr::Integer(new_nmax),
+                Expr::Integer(den_val),
+              ]
+              .into(),
+            });
+          }
+
           // First, the element-wise contribution from differentiating
           // each coefficient.
           let mut diffed: Vec<Expr> = Vec::with_capacity(coeffs.len());
@@ -8275,7 +8338,11 @@ pub fn inverse_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let out_coeffs: Vec<Expr> = (1..=last).map(|k| rat_to_expr(b[k])).collect();
   // The optional second argument renames the series variable in the result.
-  let out_var = if args.len() == 2 { args[1].clone() } else { var };
+  let out_var = if args.len() == 2 {
+    args[1].clone()
+  } else {
+    var
+  };
   Ok(Expr::FunctionCall {
     name: "SeriesData".to_string(),
     args: vec![

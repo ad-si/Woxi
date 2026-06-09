@@ -1255,6 +1255,59 @@ mod series {
       "SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]"
     );
   }
+
+  // Differentiating a SeriesData with respect to its own expansion variable
+  // applies the term-by-term power rule (it previously returned 0 because the
+  // coefficients — all constants — were differentiated as a parameter).
+  #[test]
+  fn derivative_of_seriesdata_power_rule() {
+    assert_eq!(
+      interpret("D[SeriesData[x, 0, {1, 1, 1}, 0, 3, 1], x]").unwrap(),
+      "SeriesData[x, 0, {1, 2}, 0, 2, 1]"
+    );
+  }
+
+  #[test]
+  fn derivative_of_exp_series_is_exp_series() {
+    assert_eq!(
+      interpret("D[Series[Exp[x], {x, 0, 4}], x]").unwrap(),
+      "SeriesData[x, 0, {1, 1, 1/2, 1/6}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn derivative_of_sin_series() {
+    assert_eq!(
+      interpret("D[Series[Sin[x], {x, 0, 6}], x]").unwrap(),
+      "SeriesData[x, 0, {1, 0, -1/2, 0, 1/24}, 0, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn derivative_of_seriesdata_with_offset_nmin() {
+    assert_eq!(
+      interpret("D[SeriesData[x, 0, {1, 2, 3}, 1, 4, 1], x]").unwrap(),
+      "SeriesData[x, 0, {1, 4, 9}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn derivative_of_shifted_center_series() {
+    assert_eq!(
+      interpret("D[Series[Sqrt[x], {x, 1, 3}], x]").unwrap(),
+      "SeriesData[x, 1, {1/2, -1/4, 3/16}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn derivative_of_fractional_power_series() {
+    // den = 2 (half-integer powers): exponents shift down by one integer
+    // power, so nmin and nmax each drop by den.
+    assert_eq!(
+      interpret("D[SeriesData[x, 0, {1, 0, 1}, 1, 5, 2], x]").unwrap(),
+      "SeriesData[x, 0, {1/2, 0, 3/2}, -1, 3, 2]"
+    );
+  }
 }
 
 mod limit {

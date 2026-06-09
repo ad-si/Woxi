@@ -18,3 +18,16 @@ $ wo 'D[x^2 + 3 x + 5, x]'
 $ wo 'D[x^2 y, {x, 2}]'
 2*y
 ```
+
+Differentiating a power series with respect to its expansion variable applies
+the term-by-term power rule:
+
+```scrut
+$ wo 'D[Series[Exp[x], {x, 0, 4}], x]'
+SeriesData[x, 0, {1, 1, 1/2, 1/6}, 0, 4, 1]
+```
+
+```scrut
+$ wo 'D[SeriesData[x, 0, {1, 1, 1}, 0, 3, 1], x]'
+SeriesData[x, 0, {1, 2}, 0, 2, 1]
+```
