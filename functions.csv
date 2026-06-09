@@ -3558,7 +3558,7 @@ PairedZTest,,,,8.0,3656
 PolygonalNumber,Gives the nth r-gonal polygonal number,✅,pure,10.4,3656
 ReliefImage,,🚫,,8.0,3656
 SampleDepth,,,,2.0,3656
-SequenceSplit,,,,11.3,3656
+SequenceSplit,Splits a list into segments separated by matching subsequences,✅,pure,11.3,3656
 Snippet,,🚫,,10.2,3656
 SpectrogramArray,,🚫,,9.0,3656
 TravelDirections,,🚫,,10.3,3656

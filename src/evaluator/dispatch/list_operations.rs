@@ -2946,6 +2946,129 @@ pub fn dispatch_list_operations(
         }
       }
     }
+    // SequenceSplit[list, patt] — split list into segments separated by the
+    // (non-overlapping, left-to-right) subsequences matching patt. The
+    // separators are dropped; empty segments are dropped too, except that when
+    // patt matches nothing the whole list is returned as a single segment.
+    "SequenceSplit" if args.len() == 2 => {
+      if !matches!(&args[0], Expr::List(_)) {
+        crate::emit_message(&format!(
+          "SequenceSplit::list: List expected at position 1 in SequenceSplit[{}, {}].",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&args[1])
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "SequenceSplit".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      if let Expr::List(list) = &args[0] {
+        let match_pat = &args[1];
+        // Unwrap Pattern/Condition wrappers to get the list pattern used for
+        // length calculations (matching uses the original `match_pat`).
+        let mut list_pat = match_pat;
+        loop {
+          match list_pat {
+            Expr::FunctionCall { name, args: ia }
+              if name == "Pattern" && ia.len() == 2 =>
+            {
+              list_pat = &ia[1];
+            }
+            Expr::FunctionCall { name, args: ca }
+              if name == "Condition" && ca.len() == 2 =>
+            {
+              list_pat = &ca[0];
+            }
+            _ => break,
+          }
+        }
+        let sub = match list_pat {
+          Expr::List(items) => items,
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "SequenceSplit".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        };
+
+        // Collect non-overlapping match ranges [start, end).
+        let mut matches: Vec<(usize, usize)> = Vec::new();
+        if !sub.is_empty() {
+          let has_patterns = sub.iter().any(has_pattern_element);
+          let has_sequence = sub.iter().any(has_sequence_pattern);
+          if has_patterns {
+            let mut i = 0;
+            while i < list.len() {
+              let remaining = list.len() - i;
+              let min_len = if has_sequence { 1 } else { sub.len() };
+              let try_max =
+                if has_sequence { remaining } else { sub.len() }.min(remaining);
+              let mut matched = false;
+              if remaining >= min_len {
+                for len in (min_len..=try_max).rev() {
+                  let subseq = Expr::List(list[i..i + len].to_vec().into());
+                  if crate::evaluator::pattern_matching::match_pattern(
+                    &subseq, match_pat,
+                  )
+                  .is_some()
+                  {
+                    matches.push((i, i + len));
+                    i += len;
+                    matched = true;
+                    break;
+                  }
+                }
+              }
+              if !matched {
+                i += 1;
+              }
+            }
+          } else {
+            let sub_len = sub.len();
+            let sub_strs: Vec<String> =
+              sub.iter().map(expr_to_string).collect();
+            let mut i = 0;
+            while i + sub_len <= list.len() {
+              let mut is_match = true;
+              for j in 0..sub_len {
+                if expr_to_string(&list[i + j]) != sub_strs[j] {
+                  is_match = false;
+                  break;
+                }
+              }
+              if is_match {
+                matches.push((i, i + sub_len));
+                i += sub_len;
+              } else {
+                i += 1;
+              }
+            }
+          }
+        }
+
+        // No match: the whole list is a single segment (kept even if empty).
+        if matches.is_empty() {
+          return Some(Ok(Expr::List(
+            vec![Expr::List(list.clone())].into(),
+          )));
+        }
+
+        // Otherwise emit the non-empty segments between separators.
+        let mut segments: Vec<Expr> = Vec::new();
+        let mut prev = 0usize;
+        for &(s, e) in &matches {
+          if s > prev {
+            segments.push(Expr::List(list[prev..s].to_vec().into()));
+          }
+          prev = e;
+        }
+        if prev < list.len() {
+          segments.push(Expr::List(list[prev..].to_vec().into()));
+        }
+        return Some(Ok(Expr::List(segments.into())));
+      }
+    }
     // SequenceCount[list, sublist] — count non-overlapping occurrences
     "SequenceCount" if args.len() == 2 => {
       if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {

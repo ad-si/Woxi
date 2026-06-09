@@ -3306,6 +3306,66 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn sequence_split_single_element_separator() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 0, 2, 3, 0, 4}, {0}]").unwrap(),
+      "{{1}, {2, 3}, {4}}"
+    );
+  }
+  #[test]
+  fn sequence_split_multi_element_separator() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 1, 2, 3, 1, 2}, {1, 2}]").unwrap(),
+      "{{3}}"
+    );
+  }
+  #[test]
+  fn sequence_split_no_match_returns_whole_list() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3}, {5}]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+  #[test]
+  fn sequence_split_drops_leading_and_trailing_empty() {
+    assert_eq!(
+      interpret("SequenceSplit[{0, 1, 0}, {0}]").unwrap(),
+      "{{1}}"
+    );
+  }
+  #[test]
+  fn sequence_split_pattern_separator() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4}, {x_ /; EvenQ[x]}]").unwrap(),
+      "{{1}, {3}}"
+    );
+  }
+  #[test]
+  fn sequence_split_conditioned_pair_separator() {
+    assert_eq!(
+      interpret("SequenceSplit[{1, 2, 3, 4, 5, 6}, {a_, b_} /; a + b == 7]")
+        .unwrap(),
+      "{{1, 2}, {5, 6}}"
+    );
+  }
+  #[test]
+  fn sequence_split_empty_list() {
+    // No separator match in an empty list yields a single empty segment.
+    assert_eq!(interpret("SequenceSplit[{}, {0}]").unwrap(), "{{}}");
+  }
+  #[test]
+  fn sequence_split_all_separators() {
+    assert_eq!(interpret("SequenceSplit[{1, 1, 1}, {1}]").unwrap(), "{}");
+  }
+  #[test]
+  fn sequence_split_strings() {
+    assert_eq!(
+      interpret("SequenceSplit[{\"a\", \"x\", \"b\", \"x\", \"c\"}, {\"x\"}]")
+        .unwrap(),
+      "{{a}, {b}, {c}}"
+    );
+  }
+  #[test]
   fn sequence_cases_pattern() {
     assert_eq!(
       interpret("SequenceCases[{1, 2, 3, 4, 1, 2}, {_, _}]").unwrap(),
