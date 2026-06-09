@@ -8402,11 +8402,9 @@ fn series_poly_mul(
       if p >= max_power {
         continue;
       }
-      let term = crate::functions::math_ast::times_ast(&[
-        ca.clone(),
-        cb.clone(),
-      ])
-      .unwrap_or(Expr::Integer(0));
+      let term =
+        crate::functions::math_ast::times_ast(&[ca.clone(), cb.clone()])
+          .unwrap_or(Expr::Integer(0));
       out.entry(p).or_default().push(term);
     }
   }
@@ -8500,9 +8498,7 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
   let mut dense: Vec<Expr> = Vec::new();
   if nmin_r < big_m {
     let mut hi = big_m - 1;
-    while hi > nmin_r
-      && coeff_map.get(&hi).map(|c| is_zero(c)).unwrap_or(true)
-    {
+    while hi > nmin_r && coeff_map.get(&hi).map(&is_zero).unwrap_or(true) {
       hi -= 1;
     }
     for p in nmin_r..=hi {
@@ -8867,6 +8863,13 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // If the expression does not depend on the expansion variable, its series
+  // is the expression itself (wolframscript returns it directly, with no
+  // SeriesData wrapper or O-term).
+  if is_constant_wrt(&args[0], &var_name) {
+    return crate::evaluator::evaluate_expr_to_expr(&args[0]);
+  }
 
   // Series[QFactorial[n, q], {q, 0, k}] — expand the q-factorial directly
   // as the polynomial product (1+q)·(1+q+q²)·…·(1+q+…+q^{n-1}), truncating
@@ -9444,6 +9447,16 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // If all coefficients are zero, return 0
   if coefficients.is_empty() {
     return Ok(Expr::Integer(0));
+  }
+
+  // Strip trailing zero coefficients (wolframscript drops them from the
+  // coefficient list while keeping the truncation order nmax). The leading
+  // strip above guarantees the first element is nonzero, so this never empties
+  // the list.
+  while coefficients.len() > 1
+    && matches!(coefficients.last(), Some(Expr::Integer(0)))
+  {
+    coefficients.pop();
   }
 
   // Build SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, 1]

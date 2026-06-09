@@ -1308,6 +1308,64 @@ mod series {
       "SeriesData[x, 0, {1/2, 0, 3/2}, -1, 3, 2]"
     );
   }
+
+  // wolframscript drops trailing zero coefficients from the SeriesData list
+  // while keeping the truncation order (nmax).
+  #[test]
+  fn trailing_zeros_trimmed_linear() {
+    assert_eq!(
+      interpret("Series[1 + x, {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1, 1}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn trailing_zeros_trimmed_monomial() {
+    assert_eq!(
+      interpret("Series[x^2, {x, 0, 5}]").unwrap(),
+      "SeriesData[x, 0, {1}, 2, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn trailing_zeros_trimmed_keeps_internal_zeros() {
+    assert_eq!(
+      interpret("Series[x^2 + x^4, {x, 0, 7}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 1}, 2, 8, 1]"
+    );
+  }
+
+  // A constant (or any expression free of the expansion variable) has no
+  // SeriesData wrapper — the series is the expression itself.
+  #[test]
+  fn constant_returns_bare_value() {
+    assert_eq!(interpret("Series[3, {x, 0, 3}]").unwrap(), "3");
+  }
+
+  #[test]
+  fn variable_free_symbol_returns_bare() {
+    assert_eq!(interpret("Series[a, {x, 0, 3}]").unwrap(), "a");
+  }
+
+  #[test]
+  fn variable_free_expression_returns_bare() {
+    assert_eq!(interpret("Series[a + b, {x, 0, 3}]").unwrap(), "a + b");
+  }
+
+  #[test]
+  fn series_in_unrelated_variable_returns_bare() {
+    assert_eq!(interpret("Series[Sin[y], {x, 0, 3}]").unwrap(), "Sin[y]");
+  }
+
+  // The constant coefficient inside a multivariate expansion likewise stays
+  // bare rather than being wrapped in a degenerate SeriesData.
+  #[test]
+  fn multivariate_constant_coefficient_stays_bare() {
+    assert_eq!(
+      interpret("Series[x + y, {x, 0, 2}, {y, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {SeriesData[y, 0, {1}, 1, 3, 1], 1}, 0, 3, 1]"
+    );
+  }
 }
 
 mod limit {
