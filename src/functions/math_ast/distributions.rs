@@ -426,6 +426,30 @@ pub fn quantile_distribution_closed_form(
   let is_exact_q = !matches!(q, Expr::Real(_));
 
   match dist_name {
+    // Empirical DataDistribution: the smallest support value whose
+    // cumulative weight reaches q (inclusive)
+    "DataDistribution" => {
+      let (weights, values) = data_distribution_parts(dargs)?;
+      let target = q_num;
+      let mut cum = 0.0;
+      for (w, v) in weights.iter().zip(values.iter()) {
+        cum += w.0 as f64 / w.1 as f64;
+        if cum >= target - 1e-12 {
+          return Some(if v.1 == 1 {
+            Expr::Integer(v.0)
+          } else {
+            crate::functions::math_ast::make_rational_pub(v.0, v.1)
+          });
+        }
+      }
+      values.last().map(|v| {
+        if v.1 == 1 {
+          Expr::Integer(v.0)
+        } else {
+          crate::functions::math_ast::make_rational_pub(v.0, v.1)
+        }
+      })
+    }
     // Quantile[ExponentialDistribution[lambda], q] = -Log[1 - q] / lambda
     "ExponentialDistribution" if dargs.len() == 1 => {
       // Edges: the generic formula would leave Infinity/lambda unreduced

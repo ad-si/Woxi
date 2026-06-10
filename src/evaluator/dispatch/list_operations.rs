@@ -1978,6 +1978,18 @@ pub fn dispatch_list_operations(
       ));
     }
     "Median" if args.len() == 1 => {
+      // Median of an empirical DataDistribution is its 1/2 quantile
+      if let Expr::FunctionCall { name: dn, args: da } = &args[0]
+        && dn == "DataDistribution"
+        && let Some(result) =
+          crate::functions::quantile_distribution_closed_form(
+            dn,
+            da,
+            &crate::functions::math_ast::make_rational_pub(1, 2),
+          )
+      {
+        return Some(Ok(result));
+      }
       return Some(list_helpers_ast::median_ast(&args[0]));
     }
     "Count" if args.len() == 2 => {
@@ -3049,9 +3061,7 @@ pub fn dispatch_list_operations(
 
         // No match: the whole list is a single segment (kept even if empty).
         if matches.is_empty() {
-          return Some(Ok(Expr::List(
-            vec![Expr::List(list.clone())].into(),
-          )));
+          return Some(Ok(Expr::List(vec![Expr::List(list.clone())].into())));
         }
 
         // Otherwise emit the non-empty segments between separators.

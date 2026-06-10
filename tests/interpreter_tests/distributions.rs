@@ -1430,3 +1430,55 @@ mod empirical_distribution {
     );
   }
 }
+
+mod empirical_quantiles {
+  use super::*;
+
+  #[test]
+  fn quantile_is_inclusive_step() {
+    // Smallest support value whose cumulative weight reaches q
+    assert_eq!(
+      interpret("Quantile[EmpiricalDistribution[{1, 2, 2, 3}], 1/2]").unwrap(),
+      "2"
+    );
+    // CDF(1) = 1/4 reaches q = 1/4 inclusively
+    assert_eq!(
+      interpret("Quantile[EmpiricalDistribution[{1, 2, 2, 3}], 1/4]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Quantile[EmpiricalDistribution[{1, 2, 2, 3}], 9/10]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn quantile_boundaries() {
+    assert_eq!(
+      interpret("Quantile[EmpiricalDistribution[{1, 2, 2, 3}], 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Quantile[EmpiricalDistribution[{1, 2, 2, 3}], 1]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn median_inverse_cdf_survival() {
+    assert_eq!(
+      interpret("Median[EmpiricalDistribution[{1, 2, 2, 3}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("InverseCDF[EmpiricalDistribution[{1, 2, 2, 3}], 1/2]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("SurvivalFunction[EmpiricalDistribution[{1, 2, 2, 3}], 2]")
+        .unwrap(),
+      "1/4"
+    );
+  }
+}
