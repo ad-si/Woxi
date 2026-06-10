@@ -185,7 +185,208 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   let cdf = cdf_ast(args)?;
+
+  // A Piecewise CDF complements piece by piece (with the pieces folded
+  // individually — evaluating the assembled Piecewise would mangle the
+  // exponentials), matching wolframscript's
+  // Piecewise[{{E^(-(a*x)), x >= 0}}, 1] instead of 1 - Piecewise[...].
+  if let Expr::FunctionCall { name, args: pargs } = &cdf
+    && name == "Piecewise"
+    && !pargs.is_empty()
+    && let Expr::List(pieces) = &pargs[0]
+  {
+    let mut new_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
+    let mut all_pairs = true;
+    for piece in pieces {
+      if let Expr::List(pair) = piece
+        && pair.len() == 2
+      {
+        let val = eval(minus(int(1), pair[0].clone()))?;
+        new_pieces.push(Expr::List(vec![val, pair[1].clone()].into()));
+      } else {
+        all_pairs = false;
+        break;
+      }
+    }
+    if all_pairs {
+      let default = pargs.get(1).cloned().unwrap_or(int(0));
+      let new_default = eval(minus(int(1), default))?;
+      return Ok(Expr::FunctionCall {
+        name: "Piecewise".to_string(),
+        args: vec![Expr::List(new_pieces.into()), new_default].into(),
+      });
+    }
+  }
+
+  // Erfc-based CDF (normal family): 1 - Erfc[z]/2 = Erfc[-z]/2.
+  // Simplify normalizes the negated argument the way wolframscript
+  // prints it: (-m + x)/(Sqrt[2]*s) rather than -((m - x)/(Sqrt[2]*s)).
+  if let Some(z) = match_erfc_half(&cdf) {
+    let neg_z = eval(Expr::FunctionCall {
+      name: "Simplify".to_string(),
+      args: vec![times(int(-1), z)].into(),
+    })?;
+    return Ok(divide(
+      Expr::FunctionCall {
+        name: "Erfc".to_string(),
+        args: vec![neg_z].into(),
+      },
+      int(2),
+    ));
+  }
+
   eval(minus(int(1), cdf))
+}
+
+/// `HazardFunction[dist, x] = PDF[dist, x] / SurvivalFunction[dist, x]`.
+///
+/// Supported for distributions whose per-piece ratio simplifies to
+/// wolframscript's closed form (Exponential, Pareto) plus the standard
+/// normal. Other distributions stay unevaluated rather than risking a
+/// differently-shaped (though equivalent) answer.
+pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "HazardFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let (dist_name, dargs) = match &args[0] {
+    Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
+    _ => return Ok(unevaluated(args)),
+  };
+  let x = args[1].clone();
+
+  // Standard normal: Sqrt[2/Pi]/(E^(x^2/2)*Erfc[x/Sqrt[2]])
+  let is_std_normal = dist_name == "NormalDistribution"
+    && (dargs.is_empty()
+      || (dargs.len() == 2
+        && matches!(&dargs[0], Expr::Integer(0))
+        && matches!(&dargs[1], Expr::Integer(1))));
+  if is_std_normal && matches!(&x, Expr::Identifier(_)) {
+    let sqrt = |e: Expr| Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![e].into(),
+    };
+    return Ok(divide(
+      sqrt(divide(int(2), Expr::Constant("Pi".to_string()))),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Identifier("E".to_string())),
+            right: Box::new(divide(
+              Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(x.clone()),
+                right: Box::new(int(2)),
+              },
+              int(2),
+            )),
+          },
+          Expr::FunctionCall {
+            name: "Erfc".to_string(),
+            args: vec![divide(x.clone(), sqrt(int(2)))].into(),
+          },
+        ]
+        .into(),
+      },
+    ));
+  }
+
+  if !matches!(dist_name, "ExponentialDistribution" | "ParetoDistribution") {
+    return Ok(unevaluated(args));
+  }
+
+  let simplify_ratio = |p: Expr, s: Expr| -> Result<Expr, InterpreterError> {
+    eval(Expr::FunctionCall {
+      name: "Simplify".to_string(),
+      args: vec![divide(p, s)].into(),
+    })
+  };
+
+  let pdf = pdf_ast(args)?;
+  let sf = survival_function_ast(args)?;
+
+  // Piecewise PDF and SF with identical conditions: divide piece-wise
+  if let (
+    Expr::FunctionCall {
+      name: pn,
+      args: pargs,
+    },
+    Expr::FunctionCall {
+      name: sn,
+      args: sargs,
+    },
+  ) = (&pdf, &sf)
+    && pn == "Piecewise"
+    && sn == "Piecewise"
+    && !pargs.is_empty()
+    && !sargs.is_empty()
+    && let (Expr::List(p_pieces), Expr::List(s_pieces)) = (&pargs[0], &sargs[0])
+    && p_pieces.len() == s_pieces.len()
+  {
+    let mut new_pieces: Vec<Expr> = Vec::with_capacity(p_pieces.len());
+    for (pp, sp) in p_pieces.iter().zip(s_pieces.iter()) {
+      let (Expr::List(p_pair), Expr::List(s_pair)) = (pp, sp) else {
+        return Ok(unevaluated(args));
+      };
+      if p_pair.len() != 2
+        || s_pair.len() != 2
+        || crate::syntax::expr_to_string(&p_pair[1])
+          != crate::syntax::expr_to_string(&s_pair[1])
+      {
+        return Ok(unevaluated(args));
+      }
+      let ratio = simplify_ratio(p_pair[0].clone(), s_pair[0].clone())?;
+      new_pieces.push(Expr::List(vec![ratio, p_pair[1].clone()].into()));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Piecewise".to_string(),
+      args: vec![Expr::List(new_pieces.into()), int(0)].into(),
+    });
+  }
+
+  // Numeric argument: the piecewise branch has already been selected
+  simplify_ratio(pdf, sf)
+}
+
+/// Match `Erfc[z]/2` (as Divide or Times[1/2, ...]) and return z.
+fn match_erfc_half(expr: &Expr) -> Option<Expr> {
+  let erfc_arg = |e: &Expr| -> Option<Expr> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Erfc"
+      && args.len() == 1
+    {
+      Some(args[0].clone())
+    } else {
+      None
+    }
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(2)) => erfc_arg(left),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      match (&args[0], &args[1]) {
+        (Expr::FunctionCall { name: rn, args: ra }, other)
+        | (other, Expr::FunctionCall { name: rn, args: ra })
+          if rn == "Rational"
+            && ra.len() == 2
+            && matches!(&ra[0], Expr::Integer(1))
+            && matches!(&ra[1], Expr::Integer(2)) =>
+        {
+          erfc_arg(other)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
 }
 
 /// Closed-form Quantile[dist, q] for distributions whose inverse CDF is

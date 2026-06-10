@@ -878,3 +878,97 @@ mod parameter_mixture_distribution {
     );
   }
 }
+
+mod survival_function_symbolic {
+  use super::*;
+
+  #[test]
+  fn exponential_piecewise() {
+    // Regression: used to print the unsimplified 1 - Piecewise[...] form
+    assert_eq!(
+      interpret("SurvivalFunction[ExponentialDistribution[a], x]").unwrap(),
+      "Piecewise[{{E^(-(a*x)), x >= 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn uniform_piecewise() {
+    assert_eq!(
+      interpret("SurvivalFunction[UniformDistribution[{0, 1}], x]").unwrap(),
+      "Piecewise[{{1 - x, 0 <= x <= 1}, {0, x > 1}}, 1]"
+    );
+  }
+
+  #[test]
+  fn geometric_piecewise() {
+    assert_eq!(
+      interpret("SurvivalFunction[GeometricDistribution[1/3], x]").unwrap(),
+      "Piecewise[{{(2/3)^(1 + Floor[x]), x >= 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn normal_erfc_reflection() {
+    // 1 - Erfc[z]/2 folds to Erfc[-z]/2 with the argument normalized
+    assert_eq!(
+      interpret("SurvivalFunction[NormalDistribution[], x]").unwrap(),
+      "Erfc[x/Sqrt[2]]/2"
+    );
+    assert_eq!(
+      interpret("SurvivalFunction[NormalDistribution[m, s], x]").unwrap(),
+      "Erfc[(-m + x)/(Sqrt[2]*s)]/2"
+    );
+  }
+
+  #[test]
+  fn numeric_argument_still_folds() {
+    assert_eq!(
+      interpret("SurvivalFunction[ExponentialDistribution[2], 3]").unwrap(),
+      "E^(-6)"
+    );
+  }
+}
+
+mod hazard_function {
+  use super::*;
+
+  #[test]
+  fn exponential_constant_hazard() {
+    assert_eq!(
+      interpret("HazardFunction[ExponentialDistribution[a], x]").unwrap(),
+      "Piecewise[{{a, x >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pareto() {
+    assert_eq!(
+      interpret("HazardFunction[ParetoDistribution[k, a], x]").unwrap(),
+      "Piecewise[{{a/x, x >= k}}, 0]"
+    );
+  }
+
+  #[test]
+  fn standard_normal() {
+    assert_eq!(
+      interpret("HazardFunction[NormalDistribution[], x]").unwrap(),
+      "Sqrt[2/Pi]/(E^(x^2/2)*Erfc[x/Sqrt[2]])"
+    );
+  }
+
+  #[test]
+  fn numeric_argument() {
+    assert_eq!(
+      interpret("HazardFunction[ExponentialDistribution[2], 3]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("HazardFunction[PoissonDistribution[2], x]").unwrap(),
+      "HazardFunction[PoissonDistribution[2], x]"
+    );
+  }
+}
