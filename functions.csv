@@ -840,7 +840,7 @@ Curl,Computes the curl of a vector field,✅,pure,9.0,847
 GraphPlot,Forwards to Graph[…] for rendering as Graphics,✅,pure,6.0,849
 Texture,Apply a texture to a surface in graphics,✅,none,8.0,849
 Hypergeometric2F1Regularized,Regularized hypergeometric 2F1 function,✅,pure,3.0,850
-TransformedDistribution,,🚫,,8.0,851
+TransformedDistribution,Distribution of a linear transform of a random variable,✅,pure,8.0,851
 TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3.0,852
 RegionIntersection,,🚫,,10.0,853
 Variables,Returns the variables in a polynomial expression,✅,pure,1.0,854

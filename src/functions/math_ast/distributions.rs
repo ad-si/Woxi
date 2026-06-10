@@ -6026,3 +6026,117 @@ pub fn polynomial_expectation(
   })
   .ok()
 }
+
+// ─── TransformedDistribution ─────────────────────────────────────────
+
+/// TransformedDistribution[a*x + b, x \[Distributed] dist] for numeric
+/// rational a (nonzero) and b, folding linear transforms into the
+/// distribution families wolframscript uses:
+/// - NormalDistribution[m, s] -> NormalDistribution[b + a*m, |a|*s]
+/// - UniformDistribution[{lo, hi}] -> sorted {a*lo + b, a*hi + b}
+/// - ExponentialDistribution[l] (a > 0, b = 0) -> ExponentialDistribution[l/a]
+/// - GammaDistribution[al, be] (a > 0, b = 0) -> GammaDistribution[al, a*be]
+pub fn transformed_distribution_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "TransformedDistribution".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let (var, dist) = match &args[1] {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "Distributed" && dargs.len() == 2 =>
+    {
+      match &dargs[0] {
+        Expr::Identifier(v) => (v.clone(), dargs[1].clone()),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+  let (dist_name, dargs) = match &dist {
+    Expr::FunctionCall { name, args: da } => (name.as_str(), da.as_slice()),
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Linear transform a*x + b with exact numeric a (nonzero) and b.
+  // extract_linear returns unevaluated Plus chains — fold them first.
+  let (a, b) = match extract_linear(&args[0], &var) {
+    Some((a, b)) => (eval(a)?, eval(b)?),
+    None => return Ok(unevaluated(args)),
+  };
+  let as_frac = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some((*n, *d))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  };
+  let (Some(af), Some(bf)) = (as_frac(&a), as_frac(&b)) else {
+    return Ok(unevaluated(args));
+  };
+  if af.0 == 0 {
+    return Ok(unevaluated(args));
+  }
+  let a_positive = af.0 > 0;
+
+  let dist_call = |name: &str, params: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: params.into(),
+  };
+  let linear = |e: &Expr| -> Result<Expr, InterpreterError> {
+    // a*e + b
+    eval(plus(times(a.clone(), e.clone()), b.clone()))
+  };
+
+  match (dist_name, dargs) {
+    ("NormalDistribution", [m, s]) => {
+      let new_m = linear(m)?;
+      let abs_a = frac_to_rational_expr((af.0.abs(), af.1));
+      let new_s = eval(times(abs_a, s.clone()))?;
+      Ok(dist_call("NormalDistribution", vec![new_m, new_s]))
+    }
+    ("NormalDistribution", []) => {
+      let new_m = eval(b.clone())?;
+      let new_s = frac_to_rational_expr((af.0.abs(), af.1));
+      Ok(dist_call("NormalDistribution", vec![new_m, new_s]))
+    }
+    ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
+      let p = linear(&bounds[0])?;
+      let q = linear(&bounds[1])?;
+      let (lo, hi) = if a_positive { (p, q) } else { (q, p) };
+      Ok(dist_call(
+        "UniformDistribution",
+        vec![Expr::List(vec![lo, hi].into())],
+      ))
+    }
+    ("ExponentialDistribution", [l]) if a_positive && bf.0 == 0 => {
+      let new_l = eval(divide(l.clone(), a.clone()))?;
+      Ok(dist_call("ExponentialDistribution", vec![new_l]))
+    }
+    ("GammaDistribution", [al, be]) if a_positive && bf.0 == 0 => {
+      let new_be = eval(times(a.clone(), be.clone()))?;
+      Ok(dist_call("GammaDistribution", vec![al.clone(), new_be]))
+    }
+    _ => Ok(unevaluated(args)),
+  }
+}
+
+fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
+  if f.1 == 1 {
+    Expr::Integer(f.0)
+  } else {
+    crate::functions::math_ast::make_rational_pub(f.0, f.1)
+  }
+}

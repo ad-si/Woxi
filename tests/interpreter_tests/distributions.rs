@@ -1184,3 +1184,95 @@ mod polynomial_expectation {
     );
   }
 }
+
+mod transformed_distribution {
+  use super::*;
+
+  #[test]
+  fn normal_linear() {
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[2 x, x \\[Distributed] NormalDistribution[0, 1]]"
+      )
+      .unwrap(),
+      "NormalDistribution[0, 2]"
+    );
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[x + 3, x \\[Distributed] NormalDistribution[m, s]]"
+      )
+      .unwrap(),
+      "NormalDistribution[3 + m, s]"
+    );
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[2 x + 1, x \\[Distributed] NormalDistribution[m, s]]"
+      )
+      .unwrap(),
+      "NormalDistribution[1 + 2*m, 2*s]"
+    );
+    // Negative scale: the deviation stays positive
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[-x, x \\[Distributed] NormalDistribution[m, s]]"
+      )
+      .unwrap(),
+      "NormalDistribution[-m, s]"
+    );
+  }
+
+  #[test]
+  fn uniform_linear() {
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[x + 2, x \\[Distributed] UniformDistribution[{0, 1}]]"
+      )
+      .unwrap(),
+      "UniformDistribution[{2, 3}]"
+    );
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[2 x, x \\[Distributed] UniformDistribution[{0, 1}]]"
+      )
+      .unwrap(),
+      "UniformDistribution[{0, 2}]"
+    );
+    // Negative scale sorts the bounds
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[-2 x, x \\[Distributed] UniformDistribution[{0, 1}]]"
+      )
+      .unwrap(),
+      "UniformDistribution[{-2, 0}]"
+    );
+  }
+
+  #[test]
+  fn exponential_and_gamma_scaling() {
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[3 x, x \\[Distributed] ExponentialDistribution[a]]"
+      )
+      .unwrap(),
+      "ExponentialDistribution[a/3]"
+    );
+    assert_eq!(
+      interpret(
+        "TransformedDistribution[2 x, x \\[Distributed] GammaDistribution[a, b]]"
+      )
+      .unwrap(),
+      "GammaDistribution[a, 2*b]"
+    );
+  }
+
+  #[test]
+  fn composes_with_mean() {
+    assert_eq!(
+      interpret(
+        "Mean[TransformedDistribution[2 x + 1, x \\[Distributed] NormalDistribution[m, s]]]"
+      )
+      .unwrap(),
+      "1 + 2*m"
+    );
+  }
+}
