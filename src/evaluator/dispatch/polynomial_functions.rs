@@ -193,6 +193,16 @@ pub fn dispatch_polynomial_functions(
         args, true,
       ));
     }
+    "FindMinValue" if args.len() >= 2 => {
+      return Some(crate::functions::polynomial_ast::find_min_value_ast(
+        args, false,
+      ));
+    }
+    "FindMaxValue" if args.len() >= 2 => {
+      return Some(crate::functions::polynomial_ast::find_min_value_ast(
+        args, true,
+      ));
+    }
     "Minimize" | "Maximize"
       if args.len() == 2
         && matches!(

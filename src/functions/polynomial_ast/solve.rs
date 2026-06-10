@@ -6330,6 +6330,71 @@ fn minimize_lp_2d(
 
 // ─── FindMinimum / FindMaximum ───────────────────────────────────────
 
+/// Solve the dense linear system `a * x = b` with Gaussian elimination
+/// and partial pivoting. Returns None when the matrix is singular.
+fn solve_dense_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+  let n = b.len();
+  let mut aug: Vec<Vec<f64>> = a
+    .iter()
+    .zip(b.iter())
+    .map(|(row, &bi)| {
+      let mut r = row.clone();
+      r.push(bi);
+      r
+    })
+    .collect();
+
+  for col in 0..n {
+    let pivot_row = (col..n)
+      .max_by(|&r1, &r2| {
+        aug[r1][col]
+          .abs()
+          .partial_cmp(&aug[r2][col].abs())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      })?;
+    if aug[pivot_row][col].abs() < 1e-12 {
+      return None;
+    }
+    aug.swap(col, pivot_row);
+    for row in (col + 1)..n {
+      let factor = aug[row][col] / aug[col][col];
+      for j in col..=n {
+        aug[row][j] -= factor * aug[col][j];
+      }
+    }
+  }
+
+  let mut x = vec![0.0; n];
+  for i in (0..n).rev() {
+    let mut s = aug[i][n];
+    for j in (i + 1)..n {
+      s -= aug[i][j] * x[j];
+    }
+    x[i] = s / aug[i][i];
+  }
+  Some(x)
+}
+
+/// FindMinValue / FindMaxValue — like FindMinimum / FindMaximum, but
+/// return only the extremum value (first element of the result pair).
+pub fn find_min_value_ast(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  match find_minimum_ast(args, maximize)? {
+    Expr::List(ref items) if items.len() == 2 => Ok(items[0].clone()),
+    _ => Ok(Expr::FunctionCall {
+      name: if maximize {
+        "FindMaxValue"
+      } else {
+        "FindMinValue"
+      }
+      .to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
 /// FindMinimum[f, {x, x0}] — find a local minimum of f starting at x0
 /// FindMinimum[f, {{x, x0}, {y, y0}}] — multivariable
 /// Returns {min_value, {x -> x_min, ...}}
@@ -6355,8 +6420,11 @@ pub fn find_minimum_ast(
   // Only the first two positional arguments drive the optimisation.
   let f = &args[0];
 
-  // Parse variables and starting points: {x, x0} or {{x, x0}, {y, y0}}
+  // Parse variables and starting points: x, {x, y}, {x, x0} or
+  // {{x, x0}, {y, y0}}. Bare symbols get Wolfram's automatic starting
+  // point of 1 (FindMinimum[f, x] == FindMinimum[f, {x, 1}]).
   let var_specs = match &args[1] {
+    Expr::Identifier(name) => vec![(name.clone(), 1.0)],
     Expr::List(items)
       if !items.is_empty() && matches!(&items[0], Expr::List(_)) =>
     {
@@ -6376,6 +6444,22 @@ pub fn find_minimum_ast(
         }
       }
       specs
+    }
+    // List of bare symbols: {x, y, ...} with automatic starting points.
+    // A two-element list is only a variable list when the second element
+    // is not a numeric starting point (so {x, Pi} stays {var, start}).
+    Expr::List(items)
+      if items.len() >= 2
+        && items.iter().all(|i| matches!(i, Expr::Identifier(_)))
+        && (items.len() != 2 || find_root_eval_number(&items[1]).is_err()) =>
+    {
+      items
+        .iter()
+        .map(|i| match i {
+          Expr::Identifier(name) => (name.clone(), 1.0),
+          _ => unreachable!(),
+        })
+        .collect()
     }
     Expr::List(items) if items.len() == 2 => {
       // Single variable: {x, x0}
@@ -6520,12 +6604,16 @@ pub fn find_minimum_ast(
       x[0] = best_x;
     }
   } else {
-    // Multivariable: use BFGS-like gradient descent with line search
+    // Multivariable: damped Newton on sign*f using the symbolic Hessian.
+    // Falls back to steepest descent when the Newton system is singular
+    // or its direction is not a descent direction (e.g. near a saddle).
+    // Plain gradient descent only converges linearly and used to stall
+    // short of the optimum within the iteration budget.
     for _ in 0..max_iter {
-      // Evaluate gradient
+      // Signed gradient (of sign*f, so "descent" always means improvement)
       let mut grad = vec![0.0; n];
       for i in 0..n {
-        grad[i] = eval_at(&grad_exprs[i], &x)?;
+        grad[i] = eval_at(&grad_exprs[i], &x)? * sign;
       }
 
       let grad_norm: f64 = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
@@ -6533,13 +6621,37 @@ pub fn find_minimum_ast(
         break;
       }
 
-      // Descent direction
-      let dir: Vec<f64> = grad.iter().map(|g| -sign * g).collect();
+      // Signed Hessian
+      let mut hess = vec![vec![0.0; n]; n];
+      for (i, row) in hess.iter_mut().enumerate() {
+        for (j, h) in row.iter_mut().enumerate() {
+          *h = eval_at(&hess_exprs[i][j], &x)? * sign;
+        }
+      }
 
-      // Backtracking line search
-      let mut alpha = 1.0;
+      // Newton direction: hess * d = -grad
+      let neg_grad: Vec<f64> = grad.iter().map(|g| -g).collect();
+      let dir = match solve_dense_linear_system(&hess, &neg_grad) {
+        Some(d)
+          if grad.iter().zip(d.iter()).map(|(g, di)| g * di).sum::<f64>()
+            < 0.0 =>
+        {
+          d
+        }
+        _ => neg_grad,
+      };
+
+      let step_norm: f64 = dir.iter().map(|d| d * d).sum::<f64>().sqrt();
+      if step_norm < tol {
+        break;
+      }
+
+      // Backtracking line search (Armijo condition on sign*f)
       let c = 1e-4;
       let current_f = eval_at(f, &x)? * sign;
+      let decrease: f64 =
+        grad.iter().zip(dir.iter()).map(|(g, d)| g * d).sum::<f64>();
+      let mut alpha = 1.0;
 
       for _ in 0..50 {
         let x_new: Vec<f64> = x
@@ -6548,17 +6660,11 @@ pub fn find_minimum_ast(
           .map(|(xi, di)| xi + alpha * di)
           .collect();
         let new_f = eval_at(f, &x_new)? * sign;
-        let decrease: f64 =
-          grad.iter().zip(dir.iter()).map(|(g, d)| g * d).sum::<f64>();
-        if new_f <= current_f + c * alpha * decrease * sign {
+        if new_f <= current_f + c * alpha * decrease || alpha < 1e-15 {
           x = x_new;
           break;
         }
         alpha *= 0.5;
-        if alpha < 1e-15 {
-          x = x_new;
-          break;
-        }
       }
     }
   }

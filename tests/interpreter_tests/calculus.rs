@@ -2745,6 +2745,78 @@ mod find_minimum {
   }
 
   #[test]
+  fn find_minimum_bare_symbol_default_start() {
+    // FindMinimum[f, x] uses Wolfram's automatic starting point x = 1
+    clear_state();
+    let result = interpret("FindMinimum[(x - 3)^2, x]").unwrap();
+    assert_eq!(result, "{0., {x -> 3.}}");
+  }
+
+  #[test]
+  fn find_max_value_univariate() {
+    clear_state();
+    let result = interpret("FindMaxValue[-2*x^2 - 3*x + 5, x]").unwrap();
+    assert_eq!(result, "6.125");
+  }
+
+  #[test]
+  fn find_max_value_with_start() {
+    clear_state();
+    let result = interpret("FindMaxValue[Sin[x], {x, 2}]").unwrap();
+    assert_eq!(result, "1.");
+  }
+
+  #[test]
+  fn find_max_value_multivariate_bare_symbols() {
+    // {x, y} is a list of variables with automatic starting points,
+    // not a {var, start} pair
+    clear_state();
+    let result = interpret("FindMaxValue[Sin[x]*Sin[2*y], {x, y}]").unwrap();
+    assert_eq!(result, "1.");
+  }
+
+  #[test]
+  fn find_min_value_univariate() {
+    clear_state();
+    let result = interpret("FindMinValue[x^2 - 3 x + 2, x]").unwrap();
+    assert_eq!(result, "-0.25");
+  }
+
+  #[test]
+  fn find_min_value_with_start() {
+    clear_state();
+    let result = interpret("FindMinValue[Cos[x], {x, 3}]").unwrap();
+    assert_eq!(result, "-1.");
+  }
+
+  #[test]
+  fn find_min_value_bare_symbol() {
+    clear_state();
+    let result = interpret("FindMinValue[Sin[x], x]").unwrap();
+    assert_eq!(result, "-1.");
+  }
+
+  #[test]
+  fn find_min_value_multivariate() {
+    clear_state();
+    let result =
+      interpret("FindMinValue[(x - 3)^2 + (y - 2)^2, {{x, 0}, {y, 0}}]")
+        .unwrap();
+    assert_eq!(result, "0.");
+  }
+
+  #[test]
+  fn find_maximum_multivariate_newton_convergence() {
+    // Regression: plain gradient descent stalled at ~0.9967 within the
+    // iteration budget; the damped-Newton step converges to the exact
+    // maximum value 1.
+    clear_state();
+    let result =
+      interpret("FindMaximum[Sin[x]*Sin[2*y], {{x, 2}, {y, 1}}]").unwrap();
+    assert!(result.starts_with("{1., {x -> 1.5707"));
+  }
+
+  #[test]
   fn find_maximum_negative_quadratic() {
     clear_state();
     let result = interpret("FindMaximum[-(x - 5)^2 + 10, {x, 0}]").unwrap();

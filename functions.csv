@@ -1638,7 +1638,7 @@ DiscreteMarkovProcess,Discrete Markov process,,unevaluated,9.0,1665
 Ket,Dirac ket notation,,unevaluated,13.3,1665
 TradingChart,Financial trading chart,,unevaluated,8.0,1666
 ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668
-FindMaxValue,Find maximum value,,unevaluated,7.0,1668
+FindMaxValue,Finds the value at a local maximum of a function numerically,✅,pure,7.0,1668
 DistributeDefinitions,Distribute definitions to kernels,,unevaluated,7.0,1672
 FilePrint,Prints the contents of a file to standard output,✅,io,6.0,1672
 FormPage,Form page interface,,unevaluated,10.3,1672
@@ -2297,7 +2297,7 @@ ParameterEstimator,statistical estimation,🚫,None,8.0,2344
 TransformationMatrix,requires TransformationFunction framework,🚫,None,6.0,2344
 VectorAspectRatio,visualization option,🚫,None,12.1,2344
 CylindricalDecomposition,algebraic geometry,🚫,None,5.0,2350
-FindMinValue,numerical optimization,🚫,None,7.0,2350
+FindMinValue,Finds the value at a local minimum of a function numerically,✅,pure,7.0,2350
 FromContinuedFraction,Converts a continued fraction to a number,✅,pure,4.0,2350
 InverseSurvivalFunction,probability distribution,🚫,None,8.0,2350
 WeierstrassInvariants,elliptic function theory,🚫,None,3.0,2350
