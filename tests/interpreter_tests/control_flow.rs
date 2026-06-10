@@ -1675,6 +1675,39 @@ mod piecewise {
   }
 
   #[test]
+  fn piece_values_evaluate_and_false_pieces_drop() {
+    // Regression: piece values used to stay unevaluated and False pieces
+    // were kept when any symbolic condition was present
+    assert_eq!(
+      interpret("Piecewise[{{1+1, x > 0}, {3+4, False}}, 1+2]").unwrap(),
+      "Piecewise[{{2, x > 0}}, 3]"
+    );
+  }
+
+  #[test]
+  fn true_after_symbolic_becomes_default() {
+    // A True condition after symbolic ones makes its value the new
+    // default and drops everything behind it
+    assert_eq!(
+      interpret("Piecewise[{{a, x > 0}, {b, True}, {c, y > 0}}, d]").unwrap(),
+      "Piecewise[{{a, x > 0}}, b]"
+    );
+  }
+
+  #[test]
+  fn missing_default_normalizes_to_zero() {
+    assert_eq!(
+      interpret("Piecewise[{{1, x > 0}}]").unwrap(),
+      "Piecewise[{{1, x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn all_false_returns_symbolic_default() {
+    assert_eq!(interpret("Piecewise[{{a, False}}, d]").unwrap(), "d");
+  }
+
+  #[test]
   fn symbolic_condition_negative_substitution() {
     let result =
       interpret("Piecewise[{{x, x > 0}, {-x, True}}] /. x -> -3").unwrap();

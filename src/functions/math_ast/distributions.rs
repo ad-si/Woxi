@@ -5209,7 +5209,15 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         ComparisonOp::Less,
         plus(mu, sigma),
       );
-      eval(piecewise(vec![(density, cond)], int(0)))
+      // The density is built in Wolfram's canonical factor order
+      // ((mu + sigma - x)*(-mu + x)), which Woxi's evaluator would
+      // reorder; keep the raw form for a symbolic x and only evaluate
+      // (to fold the branch) for concrete arguments.
+      if matches!(&x, Expr::Identifier(_)) {
+        Ok(piecewise(vec![(density, cond)], int(0)))
+      } else {
+        eval(piecewise(vec![(density, cond)], int(0)))
+      }
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "JohnsonDistribution: unknown type {type_str}"

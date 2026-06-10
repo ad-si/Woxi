@@ -6299,7 +6299,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           // mirrored pair, anchored at any constant `c`.
           let is_complement =
             |a: &Expr, b: &Expr| -> bool { conditions_are_complementary(a, b) };
-          if args.len() == 1
+          // The default-0 case behaves like the no-default case: the two
+          // complementary conditions partition the axis, so the default
+          // is unreachable. (Piecewise evaluation normalizes a missing
+          // default to an explicit 0, so both spellings arrive here.)
+          let no_reachable_default = args.len() == 1
+            || (args.len() == 2 && matches!(&args[1], Expr::Integer(0)));
+          if no_reachable_default
             && new_pieces.len() == 2
             && let Expr::List(pair_a) = &new_pieces[0]
             && let Expr::List(pair_b) = &new_pieces[1]

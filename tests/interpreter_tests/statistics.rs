@@ -1320,9 +1320,12 @@ mod chi_square_distribution {
 
   #[test]
   fn pdf_symbolic() {
+    // x^(-1 + k/2) is wolframscript's canonical exponent order (this
+    // previously asserted the unevaluated x^(k/2 - 1) form that predated
+    // Piecewise evaluating its piece values)
     assert_eq!(
       interpret("PDF[ChiSquareDistribution[k], x]").unwrap(),
-      "Piecewise[{{x^(k/2 - 1)/(2^(k/2)*E^(x/2)*Gamma[k/2]), x > 0}}, 0]"
+      "Piecewise[{{x^(-1 + k/2)/(2^(k/2)*E^(x/2)*Gamma[k/2]), x > 0}}, 0]"
     );
   }
 
@@ -1374,9 +1377,12 @@ mod pareto_distribution {
 
   #[test]
   fn pdf_symbolic() {
+    // a*k^a*x^(-1 - a) is wolframscript's canonical form (this previously
+    // asserted the unevaluated quotient spelling that predated Piecewise
+    // evaluating its piece values)
     assert_eq!(
       interpret("PDF[ParetoDistribution[k, a], x]").unwrap(),
-      "Piecewise[{{(a*k^a)/x^(1 + a), x >= k}}, 0]"
+      "Piecewise[{{a*k^a*x^(-1 - a), x >= k}}, 0]"
     );
   }
 
@@ -1434,9 +1440,32 @@ mod weibull_distribution {
 
   #[test]
   fn pdf_symbolic() {
+    // (x/b)^(-1 + a) is wolframscript's canonical exponent order (this
+    // previously asserted the unevaluated a - 1 form that predated
+    // Piecewise evaluating its piece values)
     assert_eq!(
       interpret("PDF[WeibullDistribution[a, b], x]").unwrap(),
-      "Piecewise[{{(a*(x/b)^(a - 1))/(b*E^(x/b)^a), x > 0}}, 0]"
+      "Piecewise[{{(a*(x/b)^(-1 + a))/(b*E^(x/b)^a), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric_parameters_fold() {
+    // Regression: (x/5)^(2 - 1) used to be left unfolded; the piece now
+    // evaluates to wolframscript's (2*x)/(25*E^(x^2/25))
+    assert_eq!(
+      interpret("PDF[WeibullDistribution[2, 5], x]").unwrap(),
+      "Piecewise[{{(2*x)/(25*E^(x^2/25)), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn survival_function_normalizes_sqrt() {
+    // Piece evaluation also normalizes Sqrt[x/2] to Sqrt[x]/Sqrt[2],
+    // matching wolframscript
+    assert_eq!(
+      interpret("SurvivalFunction[WeibullDistribution[1/2, 2], x]").unwrap(),
+      "Piecewise[{{E^(-(Sqrt[x]/Sqrt[2])), x > 0}}, 1]"
     );
   }
 

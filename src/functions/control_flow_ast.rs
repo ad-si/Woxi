@@ -82,7 +82,12 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  let mut has_symbolic = false;
+  // Wolfram semantics: conditions evaluate in order; False pieces are
+  // removed; the values of surviving pieces (and the default) evaluate;
+  // a True condition after symbolic ones turns its value into the new
+  // default and drops everything behind it.
+  let mut kept: Vec<Expr> = Vec::new(); // evaluated {value, cond} pairs
+  let mut true_default: Option<Expr> = None;
 
   for pair in pairs {
     match pair {
@@ -90,17 +95,20 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let cond = evaluate_expr_to_expr(&items[1])?;
         match &cond {
           Expr::Identifier(s) if s == "True" => {
-            return evaluate_expr_to_expr(&items[0]);
+            let val = evaluate_expr_to_expr(&items[0])?;
+            if kept.is_empty() {
+              // First reachable piece — Piecewise collapses to it
+              return Ok(val);
+            }
+            true_default = Some(val);
+            break;
           }
           Expr::Identifier(s) if s == "False" => {
             continue;
           }
           _ => {
-            // Symbolic condition — can't evaluate.
-            // We must stop here: later True branches may not be
-            // reachable if this condition turns out to be True.
-            has_symbolic = true;
-            break;
+            let val = evaluate_expr_to_expr(&items[0])?;
+            kept.push(Expr::List(vec![val, cond].into()));
           }
         }
       }
@@ -113,19 +121,23 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  if has_symbolic {
-    // Return unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "Piecewise".to_string(),
-      args: args.to_vec().into(),
-    });
+  let default_val = match true_default {
+    Some(v) => v,
+    None => match default {
+      Some(d) => evaluate_expr_to_expr(d)?,
+      None => Expr::Integer(0),
+    },
+  };
+
+  if kept.is_empty() {
+    // No condition can still become True — collapse to the default
+    return Ok(default_val);
   }
 
-  // No condition was True — return default (or 0)
-  match default {
-    Some(d) => evaluate_expr_to_expr(d),
-    None => Ok(Expr::Integer(0)),
-  }
+  Ok(Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(kept.into()), default_val].into(),
+  })
 }
 
 /// Parse the message-off specification for Quiet.
