@@ -1655,7 +1655,7 @@ NExpectation,Numerical expectation,,unevaluated,8.0,1682
 WordBoundary,Represents a word boundary in string patterns (like regex \b),✅,pure,5.1,1682
 Mouseover,Mouseover display,,unevaluated,6.0,1683
 AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
-LogLikelihood,Log-likelihood function,,unevaluated,8.0,1687
+LogLikelihood,Log-likelihood of numeric observations under a distribution,✅,pure,8.0,1687
 RectangleChart,Rectangle chart,,unevaluated,7.0,1687
 SpanFromAbove,Span from above,,unevaluated,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688

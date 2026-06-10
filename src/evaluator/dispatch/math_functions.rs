@@ -1144,6 +1144,9 @@ pub fn dispatch_math_functions(
     "HazardFunction" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hazard_function_ast(args));
     }
+    "LogLikelihood" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::log_likelihood_ast(args));
+    }
     "Probability" if args.len() == 2 || args.len() == 3 => {
       // The optional third argument is `Assumptions -> …`, which we
       // currently ignore — pass through only the event and distribution.

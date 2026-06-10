@@ -3878,3 +3878,85 @@ mod characteristic_function {
     );
   }
 }
+
+mod log_likelihood {
+  use super::*;
+
+  #[test]
+  fn exponential() {
+    assert_eq!(
+      interpret("LogLikelihood[ExponentialDistribution[a], {2, 3, 5}]")
+        .unwrap(),
+      "-10*a + 3*Log[a]"
+    );
+    assert_eq!(
+      interpret("LogLikelihood[ExponentialDistribution[2], {1, 4}]").unwrap(),
+      "-10 + 2*Log[2]"
+    );
+  }
+
+  #[test]
+  fn poisson() {
+    // -n*m + Sum[x]*Log[m] - Log[x_i!] per observation
+    assert_eq!(
+      interpret("LogLikelihood[PoissonDistribution[m], {1, 2, 3}]").unwrap(),
+      "-3*m - Log[2] - Log[6] + 6*Log[m]"
+    );
+    // Numeric mean combines the Log[2] terms
+    assert_eq!(
+      interpret("LogLikelihood[PoissonDistribution[2], {1, 2, 3}]").unwrap(),
+      "-6 + 5*Log[2] - Log[6]"
+    );
+  }
+
+  #[test]
+  fn bernoulli() {
+    assert_eq!(
+      interpret("LogLikelihood[BernoulliDistribution[p], {1, 0, 1, 1}]")
+        .unwrap(),
+      "Log[1 - p] + 3*Log[p]"
+    );
+    assert_eq!(
+      interpret("LogLikelihood[BernoulliDistribution[p], {1, 1}]").unwrap(),
+      "2*Log[p]"
+    );
+    assert_eq!(
+      interpret("LogLikelihood[BernoulliDistribution[1/3], {1, 0, 1, 1}]")
+        .unwrap(),
+      "-Log[3/2] - 3*Log[3]"
+    );
+  }
+
+  #[test]
+  fn normal() {
+    // Grouped wolframscript form with the sum of squares expanded in m
+    assert_eq!(
+      interpret("LogLikelihood[NormalDistribution[m, s], {1, 2}]").unwrap(),
+      "-1/2*(5 - 6*m + 2*m^2)/s^2 - 2*((Log[2] + Log[Pi])/2 + Log[s])"
+    );
+    assert_eq!(
+      interpret("LogLikelihood[NormalDistribution[], {1, 2}]").unwrap(),
+      "-5/2 - Log[2] - Log[Pi]"
+    );
+    // Numeric parameters fold like the standard normal
+    assert_eq!(
+      interpret("LogLikelihood[NormalDistribution[0, 1], {1, 2}]").unwrap(),
+      "-5/2 - Log[2] - Log[Pi]"
+    );
+    // Real data folds to a machine number
+    assert_eq!(
+      interpret("LogLikelihood[NormalDistribution[0, 1], {1.5, 2.5}]").unwrap(),
+      "-6.087877066409345"
+    );
+  }
+
+  #[test]
+  fn symbolic_data_stays_unevaluated() {
+    // wolframscript wraps symbolic observations in domain Piecewise
+    // conditions; Woxi leaves them unevaluated
+    assert_eq!(
+      interpret("LogLikelihood[ExponentialDistribution[a], {x1, x2}]").unwrap(),
+      "LogLikelihood[ExponentialDistribution[a], {x1, x2}]"
+    );
+  }
+}

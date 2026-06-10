@@ -5514,3 +5514,149 @@ fn contains_variable(expr: &Expr, var: &str) -> bool {
     _ => false,
   }
 }
+
+// ─── LogLikelihood ───────────────────────────────────────────────────
+
+/// LogLikelihood[dist, {x1, x2, ...}] — the sum of Log[PDF[dist, x_i]]
+/// in wolframscript's per-distribution closed form. Supports numeric
+/// observations for Exponential, Poisson, Bernoulli, and Normal
+/// distributions; symbolic observations (which wolframscript wraps in
+/// domain Piecewise conditions) stay unevaluated.
+pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "LogLikelihood".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let (dist_name, dargs) = match &args[0] {
+    Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
+    _ => return Ok(unevaluated(args)),
+  };
+  let data = match &args[1] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return Ok(unevaluated(args)),
+  };
+  let is_numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !data.iter().all(is_numeric) {
+    return Ok(unevaluated(args));
+  }
+  let n = data.len() as i128;
+
+  let log_of = |e: Expr| Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![e].into(),
+  };
+  let sum_expr = || -> Result<Expr, InterpreterError> {
+    eval(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: data.to_vec().into(),
+    })
+  };
+
+  match (dist_name, dargs) {
+    // n*Log[a] - a*Sum[x]
+    ("ExponentialDistribution", [a]) => {
+      let total = sum_expr()?;
+      eval(plus(
+        times(int(-1), times(total, a.clone())),
+        times(int(n), log_of(a.clone())),
+      ))
+    }
+    // -n*m + Sum[x]*Log[m] - Sum[Log[x!]]
+    ("PoissonDistribution", [m]) => {
+      if !data
+        .iter()
+        .all(|e| matches!(e, Expr::Integer(v) if *v >= 0))
+      {
+        return Ok(unevaluated(args));
+      }
+      let total = sum_expr()?;
+      let mut terms =
+        vec![times(int(-n), m.clone()), times(total, log_of(m.clone()))];
+      for x in data {
+        let fact = eval(Expr::FunctionCall {
+          name: "Factorial".to_string(),
+          args: vec![x.clone()].into(),
+        })?;
+        if !matches!(fact, Expr::Integer(1)) {
+          terms.push(times(int(-1), log_of(fact)));
+        }
+      }
+      eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      })
+    }
+    // zeros*Log[1 - p] + ones*Log[p] (raw: the evaluator would reorder
+    // the Plus terms away from wolframscript's Log[1 - p] + 3*Log[p])
+    ("BernoulliDistribution", [p]) => {
+      let ones = data
+        .iter()
+        .filter(|e| matches!(e, Expr::Integer(1)))
+        .count() as i128;
+      let zeros = data
+        .iter()
+        .filter(|e| matches!(e, Expr::Integer(0)))
+        .count() as i128;
+      if ones + zeros != n {
+        return Ok(unevaluated(args));
+      }
+      // Evaluate each term individually but keep the raw Plus order
+      // (Log[1 - p] first): full evaluation reorders the sum away from
+      // wolframscript's Log[1 - p] + 3*Log[p] / -Log[3/2] - 3*Log[3]
+      let log_q = eval(log_of(plus(int(1), times(int(-1), p.clone()))))?;
+      let log_p = eval(log_of(p.clone()))?;
+      let term = |c: i128, l: Expr| -> Result<Expr, InterpreterError> {
+        match c {
+          1 => Ok(l),
+          c => eval(times(int(c), l)),
+        }
+      };
+      Ok(match (zeros, ones) {
+        (0, o) => term(o, log_p)?,
+        (z, 0) => term(z, log_q)?,
+        (z, o) => plus(term(z, log_q)?, term(o, log_p)?),
+      })
+    }
+    // -1/2*(Sum[(x - m)^2] expanded)/s^2 - n*((Log[2] + Log[Pi])/2 + Log[s])
+    ("NormalDistribution", params)
+      if params.is_empty() || params.len() == 2 =>
+    {
+      let (m, s) = if params.is_empty() {
+        (int(0), int(1))
+      } else {
+        (params[0].clone(), params[1].clone())
+      };
+      // Sum[(x_i - m)^2] expanded in ascending powers of m:
+      // Sum[x^2] - 2*Sum[x]*m + n*m^2
+      let sq_total = eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: data
+          .iter()
+          .map(|x| times(x.clone(), x.clone()))
+          .collect::<Vec<_>>()
+          .into(),
+      })?;
+      let total = sum_expr()?;
+      let poly = plus(
+        plus(sq_total, times(times(int(-2), total), m.clone())),
+        times(int(n), times(m.clone(), m.clone())),
+      );
+      let half_log_2pi = divide(plus(log_of(int(2)), log_of(pi())), int(2));
+      let result = plus(
+        times(
+          crate::functions::math_ast::make_rational_pub(-1, 2),
+          divide(poly, times(s.clone(), s.clone())),
+        ),
+        times(int(-n), plus(half_log_2pi, log_of(s.clone()))),
+      );
+      eval(result)
+    }
+    _ => Ok(unevaluated(args)),
+  }
+}
