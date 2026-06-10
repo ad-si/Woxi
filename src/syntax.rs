@@ -7704,6 +7704,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             && let Some(frac) =
               format_times_with_denominator(&args[1..], fmt_fn)
           {
+            // wolframscript keeps a -I coefficient inline in quotients:
+            // (-I*(-1 + E^(I*t)))/t, not -((I*(-1 + E^(I*t)))/t)
+            if matches!(&args[1], Expr::Identifier(s) if s == "I")
+              && frac.starts_with("(I*")
+            {
+              return format!("(-I*{}", &frac[3..]);
+            }
             return format!("-({})", frac);
           }
           let rest = args[1..]

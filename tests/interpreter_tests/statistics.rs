@@ -3765,3 +3765,87 @@ mod arma_covariance_function {
     );
   }
 }
+
+mod characteristic_function {
+  use super::*;
+
+  #[test]
+  fn normal() {
+    assert_eq!(
+      interpret("CharacteristicFunction[NormalDistribution[], t]").unwrap(),
+      "E^(-1/2*t^2)"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[NormalDistribution[m, s], t]").unwrap(),
+      "E^(I*m*t - (s^2*t^2)/2)"
+    );
+    // Numeric parameters fold to the standard normal form
+    assert_eq!(
+      interpret("CharacteristicFunction[NormalDistribution[0, 1], t]").unwrap(),
+      "E^(-1/2*t^2)"
+    );
+  }
+
+  #[test]
+  fn exponential_and_gamma() {
+    assert_eq!(
+      interpret("CharacteristicFunction[ExponentialDistribution[a], t]")
+        .unwrap(),
+      "a/(a - I*t)"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[GammaDistribution[a, b], t]").unwrap(),
+      "(1 - I*b*t)^(-a)"
+    );
+  }
+
+  #[test]
+  fn discrete_distributions() {
+    assert_eq!(
+      interpret("CharacteristicFunction[PoissonDistribution[m], t]").unwrap(),
+      "E^((-1 + E^(I*t))*m)"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[BernoulliDistribution[p], t]").unwrap(),
+      "1 - p + E^(I*t)*p"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[BinomialDistribution[n, p], t]")
+        .unwrap(),
+      "(1 - p + E^(I*t)*p)^n"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[GeometricDistribution[p], t]").unwrap(),
+      "p/(1 - E^(I*t)*(1 - p))"
+    );
+  }
+
+  #[test]
+  fn uniform() {
+    assert_eq!(
+      interpret("CharacteristicFunction[UniformDistribution[], t]").unwrap(),
+      "(-I*(-1 + E^(I*t)))/t"
+    );
+    assert_eq!(
+      interpret("CharacteristicFunction[UniformDistribution[{a, b}], t]")
+        .unwrap(),
+      "(-I*(-E^(I*a*t) + E^(I*b*t)))/((-a + b)*t)"
+    );
+  }
+
+  #[test]
+  fn numeric_argument() {
+    assert_eq!(
+      interpret("CharacteristicFunction[NormalDistribution[], 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("CharacteristicFunction[x, t]").unwrap(),
+      "CharacteristicFunction[x, t]"
+    );
+  }
+}

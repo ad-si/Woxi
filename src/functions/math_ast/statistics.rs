@@ -3961,3 +3961,258 @@ fn cov_arma11(a: &Expr, b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
 }
 
 // ─── PowerExpand ──────────────────────────────────────────────────────
+
+// ─── CharacteristicFunction ──────────────────────────────────────────
+
+/// CharacteristicFunction[dist, t] — E[e^(i t X)] for the supported
+/// distribution constructors.
+///
+/// Templates whose evaluated form round-trips to wolframscript's print
+/// are built and evaluated; the NormalDistribution[m, s] and
+/// UniformDistribution forms are returned as raw structures because the
+/// evaluator's canonical ordering would reshuffle them (e.g.
+/// E^(-1/2*(s^2*t^2) + I*m*t) instead of E^(I*m*t - (s^2*t^2)/2)).
+pub fn characteristic_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "CharacteristicFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let t = args[1].clone();
+
+  // Identifier (not Constant): the output formatter's imaginary-unit
+  // special cases match Identifier("I")
+  let i_unit = || Expr::Identifier("I".to_string());
+  let e_sym = || Expr::Identifier("E".to_string());
+  let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: fargs.into(),
+  };
+  let neg = |e: Expr| Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(e),
+  };
+  let pow = |b: Expr, e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(b),
+    right: Box::new(e),
+  };
+  let div = |n: Expr, d: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(n),
+    right: Box::new(d),
+  };
+  // E^(I*t) and E^(I*c*t)
+  let e_it = |factors: Vec<Expr>| {
+    let mut f = vec![i_unit()];
+    f.extend(factors);
+    f.push(t.clone());
+    pow(e_sym(), call("Times", f))
+  };
+
+  let (dist_name, dargs) = match &args[0] {
+    Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Raw templates only make sense while everything stays symbolic
+  // (parameter lists like UniformDistribution's {a, b} count when all
+  // their elements are symbols)
+  fn is_symbolic_param(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::List(items) => {
+        items.iter().all(|i| matches!(i, Expr::Identifier(_)))
+      }
+      _ => false,
+    }
+  }
+  let symbolic =
+    matches!(&t, Expr::Identifier(_)) && dargs.iter().all(is_symbolic_param);
+
+  let template: Option<(Expr, bool)> = match (dist_name, dargs) {
+    // E^(-1/2*t^2)
+    ("NormalDistribution", []) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Times",
+          vec![
+            crate::functions::math_ast::make_rational_pub(-1, 2),
+            pow(t.clone(), Expr::Integer(2)),
+          ],
+        ),
+      ),
+      false,
+    )),
+    // E^(I*m*t - (s^2*t^2)/2)
+    ("NormalDistribution", [m, s]) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Plus",
+          vec![
+            call("Times", vec![i_unit(), m.clone(), t.clone()]),
+            neg(div(
+              call(
+                "Times",
+                vec![
+                  pow(s.clone(), Expr::Integer(2)),
+                  pow(t.clone(), Expr::Integer(2)),
+                ],
+              ),
+              Expr::Integer(2),
+            )),
+          ],
+        ),
+      ),
+      true,
+    )),
+    // a/(a - I*t)
+    ("ExponentialDistribution", [a]) => Some((
+      div(
+        a.clone(),
+        call(
+          "Plus",
+          vec![
+            a.clone(),
+            call("Times", vec![Expr::Integer(-1), i_unit(), t.clone()]),
+          ],
+        ),
+      ),
+      false,
+    )),
+    // E^((-1 + E^(I*t))*m)
+    ("PoissonDistribution", [m]) => Some((
+      pow(
+        e_sym(),
+        call(
+          "Times",
+          vec![
+            call("Plus", vec![Expr::Integer(-1), e_it(vec![])]),
+            m.clone(),
+          ],
+        ),
+      ),
+      false,
+    )),
+    // 1 - p + E^(I*t)*p
+    ("BernoulliDistribution", [p]) => Some((
+      call(
+        "Plus",
+        vec![
+          Expr::Integer(1),
+          call("Times", vec![Expr::Integer(-1), p.clone()]),
+          call("Times", vec![e_it(vec![]), p.clone()]),
+        ],
+      ),
+      false,
+    )),
+    // (1 - p + E^(I*t)*p)^n
+    ("BinomialDistribution", [n, p]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call("Times", vec![Expr::Integer(-1), p.clone()]),
+            call("Times", vec![e_it(vec![]), p.clone()]),
+          ],
+        ),
+        n.clone(),
+      ),
+      false,
+    )),
+    // p/(1 - E^(I*t)*(1 - p))
+    ("GeometricDistribution", [p]) => Some((
+      div(
+        p.clone(),
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call(
+              "Times",
+              vec![
+                Expr::Integer(-1),
+                e_it(vec![]),
+                call(
+                  "Plus",
+                  vec![
+                    Expr::Integer(1),
+                    call("Times", vec![Expr::Integer(-1), p.clone()]),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      false,
+    )),
+    // (1 - I*b*t)^(-a) — raw: the evaluator's canonical Times order
+    // would print b*I*t
+    ("GammaDistribution", [a, b]) => Some((
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            neg(call("Times", vec![i_unit(), b.clone(), t.clone()])),
+          ],
+        ),
+        neg(a.clone()),
+      ),
+      true,
+    )),
+    // (-I*(-1 + E^(I*t)))/t
+    ("UniformDistribution", []) => Some((
+      div(
+        call(
+          "Times",
+          vec![
+            neg(i_unit()),
+            call("Plus", vec![Expr::Integer(-1), e_it(vec![])]),
+          ],
+        ),
+        t.clone(),
+      ),
+      false,
+    )),
+    // (-I*(-E^(I*a*t) + E^(I*b*t)))/((-a + b)*t)
+    ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
+      let (a, b) = (bounds[0].clone(), bounds[1].clone());
+      Some((
+        div(
+          call(
+            "Times",
+            vec![
+              neg(i_unit()),
+              call(
+                "Plus",
+                vec![neg(e_it(vec![a.clone()])), e_it(vec![b.clone()])],
+              ),
+            ],
+          ),
+          call("Times", vec![call("Plus", vec![neg(a), b]), t.clone()]),
+        ),
+        true,
+      ))
+    }
+    _ => None,
+  };
+
+  match template {
+    // Raw templates print in wolframscript's exact form; evaluating
+    // them would re-canonicalize. With numeric arguments fall back to
+    // evaluation so e.g. CharacteristicFunction[NormalDistribution[], 0]
+    // folds to 1.
+    Some((expr, raw)) if raw && symbolic => Ok(expr),
+    Some((expr, _)) => crate::evaluator::evaluate_expr_to_expr(&expr),
+    None => Ok(unevaluated(args)),
+  }
+}
