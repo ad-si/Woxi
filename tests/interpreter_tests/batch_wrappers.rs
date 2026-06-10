@@ -2392,9 +2392,12 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn inverse_z_transform() {
+    // x is constant with respect to y: x*DiscreteDelta[z], verified
+    // against wolframscript (this previously asserted the
+    // unimplemented-stub behavior InverseZTransform[x, y, z])
     assert_eq!(
       interpret("InverseZTransform[x, y, z]").unwrap(),
-      "InverseZTransform[x, y, z]"
+      "x*DiscreteDelta[z]"
     );
   }
   #[test]

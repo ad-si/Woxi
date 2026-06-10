@@ -653,6 +653,11 @@ pub fn dispatch_calculus_functions(
     "ZTransform" if args.len() == 3 => {
       return Some(crate::functions::ztransform_ast::z_transform_ast(args));
     }
+    "InverseZTransform" if args.len() == 3 => {
+      return Some(crate::functions::ztransform_ast::inverse_z_transform_ast(
+        args,
+      ));
+    }
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
     }

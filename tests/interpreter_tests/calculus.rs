@@ -7206,3 +7206,139 @@ mod z_transform {
     );
   }
 }
+
+mod inverse_z_transform {
+  use super::*;
+
+  #[test]
+  fn geometric() {
+    assert_eq!(
+      interpret("InverseZTransform[z/(z - a), z, n]").unwrap(),
+      "a^n"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[z/(z - 1), z, n]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[z/(z - 2), z, n]").unwrap(),
+      "2^n"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(3*z)/(-1 + 3*z), z, n]").unwrap(),
+      "3^(-n)"
+    );
+    // Sign-wrapped spelling of the same transform
+    assert_eq!(
+      interpret("InverseZTransform[-(z/(a - z)), z, n]").unwrap(),
+      "a^n"
+    );
+  }
+
+  #[test]
+  fn polynomial_sequences() {
+    assert_eq!(
+      interpret("InverseZTransform[z/(z - 1)^2, z, n]").unwrap(),
+      "n"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(z*(1 + z))/(-1 + z)^3, z, n]").unwrap(),
+      "n^2"
+    );
+  }
+
+  #[test]
+  fn binomial_sequences() {
+    assert_eq!(
+      interpret("InverseZTransform[z/(z - 1)^3, z, n]").unwrap(),
+      "((-1 + n)*n)/2"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[z/(z - 1)^4, z, n]").unwrap(),
+      "((-2 + n)*(-1 + n)*n)/6"
+    );
+  }
+
+  #[test]
+  fn polynomial_times_geometric() {
+    assert_eq!(
+      interpret("InverseZTransform[(a*z)/(a - z)^2, z, n]").unwrap(),
+      "a^n*n"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(2*z)/(-2 + z)^2, z, n]").unwrap(),
+      "2^n*n"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(3*z)/(1 - 3*z)^2, z, n]").unwrap(),
+      "n/3^n"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(2*z*(2 + z))/(-2 + z)^3, z, n]").unwrap(),
+      "2^n*n^2"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[-((a*z*(a + z))/(a - z)^3), z, n]").unwrap(),
+      "a^n*n^2"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(2*z*(1 + 2*z))/(-1 + 2*z)^3, z, n]")
+        .unwrap(),
+      "n^2/2^n"
+    );
+  }
+
+  #[test]
+  fn exponential_forms() {
+    assert_eq!(
+      interpret("InverseZTransform[E^(1/z), z, n]").unwrap(),
+      "n!^(-1)"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[E^(3/z), z, n]").unwrap(),
+      "3^n/n!"
+    );
+  }
+
+  #[test]
+  fn constants() {
+    assert_eq!(
+      interpret("InverseZTransform[(2*z)/(-1 + z), z, n]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[(x*z)/(-1 + z), z, n]").unwrap(),
+      "x"
+    );
+    // z-free input is a DiscreteDelta impulse
+    assert_eq!(
+      interpret("InverseZTransform[1, z, n]").unwrap(),
+      "DiscreteDelta[n]"
+    );
+    assert_eq!(
+      interpret("InverseZTransform[5, z, n]").unwrap(),
+      "5*DiscreteDelta[n]"
+    );
+  }
+
+  #[test]
+  fn round_trip_with_z_transform() {
+    assert_eq!(
+      interpret("InverseZTransform[ZTransform[n^2/2^n, n, z], z, n]").unwrap(),
+      "n^2/2^n"
+    );
+    assert_eq!(
+      interpret("ZTransform[InverseZTransform[z/(z - 2), z, n], n, z]")
+        .unwrap(),
+      "z/(-2 + z)"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("InverseZTransform[Sin[z], z, n]").unwrap(),
+      "InverseZTransform[Sin[z], z, n]"
+    );
+  }
+}
