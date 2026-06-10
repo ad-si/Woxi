@@ -36,6 +36,7 @@ pub mod quantity_ast;
 pub mod rsolve_ast;
 pub mod scoping;
 pub mod string_ast;
+pub mod sum_convergence_ast;
 pub mod tabular_ast;
 pub mod tree_form;
 pub mod turing_machine_ast;

@@ -680,6 +680,11 @@ pub fn dispatch_calculus_functions(
         ),
       );
     }
+    "SumConvergence" if args.len() == 2 => {
+      return Some(crate::functions::sum_convergence_ast::sum_convergence_ast(
+        args,
+      ));
+    }
     "FunctionRange" if args.len() == 3 => {
       return Some(crate::functions::function_range_ast::function_range_ast(
         args,

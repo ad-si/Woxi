@@ -1036,7 +1036,7 @@ Del,Symbolic nabla operator with Unicode display,✅,none,3.0,1046
 Resolve,,🚫,,5.0,1047
 MorphologicalComponents,,🚫,,7.0,1048
 Wedge,Symbolic wedge product operator with Unicode display,✅,none,3.0,1049
-SumConvergence,,🚫,,7.0,1050
+SumConvergence,Tests convergence of infinite sums (rational geometric alternating and factorial terms),✅,pure,7.0,1050
 TextAlignment,,🚫,,3.0,1051
 InterpolatingPolynomial,Polynomial that interpolates given data points,✅,pure,2.0,1052
 LeafCount,Returns the number of leaves in an expression,✅,pure,1.0,1054

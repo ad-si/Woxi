@@ -7603,3 +7603,61 @@ mod fourier_sin_cos_coefficient {
     );
   }
 }
+
+mod sum_convergence {
+  use super::*;
+
+  #[test]
+  fn p_series() {
+    assert_eq!(interpret("SumConvergence[1/n^2, n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[1/n^3, n]").unwrap(), "True");
+    // The harmonic series diverges
+    assert_eq!(interpret("SumConvergence[1/n, n]").unwrap(), "False");
+    assert_eq!(interpret("SumConvergence[n, n]").unwrap(), "False");
+    // Symbolic exponent: condition on the real part
+    assert_eq!(interpret("SumConvergence[1/n^p, n]").unwrap(), "Re[p] > 1");
+  }
+
+  #[test]
+  fn rational_functions() {
+    // Converges iff deg(denominator) - deg(numerator) >= 2
+    assert_eq!(interpret("SumConvergence[1/(n^2 + 1), n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[n/(n^3 + 1), n]").unwrap(), "True");
+    assert_eq!(
+      interpret("SumConvergence[n/(n^2 + 1), n]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn geometric() {
+    assert_eq!(interpret("SumConvergence[1/2^n, n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[(2/3)^n, n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[2^n, n]").unwrap(), "False");
+    // Geometric decay dominates polynomial growth
+    assert_eq!(interpret("SumConvergence[n/2^n, n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[(-3)^n/n, n]").unwrap(), "False");
+    // Symbolic base: condition on the absolute value
+    assert_eq!(interpret("SumConvergence[x^n, n]").unwrap(), "Abs[x] < 1");
+  }
+
+  #[test]
+  fn alternating() {
+    assert_eq!(interpret("SumConvergence[(-1)^n/n, n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[(-1)^n, n]").unwrap(), "False");
+  }
+
+  #[test]
+  fn factorial_decay() {
+    assert_eq!(interpret("SumConvergence[1/n!, n]").unwrap(), "True");
+    assert_eq!(interpret("SumConvergence[n^2/n!, n]").unwrap(), "True");
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("SumConvergence[Sin[n], n]").unwrap(),
+      "SumConvergence[Sin[n], n]"
+    );
+  }
+}
