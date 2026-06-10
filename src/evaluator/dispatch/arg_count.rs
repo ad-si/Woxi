@@ -710,6 +710,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Mod" => Some((2, 3)),
     "ModularInverse" => Some((2, 2)),
     "MoebiusMu" => Some((1, 1)),
+    "FactorialMoment" => Some((1, 2)),
     "Moment" => Some((2, 2)),
     "MonomialList" => Some((2, 2)),
     "Most" => Some((1, 1)),

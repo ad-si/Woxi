@@ -654,6 +654,14 @@ mod mean {
   }
 
   #[test]
+  fn mean_rationals_noninteger_sum() {
+    // Regression: a rational sum used to be left as the unevaluated
+    // quotient (3/8)/2 instead of folding to 3/16
+    assert_eq!(interpret("Mean[{1/4, 1/8}]").unwrap(), "3/16");
+    assert_eq!(interpret("Mean[{1/2, 3/2}]").unwrap(), "1");
+  }
+
+  #[test]
   fn mean_empty_list() {
     // Mean of empty list returns unevaluated, matching Wolfram Language
     assert_eq!(interpret("Mean[{}]").unwrap(), "Mean[{}]");
@@ -1048,6 +1056,63 @@ mod moment {
   #[test]
   fn symbolic() {
     assert_eq!(interpret("Moment[{a,b,c}, 1]").unwrap(), "(a + b + c)/3");
+  }
+}
+
+mod factorial_moment {
+  use super::*;
+
+  #[test]
+  fn second_order() {
+    // Sum[x(x-1)]/5 = (0+2+6+12+20)/5 = 8
+    assert_eq!(interpret("FactorialMoment[{1,2,3,4,5}, 2]").unwrap(), "8");
+  }
+
+  #[test]
+  fn first_order_is_mean() {
+    assert_eq!(interpret("FactorialMoment[{1,2,3,4,5}, 1]").unwrap(), "3");
+  }
+
+  #[test]
+  fn third_order() {
+    // Sum[x(x-1)(x-2)]/5 = (0+0+6+24+60)/5 = 18
+    assert_eq!(interpret("FactorialMoment[{1,2,3,4,5}, 3]").unwrap(), "18");
+  }
+
+  #[test]
+  fn zeroth_order() {
+    assert_eq!(interpret("FactorialMoment[{1,2,3}, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn real_data() {
+    assert_eq!(
+      interpret("FactorialMoment[{2.5, 3.1, 4.7}, 2]").unwrap(),
+      "9.216666666666667"
+    );
+  }
+
+  #[test]
+  fn negative_order() {
+    // Mean[{1/((3+1)), 1/((7+1))}] = (1/4 + 1/8)/2 = 3/16
+    assert_eq!(interpret("FactorialMoment[{3, 7}, -1]").unwrap(), "3/16");
+  }
+
+  #[test]
+  fn multivariate() {
+    // Mean of x*y(y-1): (1*2*1 + 3*4*3 + 5*6*5)/3 = 188/3
+    assert_eq!(
+      interpret("FactorialMoment[{{1, 2}, {3, 4}, {5, 6}}, {1, 2}]").unwrap(),
+      "188/3"
+    );
+  }
+
+  #[test]
+  fn symbolic_order() {
+    assert_eq!(
+      interpret("FactorialMoment[{1, 2, 3}, r]").unwrap(),
+      "(FactorialPower[1, r] + FactorialPower[2, r] + FactorialPower[3, r])/3"
+    );
   }
 }
 

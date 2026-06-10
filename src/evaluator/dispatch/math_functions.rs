@@ -439,6 +439,9 @@ pub fn dispatch_math_functions(
     "Moment" if args.len() == 2 => {
       return Some(crate::functions::math_ast::moment_ast(args));
     }
+    "FactorialMoment" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::factorial_moment_ast(args));
+    }
     "Variance" if args.len() == 1 => {
       return Some(crate::functions::math_ast::variance_ast(args));
     }

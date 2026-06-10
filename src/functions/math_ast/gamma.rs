@@ -121,40 +121,89 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// FactorialPower[n, k] - falling factorial: n*(n-1)*...*(n-k+1)
 /// FactorialPower[n, k, h] - generalized: n*(n-h)*(n-2h)*... (k terms)
+/// Negative order: FactorialPower[n, -k, h] = 1/((n+h)*(n+2h)*...*(n+kh))
 pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "FactorialPower expects 2 or 3 arguments".into(),
     ));
   }
-  let h = if args.len() == 3 {
-    expr_to_i128(&args[2])
-  } else {
-    Some(1)
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FactorialPower".to_string(),
+    args: args.to_vec().into(),
   };
-  if let (Some(n), Some(k), Some(h)) =
-    (expr_to_i128(&args[0]), expr_to_i128(&args[1]), h)
-  {
+
+  let Some(k) = expr_to_i128(&args[1]) else {
+    return Ok(unevaluated(args));
+  };
+  let h_expr = args.get(2).cloned().unwrap_or(Expr::Integer(1));
+
+  // All-integer fast path with BigInt products (no i128 overflow)
+  if let (Some(n), Some(h)) = (expr_to_i128(&args[0]), expr_to_i128(&h_expr)) {
     if k == 0 {
       return Ok(Expr::Integer(1));
     }
-    if k < 0 {
-      return Ok(Expr::FunctionCall {
-        name: "FactorialPower".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
     let mut result = BigInt::from(1);
-    for i in 0..k {
-      result *= BigInt::from(n - i * h);
+    if k > 0 {
+      for i in 0..k {
+        result *= BigInt::from(n - i * h);
+      }
+      return Ok(bigint_to_expr(result));
     }
-    Ok(bigint_to_expr(result))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "FactorialPower".to_string(),
-      args: args.to_vec().into(),
-    })
+    // k < 0: reciprocal of (n+h)*(n+2h)*...*(n+|k|h)
+    for i in 1..=(-k) {
+      result *= BigInt::from(n + i * h);
+    }
+    if result == BigInt::from(0) {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    if let Ok(den) = i128::try_from(result) {
+      return Ok(make_rational(1, den));
+    }
+    return Ok(unevaluated(args));
   }
+
+  // General numeric path (Real or Rational n/h): build the product as
+  // expression arithmetic so exact rationals stay exact and reals fold
+  // to machine precision.
+  if expr_to_num(&args[0]).is_some() && expr_to_num(&h_expr).is_some() {
+    if k == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    let term = |i: i128| Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        args[0].clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(i), h_expr.clone()].into(),
+        },
+      ]
+      .into(),
+    };
+    let factors: Vec<Expr> = if k > 0 {
+      (0..k).map(|i| term(-i)).collect()
+    } else {
+      (1..=(-k)).map(term).collect()
+    };
+    let product =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      })?;
+    if k > 0 {
+      return Ok(product);
+    }
+    if matches!(&product, Expr::Integer(0)) {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![product, Expr::Integer(-1)].into(),
+    });
+  }
+
+  Ok(unevaluated(args))
 }
 
 /// Gamma[n] - Gamma function: Gamma[n] = (n-1)! for positive integers

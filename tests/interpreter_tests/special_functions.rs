@@ -1496,6 +1496,47 @@ mod factorial_power {
   }
 
   #[test]
+  fn negative_order() {
+    // FactorialPower[n, -k] = 1/((n+1)(n+2)...(n+k))
+    assert_eq!(interpret("FactorialPower[3, -1]").unwrap(), "1/4");
+    assert_eq!(interpret("FactorialPower[3, -2]").unwrap(), "1/20");
+  }
+
+  #[test]
+  fn negative_order_with_step() {
+    // FactorialPower[n, -k, h] = 1/((n+h)(n+2h)...(n+kh))
+    assert_eq!(interpret("FactorialPower[3, -2, 2]").unwrap(), "1/35");
+  }
+
+  #[test]
+  fn negative_order_pole() {
+    // Zero in the denominator product
+    assert_eq!(
+      interpret("FactorialPower[-1, -1]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn rational_base() {
+    assert_eq!(interpret("FactorialPower[5/2, 2]").unwrap(), "15/4");
+  }
+
+  #[test]
+  fn real_base() {
+    assert_eq!(interpret("FactorialPower[2.5, 2]").unwrap(), "3.75");
+    assert_eq!(
+      interpret("FactorialPower[2.5, -2]").unwrap(),
+      "0.06349206349206349"
+    );
+  }
+
+  #[test]
+  fn real_step() {
+    assert_eq!(interpret("FactorialPower[2.5, 2, 0.5]").unwrap(), "5.");
+  }
+
+  #[test]
   fn series_at_zero_order_5() {
     // FactorialPower[x, 5] = x*(x-1)*(x-2)*(x-3)*(x-4)
     //                     = 24 x - 50 x^2 + 35 x^3 - 10 x^4 + x^5.

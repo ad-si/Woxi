@@ -288,6 +288,13 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let evaluated_sum = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
         let n = items.len() as i128;
+        // A rational sum folds to an exact rational (e.g. Mean[{1/4, 1/8}]
+        // is 3/16, not the unevaluated quotient (3/8)/2)
+        if let Some((num, den)) = expr_to_rational(&evaluated_sum)
+          && let Some(full_den) = den.checked_mul(n)
+        {
+          return Ok(make_rational(num, full_den));
+        }
         // Use BinaryOp::Divide to represent (sum) / n without distributing
         Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
@@ -1933,6 +1940,63 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let powered_list = Expr::List(powered.into());
   mean_ast(&[powered_list])
+}
+
+/// FactorialMoment[data, r] — the r-th factorial moment:
+/// Mean of the falling factorials FactorialPower[x_i, r].
+/// FactorialMoment[{{x1, y1, ...}, ...}, {r1, r2, ...}] — multivariate:
+/// mean of the products of per-coordinate falling factorials.
+pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FactorialMoment".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return Ok(unevaluated(args)),
+  };
+
+  let factorial_power = |x: &Expr, r: &Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "FactorialPower".to_string(),
+      args: vec![x.clone(), r.clone()].into(),
+    })
+  };
+
+  let mut terms = Vec::with_capacity(items.len());
+  match &args[1] {
+    // Multivariate order {r1, ..., rm}: data points must be lists of
+    // matching length
+    Expr::List(orders) => {
+      for item in items {
+        let coords = match item {
+          Expr::List(coords) if coords.len() == orders.len() => coords,
+          _ => return Ok(unevaluated(args)),
+        };
+        let mut factors = Vec::with_capacity(coords.len());
+        for (x, r) in coords.iter().zip(orders.iter()) {
+          factors.push(factorial_power(x, r)?);
+        }
+        terms.push(crate::evaluator::evaluate_expr_to_expr(
+          &Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: factors.into(),
+          },
+        )?);
+      }
+    }
+    r => {
+      for x in items {
+        terms.push(factorial_power(x, r)?);
+      }
+    }
+  }
+
+  mean_ast(&[Expr::List(terms.into())])
 }
 
 /// MeanDeviation[list] - mean absolute deviation from the mean
