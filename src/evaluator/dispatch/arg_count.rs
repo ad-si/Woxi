@@ -220,7 +220,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CountDistinct" => Some((1, 1)),
     "Counts" => Some((1, 1)),
     "CountsBy" => Some((1, 2)),
-    "Covariance" => Some((2, 2)),
+    "Covariance" => Some((1, 2)),
     "CovarianceFunction" => Some((3, 3)),
     "Cross" => Some((1, 2)),
     "CrossMatrix" => Some((1, 1)),

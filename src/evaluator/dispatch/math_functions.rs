@@ -398,6 +398,36 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::list_fourier_sequence_transform_ast(args),
       );
     }
+    // MultinormalDistribution statistics: the mean vector, covariance
+    // matrix, and per-component variances read straight off the
+    // constructor arguments
+    "Mean" | "Covariance" | "Variance"
+      if args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
+          if dn == "MultinormalDistribution" && da.len() == 2) =>
+    {
+      if let Expr::FunctionCall { args: da, .. } = &args[0]
+        && let (Expr::List(mu), Expr::List(rows)) = (&da[0], &da[1])
+      {
+        match name {
+          "Mean" => return Some(Ok(Expr::List(mu.clone()))),
+          "Covariance" => return Some(Ok(da[1].clone())),
+          _ => {
+            let mut diag: Vec<Expr> = Vec::with_capacity(rows.len());
+            for (i, row) in rows.iter().enumerate() {
+              match row {
+                Expr::List(cols) if cols.len() == rows.len() => {
+                  diag.push(cols[i].clone());
+                }
+                _ => return None,
+              }
+            }
+            return Some(Ok(Expr::List(diag.into())));
+          }
+        }
+      }
+      return None;
+    }
     "Mean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_ast(args));
     }

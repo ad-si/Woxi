@@ -1276,3 +1276,88 @@ mod transformed_distribution {
     );
   }
 }
+
+mod multinormal_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_identity_covariance() {
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {x, y}]"
+      )
+      .unwrap(),
+      "E^((-x^2 - y^2)/2)/(2*Pi)"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], {x, y, z}]"
+      )
+      .unwrap(),
+      "E^((-x^2 - y^2 - z^2)/2)/(2*Sqrt[2]*Pi^(3/2))"
+    );
+  }
+
+  #[test]
+  fn pdf_diagonal_covariance() {
+    // wolframscript's term styles are position-dependent: the first
+    // scaled term prints -1/q*v^2, later ones -v^2/q
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{2, 0}, {0, 3}}], {x, y}]"
+      )
+      .unwrap(),
+      "E^((-1/2*x^2 - y^2/3)/2)/(2*Sqrt[6]*Pi)"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{3, 0}, {0, 2}}], {x, y}]"
+      )
+      .unwrap(),
+      "E^((-1/3*x^2 - y^2/2)/2)/(2*Sqrt[6]*Pi)"
+    );
+  }
+
+  #[test]
+  fn pdf_shifted_mean() {
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{1, 2}, {{1, 0}, {0, 1}}], {x, y}]"
+      )
+      .unwrap(),
+      "E^((-(-1 + x)^2 - (-2 + y)^2)/2)/(2*Pi)"
+    );
+  }
+
+  #[test]
+  fn statistics() {
+    assert_eq!(
+      interpret("Mean[MultinormalDistribution[{a, b}, {{1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret(
+        "Covariance[MultinormalDistribution[{0, 0}, {{2, 1}, {1, 3}}]]"
+      )
+      .unwrap(),
+      "{{2, 1}, {1, 3}}"
+    );
+    assert_eq!(
+      interpret("Variance[MultinormalDistribution[{0, 0}, {{2, 1}, {1, 3}}]]")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn non_diagonal_pdf_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "PDF[MultinormalDistribution[{0, 0}, {{2, 1}, {1, 3}}], {x, y}]"
+      )
+      .unwrap(),
+      "PDF[MultinormalDistribution[{0, 0}, {{2, 1}, {1, 3}}], {x, y}]"
+    );
+  }
+}

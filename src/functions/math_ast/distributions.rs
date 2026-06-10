@@ -126,6 +126,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match dist_name {
     "ProbabilityDistribution" => pdf_probability_distribution(dargs, x),
     "NormalDistribution" => pdf_normal(dargs, x),
+    "MultinormalDistribution" => pdf_multinormal(dargs, x),
     "UniformDistribution" => pdf_uniform(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
@@ -6139,4 +6140,149 @@ fn frac_to_rational_expr(f: (i128, i128)) -> Expr {
   } else {
     crate::functions::math_ast::make_rational_pub(f.0, f.1)
   }
+}
+
+// ─── MultinormalDistribution ─────────────────────────────────────────
+
+/// PDF[MultinormalDistribution[mu, sigma], {v...}] for diagonal
+/// covariance matrices, in wolframscript's printed form. The exponent's
+/// term styles are position-dependent (the first non-unit-variance term
+/// prints as -1/q*v^2, later ones as -v^2/q), so the structure mirrors
+/// what the parser builds for those strings.
+pub fn pdf_multinormal(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MultinormalDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x.clone(),
+    ]
+    .into(),
+  };
+  let (mu, sigma) = match dargs {
+    [Expr::List(mu), Expr::List(rows)] => (mu, rows),
+    _ => return Ok(unevaluated()),
+  };
+  let vars = match &x {
+    Expr::List(vars) if vars.len() == mu.len() => vars,
+    _ => return Ok(unevaluated()),
+  };
+  let k = mu.len();
+  if !(2..=3).contains(&k) || sigma.len() != k {
+    return Ok(unevaluated());
+  }
+
+  // Diagonal covariance with positive integer variances
+  let mut variances: Vec<i128> = Vec::with_capacity(k);
+  for (i, row) in sigma.iter().enumerate() {
+    let cols = match row {
+      Expr::List(cols) if cols.len() == k => cols,
+      _ => return Ok(unevaluated()),
+    };
+    for (j, e) in cols.iter().enumerate() {
+      match e {
+        Expr::Integer(v) if i == j && *v >= 1 => variances.push(*v),
+        Expr::Integer(0) if i != j => {}
+        _ => return Ok(unevaluated()),
+      }
+    }
+  }
+
+  let pow2 = |e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(e),
+    right: Box::new(int(2)),
+  };
+  let neg = |e: Expr| Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(e),
+  };
+  let div2 = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+
+  // (v - mu): canonical (-mu + v), or just v for a zero mean
+  let centered = |i: usize| -> Result<Expr, InterpreterError> {
+    if matches!(&mu[i], Expr::Integer(0)) {
+      Ok(vars[i].clone())
+    } else {
+      eval(plus(times(int(-1), mu[i].clone()), vars[i].clone()))
+    }
+  };
+
+  let mut terms: Vec<Expr> = Vec::with_capacity(k);
+  let mut first_scaled_seen = false;
+  for i in 0..k {
+    let sq = pow2(centered(i)?);
+    let term = if variances[i] == 1 {
+      neg(sq)
+    } else if !first_scaled_seen {
+      first_scaled_seen = true;
+      times(
+        crate::functions::math_ast::make_rational_pub(-1, variances[i]),
+        sq,
+      )
+    } else {
+      neg(div2(sq, int(variances[i])))
+    };
+    terms.push(term);
+  }
+  let exponent = div2(
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+    int(2),
+  );
+  let e_pow = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Identifier("E".to_string())),
+    right: Box::new(exponent),
+  };
+
+  // Normalizer: (2*Pi)^(k/2) * Sqrt[det]
+  let det: i128 = variances.iter().product();
+  let denominator = if k == 2 {
+    // 2*Pi, 2*Sqrt[det]*Pi, or (2*sqrt)*Pi when det is a perfect square
+    let sqrt_det = eval(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![int(det)].into(),
+    })?;
+    match &sqrt_det {
+      Expr::Integer(s) => times(int(2 * s), pi()),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2), sqrt_det, pi()].into(),
+      },
+    }
+  } else {
+    // k == 3: 2*Sqrt[2*det]*Pi^(3/2)
+    let sqrt_part = eval(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![int(2 * det)].into(),
+    })?;
+    let pi_pow = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(pi()),
+      right: Box::new(crate::functions::math_ast::make_rational_pub(3, 2)),
+    };
+    match &sqrt_part {
+      Expr::Integer(s) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2 * s), pi_pow].into(),
+      },
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(2), sqrt_part, pi_pow].into(),
+      },
+    }
+  };
+  Ok(div2(e_pow, denominator))
 }

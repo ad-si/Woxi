@@ -1028,7 +1028,7 @@ TimeSeries,,🚫,,10.0,1038
 VectorPoints,,🚫,,7.0,1039
 NextPrime,Returns the smallest prime greater than n,✅,pure,6.0,1040
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1.0,1041
-MultinormalDistribution,,🚫,,8.0,1042
+MultinormalDistribution,Multivariate normal distribution (PDF for diagonal covariance plus Mean Covariance Variance),✅,pure,8.0,1042
 UnitBox,Unit box function (1 for |x| <= 1/2),✅,pure,7.0,1043
 Today,Returns a DateObject representing the current date,✅,contextual,10.0,1044
 ClippingStyle,,🚫,,6.0,1046
