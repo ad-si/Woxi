@@ -668,6 +668,63 @@ mod cases {
     );
   }
   #[test]
+  fn r_solve_integer_coefficient() {
+    // Regression: `2*a[n]` arrives as FunctionCall Times after evaluation
+    // and used to be silently dropped, leaving RSolve unevaluated.
+    assert_case(
+      r#"RSolve[{a[n + 1] == 2 a[n], a[0] == 1}, a, n]"#,
+      r#"{{a -> Function[{n}, 2^n]}}"#,
+    );
+  }
+  #[test]
+  fn r_solve_second_order_distinct_roots() {
+    assert_case(
+      r#"RSolve[{a[n + 2] == 5 a[n + 1] - 6 a[n], a[0] == 0, a[1] == 1}, a, n]"#,
+      r#"{{a -> Function[{n}, -2^n + 3^n]}}"#,
+    );
+  }
+  #[test]
+  fn r_solve_inhomogeneous_stays_unevaluated() {
+    // Regression: the constant/`n` forcing term used to be silently
+    // dropped, returning the (wrong) homogeneous solution {{a[n] -> C[1]}}.
+    assert_case(
+      r#"RSolve[a[n] == a[n+1] + n, a[n], n]"#,
+      r#"RSolve[a[n] == n + a[1 + n], a[n], n]"#,
+    );
+  }
+  #[test]
+  fn r_solve_value_function() {
+    assert_case(
+      r#"RSolveValue[{a[n + 1] == 2 a[n], a[0] == 1}, a, n]"#,
+      r#"Function[{n}, 2^n]"#,
+    );
+  }
+  #[test]
+  fn r_solve_value_expression() {
+    assert_case(
+      r#"RSolveValue[{a[n + 1] == 3 a[n], a[0] == 2}, a[n], n]"#,
+      r#"2*3^n"#,
+    );
+  }
+  #[test]
+  fn r_solve_value_at_point() {
+    assert_case(
+      r#"RSolveValue[{a[n + 1] == 2 a[n], a[0] == 1}, a[3], n]"#,
+      r#"8"#,
+    );
+  }
+  #[test]
+  fn r_solve_value_general_solution() {
+    assert_case(r#"RSolveValue[a[n] == a[n+1], a[n], n]"#, r#"C[1]"#);
+  }
+  #[test]
+  fn r_solve_value_second_order() {
+    assert_case(
+      r#"RSolveValue[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a[n], n]"#,
+      r#"(5 - 3*(-1)^n)/2"#,
+    );
+  }
+  #[test]
   fn sum_6() {
     assert_case(
       r#"Precision[1]; 1 / Infinity; Infinity + 100; Sum[1/x^2, {x, 1, Infinity}]"#,

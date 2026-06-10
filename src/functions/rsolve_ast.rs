@@ -139,6 +139,60 @@ fn unevaluated(args: &[Expr]) -> Expr {
   }
 }
 
+/// RSolveValue[eqns, expr, n] — like RSolve, but returns the value of `expr`
+/// under the solution instead of a list of replacement rules.
+pub fn rsolve_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated_value = |args: &[Expr]| Expr::FunctionCall {
+    name: "RSolveValue".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  if args.len() != 3 {
+    return Ok(unevaluated_value(args));
+  }
+
+  // Determine the unknown function from the second argument: either the
+  // bare symbol `a` or any call `a[...]` (e.g. `a[n]`, `a[3]`).
+  let func_name = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    Expr::FunctionCall { name, .. } => name.clone(),
+    _ => return Ok(unevaluated_value(args)),
+  };
+
+  // Solve for the function itself: {{a -> Function[{n}, body]}}
+  let rsolve_args = [
+    args[0].clone(),
+    Expr::Identifier(func_name),
+    args[2].clone(),
+  ];
+  let solved = rsolve_ast(&rsolve_args)?;
+
+  let rule = match &solved {
+    Expr::List(outer) if outer.len() == 1 => match &outer[0] {
+      Expr::List(inner) if inner.len() == 1 => match &inner[0] {
+        rule @ Expr::Rule { .. } => rule.clone(),
+        _ => return Ok(unevaluated_value(args)),
+      },
+      _ => return Ok(unevaluated_value(args)),
+    },
+    _ => return Ok(unevaluated_value(args)),
+  };
+
+  // Bare symbol requested: return the Function[...] itself.
+  if let Expr::Rule { replacement, .. } = &rule
+    && matches!(&args[1], Expr::Identifier(_))
+  {
+    return Ok((**replacement).clone());
+  }
+
+  // Otherwise substitute the solution into the requested expression
+  // (e.g. a[n] or a[3]) and evaluate.
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "ReplaceAll".to_string(),
+    args: vec![args[1].clone(), rule].into(),
+  })
+}
+
 /// Extract lhs and rhs from an equation (Comparison or FunctionCall Equal)
 fn extract_equation(expr: &Expr) -> Option<(Expr, Expr)> {
   match expr {
@@ -185,9 +239,15 @@ fn solve_const_coeff_linear(
   // Move everything to lhs - rhs = 0
   let mut terms: Vec<(i128, i128)> = Vec::new(); // (offset, coefficient)
 
-  // Extract terms from lhs (positive) and rhs (negative when moved)
-  collect_recurrence_terms(lhs, func_name, var_name, 1, &mut terms);
-  collect_recurrence_terms(rhs, func_name, var_name, -1, &mut terms);
+  // Extract terms from lhs (positive) and rhs (negative when moved).
+  // Bail if any term is not a recognized homogeneous piece (e.g. a constant
+  // or a free `n` term) — silently dropping it would solve a different
+  // (homogeneous) recurrence and return a wrong answer.
+  if !collect_recurrence_terms(lhs, func_name, var_name, 1, &mut terms)
+    || !collect_recurrence_terms(rhs, func_name, var_name, -1, &mut terms)
+  {
+    return None;
+  }
 
   if terms.is_empty() {
     return None;
@@ -415,14 +475,18 @@ fn build_general_solution(
   crate::functions::math_ast::plus_ast(&terms).ok()
 }
 
-/// Collect terms of the form coeff * func[var + offset] from an expression
+/// Collect terms of the form coeff * func[var + offset] from an expression.
+/// Returns false if the expression contains a term that is not a recognized
+/// homogeneous piece (a constant, a free variable term, a non-integer
+/// coefficient, …) so the caller can bail instead of solving the wrong
+/// recurrence.
 fn collect_recurrence_terms(
   expr: &Expr,
   func_name: &str,
   var_name: &str,
   sign: i128,
   terms: &mut Vec<(i128, i128)>,
-) {
+) -> bool {
   match expr {
     // Direct: a[n + k] or a[n]
     Expr::FunctionCall { name, args }
@@ -430,62 +494,76 @@ fn collect_recurrence_terms(
     {
       if let Some(offset) = extract_var_offset(&args[0], var_name) {
         terms.push((offset, sign));
+        true
+      } else {
+        false
       }
     }
-    // c * a[n + k]
+    // c * a[n + k] (parsed form)
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
       right,
-    } => {
-      if let Expr::Integer(c) = left.as_ref()
-        && let Expr::FunctionCall { name, args } = right.as_ref()
-        && name == func_name
-        && args.len() == 1
-        && let Some(offset) = extract_var_offset(&args[0], var_name)
-      {
-        terms.push((offset, sign * c));
-        return;
-      }
-      if let Expr::Integer(c) = right.as_ref()
-        && let Expr::FunctionCall { name, args } = left.as_ref()
-        && name == func_name
-        && args.len() == 1
-        && let Some(offset) = extract_var_offset(&args[0], var_name)
-      {
-        terms.push((offset, sign * c));
-      }
+    } => collect_coeff_times_term(left, right, func_name, var_name, sign, terms),
+    // c * a[n + k] (evaluated form: Times[c, a[n + k]])
+    Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() == 2 =>
+    {
+      collect_coeff_times_term(
+        &args[0], &args[1], func_name, var_name, sign, terms,
+      )
     }
     // Plus: recurse into sub-terms
-    Expr::FunctionCall { name, args } if name == "Plus" => {
-      for arg in args {
-        collect_recurrence_terms(arg, func_name, var_name, sign, terms);
-      }
-    }
+    Expr::FunctionCall { name, args } if name == "Plus" => args
+      .iter()
+      .all(|arg| collect_recurrence_terms(arg, func_name, var_name, sign, terms)),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,
       right,
     } => {
-      collect_recurrence_terms(left, func_name, var_name, sign, terms);
-      collect_recurrence_terms(right, func_name, var_name, sign, terms);
+      collect_recurrence_terms(left, func_name, var_name, sign, terms)
+        && collect_recurrence_terms(right, func_name, var_name, sign, terms)
     }
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left,
       right,
     } => {
-      collect_recurrence_terms(left, func_name, var_name, sign, terms);
-      collect_recurrence_terms(right, func_name, var_name, -sign, terms);
+      collect_recurrence_terms(left, func_name, var_name, sign, terms)
+        && collect_recurrence_terms(right, func_name, var_name, -sign, terms)
     }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
-    } => {
-      collect_recurrence_terms(operand, func_name, var_name, -sign, terms);
-    }
-    _ => {}
+    } => collect_recurrence_terms(operand, func_name, var_name, -sign, terms),
+    // A zero constant contributes nothing (e.g. `a[n+2] - a[n] == 0`)
+    Expr::Integer(0) => true,
+    _ => false,
   }
+}
+
+/// Recognize `c * a[n + k]` with an integer coefficient on either side.
+fn collect_coeff_times_term(
+  left: &Expr,
+  right: &Expr,
+  func_name: &str,
+  var_name: &str,
+  sign: i128,
+  terms: &mut Vec<(i128, i128)>,
+) -> bool {
+  for (coeff_side, call_side) in [(left, right), (right, left)] {
+    if let Expr::Integer(c) = coeff_side
+      && let Expr::FunctionCall { name, args } = call_side
+      && name == func_name
+      && args.len() == 1
+      && let Some(offset) = extract_var_offset(&args[0], var_name)
+    {
+      terms.push((offset, sign * c));
+      return true;
+    }
+  }
+  false
 }
 
 /// Extract offset from expressions like `n`, `n + 2`, `2 + n`

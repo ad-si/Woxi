@@ -1592,7 +1592,7 @@ Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
 ImagePartition,Partition an image,,unevaluated,7.0,1617
 RelationGraph,Builds a graph whose edges connect vertex pairs satisfying a binary relation,✅,pure,10.2,1617
 PetersenGraph,Generalized Petersen graph GP(n k) built from outer cycle and inner k-jumps,✅,pure,8.0,1620
-RSolveValue,Solution value of recurrence,,unevaluated,10.0,1621
+RSolveValue,Solves a recurrence equation and returns the value of the requested expression,✅,pure,10.0,1621
 ArrayDepth,Returns the depth of a nested array,✅,pure,5.0,1622
 FeatureExtraction,Extract features from data,,unevaluated,11.0,1623
 CellStyle,Cell style specification,,unevaluated,9.0,1625
