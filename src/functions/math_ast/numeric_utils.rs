@@ -293,6 +293,21 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let d = try_eval_to_f64(&args[1])?;
         if d != 0.0 { Some(n / d) } else { None }
       }
+      // Stieltjes constants (machine-precision values from wolframscript)
+      "StieltjesGamma" if args.len() == 1 => match &args[0] {
+        Expr::Integer(0) => Some(0.5772156649015329),
+        Expr::Integer(1) => Some(-0.07281584548367673),
+        Expr::Integer(2) => Some(-0.00969036319287232),
+        Expr::Integer(3) => Some(0.002053834420303346),
+        Expr::Integer(4) => Some(0.0023253700654673),
+        Expr::Integer(5) => Some(0.0007933238173010627),
+        Expr::Integer(6) => Some(-0.0002387693454301996),
+        Expr::Integer(7) => Some(-0.000527289567057751),
+        Expr::Integer(8) => Some(-0.0003521233538030395),
+        Expr::Integer(9) => Some(-0.00003439477441808805),
+        Expr::Integer(10) => Some(0.0002053328149090648),
+        _ => None,
+      },
       "Sin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sin()),
       "Cos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.cos()),
       "Tan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.tan()),

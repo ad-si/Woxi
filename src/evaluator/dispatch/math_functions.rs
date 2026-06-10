@@ -1155,6 +1155,28 @@ pub fn dispatch_math_functions(
     "CorrelationFunction" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_function_ast(args));
     }
+    // StieltjesGamma[0] is EulerGamma; positive integers and symbols stay
+    // symbolic (N picks up the machine values via try_eval_to_f64); other
+    // arguments emit StieltjesGamma::intnm like wolframscript
+    "StieltjesGamma" if args.len() == 1 => {
+      let unevaluated = Expr::FunctionCall {
+        name: "StieltjesGamma".to_string(),
+        args: args.to_vec().into(),
+      };
+      return Some(Ok(match &args[0] {
+        Expr::Integer(0) => Expr::Identifier("EulerGamma".to_string()),
+        Expr::Integer(n) if *n >= 1 => unevaluated,
+        Expr::Identifier(_) => unevaluated,
+        other => {
+          crate::emit_message(&format!(
+            "StieltjesGamma::intnm: Non-negative machine-sized integer \
+             expected at position 1 in StieltjesGamma[{}].",
+            crate::syntax::expr_to_string(other)
+          ));
+          unevaluated
+        }
+      }));
+    }
     // InverseCDF[dist, q] coincides with Quantile[dist, q] for the
     // closed-form distributions (numeric q only)
     "InverseCDF" if args.len() == 2 => {

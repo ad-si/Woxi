@@ -3414,3 +3414,59 @@ mod mittag_leffler_e {
     );
   }
 }
+
+mod stieltjes_gamma {
+  use super::*;
+
+  #[test]
+  fn zero_is_euler_gamma() {
+    assert_eq!(interpret("StieltjesGamma[0]").unwrap(), "EulerGamma");
+    assert_eq!(
+      interpret("N[StieltjesGamma[0]]").unwrap(),
+      "0.5772156649015329"
+    );
+  }
+
+  #[test]
+  fn positive_integers_stay_symbolic() {
+    assert_eq!(interpret("StieltjesGamma[1]").unwrap(), "StieltjesGamma[1]");
+    assert_eq!(interpret("StieltjesGamma[n]").unwrap(), "StieltjesGamma[n]");
+  }
+
+  #[test]
+  fn machine_values() {
+    assert_eq!(
+      interpret("N[StieltjesGamma[1]]").unwrap(),
+      "-0.07281584548367673"
+    );
+    assert_eq!(
+      interpret("N[StieltjesGamma[2]]").unwrap(),
+      "-0.00969036319287232"
+    );
+    assert_eq!(
+      interpret("N[StieltjesGamma[3]]").unwrap(),
+      "0.002053834420303346"
+    );
+    assert_eq!(
+      interpret("N[StieltjesGamma[7]]").unwrap(),
+      "-0.000527289567057751"
+    );
+    assert_eq!(
+      interpret("N[StieltjesGamma[10]]").unwrap(),
+      "0.0002053328149090648"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_emit_intnm() {
+    // Reals and negative integers: StieltjesGamma::intnm, unevaluated
+    assert_eq!(
+      interpret("StieltjesGamma[1.5]").unwrap(),
+      "StieltjesGamma[1.5]"
+    );
+    assert_eq!(
+      interpret("StieltjesGamma[-1]").unwrap(),
+      "StieltjesGamma[-1]"
+    );
+  }
+}
