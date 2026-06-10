@@ -7524,3 +7524,82 @@ mod fourier_coefficient {
     );
   }
 }
+
+mod fourier_sin_cos_coefficient {
+  use super::*;
+
+  #[test]
+  fn sine_monomials() {
+    assert_eq!(
+      interpret("FourierSinCoefficient[t, t, n]").unwrap(),
+      "(-2*(-1)^n)/n"
+    );
+    assert_eq!(
+      interpret("FourierSinCoefficient[t^2, t, n]").unwrap(),
+      "(-2*(2 - 2*(-1)^n + (-1)^n*n^2*Pi^2))/(n^3*Pi)"
+    );
+    assert_eq!(
+      interpret("FourierSinCoefficient[t^3, t, n]").unwrap(),
+      "(-2*(-1)^n*(-6 + n^2*Pi^2))/n^3"
+    );
+    assert_eq!(
+      interpret("FourierSinCoefficient[1, t, n]").unwrap(),
+      "(-2*(-1 + (-1)^n))/(n*Pi)"
+    );
+    // Scaled monomial
+    assert_eq!(
+      interpret("FourierSinCoefficient[2 t, t, n]").unwrap(),
+      "(-4*(-1)^n)/n"
+    );
+  }
+
+  #[test]
+  fn cosine_monomials() {
+    assert_eq!(
+      interpret("FourierCosCoefficient[t, t, n]").unwrap(),
+      "(2*(-1 + (-1)^n))/(n^2*Pi)"
+    );
+    assert_eq!(
+      interpret("FourierCosCoefficient[t^2, t, n]").unwrap(),
+      "(4*(-1)^n)/n^2"
+    );
+    assert_eq!(
+      interpret("FourierCosCoefficient[t^3, t, n]").unwrap(),
+      "(6*(2 - 2*(-1)^n + (-1)^n*n^2*Pi^2))/(n^4*Pi)"
+    );
+    assert_eq!(
+      interpret("FourierCosCoefficient[1, t, n]").unwrap(),
+      "2*DiscreteDelta[n]"
+    );
+  }
+
+  #[test]
+  fn cosine_zero_order_means() {
+    assert_eq!(interpret("FourierCosCoefficient[t, t, 0]").unwrap(), "Pi");
+    assert_eq!(
+      interpret("FourierCosCoefficient[t^2, t, 0]").unwrap(),
+      "(2*Pi^2)/3"
+    );
+    assert_eq!(
+      interpret("FourierCosCoefficient[t^3, t, 0]").unwrap(),
+      "Pi^3/2"
+    );
+  }
+
+  #[test]
+  fn numeric_orders() {
+    assert_eq!(interpret("FourierSinCoefficient[t, t, 3]").unwrap(), "2/3");
+    assert_eq!(
+      interpret("FourierCosCoefficient[t^2, t, 4]").unwrap(),
+      "1/4"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("FourierSinCoefficient[Sin[t], t, n]").unwrap(),
+      "FourierSinCoefficient[Sin[t], t, n]"
+    );
+  }
+}

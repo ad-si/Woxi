@@ -1229,3 +1229,177 @@ pub fn fourier_coefficient_ast(
     .into(),
   })
 }
+
+// ─── FourierSinCoefficient / FourierCosCoefficient ───────────────────
+
+/// Half-range Fourier sine/cosine coefficients over (0, Pi) for single
+/// monomials c*t^k (k <= 3), in wolframscript's closed forms.
+pub fn fourier_sin_cos_coefficient_ast(
+  args: &[Expr],
+  sine: bool,
+) -> Result<Expr, InterpreterError> {
+  let head = if sine {
+    "FourierSinCoefficient"
+  } else {
+    "FourierCosCoefficient"
+  };
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: head.to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 3 {
+    return Ok(unevaluated(args));
+  }
+  let t_var = match &args[1] {
+    Expr::Identifier(v) => v.clone(),
+    _ => return Ok(unevaluated(args)),
+  };
+  let n_arg = args[2].clone();
+  if !matches!(&n_arg, Expr::Identifier(_) | Expr::Integer(_)) {
+    return Ok(unevaluated(args));
+  }
+
+  // Single monomial c*t^k with rational c, k <= 3
+  let coeffs = match poly_coeffs(&args[0], &t_var) {
+    Some(c) => c,
+    None => return Ok(unevaluated(args)),
+  };
+  if coeffs.len() > 4 {
+    return Ok(unevaluated(args));
+  }
+  let nonzero: Vec<(usize, Frac)> = coeffs
+    .iter()
+    .enumerate()
+    .filter(|(_, f)| f.0 != 0)
+    .map(|(k, f)| (k, *f))
+    .collect();
+  if nonzero.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  let (k, c) = nonzero[0];
+
+  let times = |fs: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: fs.into(),
+  };
+  let plus = |ts: Vec<Expr>| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: ts.into(),
+  };
+  let div = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let pow = |b: Expr, e: i128| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(b),
+    right: Box::new(Expr::Integer(e)),
+  };
+  let pi = || Expr::Constant("Pi".to_string());
+  let n_e = || n_arg.clone();
+  let m1 = || Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(n_arg.clone()),
+  };
+  let scaled = |base: i128| -> Expr {
+    let f = frac(base * c.0, c.1);
+    if f.1 == 1 {
+      Expr::Integer(f.0)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(f.0), Expr::Integer(f.1)].into(),
+      }
+    }
+  };
+  // 2 - 2*(-1)^n + (-1)^n*n^2*Pi^2
+  let bracket2 = || {
+    plus(vec![
+      Expr::Integer(2),
+      times(vec![Expr::Integer(-2), m1()]),
+      times(vec![m1(), pow(n_e(), 2), pow(pi(), 2)]),
+    ])
+  };
+
+  // Cosine at n = 0: the mean integral (2/Pi) Integrate[f, {t, 0, Pi}]
+  if !sine && matches!(&n_arg, Expr::Integer(0)) {
+    let value = match k {
+      0 => scaled(2),
+      1 => times(vec![scaled(1), pi()]),
+      2 => div(times(vec![scaled(2), pow(pi(), 2)]), Expr::Integer(3)),
+      3 => div(times(vec![scaled(1), pow(pi(), 3)]), Expr::Integer(2)),
+      _ => return Ok(unevaluated(args)),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&value);
+  }
+
+  let general: Expr = if sine {
+    match k {
+      // (-2*(-1 + (-1)^n))/(n*Pi)
+      0 => div(
+        times(vec![scaled(-2), plus(vec![Expr::Integer(-1), m1()])]),
+        times(vec![n_e(), pi()]),
+      ),
+      // (-2*(-1)^n)/n
+      1 => div(times(vec![scaled(-2), m1()]), n_e()),
+      // (-2*(2 - 2*(-1)^n + (-1)^n*n^2*Pi^2))/(n^3*Pi)
+      2 => div(
+        times(vec![scaled(-2), bracket2()]),
+        times(vec![pow(n_e(), 3), pi()]),
+      ),
+      // (-2*(-1)^n*(-6 + n^2*Pi^2))/n^3
+      3 => div(
+        times(vec![
+          scaled(-2),
+          m1(),
+          plus(vec![
+            Expr::Integer(-6),
+            times(vec![pow(n_e(), 2), pow(pi(), 2)]),
+          ]),
+        ]),
+        pow(n_e(), 3),
+      ),
+      _ => return Ok(unevaluated(args)),
+    }
+  } else {
+    match k {
+      // 2*DiscreteDelta[n]
+      0 => times(vec![
+        scaled(2),
+        Expr::FunctionCall {
+          name: "DiscreteDelta".to_string(),
+          args: vec![n_e()].into(),
+        },
+      ]),
+      // (2*(-1 + (-1)^n))/(n^2*Pi)
+      1 => div(
+        times(vec![scaled(2), plus(vec![Expr::Integer(-1), m1()])]),
+        times(vec![pow(n_e(), 2), pi()]),
+      ),
+      // (4*(-1)^n)/n^2
+      2 => div(times(vec![scaled(4), m1()]), pow(n_e(), 2)),
+      // (6*(2 - 2*(-1)^n + (-1)^n*n^2*Pi^2))/(n^4*Pi)
+      3 => div(
+        times(vec![scaled(6), bracket2()]),
+        times(vec![pow(n_e(), 4), pi()]),
+      ),
+      _ => return Ok(unevaluated(args)),
+    }
+  };
+
+  match &n_arg {
+    // Numeric order: evaluate the closed form (n = 0 for sine emits the
+    // same division-by-zero messages wolframscript shows, then echoes
+    // the call unevaluated)
+    Expr::Integer(n_val) => {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&general)?;
+      if *n_val == 0 {
+        return Ok(unevaluated(args));
+      }
+      Ok(evaluated)
+    }
+    _ => Ok(general),
+  }
+}

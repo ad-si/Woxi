@@ -666,6 +666,20 @@ pub fn dispatch_calculus_functions(
         args,
       ));
     }
+    "FourierSinCoefficient" if args.len() == 3 => {
+      return Some(
+        crate::functions::ztransform_ast::fourier_sin_cos_coefficient_ast(
+          args, true,
+        ),
+      );
+    }
+    "FourierCosCoefficient" if args.len() == 3 => {
+      return Some(
+        crate::functions::ztransform_ast::fourier_sin_cos_coefficient_ast(
+          args, false,
+        ),
+      );
+    }
     "FunctionRange" if args.len() == 3 => {
       return Some(crate::functions::function_range_ast::function_range_ast(
         args,

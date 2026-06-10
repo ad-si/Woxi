@@ -2277,7 +2277,7 @@ ControllerLinking,dynamic interaction,🚫,None,6.0,2321
 KeyValuePattern,Pattern object matching an association or list of rules that contains the given key-value rules (order-independent subset),✅,pure,10.4,2324
 Parallelepiped,3D geometric primitive,🚫,None,10.0,2324
 SendMail,email sending,🚫,None,7.0,2324
-FourierSinCoefficient,symbolic Fourier integral,🚫,None,7.0,2329
+FourierSinCoefficient,Half-range Fourier sine coefficient of polynomials,✅,pure,7.0,2329
 HeavisideLambda,Triangular pulse function: 1 - |x| for |x| < 1,✅,1,7.0,2329
 NDEigenvalues,numerical PDE eigenvalues,🚫,None,10.2,2329
 Star,graphics primitive,🚫,None,3.0,2329
@@ -2289,7 +2289,7 @@ ZernikeR,Radial Zernike polynomial R_n^m(x) for non-negative integer orders,✅,
 AnimationDirection,animation option,🚫,None,3.0,2338
 ClipPlanes,3D graphics option,🚫,None,10.0,2338
 FinancialIndicator,financial data,🚫,None,8.0,2338
-FourierCosCoefficient,symbolic Fourier integral,🚫,None,7.0,2338
+FourierCosCoefficient,Half-range Fourier cosine coefficient of polynomials,✅,pure,7.0,2338
 SequenceHold,Attribute that prevents Sequence objects in a function's arguments from being flattened/spliced,✅,None,3.0,2338
 BoundaryMesh,mesh generation,🚫,None,10.0,2344
 ImageCorrelate,image processing,🚫,None,7.0,2344

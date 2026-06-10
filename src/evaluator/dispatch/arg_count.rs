@@ -416,6 +416,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FourierCosTransform" => Some((3, 3)),
     "FourierDCT" => Some((1, 2)),
     "FourierCoefficient" => Some((3, 3)),
+    "FourierSinCoefficient" => Some((3, 3)),
+    "FourierCosCoefficient" => Some((3, 3)),
     "FourierMatrix" => Some((1, 1)),
     "FourierSinTransform" => Some((3, 3)),
     "FourierTransform" => Some((3, 3)),
