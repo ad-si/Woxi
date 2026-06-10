@@ -6789,3 +6789,68 @@ mod sinusoid_extremum_values {
     assert_case(r#"MinValue[Sin[x]/3, x]"#, r#"-1/3"#);
   }
 }
+
+mod groebner_basis {
+  use super::*;
+
+  #[test]
+  fn linear_system() {
+    assert_eq!(
+      interpret("GroebnerBasis[{x + y, x - y}, {x, y}]").unwrap(),
+      "{y, x}"
+    );
+  }
+
+  #[test]
+  fn circle_and_line() {
+    assert_eq!(
+      interpret("GroebnerBasis[{x^2 + y^2 - 1, x - y}, {x, y}]").unwrap(),
+      "{-1 + 2*y^2, x - y}"
+    );
+  }
+
+  #[test]
+  fn hyperbola_and_circle() {
+    assert_eq!(
+      interpret("GroebnerBasis[{x y - 1, x^2 + y^2 - 4}, {x, y}]").unwrap(),
+      "{1 - 4*y^2 + y^4, x - 4*y + y^3}"
+    );
+  }
+
+  #[test]
+  fn cyclic_three() {
+    assert_eq!(
+      interpret(
+        "GroebnerBasis[{x + y + z, x y + y z + z x, x y z - 1}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{-1 + z^3, y^2 + y*z + z^2, x + y + z}"
+    );
+  }
+
+  #[test]
+  fn normalization() {
+    // Content is divided out
+    assert_eq!(
+      interpret("GroebnerBasis[{2 x + 2 y}, {x, y}]").unwrap(),
+      "{x + y}"
+    );
+    assert_eq!(
+      interpret("GroebnerBasis[{x^2 - 1}, {x}]").unwrap(),
+      "{-1 + x^2}"
+    );
+  }
+
+  #[test]
+  fn inconsistent_system_is_unit_ideal() {
+    assert_eq!(interpret("GroebnerBasis[{x, x + 1}, {x}]").unwrap(), "{1}");
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("GroebnerBasis[{Sin[x]}, {x}]").unwrap(),
+      "GroebnerBasis[{Sin[x]}, {x}]"
+    );
+  }
+}

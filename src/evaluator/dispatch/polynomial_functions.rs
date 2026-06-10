@@ -29,6 +29,9 @@ pub fn dispatch_polynomial_functions(
         ),
       );
     }
+    "GroebnerBasis" if args.len() == 2 => {
+      return Some(crate::functions::groebner_ast::groebner_basis_ast(args));
+    }
     "PolynomialGCD" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::polynomial_gcd_ast(args));
     }

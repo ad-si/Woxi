@@ -1135,7 +1135,7 @@ KelvinBer,Kelvin ber function (real part of BesselJ on a rotated argument),✅,p
 NetTrain,,🚫,,11.0,1147
 SinIntegral,Sine integral Si(z),✅,pure,2.0,1148
 DiscretizeGraphics,,🚫,,10.0,1149
-GroebnerBasis,,🚫,,2.0,1150
+GroebnerBasis,Reduced lexicographic Groebner basis over the rationals,✅,pure,2.0,1150
 LegendMarkerSize,,🚫,,9.0,1151
 Subsuperscript,,🚫,,3.0,1152
 KelvinBei,Kelvin bei function (imaginary part of BesselJ on a rotated argument),✅,pure,6.0,1153
