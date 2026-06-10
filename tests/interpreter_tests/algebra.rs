@@ -6854,3 +6854,49 @@ mod groebner_basis {
     );
   }
 }
+
+mod resolve {
+  use super::*;
+
+  #[test]
+  fn exists_decisions() {
+    assert_eq!(
+      interpret("Resolve[Exists[x, x^2 == 4], Reals]").unwrap(),
+      "True"
+    );
+    // Solutions are complex, so nothing exists over the reals
+    assert_eq!(
+      interpret("Resolve[Exists[x, x^2 == -1], Reals]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Resolve[Exists[x, x > 0 && x < 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn forall_decisions() {
+    assert_eq!(
+      interpret("Resolve[ForAll[x, x^2 >= 0], Reals]").unwrap(),
+      "True"
+    );
+    // x = 0 violates the strict inequality
+    assert_eq!(
+      interpret("Resolve[ForAll[x, x^2 > 0], Reals]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn parametric_conditions() {
+    assert_eq!(
+      interpret("Resolve[Exists[x, x^2 == c], Reals]").unwrap(),
+      "c >= 0"
+    );
+    assert_eq!(
+      interpret("Resolve[ForAll[x, x^2 + c > 0], Reals]").unwrap(),
+      "c > 0"
+    );
+  }
+}

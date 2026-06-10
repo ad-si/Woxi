@@ -1033,7 +1033,7 @@ UnitBox,Unit box function (1 for |x| <= 1/2),✅,pure,7.0,1043
 Today,Returns a DateObject representing the current date,✅,contextual,10.0,1044
 ClippingStyle,,🚫,,6.0,1046
 Del,Symbolic nabla operator with Unicode display,✅,none,3.0,1046
-Resolve,,🚫,,5.0,1047
+Resolve,Quantifier elimination for univariate polynomial formulas over the reals,✅,pure,5.0,1047
 MorphologicalComponents,,🚫,,7.0,1048
 Wedge,Symbolic wedge product operator with Unicode display,✅,none,3.0,1049
 SumConvergence,Tests convergence of infinite sums (rational geometric alternating and factorial terms),✅,pure,7.0,1050
