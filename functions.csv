@@ -1849,7 +1849,7 @@ DistributionChart,Distribution chart,,unevaluated,8.0,1880
 IncidenceMatrix,Builds the vertex-by-edge incidence matrix of a graph,✅,none,8.0,1880
 InverseZTransform,Inverse Z-transform,,unevaluated,4.0,1880
 Notebooks,List open notebooks,,unevaluated,3.0,1883
-ZTransform,Z-transform,,unevaluated,4.0,1883
+ZTransform,Computes the Z transform of sequences c*n^k*a^n and a^n/n!,✅,pure,4.0,1883
 FeatureTypes,Feature types option,,unevaluated,10.1,1885
 LeastSquares,Least squares solution,✅,pure,6.0,1885
 CovarianceFunction,Autocovariance function of a stochastic process (ARMA(p<=1 q<=1) closed forms),✅,pure,9.0,1887

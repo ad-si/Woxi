@@ -7107,3 +7107,102 @@ mod ndeigenvalues_diffusion_line {
     assert_close(xs[3], 9.0, "λ_3 = 9");
   }
 }
+
+mod z_transform {
+  use super::*;
+
+  #[test]
+  fn polynomial_monomials() {
+    assert_eq!(interpret("ZTransform[1, n, z]").unwrap(), "z/(-1 + z)");
+    assert_eq!(interpret("ZTransform[n, n, z]").unwrap(), "z/(-1 + z)^2");
+    assert_eq!(
+      interpret("ZTransform[n^2, n, z]").unwrap(),
+      "(z*(1 + z))/(-1 + z)^3"
+    );
+    assert_eq!(
+      interpret("ZTransform[n^3, n, z]").unwrap(),
+      "(z*(1 + 4*z + z^2))/(-1 + z)^4"
+    );
+    assert_eq!(
+      interpret("ZTransform[n^4, n, z]").unwrap(),
+      "(z*(1 + 11*z + 11*z^2 + z^3))/(-1 + z)^5"
+    );
+  }
+
+  #[test]
+  fn constant_multiples() {
+    assert_eq!(interpret("ZTransform[2, n, z]").unwrap(), "(2*z)/(-1 + z)");
+    assert_eq!(
+      interpret("ZTransform[2 n, n, z]").unwrap(),
+      "(2*z)/(-1 + z)^2"
+    );
+    assert_eq!(
+      interpret("ZTransform[2 n^2, n, z]").unwrap(),
+      "(2*z*(1 + z))/(-1 + z)^3"
+    );
+    // Symbols free of n act as constants
+    assert_eq!(interpret("ZTransform[x, n, z]").unwrap(), "(x*z)/(-1 + z)");
+  }
+
+  #[test]
+  fn geometric_sequences() {
+    // Symbolic base keeps the (a - z) denominator with a sign wrapper
+    assert_eq!(interpret("ZTransform[a^n, n, z]").unwrap(), "-(z/(a - z))");
+    // Numeric bases use the canonical (-a + z) order
+    assert_eq!(interpret("ZTransform[2^n, n, z]").unwrap(), "z/(-2 + z)");
+    // Rational bases clear denominators
+    assert_eq!(
+      interpret("ZTransform[(1/3)^n, n, z]").unwrap(),
+      "(3*z)/(-1 + 3*z)"
+    );
+  }
+
+  #[test]
+  fn polynomial_times_geometric() {
+    assert_eq!(
+      interpret("ZTransform[n a^n, n, z]").unwrap(),
+      "(a*z)/(a - z)^2"
+    );
+    assert_eq!(
+      interpret("ZTransform[n 2^n, n, z]").unwrap(),
+      "(2*z)/(-2 + z)^2"
+    );
+    // Even denominator powers of a rational base flip to a positive
+    // constant term: (1 - 3*z)^2, not (-1 + 3*z)^2
+    assert_eq!(
+      interpret("ZTransform[n/3^n, n, z]").unwrap(),
+      "(3*z)/(1 - 3*z)^2"
+    );
+    assert_eq!(
+      interpret("ZTransform[n^2 a^n, n, z]").unwrap(),
+      "-((a*z*(a + z))/(a - z)^3)"
+    );
+    assert_eq!(
+      interpret("ZTransform[n^2 2^n, n, z]").unwrap(),
+      "(2*z*(2 + z))/(-2 + z)^3"
+    );
+    // The documentation example
+    assert_eq!(
+      interpret("ZTransform[n^2/2^n, n, z]").unwrap(),
+      "(2*z*(1 + 2*z))/(-1 + 2*z)^3"
+    );
+  }
+
+  #[test]
+  fn inverse_factorial() {
+    assert_eq!(interpret("ZTransform[1/n!, n, z]").unwrap(), "E^z^(-1)");
+    assert_eq!(interpret("ZTransform[3^n/n!, n, z]").unwrap(), "E^(3/z)");
+  }
+
+  #[test]
+  fn unsupported_forms_stay_unevaluated() {
+    assert_eq!(
+      interpret("ZTransform[Sin[n], n, z]").unwrap(),
+      "ZTransform[Sin[n], n, z]"
+    );
+    assert_eq!(
+      interpret("ZTransform[n^2 + n + 1, n, z]").unwrap(),
+      "ZTransform[1 + n + n^2, n, z]"
+    );
+  }
+}

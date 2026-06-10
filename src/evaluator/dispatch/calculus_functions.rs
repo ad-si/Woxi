@@ -650,6 +650,9 @@ pub fn dispatch_calculus_functions(
     "RSolveValue" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::rsolve_value_ast(args));
     }
+    "ZTransform" if args.len() == 3 => {
+      return Some(crate::functions::ztransform_ast::z_transform_ast(args));
+    }
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
     }

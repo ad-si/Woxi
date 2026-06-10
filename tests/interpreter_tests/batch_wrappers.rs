@@ -2410,10 +2410,10 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn z_transform() {
-    assert_eq!(
-      interpret("ZTransform[x, y, z]").unwrap(),
-      "ZTransform[x, y, z]"
-    );
+    // x is constant with respect to y: Z{x} = (x*z)/(-1 + z), verified
+    // against wolframscript (this previously asserted the
+    // unimplemented-stub behavior ZTransform[x, y, z])
+    assert_eq!(interpret("ZTransform[x, y, z]").unwrap(), "(x*z)/(-1 + z)");
   }
   #[test]
   fn least_squares() {

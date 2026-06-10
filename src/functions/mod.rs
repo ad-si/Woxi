@@ -41,6 +41,7 @@ pub mod txt_ast;
 pub mod voronoi;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;
+pub mod ztransform_ast;
 
 // Re-export all function implementations
 pub use association_ast::*;

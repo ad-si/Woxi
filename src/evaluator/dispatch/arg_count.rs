@@ -946,6 +946,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RowReduce" => Some((1, 1)),
     "RSolve" => Some((3, 3)),
     "RSolveValue" => Some((3, 3)),
+    "ZTransform" => Some((3, 3)),
     "Rule" => Some((2, 2)),
     "RulePlot" => Some((1, usize::MAX)),
     "Run" => Some((1, 1)),
