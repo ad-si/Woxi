@@ -6345,13 +6345,12 @@ fn solve_dense_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
     .collect();
 
   for col in 0..n {
-    let pivot_row = (col..n)
-      .max_by(|&r1, &r2| {
-        aug[r1][col]
-          .abs()
-          .partial_cmp(&aug[r2][col].abs())
-          .unwrap_or(std::cmp::Ordering::Equal)
-      })?;
+    let pivot_row = (col..n).max_by(|&r1, &r2| {
+      aug[r1][col]
+        .abs()
+        .partial_cmp(&aug[r2][col].abs())
+        .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
     if aug[pivot_row][col].abs() < 1e-12 {
       return None;
     }

@@ -7024,7 +7024,10 @@ fn split_sentences(text: &str) -> Vec<String> {
 
     // Include closing quotes/brackets in the sentence
     while i < chars.len()
-      && matches!(chars[i], '"' | '\'' | '\u{201d}' | '\u{2019}' | ')' | ']' | '}')
+      && matches!(
+        chars[i],
+        '"' | '\'' | '\u{201d}' | '\u{2019}' | ')' | ']' | '}'
+      )
     {
       i += 1;
     }
@@ -7076,7 +7079,8 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
   }
   let token: String = before[tok_start..].iter().collect();
   // Strip leading quotes/brackets from the token
-  let token = token.trim_start_matches(['"', '\'', '\u{201c}', '\u{2018}', '(', '[', '{']);
+  let token = token
+    .trim_start_matches(['"', '\'', '\u{201c}', '\u{2018}', '(', '[', '{']);
 
   if token.is_empty() {
     return false;
@@ -7092,8 +7096,8 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
   }
   // Titles and common abbreviations that never end a sentence
   const ALWAYS: &[&str] = &[
-    "Mr", "Mrs", "Ms", "Dr", "Prof", "Rev", "Gen", "Sen", "Rep", "Sgt",
-    "Col", "Capt", "Lt", "Mt", "St", "vs", "cf", "al",
+    "Mr", "Mrs", "Ms", "Dr", "Prof", "Rev", "Gen", "Sen", "Rep", "Sgt", "Col",
+    "Capt", "Lt", "Mt", "St", "vs", "cf", "al",
   ];
   if ALWAYS.contains(&token) {
     return true;

@@ -504,19 +504,21 @@ fn collect_recurrence_terms(
       op: BinaryOperator::Times,
       left,
       right,
-    } => collect_coeff_times_term(left, right, func_name, var_name, sign, terms),
+    } => {
+      collect_coeff_times_term(left, right, func_name, var_name, sign, terms)
+    }
     // c * a[n + k] (evaluated form: Times[c, a[n + k]])
-    Expr::FunctionCall { name, args }
-      if name == "Times" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
       collect_coeff_times_term(
         &args[0], &args[1], func_name, var_name, sign, terms,
       )
     }
     // Plus: recurse into sub-terms
-    Expr::FunctionCall { name, args } if name == "Plus" => args
-      .iter()
-      .all(|arg| collect_recurrence_terms(arg, func_name, var_name, sign, terms)),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().all(|arg| {
+        collect_recurrence_terms(arg, func_name, var_name, sign, terms)
+      })
+    }
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left,

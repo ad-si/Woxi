@@ -2846,8 +2846,10 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn text_sentences_basic() {
     assert_eq!(
-      interpret("TextSentences[\"This is a sentence.  This is another sentence.\"]")
-        .unwrap(),
+      interpret(
+        "TextSentences[\"This is a sentence.  This is another sentence.\"]"
+      )
+      .unwrap(),
       "{This is a sentence., This is another sentence.}"
     );
   }
@@ -3459,10 +3461,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn sequence_split_drops_leading_and_trailing_empty() {
-    assert_eq!(
-      interpret("SequenceSplit[{0, 1, 0}, {0}]").unwrap(),
-      "{{1}}"
-    );
+    assert_eq!(interpret("SequenceSplit[{0, 1, 0}, {0}]").unwrap(), "{{1}}");
   }
   #[test]
   fn sequence_split_pattern_separator() {
