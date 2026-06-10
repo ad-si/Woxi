@@ -41,6 +41,7 @@ pub mod string_ast;
 pub mod sum_convergence_ast;
 pub mod tabular_ast;
 pub mod tree_form;
+pub mod trig_factor_ast;
 pub mod turing_machine_ast;
 pub mod txt_ast;
 pub mod voronoi;

@@ -445,6 +445,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SumConvergence" => Some((2, 3)),
     "GroebnerBasis" => Some((2, 2)),
     "Resolve" => Some((1, 3)),
+    "TrigFactor" => Some((1, 1)),
     "FunctionRange" => Some((3, 3)),
     "FunctionExpand" => Some((1, 1)),
     "FunctionDomain" => Some((2, 3)),

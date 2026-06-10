@@ -6900,3 +6900,125 @@ mod resolve {
     );
   }
 }
+
+mod trig_factor {
+  use super::*;
+
+  #[test]
+  fn sin_plus_minus_cos() {
+    // Pi/4 leads when the variable sorts after "Pi"
+    assert_eq!(
+      interpret("TrigFactor[Sin[x] + Cos[x]]").unwrap(),
+      "Sqrt[2]*Sin[Pi/4 + x]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[x] - Cos[x]]").unwrap(),
+      "-(Sqrt[2]*Sin[Pi/4 - x])"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cos[x] - Sin[x]]").unwrap(),
+      "Sqrt[2]*Sin[Pi/4 - x]"
+    );
+    // The variable leads when it sorts before "Pi"
+    assert_eq!(
+      interpret("TrigFactor[Sin[a] + Cos[a]]").unwrap(),
+      "Sqrt[2]*Sin[a + Pi/4]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[a] - Cos[a]]").unwrap(),
+      "Sqrt[2]*Sin[a - Pi/4]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cos[a] - Sin[a]]").unwrap(),
+      "-(Sqrt[2]*Sin[a - Pi/4])"
+    );
+    // Composite arguments
+    assert_eq!(
+      interpret("TrigFactor[Sin[a + b] + Cos[a + b]]").unwrap(),
+      "Sqrt[2]*Sin[a + b + Pi/4]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[a + b] - Cos[a + b]]").unwrap(),
+      "Sqrt[2]*Sin[a + b - Pi/4]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cos[a + b] - Sin[a + b]]").unwrap(),
+      "-(Sqrt[2]*Sin[a + b - Pi/4])"
+    );
+  }
+
+  #[test]
+  fn one_plus_minus_trig_half_angle_squares() {
+    assert_eq!(interpret("TrigFactor[1 + Cos[x]]").unwrap(), "2*Cos[x/2]^2");
+    assert_eq!(interpret("TrigFactor[1 - Cos[x]]").unwrap(), "2*Sin[x/2]^2");
+    assert_eq!(
+      interpret("TrigFactor[1 + Sin[x]]").unwrap(),
+      "2*Sin[Pi/4 + x/2]^2"
+    );
+    assert_eq!(
+      interpret("TrigFactor[1 - Sin[x]]").unwrap(),
+      "2*Sin[Pi/4 - x/2]^2"
+    );
+    assert_eq!(
+      interpret("TrigFactor[1 - Sin[a]]").unwrap(),
+      "2*Sin[a/2 - Pi/4]^2"
+    );
+    // Double angles halve exactly instead of printing (2*a)/2
+    assert_eq!(interpret("TrigFactor[1 + Cos[2 a]]").unwrap(), "2*Cos[a]^2");
+    assert_eq!(interpret("TrigFactor[1 - Cos[2 a]]").unwrap(), "2*Sin[a]^2");
+    assert_eq!(
+      interpret("TrigFactor[1 + Sin[2 a]]").unwrap(),
+      "2*Sin[a + Pi/4]^2"
+    );
+    assert_eq!(
+      interpret("TrigFactor[1 - Sin[2 a]]").unwrap(),
+      "2*Sin[a - Pi/4]^2"
+    );
+  }
+
+  #[test]
+  fn double_angles() {
+    assert_eq!(
+      interpret("TrigFactor[Sin[2 x]]").unwrap(),
+      "2*Cos[x]*Sin[x]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[2 t]]").unwrap(),
+      "2*Cos[t]*Sin[t]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cos[2 x]]").unwrap(),
+      "2*Sin[Pi/4 - x]*Sin[Pi/4 + x]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cos[2 a]]").unwrap(),
+      "-2*Sin[a - Pi/4]*Sin[a + Pi/4]"
+    );
+  }
+
+  #[test]
+  fn difference_of_squares() {
+    assert_eq!(
+      interpret("TrigFactor[Sin[x]^2 - Cos[x]^2]").unwrap(),
+      "-2*Sin[Pi/4 - x]*Sin[Pi/4 + x]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Cos[x]^2 - Sin[x]^2]").unwrap(),
+      "2*Sin[Pi/4 - x]*Sin[Pi/4 + x]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[a]^2 - Cos[a]^2]").unwrap(),
+      "2*Sin[a - Pi/4]*Sin[a + Pi/4]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[2 x]^2 - Cos[2 x]^2]").unwrap(),
+      "-2*Sin[Pi/4 - 2*x]*Sin[Pi/4 + 2*x]"
+    );
+  }
+
+  #[test]
+  fn passthrough_when_nothing_factors() {
+    assert_eq!(interpret("TrigFactor[Sin[x]]").unwrap(), "Sin[x]");
+    assert_eq!(interpret("TrigFactor[x + 1]").unwrap(), "1 + x");
+  }
+}
