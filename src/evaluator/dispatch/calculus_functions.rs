@@ -661,6 +661,11 @@ pub fn dispatch_calculus_functions(
     "Convolve" if args.len() == 4 => {
       return Some(crate::functions::convolve_ast::convolve_ast(args));
     }
+    "FourierCoefficient" if args.len() == 3 => {
+      return Some(crate::functions::ztransform_ast::fourier_coefficient_ast(
+        args,
+      ));
+    }
     "FunctionRange" if args.len() == 3 => {
       return Some(crate::functions::function_range_ast::function_range_ast(
         args,

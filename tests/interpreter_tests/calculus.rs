@@ -7464,3 +7464,63 @@ mod function_range {
     );
   }
 }
+
+mod fourier_coefficient {
+  use super::*;
+
+  #[test]
+  fn monomials_symbolic_order() {
+    assert_eq!(
+      interpret("FourierCoefficient[t, t, n]").unwrap(),
+      "Piecewise[{{0, n == 0}}, (I*(-1)^n)/n]"
+    );
+    assert_eq!(
+      interpret("FourierCoefficient[t^2, t, n]").unwrap(),
+      "Piecewise[{{Pi^2/3, n == 0}}, (2*(-1)^n)/n^2]"
+    );
+    assert_eq!(
+      interpret("FourierCoefficient[t^3, t, n]").unwrap(),
+      "Piecewise[{{0, n == 0}}, (I*(-1)^n*(-6 + n^2*Pi^2))/n^3]"
+    );
+  }
+
+  #[test]
+  fn constants_are_discrete_delta() {
+    assert_eq!(
+      interpret("FourierCoefficient[1, t, n]").unwrap(),
+      "DiscreteDelta[n]"
+    );
+  }
+
+  #[test]
+  fn linear_combination() {
+    // The constant only contributes to the n == 0 piece; the coefficient
+    // groups with I as (2*I)
+    assert_eq!(
+      interpret("FourierCoefficient[2 t + 1, t, n]").unwrap(),
+      "Piecewise[{{1, n == 0}}, ((2*I)*(-1)^n)/n]"
+    );
+  }
+
+  #[test]
+  fn numeric_orders() {
+    assert_eq!(interpret("FourierCoefficient[t, t, 2]").unwrap(), "I/2");
+    assert_eq!(
+      interpret("FourierCoefficient[t^2, t, 0]").unwrap(),
+      "Pi^2/3"
+    );
+    assert_eq!(interpret("FourierCoefficient[t^2, t, 3]").unwrap(), "-2/9");
+    assert_eq!(
+      interpret("FourierCoefficient[t^3, t, 1]").unwrap(),
+      "-I*(-6 + Pi^2)"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("FourierCoefficient[Sin[t], t, n]").unwrap(),
+      "FourierCoefficient[Sin[t], t, n]"
+    );
+  }
+}

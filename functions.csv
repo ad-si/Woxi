@@ -1668,7 +1668,7 @@ WeightedAdjacencyGraph,Weighted adjacency graph,,unevaluated,8.0,1695
 CellFrame,Cell frame option,,unevaluated,3.0,1696
 Compiled,Compiled option,,unevaluated,2.0,1697
 AudioGenerator,Audio generator,,unevaluated,11.0,1698
-FourierCoefficient,Fourier coefficient,,unevaluated,7.0,1701
+FourierCoefficient,Fourier series coefficient of polynomials over the standard period,✅,pure,7.0,1701
 PageWidth,Option specifying the page width for output formatting,✅,pure,1.0,1701
 Underlined,Underlined text,,unevaluated,6.0,1701
 Constant,Attribute indicating zero derivative with respect to all parameters,✅,pure,1.0,1704

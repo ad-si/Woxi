@@ -1044,3 +1044,188 @@ fn times_factors(expr: &Expr) -> Vec<Expr> {
     _ => vec![expr.clone()],
   }
 }
+
+// ─── FourierCoefficient ──────────────────────────────────────────────
+
+/// FourierCoefficient[f, t, n] for polynomials f of degree <= 3 with
+/// rational coefficients, in wolframscript's closed forms:
+/// the n = 0 piece carries the mean (constants and Pi^2/3 per t^2),
+/// the general piece sums the per-monomial terms (I*(-1)^n)/n,
+/// (2*(-1)^n)/n^2, (I*(-1)^n*(-6 + n^2*Pi^2))/n^3; a pure constant c
+/// gives c*DiscreteDelta[n].
+pub fn fourier_coefficient_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FourierCoefficient".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 3 {
+    return Ok(unevaluated(args));
+  }
+  let t_var = match &args[1] {
+    Expr::Identifier(v) => v.clone(),
+    _ => return Ok(unevaluated(args)),
+  };
+  let n_arg = args[2].clone();
+
+  // Polynomial in t with rational coefficients, degree <= 3
+  let coeffs = match poly_coeffs(&args[0], &t_var) {
+    Some(c) => c,
+    None => return Ok(unevaluated(args)),
+  };
+  if coeffs.len() > 4 {
+    return Ok(unevaluated(args));
+  }
+  let coeff = |k: usize| *coeffs.get(k).unwrap_or(&(0, 1));
+  let frac_expr = |f: Frac| -> Expr {
+    let f = frac(f.0, f.1);
+    if f.1 == 1 {
+      Expr::Integer(f.0)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(f.0), Expr::Integer(f.1)].into(),
+      }
+    }
+  };
+  let times = |fs: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: fs.into(),
+  };
+  let div = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let pow = |b: Expr, e: i128| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(b),
+    right: Box::new(Expr::Integer(e)),
+  };
+  let i_unit = || Expr::Identifier("I".to_string());
+  let pi = || Expr::Constant("Pi".to_string());
+
+  let (c0, c1, c2, c3) = (coeff(0), coeff(1), coeff(2), coeff(3));
+
+  // Pure constant: c*DiscreteDelta[n]
+  if c1.0 == 0 && c2.0 == 0 && c3.0 == 0 {
+    let delta = Expr::FunctionCall {
+      name: "DiscreteDelta".to_string(),
+      args: vec![n_arg.clone()].into(),
+    };
+    let result = if c0 == (1, 1) {
+      delta
+    } else {
+      times(vec![frac_expr(c0), delta])
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
+  // n == 0 piece: c0 + c2*Pi^2/3 (odd powers integrate to zero)
+  let zero_piece: Expr = {
+    let mut terms: Vec<Expr> = Vec::new();
+    if c0.0 != 0 {
+      terms.push(frac_expr(c0));
+    }
+    if c2.0 != 0 {
+      let scaled = frac(c2.0, c2.1 * 3);
+      terms.push(if scaled == (1, 1) {
+        pow(pi(), 2)
+      } else {
+        // Pi^2/3-style quotient (or c*Pi^2 for integer multiples)
+        match scaled {
+          (p, 1) => times(vec![Expr::Integer(p), pow(pi(), 2)]),
+          (1, q) => div(pow(pi(), 2), Expr::Integer(q)),
+          (p, q) => div(
+            times(vec![Expr::Integer(p), pow(pi(), 2)]),
+            Expr::Integer(q),
+          ),
+        }
+      });
+    }
+    match terms.len() {
+      0 => Expr::Integer(0),
+      1 => terms.remove(0),
+      _ => Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      },
+    }
+  };
+
+  // General piece: sum of the per-monomial closed forms.
+  // Coefficient grouping: rational multiples of I print as (2*I).
+  let coeff_i = |f: Frac| -> Option<Expr> {
+    match frac(f.0, f.1) {
+      (0, _) => None,
+      (1, 1) => Some(i_unit()),
+      (p, 1) => Some(times(vec![Expr::Integer(p), i_unit()])),
+      (p, q) => Some(div(
+        times(vec![Expr::Integer(p), i_unit()]),
+        Expr::Integer(q),
+      )),
+    }
+  };
+  let m1n = || Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(n_arg.clone()),
+  };
+  let n_expr = || n_arg.clone();
+
+  let mut general_terms: Vec<Expr> = Vec::new();
+  // t: (c1*I*(-1)^n)/n
+  if let Some(ci) = coeff_i(c1) {
+    general_terms.push(div(times(vec![ci, m1n()]), n_expr()));
+  }
+  // t^2: (2*c2*(-1)^n)/n^2
+  if c2.0 != 0 {
+    let f = frac(2 * c2.0, c2.1);
+    let lead = frac_expr(f);
+    general_terms.push(div(times(vec![lead, m1n()]), pow(n_expr(), 2)));
+  }
+  // t^3: (c3*I*(-1)^n*(-6 + n^2*Pi^2))/n^3
+  if let Some(ci) = coeff_i(c3) {
+    let bracket = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(-6),
+        times(vec![pow(n_expr(), 2), pow(pi(), 2)]),
+      ]
+      .into(),
+    };
+    general_terms.push(div(times(vec![ci, m1n(), bracket]), pow(n_expr(), 3)));
+  }
+  let general = match general_terms.len() {
+    0 => Expr::Integer(0),
+    1 => general_terms.remove(0),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: general_terms.into(),
+    },
+  };
+
+  // Numeric n: pick the branch and evaluate
+  if let Expr::Integer(n_val) = &n_arg {
+    let chosen = if *n_val == 0 { zero_piece } else { general };
+    return crate::evaluator::evaluate_expr_to_expr(&chosen);
+  }
+  if !matches!(&n_arg, Expr::Identifier(_)) {
+    return Ok(unevaluated(args));
+  }
+
+  // Symbolic n: Piecewise[{{zero_piece, n == 0}}, general]
+  let cond = Expr::Comparison {
+    operands: vec![n_arg.clone(), Expr::Integer(0)],
+    operators: vec![crate::syntax::ComparisonOp::Equal],
+  };
+  Ok(Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![
+      Expr::List(vec![Expr::List(vec![zero_piece, cond].into())].into()),
+      general,
+    ]
+    .into(),
+  })
+}
