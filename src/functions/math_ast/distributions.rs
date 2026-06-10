@@ -127,6 +127,20 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ProbabilityDistribution" => pdf_probability_distribution(dargs, x),
     "NormalDistribution" => pdf_normal(dargs, x),
     "MultinormalDistribution" => pdf_multinormal(dargs, x),
+    "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, false) {
+      Some(v) => Ok(v),
+      None => Ok(Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "DataDistribution".to_string(),
+            args: dargs.to_vec().into(),
+          },
+          x,
+        ]
+        .into(),
+      }),
+    },
     "UniformDistribution" => pdf_uniform(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
@@ -1081,6 +1095,20 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match dist_name {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
+    "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
+      Some(v) => Ok(v),
+      None => Ok(Expr::FunctionCall {
+        name: "CDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "DataDistribution".to_string(),
+            args: dargs.to_vec().into(),
+          },
+          x,
+        ]
+        .into(),
+      }),
+    },
     "UniformDistribution" => cdf_uniform(dargs, x),
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
@@ -6285,4 +6313,184 @@ pub fn pdf_multinormal(
     }
   };
   Ok(div2(e_pow, denominator))
+}
+
+// ─── EmpiricalDistribution / DataDistribution ────────────────────────
+
+fn as_exact_frac(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+fn frac_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
+  (a.0 * b.1).cmp(&(b.0 * a.1))
+}
+
+/// EmpiricalDistribution[{data}] — wolframscript's container:
+/// DataDistribution["Empirical", {weights, sorted values, False}, 1, n]
+pub fn empirical_distribution_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "EmpiricalDistribution".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  let data = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return Ok(unevaluated(args)),
+  };
+  let mut values: Vec<(i128, i128)> = Vec::with_capacity(data.len());
+  for e in data {
+    match as_exact_frac(e) {
+      Some(f) => values.push(f),
+      None => return Ok(unevaluated(args)),
+    }
+  }
+  values.sort_by(|a, b| frac_cmp(*a, *b));
+  let n = values.len() as i128;
+  let mut weights: Vec<Expr> = Vec::new();
+  let mut uniques: Vec<Expr> = Vec::new();
+  let mut i = 0usize;
+  while i < values.len() {
+    let v = values[i];
+    let mut count = 0i128;
+    while i < values.len() && values[i] == v {
+      count += 1;
+      i += 1;
+    }
+    weights.push(eval(divide(int(count), int(n)))?);
+    uniques.push(if v.1 == 1 {
+      Expr::Integer(v.0)
+    } else {
+      crate::functions::math_ast::make_rational_pub(v.0, v.1)
+    });
+  }
+  Ok(Expr::FunctionCall {
+    name: "DataDistribution".to_string(),
+    args: vec![
+      Expr::String("Empirical".to_string()),
+      Expr::List(
+        vec![
+          Expr::List(weights.into()),
+          Expr::List(uniques.into()),
+          Expr::Identifier("False".to_string()),
+        ]
+        .into(),
+      ),
+      Expr::Integer(1),
+      Expr::Integer(n),
+    ]
+    .into(),
+  })
+}
+
+/// Extract (weights, values) from an empirical DataDistribution.
+pub fn data_distribution_parts(
+  dargs: &[Expr],
+) -> Option<(Vec<(i128, i128)>, Vec<(i128, i128)>)> {
+  if dargs.len() != 4 {
+    return None;
+  }
+  match &dargs[0] {
+    Expr::String(s) if s == "Empirical" => {}
+    _ => return None,
+  }
+  let inner = match &dargs[1] {
+    Expr::List(items) if items.len() == 3 => items,
+    _ => return None,
+  };
+  let (w_list, v_list) = match (&inner[0], &inner[1]) {
+    (Expr::List(w), Expr::List(v)) if w.len() == v.len() => (w, v),
+    _ => return None,
+  };
+  let mut weights = Vec::with_capacity(w_list.len());
+  let mut values = Vec::with_capacity(v_list.len());
+  for (w, v) in w_list.iter().zip(v_list.iter()) {
+    weights.push(as_exact_frac(w)?);
+    values.push(as_exact_frac(v)?);
+  }
+  Some((weights, values))
+}
+
+/// Mean (k = 1) or raw second moment (k = 2) of an empirical
+/// distribution, exactly.
+pub fn data_distribution_moment(dargs: &[Expr], k: u32) -> Option<Expr> {
+  let (weights, values) = data_distribution_parts(dargs)?;
+  let mut num: i128 = 0;
+  let mut den: i128 = 1;
+  for (w, v) in weights.iter().zip(values.iter()) {
+    // w * v^k
+    let (vn, vd) = (v.0.checked_pow(k)?, v.1.checked_pow(k)?);
+    let tn = w.0.checked_mul(vn)?;
+    let td = w.1.checked_mul(vd)?;
+    num = num.checked_mul(td)?.checked_add(tn.checked_mul(den)?)?;
+    den = den.checked_mul(td)?;
+  }
+  let g = {
+    let (mut a, mut b) = (num.abs().max(1), den.abs());
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a.max(1)
+  };
+  let (num, den) = (num / g, den / g);
+  Some(if den == 1 {
+    Expr::Integer(num)
+  } else {
+    crate::functions::math_ast::make_rational_pub(num, den)
+  })
+}
+
+/// PDF (point mass) and CDF (left-closed step sum) at a numeric point.
+pub fn data_distribution_pdf_cdf(
+  dargs: &[Expr],
+  x: &Expr,
+  cumulative: bool,
+) -> Option<Expr> {
+  let (weights, values) = data_distribution_parts(dargs)?;
+  let xf = as_exact_frac(x)?;
+  let mut num: i128 = 0;
+  let mut den: i128 = 1;
+  for (w, v) in weights.iter().zip(values.iter()) {
+    let include = if cumulative {
+      frac_cmp(*v, xf) != std::cmp::Ordering::Greater
+    } else {
+      *v == xf
+    };
+    if include {
+      num = num * w.1 + w.0 * den;
+      den *= w.1;
+    }
+  }
+  let g = {
+    let (mut a, mut b) = (num.abs().max(1), den.abs());
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a.max(1)
+  };
+  let (num, den) = (num / g, den / g);
+  Some(if den == 1 {
+    Expr::Integer(num)
+  } else {
+    crate::functions::math_ast::make_rational_pub(num, den)
+  })
 }

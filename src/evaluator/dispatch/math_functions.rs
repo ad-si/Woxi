@@ -428,6 +428,55 @@ pub fn dispatch_math_functions(
       }
       return None;
     }
+    // Empirical DataDistribution statistics (exact)
+    "Mean" | "Variance"
+      if args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
+          if dn == "DataDistribution" && da.len() == 4) =>
+    {
+      if let Expr::FunctionCall { args: da, .. } = &args[0] {
+        let mean = crate::functions::math_ast::data_distribution_moment(da, 1);
+        match (name, mean) {
+          ("Mean", Some(m)) => return Some(Ok(m)),
+          ("Variance", Some(m)) => {
+            if let Some(m2) =
+              crate::functions::math_ast::data_distribution_moment(da, 2)
+            {
+              // Var = E[x^2] - mean^2
+              let var =
+                crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![
+                    m2,
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![
+                        Expr::Integer(-1),
+                        Expr::FunctionCall {
+                          name: "Power".to_string(),
+                          args: vec![m, Expr::Integer(2)].into(),
+                        },
+                      ]
+                      .into(),
+                    },
+                  ]
+                  .into(),
+                });
+              if let Ok(v) = var {
+                return Some(Ok(v));
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+      return None;
+    }
+    "EmpiricalDistribution" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::empirical_distribution_ast(
+        args,
+      ));
+    }
     "Mean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_ast(args));
     }

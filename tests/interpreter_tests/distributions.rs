@@ -1361,3 +1361,72 @@ mod multinormal_distribution {
     );
   }
 }
+
+mod empirical_distribution {
+  use super::*;
+
+  #[test]
+  fn constructor_normalizes() {
+    // Values sort and tally into weights regardless of input order
+    assert_eq!(
+      interpret("EmpiricalDistribution[{1, 2, 2, 3}]").unwrap(),
+      "DataDistribution[Empirical, {{1/4, 1/2, 1/4}, {1, 2, 3}, False}, 1, 4]"
+    );
+    assert_eq!(
+      interpret("EmpiricalDistribution[{3, 1, 2, 2}]").unwrap(),
+      "DataDistribution[Empirical, {{1/4, 1/2, 1/4}, {1, 2, 3}, False}, 1, 4]"
+    );
+  }
+
+  #[test]
+  fn exact_statistics() {
+    assert_eq!(
+      interpret("Mean[EmpiricalDistribution[{1, 2, 2, 3}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Mean[EmpiricalDistribution[{1, 1, 2}]]").unwrap(),
+      "4/3"
+    );
+    assert_eq!(
+      interpret("Variance[EmpiricalDistribution[{1, 2, 2, 3}]]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn pdf_point_masses() {
+    assert_eq!(
+      interpret("PDF[EmpiricalDistribution[{1, 2, 2, 3}], 2]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("PDF[EmpiricalDistribution[{1, 2, 2, 3}], 4]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_steps() {
+    assert_eq!(
+      interpret("CDF[EmpiricalDistribution[{1, 2, 2, 3}], 2]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("CDF[EmpiricalDistribution[{1, 2, 2, 3}], 3/2]").unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret("CDF[EmpiricalDistribution[{1, 2, 2, 3}], 0]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn symbolic_data_stays_unevaluated() {
+    assert_eq!(
+      interpret("EmpiricalDistribution[{x, y}]").unwrap(),
+      "EmpiricalDistribution[{x, y}]"
+    );
+  }
+}

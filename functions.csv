@@ -1124,7 +1124,7 @@ Correlation,Computes the Pearson correlation of two lists,✅,pure,6.0,1135
 SwatchLegend,,🚫,,9.0,1136
 TreeForm,Display an expression as a tree structure,✅,pure,1.0,1138
 UpdateInterval,,🚫,,6.0,1138
-EmpiricalDistribution,,🚫,,8.0,1139
+EmpiricalDistribution,Empirical distribution from data (exact weights via DataDistribution),✅,pure,8.0,1139
 LightGreen,Named light color evaluating to RGBColor[0.88 1 0.88],✅,pure,6.0,1140
 NotebookSelection,,🚫,,3.0,1141
 CellTags,,🚫,,3.0,1142
