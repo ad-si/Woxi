@@ -3897,3 +3897,95 @@ mod orthogonalize {
     );
   }
 }
+
+mod jordan_decomposition {
+  use super::*;
+
+  #[test]
+  fn diagonal_matrices() {
+    // Eigenvalues in Eigenvalues[m] order; basis-vector columns permute
+    assert_eq!(
+      interpret("JordanDecomposition[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{{0, 1}, {1, 0}}, {{3, 0}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{3, 0}, {0, 2}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {{3, 0}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{2, 0}, {0, 2}}]").unwrap(),
+      "{{{0, 1}, {1, 0}}, {{2, 0}, {0, 2}}}"
+    );
+  }
+
+  #[test]
+  fn distinct_eigenvalues() {
+    assert_eq!(
+      interpret("JordanDecomposition[{{2, 1}, {1, 2}}]").unwrap(),
+      "{{{1, -1}, {1, 1}}, {{3, 0}, {0, 1}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{5, 4}, {1, 2}}]").unwrap(),
+      "{{{4, -1}, {1, 1}}, {{6, 0}, {0, 1}}}"
+    );
+    // Triangular conventions
+    assert_eq!(
+      interpret("JordanDecomposition[{{2, 1}, {0, 3}}]").unwrap(),
+      "{{{1, 1}, {1, 0}}, {{3, 0}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{5, 0}, {1, 2}}]").unwrap(),
+      "{{{3, 0}, {1, 1}}, {{5, 0}, {0, 2}}}"
+    );
+  }
+
+  #[test]
+  fn irrational_eigenvalues() {
+    assert_eq!(
+      interpret("JordanDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{{(-3 + Sqrt[33])/6, (-3 - Sqrt[33])/6}, {1, 1}}, {{(5 + Sqrt[33])/2, 0}, {0, (5 - Sqrt[33])/2}}}"
+    );
+  }
+
+  #[test]
+  fn complex_eigenvalues() {
+    assert_eq!(
+      interpret("JordanDecomposition[{{0, -1}, {1, 0}}]").unwrap(),
+      "{{{I, -I}, {1, 1}}, {{I, 0}, {0, -I}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{1, -2}, {1, 1}}]").unwrap(),
+      "{{{I*Sqrt[2], -I*Sqrt[2]}, {1, 1}}, {{1 + I*Sqrt[2], 0}, {0, 1 - I*Sqrt[2]}}}"
+    );
+  }
+
+  #[test]
+  fn defective_matrices() {
+    assert_eq!(
+      interpret("JordanDecomposition[{{1, 1}, {0, 1}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {{1, 1}, {0, 1}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{4, 2}, {0, 4}}]").unwrap(),
+      "{{{1, 0}, {0, 1/2}}, {{4, 1}, {0, 4}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{3, 1}, {-1, 1}}]").unwrap(),
+      "{{{-1, -1}, {1, 0}}, {{2, 1}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret("JordanDecomposition[{{2, 0}, {-1, 2}}]").unwrap(),
+      "{{{0, -1}, {1, 0}}, {{2, 1}, {0, 2}}}"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    // 3x3 and machine-precision matrices are out of scope
+    assert_eq!(
+      interpret("JordanDecomposition[{{1, 1, 0}, {0, 1, 0}, {0, 0, 2}}]")
+        .unwrap(),
+      "JordanDecomposition[{{1, 1, 0}, {0, 1, 0}, {0, 0, 2}}]"
+    );
+  }
+}

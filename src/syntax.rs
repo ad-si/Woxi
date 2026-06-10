@@ -7740,7 +7740,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           let rest_factors = &args[1..];
           let all_symbolic_factors = rest_factors.iter().all(|a| {
             !matches!(a, Expr::Integer(_) | Expr::Real(_))
-              && !matches!(a, Expr::Identifier(n) if n == "I")
+              && !matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == "I")
               && !matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
           });
           let needs_neg_parens = (rest_factors.len() >= 2
@@ -8518,7 +8518,8 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             }
             Expr::FunctionCall { name: tn, args: ta } if tn == "Times" => {
               for a in ta {
-                if !matches!(a, Expr::Identifier(n) if n == "I") {
+                if !matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == "I")
+                {
                   symbolic.push(a);
                 }
               }
@@ -10337,7 +10338,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
               .iter()
               .filter(|a| {
                 !matches!(a, Expr::Integer(-1))
-                  && !matches!(a, Expr::Identifier(n) if n == "I")
+                  && !matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == "I")
               })
               .collect();
             if other.len() == 1 {

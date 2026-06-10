@@ -1286,6 +1286,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::cholesky_decomposition_ast(args),
       );
     }
+    "JordanDecomposition" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::jordan_decomposition_ast(args),
+      );
+    }
     "SingularValueList" if args.len() == 1 || args.len() == 2 => {
       return Some(
         crate::functions::linear_algebra_ast::singular_value_list_ast(args),

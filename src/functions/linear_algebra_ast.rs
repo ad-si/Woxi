@@ -6424,3 +6424,207 @@ pub fn matrix_function_ast(
   let beta_i = make("Times", vec![beta, identity])?;
   make("Plus", vec![alpha_m, beta_i])
 }
+
+/// JordanDecomposition[m] for exact 2×2 matrices: returns {s, j} with
+/// m == s.j.Inverse[s], following wolframscript's conventions:
+/// - j is Diagonal/Jordan with the eigenvalues in Eigenvalues[m] order
+/// - eigenvectors normalize to ((λ - d)/c, 1) when c ≠ 0; triangular
+///   matrices use (1, 0) for λ = a and (b/(d - a), 1) for λ = d;
+///   diagonal matrices use permuted basis vectors
+/// - defective matrices append the generalized eigenvector with second
+///   component 0 (or {0, 1/b} in the upper-triangular case)
+pub fn jordan_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "JordanDecomposition".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+
+  // 2×2 matrix with exact (Integer/Rational) entries
+  let is_exact = |e: &Expr| {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let rows = match &args[0] {
+    Expr::List(rows) if rows.len() == 2 => rows,
+    _ => return Ok(unevaluated(args)),
+  };
+  let (a, b, c, d) = match (&rows[0], &rows[1]) {
+    (Expr::List(r0), Expr::List(r1)) if r0.len() == 2 && r1.len() == 2 => {
+      (r0[0].clone(), r0[1].clone(), r1[0].clone(), r1[1].clone())
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+  if ![&a, &b, &c, &d].into_iter().all(is_exact) {
+    return Ok(unevaluated(args));
+  }
+
+  let eigen = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Eigenvalues".to_string(),
+    args: vec![args[0].clone()].into(),
+  })?;
+  let (l1, l2) = match &eigen {
+    Expr::List(ls) if ls.len() == 2 => (ls[0].clone(), ls[1].clone()),
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Evaluate + double Simplify: one Simplify pass normalizes the
+  // I*Sqrt[..] factor order but can leave an unfolded 3*2 denominator
+  // in nested-radical quotients; the second pass folds it to match
+  // wolframscript's (-3 + Sqrt[33])/6. The nested negation
+  // Times[-1, Times[I, ...]] flattens so the printer gives -I*Sqrt[2]
+  // instead of -(I*Sqrt[2]).
+  let ev = |e: Expr| -> Result<Expr, InterpreterError> {
+    let simplify = |x: Expr| {
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Simplify".to_string(),
+        args: vec![x].into(),
+      })
+    };
+    let result = simplify(simplify(evaluate_expr_to_expr(&e)?)?)?;
+    let inner = match &result {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => Some(operand.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Times"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1)) =>
+      {
+        Some(&args[1])
+      }
+      _ => None,
+    };
+    fn times_args(e: &Expr) -> Option<Vec<Expr>> {
+      match e {
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          Some(args.iter().cloned().collect())
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left,
+          right,
+        } => {
+          let mut out =
+            times_args(left).unwrap_or_else(|| vec![(**left).clone()]);
+          out.extend(
+            times_args(right).unwrap_or_else(|| vec![(**right).clone()]),
+          );
+          Some(out)
+        }
+        _ => None,
+      }
+    }
+    if let Some(e) = inner
+      && let Some(factors) = times_args(e)
+    {
+      let mut flat = vec![Expr::Integer(-1)];
+      flat.extend(factors);
+      return Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: flat.into(),
+      });
+    }
+    Ok(result)
+  };
+  let same = |x: &Expr, y: &Expr| {
+    crate::syntax::expr_to_string(x) == crate::syntax::expr_to_string(y)
+  };
+  let zero = Expr::Integer(0);
+  let one = Expr::Integer(1);
+  let b_zero = same(&b, &zero);
+  let c_zero = same(&c, &zero);
+  let repeated = same(&l1, &l2);
+
+  let div = |n: Expr, dn: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(n),
+    right: Box::new(dn),
+  };
+  let sub = |x: Expr, y: Expr| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      x,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), y].into(),
+      },
+    ]
+    .into(),
+  };
+  let matrix = |c1: (Expr, Expr), c2: (Expr, Expr)| {
+    Expr::List(
+      vec![
+        Expr::List(vec![c1.0, c2.0].into()),
+        Expr::List(vec![c1.1, c2.1].into()),
+      ]
+      .into(),
+    )
+  };
+  let diag = |x: Expr, y: Expr| {
+    Expr::List(
+      vec![
+        Expr::List(vec![x, Expr::Integer(0)].into()),
+        Expr::List(vec![Expr::Integer(0), y].into()),
+      ]
+      .into(),
+    )
+  };
+
+  // Diagonal matrix: permuted basis vectors (λ1 prefers the d slot)
+  if b_zero && c_zero {
+    let (col1, col2) = if same(&l1, &d) {
+      ((zero.clone(), one.clone()), (one.clone(), zero.clone()))
+    } else {
+      ((one.clone(), zero.clone()), (zero.clone(), one.clone()))
+    };
+    let s = matrix(col1, col2);
+    return Ok(Expr::List(vec![s, diag(l1, l2)].into()));
+  }
+
+  if !repeated {
+    let s = if !c_zero {
+      // ((λ - d)/c, 1) for both eigenvalues
+      let x1 = ev(div(sub(l1.clone(), d.clone()), c.clone()))?;
+      let x2 = ev(div(sub(l2.clone(), d.clone()), c.clone()))?;
+      matrix((x1, one.clone()), (x2, one.clone()))
+    } else {
+      // Upper triangular: (1, 0) for λ = a, (b/(d - a), 1) for λ = d
+      let vd = (ev(div(b.clone(), sub(d.clone(), a.clone())))?, one.clone());
+      let va = (one.clone(), zero.clone());
+      let (col1, col2) = if same(&l1, &a) { (va, vd) } else { (vd, va) };
+      matrix(col1, col2)
+    };
+    return Ok(Expr::List(vec![s, diag(l1, l2)].into()));
+  }
+
+  // Repeated eigenvalue, non-diagonal: defective Jordan block
+  let lam = l1;
+  let j = Expr::List(
+    vec![
+      Expr::List(vec![lam.clone(), Expr::Integer(1)].into()),
+      Expr::List(vec![Expr::Integer(0), lam.clone()].into()),
+    ]
+    .into(),
+  );
+  let s = if !c_zero {
+    let v1 = ev(div(sub(lam.clone(), d.clone()), c.clone()))?;
+    let a_minus_lam = ev(sub(a.clone(), lam.clone()))?;
+    let w1 = if same(&a_minus_lam, &zero) {
+      ev(div(one.clone(), c.clone()))?
+    } else {
+      ev(div(v1.clone(), a_minus_lam))?
+    };
+    matrix((v1, one.clone()), (w1, zero.clone()))
+  } else {
+    // Upper triangular defective: v = (1, 0), w = (0, 1/b)
+    let w2 = ev(div(one.clone(), b.clone()))?;
+    matrix((one.clone(), zero.clone()), (zero.clone(), w2))
+  };
+  Ok(Expr::List(vec![s, j].into()))
+}

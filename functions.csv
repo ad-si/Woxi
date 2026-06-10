@@ -833,7 +833,7 @@ Play,Requires external services or GUI infrastructure,🚫,io,2.0,840
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10.0,841
 ImageMargins,Option for margins around an image,✅,none,3.0,842
 ContourLabels,Option for labeling contour lines,✅,none,6.0,843
-JordanDecomposition,,🚫,,3.0,844
+JordanDecomposition,Jordan decomposition (similarity matrix and Jordan form) of a square matrix,✅,pure,3.0,844
 Inner,Generalized inner product,✅,pure,1.0,845
 ToCharacterCode,Converts characters to their character codes,✅,pure,2.0,846
 Curl,Computes the curl of a vector field,✅,pure,9.0,847
