@@ -127,6 +127,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ProbabilityDistribution" => pdf_probability_distribution(dargs, x),
     "NormalDistribution" => pdf_normal(dargs, x),
     "MultinormalDistribution" => pdf_multinormal(dargs, x),
+    "ProductDistribution" => pdf_product_distribution(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, false) {
       Some(v) => Ok(v),
       None => Ok(Expr::FunctionCall {
@@ -6516,5 +6517,173 @@ pub fn data_distribution_pdf_cdf(
     Expr::Integer(num)
   } else {
     crate::functions::math_ast::make_rational_pub(num, den)
+  })
+}
+
+// ─── ProductDistribution ─────────────────────────────────────────────
+
+/// PDF[ProductDistribution[d1, d2], {x, y}] for pairs of standard
+/// normals and integer-rate exponentials, in wolframscript's merged
+/// form: one E-power with position-styled exponent terms, And-ed
+/// support conditions, and the coefficient quirks (6*E^...,
+/// E^.../Sqrt[2*Pi], (3*E^...)/Sqrt[2*Pi], and the lambda = 2 special
+/// case E^...*Sqrt[2/Pi]).
+pub fn pdf_product_distribution(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "ProductDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x.clone(),
+    ]
+    .into(),
+  };
+  let vars = match &x {
+    Expr::List(vars) if vars.len() == dargs.len() => vars,
+    _ => return Ok(unevaluated()),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated());
+  }
+
+  enum Comp {
+    StdNormal,
+    Exponential(i128),
+  }
+  let mut comps: Vec<Comp> = Vec::with_capacity(2);
+  for d in dargs {
+    match d {
+      Expr::FunctionCall { name, args } if name == "NormalDistribution" => {
+        let standard = args.is_empty()
+          || (args.len() == 2
+            && matches!(&args[0], Expr::Integer(0))
+            && matches!(&args[1], Expr::Integer(1)));
+        if !standard {
+          return Ok(unevaluated());
+        }
+        comps.push(Comp::StdNormal);
+      }
+      Expr::FunctionCall { name, args }
+        if name == "ExponentialDistribution" && args.len() == 1 =>
+      {
+        match &args[0] {
+          Expr::Integer(l) if *l >= 1 => comps.push(Comp::Exponential(*l)),
+          _ => return Ok(unevaluated()),
+        }
+      }
+      _ => return Ok(unevaluated()),
+    }
+  }
+
+  let neg = |e: Expr| Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(e),
+  };
+  let pow2 = |e: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(e),
+    right: Box::new(int(2)),
+  };
+  let div2 = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+
+  // Exponent terms (position-styled for normals, like the multinormal
+  // diagonal PDF)
+  let mut terms: Vec<Expr> = Vec::with_capacity(2);
+  let mut conds: Vec<Expr> = Vec::new();
+  let mut normal_count = 0usize;
+  let mut rate_product: i128 = 1;
+  let mut first_scaled_seen = false;
+  for (i, comp) in comps.iter().enumerate() {
+    let v = vars[i].clone();
+    match comp {
+      Comp::StdNormal => {
+        normal_count += 1;
+        let sq = pow2(v);
+        terms.push(if !first_scaled_seen {
+          first_scaled_seen = true;
+          times(crate::functions::math_ast::make_rational_pub(-1, 2), sq)
+        } else {
+          neg(div2(sq, int(2)))
+        });
+      }
+      Comp::Exponential(l) => {
+        rate_product *= l;
+        terms.push(if *l == 1 {
+          neg(v.clone())
+        } else {
+          times(int(-l), v.clone())
+        });
+        conds.push(Expr::Comparison {
+          operands: vec![v, int(0)],
+          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+        });
+      }
+    }
+  }
+  let e_pow = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Identifier("E".to_string())),
+    right: Box::new(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }),
+  };
+  let sqrt = |e: Expr| Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![e].into(),
+  };
+
+  // Assemble the density with wolframscript's coefficient shapes
+  let value = match normal_count {
+    0 => {
+      if rate_product == 1 {
+        e_pow
+      } else {
+        times(int(rate_product), e_pow)
+      }
+    }
+    1 => {
+      if rate_product == 2 {
+        // 2/Sqrt[2*Pi] folds to Sqrt[2/Pi], printed as a postfix factor
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![e_pow, sqrt(div2(int(2), pi()))].into(),
+        }
+      } else if rate_product == 1 {
+        div2(e_pow, sqrt(times(int(2), pi())))
+      } else {
+        div2(times(int(rate_product), e_pow), sqrt(times(int(2), pi())))
+      }
+    }
+    _ => div2(e_pow, times(int(2), pi())),
+  };
+
+  if conds.is_empty() {
+    return Ok(value);
+  }
+  let cond = if conds.len() == 1 {
+    conds.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "And".to_string(),
+      args: conds.into(),
+    }
+  };
+  Ok(Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![
+      Expr::List(vec![Expr::List(vec![value, cond].into())].into()),
+      int(0),
+    ]
+    .into(),
   })
 }

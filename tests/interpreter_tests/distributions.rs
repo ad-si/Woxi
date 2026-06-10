@@ -1482,3 +1482,87 @@ mod empirical_quantiles {
     );
   }
 }
+
+mod product_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_normal_pair() {
+    assert_eq!(
+      interpret(
+        "PDF[ProductDistribution[NormalDistribution[], NormalDistribution[]], {x, y}]"
+      )
+      .unwrap(),
+      "E^(-1/2*x^2 - y^2/2)/(2*Pi)"
+    );
+  }
+
+  #[test]
+  fn pdf_normal_exponential_coefficients() {
+    // lambda = 2 folds 2/Sqrt[2*Pi] into the postfix Sqrt[2/Pi]
+    assert_eq!(
+      interpret(
+        "PDF[ProductDistribution[NormalDistribution[], ExponentialDistribution[2]], {x, y}]"
+      )
+      .unwrap(),
+      "Piecewise[{{E^(-1/2*x^2 - 2*y)*Sqrt[2/Pi], y >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[ProductDistribution[NormalDistribution[], ExponentialDistribution[1]], {x, y}]"
+      )
+      .unwrap(),
+      "Piecewise[{{E^(-1/2*x^2 - y)/Sqrt[2*Pi], y >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[ProductDistribution[NormalDistribution[], ExponentialDistribution[3]], {x, y}]"
+      )
+      .unwrap(),
+      "Piecewise[{{(3*E^(-1/2*x^2 - 3*y))/Sqrt[2*Pi], y >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_exponential_pair() {
+    assert_eq!(
+      interpret(
+        "PDF[ProductDistribution[ExponentialDistribution[1], ExponentialDistribution[1]], {x, y}]"
+      )
+      .unwrap(),
+      "Piecewise[{{E^(-x - y), x >= 0 && y >= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "PDF[ProductDistribution[ExponentialDistribution[2], ExponentialDistribution[3]], {x, y}]"
+      )
+      .unwrap(),
+      "Piecewise[{{6*E^(-2*x - 3*y), x >= 0 && y >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn component_statistics() {
+    assert_eq!(
+      interpret(
+        "Mean[ProductDistribution[NormalDistribution[m, s], ExponentialDistribution[2]]]"
+      )
+      .unwrap(),
+      "{m, 1/2}"
+    );
+    assert_eq!(
+      interpret(
+        "Variance[ProductDistribution[NormalDistribution[m, s], ExponentialDistribution[2]]]"
+      )
+      .unwrap(),
+      "{s^2, 1/4}"
+    );
+    assert_eq!(
+      interpret(
+        "Mean[ProductDistribution[ExponentialDistribution[1], ExponentialDistribution[2]]]"
+      )
+      .unwrap(),
+      "{1, 1/2}"
+    );
+  }
+}

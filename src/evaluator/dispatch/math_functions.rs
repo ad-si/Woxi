@@ -472,6 +472,33 @@ pub fn dispatch_math_functions(
       }
       return None;
     }
+    // ProductDistribution statistics: lists of the component values
+    "Mean" | "Variance"
+      if args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
+          if dn == "ProductDistribution" && !da.is_empty()) =>
+    {
+      if let Expr::FunctionCall { args: da, .. } = &args[0] {
+        let mut out: Vec<Expr> = Vec::with_capacity(da.len());
+        for d in da.iter() {
+          let Expr::FunctionCall { name: cn, args: ca } = d else {
+            return None;
+          };
+          let Ok((mean, var)) =
+            crate::functions::math_ast::distribution_mean_variance_pub(cn, ca)
+          else {
+            return None;
+          };
+          let component = if name == "Mean" { mean } else { var };
+          match crate::evaluator::evaluate_expr_to_expr(&component) {
+            Ok(v) => out.push(v),
+            Err(_) => return None,
+          }
+        }
+        return Some(Ok(Expr::List(out.into())));
+      }
+      return None;
+    }
     "EmpiricalDistribution" if args.len() == 1 => {
       return Some(crate::functions::math_ast::empirical_distribution_ast(
         args,

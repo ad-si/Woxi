@@ -1682,7 +1682,7 @@ SuperDagger,Dagger superscript,,unevaluated,6.0,1709
 ReImPlot,Plots the real and imaginary parts of a complex function on the same axes,✅,pure,12.0,1710
 ExponentFunction,Exponent display function,,unevaluated,2.0,1712
 SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
-ProductDistribution,Product of distributions,,unevaluated,8.0,1713
+ProductDistribution,Independent product of distributions (merged PDF plus component stats),✅,pure,8.0,1713
 Save,Saves definitions associated with symbols to a file,✅,effectful,1.0,1714
 RegionDimension,Dimension of a region,,unevaluated,10.0,1716
 TogglerBar,Toggler bar control,,unevaluated,6.0,1716
