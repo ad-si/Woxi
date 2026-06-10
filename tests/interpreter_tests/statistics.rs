@@ -3960,3 +3960,62 @@ mod log_likelihood {
     );
   }
 }
+
+mod correlation_function {
+  use super::*;
+
+  #[test]
+  fn basic_lags() {
+    assert_eq!(
+      interpret("CorrelationFunction[{1, 2, 3, 4, 5}, 1]").unwrap(),
+      "2/5"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "-1/10"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[{2, 4, 3, 5, 7, 6}, 1]").unwrap(),
+      "5/14"
+    );
+  }
+
+  #[test]
+  fn edge_lags() {
+    assert_eq!(
+      interpret("CorrelationFunction[{1, 2, 3, 4, 5}, 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("CorrelationFunction[{1, 2, 3, 4, 5}, 4]").unwrap(),
+      "-2/5"
+    );
+    // Autocorrelation is symmetric in the lag sign
+    assert_eq!(
+      interpret("CorrelationFunction[{1, 2, 3, 4, 5}, -1]").unwrap(),
+      "2/5"
+    );
+  }
+
+  #[test]
+  fn out_of_range_lag_stays_unevaluated() {
+    // |k| >= n: CorrelationFunction::bdlag message, unevaluated
+    assert_eq!(
+      interpret("CorrelationFunction[{1, 2, 3, 4, 5}, 7]").unwrap(),
+      "CorrelationFunction[{1, 2, 3, 4, 5}, 7]"
+    );
+  }
+
+  #[test]
+  fn constant_data_is_indeterminate() {
+    // 0/0 without the division messages a literal 0/0 would emit
+    assert_eq!(
+      interpret("CorrelationFunction[{3, 3, 3}, 1]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Check[CorrelationFunction[{3, 3, 3}, 1], \"msg\"]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}

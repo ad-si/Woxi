@@ -1152,6 +1152,9 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "CorrelationFunction" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::correlation_function_ast(args));
+    }
     // InverseCDF[dist, q] coincides with Quantile[dist, q] for the
     // closed-form distributions (numeric q only)
     "InverseCDF" if args.len() == 2 => {

@@ -4216,3 +4216,96 @@ pub fn characteristic_function_ast(
     None => Ok(unevaluated(args)),
   }
 }
+
+// ─── CorrelationFunction ─────────────────────────────────────────────
+
+/// CorrelationFunction[data, k] — the sample autocorrelation at lag k:
+/// Sum[(x_i - mean)(x_{i+|k|} - mean)] / Sum[(x_i - mean)^2].
+/// Symmetric in the lag sign; |k| must be smaller than the data length
+/// (wolframscript emits CorrelationFunction::bdlag otherwise).
+pub fn correlation_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "CorrelationFunction".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let data = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return Ok(unevaluated(args)),
+  };
+  let is_numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !data.iter().all(is_numeric) {
+    return Ok(unevaluated(args));
+  }
+  let k = match &args[1] {
+    Expr::Integer(k) => *k,
+    _ => return Ok(unevaluated(args)),
+  };
+  let n = data.len() as i128;
+  if k.abs() >= n {
+    crate::emit_message(&format!(
+      "CorrelationFunction::bdlag: The lag specification {k} should be a \
+       symbol, an integer with magnitude less than the length of the data \
+       or a range specification indicating such integers.",
+    ));
+    return Ok(unevaluated(args));
+  }
+  let lag = k.unsigned_abs() as usize;
+
+  let mean = mean_ast(&[args[0].clone()])?;
+  let dev = |x: &Expr| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      x.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), mean.clone()].into(),
+      },
+    ]
+    .into(),
+  };
+  let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    })
+  };
+  let len = data.len();
+  let num_terms: Vec<Expr> = (0..len - lag)
+    .map(|i| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![dev(&data[i]), dev(&data[i + lag])].into(),
+    })
+    .collect();
+  let den_terms: Vec<Expr> = data
+    .iter()
+    .map(|x| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![dev(x), dev(x)].into(),
+    })
+    .collect();
+  let numerator = sum(num_terms)?;
+  let denominator = sum(den_terms)?;
+
+  // Constant data: 0/0 — wolframscript returns a bare Indeterminate
+  // without the Power::infy/Infinity::indet messages a literal division
+  // would emit
+  let is_zero = matches!(&denominator, Expr::Integer(0))
+    || matches!(&denominator, Expr::Real(v) if *v == 0.0);
+  if is_zero {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(numerator),
+    right: Box::new(denominator),
+  })
+}
