@@ -6955,3 +6955,156 @@ pub fn byte_array_to_string_ast(
     args: args.to_vec().into(),
   })
 }
+
+/// TextSentences["string"] — split a string into sentences.
+/// TextSentences["string", n] — first n sentences.
+///
+/// Rule-based segmentation approximating Wolfram's NLP behaviour:
+/// a sentence ends at a run of `.`/`!`/`?` (plus any closing quotes or
+/// brackets) followed by whitespace or end of input — unless the run is
+/// an ellipsis or the preceding token is an abbreviation.
+pub fn text_sentences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "TextSentences".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated(args));
+  }
+  let text = match &args[0] {
+    Expr::String(s) => s,
+    _ => {
+      crate::emit_message(
+        "TextSentences::arg1: String or ContentObject expected at position 1.",
+      );
+      return Ok(unevaluated(args));
+    }
+  };
+  let limit = match args.get(1) {
+    None => None,
+    Some(Expr::Integer(n)) if *n >= 1 => Some(*n as usize),
+    Some(_) => {
+      crate::emit_message(
+        "TextSentences::arg2: Positive integer expected at position 2.",
+      );
+      return Ok(unevaluated(args));
+    }
+  };
+
+  let mut sentences: Vec<Expr> = split_sentences(text)
+    .into_iter()
+    .map(Expr::String)
+    .collect();
+  if let Some(n) = limit {
+    sentences.truncate(n);
+  }
+  Ok(Expr::List(sentences.into()))
+}
+
+fn split_sentences(text: &str) -> Vec<String> {
+  let chars: Vec<char> = text.chars().collect();
+  let mut sentences = Vec::new();
+  let mut start = 0usize;
+  let mut i = 0usize;
+
+  while i < chars.len() {
+    if !matches!(chars[i], '.' | '!' | '?') {
+      i += 1;
+      continue;
+    }
+
+    // Collect the terminator run (e.g. ".", "?!", "...")
+    let run_start = i;
+    while i < chars.len() && matches!(chars[i], '.' | '!' | '?') {
+      i += 1;
+    }
+    let run_len = i - run_start;
+    let all_dots = chars[run_start..i].iter().all(|&c| c == '.');
+
+    // Include closing quotes/brackets in the sentence
+    while i < chars.len()
+      && matches!(chars[i], '"' | '\'' | '\u{201d}' | '\u{2019}' | ')' | ']' | '}')
+    {
+      i += 1;
+    }
+    let boundary_end = i;
+
+    // A boundary needs trailing whitespace or end of input
+    // (so decimals like "5.50" never split)
+    if boundary_end < chars.len() && !chars[boundary_end].is_whitespace() {
+      continue;
+    }
+    // An ellipsis does not end a sentence
+    if all_dots && run_len >= 3 {
+      continue;
+    }
+    // Abbreviations (only relevant for a single ".") do not end a sentence
+    if all_dots
+      && run_len == 1
+      && is_abbreviation(&chars[..run_start], &chars[boundary_end..])
+    {
+      continue;
+    }
+
+    let sentence: String = chars[start..boundary_end].iter().collect();
+    let sentence = sentence.trim();
+    if !sentence.is_empty() {
+      sentences.push(sentence.to_string());
+    }
+    start = boundary_end;
+  }
+
+  // Trailing text without a terminator is its own sentence
+  let rest: String = chars[start..].iter().collect();
+  let rest = rest.trim();
+  if !rest.is_empty() {
+    sentences.push(rest.to_string());
+  }
+
+  sentences
+}
+
+/// Decide whether the token directly before a `.` is an abbreviation.
+/// `before` is everything up to (not including) the period;
+/// `after` is everything after the boundary (starting at the whitespace).
+fn is_abbreviation(before: &[char], after: &[char]) -> bool {
+  // Token immediately preceding the period (letters and internal periods)
+  let mut tok_start = before.len();
+  while tok_start > 0 && !before[tok_start - 1].is_whitespace() {
+    tok_start -= 1;
+  }
+  let token: String = before[tok_start..].iter().collect();
+  // Strip leading quotes/brackets from the token
+  let token = token.trim_start_matches(['"', '\'', '\u{201c}', '\u{2018}', '(', '[', '{']);
+
+  if token.is_empty() {
+    return false;
+  }
+
+  // Tokens with internal periods: U.S.A, p.m, a.m, e.g, i.e, ...
+  if token.contains('.') {
+    return true;
+  }
+  // Single-letter initials: "J. Smith"
+  if token.chars().count() == 1 && token.chars().all(|c| c.is_alphabetic()) {
+    return true;
+  }
+  // Titles and common abbreviations that never end a sentence
+  const ALWAYS: &[&str] = &[
+    "Mr", "Mrs", "Ms", "Dr", "Prof", "Rev", "Gen", "Sen", "Rep", "Sgt",
+    "Col", "Capt", "Lt", "Mt", "St", "vs", "cf", "al",
+  ];
+  if ALWAYS.contains(&token) {
+    return true;
+  }
+  // Abbreviations that only continue when followed by a number
+  // ("No. 5", "Fig. 3", "Eq. 2")
+  const BEFORE_NUMBER: &[&str] = &["No", "Fig", "Eq", "Sec", "Ch", "pp", "p"];
+  if BEFORE_NUMBER.contains(&token) {
+    let next = after.iter().find(|c| !c.is_whitespace());
+    return matches!(next, Some(c) if c.is_ascii_digit());
+  }
+
+  false
+}

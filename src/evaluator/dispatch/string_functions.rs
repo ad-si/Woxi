@@ -287,6 +287,9 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::Association(pairs)));
       }
     }
+    "TextSentences" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::string_ast::text_sentences_ast(args));
+    }
     "TextWords" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
         // Split into words, stripping punctuation from each word

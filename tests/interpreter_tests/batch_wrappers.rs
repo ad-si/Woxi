@@ -2844,6 +2844,137 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn text_sentences_basic() {
+    assert_eq!(
+      interpret("TextSentences[\"This is a sentence.  This is another sentence.\"]")
+        .unwrap(),
+      "{This is a sentence., This is another sentence.}"
+    );
+  }
+  #[test]
+  fn text_sentences_mixed_terminators() {
+    assert_eq!(
+      interpret("TextSentences[\"Hello world! How are you? I am fine.\"]")
+        .unwrap(),
+      "{Hello world!, How are you?, I am fine.}"
+    );
+  }
+  #[test]
+  fn text_sentences_abbreviations() {
+    assert_eq!(
+      interpret(
+        "TextSentences[\"Dr. Smith went to Washington. He arrived at 3 p.m. on Tuesday.\"]"
+      )
+      .unwrap(),
+      "{Dr. Smith went to Washington., He arrived at 3 p.m. on Tuesday.}"
+    );
+  }
+  #[test]
+  fn text_sentences_abbreviation_before_capital() {
+    // "p.m." does not end a sentence even before a capitalized word
+    assert_eq!(
+      interpret(
+        "TextSentences[\"He arrived at 3 p.m. He left at 4 a.m. the next day.\"]"
+      )
+      .unwrap(),
+      "{He arrived at 3 p.m. He left at 4 a.m. the next day.}"
+    );
+  }
+  #[test]
+  fn text_sentences_titles_and_initials() {
+    assert_eq!(
+      interpret("TextSentences[\"Mr. Jones met Mrs. Smith. They talked.\"]")
+        .unwrap(),
+      "{Mr. Jones met Mrs. Smith., They talked.}"
+    );
+    assert_eq!(
+      interpret(
+        "TextSentences[\"J. R. R. Tolkien wrote books. They are long.\"]"
+      )
+      .unwrap(),
+      "{J. R. R. Tolkien wrote books., They are long.}"
+    );
+  }
+  #[test]
+  fn text_sentences_internal_periods() {
+    assert_eq!(
+      interpret("TextSentences[\"The U.S.A. is big. It has 50 states.\"]")
+        .unwrap(),
+      "{The U.S.A. is big., It has 50 states.}"
+    );
+  }
+  #[test]
+  fn text_sentences_ellipsis_and_punctuation_runs() {
+    assert_eq!(
+      interpret("TextSentences[\"What?! Really?? Yes... I think so.\"]")
+        .unwrap(),
+      "{What?!, Really??, Yes... I think so.}"
+    );
+  }
+  #[test]
+  fn text_sentences_decimal_not_boundary() {
+    assert_eq!(
+      interpret("TextSentences[\"I paid $5.50 for it. Then I left.\"]")
+        .unwrap(),
+      "{I paid $5.50 for it., Then I left.}"
+    );
+  }
+  #[test]
+  fn text_sentences_number_abbreviation() {
+    assert_eq!(
+      interpret("TextSentences[\"No. 5 is missing. Check again.\"]").unwrap(),
+      "{No. 5 is missing., Check again.}"
+    );
+  }
+  #[test]
+  fn text_sentences_lowercase_after_period_splits() {
+    assert_eq!(
+      interpret("TextSentences[\"This is fine. okay then.\"]").unwrap(),
+      "{This is fine., okay then.}"
+    );
+  }
+  #[test]
+  fn text_sentences_closing_quote() {
+    assert_eq!(
+      interpret("TextSentences[\"He said \\\"Stop!\\\" Then he ran.\"]")
+        .unwrap(),
+      "{He said \"Stop!\", Then he ran.}"
+    );
+  }
+  #[test]
+  fn text_sentences_first_n() {
+    assert_eq!(
+      interpret(
+        "TextSentences[\"This is a sentence.  This is another sentence.\", 1]"
+      )
+      .unwrap(),
+      "{This is a sentence.}"
+    );
+    // n larger than the number of sentences returns all of them
+    assert_eq!(
+      interpret("TextSentences[\"Hello world! How are you?\", 5]").unwrap(),
+      "{Hello world!, How are you?}"
+    );
+  }
+  #[test]
+  fn text_sentences_no_terminator_and_empty() {
+    assert_eq!(
+      interpret("TextSentences[\"One sentence only\"]").unwrap(),
+      "{One sentence only}"
+    );
+    assert_eq!(interpret("TextSentences[\"\"]").unwrap(), "{}");
+  }
+  #[test]
+  fn text_sentences_invalid_args_stay_unevaluated() {
+    // Non-positive n: TextSentences::arg2 message, unevaluated
+    assert_eq!(
+      interpret("TextSentences[\"A b c. D e f.\", 0]").unwrap(),
+      "TextSentences[A b c. D e f., 0]"
+    );
+    // Non-string first argument: TextSentences::arg1 message, unevaluated
+    assert_eq!(interpret("TextSentences[42]").unwrap(), "TextSentences[42]");
+  }
+  #[test]
   fn orthogonal_matrix_q_identity() {
     assert_eq!(
       interpret("OrthogonalMatrixQ[{{1, 0}, {0, 1}}]").unwrap(),

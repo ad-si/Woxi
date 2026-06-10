@@ -1552,7 +1552,7 @@ PolynomialReduce,Reduce a polynomial modulo a list of polynomials (single variab
 AutoScroll,Auto-scrolling option,,unevaluated,3.0,1578
 CoefficientRules,Coefficient rules for polynomials,✅,pure,7.0,1578
 ConfidenceLevel,Confidence level specification,,unevaluated,7.0,1578
-TextSentences,Extract sentences from text,,unevaluated,10.1,1578
+TextSentences,Splits a string into a list of sentences,✅,pure,10.1,1578
 CreatePalette,Create a palette notebook,,unevaluated,6.0,1579
 Erosion,Morphological erosion (min filter),✅,pure,7.0,1582
 NetDecoder,Neural net decoder,,unevaluated,11.0,1582
