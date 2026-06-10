@@ -6519,33 +6519,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       {
         return format!("Graph[<{}>, <{}>]", verts.len(), edges.len());
       }
-      // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
+      // Inequality[a, Op, b, Op, c] — always use head form. wolframscript
+      // keeps the head in every form, including script-mode OutputForm:
+      // Reduce[x^2 <= 4 && x > 0, x] prints Inequality[0, Less, x,
+      // LessEqual, 2], not the chained 0 < x <= 2.
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
-        if is_output {
-          // OutputForm: render as chained comparison, e.g. -2 < x < 2
-          let mut result = String::new();
-          for (i, arg) in args.iter().enumerate() {
-            if i > 0 {
-              result.push(' ');
-            }
-            if i % 2 == 1 {
-              // Operator position: convert Identifier to symbol
-              match arg {
-                Expr::Identifier(s) => match s.as_str() {
-                  "Less" => result.push('<'),
-                  "Greater" => result.push('>'),
-                  "LessEqual" => result.push_str("<="),
-                  "GreaterEqual" => result.push_str(">="),
-                  _ => result.push_str(&fmt(arg)),
-                },
-                _ => result.push_str(&fmt(arg)),
-              }
-            } else {
-              result.push_str(&fmt(arg));
-            }
-          }
-          return result;
-        }
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return format!("Inequality[{}]", parts.join(", "));
       }

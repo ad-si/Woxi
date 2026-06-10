@@ -29,8 +29,8 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let cmp =
     |operands: Vec<Expr>, operators: Vec<ComparisonOp>| Expr::Comparison {
-      operands: operands,
-      operators: operators,
+      operands,
+      operators,
     };
   let true_expr = || Expr::Identifier("True".to_string());
   let y_ge =
@@ -89,10 +89,26 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(y_ge(Expr::Integer(0)));
     }
-    // Note: 1/(1 + x^2) gives Inequality[0, Less, y, LessEqual, 1] in
-    // wolframscript; Woxi currently prints mixed-strictness Inequality
-    // as a chained comparison, so that rule is omitted until the display
-    // divergence is resolved.
+    // 1/(1 + x^2): Inequality[0, Less, y, LessEqual, 1]
+    if matches!(&exp, Expr::Integer(-1))
+      && let Expr::FunctionCall { name, args: pargs } = &base
+      && name == "Plus"
+      && pargs.len() == 2
+      && matches!(&pargs[0], Expr::Integer(1))
+      && matches!(as_power(&pargs[1]), Some((b, Expr::Integer(2))) if is_x(&b))
+    {
+      return Ok(Expr::FunctionCall {
+        name: "Inequality".to_string(),
+        args: vec![
+          Expr::Integer(0),
+          Expr::Identifier("Less".to_string()),
+          y.clone(),
+          Expr::Identifier("LessEqual".to_string()),
+          Expr::Integer(1),
+        ]
+        .into(),
+      });
+    }
   }
 
   // Polynomials with rational coefficients

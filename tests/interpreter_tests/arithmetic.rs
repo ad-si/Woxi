@@ -221,10 +221,11 @@ mod arithmetic {
 
     #[test]
     fn inequality_display_output_form() {
-      // Inequality should display as chained comparison, not FullForm
+      // wolframscript keeps the Inequality head in script-mode output
+      // (this previously asserted the chained -2 < x < 2 form)
       assert_eq!(
         interpret("Inequality[-2, Less, x, Less, 2]").unwrap(),
-        "-2 < x < 2"
+        "Inequality[-2, Less, x, Less, 2]"
       );
     }
 
@@ -232,7 +233,7 @@ mod arithmetic {
     fn inequality_less_equal_display() {
       assert_eq!(
         interpret("Inequality[0, LessEqual, x, LessEqual, 1]").unwrap(),
-        "0 <= x <= 1"
+        "Inequality[0, LessEqual, x, LessEqual, 1]"
       );
     }
   }

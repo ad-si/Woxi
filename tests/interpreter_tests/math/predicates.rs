@@ -884,11 +884,12 @@ mod equal_edge_cases {
 
   #[test]
   fn inequality_fn_same_direction_stays_head() {
-    // Same-direction Less/LessEqual — keep as Inequality head so
-    // ToString[..., InputForm] can still print it as Inequality[...].
+    // Same-direction Less/LessEqual — keeps the Inequality head, and
+    // wolframscript also prints it with the head in script-mode output
+    // (this previously asserted the chained 0 <= x <= 1 form)
     assert_eq!(
       interpret("Inequality[0, LessEqual, x, LessEqual, 1]").unwrap(),
-      "0 <= x <= 1"
+      "Inequality[0, LessEqual, x, LessEqual, 1]"
     );
   }
 }

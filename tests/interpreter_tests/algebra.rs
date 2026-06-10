@@ -2774,7 +2774,10 @@ mod reduce {
 
   #[test]
   fn quadratic_inequality_less() {
-    assert_eq!(interpret("Reduce[x^2 < 4, x]").unwrap(), "-2 < x < 2");
+    assert_eq!(
+      interpret("Reduce[x^2 < 4, x]").unwrap(),
+      "Inequality[-2, Less, x, Less, 2]"
+    );
   }
 
   #[test]
@@ -2797,7 +2800,7 @@ mod reduce {
   fn factored_inequality_less() {
     assert_eq!(
       interpret("Reduce[(x - 1)*(x + 2) < 0, x]").unwrap(),
-      "-2 < x < 1"
+      "Inequality[-2, Less, x, Less, 1]"
     );
   }
 
@@ -2805,7 +2808,7 @@ mod reduce {
   fn factored_inequality_leq() {
     assert_eq!(
       interpret("Reduce[(x - 1)*(x + 2) <= 0, x]").unwrap(),
-      "-2 <= x <= 1"
+      "Inequality[-2, LessEqual, x, LessEqual, 1]"
     );
   }
 
@@ -2848,7 +2851,7 @@ mod reduce {
   fn combined_inequalities() {
     assert_eq!(
       interpret("Reduce[x > 0 && x < 5 && x > 3, x]").unwrap(),
-      "3 < x < 5"
+      "Inequality[3, Less, x, Less, 5]"
     );
   }
 
@@ -2856,7 +2859,7 @@ mod reduce {
   fn combined_two_bounds() {
     assert_eq!(
       interpret("Reduce[x > 2 && x < 10, x]").unwrap(),
-      "2 < x < 10"
+      "Inequality[2, Less, x, Less, 10]"
     );
   }
 
@@ -2864,7 +2867,7 @@ mod reduce {
   fn mixed_equation_inequality() {
     assert_eq!(
       interpret("Reduce[x^2 <= 4 && x > 0, x]").unwrap(),
-      "0 < x <= 2"
+      "Inequality[0, Less, x, LessEqual, 2]"
     );
   }
 
@@ -2975,7 +2978,7 @@ mod reduce {
     // x^2 > 4 && x > 0 && x < 10  →  2 < x < 10
     assert_eq!(
       interpret("Reduce[x^2 > 4 && x > 0 && x < 10, x]").unwrap(),
-      "2 < x < 10"
+      "Inequality[2, Less, x, Less, 10]"
     );
   }
 
@@ -2986,7 +2989,7 @@ mod reduce {
     // arccos(x) > 60° iff -1 <= x < cos(60°) = 1/2.
     assert_eq!(
       interpret("Reduce[ArcCosDegrees[x] > 60, x]").unwrap(),
-      "-1 <= x < 1/2"
+      "Inequality[-1, LessEqual, x, Less, 1/2]"
     );
   }
 
@@ -2995,7 +2998,7 @@ mod reduce {
     // arcsin(x) > 60° iff sin(60°) = Sqrt[3]/2 < x <= 1.
     assert_eq!(
       interpret("Reduce[ArcSinDegrees[x] > 60, x]").unwrap(),
-      "Sqrt[3]/2 < x <= 1"
+      "Inequality[Sqrt[3]/2, Less, x, LessEqual, 1]"
     );
   }
 
@@ -3013,7 +3016,7 @@ mod reduce {
     // arccot(x) > 60° iff 0 <= x < cot(60°) = 1/Sqrt[3].
     assert_eq!(
       interpret("Reduce[ArcCotDegrees[x] > 60, x]").unwrap(),
-      "0 <= x < 1/Sqrt[3]"
+      "Inequality[0, LessEqual, x, Less, 1/Sqrt[3]]"
     );
   }
 
@@ -3022,7 +3025,7 @@ mod reduce {
     // arccsc(x) > 60° iff 1 <= x < csc(60°) = 2/Sqrt[3].
     assert_eq!(
       interpret("Reduce[ArcCscDegrees[x] > 60, x]").unwrap(),
-      "1 <= x < 2/Sqrt[3]"
+      "Inequality[1, LessEqual, x, Less, 2/Sqrt[3]]"
     );
   }
 
@@ -6724,5 +6727,40 @@ mod irreducible_polynomial_q {
     assert_eq!(interpret("IrreduciblePolynomialQ[1]").unwrap(), "False");
     assert_eq!(interpret("IrreduciblePolynomialQ[Pi]").unwrap(), "False");
     assert_eq!(interpret("IrreduciblePolynomialQ[E]").unwrap(), "False");
+  }
+}
+
+mod inequality_display {
+  use super::*;
+
+  #[test]
+  fn mixed_strictness_keeps_head() {
+    // Regression: mixed-strictness Inequality used to print as the
+    // chained 1 < x <= 10; wolframscript keeps the head in script mode
+    assert_eq!(
+      interpret("1 < x <= 10").unwrap(),
+      "Inequality[1, Less, x, LessEqual, 10]"
+    );
+    assert_eq!(
+      interpret("Inequality[1, Less, x, Less, 5]").unwrap(),
+      "Inequality[1, Less, x, Less, 5]"
+    );
+  }
+
+  #[test]
+  fn numeric_inequalities_still_evaluate() {
+    assert_eq!(interpret("1 < 3 <= 10").unwrap(), "True");
+    assert_eq!(
+      interpret("Inequality[1, Less, x, LessEqual, 10] /. x -> 0").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn function_range_inequality_form() {
+    assert_eq!(
+      interpret("FunctionRange[1/(1 + x^2), x, y]").unwrap(),
+      "Inequality[0, Less, y, LessEqual, 1]"
+    );
   }
 }
