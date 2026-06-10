@@ -437,6 +437,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FullDefinition" => Some((1, 1)),
     "FullForm" => Some((1, 1)),
     "FullSimplify" => Some((1, 2)),
+    "FunctionRange" => Some((3, 3)),
     "FunctionExpand" => Some((1, 1)),
     "FunctionDomain" => Some((2, 3)),
     "Gamma" => Some((1, 2)),

@@ -1575,7 +1575,7 @@ Magnify,Magnify a display object,,unevaluated,6.0,1599
 ScriptBaselineShifts,Script baseline shift option,,unevaluated,3.0,1599
 HoldRest,Attribute holding all but first argument,✅,pure,1.0,1600
 LineSpacing,Line spacing specification,,unevaluated,3.0,1601
-FunctionRange,Range of a function,,unevaluated,10.0,1604
+FunctionRange,Range of a real function as a condition on the output variable,✅,pure,10.0,1604
 StringInsert,Inserts a string at a specified position,✅,pure,2.0,1604
 Vectors,Vector space domain,,unevaluated,9.0,1604
 SectorOrigin,Sector origin in pie charts,,unevaluated,7.0,1605

@@ -7411,3 +7411,56 @@ mod convolve {
     );
   }
 }
+
+mod function_range {
+  use super::*;
+
+  #[test]
+  fn polynomials() {
+    assert_eq!(interpret("FunctionRange[x^2, x, y]").unwrap(), "y >= 0");
+    assert_eq!(
+      interpret("FunctionRange[x^2 + 2 x + 3, x, y]").unwrap(),
+      "y >= 2"
+    );
+    // Negative leading coefficient bounds from above
+    assert_eq!(
+      interpret("FunctionRange[-2 x^2 + 4, x, y]").unwrap(),
+      "y <= 4"
+    );
+    // Non-constant linear and odd powers cover the reals
+    assert_eq!(interpret("FunctionRange[2 x + 1, x, y]").unwrap(), "True");
+    assert_eq!(interpret("FunctionRange[x^3, x, y]").unwrap(), "True");
+    assert_eq!(interpret("FunctionRange[x^4, x, y]").unwrap(), "y >= 0");
+  }
+
+  #[test]
+  fn trigonometric_and_hyperbolic() {
+    assert_eq!(
+      interpret("FunctionRange[Sin[x], x, y]").unwrap(),
+      "-1 <= y <= 1"
+    );
+    assert_eq!(interpret("FunctionRange[Tan[x], x, y]").unwrap(), "True");
+    // wolframscript prints the constant first for Cosh
+    assert_eq!(interpret("FunctionRange[Cosh[x], x, y]").unwrap(), "1 <= y");
+    assert_eq!(
+      interpret("FunctionRange[Tanh[x], x, y]").unwrap(),
+      "-1 < y < 1"
+    );
+  }
+
+  #[test]
+  fn exponential_and_friends() {
+    assert_eq!(interpret("FunctionRange[E^x, x, y]").unwrap(), "y > 0");
+    assert_eq!(interpret("FunctionRange[Log[x], x, y]").unwrap(), "True");
+    assert_eq!(interpret("FunctionRange[Sqrt[x], x, y]").unwrap(), "y >= 0");
+    assert_eq!(interpret("FunctionRange[Abs[x], x, y]").unwrap(), "y >= 0");
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("FunctionRange[Gamma[x], x, y]").unwrap(),
+      "FunctionRange[Gamma[x], x, y]"
+    );
+  }
+}
