@@ -263,6 +263,16 @@ pub fn dispatch_polynomial_functions(
         }
         _ => {} // optimizer failed or stayed symbolic; fall through
       }
+      // Single sinusoid c0 + c1*Sin/Cos[...]: the extremum value is
+      // c0 ± |c1| regardless of the inner argument. (Only the value —
+      // Minimize/Maximize stay unevaluated for trig objectives since
+      // wolframscript's reported locations are solver artifacts like
+      // (-97*Pi)/2.)
+      if let Expr::Identifier(var) = &args[1]
+        && let Some(value) = sinusoid_extremum(&args[0], var, maximize)
+      {
+        return Some(Ok(value));
+      }
     }
     // ArgMax[f, x] / ArgMin[f, x] — exact (symbolic) optimizing argument(s).
     // Delegates to the same exact optimizer as Maximize/Minimize and then
@@ -1055,4 +1065,116 @@ fn try_constrained_linear_disk_symbolic(
   };
   let argmap = Expr::List(vec![rule(&v1, px), rule(&v2, py)].into());
   Some(Expr::List(vec![value, argmap].into()))
+}
+
+/// Match `c0 + c1*Sin[...]` / `c0 + c1*Cos[...]` (rational c0, c1, with
+/// the trig factor the only term containing `var`) and return the exact
+/// extremum value c0 + |c1| (maximize) or c0 - |c1| (minimize).
+fn sinusoid_extremum(expr: &Expr, var: &str, maximize: bool) -> Option<Expr> {
+  type Frac = (i128, i128);
+  fn add(a: Frac, b: Frac) -> Frac {
+    norm((a.0 * b.1 + b.0 * a.1, a.1 * b.1))
+  }
+  fn norm(f: Frac) -> Frac {
+    fn gcd(a: i128, b: i128) -> i128 {
+      let (mut a, mut b) = (a.abs(), b.abs());
+      while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+      }
+      a.max(1)
+    }
+    let g = gcd(f.0, f.1);
+    let (mut n, mut d) = (f.0 / g, f.1 / g);
+    if d < 0 {
+      n = -n;
+      d = -d;
+    }
+    (n, d)
+  }
+  fn as_frac(e: &Expr) -> Option<Frac> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some(norm((*n, *d)))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  }
+  fn is_trig_of_var(e: &Expr, var: &str) -> bool {
+    matches!(e, Expr::FunctionCall { name, args }
+      if (name == "Sin" || name == "Cos")
+        && args.len() == 1
+        && !crate::functions::calculus_ast::is_constant_wrt(&args[0], var))
+  }
+
+  let terms: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().collect()
+    }
+    other => vec![other],
+  };
+
+  let mut c0: Frac = (0, 1);
+  let mut amplitude: Option<Frac> = None;
+  for term in terms {
+    if let Some(c) = as_frac(term) {
+      c0 = add(c0, c);
+      continue;
+    }
+    if amplitude.is_some() {
+      return None; // more than one var-dependent term
+    }
+    if is_trig_of_var(term, var) {
+      amplitude = Some((1, 1));
+      continue;
+    }
+    // c * Sin/Cos[...] (flat Times or BinaryOp forms)
+    let factors: Vec<&Expr> = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().collect()
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => vec![left, right],
+      _ => return None,
+    };
+    if factors.len() != 2 {
+      return None;
+    }
+    let (coeff, trig) = if is_trig_of_var(factors[1], var) {
+      (as_frac(factors[0])?, factors[1])
+    } else if is_trig_of_var(factors[0], var) {
+      (as_frac(factors[1])?, factors[0])
+    } else {
+      return None;
+    };
+    let _ = trig;
+    if coeff.0 == 0 {
+      return None;
+    }
+    amplitude = Some(coeff);
+  }
+
+  let amp = amplitude?;
+  let abs_amp = (amp.0.abs(), amp.1);
+  let value = if maximize {
+    add(c0, abs_amp)
+  } else {
+    add(c0, (-abs_amp.0, abs_amp.1))
+  };
+  Some(if value.1 == 1 {
+    Expr::Integer(value.0)
+  } else {
+    crate::functions::math_ast::make_rational_pub(value.0, value.1)
+  })
 }

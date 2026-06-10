@@ -6764,3 +6764,28 @@ mod inequality_display {
     );
   }
 }
+
+mod sinusoid_extremum_values {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn plain_sin_cos() {
+    assert_case(r#"MinValue[Sin[x], x]"#, r#"-1"#);
+    assert_case(r#"MaxValue[Sin[x], x]"#, r#"1"#);
+  }
+
+  #[test]
+  fn scaled_and_shifted() {
+    assert_case(r#"MinValue[2 Sin[x] + 1, x]"#, r#"-1"#);
+    assert_case(r#"MaxValue[3 Cos[x] - 2, x]"#, r#"1"#);
+    // Inner argument doesn't affect the range
+    assert_case(r#"MinValue[2 Sin[3 x + 1] + 5, x]"#, r#"3"#);
+    assert_case(r#"MaxValue[2 Sin[3 x + 1] + 5, x]"#, r#"7"#);
+  }
+
+  #[test]
+  fn negative_and_rational_amplitudes() {
+    assert_case(r#"MinValue[-4 Cos[2 x], x]"#, r#"-4"#);
+    assert_case(r#"MinValue[Sin[x]/3, x]"#, r#"-1/3"#);
+  }
+}
