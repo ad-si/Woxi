@@ -1858,7 +1858,7 @@ GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
 ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
 BSplineSurface,B-spline surface,,unevaluated,7.0,1891
 Setting,Setting wrapper,,unevaluated,6.0,1891
-SingularValueList,Singular value list,,unevaluated,5.0,1892
+SingularValueList,Returns the nonzero singular values of a matrix in decreasing order,✅,pure,5.0,1892
 Gudermannian,Returns the Gudermannian function value,✅,pure,7.0,1895
 MorphologicalBinarize,Morphological binarize,,unevaluated,8.0,1895
 VertexWeight,Vertex weight option,,unevaluated,8.0,1895

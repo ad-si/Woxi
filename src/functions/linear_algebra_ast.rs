@@ -6070,3 +6070,124 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result_rows.into()))
 }
+
+/// SingularValueList[m] — the nonzero singular values of a numeric matrix,
+/// sorted decreasing. SingularValueList[m, k] — the k largest (k < 0: the
+/// |k| smallest). Exact input yields exact values (square roots of the
+/// Gram-matrix eigenvalues); machine-precision input yields reals, with
+/// near-zero values dropped relative to the largest singular value.
+pub fn singular_value_list_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "SingularValueList".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated(args));
+  }
+
+  // Validate: rectangular, non-empty, numeric matrix
+  let rows = match &args[0] {
+    Expr::List(rows) if !rows.is_empty() => rows,
+    _ => return Ok(unevaluated(args)),
+  };
+  let ncols = match &rows[0] {
+    Expr::List(cols) if !cols.is_empty() => cols.len(),
+    _ => return Ok(unevaluated(args)),
+  };
+  let mut has_real = false;
+  for row in rows {
+    let cols = match row {
+      Expr::List(cols) if cols.len() == ncols => cols,
+      _ => return Ok(unevaluated(args)),
+    };
+    for entry in cols {
+      if try_eval_to_f64(entry).is_none() {
+        return Ok(unevaluated(args));
+      }
+      if matches!(entry, Expr::Real(_)) {
+        has_real = true;
+      }
+    }
+  }
+  let nrows = rows.len();
+
+  // Optional second argument: how many singular values to keep
+  let take = match args.get(1) {
+    None => None,
+    Some(k) => match crate::functions::math_ast::expr_to_i128(k) {
+      Some(k) => Some(k),
+      None => return Ok(unevaluated(args)),
+    },
+  };
+
+  // Eigenvalues of the smaller Gram matrix (m.m^H or m^H.m); both share
+  // the nonzero spectrum
+  let ct = Expr::FunctionCall {
+    name: "ConjugateTranspose".to_string(),
+    args: vec![args[0].clone()].into(),
+  };
+  let gram_args = if nrows <= ncols {
+    vec![args[0].clone(), ct]
+  } else {
+    vec![ct, args[0].clone()]
+  };
+  let eigenvalues = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Eigenvalues".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: gram_args.into(),
+    }]
+    .into(),
+  })?;
+  let eig_items = match &eigenvalues {
+    Expr::List(items) => items,
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Pair each eigenvalue with its numeric value for sorting and zero-drop
+  let mut pairs: Vec<(Expr, f64)> = Vec::with_capacity(eig_items.len());
+  for e in eig_items {
+    match try_eval_to_f64(e) {
+      Some(v) => pairs.push((e.clone(), v)),
+      None => return Ok(unevaluated(args)),
+    }
+  }
+  let max_val = pairs.iter().map(|(_, v)| v.abs()).fold(0.0_f64, f64::max);
+
+  // Exact input: drop only exact zeros. Machine input: drop eigenvalues
+  // that are zero relative to the largest (Gram eigenvalues scale as the
+  // squares of the singular values).
+  let tol = if has_real { max_val * 1e-24 } else { 0.0 };
+  pairs.retain(|(e, v)| !matches!(e, Expr::Integer(0)) && v.abs() > tol);
+
+  // Largest first
+  pairs
+    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  let mut values = Vec::with_capacity(pairs.len());
+  for (e, _) in &pairs {
+    // Use the Sqrt head (not make_sqrt's Power form): the Power
+    // simplifier splits Sqrt[a*b/c] into radical products, while
+    // wolframscript keeps the nested Sqrt[(a*b)/c] form
+    values.push(evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![e.clone()].into(),
+    })?);
+  }
+
+  match take {
+    None => Ok(Expr::List(values.into())),
+    Some(k) if k >= 0 => {
+      values.truncate(k as usize);
+      Ok(Expr::List(values.into()))
+    }
+    Some(k) => {
+      // Negative k: the |k| smallest singular values
+      let keep = (-k) as usize;
+      let skip = values.len().saturating_sub(keep);
+      Ok(Expr::List(values.split_off(skip).into()))
+    }
+  }
+}

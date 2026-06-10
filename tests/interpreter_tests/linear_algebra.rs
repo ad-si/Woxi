@@ -3056,6 +3056,55 @@ mod cases {
     );
   }
   #[test]
+  fn singular_value_list_exact() {
+    assert_case(
+      r#"SingularValueList[{{1, 2}, {3, 4}}]"#,
+      r#"{Sqrt[15 + Sqrt[221]], Sqrt[15 - Sqrt[221]]}"#,
+    );
+  }
+  #[test]
+  fn singular_value_list_drops_zero() {
+    // Rank-2 matrix: only the nonzero singular values are returned
+    assert_case(
+      r#"SingularValueList[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#,
+      r#"{Sqrt[(3*(95 + Sqrt[8881]))/2], Sqrt[(3*(95 - Sqrt[8881]))/2]}"#,
+    );
+  }
+  #[test]
+  fn singular_value_list_rank_one() {
+    assert_case(r#"SingularValueList[{{1, 1}, {1, 1}}]"#, r#"{2}"#);
+  }
+  #[test]
+  fn singular_value_list_integer_results() {
+    assert_case(r#"SingularValueList[{{3, 0}, {0, 2}}]"#, r#"{3, 2}"#);
+    assert_case(r#"SingularValueList[{{0, -2}, {1, 0}}]"#, r#"{2, 1}"#);
+  }
+  #[test]
+  fn singular_value_list_rectangular() {
+    assert_case(
+      r#"SingularValueList[{{1, 2, 3}, {4, 5, 6}}]"#,
+      r#"{Sqrt[(91 + Sqrt[8065])/2], Sqrt[(91 - Sqrt[8065])/2]}"#,
+    );
+  }
+  #[test]
+  fn singular_value_list_machine_precision() {
+    assert_case(r#"SingularValueList[{{3., 0.}, {0., 4.}}]"#, r#"{4., 3.}"#);
+    // Numerically singular: the zero singular value is dropped
+    assert_case(r#"SingularValueList[{{1., 2.}, {2., 4.}}]"#, r#"{5.}"#);
+  }
+  #[test]
+  fn singular_value_list_k_largest() {
+    assert_case(
+      r#"SingularValueList[{{1, 2}, {3, 4}}, 1]"#,
+      r#"{Sqrt[15 + Sqrt[221]]}"#,
+    );
+    // Negative k: the |k| smallest
+    assert_case(
+      r#"SingularValueList[{{1, 2}, {3, 4}}, -1]"#,
+      r#"{Sqrt[15 - Sqrt[221]]}"#,
+    );
+  }
+  #[test]
   fn tr_1() {
     assert_case(r#"Tr[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"#, r#"15"#);
   }
