@@ -1074,3 +1074,113 @@ mod quantile_distribution_extended {
     );
   }
 }
+
+mod polynomial_expectation {
+  use super::*;
+
+  #[test]
+  fn exponential_moments() {
+    // Regression: the numerical fallback truncated the domain at 10/lambda
+    // and returned 0.7422479289 instead of 3/4
+    assert_eq!(
+      interpret(
+        "Expectation[x^3, x \\[Distributed] ExponentialDistribution[2]]"
+      )
+      .unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[x^4, x \\[Distributed] ExponentialDistribution[a]]"
+      )
+      .unwrap(),
+      "24/a^4"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[x^5, x \\[Distributed] ExponentialDistribution[2]]"
+      )
+      .unwrap(),
+      "15/4"
+    );
+  }
+
+  #[test]
+  fn normal_moments() {
+    assert_eq!(
+      interpret("Expectation[x^3, x \\[Distributed] NormalDistribution[m, s]]")
+        .unwrap(),
+      "m*(m^2 + 3*s^2)"
+    );
+    assert_eq!(
+      interpret("Expectation[x^4, x \\[Distributed] NormalDistribution[m, s]]")
+        .unwrap(),
+      "m^4 + 6*m^2*s^2 + 3*s^4"
+    );
+    assert_eq!(
+      interpret("Expectation[x^4, x \\[Distributed] NormalDistribution[0, 1]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Expectation[x^6, x \\[Distributed] NormalDistribution[0, 1]]")
+        .unwrap(),
+      "15"
+    );
+  }
+
+  #[test]
+  fn uniform_moments() {
+    assert_eq!(
+      interpret(
+        "Expectation[x^3, x \\[Distributed] UniformDistribution[{0, 1}]]"
+      )
+      .unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret(
+        "Expectation[x^3, x \\[Distributed] UniformDistribution[{a, b}]]"
+      )
+      .unwrap(),
+      "(a^3 + a^2*b + a*b^2 + b^3)/4"
+    );
+  }
+
+  #[test]
+  fn gamma_and_poisson_moments() {
+    assert_eq!(
+      interpret("Expectation[x^3, x \\[Distributed] GammaDistribution[a, b]]")
+        .unwrap(),
+      "a*(1 + a)*(2 + a)*b^3"
+    );
+    assert_eq!(
+      interpret("Expectation[x^3, x \\[Distributed] PoissonDistribution[m]]")
+        .unwrap(),
+      "m + 3*m^2 + m^3"
+    );
+    assert_eq!(
+      interpret("Expectation[x^4, x \\[Distributed] PoissonDistribution[m]]")
+        .unwrap(),
+      "m + 7*m^2 + 6*m^3 + m^4"
+    );
+  }
+
+  #[test]
+  fn polynomial_combination() {
+    assert_eq!(
+      interpret(
+        "Expectation[2 x^3 + x - 5, x \\[Distributed] ExponentialDistribution[2]]"
+      )
+      .unwrap(),
+      "-3"
+    );
+    assert_eq!(
+      interpret(
+        "N[Expectation[x^3 + x, x \\[Distributed] ExponentialDistribution[2]]]"
+      )
+      .unwrap(),
+      "1.25"
+    );
+  }
+}

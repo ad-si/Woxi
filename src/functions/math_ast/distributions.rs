@@ -2350,6 +2350,15 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return eval(times(c, mgf));
   }
 
+  // Polynomial integrands: exact raw moments (the numerical fallback
+  // below truncates integration domains and used to return e.g. 0.7422
+  // for E[x^3] under ExponentialDistribution[2] instead of 3/4)
+  if let Some(result) =
+    polynomial_expectation(expr, &var_name, dist_name, dargs)
+  {
+    return Ok(result);
+  }
+
   // For more complex expressions, use numerical integration
   expectation_numerical(expr, &var_name, dist_name, dargs)
 }
@@ -5747,4 +5756,273 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(unevaluated(args)),
   }
+}
+
+// ─── Exact polynomial moments for Expectation ────────────────────────
+
+/// Decompose `expr` as a polynomial in `var` with var-free coefficients:
+/// returns (k, coeff) pairs. None when any term isn't c·var^k.
+fn extract_polynomial_in_var(
+  expr: &Expr,
+  var: &str,
+) -> Option<Vec<(i128, Expr)>> {
+  let terms: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().cloned().collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => vec![expr.clone()],
+  };
+  let mut out: Vec<(i128, Expr)> = Vec::with_capacity(terms.len());
+  for term in &terms {
+    let (c, rest) = strip_constant_multiplier(term, var);
+    let k = match &rest {
+      Expr::Integer(1) => 0,
+      Expr::Identifier(v) if v == var => 1,
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(v) if v == var) =>
+      {
+        match &args[1] {
+          Expr::Integer(k) if *k >= 1 => *k,
+          _ => return None,
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Identifier(v) if v == var) => {
+        match right.as_ref() {
+          Expr::Integer(k) if *k >= 1 => *k,
+          _ => return None,
+        }
+      }
+      _ if !contains_variable(&rest, var) => {
+        // Fully constant term: fold rest into the coefficient
+        out.push((0, times(c, rest.clone())));
+        continue;
+      }
+      _ => return None,
+    };
+    if !(0..=12).contains(&k) {
+      return None;
+    }
+    out.push((k, c));
+  }
+  Some(out)
+}
+
+/// The k-th raw moment E[x^k] of a supported distribution, in
+/// wolframscript's exact output form. Symbolic parameters return raw
+/// (unevaluated) structures where evaluation would reshuffle the
+/// factored shapes; numeric parameters evaluate.
+fn distribution_raw_moment(
+  dist_name: &str,
+  dargs: &[Expr],
+  k: i128,
+) -> Option<Expr> {
+  if k == 0 {
+    return Some(int(1));
+  }
+  let numeric = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let factorial = |n: i128| -> i128 { (2..=n).product() };
+
+  match dist_name {
+    // E[x^k] = k!/lambda^k
+    "ExponentialDistribution" if dargs.len() == 1 => {
+      eval(divide(int(factorial(k)), power(dargs[0].clone(), int(k)))).ok()
+    }
+    // E[x^k] = (a^k + a^(k-1) b + ... + b^k)/(k + 1)
+    "UniformDistribution" if dargs.len() == 1 => {
+      let (a, b) = match &dargs[0] {
+        Expr::List(bounds) if bounds.len() == 2 => {
+          (bounds[0].clone(), bounds[1].clone())
+        }
+        _ => return None,
+      };
+      let term = |i: i128| -> Expr {
+        // a^i * b^(k-i), omitting exponent-0/1 noise
+        let pow_of = |base: &Expr, e: i128| match e {
+          0 => None,
+          1 => Some(base.clone()),
+          e => Some(power(base.clone(), int(e))),
+        };
+        match (pow_of(&a, i), pow_of(&b, k - i)) {
+          (Some(x), Some(y)) => times(x, y),
+          (Some(x), None) => x,
+          (None, Some(y)) => y,
+          (None, None) => int(1),
+        }
+      };
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: (0..=k).rev().map(term).collect::<Vec<_>>().into(),
+      };
+      let result = divide(sum, int(k + 1));
+      if numeric(&a) && numeric(&b) {
+        eval(result).ok()
+      } else {
+        Some(result)
+      }
+    }
+    // E[x^k] = Sum[Binomial[k, j]*(j-1)!!*m^(k-j)*s^j, even j]
+    "NormalDistribution" if dargs.is_empty() || dargs.len() == 2 => {
+      let (m, s) = if dargs.is_empty() {
+        (int(0), int(1))
+      } else {
+        (dargs[0].clone(), dargs[1].clone())
+      };
+      let all_numeric = numeric(&m) && numeric(&s);
+      if !all_numeric {
+        // Symbolic parameters: wolframscript's templates for k <= 4
+        return match k {
+          1 => Some(m),
+          2 => {
+            eval(plus(power(s.clone(), int(2)), power(m.clone(), int(2)))).ok()
+          }
+          // m*(m^2 + 3*s^2), kept raw so Times isn't distributed
+          3 => Some(times(
+            m.clone(),
+            plus(
+              power(m.clone(), int(2)),
+              times(int(3), power(s.clone(), int(2))),
+            ),
+          )),
+          // m^4 + 6*m^2*s^2 + 3*s^4
+          4 => Some(plus(
+            plus(
+              power(m.clone(), int(4)),
+              times(
+                int(6),
+                times(power(m.clone(), int(2)), power(s.clone(), int(2))),
+              ),
+            ),
+            times(int(3), power(s.clone(), int(4))),
+          )),
+          _ => None,
+        };
+      }
+      // Numeric parameters: exact binomial sum over central moments
+      let binom = |n: i128, j: i128| -> i128 {
+        let mut r = 1i128;
+        for i in 0..j {
+          r = r * (n - i) / (i + 1);
+        }
+        r
+      };
+      let double_fact = |n: i128| -> i128 {
+        let mut r = 1i128;
+        let mut i = n;
+        while i > 1 {
+          r *= i;
+          i -= 2;
+        }
+        r
+      };
+      let pow_term = |base: &Expr, e: i128| -> Option<Expr> {
+        // Omit unit factors — Power[0, 0] would be Indeterminate
+        match e {
+          0 => None,
+          1 => Some(base.clone()),
+          e => Some(power(base.clone(), int(e))),
+        }
+      };
+      let mut terms: Vec<Expr> = Vec::new();
+      for j in (0..=k).step_by(2) {
+        let c = binom(k, j) * double_fact(j - 1);
+        let mut factors = vec![int(c)];
+        factors.extend(pow_term(&m, k - j));
+        factors.extend(pow_term(&s, j));
+        terms.push(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors.into(),
+        });
+      }
+      eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      })
+      .ok()
+    }
+    // E[x^k] = a*(1 + a)*...*(k - 1 + a)*b^k
+    "GammaDistribution" if dargs.len() == 2 => {
+      let (a, b) = (dargs[0].clone(), dargs[1].clone());
+      let mut factors: Vec<Expr> = vec![a.clone()];
+      for i in 1..k {
+        factors.push(plus(int(i), a.clone()));
+      }
+      factors.push(power(b.clone(), int(k)));
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      if numeric(&a) && numeric(&b) {
+        eval(result).ok()
+      } else {
+        Some(result)
+      }
+    }
+    // E[x^k] = Sum[StirlingS2[k, j]*mu^j] (Touchard polynomial)
+    "PoissonDistribution" if dargs.len() == 1 => {
+      let mu = dargs[0].clone();
+      // Stirling numbers of the second kind via the triangle recurrence
+      let mut s2 = vec![vec![0i128; (k + 1) as usize]; (k + 1) as usize];
+      s2[0][0] = 1;
+      for n in 1..=(k as usize) {
+        for j in 1..=n {
+          s2[n][j] = s2[n - 1][j - 1] + (j as i128) * s2[n - 1][j];
+        }
+      }
+      let terms: Vec<Expr> = (1..=(k as usize))
+        .map(|j| {
+          let c = s2[k as usize][j];
+          let p = match j {
+            1 => mu.clone(),
+            j => power(mu.clone(), int(j as i128)),
+          };
+          if c == 1 { p } else { times(int(c), p) }
+        })
+        .collect();
+      eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      })
+      .ok()
+    }
+    _ => None,
+  }
+}
+
+/// Exact expectation of a polynomial integrand: Sum[c_k * E[x^k]].
+/// Single power terms with unit coefficient return the moment verbatim
+/// (preserving raw factored templates); combinations evaluate.
+pub fn polynomial_expectation(
+  expr: &Expr,
+  var: &str,
+  dist_name: &str,
+  dargs: &[Expr],
+) -> Option<Expr> {
+  let poly = extract_polynomial_in_var(expr, var)?;
+  if poly.len() == 1 && matches!(&poly[0].1, Expr::Integer(1)) {
+    return distribution_raw_moment(dist_name, dargs, poly[0].0);
+  }
+  let mut terms: Vec<Expr> = Vec::with_capacity(poly.len());
+  for (k, c) in &poly {
+    let moment = distribution_raw_moment(dist_name, dargs, *k)?;
+    terms.push(times(c.clone(), moment));
+  }
+  eval(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+  .ok()
 }
