@@ -1554,8 +1554,63 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
     }
   }
 
-  // Simplify sqrt(discriminant): factor out perfect squares
+  // Simplify sqrt(|discriminant|): factor out perfect squares
   let (outer, inner) = simplify_sqrt(discriminant.unsigned_abs());
+
+  // Negative discriminant: conjugate pair (neg_b ± I*outer*Sqrt[inner])/2,
+  // plus branch (positive imaginary part) first, matching wolframscript's
+  // {1 + I*Sqrt[2], 1 - I*Sqrt[2]} ordering.
+  if discriminant < 0 {
+    let imag_term = |coeff: i128| -> Expr {
+      // Flat Times[coeff, I, Sqrt[inner]] so the printed factor order is
+      // wolframscript's `2*I*Sqrt[5]`
+      let mut factors: Vec<Expr> = Vec::new();
+      if coeff != 1 {
+        factors.push(Expr::Integer(coeff));
+      }
+      factors.push(Expr::Constant("I".to_string()));
+      if inner != 1 {
+        factors.push(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::Integer(inner as i128)].into(),
+        });
+      }
+      if factors.len() == 1 {
+        factors.remove(0)
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors.into(),
+        }
+      }
+    };
+    let with_real = |re: i128, imag: Expr| -> Expr {
+      if re == 0 {
+        imag
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![Expr::Integer(re), imag].into(),
+        }
+      }
+    };
+    let outer = outer as i128;
+    if neg_b % 2 == 0 && outer % 2 == 0 {
+      // Components fold to exact halves: re ± oc*I*Sqrt[inner]
+      let (re, oc) = (neg_b / 2, outer / 2);
+      return vec![with_real(re, imag_term(oc)), with_real(re, imag_term(-oc))];
+    }
+    // Otherwise keep the quotient form (3 + I*Sqrt[11])/2
+    let halved = |num: Expr| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(num),
+      right: Box::new(Expr::Integer(2)),
+    };
+    return vec![
+      halved(with_real(neg_b, imag_term(outer))),
+      halved(with_real(neg_b, imag_term(-outer))),
+    ];
+  }
 
   // Factor out GCD of neg_b and outer from the numerator:
   // (neg_b ± outer*Sqrt[inner]) / 2  =  common * (reduced_b ± reduced_outer*Sqrt[inner]) / 2
@@ -6190,4 +6245,182 @@ pub fn singular_value_list_ast(
       Ok(Expr::List(values.split_off(skip).into()))
     }
   }
+}
+
+/// Shared MatrixExp / MatrixLog implementation. `head` is the matrix
+/// function name (for unevaluated returns); `func` the scalar head
+/// ("Exp" / "Log").
+///
+/// Diagonal matrices apply `func` entrywise to the diagonal. 2×2 matrices
+/// with distinct eigenvalues use Sylvester's formula `f(M) = α·M + β·I`
+/// (α = (f(λ₁) − f(λ₂))/(λ₁ − λ₂), β = (λ₁·f(λ₂) − λ₂·f(λ₁))/(λ₁ − λ₂)),
+/// which keeps Wolfram-canonical factorings like `2*(-1 + E)` intact.
+/// A repeated eigenvalue uses the Jordan form `f(M) = f'(λ)·M +
+/// (f(λ) − λ·f'(λ))·I` — the same α·M + β·I assembly with α = f'(λ).
+pub fn matrix_function_ast(
+  args: &[Expr],
+  head: &str,
+  func: &str,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: head.to_string(),
+    args: args.to_vec().into(),
+  };
+  let mat = args[0].clone();
+
+  // Square-matrix shape check
+  let n = match &mat {
+    Expr::List(rows)
+      if !rows.is_empty()
+        && rows.iter().all(
+          |r| matches!(r, Expr::List(cols) if cols.len() == rows.len()),
+        ) =>
+    {
+      rows.len()
+    }
+    _ => 0,
+  };
+  if n == 0 {
+    return Ok(unevaluated(args));
+  }
+
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(z) if *z == 0.0)
+  };
+  // Log is not defined at 0: emit fnand (matching wolframscript) and
+  // return unevaluated
+  let log_zero_bail = |args: &[Expr]| {
+    crate::emit_message(&format!(
+      "{head}::fnand: The function Log is not analytic or defined at 0.",
+    ));
+    Ok(unevaluated(args))
+  };
+
+  // Diagonal-matrix fast path: works for symbolic entries too
+  if let Expr::List(rows) = &mat {
+    let is_diag = rows.iter().enumerate().all(|(i, r)| {
+      if let Expr::List(cs) = r {
+        cs.iter().enumerate().all(|(j, c)| i == j || is_zero(c))
+      } else {
+        false
+      }
+    });
+    if is_diag {
+      let mut new_rows: Vec<Expr> = Vec::with_capacity(n);
+      for (i, r) in rows.iter().enumerate() {
+        if let Expr::List(cs) = r {
+          let mut new_cs: Vec<Expr> = Vec::with_capacity(n);
+          for (j, c) in cs.iter().enumerate() {
+            if i == j {
+              if func == "Log" && is_zero(c) {
+                return log_zero_bail(args);
+              }
+              new_cs.push(evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: func.to_string(),
+                args: vec![c.clone()].into(),
+              })?);
+            } else {
+              new_cs.push(c.clone());
+            }
+          }
+          new_rows.push(Expr::List(new_cs.into()));
+        }
+      }
+      return Ok(Expr::List(new_rows.into()));
+    }
+  }
+  if n != 2 {
+    return Ok(unevaluated(args));
+  }
+
+  let make = |head: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: head.to_string(),
+      args: args.into(),
+    })
+  };
+
+  let evals = make("Eigenvalues", vec![mat.clone()])?;
+  let evals_list = match &evals {
+    Expr::List(xs) if xs.len() == 2 => xs.clone(),
+    _ => return Ok(unevaluated(args)),
+  };
+  let l1 = evals_list[0].clone();
+  let l2 = evals_list[1].clone();
+  if func == "Log" && (is_zero(&l1) || is_zero(&l2)) {
+    return log_zero_bail(args);
+  }
+
+  // λ₁ − λ₂ decides between Sylvester (distinct) and Jordan (repeated)
+  let diff = make(
+    "Plus",
+    vec![
+      l1.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), l2.clone()].into(),
+      },
+    ],
+  )?;
+
+  let (alpha, beta) = if is_zero(&diff) {
+    // Repeated eigenvalue λ: α = f'(λ), β = f(λ) − λ·f'(λ)
+    let f_l = make(func, vec![l1.clone()])?;
+    let fp_l = match func {
+      "Exp" => f_l.clone(),
+      "Log" => make("Divide", vec![Expr::Integer(1), l1.clone()])?,
+      _ => return Ok(unevaluated(args)),
+    };
+    let beta = make(
+      "Plus",
+      vec![
+        f_l,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), l1.clone(), fp_l.clone()].into(),
+        },
+      ],
+    )?;
+    (fp_l, beta)
+  } else {
+    let f_l1 = make(func, vec![l1.clone()])?;
+    let f_l2 = make(func, vec![l2.clone()])?;
+    // α = (f(λ₁) − f(λ₂)) / (λ₁ − λ₂)
+    let alpha_num = make(
+      "Plus",
+      vec![
+        f_l1.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), f_l2.clone()].into(),
+        },
+      ],
+    )?;
+    let alpha = make("Divide", vec![alpha_num, diff.clone()])?;
+    // β = (λ₁·f(λ₂) − λ₂·f(λ₁)) / (λ₁ − λ₂)
+    let beta_num = make(
+      "Plus",
+      vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![l1.clone(), f_l2.clone()].into(),
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), l2.clone(), f_l1.clone()].into(),
+        },
+      ],
+    )?;
+    let beta = make("Divide", vec![beta_num, diff])?;
+    (alpha, beta)
+  };
+
+  // α·M + β·I
+  let identity = crate::evaluator::evaluate_function_call_ast(
+    "IdentityMatrix",
+    &[Expr::Integer(2)],
+  )?;
+  let alpha_m = make("Times", vec![alpha, mat.clone()])?;
+  let beta_i = make("Times", vec![beta, identity])?;
+  make("Plus", vec![alpha_m, beta_i])
 }

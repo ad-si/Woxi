@@ -1841,7 +1841,7 @@ PrintTemporary,Print temporary expression,,unevaluated,6.0,1870
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1.0,1873
 GeneratedParameters,Generated parameters option,,unevaluated,5.0,1873
 ImageValue,Image pixel value,,unevaluated,8.0,1873
-MatrixLog,Matrix logarithm,,unevaluated,9.0,1875
+MatrixLog,Computes the matrix logarithm (inverse of MatrixExp),✅,pure,9.0,1875
 PlotRegion,Plot region option,,unevaluated,2.0,1875
 DensityHistogram,Density histogram,,unevaluated,8.0,1877
 DigitCount,Counts occurrences of each digit in a number,✅,pure,4.0,1877

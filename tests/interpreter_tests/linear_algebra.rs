@@ -656,6 +656,53 @@ mod eigenvalues {
   }
 
   #[test]
+  fn eigenvalues_2x2_complex_pure_imaginary() {
+    // Regression: the negative discriminant lost its sign and the rotation
+    // matrix got real eigenvalues {-Sqrt[1], Sqrt[1]} instead of {I, -I}
+    assert_eq!(
+      interpret("Eigenvalues[{{0, -1}, {1, 0}}]").unwrap(),
+      "{I, -I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{0, -4}, {1, 0}}]").unwrap(),
+      "{2*I, -2*I}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_complex_with_real_part() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1, -1}, {1, 1}}]").unwrap(),
+      "{1 + I, 1 - I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{3, -2}, {4, -1}}]").unwrap(),
+      "{1 + 2*I, 1 - 2*I}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_complex_irrational() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1, -2}, {1, 1}}]").unwrap(),
+      "{1 + I*Sqrt[2], 1 - I*Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{2, -5}, {1, 2}}]").unwrap(),
+      "{2 + I*Sqrt[5], 2 - I*Sqrt[5]}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_complex_half_integer() {
+    // Odd trace keeps the quotient form
+    assert_eq!(
+      interpret("Eigenvalues[{{2, -1}, {3, 1}}]").unwrap(),
+      "{(3 + I*Sqrt[11])/2, (3 - I*Sqrt[11])/2}"
+    );
+  }
+
+  #[test]
   fn eigenvalues_3x3_diagonal() {
     assert_eq!(
       interpret("Eigenvalues[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
@@ -2853,6 +2900,47 @@ mod cases {
     assert_case(
       r#"MatrixExp[{{0, 2}, {0, 1}}]; MatrixExp[{{1.5, 0.5}, {0.5, 2.0}}]"#,
       r#"{{5.162660242762233, 3.0295198346219987}, {3.0295198346219983, 8.192180077384233}}"#,
+    );
+  }
+  #[test]
+  fn matrix_exp_repeated_eigenvalue() {
+    // Jordan form f(M) = f'(λ)·M + (f(λ) − λ·f'(λ))·I; previously stayed
+    // unevaluated for defective matrices
+    assert_case(r#"MatrixExp[{{1, 1}, {0, 1}}]"#, r#"{{E, E}, {0, E}}"#);
+    assert_case(
+      r#"MatrixExp[{{4, 1}, {0, 4}}]"#,
+      r#"{{E^4, E^4}, {0, E^4}}"#,
+    );
+  }
+  #[test]
+  fn matrix_log_diagonal() {
+    assert_case(
+      r#"MatrixLog[{{2, 0}, {0, 3}}]"#,
+      r#"{{Log[2], 0}, {0, Log[3]}}"#,
+    );
+    assert_case(r#"MatrixLog[{{E, 0}, {0, E^2}}]"#, r#"{{1, 0}, {0, 2}}"#);
+  }
+  #[test]
+  fn matrix_log_nilpotent_offset() {
+    assert_case(r#"MatrixLog[{{1, 1}, {0, 1}}]"#, r#"{{0, 1}, {0, 0}}"#);
+    assert_case(
+      r#"MatrixLog[{{4, 1}, {0, 4}}]"#,
+      r#"{{Log[4], 1/4}, {0, Log[4]}}"#,
+    );
+  }
+  #[test]
+  fn matrix_log_symmetric() {
+    assert_case(
+      r#"MatrixLog[{{2, 1}, {1, 2}}]"#,
+      r#"{{Log[3]/2, Log[3]/2}, {Log[3]/2, Log[3]/2}}"#,
+    );
+  }
+  #[test]
+  fn matrix_log_singular_stays_unevaluated() {
+    // Singular matrix: MatrixLog::fnand message, unevaluated result
+    assert_case(
+      r#"MatrixLog[{{1, 1}, {1, 1}}]"#,
+      r#"MatrixLog[{{1, 1}, {1, 1}}]"#,
     );
   }
   #[test]

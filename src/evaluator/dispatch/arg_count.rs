@@ -674,6 +674,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MatchQ" => Some((1, 2)),
     "MatrixPower" => Some((2, 2)),
     "MatrixExp" => Some((1, 1)),
+    "MatrixLog" => Some((1, 1)),
     "MatrixQ" => Some((1, 2)),
     "MatrixRank" => Some((1, 1)),
     "Max" => Some((0, usize::MAX)),
