@@ -4275,6 +4275,20 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(prod.to_expr());
   }
 
+  // Integer-1 factors are the identity: return the remaining factor
+  // structurally unchanged. Rebuilding it would re-normalize forms the
+  // formatter treats specially (1*Cos[Pi/4] used to print (Sqrt[2])^(-1)
+  // instead of 1/Sqrt[2]).
+  {
+    let non_unit: Vec<&Expr> = args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Integer(1)))
+      .collect();
+    if non_unit.len() == 1 && args.len() > 1 {
+      return Ok(non_unit[0].clone());
+    }
+  }
+
   // SeriesData[var, x0, coeffs, nmin, nmax, denom] times var^k (k integer
   // or rational): shift the series exponent range by k. With k = p/q,
   // pick a common denominator d = lcm(denom, q) and scale all exponents

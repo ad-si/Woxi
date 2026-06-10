@@ -198,6 +198,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Convergents" => Some((1, 2)),
     "Convolve" => Some((4, 4)),
     "CoordinateBounds" => Some((1, 2)),
+    "CoordinateTransform" => Some((2, 2)),
     "CoordinateBoundsArray" => Some((1, 2)),
     "Coordinates" => Some((0, 1)),
     "CoordinatesFromCartesian" => Some((1, 2)),

@@ -6628,3 +6628,122 @@ pub fn jordan_decomposition_ast(
   };
   Ok(Expr::List(vec![s, j].into()))
 }
+
+/// CoordinateTransform[src -> dst, pt] for the named coordinate systems
+/// Polar/Cartesian (2D) and Spherical/Cylindrical/Cartesian (3D), in
+/// wolframscript's conventions (e.g. ArcTan[x, y] for the polar angle,
+/// Spherical as {r, theta, phi} with theta from the z axis).
+pub fn coordinate_transform_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "CoordinateTransform".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let (src, dst) = match &args[0] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::String(s), Expr::String(d)) => (s.clone(), d.clone()),
+      _ => return Ok(unevaluated(args)),
+    },
+    Expr::FunctionCall { name, args: ra }
+      if name == "Rule" && ra.len() == 2 =>
+    {
+      match (&ra[0], &ra[1]) {
+        (Expr::String(s), Expr::String(d)) => (s.clone(), d.clone()),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+  let pt = match &args[1] {
+    Expr::List(items) => items,
+    _ => return Ok(unevaluated(args)),
+  };
+
+  let times = |fs: Vec<Expr>| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: fs.into(),
+  };
+  let call = |head: &str, fargs: Vec<Expr>| Expr::FunctionCall {
+    name: head.to_string(),
+    args: fargs.into(),
+  };
+  let sq = |e: &Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(e.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let norm = |coords: &[&Expr]| {
+    call(
+      "Sqrt",
+      vec![call("Plus", coords.iter().map(|c| sq(c)).collect())],
+    )
+  };
+
+  let components: Vec<Expr> = match (src.as_str(), dst.as_str(), pt.len()) {
+    ("Polar", "Cartesian", 2) => {
+      let (r, t) = (&pt[0], &pt[1]);
+      vec![
+        times(vec![r.clone(), call("Cos", vec![t.clone()])]),
+        times(vec![r.clone(), call("Sin", vec![t.clone()])]),
+      ]
+    }
+    ("Cartesian", "Polar", 2) => {
+      let (x, y) = (&pt[0], &pt[1]);
+      vec![norm(&[x, y]), call("ArcTan", vec![x.clone(), y.clone()])]
+    }
+    ("Spherical", "Cartesian", 3) => {
+      let (r, t, p) = (&pt[0], &pt[1], &pt[2]);
+      vec![
+        times(vec![
+          r.clone(),
+          call("Cos", vec![p.clone()]),
+          call("Sin", vec![t.clone()]),
+        ]),
+        times(vec![
+          r.clone(),
+          call("Sin", vec![p.clone()]),
+          call("Sin", vec![t.clone()]),
+        ]),
+        times(vec![r.clone(), call("Cos", vec![t.clone()])]),
+      ]
+    }
+    ("Cartesian", "Spherical", 3) => {
+      let (x, y, z) = (&pt[0], &pt[1], &pt[2]);
+      vec![
+        norm(&[x, y, z]),
+        call("ArcTan", vec![z.clone(), norm(&[x, y])]),
+        call("ArcTan", vec![x.clone(), y.clone()]),
+      ]
+    }
+    ("Cylindrical", "Cartesian", 3) => {
+      let (r, t, z) = (&pt[0], &pt[1], &pt[2]);
+      vec![
+        times(vec![r.clone(), call("Cos", vec![t.clone()])]),
+        times(vec![r.clone(), call("Sin", vec![t.clone()])]),
+        z.clone(),
+      ]
+    }
+    ("Cartesian", "Cylindrical", 3) => {
+      let (x, y, z) = (&pt[0], &pt[1], &pt[2]);
+      vec![
+        norm(&[x, y]),
+        call("ArcTan", vec![x.clone(), y.clone()]),
+        z.clone(),
+      ]
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+
+  let mut evaluated = Vec::with_capacity(components.len());
+  for c in components {
+    evaluated.push(evaluate_expr_to_expr(&c)?);
+  }
+  Ok(Expr::List(evaluated.into()))
+}

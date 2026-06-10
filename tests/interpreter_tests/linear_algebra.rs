@@ -3989,3 +3989,99 @@ mod jordan_decomposition {
     );
   }
 }
+
+mod coordinate_transform {
+  use super::*;
+
+  #[test]
+  fn polar_cartesian() {
+    assert_eq!(
+      interpret("CoordinateTransform[\"Polar\" -> \"Cartesian\", {r, t}]")
+        .unwrap(),
+      "{r*Cos[t], r*Sin[t]}"
+    );
+    assert_eq!(
+      interpret("CoordinateTransform[\"Cartesian\" -> \"Polar\", {x, y}]")
+        .unwrap(),
+      "{Sqrt[x^2 + y^2], ArcTan[x, y]}"
+    );
+  }
+
+  #[test]
+  fn spherical_cartesian() {
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Spherical\" -> \"Cartesian\", {r, t, p}]"
+      )
+      .unwrap(),
+      "{r*Cos[p]*Sin[t], r*Sin[p]*Sin[t], r*Cos[t]}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Spherical\", {x, y, z}]"
+      )
+      .unwrap(),
+      "{Sqrt[x^2 + y^2 + z^2], ArcTan[z, Sqrt[x^2 + y^2]], ArcTan[x, y]}"
+    );
+  }
+
+  #[test]
+  fn cylindrical_cartesian() {
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cylindrical\" -> \"Cartesian\", {r, t, z}]"
+      )
+      .unwrap(),
+      "{r*Cos[t], r*Sin[t], z}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Cylindrical\", {x, y, z}]"
+      )
+      .unwrap(),
+      "{Sqrt[x^2 + y^2], ArcTan[x, y], z}"
+    );
+  }
+
+  #[test]
+  fn numeric_points_fold() {
+    assert_eq!(
+      interpret("CoordinateTransform[\"Polar\" -> \"Cartesian\", {1, Pi/4}]")
+        .unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("CoordinateTransform[\"Cartesian\" -> \"Polar\", {1, 1}]")
+        .unwrap(),
+      "{Sqrt[2], Pi/4}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Spherical\" -> \"Cartesian\", {2, Pi/2, 0}]"
+      )
+      .unwrap(),
+      "{2, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("CoordinateTransform[\"Bogus\" -> \"Cartesian\", {x, y}]")
+        .unwrap(),
+      "CoordinateTransform[Bogus -> Cartesian, {x, y}]"
+    );
+  }
+}
+
+mod times_unit_factor {
+  use super::*;
+
+  #[test]
+  fn unit_factor_preserves_structure() {
+    // Regression: Times[1, Cos[Pi/4]] used to re-normalize the result
+    // into (Sqrt[2])^(-1) instead of returning 1/Sqrt[2] unchanged
+    assert_eq!(interpret("1*Cos[Pi/4]").unwrap(), "1/Sqrt[2]");
+    assert_eq!(interpret("1*x").unwrap(), "x");
+  }
+}

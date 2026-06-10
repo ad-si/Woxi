@@ -405,6 +405,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "CoordinateTransform" if args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::coordinate_transform_ast(args),
+      );
+    }
     "DiceDissimilarity"
     | "JaccardDissimilarity"
     | "MatchingDissimilarity"
