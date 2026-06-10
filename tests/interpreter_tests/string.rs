@@ -7327,3 +7327,43 @@ abb""#,
     );
   }
 }
+
+mod padded_form {
+  use super::*;
+
+  #[test]
+  fn integer_spec_pads_to_width_n_plus_one() {
+    assert_eq!(interpret("ToString[PaddedForm[7, 4]]").unwrap(), "    7");
+    assert_eq!(
+      interpret("ToString[PaddedForm[123, 6]]").unwrap(),
+      "    123"
+    );
+    assert_eq!(interpret("ToString[PaddedForm[-7, 4]]").unwrap(), "   -7");
+  }
+
+  #[test]
+  fn list_spec_rounds_and_pads() {
+    assert_eq!(
+      interpret("ToString[PaddedForm[12.345, {6, 2}]]").unwrap(),
+      "   12.35"
+    );
+    // Trailing zeros fill the fractional places
+    assert_eq!(
+      interpret("ToString[PaddedForm[-3.7, {5, 3}]]").unwrap(),
+      " -3.700"
+    );
+    assert_eq!(
+      interpret("ToString[PaddedForm[3.14159, {4, 1}]]").unwrap(),
+      "   3.1"
+    );
+  }
+
+  #[test]
+  fn bare_wrapper_echoes_unevaluated() {
+    assert_eq!(
+      interpret("PaddedForm[12.345, {6, 2}]").unwrap(),
+      "PaddedForm[12.345, {6, 2}]"
+    );
+    assert_eq!(interpret("PaddedForm[7, 4]").unwrap(), "PaddedForm[7, 4]");
+  }
+}

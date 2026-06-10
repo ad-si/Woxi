@@ -101,6 +101,14 @@ pub fn dispatch_string_functions(
     "ToString" | "TextString" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::to_string_ast(args));
     }
+    // Display wrapper: stays unevaluated in script-mode echo (rendering
+    // happens through ToString), without the not-yet-implemented warning
+    "PaddedForm" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "PaddedForm".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "ToExpression" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::to_expression_ast(args));
     }

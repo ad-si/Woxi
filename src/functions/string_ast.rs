@@ -2240,6 +2240,21 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // PaddedForm[expr, n] / PaddedForm[expr, {n, f}] — right-aligned
+  // number rendering (width n+1 for the integer spec, n+2 for {n, f},
+  // reserving sign/decimal-point columns like wolframscript)
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "PaddedForm"
+    && inner_args.len() == 2
+    && let Some(rendered) =
+      padded_form_to_string(&inner_args[0], &inner_args[1])
+  {
+    return Ok(Expr::String(rendered));
+  }
+
   // If the expression is MathMLForm[inner], produce MathML regardless of form argument
   if let Expr::FunctionCall {
     name,
@@ -7111,4 +7126,35 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
   }
 
   false
+}
+
+/// Render PaddedForm[value, spec] as wolframscript's padded string.
+/// Integer spec n: right-aligned to width n + 1. List spec {n, f}:
+/// rounded to f decimals (with trailing zeros) and right-aligned to
+/// width n + 2. None for non-numeric values or malformed specs.
+fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
+  let v = crate::functions::math_ast::expr_to_num(value)?;
+  match spec {
+    Expr::Integer(n) if *n >= 0 => {
+      let body = match value {
+        Expr::Integer(i) => i.to_string(),
+        _ => crate::syntax::expr_to_output(value),
+      };
+      let width = (*n as usize) + 1;
+      Some(format!("{body:>width$}"))
+    }
+    Expr::List(parts) if parts.len() == 2 => {
+      if let (Expr::Integer(n), Expr::Integer(f)) = (&parts[0], &parts[1])
+        && *n >= 0
+        && *f >= 0
+      {
+        let body = format!("{v:.prec$}", prec = *f as usize);
+        let width = (*n as usize) + 2;
+        Some(format!("{body:>width$}"))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
 }
