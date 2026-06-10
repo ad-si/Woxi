@@ -397,9 +397,29 @@ pub fn quantile_distribution_closed_form(
   dargs: &[Expr],
   q: &Expr,
 ) -> Option<Expr> {
+  // Numeric q in [0, 1] only; the symbolic-q forms wolframscript returns
+  // are ConditionalExpression/Piecewise wrappers that are out of scope.
+  let q_num = crate::functions::math_ast::expr_to_num(q)?;
+  if !(0.0..=1.0).contains(&q_num) {
+    return None;
+  }
+  let infinity = || Expr::Identifier("Infinity".to_string());
+  let neg_infinity = || Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(infinity()),
+  };
+  let is_exact_q = !matches!(q, Expr::Real(_));
+
   match dist_name {
     // Quantile[ExponentialDistribution[lambda], q] = -Log[1 - q] / lambda
     "ExponentialDistribution" if dargs.len() == 1 => {
+      // Edges: the generic formula would leave Infinity/lambda unreduced
+      if q_num == 1.0 && is_exact_q {
+        return Some(infinity());
+      }
+      if q_num == 0.0 && is_exact_q {
+        return Some(int(0));
+      }
       let lambda = dargs[0].clone();
       let one_minus_q = minus(int(1), q.clone());
       let log_term = Expr::FunctionCall {
@@ -409,6 +429,74 @@ pub fn quantile_distribution_closed_form(
       let neg_log = times(int(-1), log_term);
       let expr = divide(neg_log, lambda);
       eval(expr).ok()
+    }
+    // Quantile[UniformDistribution[{a, b}], q] = (1 - q)*a + q*b
+    "UniformDistribution" if dargs.len() == 1 => {
+      let (a, b) = match &dargs[0] {
+        Expr::List(bounds) if bounds.len() == 2 => {
+          (bounds[0].clone(), bounds[1].clone())
+        }
+        _ => return None,
+      };
+      eval(plus(
+        times(minus(int(1), q.clone()), a),
+        times(q.clone(), b),
+      ))
+      .ok()
+    }
+    // Quantile[NormalDistribution[m, s], q] = m - Sqrt[2]*s*InverseErfc[2q]
+    "NormalDistribution" if dargs.is_empty() || dargs.len() == 2 => {
+      let (m, s) = if dargs.is_empty() {
+        (int(0), int(1))
+      } else {
+        (dargs[0].clone(), dargs[1].clone())
+      };
+      if is_exact_q {
+        if q_num == 0.0 {
+          return Some(neg_infinity());
+        }
+        if q_num == 1.0 {
+          return Some(infinity());
+        }
+        // InverseErfc[1] = 0: the median is exactly m
+        if let Some((1, 2)) = crate::functions::math_ast::expr_to_rational(q) {
+          return eval(m).ok();
+        }
+        // m - Sqrt[2]*s*InverseErfc[2q], kept raw so the factor order
+        // matches wolframscript (InverseErfc stays symbolic in Woxi)
+        let two_q = eval(times(int(2), q.clone())).ok()?;
+        let inverse_erfc = Expr::FunctionCall {
+          name: "InverseErfc".to_string(),
+          args: vec![two_q].into(),
+        };
+        let sqrt2 = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![int(2)].into(),
+        };
+        let factors: Vec<Expr> = match &s {
+          Expr::Integer(1) => vec![sqrt2, inverse_erfc],
+          _ => vec![sqrt2, s.clone(), inverse_erfc],
+        };
+        let term = Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: factors.into(),
+          }),
+        };
+        return Some(match &m {
+          Expr::Integer(0) => term,
+          _ => Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![m.clone(), term].into(),
+          },
+        });
+      }
+      // Machine-precision q: numeric inverse CDF (requires numeric m, s)
+      let m_num = crate::functions::math_ast::expr_to_num(&m)?;
+      let s_num = crate::functions::math_ast::expr_to_num(&s)?;
+      let z = crate::functions::math_ast::inverse_erf_f64(2.0 * q_num - 1.0);
+      Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
     _ => None,
   }

@@ -972,3 +972,105 @@ mod hazard_function {
     );
   }
 }
+
+mod inverse_cdf {
+  use super::*;
+
+  #[test]
+  fn exponential() {
+    assert_eq!(
+      interpret("InverseCDF[ExponentialDistribution[2], 1/2]").unwrap(),
+      "Log[2]/2"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ExponentialDistribution[a], 1/4]").unwrap(),
+      "Log[4/3]/a"
+    );
+  }
+
+  #[test]
+  fn exponential_edges() {
+    assert_eq!(
+      interpret("InverseCDF[ExponentialDistribution[a], 1]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("InverseCDF[ExponentialDistribution[a], 0]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn uniform() {
+    assert_eq!(
+      interpret("InverseCDF[UniformDistribution[{0, 10}], 1/4]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("InverseCDF[UniformDistribution[{a, b}], 1/4]").unwrap(),
+      "(3*a)/4 + b/4"
+    );
+  }
+
+  #[test]
+  fn normal_median() {
+    assert_eq!(
+      interpret("InverseCDF[NormalDistribution[0, 1], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("InverseCDF[NormalDistribution[m, s], 1/2]").unwrap(),
+      "m"
+    );
+  }
+
+  #[test]
+  fn normal_symbolic_quartile() {
+    assert_eq!(
+      interpret("InverseCDF[NormalDistribution[0, 1], 1/4]").unwrap(),
+      "-(Sqrt[2]*InverseErfc[1/2])"
+    );
+    assert_eq!(
+      interpret("InverseCDF[NormalDistribution[m, s], 1/4]").unwrap(),
+      "m - Sqrt[2]*s*InverseErfc[1/2]"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("InverseCDF[x, 1/2]").unwrap(),
+      "InverseCDF[x, 1/2]"
+    );
+  }
+}
+
+mod quantile_distribution_extended {
+  use super::*;
+
+  #[test]
+  fn quantile_matches_inverse_cdf() {
+    // Quantile gained the same closed forms
+    assert_eq!(
+      interpret("Quantile[NormalDistribution[0, 1], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[UniformDistribution[{a, b}], 1/4]").unwrap(),
+      "(3*a)/4 + b/4"
+    );
+    assert_eq!(
+      interpret("Quantile[NormalDistribution[m, s], 1/4]").unwrap(),
+      "m - Sqrt[2]*s*InverseErfc[1/2]"
+    );
+  }
+
+  #[test]
+  fn exponential_at_one_is_infinity() {
+    // Regression: used to produce the unreduced Infinity/a
+    assert_eq!(
+      interpret("Quantile[ExponentialDistribution[a], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+}
