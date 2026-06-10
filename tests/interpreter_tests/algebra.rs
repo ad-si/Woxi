@@ -5559,6 +5559,45 @@ mod cases {
     );
   }
   #[test]
+  fn min_value_univariate() {
+    assert_case(r#"MinValue[2 x^2 - 3 x + 5, x]"#, r#"31/8"#);
+  }
+  #[test]
+  fn min_value_multivariate() {
+    assert_case(r#"MinValue[(x y - 3)^2 + 1, {x, y}]"#, r#"1"#);
+    assert_case(r#"MinValue[x^2 + y^2 - 2 x, {x, y}]"#, r#"-1"#);
+  }
+  #[test]
+  fn min_value_disk_constraint() {
+    assert_case(
+      r#"MinValue[{x - 2 y, x^2 + y^2 <= 1}, {x, y}]"#,
+      r#"-Sqrt[5]"#,
+    );
+  }
+  #[test]
+  fn max_value_univariate() {
+    assert_case(r#"MaxValue[-x^2 + 4 x, x]"#, r#"4"#);
+  }
+  #[test]
+  fn max_value_disk_constraint() {
+    assert_case(
+      r#"MaxValue[{x + 2 y, x^2 + y^2 <= 1}, {x, y}]"#,
+      r#"Sqrt[5]"#,
+    );
+  }
+  #[test]
+  fn max_value_equality_constraint() {
+    assert_case(r#"MaxValue[{x y, x + y == 4}, {x, y}]"#, r#"4"#);
+  }
+  #[test]
+  fn max_value_unbounded_no_message() {
+    // Maximize emits Maximize::natt here; MaxValue must return Infinity
+    // without any message (matches wolframscript). Check[] detects a
+    // stray message and would return the fallback string instead.
+    assert_case(r#"MaxValue[x^2, x]"#, r#"Infinity"#);
+    assert_case(r#"Check[MaxValue[x^2, x], "msg emitted"]"#, r#"Infinity"#);
+  }
+  #[test]
   fn apart_1() {
     assert_case(
       r#"Apart[1 / (x^2 + 5x + 6)]"#,

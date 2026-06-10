@@ -229,6 +229,41 @@ pub fn dispatch_polynomial_functions(
     "Maximize" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::minimize_ast(args, true));
     }
+    // MinValue[f, x] / MaxValue[f, x] — the extremum value from the exact
+    // optimizer's `{value, rules}` result. Unlike Maximize/Minimize these
+    // emit no messages in Wolfram (e.g. no natt for unbounded objectives),
+    // so the optimizer runs quietly with the message buffers restored.
+    "MinValue" | "MaxValue" if args.len() == 2 || args.len() == 3 => {
+      let maximize = name == "MaxValue";
+      let opt_name = if maximize { "Maximize" } else { "Minimize" };
+      let snapshot = crate::snapshot_warnings();
+      crate::push_quiet();
+      let optimized = if args.len() == 2
+        && matches!(&args[0], Expr::List(items) if items.len() == 2)
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 2
+            && items.iter().all(|v| matches!(v, Expr::Identifier(_)))
+        ) {
+        if let Some(result) =
+          try_constrained_linear_disk_symbolic(opt_name, args)
+        {
+          Ok(result)
+        } else {
+          crate::functions::polynomial_ast::minimize_ast(args, maximize)
+        }
+      } else {
+        crate::functions::polynomial_ast::minimize_ast(args, maximize)
+      };
+      crate::pop_quiet();
+      crate::restore_warnings(snapshot);
+      match optimized {
+        Ok(Expr::List(ref result)) if result.len() == 2 => {
+          return Some(Ok(result[0].clone()));
+        }
+        _ => {} // optimizer failed or stayed symbolic; fall through
+      }
+    }
     // ArgMax[f, x] / ArgMin[f, x] — exact (symbolic) optimizing argument(s).
     // Delegates to the same exact optimizer as Maximize/Minimize and then
     // extracts the argument value(s) from the returned `{value, {x -> a, ...}}`

@@ -1287,7 +1287,7 @@ RegionBoundary,,🚫,,10.0,1301
 FormFunction,,🚫,,10.0,1303
 GeneratedCell,,🚫,,3.0,1303
 StreamStyle,,🚫,,7.0,1304
-MaxValue,,🚫,,7.0,1305
+MaxValue,Global symbolic maximum value of a function over variables with optional constraints,✅,pure,7.0,1305
 KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
 KelvinKei,Kelvin kei function (imaginary part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1307
 TabView,,🚫,,6.0,1308
@@ -1659,7 +1659,7 @@ LogLikelihood,Log-likelihood function,,unevaluated,8.0,1687
 RectangleChart,Rectangle chart,,unevaluated,7.0,1687
 SpanFromAbove,Span from above,,unevaluated,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688
-MinValue,Minimum value,,unevaluated,7.0,1690
+MinValue,Global symbolic minimum value of a function over variables with optional constraints,✅,pure,7.0,1690
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,1692
 SubPlus,Subscript plus notation,,unevaluated,6.0,1692
 Extension,Extension option,,unevaluated,3.0,1693
