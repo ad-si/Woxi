@@ -871,7 +871,7 @@ FunctionDomain,Find the domain of a function,✅,pure,10.0,878
 EllipticE,Complete elliptic integral of the second kind E(m),✅,pure,1.0,879
 WikipediaData,,🚫,,10.1,880
 ArrayPad,Pads an array with elements on each side,✅,pure,7.0,881
-Convolve,,🚫,,7.0,882
+Convolve,Symbolic convolution of two expressions over the real line,✅,pure,7.0,882
 AircraftData,,🚫,,10.0,883
 IntegerPartitions,Returns the integer partitions of n,✅,pure,6.0,884
 MinMax,Returns the minimum and maximum of a list,✅,pure,10.1,885

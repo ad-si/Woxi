@@ -658,6 +658,9 @@ pub fn dispatch_calculus_functions(
         args,
       ));
     }
+    "Convolve" if args.len() == 4 => {
+      return Some(crate::functions::convolve_ast::convolve_ast(args));
+    }
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
     }

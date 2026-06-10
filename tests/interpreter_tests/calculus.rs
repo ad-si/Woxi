@@ -7342,3 +7342,72 @@ mod inverse_z_transform {
     );
   }
 }
+
+mod convolve {
+  use super::*;
+
+  #[test]
+  fn gaussian_pairs() {
+    assert_eq!(
+      interpret("Convolve[E^(-x^2), E^(-x^2), x, y]").unwrap(),
+      "Sqrt[Pi/2]/E^(y^2/2)"
+    );
+    assert_eq!(
+      interpret("Convolve[E^(-x^2), E^(-2*x^2), x, y]").unwrap(),
+      "Sqrt[Pi/3]/E^((2*y^2)/3)"
+    );
+  }
+
+  #[test]
+  fn unit_functions() {
+    assert_eq!(
+      interpret("Convolve[UnitBox[x], UnitBox[x], x, y]").unwrap(),
+      "UnitTriangle[y]"
+    );
+    assert_eq!(
+      interpret("Convolve[UnitStep[x], UnitStep[x], x, y]").unwrap(),
+      "y*UnitStep[y]"
+    );
+  }
+
+  #[test]
+  fn exponential_step() {
+    assert_eq!(
+      interpret("Convolve[Exp[-x]*UnitStep[x], Exp[-x]*UnitStep[x], x, y]")
+        .unwrap(),
+      "(y*UnitStep[y])/E^y"
+    );
+    assert_eq!(
+      interpret("Convolve[Exp[-2 x]*UnitStep[x], Exp[-2 x]*UnitStep[x], x, y]")
+        .unwrap(),
+      "(y*UnitStep[y])/E^(2*y)"
+    );
+  }
+
+  #[test]
+  fn dirac_delta_identity() {
+    // DiracDelta is the convolution identity
+    assert_eq!(
+      interpret("Convolve[DiracDelta[x], Sin[x], x, y]").unwrap(),
+      "Sin[y]"
+    );
+    assert_eq!(
+      interpret("Convolve[DiracDelta[x], x^2 + 1, x, y]").unwrap(),
+      "1 + y^2"
+    );
+    // Commuted argument order works too
+    assert_eq!(
+      interpret("Convolve[Sin[x], DiracDelta[x], x, y]").unwrap(),
+      "Sin[y]"
+    );
+  }
+
+  #[test]
+  fn unsupported_stays_unevaluated() {
+    // Divergent convolution: wolframscript also leaves it unevaluated
+    assert_eq!(
+      interpret("Convolve[Sin[x], Cos[x], x, y]").unwrap(),
+      "Convolve[Sin[x], Cos[x], x, y]"
+    );
+  }
+}
