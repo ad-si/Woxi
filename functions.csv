@@ -4927,7 +4927,7 @@ ExternalBundle,,🚫,,10.0,5184
 ExternalStorageGet,,,,12.1,5184
 FaceRecognize,,,,12.2,5184
 FeatureExtractorFunction,,🚫,,11.0,5184
-Fibonorial,,,,10.0,5184
+Fibonorial,Product of the first n Fibonacci numbers,✅,pure,10.0,5184
 FileFormatQ,,,,12.2,5184
 FindCookies,,,,11.0,5184
 FischerGroupFi24Prime,,,,8.0,5184

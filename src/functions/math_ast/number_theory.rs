@@ -7760,3 +7760,45 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => Ok(unevaluated(args)),
   }
 }
+
+/// Fibonorial[n] - product of the first n Fibonacci numbers.
+/// Negative integers give ComplexInfinity; non-integer numbers emit
+/// Fibonorial::intnm and stay unevaluated; symbols stay quiet.
+pub fn fibonorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "Fibonorial".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  let is_non_integer_number = match &args[0] {
+    Expr::Real(_) => true,
+    Expr::FunctionCall { name, .. } if name == "Rational" => true,
+    _ => false,
+  };
+  match &args[0] {
+    Expr::Integer(n) if *n >= 0 => {
+      let mut product = BigInt::from(1);
+      let (mut a, mut b) = (BigInt::from(1), BigInt::from(1));
+      for _ in 0..*n {
+        product *= &a;
+        let next = &a + &b;
+        a = b;
+        b = next;
+      }
+      Ok(crate::functions::math_ast::numeric_utils::bigint_to_expr(
+        product,
+      ))
+    }
+    Expr::Integer(_) => Ok(Expr::Identifier("ComplexInfinity".to_string())),
+    _ if is_non_integer_number => {
+      crate::emit_message(&format!(
+        "Fibonorial::intnm: Non-negative machine-sized integer expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&unevaluated(args))
+      ));
+      Ok(unevaluated(args))
+    }
+    _ => Ok(unevaluated(args)),
+  }
+}

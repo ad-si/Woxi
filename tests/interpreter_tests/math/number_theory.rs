@@ -3131,3 +3131,38 @@ mod number_decompose {
     assert_case(r#"NumberDecompose[325, x]"#, r#"NumberDecompose[325, x]"#);
   }
 }
+
+mod fibonorial {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn small_values() {
+    assert_case(
+      r#"Fibonorial /@ Range[0, 10]"#,
+      r#"{1, 1, 1, 2, 6, 30, 240, 3120, 65520, 2227680, 122522400}"#,
+    );
+  }
+
+  #[test]
+  fn big_integer_values() {
+    assert_case(
+      r#"Fibonorial[20]"#,
+      r#"9692987370815489224102512784450560000"#,
+    );
+  }
+
+  #[test]
+  fn negative_integers_are_complex_infinity() {
+    assert_case(r#"Fibonorial[-1]"#, r#"ComplexInfinity"#);
+    assert_case(r#"Fibonorial[-4]"#, r#"ComplexInfinity"#);
+  }
+
+  #[test]
+  fn non_integer_input() {
+    // Rationals and reals emit Fibonorial::intnm and stay unevaluated;
+    // symbols stay quiet
+    assert_case(r#"Fibonorial[5/2]"#, r#"Fibonorial[5/2]"#);
+    assert_case(r#"Fibonorial[2.5]"#, r#"Fibonorial[2.5]"#);
+    assert_case(r#"Fibonorial[x]"#, r#"Fibonorial[x]"#);
+  }
+}
