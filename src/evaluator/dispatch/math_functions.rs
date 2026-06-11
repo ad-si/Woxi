@@ -1732,6 +1732,9 @@ pub fn dispatch_math_functions(
     "RomanNumeral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::roman_numeral_ast(args));
     }
+    "FromRomanNumeral" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::from_roman_numeral_ast(args));
+    }
     "FactorInteger" if args.len() == 1 => {
       return Some(crate::functions::math_ast::factor_integer_ast(args));
     }

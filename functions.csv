@@ -3715,7 +3715,7 @@ DateWithinQ,,,,11.1,3823
 DavisDistribution,,,,8.0,3823
 Deletable,,,,3.0,3823
 FindKPlex,,,,9.0,3823
-FromRomanNumeral,,,,10.2,3823
+FromRomanNumeral,Integer value of a roman numeral string (pairwise subtractive),✅,pure,10.2,3823
 MessagePacket,,🚫,,3.0,3823
 NetPortGradient,,🚫,,11.1,3823
 NumberExpand,Place-value decomposition of exact numbers in any base,✅,pure,11.0,3823

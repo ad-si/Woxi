@@ -3324,3 +3324,48 @@ mod continued_fraction_negative_convention {
     assert_case(r#"ContinuedFraction[Sqrt[2]/2]"#, r#"{0, 1, {2}}"#);
   }
 }
+
+mod from_roman_numeral {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn standard_numerals() {
+    assert_case(r#"FromRomanNumeral["MCMXCIV"]"#, r#"1994"#);
+    // Case-insensitive
+    assert_case(r#"FromRomanNumeral["mcmxciv"]"#, r#"1994"#);
+    assert_case(r#"FromRomanNumeral["McM"]"#, r#"1900"#);
+    // N denotes zero (RomanNumeral[0] is "N"), alone or repeated
+    assert_case(r#"FromRomanNumeral["N"]"#, r#"0"#);
+    assert_case(r#"FromRomanNumeral["NN"]"#, r#"0"#);
+    assert_case(r#"FromRomanNumeral[""]"#, r#"0"#);
+  }
+
+  #[test]
+  fn non_canonical_forms() {
+    // Generic pairwise subtractive rule, not strict syntax
+    assert_case(r#"FromRomanNumeral["IIII"]"#, r#"4"#);
+    assert_case(r#"FromRomanNumeral["XIIX"]"#, r#"20"#);
+    assert_case(r#"FromRomanNumeral["VX"]"#, r#"5"#);
+    assert_case(r#"FromRomanNumeral["IM"]"#, r#"999"#);
+    assert_case(r#"FromRomanNumeral["MMMMM"]"#, r#"5000"#);
+  }
+
+  #[test]
+  fn listability_and_round_trip() {
+    assert_case(r#"FromRomanNumeral[{"III", "IX"}]"#, r#"{3, 9}"#);
+    assert_case(
+      r#"FromRomanNumeral[RomanNumeral[Range[0, 30]]] == Range[0, 30]"#,
+      r#"True"#,
+    );
+  }
+
+  #[test]
+  fn invalid_input() {
+    // Invalid characters emit FromRomanNumeral::nrom; non-strings emit
+    // FromRomanNumeral::string
+    assert_case(r#"FromRomanNumeral["ABC"]"#, r#"FromRomanNumeral[ABC]"#);
+    assert_case(r#"FromRomanNumeral["I I"]"#, r#"FromRomanNumeral[I I]"#);
+    assert_case(r#"FromRomanNumeral[5]"#, r#"FromRomanNumeral[5]"#);
+    assert_case(r#"FromRomanNumeral[x]"#, r#"FromRomanNumeral[x]"#);
+  }
+}

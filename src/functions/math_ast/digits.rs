@@ -3068,3 +3068,71 @@ pub fn minkowski_question_mark_ast(
 
   Ok(super::number_theory::make_rational_expr(total.0, total.1))
 }
+
+/// FromRomanNumeral[s] - integer value of a roman numeral string.
+/// Case-insensitive over I V X L C D M plus N for zero; values combine
+/// with the generic pairwise subtractive rule (a symbol smaller than
+/// its successor counts negative), so non-canonical forms like "IIII"
+/// (4), "XIIX" (20) and "IM" (999) are accepted. Lists map elementwise.
+/// Other characters emit FromRomanNumeral::nrom; non-strings emit
+/// FromRomanNumeral::string.
+pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FromRomanNumeral".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let values: Option<Vec<i128>> = s
+        .chars()
+        .map(|c| match c.to_ascii_uppercase() {
+          'N' => Some(0),
+          'I' => Some(1),
+          'V' => Some(5),
+          'X' => Some(10),
+          'L' => Some(50),
+          'C' => Some(100),
+          'D' => Some(500),
+          'M' => Some(1000),
+          _ => None,
+        })
+        .collect();
+      match values {
+        Some(v) => {
+          let mut total = 0i128;
+          for (i, val) in v.iter().enumerate() {
+            if v.get(i + 1).is_some_and(|next| val < next) {
+              total -= val;
+            } else {
+              total += val;
+            }
+          }
+          Ok(Expr::Integer(total))
+        }
+        None => {
+          crate::emit_message(&format!(
+            "FromRomanNumeral::nrom: String {s} does not represent a valid roman numeral."
+          ));
+          Ok(unevaluated(args))
+        }
+      }
+    }
+    Expr::List(items) => {
+      let mut results = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        results.push(from_roman_numeral_ast(&[item.clone()])?);
+      }
+      Ok(Expr::List(results.into()))
+    }
+    _ => {
+      crate::emit_message(&format!(
+        "FromRomanNumeral::string: String expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&unevaluated(args))
+      ));
+      Ok(unevaluated(args))
+    }
+  }
+}
