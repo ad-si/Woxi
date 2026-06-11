@@ -631,3 +631,433 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into(),
   })
 }
+
+// ---------------------------------------------------------------------------
+// DirichletConvolve[f, g, n, m] — the Dirichlet convolution
+//   Sum over the divisors d of m of f(d) g(m/d).
+//
+// Matches wolframscript's evaluation strategy (decoded by probing):
+// 1. Positive integer m: expand the divisor sum directly.
+// 2. Symbolic m, every term pair reducible by the identity table
+//    (n^j * n^k, MoebiusMu * 1, MoebiusMu * n, EulerPhi * 1): full closed
+//    form via linearity.
+// 3. Symbolic m with g == 1: rewrite as DivisorSum[m, f(#) &] (whole f —
+//    no linear split on this path).
+// 4. Otherwise split linearly (swapping the arguments first when f is a
+//    sum and g is not); reducible pairs use the table plus
+//    `unknown * 1 -> DivisorSum`, irreducible pairs stay as inert
+//    DirichletConvolve terms.
+
+use crate::syntax::BinaryOperator;
+
+#[derive(Clone)]
+enum ConvAtom {
+  /// var^k for integer k >= 0 (k = 0 is the constant 1, k = 1 is var)
+  Power(i128),
+  Mu,
+  Phi,
+  Unknown,
+}
+
+/// One additive term of f or g: numeric/var-free coefficient factors,
+/// the classified var-dependent atom, and the atom's original expression
+/// (used for inert DirichletConvolve output and DivisorSum bodies).
+struct ConvTerm {
+  coeff: Vec<Expr>,
+  atom: ConvAtom,
+  atom_expr: Expr,
+}
+
+fn flatten_plus(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      flatten_plus(left, out);
+      flatten_plus(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args.iter() {
+        flatten_plus(a, out);
+      }
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_times(left, out);
+      flatten_times(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        flatten_times(a, out);
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      out.push(Expr::Integer(-1));
+      flatten_times(operand, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+fn classify_term(term: &Expr, var: &str) -> ConvTerm {
+  let mut factors = Vec::new();
+  flatten_times(term, &mut factors);
+  let (coeff, var_factors): (Vec<Expr>, Vec<Expr>) = factors
+    .into_iter()
+    .partition(|f| crate::functions::calculus_ast::is_constant_wrt(f, var));
+  let atom = if var_factors.is_empty() {
+    ConvAtom::Power(0)
+  } else if var_factors.len() == 1 {
+    match &var_factors[0] {
+      Expr::Identifier(s) if s == var => ConvAtom::Power(1),
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Identifier(s) if s == var) => {
+        match right.as_ref() {
+          Expr::Integer(k) if *k >= 0 => ConvAtom::Power(*k),
+          _ => ConvAtom::Unknown,
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == var) =>
+      {
+        match name.as_str() {
+          "MoebiusMu" => ConvAtom::Mu,
+          "EulerPhi" => ConvAtom::Phi,
+          _ => ConvAtom::Unknown,
+        }
+      }
+      _ => ConvAtom::Unknown,
+    }
+  } else {
+    ConvAtom::Unknown
+  };
+  let atom_expr = if var_factors.is_empty() {
+    Expr::Integer(1)
+  } else if var_factors.len() == 1 {
+    var_factors[0].clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: var_factors.into(),
+    }
+  };
+  ConvTerm {
+    coeff,
+    atom,
+    atom_expr,
+  }
+}
+
+fn divisor_sigma_expr(k: i128, m: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "DivisorSigma".to_string(),
+    args: vec![Expr::Integer(k), m.clone()].into(),
+  }
+}
+
+/// Closed form for a pair of classified atoms, or None when the pair has
+/// no identity. `with_divisor_sum` enables the `unknown * 1 -> DivisorSum`
+/// rule (used on the linear-split path but not for full reduction).
+fn convolve_pair(
+  a: &ConvTerm,
+  b: &ConvTerm,
+  var: &str,
+  m: &Expr,
+  with_divisor_sum: bool,
+) -> Option<Expr> {
+  use ConvAtom::*;
+  match (&a.atom, &b.atom) {
+    (Power(j), Power(k)) => {
+      let mn = (*j).min(*k);
+      let diff = (*j - *k).abs();
+      let sigma = divisor_sigma_expr(diff, m);
+      if mn > 0 {
+        Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(m.clone()),
+              right: Box::new(Expr::Integer(mn)),
+            },
+            sigma,
+          ]
+          .into(),
+        })
+      } else {
+        Some(sigma)
+      }
+    }
+    (Mu, Power(0)) | (Power(0), Mu) => Some(Expr::FunctionCall {
+      name: "KroneckerDelta".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), m.clone()].into(),
+          },
+        ]
+        .into(),
+      }]
+      .into(),
+    }),
+    (Mu, Power(1)) | (Power(1), Mu) => Some(Expr::FunctionCall {
+      name: "EulerPhi".to_string(),
+      args: vec![m.clone()].into(),
+    }),
+    (Phi, Power(0)) | (Power(0), Phi) => Some(m.clone()),
+    (Unknown, Power(0)) if with_divisor_sum => {
+      Some(divisor_sum_expr(&a.atom_expr, var, m))
+    }
+    (Power(0), Unknown) if with_divisor_sum => {
+      Some(divisor_sum_expr(&b.atom_expr, var, m))
+    }
+    _ => None,
+  }
+}
+
+/// DivisorSum[m, body(#) &] with `var` replaced by the slot.
+fn divisor_sum_expr(body: &Expr, var: &str, m: &Expr) -> Expr {
+  let slotted = crate::syntax::substitute_variable(body, var, &Expr::Slot(1));
+  let slotted = reorder_slots_last(&slotted);
+  Expr::FunctionCall {
+    name: "DivisorSum".to_string(),
+    args: vec![
+      m.clone(),
+      Expr::Function {
+        body: Box::new(slotted),
+      },
+    ]
+    .into(),
+  }
+}
+
+/// Wolfram's canonical order sorts bare slots after composite terms
+/// (`f[#1] + #1`, `f[#1]*#1`), while Woxi's sorts them first. Reorder the
+/// top-level Plus/Times factors of a function body to match, since the
+/// body is held inside Function and never re-canonicalized.
+fn reorder_slots_last(expr: &Expr) -> Expr {
+  let is_plus = matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus");
+  let is_times = matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, .. } if name == "Times");
+  if !is_plus && !is_times {
+    return expr.clone();
+  }
+  let mut parts = Vec::new();
+  if is_plus {
+    flatten_plus(expr, &mut parts);
+    for p in parts.iter_mut() {
+      *p = reorder_slots_last(p);
+    }
+  } else {
+    flatten_times(expr, &mut parts);
+  }
+  let (others, slots): (Vec<Expr>, Vec<Expr>) =
+    parts.into_iter().partition(|e| !matches!(e, Expr::Slot(_)));
+  if slots.is_empty() {
+    return expr.clone();
+  }
+  let mut all = others;
+  all.extend(slots);
+  Expr::FunctionCall {
+    name: if is_plus { "Plus" } else { "Times" }.to_string(),
+    args: all.into(),
+  }
+}
+
+/// Multiply the two terms' coefficient factors into `core`.
+fn scale_by_coeffs(core: Expr, a: &ConvTerm, b: &ConvTerm) -> Expr {
+  let mut factors: Vec<Expr> = Vec::new();
+  factors.extend(a.coeff.iter().cloned());
+  factors.extend(b.coeff.iter().cloned());
+  if factors.is_empty() {
+    return core;
+  }
+  factors.push(core);
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors.into(),
+  }
+}
+
+pub fn dirichlet_convolve_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "DirichletConvolve".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (f, g, var_expr, m) = (&args[0], &args[1], &args[2], &args[3]);
+  let var = match var_expr {
+    Expr::Identifier(s) => s.clone(),
+    _ => return Ok(unevaluated()),
+  };
+  // wolframscript leaves List arguments unevaluated (no listability)
+  if matches!(f, Expr::List(_)) || matches!(g, Expr::List(_)) {
+    return Ok(unevaluated());
+  }
+
+  // Numeric m: positive integers expand the divisor sum directly; other
+  // numeric values stay unevaluated.
+  match m {
+    Expr::Integer(mv) => {
+      if *mv < 1 {
+        return Ok(unevaluated());
+      }
+      let divisors = match divisors_of_i128(*mv) {
+        Some(d) => d,
+        None => return Ok(unevaluated()),
+      };
+      let terms: Vec<Expr> = divisors
+        .iter()
+        .map(|d| {
+          let fd =
+            crate::syntax::substitute_variable(f, &var, &Expr::Integer(*d));
+          let gq = crate::syntax::substitute_variable(
+            g,
+            &var,
+            &Expr::Integer(mv / d),
+          );
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![fd, gq].into(),
+          }
+        })
+        .collect();
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      });
+    }
+    Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(_, _) => {
+      return Ok(unevaluated());
+    }
+    _ => {}
+  }
+
+  // Symbolic m.
+  let mut f_addends = Vec::new();
+  let mut g_addends = Vec::new();
+  flatten_plus(f, &mut f_addends);
+  flatten_plus(g, &mut g_addends);
+  let f_terms: Vec<ConvTerm> =
+    f_addends.iter().map(|t| classify_term(t, &var)).collect();
+  let g_terms: Vec<ConvTerm> =
+    g_addends.iter().map(|t| classify_term(t, &var)).collect();
+
+  // 1. Full reduction: every pair must have a closed form (without the
+  //    DivisorSum fallback rule).
+  let mut reduced: Vec<Expr> = Vec::new();
+  let mut all_reduce = true;
+  'outer: for ft in &f_terms {
+    for gt in &g_terms {
+      match convolve_pair(ft, gt, &var, m, false) {
+        Some(core) => reduced.push(scale_by_coeffs(core, ft, gt)),
+        None => {
+          all_reduce = false;
+          break 'outer;
+        }
+      }
+    }
+  }
+  if all_reduce {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: reduced.into(),
+    });
+  }
+
+  // 2. g == 1: the convolution is a plain divisor sum over f (whole f,
+  //    no linear split on this path — matching wolframscript).
+  if matches!(g, Expr::Integer(1)) {
+    return crate::evaluator::evaluate_expr_to_expr(&divisor_sum_expr(
+      f, &var, m,
+    ));
+  }
+
+  // 3. Linear split. wolframscript commutes the arguments first when f is
+  //    a sum and g is not (so the split runs over the second argument).
+  let f_is_sum = f_terms.len() > 1;
+  let g_is_sum = g_terms.len() > 1;
+  let (a_terms, b_terms) = if f_is_sum && !g_is_sum {
+    (g_terms, f_terms)
+  } else {
+    (f_terms, g_terms)
+  };
+  let mut parts: Vec<Expr> = Vec::new();
+  for at in &a_terms {
+    for bt in &b_terms {
+      let core = match convolve_pair(at, bt, &var, m, true) {
+        Some(c) => c,
+        None => Expr::FunctionCall {
+          name: "DirichletConvolve".to_string(),
+          args: vec![
+            at.atom_expr.clone(),
+            bt.atom_expr.clone(),
+            Expr::Identifier(var.clone()),
+            m.clone(),
+          ]
+          .into(),
+        },
+      };
+      parts.push(scale_by_coeffs(core, at, bt));
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: parts.into(),
+  })
+}
+
+/// All positive divisors of n in ascending order.
+fn divisors_of_i128(n: i128) -> Option<Vec<i128>> {
+  if n < 1 {
+    return None;
+  }
+  let mut small = Vec::new();
+  let mut large = Vec::new();
+  let mut d: i128 = 1;
+  while d * d <= n {
+    if n % d == 0 {
+      small.push(d);
+      if d * d != n {
+        large.push(n / d);
+      }
+    }
+    d += 1;
+  }
+  large.reverse();
+  small.extend(large);
+  Some(small)
+}

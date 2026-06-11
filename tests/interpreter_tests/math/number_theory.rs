@@ -3428,3 +3428,235 @@ mod dirichlet_l {
     assert_case(r#"DirichletL[5, 0, 1]"#, r#"DirichletL[5, 0, 1]"#);
   }
 }
+
+mod dirichlet_convolve {
+  use super::*;
+
+  #[test]
+  fn numeric_modulus_expands_divisor_sum() {
+    // Sum over divisors d of m of f(d) g(m/d)
+    assert_eq!(interpret("DirichletConvolve[n, n, n, 6]").unwrap(), "24");
+    assert_eq!(interpret("DirichletConvolve[1, 1, n, 12]").unwrap(), "6");
+    assert_eq!(interpret("DirichletConvolve[n, 1, n, 12]").unwrap(), "28");
+    assert_eq!(
+      interpret("DirichletConvolve[MoebiusMu[n], n, n, 12]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn numeric_modulus_with_unknown_functions() {
+    assert_eq!(
+      interpret("DirichletConvolve[f[n], g[n], n, 4]").unwrap(),
+      "f[4]*g[1] + f[2]*g[2] + f[1]*g[4]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[f[n], g[n], n, 1]").unwrap(),
+      "f[1]*g[1]"
+    );
+  }
+
+  #[test]
+  fn symbolic_power_identities() {
+    // n^j * n^k -> m^min(j,k) DivisorSigma[|j-k|, m]
+    assert_eq!(
+      interpret("DirichletConvolve[1, 1, n, m]").unwrap(),
+      "DivisorSigma[0, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[n, 1, n, m]").unwrap(),
+      "DivisorSigma[1, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[n^2, 1, n, m]").unwrap(),
+      "DivisorSigma[2, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[n, n, n, m]").unwrap(),
+      "m*DivisorSigma[0, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[n^2, n, n, m]").unwrap(),
+      "m*DivisorSigma[1, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[n^3, n, n, m]").unwrap(),
+      "m*DivisorSigma[2, m]"
+    );
+  }
+
+  #[test]
+  fn symbolic_moebius_and_totient_identities() {
+    assert_eq!(
+      interpret("DirichletConvolve[MoebiusMu[n], n, n, m]").unwrap(),
+      "EulerPhi[m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[MoebiusMu[n], 1, n, m]").unwrap(),
+      "KroneckerDelta[1 - m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[1, MoebiusMu[n], n, m]").unwrap(),
+      "KroneckerDelta[1 - m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[EulerPhi[n], 1, n, m]").unwrap(),
+      "m"
+    );
+  }
+
+  #[test]
+  fn linearity_and_coefficients() {
+    assert_eq!(
+      interpret("DirichletConvolve[n + 1, 1, n, m]").unwrap(),
+      "DivisorSigma[0, m] + DivisorSigma[1, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[2, 3, n, m]").unwrap(),
+      "6*DivisorSigma[0, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[2 n, 1, n, m]").unwrap(),
+      "2*DivisorSigma[1, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[a n, 1, n, m]").unwrap(),
+      "a*DivisorSigma[1, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[2 MoebiusMu[n], 1, n, m]").unwrap(),
+      "2*KroneckerDelta[1 - m]"
+    );
+    // Variable not appearing in f, g: both are constants
+    assert_eq!(
+      interpret("DirichletConvolve[n, n, k, m]").unwrap(),
+      "n^2*DivisorSigma[0, m]"
+    );
+  }
+
+  #[test]
+  fn unit_second_argument_rewrites_to_divisor_sum() {
+    // g == 1 with irreducible f: whole f becomes a DivisorSum body
+    assert_eq!(
+      interpret("DirichletConvolve[f[n], 1, n, m]").unwrap(),
+      "DivisorSum[m, f[#1] & ]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[f[n] + n, 1, n, m]").unwrap(),
+      "DivisorSum[m, f[#1] + #1 & ]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[n f[n], 1, n, m]").unwrap(),
+      "DivisorSum[m, f[#1]*#1 & ]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[f[n] + g[n], 1, n, m]").unwrap(),
+      "DivisorSum[m, f[#1] + g[#1] & ]"
+    );
+  }
+
+  #[test]
+  fn unit_first_argument_splits_linearly() {
+    // f == 1 splits g term-by-term (asymmetric with the g == 1 path)
+    assert_eq!(
+      interpret("DirichletConvolve[1, f[n], n, m]").unwrap(),
+      "DivisorSum[m, f[#1] & ]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[1, f[n] + n, n, m]").unwrap(),
+      "DivisorSigma[1, m] + DivisorSum[m, f[#1] & ]"
+    );
+  }
+
+  #[test]
+  fn partial_reduction_keeps_inert_pairs() {
+    assert_eq!(
+      interpret("DirichletConvolve[n + MoebiusMu[n], MoebiusMu[n], n, m]")
+        .unwrap(),
+      "DirichletConvolve[MoebiusMu[n], MoebiusMu[n], n, m] + EulerPhi[m]"
+    );
+    // A sum in f commutes to the second position before splitting
+    assert_eq!(
+      interpret("DirichletConvolve[f[n] + n, MoebiusMu[n], n, m]").unwrap(),
+      "DirichletConvolve[MoebiusMu[n], f[n], n, m] + EulerPhi[m]"
+    );
+  }
+
+  #[test]
+  fn irreducible_cases_stay_unevaluated() {
+    assert_eq!(
+      interpret("DirichletConvolve[f[n], g[n], n, m]").unwrap(),
+      "DirichletConvolve[f[n], g[n], n, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[MoebiusMu[n], MoebiusMu[n], n, m]")
+        .unwrap(),
+      "DirichletConvolve[MoebiusMu[n], MoebiusMu[n], n, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[MoebiusMu[n], n^2, n, m]").unwrap(),
+      "DirichletConvolve[MoebiusMu[n], n^2, n, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[f[n], EulerPhi[n], n, m]").unwrap(),
+      "DirichletConvolve[f[n], EulerPhi[n], n, m]"
+    );
+    assert_eq!(
+      interpret("DirichletConvolve[1, 1, n, 2.5]").unwrap(),
+      "DirichletConvolve[1, 1, n, 2.5]"
+    );
+  }
+
+  #[test]
+  fn symbolic_compound_modulus() {
+    assert_eq!(
+      interpret("DirichletConvolve[1, 1, n, 2 m]").unwrap(),
+      "DivisorSigma[0, 2*m]"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count_emits_argrx() {
+    assert_eq!(
+      interpret("DirichletConvolve[1, 1, n]").unwrap(),
+      "DirichletConvolve[1, 1, n]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "DirichletConvolve::argrx: DirichletConvolve called with 3 arguments; 4 arguments are expected."
+      )),
+      "expected argrx message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn moebius_mu_table_via_convolution() {
+    assert_eq!(
+      interpret("Table[DirichletConvolve[MoebiusMu[n], 1, n, m], {m, 1, 8}]")
+        .unwrap(),
+      "{1, 0, 0, 0, 0, 0, 0, 0}"
+    );
+  }
+}
+
+mod moebius_mu_symbolic {
+  use super::*;
+
+  #[test]
+  fn symbolic_argument_stays_unevaluated() {
+    // Regression: this used to be a hard evaluation error
+    assert_eq!(interpret("MoebiusMu[n]").unwrap(), "MoebiusMu[n]");
+    assert_eq!(interpret("MoebiusMu[2.5]").unwrap(), "MoebiusMu[2.5]");
+  }
+
+  #[test]
+  fn zero_and_negative_arguments() {
+    assert_eq!(interpret("MoebiusMu[0]").unwrap(), "0");
+    // Negative arguments use the absolute value
+    assert_eq!(interpret("MoebiusMu[-6]").unwrap(), "1");
+    assert_eq!(interpret("MoebiusMu[-4]").unwrap(), "0");
+    assert_eq!(interpret("MoebiusMu[-5]").unwrap(), "-1");
+  }
+}

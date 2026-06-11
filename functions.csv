@@ -3074,7 +3074,7 @@ InsertResults,,,,8.0,3143
 InsertionFunction,,,,10.0,3143
 Polyhedron,,🚫,,12.0,3143
 ClusterClassify,,🚫,,10.4,3153
-DirichletConvolve,,,,7.0,3153
+DirichletConvolve,Dirichlet convolution of two arithmetic expressions (divisor-sum expansion plus symbolic identities),✅,pure,7.0,3153
 InString,,,,2.0,3153
 LanguageCategory,,🚫,,4.0,3153
 LibraryFunction,,,,8.0,3153

@@ -859,6 +859,11 @@ pub fn dispatch_math_functions(
     "DirichletL" if args.len() == 3 => {
       return Some(crate::functions::dirichlet_ast::dirichlet_l_ast(args));
     }
+    "DirichletConvolve" if args.len() == 4 => {
+      return Some(crate::functions::dirichlet_ast::dirichlet_convolve_ast(
+        args,
+      ));
+    }
     "Pochhammer" if args.len() == 2 => {
       return Some(crate::functions::math_ast::pochhammer_ast(args));
     }

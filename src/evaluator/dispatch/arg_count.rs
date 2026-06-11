@@ -1081,6 +1081,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Fibonorial" => Some((1, 1)),
     "LogBarnesG" => Some((1, 1)),
     "DirichletCharacter" => Some((3, 3)),
+    "DirichletConvolve" => Some((4, 4)),
     "MinkowskiQuestionMark" => Some((1, 1)),
     "DirichletL" => Some((3, 3)),
     "UniformSumDistribution" => Some((1, 2)),

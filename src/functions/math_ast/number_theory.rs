@@ -2595,12 +2595,18 @@ pub fn moebius_mu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Integer arguments only: MoebiusMu[0] is 0, negative n uses |n|
+  // (matching wolframscript). Anything else stays unevaluated.
+  let is_integer =
+    matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_));
   let n = match expr_to_i128(&args[0]) {
-    Some(n) if n >= 1 => n as u128,
+    Some(0) if is_integer => return Ok(Expr::Integer(0)),
+    Some(v) if is_integer => v.unsigned_abs(),
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "MoebiusMu: argument must be a positive integer".into(),
-      ));
+      return Ok(Expr::FunctionCall {
+        name: "MoebiusMu".to_string(),
+        args: args.to_vec().into(),
+      });
     }
   };
 
