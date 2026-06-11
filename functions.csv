@@ -3587,7 +3587,7 @@ WakebyDistribution,,,,8.0,3678
 AiryAiZero,n-th real zero of the Airy function Ai,✅,pure,6.0,3697
 AudioFade,,🚫,,11.0,3697
 BirnbaumSaundersDistribution,,,,8.0,3697
-BorelTannerDistribution,,,,8.0,3697
+BorelTannerDistribution,Borel-Tanner discrete distribution (prime-power-merged PMF),✅,pure,8.0,3697
 CloudLoggingData,,🚫,,10.2,3697
 DynamicGeoGraphics,,🚫,,10.4,3697
 EntityStore,Represents an entity store for custom entity types,✅,pure,11.0,3697

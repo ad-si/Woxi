@@ -2706,3 +2706,84 @@ mod moyal_distribution {
     );
   }
 }
+
+mod borel_tanner_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_prime_power_merging() {
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[a, n], x]").unwrap(),
+      "Piecewise[{{(a^(-n + x)*n*x^(-1 - n + x))/(E^(a*x)*(-n + x)!), x >= n}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[a, 2], x]").unwrap(),
+      "Piecewise[{{(2*a^(-2 + x)*x^(-3 + x))/(E^(a*x)*(-2 + x)!), x >= 2}}, 0]"
+    );
+    // n = 2 merges into the q = 2 base: 2*2^(2-x) -> 2^(3-x)
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[1/2, 2], x]").unwrap(),
+      "Piecewise[{{(2^(3 - x)*x^(-3 + x))/(E^(x/2)*(-2 + x)!), x >= 2}}, 0]"
+    );
+    // ...but stays separate when no base matches
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[1/3, 2], x]").unwrap(),
+      "Piecewise[{{(2*3^(2 - x)*x^(-3 + x))/(E^(x/3)*(-2 + x)!), x >= 2}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[1/2, 3], x]").unwrap(),
+      "Piecewise[{{(3*2^(3 - x)*x^(-4 + x))/(E^(x/2)*(-3 + x)!), x >= 3}}, 0]"
+    );
+    // Rational a splits into p- and q-power factors, n merging into p
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[2/3, 2], x]").unwrap(),
+      "Piecewise[{{(2^(-1 + x)*3^(2 - x)*x^(-3 + x))/(E^((2*x)/3)*(-2 + x)!), x >= 2}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_points() {
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[1/2, 2], 5]").unwrap(),
+      "25/(24*E^(5/2))"
+    );
+    // Below the support and non-integers vanish
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[1/2, 2], 1]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[BorelTannerDistribution[1/2, 2], 7/2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn moments_and_unevaluated_cdf() {
+    assert_eq!(
+      interpret("Mean[BorelTannerDistribution[a, n]]").unwrap(),
+      "n/(1 - a)"
+    );
+    assert_eq!(
+      interpret("Mean[BorelTannerDistribution[1/2, 2]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Variance[BorelTannerDistribution[a, n]]").unwrap(),
+      "(a*n)/(1 - a)^3"
+    );
+    assert_eq!(
+      interpret("Variance[BorelTannerDistribution[a, 2]]").unwrap(),
+      "(2*a)/(1 - a)^3"
+    );
+    assert_eq!(
+      interpret("Variance[BorelTannerDistribution[1/2, 2]]").unwrap(),
+      "8"
+    );
+    // wolframscript leaves the CDF symbolic too
+    assert_eq!(
+      interpret("CDF[BorelTannerDistribution[1/2, 2], x]").unwrap(),
+      "CDF[BorelTannerDistribution[1/2, 2], x]"
+    );
+  }
+}

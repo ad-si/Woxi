@@ -156,6 +156,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
     "SechDistribution" => pdf_sech(dargs, x),
     "MoyalDistribution" => pdf_moyal(dargs, x),
+    "BorelTannerDistribution" => pdf_borel_tanner(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2951,6 +2952,14 @@ fn distribution_mean_variance(
         ));
       }
       maxwell_mean_variance(&dargs[0])
+    }
+    "BorelTannerDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BorelTannerDistribution expects 2 arguments".into(),
+        ));
+      }
+      borel_tanner_mean_variance(&dargs[0], &dargs[1])
     }
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
@@ -10516,5 +10525,174 @@ pub fn moyal_mean_variance(
     left: Box::new(call("Times", vec![power(pi(), int(2)), power(s, int(2))])),
     right: Box::new(int(2)),
   })?;
+  Ok((mean, var))
+}
+
+/// PDF[BorelTannerDistribution[a, n], x] =
+/// Piecewise[{{a^(x-n) n x^(x-n-1)/(E^(a x) (x-n)!), x >= n}}, 0].
+/// For rational a = p/q wolframscript splits the power into
+/// p^(x-n) q^(n-x) and merges any matching prime-power part of n into
+/// the bases (n = 2, a = 1/2 gives 2^(3-x)).
+pub fn pdf_borel_tanner(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BorelTannerDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, n) = (dargs[0].clone(), dargs[1].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+
+  // Numeric point: exact value or 0
+  if ms_numeric(&x).is_some() {
+    let (Some(xv), Some(nv)) = (ms_numeric(&x), ms_numeric(&n)) else {
+      return Ok(unevaluated(dargs, x));
+    };
+    if xv < nv || xv.fract() != 0.0 {
+      return Ok(int(0));
+    }
+    // a^(x-n) n x^(x-n-1) / (E^(a x) (x-n)!)
+    return eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Times",
+        vec![
+          power(a.clone(), plus(x.clone(), times(int(-1), n.clone()))),
+          n.clone(),
+          power(
+            x.clone(),
+            plus(plus(x.clone(), times(int(-1), n.clone())), int(-1)),
+          ),
+        ],
+      )),
+      right: Box::new(call(
+        "Times",
+        vec![
+          power(e(), times(a.clone(), x.clone())),
+          call(
+            "Factorial",
+            vec![plus(x.clone(), times(int(-1), n.clone()))],
+          ),
+        ],
+      )),
+    });
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+
+  // Numerator factors in wolframscript's order
+  let mut factors: Vec<Expr> = Vec::new();
+  let n_int = match &n {
+    Expr::Integer(v) if *v >= 1 => Some(*v),
+    _ => None,
+  };
+  match (maxwell_rational(&a), n_int) {
+    (Some((p, q)), Some(nv)) if p >= 1 && q > p => {
+      // Extract the p- and q-parts of n
+      let extract = |mut m: i128, base: i128| -> (i128, i128) {
+        if base <= 1 {
+          return (0, m);
+        }
+        let mut k = 0;
+        while m % base == 0 {
+          m /= base;
+          k += 1;
+        }
+        (k, m)
+      };
+      let (i, rest) = extract(nv, p);
+      let (j, m) = extract(rest, q);
+      if m > 1 {
+        factors.push(int(m));
+      }
+      if p > 1 {
+        // p^(x - n + i)
+        factors.push(power(int(p), call("Plus", vec![int(i - nv), x.clone()])));
+      }
+      // q^(n - x + j)
+      factors.push(power(
+        int(q),
+        call(
+          "Plus",
+          vec![int(nv + j), call("Times", vec![int(-1), x.clone()])],
+        ),
+      ));
+      // x^(x - n - 1)
+      factors.push(power(
+        x.clone(),
+        call("Plus", vec![int(-1 - nv), x.clone()]),
+      ));
+    }
+    _ => {
+      // Symbolic forms: a^(-n + x) n x^(-1 - n + x) or with numeric n
+      let neg_n = || -> Expr {
+        match n_int {
+          Some(nv) => int(-nv),
+          None => call("Times", vec![int(-1), n.clone()]),
+        }
+      };
+      if let Some(nv) = n_int {
+        factors.push(int(nv));
+        factors.push(power(a.clone(), call("Plus", vec![int(-nv), x.clone()])));
+        factors.push(power(
+          x.clone(),
+          call("Plus", vec![int(-1 - nv), x.clone()]),
+        ));
+      } else {
+        factors.push(power(a.clone(), call("Plus", vec![neg_n(), x.clone()])));
+        factors.push(n.clone());
+        factors.push(power(
+          x.clone(),
+          call("Plus", vec![int(-1), neg_n(), x.clone()]),
+        ));
+      }
+    }
+  }
+  let neg_n_expr = match n_int {
+    Some(nv) => int(-nv),
+    None => call("Times", vec![int(-1), n.clone()]),
+  };
+  let body = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call("Times", factors)),
+    right: Box::new(call(
+      "Times",
+      vec![
+        power(e(), eval(times(a.clone(), x.clone()))?),
+        call("Factorial", vec![call("Plus", vec![neg_n_expr, x.clone()])]),
+      ],
+    )),
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, n);
+  Ok(piecewise(vec![(body, cond)], int(0)))
+}
+
+/// Mean n/(1 - a) and variance a n/(1 - a)^3 for
+/// BorelTannerDistribution.
+pub fn borel_tanner_mean_variance(
+  a: &Expr,
+  n: &Expr,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let one_minus_a = plus(int(1), times(int(-1), a.clone()));
+  let mean = eval(divide(n.clone(), one_minus_a.clone()))?;
+  let var = eval(divide(
+    times(a.clone(), n.clone()),
+    power(one_minus_a, int(3)),
+  ))?;
   Ok((mean, var))
 }
