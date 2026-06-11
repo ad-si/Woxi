@@ -158,6 +158,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MoyalDistribution" => pdf_moyal(dargs, x),
     "BorelTannerDistribution" => pdf_borel_tanner(dargs, x),
     "BenktanderGibratDistribution" => pdf_benktander_gibrat(dargs, x),
+    "GumbelDistribution" => pdf_gumbel(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1148,6 +1149,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SechDistribution" => cdf_sech(dargs, x),
     "MoyalDistribution" => cdf_moyal(dargs, x),
     "BenktanderGibratDistribution" => cdf_benktander_gibrat(dargs, x),
+    "GumbelDistribution" => cdf_gumbel(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2971,6 +2973,7 @@ fn distribution_mean_variance(
       }
       benktander_gibrat_mean_variance(&dargs[0], &dargs[1])
     }
+    "GumbelDistribution" => gumbel_mean_variance(dargs),
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
     "TriangularDistribution" => triangular_mean_variance(dargs),
@@ -11056,5 +11059,172 @@ pub fn benktander_gibrat_mean_variance(
       right: Box::new(power(a.clone(), int(2))),
     }
   };
+  Ok((mean, var))
+}
+
+/// PDF[GumbelDistribution[a, b], x] = E^(-E^z + z)/b with
+/// z = (x - a)/b (the minimum-extreme-value Gumbel; [] is (0, 1)).
+pub fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "GumbelDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let (a, b) = match dargs {
+    [] => (int(0), int(1)),
+    [a, b] => (a.clone(), b.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let z_of = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let diff = if matches!(&a, Expr::Integer(0)) {
+      at.clone()
+    } else {
+      call(
+        "Plus",
+        vec![call("Times", vec![int(-1), a.clone()]), at.clone()],
+      )
+    };
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(diff),
+      right: Box::new(b.clone()),
+    })
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let z = z_of(at)?;
+    let exponent = call(
+      "Plus",
+      vec![
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(power(e(), z.clone())),
+        },
+        z,
+      ],
+    );
+    let body = power(e(), exponent);
+    Ok(if matches!(&b, Expr::Integer(1)) {
+      body
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(body),
+        right: Box::new(b.clone()),
+      }
+    })
+  };
+  if ms_numeric(&x).is_some() {
+    return eval(body(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  body(&x)
+}
+
+/// CDF[GumbelDistribution[a, b], x] = 1 - E^(-E^((x - a)/b)).
+pub fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "GumbelDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let (a, b) = match dargs {
+    [] => (int(0), int(1)),
+    [a, b] => (a.clone(), b.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let diff = if matches!(&a, Expr::Integer(0)) {
+      at.clone()
+    } else {
+      call(
+        "Plus",
+        vec![call("Times", vec![int(-1), a.clone()]), at.clone()],
+      )
+    };
+    let z = eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(diff),
+      right: Box::new(b.clone()),
+    })?;
+    Ok(call(
+      "Plus",
+      vec![
+        int(1),
+        call(
+          "Times",
+          vec![
+            int(-1),
+            power(
+              e(),
+              Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(power(e(), z)),
+              },
+            ),
+          ],
+        ),
+      ],
+    ))
+  };
+  if ms_numeric(&x).is_some() {
+    return eval(body(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  body(&x)
+}
+
+/// Mean a - b EulerGamma and variance b^2 Pi^2/6 for
+/// GumbelDistribution.
+pub fn gumbel_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (a, b) = match dargs {
+    [] => (int(0), int(1)),
+    [a, b] => (a.clone(), b.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "GumbelDistribution expects no arguments or [a, b]".into(),
+      ));
+    }
+  };
+  let mean = eval(plus(
+    a,
+    times(
+      int(-1),
+      times(b.clone(), Expr::Identifier("EulerGamma".to_string())),
+    ),
+  ))?;
+  let var = eval(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![power(b, int(2)), power(pi(), int(2))].into(),
+    }),
+    right: Box::new(int(6)),
+  })?;
   Ok((mean, var))
 }

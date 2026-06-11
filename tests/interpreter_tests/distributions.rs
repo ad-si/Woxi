@@ -2863,3 +2863,71 @@ mod benktander_gibrat_distribution {
     );
   }
 }
+
+mod gumbel_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[GumbelDistribution[a, b], x]").unwrap(),
+      "E^(-E^((-a + x)/b) + (-a + x)/b)/b"
+    );
+    assert_eq!(
+      interpret("PDF[GumbelDistribution[0, 1], x]").unwrap(),
+      "E^(-E^x + x)"
+    );
+    assert_eq!(
+      interpret("PDF[GumbelDistribution[], x]").unwrap(),
+      "E^(-E^x + x)"
+    );
+    assert_eq!(
+      interpret("PDF[GumbelDistribution[2, 3], x]").unwrap(),
+      "E^(-E^((-2 + x)/3) + (-2 + x)/3)/3"
+    );
+    assert_eq!(
+      interpret("PDF[GumbelDistribution[0, 1], 1]").unwrap(),
+      "E^(1 - E)"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[GumbelDistribution[a, b], x]").unwrap(),
+      "1 - E^(-E^((-a + x)/b))"
+    );
+    assert_eq!(
+      interpret("CDF[GumbelDistribution[0, 1], x]").unwrap(),
+      "1 - E^(-E^x)"
+    );
+    assert_eq!(
+      interpret("CDF[GumbelDistribution[2, 3], x]").unwrap(),
+      "1 - E^(-E^((-2 + x)/3))"
+    );
+    assert_eq!(
+      interpret("CDF[GumbelDistribution[0, 1], 0]").unwrap(),
+      "1 - E^(-1)"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[GumbelDistribution[a, b]]").unwrap(),
+      "a - b*EulerGamma"
+    );
+    assert_eq!(
+      interpret("Mean[GumbelDistribution[2, 3]]").unwrap(),
+      "2 - 3*EulerGamma"
+    );
+    assert_eq!(
+      interpret("Variance[GumbelDistribution[a, b]]").unwrap(),
+      "(b^2*Pi^2)/6"
+    );
+    assert_eq!(
+      interpret("Variance[GumbelDistribution[2, 3]]").unwrap(),
+      "(3*Pi^2)/2"
+    );
+  }
+}
