@@ -2912,7 +2912,7 @@ KeyMemberQ,True if key exists in association,✅,1,10.3,2978
 KroneckerSymbol,Generalized Jacobi symbol,✅,1,6.0,2978
 SliceDistribution,,,,9.0,2978
 TraceOriginal,,,,2.0,2978
-DirichletCharacter,,,,7.0,2986
+DirichletCharacter,j-th Dirichlet character modulo k at n (Wolfram indexing),✅,pure,7.0,2986
 FindMinimumCostFlow,,,,9.0,2986
 Forward,,,,6.0,2986
 PermutationOrder,Order of a permutation,✅,1,8.0,2986

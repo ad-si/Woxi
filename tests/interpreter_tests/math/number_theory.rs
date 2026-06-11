@@ -3166,3 +3166,92 @@ mod fibonorial {
     assert_case(r#"Fibonorial[x]"#, r#"Fibonorial[x]"#);
   }
 }
+
+mod dirichlet_character {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn cyclic_moduli() {
+    assert_case(
+      r#"Table[DirichletCharacter[5, j, n], {j, 4}, {n, 5}]"#,
+      r#"{{1, 1, 1, 1, 0}, {1, I, -I, -1, 0}, {1, -1, -1, 1, 0}, {1, -I, I, -1, 0}}"#,
+    );
+    // Order-6 values keep their exponential print forms
+    assert_case(
+      r#"Table[DirichletCharacter[9, j, 2], {j, 6}]"#,
+      r#"{1, E^(I/3*Pi), E^((2*I)/3*Pi), -1, E^((-2*I)/3*Pi), E^((-1/3*I)*Pi)}"#,
+    );
+    assert_case(r#"DirichletCharacter[7, 2, 5]"#, r#"E^((-1/3*I)*Pi)"#);
+  }
+
+  #[test]
+  fn two_power_moduli() {
+    // (Z/8)* = <-1> x <5>: the 5-part index runs fastest
+    assert_case(
+      r#"Table[DirichletCharacter[8, j, n], {j, 4}, {n, 8}]"#,
+      r#"{{1, 0, 1, 0, 1, 0, 1, 0}, {1, 0, -1, 0, -1, 0, 1, 0}, {1, 0, -1, 0, 1, 0, -1, 0}, {1, 0, 1, 0, -1, 0, -1, 0}}"#,
+    );
+    assert_case(
+      r#"Table[DirichletCharacter[16, j, 3], {j, 8}]"#,
+      r#"{1, -I, -1, I, -1, I, 1, -I}"#,
+    );
+  }
+
+  #[test]
+  fn composite_moduli() {
+    // CRT factors in ascending prime order, last factor fastest
+    assert_case(
+      r#"Table[DirichletCharacter[12, j, n], {j, 4}, {n, 12}]"#,
+      r#"{{1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0}, {1, 0, 0, 0, -1, 0, 1, 0, 0, 0, -1, 0}, {1, 0, 0, 0, 1, 0, -1, 0, 0, 0, -1, 0}, {1, 0, 0, 0, -1, 0, -1, 0, 0, 0, 1, 0}}"#,
+    );
+    assert_case(
+      r#"Table[DirichletCharacter[15, j, 2], {j, 8}]"#,
+      r#"{1, I, -1, -I, -1, -I, 1, I}"#,
+    );
+    // Coefficient stays outside the exponential: -1 * e^(2 i pi/3)
+    assert_case(
+      r#"Table[DirichletCharacter[21, j, 2], {j, 12}]"#,
+      r#"{1, E^((2*I)/3*Pi), E^((-2*I)/3*Pi), 1, E^((2*I)/3*Pi), E^((-2*I)/3*Pi), -1, -E^((2*I)/3*Pi), -E^((-2*I)/3*Pi), -1, -E^((2*I)/3*Pi), -E^((-2*I)/3*Pi)}"#,
+    );
+    // +-I coefficients multiply positive exponentials but divide
+    // negative ones (Times with a negative power prints as division)
+    assert_case(
+      r#"Table[DirichletCharacter[45, j, 2], {j, 24}]"#,
+      r#"{1, I, -1, -I, E^(I/3*Pi), I*E^(I/3*Pi), -E^(I/3*Pi), -I*E^(I/3*Pi), E^((2*I)/3*Pi), I*E^((2*I)/3*Pi), -E^((2*I)/3*Pi), -I*E^((2*I)/3*Pi), -1, -I, 1, I, E^((-2*I)/3*Pi), I/E^((2*I)/3*Pi), -E^((-2*I)/3*Pi), -I/E^((2*I)/3*Pi), E^((-1/3*I)*Pi), I/E^(I/3*Pi), -E^((-1/3*I)*Pi), -I/E^(I/3*Pi)}"#,
+    );
+  }
+
+  #[test]
+  fn trivial_moduli_and_periodicity() {
+    // k = 1: identically 1, even at n = 0
+    assert_case(
+      r#"Table[DirichletCharacter[1, 1, n], {n, 0, 4}]"#,
+      r#"{1, 1, 1, 1, 1}"#,
+    );
+    assert_case(
+      r#"Table[DirichletCharacter[2, 1, n], {n, 0, 4}]"#,
+      r#"{0, 1, 0, 1, 0}"#,
+    );
+    // chi is periodic: -3 == 2 mod 5
+    assert_case(r#"DirichletCharacter[5, 2, -3]"#, r#"I"#);
+    assert_case(r#"DirichletCharacter[5, 2, 0]"#, r#"0"#);
+  }
+
+  #[test]
+  fn invalid_index_handling() {
+    // j > EulerPhi[k] messages DirichletCharacter::invl; j <= 0
+    // messages DirichletCharacter::intp; symbolic n stays quiet
+    assert_case(
+      r#"DirichletCharacter[5, 5, 2]"#,
+      r#"DirichletCharacter[5, 5, 2]"#,
+    );
+    assert_case(
+      r#"DirichletCharacter[5, 0, 2]"#,
+      r#"DirichletCharacter[5, 0, 2]"#,
+    );
+    assert_case(
+      r#"DirichletCharacter[5, 2, x]"#,
+      r#"DirichletCharacter[5, 2, x]"#,
+    );
+  }
+}
