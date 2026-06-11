@@ -2400,12 +2400,10 @@ pub fn connectivity_ast(
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return Ok(unevaluated()),
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return Ok(unevaluated()),
+    },
     _ => return Ok(unevaluated()),
   };
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
@@ -2434,8 +2432,7 @@ pub fn connectivity_ast(
   };
 
   if args.len() == 3 {
-    let find =
-      |e: &Expr| vkeys.iter().position(|k| *k == expr_to_string(e));
+    let find = |e: &Expr| vkeys.iter().position(|k| *k == expr_to_string(e));
     let inv = |pos: usize| {
       crate::emit_message(&format!(
         "{}::inv: The argument {} in {} is not a valid vertex.",
@@ -2508,4 +2505,150 @@ pub fn connectivity_ast(
   }
   // All pairs adjacent: complete graph, connectivity n - 1
   Ok(Expr::Integer(best.unwrap_or(n as i64 - 1) as i128))
+}
+
+// ---------------------------------------------------------------------------
+// KCoreComponents[g, k] — connected components of the k-core (the maximal
+// subgraph in which every vertex has degree >= k), each as a vertex list.
+// Matches wolframscript:
+// - components are discovered in reverse VertexList order, members listed
+//   in VertexList order, then stable-sorted by size descending
+// - third argument must be "In" or "Out" (degree direction; identical to
+//   the plain form on undirected graphs), anything else emits ::inv
+// - non-integer k emits ::int; non-graph first arguments stay unevaluated
+// Note: wolframscript's k <= 0 multi-component ordering is an internal
+// artifact that is not replicated; k <= 0 performs no pruning here.
+
+pub fn k_core_components_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "KCoreComponents".to_string(),
+    args: args.to_vec().into(),
+  };
+  let call_str = || {
+    crate::syntax::format_expr(
+      &Expr::FunctionCall {
+        name: "KCoreComponents".to_string(),
+        args: args.to_vec().into(),
+      },
+      crate::syntax::ExprForm::Output,
+    )
+  };
+  let (vertices, edge_exprs) = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) => *k,
+    _ => {
+      crate::emit_message(&format!(
+        "KCoreComponents::int: Integer expected at position 2 in {}.",
+        call_str()
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  if args.len() == 3 {
+    let valid = matches!(&args[2], Expr::String(s) if s == "In" || s == "Out");
+    if !valid {
+      crate::emit_message(&format!(
+        "KCoreComponents::inv: The argument {} in {} is not a valid parameter.",
+        crate::syntax::format_expr(&args[2], crate::syntax::ExprForm::Output),
+        call_str()
+      ));
+      return Ok(unevaluated());
+    }
+  }
+
+  let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
+  let n = vkeys.len();
+  // Underlying simple graph: dedup edges, drop self-loops
+  let mut adj: Vec<std::collections::BTreeSet<usize>> = vec![Default::default(); n];
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+    {
+      let a = vkeys.iter().position(|v| *v == expr_to_string(&eargs[0]));
+      let b = vkeys.iter().position(|v| *v == expr_to_string(&eargs[1]));
+      if let (Some(a), Some(b)) = (a, b) {
+        if a != b {
+          adj[a].insert(b);
+          adj[b].insert(a);
+        }
+      } else {
+        return Ok(unevaluated());
+      }
+    } else {
+      return Ok(unevaluated());
+    }
+  }
+
+  // Prune to the k-core: repeatedly remove vertices with degree < k
+  let mut alive = vec![true; n];
+  if k > 0 {
+    loop {
+      let mut changed = false;
+      for v in 0..n {
+        if alive[v]
+          && (adj[v].iter().filter(|&&u| alive[u]).count() as i128) < k
+        {
+          alive[v] = false;
+          changed = true;
+        }
+      }
+      if !changed {
+        break;
+      }
+    }
+  }
+
+  // Connected components; members listed in VertexList order
+  let mut seen = vec![false; n];
+  let mut components: Vec<Vec<usize>> = Vec::new();
+  for start in 0..n {
+    if !alive[start] || seen[start] {
+      continue;
+    }
+    let mut members = Vec::new();
+    let mut queue = std::collections::VecDeque::new();
+    seen[start] = true;
+    queue.push_back(start);
+    while let Some(u) = queue.pop_front() {
+      members.push(u);
+      for &v in &adj[u] {
+        if alive[v] && !seen[v] {
+          seen[v] = true;
+          queue.push_back(v);
+        }
+      }
+    }
+    members.sort_unstable();
+    components.push(members);
+  }
+  // wolframscript order: size descending, ties broken by the position of
+  // the first member in the vertex list, descending
+  components.sort_by_key(|c| (std::cmp::Reverse(c.len()), std::cmp::Reverse(c[0])));
+
+  Ok(Expr::List(
+    components
+      .into_iter()
+      .map(|c| {
+        Expr::List(c.into_iter().map(|i| vertices[i].clone()).collect())
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
 }

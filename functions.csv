@@ -3030,7 +3030,7 @@ Vee,,,,3.0,3094
 BinarySerialize,,,,11.1,3108
 DatePattern,,,,6.0,3108
 GeoVariant,,🚫,,10.0,3108
-KCoreComponents,,,,8.0,3108
+KCoreComponents,Connected components of the k-core as vertex lists,✅,pure,8.0,3108
 MaxStableDistribution,Max-stable (GEV) distribution with shape-cased forms,✅,pure,8.0,3108
 PacletFind,,🚫,,12.1,3108
 PlayRange,,🚫,,2.0,3108

@@ -2840,3 +2840,146 @@ mod connectivity {
     assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
   }
 }
+
+mod k_core_components {
+  use super::*;
+
+  #[test]
+  fn finds_k_core_components() {
+    // Two 3-cores joined by a path through vertex 5
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4, 5, 6, 7, 8, 9}, {1 <-> 2, 1 <-> 3, 1 <-> 4, 2 <-> 3, 2 <-> 4, 3 <-> 4, 4 <-> 5, 5 <-> 6, 6 <-> 7, 6 <-> 8, 6 <-> 9, 7 <-> 8, 7 <-> 9, 8 <-> 9}]; KCoreComponents[g, 3]"
+      )
+      .unwrap(),
+      "{{6, 7, 8, 9}, {1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5], 2]").unwrap(),
+      "{{1, 2, 3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("KCoreComponents[PetersenGraph[5, 2], 3]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}}"
+    );
+  }
+
+  #[test]
+  fn component_ordering() {
+    // Size descending, ties broken by descending position of the first
+    // member in the vertex list
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 4 <-> 5, 4 <-> 6, 4 <-> 7, 5 <-> 6, 5 <-> 7, 6 <-> 7, 9 <-> 10, 9 <-> 11, 10 <-> 11}]; KCoreComponents[g, 2]"
+      )
+      .unwrap(),
+      "{{4, 5, 6, 7}, {9, 10, 11}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 10}, {1 <-> 10, 2 <-> 3}]; KCoreComponents[g, 1]"
+      )
+      .unwrap(),
+      "{{2, 3}, {1, 10}}"
+    );
+    // Members appear in VertexList order, not sorted by value
+    assert_eq!(
+      interpret(
+        "g = Graph[{5, 4, 3, 2, 1}, {5 <-> 4, 2 <-> 1}]; KCoreComponents[g, 1]"
+      )
+      .unwrap(),
+      "{{2, 1}, {5, 4}}"
+    );
+  }
+
+  #[test]
+  fn k_larger_than_max_degree_gives_empty() {
+    assert_eq!(interpret("KCoreComponents[CycleGraph[5], 7]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn degree_one_core_keeps_leaves() {
+    assert_eq!(
+      interpret("KCoreComponents[StarGraph[6], 1]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6}}"
+    );
+    assert_eq!(
+      interpret("KCoreComponents[CompleteGraph[6], 5]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6}}"
+    );
+    assert_eq!(
+      interpret("KCoreComponents[WheelGraph[7], 3]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6, 7}}"
+    );
+  }
+
+  #[test]
+  fn in_out_parameter_accepted() {
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5], 2, \"In\"]").unwrap(),
+      "{{1, 2, 3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5], 2, \"Out\"]").unwrap(),
+      "{{1, 2, 3, 4, 5}}"
+    );
+  }
+
+  #[test]
+  fn invalid_parameter_emits_inv() {
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5], 2, \"Bogus\"]").unwrap(),
+      "KCoreComponents[Graph[<5>, <5>], 2, Bogus]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KCoreComponents::inv: The argument Bogus in KCoreComponents[Graph[<5>, <5>], 2, Bogus] is not a valid parameter."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_integer_k_emits_int() {
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5], 1.5]").unwrap(),
+      "KCoreComponents[Graph[<5>, <5>], 1.5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KCoreComponents::int: Integer expected at position 2 in KCoreComponents[Graph[<5>, <5>], 1.5]."
+      )),
+      "expected int message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count_emits_argtu() {
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5]]").unwrap(),
+      "KCoreComponents[Graph[<5>, <5>]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KCoreComponents::argtu: KCoreComponents called with 1 argument; 2 or 3 arguments are expected."
+      )),
+      "expected argtu message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(
+      interpret("KCoreComponents[x, 2]").unwrap(),
+      "KCoreComponents[x, 2]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+}

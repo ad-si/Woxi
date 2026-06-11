@@ -88,3 +88,44 @@ mod arg_count_errors {
       .contains("Quiet::argb: Quiet called with 4 arguments; between 1 and 3 arguments are expected."));
   }
 }
+
+mod singular_argument_tags {
+  use super::*;
+
+  #[test]
+  fn one_argument_uses_argtu_tag() {
+    // Regression: wolframscript uses ::argtu (not ::argt) when a
+    // range-arity function is called with exactly one argument
+    assert_eq!(interpret("Insert[x]").unwrap(), "Insert[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Insert::argtu: Insert called with 1 argument; 2 or 3 arguments are expected."
+      )),
+      "expected argtu message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn one_argument_uses_argbu_tag() {
+    assert_eq!(interpret("Array[f]").unwrap(), "Array[f]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Array::argbu: Array called with 1 argument; between 2 and 4 arguments are expected."
+      )),
+      "expected argbu message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn insert_two_argument_operator_form_is_silent() {
+    // Regression: Insert[a, b] is the valid operator form, previously
+    // warned Insert::argrx
+    assert_eq!(interpret("Insert[a, b]").unwrap(), "Insert[a, b]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+}

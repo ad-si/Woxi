@@ -544,7 +544,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "InexactNumberQ" => Some((1, 1)),
     "Information" => Some((1, 2)),
     "Inner" => Some((3, 4)),
-    "Insert" => Some((3, 3)),
+    "Insert" => Some((2, 3)),
     "Insphere" => Some((1, 1)),
     "IntegerDigits" => Some((1, 3)),
     "IntegerExponent" => Some((1, 2)),
@@ -618,6 +618,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "KeyUnion" => Some((1, 2)),
     "KeyValueMap" => Some((2, 2)),
     "KroneckerProduct" => Some((2, 2)),
+    "KCoreComponents" => Some((2, 3)),
     "KroneckerSymbol" => Some((2, 2)),
     "Kurtosis" => Some((1, 1)),
     "LaguerreL" => Some((2, 3)),
@@ -1276,14 +1277,17 @@ pub fn check_arg_count(
       name, name, n, arg_word, min
     )
   } else if max - min == 1 {
+    // wolframscript uses the *u tag variants when called with one argument
+    let tag = if n == 1 { "argtu" } else { "argt" };
     format!(
-      "{}::argt: {} called with {} {}; {} or {} arguments are expected.",
-      name, name, n, arg_word, min, max
+      "{}::{}: {} called with {} {}; {} or {} arguments are expected.",
+      name, tag, name, n, arg_word, min, max
     )
   } else {
+    let tag = if n == 1 { "argbu" } else { "argb" };
     format!(
-      "{}::argb: {} called with {} {}; between {} and {} arguments are expected.",
-      name, name, n, arg_word, min, max
+      "{}::{}: {} called with {} {}; between {} and {} arguments are expected.",
+      name, tag, name, n, arg_word, min, max
     )
   };
 

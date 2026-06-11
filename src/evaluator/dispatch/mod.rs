@@ -5013,6 +5013,10 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if name == "KCoreComponents" && (args.len() == 2 || args.len() == 3) {
+    return crate::functions::graph::k_core_components_ast(args);
+  }
+
   if (name == "EdgeConnectivity" || name == "VertexConnectivity")
     && (args.len() == 1 || args.len() == 3)
   {
