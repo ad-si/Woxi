@@ -32,6 +32,9 @@ pub fn dispatch_polynomial_functions(
     "Resolve" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::resolve_ast::resolve_ast(args));
     }
+    "Subresultants" if args.len() == 3 => {
+      return Some(crate::functions::polynomial_ast::subresultants_ast(args));
+    }
     "TrigFactor" if args.len() == 1 => {
       return Some(crate::functions::trig_factor_ast::trig_factor_ast(args));
     }

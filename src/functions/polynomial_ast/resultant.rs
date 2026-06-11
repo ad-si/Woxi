@@ -133,6 +133,112 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(simplified)
 }
 
+/// Subresultants[poly1, poly2, var] - The principal subresultant
+/// coefficients s_j for j = 0..Min[deg1, deg2]; s_0 is the resultant.
+///
+/// s_j is the determinant of the leading (m+n-2j) square block of the
+/// matrix whose rows are x^(n-j-1)*p1 ... p1, x^(m-j-1)*p2 ... p2 over
+/// the columns for degrees m+n-j-1 down to j. This single formula
+/// reproduces wolframscript for every degree combination (m < n needs
+/// no swap or sign factor).
+pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "Subresultants".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 3 {
+    return Ok(unevaluated(args));
+  }
+  let poly1 = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let poly2 = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
+  let var = match &args[2] {
+    Expr::Identifier(name) => name.clone(),
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // A zero polynomial has no subresultant chain
+  if matches!(poly1, Expr::Integer(0)) || matches!(poly2, Expr::Integer(0)) {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  let m = match max_power_int(&poly1, &var) {
+    Some(d) => d as usize,
+    None => return Ok(unevaluated(args)),
+  };
+  let n = match max_power_int(&poly2, &var) {
+    Some(d) => d as usize,
+    None => return Ok(unevaluated(args)),
+  };
+
+  let var_expr = Expr::Identifier(var.clone());
+  let mut coeff1 = Vec::with_capacity(m + 1);
+  let mut coeff2 = Vec::with_capacity(n + 1);
+  for i in 0..=m {
+    let c = coefficient_ast(&[
+      poly1.clone(),
+      var_expr.clone(),
+      Expr::Integer(i as i128),
+    ])?;
+    coeff1.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
+  }
+  for i in 0..=n {
+    let c = coefficient_ast(&[
+      poly2.clone(),
+      var_expr.clone(),
+      Expr::Integer(i as i128),
+    ])?;
+    coeff2.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
+  }
+
+  let int_coeffs1: Option<Vec<i128>> =
+    coeff1.iter().map(expr_to_i128).collect();
+  let int_coeffs2: Option<Vec<i128>> =
+    coeff2.iter().map(expr_to_i128).collect();
+  let integer_path = int_coeffs1.is_some() && int_coeffs2.is_some();
+
+  let d = m.min(n);
+  let mut result = Vec::with_capacity(d + 1);
+  for j in 0..=d {
+    let size = m + n - 2 * j;
+    if size == 0 {
+      result.push(Expr::Integer(1));
+      continue;
+    }
+    // Row for x^s * p: entry of degree deg is coeff[deg - s]; the kept
+    // columns cover degrees m+n-j-1 down to j (col = m+n-j-1 - deg).
+    let top_degree = m + n - j - 1;
+    let fill_rows =
+      |matrix: &mut Vec<Vec<Expr>>, coeffs: &[Expr], shifts: usize| {
+        for i in 0..shifts {
+          let s = shifts - 1 - i;
+          let mut row = vec![Expr::Integer(0); size];
+          for (k, c) in coeffs.iter().enumerate() {
+            let deg = k + s;
+            if deg >= j && deg <= top_degree {
+              row[top_degree - deg] = c.clone();
+            }
+          }
+          matrix.push(row);
+        }
+      };
+    let mut matrix: Vec<Vec<Expr>> = Vec::with_capacity(size);
+    fill_rows(&mut matrix, &coeff1, n - j);
+    fill_rows(&mut matrix, &coeff2, m - j);
+
+    if integer_path {
+      let mut int_matrix: Vec<Vec<i128>> = matrix
+        .iter()
+        .map(|row| row.iter().map(|e| expr_to_i128(e).unwrap()).collect())
+        .collect();
+      result.push(Expr::Integer(bareiss_determinant(&mut int_matrix)));
+    } else {
+      let det = symbolic_determinant(&matrix);
+      result.push(crate::evaluator::evaluate_expr_to_expr(&det)?);
+    }
+  }
+  Ok(Expr::List(result.into()))
+}
+
 /// Compute the determinant of the Sylvester matrix for integer coefficients
 /// using Gaussian elimination over integers (fraction-free).
 fn sylvester_det_integer(

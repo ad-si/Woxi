@@ -7022,3 +7022,66 @@ mod trig_factor {
     assert_eq!(interpret("TrigFactor[x + 1]").unwrap(), "1 + x");
   }
 }
+
+mod subresultants {
+  use super::*;
+
+  #[test]
+  fn integer_chains() {
+    // First element is the resultant; 0 there signals a common root
+    assert_eq!(
+      interpret("Subresultants[x^2 - 1, x^3 - 1, x]").unwrap(),
+      "{0, 1, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x^4 + x^2 + 1, x^2 + 1, x]").unwrap(),
+      "{1, 0, 1}"
+    );
+    assert_eq!(
+      interpret("Subresultants[x^3 - 2 x + 1, x^2 - 1, x]").unwrap(),
+      "{0, -1, 1}"
+    );
+    // gcd of degree 1: s_0 = 0, s_1 != 0
+    assert_eq!(
+      interpret("Subresultants[x^2 - 4, x^2 - 5 x + 6, x]").unwrap(),
+      "{0, -5, 1}"
+    );
+  }
+
+  #[test]
+  fn argument_order_changes_sign() {
+    assert_eq!(interpret("Subresultants[x - 2, x^3, x]").unwrap(), "{8, 1}");
+    assert_eq!(
+      interpret("Subresultants[x^3, x - 2, x]").unwrap(),
+      "{-8, 1}"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_eq!(
+      interpret("Subresultants[x^2 + a, x + b, x]").unwrap(),
+      "{a + b^2, 1}"
+    );
+    // Classic discriminant pair (p, p')
+    assert_eq!(
+      interpret("Subresultants[a x^2 + b x + c, 2 a x + b, x]").unwrap(),
+      "{-(a*b^2) + 4*a^2*c, 2*a}"
+    );
+  }
+
+  #[test]
+  fn degenerate_inputs() {
+    // Constant polynomial: only the resultant c^deg remains
+    assert_eq!(interpret("Subresultants[3, x^2 + 1, x]").unwrap(), "{9}");
+    // Two constants: empty Sylvester block determinant
+    assert_eq!(interpret("Subresultants[3, 5, x]").unwrap(), "{1}");
+    // Zero polynomial has no subresultant chain
+    assert_eq!(interpret("Subresultants[x^2 + 1, 0, x]").unwrap(), "{}");
+    // Identical polynomials: everything but the trivial entry vanishes
+    assert_eq!(
+      interpret("Subresultants[x^2 + 1, x^2 + 1, x]").unwrap(),
+      "{0, 0, 1}"
+    );
+  }
+}
