@@ -2974,3 +2974,47 @@ mod cases {
     assert_case(r#"Binomial[-10, -3.5]"#, r#"ComplexInfinity"#);
   }
 }
+
+mod farey_sequence {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn full_sequences() {
+    assert_case(
+      r#"FareySequence[5]"#,
+      r#"{0, 1/5, 1/4, 1/3, 2/5, 1/2, 3/5, 2/3, 3/4, 4/5, 1}"#,
+    );
+    assert_case(r#"FareySequence[1]"#, r#"{0, 1}"#);
+    assert_case(
+      r#"FareySequence[8]"#,
+      r#"{0, 1/8, 1/7, 1/6, 1/5, 1/4, 2/7, 1/3, 3/8, 2/5, 3/7, 1/2, 4/7, 3/5, 5/8, 2/3, 5/7, 3/4, 4/5, 5/6, 6/7, 7/8, 1}"#,
+    );
+  }
+
+  #[test]
+  fn indexed_elements() {
+    assert_case(r#"FareySequence[6, 3]"#, r#"1/5"#);
+    assert_case(r#"FareySequence[5, 11]"#, r#"1"#);
+    assert_case(r#"FareySequence[2, 3]"#, r#"1"#);
+  }
+
+  #[test]
+  fn non_positive_order_messages_null() {
+    // FareySequence::intpm message, result Null (1-argument form only)
+    assert_case(r#"FareySequence[0]"#, r#"Null"#);
+    assert_case(r#"FareySequence[-1]"#, r#"Null"#);
+  }
+
+  #[test]
+  fn silently_unevaluated_forms() {
+    // Out-of-range positive rank messages FareySequence::rank
+    assert_case(r#"FareySequence[5, 100]"#, r#"FareySequence[5, 100]"#);
+    // Rank 0, non-positive order in rank form, and symbolic/rational
+    // arguments all stay quiet
+    assert_case(r#"FareySequence[5, 0]"#, r#"FareySequence[5, 0]"#);
+    assert_case(r#"FareySequence[0, 1]"#, r#"FareySequence[0, 1]"#);
+    assert_case(r#"FareySequence[n]"#, r#"FareySequence[n]"#);
+    assert_case(r#"FareySequence[5/2]"#, r#"FareySequence[5/2]"#);
+    assert_case(r#"FareySequence[3, x]"#, r#"FareySequence[3, x]"#);
+  }
+}

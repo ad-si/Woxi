@@ -3409,7 +3409,7 @@ CloudSave,,🚫,,10.0,3506
 CreateDatabin,,,,10.0,3506
 Deinitialization,,,,6.0,3506
 ExpGammaDistribution,,,,8.0,3506
-FareySequence,,,,10.0,3506
+FareySequence,Farey fractions of order n (full list or single rank),✅,pure,10.0,3506
 GraphDifference,,,,8.0,3506
 GraphPower,,,,8.0,3506
 LaminaData,,🚫,,10.0,3506

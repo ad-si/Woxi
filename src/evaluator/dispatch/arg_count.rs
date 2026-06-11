@@ -1073,6 +1073,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StudentTDistribution" => Some((1, 1)),
     "Subdivide" => Some((1, 3)),
     "Subfactorial" => Some((1, 1)),
+    "FareySequence" => Some((1, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

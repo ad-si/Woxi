@@ -797,6 +797,9 @@ pub fn dispatch_math_functions(
     "Subfactorial" if args.len() == 1 => {
       return Some(crate::functions::math_ast::subfactorial_ast(args));
     }
+    "FareySequence" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::farey_sequence_ast(args));
+    }
     "Pochhammer" if args.len() == 2 => {
       return Some(crate::functions::math_ast::pochhammer_ast(args));
     }

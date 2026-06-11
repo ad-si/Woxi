@@ -7697,3 +7697,66 @@ impl PipeThroughRational for Expr {
     self
   }
 }
+
+/// FareySequence[n] - ascending Farey fractions of order n;
+/// FareySequence[n, k] - the k-th element (1-indexed).
+///
+/// Message policy matches wolframscript: a non-positive integer order
+/// emits FareySequence::intpm and yields Null in the 1-argument form
+/// only; an out-of-range positive integer rank emits
+/// FareySequence::rank and stays unevaluated; everything else
+/// (symbolic, rational, rank 0) stays silently unevaluated.
+pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FareySequence".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated(args));
+  }
+  let n = match &args[0] {
+    Expr::Integer(k) if *k >= 1 => *k,
+    Expr::Integer(_) if args.len() == 1 => {
+      crate::emit_message(&format!(
+        "FareySequence::intpm: Positive machine-sized integer expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&unevaluated(args))
+      ));
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Farey neighbor recurrence: from adjacent a/b, c/d the next term is
+  // (k*c - a)/(k*d - b) with k = (n + b) div d.
+  let mut terms: Vec<Expr> = Vec::new();
+  let (mut a, mut b, mut c, mut d) = (0i128, 1i128, 1i128, n);
+  terms.push(Expr::Integer(0));
+  while c <= n {
+    let k = (n + b) / d;
+    let (c2, d2) = (k * c - a, k * d - b);
+    a = c;
+    b = d;
+    c = c2;
+    d = d2;
+    terms.push(make_rational_expr(BigInt::from(a), BigInt::from(b)));
+  }
+
+  if args.len() == 1 {
+    return Ok(Expr::List(terms.into()));
+  }
+  match &args[1] {
+    Expr::Integer(rank) if *rank >= 1 => {
+      if *rank as usize > terms.len() {
+        crate::emit_message(&format!(
+          "FareySequence::rank: Farey sequence rank {} at position 2 of {} is expected to be a positive integer less than or equal to {}.",
+          rank,
+          crate::syntax::expr_to_string(&unevaluated(args)),
+          terms.len()
+        ));
+        return Ok(unevaluated(args));
+      }
+      Ok(terms.swap_remove(*rank as usize - 1))
+    }
+    _ => Ok(unevaluated(args)),
+  }
+}
