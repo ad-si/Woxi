@@ -1961,3 +1961,96 @@ mod noncentral_chi_square_cdf {
     );
   }
 }
+
+mod exponential_power_distribution {
+  use super::*;
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[ExponentialPowerDistribution[2, 0, 1]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Variance[ExponentialPowerDistribution[2, 0, 1]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Variance[ExponentialPowerDistribution[1, 0, 1]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Variance[ExponentialPowerDistribution[3, 2, 5]]").unwrap(),
+      "(25*3^(2/3))/Gamma[1/3]"
+    );
+    assert_eq!(
+      interpret("Mean[ExponentialPowerDistribution[k, m, s]]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Variance[ExponentialPowerDistribution[k, m, s]]").unwrap(),
+      "(k^(2/k)*s^2*Gamma[3/k])/Gamma[k^(-1)]"
+    );
+  }
+
+  #[test]
+  fn pdf_forms() {
+    // k = 2, m = 0: both branches canonicalize identically and the
+    // Piecewise collapses to the plain normal density
+    assert_eq!(
+      interpret("PDF[ExponentialPowerDistribution[2, 0, 1], x]").unwrap(),
+      "1/(E^(x^2/2)*Sqrt[2*Pi])"
+    );
+    // Nonzero location keeps the mirrored branches
+    assert_eq!(
+      interpret("PDF[ExponentialPowerDistribution[2, 1, 2], x]").unwrap(),
+      "Piecewise[{{1/(2*E^((-1 + x)^2/8)*Sqrt[2*Pi]), x >= 1}}, 1/(2*E^((1 - x)^2/8)*Sqrt[2*Pi])]"
+    );
+    // k = 1 is Laplace
+    assert_eq!(
+      interpret("PDF[ExponentialPowerDistribution[1, 0, 1], x]").unwrap(),
+      "Piecewise[{{1/(2*E^x), x >= 0}}, E^x/2]"
+    );
+    // Odd k flips the lower branch's exponent into the numerator
+    assert_eq!(
+      interpret("PDF[ExponentialPowerDistribution[3, 0, 1], x]").unwrap(),
+      "Piecewise[{{1/(2*3^(1/3)*E^(x^3/3)*Gamma[4/3]), x >= 0}}, E^(x^3/3)/(2*3^(1/3)*Gamma[4/3])]"
+    );
+    assert_eq!(
+      interpret("PDF[ExponentialPowerDistribution[k, m, s], x]").unwrap(),
+      "Piecewise[{{1/(2*E^(((-m + x)/s)^k/k)*k^k^(-1)*s*Gamma[1 + k^(-1)]), x >= m}}, 1/(2*E^(((m - x)/s)^k/k)*k^k^(-1)*s*Gamma[1 + k^(-1)])]"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[ExponentialPowerDistribution[2, 0, 1], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[1/2, x^2/2]/2, x < 0}}, 1 - GammaRegularized[1/2, x^2/2]/2]"
+    );
+    // k = 1 evaluates through GammaRegularized[1, z] = E^(-z)
+    assert_eq!(
+      interpret("CDF[ExponentialPowerDistribution[1, 0, 1], x]").unwrap(),
+      "Piecewise[{{E^x/2, x < 0}}, 1 - 1/(2*E^x)]"
+    );
+    assert_eq!(
+      interpret("CDF[ExponentialPowerDistribution[k, m, s], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[k^(-1), ((m - x)/s)^k/k]/2, x < m}}, 1 - GammaRegularized[k^(-1), ((-m + x)/s)^k/k]/2]"
+    );
+  }
+}
+
+mod gamma_regularized_order_one {
+  use super::*;
+
+  #[test]
+  fn evaluates_symbolically() {
+    // Wolfram auto-evaluates order one even for symbolic z
+    assert_eq!(interpret("GammaRegularized[1, x]").unwrap(), "E^(-x)");
+    // ...but not higher integer orders
+    assert_eq!(
+      interpret("GammaRegularized[4, x]").unwrap(),
+      "GammaRegularized[4, x]"
+    );
+  }
+}

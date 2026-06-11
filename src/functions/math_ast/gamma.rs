@@ -1334,6 +1334,22 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(gamma_regularized_numeric(a, z)));
   }
 
+  // GammaRegularized[1, z] = E^(-z) for any z (Wolfram auto-evaluates
+  // this case even symbolically)
+  if matches!(a_expr, Expr::Integer(1)) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::Constant("E".to_string()),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), z_expr.clone()].into(),
+        },
+      ]
+      .into(),
+    });
+  }
+
   // Exact evaluation for positive integer a with exact numeric z:
   // Q(m, z) = e^(-z) sum_{k<m} z^k/k!
   if let Expr::Integer(m) = a_expr

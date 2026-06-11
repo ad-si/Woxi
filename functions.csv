@@ -2970,7 +2970,7 @@ BetaBinomialDistribution,Beta-binomial compound distribution (exact PMF and mome
 BitLength,Returns the number of bits needed to represent an integer,✅,pure,6.0,3048
 EllipticExp,Inverse of EllipticLog on the curve y^2 = x^3 + a x^2 + b x (numerical),✅,pure,1.0,3048
 EvaluationBox,,,,10.0,3048
-ExponentialPowerDistribution,,,,8.0,3048
+ExponentialPowerDistribution,Generalized normal (exponential power) distribution,✅,pure,8.0,3048
 FourierDST,Discrete sine transform of a real list (DST types 1-4; default type 2),✅,pure,6.0,3048
 JulianDate,Julian date of a date list or the current instant,✅,impure,10.2,3048
 ListSliceDensityPlot3D,,🚫,,10.2,3048
