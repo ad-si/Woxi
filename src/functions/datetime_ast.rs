@@ -1684,3 +1684,78 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result.into()))
 }
+
+/// JulianDate[] / JulianDate[{y, m, d, h, min, s}] - Julian date of the
+/// current instant or of a proleptic-Gregorian date list. Wolfram has
+/// no input year zero: 0 and -1 both denote 1 BC (astronomical year 0),
+/// so negative years shift by one. Date lists are taken as-is with no
+/// time-zone adjustment, matching wolframscript.
+pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "JulianDate".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  if args.is_empty() {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+      use std::time::{SystemTime, UNIX_EPOCH};
+      let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+      return Ok(Expr::Real(2440587.5 + unix / 86400.0));
+    }
+    #[cfg(target_arch = "wasm32")]
+    return Ok(unevaluated(args));
+  }
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() && items.len() <= 6 => items,
+    _ => return Ok(unevaluated(args)),
+  };
+  let mut parts: Vec<f64> = Vec::with_capacity(6);
+  for item in items.iter() {
+    match item {
+      Expr::Integer(v) => parts.push(*v as f64),
+      Expr::Real(v) => parts.push(*v),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+            parts.push(*p as f64 / *q as f64)
+          }
+          _ => return Ok(unevaluated(&[Expr::List(items.clone())])),
+        }
+      }
+      _ => return Ok(unevaluated(&[Expr::List(items.clone())])),
+    }
+  }
+  while parts.len() < 3 {
+    parts.push(1.0);
+  }
+  while parts.len() < 6 {
+    parts.push(0.0);
+  }
+
+  let y_input = parts[0] as i64;
+  // No input year zero: 0 and -1 are both 1 BC (astronomical 0)
+  let y = if y_input < 0 { y_input + 1 } else { y_input };
+  let m = parts[1] as i64;
+  let d = parts[2] as i64;
+
+  // Proleptic Gregorian JDN (floor divisions for negative years)
+  let a = (14 - m).div_euclid(12);
+  let y2 = y + 4800 - a;
+  let m2 = m + 12 * a - 3;
+  let jdn = d + (153 * m2 + 2).div_euclid(5) + 365 * y2 + y2.div_euclid(4)
+    - y2.div_euclid(100)
+    + y2.div_euclid(400)
+    - 32045;
+
+  // Single division keeps the float rounding identical to wolframscript
+  let seconds = (parts[3] - 12.0) * 3600.0 + parts[4] * 60.0 + parts[5];
+  Ok(Expr::Real(jdn as f64 + seconds / 86400.0))
+}

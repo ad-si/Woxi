@@ -2972,7 +2972,7 @@ EllipticExp,Inverse of EllipticLog on the curve y^2 = x^3 + a x^2 + b x (numeric
 EvaluationBox,,,,10.0,3048
 ExponentialPowerDistribution,,,,8.0,3048
 FourierDST,Discrete sine transform of a real list (DST types 1-4; default type 2),✅,pure,6.0,3048
-JulianDate,,,,10.2,3048
+JulianDate,Julian date of a date list or the current instant,✅,impure,10.2,3048
 ListSliceDensityPlot3D,,🚫,,10.2,3048
 LongestCommonSubsequence,Returns the longest common subsequence of two lists,✅,pure,7.0,3048
 NotebookDynamicExpression,,🚫,,8.0,3048

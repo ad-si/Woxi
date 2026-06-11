@@ -1029,3 +1029,65 @@ mod cases {
     );
   }
 }
+
+mod julian_date {
+  use super::*;
+
+  #[test]
+  fn epoch_and_common_dates() {
+    // J2000.0
+    assert_eq!(
+      interpret("JulianDate[{2000, 1, 1, 12, 0, 0}]").unwrap(),
+      "2.451545*^6"
+    );
+    // Midnight gives the half-day boundary
+    assert_eq!(
+      interpret("JulianDate[{2026, 6, 11}]").unwrap(),
+      "2.4612025*^6"
+    );
+    // Short date lists default to January 1st, 00:00
+    assert_eq!(interpret("JulianDate[{2000}]").unwrap(), "2.4515445*^6");
+    assert_eq!(
+      interpret("JulianDate[{2000, 1, 1, 12}]").unwrap(),
+      "2.451545*^6"
+    );
+    // Second overflow rolls over (leap-second style input)
+    assert_eq!(
+      interpret("JulianDate[{1999, 12, 31, 23, 59, 60}]").unwrap(),
+      "2.4515445*^6"
+    );
+    // Gregorian calendar adoption date
+    assert_eq!(
+      interpret("JulianDate[{1582, 10, 15}]").unwrap(),
+      "2.2991605*^6"
+    );
+    // Fractional seconds stay at machine precision
+    assert_eq!(
+      interpret("JulianDate[{2000, 1, 1, 12, 30, 45.5}]").unwrap(),
+      "2.4515450213599536*^6"
+    );
+  }
+
+  #[test]
+  fn no_input_year_zero() {
+    // Wolfram treats both 0 and -1 as 1 BC (astronomical year 0)
+    assert_eq!(interpret("JulianDate[{0, 1, 1}]").unwrap(), "1.7210595*^6");
+    assert_eq!(interpret("JulianDate[{-1, 1, 1}]").unwrap(), "1.7210595*^6");
+    assert_eq!(interpret("JulianDate[{1, 1, 1}]").unwrap(), "1.7214255*^6");
+    assert_eq!(
+      interpret("JulianDate[{-100, 1, 1}]").unwrap(),
+      "1.6849005*^6"
+    );
+    // JD 0 sits in input year -4713 (proleptic Gregorian)
+    assert_eq!(interpret("JulianDate[{-4713, 1, 1}]").unwrap(), "37.5");
+    assert_eq!(
+      interpret("JulianDate[{-4712, 1, 1, 12, 0, 0}]").unwrap(),
+      "404."
+    );
+  }
+
+  #[test]
+  fn non_date_input_stays_unevaluated() {
+    assert_eq!(interpret("JulianDate[x]").unwrap(), "JulianDate[x]");
+  }
+}

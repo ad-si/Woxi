@@ -172,6 +172,9 @@ pub fn dispatch_datetime_functions(
         .as_secs();
       return Some(Ok(Expr::Integer(secs as i128)));
     }
+    "JulianDate" if args.len() <= 1 => {
+      return Some(crate::functions::datetime_ast::julian_date_ast(args));
+    }
     _ => {}
   }
   None
