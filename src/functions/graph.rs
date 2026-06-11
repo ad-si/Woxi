@@ -2300,3 +2300,212 @@ pub fn nearest_neighbor_graph_ast(
     args: vec![Expr::List(points.clone()), Expr::List(edges.into())].into(),
   })
 }
+
+// ---------------------------------------------------------------------------
+// EdgeConnectivity / VertexConnectivity via unit-capacity max-flow
+// (Edmonds-Karp). Matches wolframscript:
+// - EdgeConnectivity[g]: min over t of maxflow(v0, t); single-vertex
+//   graphs stay unevaluated (wolframscript artifact)
+// - VertexConnectivity[g]: n-1 for complete graphs, else min vertex cut
+//   over non-adjacent pairs (vertex-splitting reduction)
+// - 3-arg s-t forms; s == t returns VertexDegree[g, s] (edge) or
+//   EdgeCount[g] (vertex), adjacent s, t give vertex connectivity 0 —
+//   all replicating wolframscript's observed behavior
+// - invalid vertices emit `inv` messages naming the argument position
+
+fn bfs_max_flow(cap: &mut [Vec<i64>], s: usize, t: usize) -> i64 {
+  let n = cap.len();
+  let mut flow = 0;
+  loop {
+    let mut parent = vec![usize::MAX; n];
+    parent[s] = s;
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(s);
+    while let Some(u) = queue.pop_front() {
+      if u == t {
+        break;
+      }
+      for v in 0..n {
+        if parent[v] == usize::MAX && cap[u][v] > 0 {
+          parent[v] = u;
+          queue.push_back(v);
+        }
+      }
+    }
+    if parent[t] == usize::MAX {
+      return flow;
+    }
+    let mut bottleneck = i64::MAX;
+    let mut v = t;
+    while v != s {
+      let u = parent[v];
+      bottleneck = bottleneck.min(cap[u][v]);
+      v = u;
+    }
+    let mut v = t;
+    while v != s {
+      let u = parent[v];
+      cap[u][v] -= bottleneck;
+      cap[v][u] += bottleneck;
+      v = u;
+    }
+    flow += bottleneck;
+  }
+}
+
+/// Max number of edge-disjoint paths between s and t (unit edge capacities).
+fn edge_maxflow(n: usize, pairs: &[(usize, usize)], s: usize, t: usize) -> i64 {
+  let mut cap = vec![vec![0i64; n]; n];
+  for &(a, b) in pairs {
+    if a != b {
+      cap[a][b] += 1;
+      cap[b][a] += 1;
+    }
+  }
+  bfs_max_flow(&mut cap, s, t)
+}
+
+/// Max number of internally vertex-disjoint paths between non-adjacent
+/// s and t (vertex-splitting: v_in = v, v_out = v + n, unit vertex caps).
+fn vertex_maxflow(
+  n: usize,
+  pairs: &[(usize, usize)],
+  s: usize,
+  t: usize,
+) -> i64 {
+  let inf = (n as i64 + 1) * 2;
+  let mut cap = vec![vec![0i64; 2 * n]; 2 * n];
+  for v in 0..n {
+    cap[v][v + n] = if v == s || v == t { inf } else { 1 };
+  }
+  for &(a, b) in pairs {
+    if a != b {
+      cap[a + n][b] = inf;
+      cap[b + n][a] = inf;
+    }
+  }
+  bfs_max_flow(&mut cap, s + n, t)
+}
+
+pub fn connectivity_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  // Extract Graph[vertex list, undirected edge list]
+  let (vertices, edge_exprs) = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+  let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
+  let n = vkeys.len();
+  let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(edge_exprs.len());
+  for e in edge_exprs.iter() {
+    match e {
+      Expr::FunctionCall {
+        name: ename,
+        args: eargs,
+      } if ename == "UndirectedEdge" && eargs.len() == 2 => {
+        let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]));
+        let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]));
+        match (a, b) {
+          (Some(a), Some(b)) => pairs.push((a, b)),
+          _ => return Ok(unevaluated()),
+        }
+      }
+      _ => return Ok(unevaluated()),
+    }
+  }
+  let adjacent = |s: usize, t: usize| {
+    pairs
+      .iter()
+      .any(|&(a, b)| (a == s && b == t) || (a == t && b == s))
+  };
+
+  if args.len() == 3 {
+    let find =
+      |e: &Expr| vkeys.iter().position(|k| *k == expr_to_string(e));
+    let inv = |pos: usize| {
+      crate::emit_message(&format!(
+        "{}::inv: The argument {} in {} is not a valid vertex.",
+        name,
+        pos,
+        expr_to_string(&Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        })
+      ));
+    };
+    let s = match find(&args[1]) {
+      Some(i) => i,
+      None => {
+        inv(2);
+        return Ok(unevaluated());
+      }
+    };
+    let t = match find(&args[2]) {
+      Some(i) => i,
+      None => {
+        inv(3);
+        return Ok(unevaluated());
+      }
+    };
+    if s == t {
+      // wolframscript artifacts: degree of s (edge), edge count (vertex)
+      return Ok(Expr::Integer(if name == "EdgeConnectivity" {
+        pairs.iter().filter(|&&(a, b)| a == s || b == s).count() as i128
+      } else {
+        pairs.len() as i128
+      }));
+    }
+    let result = if name == "EdgeConnectivity" {
+      edge_maxflow(n, &pairs, s, t)
+    } else if adjacent(s, t) {
+      0
+    } else {
+      vertex_maxflow(n, &pairs, s, t)
+    };
+    return Ok(Expr::Integer(result as i128));
+  }
+
+  // Single-argument forms
+  if name == "EdgeConnectivity" {
+    if n <= 1 {
+      return Ok(unevaluated());
+    }
+    let min_flow = (1..n)
+      .map(|t| edge_maxflow(n, &pairs, 0, t))
+      .min()
+      .unwrap_or(0);
+    return Ok(Expr::Integer(min_flow as i128));
+  }
+  // VertexConnectivity
+  if n <= 1 {
+    return Ok(Expr::Integer(0));
+  }
+  let mut best: Option<i64> = None;
+  for s in 0..n {
+    for t in (s + 1)..n {
+      if !adjacent(s, t) {
+        let f = vertex_maxflow(n, &pairs, s, t);
+        best = Some(best.map_or(f, |b| b.min(f)));
+        if f == 0 {
+          return Ok(Expr::Integer(0));
+        }
+      }
+    }
+  }
+  // All pairs adjacent: complete graph, connectivity n - 1
+  Ok(Expr::Integer(best.unwrap_or(n as i64 - 1) as i128))
+}

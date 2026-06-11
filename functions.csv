@@ -3357,7 +3357,7 @@ PlanarGraphQ,,,,9.0,3440
 ScaleOrigin,,,,9.0,3440
 SystemsModelParallelConnect,,🚫,,8.0,3440
 UnsavedVariables,,,,8.0,3440
-VertexConnectivity,,,,9.0,3440
+VertexConnectivity,Minimum vertex cut size (s-t form uses vertex-disjoint paths),✅,pure,9.0,3440
 BiorthogonalSplineWavelet,,🚫,,8.0,3462
 CanonicalGraph,,,,10.0,3462
 ComposeSeries,Composes power series by substituting one series into another,✅,pure,1.0,3462
@@ -3435,7 +3435,7 @@ TransitiveReductionGraph,,,,10.0,3522
 UtilityFunction,,,,10.0,3522
 BeniniDistribution,,,,8.0,3537
 CoxModelFit,,,,9.0,3537
-EdgeConnectivity,,,,9.0,3537
+EdgeConnectivity,Minimum edge cut size (s-t form uses edge-disjoint paths),✅,pure,9.0,3537
 EntropyFilter,,🚫,,7.0,3537
 ExponentStep,,,,3.0,3537
 GeoDistanceList,,🚫,,10.4,3537

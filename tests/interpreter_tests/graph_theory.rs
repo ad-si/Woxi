@@ -2548,10 +2548,7 @@ mod harary_graph {
       interpret("EdgeList[HararyGraph[2, 8]]").unwrap(),
       "{1 \u{f3d4} 2, 1 \u{f3d4} 8, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 5, 5 \u{f3d4} 6, 6 \u{f3d4} 7, 7 \u{f3d4} 8}"
     );
-    assert_eq!(
-      interpret("EdgeCount[HararyGraph[4, 8]]").unwrap(),
-      "16"
-    );
+    assert_eq!(interpret("EdgeCount[HararyGraph[4, 8]]").unwrap(), "16");
   }
 
   #[test]
@@ -2574,10 +2571,7 @@ mod harary_graph {
 
   #[test]
   fn k_equals_n_minus_one_is_complete() {
-    assert_eq!(
-      interpret("EdgeCount[HararyGraph[7, 8]]").unwrap(),
-      "28"
-    );
+    assert_eq!(interpret("EdgeCount[HararyGraph[7, 8]]").unwrap(), "28");
     assert_eq!(
       interpret("EdgeList[HararyGraph[2, 3]]").unwrap(),
       "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}"
@@ -2630,10 +2624,7 @@ mod harary_graph {
 
   #[test]
   fn non_positive_and_real_arguments_warn_intpm() {
-    assert_eq!(
-      interpret("HararyGraph[0, 5]").unwrap(),
-      "HararyGraph[0, 5]"
-    );
+    assert_eq!(interpret("HararyGraph[0, 5]").unwrap(), "HararyGraph[0, 5]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
@@ -2677,5 +2668,175 @@ mod harary_graph {
       "expected nonopt message, got {:?}",
       msgs
     );
+  }
+}
+
+mod connectivity {
+  use super::*;
+
+  #[test]
+  fn edge_connectivity_basic() {
+    assert_eq!(
+      interpret("EdgeConnectivity[CompleteGraph[5]]").unwrap(),
+      "4"
+    );
+    assert_eq!(interpret("EdgeConnectivity[CycleGraph[6]]").unwrap(), "2");
+    assert_eq!(interpret("EdgeConnectivity[StarGraph[6]]").unwrap(), "1");
+    assert_eq!(
+      interpret("EdgeConnectivity[PathGraph[Range[5]]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("EdgeConnectivity[PetersenGraph[5, 2]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn vertex_connectivity_basic() {
+    assert_eq!(
+      interpret("VertexConnectivity[CompleteGraph[5]]").unwrap(),
+      "4"
+    );
+    assert_eq!(interpret("VertexConnectivity[CycleGraph[6]]").unwrap(), "2");
+    assert_eq!(interpret("VertexConnectivity[StarGraph[6]]").unwrap(), "1");
+    assert_eq!(
+      interpret("VertexConnectivity[PetersenGraph[5, 2]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[GridGraph[{3, 3}]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn harary_graphs_are_exactly_k_connected() {
+    // H_{k,n} is the minimal k-connected graph — cross-validates both
+    // HararyGraph and the connectivity algorithms
+    assert_eq!(
+      interpret(
+        "Table[{VertexConnectivity[HararyGraph[k, 9]], EdgeConnectivity[HararyGraph[k, 9]]}, {k, 2, 8}]"
+      )
+      .unwrap(),
+      "{{2, 2}, {3, 3}, {4, 4}, {5, 5}, {6, 6}, {7, 7}, {8, 8}}"
+    );
+  }
+
+  #[test]
+  fn disconnected_graphs_have_zero_connectivity() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]; {EdgeConnectivity[g], VertexConnectivity[g]}"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[Graph[{1, 2, 3}, {}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn s_t_connectivity() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4, 5, 6}, {1 <-> 2, 2 <-> 3, 3 <-> 4, 1 <-> 5, 5 <-> 6, 6 <-> 4, 2 <-> 5, 3 <-> 6}]; {EdgeConnectivity[g, 2, 6], VertexConnectivity[g, 2, 6]}"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+    // Non-adjacent pair on a cycle
+    assert_eq!(
+      interpret("VertexConnectivity[CycleGraph[5], 1, 3]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn adjacent_vertices_have_vertex_connectivity_zero() {
+    // wolframscript convention: no vertex cut separates adjacent vertices
+    assert_eq!(
+      interpret("VertexConnectivity[CycleGraph[5], 1, 2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[CompleteGraph[5], 1, 2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn same_vertex_artifacts() {
+    // wolframscript: s == t gives the degree (edge) or edge count (vertex)
+    assert_eq!(
+      interpret("EdgeConnectivity[StarGraph[6], 1, 1]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("EdgeConnectivity[StarGraph[6], 3, 3]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[CompleteGraph[5], 1, 1]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[CycleGraph[5], 1, 1]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn single_vertex_graph() {
+    // wolframscript: EdgeConnectivity stays unevaluated, VertexConnectivity
+    // gives 0
+    assert_eq!(
+      interpret("EdgeConnectivity[Graph[{1}, {}]]").unwrap(),
+      "EdgeConnectivity[Graph[<1>, <0>]]"
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[Graph[{1}, {}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn invalid_vertex_emits_inv_message() {
+    assert_eq!(
+      interpret("EdgeConnectivity[CycleGraph[5], 1, 7]").unwrap(),
+      "EdgeConnectivity[Graph[<5>, <5>], 1, 7]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "EdgeConnectivity::inv: The argument 3 in EdgeConnectivity[Graph[<5>, <5>], 1, 7] is not a valid vertex."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("VertexConnectivity[CycleGraph[5], 9, 2]").unwrap(),
+      "VertexConnectivity[Graph[<5>, <5>], 9, 2]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "VertexConnectivity::inv: The argument 2 in VertexConnectivity[Graph[<5>, <5>], 9, 2] is not a valid vertex."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_graph_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("EdgeConnectivity[x]").unwrap(),
+      "EdgeConnectivity[x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
   }
 }

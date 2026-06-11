@@ -2630,14 +2630,12 @@ pub fn evaluate_function_call_ast_inner(
       .into_iter()
       .map(|(a, b)| Expr::FunctionCall {
         name: "UndirectedEdge".to_string(),
-        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)]
-          .into(),
+        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
       })
       .collect();
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
-      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
-        .into(),
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
     });
   }
 
@@ -5015,6 +5013,12 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if (name == "EdgeConnectivity" || name == "VertexConnectivity")
+    && (args.len() == 1 || args.len() == 3)
+  {
+    return crate::functions::graph::connectivity_ast(name, args);
+  }
+
   if (name == "GraphDiameter"
     || name == "VertexEccentricity"
     || name == "GraphCenter"
