@@ -1633,3 +1633,107 @@ mod ordered_f64 {
     }
   }
 }
+
+/// TransitiveClosureGraph[g] - graph with an edge from u to v whenever
+/// v is reachable from u in g (no self-loops, matching wolframscript;
+/// undirected graphs connect every pair inside a component). Edge
+/// lists are accepted by wrapping them in Graph first.
+pub fn transitive_closure_graph_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "TransitiveClosureGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  // Accept raw edge lists like wolframscript does
+  let graph = match &args[0] {
+    Expr::List(_) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?
+    }
+    other => other.clone(),
+  };
+  let (vertices, edges) = match &graph {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() >= 2 =>
+    {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v.clone(), e.clone()),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let n = vertices.len();
+  let mut adjacency = vec![vec![false; n]; n];
+  let mut any_directed = false;
+  for edge in edges.iter() {
+    if let Expr::FunctionCall { name, args: eargs } = edge
+      && eargs.len() == 2
+      && let (Some(&u), Some(&v)) =
+        (index.get(&key(&eargs[0])), index.get(&key(&eargs[1])))
+    {
+      match name.as_str() {
+        "DirectedEdge" => {
+          any_directed = true;
+          adjacency[u][v] = true;
+        }
+        "UndirectedEdge" => {
+          adjacency[u][v] = true;
+          adjacency[v][u] = true;
+        }
+        _ => return Ok(unevaluated(args)),
+      }
+    } else {
+      return Ok(unevaluated(args));
+    }
+  }
+
+  // Floyd-Warshall reachability
+  let mut reach = adjacency;
+  for k in 0..n {
+    for i in 0..n {
+      if reach[i][k] {
+        for j in 0..n {
+          if reach[k][j] {
+            reach[i][j] = true;
+          }
+        }
+      }
+    }
+  }
+
+  let edge_head = if any_directed {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  };
+  let mut closure_edges: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    let j_start = if any_directed { 0 } else { i + 1 };
+    for j in j_start..n {
+      if i != j && reach[i][j] {
+        closure_edges.push(Expr::FunctionCall {
+          name: edge_head.to_string(),
+          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+        });
+      }
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(vertices), Expr::List(closure_edges.into())].into(),
+  })
+}

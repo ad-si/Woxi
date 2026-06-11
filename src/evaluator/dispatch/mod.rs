@@ -3827,6 +3827,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_cycle_ast(args);
   }
 
+  // TransitiveClosureGraph[graph | edgeList] → graph with reachability edges
+  if name == "TransitiveClosureGraph" && args.len() == 1 {
+    return crate::functions::graph::transitive_closure_graph_ast(args);
+  }
+
   // FindShortestPath[graph, src, dst, opts...] → list of vertices on a
   // shortest weighted path (Dijkstra).
   if name == "FindShortestPath" && args.len() >= 3 {

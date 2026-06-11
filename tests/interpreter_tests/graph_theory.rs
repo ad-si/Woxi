@@ -2102,3 +2102,61 @@ mod find_shortest_path {
     );
   }
 }
+
+mod transitive_closure_graph {
+  use super::*;
+
+  #[test]
+  fn directed_closures() {
+    assert_eq!(
+      interpret("TransitiveClosureGraph[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "Graph[<3>, <3>]"
+    );
+    assert_eq!(
+      interpret("EdgeList[TransitiveClosureGraph[Graph[{1 -> 2, 2 -> 3}]]]")
+        .unwrap(),
+      "{1 \u{f3d5} 2, 1 \u{f3d5} 3, 2 \u{f3d5} 3}"
+    );
+    // A cycle closes into the complete digraph without self-loops
+    assert_eq!(
+      interpret(
+        "EdgeList[TransitiveClosureGraph[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 1 \u{f3d5} 3, 2 \u{f3d5} 1, 2 \u{f3d5} 3, 3 \u{f3d5} 1, 3 \u{f3d5} 2}"
+    );
+    // Components stay separate; diamond DAG closes with the long edge
+    assert_eq!(
+      interpret("EdgeList[TransitiveClosureGraph[Graph[{1 -> 2, 3 -> 4}]]]")
+        .unwrap(),
+      "{1 \u{f3d5} 2, 3 \u{f3d5} 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[TransitiveClosureGraph[Graph[{a -> b, b -> c}]]]")
+        .unwrap(),
+      "{a \u{f3d5} b, a \u{f3d5} c, b \u{f3d5} c}"
+    );
+  }
+
+  #[test]
+  fn undirected_closures_connect_components() {
+    assert_eq!(
+      interpret("EdgeList[TransitiveClosureGraph[Graph[{1 <-> 2, 2 <-> 3}]]]")
+        .unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}"
+    );
+  }
+
+  #[test]
+  fn edge_lists_and_invalid_input() {
+    // Raw edge lists wrap into a Graph first
+    assert_eq!(
+      interpret("TransitiveClosureGraph[{1 -> 2}]").unwrap(),
+      "Graph[<2>, <1>]"
+    );
+    assert_eq!(
+      interpret("TransitiveClosureGraph[x]").unwrap(),
+      "TransitiveClosureGraph[x]"
+    );
+  }
+}

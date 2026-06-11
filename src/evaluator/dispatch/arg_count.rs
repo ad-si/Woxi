@@ -1091,6 +1091,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MarcumQ" => Some((3, 4)),
     "ExponentialPowerDistribution" => Some((3, 3)),
     "CommonestFilter" => Some((2, 2)),
+    "TransitiveClosureGraph" => Some((1, 1)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),
