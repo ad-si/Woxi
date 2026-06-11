@@ -2171,3 +2171,132 @@ pub fn find_minimum_cost_flow_ast(
     Ok(Expr::Real(total))
   }
 }
+
+/// NearestNeighborGraph[points] / NearestNeighborGraph[points, k] -
+/// undirected graph joining every point to its k nearest other points
+/// (all equidistant ties included, so {0,1,2,3} links 1 to both
+/// neighbors). Vertices keep input order; edges normalize to
+/// vertex-order pairs and sort lexicographically. Non-lists emit
+/// NearestNeighborGraph::list.
+pub fn nearest_neighbor_graph_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "NearestNeighborGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated(args));
+  }
+  let points = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      crate::emit_message(&format!(
+        "NearestNeighborGraph::list: List expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&unevaluated(args))
+      ));
+      return Ok(unevaluated(args));
+    }
+  };
+  let k = match args.get(1) {
+    None => 1usize,
+    Some(Expr::Integer(k)) if *k >= 1 => *k as usize,
+    Some(_) => return Ok(unevaluated(args)),
+  };
+
+  // Coordinates: scalars or equal-length numeric vectors; exact i128
+  // when everything is an integer (ties matter), f64 otherwise
+  let coords_of = |p: &Expr| -> Vec<Expr> {
+    match p {
+      Expr::List(cs) => cs.to_vec(),
+      other => vec![other.clone()],
+    }
+  };
+  let n = points.len();
+  let mut coords: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for p in points.iter() {
+    let cs = coords_of(p);
+    if !coords.is_empty() && cs.len() != coords[0].len() {
+      return Ok(unevaluated(args));
+    }
+    coords.push(cs);
+  }
+  let all_integer = coords
+    .iter()
+    .all(|cs| cs.iter().all(|c| matches!(c, Expr::Integer(_))));
+
+  // Squared distances, exact when possible (scaled by 2^20 for floats
+  // only for ordering, never printed)
+  let dist2 = |a: &[Expr], b: &[Expr]| -> Option<f64> {
+    let mut acc = 0.0;
+    for (x, y) in a.iter().zip(b) {
+      let xv = crate::functions::try_eval_to_f64(x)?;
+      let yv = crate::functions::try_eval_to_f64(y)?;
+      acc += (xv - yv) * (xv - yv);
+    }
+    Some(acc)
+  };
+  let dist2_int = |a: &[Expr], b: &[Expr]| -> i128 {
+    a.iter()
+      .zip(b)
+      .map(|(x, y)| match (x, y) {
+        (Expr::Integer(p), Expr::Integer(q)) => (p - q) * (p - q),
+        _ => unreachable!(),
+      })
+      .sum()
+  };
+
+  let mut pair_set: std::collections::BTreeSet<(usize, usize)> =
+    std::collections::BTreeSet::new();
+  for i in 0..n {
+    // distances to all other points
+    if all_integer {
+      let mut ds: Vec<(i128, usize)> = (0..n)
+        .filter(|&j| j != i)
+        .map(|j| (dist2_int(&coords[i], &coords[j]), j))
+        .collect();
+      ds.sort();
+      if ds.is_empty() {
+        continue;
+      }
+      let cutoff = ds[(k - 1).min(ds.len() - 1)].0;
+      for &(d, j) in &ds {
+        if d <= cutoff {
+          pair_set.insert((i.min(j), i.max(j)));
+        }
+      }
+    } else {
+      let mut ds: Vec<(f64, usize)> = Vec::new();
+      for j in 0..n {
+        if j == i {
+          continue;
+        }
+        match dist2(&coords[i], &coords[j]) {
+          Some(d) => ds.push((d, j)),
+          None => return Ok(unevaluated(args)),
+        }
+      }
+      ds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      if ds.is_empty() {
+        continue;
+      }
+      let cutoff = ds[(k - 1).min(ds.len() - 1)].0;
+      for &(d, j) in &ds {
+        if d <= cutoff {
+          pair_set.insert((i.min(j), i.max(j)));
+        }
+      }
+    }
+  }
+  let edges: Vec<Expr> = pair_set
+    .into_iter()
+    .map(|(a, b)| Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![points[a].clone(), points[b].clone()].into(),
+    })
+    .collect();
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(points.clone()), Expr::List(edges.into())].into(),
+  })
+}

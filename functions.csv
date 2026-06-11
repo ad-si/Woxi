@@ -1642,7 +1642,7 @@ FindMaxValue,Finds the value at a local maximum of a function numerically,✅,pu
 DistributeDefinitions,Distribute definitions to kernels,,unevaluated,7.0,1672
 FilePrint,Prints the contents of a file to standard output,✅,io,6.0,1672
 FormPage,Form page interface,,unevaluated,10.3,1672
-NearestNeighborGraph,Nearest neighbor graph,,unevaluated,10.2,1672
+NearestNeighborGraph,Undirected k-nearest-neighbor graph of points (ties included),✅,pure,10.2,1672
 BatchNormalizationLayer,Batch normalization layer,,unevaluated,11.0,1675
 ChartBaseStyle,Chart base style,,unevaluated,7.0,1675
 RiemannSiegelZ,Riemann-Siegel Z function on the critical line for real numeric arguments,✅,pure,2.0,1675

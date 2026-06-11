@@ -2453,3 +2453,80 @@ mod find_minimum_cost_flow {
     );
   }
 }
+
+mod nearest_neighbor_graph {
+  use super::*;
+
+  #[test]
+  fn nearest_neighbor_edges() {
+    assert_eq!(
+      interpret("NearestNeighborGraph[{{0, 0}, {1, 0}, {5, 5}, {6, 5}}]")
+        .unwrap(),
+      "Graph[<4>, <2>]"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[NearestNeighborGraph[{{0, 0}, {1, 0}, {5, 5}, {6, 5}}]]"
+      )
+      .unwrap(),
+      "{{0, 0} \u{f3d4} {1, 0}, {5, 5} \u{f3d4} {6, 5}}"
+    );
+    // Mutual nearest neighbors collapse into single undirected edges
+    assert_eq!(
+      interpret("EdgeList[NearestNeighborGraph[{1, 2, 4, 8}]]").unwrap(),
+      "{1 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 8}"
+    );
+    // Vertices keep input order even when scrambled
+    assert_eq!(
+      interpret("EdgeList[NearestNeighborGraph[{10, 3, 7}]]").unwrap(),
+      "{10 \u{f3d4} 7, 3 \u{f3d4} 7}"
+    );
+    assert_eq!(
+      interpret("VertexList[NearestNeighborGraph[{1, 2, 4, 8}]]").unwrap(),
+      "{1, 2, 4, 8}"
+    );
+  }
+
+  #[test]
+  fn ties_include_all_equidistant_points() {
+    assert_eq!(
+      interpret("EdgeList[NearestNeighborGraph[{0, 1, 2, 3}]]").unwrap(),
+      "{0 \u{f3d4} 1, 1 \u{f3d4} 2, 2 \u{f3d4} 3}"
+    );
+    assert_eq!(
+      interpret("EdgeList[NearestNeighborGraph[{0, 2, 4}]]").unwrap(),
+      "{0 \u{f3d4} 2, 2 \u{f3d4} 4}"
+    );
+  }
+
+  #[test]
+  fn k_nearest_and_real_coordinates() {
+    assert_eq!(
+      interpret("EdgeList[NearestNeighborGraph[{1, 2, 4, 8}, 2]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 4, 2 \u{f3d4} 4, 2 \u{f3d4} 8, 4 \u{f3d4} 8}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[NearestNeighborGraph[{{0, 0}, {2, 0}, {4, 1}, {1, 3}}, 2]]"
+      )
+      .unwrap(),
+      "{{0, 0} \u{f3d4} {2, 0}, {0, 0} \u{f3d4} {1, 3}, {2, 0} \u{f3d4} {4, 1}, {2, 0} \u{f3d4} {1, 3}, {4, 1} \u{f3d4} {1, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "EdgeList[NearestNeighborGraph[{{0., 0.}, {1.5, 0.}, {1.5, 1.}}]]"
+      )
+      .unwrap(),
+      "{{0., 0.} \u{f3d4} {1.5, 0.}, {1.5, 0.} \u{f3d4} {1.5, 1.}}"
+    );
+  }
+
+  #[test]
+  fn invalid_input() {
+    // NearestNeighborGraph::list message
+    assert_eq!(
+      interpret("NearestNeighborGraph[x]").unwrap(),
+      "NearestNeighborGraph[x]"
+    );
+  }
+}

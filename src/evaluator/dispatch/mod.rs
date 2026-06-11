@@ -3852,6 +3852,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_minimum_cost_flow_ast(args);
   }
 
+  // NearestNeighborGraph[points] → undirected k-nearest-neighbor graph
+  if name == "NearestNeighborGraph" && (args.len() == 1 || args.len() == 2) {
+    return crate::functions::graph::nearest_neighbor_graph_ast(args);
+  }
+
   // FindShortestPath[graph, src, dst, opts...] → list of vertices on a
   // shortest weighted path (Dijkstra).
   if name == "FindShortestPath" && args.len() >= 3 {

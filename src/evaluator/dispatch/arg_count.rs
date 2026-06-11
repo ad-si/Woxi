@@ -1096,6 +1096,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "VertexComponent" => Some((2, 2)),
     "WeightedAdjacencyGraph" => Some((1, 3)),
     "FindMinimumCostFlow" => Some((2, 4)),
+    "NearestNeighborGraph" => Some((1, 3)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),
