@@ -2019,3 +2019,155 @@ pub fn weighted_adjacency_graph_ast(
     .into(),
   })
 }
+
+/// FindMinimumCostFlow[cmat, s, t] - minimum total cost of a maximum
+/// flow from s to t where each nonzero cost-matrix entry is an arc of
+/// capacity one (wolframscript's default). No path at all stays
+/// unevaluated, matching wolframscript.
+pub fn find_minimum_cost_flow_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FindMinimumCostFlow".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 3 {
+    return Ok(unevaluated(args));
+  }
+  let matrix = match &args[0] {
+    Expr::List(rows) if !rows.is_empty() => rows,
+    _ => return Ok(unevaluated(args)),
+  };
+  let n = matrix.len();
+  let mut all_integer = true;
+  let mut cost = vec![vec![0.0f64; n]; n];
+  let mut int_cost = vec![vec![0i128; n]; n];
+  for (i, row) in matrix.iter().enumerate() {
+    let Expr::List(cells) = row else {
+      return Ok(unevaluated(args));
+    };
+    if cells.len() != n {
+      return Ok(unevaluated(args));
+    }
+    for (j, cell) in cells.iter().enumerate() {
+      match cell {
+        Expr::Integer(v) => {
+          cost[i][j] = *v as f64;
+          int_cost[i][j] = *v;
+        }
+        _ => match crate::functions::try_eval_to_f64(cell) {
+          Some(v) => {
+            cost[i][j] = v;
+            all_integer = false;
+          }
+          None => return Ok(unevaluated(args)),
+        },
+      }
+    }
+  }
+  let (s, t) = match (&args[1], &args[2]) {
+    (Expr::Integer(a), Expr::Integer(b))
+      if *a >= 1 && *a as usize <= n && *b >= 1 && *b as usize <= n =>
+    {
+      ((*a - 1) as usize, (*b - 1) as usize)
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Residual network: arcs with capacity 1 and cost c, reverse arcs
+  // with capacity 0 and cost -c
+  struct Arc {
+    to: usize,
+    cap: i32,
+    cost: f64,
+    rev: usize,
+  }
+  let mut adj: Vec<Vec<Arc>> = (0..n).map(|_| Vec::new()).collect();
+  for i in 0..n {
+    for j in 0..n {
+      if i != j && cost[i][j] != 0.0 {
+        let fwd_rev = adj[j].len();
+        let bwd_rev = adj[i].len();
+        adj[i].push(Arc {
+          to: j,
+          cap: 1,
+          cost: cost[i][j],
+          rev: fwd_rev,
+        });
+        adj[j].push(Arc {
+          to: i,
+          cap: 0,
+          cost: -cost[i][j],
+          rev: bwd_rev,
+        });
+      }
+    }
+  }
+
+  // Successive shortest augmenting paths (Bellman-Ford handles the
+  // negative residual costs)
+  let mut total_int = 0i128;
+  let mut augmented_any = false;
+  loop {
+    let mut dist = vec![f64::INFINITY; n];
+    let mut prev: Vec<Option<(usize, usize)>> = vec![None; n];
+    dist[s] = 0.0;
+    for _ in 0..n {
+      let mut changed = false;
+      for u in 0..n {
+        if dist[u].is_infinite() {
+          continue;
+        }
+        for (k, arc) in adj[u].iter().enumerate() {
+          if arc.cap > 0 && dist[u] + arc.cost < dist[arc.to] - 1e-12 {
+            dist[arc.to] = dist[u] + arc.cost;
+            prev[arc.to] = Some((u, k));
+            changed = true;
+          }
+        }
+      }
+      if !changed {
+        break;
+      }
+    }
+    if dist[t].is_infinite() {
+      break;
+    }
+    augmented_any = true;
+    // Augment one unit along the path
+    let mut v = t;
+    while v != s {
+      let (u, k) = prev[v].expect("path edge");
+      let arc_rev = adj[u][k].rev;
+      adj[u][k].cap -= 1;
+      adj[v][arc_rev].cap += 1;
+      // Sum the integer costs of forward arcs (reverse arcs subtract)
+      if all_integer {
+        if int_cost[u][v] != 0 {
+          total_int += int_cost[u][v];
+        } else {
+          total_int -= int_cost[v][u];
+        }
+      }
+      v = u;
+    }
+  }
+  if !augmented_any {
+    return Ok(unevaluated(args));
+  }
+  if all_integer {
+    Ok(Expr::Integer(total_int))
+  } else {
+    // Recompute the real total from saturated forward arcs
+    let mut total = 0.0;
+    for (u, arcs) in adj.iter().enumerate() {
+      for arc in arcs {
+        if cost[u][arc.to] != 0.0 && arc.cap == 0 && u != arc.to {
+          // forward arc fully used
+          total += cost[u][arc.to];
+        }
+      }
+    }
+    Ok(Expr::Real(total))
+  }
+}

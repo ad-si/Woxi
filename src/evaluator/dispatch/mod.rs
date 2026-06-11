@@ -3847,6 +3847,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::weighted_adjacency_graph_ast(args);
   }
 
+  // FindMinimumCostFlow[cmat, s, t] → minimum cost of a maximum flow
+  if name == "FindMinimumCostFlow" && args.len() == 3 {
+    return crate::functions::graph::find_minimum_cost_flow_ast(args);
+  }
+
   // FindShortestPath[graph, src, dst, opts...] → list of vertices on a
   // shortest weighted path (Dijkstra).
   if name == "FindShortestPath" && args.len() >= 3 {

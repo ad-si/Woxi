@@ -2390,3 +2390,66 @@ mod graph_distance_weighted {
     );
   }
 }
+
+mod find_minimum_cost_flow {
+  use super::*;
+
+  #[test]
+  fn unit_capacity_min_cost_max_flow() {
+    // Flow 2: the direct edge (4) plus the two-hop path (2 + 1)
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 2, 4}, {0, 0, 1}, {0, 0, 0}}, 1, 3]")
+        .unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 1}, {0, 0}}, 1, 2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 5, 2, 0}, {0, 0, 0, 3}, {0, 0, 0, 4}, {0, 0, 0, 0}}, 1, 4]").unwrap(),
+      "14"
+    );
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 1, 1, 0}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}}, 1, 4]").unwrap(),
+      "4"
+    );
+    // Reverse-direction entries are separate arcs
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 3}, {2, 0}}, 1, 2]").unwrap(),
+      "3"
+    );
+    // Residual rerouting: diamond with a cross edge
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 1, 2, 0}, {0, 0, 1, 2}, {0, 0, 0, 1}, {0, 0, 0, 0}}, 1, 4]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 9, 1, 0, 0}, {0, 0, 0, 1, 0}, {0, 0, 0, 9, 1}, {0, 0, 0, 0, 1}, {0, 0, 0, 0, 0}}, 1, 5]").unwrap(),
+      "13"
+    );
+  }
+
+  #[test]
+  fn real_costs_give_reals() {
+    assert_eq!(
+      interpret(
+        "FindMinimumCostFlow[{{0, 1.5, 0}, {0, 0, 2.5}, {0, 0, 0}}, 1, 3]"
+      )
+      .unwrap(),
+      "4."
+    );
+  }
+
+  #[test]
+  fn no_flow_stays_unevaluated() {
+    assert_eq!(
+      interpret("FindMinimumCostFlow[{{0, 0}, {0, 0}}, 1, 2]").unwrap(),
+      "FindMinimumCostFlow[{{0, 0}, {0, 0}}, 1, 2]"
+    );
+    assert_eq!(
+      interpret("FindMinimumCostFlow[x, 1, 2]").unwrap(),
+      "FindMinimumCostFlow[x, 1, 2]"
+    );
+  }
+}
