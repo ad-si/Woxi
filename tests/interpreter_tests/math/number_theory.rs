@@ -3369,3 +3369,62 @@ mod from_roman_numeral {
     assert_case(r#"FromRomanNumeral[x]"#, r#"FromRomanNumeral[x]"#);
   }
 }
+
+mod dirichlet_l {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn modulus_one_is_zeta() {
+    assert_case(r#"DirichletL[1, 1, 2]"#, r#"Pi^2/6"#);
+    assert_case(r#"DirichletL[1, 1, 4]"#, r#"Pi^4/90"#);
+    assert_case(r#"DirichletL[1, 1, 3]"#, r#"Zeta[3]"#);
+    assert_case(r#"DirichletL[1, 1, 1]"#, r#"ComplexInfinity"#);
+    // ...but symbolic s stays unevaluated even for k = 1
+    assert_case(r#"DirichletL[1, 1, s]"#, r#"DirichletL[1, 1, s]"#);
+  }
+
+  #[test]
+  fn classic_values_at_one() {
+    // Leibniz series and its mod-3 sibling
+    assert_case(r#"DirichletL[4, 2, 1]"#, r#"Pi/4"#);
+    assert_case(r#"DirichletL[3, 2, 1]"#, r#"Pi/(3*Sqrt[3])"#);
+  }
+
+  #[test]
+  fn non_positive_integers_via_generalized_bernoulli() {
+    // Real characters give rationals: L(1-n, chi) = -B_{n,chi}/n
+    assert_case(r#"DirichletL[4, 2, 0]"#, r#"1/2"#);
+    assert_case(r#"DirichletL[4, 2, -1]"#, r#"0"#);
+    assert_case(r#"DirichletL[4, 2, -2]"#, r#"-1/2"#);
+    assert_case(r#"DirichletL[3, 2, 0]"#, r#"1/3"#);
+    assert_case(r#"DirichletL[3, 2, -2]"#, r#"-2/9"#);
+    assert_case(r#"DirichletL[8, 3, 0]"#, r#"1/2"#);
+    assert_case(r#"DirichletL[12, 4, 0]"#, r#"0"#);
+    // Quartic characters give Gaussian rationals
+    assert_case(r#"DirichletL[5, 2, 0]"#, r#"3/5 + I/5"#);
+    assert_case(r#"DirichletL[5, 2, -2]"#, r#"-4/5 - (2*I)/5"#);
+    assert_case(r#"DirichletL[5, 2, -4]"#, r#"148/25 + (86*I)/25"#);
+    assert_case(r#"DirichletL[5, 3, 0]"#, r#"0"#);
+  }
+
+  #[test]
+  fn unevaluated_cases() {
+    // Principal characters never evaluate (s = 1 diverges, the rest
+    // stays symbolic in wolframscript too)
+    assert_case(r#"DirichletL[4, 1, 1]"#, r#"DirichletL[4, 1, 1]"#);
+    assert_case(r#"DirichletL[4, 1, 2]"#, r#"DirichletL[4, 1, 2]"#);
+    // s >= 2 stays symbolic for k > 1 (wolframscript leaves even the
+    // Catalan value DirichletL[4, 2, 2] unevaluated)
+    assert_case(r#"DirichletL[4, 2, 2]"#, r#"DirichletL[4, 2, 2]"#);
+    // Symbolic and non-integer s
+    assert_case(r#"DirichletL[4, 2, s]"#, r#"DirichletL[4, 2, s]"#);
+    assert_case(r#"DirichletL[5, 2, 3/2]"#, r#"DirichletL[5, 2, 3/2]"#);
+  }
+
+  #[test]
+  fn invalid_index_messages() {
+    // DirichletL::invl / DirichletL::intp, mirroring DirichletCharacter
+    assert_case(r#"DirichletL[5, 9, 1]"#, r#"DirichletL[5, 9, 1]"#);
+    assert_case(r#"DirichletL[5, 0, 1]"#, r#"DirichletL[5, 0, 1]"#);
+  }
+}

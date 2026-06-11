@@ -336,3 +336,298 @@ fn assemble_value(quarter: i128, num: i128, den: i128) -> Expr {
     }
   })
 }
+
+/// Total rotation r in [0, 1) (as a reduced fraction) with
+/// chi_j(a) = e^(2 pi i r), for a coprime to k.
+fn total_rotation(factors: &[Factor], exps: &[i128], a: i128) -> (i128, i128) {
+  let (mut num, mut den) = (0i128, 1i128);
+  for (f, e) in factors.iter().zip(exps) {
+    let t = f.dlog(a);
+    let (p, q) = (e * t, f.order);
+    num = num * q + p * den;
+    den *= q;
+    let g = gcd(num, den);
+    num /= g;
+    den /= g;
+  }
+  num = num.rem_euclid(den);
+  let g = gcd(num, den);
+  (num / g, den / g)
+}
+
+/// DirichletL[k, j, s] - Dirichlet L-function of the j-th character
+/// modulo k, in the cases wolframscript evaluates exactly:
+/// - k == 1: Zeta[s];
+/// - non-principal characters with values in {1, -1, I, -I} at integer
+///   s <= 0: exact (complex-)rational values via generalized Bernoulli
+///   numbers, L(1-n, chi) = -B_{n,chi}/n;
+/// - odd real characters at s == 1 for k <= 4: the classic Pi forms
+///   via the cotangent sum (higher conductors use Wolfram-internal
+///   radical/log canonicalizations we do not reproduce).
+/// Principal characters (k > 1), s >= 2, non-integer s, and characters
+/// with higher-order values stay unevaluated.
+pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "DirichletL".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 3 {
+    return Ok(unevaluated(args));
+  }
+  let k = match &args[0] {
+    Expr::Integer(k) if *k >= 1 => *k,
+    _ => return Ok(unevaluated(args)),
+  };
+  let j = match &args[1] {
+    Expr::Integer(j) => *j,
+    _ => return Ok(unevaluated(args)),
+  };
+  if j <= 0 {
+    crate::emit_message(&format!(
+      "DirichletL::intp: Positive integer expected at position 2 in {}.",
+      crate::syntax::expr_to_string(&unevaluated(args))
+    ));
+    return Ok(unevaluated(args));
+  }
+  let phi = euler_phi(k);
+  if j > phi {
+    crate::emit_message(&format!(
+      "DirichletL::invl: Argument {} at position 2 in {} should be a positive integer less than or equal to {}.",
+      j,
+      crate::syntax::expr_to_string(&unevaluated(args)),
+      phi
+    ));
+    return Ok(unevaluated(args));
+  }
+  let s = match &args[2] {
+    Expr::Integer(s) => *s,
+    _ => return Ok(unevaluated(args)),
+  };
+
+  if k == 1 {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Zeta".to_string(),
+      args: vec![Expr::Integer(s)].into(),
+    });
+  }
+  if j == 1 {
+    // Principal characters never evaluate (the s = 1 series diverges
+    // and wolframscript keeps the rest symbolic as well)
+    return Ok(unevaluated(args));
+  }
+
+  let factors = character_factors(k);
+  let mut exps = vec![0i128; factors.len()];
+  let mut rest = j - 1;
+  for (i, f) in factors.iter().enumerate().rev() {
+    exps[i] = rest % f.order;
+    rest /= f.order;
+  }
+  // chi(a) for a = 1..k as rotations; None where chi vanishes
+  let rotations: Vec<Option<(i128, i128)>> = (1..=k)
+    .map(|a| {
+      if gcd(a, k) == 1 {
+        Some(total_rotation(&factors, &exps, a))
+      } else {
+        None
+      }
+    })
+    .collect();
+
+  if s == 1 {
+    // Odd real character: L(1) = (Pi/(2k)) * sum chi(a) Cot[Pi a/k]
+    let real = rotations
+      .iter()
+      .flatten()
+      .all(|&(_, den)| den == 1 || den == 2);
+    let odd = rotations[(k - 2) as usize] == Some((1, 2)); // chi(k-1) = -1
+    if !(real && odd && k <= 4) {
+      return Ok(unevaluated(args));
+    }
+    let mut terms: Vec<Expr> = Vec::new();
+    for (a, rot) in rotations.iter().enumerate().take((k - 1) as usize) {
+      let Some(&(num, _)) = rot.as_ref() else {
+        continue;
+      };
+      let cot = Expr::FunctionCall {
+        name: "Cot".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(a as i128 + 1), Expr::Integer(k)].into(),
+            },
+            Expr::Constant("Pi".to_string()),
+          ]
+          .into(),
+        }]
+        .into(),
+      };
+      terms.push(if num == 0 {
+        cot
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), cot].into(),
+        }
+      });
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    let product = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2 * k)].into(),
+        },
+        Expr::Constant("Pi".to_string()),
+        sum,
+      ]
+      .into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Simplify".to_string(),
+      args: vec![product].into(),
+    });
+  }
+
+  if s > 1 {
+    return Ok(unevaluated(args));
+  }
+
+  // s <= 0: L(1-n, chi) = -B_{n,chi}/n with n = 1-s, where
+  // B_{n,chi} = k^(n-1) * sum_a chi(a) B_n(a/k). Exact only when the
+  // character values are fourth roots of unity.
+  if !rotations.iter().flatten().all(|&(_, den)| den <= 4) {
+    return Ok(unevaluated(args));
+  }
+  let n = (1 - s) as usize;
+
+  // Fraction helpers over BigInt
+  type Frac = (BigInt, BigInt);
+  let gcd_big = |a: &BigInt, b: &BigInt| -> BigInt {
+    let (mut a, mut b) = (a.clone(), b.clone());
+    if a < BigInt::from(0) {
+      a = -a;
+    }
+    if b < BigInt::from(0) {
+      b = -b;
+    }
+    while b != BigInt::from(0) {
+      let r = &a % &b;
+      a = b;
+      b = r;
+    }
+    if a == BigInt::from(0) {
+      BigInt::from(1)
+    } else {
+      a
+    }
+  };
+  let reduce = |num: BigInt, den: BigInt| -> Frac {
+    let g = gcd_big(&num, &den);
+    let (mut n, mut d) = (num / &g, den / g);
+    if d < BigInt::from(0) {
+      n = -n;
+      d = -d;
+    }
+    (n, d)
+  };
+  let add = |a: &Frac, b: &Frac| reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1);
+  let mul = |a: &Frac, b: &Frac| reduce(&a.0 * &b.0, &a.1 * &b.1);
+
+  // Bernoulli numbers B_0..B_n (B_1 = -1/2) via the standard recurrence
+  let mut bernoulli: Vec<Frac> = Vec::with_capacity(n + 1);
+  for m in 0..=n {
+    if m == 0 {
+      bernoulli.push((BigInt::from(1), BigInt::from(1)));
+      continue;
+    }
+    // B_m = -1/(m+1) * sum_{i<m} C(m+1, i) B_i
+    let mut acc: Frac = (BigInt::from(0), BigInt::from(1));
+    let mut binom = BigInt::from(1); // C(m+1, 0)
+    for (i, b) in bernoulli.iter().enumerate().take(m) {
+      let term = mul(&(binom.clone(), BigInt::from(1)), b);
+      acc = add(&acc, &term);
+      binom =
+        binom * BigInt::from((m + 1 - i) as i64) / BigInt::from((i + 1) as i64);
+    }
+    bernoulli.push(reduce(-acc.0, acc.1 * BigInt::from((m + 1) as i64)));
+  }
+  // Binomials C(n, i)
+  let mut binoms: Vec<BigInt> = Vec::with_capacity(n + 1);
+  let mut c = BigInt::from(1);
+  for i in 0..=n {
+    binoms.push(c.clone());
+    if i < n {
+      c = c * BigInt::from((n - i) as i64) / BigInt::from((i + 1) as i64);
+    }
+  }
+
+  // B_{n,chi} = k^(n-1) sum_a chi(a) B_n(a/k), complex (re, im)
+  let mut re: Frac = (BigInt::from(0), BigInt::from(1));
+  let mut im: Frac = (BigInt::from(0), BigInt::from(1));
+  for (idx, rot) in rotations.iter().enumerate() {
+    let Some(&(rnum, rden)) = rot.as_ref() else {
+      continue;
+    };
+    let a = idx as i128 + 1;
+    // B_n(a/k) = sum_i C(n,i) B_i (a/k)^(n-i)
+    let x: Frac = reduce(BigInt::from(a), BigInt::from(k));
+    let mut poly: Frac = (BigInt::from(0), BigInt::from(1));
+    let mut x_pow: Frac = (BigInt::from(1), BigInt::from(1));
+    // accumulate from i = n down to 0 so x_pow tracks x^(n-i)
+    for i in (0..=n).rev() {
+      let term = mul(
+        &mul(&(binoms[i].clone(), BigInt::from(1)), &bernoulli[i]),
+        &x_pow,
+      );
+      poly = add(&poly, &term);
+      x_pow = mul(&x_pow, &x);
+    }
+    // chi(a): rotation num/den with den | 4
+    let (cre, cim): (i64, i64) = match (rnum * (4 / rden)).rem_euclid(4) {
+      0 => (1, 0),
+      1 => (0, 1),
+      2 => (-1, 0),
+      _ => (0, -1),
+    };
+    if cre != 0 {
+      re = add(&re, &mul(&(BigInt::from(cre), BigInt::from(1)), &poly));
+    }
+    if cim != 0 {
+      im = add(&im, &mul(&(BigInt::from(cim), BigInt::from(1)), &poly));
+    }
+  }
+  // Scale by k^(n-1) and -1/n
+  let mut k_pow = (BigInt::from(1), BigInt::from(1));
+  if n >= 1 {
+    k_pow = (BigInt::from(k).pow((n - 1) as u32), BigInt::from(1));
+  }
+  let scale = mul(&k_pow, &(BigInt::from(-1), BigInt::from(n as i64)));
+  re = mul(&re, &scale);
+  im = mul(&im, &scale);
+
+  let re_expr = crate::functions::make_rational_expr(re.0, re.1);
+  let im_is_zero = im.0 == BigInt::from(0);
+  if im_is_zero {
+    return Ok(re_expr);
+  }
+  let im_expr = crate::functions::make_rational_expr(im.0, im.1);
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      re_expr,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![im_expr, Expr::Identifier("I".to_string())].into(),
+      },
+    ]
+    .into(),
+  })
+}
