@@ -341,6 +341,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "DagumDistribution"
         | "HyperbolicDistribution"
         | "NoncentralFRatioDistribution"
+        | "UniformSumDistribution"
     ) =>
     {
       let (mean, _) =
@@ -558,6 +559,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "DagumDistribution"
         | "HyperbolicDistribution"
         | "NoncentralFRatioDistribution"
+        | "UniformSumDistribution"
     ) =>
     {
       let (_, variance) =
@@ -808,6 +810,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "DagumDistribution"
       | "HyperbolicDistribution"
       | "NoncentralFRatioDistribution"
+      | "UniformSumDistribution"
       | "BinomialDistribution"
       | "JohnsonDistribution"
   ))

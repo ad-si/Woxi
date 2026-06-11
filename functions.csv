@@ -2953,7 +2953,7 @@ FisherRatioTest,,,,8.0,3020
 HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020
 NetReplacePart,,🚫,,11.0,3020
 TotalVariationFilter,,🚫,,8.0,3020
-UniformSumDistribution,,,,8.0,3020
+UniformSumDistribution,Irwin-Hall sum of n uniform variables (PDF and CDF and moments),✅,pure,8.0,3020
 AbsoluteFileName,,✅,,7.0,3031
 AudioTrim,,🚫,,11.0,3031
 BitSet,Set a bit in an integer,✅,pure,6.0,3031

@@ -1566,3 +1566,99 @@ mod product_distribution {
     );
   }
 }
+
+mod uniform_sum_distribution {
+  use super::*;
+
+  #[test]
+  fn mean_and_variance() {
+    assert_eq!(interpret("Mean[UniformSumDistribution[3]]").unwrap(), "3/2");
+    assert_eq!(
+      interpret("Variance[UniformSumDistribution[3]]").unwrap(),
+      "1/4"
+    );
+    // Symbolic n and the {min, max} range variant
+    assert_eq!(interpret("Mean[UniformSumDistribution[n]]").unwrap(), "n/2");
+    assert_eq!(
+      interpret("Variance[UniformSumDistribution[n]]").unwrap(),
+      "n/12"
+    );
+    assert_eq!(
+      interpret("Mean[UniformSumDistribution[3, {-1, 1}]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Variance[UniformSumDistribution[3, {-1, 1}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Mean[UniformSumDistribution[n, {a, b}]]").unwrap(),
+      "((a + b)*n)/2"
+    );
+    assert_eq!(
+      interpret("Variance[UniformSumDistribution[n, {a, b}]]").unwrap(),
+      "((-a + b)^2*n)/12"
+    );
+  }
+
+  #[test]
+  fn pdf_piecewise_forms() {
+    // n = 1 has no leading zero piece
+    assert_eq!(
+      interpret("PDF[UniformSumDistribution[1], x]").unwrap(),
+      "Piecewise[{{1, 0 <= x <= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[UniformSumDistribution[2], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x, Inequality[0, LessEqual, x, Less, 1]}, {2 - x, 1 <= x <= 2}}, 0]"
+    );
+    // Ascending inclusion-exclusion up to the midpoint, x -> n-x
+    // reflections past it
+    assert_eq!(
+      interpret("PDF[UniformSumDistribution[3], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x^2/2, Inequality[0, LessEqual, x, Less, 1]}, {(-3*(-1 + x)^2 + x^2)/2, Inequality[1, LessEqual, x, Less, 2]}, {(3 - x)^2/2, 2 <= x <= 3}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[UniformSumDistribution[5], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x^4/24, Inequality[0, LessEqual, x, Less, 1]}, {(-5*(-1 + x)^4 + x^4)/24, Inequality[1, LessEqual, x, Less, 2]}, {(10*(-2 + x)^4 - 5*(-1 + x)^4 + x^4)/24, Inequality[2, LessEqual, x, Less, 3]}, {(-5*(4 - x)^4 + (5 - x)^4)/24, Inequality[3, LessEqual, x, Less, 4]}, {(5 - x)^4/24, 4 <= x <= 5}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_piecewise_forms() {
+    assert_eq!(
+      interpret("CDF[UniformSumDistribution[1], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x, 0 <= x <= 1}}, 1]"
+    );
+    assert_eq!(
+      interpret("CDF[UniformSumDistribution[2], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x^2/2, Inequality[0, LessEqual, x, Less, 1]}, {1 - (2 - x)^2/2, 1 <= x <= 2}}, 1]"
+    );
+    // Middle pieces print expanded; past the midpoint they expand in
+    // powers of (n - x)
+    assert_eq!(
+      interpret("CDF[UniformSumDistribution[3], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x^3/6, Inequality[0, LessEqual, x, Less, 1]}, {1/2 - (3*x)/2 + (3*x^2)/2 - x^3/3, Inequality[1, LessEqual, x, Less, 2]}, {1 - (3 - x)^3/6, 2 <= x <= 3}}, 1]"
+    );
+    assert_eq!(
+      interpret("CDF[UniformSumDistribution[4], x]").unwrap(),
+      "Piecewise[{{0, x < 0}, {x^4/24, Inequality[0, LessEqual, x, Less, 1]}, {-1/6 + (2*x)/3 - x^2 + (2*x^3)/3 - x^4/8, Inequality[1, LessEqual, x, Less, 2]}, {7/6 - (2*(4 - x))/3 + (4 - x)^2 - (2*(4 - x)^3)/3 + (4 - x)^4/8, Inequality[2, LessEqual, x, Less, 3]}, {1 - (4 - x)^4/24, 3 <= x <= 4}}, 1]"
+    );
+  }
+
+  #[test]
+  fn point_evaluation() {
+    assert_eq!(
+      interpret("PDF[UniformSumDistribution[3], 3/2]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("PDF[UniformSumDistribution[3], 1.5]").unwrap(),
+      "0.75"
+    );
+    assert_eq!(
+      interpret("CDF[UniformSumDistribution[3], 1/2]").unwrap(),
+      "1/48"
+    );
+  }
+}

@@ -143,6 +143,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }),
     },
     "UniformDistribution" => pdf_uniform(dargs, x),
+    "UniformSumDistribution" => pdf_uniform_sum(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1119,6 +1120,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match dist_name {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
+    "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2918,6 +2920,23 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "UniformSumDistribution" => {
+      // Mean = n(a+b)/2, Var = n(b-a)^2/12 (default range {0, 1})
+      let (n, a, b) = match dargs {
+        [n] => (n.clone(), int(0), int(1)),
+        [n, Expr::List(bounds)] if bounds.len() == 2 => {
+          (n.clone(), bounds[0].clone(), bounds[1].clone())
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "UniformSumDistribution expects n or n, {min, max}".into(),
+          ));
+        }
+      };
+      let mean = divide(times(plus(a.clone(), b.clone()), n.clone()), int(2));
+      let var = divide(times(power(minus(b, a), int(2)), n), int(12));
+      Ok((mean, var))
+    }
     "NormalDistribution" => {
       let (mu, sigma) = match dargs.len() {
         0 => (int(0), int(1)),
@@ -6686,4 +6705,416 @@ pub fn pdf_product_distribution(
     ]
     .into(),
   })
+}
+
+/// Shared pieces for UniformSumDistribution (Irwin-Hall): wolframscript
+/// prints the inclusion-exclusion sum ascending up to the midpoint and
+/// the x -> n-x reflection past it, with the CDF middles expanded.
+fn uniform_sum_n(dargs: &[Expr]) -> Option<i128> {
+  match dargs {
+    [Expr::Integer(n)] if *n >= 1 && *n <= 25 => Some(*n),
+    _ => None,
+  }
+}
+
+fn binom(n: i128, k: i128) -> i128 {
+  let mut c = 1i128;
+  for i in 0..k {
+    c = c * (n - i) / (i + 1);
+  }
+  c
+}
+
+fn fact(n: i128) -> i128 {
+  (2..=n).product::<i128>().max(1)
+}
+
+/// (x - k)^p as the raw print form (-k + x)^p, or (n - k - x)^p when
+/// reflected; p == 1 collapses to the bare base.
+fn shifted_power(k: i128, x: &Expr, p: i128, reflect_n: Option<i128>) -> Expr {
+  let base = match reflect_n {
+    None if k == 0 => x.clone(),
+    None => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![int(-k), x.clone()].into(),
+    },
+    Some(n) => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        int(n - k),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![int(-1), x.clone()].into(),
+        },
+      ]
+      .into(),
+    },
+  };
+  if p == 1 {
+    base
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(int(p)),
+    }
+  }
+}
+
+/// Sum_{k=0..j} (-1)^k C(n,k) (x-k)^p / denom in raw print form,
+/// terms ordered k descending (the canonical Plus order).
+fn inclusion_exclusion_piece(
+  n: i128,
+  j: i128,
+  p: i128,
+  denom: i128,
+  x: &Expr,
+  reflect: bool,
+) -> Expr {
+  let reflect_n = if reflect { Some(n) } else { None };
+  let mut terms: Vec<Expr> = Vec::new();
+  for k in (1..=j).rev() {
+    let coeff = if k % 2 == 0 {
+      binom(n, k)
+    } else {
+      -binom(n, k)
+    };
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![int(coeff), shifted_power(k, x, p, reflect_n)].into(),
+    });
+  }
+  terms.push(shifted_power(0, x, p, reflect_n));
+  let sum = if terms.len() == 1 {
+    terms.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }
+  };
+  if denom == 1 {
+    sum
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(sum),
+      right: Box::new(int(denom)),
+    }
+  }
+}
+
+/// Exact coefficients (as i128 fractions over fact(n)) of the expanded
+/// CDF middle polynomial sum_{k<=j} (-1)^k C(n,k) (x-k)^n / n!.
+/// Returns c[i] as (num, den) reduced.
+fn cdf_expanded_coeffs(n: i128, j: i128) -> Vec<(i128, i128)> {
+  let nf = fact(n);
+  let mut coeffs = vec![0i128; (n + 1) as usize];
+  for k in 0..=j {
+    let sign = if k % 2 == 0 { 1 } else { -1 };
+    let c_nk = binom(n, k) * sign;
+    // (x - k)^n = sum_i C(n,i) x^i (-k)^(n-i)
+    for i in 0..=n {
+      let mut term = c_nk * binom(n, i);
+      for _ in 0..(n - i) {
+        term *= -k;
+      }
+      coeffs[i as usize] += term;
+    }
+  }
+  coeffs
+    .into_iter()
+    .map(|c| {
+      let g = {
+        let (mut a, mut b) = (c.abs(), nf);
+        while b != 0 {
+          (a, b) = (b, a % b);
+        }
+        a.max(1)
+      };
+      (c / g, nf / g)
+    })
+    .collect()
+}
+
+/// Raw term coeff * base^i for the expanded CDF pieces; i == 0 gives
+/// the bare rational and unit coefficients collapse.
+fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
+  let rational = |num: i128, den: i128| -> Expr {
+    if den == 1 {
+      int(num)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![int(num), int(den)].into(),
+      }
+    }
+  };
+  let pow = |i: i128| -> Expr {
+    if i == 1 {
+      base.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(int(i)),
+      }
+    }
+  };
+  if i == 0 {
+    return rational(num, den);
+  }
+  // Pull the sign out so Plus prints "- (3*x)/2" instead of "+ (-3*x)/2"
+  if num < 0 {
+    return Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(coeff_power_term(-num, den, base, i)),
+    };
+  }
+  if num == 1 && den == 1 {
+    pow(i)
+  } else if den == 1 {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![int(num), pow(i)].into(),
+    }
+  } else {
+    // (num * base^i) / den prints as (num*base^i)/den; num == 1 drops
+    // the explicit factor
+    let numerator = if num == 1 {
+      pow(i)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(num), pow(i)].into(),
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(int(den)),
+    }
+  }
+}
+
+pub fn pdf_uniform_sum(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "UniformSumDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some(n) = uniform_sum_n(dargs) else {
+    return Ok(unevaluated(dargs, x));
+  };
+
+  // Numeric point: evaluate the inclusion-exclusion sum directly
+  if let Some(j) = numeric_floor(&x) {
+    if j < 0 || j >= n {
+      return eval(times(int(0), x)); // 0 or 0. matching x's exactness
+    }
+    let piece = inclusion_exclusion_piece(n, j, n - 1, fact(n - 1), &x, false);
+    return eval(piece);
+  }
+
+  if n == 1 {
+    // No leading zero piece, matching wolframscript
+    return Ok(piecewise(
+      vec![(
+        int(1),
+        comparison3(
+          int(0),
+          ComparisonOp::LessEqual,
+          x,
+          ComparisonOp::LessEqual,
+          int(1),
+        ),
+      )],
+      int(0),
+    ));
+  }
+
+  let mut pairs: Vec<(Expr, Expr)> =
+    vec![(int(0), comparison(x.clone(), ComparisonOp::Less, int(0)))];
+  for j in 0..n {
+    let reflect = 2 * j > n - 1;
+    let piece = if reflect {
+      inclusion_exclusion_piece(n, n - 1 - j, n - 1, fact(n - 1), &x, true)
+    } else {
+      inclusion_exclusion_piece(n, j, n - 1, fact(n - 1), &x, false)
+    };
+    let cond = if j == n - 1 {
+      comparison3(
+        int(j),
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::LessEqual,
+        int(j + 1),
+      )
+    } else {
+      comparison3(
+        int(j),
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::Less,
+        int(j + 1),
+      )
+    };
+    pairs.push((piece, cond));
+  }
+  Ok(piecewise(pairs, int(0)))
+}
+
+pub fn cdf_uniform_sum(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "UniformSumDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some(n) = uniform_sum_n(dargs) else {
+    return Ok(unevaluated(dargs, x));
+  };
+
+  if let Some(j) = numeric_floor(&x) {
+    if j < 0 {
+      return eval(times(int(0), x));
+    }
+    if j >= n {
+      return eval(plus(int(1), times(int(0), x)));
+    }
+    let piece = inclusion_exclusion_piece(n, j, n, fact(n), &x, false);
+    return eval(piece);
+  }
+
+  let mut pairs: Vec<(Expr, Expr)> =
+    vec![(int(0), comparison(x.clone(), ComparisonOp::Less, int(0)))];
+  for j in 0..n {
+    let piece = if j == 0 {
+      inclusion_exclusion_piece(n, 0, n, fact(n), &x, false)
+    } else if j == n - 1 {
+      // 1 - (n - x)^n / n!
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          int(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              int(-1),
+              inclusion_exclusion_piece(n, 0, n, fact(n), &x, true),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      }
+    } else if 2 * j < n {
+      // Expanded ascending polynomial in x
+      let coeffs = cdf_expanded_coeffs(n, j);
+      let terms: Vec<Expr> = coeffs
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.0 != 0)
+        .map(|(i, &(num, den))| coeff_power_term(num, den, &x, i as i128))
+        .collect();
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }
+    } else {
+      // 1 - mirror(j') at u = n - x, expanded in powers of u
+      let coeffs = cdf_expanded_coeffs(n, n - 1 - j);
+      let u = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          int(n),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(-1), x.clone()].into(),
+          },
+        ]
+        .into(),
+      };
+      let terms: Vec<Expr> = coeffs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &(num, den))| {
+          let (num, den) = if i == 0 {
+            // 1 - c_0
+            (den - num, den)
+          } else {
+            (-num, den)
+          };
+          if num == 0 {
+            return None;
+          }
+          let g = {
+            let (mut a, mut b) = (num.abs(), den);
+            while b != 0 {
+              (a, b) = (b, a % b);
+            }
+            a.max(1)
+          };
+          Some(coeff_power_term(num / g, den / g, &u, i as i128))
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }
+    };
+    let cond = if j == n - 1 {
+      comparison3(
+        int(j),
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::LessEqual,
+        int(j + 1),
+      )
+    } else {
+      comparison3(
+        int(j),
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::Less,
+        int(j + 1),
+      )
+    };
+    pairs.push((piece, cond));
+  }
+  Ok(piecewise(pairs, int(1)))
+}
+
+/// Floor of an exact or machine numeric Expr, None for symbolic input.
+fn numeric_floor(x: &Expr) -> Option<i128> {
+  match x {
+    Expr::Integer(v) => Some(*v),
+    Expr::Real(v) => Some(v.floor() as i128),
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+          Some(p.div_euclid(*q))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
 }
