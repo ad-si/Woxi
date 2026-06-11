@@ -2330,3 +2330,89 @@ mod max_stable_distribution {
     );
   }
 }
+
+mod triangular_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[{0, 2}], x]").unwrap(),
+      "Piecewise[{{x, 0 <= x <= 1}, {2 - x, Inequality[1, Less, x, LessEqual, 2]}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[{0, 4}, 1], x]").unwrap(),
+      "Piecewise[{{x/2, 0 <= x <= 1}, {(4 - x)/6, Inequality[1, Less, x, LessEqual, 4]}}, 0]"
+    );
+    // No arguments defaults to {0, 1} with mode 1/2; the falling piece
+    // keeps its factored 4*(1 - x) form
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[], x]").unwrap(),
+      "Piecewise[{{4*x, 0 <= x <= 1/2}, {4*(1 - x), Inequality[1/2, Less, x, LessEqual, 1]}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[{1, 5}], x]").unwrap(),
+      "Piecewise[{{(-1 + x)/4, 1 <= x <= 3}, {(5 - x)/4, Inequality[3, Less, x, LessEqual, 5]}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[{a, b}, c], x]").unwrap(),
+      "Piecewise[{{(2*(-a + x))/((-a + b)*(-a + c)), a <= x <= c}, {(2*(b - x))/((-a + b)*(b - c)), Inequality[c, Less, x, LessEqual, b]}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[{0, 2}], 1/2]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("PDF[TriangularDistribution[{0, 2}], 3]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[TriangularDistribution[{0, 2}], x]").unwrap(),
+      "Piecewise[{{x^2/2, 0 <= x <= 1}, {1 - (2 - x)^2/2, Inequality[1, Less, x, LessEqual, 2]}, {1, x > 2}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[TriangularDistribution[], x]").unwrap(),
+      "Piecewise[{{2*x^2, 0 <= x <= 1/2}, {1 - 2*(1 - x)^2, Inequality[1/2, Less, x, LessEqual, 1]}, {1, x > 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[TriangularDistribution[{a, b}, c], x]").unwrap(),
+      "Piecewise[{{(-a + x)^2/((-a + b)*(-a + c)), a <= x <= c}, {1 - (b - x)^2/((-a + b)*(b - c)), Inequality[c, Less, x, LessEqual, b]}, {1, x > b}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[TriangularDistribution[{0, 4}, 1], 2]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(
+      interpret("CDF[TriangularDistribution[{0, 2}], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[TriangularDistribution[{0, 4}, 1]]").unwrap(),
+      "5/3"
+    );
+    assert_eq!(
+      interpret("Mean[TriangularDistribution[{0, 2}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Mean[TriangularDistribution[{a, b}, c]]").unwrap(),
+      "(a + b + c)/3"
+    );
+    assert_eq!(
+      interpret("Variance[TriangularDistribution[{0, 4}, 1]]").unwrap(),
+      "13/18"
+    );
+    assert_eq!(
+      interpret("Variance[TriangularDistribution[{a, b}, c]]").unwrap(),
+      "(a^2 - a*b + b^2 - a*c - b*c + c^2)/18"
+    );
+  }
+}

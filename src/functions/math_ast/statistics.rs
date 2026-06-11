@@ -349,6 +349,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "RiceDistribution"
         | "MinStableDistribution"
         | "MaxStableDistribution"
+        | "TriangularDistribution"
     ) =>
     {
       let (mean, _) =
@@ -574,6 +575,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "RiceDistribution"
         | "MinStableDistribution"
         | "MaxStableDistribution"
+        | "TriangularDistribution"
     ) =>
     {
       let (_, variance) =
@@ -832,6 +834,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "RiceDistribution"
       | "MinStableDistribution"
       | "MaxStableDistribution"
+      | "TriangularDistribution"
       | "BinomialDistribution"
       | "JohnsonDistribution"
   ))

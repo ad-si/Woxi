@@ -1794,7 +1794,7 @@ ColorQuantize,Quantize image colors,,unevaluated,7.0,1827
 CornerNeighbors,Corner neighbors option,,unevaluated,7.0,1827
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2.0,1827
 RealExponent,Returns the base-b real exponent Log[b Abs[x]] of x as a machine real (base 10 by default),✅,pure,6.0,1827
-TriangularDistribution,Triangular distribution,,unevaluated,6.0,1827
+TriangularDistribution,Triangular distribution (piecewise PDF and CDF and moments),✅,pure,6.0,1827
 BinaryWrite,Write binary data,✅,io,5.1,1833
 CheckboxBar,Checkbox bar control,,unevaluated,6.0,1833
 DuplicateFreeQ,Test if list has no duplicates,✅,computation,10.0,1833

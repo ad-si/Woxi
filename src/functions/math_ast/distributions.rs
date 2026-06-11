@@ -151,6 +151,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "RiceDistribution" => pdf_rice(dargs, x),
     "MinStableDistribution" => pdf_min_stable(dargs, x),
     "MaxStableDistribution" => pdf_max_stable(dargs, x),
+    "TriangularDistribution" => pdf_triangular(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1135,6 +1136,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "RiceDistribution" => cdf_rice(dargs, x),
     "MinStableDistribution" => cdf_min_stable(dargs, x),
     "MaxStableDistribution" => cdf_max_stable(dargs, x),
+    "TriangularDistribution" => cdf_triangular(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2934,6 +2936,7 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "TriangularDistribution" => triangular_mean_variance(dargs),
     "MaxStableDistribution" => {
       if dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
@@ -9283,4 +9286,354 @@ pub fn max_stable_mean_variance(
       Ok((mean, var))
     }
   }
+}
+
+/// Parse TriangularDistribution arguments: {a, b} with optional mode c
+/// (default (a + b)/2; no arguments means {0, 1}).
+fn triangular_params(
+  dargs: &[Expr],
+) -> Result<Option<(Expr, Expr, Expr)>, InterpreterError> {
+  let (a, b, c) = match dargs {
+    [] => (int(0), int(1), None),
+    [Expr::List(bounds)] if bounds.len() == 2 => {
+      (bounds[0].clone(), bounds[1].clone(), None)
+    }
+    [Expr::List(bounds), c] if bounds.len() == 2 => {
+      (bounds[0].clone(), bounds[1].clone(), Some(c.clone()))
+    }
+    _ => return Ok(None),
+  };
+  let c = match c {
+    Some(c) => c,
+    None => eval(divide(plus(a.clone(), b.clone()), int(2)))?,
+  };
+  Ok(Some((a, b, c)))
+}
+
+/// PDF[TriangularDistribution[{a, b}, c], x]: rising piece
+/// 2(x-a)/((b-a)(c-a)) on a <= x <= c and falling piece
+/// 2(b-x)/((b-a)(b-c)) on c < x <= b, with the numeric coefficient
+/// evaluated but the (b - x) factor kept unexpanded, as wolframscript
+/// prints it.
+pub fn pdf_triangular(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "TriangularDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some((a, b, c)) = triangular_params(dargs)? else {
+    return Ok(unevaluated(dargs, x));
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let diff_xa = call(
+    "Plus",
+    vec![call("Times", vec![int(-1), a.clone()]), x.clone()],
+  );
+  let diff_bx = call(
+    "Plus",
+    vec![b.clone(), call("Times", vec![int(-1), x.clone()])],
+  );
+  let numeric = ms_numeric(&a).is_some()
+    && ms_numeric(&b).is_some()
+    && ms_numeric(&c).is_some();
+  let (p1, p2) = if numeric {
+    // Times[coef, factor] keeps the linear factor unexpanded
+    let coef1 = eval(divide(
+      int(2),
+      times(
+        plus(b.clone(), times(int(-1), a.clone())),
+        plus(c.clone(), times(int(-1), a.clone())),
+      ),
+    ))?;
+    let coef2 = eval(divide(
+      int(2),
+      times(
+        plus(b.clone(), times(int(-1), a.clone())),
+        plus(b.clone(), times(int(-1), c.clone())),
+      ),
+    ))?;
+    (
+      eval(call("Times", vec![coef1, diff_xa]))?,
+      eval(call("Times", vec![coef2, diff_bx]))?,
+    )
+  } else {
+    let den1 = call(
+      "Times",
+      vec![
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), a.clone()]), b.clone()],
+        ),
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), a.clone()]), c.clone()],
+        ),
+      ],
+    );
+    let den2 = call(
+      "Times",
+      vec![
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), a.clone()]), b.clone()],
+        ),
+        call(
+          "Plus",
+          vec![b.clone(), call("Times", vec![int(-1), c.clone()])],
+        ),
+      ],
+    );
+    (
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(call("Times", vec![int(2), diff_xa])),
+        right: Box::new(den1),
+      },
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(call("Times", vec![int(2), diff_bx])),
+        right: Box::new(den2),
+      },
+    )
+  };
+
+  if ms_numeric(&x).is_some() {
+    // Pointwise: pick the piece by comparing against a, c, b
+    let (xv, av, bv, cv) = (
+      ms_numeric(&x).unwrap(),
+      ms_numeric(&a).unwrap_or(f64::NAN),
+      ms_numeric(&b).unwrap_or(f64::NAN),
+      ms_numeric(&c).unwrap_or(f64::NAN),
+    );
+    if !numeric {
+      return Ok(unevaluated(dargs, x));
+    }
+    if xv >= av && xv <= cv {
+      return eval(p1);
+    }
+    if xv > cv && xv <= bv {
+      return eval(p2);
+    }
+    return Ok(int(0));
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond1 = comparison3(
+    a,
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::LessEqual,
+    c.clone(),
+  );
+  let cond2 = comparison3(c, ComparisonOp::Less, x, ComparisonOp::LessEqual, b);
+  Ok(piecewise(vec![(p1, cond1), (p2, cond2)], int(0)))
+}
+
+/// CDF[TriangularDistribution[{a, b}, c], x] with the quadratic pieces
+/// and a third {1, x > b} piece.
+pub fn cdf_triangular(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "TriangularDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some((a, b, c)) = triangular_params(dargs)? else {
+    return Ok(unevaluated(dargs, x));
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let sq_xa = power(
+    call(
+      "Plus",
+      vec![call("Times", vec![int(-1), a.clone()]), x.clone()],
+    ),
+    int(2),
+  );
+  let sq_bx = power(
+    call(
+      "Plus",
+      vec![b.clone(), call("Times", vec![int(-1), x.clone()])],
+    ),
+    int(2),
+  );
+  let numeric = ms_numeric(&a).is_some()
+    && ms_numeric(&b).is_some()
+    && ms_numeric(&c).is_some();
+  let (p1, p2) = if numeric {
+    let coef1 = eval(divide(
+      int(1),
+      times(
+        plus(b.clone(), times(int(-1), a.clone())),
+        plus(c.clone(), times(int(-1), a.clone())),
+      ),
+    ))?;
+    let coef2 = eval(divide(
+      int(1),
+      times(
+        plus(b.clone(), times(int(-1), a.clone())),
+        plus(b.clone(), times(int(-1), c.clone())),
+      ),
+    ))?;
+    (
+      eval(call("Times", vec![coef1, sq_xa]))?,
+      call(
+        "Plus",
+        vec![
+          int(1),
+          call(
+            "Times",
+            vec![int(-1), eval(call("Times", vec![coef2, sq_bx]))?],
+          ),
+        ],
+      ),
+    )
+  } else {
+    let den1 = call(
+      "Times",
+      vec![
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), a.clone()]), b.clone()],
+        ),
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), a.clone()]), c.clone()],
+        ),
+      ],
+    );
+    let den2 = call(
+      "Times",
+      vec![
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), a.clone()]), b.clone()],
+        ),
+        call(
+          "Plus",
+          vec![b.clone(), call("Times", vec![int(-1), c.clone()])],
+        ),
+      ],
+    );
+    (
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(sq_xa),
+        right: Box::new(den1),
+      },
+      call(
+        "Plus",
+        vec![
+          int(1),
+          call(
+            "Times",
+            vec![
+              int(-1),
+              Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(sq_bx),
+                right: Box::new(den2),
+              },
+            ],
+          ),
+        ],
+      ),
+    )
+  };
+
+  if ms_numeric(&x).is_some() {
+    if !numeric {
+      return Ok(unevaluated(dargs, x));
+    }
+    let (xv, av, bv, cv) = (
+      ms_numeric(&x).unwrap(),
+      ms_numeric(&a).unwrap(),
+      ms_numeric(&b).unwrap(),
+      ms_numeric(&c).unwrap(),
+    );
+    if xv < av {
+      return Ok(int(0));
+    }
+    if xv > bv {
+      return Ok(int(1));
+    }
+    if xv <= cv {
+      return eval(p1);
+    }
+    return eval(p2);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond1 = comparison3(
+    a,
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::LessEqual,
+    c.clone(),
+  );
+  let cond2 = comparison3(
+    c,
+    ComparisonOp::Less,
+    x.clone(),
+    ComparisonOp::LessEqual,
+    b.clone(),
+  );
+  let cond3 = comparison(x, ComparisonOp::Greater, b);
+  Ok(piecewise(
+    vec![(p1, cond1), (p2, cond2), (int(1), cond3)],
+    int(0),
+  ))
+}
+
+/// Mean (a + b + c)/3 and variance
+/// (a^2 - a b + b^2 - a c - b c + c^2)/18 for TriangularDistribution.
+pub fn triangular_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((a, b, c)) = triangular_params(dargs)? else {
+    return Err(InterpreterError::EvaluationError(
+      "TriangularDistribution expects {min, max} and an optional mode".into(),
+    ));
+  };
+  let mean = eval(divide(plus(plus(a.clone(), b.clone()), c.clone()), int(3)))?;
+  let var = eval(divide(
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        power(a.clone(), int(2)),
+        times(int(-1), times(a.clone(), b.clone())),
+        power(b.clone(), int(2)),
+        times(int(-1), times(a.clone(), c.clone())),
+        times(int(-1), times(b.clone(), c.clone())),
+        power(c, int(2)),
+      ]
+      .into(),
+    },
+    int(18),
+  ))?;
+  Ok((mean, var))
 }

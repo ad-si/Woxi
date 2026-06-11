@@ -1102,6 +1102,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FisherRatioTest" => Some((1, 3)),
     "MinStableDistribution" => Some((3, 3)),
     "MaxStableDistribution" => Some((3, 3)),
+    "TriangularDistribution" => Some((0, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),
