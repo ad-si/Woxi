@@ -2530,3 +2530,152 @@ mod nearest_neighbor_graph {
     );
   }
 }
+
+mod harary_graph {
+  use super::*;
+
+  #[test]
+  fn displays_as_graph_summary() {
+    assert_eq!(interpret("HararyGraph[2, 8]").unwrap(), "Graph[<8>, <8>]");
+    assert_eq!(interpret("HararyGraph[4, 9]").unwrap(), "Graph[<9>, <18>]");
+  }
+
+  #[test]
+  fn even_k_is_circulant() {
+    // H_{2,n} is the cycle; H_{2r,n} connects each vertex to its r
+    // nearest neighbors on each side
+    assert_eq!(
+      interpret("EdgeList[HararyGraph[2, 8]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 8, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 5, 5 \u{f3d4} 6, 6 \u{f3d4} 7, 7 \u{f3d4} 8}"
+    );
+    assert_eq!(
+      interpret("EdgeCount[HararyGraph[4, 8]]").unwrap(),
+      "16"
+    );
+  }
+
+  #[test]
+  fn odd_k_even_n_adds_diameters() {
+    // H_{3,8}: cycle plus the four diameters
+    assert_eq!(
+      interpret("EdgeList[HararyGraph[3, 8]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 5, 1 \u{f3d4} 8, 2 \u{f3d4} 3, 2 \u{f3d4} 6, 3 \u{f3d4} 4, 3 \u{f3d4} 7, 4 \u{f3d4} 5, 4 \u{f3d4} 8, 5 \u{f3d4} 6, 6 \u{f3d4} 7, 7 \u{f3d4} 8}"
+    );
+  }
+
+  #[test]
+  fn odd_k_odd_n_adds_half_diagonals() {
+    // H_{3,7}: cycle, the (1, 1+(n-1)/2) edge, and (i, i+(n+1)/2)
+    assert_eq!(
+      interpret("EdgeList[HararyGraph[3, 7]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 4, 1 \u{f3d4} 5, 1 \u{f3d4} 7, 2 \u{f3d4} 3, 2 \u{f3d4} 6, 3 \u{f3d4} 4, 3 \u{f3d4} 7, 4 \u{f3d4} 5, 5 \u{f3d4} 6, 6 \u{f3d4} 7}"
+    );
+  }
+
+  #[test]
+  fn k_equals_n_minus_one_is_complete() {
+    assert_eq!(
+      interpret("EdgeCount[HararyGraph[7, 8]]").unwrap(),
+      "28"
+    );
+    assert_eq!(
+      interpret("EdgeList[HararyGraph[2, 3]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}"
+    );
+  }
+
+  #[test]
+  fn edge_count_is_ceil_kn_over_2() {
+    assert_eq!(interpret("EdgeCount[HararyGraph[3, 11]]").unwrap(), "17");
+    assert_eq!(interpret("VertexCount[HararyGraph[4, 9]]").unwrap(), "9");
+    assert_eq!(
+      interpret("VertexList[HararyGraph[3, 11]]").unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}"
+    );
+  }
+
+  #[test]
+  fn options_are_accepted_and_ignored() {
+    assert_eq!(
+      interpret("HararyGraph[3, 7, PlotLabel -> x]").unwrap(),
+      "Graph[<7>, <11>]"
+    );
+  }
+
+  #[test]
+  fn k_must_be_at_least_two() {
+    assert_eq!(interpret("HararyGraph[1, 5]").unwrap(), "HararyGraph[1, 5]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "HararyGraph::intg: Integer greater than 1 expected at position 1 in HararyGraph[1, 5]."
+      )),
+      "expected intg message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn n_must_exceed_k() {
+    assert_eq!(interpret("HararyGraph[8, 8]").unwrap(), "HararyGraph[8, 8]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "HararyGraph::intg: Integer greater than 8 expected at position 2 in HararyGraph[8, 8]."
+      )),
+      "expected intg message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_positive_and_real_arguments_warn_intpm() {
+    assert_eq!(
+      interpret("HararyGraph[0, 5]").unwrap(),
+      "HararyGraph[0, 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "HararyGraph::intpm: Positive machine-sized integer expected at position 1 in HararyGraph[0, 5]."
+      )),
+      "expected intpm message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("HararyGraph[3, 7.5]").unwrap(),
+      "HararyGraph[3, 7.5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "HararyGraph::intpm: Positive machine-sized integer expected at position 2 in HararyGraph[3, 7.5]."
+      )),
+      "expected intpm message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn symbolic_arguments_stay_unevaluated_silently() {
+    assert_eq!(interpret("HararyGraph[2, n]").unwrap(), "HararyGraph[2, n]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+
+  #[test]
+  fn non_option_extra_argument_warns_nonopt() {
+    assert_eq!(
+      interpret("HararyGraph[3, 7, 1]").unwrap(),
+      "HararyGraph[3, 7, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "HararyGraph::nonopt: Options expected (instead of 1) beyond position 2 in HararyGraph[3, 7, 1]."
+      )),
+      "expected nonopt message, got {:?}",
+      msgs
+    );
+  }
+}

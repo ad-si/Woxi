@@ -2516,6 +2516,131 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // HararyGraph[k, n] — the minimal k-connected graph on n vertices.
+  // Even k = 2r: circulant graph with jumps 1..r. Odd k = 2r + 1 adds the
+  // diameter jump n/2 (n even), or the (1, 1 + (n-1)/2) edge plus
+  // (i, i + (n+1)/2) for i = 1..(n-1)/2 (n odd).
+  if name == "HararyGraph" && args.len() >= 2 {
+    // Arguments beyond position 2 must be options (rules); they only
+    // affect rendering, so they are validated and ignored.
+    for extra in &args[2..] {
+      let is_opt = matches!(
+        extra,
+        Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+      );
+      if !is_opt {
+        crate::emit_message(&format!(
+          "HararyGraph::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+          crate::syntax::expr_to_string(extra),
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "HararyGraph".to_string(),
+            args: args.to_vec().into(),
+          })
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "HararyGraph".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+    // Positive machine-sized integers required (intpm); reals, zero, and
+    // negative integers warn, symbolic arguments stay silent.
+    let call_str = || {
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "HararyGraph".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
+    let classify = |e: &Expr| -> Option<Option<i128>> {
+      // Some(Some(v)): positive integer; Some(None): invalid numeric
+      // (emit intpm); None: symbolic (stay unevaluated silently)
+      match e {
+        Expr::Integer(v) if *v >= 1 => Some(Some(*v)),
+        Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => Some(None),
+        _ => None,
+      }
+    };
+    let unevaluated = Expr::FunctionCall {
+      name: "HararyGraph".to_string(),
+      args: args.to_vec().into(),
+    };
+    let (k, n) = match (classify(&args[0]), classify(&args[1])) {
+      (Some(None), _) => {
+        crate::emit_message(&format!(
+          "HararyGraph::intpm: Positive machine-sized integer expected at position 1 in {}.",
+          call_str()
+        ));
+        return Ok(unevaluated);
+      }
+      (_, Some(None)) => {
+        crate::emit_message(&format!(
+          "HararyGraph::intpm: Positive machine-sized integer expected at position 2 in {}.",
+          call_str()
+        ));
+        return Ok(unevaluated);
+      }
+      (Some(Some(k)), Some(Some(n))) => (k, n),
+      _ => return Ok(unevaluated),
+    };
+    if k < 2 {
+      crate::emit_message(&format!(
+        "HararyGraph::intg: Integer greater than 1 expected at position 1 in {}.",
+        call_str()
+      ));
+      return Ok(unevaluated);
+    }
+    if n <= k {
+      crate::emit_message(&format!(
+        "HararyGraph::intg: Integer greater than {} expected at position 2 in {}.",
+        k,
+        call_str()
+      ));
+      return Ok(unevaluated);
+    }
+    let (k, n) = (k as usize, n as usize);
+    let mut pairs: std::collections::BTreeSet<(usize, usize)> =
+      std::collections::BTreeSet::new();
+    let mut add = |a: usize, b: usize| {
+      if a != b {
+        pairs.insert((a.min(b), a.max(b)));
+      }
+    };
+    let r = k / 2;
+    for i in 1..=n {
+      for j in 1..=r {
+        add(i, (i - 1 + j) % n + 1);
+      }
+    }
+    if k % 2 == 1 {
+      if n % 2 == 0 {
+        for i in 1..=n {
+          add(i, (i - 1 + n / 2) % n + 1);
+        }
+      } else {
+        let half = (n - 1) / 2;
+        add(1, 1 + half);
+        for i in 1..=half {
+          add(i, i + half + 1);
+        }
+      }
+    }
+    let vertices: Vec<Expr> =
+      (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+    let edges: Vec<Expr> = pairs
+      .into_iter()
+      .map(|(a, b)| Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)]
+          .into(),
+      })
+      .collect();
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices.into()), Expr::List(edges.into())]
+        .into(),
+    });
+  }
+
   // CirculantGraph[n, {j1, j2, ...}] — circulant graph
   if name == "CirculantGraph"
     && args.len() == 2

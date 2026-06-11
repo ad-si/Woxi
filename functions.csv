@@ -3061,7 +3061,7 @@ CharacterCounts,Returns an association of character frequencies in a string,✅,
 DayMatchQ,,,,9.0,3134
 ExponentialFamily,,,,7.0,3134
 FileHash,,✅,,6.0,3134
-HararyGraph,,,,8.0,3134
+HararyGraph,Minimal k-connected Harary graph on n vertices,✅,pure,8.0,3134
 InitializationCell,,🚫,,3.0,3134
 NegativeDefiniteMatrixQ,Test whether a matrix is negative definite,✅,none,10.0,3134
 RegionDisjoint,,,,11.1,3134
