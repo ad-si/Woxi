@@ -569,6 +569,13 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "Query" && args.len() == 1 => {
+      // Query[ops...][data] — successive-level query application
+      crate::functions::query_ast::apply_query(func_args, &args[0])
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "Entity" && func_args.len() == 2 => {
       // Entity["type", "name"]["property"] — property access on entities
       crate::functions::entity_ast::entity_property_access(func_args, args)

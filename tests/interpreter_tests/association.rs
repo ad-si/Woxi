@@ -1233,3 +1233,86 @@ mod cases {
     );
   }
 }
+
+mod query {
+  use super::*;
+
+  #[test]
+  fn descending_operators() {
+    // All maps the rest of the spec over elements
+    assert_eq!(
+      interpret(
+        "Query[All, \"a\"][{<|\"a\" -> 1, \"b\" -> 2|>, <|\"a\" -> 3, \"b\" -> 4|>}]"
+      )
+      .unwrap(),
+      "{1, 3}"
+    );
+    // Keys and parts descend
+    assert_eq!(
+      interpret("Query[\"a\"][<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("Query[2][{10, 20, 30}]").unwrap(), "20");
+    assert_eq!(
+      interpret("Query[\"a\", 2][<|\"a\" -> {10, 20}|>]").unwrap(),
+      "20"
+    );
+    assert_eq!(
+      interpret(
+        "Query[All, \"a\", 2][{<|\"a\" -> {1, 2}|>, <|\"a\" -> {3, 4}|>}]"
+      )
+      .unwrap(),
+      "{2, 4}"
+    );
+    // List operators filter/sort/take at their level, then the rest
+    // maps over survivors
+    assert_eq!(
+      interpret("Query[Select[#[\"a\"] > 1 &], \"a\"][{<|\"a\" -> 1|>, <|\"a\" -> 3|>, <|\"a\" -> 5|>}]").unwrap(),
+      "{3, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "Query[SortBy[#[\"a\"] &], \"a\"][{<|\"a\" -> 3|>, <|\"a\" -> 1|>}]"
+      )
+      .unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret("Query[TakeLargest[2]][{5, 8, 6, 7}]").unwrap(),
+      "{8, 7}"
+    );
+  }
+
+  #[test]
+  fn ascending_operators() {
+    // Functions apply on the way up, after deeper levels
+    assert_eq!(
+      interpret("Query[Total, \"a\"][{<|\"a\" -> 1|>, <|\"a\" -> 3|>}]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Query[Mean, \"a\"][{<|\"a\" -> 1|>, <|\"a\" -> 3|>}]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("Query[Total][{1, 2, 3}]").unwrap(), "6");
+    assert_eq!(
+      interpret("Query[All, Total][{{1, 2}, {3, 4}}]").unwrap(),
+      "{3, 7}"
+    );
+    assert_eq!(
+      interpret("Query[All, All, f][{{1, 2}, {3, 4}}]").unwrap(),
+      "{{f[1], f[2]}, {f[3], f[4]}}"
+    );
+  }
+
+  #[test]
+  fn identity_and_missing() {
+    assert_eq!(interpret("Query[All][{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(
+      interpret("Query[\"x\"][<|\"a\" -> 1|>]").unwrap(),
+      "Missing[KeyAbsent, x]"
+    );
+  }
+}

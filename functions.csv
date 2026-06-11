@@ -820,7 +820,7 @@ ToLowerCase,Converts a string to lowercase,✅,pure,2.0,827
 ListLogPlot,Plots data with logarithmic y-axis,✅,pure,6.0,828
 Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1.0,829
 WolframLanguageData,,🚫,,10.2,830
-Query,Requires external services or GUI infrastructure,🚫,io,10.0,831
+Query,Successive-level queries over lists and associations,✅,pure,10.0,831
 DatePlus,Adds a time increment to a date,✅,pure,6.0,832
 Area,Computes the area of geometric regions like Disk Rectangle Triangle and Polygon,✅,pure,10.0,834
 Clip,Constrains a value to a range,✅,pure,5.1,834
