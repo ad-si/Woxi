@@ -356,6 +356,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "BorelTannerDistribution"
         | "BenktanderGibratDistribution"
         | "GumbelDistribution"
+        | "ZipfDistribution"
     ) =>
     {
       let (mean, _) =
@@ -588,6 +589,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "BorelTannerDistribution"
         | "BenktanderGibratDistribution"
         | "GumbelDistribution"
+        | "ZipfDistribution"
     ) =>
     {
       let (_, variance) =
@@ -853,6 +855,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "BorelTannerDistribution"
       | "BenktanderGibratDistribution"
       | "GumbelDistribution"
+      | "ZipfDistribution"
       | "BinomialDistribution"
       | "JohnsonDistribution"
   ))

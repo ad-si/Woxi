@@ -159,6 +159,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BorelTannerDistribution" => pdf_borel_tanner(dargs, x),
     "BenktanderGibratDistribution" => pdf_benktander_gibrat(dargs, x),
     "GumbelDistribution" => pdf_gumbel(dargs, x),
+    "ZipfDistribution" => pdf_zipf(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2973,6 +2974,7 @@ fn distribution_mean_variance(
       }
       benktander_gibrat_mean_variance(&dargs[0], &dargs[1])
     }
+    "ZipfDistribution" => zipf_mean_variance(dargs),
     "GumbelDistribution" => gumbel_mean_variance(dargs),
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
@@ -11227,4 +11229,195 @@ pub fn gumbel_mean_variance(
     right: Box::new(int(6)),
   })?;
   Ok((mean, var))
+}
+
+/// PDF[ZipfDistribution[r], x] = x^(-1-r)/Zeta[1+r] on x >= 1;
+/// PDF[ZipfDistribution[n, r], x] uses HarmonicNumber[n, 1+r] on
+/// 1 <= x <= n.
+pub fn pdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "ZipfDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let (n, r) = match dargs {
+    [r] => (None, r.clone()),
+    [n, r] => (Some(n.clone()), r.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let norm = match &n {
+    None => call("Zeta", vec![eval(plus(int(1), r.clone()))?]),
+    Some(n) => call(
+      "HarmonicNumber",
+      vec![n.clone(), eval(plus(int(1), r.clone()))?],
+    ),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    // Pre-dividing 1/norm hoists rationals out of evaluated Zeta
+    // values (Zeta[2] = Pi^2/6 prints as 6/(Pi^2 x^2), not nested)
+    let coeff = eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(int(1)),
+      right: Box::new(norm.clone()),
+    })?;
+    eval(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        coeff,
+        power(at.clone(), eval(plus(int(-1), times(int(-1), r.clone())))?),
+      ]
+      .into(),
+    })
+  };
+  if ms_numeric(&x).is_some() {
+    let xv = ms_numeric(&x).unwrap();
+    let in_support = xv >= 1.0
+      && xv.fract() == 0.0
+      && n.as_ref().and_then(ms_numeric).is_none_or(|nv| xv <= nv);
+    if !in_support {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond = match &n {
+    None => comparison(x.clone(), ComparisonOp::GreaterEqual, int(1)),
+    Some(n) => comparison3(
+      int(1),
+      ComparisonOp::LessEqual,
+      x.clone(),
+      ComparisonOp::LessEqual,
+      n.clone(),
+    ),
+  };
+  Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
+}
+
+/// Mean and variance for ZipfDistribution: Zeta ratios with existence
+/// thresholds (r > 1, r > 2) for the infinite form, HarmonicNumber
+/// ratios for the bounded form.
+pub fn zipf_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  match dargs {
+    [r] => {
+      let zeta = |offset: i128| -> Result<Expr, InterpreterError> {
+        Ok(call("Zeta", vec![eval(plus(int(offset), r.clone()))?]))
+      };
+      let mean_value = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(zeta(0)?),
+        right: Box::new(zeta(1)?),
+      };
+      let var_value = call(
+        "Plus",
+        vec![
+          call(
+            "Times",
+            vec![
+              int(-1),
+              Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(power(zeta(0)?, int(2))),
+                right: Box::new(power(zeta(1)?, int(2))),
+              },
+            ],
+          ),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(zeta(-1)?),
+            right: Box::new(zeta(1)?),
+          },
+        ],
+      );
+      let infinity = || Expr::Identifier("Infinity".to_string());
+      match ms_numeric(r) {
+        Some(rv) => Ok((
+          if rv > 1.0 {
+            eval(mean_value)?
+          } else {
+            infinity()
+          },
+          if rv > 2.0 {
+            eval(var_value)?
+          } else {
+            infinity()
+          },
+        )),
+        None => Ok((
+          piecewise(
+            vec![(
+              mean_value,
+              comparison(r.clone(), ComparisonOp::Greater, int(1)),
+            )],
+            infinity(),
+          ),
+          piecewise(
+            vec![(
+              var_value,
+              comparison(r.clone(), ComparisonOp::Greater, int(2)),
+            )],
+            infinity(),
+          ),
+        )),
+      }
+    }
+    [n, r] => {
+      let h = |offset: i128| -> Result<Expr, InterpreterError> {
+        Ok(call(
+          "HarmonicNumber",
+          vec![n.clone(), eval(plus(int(offset), r.clone()))?],
+        ))
+      };
+      let mean = eval(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(h(0)?),
+        right: Box::new(h(1)?),
+      })?;
+      let var = eval(call(
+        "Plus",
+        vec![
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(h(-1)?),
+            right: Box::new(h(1)?),
+          },
+          call(
+            "Times",
+            vec![
+              int(-1),
+              power(
+                Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  left: Box::new(h(0)?),
+                  right: Box::new(h(1)?),
+                },
+                int(2),
+              ),
+            ],
+          ),
+        ],
+      ))?;
+      Ok((mean, var))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "ZipfDistribution expects 1 or 2 arguments".into(),
+    )),
+  }
 }

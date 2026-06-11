@@ -2931,3 +2931,67 @@ mod gumbel_distribution {
     );
   }
 }
+
+mod zipf_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[ZipfDistribution[r], x]").unwrap(),
+      "Piecewise[{{x^(-1 - r)/Zeta[1 + r], x >= 1}}, 0]"
+    );
+    // Zeta[2] collapses with the rational hoisted
+    assert_eq!(
+      interpret("PDF[ZipfDistribution[1], x]").unwrap(),
+      "Piecewise[{{6/(Pi^2*x^2), x >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[ZipfDistribution[1], 3]").unwrap(),
+      "2/(3*Pi^2)"
+    );
+    // Non-integer points vanish
+    assert_eq!(interpret("PDF[ZipfDistribution[1], 1/2]").unwrap(), "0");
+    assert_eq!(interpret("PDF[ZipfDistribution[1], 5/2]").unwrap(), "0");
+    // The bounded form normalizes by HarmonicNumber
+    assert_eq!(
+      interpret("PDF[ZipfDistribution[n, r], x]").unwrap(),
+      "Piecewise[{{x^(-1 - r)/HarmonicNumber[n, 1 + r], 1 <= x <= n}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[ZipfDistribution[5, 1], x]").unwrap(),
+      "Piecewise[{{3600/(5269*x^2), 1 <= x <= 5}}, 0]"
+    );
+  }
+
+  #[test]
+  fn moments_with_existence_thresholds() {
+    // Mean needs r > 1, variance r > 2
+    assert_eq!(
+      interpret("Mean[ZipfDistribution[r]]").unwrap(),
+      "Piecewise[{{Zeta[r]/Zeta[1 + r], r > 1}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Mean[ZipfDistribution[2]]").unwrap(),
+      "Pi^2/(6*Zeta[3])"
+    );
+    assert_eq!(interpret("Mean[ZipfDistribution[1]]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("Variance[ZipfDistribution[r]]").unwrap(),
+      "Piecewise[{{-(Zeta[r]^2/Zeta[1 + r]^2) + Zeta[-1 + r]/Zeta[1 + r], r > 2}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Variance[ZipfDistribution[2]]").unwrap(),
+      "Infinity"
+    );
+    // Bounded form gives exact rationals
+    assert_eq!(
+      interpret("Mean[ZipfDistribution[5, 1]]").unwrap(),
+      "8220/5269"
+    );
+    assert_eq!(
+      interpret("Variance[ZipfDistribution[5, 1]]").unwrap(),
+      "27273600/27762361"
+    );
+  }
+}

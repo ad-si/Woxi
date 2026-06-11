@@ -2301,7 +2301,7 @@ FindMinValue,Finds the value at a local minimum of a function numerically,✅,pu
 FromContinuedFraction,Converts a continued fraction to a number,✅,pure,4.0,2350
 InverseSurvivalFunction,probability distribution,🚫,None,8.0,2350
 WeierstrassInvariants,elliptic function theory,🚫,None,3.0,2350
-ZipfDistribution,probability distribution,🚫,None,6.0,2350
+ZipfDistribution,Zipf distribution (Zeta and HarmonicNumber normalizations),✅,pure,6.0,2350
 GeoBubbleChart,geographic visualization,🚫,None,11.1,2355
 MixedUnit,unit system,🚫,None,10.4,2355
 RankedMax,k-th largest element,✅,pure,8.0,2355
