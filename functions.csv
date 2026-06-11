@@ -10,10 +10,10 @@ CompoundExpression,Evaluates expressions sequentially and returns the last resul
 Pattern,Names a pattern object for use in transformation rules,✅,pure,1.0,9
 Alternatives,Pattern object representing any of several alternatives,✅,pure,2.0,10
 Equal,Checks if two values are equal,✅,pure,1.0,11
-Part,Returns the nth element of a list,✅,pure,1.0,12
+Part,Extracts parts of expressions: positional/Span/list indices and string/Key lookup on associations,✅,pure,1.0,12
 SetDelayed,Defines a delayed assignment that evaluates the RHS each time,✅,stateful,1.0,15
 Pi,Represents the ratio of circumference to diameter,✅,pure,1.0,16
-Slot,Represents the nth argument in a pure function,✅,pure,1.0,17
+Slot,Represents the nth argument (#n) or named association key (#name) in a pure function,✅,pure,1.0,17
 Sqrt,Returns the square root of a number,✅,pure,1.0,18
 Function,Represents a pure function,✅,pure,1.0,19
 ReplaceAll,Applies replacement rules to an expression,✅,pure,1.0,20

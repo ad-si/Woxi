@@ -167,6 +167,45 @@ pub fn max_slot_index(expr: &Expr) -> usize {
   m
 }
 
+/// Emit Function::slot1 / Function::slota messages for named slots (`#key`)
+/// in an anonymous-function body that cannot be filled from `args`, matching
+/// wolframscript: one message per unfillable named-slot occurrence.
+fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
+  let mut keys = Vec::new();
+  crate::syntax::collect_named_slot_keys(body, &mut keys);
+  if keys.is_empty() {
+    return;
+  }
+  let body_str = crate::syntax::expr_to_message_form(body);
+  if let Some(Expr::Association(items)) = args.first() {
+    let assoc_str = crate::syntax::format_expr(
+      args.first().unwrap(),
+      crate::syntax::ExprForm::Output,
+    );
+    for key in keys {
+      let filled = items
+        .iter()
+        .any(|(k, _)| matches!(k, Expr::String(s) if s == &key));
+      if !filled {
+        crate::emit_message(&format!(
+          "Function::slota: Named slot {} in {} &  cannot be filled from {}.",
+          key, body_str, assoc_str
+        ));
+      }
+    }
+  } else {
+    let args_str: Vec<String> =
+      args.iter().map(crate::syntax::expr_to_message_form).collect();
+    for _ in keys {
+      crate::emit_message(&format!(
+        "Function::slot1: ({} & )[{}] is expected to have an Association as the first argument.",
+        body_str,
+        args_str.join(", ")
+      ));
+    }
+  }
+}
+
 /// Apply `Derivative[n1, …, nk]` to a pure function body symbolically.
 ///
 /// For each slot index `i` with `n_i > 0` we substitute `Slot(i)` for a fresh
@@ -393,6 +432,7 @@ pub fn apply_function_to_arg(
       // support recursion like If[#1<=1, 1, #1 #0[#1-1]]&), then substitute
       // the remaining numeric slots with arg. Skip the self-substitution
       // pass when #0 is absent — avoids a full tree clone per call.
+      emit_named_slot_messages(body, std::slice::from_ref(arg));
       let substituted = if crate::syntax::contains_slot_zero(body) {
         let self_substituted =
           crate::syntax::substitute_slot_zero_with_self(body, func);
@@ -531,6 +571,7 @@ pub fn apply_curried_call(
       // Anonymous function: substitute #0 with the whole function first,
       // then # with args and evaluate. Skip the self-substitution pass
       // when #0 is absent — avoids a full tree clone per call.
+      emit_named_slot_messages(body, args);
       let substituted = if crate::syntax::contains_slot_zero(body) {
         let self_substituted =
           crate::syntax::substitute_slot_zero_with_self(body, func);

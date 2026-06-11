@@ -2828,6 +2828,10 @@ pub fn evaluate_expr_to_expr_inner(
               || matches!(idx, Expr::FunctionCall { name, .. } if name == "Span")))
       });
 
+      // Set when a multi-index extraction reaches an atom with indices left
+      // over — the spec is deeper than the object (Part::partd), as opposed
+      // to an out-of-bounds index (Part::partw, already emitted).
+      let mut hit_atom_mid = false;
       let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
         let base_val = eval_part_base(base_expr)?;
@@ -2845,6 +2849,18 @@ pub fn evaluate_expr_to_expr_inner(
           for idx in &indices[1..] {
             if let Expr::Part { .. } = &result {
               part_too_deep = true;
+              break;
+            }
+            if matches!(
+              &result,
+              Expr::Identifier(_)
+                | Expr::Integer(_)
+                | Expr::BigInteger(_)
+                | Expr::Real(_)
+                | Expr::String(_)
+            ) {
+              part_too_deep = true;
+              hit_atom_mid = true;
               break;
             }
             result = extract_part_ast(&result, idx)?;
@@ -2866,22 +2882,35 @@ pub fn evaluate_expr_to_expr_inner(
         result
       };
       PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
-      // Part::partd: warn only at the outermost Part level (depth == 0)
+      // Part::partd / Part::pspec1: warn only at the outermost Part level
       let at_outermost = PART_DEPTH.with(|d| *d.borrow() == 0);
       if at_outermost && let Expr::Part { .. } = &result {
+        // A string part spec on a non-association is never applicable,
+        // regardless of the base (wolframscript: Part::pspec1).
+        if let Some(Expr::String(s)) =
+          indices.iter().find(|i| matches!(i, Expr::String(_)))
+        {
+          crate::emit_message(&format!(
+            "Part::pspec1: Part specification {} is not applicable.",
+            s
+          ));
+          return Ok(result);
+        }
         let base = get_part_base(&result);
-        if matches!(
-          base,
-          Expr::Identifier(_)
-            | Expr::Integer(_)
-            | Expr::BigInteger(_)
-            | Expr::Real(_)
-        ) {
-          let original = Expr::Part {
-            expr: e.clone(),
-            index: index.clone(),
-          };
-          let part_str = crate::syntax::expr_to_string(&original);
+        if hit_atom_mid
+          || matches!(
+            base,
+            Expr::Identifier(_)
+              | Expr::Integer(_)
+              | Expr::BigInteger(_)
+              | Expr::Real(_)
+              | Expr::String(_)
+          )
+        {
+          let part_str = crate::syntax::format_expr(
+            &result,
+            crate::syntax::ExprForm::Output,
+          );
           crate::emit_message(&format!(
             "Part::partd: Part specification {} is longer than depth of object.",
             part_str

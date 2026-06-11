@@ -2333,8 +2333,21 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::Slot => {
       let s = pair.as_str();
       // # is slot 1, #1 is slot 1, #2 is slot 2, etc.
+      // #name is the named-slot form Slot["name"] — fills from the keys of
+      // an Association passed as the first argument.
+      let suffix = &s[1..];
+      if suffix
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+      {
+        return Expr::FunctionCall {
+          name: "Slot".to_string(),
+          args: vec![Expr::String(suffix.to_string())].into(),
+        };
+      }
       let num = if s.len() > 1 {
-        s[1..].parse().unwrap_or(1)
+        suffix.parse().unwrap_or(1)
       } else {
         1
       };
@@ -6332,6 +6345,10 @@ fn format_times_with_denominator(
 }
 
 fn expr_to_part_index_string(expr: &Expr) -> String {
+  // String part indices display unquoted (wolframscript: x[["a"]] -> x[[a]])
+  if let Expr::String(s) = expr {
+    return s.clone();
+  }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Span"
   {
@@ -6506,6 +6523,15 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Named slot Slot["name"] displays as #name (matching wolframscript).
+      if name == "Slot"
+        && args.len() == 1
+        && let Expr::String(key) = &args[0]
+        && key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && key.chars().all(|c| c.is_ascii_alphanumeric())
+      {
+        return format!("#{}", key);
+      }
       // Sound[...] always renders as -Sound- (matching wolframscript REPL),
       // regardless of what primitives it wraps.
       if name == "Sound" && !args.is_empty() {
@@ -9132,11 +9158,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!(
-        "{}[[{}]]",
-        format_expr(base, ExprForm::Input),
-        indices.join(",")
-      )
+      format!("{}[[{}]]", format_expr(base, form), indices.join(","))
     }
     Expr::Function { body } => {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
@@ -10664,6 +10686,75 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
   }
 }
 
+/// Collect the keys of every named slot (`#key` / `Slot["key"]`) inside
+/// `expr` in occurrence order, without descending into nested Function
+/// bodies (their slots bind to the inner function). Used by anonymous
+/// function application to emit Function::slot1 / Function::slota messages.
+pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
+      if let Expr::String(key) = &args[0] {
+        out.push(key.clone());
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args.iter() {
+        collect_named_slot_keys(a, out);
+      }
+    }
+    Expr::CurriedCall { func, args } => {
+      collect_named_slot_keys(func, out);
+      for a in args {
+        collect_named_slot_keys(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for e in items.iter() {
+        collect_named_slot_keys(e, out);
+      }
+    }
+    Expr::CompoundExpr(items) => {
+      for e in items.iter() {
+        collect_named_slot_keys(e, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_named_slot_keys(left, out);
+      collect_named_slot_keys(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_named_slot_keys(operand, out),
+    Expr::Comparison { operands, .. } => {
+      for e in operands {
+        collect_named_slot_keys(e, out);
+      }
+    }
+    Expr::Association(items) => {
+      for (k, v) in items.iter() {
+        collect_named_slot_keys(k, out);
+        collect_named_slot_keys(v, out);
+      }
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      collect_named_slot_keys(pattern, out);
+      collect_named_slot_keys(replacement, out);
+    }
+    Expr::Part { expr: e, index } => {
+      collect_named_slot_keys(e, out);
+      collect_named_slot_keys(index, out);
+    }
+    // Nested Function/NamedFunction bodies introduce their own slot scope.
+    Expr::Function { .. } | Expr::NamedFunction { .. } => {}
+    _ => {}
+  }
+}
+
 /// Replace every `Slot(0)` / `Slot[0]` inside `expr` with `self_fn`. Used by
 /// anonymous-function application to support `#0` self-reference, enabling
 /// recursive definitions like `If[#1 <= 1, 1, #1 #0[#1-1]] &`.
@@ -10763,6 +10854,19 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
         let index = if *n <= 0 { 0 } else { (*n as usize) - 1 };
         if index < values.len() {
           values[index].clone()
+        } else {
+          expr.clone()
+        }
+      } else if let Expr::String(key) = &args[0] {
+        // Named slot #key fills from the keys of an Association first
+        // argument; otherwise it stays unfilled (the application site emits
+        // Function::slot1 / Function::slota messages).
+        if let Some(Expr::Association(items)) = values.first()
+          && let Some((_, v)) = items
+            .iter()
+            .find(|(k, _)| matches!(k, Expr::String(s) if s == key))
+        {
+          v.clone()
         } else {
           expr.clone()
         }

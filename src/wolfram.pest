@@ -23,12 +23,12 @@ PartClose = _{ "]]" | "\u{27E7}" | "\u{301B}" }
 // Part extraction suffix: [[expr, ...]] or 〚expr, ...〛 for indexing
 PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 
-// PartExtract for non-FunctionCall bases only (Slot, Identifier)
+// PartExtract for non-FunctionCall bases only (Slot, Identifier, number)
 // FunctionCall-based Part extraction is handled by FunctionCallExtended
 // List-based Part extraction is handled by ListExtended
 // A trailing `BracketArgs*` lets a Part result be applied as a function:
 // `a[[i]][x]` (e.g. extract a function from a list and call it).
-PartExtract = { (Slot | Identifier) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ ~ BracketArgs* }
+PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ ~ BracketArgs* }
 
 // `-N^M` should bind as `-(N^M)` (Wolfram's `^` binds tighter than
 // unary `-`), so don't consume the leading `-` when it's followed by
@@ -105,7 +105,7 @@ String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ A
 
 // Anonymous function syntax: body & where body contains # slots
 SlotSequence = @{ "##" ~ ASCII_DIGIT* }
-Slot = @{ "#" ~ !"#" ~ ASCII_DIGIT* }
+Slot = @{ "#" ~ !"#" ~ (ASCII_ALPHA ~ ASCII_ALPHANUMERIC* | ASCII_DIGIT*) }
 // Output reference shortcut: `%n` (digits) is `Out[n]`, plain `%`/`%%`/`%%%` is
 // `Out[$Line - k]`. Atomic so adjacent text isn't dragged in. The digit form
 // must come first so `%5` is consumed as a single token rather than `% * 5`.

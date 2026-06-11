@@ -1792,3 +1792,192 @@ mod cases {
     );
   }
 }
+
+mod named_slots {
+  use super::*;
+
+  #[test]
+  fn named_slot_fills_from_association() {
+    assert_eq!(interpret(r#"(#name &)[<|"name" -> 7|>]"#).unwrap(), "7");
+    assert_eq!(
+      interpret(r#"(#a + #b &)[<|"a" -> 1, "b" -> 2|>]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn named_slot_alphanumeric_key() {
+    assert_eq!(interpret(r#"(#abc1 &)[<|"abc1" -> 9|>]"#).unwrap(), "9");
+  }
+
+  #[test]
+  fn named_slot_extra_arguments_ignored() {
+    assert_eq!(interpret(r#"(#a &)[<|"a" -> 9|>, 99]"#).unwrap(), "9");
+  }
+
+  #[test]
+  fn named_slot_in_operator_forms() {
+    assert_eq!(
+      interpret(r#"Select[#a > 1 &][{<|"a" -> 1|>, <|"a" -> 3|>}]"#).unwrap(),
+      "{<|a -> 3|>}"
+    );
+    assert_eq!(
+      interpret(r#"Map[#x &, {<|"x" -> 1|>, <|"x" -> 2|>}]"#).unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn named_slot_display_form() {
+    // #a & round-trips; bare Slot["a"] also displays as #a
+    assert_eq!(interpret("#a &").unwrap(), "#a & ");
+    assert_eq!(interpret(r#"Slot["a"]"#).unwrap(), "#a");
+    assert_eq!(interpret("#abc + #2 &").unwrap(), "#abc + #2 & ");
+  }
+
+  #[test]
+  fn named_slot_via_stored_function() {
+    assert_eq!(
+      interpret(r#"f = #total &; f[<|"total" -> 42|>]"#).unwrap(),
+      "42"
+    );
+  }
+
+  #[test]
+  fn named_slot_missing_key_emits_slota() {
+    // The filled slots substitute; missing ones stay as #key
+    assert_eq!(
+      interpret(r#"(#a + #b &)[<|"a" -> 1|>]"#).unwrap(),
+      "1 + #b"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Function::slota: Named slot b in #a + #b &  cannot be filled from <|a -> 1|>."
+      )),
+      "expected Function::slota message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn named_slot_non_association_emits_slot1() {
+    assert_eq!(interpret("(#a &)[5]").unwrap(), "#a");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Function::slot1: (#a & )[5] is expected to have an Association as the first argument."
+      )),
+      "expected Function::slot1 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn named_slot_no_arguments_emits_slot1() {
+    assert_eq!(interpret("(#a &)[]").unwrap(), "#a");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Function::slot1: (#a & )[] is expected to have an Association as the first argument."
+      )),
+      "expected Function::slot1 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn named_slot_in_map_with_missing_key() {
+    assert_eq!(
+      interpret(r#"Map[#a &, {<|"a" -> 1|>, <|"b" -> 2|>}]"#).unwrap(),
+      "{1, #a}"
+    );
+  }
+}
+
+mod part_of_atoms {
+  use super::*;
+
+  #[test]
+  fn part_of_number_parses_and_warns() {
+    // 5[["a"]] must parse (number base) and emit Part::pspec1
+    assert_eq!(interpret(r#"5[["a"]]"#).unwrap(), r#"5[[a]]"#);
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Part::pspec1: Part specification a is not applicable.")),
+      "expected Part::pspec1 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn string_part_spec_on_list_emits_pspec1() {
+    assert_eq!(interpret(r#"{1, 2}[["a"]]"#).unwrap(), "{1, 2}[[a]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Part::pspec1: Part specification a is not applicable.")),
+      "expected Part::pspec1 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn string_part_spec_on_symbol_emits_pspec1() {
+    // Multiple string indices: the message names the first one
+    assert_eq!(interpret(r#"x[["a", "b"]]"#).unwrap(), "x[[a,b]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Part::pspec1: Part specification a is not applicable.")),
+      "expected Part::pspec1 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn part_deeper_than_object_emits_partd() {
+    // Multi-index spec that hits an atom mid-way: partd with the
+    // evaluated base displayed in OutputForm (strings unquoted)
+    assert_eq!(
+      interpret(r#"{{1, 2}, {3, 4}}[[1, 2, 3]]"#).unwrap(),
+      "{{1, 2}, {3, 4}}[[1,2,3]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Part::partd: Part specification {{1, 2}, {3, 4}}[[1,2,3]] is longer than depth of object."
+      )),
+      "expected Part::partd message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn part_of_string_literal_parses() {
+    // String bases parse: "Alice"[[2]] stays unevaluated with partd
+    assert_eq!(interpret(r#""Alice"[[2]]"#).unwrap(), "Alice[[2]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Part::partd: Part specification Alice[[2]] is longer than depth of object."
+      )),
+      "expected Part::partd message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn part_of_number_literal_parses() {
+    assert_eq!(interpret("5[[1]]").unwrap(), "5[[1]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Part::partd: Part specification 5[[1]] is longer than depth of object."
+      )),
+      "expected Part::partd message, got {:?}",
+      msgs
+    );
+  }
+}

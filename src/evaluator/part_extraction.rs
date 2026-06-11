@@ -256,39 +256,154 @@ pub fn extract_part_ast(
 ) -> Result<Expr, InterpreterError> {
   // For associations, handle key-based lookup and integer position indexing
   if let Expr::Association(items) = expr {
-    // Integer index: access by position (return value, not rule)
-    if let Expr::Integer(i) = index {
-      if *i == 0 {
-        return Ok(Expr::Identifier("Association".to_string()));
+    // Positional lookup shared by the single-integer and list-index forms.
+    // Returns the (key, value) entry, or None when out of bounds (the caller
+    // emits Part::partw).
+    let entry_at = |i: i128| -> Option<&(Expr, Expr)> {
+      if i == 0 {
+        return None;
       }
-      let idx = if *i > 0 {
-        (*i as usize) - 1
+      let idx = if i > 0 {
+        (i as usize) - 1
       } else {
-        (items.len() as i128 + *i) as usize
+        let pos = items.len() as i128 + i;
+        if pos < 0 {
+          return None;
+        }
+        pos as usize
       };
-      if idx >= items.len() {
-        return Err(InterpreterError::EvaluationError(
-          "Part: index out of bounds".into(),
+      items.get(idx)
+    };
+    let missing_for = |key: &Expr| Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
+    };
+    // Key-based lookup shared by the string, Key[...], and list-index forms.
+    // String indices match only string keys; Key[k] matches any key exactly.
+    let lookup = |key: &Expr| -> Option<&Expr> {
+      items
+        .iter()
+        .find(|(k, _)| crate::evaluator::pattern_matching::expr_equal(k, key))
+        .map(|(_, v)| v)
+    };
+    match index {
+      // Integer index: access by position (return value, not rule)
+      Expr::Integer(i) => {
+        if *i == 0 {
+          return Ok(Expr::Identifier("Association".to_string()));
+        }
+        if let Some((_, v)) = entry_at(*i) {
+          return Ok(v.clone());
+        }
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          i,
+          crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
         ));
+        return Ok(part_take_unevaluated(expr, index));
       }
-      return Ok(items[idx].1.clone());
-    }
-    // Try to find a matching key
-    let index_str = crate::syntax::expr_to_string(index);
-    for (key, val) in items {
-      let key_str = crate::syntax::expr_to_string(key);
-      // Compare keys (strip quotes from strings for comparison)
-      let key_cmp = key_str.trim_matches('"');
-      let index_cmp = index_str.trim_matches('"');
-      if key_cmp == index_cmp {
-        return Ok(val.clone());
+      // String index: lookup among string keys; absent -> Missing[KeyAbsent, key]
+      Expr::String(_) => {
+        if let Some(v) = lookup(index) {
+          return Ok(v.clone());
+        }
+        return Ok(missing_for(index));
+      }
+      // Key[k] index: exact key-expression lookup (works for non-string keys)
+      Expr::FunctionCall { name, args }
+        if name == "Key" && args.len() == 1 =>
+      {
+        if let Some(v) = lookup(&args[0]) {
+          return Ok(v.clone());
+        }
+        return Ok(missing_for(index));
+      }
+      // Span: positional slice preserving the key -> value entries
+      Expr::FunctionCall { name, args }
+        if name == "Span" && (args.len() == 2 || args.len() == 3) =>
+      {
+        let rule_items: Vec<Expr> = items
+          .iter()
+          .map(|(k, v)| Expr::Rule {
+            pattern: Box::new(k.clone()),
+            replacement: Box::new(v.clone()),
+          })
+          .collect();
+        return extract_span_from_items(
+          expr,
+          index,
+          &rule_items,
+          &args[0],
+          &args[1],
+          args.get(2),
+          |selected| {
+            Expr::Association(
+              selected
+                .into_iter()
+                .map(|r| match &r {
+                  Expr::Rule {
+                    pattern,
+                    replacement,
+                  } => ((**pattern).clone(), (**replacement).clone()),
+                  _ => (r.clone(), Expr::Identifier("Null".to_string())),
+                })
+                .collect(),
+            )
+          },
+        );
+      }
+      // List index: sub-association of the selected entries
+      Expr::List(idxs) => {
+        let mut selected: Vec<(Expr, Expr)> = Vec::with_capacity(idxs.len());
+        for ix in idxs.iter() {
+          match ix {
+            Expr::Integer(i) => {
+              if let Some((k, v)) = entry_at(*i) {
+                selected.push((k.clone(), v.clone()));
+              } else {
+                crate::emit_message(&format!(
+                  "Part::partw: Part {} of {} does not exist.",
+                  i,
+                  crate::syntax::format_expr(
+                    expr,
+                    crate::syntax::ExprForm::Output
+                  )
+                ));
+                return Ok(part_take_unevaluated(expr, index));
+              }
+            }
+            Expr::String(_) => match lookup(ix) {
+              Some(v) => selected.push((ix.clone(), v.clone())),
+              None => selected.push((ix.clone(), missing_for(ix))),
+            },
+            Expr::FunctionCall { name, args }
+              if name == "Key" && args.len() == 1 =>
+            {
+              match lookup(&args[0]) {
+                Some(v) => selected.push((args[0].clone(), v.clone())),
+                None => selected.push((args[0].clone(), missing_for(ix))),
+              }
+            }
+            _ => {
+              crate::emit_message(&format!(
+                "Part::pkspec1: The expression {} cannot be used as a part specification.",
+                crate::syntax::format_expr(ix, crate::syntax::ExprForm::Output)
+              ));
+              return Ok(part_take_unevaluated(expr, index));
+            }
+          }
+        }
+        return Ok(Expr::Association(selected));
+      }
+      // Anything else is not a valid association part specification
+      _ => {
+        crate::emit_message(&format!(
+          "Part::pkspec1: The expression {} cannot be used as a part specification.",
+          crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(part_take_unevaluated(expr, index));
       }
     }
-    // Key not found - return unevaluated Part
-    return Ok(Expr::Part {
-      expr: Box::new(expr.clone()),
-      index: Box::new(index.clone()),
-    });
   }
 
   // Span[start, end] or Span[start, end, step]

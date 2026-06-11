@@ -1316,3 +1316,126 @@ mod query {
     );
   }
 }
+
+mod part_on_associations {
+  use super::*;
+
+  #[test]
+  fn part_string_key_lookup() {
+    assert_eq!(interpret(r#"<|"a" -> 1, "b" -> 2|>[["b"]]"#).unwrap(), "2");
+  }
+
+  #[test]
+  fn part_string_key_absent_returns_missing() {
+    // wolframscript returns Missing[KeyAbsent, key] silently (no message)
+    assert_eq!(
+      interpret(r#"<|"b" -> 1|>[["a"]]"#).unwrap(),
+      "Missing[KeyAbsent, a]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+
+  #[test]
+  fn part_string_key_does_not_match_symbol_key() {
+    assert_eq!(
+      interpret(r#"<|a -> 1|>[["a"]]"#).unwrap(),
+      "Missing[KeyAbsent, a]"
+    );
+  }
+
+  #[test]
+  fn part_symbol_index_emits_pkspec1() {
+    // A bare symbol is not a valid association part spec — pkspec1 +
+    // unevaluated (it does NOT match a symbol key; that needs Key[...])
+    assert_eq!(
+      interpret("<|x -> 1|>[[x]]").unwrap(),
+      "<|x -> 1|>[[x]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Part::pkspec1: The expression x cannot be used as a part specification."
+      )),
+      "expected Part::pkspec1 message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn part_key_wrapper_matches_any_key() {
+    assert_eq!(interpret("<|x -> 1|>[[Key[x]]]").unwrap(), "1");
+    assert_eq!(
+      interpret(r#"<|"a" -> 1|>[[Key["a"]]]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn part_key_wrapper_absent_returns_missing() {
+    // The Missing token carries the whole Key[...] wrapper
+    assert_eq!(
+      interpret(r#"<|"b" -> 1|>[[Key["a"]]]"#).unwrap(),
+      "Missing[KeyAbsent, Key[a]]"
+    );
+  }
+
+  #[test]
+  fn part_span_returns_sub_association() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[1 ;; 2]]"#).unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+    // Negative step reverses the entries
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[3 ;; 1 ;; -1]]"#)
+        .unwrap(),
+      "<|c -> 3, b -> 2, a -> 1|>"
+    );
+  }
+
+  #[test]
+  fn part_list_index_returns_sub_association() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[{1, 3}]]"#).unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[{"a", "c"}]]"#).unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn part_list_index_absent_key_keeps_missing_entry() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2|>[[{"a", "zz"}]]"#).unwrap(),
+      "<|a -> 1, zz -> Missing[KeyAbsent, zz]|>"
+    );
+  }
+
+  #[test]
+  fn part_positional_out_of_bounds_emits_partw() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1|>[[5]]"#).unwrap(),
+      "<|a -> 1|>[[5]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Part::partw: Part 5 of <|a -> 1|> does not exist.")),
+      "expected Part::partw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn part_negative_index_counts_from_end() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[-1]]"#).unwrap(),
+      "3"
+    );
+  }
+}
