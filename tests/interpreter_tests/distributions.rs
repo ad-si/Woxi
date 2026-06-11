@@ -2787,3 +2787,79 @@ mod borel_tanner_distribution {
     );
   }
 }
+
+mod benktander_gibrat_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    // Symbolic keeps x^(-2 - a) in the numerator with the f1*f2 order
+    assert_eq!(
+      interpret("PDF[BenktanderGibratDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{(x^(-2 - a)*((-2*b)/a + (1 + a + 2*b*Log[x])*(1 + (2*b*Log[x])/a)))/E^(b*Log[x]^2), x >= 1}}, 0]"
+    );
+    // Numeric parameters hoist the x power and swap the factor order
+    assert_eq!(
+      interpret("PDF[BenktanderGibratDistribution[1, 1/2], x]").unwrap(),
+      "Piecewise[{{(-1 + (1 + Log[x])*(2 + Log[x]))/(E^(Log[x]^2/2)*x^3), x >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BenktanderGibratDistribution[2, 1/2], x]").unwrap(),
+      "Piecewise[{{(-1/2 + (1 + Log[x]/2)*(3 + Log[x]))/(E^(Log[x]^2/2)*x^4), x >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BenktanderGibratDistribution[1, 1/2], 2]").unwrap(),
+      "(-1 + (1 + Log[2])*(2 + Log[2]))/(8*E^(Log[2]^2/2))"
+    );
+    assert_eq!(
+      interpret("PDF[BenktanderGibratDistribution[1, 1/2], 1/2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[BenktanderGibratDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{1 - (x^(-1 - a)*(1 + (2*b*Log[x])/a))/E^(b*Log[x]^2), x >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[BenktanderGibratDistribution[1, 1/2], x]").unwrap(),
+      "Piecewise[{{1 - (1 + Log[x])/(E^(Log[x]^2/2)*x^2), x >= 1}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[BenktanderGibratDistribution[1, 1/2], 2]").unwrap(),
+      "1 - (1 + Log[2])/(4*E^(Log[2]^2/2))"
+    );
+  }
+
+  #[test]
+  fn moments_and_validation() {
+    assert_eq!(
+      interpret("Mean[BenktanderGibratDistribution[a, b]]").unwrap(),
+      "1 + a^(-1)"
+    );
+    assert_eq!(
+      interpret("Mean[BenktanderGibratDistribution[1, 1/2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Variance[BenktanderGibratDistribution[a, b]]").unwrap(),
+      "(-1 + (a*E^((-1 + a)^2/(4*b))*Sqrt[Pi]*Erfc[(-1 + a)/(2*Sqrt[b])])/Sqrt[b])/a^2"
+    );
+    // Numeric b merges Sqrt[Pi/b]
+    assert_eq!(
+      interpret("Variance[BenktanderGibratDistribution[1, 1/2]]").unwrap(),
+      "-1 + Sqrt[2*Pi]"
+    );
+    assert_eq!(
+      interpret("Variance[BenktanderGibratDistribution[2, 1/2]]").unwrap(),
+      "(-1 + 2*Sqrt[2*E*Pi]*Erfc[1/Sqrt[2]])/4"
+    );
+    // b > a (a + 1)/2 emits BenktanderGibratDistribution::lsseq
+    assert_eq!(
+      interpret("PDF[BenktanderGibratDistribution[1, 2], x]").unwrap(),
+      "PDF[BenktanderGibratDistribution[1, 2], x]"
+    );
+  }
+}

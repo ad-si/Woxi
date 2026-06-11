@@ -157,6 +157,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SechDistribution" => pdf_sech(dargs, x),
     "MoyalDistribution" => pdf_moyal(dargs, x),
     "BorelTannerDistribution" => pdf_borel_tanner(dargs, x),
+    "BenktanderGibratDistribution" => pdf_benktander_gibrat(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1146,6 +1147,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
     "SechDistribution" => cdf_sech(dargs, x),
     "MoyalDistribution" => cdf_moyal(dargs, x),
+    "BenktanderGibratDistribution" => cdf_benktander_gibrat(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2960,6 +2962,14 @@ fn distribution_mean_variance(
         ));
       }
       borel_tanner_mean_variance(&dargs[0], &dargs[1])
+    }
+    "BenktanderGibratDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BenktanderGibratDistribution expects 2 arguments".into(),
+        ));
+      }
+      benktander_gibrat_mean_variance(&dargs[0], &dargs[1])
     }
     "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
@@ -10694,5 +10704,357 @@ pub fn borel_tanner_mean_variance(
     times(a.clone(), n.clone()),
     power(one_minus_a, int(3)),
   ))?;
+  Ok((mean, var))
+}
+
+/// Validate BenktanderGibratDistribution parameters: numeric b must
+/// satisfy b <= a (a + 1)/2, emitting ::lsseq otherwise.
+fn benktander_valid(
+  a: &Expr,
+  b: &Expr,
+  context: &Expr,
+) -> Result<bool, InterpreterError> {
+  if let (Some(av), Some(bv)) = (ms_numeric(a), ms_numeric(b)) {
+    let bound = av * (av + 1.0) / 2.0;
+    if bv > bound {
+      let bound_expr =
+        eval(divide(times(a.clone(), plus(a.clone(), int(1))), int(2)))?;
+      crate::emit_message(&format!(
+        "BenktanderGibratDistribution::lsseq: Parameter {} at position 2 in {} is expected to be less than or equal to {}.",
+        crate::syntax::expr_to_string(b),
+        crate::syntax::expr_to_string(context),
+        crate::syntax::expr_to_string(&bound_expr)
+      ));
+      return Ok(false);
+    }
+  }
+  Ok(true)
+}
+
+/// PDF[BenktanderGibratDistribution[a, b], x] on x >= 1.
+pub fn pdf_benktander_gibrat(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BenktanderGibratDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let dist = Expr::FunctionCall {
+    name: "BenktanderGibratDistribution".to_string(),
+    args: dargs.to_vec().into(),
+  };
+  if !benktander_valid(&a, &b, &dist)? {
+    return Ok(unevaluated(dargs, x));
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let log_x = |at: &Expr| call("Log", vec![at.clone()]);
+  let numeric = ms_numeric(&a).is_some() && ms_numeric(&b).is_some();
+
+  if ms_numeric(&x).is_some() {
+    if !numeric {
+      return Ok(unevaluated(dargs, x));
+    }
+    if ms_numeric(&x).is_some_and(|v| v < 1.0) {
+      return Ok(int(0));
+    }
+    // Evaluate the closed form at the point
+    return eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Times",
+        vec![
+          power(x.clone(), eval(plus(int(-2), times(int(-1), a.clone())))?),
+          call(
+            "Plus",
+            vec![
+              divide(times(int(-2), b.clone()), a.clone()),
+              call(
+                "Times",
+                vec![
+                  plus(
+                    plus(int(1), a.clone()),
+                    times(times(int(2), b.clone()), log_x(&x)),
+                  ),
+                  plus(
+                    int(1),
+                    divide(
+                      times(times(int(2), b.clone()), log_x(&x)),
+                      a.clone(),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      )),
+      right: Box::new(power(e(), times(b.clone(), power(log_x(&x), int(2))))),
+    });
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+
+  // t1 = -2 b/a; f1 = 1 + a + 2 b Log[x]; f2 = 1 + 2 b Log[x]/a
+  let t1 = eval(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call("Times", vec![int(-2), b.clone()])),
+    right: Box::new(a.clone()),
+  })?;
+  let f1 = eval(call(
+    "Plus",
+    vec![
+      int(1),
+      a.clone(),
+      call("Times", vec![int(2), b.clone(), log_x(&x)]),
+    ],
+  ))?;
+  let f2 = eval(call(
+    "Plus",
+    vec![
+      int(1),
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(call("Times", vec![int(2), b.clone(), log_x(&x)])),
+        right: Box::new(a.clone()),
+      },
+    ],
+  ))?;
+  // Numeric parameters order f2 f1, symbolic f1 f2
+  let product = if numeric {
+    call("Times", vec![f2, f1])
+  } else {
+    call("Times", vec![f1, f2])
+  };
+  let bracket = call("Plus", vec![t1, product]);
+  let e_part = power(e(), eval(times(b.clone(), power(log_x(&x), int(2))))?);
+  let body = if numeric {
+    // (...)/(E^(b Log[x]^2) x^(2 + a))
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(bracket),
+      right: Box::new(call(
+        "Times",
+        vec![e_part, power(x.clone(), eval(plus(int(2), a.clone()))?)],
+      )),
+    }
+  } else {
+    // (x^(-2 - a) (...))/E^(b Log[x]^2)
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Times",
+        vec![
+          power(
+            x.clone(),
+            call(
+              "Plus",
+              vec![int(-2), call("Times", vec![int(-1), a.clone()])],
+            ),
+          ),
+          bracket,
+        ],
+      )),
+      right: Box::new(e_part),
+    }
+  };
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(1));
+  Ok(piecewise(vec![(body, cond)], int(0)))
+}
+
+/// CDF[BenktanderGibratDistribution[a, b], x] =
+/// 1 - x^(-1 - a)(1 + 2 b Log[x]/a)/E^(b Log[x]^2) on x >= 1.
+pub fn cdf_benktander_gibrat(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BenktanderGibratDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let dist = Expr::FunctionCall {
+    name: "BenktanderGibratDistribution".to_string(),
+    args: dargs.to_vec().into(),
+  };
+  if !benktander_valid(&a, &b, &dist)? {
+    return Ok(unevaluated(dargs, x));
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let log_x = |at: &Expr| call("Log", vec![at.clone()]);
+  let numeric = ms_numeric(&a).is_some() && ms_numeric(&b).is_some();
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let f2 = eval(call(
+      "Plus",
+      vec![
+        int(1),
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(call("Times", vec![int(2), b.clone(), log_x(at)])),
+          right: Box::new(a.clone()),
+        },
+      ],
+    ))?;
+    let e_part = power(e(), eval(times(b.clone(), power(log_x(at), int(2))))?);
+    let fraction = if numeric {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(f2),
+        right: Box::new(call(
+          "Times",
+          vec![e_part, power(at.clone(), eval(plus(int(1), a.clone()))?)],
+        )),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(call(
+          "Times",
+          vec![
+            power(
+              at.clone(),
+              call(
+                "Plus",
+                vec![int(-1), call("Times", vec![int(-1), a.clone()])],
+              ),
+            ),
+            f2,
+          ],
+        )),
+        right: Box::new(e_part),
+      }
+    };
+    Ok(call(
+      "Plus",
+      vec![int(1), call("Times", vec![int(-1), fraction])],
+    ))
+  };
+  if ms_numeric(&x).is_some() {
+    if !numeric {
+      return Ok(unevaluated(dargs, x));
+    }
+    if ms_numeric(&x).is_some_and(|v| v < 1.0) {
+      return Ok(int(0));
+    }
+    return eval(body(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond = comparison(x.clone(), ComparisonOp::GreaterEqual, int(1));
+  Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
+}
+
+/// Mean 1 + 1/a and the Erfc-based variance for
+/// BenktanderGibratDistribution.
+pub fn benktander_gibrat_mean_variance(
+  a: &Expr,
+  b: &Expr,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let dist = Expr::FunctionCall {
+    name: "BenktanderGibratDistribution".to_string(),
+    args: vec![a.clone(), b.clone()].into(),
+  };
+  if !benktander_valid(a, b, &dist)? {
+    return Err(InterpreterError::EvaluationError(
+      "BenktanderGibratDistribution: invalid parameters".into(),
+    ));
+  }
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let mean = eval(plus(int(1), power(a.clone(), int(-1))))?;
+  let a_minus_1 = call("Plus", vec![int(-1), a.clone()]);
+  let numeric = ms_numeric(a).is_some() && ms_numeric(b).is_some();
+  let erfc = call(
+    "Erfc",
+    vec![eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(a_minus_1.clone()),
+      right: Box::new(call(
+        "Times",
+        vec![int(2), call("Sqrt", vec![b.clone()])],
+      )),
+    })?],
+  );
+  let e_part = power(
+    e(),
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(power(a_minus_1, int(2))),
+      right: Box::new(times(int(4), b.clone())),
+    })?,
+  );
+  let var = if numeric {
+    // Sqrt[Pi/b] merges for numeric b
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Plus",
+        vec![
+          int(-1),
+          call(
+            "Times",
+            vec![
+              a.clone(),
+              e_part,
+              call("Sqrt", vec![eval(divide(pi(), b.clone()))?]),
+              erfc,
+            ],
+          ),
+        ],
+      )),
+      right: Box::new(power(a.clone(), int(2))),
+    })?
+  } else {
+    // (-1 + (a E^((a-1)^2/(4 b)) Sqrt[Pi] Erfc[...])/Sqrt[b])/a^2
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Plus",
+        vec![
+          int(-1),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(call(
+              "Times",
+              vec![a.clone(), e_part, call("Sqrt", vec![pi()]), erfc],
+            )),
+            right: Box::new(call("Sqrt", vec![b.clone()])),
+          },
+        ],
+      )),
+      right: Box::new(power(a.clone(), int(2))),
+    }
+  };
   Ok((mean, var))
 }

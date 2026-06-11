@@ -1108,6 +1108,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SechDistribution" => Some((0, 2)),
     "MoyalDistribution" => Some((0, 2)),
     "BorelTannerDistribution" => Some((2, 2)),
+    "BenktanderGibratDistribution" => Some((2, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

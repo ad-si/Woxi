@@ -3690,7 +3690,7 @@ TextClipboardType,,,,7.0,3785
 UnderBar,,,,6.0,3785
 UnitRootTest,,,,9.0,3785
 AudioPad,,🚫,,11.0,3803
-BenktanderGibratDistribution,,,,8.0,3803
+BenktanderGibratDistribution,Benktander-Gibrat actuarial distribution,✅,pure,8.0,3803
 DeviceReadTimeSeries,,🚫,,10.0,3803
 FindHiddenMarkovStates,,,,10.0,3803
 FitRegularization,,,,12.0,3803
