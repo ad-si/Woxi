@@ -2660,3 +2660,62 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Integer(digit))
 }
+
+/// NumberExpand[n] / NumberExpand[n, b] - place-value decomposition of
+/// an exact integer (zeros kept, each term carrying the sign of n);
+/// rationals come back as a one-element list, matching wolframscript.
+/// An integer base below 2 emits NumberExpand::rbase; symbolic input
+/// and machine reals stay unevaluated (the real-number expansion with
+/// its trailing machine-precision residual term is not implemented).
+pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "NumberExpand".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated(args));
+  }
+  // Base validation happens before the value is looked at
+  let base: i128 = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) if *b >= 2 => *b,
+      Expr::Integer(b) => {
+        crate::emit_message(&format!(
+          "NumberExpand::rbase: Base {b} is not a real number greater than 1."
+        ));
+        return Ok(unevaluated(args));
+      }
+      _ => return Ok(unevaluated(args)),
+    }
+  } else {
+    10
+  };
+
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n == 0 {
+        return Ok(Expr::List(vec![Expr::Integer(0)].into()));
+      }
+      let sign = n.signum();
+      let mut digits: Vec<i128> = Vec::new();
+      let mut num = n.unsigned_abs();
+      let base_u = base as u128;
+      while num != 0 {
+        digits.push((num % base_u) as i128);
+        num /= base_u;
+      }
+      // digits[i] sits at place base^i; emit highest place first
+      let terms: Vec<Expr> = digits
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(place, d)| Expr::Integer(sign * d * base.pow(place as u32)))
+        .collect();
+      Ok(Expr::List(terms.into()))
+    }
+    Expr::FunctionCall { name, .. } if name == "Rational" => {
+      Ok(Expr::List(vec![args[0].clone()].into()))
+    }
+    _ => Ok(unevaluated(args)),
+  }
+}

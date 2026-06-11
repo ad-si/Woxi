@@ -3018,3 +3018,51 @@ mod farey_sequence {
     assert_case(r#"FareySequence[3, x]"#, r#"FareySequence[3, x]"#);
   }
 }
+
+mod number_expand {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn decimal_place_values() {
+    assert_case(r#"NumberExpand[325]"#, r#"{300, 20, 5}"#);
+    assert_case(r#"NumberExpand[12345]"#, r#"{10000, 2000, 300, 40, 5}"#);
+    // Zero digits stay in the list
+    assert_case(r#"NumberExpand[305]"#, r#"{300, 0, 5}"#);
+    assert_case(r#"NumberExpand[1000]"#, r#"{1000, 0, 0, 0}"#);
+    assert_case(r#"NumberExpand[0]"#, r#"{0}"#);
+    // Each term carries the sign
+    assert_case(r#"NumberExpand[-325]"#, r#"{-300, -20, -5}"#);
+  }
+
+  #[test]
+  fn other_bases() {
+    assert_case(
+      r#"NumberExpand[325, 2]"#,
+      r#"{256, 0, 64, 0, 0, 0, 4, 0, 1}"#,
+    );
+    assert_case(r#"NumberExpand[7, 2]"#, r#"{4, 2, 1}"#);
+    assert_case(r#"NumberExpand[-7, 2]"#, r#"{-4, -2, -1}"#);
+    assert_case(r#"NumberExpand[325, 16]"#, r#"{256, 64, 5}"#);
+    assert_case(r#"NumberExpand[0, 2]"#, r#"{0}"#);
+  }
+
+  #[test]
+  fn rationals_stay_whole() {
+    // No positional expansion for exact non-integers, base ignored
+    assert_case(r#"NumberExpand[1/3]"#, r#"{1/3}"#);
+    assert_case(r#"NumberExpand[-1/3]"#, r#"{-1/3}"#);
+    assert_case(r#"NumberExpand[1/3, 2]"#, r#"{1/3}"#);
+    assert_case(r#"NumberExpand[5/2]"#, r#"{5/2}"#);
+  }
+
+  #[test]
+  fn invalid_input_handling() {
+    // Integer base below 2 messages NumberExpand::rbase (even when the
+    // value itself would not expand)
+    assert_case(r#"NumberExpand[325, 1]"#, r#"NumberExpand[325, 1]"#);
+    assert_case(r#"NumberExpand[1/3, 1]"#, r#"NumberExpand[1/3, 1]"#);
+    // Symbolic value or base stays silently unevaluated
+    assert_case(r#"NumberExpand[x]"#, r#"NumberExpand[x]"#);
+    assert_case(r#"NumberExpand[325, x]"#, r#"NumberExpand[325, x]"#);
+  }
+}
