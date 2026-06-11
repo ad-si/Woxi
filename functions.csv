@@ -4185,7 +4185,7 @@ ImageAugmentationLayer,,🚫,,11.1,4315
 IndefiniteMatrixQ,,,,10.0,4315
 IndexEdgeTaggedGraph,,,,12.1,4315
 LQEstimatorGains,,,,8.0,4315
-MinkowskiQuestionMark,,,,10.0,4315
+MinkowskiQuestionMark,Minkowski question-mark function (exact for rationals and quadratic irrationals),✅,pure,10.0,4315
 MoleculeDraw,,🚫,,12.2,4315
 MoleculePattern,,🚫,,12.0,4315
 NearestMeshCells,,,,12.1,4315

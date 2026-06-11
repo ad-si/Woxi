@@ -3255,3 +3255,72 @@ mod dirichlet_character {
     );
   }
 }
+
+mod minkowski_question_mark {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn positive_rationals() {
+    assert_case(
+      r#"MinkowskiQuestionMark /@ {0, 1, 1/2, 1/3, 2/3, 3/7, 5/8}"#,
+      r#"{0, 1, 1/2, 1/4, 3/4, 7/16, 11/16}"#,
+    );
+    // ?(x + 1) = ?(x) + 1 on the positive side
+    assert_case(r#"MinkowskiQuestionMark[7/3]"#, r#"9/4"#);
+  }
+
+  #[test]
+  fn negative_rationals_use_wolframs_expansion() {
+    // Wolfram feeds its termwise-negated ContinuedFraction into the
+    // dyadic formula, so negative quotients become positive exponents:
+    // ?(-1/2) = 2/2^(-2) = 8
+    assert_case(
+      r#"MinkowskiQuestionMark /@ {-1/2, -1/3, -2/3, -1, -2, -5/8, -7/3}"#,
+      r#"{8, 16, -12, -1, -2, -52, 14}"#,
+    );
+    assert_case(r#"MinkowskiQuestionMark[-3/7]"#, r#"-56"#);
+  }
+
+  #[test]
+  fn quadratic_irrationals() {
+    // Periodic tails sum as geometric series
+    assert_case(r#"MinkowskiQuestionMark[Sqrt[2]]"#, r#"7/5"#);
+    assert_case(r#"MinkowskiQuestionMark[GoldenRatio]"#, r#"5/3"#);
+    assert_case(r#"MinkowskiQuestionMark[1 + Sqrt[2]]"#, r#"12/5"#);
+    assert_case(r#"MinkowskiQuestionMark[Sqrt[2]/2]"#, r#"4/5"#);
+    // ...even formally divergent ones (ratio -4 here)
+    assert_case(r#"MinkowskiQuestionMark[-Sqrt[2]]"#, r#"3/5"#);
+  }
+
+  #[test]
+  fn unevaluated_forms() {
+    assert_case(r#"MinkowskiQuestionMark[x]"#, r#"MinkowskiQuestionMark[x]"#);
+    // Machine reals use a limited-precision expansion in wolframscript
+    // whose noise is not reproduced; stay symbolic instead
+    assert_case(
+      r#"MinkowskiQuestionMark[0.3]"#,
+      r#"MinkowskiQuestionMark[0.3]"#,
+    );
+  }
+}
+
+mod continued_fraction_negative_convention {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn negative_rationals_negate_termwise() {
+    // Regression: floor-based expansion {-1, 2} is wrong; Wolfram
+    // negates the expansion of |x| termwise
+    assert_case(r#"ContinuedFraction[-1/2]"#, r#"{0, -2}"#);
+    assert_case(r#"ContinuedFraction[-2/3]"#, r#"{0, -1, -2}"#);
+    assert_case(r#"ContinuedFraction[-7/3]"#, r#"{-2, -3}"#);
+    assert_case(r#"ContinuedFraction[-151/77]"#, r#"{-1, -1, -24, -1, -2}"#);
+  }
+
+  #[test]
+  fn golden_ratio_and_reciprocal_sqrt() {
+    // Regression: both stayed unevaluated before
+    assert_case(r#"ContinuedFraction[GoldenRatio]"#, r#"{1, {1}}"#);
+    assert_case(r#"ContinuedFraction[Sqrt[2]/2]"#, r#"{0, 1, {2}}"#);
+  }
+}

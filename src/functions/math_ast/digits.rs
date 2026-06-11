@@ -687,6 +687,41 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
   }
 }
 
+/// Match 1/√d (Power[d, Rational[-1, 2]], the canonical form of
+/// Sqrt[d]/d) and return d.
+fn extract_reciprocal_sqrt_integer(expr: &Expr) -> Option<i128> {
+  let rational_minus_half = |e: &Expr| -> bool {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1))
+        && matches!(args[1], Expr::Integer(2)))
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Integer(d) = &args[0]
+        && rational_minus_half(&args[1])
+      {
+        return Some(*d);
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(d) = left.as_ref()
+        && rational_minus_half(right)
+      {
+        return Some(*d);
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
 /// Extract a quadratic-irrational expression of the form `(p + q · √d) / r`
 /// where `p`, `q`, `r` are integers and `d` is a positive integer (not a
 /// perfect square — caller verifies). Returns `None` if the input doesn't
@@ -694,6 +729,10 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
 fn extract_quadratic_irrational(
   expr: &Expr,
 ) -> Option<(i128, i128, i128, i128)> {
+  // 1/√d = √d/d = (0 + 1·√d)/d
+  if let Some(d) = extract_reciprocal_sqrt_integer(expr) {
+    return Some((0, 1, d, d));
+  }
   // Peel off outer scale: (scale_num/scale_den) · inner, collecting the
   // overall Rational coefficient and whatever Plus-sum remains.
   let (inner_owned, scale_num, scale_den): (Expr, i128, i128) = match expr {
@@ -985,17 +1024,21 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if name == "Rational" && rargs.len() == 2 =>
     {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) {
+        // Wolfram expands |x| and negates every quotient for negative
+        // x (termwise negation), not the floor-based expansion:
+        // ContinuedFraction[-1/2] is {0, -2}, not {-1, 2}
+        let negative = (*p < 0) != (*q < 0);
         let mut result = Vec::new();
-        let mut a = *p;
-        let mut b = *q;
+        let mut a = p.abs();
+        let mut b = q.abs();
         while b != 0 {
-          let quotient = if (a < 0) != (b < 0) && a % b != 0 {
-            a / b - 1
+          let quotient = a / b;
+          result.push(Expr::Integer(if negative {
+            -quotient
           } else {
-            a / b
-          };
-          result.push(Expr::Integer(quotient));
-          let rem = a - quotient * b;
+            quotient
+          }));
+          let rem = a % b;
           a = b;
           b = rem;
         }
@@ -1023,6 +1066,18 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let period_list =
       Expr::List(period.into_iter().map(Expr::Integer).collect());
     return Ok(Expr::List(vec![Expr::Integer(a0), period_list].into()));
+  }
+
+  // GoldenRatio = (1 + √5) / 2
+  if args.len() == 1
+    && matches!(&args[0], Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio")
+    && let Some((pre, period)) = continued_fraction_of_quadratic(1, 1, 5, 2)
+  {
+    let mut result: Vec<Expr> = pre.into_iter().map(Expr::Integer).collect();
+    if !period.is_empty() {
+      result.push(Expr::List(period.into_iter().map(Expr::Integer).collect()));
+    }
+    return Ok(Expr::List(result.into()));
   }
 
   // ContinuedFraction[(p + q √d) / r] — periodic CF for quadratic irrationals.
@@ -2843,4 +2898,173 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(Expr::List(result.into()))
+}
+
+/// MinkowskiQuestionMark[x] - Minkowski's question-mark function via
+/// the dyadic continued-fraction formula Wolfram uses:
+/// ?([a0; a1, a2, ...]) = a0 + sum_k (-1)^(k+1) * 2^(1 - (a1+...+ak)),
+/// fed with Wolfram's ContinuedFraction convention (termwise-negated
+/// quotients for negative x, which makes exponents positive and yields
+/// values like ?(-1/2) = 8), and with periodic tails of quadratic
+/// irrationals summed as formal geometric series even when divergent
+/// (?(-Sqrt[2]) = 3/5). Machine reals stay unevaluated: wolframscript
+/// uses a limited-precision expansion there whose noise we do not
+/// reproduce.
+pub fn minkowski_question_mark_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "MinkowskiQuestionMark".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+
+  // Continued fraction (prefix, period) in Wolfram's convention
+  let (prefix, period): (Vec<i128>, Vec<i128>) = match &args[0] {
+    Expr::Integer(n) => return Ok(Expr::Integer(*n)),
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      match (&rargs[0], &rargs[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+          let negative = (*p < 0) != (*q < 0);
+          let (mut a, mut b) = (p.abs(), q.abs());
+          let mut terms = Vec::new();
+          while b != 0 {
+            let quot = a / b;
+            terms.push(if negative { -quot } else { quot });
+            let rem = a % b;
+            a = b;
+            b = rem;
+          }
+          (terms, Vec::new())
+        }
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    other => {
+      // Quadratic irrationals: GoldenRatio, Sqrt[d], (p + q*Sqrt[d])/r.
+      // Compute the expansion of |x| and negate termwise when x < 0.
+      let golden = matches!(other, Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio");
+      let neg_golden = match other {
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } => matches!(
+          operand.as_ref(),
+          Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio"
+        ),
+        _ => false,
+      };
+      let quad: Option<(i128, i128, i128, i128, bool)> = if golden {
+        Some((1, 1, 5, 2, false))
+      } else if neg_golden {
+        Some((1, 1, 5, 2, true))
+      } else if let Some(d) = extract_sqrt_integer(other) {
+        Some((0, 1, d, 1, false))
+      } else if let Some((p, q, d, r)) = extract_quadratic_irrational(other) {
+        // Sign of (p + q*sqrt(d)) / r
+        let value = (p as f64 + q as f64 * (d as f64).sqrt()) / r as f64;
+        if value < 0.0 {
+          Some((-p, -q, d, -r, true))
+        } else {
+          Some((p, q, d, r, false))
+        }
+      } else {
+        None
+      };
+      match quad {
+        Some((p, q, d, r, negative))
+          if d > 0 && q != 0 && r != 0 && !is_perfect_square(d) =>
+        {
+          match continued_fraction_of_quadratic(p, q, d, r) {
+            Some((pre, per)) if !per.is_empty() => {
+              let s = if negative { -1 } else { 1 };
+              (
+                pre.into_iter().map(|t| s * t).collect(),
+                per.into_iter().map(|t| s * t).collect(),
+              )
+            }
+            _ => return Ok(unevaluated(args)),
+          }
+        }
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+  };
+
+  // Exact fraction arithmetic over BigInt
+  let gcd = |a: &BigInt, b: &BigInt| -> BigInt {
+    let (mut a, mut b) = (a.clone(), b.clone());
+    if a < BigInt::from(0) {
+      a = -a;
+    }
+    if b < BigInt::from(0) {
+      b = -b;
+    }
+    while b != BigInt::from(0) {
+      let r = &a % &b;
+      a = b;
+      b = r;
+    }
+    if a == BigInt::from(0) {
+      BigInt::from(1)
+    } else {
+      a
+    }
+  };
+  let reduce = |num: BigInt, den: BigInt| -> (BigInt, BigInt) {
+    let g = gcd(&num, &den);
+    let (mut n, mut d) = (num / &g, den / g);
+    if d < BigInt::from(0) {
+      n = -n;
+      d = -d;
+    }
+    (n, d)
+  };
+  let add = |a: &(BigInt, BigInt), b: &(BigInt, BigInt)| -> (BigInt, BigInt) {
+    reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+  };
+  // sign * 2^e as a fraction (e may be negative)
+  let pow2 = |sign: i64, e: i128| -> (BigInt, BigInt) {
+    if e >= 0 {
+      (BigInt::from(sign) << (e as u64), BigInt::from(1))
+    } else {
+      (BigInt::from(sign), BigInt::from(1) << ((-e) as u64))
+    }
+  };
+
+  let a0 = prefix.first().copied().unwrap_or(0);
+  let mut total = (BigInt::from(a0), BigInt::from(1));
+  let mut s: i128 = 0; // running sum a1 + ... + ak
+  let mut sign: i64 = 1; // (-1)^(k+1)
+  for a in &prefix[1..] {
+    s += a;
+    total = add(&total, &pow2(sign, 1 - s));
+    sign = -sign;
+  }
+
+  if !period.is_empty() {
+    // One cycle of terms, then the formal geometric tail
+    // T / (1 - r) with r = (-1)^L * 2^(-sum(period))
+    let mut t = (BigInt::from(0), BigInt::from(1));
+    let mut q_sum = 0i128;
+    let mut cycle_sign = sign;
+    for p in &period {
+      q_sum += p;
+      t = add(&t, &pow2(cycle_sign, 1 - s - q_sum));
+      cycle_sign = -cycle_sign;
+    }
+    let r_sign: i64 = if period.len() % 2 == 0 { 1 } else { -1 };
+    let r = pow2(r_sign, -q_sum);
+    let one_minus_r = add(&(BigInt::from(1), BigInt::from(1)), &(-r.0, r.1));
+    // tail = t / (1 - r)
+    let tail = reduce(&t.0 * &one_minus_r.1, &t.1 * &one_minus_r.0);
+    total = add(&total, &tail);
+  }
+
+  Ok(super::number_theory::make_rational_expr(total.0, total.1))
 }

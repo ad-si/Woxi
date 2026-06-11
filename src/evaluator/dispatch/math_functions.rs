@@ -806,6 +806,11 @@ pub fn dispatch_math_functions(
     "LogBarnesG" if args.len() == 1 => {
       return Some(crate::functions::math_ast::log_barnes_g_ast(args));
     }
+    "MinkowskiQuestionMark" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::minkowski_question_mark_ast(
+        args,
+      ));
+    }
     "DirichletCharacter" if args.len() == 3 => {
       return Some(crate::functions::dirichlet_ast::dirichlet_character_ast(
         args,
