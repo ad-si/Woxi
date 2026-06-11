@@ -2227,3 +2227,79 @@ mod find_independent_vertex_set {
     );
   }
 }
+
+mod vertex_component {
+  use super::*;
+
+  #[test]
+  fn undirected_components() {
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}], 1]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}], {4}]")
+        .unwrap(),
+      "{4, 5}"
+    );
+    // BFS order from the seed, not vertex-list order
+    assert_eq!(
+      interpret("VertexComponent[Graph[{5 <-> 3, 3 <-> 1, 8 <-> 9}], 1]")
+        .unwrap(),
+      "{1, 3, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexComponent[Graph[{9 <-> 7, 7 <-> 5, 5 <-> 3, 2 <-> 4}], 5]"
+      )
+      .unwrap(),
+      "{5, 7, 3, 9}"
+    );
+    assert_eq!(
+      interpret("VertexComponent[Graph[{a <-> b, c <-> d}], b]").unwrap(),
+      "{b, a}"
+    );
+  }
+
+  #[test]
+  fn directed_in_components() {
+    // Directed graphs return the vertices that can REACH the seed
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 -> 2, 3 -> 2}], 1]").unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 -> 2, 3 -> 2}], 2]").unwrap(),
+      "{2, 1, 3}"
+    );
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 -> 2, 2 -> 1, 2 -> 3}], 1]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 -> 2, 2 -> 3, 4 -> 3, 5 -> 4}], 3]")
+        .unwrap(),
+      "{3, 2, 4, 1, 5}"
+    );
+  }
+
+  #[test]
+  fn multiple_seeds_and_invalid_vertices() {
+    // Seeds expand sequentially with shared visited state
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}], {1, 4}]")
+        .unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 -> 2}], {2, 1}]").unwrap(),
+      "{2, 1}"
+    );
+    // Unknown vertex emits VertexComponent::inv and stays unevaluated
+    assert_eq!(
+      interpret("VertexComponent[Graph[{1 <-> 2}], 7]").unwrap(),
+      "VertexComponent[Graph[<2>, <1>], 7]"
+    );
+  }
+}

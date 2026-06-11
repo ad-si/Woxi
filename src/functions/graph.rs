@@ -1833,3 +1833,112 @@ pub fn find_independent_vertex_set_ast(
   }
   Ok(Expr::List(vec![Expr::List(chosen.into())].into()))
 }
+
+/// VertexComponent[g, v] / VertexComponent[g, {v1, ...}] - vertices
+/// from which the given vertices can be reached (the connected
+/// component for undirected graphs), in BFS order seed-first with
+/// in-neighbors visited in vertex-list order; multiple seeds expand
+/// sequentially with shared visited state. Unknown vertices emit
+/// VertexComponent::inv.
+pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "VertexComponent".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let graph = match &args[0] {
+    Expr::List(_) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?
+    }
+    other => other.clone(),
+  };
+  let (vertices, edges) = match &graph {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() >= 2 =>
+    {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v.clone(), e.clone()),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let n = vertices.len();
+  // In-neighbor lists (undirected edges count both ways)
+  let mut in_nbrs: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for edge in edges.iter() {
+    if let Expr::FunctionCall { name, args: eargs } = edge
+      && (name == "DirectedEdge" || name == "UndirectedEdge")
+      && eargs.len() == 2
+      && let (Some(&u), Some(&v)) =
+        (index.get(&key(&eargs[0])), index.get(&key(&eargs[1])))
+    {
+      in_nbrs[v].push(u);
+      if name == "UndirectedEdge" {
+        in_nbrs[u].push(v);
+      }
+    } else {
+      return Ok(unevaluated(args));
+    }
+  }
+  // Visit in-neighbors in vertex-list order
+  for list in &mut in_nbrs {
+    list.sort_unstable();
+    list.dedup();
+  }
+
+  let seeds: Vec<&Expr> = match &args[1] {
+    Expr::List(items) => items.iter().collect(),
+    single => vec![single],
+  };
+  let mut seed_indices = Vec::with_capacity(seeds.len());
+  for seed in &seeds {
+    match index.get(&key(seed)) {
+      Some(&i) => seed_indices.push(i),
+      None => {
+        crate::emit_message(&format!(
+          "VertexComponent::inv: The argument {} in {} is not a valid vertex.",
+          key(seed),
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "VertexComponent".to_string(),
+            args: vec![graph.clone(), args[1].clone()].into(),
+          })
+        ));
+        return Ok(unevaluated(&[graph, args[1].clone()]));
+      }
+    }
+  }
+
+  let mut visited = vec![false; n];
+  let mut order: Vec<usize> = Vec::new();
+  for &start in &seed_indices {
+    if visited[start] {
+      continue;
+    }
+    visited[start] = true;
+    let mut queue = std::collections::VecDeque::from([start]);
+    while let Some(v) = queue.pop_front() {
+      order.push(v);
+      for &u in &in_nbrs[v] {
+        if !visited[u] {
+          visited[u] = true;
+          queue.push_back(u);
+        }
+      }
+    }
+  }
+  Ok(Expr::List(
+    order.into_iter().map(|i| vertices[i].clone()).collect(),
+  ))
+}
