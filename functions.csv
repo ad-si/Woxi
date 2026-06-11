@@ -1664,7 +1664,7 @@ Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,169
 SubPlus,Subscript plus notation,,unevaluated,6.0,1692
 Extension,Extension option,,unevaluated,3.0,1693
 KeySort,Sorts an association by its keys,✅,pure,10.0,1694
-WeightedAdjacencyGraph,Weighted adjacency graph,,unevaluated,8.0,1695
+WeightedAdjacencyGraph,Graph from a weight matrix (Infinity marks absent edges),✅,pure,8.0,1695
 CellFrame,Cell frame option,,unevaluated,3.0,1696
 Compiled,Compiled option,,unevaluated,2.0,1697
 AudioGenerator,Audio generator,,unevaluated,11.0,1698

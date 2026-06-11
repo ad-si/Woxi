@@ -2303,3 +2303,90 @@ mod vertex_component {
     );
   }
 }
+
+mod weighted_adjacency_graph {
+  use super::*;
+
+  #[test]
+  fn symmetric_matrices_give_undirected_graphs() {
+    assert_eq!(
+      interpret("WeightedAdjacencyGraph[{{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}]").unwrap(),
+      "Graph[<3>, <2>]"
+    );
+    assert_eq!(
+      interpret("EdgeList[WeightedAdjacencyGraph[{{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}]]").unwrap(),
+      "{1 \u{f3d4} 2, 2 \u{f3d4} 3}"
+    );
+    // Custom vertex names
+    assert_eq!(
+      interpret("VertexList[WeightedAdjacencyGraph[{a, b, c}, {{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}]]").unwrap(),
+      "{a, b, c}"
+    );
+    // Diagonal entries are self-loops; zero is a real weight, only
+    // Infinity marks absence
+    assert_eq!(
+      interpret("EdgeList[WeightedAdjacencyGraph[{{1, 2}, {2, Infinity}}]]")
+        .unwrap(),
+      "{1 \u{f3d4} 1, 1 \u{f3d4} 2}"
+    );
+  }
+
+  #[test]
+  fn asymmetric_matrices_give_directed_graphs() {
+    assert_eq!(
+      interpret(
+        "EdgeList[WeightedAdjacencyGraph[{{Infinity, 2}, {3, Infinity}}]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d5} 2, 2 \u{f3d5} 1}"
+    );
+  }
+
+  #[test]
+  fn weights_survive_round_trips() {
+    assert_eq!(
+      interpret("Normal[WeightedAdjacencyMatrix[WeightedAdjacencyGraph[{{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}]]]").unwrap(),
+      "{{0, 2, 0}, {2, 0, 5}, {0, 5, 0}}"
+    );
+  }
+
+  #[test]
+  fn invalid_input() {
+    assert_eq!(
+      interpret("WeightedAdjacencyGraph[x]").unwrap(),
+      "WeightedAdjacencyGraph[x]"
+    );
+  }
+}
+
+mod graph_distance_weighted {
+  use super::*;
+
+  #[test]
+  fn uses_edge_weights_and_returns_reals() {
+    // Regression: EdgeWeight was ignored (returned hop count 2)
+    assert_eq!(
+      interpret("GraphDistance[WeightedAdjacencyGraph[{{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}], 1, 3]").unwrap(),
+      "7."
+    );
+    assert_eq!(
+      interpret("GraphDistance[WeightedAdjacencyGraph[{{Infinity, 2}, {3, Infinity}}], 2, 1]").unwrap(),
+      "3."
+    );
+    // Dijkstra takes the cheap two-hop path over the expensive direct
+    // edge
+    assert_eq!(
+      interpret("GraphDistance[WeightedAdjacencyGraph[{{Infinity, 1, 10}, {1, Infinity, 1}, {10, 1, Infinity}}], 1, 3]").unwrap(),
+      "2."
+    );
+    // Unreachable stays Infinity; unweighted graphs keep integer hops
+    assert_eq!(
+      interpret("GraphDistance[WeightedAdjacencyGraph[{{Infinity, 2}, {Infinity, Infinity}}], 2, 1]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("GraphDistance[Graph[{1 <-> 2, 2 <-> 3}], 1, 3]").unwrap(),
+      "2"
+    );
+  }
+}

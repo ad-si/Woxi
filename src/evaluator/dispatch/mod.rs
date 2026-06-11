@@ -3842,6 +3842,11 @@ pub fn evaluate_function_call_ast_inner(
     return crate::functions::graph::vertex_component_ast(args);
   }
 
+  // WeightedAdjacencyGraph[wmat] → weighted graph (Infinity = no edge)
+  if name == "WeightedAdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
+    return crate::functions::graph::weighted_adjacency_graph_ast(args);
+  }
+
   // FindShortestPath[graph, src, dst, opts...] → list of vertices on a
   // shortest weighted path (Dijkstra).
   if name == "FindShortestPath" && args.len() >= 3 {
@@ -4664,6 +4669,94 @@ pub fn evaluate_function_call_ast_inner(
           adj[di].push(si);
         }
       }
+    }
+
+    // Graphs carrying an EdgeWeight option use Dijkstra and return
+    // machine reals, as wolframscript does ("7." for integer weights)
+    let edge_weights: Option<Vec<f64>> = gargs[2..].iter().find_map(|g| {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = g
+        && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "EdgeWeight")
+        && let Expr::List(ws) = replacement.as_ref()
+        && ws.len() == edges.len()
+      {
+        ws.iter().map(crate::functions::try_eval_to_f64).collect()
+      } else {
+        None
+      }
+    });
+    if let Some(weights) = &edge_weights {
+      let mut wadj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+      for (edge, &w) in edges.iter().zip(weights.iter()) {
+        let (directed, src, dst) = match edge {
+          Expr::FunctionCall {
+            name: ename,
+            args: eargs,
+          } if eargs.len() == 2 => {
+            (ename == "DirectedEdge", &eargs[0], &eargs[1])
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => (true, pattern.as_ref(), replacement.as_ref()),
+          _ => continue,
+        };
+        if let (Some(si), Some(di)) = (index_of(src), index_of(dst)) {
+          wadj[si].push((di, w));
+          if !directed {
+            wadj[di].push((si, w));
+          }
+        }
+      }
+      // O(n^2) Dijkstra (graphs here are small)
+      let dijkstra = |start: usize| -> Vec<f64> {
+        let mut dist = vec![f64::INFINITY; n];
+        let mut done = vec![false; n];
+        dist[start] = 0.0;
+        for _ in 0..n {
+          let mut u = usize::MAX;
+          let mut best = f64::INFINITY;
+          for i in 0..n {
+            if !done[i] && dist[i] < best {
+              best = dist[i];
+              u = i;
+            }
+          }
+          if u == usize::MAX {
+            break;
+          }
+          done[u] = true;
+          for &(v, w) in &wadj[u] {
+            if dist[u] + w < dist[v] {
+              dist[v] = dist[u] + w;
+            }
+          }
+        }
+        dist
+      };
+      let wdist_to_expr = |d: f64| -> Expr {
+        if d.is_infinite() {
+          Expr::Identifier("Infinity".to_string())
+        } else {
+          Expr::Real(d)
+        }
+      };
+      if let Some(s) = index_of(&args[1]) {
+        let dist = dijkstra(s);
+        if args.len() == 3 {
+          if let Some(t) = index_of(&args[2]) {
+            return Ok(wdist_to_expr(dist[t]));
+          }
+        } else {
+          return Ok(Expr::List(dist.into_iter().map(wdist_to_expr).collect()));
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      });
     }
 
     // BFS over unit-weight edges from `start`, returning distances

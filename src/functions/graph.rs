@@ -1942,3 +1942,80 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     order.into_iter().map(|i| vertices[i].clone()).collect(),
   ))
 }
+
+/// WeightedAdjacencyGraph[wmat] / WeightedAdjacencyGraph[{v...}, wmat]
+/// - graph from a weight matrix, with Infinity marking absent edges
+/// (zero is a real weight). Symmetric matrices give undirected graphs
+/// (upper triangle incl. self-loops, row-major); anything else gives
+/// directed edges in row-major order. Weights land in the Graph's
+/// EdgeWeight option.
+pub fn weighted_adjacency_graph_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "WeightedAdjacencyGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (vertices, matrix) = match args {
+    [Expr::List(m)] => (None, m),
+    [Expr::List(v), Expr::List(m)] => (Some(v.clone()), m),
+    _ => return Ok(unevaluated(args)),
+  };
+  let n = matrix.len();
+  let rows: Option<Vec<&[Expr]>> = matrix
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) if cells.len() == n => Some(cells.as_slice()),
+      _ => None,
+    })
+    .collect();
+  let Some(rows) = rows else {
+    return Ok(unevaluated(args));
+  };
+  let vertices: Vec<Expr> = match vertices {
+    Some(v) if v.len() == n => v.to_vec(),
+    Some(_) => return Ok(unevaluated(args)),
+    None => (1..=n as i128).map(Expr::Integer).collect(),
+  };
+  let is_edge = |e: &Expr| !matches!(e, Expr::Identifier(s) if s == "Infinity");
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let symmetric =
+    (0..n).all(|i| (0..n).all(|j| key(&rows[i][j]) == key(&rows[j][i])));
+
+  let mut edges: Vec<Expr> = Vec::new();
+  let mut weights: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    let j_start = if symmetric { i } else { 0 };
+    for j in j_start..n {
+      if !symmetric && i == j {
+        continue;
+      }
+      if symmetric && i == j && !is_edge(&rows[i][j]) {
+        continue;
+      }
+      if is_edge(&rows[i][j]) {
+        edges.push(Expr::FunctionCall {
+          name: if symmetric {
+            "UndirectedEdge".to_string()
+          } else {
+            "DirectedEdge".to_string()
+          },
+          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+        });
+        weights.push(rows[i][j].clone());
+      }
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![
+      Expr::List(vertices.into()),
+      Expr::List(edges.into()),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("EdgeWeight".to_string())),
+        replacement: Box::new(Expr::List(weights.into())),
+      },
+    ]
+    .into(),
+  })
+}
