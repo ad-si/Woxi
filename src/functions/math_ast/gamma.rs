@@ -1417,6 +1417,12 @@ fn barnes_g_float(z: f64) -> f64 {
     return 0.0;
   }
 
+  log_barnes_g_float(z).exp()
+}
+
+/// ln G(z) for z away from the non-positive integers (where G vanishes
+/// and the logarithm diverges); shared by BarnesG and LogBarnesG.
+fn log_barnes_g_float(z: f64) -> f64 {
   // Shift z to [1, 2] using recurrence G(z+1) = Gamma(z) * G(z)
   let mut z_shifted = z;
   let mut log_correction = 0.0_f64;
@@ -1431,9 +1437,54 @@ fn barnes_g_float(z: f64) -> f64 {
   }
 
   let w = z_shifted - 1.0; // w in [0, 1]
-  let log_g = log_barnes_g_series(w);
+  log_barnes_g_series(w) + log_correction
+}
 
-  (log_g + log_correction).exp()
+/// LogBarnesG[z] - logarithm of the Barnes G-function.
+/// Positive integers give the exact Log[G(n)] (0 when G(n) == 1);
+/// non-positive integers (exact or real-valued) give -Infinity;
+/// machine reals evaluate numerically; exact non-integers and symbols
+/// stay unevaluated.
+///
+/// The machine-real path shares BarnesG's series and agrees with
+/// wolframscript to ~12 significant digits, not to the last bit
+/// (wolframscript uses its own internal asymptotics: e.g. it prints
+/// LogBarnesG[5.] as 2.4849066497880052 while Log[12.] is
+/// 2.4849066497880004).
+pub fn log_barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "LogBarnesG".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  let neg_infinity = || Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(Expr::Identifier("Infinity".to_string())),
+  };
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n <= 0 {
+        return Ok(neg_infinity());
+      }
+      let g = barnes_g_ast(&[args[0].clone()])?;
+      if matches!(g, Expr::Integer(1)) {
+        return Ok(Expr::Integer(0));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![g].into(),
+      })
+    }
+    Expr::Real(x) => {
+      if *x <= 0.0 && *x == x.floor() {
+        return Ok(neg_infinity());
+      }
+      Ok(Expr::Real(log_barnes_g_float(*x)))
+    }
+    _ => Ok(unevaluated(args)),
+  }
 }
 
 /// Taylor series for ln G(1+z), valid for |z| ≤ 1.

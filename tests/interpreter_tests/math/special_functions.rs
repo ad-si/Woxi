@@ -8381,3 +8381,41 @@ mod real_exponent {
     );
   }
 }
+
+mod log_barnes_g {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn exact_integers() {
+    assert_case(r#"LogBarnesG[5]"#, r#"Log[12]"#);
+    assert_case(r#"LogBarnesG[10]"#, r#"Log[5056584744960000]"#);
+    // G(1) = G(2) = G(3) = 1, so the log collapses to 0
+    assert_case(r#"LogBarnesG[1]"#, r#"0"#);
+    assert_case(r#"LogBarnesG[3]"#, r#"0"#);
+  }
+
+  #[test]
+  fn poles_at_non_positive_integers() {
+    assert_case(r#"LogBarnesG[0]"#, r#"-Infinity"#);
+    assert_case(r#"LogBarnesG[-1]"#, r#"-Infinity"#);
+    assert_case(r#"LogBarnesG[0.]"#, r#"-Infinity"#);
+    assert_case(r#"LogBarnesG[-1.]"#, r#"-Infinity"#);
+  }
+
+  #[test]
+  fn unevaluated_forms() {
+    // Exact non-integers and symbols stay symbolic (wolframscript
+    // keeps LogBarnesG[1/2] unevaluated too)
+    assert_case(r#"LogBarnesG[1/2]"#, r#"LogBarnesG[1/2]"#);
+    assert_case(r#"LogBarnesG[x]"#, r#"LogBarnesG[x]"#);
+  }
+
+  #[test]
+  fn machine_real_evaluates() {
+    // The real path matches wolframscript to ~12 digits (see the
+    // implementation note); assert through a Round projection that is
+    // robust to the final-digit drift
+    assert_case(r#"Round[LogBarnesG[5.] * 10^10]"#, r#"24849066498"#);
+    assert_case(r#"Round[LogBarnesG[15.5] * 10^10]"#, r#"1363686988426"#);
+  }
+}
