@@ -3066,3 +3066,68 @@ mod number_expand {
     assert_case(r#"NumberExpand[325, x]"#, r#"NumberExpand[325, x]"#);
   }
 }
+
+mod number_decompose {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn greedy_decomposition() {
+    assert_case(r#"NumberDecompose[325, {100, 10, 1}]"#, r#"{3, 2, 5}"#);
+    assert_case(
+      r#"NumberDecompose[327/100, {1, 1/10, 1/100}]"#,
+      r#"{3, 2, 7}"#,
+    );
+    // Greedy, not optimal: 17 = 3*5 + 1*2 + 0*1
+    assert_case(r#"NumberDecompose[17, {5, 2, 1}]"#, r#"{3, 1, 0}"#);
+    assert_case(r#"NumberDecompose[0, {100, 10, 1}]"#, r#"{0, 0, 0}"#);
+    // Quotients truncate toward zero, so signs carry through
+    assert_case(r#"NumberDecompose[-325, {100, 10, 1}]"#, r#"{-3, -2, -5}"#);
+    // Equal adjacent units are allowed (nonincreasing)
+    assert_case(r#"NumberDecompose[25, {10, 10, 1}]"#, r#"{2, 0, 5}"#);
+  }
+
+  #[test]
+  fn last_entry_is_remainder_quotient() {
+    // The final element is rem/unit, not floored
+    assert_case(r#"NumberDecompose[7/2, {1}]"#, r#"{7/2}"#);
+    // ...and becomes a machine real when any input is real
+    assert_case(r#"NumberDecompose[10.25, {10, 1, 0.25}]"#, r#"{1, 0, 1.}"#);
+    assert_case(r#"NumberDecompose[10, {3, 1.}]"#, r#"{3, 1.}"#);
+  }
+
+  #[test]
+  fn unit_validation() {
+    // Non-positive, increasing, or symbolic units message
+    // NumberDecompose::psv and stay unevaluated
+    assert_case(
+      r#"NumberDecompose[325, {10, 100, 1}]"#,
+      r#"NumberDecompose[325, {10, 100, 1}]"#,
+    );
+    assert_case(
+      r#"NumberDecompose[325, {0, 10}]"#,
+      r#"NumberDecompose[325, {0, 10}]"#,
+    );
+    assert_case(
+      r#"NumberDecompose[325, {-10, 1}]"#,
+      r#"NumberDecompose[325, {-10, 1}]"#,
+    );
+    assert_case(
+      r#"NumberDecompose[325, {100, y}]"#,
+      r#"NumberDecompose[325, {100, y}]"#,
+    );
+  }
+
+  #[test]
+  fn symbolic_value_skips_unit_validation() {
+    // No psv message when the value is not numeric
+    assert_case(
+      r#"NumberDecompose[x, {2, 3}]"#,
+      r#"NumberDecompose[x, {2, 3}]"#,
+    );
+    assert_case(
+      r#"NumberDecompose[x, {100, 10}]"#,
+      r#"NumberDecompose[x, {100, 10}]"#,
+    );
+    assert_case(r#"NumberDecompose[325, x]"#, r#"NumberDecompose[325, x]"#);
+  }
+}

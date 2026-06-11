@@ -2719,3 +2719,128 @@ pub fn number_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => Ok(unevaluated(args)),
   }
 }
+
+/// NumberDecompose[x, {u1, u2, ...}] - greedy decomposition of x into
+/// multiples of the units: quotients truncate toward zero and the last
+/// entry is the exact remainder over the final unit (real whenever any
+/// input is a machine real). Units must be a nonincreasing list of
+/// positive numbers (NumberDecompose::psv otherwise, but only once the
+/// value itself is numeric); symbolic input stays unevaluated.
+pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "NumberDecompose".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+
+  // Exact values as normalized (numerator, positive denominator)
+  enum Num {
+    Exact(i128, i128),
+    Real(f64),
+  }
+  let to_num = |e: &Expr| -> Option<Num> {
+    match e {
+      Expr::Integer(n) => Some(Num::Exact(*n, 1)),
+      Expr::Real(r) => Some(Num::Real(*r)),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *q > 0 => {
+            Some(Num::Exact(*p, *q))
+          }
+          (Expr::Integer(p), Expr::Integer(q)) if *q < 0 => {
+            Some(Num::Exact(-*p, -*q))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+
+  // The value must be numeric before the unit list is even validated
+  let value = match to_num(&args[0]) {
+    Some(v) => v,
+    None => return Ok(unevaluated(args)),
+  };
+  let unit_exprs = match &args[1] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return Ok(unevaluated(args)),
+  };
+  let psv = |args: &[Expr]| {
+    crate::emit_message(&format!(
+      "NumberDecompose::psv: {} is not a list of nonincreasing positive numbers.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    Ok(unevaluated(args))
+  };
+  let units: Vec<Num> = match unit_exprs.iter().map(&to_num).collect() {
+    Some(u) => u,
+    None => return psv(args),
+  };
+  let as_f64 = |n: &Num| -> f64 {
+    match n {
+      Num::Exact(p, q) => *p as f64 / *q as f64,
+      Num::Real(r) => *r,
+    }
+  };
+  let positive_nonincreasing = units.iter().all(|u| as_f64(u) > 0.0)
+    && units.windows(2).all(|w| as_f64(&w[0]) >= as_f64(&w[1]));
+  if !positive_nonincreasing {
+    return psv(args);
+  }
+
+  let any_real = matches!(value, Num::Real(_))
+    || units.iter().any(|u| matches!(u, Num::Real(_)));
+
+  let mut result: Vec<Expr> = Vec::with_capacity(units.len());
+  if any_real {
+    let mut rem = as_f64(&value);
+    for (i, u) in units.iter().enumerate() {
+      let u = as_f64(u);
+      if i + 1 == units.len() {
+        result.push(Expr::Real(rem / u));
+      } else {
+        let q = (rem / u).trunc();
+        result.push(Expr::Integer(q as i128));
+        rem -= q * u;
+      }
+    }
+  } else {
+    let gcd = |mut a: i128, mut b: i128| -> i128 {
+      a = a.abs();
+      b = b.abs();
+      while b != 0 {
+        (a, b) = (b, a % b);
+      }
+      a.max(1)
+    };
+    let (mut rn, mut rd) = match value {
+      Num::Exact(p, q) => (p, q),
+      Num::Real(_) => unreachable!(),
+    };
+    for (i, u) in units.iter().enumerate() {
+      let (un, ud) = match u {
+        Num::Exact(p, q) => (*p, *q),
+        Num::Real(_) => unreachable!(),
+      };
+      // rem / u = (rn*ud) / (rd*un); un > 0, rd > 0
+      let qn = rn * ud;
+      let qd = rd * un;
+      if i + 1 == units.len() {
+        result.push(make_rational_expr(qn, qd));
+      } else {
+        let q_int = qn / qd; // Rust integer division truncates toward zero
+        result.push(Expr::Integer(q_int));
+        // rem -= q_int * u
+        rn = rn * ud - q_int * un * rd;
+        rd *= ud;
+        let g = gcd(rn, rd);
+        rn /= g;
+        rd /= g;
+      }
+    }
+  }
+  Ok(Expr::List(result.into()))
+}

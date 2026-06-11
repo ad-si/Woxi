@@ -1697,6 +1697,9 @@ pub fn dispatch_math_functions(
     "NumberExpand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::number_expand_ast(args));
     }
+    "NumberDecompose" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::number_decompose_ast(args));
+    }
     "NumberDigit" if args.len() == 2 => {
       return Some(crate::functions::math_ast::number_digit_ast(args));
     }

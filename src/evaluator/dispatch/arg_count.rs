@@ -1075,6 +1075,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Subfactorial" => Some((1, 1)),
     "FareySequence" => Some((1, 2)),
     "NumberExpand" => Some((1, 2)),
+    "NumberDecompose" => Some((2, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

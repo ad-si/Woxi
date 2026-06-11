@@ -4106,7 +4106,7 @@ ImageCapture,,🚫,,8.0,4225
 MaxDuration,,,,11.2,4225
 MaxMixtureKernels,,,,8.0,4225
 MoleculeValue,,🚫,,12.0,4225
-NumberDecompose,,,,10.2,4225
+NumberDecompose,Greedy decomposition of a number into unit multiples,✅,pure,10.2,4225
 ReferenceLineStyle,,,,8.0,4225
 SequenceFold,,,,10.2,4225
 StringRotateRight,Rotates characters in a string to the right,✅,pure,9.0,4225
