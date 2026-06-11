@@ -436,15 +436,24 @@ pub fn dispatch_math_functions(
       if args.len() == 1
         && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
           if (dn == "RiceDistribution" && da.len() == 2)
-            || (dn == "MaxwellDistribution" && da.len() == 1)) =>
+            || (dn == "MaxwellDistribution" && da.len() == 1)
+            || (dn == "MoyalDistribution" && da.len() <= 2)) =>
     {
       if let Expr::FunctionCall { args: da, .. } = &args[0] {
         // Returned directly: the variance prints use Raw assemblies
         // that re-evaluation would re-canonicalize
-        let result = if da.len() == 2 {
-          crate::functions::math_ast::rice_mean_variance(&da[0], &da[1])
-        } else {
-          crate::functions::math_ast::maxwell_mean_variance(&da[0])
+        let dist_name = match &args[0] {
+          Expr::FunctionCall { name: dn, .. } => dn.as_str(),
+          _ => "",
+        };
+        let result = match dist_name {
+          "RiceDistribution" => {
+            crate::functions::math_ast::rice_mean_variance(&da[0], &da[1])
+          }
+          "MaxwellDistribution" => {
+            crate::functions::math_ast::maxwell_mean_variance(&da[0])
+          }
+          _ => crate::functions::math_ast::moyal_mean_variance(da),
         };
         match result {
           Ok((mean, var)) => {

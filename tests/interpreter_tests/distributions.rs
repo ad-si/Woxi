@@ -2630,3 +2630,79 @@ mod sech_distribution {
     assert_eq!(interpret("Variance[SechDistribution[0, 2]]").unwrap(), "4");
   }
 }
+
+mod moyal_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_sign_folding() {
+    // Symbolic and zero locations use the reciprocal exponent form
+    assert_eq!(
+      interpret("PDF[MoyalDistribution[m, s], x]").unwrap(),
+      "E^(-1/2*1/E^((-m + x)/s) - (-m + x)/(2*s))/(Sqrt[2*Pi]*s)"
+    );
+    assert_eq!(
+      interpret("PDF[MoyalDistribution[0, 1], x]").unwrap(),
+      "E^(-1/2*1/E^x - x/2)/Sqrt[2*Pi]"
+    );
+    assert_eq!(
+      interpret("PDF[MoyalDistribution[], x]").unwrap(),
+      "E^(-1/2*1/E^x - x/2)/Sqrt[2*Pi]"
+    );
+    // Numeric nonzero locations fold the sign into (m - x)/s
+    assert_eq!(
+      interpret("PDF[MoyalDistribution[1, 2], x]").unwrap(),
+      "E^(-1/2*E^((1 - x)/2) + (1 - x)/4)/(2*Sqrt[2*Pi])"
+    );
+    assert_eq!(
+      interpret("PDF[MoyalDistribution[-1, 2], x]").unwrap(),
+      "E^(-1/2*E^((-1 - x)/2) + (-1 - x)/4)/(2*Sqrt[2*Pi])"
+    );
+    // The mode collapses to 1/Sqrt[2 E Pi]
+    assert_eq!(
+      interpret("PDF[MoyalDistribution[0, 1], 0]").unwrap(),
+      "1/Sqrt[2*E*Pi]"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[MoyalDistribution[m, s], x]").unwrap(),
+      "Erfc[1/(Sqrt[2]*E^((-m + x)/(2*s)))]"
+    );
+    assert_eq!(
+      interpret("CDF[MoyalDistribution[0, 1], x]").unwrap(),
+      "Erfc[1/(Sqrt[2]*E^(x/2))]"
+    );
+    assert_eq!(
+      interpret("CDF[MoyalDistribution[0, 1], 0]").unwrap(),
+      "Erfc[1/Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    // s prints before the EulerGamma sum
+    assert_eq!(
+      interpret("Mean[MoyalDistribution[m, s]]").unwrap(),
+      "m + s*(EulerGamma + Log[2])"
+    );
+    assert_eq!(
+      interpret("Mean[MoyalDistribution[2, 3]]").unwrap(),
+      "2 + 3*(EulerGamma + Log[2])"
+    );
+    assert_eq!(
+      interpret("Mean[MoyalDistribution[]]").unwrap(),
+      "EulerGamma + Log[2]"
+    );
+    assert_eq!(
+      interpret("Variance[MoyalDistribution[m, s]]").unwrap(),
+      "(Pi^2*s^2)/2"
+    );
+    assert_eq!(
+      interpret("Variance[MoyalDistribution[2, 3]]").unwrap(),
+      "(9*Pi^2)/2"
+    );
+  }
+}

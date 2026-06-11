@@ -155,6 +155,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxwellDistribution" => pdf_maxwell(dargs, x),
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
     "SechDistribution" => pdf_sech(dargs, x),
+    "MoyalDistribution" => pdf_moyal(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1143,6 +1144,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxwellDistribution" => cdf_maxwell(dargs, x),
     "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
     "SechDistribution" => cdf_sech(dargs, x),
+    "MoyalDistribution" => cdf_moyal(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -10296,4 +10298,223 @@ pub fn sech_mean_variance(
     ));
   };
   Ok((m, eval(power(s, int(2)))?))
+}
+
+/// PDF[MoyalDistribution[m, s], x] =
+/// E^(-(1/2) E^(-(x-m)/s) - (x-m)/(2 s))/(Sqrt[2 Pi] s), printed with
+/// wolframscript's sign folding: numeric nonzero m keeps the
+/// (m - x)/s exponent, m = 0 and symbolic m flip into the
+/// 1/E^((-m + x)/s) reciprocal.
+pub fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MoyalDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let (m, s) = match dargs {
+    [] => (int(0), int(1)),
+    [m, s] => (m.clone(), s.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let half = || call("Rational", vec![int(-1), int(2)]);
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let folded = ms_numeric(&m).is_some_and(|v| v != 0.0);
+    let exponent = if folded {
+      // -1/2 E^((m - x)/s) + (m - x)/(2 s)
+      let neg_z = eval(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(call(
+          "Plus",
+          vec![m.clone(), call("Times", vec![int(-1), at.clone()])],
+        )),
+        right: Box::new(s.clone()),
+      })?;
+      let half_neg_z = eval(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(call(
+          "Plus",
+          vec![m.clone(), call("Times", vec![int(-1), at.clone()])],
+        )),
+        right: Box::new(times(int(2), s.clone())),
+      })?;
+      call(
+        "Plus",
+        vec![call("Times", vec![half(), power(e(), neg_z)]), half_neg_z],
+      )
+    } else {
+      // -1/2 1/E^((-m + x)/s) - (-m + x)/(2 s)
+      let diff = if matches!(&m, Expr::Integer(0)) {
+        at.clone()
+      } else {
+        call(
+          "Plus",
+          vec![call("Times", vec![int(-1), m.clone()]), at.clone()],
+        )
+      };
+      let z = eval(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(diff.clone()),
+        right: Box::new(s.clone()),
+      })?;
+      let z_half = eval(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(diff),
+        right: Box::new(times(int(2), s.clone())),
+      })?;
+      call(
+        "Plus",
+        vec![
+          call(
+            "Times",
+            vec![
+              half(),
+              Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(int(1)),
+                right: Box::new(power(e(), z)),
+              },
+            ],
+          ),
+          call("Times", vec![int(-1), z_half]),
+        ],
+      )
+    };
+    let mut den_factors: Vec<Expr> = Vec::new();
+    if let Some(sv) = ms_numeric(&s) {
+      if sv != 1.0 {
+        den_factors.push(s.clone());
+      }
+    } else {
+      den_factors.push(s.clone());
+    }
+    // wolframscript orders the numeric scale before Sqrt[2 Pi] but a
+    // symbolic one after it
+    let sqrt_2pi = call("Sqrt", vec![times(int(2), pi())]);
+    let den = if den_factors.is_empty() {
+      sqrt_2pi
+    } else if ms_numeric(&s).is_some() {
+      call("Times", vec![den_factors.remove(0), sqrt_2pi])
+    } else {
+      call("Times", vec![sqrt_2pi, den_factors.remove(0)])
+    };
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(power(e(), exponent)),
+      right: Box::new(den),
+    })
+  };
+  if ms_numeric(&x).is_some() {
+    return eval(body(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  body(&x)
+}
+
+/// CDF[MoyalDistribution[m, s], x] = Erfc[E^(-(x-m)/(2 s))/Sqrt[2]].
+pub fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MoyalDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let (m, s) = match dargs {
+    [] => (int(0), int(1)),
+    [m, s] => (m.clone(), s.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let diff = if matches!(&m, Expr::Integer(0)) {
+      at.clone()
+    } else {
+      call(
+        "Plus",
+        vec![call("Times", vec![int(-1), m.clone()]), at.clone()],
+      )
+    };
+    let z_half = eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(diff),
+      right: Box::new(times(int(2), s.clone())),
+    })?;
+    Ok(call(
+      "Erfc",
+      vec![Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(int(1)),
+        right: Box::new(call(
+          "Times",
+          vec![call("Sqrt", vec![int(2)]), power(e(), z_half)],
+        )),
+      }],
+    ))
+  };
+  if ms_numeric(&x).is_some() {
+    return eval(body(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  body(&x)
+}
+
+/// Mean m + s (EulerGamma + Log[2]) and variance Pi^2 s^2/2 for
+/// MoyalDistribution (the mean is returned raw to keep wolframscript's
+/// s-before-sum factor order).
+pub fn moyal_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let (m, s) = match dargs {
+    [] => (int(0), int(1)),
+    [m, s] => (m.clone(), s.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "MoyalDistribution expects no arguments or [m, s]".into(),
+      ));
+    }
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let sum = call(
+    "Plus",
+    vec![
+      Expr::Identifier("EulerGamma".to_string()),
+      call("Log", vec![int(2)]),
+    ],
+  );
+  let mean = if matches!(&m, Expr::Integer(0)) && matches!(&s, Expr::Integer(1))
+  {
+    eval(sum)?
+  } else {
+    call("Plus", vec![m.clone(), call("Times", vec![s.clone(), sum])])
+  };
+  let var = eval(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call("Times", vec![power(pi(), int(2)), power(s, int(2))])),
+    right: Box::new(int(2)),
+  })?;
+  Ok((mean, var))
 }

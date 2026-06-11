@@ -3667,7 +3667,7 @@ CelestialSystem,,,,10.0,3765
 CornerFilter,,,,8.0,3765
 FunctionSingularities,,,,12.2,3765
 KalmanFilter,,,,9.0,3765
-MoyalDistribution,,,,8.0,3765
+MoyalDistribution,Moyal distribution (sign-folded PDF and Erfc CDF),✅,pure,8.0,3765
 PathGraphQ,,,,8.0,3765
 RegionResize,,,,11.0,3765
 AudioChannelMix,,🚫,,11.0,3785
