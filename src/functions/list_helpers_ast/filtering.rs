@@ -2178,3 +2178,114 @@ pub fn subset_count_ast(
     _ => Ok(Expr::Integer(0)),
   }
 }
+
+/// CommonestFilter[data, r] - replace every element by the commonest
+/// value in its radius-r neighborhood (clamped at the edges; 2D
+/// rectangular arrays use a square window). Ties keep the center value
+/// when it is among the maxima and otherwise take the first-occurring
+/// maximum in window order. Nonpositive radii leave the data unchanged.
+pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "CommonestFilter".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      crate::emit_message(&format!(
+        "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated(args));
+    }
+  };
+  let r = match &args[1] {
+    Expr::Integer(r) => *r,
+    _ => {
+      crate::emit_message(&format!(
+        "CommonestFilter::bdrad: {} is not a valid neighborhood range specification.",
+        crate::syntax::expr_to_string(&args[1])
+      ));
+      return Ok(unevaluated(args));
+    }
+  };
+  if r <= 0 {
+    return Ok(args[0].clone());
+  }
+  let r = r as usize;
+
+  // Commonest in `window` with the tie rules; elements compare by
+  // their printed form
+  let pick = |window: &[&Expr], center: &Expr| -> Expr {
+    let keys: Vec<String> = window
+      .iter()
+      .map(|e| crate::syntax::expr_to_string(e))
+      .collect();
+    let count_of = |key: &str| -> usize {
+      keys.iter().filter(|k| k.as_str() == key).count()
+    };
+    let max_count = keys.iter().map(|k| count_of(k)).max().unwrap_or(0);
+    let center_key = crate::syntax::expr_to_string(center);
+    if count_of(&center_key) == max_count {
+      return center.clone();
+    }
+    for (i, k) in keys.iter().enumerate() {
+      if count_of(k) == max_count {
+        return window[i].clone();
+      }
+    }
+    center.clone()
+  };
+
+  // 2D rectangular array
+  let is_matrix =
+    !items.is_empty() && items.iter().all(|row| matches!(row, Expr::List(_)));
+  if is_matrix {
+    let rows: Vec<&[Expr]> = items
+      .iter()
+      .map(|row| match row {
+        Expr::List(cells) => cells.as_slice(),
+        _ => unreachable!(),
+      })
+      .collect();
+    let width = rows[0].len();
+    if rows.iter().any(|row| row.len() != width) {
+      crate::emit_message(&format!(
+        "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated(args));
+    }
+    let result: Vec<Expr> = (0..rows.len())
+      .map(|i| {
+        let cells: Vec<Expr> = (0..width)
+          .map(|j| {
+            let mut window: Vec<&Expr> = Vec::new();
+            for wi in i.saturating_sub(r)..=(i + r).min(rows.len() - 1) {
+              for wj in j.saturating_sub(r)..=(j + r).min(width - 1) {
+                window.push(&rows[wi][wj]);
+              }
+            }
+            pick(&window, &rows[i][j])
+          })
+          .collect();
+        Expr::List(cells.into())
+      })
+      .collect();
+    return Ok(Expr::List(result.into()));
+  }
+
+  let n = items.len();
+  let result: Vec<Expr> = (0..n)
+    .map(|i| {
+      let window: Vec<&Expr> = items[i.saturating_sub(r)..=(i + r).min(n - 1)]
+        .iter()
+        .collect();
+      pick(&window, &items[i])
+    })
+    .collect();
+  Ok(Expr::List(result.into()))
+}

@@ -811,6 +811,9 @@ pub fn dispatch_list_operations(
     "Commonest" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::commonest_ast(args));
     }
+    "CommonestFilter" if args.len() == 2 => {
+      return Some(list_helpers_ast::commonest_filter_ast(args));
+    }
     "ClusteringComponents" if args.len() == 1 => {
       return Some(list_helpers_ast::clustering_components_ast(&args[0]));
     }

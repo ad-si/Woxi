@@ -10142,3 +10142,82 @@ mod cases {
     assert_case(r#"FixedPoint[f, x, 0]"#, r#"x"#);
   }
 }
+
+mod commonest_filter {
+  use super::*;
+
+  #[test]
+  fn neighborhood_filtering() {
+    assert_eq!(
+      interpret("CommonestFilter[{1, 2, 2, 3, 3, 3, 2, 1}, 1]").unwrap(),
+      "{1, 2, 2, 3, 3, 3, 2, 1}"
+    );
+    assert_eq!(
+      interpret("CommonestFilter[{1, 1, 2, 3, 2}, 2]").unwrap(),
+      "{1, 1, 2, 2, 2}"
+    );
+    assert_eq!(
+      interpret("CommonestFilter[{4, 4, 1, 2, 2, 2, 1, 4, 4, 1}, 2]").unwrap(),
+      "{4, 4, 4, 2, 2, 2, 2, 4, 4, 4}"
+    );
+  }
+
+  #[test]
+  fn tie_breaking() {
+    // Ties keep the center value when it is among the maxima...
+    assert_eq!(
+      interpret("CommonestFilter[{a, b, b, c}, 1]").unwrap(),
+      "{a, b, b, c}"
+    );
+    // ...otherwise the first-occurring maximum in window order wins
+    // (not the smallest: 3 beats 1 here)
+    assert_eq!(
+      interpret("CommonestFilter[{3, 3, 2, 1, 1}, 2]").unwrap(),
+      "{3, 3, 3, 1, 1}"
+    );
+    assert_eq!(
+      interpret("CommonestFilter[{1, 1, 4, 3, 3}, 2]").unwrap(),
+      "{1, 1, 1, 3, 3}"
+    );
+  }
+
+  #[test]
+  fn radius_edge_cases() {
+    // Zero or negative radius is the identity; oversized radii clamp
+    assert_eq!(
+      interpret("CommonestFilter[{1, 2, 3}, 0]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("CommonestFilter[{1, 2}, -1]").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("CommonestFilter[{1, 2, 2}, 5]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn matrices_use_square_windows() {
+    assert_eq!(
+      interpret("CommonestFilter[{{1, 2}, {2, 2}}, 1]").unwrap(),
+      "{{2, 2}, {2, 2}}"
+    );
+    assert_eq!(
+      interpret("CommonestFilter[{{1, 2, 3}, {2, 2, 3}, {1, 3, 3}}, 1]")
+        .unwrap(),
+      "{{2, 2, 3}, {2, 3, 3}, {2, 3, 3}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments() {
+    // CommonestFilter::arg1 / CommonestFilter::bdrad messages
+    assert_eq!(
+      interpret("CommonestFilter[x, 1]").unwrap(),
+      "CommonestFilter[x, 1]"
+    );
+    assert_eq!(
+      interpret("CommonestFilter[{1, 2}, x]").unwrap(),
+      "CommonestFilter[{1, 2}, x]"
+    );
+  }
+}
