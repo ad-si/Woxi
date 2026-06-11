@@ -1662,3 +1662,87 @@ mod uniform_sum_distribution {
     );
   }
 }
+
+mod beta_binomial_distribution {
+  use super::*;
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[BetaBinomialDistribution[2, 3, 10]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Variance[BetaBinomialDistribution[2, 3, 10]]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Mean[BetaBinomialDistribution[1/2, 3/2, 6]]").unwrap(),
+      "3/2"
+    );
+    // Fully symbolic closed forms
+    assert_eq!(
+      interpret("Mean[BetaBinomialDistribution[a, b, n]]").unwrap(),
+      "(a*n)/(a + b)"
+    );
+    assert_eq!(
+      interpret("Variance[BetaBinomialDistribution[a, b, n]]").unwrap(),
+      "(a*b*n*(a + b + n))/((a + b)^2*(1 + a + b))"
+    );
+  }
+
+  #[test]
+  fn pdf_values() {
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[2, 3, 10], 4]").unwrap(),
+      "20/143"
+    );
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[1/2, 3/2, 4], 2]").unwrap(),
+      "9/64"
+    );
+    // Out of range or non-integer points vanish
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[2, 3, 10], -1]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[2, 3, 10], 11]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[2, 3, 10], 1/2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic_forms() {
+    // Numeric n evaluates the Pochhammer denominator and prints 10 - k
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[2, 3, 10], k]").unwrap(),
+      "Piecewise[{{(Binomial[10, k]*Pochhammer[2, k]*Pochhammer[3, 10 - k])/3632428800, 0 <= k <= 10}}, 0]"
+    );
+    // Symbolic parameters keep everything unevaluated and print -k + n
+    assert_eq!(
+      interpret("PDF[BetaBinomialDistribution[a, b, n], k]").unwrap(),
+      "Piecewise[{{(Binomial[n, k]*Pochhammer[a, k]*Pochhammer[b, -k + n])/Pochhammer[a + b, n], 0 <= k <= n}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_values() {
+    assert_eq!(
+      interpret("CDF[BetaBinomialDistribution[2, 3, 4], 2]").unwrap(),
+      "53/70"
+    );
+    assert_eq!(
+      interpret("CDF[BetaBinomialDistribution[2, 3, 10], -1]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[BetaBinomialDistribution[2, 3, 10], 15]").unwrap(),
+      "1"
+    );
+  }
+}

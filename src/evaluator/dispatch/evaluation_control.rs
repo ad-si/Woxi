@@ -180,6 +180,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "BetaBinomialDistribution" if args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BetaBinomialDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "BetaDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "BetaDistribution".to_string(),

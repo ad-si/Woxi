@@ -144,6 +144,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     "UniformDistribution" => pdf_uniform(dargs, x),
     "UniformSumDistribution" => pdf_uniform_sum(dargs, x),
+    "BetaBinomialDistribution" => pdf_beta_binomial(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1121,6 +1122,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match dist_name {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
     "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
+    "BetaBinomialDistribution" => cdf_beta_binomial(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2920,6 +2922,29 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "BetaBinomialDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "BetaBinomialDistribution expects 3 arguments".into(),
+        ));
+      }
+      let (a, b, n) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+      // Mean = a n / (a + b)
+      let mean =
+        divide(times(a.clone(), n.clone()), plus(a.clone(), b.clone()));
+      // Var = a b n (a + b + n) / ((a + b)^2 (1 + a + b))
+      let var = divide(
+        times(
+          times(a.clone(), b.clone()),
+          times(n.clone(), plus(plus(a.clone(), b.clone()), n)),
+        ),
+        times(
+          power(plus(a.clone(), b.clone()), int(2)),
+          plus(int(1), plus(a, b)),
+        ),
+      );
+      Ok((mean, var))
+    }
     "UniformSumDistribution" => {
       // Mean = n(a+b)/2, Var = n(b-a)^2/12 (default range {0, 1})
       let (n, a, b) = match dargs {
@@ -7117,4 +7142,149 @@ fn numeric_floor(x: &Expr) -> Option<i128> {
     }
     _ => None,
   }
+}
+
+/// PDF[BetaBinomialDistribution[a, b, n], k] in wolframscript's form:
+/// Binomial[n,k] Pochhammer[a,k] Pochhammer[b,n-k] / Pochhammer[a+b,n]
+/// wrapped in Piecewise over 0 <= k <= n (the denominator evaluates
+/// when the parameters are numeric). Numeric k gives the exact value;
+/// non-integers and out-of-range points give 0.
+pub fn pdf_beta_binomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BetaBinomialDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 3 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b, n) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let pmf = |k: Expr| -> Expr {
+    // Wolfram prints "10 - k" for numeric n but "-k + n" symbolically
+    let neg_k = call("Times", vec![int(-1), k.clone()]);
+    let n_minus_k = if matches!(&n, Expr::Integer(_)) {
+      call("Plus", vec![n.clone(), neg_k])
+    } else {
+      call("Plus", vec![neg_k, n.clone()])
+    };
+    let numerator = call(
+      "Times",
+      vec![
+        call("Binomial", vec![n.clone(), k.clone()]),
+        call("Pochhammer", vec![a.clone(), k.clone()]),
+        call("Pochhammer", vec![b.clone(), n_minus_k]),
+      ],
+    );
+    let denominator = call(
+      "Pochhammer",
+      vec![call("Plus", vec![a.clone(), b.clone()]), n.clone()],
+    );
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denominator),
+    }
+  };
+
+  // Numeric point: exact value or 0
+  if let Some(int_n) = match &n {
+    Expr::Integer(v) => Some(*v),
+    _ => None,
+  } {
+    let integer_x = match &x {
+      Expr::Integer(v) => Some(*v),
+      Expr::Real(v) if v.fract() == 0.0 => Some(*v as i128),
+      Expr::FunctionCall { name, .. } if name == "Rational" => {
+        return Ok(int(0));
+      }
+      Expr::Real(_) => return Ok(int(0)),
+      _ => None,
+    };
+    if let Some(k) = integer_x {
+      if k < 0 || k > int_n {
+        return Ok(int(0));
+      }
+      return eval(pmf(int(k)));
+    }
+  }
+
+  // Symbolic point: Piecewise with the denominator pre-evaluated
+  match &x {
+    Expr::Identifier(_) => {
+      let body = pmf(x.clone());
+      let body = match &body {
+        Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+          op: *op,
+          left: left.clone(),
+          right: Box::new(eval((**right).clone())?),
+        },
+        other => other.clone(),
+      };
+      let cond = comparison3(
+        int(0),
+        ComparisonOp::LessEqual,
+        x,
+        ComparisonOp::LessEqual,
+        n,
+      );
+      Ok(piecewise(vec![(body, cond)], int(0)))
+    }
+    _ => Ok(unevaluated(dargs, x)),
+  }
+}
+
+/// CDF[BetaBinomialDistribution[a, b, n], x] for numeric x: partial
+/// PMF sums (the symbolic form uses HypergeometricPFQ internals that
+/// stay unevaluated here).
+pub fn cdf_beta_binomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BetaBinomialDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 3 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let int_n = match &dargs[2] {
+    Expr::Integer(v) => *v,
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let Some(floor_x) = numeric_floor(&x) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if floor_x < 0 {
+    return Ok(int(0));
+  }
+  if floor_x >= int_n {
+    return Ok(int(1));
+  }
+  let mut acc = int(0);
+  for k in 0..=floor_x {
+    let term = pdf_beta_binomial(dargs, int(k))?;
+    acc = eval(plus(acc, term))?;
+  }
+  Ok(acc)
 }

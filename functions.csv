@@ -2966,7 +2966,7 @@ URLEncode,Percent-encode a string for use in URLs,✅,pure,10.0,3031
 WaveletImagePlot,,🚫,,8.0,3031
 Xnor,Logical XNOR (true when even number of args are true),✅,pure,7.0,3031
 AbsoluteCorrelationFunction,,,,9.0,3048
-BetaBinomialDistribution,,,,6.0,3048
+BetaBinomialDistribution,Beta-binomial compound distribution (exact PMF and moments),✅,pure,6.0,3048
 BitLength,Returns the number of bits needed to represent an integer,✅,pure,6.0,3048
 EllipticExp,Inverse of EllipticLog on the curve y^2 = x^3 + a x^2 + b x (numerical),✅,pure,1.0,3048
 EvaluationBox,,,,10.0,3048
