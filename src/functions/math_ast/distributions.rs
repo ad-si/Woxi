@@ -148,6 +148,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaPrimeDistribution" => pdf_beta_prime(dargs, x),
     "NoncentralChiSquareDistribution" => pdf_noncentral_chi_square(dargs, x),
     "ExponentialPowerDistribution" => pdf_exponential_power(dargs, x),
+    "RiceDistribution" => pdf_rice(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1129,6 +1130,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaPrimeDistribution" => cdf_beta_prime(dargs, x),
     "NoncentralChiSquareDistribution" => cdf_noncentral_chi_square(dargs, x),
     "ExponentialPowerDistribution" => cdf_exponential_power(dargs, x),
+    "RiceDistribution" => cdf_rice(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2928,6 +2930,14 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "RiceDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "RiceDistribution expects 2 arguments".into(),
+        ));
+      }
+      rice_mean_variance(&dargs[0], &dargs[1])
+    }
     "ExponentialPowerDistribution" => {
       if dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
@@ -8018,4 +8028,343 @@ pub fn cdf_exponential_power(
   let default = eval(plus(int(1), times(int(-1), half_reg(diff_plus)?)))?;
   let cond = comparison(x, ComparisonOp::Less, m);
   Ok(piecewise(vec![(piece, cond)], default))
+}
+
+/// Helper: numeric value when the Expr is an exact or machine number.
+fn rice_numeric(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(v) => Some(*v as f64),
+    Expr::Real(v) => Some(*v),
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+          Some(*p as f64 / *q as f64)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// PDF[RiceDistribution[a, b], x] =
+/// Piecewise[{{E^((-a^2 - x^2)/(2 b^2)) x BesselI[0, a x/b^2]/b^2,
+/// x > 0}}, 0], evaluated so numeric parameters collapse the way
+/// wolframscript prints them.
+pub fn pdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "RiceDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let pow2 = |e: &Expr| power(e.clone(), int(2));
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let exponent = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Plus",
+        vec![
+          call("Times", vec![int(-1), pow2(&a)]),
+          call("Times", vec![int(-1), pow2(at)]),
+        ],
+      )),
+      right: Box::new(call("Times", vec![int(2), pow2(&b)])),
+    };
+    let bessel_arg = eval(divide(times(a.clone(), at.clone()), pow2(&b)))?;
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Times",
+        vec![
+          power(e(), eval(exponent)?),
+          at.clone(),
+          call("BesselI", vec![int(0), bessel_arg]),
+        ],
+      )),
+      right: Box::new(pow2(&b)),
+    })
+  };
+
+  let numeric_x = rice_numeric(&x).is_some();
+  if numeric_x {
+    if rice_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// CDF[RiceDistribution[a, b], x] =
+/// Piecewise[{{MarcumQ[1, a/b, 0, x/b], x > 0}}, 0].
+pub fn cdf_rice(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "RiceDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b) = (dargs[0].clone(), dargs[1].clone());
+  let marcum = |at: &Expr| -> Result<Expr, InterpreterError> {
+    Ok(Expr::FunctionCall {
+      name: "MarcumQ".to_string(),
+      args: vec![
+        int(1),
+        eval(divide(a.clone(), b.clone()))?,
+        int(0),
+        eval(divide(at.clone(), b.clone()))?,
+      ]
+      .into(),
+    })
+  };
+  if rice_numeric(&x).is_some() {
+    if rice_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return eval(marcum(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = marcum(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// Mean and variance expressions for RiceDistribution: BesselI
+/// combinations for numeric parameters (via the Laguerre identity
+/// L_{1/2}(-k) = e^{-k/2}((1+k) I_0(k/2) + k I_1(k/2))), the inert
+/// LaguerreL[1/2, ...] forms otherwise.
+pub fn rice_mean_variance(
+  a: &Expr,
+  b: &Expr,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let pow2 = |e: &Expr| power(e.clone(), int(2));
+  let sqrt_half_pi = call("Sqrt", vec![divide(pi(), int(2))]);
+  let numeric_params = rice_numeric(a).is_some() && rice_numeric(b).is_some();
+  if numeric_params {
+    // k = a^2/(2 b^2) as an exact fraction p/q; wolframscript pulls
+    // the common denominator out of the Bessel sum:
+    // sum = (q + p) I_0(k/2) + p I_1(k/2), all integer coefficients
+    let k = eval(divide(pow2(a), times(int(2), pow2(b))))?;
+    let (pn, qd) = match &k {
+      Expr::Integer(v) => (*v, 1i128),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) => (*p, *q),
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "RiceDistribution: unexpected parameter form".into(),
+            ));
+          }
+        }
+      }
+      _ => {
+        // Real parameters: evaluate everything numerically
+        let half_k = eval(divide(k.clone(), int(2)))?;
+        let laguerre = call(
+          "Times",
+          vec![
+            power(e(), eval(times(int(-1), half_k.clone()))?),
+            call(
+              "Plus",
+              vec![
+                call(
+                  "Times",
+                  vec![
+                    eval(plus(int(1), k.clone()))?,
+                    call("BesselI", vec![int(0), half_k.clone()]),
+                  ],
+                ),
+                call(
+                  "Times",
+                  vec![k.clone(), call("BesselI", vec![int(1), half_k])],
+                ),
+              ],
+            ),
+          ],
+        );
+        let mean = eval(call(
+          "Times",
+          vec![b.clone(), sqrt_half_pi.clone(), laguerre.clone()],
+        ))?;
+        let var = eval(call(
+          "Plus",
+          vec![
+            eval(plus(pow2(a), times(int(2), pow2(b))))?,
+            call(
+              "Times",
+              vec![
+                int(-1),
+                Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  left: Box::new(call(
+                    "Times",
+                    vec![pi(), pow2(b), power(laguerre, int(2))],
+                  )),
+                  right: Box::new(int(2)),
+                },
+              ],
+            ),
+          ],
+        ))?;
+        return Ok((mean, var));
+      }
+    };
+    if pn == 0 {
+      // Rayleigh case: mean = b Sqrt[Pi/2], var = 2 b^2 - pi b^2/2
+      let mean = eval(times(b.clone(), sqrt_half_pi.clone()))?;
+      let var = eval(call(
+        "Plus",
+        vec![
+          times(int(2), pow2(b)),
+          call(
+            "Times",
+            vec![
+              int(-1),
+              Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(call("Times", vec![pi(), pow2(b)])),
+                right: Box::new(int(2)),
+              },
+            ],
+          ),
+        ],
+      ))?;
+      return Ok((mean, var));
+    }
+    let half_k = eval(divide(k.clone(), int(2)))?;
+    let sum_term = |coef: i128, order: i128| -> Expr {
+      let bessel = call("BesselI", vec![int(order), half_k.clone()]);
+      if coef == 1 {
+        bessel
+      } else {
+        call("Times", vec![int(coef), bessel])
+      }
+    };
+    let sum = call("Plus", vec![sum_term(qd + pn, 0), sum_term(pn, 1)]);
+    // Mean = (b/q) Sqrt[Pi/2] sum / e^(k/2), assembled raw so the
+    // factored sum is not re-canonicalized
+    let r = eval(divide(b.clone(), int(qd)))?;
+    let (rn, rd) = match &r {
+      Expr::Integer(v) => (*v, 1i128),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) => (*p, *q),
+          _ => (1, 1),
+        }
+      }
+      _ => (1, 1),
+    };
+    let mut num_factors: Vec<Expr> = Vec::new();
+    if rn != 1 {
+      num_factors.push(int(rn));
+    }
+    num_factors.push(sqrt_half_pi.clone());
+    num_factors.push(sum.clone());
+    let numerator = call("Times", num_factors);
+    let e_half = power(e(), half_k.clone());
+    let denominator = if rd == 1 {
+      eval(e_half)?
+    } else {
+      eval(times(int(rd), e_half))?
+    };
+    // Single-factor denominators print without parentheses
+    let den_str = crate::syntax::expr_to_string(&denominator);
+    let den_str = if den_str.contains('*') {
+      format!("({den_str})")
+    } else {
+      den_str
+    };
+    let mean = Expr::Raw(format!(
+      "({})/{}",
+      crate::syntax::expr_to_string(&numerator),
+      den_str
+    ));
+    // Var = base - Pi sum^2 / (q^2 2 e^k / b^2)
+    let base = eval(plus(pow2(a), times(int(2), pow2(b))))?;
+    let denom = eval(divide(
+      times(int(2 * qd * qd), power(e(), k.clone())),
+      pow2(b),
+    ))?;
+    let var = Expr::Raw(format!(
+      "{} - (Pi*({})^2)/({})",
+      crate::syntax::expr_to_string(&base),
+      crate::syntax::expr_to_string(&sum),
+      crate::syntax::expr_to_string(&denom)
+    ));
+    return Ok((mean, var));
+  }
+  // Symbolic: LaguerreL[1/2, -a^2/(2 b^2)]
+  let laguerre = call(
+    "LaguerreL",
+    vec![
+      call("Rational", vec![int(1), int(2)]),
+      call(
+        "Times",
+        vec![
+          call("Rational", vec![int(-1), int(2)]),
+          pow2(a),
+          power(b.clone(), int(-2)),
+        ],
+      ),
+    ],
+  );
+  let mean = eval(call(
+    "Times",
+    vec![b.clone(), sqrt_half_pi, laguerre.clone()],
+  ))?;
+  let var = eval(call(
+    "Plus",
+    vec![
+      pow2(a),
+      times(int(2), pow2(b)),
+      call(
+        "Times",
+        vec![
+          int(-1),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(call(
+              "Times",
+              vec![pow2(b), pi(), power(laguerre, int(2))],
+            )),
+            right: Box::new(int(2)),
+          },
+        ],
+      ),
+    ],
+  ))?;
+  Ok((mean, var))
 }

@@ -435,6 +435,22 @@ pub fn dispatch_math_functions(
     "Mean" | "Variance"
       if args.len() == 1
         && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
+          if dn == "RiceDistribution" && da.len() == 2) =>
+    {
+      if let Expr::FunctionCall { args: da, .. } = &args[0] {
+        // Returned directly: the variance print uses a Raw assembly
+        // that re-evaluation would re-canonicalize
+        match crate::functions::math_ast::rice_mean_variance(&da[0], &da[1]) {
+          Ok((mean, var)) => {
+            return Some(Ok(if name == "Mean" { mean } else { var }));
+          }
+          Err(e) => return Some(Err(e)),
+        }
+      }
+    }
+    "Mean" | "Variance"
+      if args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: dn, args: da }
           if dn == "DataDistribution" && da.len() == 4) =>
     {
       if let Expr::FunctionCall { args: da, .. } = &args[0] {

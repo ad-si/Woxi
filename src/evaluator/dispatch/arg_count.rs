@@ -1098,6 +1098,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindMinimumCostFlow" => Some((2, 4)),
     "NearestNeighborGraph" => Some((1, 3)),
     "ZTest" => Some((1, 4)),
+    "RiceDistribution" => Some((2, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

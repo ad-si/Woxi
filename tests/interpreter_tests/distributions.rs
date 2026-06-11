@@ -2054,3 +2054,85 @@ mod gamma_regularized_order_one {
     );
   }
 }
+
+mod rice_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[RiceDistribution[2, 1], x]").unwrap(),
+      "Piecewise[{{E^((-4 - x^2)/2)*x*BesselI[0, 2*x], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[RiceDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{(E^((-a^2 - x^2)/(2*b^2))*x*BesselI[0, (a*x)/b^2])/b^2, x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[RiceDistribution[2, 1], 1]").unwrap(),
+      "BesselI[0, 2]/E^(5/2)"
+    );
+    assert_eq!(interpret("PDF[RiceDistribution[2, 1], -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn moments_factor_bessel_sums() {
+    assert_eq!(
+      interpret("Mean[RiceDistribution[2, 1]]").unwrap(),
+      "(Sqrt[Pi/2]*(3*BesselI[0, 1] + 2*BesselI[1, 1]))/E"
+    );
+    // Rational k pulls the common denominator out of the sum
+    assert_eq!(
+      interpret("Mean[RiceDistribution[1, 1]]").unwrap(),
+      "(Sqrt[Pi/2]*(3*BesselI[0, 1/4] + BesselI[1, 1/4]))/(2*E^(1/4))"
+    );
+    assert_eq!(
+      interpret("Mean[RiceDistribution[1, 2]]").unwrap(),
+      "(Sqrt[Pi/2]*(9*BesselI[0, 1/16] + BesselI[1, 1/16]))/(4*E^(1/16))"
+    );
+    // b/q can cancel completely
+    assert_eq!(
+      interpret("Mean[RiceDistribution[2, 2]]").unwrap(),
+      "(Sqrt[Pi/2]*(3*BesselI[0, 1/4] + BesselI[1, 1/4]))/E^(1/4)"
+    );
+    // Rayleigh special case
+    assert_eq!(
+      interpret("Mean[RiceDistribution[0, 1]]").unwrap(),
+      "Sqrt[Pi/2]"
+    );
+    assert_eq!(
+      interpret("Variance[RiceDistribution[2, 1]]").unwrap(),
+      "6 - (Pi*(3*BesselI[0, 1] + 2*BesselI[1, 1])^2)/(2*E^2)"
+    );
+    assert_eq!(
+      interpret("Variance[RiceDistribution[1, 1]]").unwrap(),
+      "3 - (Pi*(3*BesselI[0, 1/4] + BesselI[1, 1/4])^2)/(8*Sqrt[E])"
+    );
+    assert_eq!(
+      interpret("Variance[RiceDistribution[0, 1]]").unwrap(),
+      "2 - Pi/2"
+    );
+    // Symbolic parameters keep the LaguerreL forms
+    assert_eq!(
+      interpret("Mean[RiceDistribution[a, b]]").unwrap(),
+      "b*Sqrt[Pi/2]*LaguerreL[1/2, -1/2*a^2/b^2]"
+    );
+    assert_eq!(
+      interpret("Variance[RiceDistribution[a, b]]").unwrap(),
+      "a^2 + 2*b^2 - (b^2*Pi*LaguerreL[1/2, -1/2*a^2/b^2]^2)/2"
+    );
+  }
+
+  #[test]
+  fn cdf_uses_marcum_q() {
+    assert_eq!(
+      interpret("CDF[RiceDistribution[2, 1], x]").unwrap(),
+      "Piecewise[{{MarcumQ[1, 2, 0, x], x > 0}}, 0]"
+    );
+    // Real points evaluate through the MarcumQ series
+    assert_eq!(
+      interpret("Round[10^10 CDF[RiceDistribution[2, 1], 2.5]]").unwrap(),
+      "6058960755"
+    );
+  }
+}

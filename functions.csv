@@ -2916,7 +2916,7 @@ DirichletCharacter,j-th Dirichlet character modulo k at n (Wolfram indexing),✅
 FindMinimumCostFlow,Minimum cost of a maximum flow over a cost matrix,✅,pure,9.0,2986
 Forward,,,,6.0,2986
 PermutationOrder,Order of a permutation,✅,1,8.0,2986
-RiceDistribution,,,,8.0,2986
+RiceDistribution,Rice distribution (Bessel PDF and MarcumQ CDF and factored moments),✅,pure,8.0,2986
 SymletWavelet,,🚫,,8.0,2986
 TargetDevice,,🚫,,11.0,2986
 VerifySolutions,Option for Solve to verify solutions,✅,pure,1.0,2986
