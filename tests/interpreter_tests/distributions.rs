@@ -2572,3 +2572,61 @@ mod wigner_semicircle_distribution {
     );
   }
 }
+
+mod sech_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[SechDistribution[], x]").unwrap(),
+      "Sech[(Pi*x)/2]/2"
+    );
+    assert_eq!(
+      interpret("PDF[SechDistribution[0, 1], x]").unwrap(),
+      "Sech[(Pi*x)/2]/2"
+    );
+    assert_eq!(
+      interpret("PDF[SechDistribution[m, s], x]").unwrap(),
+      "Sech[(Pi*(-m + x))/(2*s)]/(2*s)"
+    );
+    assert_eq!(
+      interpret("PDF[SechDistribution[1, 2], x]").unwrap(),
+      "Sech[(Pi*(-1 + x))/4]/4"
+    );
+    // Points: Sech[0] collapses, others stay closed-form
+    assert_eq!(interpret("PDF[SechDistribution[0, 1], 0]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("PDF[SechDistribution[0, 1], 1]").unwrap(),
+      "Sech[Pi/2]/2"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[SechDistribution[m, s], x]").unwrap(),
+      "(2*ArcTan[E^((Pi*(-m + x))/(2*s))])/Pi"
+    );
+    assert_eq!(
+      interpret("CDF[SechDistribution[0, 1], x]").unwrap(),
+      "(2*ArcTan[E^((Pi*x)/2)])/Pi"
+    );
+    // ArcTan[1] collapses to Pi/4 at the median
+    assert_eq!(interpret("CDF[SechDistribution[0, 1], 0]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("CDF[SechDistribution[1, 2], 3]").unwrap(),
+      "(2*ArcTan[E^(Pi/2)])/Pi"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(interpret("Mean[SechDistribution[m, s]]").unwrap(), "m");
+    assert_eq!(
+      interpret("Variance[SechDistribution[m, s]]").unwrap(),
+      "s^2"
+    );
+    assert_eq!(interpret("Variance[SechDistribution[0, 2]]").unwrap(), "4");
+  }
+}

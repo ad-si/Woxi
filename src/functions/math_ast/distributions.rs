@@ -154,6 +154,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "TriangularDistribution" => pdf_triangular(dargs, x),
     "MaxwellDistribution" => pdf_maxwell(dargs, x),
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
+    "SechDistribution" => pdf_sech(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1141,6 +1142,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "TriangularDistribution" => cdf_triangular(dargs, x),
     "MaxwellDistribution" => cdf_maxwell(dargs, x),
     "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
+    "SechDistribution" => cdf_sech(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2948,6 +2950,7 @@ fn distribution_mean_variance(
       }
       maxwell_mean_variance(&dargs[0])
     }
+    "SechDistribution" => sech_mean_variance(dargs),
     "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
     "TriangularDistribution" => triangular_mean_variance(dargs),
     "MaxStableDistribution" => {
@@ -10177,4 +10180,120 @@ pub fn wigner_mean_variance(
   };
   let var = eval(divide(power(r, int(2)), int(4)))?;
   Ok((a, var))
+}
+
+/// Parse SechDistribution arguments: [] is (0, 1), otherwise [m, s].
+fn sech_params(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  match dargs {
+    [] => Some((int(0), int(1))),
+    [m, s] => Some((m.clone(), s.clone())),
+    _ => None,
+  }
+}
+
+/// The Pi (x - m)/(2 s) argument shared by the Sech PDF and CDF.
+fn sech_arg(m: &Expr, s: &Expr, x: &Expr) -> Result<Expr, InterpreterError> {
+  let diff = if matches!(m, Expr::Integer(0)) {
+    x.clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![int(-1), m.clone()].into(),
+        },
+        x.clone(),
+      ]
+      .into(),
+    }
+  };
+  eval(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![pi(), diff].into(),
+    }),
+    right: Box::new(times(int(2), s.clone())),
+  })
+}
+
+/// PDF[SechDistribution[m, s], x] = Sech[Pi (x - m)/(2 s)]/(2 s).
+pub fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "SechDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some((m, s)) = sech_params(dargs) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if !matches!(&x, Expr::Identifier(_)) && ms_numeric(&x).is_none() {
+    return Ok(unevaluated(dargs, x));
+  }
+  let arg = sech_arg(&m, &s, &x)?;
+  eval(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Sech".to_string(),
+      args: vec![arg].into(),
+    }),
+    right: Box::new(times(int(2), s)),
+  })
+}
+
+/// CDF[SechDistribution[m, s], x] =
+/// 2 ArcTan[E^(Pi (x - m)/(2 s))]/Pi.
+pub fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "SechDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some((m, s)) = sech_params(dargs) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if !matches!(&x, Expr::Identifier(_)) && ms_numeric(&x).is_none() {
+    return Ok(unevaluated(dargs, x));
+  }
+  let arg = sech_arg(&m, &s, &x)?;
+  eval(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        int(2),
+        Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![power(e(), arg)].into(),
+        },
+      ]
+      .into(),
+    }),
+    right: Box::new(pi()),
+  })
+}
+
+/// Mean m and variance s^2 for SechDistribution.
+pub fn sech_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((m, s)) = sech_params(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "SechDistribution expects no arguments or [m, s]".into(),
+    ));
+  };
+  Ok((m, eval(power(s, int(2)))?))
 }

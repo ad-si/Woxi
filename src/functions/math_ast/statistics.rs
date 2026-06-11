@@ -352,6 +352,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "TriangularDistribution"
         | "MaxwellDistribution"
         | "WignerSemicircleDistribution"
+        | "SechDistribution"
     ) =>
     {
       let (mean, _) =
@@ -580,6 +581,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "TriangularDistribution"
         | "MaxwellDistribution"
         | "WignerSemicircleDistribution"
+        | "SechDistribution"
     ) =>
     {
       let (_, variance) =
@@ -841,6 +843,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "TriangularDistribution"
       | "MaxwellDistribution"
       | "WignerSemicircleDistribution"
+      | "SechDistribution"
       | "BinomialDistribution"
       | "JohnsonDistribution"
   ))
