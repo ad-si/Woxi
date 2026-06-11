@@ -387,6 +387,9 @@ pub fn dispatch_math_functions(
     "Fourier" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::fourier_ast(args));
     }
+    "FourierDST" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::fourier_dst_ast(args));
+    }
     "FourierDCT" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::fourier_dct_ast(args));
     }

@@ -8419,3 +8419,65 @@ mod log_barnes_g {
     assert_case(r#"Round[LogBarnesG[15.5] * 10^10]"#, r#"1363686988426"#);
   }
 }
+
+mod fourier_dst {
+  use super::*;
+
+  #[test]
+  fn type_1() {
+    // wolframscript: FourierDST[{1, 2, 3, 4}, 1]
+    assert_eq!(
+      interpret("Round[10^10 FourierDST[{1, 2, 3, 4}, 1]]").unwrap(),
+      "{48662449473, -21762508995, 11487646027, -5137431484}"
+    );
+  }
+
+  #[test]
+  fn type_2_is_default() {
+    // wolframscript: FourierDST[{1, 2, 3, 4}]
+    assert_eq!(
+      interpret("Round[10^10 FourierDST[{1, 2, 3, 4}]]").unwrap(),
+      "{32664074122, -14142135624, 13529902504, -10000000000}"
+    );
+    assert_eq!(
+      interpret("FourierDST[{1, 2, 3, 4}, 2]").unwrap(),
+      interpret("FourierDST[{1, 2, 3, 4}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn type_3() {
+    assert_eq!(
+      interpret("Round[10^10 FourierDST[{1, 2, 3, 4}, 3]]").unwrap(),
+      "{65685355923, -8099572022, 3616156730, -2598915325}"
+    );
+  }
+
+  #[test]
+  fn type_4() {
+    assert_eq!(
+      interpret("Round[10^10 FourierDST[{1, 2, 3, 4}, 4]]").unwrap(),
+      "{54615377423, -1580148114, 3546673293, 1443879993}"
+    );
+  }
+
+  #[test]
+  fn short_and_exact_input() {
+    // Exact input numericizes; a singleton is its own transform
+    assert_eq!(interpret("FourierDST[{5.}]").unwrap(), "{5.}");
+    assert_eq!(
+      interpret("Round[10^10 FourierDST[{1, 2, 3}]]").unwrap(),
+      "{23094010768, -10000000000, 11547005384}"
+    );
+  }
+
+  #[test]
+  fn invalid_input() {
+    // Empty or non-numeric lists emit FourierDST::fftl
+    assert_eq!(interpret("FourierDST[{}]").unwrap(), "FourierDST[{}]");
+    assert_eq!(
+      interpret("FourierDST[{1, x}]").unwrap(),
+      "FourierDST[{1, x}]"
+    );
+  }
+}
