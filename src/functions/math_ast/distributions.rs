@@ -152,6 +152,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MinStableDistribution" => pdf_min_stable(dargs, x),
     "MaxStableDistribution" => pdf_max_stable(dargs, x),
     "TriangularDistribution" => pdf_triangular(dargs, x),
+    "MaxwellDistribution" => pdf_maxwell(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1137,6 +1138,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MinStableDistribution" => cdf_min_stable(dargs, x),
     "MaxStableDistribution" => cdf_max_stable(dargs, x),
     "TriangularDistribution" => cdf_triangular(dargs, x),
+    "MaxwellDistribution" => cdf_maxwell(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2936,6 +2938,14 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "MaxwellDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "MaxwellDistribution expects 1 argument".into(),
+        ));
+      }
+      maxwell_mean_variance(&dargs[0])
+    }
     "TriangularDistribution" => triangular_mean_variance(dargs),
     "MaxStableDistribution" => {
       if dargs.len() != 3 {
@@ -9635,5 +9645,304 @@ pub fn triangular_mean_variance(
     },
     int(18),
   ))?;
+  Ok((mean, var))
+}
+
+/// Coefficient r*Sqrt[2/Pi]*num/E-part in wolframscript's canonical
+/// radical form: powers of two in r's denominator merge into a
+/// Sqrt[2*Pi] denominator (1/8 -> 1/(4 Sqrt[2 Pi])); everything else
+/// keeps the Sqrt[2/Pi] factor.
+fn maxwell_term(
+  r_num: i128,
+  r_den: i128,
+  numerator: Expr,
+  e_part: Expr,
+) -> Expr {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let mut k = 0;
+  let mut m = r_den;
+  while m % 2 == 0 {
+    m /= 2;
+    k += 1;
+  }
+  if k >= 1 {
+    // p num / (m 2^(k-1) Sqrt[2 Pi] E-part)
+    let c = m * (1 << (k - 1));
+    let num_expr = if r_num == 1 {
+      numerator
+    } else {
+      call("Times", vec![int(r_num), numerator])
+    };
+    let mut den_factors: Vec<Expr> = Vec::new();
+    if c > 1 {
+      den_factors.push(int(c));
+    }
+    den_factors.push(e_part);
+    den_factors.push(call("Sqrt", vec![times(int(2), pi())]));
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(num_expr),
+      right: Box::new(call("Times", den_factors)),
+    }
+  } else {
+    // (p Sqrt[2/Pi] num)/(m E-part)
+    let mut num_factors: Vec<Expr> = Vec::new();
+    if r_num != 1 {
+      num_factors.push(int(r_num));
+    }
+    num_factors.push(call("Sqrt", vec![divide(int(2), pi())]));
+    num_factors.push(numerator);
+    let den = if m > 1 {
+      call("Times", vec![int(m), e_part])
+    } else {
+      e_part
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call("Times", num_factors)),
+      right: Box::new(den),
+    }
+  }
+}
+
+/// Exact rational (p, q > 0) of an Integer/Rational Expr.
+fn maxwell_rational(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(v) => Some((*v, 1)),
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q > 0 => Some((*p, *q)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// PDF[MaxwellDistribution[s], x] =
+/// Piecewise[{{Sqrt[2/Pi] x^2 E^(-x^2/(2 s^2))/s^3, x > 0}}, 0].
+pub fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MaxwellDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 1 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let s = dargs[0].clone();
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let sqrt_2_pi = call("Sqrt", vec![divide(int(2), pi())]);
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let e_part = power(
+      e(),
+      eval(divide(
+        power(at.clone(), int(2)),
+        times(int(2), power(s.clone(), int(2))),
+      ))?,
+    );
+    // Exact rational scale: 1/s^3 in wolframscript's canonical
+    // radical form; symbolic or real s falls back to plain evaluation
+    if ms_numeric(at).is_none()
+      && let Some((sp, sq)) = maxwell_rational(&s)
+    {
+      // r = 1/s^3 = sq^3/sp^3 (sign of s is positive for a scale)
+      return Ok(maxwell_term(
+        sq * sq * sq,
+        sp * sp * sp,
+        power(at.clone(), int(2)),
+        e_part,
+      ));
+    }
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Times",
+        vec![sqrt_2_pi.clone(), power(at.clone(), int(2))],
+      )),
+      right: Box::new(call(
+        "Times",
+        vec![
+          power(
+            e(),
+            divide(
+              power(at.clone(), int(2)),
+              times(int(2), power(s.clone(), int(2))),
+            ),
+          ),
+          power(s.clone(), int(3)),
+        ],
+      )),
+    })
+  };
+  if ms_numeric(&x).is_some() {
+    if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// CDF[MaxwellDistribution[s], x] =
+/// Piecewise[{{-Sqrt[2/Pi] x E^(-x^2/(2 s^2))/s + Erf[x/(Sqrt[2] s)],
+/// x > 0}}, 0].
+pub fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MaxwellDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 1 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let s = dargs[0].clone();
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let sqrt_2_pi = call("Sqrt", vec![divide(int(2), pi())]);
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    if ms_numeric(at).is_none()
+      && let Some((sp, sq)) = maxwell_rational(&s)
+      && (sp, sq) != (1, 1)
+    {
+      let e_part = power(
+        e(),
+        eval(divide(
+          power(at.clone(), int(2)),
+          times(int(2), power(s.clone(), int(2))),
+        ))?,
+      );
+      let term1 = Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(maxwell_term(sq, sp, at.clone(), e_part)),
+      };
+      let erf = call(
+        "Erf",
+        vec![eval(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(at.clone()),
+          right: Box::new(call(
+            "Times",
+            vec![call("Sqrt", vec![int(2)]), s.clone()],
+          )),
+        })?],
+      );
+      return Ok(call("Plus", vec![term1, erf]));
+    }
+    eval(call(
+      "Plus",
+      vec![
+        call(
+          "Times",
+          vec![
+            int(-1),
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(call(
+                "Times",
+                vec![sqrt_2_pi.clone(), at.clone()],
+              )),
+              right: Box::new(call(
+                "Times",
+                vec![
+                  power(
+                    e(),
+                    divide(
+                      power(at.clone(), int(2)),
+                      times(int(2), power(s.clone(), int(2))),
+                    ),
+                  ),
+                  s.clone(),
+                ],
+              )),
+            },
+          ],
+        ),
+        call(
+          "Erf",
+          vec![Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(at.clone()),
+            right: Box::new(call(
+              "Times",
+              vec![call("Sqrt", vec![int(2)]), s.clone()],
+            )),
+          }],
+        ),
+      ],
+    ))
+  };
+  if ms_numeric(&x).is_some() {
+    if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let piece = body(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(piece, cond)], int(0)))
+}
+
+/// Mean 2 Sqrt[2/Pi] s and variance (3 Pi - 8) s^2/Pi for
+/// MaxwellDistribution.
+pub fn maxwell_mean_variance(
+  s: &Expr,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let mean = eval(call(
+    "Times",
+    vec![int(2), call("Sqrt", vec![divide(int(2), pi())]), s.clone()],
+  ))?;
+  let var = if ms_numeric(s).is_some() {
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Times",
+        vec![
+          call("Plus", vec![int(-8), call("Times", vec![int(3), pi()])]),
+          power(s.clone(), int(2)),
+        ],
+      )),
+      right: Box::new(pi()),
+    })?
+  } else {
+    // wolframscript puts the Pi-sum factor first; assembled raw since
+    // evaluation would reorder it
+    Expr::Raw(format!(
+      "((-8 + 3*Pi)*{}^2)/Pi",
+      crate::syntax::expr_to_string(s)
+    ))
+  };
   Ok((mean, var))
 }

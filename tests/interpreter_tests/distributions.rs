@@ -2416,3 +2416,84 @@ mod triangular_distribution {
     );
   }
 }
+
+mod maxwell_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_radical_canonicalization() {
+    assert_eq!(
+      interpret("PDF[MaxwellDistribution[1], x]").unwrap(),
+      "Piecewise[{{(Sqrt[2/Pi]*x^2)/E^(x^2/2), x > 0}}, 0]"
+    );
+    // Powers of two in the scale's cube merge into Sqrt[2*Pi]...
+    assert_eq!(
+      interpret("PDF[MaxwellDistribution[2], x]").unwrap(),
+      "Piecewise[{{x^2/(4*E^(x^2/8)*Sqrt[2*Pi]), x > 0}}, 0]"
+    );
+    // ...while odd factors and numerators keep Sqrt[2/Pi]
+    assert_eq!(
+      interpret("PDF[MaxwellDistribution[3], x]").unwrap(),
+      "Piecewise[{{(Sqrt[2/Pi]*x^2)/(27*E^(x^2/18)), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MaxwellDistribution[1/2], x]").unwrap(),
+      "Piecewise[{{(8*Sqrt[2/Pi]*x^2)/E^(2*x^2), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MaxwellDistribution[s], x]").unwrap(),
+      "Piecewise[{{(Sqrt[2/Pi]*x^2)/(E^(x^2/(2*s^2))*s^3), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MaxwellDistribution[1], 2]").unwrap(),
+      "(4*Sqrt[2/Pi])/E^2"
+    );
+    assert_eq!(interpret("PDF[MaxwellDistribution[1], -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[MaxwellDistribution[1], x]").unwrap(),
+      "Piecewise[{{-((Sqrt[2/Pi]*x)/E^(x^2/2)) + Erf[x/Sqrt[2]], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[MaxwellDistribution[2], x]").unwrap(),
+      "Piecewise[{{-(x/(E^(x^2/8)*Sqrt[2*Pi])) + Erf[x/(2*Sqrt[2])], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[MaxwellDistribution[s], x]").unwrap(),
+      "Piecewise[{{-((Sqrt[2/Pi]*x)/(E^(x^2/(2*s^2))*s)) + Erf[x/(Sqrt[2]*s)], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[MaxwellDistribution[1], 2]").unwrap(),
+      "(-2*Sqrt[2/Pi])/E^2 + Erf[Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("Round[10^10 CDF[MaxwellDistribution[1.], 2.]]").unwrap(),
+      "7385358701"
+    );
+    assert_eq!(interpret("CDF[MaxwellDistribution[1], -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[MaxwellDistribution[s]]").unwrap(),
+      "2*Sqrt[2/Pi]*s"
+    );
+    assert_eq!(
+      interpret("Mean[MaxwellDistribution[2]]").unwrap(),
+      "4*Sqrt[2/Pi]"
+    );
+    // The Pi-sum factor prints first for symbolic s
+    assert_eq!(
+      interpret("Variance[MaxwellDistribution[s]]").unwrap(),
+      "((-8 + 3*Pi)*s^2)/Pi"
+    );
+    assert_eq!(
+      interpret("Variance[MaxwellDistribution[2]]").unwrap(),
+      "(4*(-8 + 3*Pi))/Pi"
+    );
+  }
+}

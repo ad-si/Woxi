@@ -3111,7 +3111,7 @@ DocumentGenerator,,🚫,,10.0,3191
 GraphIntersection,Compute the intersection of graphs,✅,pure,8.0,3191
 IconData,,🚫,,10.0,3191
 Latitude,extract latitude from a geo position,✅,none,7.0,3191
-MaxwellDistribution,,,,6.0,3191
+MaxwellDistribution,Maxwell-Boltzmann distribution (radical-canonical PDF and Erf CDF),✅,pure,6.0,3191
 PERTDistribution,,,,8.0,3191
 PageHeaders,,🚫,,4.0,3191
 PointValuePlot,,🚫,,12.2,3191
