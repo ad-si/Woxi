@@ -1104,6 +1104,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MaxStableDistribution" => Some((3, 3)),
     "TriangularDistribution" => Some((0, 2)),
     "MaxwellDistribution" => Some((1, 1)),
+    "WignerSemicircleDistribution" => Some((1, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

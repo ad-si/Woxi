@@ -153,6 +153,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxStableDistribution" => pdf_max_stable(dargs, x),
     "TriangularDistribution" => pdf_triangular(dargs, x),
     "MaxwellDistribution" => pdf_maxwell(dargs, x),
+    "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1139,6 +1140,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MaxStableDistribution" => cdf_max_stable(dargs, x),
     "TriangularDistribution" => cdf_triangular(dargs, x),
     "MaxwellDistribution" => cdf_maxwell(dargs, x),
+    "WignerSemicircleDistribution" => cdf_wigner_semicircle(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2946,6 +2948,7 @@ fn distribution_mean_variance(
       }
       maxwell_mean_variance(&dargs[0])
     }
+    "WignerSemicircleDistribution" => wigner_mean_variance(dargs),
     "TriangularDistribution" => triangular_mean_variance(dargs),
     "MaxStableDistribution" => {
       if dargs.len() != 3 {
@@ -9945,4 +9948,233 @@ pub fn maxwell_mean_variance(
     ))
   };
   Ok((mean, var))
+}
+
+/// Parse WignerSemicircleDistribution arguments: [r] or [a, r].
+fn wigner_params(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  match dargs {
+    [r] => Some((int(0), r.clone())),
+    [a, r] => Some((a.clone(), r.clone())),
+    _ => None,
+  }
+}
+
+/// PDF[WignerSemicircleDistribution[a, r], x] =
+/// Piecewise[{{2 Sqrt[1 - (x-a)^2/r^2]/(Pi r), a - r < x < a + r}}, 0].
+pub fn pdf_wigner_semicircle(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "WignerSemicircleDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some((a, r)) = wigner_params(dargs) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let diff = |at: &Expr| -> Expr {
+    if matches!(&a, Expr::Integer(0)) {
+      at.clone()
+    } else {
+      call(
+        "Plus",
+        vec![call("Times", vec![int(-1), a.clone()]), at.clone()],
+      )
+    }
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let inner = call(
+      "Plus",
+      vec![
+        int(1),
+        call(
+          "Times",
+          vec![
+            int(-1),
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(power(diff(at), int(2))),
+              right: Box::new(power(r.clone(), int(2))),
+            },
+          ],
+        ),
+      ],
+    );
+    eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call("Times", vec![int(2), call("Sqrt", vec![inner])])),
+      right: Box::new(call("Times", vec![pi(), r.clone()])),
+    })
+  };
+  let numeric_params = ms_numeric(&a).is_some() && ms_numeric(&r).is_some();
+  if ms_numeric(&x).is_some() {
+    if !numeric_params {
+      return Ok(unevaluated(dargs, x));
+    }
+    let (xv, av, rv) = (
+      ms_numeric(&x).unwrap(),
+      ms_numeric(&a).unwrap(),
+      ms_numeric(&r).unwrap(),
+    );
+    if (xv - av).abs() >= rv {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let lo = eval(plus(a.clone(), times(int(-1), r.clone())))?;
+  let hi = eval(plus(a.clone(), r.clone()))?;
+  let cond =
+    comparison3(lo, ComparisonOp::Less, x.clone(), ComparisonOp::Less, hi);
+  Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
+}
+
+/// CDF[WignerSemicircleDistribution[a, r], x] =
+/// 1/2 + (x-a) Sqrt[1 - (x-a)^2/r^2]/(Pi r) + ArcSin[(x-a)/r]/Pi
+/// inside the support, 1 at and above a + r.
+pub fn cdf_wigner_semicircle(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "WignerSemicircleDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  let Some((a, r)) = wigner_params(dargs) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let diff = |at: &Expr| -> Expr {
+    if matches!(&a, Expr::Integer(0)) {
+      at.clone()
+    } else {
+      call(
+        "Plus",
+        vec![call("Times", vec![int(-1), a.clone()]), at.clone()],
+      )
+    }
+  };
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let d = diff(at);
+    let inner = call(
+      "Plus",
+      vec![
+        int(1),
+        call(
+          "Times",
+          vec![
+            int(-1),
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(power(d.clone(), int(2))),
+              right: Box::new(power(r.clone(), int(2))),
+            },
+          ],
+        ),
+      ],
+    );
+    // The x-before-Sqrt factor order matches wolframscript, so the
+    // middle term stays raw with evaluated subparts
+    let sqrt_part = call("Sqrt", vec![eval(inner)?]);
+    let denom = eval(call("Times", vec![pi(), r.clone()]))?;
+    let arcsin_arg = eval(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(d.clone()),
+      right: Box::new(r.clone()),
+    })?;
+    Ok(call(
+      "Plus",
+      vec![
+        call("Rational", vec![int(1), int(2)]),
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          // Wolfram puts the Sqrt factor first when the shifted
+          // variable leads with a number ((-3 + x)), and last when it
+          // is bare x or leads with a symbol ((-a + x))
+          left: Box::new(if ms_numeric(&a).is_some_and(|v| v != 0.0) {
+            call("Times", vec![sqrt_part, d])
+          } else {
+            call("Times", vec![d, sqrt_part])
+          }),
+          right: Box::new(denom),
+        },
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(call("ArcSin", vec![arcsin_arg])),
+          right: Box::new(pi()),
+        },
+      ],
+    ))
+  };
+  let numeric_params = ms_numeric(&a).is_some() && ms_numeric(&r).is_some();
+  if ms_numeric(&x).is_some() {
+    if !numeric_params {
+      return Ok(unevaluated(dargs, x));
+    }
+    let (xv, av, rv) = (
+      ms_numeric(&x).unwrap(),
+      ms_numeric(&a).unwrap(),
+      ms_numeric(&r).unwrap(),
+    );
+    if xv <= av - rv {
+      return Ok(int(0));
+    }
+    if xv >= av + rv {
+      return Ok(int(1));
+    }
+    return eval(body(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let lo = eval(plus(a.clone(), times(int(-1), r.clone())))?;
+  let hi = eval(plus(a.clone(), r.clone()))?;
+  let cond_in = comparison3(
+    lo,
+    ComparisonOp::Less,
+    x.clone(),
+    ComparisonOp::Less,
+    hi.clone(),
+  );
+  let cond_ge = comparison(x.clone(), ComparisonOp::GreaterEqual, hi);
+  Ok(piecewise(
+    vec![(body(&x)?, cond_in), (int(1), cond_ge)],
+    int(0),
+  ))
+}
+
+/// Mean a and variance r^2/4 for WignerSemicircleDistribution.
+pub fn wigner_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  let Some((a, r)) = wigner_params(dargs) else {
+    return Err(InterpreterError::EvaluationError(
+      "WignerSemicircleDistribution expects [r] or [a, r]".into(),
+    ));
+  };
+  let var = eval(divide(power(r, int(2)), int(4)))?;
+  Ok((a, var))
 }

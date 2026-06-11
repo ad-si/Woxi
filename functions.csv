@@ -3203,7 +3203,7 @@ PermutationCyclesQ,True if valid Cycles form,✅,1,8.0,3280
 SiderealTime,,,,10.0,3280
 URLParse,,,,10.0,3280
 UnitDimensions,,,,9.0,3280
-WignerSemicircleDistribution,,,,8.0,3280
+WignerSemicircleDistribution,Wigner semicircle distribution (ArcSin CDF),✅,pure,8.0,3280
 AskFunction,,🚫,,10.4,3291
 Backslash,,,,3.0,3291
 DeviceClose,,🚫,,10.0,3291

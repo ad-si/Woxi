@@ -2497,3 +2497,78 @@ mod maxwell_distribution {
     );
   }
 }
+
+mod wigner_semicircle_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[WignerSemicircleDistribution[1], x]").unwrap(),
+      "Piecewise[{{(2*Sqrt[1 - x^2])/Pi, -1 < x < 1}}, 0]"
+    );
+    // The 2/(Pi r) coefficient merges for r = 2
+    assert_eq!(
+      interpret("PDF[WignerSemicircleDistribution[2], x]").unwrap(),
+      "Piecewise[{{Sqrt[1 - x^2/4]/Pi, -2 < x < 2}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[WignerSemicircleDistribution[a, r], x]").unwrap(),
+      "Piecewise[{{(2*Sqrt[1 - (-a + x)^2/r^2])/(Pi*r), a - r < x < a + r}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[WignerSemicircleDistribution[2], 1]").unwrap(),
+      "Sqrt[3]/(2*Pi)"
+    );
+    assert_eq!(
+      interpret("PDF[WignerSemicircleDistribution[1], 3]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[WignerSemicircleDistribution[1], x]").unwrap(),
+      "Piecewise[{{1/2 + (x*Sqrt[1 - x^2])/Pi + ArcSin[x]/Pi, -1 < x < 1}, {1, x >= 1}}, 0]"
+    );
+    // Sqrt factor order flips when the shifted variable leads with a
+    // number
+    assert_eq!(
+      interpret("CDF[WignerSemicircleDistribution[3, 2], x]").unwrap(),
+      "Piecewise[{{1/2 + (Sqrt[1 - (-3 + x)^2/4]*(-3 + x))/(2*Pi) + ArcSin[(-3 + x)/2]/Pi, 1 < x < 5}, {1, x >= 5}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[WignerSemicircleDistribution[a, r], x]").unwrap(),
+      "Piecewise[{{1/2 + ((-a + x)*Sqrt[1 - (-a + x)^2/r^2])/(Pi*r) + ArcSin[(-a + x)/r]/Pi, a - r < x < a + r}, {1, x >= a + r}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[WignerSemicircleDistribution[1], 1/2]").unwrap(),
+      "2/3 + Sqrt[3]/(4*Pi)"
+    );
+    assert_eq!(
+      interpret("CDF[WignerSemicircleDistribution[1], -2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[WignerSemicircleDistribution[r]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Mean[WignerSemicircleDistribution[a, r]]").unwrap(),
+      "a"
+    );
+    assert_eq!(
+      interpret("Variance[WignerSemicircleDistribution[r]]").unwrap(),
+      "r^2/4"
+    );
+    assert_eq!(
+      interpret("Variance[WignerSemicircleDistribution[a, r]]").unwrap(),
+      "r^2/4"
+    );
+  }
+}
