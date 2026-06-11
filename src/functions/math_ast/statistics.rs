@@ -4324,3 +4324,81 @@ pub fn correlation_function_ast(
     right: Box::new(denominator),
   })
 }
+
+/// ZTest[data] / ZTest[data, var] / ZTest[data, var, mu0] /
+/// ZTest[data, var, mu0, "property"] - two-sided one-sample z-test.
+/// The second argument is the KNOWN VARIANCE (Automatic or omitted
+/// estimates the sample variance); the p-value is
+/// Erfc[|z|/Sqrt[2]] with z = (mean - mu0)/Sqrt[var/n]. Properties:
+/// "PValue" (default) and "TestStatistic".
+pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "ZTest".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 4 {
+    return Ok(unevaluated(args));
+  }
+  let bad_data = |args: &[Expr]| {
+    crate::emit_message(&format!(
+      "ZTest::rctndm1: The argument {} at position 1 should be a rectangular array of real numbers with length greater than the dimension of the array or two such arrays of equal dimensionality.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "ZTest".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let data: Vec<f64> = match &args[0] {
+    Expr::List(items) if items.len() >= 2 => {
+      match items
+        .iter()
+        .map(crate::functions::math_ast::numeric_utils::try_eval_to_f64)
+        .collect::<Option<Vec<f64>>>()
+      {
+        Some(v) => v,
+        None => return bad_data(args),
+      }
+    }
+    _ => return bad_data(args),
+  };
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let variance = match args.get(1) {
+    None => None,
+    Some(Expr::Identifier(s)) if s == "Automatic" => None,
+    Some(e) => {
+      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
+        Some(v) if v > 0.0 => Some(v),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+  }
+  .unwrap_or_else(|| {
+    data.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0)
+  });
+  let mu0 = match args.get(2) {
+    None => 0.0,
+    Some(e) => {
+      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
+        Some(v) => v,
+        None => return Ok(unevaluated(args)),
+      }
+    }
+  };
+  let z = (mean - mu0) / (variance / n).sqrt();
+  match args.get(3) {
+    None => Ok(Expr::Real(
+      crate::functions::math_ast::numeric_utils::erfc_cf(
+        z.abs() / std::f64::consts::SQRT_2,
+      ),
+    )),
+    Some(Expr::String(p)) if p == "PValue" => Ok(Expr::Real(
+      crate::functions::math_ast::numeric_utils::erfc_cf(
+        z.abs() / std::f64::consts::SQRT_2,
+      ),
+    )),
+    Some(Expr::String(p)) if p == "TestStatistic" => Ok(Expr::Real(z)),
+    _ => Ok(unevaluated(args)),
+  }
+}

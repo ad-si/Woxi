@@ -4019,3 +4019,53 @@ mod correlation_function {
     );
   }
 }
+
+mod ztest {
+  use super::*;
+
+  #[test]
+  fn p_values_via_round_projections() {
+    // Default: variance estimated from the data, mu0 = 0
+    assert_eq!(
+      interpret("Round[10^15 ZTest[{1.1, 1.9, 3.2, 0.5, 2.3, 1.8}]]").unwrap(),
+      "2600383126"
+    );
+    // Second argument is the KNOWN VARIANCE, not the mean
+    assert_eq!(
+      interpret("Round[10^10 ZTest[{1.1, 1.9, 3.2, 0.5, 2.3, 1.8}, 1, 1]]")
+        .unwrap(),
+      "500435212"
+    );
+    // Automatic falls back to the sample variance
+    assert_eq!(
+      interpret(
+        "Round[10^10 ZTest[{1.1, 1.9, 3.2, 0.5, 2.3, 1.8}, Automatic, 1]]"
+      )
+      .unwrap(),
+      "367138564"
+    );
+    // Exact data numericizes
+    assert_eq!(
+      interpret("Round[10^10 ZTest[{1, 2, 3}]]").unwrap(),
+      "5320055"
+    );
+  }
+
+  #[test]
+  fn test_statistic_property() {
+    assert_eq!(
+      interpret(
+        "Round[10^10 ZTest[{1.1, 1.9, 3.2, 0.5, 2.3, 1.8}, 1, 1, \"TestStatistic\"]]"
+      )
+      .unwrap(),
+      "19595917942"
+    );
+  }
+
+  #[test]
+  fn invalid_data_messages() {
+    // ZTest::rctndm1 message, unevaluated
+    assert_eq!(interpret("ZTest[x]").unwrap(), "ZTest[x]");
+    assert_eq!(interpret("ZTest[{1, x}]").unwrap(), "ZTest[{1, x}]");
+  }
+}

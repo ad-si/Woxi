@@ -803,6 +803,9 @@ pub fn dispatch_math_functions(
     "FareySequence" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::farey_sequence_ast(args));
     }
+    "ZTest" if !args.is_empty() && args.len() <= 4 => {
+      return Some(crate::functions::math_ast::ztest_ast(args));
+    }
     "Fibonorial" if args.len() == 1 => {
       return Some(crate::functions::math_ast::fibonorial_ast(args));
     }

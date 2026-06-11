@@ -2991,7 +2991,7 @@ LessThan,Operator form of Less,✅,none,10.3,3059
 MissingDataMethod,,,,9.0,3059
 NoncentralChiSquareDistribution,Noncentral chi-square distribution (moments and parity-cased PDF),✅,pure,6.0,3059
 StationaryWaveletPacketTransform,,🚫,,8.0,3059
-ZTest,,,,8.0,3059
+ZTest,One-sample z-test p-value (known or estimated variance),✅,pure,8.0,3059
 BioSequence,,🚫,,12.2,3070
 CorrelationDistance,1 minus Pearson correlation between vectors,✅,none,6.0,3070
 FoldWhileList,Fold while condition holds returning intermediate results,✅,1,12.2,3070
