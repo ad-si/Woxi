@@ -149,6 +149,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "NoncentralChiSquareDistribution" => pdf_noncentral_chi_square(dargs, x),
     "ExponentialPowerDistribution" => pdf_exponential_power(dargs, x),
     "RiceDistribution" => pdf_rice(dargs, x),
+    "MinStableDistribution" => pdf_min_stable(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1131,6 +1132,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "NoncentralChiSquareDistribution" => cdf_noncentral_chi_square(dargs, x),
     "ExponentialPowerDistribution" => cdf_exponential_power(dargs, x),
     "RiceDistribution" => cdf_rice(dargs, x),
+    "MinStableDistribution" => cdf_min_stable(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2930,6 +2932,14 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "MinStableDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "MinStableDistribution expects 3 arguments".into(),
+        ));
+      }
+      min_stable_mean_variance(&dargs[0], &dargs[1], &dargs[2])
+    }
     "RiceDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -8367,4 +8377,489 @@ pub fn rice_mean_variance(
     ],
   ))?;
   Ok((mean, var))
+}
+
+/// Numeric value of an exact or machine number Expr (for the
+/// MinStable parameter branches).
+fn ms_numeric(e: &Expr) -> Option<f64> {
+  rice_numeric(e)
+}
+
+/// Shared raw pieces for MinStableDistribution[a, b, g]: u(x) =
+/// 1 + g (a - x)/b and the (-a + x)/b argument of the Gumbel branch.
+fn ms_u(a: &Expr, b: &Expr, g: &Expr, x: &Expr) -> Expr {
+  // For numeric negative g wolframscript folds the sign into the
+  // difference: 1 + |g| (x - a)/b prints "1 + (-1 + x)/4" rather than
+  // "1 - (1 - x)/4"
+  let (coef, diff) = if ms_numeric(g).is_some_and(|v| v < 0.0) {
+    (
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![int(-1), g.clone()].into(),
+      },
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(-1), a.clone()].into(),
+          },
+          x.clone(),
+        ]
+        .into(),
+      },
+    )
+  } else {
+    (
+      g.clone(),
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          a.clone(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![int(-1), x.clone()].into(),
+          },
+        ]
+        .into(),
+      },
+    )
+  };
+  plus(
+    int(1),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coef, diff].into(),
+      }),
+      right: Box::new(b.clone()),
+    },
+  )
+}
+
+fn ms_z(a: &Expr, b: &Expr, x: &Expr) -> Expr {
+  Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![int(-1), a.clone()].into(),
+        },
+        x.clone(),
+      ]
+      .into(),
+    }),
+    right: Box::new(b.clone()),
+  }
+}
+
+/// PDF[MinStableDistribution[a, b, g], x] in wolframscript's forms:
+/// the Gumbel branch for g == 0 (full real support) and the
+/// generalized branch with support u > 0 otherwise; symbolic g keeps
+/// both pieces.
+pub fn pdf_min_stable(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MinStableDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 3 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let gumbel = |at: &Expr| -> Expr {
+    // E^(-E^((-a + x)/b) - (a - x)/b)/b
+    let z = ms_z(&a, &b, at);
+    let neg_az = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(call(
+        "Plus",
+        vec![a.clone(), call("Times", vec![int(-1), at.clone()])],
+      )),
+      right: Box::new(b.clone()),
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(power(
+        e(),
+        call(
+          "Plus",
+          vec![
+            call("Times", vec![int(-1), power(e(), z)]),
+            call("Times", vec![int(-1), neg_az]),
+          ],
+        ),
+      )),
+      right: Box::new(b.clone()),
+    }
+  };
+  let general = |at: &Expr| -> Expr {
+    // u^(-1 - 1/g) / (b E^(u^(-1/g)))
+    let u = ms_u(&a, &b, &g, at);
+    let inv_g = power(g.clone(), int(-1));
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(power(
+        u.clone(),
+        call(
+          "Plus",
+          vec![int(-1), call("Times", vec![int(-1), inv_g.clone()])],
+        ),
+      )),
+      right: Box::new(call(
+        "Times",
+        vec![
+          b.clone(),
+          power(e(), power(u, call("Times", vec![int(-1), inv_g]))),
+        ],
+      )),
+    }
+  };
+
+  let g_num = ms_numeric(&g);
+  let numeric_x = ms_numeric(&x).is_some();
+  match g_num {
+    Some(gv) if gv == 0.0 => {
+      if numeric_x {
+        return eval(gumbel(&x));
+      }
+      if !matches!(&x, Expr::Identifier(_)) {
+        return Ok(unevaluated(dargs, x));
+      }
+      // Raw assembly with evaluated subparts keeps the exponent in
+      // wolframscript's -E^x + x order
+      let z = eval(ms_z(&a, &b, &x))?;
+      let neg_az = eval(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          int(-1),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(call(
+              "Plus",
+              vec![a.clone(), call("Times", vec![int(-1), x.clone()])],
+            )),
+            right: Box::new(b.clone()),
+          },
+        ]
+        .into(),
+      })?;
+      let exponent = call(
+        "Plus",
+        vec![call("Times", vec![int(-1), power(e(), z)]), neg_az],
+      );
+      let body = power(e(), exponent);
+      let b_is_one = matches!(&b, Expr::Integer(1));
+      Ok(if b_is_one {
+        body
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(body),
+          right: Box::new(b.clone()),
+        }
+      })
+    }
+    Some(_) => {
+      if numeric_x {
+        // Inside the support?
+        let u_val = eval(ms_u(&a, &b, &g, &x))?;
+        if ms_numeric(&u_val).is_some_and(|v| v <= 0.0) {
+          return Ok(int(0));
+        }
+        return eval(general(&x));
+      }
+      if !matches!(&x, Expr::Identifier(_)) {
+        return Ok(unevaluated(dargs, x));
+      }
+      let cond =
+        comparison(eval(ms_u(&a, &b, &g, &x))?, ComparisonOp::Greater, int(0));
+      Ok(piecewise(vec![(eval(general(&x))?, cond)], int(0)))
+    }
+    None => {
+      if !matches!(&x, Expr::Identifier(_)) {
+        return Ok(unevaluated(dargs, x));
+      }
+      let p1 = (
+        gumbel(&x),
+        comparison(g.clone(), ComparisonOp::Equal, int(0)),
+      );
+      let p2 = (
+        general(&x),
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: vec![
+            comparison(g.clone(), ComparisonOp::NotEqual, int(0)),
+            comparison(ms_u(&a, &b, &g, &x), ComparisonOp::Greater, int(0)),
+          ]
+          .into(),
+        },
+      );
+      Ok(piecewise(vec![p1, p2], int(0)))
+    }
+  }
+}
+
+/// CDF[MinStableDistribution[a, b, g], x]: 1 - E^(-E^((-a+x)/b)) for
+/// g == 0; 1 - E^(-u^(-1/g)) on u > 0 otherwise, with default 1 above
+/// the support for g > 0 and 0 below it for g < 0.
+pub fn cdf_min_stable(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "MinStableDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 3 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let one_minus = |inner: Expr| -> Expr {
+    call("Plus", vec![int(1), call("Times", vec![int(-1), inner])])
+  };
+  let gumbel = |at: &Expr| -> Expr {
+    one_minus(power(
+      e(),
+      call("Times", vec![int(-1), power(e(), ms_z(&a, &b, at))]),
+    ))
+  };
+  let general = |at: &Expr| -> Expr {
+    // Exponent built as UnaryOp Minus so the printer keeps
+    // u^(-g^(-1)) instead of hoisting the negative power
+    let u = ms_u(&a, &b, &g, at);
+    one_minus(power(
+      e(),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(power(
+          u,
+          call("Times", vec![int(-1), power(g.clone(), int(-1))]),
+        )),
+      },
+    ))
+  };
+
+  let g_num = ms_numeric(&g);
+  let numeric_x = ms_numeric(&x).is_some();
+  match g_num {
+    Some(gv) if gv == 0.0 => {
+      if numeric_x || matches!(&x, Expr::Identifier(_)) {
+        eval(gumbel(&x))
+      } else {
+        Ok(unevaluated(dargs, x))
+      }
+    }
+    Some(gv) => {
+      if numeric_x {
+        let u_val = eval(ms_u(&a, &b, &g, &x))?;
+        if ms_numeric(&u_val).is_some_and(|v| v <= 0.0) {
+          return Ok(if gv > 0.0 { int(1) } else { int(0) });
+        }
+        return eval(general(&x));
+      }
+      if !matches!(&x, Expr::Identifier(_)) {
+        return Ok(unevaluated(dargs, x));
+      }
+      let cond =
+        comparison(eval(ms_u(&a, &b, &g, &x))?, ComparisonOp::Greater, int(0));
+      Ok(piecewise(
+        vec![(eval(general(&x))?, cond)],
+        if gv > 0.0 { int(1) } else { int(0) },
+      ))
+    }
+    None => {
+      if !matches!(&x, Expr::Identifier(_)) {
+        return Ok(unevaluated(dargs, x));
+      }
+      let u = ms_u(&a, &b, &g, &x);
+      let p1 = (
+        gumbel(&x),
+        comparison(g.clone(), ComparisonOp::Equal, int(0)),
+      );
+      let p2 = (
+        general(&x),
+        call(
+          "And",
+          vec![
+            comparison(g.clone(), ComparisonOp::NotEqual, int(0)),
+            comparison(u.clone(), ComparisonOp::Greater, int(0)),
+          ],
+        ),
+      );
+      let p3 = (
+        int(1),
+        call(
+          "And",
+          vec![
+            comparison(g.clone(), ComparisonOp::Greater, int(0)),
+            comparison(u, ComparisonOp::LessEqual, int(0)),
+          ],
+        ),
+      );
+      Ok(piecewise(vec![p1, p2, p3], int(0)))
+    }
+  }
+}
+
+/// Mean and variance for MinStableDistribution: Gumbel constants at
+/// g == 0, Gamma-function forms below the existence thresholds (g < 1
+/// for the mean, 2 g < 1 for the variance), Indeterminate beyond.
+pub fn min_stable_mean_variance(
+  a: &Expr,
+  b: &Expr,
+  g: &Expr,
+) -> Result<(Expr, Expr), InterpreterError> {
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let euler_gamma = Expr::Identifier("EulerGamma".to_string());
+  let indeterminate = || Expr::Identifier("Indeterminate".to_string());
+  let mean_gumbel = || {
+    plus(
+      a.clone(),
+      times(int(-1), times(b.clone(), euler_gamma.clone())),
+    )
+  };
+  let var_gumbel = || Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call(
+      "Times",
+      vec![power(b.clone(), int(2)), power(pi(), int(2))],
+    )),
+    right: Box::new(int(6)),
+  };
+  let gamma_of = |inner: Expr| call("Gamma", vec![inner]);
+  let one_minus_g = call(
+    "Plus",
+    vec![int(1), call("Times", vec![int(-1), g.clone()])],
+  );
+  // (b + a g - b Gamma[1 - g])/g
+  let mean_general = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call(
+      "Plus",
+      vec![
+        b.clone(),
+        call("Times", vec![a.clone(), g.clone()]),
+        call(
+          "Times",
+          vec![int(-1), b.clone(), gamma_of(one_minus_g.clone())],
+        ),
+      ],
+    )),
+    right: Box::new(g.clone()),
+  };
+  // b^2 (Gamma[1 - 2g] - Gamma[1 - g]^2)/g^2
+  let one_minus_2g = call(
+    "Plus",
+    vec![int(1), call("Times", vec![int(-2), g.clone()])],
+  );
+  let var_general = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call(
+      "Times",
+      vec![
+        power(b.clone(), int(2)),
+        call(
+          "Plus",
+          vec![
+            gamma_of(one_minus_2g),
+            call("Times", vec![int(-1), power(gamma_of(one_minus_g), int(2))]),
+          ],
+        ),
+      ],
+    )),
+    right: Box::new(power(g.clone(), int(2))),
+  };
+
+  match ms_numeric(g) {
+    Some(gv) if gv == 0.0 => Ok((eval(mean_gumbel())?, eval(var_gumbel())?)),
+    Some(gv) => {
+      let mean = if gv < 1.0 {
+        eval(mean_general)?
+      } else {
+        indeterminate()
+      };
+      let var = if 2.0 * gv < 1.0 {
+        eval(var_general)?
+      } else {
+        indeterminate()
+      };
+      Ok((mean, var))
+    }
+    None => {
+      let mean = piecewise(
+        vec![
+          (
+            mean_gumbel(),
+            comparison(g.clone(), ComparisonOp::Equal, int(0)),
+          ),
+          (
+            mean_general,
+            call(
+              "And",
+              vec![
+                comparison(g.clone(), ComparisonOp::NotEqual, int(0)),
+                comparison(g.clone(), ComparisonOp::Less, int(1)),
+              ],
+            ),
+          ),
+        ],
+        indeterminate(),
+      );
+      let var = piecewise(
+        vec![
+          (
+            var_gumbel(),
+            comparison(g.clone(), ComparisonOp::Equal, int(0)),
+          ),
+          (
+            var_general,
+            call(
+              "And",
+              vec![
+                comparison(g.clone(), ComparisonOp::NotEqual, int(0)),
+                comparison(
+                  times(int(2), g.clone()),
+                  ComparisonOp::Less,
+                  int(1),
+                ),
+              ],
+            ),
+          ),
+        ],
+        indeterminate(),
+      );
+      Ok((mean, var))
+    }
+  }
 }

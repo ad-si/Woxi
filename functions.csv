@@ -3024,7 +3024,7 @@ EvaluatePacket,,🚫,,3.0,3094
 FindEquationalProof,,,,11.3,3094
 IndexGraph,Replace graph vertices with integer indices,✅,pure,8.0,3094
 MenuView,,🚫,,6.0,3094
-MinStableDistribution,,,,8.0,3094
+MinStableDistribution,Min-stable (GEV-min) distribution with shape-cased forms,✅,pure,8.0,3094
 NHoldAll,,,,3.0,3094
 Vee,,,,3.0,3094
 BinarySerialize,,,,11.1,3108

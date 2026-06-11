@@ -2136,3 +2136,108 @@ mod rice_distribution {
     );
   }
 }
+
+mod min_stable_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    // g = 0 is the Gumbel-min branch with full real support
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[0, 1, 0], x]").unwrap(),
+      "E^(-E^x + x)"
+    );
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[2, 3, 0], x]").unwrap(),
+      "E^(-E^((-2 + x)/3) - (2 - x)/3)/3"
+    );
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[0, 1, 1], x]").unwrap(),
+      "Piecewise[{{1/(E^(1 - x)^(-1)*(1 - x)^2), 1 - x > 0}}, 0]"
+    );
+    // Negative shape folds the sign into the difference
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[0, 1, -1], x]").unwrap(),
+      "Piecewise[{{E^(-1 - x), 1 + x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[a, b, g], x]").unwrap(),
+      "Piecewise[{{E^(-E^((-a + x)/b) - (a - x)/b)/b, g == 0}, {(1 + (g*(a - x))/b)^(-1 - g^(-1))/(b*E^(1 + (g*(a - x))/b)^(-g^(-1))), g != 0 && 1 + (g*(a - x))/b > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[0, 1, 1], 1/2]").unwrap(),
+      "4/E^2"
+    );
+    assert_eq!(
+      interpret("PDF[MinStableDistribution[0, 1, 1], 2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[MinStableDistribution[0, 1, 0], x]").unwrap(),
+      "1 - E^(-E^x)"
+    );
+    // Default is 1 above the support for g > 0, 0 below it for g < 0
+    assert_eq!(
+      interpret("CDF[MinStableDistribution[0, 1, 1], x]").unwrap(),
+      "Piecewise[{{1 - E^(-(1 - x)^(-1)), 1 - x > 0}}, 1]"
+    );
+    assert_eq!(
+      interpret("CDF[MinStableDistribution[0, 1, -1], x]").unwrap(),
+      "Piecewise[{{1 - E^(-1 - x), 1 + x > 0}}, 0]"
+    );
+    // The symbolic form keeps three pieces
+    assert_eq!(
+      interpret("CDF[MinStableDistribution[a, b, g], x]").unwrap(),
+      "Piecewise[{{1 - E^(-E^((-a + x)/b)), g == 0}, {1 - E^(-(1 + (g*(a - x))/b)^(-g^(-1))), g != 0 && 1 + (g*(a - x))/b > 0}, {1, g > 0 && 1 + (g*(a - x))/b <= 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[MinStableDistribution[0, 1, 1], 1/2]").unwrap(),
+      "1 - E^(-2)"
+    );
+  }
+
+  #[test]
+  fn moments_with_existence_conditions() {
+    assert_eq!(
+      interpret("Mean[MinStableDistribution[0, 1, 0]]").unwrap(),
+      "-EulerGamma"
+    );
+    assert_eq!(
+      interpret("Mean[MinStableDistribution[2, 3, 0]]").unwrap(),
+      "2 - 3*EulerGamma"
+    );
+    assert_eq!(
+      interpret("Mean[MinStableDistribution[2, 3, 1/2]]").unwrap(),
+      "2*(4 - 3*Sqrt[Pi])"
+    );
+    // The mean needs g < 1, the variance 2 g < 1
+    assert_eq!(
+      interpret("Mean[MinStableDistribution[0, 1, 1]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Variance[MinStableDistribution[0, 1, 1/2]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Variance[MinStableDistribution[2, 3, 0]]").unwrap(),
+      "(3*Pi^2)/2"
+    );
+    assert_eq!(
+      interpret("Variance[MinStableDistribution[0, 1, 1/4]]").unwrap(),
+      "16*(Sqrt[Pi] - Gamma[3/4]^2)"
+    );
+    assert_eq!(
+      interpret("Mean[MinStableDistribution[a, b, g]]").unwrap(),
+      "Piecewise[{{a - b*EulerGamma, g == 0}, {(b + a*g - b*Gamma[1 - g])/g, g != 0 && g < 1}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("Variance[MinStableDistribution[a, b, g]]").unwrap(),
+      "Piecewise[{{(b^2*Pi^2)/6, g == 0}, {(b^2*(Gamma[1 - 2*g] - Gamma[1 - g]^2))/g^2, g != 0 && 2*g < 1}}, Indeterminate]"
+    );
+  }
+}

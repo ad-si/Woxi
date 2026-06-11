@@ -347,6 +347,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "NoncentralChiSquareDistribution"
         | "ExponentialPowerDistribution"
         | "RiceDistribution"
+        | "MinStableDistribution"
     ) =>
     {
       let (mean, _) =
@@ -570,6 +571,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "NoncentralChiSquareDistribution"
         | "ExponentialPowerDistribution"
         | "RiceDistribution"
+        | "MinStableDistribution"
     ) =>
     {
       let (_, variance) =
@@ -826,6 +828,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "NoncentralChiSquareDistribution"
       | "ExponentialPowerDistribution"
       | "RiceDistribution"
+      | "MinStableDistribution"
       | "BinomialDistribution"
       | "JohnsonDistribution"
   ))
