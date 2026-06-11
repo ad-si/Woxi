@@ -1088,6 +1088,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BetaPrimeDistribution" => Some((2, 2)),
     "JulianDate" => Some((0, 1)),
     "NoncentralChiSquareDistribution" => Some((2, 2)),
+    "MarcumQ" => Some((3, 4)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

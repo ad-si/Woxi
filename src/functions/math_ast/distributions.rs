@@ -1126,6 +1126,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => cdf_beta_binomial(dargs, x),
     "BetaPrimeDistribution" => cdf_beta_prime(dargs, x),
+    "NoncentralChiSquareDistribution" => cdf_noncentral_chi_square(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -7745,4 +7746,67 @@ pub fn pdf_noncentral_chi_square(
     }
     None => Ok(unevaluated(dargs, x)),
   }
+}
+
+/// CDF[NoncentralChiSquareDistribution[v, l], x] =
+/// Piecewise[{{MarcumQ[v/2, Sqrt[l], 0, Sqrt[x]], x > 0}}, 0], with
+/// the four-argument MarcumQ evaluating numerically for machine reals.
+pub fn cdf_noncentral_chi_square(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "NoncentralChiSquareDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (nu, lam) = (dargs[0].clone(), dargs[1].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let marcum = |at: &Expr| -> Result<Expr, InterpreterError> {
+    Ok(call(
+      "MarcumQ",
+      vec![
+        eval(divide(nu.clone(), int(2)))?,
+        eval(call("Sqrt", vec![lam.clone()]))?,
+        int(0),
+        call("Sqrt", vec![at.clone()]),
+      ],
+    ))
+  };
+
+  let numeric_x = matches!(&x, Expr::Integer(_) | Expr::Real(_))
+    || matches!(&x, Expr::FunctionCall { name, .. } if name == "Rational");
+  if numeric_x {
+    let positive = match &x {
+      Expr::Integer(v) => *v > 0,
+      Expr::Real(v) => *v > 0.0,
+      Expr::FunctionCall { name, args } if name == "Rational" => matches!(
+        (&args[0], &args[1]),
+        (Expr::Integer(p), Expr::Integer(q)) if p.signum() * q.signum() > 0
+      ),
+      _ => false,
+    };
+    if !positive {
+      return Ok(int(0));
+    }
+    return eval(marcum(&x)?);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let body = marcum(&x)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(body, cond)], int(0)))
 }

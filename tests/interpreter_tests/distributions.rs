@@ -1930,3 +1930,34 @@ mod noncentral_chi_square_distribution {
     );
   }
 }
+
+mod noncentral_chi_square_cdf {
+  use super::*;
+
+  #[test]
+  fn marcum_q_forms() {
+    assert_eq!(
+      interpret("CDF[NoncentralChiSquareDistribution[3, 2], x]").unwrap(),
+      "Piecewise[{{MarcumQ[3/2, Sqrt[2], 0, Sqrt[x]], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[NoncentralChiSquareDistribution[v, l], x]").unwrap(),
+      "Piecewise[{{MarcumQ[v/2, Sqrt[l], 0, Sqrt[x]], x > 0}}, 0]"
+    );
+    // Exact points stay symbolic, just like wolframscript
+    assert_eq!(
+      interpret("CDF[NoncentralChiSquareDistribution[3, 2], 2]").unwrap(),
+      "MarcumQ[3/2, Sqrt[2], 0, Sqrt[2]]"
+    );
+    assert_eq!(
+      interpret("CDF[NoncentralChiSquareDistribution[3, 2], -1]").unwrap(),
+      "0"
+    );
+    // Real points evaluate through the MarcumQ series
+    assert_eq!(
+      interpret("Round[10^10 CDF[NoncentralChiSquareDistribution[3, 2], 2.5]]")
+        .unwrap(),
+      "2899007987"
+    );
+  }
+}

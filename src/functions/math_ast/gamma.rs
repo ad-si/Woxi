@@ -1334,11 +1334,220 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(gamma_regularized_numeric(a, z)));
   }
 
+  // Exact evaluation for positive integer a with exact numeric z:
+  // Q(m, z) = e^(-z) sum_{k<m} z^k/k!
+  if let Expr::Integer(m) = a_expr
+    && *m >= 1
+    && *m <= 64
+    && (matches!(z_expr, Expr::Integer(_))
+      || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational"))
+  {
+    let mut terms: Vec<Expr> = Vec::new();
+    let mut k_fact = 1i128;
+    for k in 0..*m {
+      if k > 0 {
+        k_fact *= k;
+      }
+      let z_pow = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z_expr.clone(), Expr::Integer(k)].into(),
+      };
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(k_fact)].into(),
+          },
+          z_pow,
+        ]
+        .into(),
+      });
+    }
+    let e_pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::Constant("E".to_string()),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), z_expr.clone()].into(),
+        },
+      ]
+      .into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        e_pow,
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: terms.into(),
+        },
+      ]
+      .into(),
+    });
+  }
+
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "GammaRegularized".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// MarcumQ[m, a, b] / MarcumQ[m, a, b0, b1] — generalized Marcum Q.
+/// Exact arguments stay symbolic apart from the wolframscript rules:
+/// b = 0 gives 1 for positive numeric m (ComplexInfinity at
+/// non-positive integers, 1 - E^(-a^2/2) at m = 0) and a = 0 reduces
+/// to GammaRegularized[m, b^2/2]. Machine reals evaluate via the
+/// Poisson-weighted incomplete-gamma series; the four-argument form is
+/// the difference Q(m,a,b0) - Q(m,a,b1).
+pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "MarcumQ".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 3 && args.len() != 4 {
+    return Ok(unevaluated(args));
+  }
+  let numeric_value = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Integer(v) => Some(*v as f64),
+      Expr::Real(v) => Some(*v),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+            Some(*p as f64 / *q as f64)
+          }
+          _ => None,
+        }
+      }
+      _ => crate::functions::math_ast::numeric_utils::try_eval_to_f64(e),
+    }
+  };
+  let has_real = args.iter().any(|e| matches!(e, Expr::Real(_)));
+
+  if args.len() == 4 {
+    if has_real {
+      let vals: Vec<Option<f64>> = args.iter().map(numeric_value).collect();
+      if let [Some(m), Some(a), Some(b0), Some(b1)] = vals[..] {
+        return Ok(Expr::Real(
+          marcum_q_numeric(m, a, b0) - marcum_q_numeric(m, a, b1),
+        ));
+      }
+    }
+    return Ok(unevaluated(args));
+  }
+
+  let (m, a, b) = (&args[0], &args[1], &args[2]);
+  // b = 0
+  if is_expr_zero(b) {
+    if is_positive_numeric(m) {
+      return Ok(Expr::Integer(1));
+    }
+    if matches!(m, Expr::Integer(v) if *v < 0) {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    if matches!(m, Expr::Integer(0)) {
+      // 1 - E^(-a^2/2)
+      return Ok(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![
+                  Expr::Constant("E".to_string()),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![
+                      Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+                      },
+                      Expr::FunctionCall {
+                        name: "Power".to_string(),
+                        args: vec![a.clone(), Expr::Integer(2)].into(),
+                      },
+                    ]
+                    .into(),
+                  },
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      });
+    }
+    return Ok(unevaluated(args));
+  }
+  // a = 0: GammaRegularized[m, b^2/2]
+  if is_expr_zero(a) {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "GammaRegularized".to_string(),
+      args: vec![
+        m.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+            },
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![b.clone(), Expr::Integer(2)].into(),
+            },
+          ]
+          .into(),
+        },
+      ]
+      .into(),
+    });
+  }
+  if has_real
+    && let (Some(m), Some(a), Some(b)) =
+      (numeric_value(m), numeric_value(a), numeric_value(b))
+  {
+    return Ok(Expr::Real(marcum_q_numeric(m, a, b)));
+  }
+  Ok(unevaluated(args))
+}
+
+/// Q_m(a, b) = sum_n Poisson(n; a^2/2) Q(m + n, b^2/2)
+fn marcum_q_numeric(m: f64, a: f64, b: f64) -> f64 {
+  if b <= 0.0 {
+    return 1.0;
+  }
+  let p = a * a / 2.0;
+  let y = b * b / 2.0;
+  if p == 0.0 {
+    return gamma_regularized_numeric(m, y);
+  }
+  let mut sum = 0.0;
+  let mut pois = (-p).exp();
+  let mut q = gamma_regularized_numeric(m, y);
+  // increment term: y^s e^(-y) / Gamma(s + 1), starting at s = m
+  let mut s = m;
+  let mut inc = (s * y.ln() - y - lgamma(s + 1.0)).exp();
+  for n in 1..=4000 {
+    sum += pois * q;
+    pois *= p / n as f64;
+    q += inc;
+    s += 1.0;
+    inc *= y / s;
+    if pois < 1e-18 && n as f64 > p {
+      break;
+    }
+  }
+  sum
 }
 
 /// Compute Q(a, z) = 1 - P(a, z) numerically
@@ -1363,35 +1572,36 @@ fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
     }
     1.0 - prefix * sum
   } else {
-    // Continued fraction for Q(a, z) using Lentz's method
+    // Continued fraction for Q(a, z) via modified Lentz:
+    // Q = prefix / (z+1-a - 1(1-a)/(z+3-a - 2(2-a)/(z+5-a - ...)))
     let ln_prefix = a * z.ln() - z - lgamma(a);
     let prefix = ln_prefix.exp();
 
-    let b0 = z - a + 1.0;
-    let mut f = if b0.abs() < 1e-30 { 1e-30 } else { b0 };
-    let mut c = f;
-    let mut d;
-
-    for n in 1..200 {
-      let an = (n as f64) * (a - n as f64);
-      let bn = z - a + 2.0 * n as f64 + 1.0;
-
-      d = bn + an / f;
-      if d.abs() < 1e-30 {
-        d = 1e-30;
+    let fpmin = 1e-300;
+    let mut b = z + 1.0 - a;
+    let mut c = 1.0 / fpmin;
+    let mut d = 1.0 / if b.abs() < fpmin { fpmin } else { b };
+    let mut h = d;
+    for i in 1..200 {
+      let an = -(i as f64) * (i as f64 - a);
+      b += 2.0;
+      d = an * d + b;
+      if d.abs() < fpmin {
+        d = fpmin;
       }
-      c = bn + an / c;
-      if c.abs() < 1e-30 {
-        c = 1e-30;
+      c = b + an / c;
+      if c.abs() < fpmin {
+        c = fpmin;
       }
-      let delta = c / d;
-      f *= delta;
+      d = 1.0 / d;
+      let delta = d * c;
+      h *= delta;
       if (delta - 1.0).abs() < 1e-15 {
         break;
       }
     }
 
-    prefix / f
+    prefix * h
   }
 }
 

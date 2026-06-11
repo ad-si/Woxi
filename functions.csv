@@ -5222,7 +5222,7 @@ KeyComplement,,,,10.1,5486
 LessSlantEqual,,,,3.0,5486
 LibraryFunctionInformation,,,,8.0,5486
 LinearFractionalOptimization,,,,12.0,5486
-MarcumQ,,,,8.0,5486
+MarcumQ,Generalized Marcum Q function (symbolic rules and numeric series),✅,pure,8.0,5486
 NegativeReals,Domain of negative real numbers,✅,pure,12.0,5486
 NetDelete,,🚫,,11.3,5486
 NotExists,,,,3.0,5486

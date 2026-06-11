@@ -8481,3 +8481,77 @@ mod fourier_dst {
     );
   }
 }
+
+mod marcum_q {
+  use super::*;
+
+  #[test]
+  fn symbolic_rules() {
+    // Exact arguments stay symbolic
+    assert_eq!(interpret("MarcumQ[1, 2, 3]").unwrap(), "MarcumQ[1, 2, 3]");
+    assert_eq!(
+      interpret("MarcumQ[3/2, Sqrt[2], 0, Sqrt[x]]").unwrap(),
+      "MarcumQ[3/2, Sqrt[2], 0, Sqrt[x]]"
+    );
+    // a = 0 reduces to GammaRegularized
+    assert_eq!(
+      interpret("MarcumQ[m, 0, b]").unwrap(),
+      "GammaRegularized[m, b^2/2]"
+    );
+    assert_eq!(interpret("MarcumQ[1, 0, 3]").unwrap(), "E^(-9/2)");
+    // b = 0 needs a numeric order: 1 when positive, pole at negative
+    // integers, the closed form at m = 0, otherwise untouched
+    assert_eq!(interpret("MarcumQ[1, a, 0]").unwrap(), "1");
+    assert_eq!(interpret("MarcumQ[1/2, a, 0]").unwrap(), "1");
+    assert_eq!(interpret("MarcumQ[-1, a, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("MarcumQ[0, a, 0]").unwrap(), "1 - E^(-1/2*a^2)");
+    assert_eq!(interpret("MarcumQ[m, a, 0]").unwrap(), "MarcumQ[m, a, 0]");
+  }
+
+  #[test]
+  fn numeric_evaluation() {
+    // wolframscript agrees to ~15 digits; assert via Round projections
+    assert_eq!(
+      interpret("Round[10^10 MarcumQ[1., 2., 3.]]").unwrap(),
+      "2143620882"
+    );
+    assert_eq!(
+      interpret("Round[10^10 MarcumQ[2., 1., 3.]]").unwrap(),
+      "1236287686"
+    );
+    assert_eq!(
+      interpret("Round[10^10 MarcumQ[1, 2., 0.5]]").unwrap(),
+      "9820693673"
+    );
+  }
+}
+
+mod gamma_regularized_exact_and_cf {
+  use super::*;
+
+  #[test]
+  fn integer_first_argument_evaluates_exactly() {
+    // Regression: stayed unevaluated before
+    assert_eq!(interpret("GammaRegularized[1, 9/2]").unwrap(), "E^(-9/2)");
+    assert_eq!(interpret("GammaRegularized[2, 3]").unwrap(), "4/E^3");
+    assert_eq!(
+      interpret("GammaRegularized[3, 1/2]").unwrap(),
+      "13/(8*Sqrt[E])"
+    );
+    // Symbolic z stays put
+    assert_eq!(
+      interpret("GammaRegularized[4, x]").unwrap(),
+      "GammaRegularized[4, x]"
+    );
+  }
+
+  #[test]
+  fn continued_fraction_branch_regression() {
+    // Regression: the z >= a + 1 branch returned 0.0643 instead of
+    // e^(-4.5)*5.5 = 0.0611 (broken Lentz iteration)
+    assert_eq!(
+      interpret("Round[10^10 GammaRegularized[2., 4.5]]").unwrap(),
+      "610994810"
+    );
+  }
+}
