@@ -1751,9 +1751,68 @@ fn is_numeric_factor(e: &Expr) -> bool {
 /// Returns None if the expression is not a simple polynomial term.
 /// E.g. `x` → [(x, 1.0)], `x^2` → [(x, 2.0)], `a*b` → [(a, 1.0), (b, 1.0)]
 /// Numeric factors in Times (like `5^(-1/2)` in `x/Sqrt[5]`) are skipped.
+/// Whether a FunctionCall behaves like an indexed variable (x[1], f[2], ...)
+/// for Plus-ordering purposes: an unknown (non-builtin) head applied to
+/// atomic arguments. Builtin heads (Sin, Log, ...) keep their existing
+/// transcendental-priority ordering.
+fn is_indexed_variable(e: &Expr) -> bool {
+  if let Expr::FunctionCall { name, args } = e
+    && !args.is_empty()
+    && crate::evaluator::dispatch::arg_count::get_arg_count_range(name)
+      .is_none()
+    && !matches!(
+      name.as_str(),
+      "Times"
+        | "Plus"
+        | "Power"
+        | "Rational"
+        | "Complex"
+        | "List"
+        | "Sequence"
+        | "Slot"
+        | "Cycles"
+        | "Missing"
+        | "Span"
+        | "DirectedInfinity"
+        | "Overflow"
+        | "Underflow"
+    )
+  {
+    // Numeric/string arguments only (x[1], f[2], C[1]): symbol arguments
+    // like h[c] keep the pre-existing opaque ordering rules.
+    args
+      .iter()
+      .all(|a| matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::String(_)))
+  } else {
+    false
+  }
+}
+
+/// Plus-ordering key for an indexed variable: integer arguments are
+/// zero-padded so that plain lexicographic comparison sorts them
+/// numerically (x[2] < x[10]), matching Wolfram. Symbol names themselves
+/// stay plainly lexicographic (x10 < x2).
+fn indexed_var_key(e: &Expr) -> String {
+  if let Expr::FunctionCall { name, args } = e {
+    let parts: Vec<String> = args
+      .iter()
+      .map(|a| match a {
+        Expr::Integer(n) if *n >= 0 => format!("{:020}", n),
+        other => expr_to_string(other),
+      })
+      .collect();
+    format!("{}[{}]", name, parts.join(", "))
+  } else {
+    expr_to_string(e)
+  }
+}
+
 fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
   match e {
     Expr::Identifier(s) => Some(vec![(s.clone(), 1.0)]),
+    // Indexed variables (x[1], f[2], ...) sort as polynomial variables
+    // keyed by their padded string form, matching wolframscript.
+    e if is_indexed_variable(e) => Some(vec![(indexed_var_key(e), 1.0)]),
     Expr::Constant(c) => Some(vec![(format!("{c:?}"), 1.0)]),
     // Treat the real-valued complex-component functions (Re, Im, Abs, Arg,
     // Conjugate) as polynomial "variables" keyed by their full string form
@@ -1808,6 +1867,10 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         // ordering rules apply.
         return Some(vec![(format!("{c:?}"), exp)]);
       }
+      if is_indexed_variable(left) {
+        let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
+        return Some(vec![(indexed_var_key(left), exp)]);
+      }
       if let Expr::FunctionCall { name, .. } = left.as_ref()
         && matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
       {
@@ -1825,6 +1888,10 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         && let Some(exp) = expr_to_f64(&args[1])
       {
         return Some(vec![(format!("{c:?}"), exp)]);
+      }
+      if is_indexed_variable(&args[0]) {
+        let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
+        return Some(vec![(indexed_var_key(&args[0]), exp)]);
       }
       if let Expr::FunctionCall { name: inner, .. } = &args[0]
         && matches!(inner.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
@@ -2132,6 +2199,29 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
   let pairs_a = extract_var_exp_pairs(&base_a);
   let pairs_b = extract_var_exp_pairs(&base_b);
+  // Indexed-variable-only pair sets (f[0], C[1], x[1]^2*x[2]^2 — recognized
+  // by the zero-padded key) participate in polynomial ordering only when
+  // BOTH terms have pairs; against pair-less terms they keep the
+  // pre-existing opaque ordering rules (wolframscript puts e.g.
+  // GeneratingFunction[f[n], n, x] before -f[0]).
+  let only_indexed = |ps: &Option<Vec<(String, f64)>>| {
+    ps.as_ref()
+      .map(|v| {
+        !v.is_empty() && v.iter().all(|p| p.0.contains("[0000000000"))
+      })
+      .unwrap_or(false)
+  };
+  let (pairs_a, pairs_b) = if pairs_a.is_some() != pairs_b.is_some() {
+    if only_indexed(&pairs_a) {
+      (None, pairs_b)
+    } else if only_indexed(&pairs_b) {
+      (pairs_a, None)
+    } else {
+      (pairs_a, pairs_b)
+    }
+  } else {
+    (pairs_a, pairs_b)
+  };
   let a_has_pairs = pairs_a.is_some();
   let b_has_pairs = pairs_b.is_some();
 
@@ -2173,6 +2263,31 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let pair_term = if a_has_pairs { a } else { b };
         let none_term = if b_has_pairs { a } else { b };
         let (_, none_base) = decompose_term(none_term);
+        // Symbolic powers of numeric bases ((-1)^n, 2^b) sort before any
+        // polynomial-like term — wolframscript: (-1)^n + C[1], 2^b + x[3].
+        let is_numeric_base_symbolic_power = |e: &Expr| -> bool {
+          let (base, exp): (&Expr, &Expr) = match e {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left,
+              right,
+            } => (left, right),
+            Expr::FunctionCall { name, args }
+              if name == "Power" && args.len() == 2 =>
+            {
+              (&args[0], &args[1])
+            }
+            _ => return false,
+          };
+          expr_to_f64(base).is_some() && expr_to_f64(exp).is_none()
+        };
+        if is_numeric_base_symbolic_power(&none_base) {
+          return if a_has_pairs {
+            std::cmp::Ordering::Greater
+          } else {
+            std::cmp::Ordering::Less
+          };
+        }
         if contains_opaque_fn_call(none_term) || term_priority(&none_base) >= 1
         {
           return if a_has_pairs {

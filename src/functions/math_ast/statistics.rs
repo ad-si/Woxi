@@ -2942,6 +2942,22 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(alternating_group_elements(*n as usize));
   }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "CyclicGroup"
+    && gargs.len() == 1
+    && let Expr::Integer(n) = &gargs[0]
+    && *n >= 0
+  {
+    return Ok(cyclic_group_elements(*n as usize));
+  }
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "SymmetricGroup"
+    && gargs.len() == 1
+    && let Expr::Integer(n) = &gargs[0]
+    && *n >= 0
+  {
+    return Ok(symmetric_group_elements(*n as usize));
+  }
   Ok(unevaluated())
 }
 
@@ -4506,4 +4522,286 @@ pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let lower = 1.0 - upper;
   Ok(Expr::Real(2.0 * lower.min(upper)))
+}
+
+/// GroupElements[CyclicGroup[n]] - the n rotations, ordered by power of the
+/// generator (which coincides with lexicographic image-list order).
+fn cyclic_group_elements(n: usize) -> Expr {
+  if n <= 1 {
+    return Expr::List(vec![make_cycles_multi(Vec::new())].into());
+  }
+  let mut elements = Vec::with_capacity(n);
+  for k in 0..n {
+    let image: Vec<i128> =
+      (0..n).map(|i| ((i + k) % n + 1) as i128).collect();
+    elements.push(images_to_cycles(&image));
+  }
+  Expr::List(elements.into())
+}
+
+/// GroupElements[SymmetricGroup[n]] - all n! permutations in lexicographic
+/// image-list order, matching wolframscript.
+fn symmetric_group_elements(n: usize) -> Expr {
+  if n <= 1 {
+    return Expr::List(vec![make_cycles_multi(Vec::new())].into());
+  }
+  let mut image: Vec<i128> = (1..=n as i128).collect();
+  let mut elements: Vec<Expr> = Vec::new();
+  loop {
+    elements.push(images_to_cycles(&image));
+    if !next_permutation(&mut image) {
+      break;
+    }
+  }
+  Expr::List(elements.into())
+}
+
+/// Cycle lengths (excluding fixed points) of a `Cycles[{{...}, ...}]` expr.
+/// Returns None when the expr is not a well-formed Cycles object.
+fn cycles_expr_lengths(e: &Expr) -> Option<Vec<usize>> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Cycles"
+    && args.len() == 1
+    && let Expr::List(cycles) = &args[0]
+  {
+    let mut lengths = Vec::with_capacity(cycles.len());
+    for c in cycles.iter() {
+      if let Expr::List(points) = c {
+        lengths.push(points.len());
+      } else {
+        return None;
+      }
+    }
+    Some(lengths)
+  } else {
+    None
+  }
+}
+
+/// CycleIndexPolynomial[group, {x1, x2, ...}] - the cycle index polynomial
+/// (1/|G|) * Sum over elements of Prod x_l^(number of l-cycles), counting
+/// fixed points as 1-cycles. Variables beyond the supplied list are 1
+/// (matching wolframscript).
+pub fn cycle_index_polynomial_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "CycleIndexPolynomial".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  let call_str = || {
+    crate::syntax::format_expr(
+      &Expr::FunctionCall {
+        name: "CycleIndexPolynomial".to_string(),
+        args: args.to_vec().into(),
+      },
+      crate::syntax::ExprForm::Output,
+    )
+  };
+
+  // Resolve the group to (element list, degree of the action)
+  let resolved: Option<(Expr, usize)> = match &args[0] {
+    Expr::FunctionCall { name, args: gargs } if gargs.len() == 1 => {
+      match name.as_str() {
+        "CyclicGroup" | "SymmetricGroup" | "AlternatingGroup"
+        | "DihedralGroup" => {
+          let min_n = if name == "DihedralGroup" { 1 } else { 0 };
+          match &gargs[0] {
+            Expr::Integer(n) if *n >= min_n => {
+              let n = *n as usize;
+              let elements = match name.as_str() {
+                "CyclicGroup" => cyclic_group_elements(n),
+                "SymmetricGroup" => symmetric_group_elements(n),
+                "AlternatingGroup" => alternating_group_elements(n),
+                _ => dihedral_group_elements(n),
+              };
+              Some((elements, n))
+            }
+            _ => None,
+          }
+        }
+        "AbelianGroup" => abelian_factors(&gargs[0]).map(|factors| {
+          let degree = factors.iter().sum();
+          (abelian_group_elements(&factors), degree)
+        }),
+        "PermutationGroup" => {
+          permutation_group_closure(&gargs[0]).map(|(elements, degree)| {
+            (Expr::List(elements.into()), degree)
+          })
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let (elements, degree) = match resolved {
+    Some(r) => r,
+    None => {
+      crate::emit_message(&format!(
+        "CycleIndexPolynomial::grp: {} is not a valid group.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  let vars = match &args[1] {
+    Expr::List(v) => v,
+    _ => {
+      crate::emit_message(&format!(
+        "CycleIndexPolynomial::list: List expected at position 2 in {}.",
+        call_str()
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  let element_list = match &elements {
+    Expr::List(items) => items,
+    _ => return Ok(unevaluated()),
+  };
+  let order = element_list.len() as i128;
+  if order == 0 {
+    return Ok(unevaluated());
+  }
+
+  // Aggregate cycle types: counts of (multiplicity per cycle length)
+  let mut type_counts: std::collections::BTreeMap<Vec<usize>, i128> =
+    Default::default();
+  for e in element_list.iter() {
+    let lengths = match cycles_expr_lengths(e) {
+      Some(l) => l,
+      None => return Ok(unevaluated()),
+    };
+    let moved: usize = lengths.iter().sum();
+    let mut mult = vec![0usize; degree + 1];
+    if degree >= moved {
+      mult[1] += degree - moved; // fixed points are 1-cycles
+    }
+    for l in lengths {
+      if l <= degree {
+        mult[l] += 1;
+      }
+    }
+    *type_counts.entry(mult).or_insert(0) += 1;
+  }
+
+  let var_for = |k: usize| -> Expr {
+    vars.get(k - 1).cloned().unwrap_or(Expr::Integer(1))
+  };
+  let terms: Vec<Expr> = type_counts
+    .into_iter()
+    .map(|(mult, count)| {
+      let mut factors: Vec<Expr> = vec![Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(count), Expr::Integer(order)].into(),
+      }];
+      for (k, &m) in mult.iter().enumerate().skip(1) {
+        if m == 0 {
+          continue;
+        }
+        let base = var_for(k);
+        factors.push(if m == 1 {
+          base
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(base),
+            right: Box::new(Expr::Integer(m as i128)),
+          }
+        });
+      }
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      }
+    })
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  })
+}
+
+/// Expand PermutationGroup generators into the full group via BFS closure.
+/// Returns the elements (as Cycles exprs, ordered lexicographically by
+/// image list) and the degree (largest moved point among the generators).
+fn permutation_group_closure(
+  gens: &Expr,
+) -> Option<(Vec<Expr>, usize)> {
+  let gen_list = match gens {
+    Expr::List(g) => g,
+    _ => return None,
+  };
+  // Degree: largest point appearing in any generator
+  let mut degree = 0usize;
+  let mut gen_lengths: Vec<Vec<Vec<usize>>> = Vec::new();
+  for g in gen_list.iter() {
+    if let Expr::FunctionCall { name, args } = g
+      && name == "Cycles"
+      && args.len() == 1
+      && let Expr::List(cycles) = &args[0]
+    {
+      let mut parsed = Vec::new();
+      for c in cycles.iter() {
+        if let Expr::List(points) = c {
+          let mut cyc = Vec::with_capacity(points.len());
+          for p in points.iter() {
+            if let Expr::Integer(v) = p
+              && *v >= 1
+            {
+              degree = degree.max(*v as usize);
+              cyc.push(*v as usize);
+            } else {
+              return None;
+            }
+          }
+          parsed.push(cyc);
+        } else {
+          return None;
+        }
+      }
+      gen_lengths.push(parsed);
+    } else {
+      return None;
+    }
+  }
+  // Generators as image lists over 1..degree
+  let to_image = |cycles: &[Vec<usize>]| -> Vec<usize> {
+    let mut image: Vec<usize> = (1..=degree).collect();
+    for cyc in cycles {
+      for w in 0..cyc.len() {
+        image[cyc[w] - 1] = cyc[(w + 1) % cyc.len()];
+      }
+    }
+    image
+  };
+  let gen_images: Vec<Vec<usize>> = gen_lengths.iter().map(|c| to_image(c)).collect();
+  let identity: Vec<usize> = (1..=degree).collect();
+  let mut seen: std::collections::BTreeSet<Vec<usize>> =
+    std::collections::BTreeSet::new();
+  seen.insert(identity.clone());
+  let mut queue = std::collections::VecDeque::new();
+  queue.push_back(identity);
+  while let Some(cur) = queue.pop_front() {
+    for g in &gen_images {
+      // compose: apply cur first, then g
+      let next: Vec<usize> = cur.iter().map(|&v| g[v - 1]).collect();
+      if seen.insert(next.clone()) {
+        if seen.len() > 100_000 {
+          return None;
+        }
+        queue.push_back(next);
+      }
+    }
+  }
+  let elements: Vec<Expr> = seen
+    .into_iter()
+    .map(|image| {
+      let image_i128: Vec<i128> = image.iter().map(|&v| v as i128).collect();
+      images_to_cycles(&image_i128)
+    })
+    .collect();
+  Some((elements, degree))
 }

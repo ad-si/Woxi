@@ -3045,7 +3045,7 @@ AutoDelete,,,,3.0,3121
 CellProlog,,🚫,,6.0,3121
 ConnectedGraphComponents,Return connected components as subgraphs,✅,pure,10.4,3121
 CurvatureFlowFilter,,🚫,,8.0,3121
-CyclicGroup,,,,8.0,3121
+CyclicGroup,Symbolic cyclic group of order n; consumed by GroupOrder/GroupGenerators/GroupElements/CycleIndexPolynomial,✅,unevaluated,8.0,3121
 DimensionReduce,,🚫,,10.1,3121
 Dithering,,🚫,,8.0,3121
 DynamicModuleBox,,🚫,,6.0,3121
@@ -3053,7 +3053,7 @@ FARIMAProcess,,🚫,,9.0,3121
 ImageLevels,,🚫,,8.0,3121
 InverseFourierSinTransform,,,,4.0,3121
 LocalTime,,,,10.0,3121
-CycleIndexPolynomial,,,,9.0,3124
+CycleIndexPolynomial,Cycle index polynomial of a permutation group in given variables,✅,pure,9.0,3124
 Dodecahedron,,,,12.0,3124
 EulerianGraphQ,Test whether a graph has an Eulerian circuit,✅,pure,8.0,3124
 CellEventActions,,🚫,,6.0,3134

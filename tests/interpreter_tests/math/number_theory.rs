@@ -3589,8 +3589,7 @@ mod dirichlet_convolve {
       "DirichletConvolve[f[n], g[n], n, m]"
     );
     assert_eq!(
-      interpret("DirichletConvolve[MoebiusMu[n], MoebiusMu[n], n, m]")
-        .unwrap(),
+      interpret("DirichletConvolve[MoebiusMu[n], MoebiusMu[n], n, m]").unwrap(),
       "DirichletConvolve[MoebiusMu[n], MoebiusMu[n], n, m]"
     );
     assert_eq!(
@@ -3658,5 +3657,178 @@ mod moebius_mu_symbolic {
     assert_eq!(interpret("MoebiusMu[-6]").unwrap(), "1");
     assert_eq!(interpret("MoebiusMu[-4]").unwrap(), "0");
     assert_eq!(interpret("MoebiusMu[-5]").unwrap(), "-1");
+  }
+}
+
+mod cyclic_group_and_cycle_index {
+  use super::*;
+
+  #[test]
+  fn cyclic_group_is_inert_and_consumed() {
+    assert_eq!(interpret("CyclicGroup[4]").unwrap(), "CyclicGroup[4]");
+    assert_eq!(interpret("GroupOrder[CyclicGroup[6]]").unwrap(), "6");
+    assert_eq!(
+      interpret("GroupGenerators[CyclicGroup[4]]").unwrap(),
+      "{Cycles[{{1, 2, 3, 4}}]}"
+    );
+    assert_eq!(interpret("GroupGenerators[CyclicGroup[1]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn cyclic_group_elements() {
+    assert_eq!(
+      interpret("GroupElements[CyclicGroup[4]]").unwrap(),
+      "{Cycles[{}], Cycles[{{1, 2, 3, 4}}], Cycles[{{1, 3}, {2, 4}}], Cycles[{{1, 4, 3, 2}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[CyclicGroup[1]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[CyclicGroup[0]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+  }
+
+  #[test]
+  fn symmetric_group_elements() {
+    // Lexicographic image-list order, matching wolframscript
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[3]]").unwrap(),
+      "{Cycles[{}], Cycles[{{2, 3}}], Cycles[{{1, 2}}], Cycles[{{1, 2, 3}}], Cycles[{{1, 3, 2}}], Cycles[{{1, 3}}]}"
+    );
+    assert_eq!(
+      interpret("GroupElements[SymmetricGroup[0]]").unwrap(),
+      "{Cycles[{}]}"
+    );
+  }
+
+  #[test]
+  fn cycle_index_named_groups() {
+    assert_eq!(
+      interpret(
+        "CycleIndexPolynomial[CyclicGroup[4], {x[1], x[2], x[3], x[4]}]"
+      )
+      .unwrap(),
+      "x[1]^4/4 + x[2]^2/4 + x[4]/2"
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[SymmetricGroup[3], {a, b, c}]")
+        .unwrap(),
+      "a^3/6 + (a*b)/2 + c/3"
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[DihedralGroup[4], {a, b, c, d}]")
+        .unwrap(),
+      "a^4/8 + (a^2*b)/4 + (3*b^2)/8 + d/4"
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[AlternatingGroup[4], {a, b, c, d}]")
+        .unwrap(),
+      "a^4/12 + b^2/4 + (2*a*c)/3"
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[SymmetricGroup[4], {a, b, c, d}]")
+        .unwrap(),
+      "a^4/24 + (a^2*b)/4 + b^2/8 + (a*c)/3 + d/4"
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[AbelianGroup[{2, 2}], {a, b}]")
+        .unwrap(),
+      "a^4/4 + (a^2*b)/2 + b^2/4"
+    );
+  }
+
+  #[test]
+  fn cycle_index_permutation_group_closure() {
+    assert_eq!(
+      interpret(
+        "CycleIndexPolynomial[PermutationGroup[{Cycles[{{1, 2}}]}], {a, b}]"
+      )
+      .unwrap(),
+      "a^2/2 + b/2"
+    );
+    // Generators of S3
+    assert_eq!(
+      interpret(
+        "CycleIndexPolynomial[PermutationGroup[{Cycles[{{1, 2, 3}}], Cycles[{{1, 2}}]}], {a, b, c}]"
+      )
+      .unwrap(),
+      "a^3/6 + (a*b)/2 + c/3"
+    );
+  }
+
+  #[test]
+  fn cycle_index_short_vars_become_one() {
+    assert_eq!(
+      interpret("CycleIndexPolynomial[SymmetricGroup[3], {a, b}]").unwrap(),
+      "1/3 + a^3/6 + (a*b)/2"
+    );
+  }
+
+  #[test]
+  fn cycle_index_indexed_variable_ordering() {
+    // Regression: products of indexed variables previously sorted after
+    // single powers in Plus (x[1]^2*x[2]^2 came after x[3]^2)
+    assert_eq!(
+      interpret(
+        "CycleIndexPolynomial[DihedralGroup[6], {x[1], x[2], x[3], x[4], x[5], x[6]}]"
+      )
+      .unwrap(),
+      "x[1]^6/12 + (x[1]^2*x[2]^2)/4 + x[2]^3/3 + x[3]^2/6 + x[6]/6"
+    );
+    // Indexed-variable arguments compare numerically: x[5] before x[10]
+    assert_eq!(
+      interpret("CycleIndexPolynomial[CyclicGroup[10], Array[x, 10]]")
+        .unwrap(),
+      "x[1]^10/10 + x[2]^5/10 + (2*x[5]^2)/5 + (2*x[10])/5"
+    );
+    assert_eq!(
+      interpret("x[1]^6 + x[2]^3 + x[1]^2 x[2]^2").unwrap(),
+      "x[1]^6 + x[1]^2*x[2]^2 + x[2]^3"
+    );
+    // Plain symbol names stay lexicographic (x10 before x2)
+    assert_eq!(interpret("x2 + x10").unwrap(), "x10 + x2");
+  }
+
+  #[test]
+  fn cycle_index_error_messages() {
+    assert_eq!(
+      interpret("CycleIndexPolynomial[x, {a, b}]").unwrap(),
+      "CycleIndexPolynomial[x, {a, b}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("CycleIndexPolynomial::grp: x is not a valid group.")),
+      "expected grp message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[CyclicGroup[3], x]").unwrap(),
+      "CycleIndexPolynomial[CyclicGroup[3], x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CycleIndexPolynomial::list: List expected at position 2 in CycleIndexPolynomial[CyclicGroup[3], x]."
+      )),
+      "expected list message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("CycleIndexPolynomial[CyclicGroup[3]]").unwrap(),
+      "CycleIndexPolynomial[CyclicGroup[3]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "CycleIndexPolynomial::argtu: CycleIndexPolynomial called with 1 argument; 2 or 3 arguments are expected."
+      )),
+      "expected argtu message, got {:?}",
+      msgs
+    );
   }
 }
