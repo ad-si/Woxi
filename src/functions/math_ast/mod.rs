@@ -10,7 +10,7 @@ mod digits;
 mod distributions;
 mod elementary;
 mod elliptic;
-mod gamma;
+pub(crate) mod gamma;
 mod hypergeometric;
 mod integrals;
 mod jacobi;

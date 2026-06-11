@@ -822,6 +822,9 @@ pub fn dispatch_math_functions(
     "ZTest" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::ztest_ast(args));
     }
+    "FisherRatioTest" if !args.is_empty() && args.len() <= 3 => {
+      return Some(crate::functions::math_ast::fisher_ratio_test_ast(args));
+    }
     "Fibonorial" if args.len() == 1 => {
       return Some(crate::functions::math_ast::fibonorial_ast(args));
     }

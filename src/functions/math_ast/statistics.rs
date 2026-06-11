@@ -4405,3 +4405,75 @@ pub fn ztest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => Ok(unevaluated(args)),
   }
 }
+
+/// FisherRatioTest[data] / FisherRatioTest[data, sigma0^2] /
+/// FisherRatioTest[data, sigma0^2, "property"] - one-sample variance
+/// test. The statistic is Total[(x - mean)^2]/sigma0^2 (chi-square
+/// with n-1 degrees of freedom under the null) and the p-value is the
+/// two-sided 2 Min[F[T], 1 - F[T]]. A non-positive or non-numeric
+/// second argument emits FisherRatioTest::sigmnt.
+pub fn fisher_ratio_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FisherRatioTest".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.is_empty() || args.len() > 3 {
+    return Ok(unevaluated(args));
+  }
+  let bad_data = |args: &[Expr]| {
+    crate::emit_message(&format!(
+      "FisherRatioTest::vctnln1: The argument {} at position 1 should be a vector of real numbers with length greater than 1 or a list containing two such vectors.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(Expr::FunctionCall {
+      name: "FisherRatioTest".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let data: Vec<f64> = match &args[0] {
+    Expr::List(items) if items.len() >= 2 => {
+      match items
+        .iter()
+        .map(crate::functions::math_ast::numeric_utils::try_eval_to_f64)
+        .collect::<Option<Vec<f64>>>()
+      {
+        Some(v) => v,
+        None => return bad_data(args),
+      }
+    }
+    _ => return bad_data(args),
+  };
+  let sigma2 = match args.get(1) {
+    None => 1.0,
+    Some(e) => {
+      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(e) {
+        Some(v) if v > 0.0 => v,
+        _ => {
+          crate::emit_message(&format!(
+            "FisherRatioTest::sigmnt: The argument {} should be a positive number.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          return Ok(unevaluated(args));
+        }
+      }
+    }
+  };
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let t = data.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / sigma2;
+  match args.get(2) {
+    None => {}
+    Some(Expr::String(p)) if p == "PValue" => {}
+    Some(Expr::String(p)) if p == "TestStatistic" => {
+      return Ok(Expr::Real(t));
+    }
+    _ => return Ok(unevaluated(args)),
+  }
+  // Two-sided p-value from the chi-square(n-1) CDF
+  let upper = crate::functions::math_ast::gamma::gamma_regularized_numeric(
+    (n - 1.0) / 2.0,
+    t / 2.0,
+  );
+  let lower = 1.0 - upper;
+  Ok(Expr::Real(2.0 * lower.min(upper)))
+}

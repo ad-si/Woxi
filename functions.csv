@@ -2949,7 +2949,7 @@ DagumDistribution,Dagum distribution for income and wealth modeling,✅,pure,8.0
 DiskSegment,,,,10.2,3020
 FailureDistribution,,,,9.0,3020
 FirstPassageTimeDistribution,,,,9.0,3020
-FisherRatioTest,,,,8.0,3020
+FisherRatioTest,One-sample variance ratio test (chi-square two-sided p-value),✅,pure,8.0,3020
 HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020
 NetReplacePart,,🚫,,11.0,3020
 TotalVariationFilter,,🚫,,8.0,3020

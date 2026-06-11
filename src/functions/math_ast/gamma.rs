@@ -1567,7 +1567,7 @@ fn marcum_q_numeric(m: f64, a: f64, b: f64) -> f64 {
 }
 
 /// Compute Q(a, z) = 1 - P(a, z) numerically
-fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
+pub(crate) fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
   if z <= 0.0 {
     return 1.0;
   }

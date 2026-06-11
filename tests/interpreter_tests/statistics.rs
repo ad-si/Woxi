@@ -4069,3 +4069,52 @@ mod ztest {
     assert_eq!(interpret("ZTest[{1, x}]").unwrap(), "ZTest[{1, x}]");
   }
 }
+
+mod fisher_ratio_test {
+  use super::*;
+
+  #[test]
+  fn p_values_and_statistic() {
+    // T = Total[(x - mean)^2]/sigma0^2, chi-square(n-1) two-sided
+    assert_eq!(
+      interpret("Round[10^10 FisherRatioTest[{1.2, 2.1, 0.5, 1.8}]]").unwrap(),
+      "6354593393"
+    );
+    assert_eq!(
+      interpret("Round[10^10 FisherRatioTest[{1.2, 2.1, 0.5, 1.8}, 2]]")
+        .unwrap(),
+      "2772298392"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^10 FisherRatioTest[{1.2, 2.1, 0.5, 1.8}, 1, \"TestStatistic\"]]"
+      )
+      .unwrap(),
+      "15000000000"
+    );
+    // Upper-tail side of the two-sided minimum
+    assert_eq!(
+      interpret("Round[10^10 FisherRatioTest[{1, 2, 3, 4}]]").unwrap(),
+      "3435942886"
+    );
+    assert_eq!(
+      interpret("Round[10^10 FisherRatioTest[{0.5, 0.9, 1.3, 2.0, 0.7}, 3]]")
+        .unwrap(),
+      "471662125"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments() {
+    // A list second argument is not a variance: FisherRatioTest::sigmnt
+    assert_eq!(
+      interpret("FisherRatioTest[{1, 2, 3, 4}, {2, 4, 6, 8}]").unwrap(),
+      "FisherRatioTest[{1, 2, 3, 4}, {2, 4, 6, 8}]"
+    );
+    // Non-vector data: FisherRatioTest::vctnln1
+    assert_eq!(
+      interpret("FisherRatioTest[x]").unwrap(),
+      "FisherRatioTest[x]"
+    );
+  }
+}
