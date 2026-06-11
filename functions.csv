@@ -2989,7 +2989,7 @@ EndOfBuffer,,,,10.0,3059
 FacialFeatures,,🚫,,11.3,3059
 LessThan,Operator form of Less,✅,none,10.3,3059
 MissingDataMethod,,,,9.0,3059
-NoncentralChiSquareDistribution,,,,6.0,3059
+NoncentralChiSquareDistribution,Noncentral chi-square distribution (moments and parity-cased PDF),✅,pure,6.0,3059
 StationaryWaveletPacketTransform,,🚫,,8.0,3059
 ZTest,,,,8.0,3059
 BioSequence,,🚫,,12.2,3070

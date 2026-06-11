@@ -1832,3 +1832,101 @@ mod beta_regularized_exact {
     assert_eq!(interpret("BetaRegularized[1/2, 2, 2]").unwrap(), "1/2");
   }
 }
+
+mod noncentral_chi_square_distribution {
+  use super::*;
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[NoncentralChiSquareDistribution[3, 2]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Variance[NoncentralChiSquareDistribution[3, 2]]").unwrap(),
+      "14"
+    );
+    assert_eq!(
+      interpret("Mean[NoncentralChiSquareDistribution[v, l]]").unwrap(),
+      "l + v"
+    );
+    assert_eq!(
+      interpret("Variance[NoncentralChiSquareDistribution[v, l]]").unwrap(),
+      "4*l + 2*v"
+    );
+  }
+
+  #[test]
+  fn pdf_odd_degrees_collapse_to_hyperbolics() {
+    // v = 3: Sinh with the Sqrt[2 l Pi] denominator canonicalizing
+    // per lambda (extracted square, merged radical, dropped unit)
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[3, 2], x]").unwrap(),
+      "Piecewise[{{(E^((-2 - x)/2)*Sinh[Sqrt[2]*Sqrt[x]])/(2*Sqrt[Pi]), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[3, 3], x]").unwrap(),
+      "Piecewise[{{(E^((-3 - x)/2)*Sinh[Sqrt[3]*Sqrt[x]])/Sqrt[6*Pi], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[3, 1/2], x]").unwrap(),
+      "Piecewise[{{(E^((-1/2 - x)/2)*Sinh[Sqrt[x]/Sqrt[2]])/Sqrt[Pi], x > 0}}, 0]"
+    );
+    // v = 1: Cosh form
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[1, 2], x]").unwrap(),
+      "Piecewise[{{(E^((-2 - x)/2)*Cosh[Sqrt[2]*Sqrt[x]])/(Sqrt[2*Pi]*Sqrt[x]), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_even_degrees_keep_hypergeometric() {
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[2, 2], x]").unwrap(),
+      "Piecewise[{{(E^((-2 - x)/2)*Hypergeometric0F1Regularized[1, x/2])/2, x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[4, 3], x]").unwrap(),
+      "Piecewise[{{(E^((-3 - x)/2)*x*Hypergeometric0F1Regularized[2, (3*x)/4])/4, x > 0}}, 0]"
+    );
+    // Fully symbolic skeleton
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[v, l], x]").unwrap(),
+      "Piecewise[{{(E^((-l - x)/2)*x^(-1 + v/2)*Hypergeometric0F1Regularized[v/2, (l*x)/4])/2^(v/2), x > 0}}, 0]"
+    );
+    // Points evaluate for even v
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[2, 2], 3]").unwrap(),
+      "Hypergeometric0F1Regularized[1, 3/2]/(2*E^(5/2))"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[3, 2], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn zero_noncentrality_is_chi_square() {
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[1, 0], x]").unwrap(),
+      "Piecewise[{{1/(E^(x/2)*Sqrt[2*Pi]*Sqrt[x]), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[2, 0], x]").unwrap(),
+      "Piecewise[{{1/(2*E^(x/2)), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[3, 0], x]").unwrap(),
+      "Piecewise[{{Sqrt[x]/(E^(x/2)*Sqrt[2*Pi]), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[4, 0], x]").unwrap(),
+      "Piecewise[{{x/(4*E^(x/2)), x > 0}}, 0]"
+    );
+    // (v-2)!! coefficient appears from v = 5
+    assert_eq!(
+      interpret("PDF[NoncentralChiSquareDistribution[5, 0], x]").unwrap(),
+      "Piecewise[{{x^(3/2)/(3*E^(x/2)*Sqrt[2*Pi]), x > 0}}, 0]"
+    );
+  }
+}

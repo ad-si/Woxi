@@ -146,6 +146,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "UniformSumDistribution" => pdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => pdf_beta_binomial(dargs, x),
     "BetaPrimeDistribution" => pdf_beta_prime(dargs, x),
+    "NoncentralChiSquareDistribution" => pdf_noncentral_chi_square(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -2924,6 +2925,18 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "NoncentralChiSquareDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "NoncentralChiSquareDistribution expects 2 arguments".into(),
+        ));
+      }
+      let (nu, lam) = (dargs[0].clone(), dargs[1].clone());
+      // Mean = v + l, Var = 2 v + 4 l
+      let mean = plus(nu.clone(), lam.clone());
+      let var = plus(times(int(2), nu), times(int(4), lam));
+      Ok((mean, var))
+    }
     "BetaPrimeDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
@@ -7503,4 +7516,233 @@ pub fn cdf_beta_prime(
   }
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   Ok(piecewise(vec![(regularized, cond)], int(0)))
+}
+
+/// PDF[NoncentralChiSquareDistribution[v, l], x] in wolframscript's
+/// per-case forms: the general Hypergeometric0F1Regularized skeleton
+/// for symbolic parameters, evaluated skeletons for even integer v,
+/// the Cosh/Sinh collapses for v = 1 and v = 3, and the chi-square
+/// forms for l = 0. Odd v >= 5 with l != 0 stays unevaluated (Wolfram
+/// collapses those into growing Bessel polynomials), as do points for
+/// odd v (Wolfram switches to BesselI forms there).
+pub fn pdf_noncentral_chi_square(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "NoncentralChiSquareDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (nu, lam) = (dargs[0].clone(), dargs[1].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let raw_div = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let sqrt = |e: Expr| call("Sqrt", vec![e]);
+  let int_of = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(v) => Some(*v),
+      _ => None,
+    }
+  };
+  let numeric_lam = matches!(&lam, Expr::Integer(_) | Expr::Real(_))
+    || matches!(&lam, Expr::FunctionCall { name, .. } if name == "Rational");
+
+  // E^((-l - x)/2)
+  let e_part = |at: &Expr| -> Result<Expr, InterpreterError> {
+    let inner = eval(divide(
+      plus(times(int(-1), lam.clone()), times(int(-1), at.clone())),
+      int(2),
+    ))?;
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(e()),
+      right: Box::new(inner),
+    })
+  };
+
+  let body_at = |at: &Expr| -> Result<Option<Expr>, InterpreterError> {
+    // l = 0: central chi-square print forms
+    let lam_is_zero = matches!(&lam, Expr::Integer(0));
+    if lam_is_zero && let Some(v) = int_of(&nu) {
+      if v < 1 {
+        return Ok(None);
+      }
+      let e_pow = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(e()),
+        right: Box::new(raw_div(at.clone(), int(2))),
+      };
+      if v % 2 == 0 {
+        // x^(v/2 - 1) / (2^(v/2) (v/2 - 1)! E^(x/2))
+        let coef = (1..=(v / 2 - 1)).product::<i128>().max(1)
+          * 2i128.pow((v / 2) as u32);
+        let num = match v / 2 - 1 {
+          0 => int(1),
+          1 => at.clone(),
+          p => Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(at.clone()),
+            right: Box::new(int(p)),
+          },
+        };
+        return Ok(Some(raw_div(num, call("Times", vec![int(coef), e_pow]))));
+      }
+      // odd: x^((v-2)/2) / ((v-2)!! Sqrt[2 Pi] E^(x/2)), negative
+      // powers of x move into the denominator
+      let dfact = (1..=(v - 2)).step_by(2).product::<i128>().max(1);
+      let sqrt_2pi = sqrt(call("Times", vec![int(2), pi()]));
+      let mut den_factors: Vec<Expr> = Vec::new();
+      if dfact > 1 {
+        den_factors.push(int(dfact));
+      }
+      den_factors.push(e_pow);
+      den_factors.push(sqrt_2pi);
+      let num = match v {
+        1 => {
+          den_factors.push(sqrt(at.clone()));
+          int(1)
+        }
+        3 => sqrt(at.clone()),
+        _ => Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(at.clone()),
+          right: Box::new(call("Rational", vec![int(v - 2), int(2)])),
+        },
+      };
+      return Ok(Some(raw_div(num, call("Times", den_factors))));
+    }
+
+    match int_of(&nu) {
+      Some(v) if v >= 2 && v % 2 == 0 && numeric_lam => {
+        // Even v: evaluated 0F1Regularized skeleton
+        let mut factors = vec![e_part(at)?];
+        match v / 2 - 1 {
+          0 => {}
+          1 => factors.push(at.clone()),
+          p => factors.push(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(at.clone()),
+            right: Box::new(int(p)),
+          }),
+        }
+        factors.push(call(
+          "Hypergeometric0F1Regularized",
+          vec![
+            int(v / 2),
+            eval(divide(times(lam.clone(), at.clone()), int(4)))?,
+          ],
+        ));
+        Ok(Some(raw_div(
+          call("Times", factors),
+          int(2i128.pow((v / 2) as u32)),
+        )))
+      }
+      Some(1) if numeric_lam => {
+        // Cosh[Sqrt[l] Sqrt[x]] / (Sqrt[2 Pi] Sqrt[x])
+        let arg = eval(times(sqrt(lam.clone()), sqrt(at.clone())))?;
+        Ok(Some(raw_div(
+          call("Times", vec![e_part(at)?, call("Cosh", vec![arg])]),
+          call(
+            "Times",
+            vec![sqrt(call("Times", vec![int(2), pi()])), sqrt(at.clone())],
+          ),
+        )))
+      }
+      Some(3) if numeric_lam => {
+        // Sinh[Sqrt[l] Sqrt[x]] / Sqrt[2 l Pi]
+        let arg = eval(times(sqrt(lam.clone()), sqrt(at.clone())))?;
+        let den = eval(sqrt(times(times(int(2), lam.clone()), pi())))?;
+        Ok(Some(raw_div(
+          call("Times", vec![e_part(at)?, call("Sinh", vec![arg])]),
+          den,
+        )))
+      }
+      Some(_) => Ok(None),
+      None if !numeric_lam || matches!(&nu, Expr::Identifier(_)) => {
+        // Fully or partially symbolic: the general skeleton
+        let half_nu = raw_div(nu.clone(), int(2));
+        Ok(Some(raw_div(
+          call(
+            "Times",
+            vec![
+              e_part(at)?,
+              Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(at.clone()),
+                right: Box::new(call("Plus", vec![int(-1), half_nu.clone()])),
+              },
+              call(
+                "Hypergeometric0F1Regularized",
+                vec![
+                  half_nu.clone(),
+                  raw_div(times(lam.clone(), at.clone()), int(4)),
+                ],
+              ),
+            ],
+          ),
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(int(2)),
+            right: Box::new(half_nu),
+          },
+        )))
+      }
+      None => Ok(None),
+    }
+  };
+
+  // Numeric point
+  let numeric_x = matches!(&x, Expr::Integer(_) | Expr::Real(_))
+    || matches!(&x, Expr::FunctionCall { name, .. } if name == "Rational");
+  if numeric_x {
+    let positive = match &x {
+      Expr::Integer(v) => *v > 0,
+      Expr::Real(v) => *v > 0.0,
+      Expr::FunctionCall { name, args } if name == "Rational" => matches!(
+        (&args[0], &args[1]),
+        (Expr::Integer(p), Expr::Integer(q)) if p.signum() * q.signum() > 0
+      ),
+      _ => false,
+    };
+    if !positive {
+      return Ok(int(0));
+    }
+    // Points keep the even-v / l = 0 forms; odd v uses BesselI prints
+    // in Wolfram that are not reproduced here
+    let odd_v = matches!(int_of(&nu), Some(v) if v % 2 == 1)
+      && !matches!(&lam, Expr::Integer(0));
+    if odd_v {
+      return Ok(unevaluated(dargs, x));
+    }
+    return match body_at(&x)? {
+      Some(body) => eval(body),
+      None => Ok(unevaluated(dargs, x)),
+    };
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  match body_at(&x)? {
+    Some(body) => {
+      let cond = comparison(x, ComparisonOp::Greater, int(0));
+      Ok(piecewise(vec![(body, cond)], int(0)))
+    }
+    None => Ok(unevaluated(dargs, x)),
+  }
 }
