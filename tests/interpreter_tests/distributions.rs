@@ -2241,3 +2241,92 @@ mod min_stable_distribution {
     );
   }
 }
+
+mod max_stable_distribution {
+  use super::*;
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[MaxStableDistribution[0, 1, 0], x]").unwrap(),
+      "E^(-E^(-x) - x)"
+    );
+    // The second exponent term reuses the (a - x)/b argument
+    assert_eq!(
+      interpret("PDF[MaxStableDistribution[2, 3, 0], x]").unwrap(),
+      "E^(-E^((2 - x)/3) + (2 - x)/3)/3"
+    );
+    assert_eq!(
+      interpret("PDF[MaxStableDistribution[0, 1, 1], x]").unwrap(),
+      "Piecewise[{{1/(E^(1 + x)^(-1)*(1 + x)^2), 1 + x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MaxStableDistribution[a, b, g], x]").unwrap(),
+      "Piecewise[{{E^(-E^((a - x)/b) - (-a + x)/b)/b, g == 0}, {(1 + (g*(-a + x))/b)^(-1 - g^(-1))/(b*E^(1 + (g*(-a + x))/b)^(-g^(-1))), g != 0 && 1 + (g*(-a + x))/b > 0}}, 0]"
+    );
+    // Negative shape folds the sign into (a - x)
+    assert_eq!(
+      interpret("PDF[MaxStableDistribution[1, 2, -1/2], x]").unwrap(),
+      "Piecewise[{{(1 + (1 - x)/4)/(2*E^(1 + (1 - x)/4)^2), 1 + (1 - x)/4 > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[MaxStableDistribution[0, 1, 1], -1/2]").unwrap(),
+      "4/E^2"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[MaxStableDistribution[0, 1, 0], x]").unwrap(),
+      "E^(-E^(-x))"
+    );
+    // Defaults mirror MinStable: 0 below the support for g > 0,
+    // 1 above it for g < 0
+    assert_eq!(
+      interpret("CDF[MaxStableDistribution[0, 1, 1], x]").unwrap(),
+      "Piecewise[{{E^(-(1 + x)^(-1)), 1 + x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("CDF[MaxStableDistribution[0, 1, -1], x]").unwrap(),
+      "Piecewise[{{E^(-1 + x), 1 - x > 0}}, 1]"
+    );
+    assert_eq!(
+      interpret("CDF[MaxStableDistribution[a, b, g], x]").unwrap(),
+      "Piecewise[{{E^(-E^((a - x)/b)), g == 0}, {E^(-(1 + (g*(-a + x))/b)^(-g^(-1))), g != 0 && 1 + (g*(-a + x))/b > 0}, {0, g > 0 && 1 + (g*(-a + x))/b <= 0}}, 1]"
+    );
+    assert_eq!(
+      interpret("CDF[MaxStableDistribution[0, 1, 1], -2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[MaxStableDistribution[0, 1, 0]]").unwrap(),
+      "EulerGamma"
+    );
+    assert_eq!(
+      interpret("Mean[MaxStableDistribution[2, 3, 1/2]]").unwrap(),
+      "2*(-2 + 3*Sqrt[Pi])"
+    );
+    assert_eq!(
+      interpret("Mean[MaxStableDistribution[0, 1, 1]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Mean[MaxStableDistribution[a, b, g]]").unwrap(),
+      "Piecewise[{{a + b*EulerGamma, g == 0}, {(-b + a*g + b*Gamma[1 - g])/g, g != 0 && g < 1}}, Indeterminate]"
+    );
+    // Variance is identical to MinStableDistribution's
+    assert_eq!(
+      interpret("Variance[MaxStableDistribution[0, 1, 1/4]]").unwrap(),
+      "16*(Sqrt[Pi] - Gamma[3/4]^2)"
+    );
+    assert_eq!(
+      interpret("Variance[MaxStableDistribution[a, b, g]]").unwrap(),
+      "Piecewise[{{(b^2*Pi^2)/6, g == 0}, {(b^2*(Gamma[1 - 2*g] - Gamma[1 - g]^2))/g^2, g != 0 && 2*g < 1}}, Indeterminate]"
+    );
+  }
+}
