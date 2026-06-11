@@ -2894,7 +2894,10 @@ mod k_core_components {
 
   #[test]
   fn k_larger_than_max_degree_gives_empty() {
-    assert_eq!(interpret("KCoreComponents[CycleGraph[5], 7]").unwrap(), "{}");
+    assert_eq!(
+      interpret("KCoreComponents[CycleGraph[5], 7]").unwrap(),
+      "{}"
+    );
   }
 
   #[test]
@@ -2981,5 +2984,175 @@ mod k_core_components {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+}
+
+mod find_clique {
+  use super::*;
+
+  #[test]
+  fn finds_largest_clique() {
+    assert_eq!(
+      interpret("FindClique[CompleteGraph[4]]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4, 5}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4, 4 <-> 5}]; FindClique[g]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("FindClique[CycleGraph[6]]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
+
+  #[test]
+  fn largest_means_largest_not_first() {
+    // The lexicographically first maximal clique {1, 2} is smaller than
+    // the triangle — the triangle must win
+    assert_eq!(
+      interpret(
+        "g4 = Graph[{1, 2, 3, 4, 5}, {1 <-> 2, 3 <-> 4, 3 <-> 5, 4 <-> 5}]; FindClique[g4]"
+      )
+      .unwrap(),
+      "{{3, 4, 5}}"
+    );
+    // Ties go to the ascending-lexicographic first
+    assert_eq!(
+      interpret(
+        "g2 = Graph[{1, 2, 3, 4, 5, 6}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 4 <-> 5, 4 <-> 6, 5 <-> 6}]; FindClique[g2]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn only_maximal_cliques_count() {
+    // Every edge of a triangle is inside the triangle, so no maximal
+    // clique has size <= 2
+    assert_eq!(
+      interpret(
+        "g2 = Graph[{1, 2, 3, 4, 5, 6}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 4 <-> 5, 4 <-> 6, 5 <-> 6}]; FindClique[g2, 2, All]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn all_results_sorted_size_then_reverse_lex() {
+    assert_eq!(
+      interpret("FindClique[CycleGraph[6], 2, All]").unwrap(),
+      "{{5, 6}, {4, 5}, {3, 4}, {2, 3}, {1, 6}, {1, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "g3 = Graph[{1, 2, 3, 4, 5, 6, 7}, {1 <-> 2, 2 <-> 3, 3 <-> 1, 3 <-> 4, 4 <-> 5, 5 <-> 6, 6 <-> 4, 6 <-> 7}]; FindClique[g3, 3, All]"
+      )
+      .unwrap(),
+      "{{4, 5, 6}, {1, 2, 3}, {6, 7}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn count_takes_ascending_enumeration_prefix() {
+    // count k >= 2: first k maximal cliques in ascending order, then
+    // sorted by size descending / lex descending
+    assert_eq!(
+      interpret(
+        "g3 = Graph[{1, 2, 3, 4, 5, 6, 7}, {1 <-> 2, 2 <-> 3, 3 <-> 1, 3 <-> 4, 4 <-> 5, 5 <-> 6, 6 <-> 4, 6 <-> 7}]; FindClique[g3, 3, 2]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "g3 = Graph[{1, 2, 3, 4, 5, 6, 7}, {1 <-> 2, 2 <-> 3, 3 <-> 1, 3 <-> 4, 4 <-> 5, 5 <-> 6, 6 <-> 4, 6 <-> 7}]; FindClique[g3, 3, 3]"
+      )
+      .unwrap(),
+      "{{4, 5, 6}, {1, 2, 3}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn size_specifications() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4, 5}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4, 4 <-> 5}]; {FindClique[g, 2], FindClique[g, {2}], FindClique[g, {1, 2}]}"
+      )
+      .unwrap(),
+      "{{{3, 4}}, {{3, 4}}, {{3, 4}}}"
+    );
+    assert_eq!(
+      interpret("FindClique[CompleteGraph[5], {3}, All]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("FindClique[CycleGraph[5], Infinity, All]").unwrap(),
+      "{{4, 5}, {3, 4}, {2, 3}, {1, 5}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn isolated_vertices_are_one_cliques() {
+    assert_eq!(interpret("FindClique[Graph[{1, 2}, {}]]").unwrap(), "{{1}}");
+    assert_eq!(interpret("FindClique[Graph[{}, {}]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn invalid_spec_emits_inv() {
+    assert_eq!(
+      interpret("FindClique[CycleGraph[5], 0]").unwrap(),
+      "FindClique[Graph[<5>, <5>], 0]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FindClique::inv: The argument 0 in FindClique[Graph[<5>, <5>], 0] is not a valid parameter."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("FindClique[CycleGraph[5], {1, 2, 3}]").unwrap(),
+      "FindClique[Graph[<5>, <5>], {1, 2, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FindClique::inv: The argument {1, 2, 3} in FindClique[Graph[<5>, <5>], {1, 2, 3}] is not a valid parameter."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(interpret("FindClique[x]").unwrap(), "FindClique[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+}
+
+mod petersen_graph_labeling {
+  use super::*;
+
+  #[test]
+  fn matches_wolfram_vertex_convention() {
+    // Regression: wolframscript labels the k-jump ring 1..n and the plain
+    // cycle n+1..2n (Woxi previously had them swapped), with edges sorted
+    assert_eq!(
+      interpret("EdgeList[PetersenGraph[5, 2]]").unwrap(),
+      "{1 \u{f3d4} 3, 1 \u{f3d4} 4, 1 \u{f3d4} 6, 2 \u{f3d4} 4, 2 \u{f3d4} 5, 2 \u{f3d4} 7, 3 \u{f3d4} 5, 3 \u{f3d4} 8, 4 \u{f3d4} 9, 5 \u{f3d4} 10, 6 \u{f3d4} 7, 6 \u{f3d4} 10, 7 \u{f3d4} 8, 8 \u{f3d4} 9, 9 \u{f3d4} 10}"
+    );
+    assert_eq!(
+      interpret("FindClique[PetersenGraph[5, 2]]").unwrap(),
+      "{{1, 3}}"
+    );
   }
 }

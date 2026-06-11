@@ -2519,9 +2519,7 @@ pub fn connectivity_ast(
 // Note: wolframscript's k <= 0 multi-component ordering is an internal
 // artifact that is not replicated; k <= 0 performs no pruning here.
 
-pub fn k_core_components_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn k_core_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "KCoreComponents".to_string(),
     args: args.to_vec().into(),
@@ -2539,12 +2537,10 @@ pub fn k_core_components_ast(
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return Ok(unevaluated()),
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return Ok(unevaluated()),
+    },
     _ => return Ok(unevaluated()),
   };
   let k = match &args[1] {
@@ -2572,7 +2568,8 @@ pub fn k_core_components_ast(
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let n = vkeys.len();
   // Underlying simple graph: dedup edges, drop self-loops
-  let mut adj: Vec<std::collections::BTreeSet<usize>> = vec![Default::default(); n];
+  let mut adj: Vec<std::collections::BTreeSet<usize>> =
+    vec![Default::default(); n];
   for e in edge_exprs.iter() {
     if let Expr::FunctionCall {
       name: ename,
@@ -2640,13 +2637,245 @@ pub fn k_core_components_ast(
   }
   // wolframscript order: size descending, ties broken by the position of
   // the first member in the vertex list, descending
-  components.sort_by_key(|c| (std::cmp::Reverse(c.len()), std::cmp::Reverse(c[0])));
+  components
+    .sort_by_key(|c| (std::cmp::Reverse(c.len()), std::cmp::Reverse(c[0])));
 
   Ok(Expr::List(
     components
       .into_iter()
+      .map(|c| Expr::List(c.into_iter().map(|i| vertices[i].clone()).collect()))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
+// ---------------------------------------------------------------------------
+// FindClique[g], FindClique[g, spec], FindClique[g, spec, count] — maximal
+// cliques (cliques not contained in any larger clique), matching
+// wolframscript's conventions (decoded by probing):
+// - spec: n (size <= n), {n} (exactly n), {min, max}, Infinity; sizes are
+//   filtered AFTER maximality is determined in the whole graph
+// - count 1 (default): the largest qualifying clique, ties broken by
+//   ascending lexicographic vertex order
+// - count k >= 2: the first k maximal cliques in ascending lexicographic
+//   enumeration order, then sorted by size descending / lex descending
+// - count All: all qualifying cliques, size descending / lex descending
+// - isolated vertices are maximal 1-cliques; invalid specs emit ::inv
+
+fn bron_kerbosch(
+  adj: &[Vec<bool>],
+  r: &mut Vec<usize>,
+  p: &mut Vec<usize>,
+  x: &mut Vec<usize>,
+  out: &mut Vec<Vec<usize>>,
+) {
+  if p.is_empty() && x.is_empty() {
+    out.push(r.clone());
+    return;
+  }
+  // Pivot: vertex in P ∪ X with most neighbors in P
+  let pivot = p
+    .iter()
+    .chain(x.iter())
+    .copied()
+    .max_by_key(|&u| p.iter().filter(|&&v| adj[u][v]).count());
+  let candidates: Vec<usize> = match pivot {
+    Some(u) => p.iter().copied().filter(|&v| !adj[u][v]).collect(),
+    None => p.clone(),
+  };
+  for v in candidates {
+    r.push(v);
+    let mut new_p: Vec<usize> =
+      p.iter().copied().filter(|&w| adj[v][w]).collect();
+    let mut new_x: Vec<usize> =
+      x.iter().copied().filter(|&w| adj[v][w]).collect();
+    bron_kerbosch(adj, r, &mut new_p, &mut new_x, out);
+    r.pop();
+    p.retain(|&w| w != v);
+    x.push(v);
+  }
+}
+
+pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "FindClique".to_string(),
+    args: args.to_vec().into(),
+  };
+  let call_str = || {
+    crate::syntax::format_expr(
+      &Expr::FunctionCall {
+        name: "FindClique".to_string(),
+        args: args.to_vec().into(),
+      },
+      crate::syntax::ExprForm::Output,
+    )
+  };
+  let inv = |arg: &Expr| {
+    crate::emit_message(&format!(
+      "FindClique::inv: The argument {} in {} is not a valid parameter.",
+      crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output),
+      call_str()
+    ));
+  };
+  let (vertices, edge_exprs) = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+
+  // Size specification
+  let is_infinity = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+  };
+  let (min_size, max_size): (usize, usize) = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(n) if *n >= 1 => (1, *n as usize),
+      e if is_infinity(e) => (1, usize::MAX),
+      Expr::List(items) if items.len() == 1 => match &items[0] {
+        Expr::Integer(n) if *n >= 1 => (*n as usize, *n as usize),
+        _ => {
+          inv(&args[1]);
+          return Ok(unevaluated());
+        }
+      },
+      Expr::List(items) if items.len() == 2 => {
+        match (&items[0], &items[1]) {
+          (Expr::Integer(lo), Expr::Integer(hi))
+            if *lo >= 1 && *hi >= *lo =>
+          {
+            (*lo as usize, *hi as usize)
+          }
+          (Expr::Integer(lo), e) if *lo >= 1 && is_infinity(e) => {
+            (*lo as usize, usize::MAX)
+          }
+          _ => {
+            inv(&args[1]);
+            return Ok(unevaluated());
+          }
+        }
+      }
+      other => {
+        inv(other);
+        return Ok(unevaluated());
+      }
+    }
+  } else {
+    (1, usize::MAX)
+  };
+
+  // Count specification
+  enum Count {
+    One,
+    K(usize),
+    All,
+  }
+  let count = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(1) => Count::One,
+      Expr::Integer(k) if *k >= 2 => Count::K(*k as usize),
+      Expr::Identifier(s) if s == "All" => Count::All,
+      e if is_infinity(e) => Count::All,
+      other => {
+        inv(other);
+        return Ok(unevaluated());
+      }
+    }
+  } else {
+    Count::One
+  };
+
+  let n = vertices.len();
+  let mut adj = vec![vec![false; n]; n];
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+    {
+      let vkey = |x: &Expr| {
+        vertices
+          .iter()
+          .position(|v| expr_to_string(v) == expr_to_string(x))
+      };
+      match (vkey(&eargs[0]), vkey(&eargs[1])) {
+        (Some(a), Some(b)) if a != b => {
+          adj[a][b] = true;
+          adj[b][a] = true;
+        }
+        (Some(_), Some(_)) => {}
+        _ => return Ok(unevaluated()),
+      }
+    } else {
+      return Ok(unevaluated());
+    }
+  }
+
+  // All maximal cliques (members sorted ascending), then filter by size
+  let mut cliques: Vec<Vec<usize>> = Vec::new();
+  let mut p: Vec<usize> = (0..n).collect();
+  bron_kerbosch(&adj, &mut Vec::new(), &mut p, &mut Vec::new(), &mut cliques);
+  for c in cliques.iter_mut() {
+    c.sort_unstable();
+  }
+  let mut qualifying: Vec<Vec<usize>> = cliques
+    .into_iter()
+    .filter(|c| c.len() >= min_size && c.len() <= max_size)
+    .collect();
+  // Ascending lexicographic enumeration order
+  qualifying.sort();
+
+  let selected: Vec<Vec<usize>> = match count {
+    Count::One => {
+      let best_len = qualifying.iter().map(|c| c.len()).max();
+      match best_len {
+        Some(l) => {
+          vec![
+            qualifying
+              .iter()
+              .find(|c| c.len() == l)
+              .cloned()
+              .unwrap_or_default(),
+          ]
+        }
+        None => Vec::new(),
+      }
+    }
+    Count::K(k) => {
+      let mut taken: Vec<Vec<usize>> =
+        qualifying.into_iter().take(k).collect();
+      taken.sort_by(|a, b| {
+        b.len().cmp(&a.len()).then_with(|| b.cmp(a))
+      });
+      taken
+    }
+    Count::All => {
+      qualifying.sort_by(|a, b| {
+        b.len().cmp(&a.len()).then_with(|| b.cmp(a))
+      });
+      qualifying
+    }
+  };
+
+  Ok(Expr::List(
+    selected
+      .into_iter()
       .map(|c| {
-        Expr::List(c.into_iter().map(|i| vertices[i].clone()).collect())
+        Expr::List(
+          c.into_iter()
+            .map(|i| vertices[i].clone())
+            .collect::<Vec<_>>()
+            .into(),
+        )
       })
       .collect::<Vec<_>>()
       .into(),

@@ -1095,6 +1095,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ExponentialPowerDistribution" => Some((3, 3)),
     "CommonestFilter" => Some((2, 2)),
     "TransitiveClosureGraph" => Some((1, 1)),
+    "FindClique" => Some((1, 3)),
     "FindIndependentVertexSet" => Some((1, 2)),
     "VertexComponent" => Some((2, 2)),
     "WeightedAdjacencyGraph" => Some((1, 3)),

@@ -3500,9 +3500,9 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // PetersenGraph[] / PetersenGraph[n, k] / PetersenGraph[n, k, opts…] —
-  // the generalized Petersen graph GP(n, k): outer ring 1..n joined as
-  // a cycle, inner ring n+1..2n joined by k-step jumps, with spokes
-  // i—(n+i). Defaults are (n=5, k=2), the classic Petersen graph.
+  // the generalized Petersen graph GP(n, k). wolframscript labels the
+  // k-jump ring 1..n, the plain cycle n+1..2n, with spokes i—(n+i), and
+  // lists the edges in ascending order. Defaults are (n=5, k=2).
   if name == "PetersenGraph"
     && (args.is_empty()
       || matches!(&args[0], Expr::Integer(_))
@@ -3525,33 +3525,32 @@ pub fn evaluate_function_call_ast_inner(
         });
       }
     };
-    let mut edges: Vec<Expr> = Vec::new();
     let und = |a: usize, b: usize| Expr::FunctionCall {
       name: "UndirectedEdge".to_string(),
       args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
     };
-    // Outer cycle: 1—2—…—n—1.
-    for i in 1..=n {
-      edges.push(und(i, if i == n { 1 } else { i + 1 }));
+    let mut pairs: std::collections::BTreeSet<(usize, usize)> =
+      std::collections::BTreeSet::new();
+    // Ring 1..n joined by k-step jumps (deduplicated for even n = 2k).
+    for i in 0..n {
+      let a = 1 + i;
+      let b = 1 + (i + k) % n;
+      if a != b {
+        pairs.insert((a.min(b), a.max(b)));
+      }
     }
-    // Spokes.
+    // Spokes i—(n+i).
     for i in 1..=n {
-      edges.push(und(i, n + i));
+      pairs.insert((i, n + i));
     }
-    // Inner ring with k-step jumps. Deduplicate undirected edges.
-    let mut seen: std::collections::HashSet<(usize, usize)> =
-      std::collections::HashSet::new();
+    // Plain cycle n+1—n+2—…—2n—n+1.
     for i in 0..n {
       let a = n + 1 + i;
-      let b = n + 1 + (i + k) % n;
-      if a == b {
-        continue;
-      }
-      let key = if a < b { (a, b) } else { (b, a) };
-      if seen.insert(key) {
-        edges.push(und(key.0, key.1));
-      }
+      let b = n + 1 + (i + 1) % n;
+      pairs.insert((a.min(b), a.max(b)));
     }
+    let edges: Vec<Expr> =
+      pairs.into_iter().map(|(a, b)| und(a, b)).collect();
     let vertices: Vec<Expr> =
       (1..=2 * n).map(|i| Expr::Integer(i as i128)).collect();
     let mut graph_args =
@@ -5013,6 +5012,10 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if name == "FindClique" && (1..=3).contains(&args.len()) {
+    return crate::functions::graph::find_clique_ast(args);
+  }
+
   if name == "KCoreComponents" && (args.len() == 2 || args.len() == 3) {
     return crate::functions::graph::k_core_components_ast(args);
   }

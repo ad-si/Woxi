@@ -2265,7 +2265,7 @@ MathieuCPrime,Mathieu function derivative (special function),🚫,None,3.0,2311
 PartialCorrelationFunction,time series,🚫,None,9.0,2311
 Skip,Skip n values from a stream while reading,✅,None,2.0,2311
 DocumentNotebook,notebook creation,🚫,None,6.0,2317
-FindClique,graph algorithm,🚫,None,8.0,2317
+FindClique,Finds maximal cliques (largest by default; size spec and count/All forms),✅,pure,8.0,2317
 GraphHighlight,graph visualization,🚫,None,8.0,2317
 MissingQ,Test whether an expression is a Missing value,✅,1,10.2,2317
 PlanckRadiationLaw,physics formula (external data),🚫,None,10.0,2317
