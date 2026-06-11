@@ -2160,3 +2160,70 @@ mod transitive_closure_graph {
     );
   }
 }
+
+mod find_independent_vertex_set {
+  use super::*;
+
+  #[test]
+  fn maximum_sets() {
+    assert_eq!(
+      interpret(
+        "FindIndependentVertexSet[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1}]]"
+      )
+      .unwrap(),
+      "{{1, 3}}"
+    );
+    assert_eq!(
+      interpret("FindIndependentVertexSet[Graph[{1 <-> 2, 1 <-> 3, 1 <-> 4}]]")
+        .unwrap(),
+      "{{2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindIndependentVertexSet[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 5}]]"
+      )
+      .unwrap(),
+      "{{1, 3, 5}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindIndependentVertexSet[Graph[{1 <-> 2, 1 <-> 3, 2 <-> 3, 4 <-> 5}]]"
+      )
+      .unwrap(),
+      "{{1, 4}}"
+    );
+    assert_eq!(
+      interpret("FindIndependentVertexSet[Graph[{a <-> b, b <-> c}]]").unwrap(),
+      "{{a, c}}"
+    );
+  }
+
+  #[test]
+  fn tie_break_uses_vertex_list_order() {
+    // Vertex 2 appears first in the vertex list, so it wins the tie
+    assert_eq!(
+      interpret("FindIndependentVertexSet[Graph[{2 <-> 1}]]").unwrap(),
+      "{{2}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindIndependentVertexSet[Graph[{5 <-> 3, 3 <-> 1, 1 <-> 4, 4 <-> 2}]]"
+      )
+      .unwrap(),
+      "{{5, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn directed_and_invalid_input() {
+    // Directed graphs use the underlying undirected graph
+    assert_eq!(
+      interpret("FindIndependentVertexSet[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "{{1, 3}}"
+    );
+    assert_eq!(
+      interpret("FindIndependentVertexSet[x]").unwrap(),
+      "FindIndependentVertexSet[x]"
+    );
+  }
+}

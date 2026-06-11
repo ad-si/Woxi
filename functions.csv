@@ -2906,7 +2906,7 @@ TextSearch,,🚫,,10.2,2971
 TextTranslation,,🚫,,11.1,2971
 VertexComponent,,,,8.0,2971
 CapsuleShape,,,,10.2,2978
-FindIndependentVertexSet,,,,8.0,2978
+FindIndependentVertexSet,Maximum independent vertex set (lexicographic by vertex order),✅,pure,8.0,2978
 HighpassFilter,Apply a highpass filter to data,✅,pure,9.0,2978
 KeyMemberQ,True if key exists in association,✅,1,10.3,2978
 KroneckerSymbol,Generalized Jacobi symbol,✅,1,6.0,2978

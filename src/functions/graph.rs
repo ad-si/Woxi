@@ -1737,3 +1737,99 @@ pub fn transitive_closure_graph_ast(
     args: vec![Expr::List(vertices), Expr::List(closure_edges.into())].into(),
   })
 }
+
+/// FindIndependentVertexSet[g] - one maximum independent vertex set,
+/// wrapped in a list. Among all maximum sets wolframscript returns the
+/// lexicographically first by vertex-list position (so Graph[{2 <-> 1}]
+/// gives {{2}}); directed edges count via the underlying undirected
+/// graph. Graphs beyond 64 vertices stay unevaluated.
+pub fn find_independent_vertex_set_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "FindIndependentVertexSet".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated(args));
+  }
+  let graph = match &args[0] {
+    Expr::List(_) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![args[0].clone()].into(),
+      })?
+    }
+    other => other.clone(),
+  };
+  let (vertices, edges) = match &graph {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() >= 2 =>
+    {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v.clone(), e.clone()),
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+  let n = vertices.len();
+  if n == 0 || n > 64 {
+    return Ok(unevaluated(args));
+  }
+  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  // Neighbor bitmasks over the underlying undirected graph
+  let mut nbr = vec![0u64; n];
+  for edge in edges.iter() {
+    if let Expr::FunctionCall { name, args: eargs } = edge
+      && (name == "DirectedEdge" || name == "UndirectedEdge")
+      && eargs.len() == 2
+      && let (Some(&u), Some(&v)) =
+        (index.get(&key(&eargs[0])), index.get(&key(&eargs[1])))
+    {
+      if u != v {
+        nbr[u] |= 1 << v;
+        nbr[v] |= 1 << u;
+      }
+    } else {
+      return Ok(unevaluated(args));
+    }
+  }
+
+  // Maximum-independent-set size on the allowed vertex mask
+  fn mis(allowed: u64, nbr: &[u64]) -> u32 {
+    if allowed == 0 {
+      return 0;
+    }
+    let v = allowed.trailing_zeros() as usize;
+    let without = mis(allowed & !(1u64 << v), nbr);
+    let with = 1 + mis(allowed & !(1u64 << v) & !nbr[v], nbr);
+    with.max(without)
+  }
+
+  let full = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+  let target = mis(full, &nbr);
+  // Greedy lexicographic selection: take vertex i whenever doing so
+  // still extends to a maximum independent set
+  let mut chosen: Vec<Expr> = Vec::new();
+  let mut taken = 0u32;
+  let mut allowed = full;
+  for i in 0..n {
+    let bit = 1u64 << i;
+    if allowed & bit == 0 {
+      continue;
+    }
+    let rest = allowed & !bit & !nbr[i];
+    if taken + 1 + mis(rest & !((bit << 1).wrapping_sub(1)), &nbr) == target {
+      chosen.push(vertices[i].clone());
+      taken += 1;
+      allowed = rest;
+    }
+  }
+  Ok(Expr::List(vec![Expr::List(chosen.into())].into()))
+}
