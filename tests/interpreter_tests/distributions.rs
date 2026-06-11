@@ -1746,3 +1746,89 @@ mod beta_binomial_distribution {
     );
   }
 }
+
+mod beta_prime_distribution {
+  use super::*;
+
+  #[test]
+  fn moments() {
+    assert_eq!(
+      interpret("Mean[BetaPrimeDistribution[3, 5]]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("Variance[BetaPrimeDistribution[3, 5]]").unwrap(),
+      "7/16"
+    );
+    // Existence conditions: mean needs q > 1, variance q > 2 — and the
+    // dead branch must not evaluate (no Power::infy message)
+    assert_eq!(
+      interpret("Mean[BetaPrimeDistribution[3, 1]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(interpret("Mean[BetaPrimeDistribution[3, 2]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Variance[BetaPrimeDistribution[3, 2]]").unwrap(),
+      "Indeterminate"
+    );
+    // Symbolic parameters keep the conditions as Piecewise
+    assert_eq!(
+      interpret("Mean[BetaPrimeDistribution[p, q]]").unwrap(),
+      "Piecewise[{{p/(-1 + q), q > 1}}, Infinity]"
+    );
+    assert_eq!(
+      interpret("Variance[BetaPrimeDistribution[p, q]]").unwrap(),
+      "Piecewise[{{(p*(-1 + p + q))/((-2 + q)*(-1 + q)^2), q > 2}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn pdf_forms() {
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[3, 5], x]").unwrap(),
+      "Piecewise[{{(105*x^2)/(1 + x)^8, x > 0}}, 0]"
+    );
+    // Half-integer parameters hoist the Beta rational into the numerator
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[1/2, 3/2], x]").unwrap(),
+      "Piecewise[{{2/(Pi*Sqrt[x]*(1 + x)^2), x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[p, q], x]").unwrap(),
+      "Piecewise[{{(x^(-1 + p)*(1 + x)^(-p - q))/Beta[p, q], x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[3, 5], 2]").unwrap(),
+      "140/2187"
+    );
+    assert_eq!(
+      interpret("PDF[BetaPrimeDistribution[3, 5], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cdf_forms() {
+    assert_eq!(
+      interpret("CDF[BetaPrimeDistribution[3, 5], x]").unwrap(),
+      "Piecewise[{{BetaRegularized[x/(1 + x), 3, 5], x > 0}}, 0]"
+    );
+    // Exact through the new BetaRegularized integer path
+    assert_eq!(
+      interpret("CDF[BetaPrimeDistribution[3, 5], 2]").unwrap(),
+      "232/243"
+    );
+  }
+}
+
+mod beta_regularized_exact {
+  use super::*;
+
+  #[test]
+  fn integer_parameters_evaluate_exactly() {
+    // Regression: stayed unevaluated before; I_z(a,b) is polynomial in
+    // z for integer a, b
+    assert_eq!(interpret("BetaRegularized[2/3, 3, 5]").unwrap(), "232/243");
+    assert_eq!(interpret("BetaRegularized[1/2, 2, 2]").unwrap(), "1/2");
+  }
+}

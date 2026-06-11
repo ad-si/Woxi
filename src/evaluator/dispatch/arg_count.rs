@@ -1085,6 +1085,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DirichletL" => Some((3, 3)),
     "UniformSumDistribution" => Some((1, 2)),
     "BetaBinomialDistribution" => Some((3, 3)),
+    "BetaPrimeDistribution" => Some((2, 2)),
     "Subsequences" => Some((1, 2)),
     "SubsetCases" => Some((2, 3)),
     "SubsetCount" => Some((2, 2)),

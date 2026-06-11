@@ -145,6 +145,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "UniformDistribution" => pdf_uniform(dargs, x),
     "UniformSumDistribution" => pdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => pdf_beta_binomial(dargs, x),
+    "BetaPrimeDistribution" => pdf_beta_prime(dargs, x),
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
@@ -1123,6 +1124,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ProbabilityDistribution" => cdf_probability_distribution(dargs, x),
     "UniformSumDistribution" => cdf_uniform_sum(dargs, x),
     "BetaBinomialDistribution" => cdf_beta_binomial(dargs, x),
+    "BetaPrimeDistribution" => cdf_beta_prime(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match data_distribution_pdf_cdf(dargs, &x, true) {
       Some(v) => Ok(v),
@@ -2922,6 +2924,59 @@ fn distribution_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
   match dist_name {
+    "BetaPrimeDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BetaPrimeDistribution expects 2 arguments".into(),
+        ));
+      }
+      let (p, q) = (dargs[0].clone(), dargs[1].clone());
+      // Resolve the q-conditions up front for numeric q so the dead
+      // branch never evaluates (a literal p/0 would message infy)
+      let q_num: Option<f64> = match &q {
+        Expr::Integer(v) => Some(*v as f64),
+        Expr::Real(v) => Some(*v),
+        Expr::FunctionCall { name, args } if name == "Rational" => {
+          match (&args[0], &args[1]) {
+            (Expr::Integer(a), Expr::Integer(b)) if *b != 0 => {
+              Some(*a as f64 / *b as f64)
+            }
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      let mean_value = divide(p.clone(), plus(int(-1), q.clone()));
+      // Mean = Piecewise[{{p/(q-1), q > 1}}, Infinity]
+      let mean = match q_num {
+        Some(v) if v > 1.0 => mean_value,
+        Some(_) => Expr::Identifier("Infinity".to_string()),
+        None => piecewise(
+          vec![(
+            mean_value,
+            comparison(q.clone(), ComparisonOp::Greater, int(1)),
+          )],
+          Expr::Identifier("Infinity".to_string()),
+        ),
+      };
+      // Var = Piecewise[{{p(p+q-1)/((q-2)(q-1)^2), q > 2}}, Indeterminate]
+      let var_value = divide(
+        times(p.clone(), plus(plus(int(-1), p), q.clone())),
+        times(
+          plus(int(-2), q.clone()),
+          power(plus(int(-1), q.clone()), int(2)),
+        ),
+      );
+      let var = match q_num {
+        Some(v) if v > 2.0 => var_value,
+        Some(_) => Expr::Identifier("Indeterminate".to_string()),
+        None => piecewise(
+          vec![(var_value, comparison(q, ComparisonOp::Greater, int(2)))],
+          Expr::Identifier("Indeterminate".to_string()),
+        ),
+      };
+      Ok((mean, var))
+    }
     "BetaBinomialDistribution" => {
       if dargs.len() != 3 {
         return Err(InterpreterError::EvaluationError(
@@ -7287,4 +7342,165 @@ pub fn cdf_beta_binomial(
     acc = eval(plus(acc, term))?;
   }
   Ok(acc)
+}
+
+/// PDF[BetaPrimeDistribution[p, q], x] =
+/// Piecewise[{{x^(p-1) (1+x)^(-p-q) / Beta[p,q], x > 0}}, 0].
+/// Numeric parameters evaluate the density (with 1/Beta pre-divided so
+/// rationals hoist into the numerator); symbolic parameters keep the
+/// raw Beta quotient form.
+pub fn pdf_beta_prime(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BetaPrimeDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (p, q) = (dargs[0].clone(), dargs[1].clone());
+  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  };
+  let is_exact_number = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+
+  // Numeric point: 0 outside the support, exact density inside
+  let numeric_x = matches!(&x, Expr::Integer(_) | Expr::Real(_))
+    || matches!(&x, Expr::FunctionCall { name, .. } if name == "Rational");
+  let density_at = |x: &Expr| -> Result<Expr, InterpreterError> {
+    let coeff = eval(divide(int(1), call("Beta", vec![p.clone(), q.clone()])))?;
+    eval(call(
+      "Times",
+      vec![
+        coeff,
+        call("Power", vec![x.clone(), plus(int(-1), p.clone())]),
+        call(
+          "Power",
+          vec![
+            plus(int(1), x.clone()),
+            call(
+              "Plus",
+              vec![
+                call("Times", vec![int(-1), p.clone()]),
+                call("Times", vec![int(-1), q.clone()]),
+              ],
+            ),
+          ],
+        ),
+      ],
+    ))
+  };
+  if numeric_x {
+    let positive = match &x {
+      Expr::Integer(v) => *v > 0,
+      Expr::Real(v) => *v > 0.0,
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        matches!((&args[0], &args[1]), (Expr::Integer(p), Expr::Integer(q)) if p.signum() * q.signum() > 0)
+      }
+      _ => false,
+    };
+    if !positive {
+      return Ok(int(0));
+    }
+    return density_at(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+
+  let cond = comparison(x.clone(), ComparisonOp::Greater, int(0));
+  if is_exact_number(&p) && is_exact_number(&q) {
+    let density = density_at(&x)?;
+    return Ok(piecewise(vec![(density, cond)], int(0)));
+  }
+  // Symbolic parameters: raw x^(-1 + p) (1 + x)^(-p - q) / Beta[p, q]
+  let density = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(call(
+      "Times",
+      vec![
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(x.clone()),
+          right: Box::new(call("Plus", vec![int(-1), p.clone()])),
+        },
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(call("Plus", vec![int(1), x.clone()])),
+          right: Box::new(call(
+            "Plus",
+            vec![
+              call("Times", vec![int(-1), p.clone()]),
+              call("Times", vec![int(-1), q.clone()]),
+            ],
+          )),
+        },
+      ],
+    )),
+    right: Box::new(call("Beta", vec![p, q])),
+  };
+  Ok(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// CDF[BetaPrimeDistribution[p, q], x] =
+/// Piecewise[{{BetaRegularized[x/(1+x), p, q], x > 0}}, 0].
+pub fn cdf_beta_prime(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "BetaPrimeDistribution".to_string(),
+        args: dargs.to_vec().into(),
+      },
+      x,
+    ]
+    .into(),
+  };
+  if dargs.len() != 2 {
+    return Ok(unevaluated(dargs, x));
+  }
+  let (p, q) = (dargs[0].clone(), dargs[1].clone());
+  let ratio = eval(divide(x.clone(), plus(int(1), x.clone())))?;
+  let regularized = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![ratio, p, q].into(),
+  };
+
+  let numeric_x = matches!(&x, Expr::Integer(_) | Expr::Real(_))
+    || matches!(&x, Expr::FunctionCall { name, .. } if name == "Rational");
+  if numeric_x {
+    let positive = match &x {
+      Expr::Integer(v) => *v > 0,
+      Expr::Real(v) => *v > 0.0,
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        matches!((&args[0], &args[1]), (Expr::Integer(p), Expr::Integer(q)) if p.signum() * q.signum() > 0)
+      }
+      _ => false,
+    };
+    if !positive {
+      return Ok(int(0));
+    }
+    return eval(regularized);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  Ok(piecewise(vec![(regularized, cond)], int(0)))
 }

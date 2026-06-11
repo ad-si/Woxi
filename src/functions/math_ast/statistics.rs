@@ -343,6 +343,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "NoncentralFRatioDistribution"
         | "UniformSumDistribution"
         | "BetaBinomialDistribution"
+        | "BetaPrimeDistribution"
     ) =>
     {
       let (mean, _) =
@@ -562,6 +563,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "NoncentralFRatioDistribution"
         | "UniformSumDistribution"
         | "BetaBinomialDistribution"
+        | "BetaPrimeDistribution"
     ) =>
     {
       let (_, variance) =
@@ -814,6 +816,7 @@ fn is_distribution_arg(expr: &Expr) -> bool {
       | "NoncentralFRatioDistribution"
       | "UniformSumDistribution"
       | "BetaBinomialDistribution"
+      | "BetaPrimeDistribution"
       | "BinomialDistribution"
       | "JohnsonDistribution"
   ))

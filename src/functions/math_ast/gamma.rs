@@ -1112,6 +1112,58 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(beta_regularized_numeric(z, a, b)));
   }
 
+  // Exact evaluation for positive integer a, b and exact rational z:
+  // I_z(a, b) = sum_{j=a}^{a+b-1} C(a+b-1, j) z^j (1-z)^(a+b-1-j)
+  // (the binomial-tail identity; polynomial in z, so exact)
+  if let (Expr::Integer(a), Expr::Integer(b)) = (a_expr, b_expr)
+    && *a >= 1
+    && *b >= 1
+    && *a + *b <= 64
+    && (matches!(z_expr, Expr::Integer(_))
+      || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational"))
+  {
+    let n = *a + *b - 1;
+    let binom = |n: i128, k: i128| -> i128 {
+      let mut c = 1i128;
+      for i in 0..k {
+        c = c * (n - i) / (i + 1);
+      }
+      c
+    };
+    let one_minus_z = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), z_expr.clone()].into(),
+        },
+      ]
+      .into(),
+    };
+    let terms: Vec<Expr> = (*a..=n)
+      .map(|j| Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(binom(n, j)),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![z_expr.clone(), Expr::Integer(j)].into(),
+          },
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![one_minus_z.clone(), Expr::Integer(n - j)].into(),
+          },
+        ]
+        .into(),
+      })
+      .collect();
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    });
+  }
+
   // Unevaluated
   Ok(Expr::FunctionCall {
     name: "BetaRegularized".to_string(),

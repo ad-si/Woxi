@@ -186,6 +186,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec().into(),
       }));
     }
+    "BetaPrimeDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BetaPrimeDistribution".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "BetaDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "BetaDistribution".to_string(),
