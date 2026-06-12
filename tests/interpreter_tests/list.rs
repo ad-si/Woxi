@@ -11327,3 +11327,176 @@ mod rotate_specs_and_messages {
     );
   }
 }
+
+mod flatten_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn zero_level_in_spec_does_not_panic() {
+    // Regression: {{0}, {1}} panicked with a usize subtract overflow
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {{0}, {1}}]").unwrap(),
+      "Flatten[{{a, b}, {c, d}}, {{0}, {1}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Flatten::flpi: Levels to be flattened together in {{0}, {1}} should be lists of positive integers."
+      )),
+      "expected flpi message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn atomic_subject_emits_normal() {
+    // Regression: Flatten[x] silently returned x
+    assert_eq!(interpret("Flatten[x]").unwrap(), "Flatten[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Flatten::normal: Nonatomic expression expected at position 1 in Flatten[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    // Associations are atomic for Flatten
+    assert_eq!(
+      interpret("Flatten[<|a -> {1, 2}|>]").unwrap(),
+      "Flatten[<|a -> {1, 2}|>]"
+    );
+  }
+
+  #[test]
+  fn invalid_level_emits_flev() {
+    // Regression: negative and symbolic levels silently returned the input
+    assert_eq!(
+      interpret("Flatten[{a, b}, -1]").unwrap(),
+      "Flatten[{a, b}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Flatten::flev: The level argument -1 in position 2 of Flatten[{a, b}, -1] should be a non-negative integer or Infinity giving the levels to flatten through or a list of lists of levels to flatten together."
+      )),
+      "expected flev message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Flatten[{a, b}, x]").unwrap(),
+      "Flatten[{a, b}, x]"
+    );
+    assert_eq!(
+      interpret("Flatten[{a, b}, 1.5]").unwrap(),
+      "Flatten[{a, b}, 1.5]"
+    );
+  }
+
+  #[test]
+  fn spec_exceeding_depth_emits_fldep() {
+    // Regression: out-of-depth specs silently returned the input
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {{1}, {2}, {3}}]").unwrap(),
+      "Flatten[{{a, b}, {c, d}}, {{1}, {2}, {3}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Flatten::fldep: Level 3 specified in {{1}, {2}, {3}} exceeds the levels, 2, which can be flattened together in {{a, b}, {c, d}}."
+      )),
+      "expected fldep message, got {:?}",
+      msgs
+    );
+    // The flattenable depth respects the head argument
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {{2}, {1}}, f]").unwrap(),
+      "Flatten[{{a, b}, {c, d}}, {{2}, {1}}, f]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("exceeds the levels, 0,")),
+      "expected fldep with depth 0, got {:?}",
+      msgs
+    );
+    // Ragged branches cap the depth (and must not be dropped)
+    assert_eq!(
+      interpret("Flatten[{{a, b}, c}, {{2}, {1}}]").unwrap(),
+      "Flatten[{{a, b}, c}, {{2}, {1}}]"
+    );
+  }
+
+  #[test]
+  fn repeated_level_emits_flrep() {
+    // Regression: {{1, 1}} silently produced duplicated output
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {{1, 1}}]").unwrap(),
+      "Flatten[{{a, b}, {c, d}}, {{1, 1}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Flatten::flrep: Level 1 specified in {{1, 1}} should not be repeated."
+      )),
+      "expected flrep message, got {:?}",
+      msgs
+    );
+    // Bare-integer specs are displayed in wrapped form
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {1, 1}]").unwrap(),
+      "Flatten[{{a, b}, {c, d}}, {1, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Level 1 specified in {{1, 1}}")),
+      "expected wrapped spec display, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn ragged_permutation_preserves_atoms() {
+    // Regression: {{a, b}, c} with spec {{1}} dropped the atom c
+    assert_eq!(
+      interpret("Flatten[{{a, b}, c}, {{1}}]").unwrap(),
+      "{{a, b}, c}"
+    );
+    assert_eq!(
+      interpret("Flatten[{{{a}}, {b}}, {{2}, {1}}]").unwrap(),
+      "{{{a}, b}}"
+    );
+  }
+
+  #[test]
+  fn general_heads_transpose() {
+    // Regression: permutation specs on non-List heads returned the input
+    assert_eq!(
+      interpret("Flatten[f[f[a, b], f[c, d]], {{2}, {1}}]").unwrap(),
+      "f[f[a, c], f[b, d]]"
+    );
+    assert_eq!(
+      interpret("Flatten[f[f[a], f[b, c]], {{1, 2}}]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn empty_and_bare_integer_specs() {
+    // Regression: Flatten[list, {}] stayed unevaluated
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {}]").unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+    // A bare-integer list is a single merge group: {2, 1} == {{2, 1}}
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {2, 1}]").unwrap(),
+      "{a, c, b, d}"
+    );
+    // A non-symbol head flattens nothing, silently
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, Infinity, 3]").unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+  }
+}

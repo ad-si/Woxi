@@ -481,62 +481,101 @@ pub fn flatten_head_ast(
 /// Flatten[list, {{n1, n2, ...}, ...}] - generalized flatten/transpose
 /// Each group specifies which levels to merge together.
 /// E.g., {{2}, {1}} transposes, {{1, 2}} merges levels 1 and 2.
+/// Children of a node when its head matches the target flatten head.
+fn head_children<'a>(expr: &'a Expr, head: &str) -> Option<&'a [Expr]> {
+  match expr {
+    Expr::List(items) if head == "List" => Some(items.as_slice()),
+    Expr::FunctionCall { name, args } if name == head => Some(args.as_slice()),
+    _ => None,
+  }
+}
+
+/// Number of levels that can be flattened together: levels at which every
+/// node has the target head. Empty nodes allow any depth below them.
+pub fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
+  match head_children(expr, head) {
+    None => 0,
+    Some(items) => {
+      if items.is_empty() {
+        usize::MAX
+      } else {
+        match items
+          .iter()
+          .map(|e| flatten_together_depth(e, head))
+          .min()
+          .unwrap_or(0)
+        {
+          usize::MAX => usize::MAX,
+          d => d + 1,
+        }
+      }
+    }
+  }
+}
+
 pub fn flatten_dims_ast(
   list: &Expr,
   dim_spec: &[Vec<usize>],
+  head: &str,
 ) -> Result<Expr, InterpreterError> {
   // Access element at given multi-index, returns None if out of bounds
-  fn access(expr: &Expr, indices: &[usize]) -> Option<Expr> {
+  fn access(expr: &Expr, indices: &[usize], head: &str) -> Option<Expr> {
     if indices.is_empty() {
       return Some(expr.clone());
     }
-    match expr {
-      Expr::List(items) => {
-        if indices[0] < items.len() {
-          access(&items[indices[0]], &indices[1..])
-        } else {
-          None
-        }
+    match head_children(expr, head) {
+      Some(items) if indices[0] < items.len() => {
+        access(&items[indices[0]], &indices[1..], head)
       }
       _ => None,
     }
   }
 
   // Get max dimension at each level (handling ragged arrays)
-  fn get_max_dim(expr: &Expr, level: usize) -> usize {
-    if level == 0 {
-      match expr {
-        Expr::List(items) => items.len(),
-        _ => 0,
-      }
-    } else {
-      match expr {
-        Expr::List(items) => items
-          .iter()
-          .map(|item| get_max_dim(item, level - 1))
-          .max()
-          .unwrap_or(0),
-        _ => 0,
+  fn get_max_dim(expr: &Expr, level: usize, head: &str) -> usize {
+    match head_children(expr, head) {
+      None => 0,
+      Some(items) => {
+        if level == 0 {
+          items.len()
+        } else {
+          items
+            .iter()
+            .map(|item| get_max_dim(item, level - 1, head))
+            .max()
+            .unwrap_or(0)
+        }
       }
     }
   }
 
-  // Depth of the input (how many nested List heads there are). Must be at
-  // least the highest level mentioned in `dim_spec`.
-  fn depth(expr: &Expr) -> usize {
-    match expr {
-      Expr::List(items) => 1 + items.iter().map(depth).max().unwrap_or(0),
-      _ => 0,
+  fn make_node(head: &str, items: Vec<Expr>) -> Expr {
+    if head == "List" {
+      Expr::List(items.into())
+    } else {
+      Expr::FunctionCall {
+        name: head.to_string(),
+        args: items.into(),
+      }
     }
   }
-  let expr_depth = depth(list);
+
+  // The caller validates spec_max <= flatten_together_depth (::fldep), so
+  // levels beyond the uniform depth never participate; this keeps ragged
+  // branches (e.g. {{a, b}, c} with spec {{1}}) intact instead of
+  // dropping them.
   let spec_max = dim_spec
     .iter()
     .flat_map(|g| g.iter())
     .copied()
     .max()
     .unwrap_or(1);
-  let max_level = expr_depth.max(spec_max).max(1);
+  let together = flatten_together_depth(list, head);
+  let max_level = if together == usize::MAX {
+    spec_max.max(1)
+  } else {
+    together.max(1)
+  };
 
   // Append any levels in 1..=max_level that `dim_spec` doesn't mention as
   // singleton groups at the end, so `Flatten[list, {{2}}]` behaves like
@@ -557,12 +596,13 @@ pub fn flatten_dims_ast(
   // Get max sizes at each level
   let mut max_dims = Vec::new();
   for level in 0..max_level {
-    max_dims.push(get_max_dim(list, level));
+    max_dims.push(get_max_dim(list, level, head));
   }
 
   // Build result by iterating over the output structure.
   // For each group in dim_spec, iterate over the corresponding dimensions.
   // For single-level groups with ragged data, only include elements that exist.
+  #[allow(clippy::too_many_arguments)]
   fn build_result(
     list: &Expr,
     dim_spec: &[Vec<usize>],
@@ -570,13 +610,14 @@ pub fn flatten_dims_ast(
     group_idx: usize,
     indices_so_far: &mut Vec<(usize, usize)>,
     max_level: usize,
+    head: &str,
   ) -> Option<Expr> {
     if group_idx >= dim_spec.len() {
       let mut orig_indices = vec![0usize; max_level];
       for &(level, idx) in indices_so_far.iter() {
         orig_indices[level] = idx;
       }
-      access(list, &orig_indices)
+      access(list, &orig_indices, head)
     } else {
       let group = &dim_spec[group_idx];
       if group.len() == 1 {
@@ -592,6 +633,7 @@ pub fn flatten_dims_ast(
             group_idx + 1,
             indices_so_far,
             max_level,
+            head,
           ) {
             items.push(result);
           }
@@ -600,7 +642,7 @@ pub fn flatten_dims_ast(
         if items.is_empty() {
           None
         } else {
-          Some(Expr::List(items.into()))
+          Some(make_node(head, items))
         }
       } else {
         // Multiple levels merged: iterate over all combinations
@@ -626,6 +668,7 @@ pub fn flatten_dims_ast(
             group_idx + 1,
             indices_so_far,
             max_level,
+            head,
           ) {
             items.push(result);
           }
@@ -636,15 +679,187 @@ pub fn flatten_dims_ast(
         if items.is_empty() {
           None
         } else {
-          Some(Expr::List(items.into()))
+          Some(make_node(head, items))
         }
       }
     }
   }
 
-  match build_result(list, dim_spec, &max_dims, 0, &mut Vec::new(), max_level) {
+  match build_result(
+    list,
+    dim_spec,
+    &max_dims,
+    0,
+    &mut Vec::new(),
+    max_level,
+    head,
+  ) {
     Some(result) => Ok(result),
     None => Ok(list.clone()),
+  }
+}
+
+/// Unified Flatten covering the full argument space:
+/// - `Flatten[expr]` / `Flatten[expr, n]` / `Flatten[expr, Infinity]`
+/// - `Flatten[expr, n, h]` — flatten subexpressions with head h
+/// - `Flatten[expr, {{s11, …}, …}]` — combine the given levels
+///   (an all-integer list auto-wraps: `{2, 1}` means `{{2}, {1}}`)
+///
+/// Atomic subjects emit `::normal`; bad level arguments emit `::flev`;
+/// permutation specs are validated in order ::flpi (form), ::flrep
+/// (repeats), ::fldep (depth); all return the call unevaluated.
+pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "Flatten".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  let subject = &args[0];
+  let subject_head: Option<&str> = match subject {
+    Expr::List(_) => Some("List"),
+    Expr::FunctionCall { name, .. } => Some(name.as_str()),
+    _ => None,
+  };
+  let Some(subject_head) = subject_head else {
+    crate::emit_message(&format!(
+      "Flatten::normal: Nonatomic expression expected at position 1 in {}.",
+      show(&original())
+    ));
+    return Ok(original());
+  };
+
+  let strict_int = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128()
+      }
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+
+  // The flatten head: an explicit third argument, else the subject's own
+  // head. A non-symbol head matches nothing.
+  let head: Option<&str> = match args.get(2) {
+    None => Some(subject_head),
+    Some(Expr::Identifier(h)) => Some(h.as_str()),
+    Some(_) => None,
+  };
+
+  enum LevelSpec {
+    Depth(i128),
+    Groups(Vec<Vec<usize>>, String),
+  }
+  let level = match args.get(1) {
+    None => LevelSpec::Depth(i128::MAX),
+    Some(e) if is_infinity(e) => LevelSpec::Depth(i128::MAX),
+    Some(e) if strict_int(e).is_some_and(|n| n >= 0) => {
+      LevelSpec::Depth(strict_int(e).unwrap())
+    }
+    Some(Expr::List(items)) => {
+      // An all-integer list is one group: {2, 1} means {{2, 1}}, and the
+      // messages display the wrapped form.
+      let wrapped =
+        !items.is_empty() && items.iter().all(|e| strict_int(e).is_some());
+      let spec_display = || {
+        if wrapped {
+          show(&Expr::List(vec![args[1].clone()].into()))
+        } else {
+          show(&args[1])
+        }
+      };
+      let groups: Option<Vec<Vec<i128>>> = if items.is_empty() {
+        Some(Vec::new())
+      } else if wrapped {
+        Some(vec![items.iter().filter_map(strict_int).collect()])
+      } else if items.iter().all(|e| matches!(e, Expr::List(_))) {
+        items
+          .iter()
+          .map(|e| match e {
+            Expr::List(levels) if !levels.is_empty() => {
+              levels.iter().map(strict_int).collect::<Option<Vec<i128>>>()
+            }
+            _ => None,
+          })
+          .collect()
+      } else {
+        None
+      };
+      let valid = groups.filter(|gs| gs.iter().flatten().all(|l| *l >= 1));
+      let Some(groups) = valid else {
+        crate::emit_message(&format!(
+          "Flatten::flpi: Levels to be flattened together in {} should be lists of positive integers.",
+          spec_display()
+        ));
+        return Ok(original());
+      };
+      let groups: Vec<Vec<usize>> = groups
+        .into_iter()
+        .map(|g| g.into_iter().map(|l| l as usize).collect())
+        .collect();
+      // Repeated levels are rejected.
+      let mut seen = std::collections::HashSet::new();
+      for level in groups.iter().flatten() {
+        if !seen.insert(*level) {
+          crate::emit_message(&format!(
+            "Flatten::flrep: Level {} specified in {} should not be repeated.",
+            level,
+            spec_display()
+          ));
+          return Ok(original());
+        }
+      }
+      LevelSpec::Groups(groups, spec_display())
+    }
+    Some(other) => {
+      crate::emit_message(&format!(
+        "Flatten::flev: The level argument {} in position 2 of {} should be a non-negative integer or Infinity giving the levels to flatten through or a list of lists of levels to flatten together.",
+        show(other),
+        show(&original())
+      ));
+      return Ok(original());
+    }
+  };
+
+  match level {
+    LevelSpec::Depth(n) => {
+      let Some(head) = head else {
+        // A non-symbol head flattens nothing.
+        return Ok(subject.clone());
+      };
+      flatten_head_ast(subject, n, head)
+    }
+    LevelSpec::Groups(groups, spec_display) => {
+      if groups.is_empty() {
+        return Ok(subject.clone());
+      }
+      let depth = match head {
+        Some(h) => flatten_together_depth(subject, h),
+        None => 0,
+      };
+      let spec_max = *groups.iter().flatten().max().unwrap();
+      if spec_max > depth {
+        let shown_depth = if depth == usize::MAX { spec_max } else { depth };
+        crate::emit_message(&format!(
+          "Flatten::fldep: Level {} specified in {} exceeds the levels, {}, which can be flattened together in {}.",
+          spec_max,
+          spec_display,
+          shown_depth,
+          show(subject)
+        ));
+        return Ok(original());
+      }
+      flatten_dims_ast(subject, &groups, head.unwrap_or("List"))
+    }
   }
 }
 

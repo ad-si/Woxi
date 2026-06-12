@@ -1404,80 +1404,8 @@ pub fn dispatch_list_operations(
     "ArrayFlatten" if args.len() == 1 => {
       return Some(array_flatten_ast(&args[0]));
     }
-    "Flatten" if args.len() == 1 => {
-      return Some(list_helpers_ast::flatten_ast(&args[0]));
-    }
-    "Flatten" if args.len() == 2 => {
-      // Flatten[expr, n] or Flatten[expr, Infinity, head]
-      if let Expr::Identifier(id) = &args[1] {
-        if id == "Infinity" {
-          // Flatten[expr, Infinity] same as Flatten[expr]
-          return Some(list_helpers_ast::flatten_ast(&args[0]));
-        }
-        // Flatten[expr, head] — treat identifier as head
-        return Some(list_helpers_ast::flatten_head_ast(
-          &args[0],
-          i128::MAX,
-          id,
-        ));
-      }
-      // Check for dimension spec: Flatten[list, {{2}, {1}}]
-      if let Expr::List(outer) = &args[1]
-        && !outer.is_empty()
-        && matches!(&outer[0], Expr::List(_))
-      {
-        // Parse dimension spec: each element is a list of level numbers
-        let mut dim_spec: Vec<Vec<usize>> = Vec::new();
-        let mut valid = true;
-        for item in outer {
-          if let Expr::List(levels) = item {
-            let mut group: Vec<usize> = Vec::new();
-            for level in levels {
-              if let Some(n) = expr_to_i128(level) {
-                group.push(n as usize);
-              } else {
-                valid = false;
-                break;
-              }
-            }
-            dim_spec.push(group);
-          } else {
-            valid = false;
-            break;
-          }
-          if !valid {
-            break;
-          }
-        }
-        if valid {
-          return Some(list_helpers_ast::flatten_dims_ast(&args[0], &dim_spec));
-        }
-      }
-      // Flat level list: Flatten[list, {1, 2, ...}] — merges those levels
-      // into a single level. Equivalent to Flatten[list, {{1, 2, ...}}].
-      if let Expr::List(levels) = &args[1]
-        && !levels.is_empty()
-        && levels.iter().all(|e| expr_to_i128(e).is_some())
-      {
-        let group: Vec<usize> = levels
-          .iter()
-          .filter_map(|e| expr_to_i128(e).map(|n| n as usize))
-          .collect();
-        return Some(list_helpers_ast::flatten_dims_ast(&args[0], &[group]));
-      }
-      if let Some(n) = expr_to_i128(&args[1]) {
-        return Some(list_helpers_ast::flatten_level_ast(&args[0], n));
-      }
-    }
-    "Flatten" if args.len() == 3 => {
-      // Flatten[expr, depth, head]
-      let depth = match &args[1] {
-        Expr::Identifier(id) if id == "Infinity" => i128::MAX,
-        _ => expr_to_i128(&args[1]).unwrap_or(i128::MAX),
-      };
-      if let Expr::Identifier(head) = &args[2] {
-        return Some(list_helpers_ast::flatten_head_ast(&args[0], depth, head));
-      }
+    "Flatten" if !args.is_empty() && args.len() <= 3 => {
+      return Some(list_helpers_ast::flatten_unified_ast(args));
     }
     "Level" if args.len() == 2 => {
       return Some(list_helpers_ast::level_ast(&args[0], &args[1], false));
