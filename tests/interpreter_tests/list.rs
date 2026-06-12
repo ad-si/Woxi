@@ -11878,3 +11878,68 @@ mod count_delete_cases_specs_and_messages {
     );
   }
 }
+
+mod level_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn third_argument_wraps_and_evaluates() {
+    // Regression: the wrap head was silently ignored
+    assert_eq!(
+      interpret("Level[f[a, b], {0, 1}, g]").unwrap(),
+      "g[a, b, f[a, b]]"
+    );
+    assert_eq!(interpret("Level[{a, b}, {1}, Plus]").unwrap(), "a + b");
+    assert_eq!(
+      interpret("Level[{{1, 2}, {3, 4}}, {2}, Times]").unwrap(),
+      "24"
+    );
+    // Non-symbol heads form curried calls
+    assert_eq!(interpret("Level[{a, b}, {1}, 3]").unwrap(), "3[a, b]");
+    assert_eq!(interpret("Level[{a, b}, {1}, g[h]]").unwrap(), "g[h][a, b]");
+  }
+
+  #[test]
+  fn four_argument_form_with_heads() {
+    // Regression: the wrap head plus a Heads option emitted ::argt
+    assert_eq!(
+      interpret("Level[f[a, b], {1}, g, Heads -> True]").unwrap(),
+      "g[f, a, b]"
+    );
+  }
+
+  #[test]
+  fn associations_traverse_values() {
+    // Regression: associations gave {}
+    assert_eq!(
+      interpret("Level[<|x -> 1, y -> {2}|>, {1}]").unwrap(),
+      "{1, {2}}"
+    );
+    assert_eq!(
+      interpret("Level[<|x -> 1, y -> {2}|>, Infinity]").unwrap(),
+      "{1, 2, {2}}"
+    );
+  }
+
+  #[test]
+  fn invalid_spec_emits_level_message() {
+    // Regression: invalid specs raised hard errors
+    assert_eq!(interpret("Level[{a, b}, x]").unwrap(), "Level[{a, b}, x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Level::level: Level specification x is not of the form n, {n} or {m, n}."
+      )),
+      "expected level message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Level[{a, b}, {1, 2, 3}]").unwrap(),
+      "Level[{a, b}, {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("Level[{a, b}, 1.5]").unwrap(),
+      "Level[{a, b}, 1.5]"
+    );
+  }
+}

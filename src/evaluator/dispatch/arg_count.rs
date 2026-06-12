@@ -652,7 +652,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LetterCounts" => Some((1, 1)),
     "LetterNumber" => Some((1, 2)),
     "LetterQ" => Some((1, 1)),
-    "Level" => Some((2, 3)),
+    "Level" => Some((2, 4)),
     "LeviCivitaTensor" => Some((1, 2)),
     "Likelihood" => Some((2, 2)),
     "LinearModelFit" => Some((1, 3)),

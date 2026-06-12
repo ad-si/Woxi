@@ -1357,33 +1357,8 @@ pub fn dispatch_list_operations(
     "Flatten" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::flatten_unified_ast(args));
     }
-    "Level" if args.len() == 2 => {
-      return Some(list_helpers_ast::level_ast(&args[0], &args[1], false));
-    }
-    "Level" if args.len() == 3 => {
-      // Extract Heads option
-      let include_heads = match &args[2] {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } => {
-          if let Expr::Identifier(name) = pattern.as_ref() {
-            if name == "Heads" {
-              matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-            } else {
-              false
-            }
-          } else {
-            false
-          }
-        }
-        _ => false,
-      };
-      return Some(list_helpers_ast::level_ast(
-        &args[0],
-        &args[1],
-        include_heads,
-      ));
+    "Level" if args.len() >= 2 && args.len() <= 4 => {
+      return Some(list_helpers_ast::level_unified_ast(args));
     }
     "Reverse" if args.len() == 1 => {
       return Some(list_helpers_ast::reverse_ast(&args[0]));
