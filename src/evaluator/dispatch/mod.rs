@@ -5007,6 +5007,17 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if matches!(
+    name,
+    "GlobalClusteringCoefficient"
+      | "MeanClusteringCoefficient"
+      | "GraphDensity"
+      | "MeanGraphDistance"
+  ) && args.len() == 1
+  {
+    return crate::functions::graph::graph_metric_ast(name, args);
+  }
+
   if name == "PlanarGraphQ" && args.len() == 1 {
     return crate::functions::graph::planar_graph_q_ast(args);
   }

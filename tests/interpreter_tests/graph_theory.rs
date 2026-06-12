@@ -3523,8 +3523,14 @@ mod planar_graph_q {
   #[test]
   fn classic_planar_and_nonplanar() {
     assert_eq!(interpret("PlanarGraphQ[CompleteGraph[4]]").unwrap(), "True");
-    assert_eq!(interpret("PlanarGraphQ[CompleteGraph[5]]").unwrap(), "False");
-    assert_eq!(interpret("PlanarGraphQ[CompleteGraph[6]]").unwrap(), "False");
+    assert_eq!(
+      interpret("PlanarGraphQ[CompleteGraph[5]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PlanarGraphQ[CompleteGraph[6]]").unwrap(),
+      "False"
+    );
     // K3,3
     assert_eq!(
       interpret(
@@ -3570,9 +3576,18 @@ mod planar_graph_q {
       "False"
     );
     // Harary graphs: H(4, n) is planar for some n, not others
-    assert_eq!(interpret("PlanarGraphQ[HararyGraph[4, 7]]").unwrap(), "False");
-    assert_eq!(interpret("PlanarGraphQ[HararyGraph[4, 8]]").unwrap(), "True");
-    assert_eq!(interpret("PlanarGraphQ[HararyGraph[2, 9]]").unwrap(), "True");
+    assert_eq!(
+      interpret("PlanarGraphQ[HararyGraph[4, 7]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PlanarGraphQ[HararyGraph[4, 8]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PlanarGraphQ[HararyGraph[2, 9]]").unwrap(),
+      "True"
+    );
   }
 
   #[test]
@@ -3586,10 +3601,8 @@ mod planar_graph_q {
       "False"
     );
     assert_eq!(
-      interpret(
-        "PlanarGraphQ[Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]]"
-      )
-      .unwrap(),
+      interpret("PlanarGraphQ[Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]]")
+        .unwrap(),
       "True"
     );
   }
@@ -3602,5 +3615,133 @@ mod planar_graph_q {
     assert_eq!(interpret("PlanarGraphQ[CycleGraph[1]]").unwrap(), "True");
     assert_eq!(interpret("PlanarGraphQ[CycleGraph[2]]").unwrap(), "True");
     assert_eq!(interpret("PlanarGraphQ[x]").unwrap(), "False");
+  }
+}
+
+mod graph_metrics {
+  use super::*;
+
+  #[test]
+  fn global_clustering_coefficient() {
+    // Triangle with a pendant: 3 triangles-counted / 5 connected triples
+    assert_eq!(
+      interpret(
+        "GlobalClusteringCoefficient[Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "3/5"
+    );
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[CompleteGraph[5]]").unwrap(),
+      "1"
+    );
+    // Triangle-free graphs give 0
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[CycleGraph[5]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[PetersenGraph[5, 2]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[WheelGraph[6]]").unwrap(),
+      "3/5"
+    );
+    // No connected triples at all also gives 0
+    assert_eq!(
+      interpret("GlobalClusteringCoefficient[Graph[{1}, {}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean_clustering_coefficient() {
+    // (1 + 1 + 1/3 + 0)/4
+    assert_eq!(
+      interpret(
+        "MeanClusteringCoefficient[Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "7/12"
+    );
+    assert_eq!(
+      interpret("MeanClusteringCoefficient[CompleteGraph[5]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MeanClusteringCoefficient[WheelGraph[6]]").unwrap(),
+      "23/36"
+    );
+    assert_eq!(
+      interpret("MeanClusteringCoefficient[Graph[{1}, {}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn graph_density() {
+    assert_eq!(
+      interpret(
+        "GraphDensity[Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "2/3"
+    );
+    assert_eq!(interpret("GraphDensity[CompleteGraph[5]]").unwrap(), "1");
+    assert_eq!(interpret("GraphDensity[CycleGraph[5]]").unwrap(), "1/2");
+    assert_eq!(interpret("GraphDensity[StarGraph[7]]").unwrap(), "2/7");
+    assert_eq!(interpret("GraphDensity[Graph[{1, 2}, {}]]").unwrap(), "0");
+    // Doubled edges count once
+    assert_eq!(interpret("GraphDensity[CycleGraph[2]]").unwrap(), "1");
+    // The single-vertex formula degenerates: stays unevaluated
+    assert_eq!(
+      interpret("GraphDensity[Graph[{1}, {}]]").unwrap(),
+      "GraphDensity[Graph[<1>, <0>]]"
+    );
+    assert_eq!(interpret("GraphDensity[x]").unwrap(), "GraphDensity[x]");
+  }
+
+  #[test]
+  fn mean_graph_distance() {
+    assert_eq!(
+      interpret(
+        "MeanGraphDistance[Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "4/3"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[CompleteGraph[5]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[CycleGraph[5]]").unwrap(),
+      "3/2"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[PetersenGraph[5, 2]]").unwrap(),
+      "5/3"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[GridGraph[{3, 3}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[PathGraph[Range[6]]]").unwrap(),
+      "7/3"
+    );
+    // Disconnected graphs give Infinity
+    assert_eq!(
+      interpret(
+        "MeanGraphDistance[Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("MeanGraphDistance[Graph[{1}, {}]]").unwrap(),
+      "MeanGraphDistance[Graph[<1>, <0>]]"
+    );
   }
 }

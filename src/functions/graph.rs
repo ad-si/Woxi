@@ -3427,8 +3427,7 @@ fn biconnected_components(
 
 /// DMP planarity test for one biconnected component given as an edge list.
 fn dmp_planar(edges: &[(usize, usize)]) -> bool {
-  let mut verts: Vec<usize> =
-    edges.iter().flat_map(|&(a, b)| [a, b]).collect();
+  let mut verts: Vec<usize> = edges.iter().flat_map(|&(a, b)| [a, b]).collect();
   verts.sort_unstable();
   verts.dedup();
   let k = verts.len();
@@ -3524,8 +3523,7 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
       n_comps += 1;
     }
     for c in 0..n_comps {
-      let members: Vec<usize> =
-        (0..k).filter(|&v| comp_id[v] == c).collect();
+      let members: Vec<usize> = (0..k).filter(|&v| comp_id[v] == c).collect();
       let mut attachments: Vec<usize> = members
         .iter()
         .flat_map(|&u| adj[u].iter().copied().filter(|&w| in_h[w]))
@@ -3551,10 +3549,7 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
           break;
         }
         for &w in &adj[u] {
-          if !in_h[w]
-            && comp_id[w] == c
-            && prev[w] == usize::MAX
-          {
+          if !in_h[w] && comp_id[w] == c && prev[w] == usize::MAX {
             prev[w] = u;
             queue.push_back(w);
           }
@@ -3667,4 +3662,140 @@ pub fn planar_graph_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .all(|comp| dmp_planar(comp));
   Ok(bool_expr(planar))
+}
+
+// ---------------------------------------------------------------------------
+// Graph metrics: GlobalClusteringCoefficient, MeanClusteringCoefficient,
+// GraphDensity, MeanGraphDistance. All exact rationals (or Infinity for
+// the mean distance of a disconnected graph); non-graphs and graphs with
+// fewer than two vertices (where the formulas degenerate) stay unevaluated.
+
+fn make_rational(num: i128, den: i128) -> Expr {
+  Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+  }
+}
+
+pub fn graph_metric_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  let (n, pairs) = match parse_graph_pairs(&args[0]) {
+    Some(g) => g,
+    None => return Ok(unevaluated()),
+  };
+  // Underlying simple graph
+  let mut simple: Vec<(usize, usize)> = pairs
+    .iter()
+    .filter(|&&(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .collect();
+  simple.sort_unstable();
+  simple.dedup();
+  let m = simple.len() as i128;
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b) in &simple {
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+  let is_adjacent =
+    |a: usize, b: usize| simple.binary_search(&(a.min(b), a.max(b))).is_ok();
+
+  let evaluated = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  match name {
+    "GraphDensity" => {
+      if n <= 1 {
+        return Ok(unevaluated());
+      }
+      evaluated(make_rational(2 * m, (n as i128) * (n as i128 - 1)))
+    }
+    "GlobalClusteringCoefficient" => {
+      let triples: i128 = adj
+        .iter()
+        .map(|nb| {
+          let d = nb.len() as i128;
+          d * (d - 1) / 2
+        })
+        .sum();
+      if triples == 0 {
+        return Ok(Expr::Integer(0));
+      }
+      let mut triangles: i128 = 0;
+      for &(a, b) in &simple {
+        for &c in &adj[a] {
+          if c > b && is_adjacent(b, c) {
+            triangles += 1;
+          }
+        }
+      }
+      evaluated(make_rational(3 * triangles, triples))
+    }
+    "MeanClusteringCoefficient" => {
+      if n == 0 {
+        return Ok(unevaluated());
+      }
+      // Sum of local coefficients as one rational: each vertex
+      // contributes links_v / C(deg_v, 2) (0 when deg_v < 2)
+      let mut num: i128 = 0;
+      let mut den: i128 = 1;
+      for v in 0..n {
+        let d = adj[v].len() as i128;
+        if d < 2 {
+          continue;
+        }
+        let mut links: i128 = 0;
+        for i in 0..adj[v].len() {
+          for j in (i + 1)..adj[v].len() {
+            if is_adjacent(adj[v][i], adj[v][j]) {
+              links += 1;
+            }
+          }
+        }
+        let vden = d * (d - 1) / 2;
+        num = num * vden + links * den;
+        den *= vden;
+      }
+      evaluated(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          make_rational(num, den),
+          make_rational(1, n as i128),
+        ]
+        .into(),
+      })
+    }
+    "MeanGraphDistance" => {
+      if n <= 1 {
+        return Ok(unevaluated());
+      }
+      let mut total: i128 = 0;
+      for start in 0..n {
+        let mut dist = vec![usize::MAX; n];
+        dist[start] = 0;
+        let mut queue = std::collections::VecDeque::from([start]);
+        let mut reached = 1usize;
+        while let Some(u) = queue.pop_front() {
+          for &w in &adj[u] {
+            if dist[w] == usize::MAX {
+              dist[w] = dist[u] + 1;
+              reached += 1;
+              queue.push_back(w);
+            }
+          }
+        }
+        if reached != n {
+          return Ok(Expr::Identifier("Infinity".to_string()));
+        }
+        total += dist.iter().map(|&d| d as i128).sum::<i128>();
+      }
+      // total counts ordered pairs; the denominator is n(n-1)
+      evaluated(make_rational(total, (n as i128) * (n as i128 - 1)))
+    }
+    _ => Ok(unevaluated()),
+  }
 }

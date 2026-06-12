@@ -3153,7 +3153,7 @@ EvaluatorNames,,🚫,,4.0,3233
 FindThreshold,,,,8.0,3233
 GaugeFrameStyle,,🚫,,9.0,3233
 GeoBoundingBox,,🚫,,10.0,3233
-GlobalClusteringCoefficient,,,,9.0,3233
+GlobalClusteringCoefficient,Fraction of connected triples that close into triangles,✅,pure,9.0,3233
 HannWindow,Compute HannWindow value,✅,pure,9.0,3233
 Share,Memory sharing optimization (no-op),✅,none,1.0,3233
 VerticalSeparator,,🚫,,3.0,3233
@@ -3738,7 +3738,7 @@ KalmanEstimator,,,,8.0,3843
 KirchhoffGraph,,,,8.0,3843
 LeveneTest,,,,8.0,3843
 MandelbrotSetDistance,,,,10.0,3843
-MeanClusteringCoefficient,,,,9.0,3843
+MeanClusteringCoefficient,Mean of the local clustering coefficients,✅,pure,9.0,3843
 RegularlySampledQ,,,,10.0,3843
 RelationalDatabase,,🚫,,12.0,3843
 RenameDirectory,,,,2.0,3843
@@ -3874,7 +3874,7 @@ DeepSpaceProbeData,,🚫,,10.0,4006
 EscapeRadius,,,,10.0,4006
 FeedbackType,,🚫,,8.0,4006
 GenerateDocument,,🚫,,10.0,4006
-GraphDensity,,,,9.0,4006
+GraphDensity,Edge count relative to the complete graph (2m/n(n-1)),✅,pure,9.0,4006
 GroupStabilizerChain,,,,8.0,4006
 HistogramPointDensity,,🚫,,12.2,4006
 InverseBetaRegularized,,,,3.0,4006
@@ -4081,7 +4081,7 @@ ListFitPlot,,,,14.0,4204
 ListFitPlot3D,,,,14.0,4204
 ListFormat,,,,10.0,4204
 Listen,,,,8.0,4204
-MeanGraphDistance,,,,9.0,4204
+MeanGraphDistance,Average shortest-path distance (Infinity when disconnected),✅,pure,9.0,4204
 NextDate,,,,11.1,4204
 PacletDirectoryLoad,,🚫,,12.1,4204
 ParallelAxisPlot,,🚫,,12.2,4204
