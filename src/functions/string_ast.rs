@@ -114,214 +114,232 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringTake[s, n] - first n chars; StringTake[s, -n] - last n chars;
 /// StringTake[s, {m, n}] - chars m through n; StringTake[s, {n}] - nth char
-pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "StringTake expects exactly 2 arguments".into(),
-    ));
-  }
+/// Emit StringTake::take / StringDrop::drop for an invalid position range.
+fn string_take_drop_message(fname: &str, from: i128, to: i128, s: &str) {
+  let (tag, verb) = if fname == "StringTake" {
+    ("take", "take")
+  } else {
+    ("drop", "drop")
+  };
+  crate::emit_message(&format!(
+    "{}::{}: Cannot {} positions {} through {} in \"{}\".",
+    fname, tag, verb, from, to, s
+  ));
+}
 
-  // StringTake[{s1, s2, ...}, spec] - map over list of strings
-  if let Expr::List(strings) = &args[0] {
-    let results: Result<Vec<Expr>, InterpreterError> = strings
+fn string_take_drop_strse(fname: &str, args: &[Expr]) {
+  crate::emit_message(&format!(
+    "{}::strse: A string or list of strings is expected at position 1 in {}.",
+    fname,
+    crate::syntax::format_expr(
+      &Expr::FunctionCall {
+        name: fname.to_string(),
+        args: args.to_vec().into(),
+      },
+      crate::syntax::ExprForm::Output
+    )
+  ));
+}
+
+/// Shared StringTake/StringDrop engine, mirroring the Take/Drop position
+/// conventions: scalar n / -n, {i}, {i, j}, {i, j, step}, All, None,
+/// UpTo[n]. The adjacent reversed range {i, i-1} is an empty take /
+/// no-op drop; anything further reversed or out of range emits the
+/// take/drop message and stays unevaluated, as do non-string arguments
+/// (::strse).
+fn string_take_drop(
+  fname: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec().into(),
+  };
+  // Thread over a list of strings
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|s| string_take_ast(&[s.clone(), args[1].clone()]))
+      .map(|item| string_take_drop(fname, &[item.clone(), args[1].clone()]))
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-
-  let s = expr_to_str(&args[0])?;
+  let Expr::String(s) = &args[0] else {
+    string_take_drop_strse(fname, args);
+    return Ok(unevaluated());
+  };
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
-
-  // StringTake[s, {spec1, spec2, ...}] where at least one spec is itself
-  // a list - return a list, applying each sub-spec to the string.
-  // (Scalar spec elements are dispatched individually as well.)
-  if let Expr::List(elems) = &args[1]
-    && elems.iter().any(|e| matches!(e, Expr::List(_)))
-  {
-    let results: Result<Vec<Expr>, InterpreterError> = elems
-      .iter()
-      .map(|e| string_take_ast(&[args[0].clone(), e.clone()]))
-      .collect();
-    return Ok(Expr::List(results?.into()));
-  }
-
-  // StringTake[s, All] - return entire string
-  if matches!(&args[1], Expr::Identifier(name) if name == "All") {
-    return Ok(Expr::String(s));
-  }
-
-  match &args[1] {
-    Expr::List(elems) if elems.len() == 1 => {
-      // StringTake[s, {n}] - just the nth character
-      let n = expr_to_int(&elems[0])?;
-      let idx = if n > 0 { n - 1 } else { len + n };
-      if idx < 0 || idx >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "StringTake index {} out of range for string of length {}",
-          n, len
-        )));
-      }
-      Ok(Expr::String(chars[idx as usize].to_string()))
-    }
-    Expr::List(elems) if elems.len() == 2 => {
-      // StringTake[s, {m, n}] - characters m through n. Wolfram returns
-      // an empty string for "degenerate" ranges where m > n (e.g. {3, 2})
-      // or when n == 0 (interpreted as "0 characters", e.g. {1, 0}).
-      let m = expr_to_int(&elems[0])?;
-      let n = expr_to_int(&elems[1])?;
-      // Degenerate range that yields empty string regardless of length.
-      if m > n && n >= 0 || (m == 1 && n == 0) {
-        return Ok(Expr::String(String::new()));
-      }
-      let start = if m > 0 { m - 1 } else { len + m };
-      let end = if n > 0 { n - 1 } else { len + n };
-      if start > end {
-        return Ok(Expr::String(String::new()));
-      }
-      if start < 0 || end < 0 || start >= len || end >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "StringTake range {{{}, {}}} out of range for string of length {}",
-          m, n, len
-        )));
-      }
-      let taken: String = chars[start as usize..=end as usize].iter().collect();
-      Ok(Expr::String(taken))
-    }
-    Expr::List(elems) if elems.len() == 3 => {
-      // StringTake[s, {m, n, step}] - characters m through n with step
-      let m = expr_to_int(&elems[0])?;
-      let n = expr_to_int(&elems[1])?;
-      let step = expr_to_int(&elems[2])?;
-      if step == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "StringTake step cannot be 0".into(),
-        ));
-      }
-      let start = if m > 0 { m - 1 } else { len + m };
-      let end = if n > 0 { n - 1 } else { len + n };
-      if start < 0 || end < 0 || start >= len || end >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "StringTake range {{{}, {}, {}}} out of range for string of length {}",
-          m, n, step, len
-        )));
-      }
-      let mut taken = String::new();
-      let mut i = start;
-      while (step > 0 && i <= end) || (step < 0 && i >= end) {
-        if i >= 0 && i < len {
-          taken.push(chars[i as usize]);
-        }
+  let is_take = fname == "StringTake";
+  let take = |from: usize, to: usize, step: i128| -> Expr {
+    // 1-based inclusive positions, already validated
+    if is_take {
+      let mut out = String::new();
+      let mut i = from as i128;
+      while (step > 0 && i <= to as i128) || (step < 0 && i >= to as i128) {
+        out.push(chars[(i - 1) as usize]);
         i += step;
       }
-      Ok(Expr::String(taken))
+      Expr::String(out)
+    } else {
+      let mut keep: Vec<bool> = vec![true; chars.len()];
+      let mut i = from as i128;
+      while (step > 0 && i <= to as i128) || (step < 0 && i >= to as i128) {
+        keep[(i - 1) as usize] = false;
+        i += step;
+      }
+      Expr::String(
+        chars
+          .iter()
+          .zip(&keep)
+          .filter(|(_, k)| **k)
+          .map(|(c, _)| c)
+          .collect(),
+      )
     }
-    // StringTake[s, UpTo[n]] - take up to n characters
+  };
+  let empty_or_all = |empty: bool| -> Expr {
+    if empty == is_take {
+      // empty take or full drop -> ""
+      if is_take {
+        Expr::String(String::new())
+      } else {
+        Expr::String(String::new())
+      }
+    } else {
+      Expr::String(s.clone())
+    }
+  };
+
+  match &args[1] {
+    Expr::Identifier(name) if name == "All" => {
+      // take everything / drop everything
+      Ok(if is_take {
+        Expr::String(s.clone())
+      } else {
+        Expr::String(String::new())
+      })
+    }
+    Expr::Identifier(name) if name == "None" => {
+      // take nothing / drop nothing
+      Ok(if is_take {
+        Expr::String(String::new())
+      } else {
+        Expr::String(s.clone())
+      })
+    }
+    // A list of sub-specifications returns a list
+    Expr::List(elems)
+      if elems.iter().any(|e| matches!(e, Expr::List(_))) =>
+    {
+      let results: Result<Vec<Expr>, InterpreterError> = elems
+        .iter()
+        .map(|e| string_take_drop(fname, &[args[0].clone(), e.clone()]))
+        .collect();
+      Ok(Expr::List(results?.into()))
+    }
+    Expr::List(elems) if elems.len() == 1 => {
+      let Some(i) = crate::functions::list_helpers_ast::expr_to_i128(&elems[0])
+      else {
+        return Ok(unevaluated());
+      };
+      let real = if i > 0 { i } else { len + i + 1 };
+      if real >= 1 && real <= len {
+        Ok(take(real as usize, real as usize, 1))
+      } else {
+        string_take_drop_message(fname, i, i, s);
+        Ok(unevaluated())
+      }
+    }
+    Expr::List(elems) if elems.len() == 2 || elems.len() == 3 => {
+      let nums: Option<Vec<i128>> = elems
+        .iter()
+        .map(crate::functions::list_helpers_ast::expr_to_i128)
+        .collect();
+      let Some(nums) = nums else {
+        return Ok(unevaluated());
+      };
+      let (m, n) = (nums[0], nums[1]);
+      let step = if nums.len() == 3 { nums[2] } else { 1 };
+      if step == 0 {
+        return Ok(unevaluated());
+      }
+      let real_start = if m >= 0 { m } else { len + m + 1 };
+      let real_end = if n >= 0 { n } else { len + n + 1 };
+      if real_end == real_start - step {
+        return Ok(empty_or_all(true));
+      }
+      let in_range = real_start >= 1
+        && real_end >= 1
+        && real_start <= len
+        && real_end <= len;
+      let proper = (step > 0 && real_end >= real_start)
+        || (step < 0 && real_end <= real_start);
+      if in_range && proper {
+        Ok(take(real_start as usize, real_end as usize, step))
+      } else {
+        string_take_drop_message(fname, m, n, s);
+        Ok(unevaluated())
+      }
+    }
     Expr::FunctionCall {
       name: up_name,
       args: up_args,
     } if up_name == "UpTo" && up_args.len() == 1 => {
-      let max_n = expr_to_int(&up_args[0])?;
-      let take_n = max_n.min(len) as usize;
-      let taken: String = chars[..take_n].iter().collect();
-      Ok(Expr::String(taken))
+      match crate::functions::list_helpers_ast::expr_to_i128(&up_args[0]) {
+        Some(k) if k >= 0 => {
+          let count = k.min(len);
+          if count == 0 {
+            Ok(empty_or_all(true))
+          } else {
+            Ok(take(1, count as usize, 1))
+          }
+        }
+        _ => Ok(unevaluated()),
+      }
     }
-    _ => {
-      // StringTake[s, n] or StringTake[s, -n]
-      let n = expr_to_int(&args[1])?;
-      if n >= 0 {
-        let take_n = n.min(len) as usize;
-        let taken: String = chars[..take_n].iter().collect();
-        Ok(Expr::String(taken))
+    other => {
+      let Some(count) =
+        crate::functions::list_helpers_ast::expr_to_i128(other)
+      else {
+        return Ok(unevaluated());
+      };
+      if count.unsigned_abs() > len.unsigned_abs() {
+        let (from, to) = if count >= 0 { (1, count) } else { (count, -1) };
+        string_take_drop_message(fname, from, to, s);
+        return Ok(unevaluated());
+      }
+      if count == 0 {
+        return Ok(empty_or_all(true));
+      }
+      if count > 0 {
+        Ok(take(1, count as usize, 1))
       } else {
-        let take_n = (-n).min(len) as usize;
-        let taken: String = chars[len as usize - take_n..].iter().collect();
-        Ok(Expr::String(taken))
+        Ok(take((len + count + 1) as usize, len as usize, 1))
       }
     }
   }
+}
+
+pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "StringTake".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  string_take_drop("StringTake", args)
 }
 
 /// StringDrop[s, n] - drop first n chars; StringDrop[s, -n] - drop last n chars
 /// StringDrop[s, {n}] - drop nth character; StringDrop[s, {m, n}] - drop chars m through n
 pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "StringDrop expects exactly 2 arguments".into(),
-    ));
+    return Ok(Expr::FunctionCall {
+      name: "StringDrop".to_string(),
+      args: args.to_vec().into(),
+    });
   }
-  // Thread over list of strings in the first argument.
-  if let Expr::List(items) = &args[0]
-    && items.iter().all(|it| matches!(it, Expr::String(_)))
-  {
-    let results: Result<Vec<Expr>, InterpreterError> = items
-      .iter()
-      .map(|item| string_drop_ast(&[item.clone(), args[1].clone()]))
-      .collect();
-    return Ok(Expr::List(results?.into()));
-  }
-  let s = expr_to_str(&args[0])?;
-  let chars: Vec<char> = s.chars().collect();
-  let len = chars.len() as i128;
-
-  match &args[1] {
-    Expr::List(elems) if elems.len() == 1 => {
-      // StringDrop[s, {n}] - drop the nth character
-      let n = expr_to_int(&elems[0])?;
-      let idx = if n > 0 { n - 1 } else { len + n };
-      if idx < 0 || idx >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "StringDrop index {} out of range for string of length {}",
-          n, len
-        )));
-      }
-      let dropped: String = chars
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != idx as usize)
-        .map(|(_, c)| c)
-        .collect();
-      Ok(Expr::String(dropped))
-    }
-    Expr::List(elems) if elems.len() == 2 => {
-      // StringDrop[s, {m, n}] - drop characters m through n
-      let m = expr_to_int(&elems[0])?;
-      let n = expr_to_int(&elems[1])?;
-      let start = if m > 0 { m - 1 } else { len + m };
-      let end = if n > 0 { n - 1 } else { len + n };
-      if start > end {
-        // When start > end, nothing is dropped
-        return Ok(Expr::String(s));
-      }
-      if start < 0 || end < 0 || start >= len || end >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "StringDrop range {{{}, {}}} out of range for string of length {}",
-          m, n, len
-        )));
-      }
-      let dropped: String = chars
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i < start as usize || *i > end as usize)
-        .map(|(_, c)| c)
-        .collect();
-      Ok(Expr::String(dropped))
-    }
-    _ => {
-      // StringDrop[s, n] or StringDrop[s, -n]
-      let n = expr_to_int(&args[1])?;
-      if n >= 0 {
-        let drop_n = n.min(len) as usize;
-        let dropped: String = chars[drop_n..].iter().collect();
-        Ok(Expr::String(dropped))
-      } else {
-        let drop_n = (-n).min(len) as usize;
-        let dropped: String = chars[..len as usize - drop_n].iter().collect();
-        Ok(Expr::String(dropped))
-      }
-    }
-  }
+  string_take_drop("StringDrop", args)
 }
 
 /// StringJoin[s1, s2, ...] or StringJoin[{s1, s2, ...}] - concatenates strings

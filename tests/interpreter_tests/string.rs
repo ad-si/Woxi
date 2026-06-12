@@ -7367,3 +7367,118 @@ mod padded_form {
     assert_eq!(interpret("PaddedForm[7, 4]").unwrap(), "PaddedForm[7, 4]");
   }
 }
+
+mod string_take_drop_specs {
+  use super::*;
+
+  #[test]
+  fn over_take_and_drop_error() {
+    // Regression: these silently clamped before
+    assert_eq!(
+      interpret(r#"StringTake["abc", 5]"#).unwrap(),
+      "StringTake[abc, 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringTake::take: Cannot take positions 1 through 5 in \"abc\"."
+      )),
+      "expected take message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret(r#"StringDrop["abc", -5]"#).unwrap(),
+      "StringDrop[abc, -5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringDrop::drop: Cannot drop positions -5 through -1 in \"abc\"."
+      )),
+      "expected drop message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn reversed_and_zero_ranges() {
+    // The adjacent reversed range is empty / a no-op; {1, 0} normalizes
+    // to the adjacent case
+    assert_eq!(interpret(r#"StringTake["abcdef", {3, 2}]"#).unwrap(), "");
+    assert_eq!(
+      interpret(r#"StringDrop["abcdef", {3, 2}]"#).unwrap(),
+      "abcdef"
+    );
+    assert_eq!(interpret(r#"StringTake["abcdef", {1, 0}]"#).unwrap(), "");
+    // Further reversed errors
+    assert_eq!(
+      interpret(r#"StringTake["abcdef", {3, 1}]"#).unwrap(),
+      "StringTake[abcdef, {3, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringTake::take: Cannot take positions 3 through 1 in \"abcdef\"."
+      )),
+      "expected take message, got {:?}",
+      msgs
+    );
+    // Out-of-range single position (previously a hard error)
+    assert_eq!(
+      interpret(r#"StringTake["abc", {0}]"#).unwrap(),
+      "StringTake[abc, {0}]"
+    );
+  }
+
+  #[test]
+  fn none_all_and_upto() {
+    assert_eq!(interpret(r#"StringTake["abc", None]"#).unwrap(), "");
+    assert_eq!(interpret(r#"StringDrop["abc", None]"#).unwrap(), "abc");
+    assert_eq!(interpret(r#"StringDrop["abc", All]"#).unwrap(), "");
+    assert_eq!(interpret(r#"StringTake["abc", All]"#).unwrap(), "abc");
+    assert_eq!(interpret(r#"StringDrop["abcdef", UpTo[10]]"#).unwrap(), "");
+    assert_eq!(
+      interpret(r#"StringTake["abcdef", UpTo[10]]"#).unwrap(),
+      "abcdef"
+    );
+  }
+
+  #[test]
+  fn non_string_emits_strse() {
+    // Regression: StringTake[x, 2] returned x before
+    assert_eq!(interpret("StringTake[x, 2]").unwrap(), "StringTake[x, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringTake::strse: A string or list of strings is expected at position 1 in StringTake[x, 2]."
+      )),
+      "expected strse message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("StringDrop[x, 2]").unwrap(), "StringDrop[x, 2]");
+  }
+
+  #[test]
+  fn steps_and_sublists_still_work() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdef", {1, 5, 2}]"#).unwrap(),
+      "ace"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcdef", {6, 1, -2}]"#).unwrap(),
+      "fdb"
+    );
+    assert_eq!(
+      interpret(r#"StringDrop["abcdef", {1, 5, 2}]"#).unwrap(),
+      "bdf"
+    );
+    assert_eq!(
+      interpret(r#"StringTake["abcdef", {{1, 2}, {3, 4}}]"#).unwrap(),
+      "{ab, cd}"
+    );
+    assert_eq!(
+      interpret(r#"StringTake[{"abcdef", "xyz"}, 2]"#).unwrap(),
+      "{ab, xy}"
+    );
+  }
+}
