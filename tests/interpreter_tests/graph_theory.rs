@@ -3286,3 +3286,79 @@ mod cycle_graph_edge_order {
     );
   }
 }
+
+mod neighborhood_graph {
+  use super::*;
+
+  #[test]
+  fn center_and_neighbors() {
+    assert_eq!(
+      interpret(
+        "{VertexList[NeighborhoodGraph[CycleGraph[6], 1]], EdgeList[NeighborhoodGraph[CycleGraph[6], 1]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 6}, {1 \u{f3d4} 2, 1 \u{f3d4} 6}}"
+    );
+    assert_eq!(
+      interpret(
+        "{VertexList[NeighborhoodGraph[PetersenGraph[5, 2], 1]], EdgeList[NeighborhoodGraph[PetersenGraph[5, 2], 1]]}"
+      )
+      .unwrap(),
+      "{{1, 3, 4, 6}, {1 \u{f3d4} 3, 1 \u{f3d4} 4, 1 \u{f3d4} 6}}"
+    );
+  }
+
+  #[test]
+  fn center_incident_edges_come_first() {
+    // Center 3 of K4: incident edges first with the center endpoint
+    // first, then the remaining edges in canonical order
+    assert_eq!(
+      interpret("EdgeList[NeighborhoodGraph[CompleteGraph[4], 3]]").unwrap(),
+      "{3 \u{f3d4} 1, 3 \u{f3d4} 2, 3 \u{f3d4} 4, 1 \u{f3d4} 2, 1 \u{f3d4} 4, 2 \u{f3d4} 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[NeighborhoodGraph[WheelGraph[6], 1]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 1 \u{f3d4} 4, 1 \u{f3d4} 5, 1 \u{f3d4} 6, 2 \u{f3d4} 3, 2 \u{f3d4} 6, 3 \u{f3d4} 4, 4 \u{f3d4} 5, 5 \u{f3d4} 6}"
+    );
+  }
+
+  #[test]
+  fn multiple_centers() {
+    assert_eq!(
+      interpret(
+        "g = CycleGraph[8]; {VertexList[NeighborhoodGraph[g, {1, 4}]], EdgeList[NeighborhoodGraph[g, {1, 4}]]}"
+      )
+      .unwrap(),
+      "{{1, 4, 2, 8, 3, 5}, {1 \u{f3d4} 2, 1 \u{f3d4} 8, 4 \u{f3d4} 3, 4 \u{f3d4} 5, 2 \u{f3d4} 3}}"
+    );
+  }
+
+  #[test]
+  fn radius_parameter() {
+    assert_eq!(
+      interpret(
+        "{VertexList[NeighborhoodGraph[CycleGraph[8], 1, 2]], EdgeList[NeighborhoodGraph[CycleGraph[8], 1, 2]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 7, 8}, {1 \u{f3d4} 2, 1 \u{f3d4} 8, 2 \u{f3d4} 3, 7 \u{f3d4} 8}}"
+    );
+    // Radius 0 keeps only the center
+    assert_eq!(
+      interpret("VertexList[NeighborhoodGraph[CycleGraph[5], 2, 0]]")
+        .unwrap(),
+      "{2}"
+    );
+  }
+
+  #[test]
+  fn unknown_center_and_non_graph() {
+    assert_eq!(
+      interpret("NeighborhoodGraph[CycleGraph[5], 9]").unwrap(),
+      "Graph[<0>, <0>]"
+    );
+    assert_eq!(
+      interpret("NeighborhoodGraph[x, 1]").unwrap(),
+      "NeighborhoodGraph[x, 1]"
+    );
+  }
+}

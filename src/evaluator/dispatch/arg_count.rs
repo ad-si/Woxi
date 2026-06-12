@@ -1103,6 +1103,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "WeightedAdjacencyGraph" => Some((1, 3)),
     "FindMinimumCostFlow" => Some((2, 4)),
     "NearestNeighborGraph" => Some((1, 3)),
+    "NeighborhoodGraph" => Some((2, 3)),
     "ZTest" => Some((1, 4)),
     "RiceDistribution" => Some((2, 2)),
     "FisherRatioTest" => Some((1, 3)),

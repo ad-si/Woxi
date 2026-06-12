@@ -2037,7 +2037,7 @@ Back,Navigate back in history,🚫,,6.0,2074
 CreateWindow,Create GUI window,🚫,,6.0,2079
 EmbedCode,Embed code for deployment,🚫,,10.0,2079
 EngineeringForm,Display wrapper for engineering notation formatting,✅,pure,1.0,2079
-NeighborhoodGraph,Neighborhood subgraph,🚫,,8.0,2079
+NeighborhoodGraph,Induced subgraph within distance r (default 1) of the given centers,✅,pure,8.0,2079
 ValidationSet,Validation dataset for ML,🚫,,10.0,2079
 EulerMatrix,Rotation matrix from Euler angles using the default {3 2 3} (ZYZ) convention or an explicit axis sequence,✅,pure,10.2,2082
 MouseAppearance,Custom mouse cursor appearance,🚫,,8.0,2082

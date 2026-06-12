@@ -2888,12 +2888,10 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return Ok(unevaluated()),
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return Ok(unevaluated()),
+    },
     _ => return Ok(unevaluated()),
   };
   // The vertex spec: a list, or a single vertex
@@ -2979,8 +2977,7 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && ename == "UndirectedEdge"
       && eargs.len() == 2
     {
-      endpoints
-        .push((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])));
+      endpoints.push((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])));
     } else {
       return Ok(unevaluated());
     }
@@ -3007,5 +3004,173 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: "Graph".to_string(),
     args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// NeighborhoodGraph[g, v], NeighborhoodGraph[g, {v1, ...}, r] — the induced
+// subgraph on the vertices within distance r (default 1) of the centers.
+// Matches wolframscript's generator-graph conventions:
+// - single center: center first, remaining vertices in vertex-list order;
+//   multiple centers: the centers (given order), then each center's
+//   BFS layers in vertex-list order, deduplicated
+// - edges: each center's incident edges first (center endpoint first,
+//   other endpoints ascending), then the remaining edges in canonical
+//   ascending order
+// - unknown centers are ignored; radius 0 keeps only the centers
+// wolframscript's edge order when the neighborhood covers the whole graph
+// (and for explicitly-constructed graphs) is an igraph traversal artifact
+// that is not replicated.
+pub fn neighborhood_graph_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "NeighborhoodGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (vertices, edge_exprs) = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+  let radius: i128 = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(r) if *r >= 0 => *r,
+      _ => return Ok(unevaluated()),
+    }
+  } else {
+    1
+  };
+  let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
+  let n = vkeys.len();
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+    {
+      let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]));
+      let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]));
+      match (a, b) {
+        (Some(a), Some(b)) if a != b => {
+          adj[a].push(b);
+          adj[b].push(a);
+        }
+        (Some(_), Some(_)) => {}
+        _ => return Ok(unevaluated()),
+      }
+    } else {
+      return Ok(unevaluated());
+    }
+  }
+  for nb in adj.iter_mut() {
+    nb.sort_unstable();
+    nb.dedup();
+  }
+  // Centers: a list or a single vertex; unknown centers are ignored
+  let requested: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.iter().cloned().collect(),
+    single => vec![single.clone()],
+  };
+  let mut centers: Vec<usize> = Vec::new();
+  for r in &requested {
+    let key = expr_to_string(r);
+    if let Some(i) = vkeys.iter().position(|k| *k == key)
+      && !centers.contains(&i)
+    {
+      centers.push(i);
+    }
+  }
+  // BFS from each center, building the kept vertex order: centers first,
+  // then per-center layers in ascending vertex order
+  let mut order: Vec<usize> = centers.clone();
+  let mut kept = vec![false; n];
+  for &c in &centers {
+    kept[c] = true;
+  }
+  for &c in &centers {
+    let mut frontier = vec![c];
+    for _ in 0..radius {
+      let mut next = Vec::new();
+      for &u in &frontier {
+        for &w in &adj[u] {
+          if !kept[w] {
+            kept[w] = true;
+            next.push(w);
+          }
+        }
+      }
+      next.sort_unstable();
+      order.extend(&next);
+      frontier = next;
+    }
+  }
+  // Single center: remaining vertices in vertex-list order
+  if centers.len() == 1 {
+    let mut rest: Vec<usize> =
+      order[1..].iter().copied().collect();
+    rest.sort_unstable();
+    order.truncate(1);
+    order.extend(rest);
+  }
+
+  // Edges: per-center incident edges first, then the rest sorted
+  let mut emitted: std::collections::BTreeSet<(usize, usize)> =
+    std::collections::BTreeSet::new();
+  let mut edges: Vec<Expr> = Vec::new();
+  let mk_edge = |a: usize, b: usize| Expr::FunctionCall {
+    name: "UndirectedEdge".to_string(),
+    args: vec![vertices[a].clone(), vertices[b].clone()].into(),
+  };
+  for &c in &centers {
+    for &w in &adj[c] {
+      if kept[w] {
+        let key = (c.min(w), c.max(w));
+        if emitted.insert(key) {
+          edges.push(mk_edge(c, w));
+        }
+      }
+    }
+  }
+  let mut rest_pairs: Vec<(usize, usize)> = Vec::new();
+  for u in 0..n {
+    if !kept[u] {
+      continue;
+    }
+    for &w in &adj[u] {
+      if u < w && kept[w] && !emitted.contains(&(u, w)) {
+        rest_pairs.push((u, w));
+      }
+    }
+  }
+  rest_pairs.sort_unstable();
+  rest_pairs.dedup();
+  for (a, b) in rest_pairs {
+    edges.push(mk_edge(a, b));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![
+      Expr::List(
+        order
+          .into_iter()
+          .map(|i| vertices[i].clone())
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      Expr::List(edges.into()),
+    ]
+    .into(),
   })
 }

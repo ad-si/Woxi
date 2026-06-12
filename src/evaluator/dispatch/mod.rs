@@ -2362,8 +2362,7 @@ pub fn evaluate_function_call_ast_inner(
         .into_iter()
         .map(|(a, b)| Expr::FunctionCall {
           name: "UndirectedEdge".to_string(),
-          args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)]
-            .into(),
+          args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
         })
         .collect();
       let opts: Vec<Expr> = args[1..]
@@ -5008,6 +5007,10 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if name == "NeighborhoodGraph" && (args.len() == 2 || args.len() == 3) {
+    return crate::functions::graph::neighborhood_graph_ast(args);
+  }
+
   if name == "Subgraph" && args.len() == 2 {
     return crate::functions::graph::subgraph_ast(args);
   }
