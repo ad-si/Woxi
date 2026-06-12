@@ -3777,10 +3777,7 @@ mod string_extract {
       interpret(r#"StringExtract["aa bb cc dd", {1, 3}]"#).unwrap(),
       "{aa, cc}"
     );
-    assert_eq!(
-      interpret(r#"StringExtract["aa bb cc", -1]"#).unwrap(),
-      "cc"
-    );
+    assert_eq!(interpret(r#"StringExtract["aa bb cc", -1]"#).unwrap(), "cc");
     assert_eq!(
       interpret(r#"StringExtract["one  two   three", {2, -1}]"#).unwrap(),
       "{two, three}"
@@ -3833,6 +3830,119 @@ mod string_extract {
       )),
       "expected strse message, got {:?}",
       msgs
+    );
+  }
+}
+
+mod boolean_minterms {
+  use super::*;
+
+  #[test]
+  fn boolean_rows() {
+    assert_eq!(
+      interpret("BooleanMinterms[{{True, False}, {False, True}}, {a, b}]")
+        .unwrap(),
+      "(a &&  !b) || ( !a && b)"
+    );
+    // Rows are ordered by descending minterm index regardless of input order
+    assert_eq!(
+      interpret("BooleanMinterms[{{False, True}, {True, False}}, {a, b}]")
+        .unwrap(),
+      "(a &&  !b) || ( !a && b)"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{{True, True}}, {a, b}]").unwrap(),
+      "a && b"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{{False}}, {a}]").unwrap(),
+      " !a"
+    );
+    // Short rows cover a prefix of the variables
+    assert_eq!(
+      interpret("BooleanMinterms[{{True}}, {a, b}]").unwrap(),
+      "a"
+    );
+  }
+
+  #[test]
+  fn integer_indices() {
+    assert_eq!(
+      interpret("BooleanMinterms[{1, 2, 7}, {a, b, c}]").unwrap(),
+      "(a && b && c) || ( !a && b &&  !c) || ( !a &&  !b && c)"
+    );
+    // Same set in any order: sorted by descending index
+    assert_eq!(
+      interpret("BooleanMinterms[{2, 7, 1}, {a, b, c}]").unwrap(),
+      "(a && b && c) || ( !a && b &&  !c) || ( !a &&  !b && c)"
+    );
+    // Indices wrap mod 2^n and duplicates collapse
+    assert_eq!(
+      interpret("BooleanMinterms[{9}, {a, b}]").unwrap(),
+      " !a && b"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{3, 3}, {a, b}]").unwrap(),
+      "a && b"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{0}, {a, b}]").unwrap(),
+      " !a &&  !b"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{5}, {p, q, r}]").unwrap(),
+      "p &&  !q && r"
+    );
+  }
+
+  #[test]
+  fn complete_and_empty_specifications() {
+    assert_eq!(
+      interpret("BooleanMinterms[{0, 1, 2, 3}, {a, b}]").unwrap(),
+      "True"
+    );
+    // Partial rows covering everything also give True
+    assert_eq!(
+      interpret("BooleanMinterms[{{True}, {False}}, {a, b}]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("BooleanMinterms[{}, {a, b}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn invalid_specifications_emit_bspec() {
+    assert_eq!(
+      interpret("BooleanMinterms[a || b, {a, b}]").unwrap(),
+      "BooleanMinterms[a || b, {a, b}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "BooleanMinterms::bspec: BooleanMinterms[a || b, {a, b}] is not a valid BooleanMinterms specification."
+      )),
+      "expected bspec message, got {:?}",
+      msgs
+    );
+    // Mixed row lengths are invalid
+    assert_eq!(
+      interpret(
+        "BooleanMinterms[{{True}, {False, True}, {False, False}}, {a, b}]"
+      )
+      .unwrap(),
+      "BooleanMinterms[{{True}, {False, True}, {False, False}}, {a, b}]"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{1, 2}, x]").unwrap(),
+      "BooleanMinterms[{1, 2}, x]"
+    );
+  }
+
+  #[test]
+  fn integrates_with_satisfiability() {
+    assert_eq!(
+      interpret("SatisfiabilityCount[BooleanMinterms[{1, 2, 7}, {a, b, c}]]")
+        .unwrap(),
+      "3"
     );
   }
 }

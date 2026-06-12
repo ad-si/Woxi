@@ -27,6 +27,9 @@ pub fn dispatch_boolean_functions(
     "Majority" => {
       return Some(crate::functions::majority_ast(args));
     }
+    "BooleanMinterms" if args.len() == 2 => {
+      return Some(crate::functions::boolean_minterms_ast(args));
+    }
     "BooleanVariables" if args.len() == 1 => {
       return Some(crate::functions::boolean_variables_ast(args));
     }

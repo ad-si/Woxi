@@ -123,6 +123,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BooleanCountingFunction" => Some((2, 2)),
     "BooleanMinimize" => Some((1, 1)),
     "BooleanQ" => Some((1, 1)),
+    "BooleanMinterms" => Some((2, 2)),
     "BooleanTable" => Some((2, 2)),
     "BooleanVariables" => Some((1, 1)),
     "BoxMatrix" => Some((1, 1)),

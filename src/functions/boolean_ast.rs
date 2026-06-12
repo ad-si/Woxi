@@ -2592,9 +2592,7 @@ fn substitute_boolean_var(expr: &Expr, var: &Expr, val: &Expr) -> Expr {
 }
 
 /// BooleanVariables[expr] - the Boolean variables, canonically sorted.
-pub fn boolean_variables_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::FunctionCall {
       name: "BooleanVariables".to_string(),
@@ -2722,7 +2720,6 @@ pub fn satisfiability_count_ast(
   }
 }
 
-
 /// Majority[b1, b2, ...] - True when more than half the arguments are True.
 /// Symbolic arguments simplify by cancelling True/False pairs and deciding
 /// early when the outcome no longer depends on the unknowns (matching
@@ -2779,4 +2776,150 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Majority".to_string(),
     args: sorted.into(),
   })
+}
+
+/// BooleanMinterms[spec, {v1, ...}] — the disjunction of minterms given
+/// either as True/False rows (positionally over the variables; short rows
+/// cover a prefix) or as minterm indices (taken mod 2^n). Terms are
+/// deduplicated and ordered by descending minterm index; the empty
+/// specification gives False. Boolean expressions and other malformed
+/// specifications emit ::bspec.
+pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "BooleanMinterms".to_string(),
+    args: args.to_vec().into(),
+  };
+  let bspec = || {
+    crate::emit_message(&format!(
+      "BooleanMinterms::bspec: {} is not a valid BooleanMinterms specification.",
+      crate::syntax::format_expr(
+        &Expr::FunctionCall {
+          name: "BooleanMinterms".to_string(),
+          args: args.to_vec().into(),
+        },
+        crate::syntax::ExprForm::Output
+      )
+    ));
+  };
+  let vars = match &args[1] {
+    Expr::List(v) if !v.is_empty() => v,
+    _ => {
+      bspec();
+      return Ok(unevaluated());
+    }
+  };
+  let nvars = vars.len();
+  if nvars > 32 {
+    return Ok(unevaluated());
+  }
+  // Each minterm becomes a bit row over a prefix of the variables
+  let mut rows: Vec<Vec<bool>> = Vec::new();
+  let spec_items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      bspec();
+      return Ok(unevaluated());
+    }
+  };
+  let all_ints = spec_items
+    .iter()
+    .all(|i| matches!(i, Expr::Integer(v) if *v >= 0));
+  let all_rows = spec_items.iter().all(|i| {
+    matches!(i, Expr::List(cells) if cells.iter().all(
+      |c| matches!(c, Expr::Identifier(s) if s == "True" || s == "False")
+    ))
+  });
+  if all_ints && !spec_items.is_empty() {
+    for i in spec_items.iter() {
+      let Expr::Integer(v) = i else { unreachable!() };
+      let idx = (*v as u64) % (1u64 << nvars);
+      rows.push(
+        (0..nvars)
+          .map(|b| (idx >> (nvars - 1 - b)) & 1 == 1)
+          .collect(),
+      );
+    }
+  } else if all_rows {
+    // Rows must share one length (at most the variable count)
+    let mut row_len: Option<usize> = None;
+    for i in spec_items.iter() {
+      let Expr::List(cells) = i else { unreachable!() };
+      if cells.len() > nvars || *row_len.get_or_insert(cells.len()) != cells.len()
+      {
+        bspec();
+        return Ok(unevaluated());
+      }
+      rows.push(
+        cells
+          .iter()
+          .map(|c| matches!(c, Expr::Identifier(s) if s == "True"))
+          .collect(),
+      );
+    }
+  } else if spec_items.is_empty() {
+    return Ok(Expr::Identifier("False".to_string()));
+  } else {
+    bspec();
+    return Ok(unevaluated());
+  }
+
+  // Deduplicate and order by descending minterm index (rows left-aligned)
+  let sort_key = |row: &Vec<bool>| -> u64 {
+    let mut k = 0u64;
+    for b in 0..nvars {
+      k <<= 1;
+      if *row.get(b).unwrap_or(&false) {
+        k |= 1;
+      }
+    }
+    k
+  };
+  rows.sort_by_key(|r| std::cmp::Reverse(sort_key(r)));
+  rows.dedup();
+
+  // A specification covering every minterm simplifies to True
+  let covered: u64 = rows
+    .iter()
+    .map(|r| 1u64 << (nvars - r.len()))
+    .sum();
+  if covered >= (1u64 << nvars) {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  let terms: Vec<Expr> = rows
+    .iter()
+    .map(|row| {
+      let literals: Vec<Expr> = row
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| {
+          if b {
+            vars[i].clone()
+          } else {
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Not,
+              operand: Box::new(vars[i].clone()),
+            }
+          }
+        })
+        .collect();
+      if literals.len() == 1 {
+        literals.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: literals.into(),
+        }
+      }
+    })
+    .collect();
+  let result = match terms.len() {
+    0 => Expr::Identifier("False".to_string()),
+    1 => terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Or".to_string(),
+      args: terms.into(),
+    },
+  };
+  evaluate_expr_to_expr(&result)
 }
