@@ -8244,7 +8244,8 @@ fn rat_linear_solve(
       }
       let factor = a[r][col];
       for j in col..n {
-        a[r][j] = rat_add(a[r][j], (-factor.0 * a[col][j].0, factor.1 * a[col][j].1));
+        a[r][j] =
+          rat_add(a[r][j], (-factor.0 * a[col][j].0, factor.1 * a[col][j].1));
         a[r][j] = rat_reduce(a[r][j].0, a[r][j].1);
       }
       b[r] = rat_reduce(
@@ -8416,18 +8417,16 @@ pub fn pade_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           right: Box::new(Expr::Integer(k as i128)),
         },
       };
-      let term = crate::functions::math_ast::times_ast(&[
-        rat_to_expr(coef),
-        power,
-      ])
-      .unwrap_or(Expr::Integer(0));
+      let term =
+        crate::functions::math_ast::times_ast(&[rat_to_expr(coef), power])
+          .unwrap_or(Expr::Integer(0));
       terms.push(term);
     }
     if terms.is_empty() {
       return Expr::Integer(0);
     }
-    let sum = crate::functions::math_ast::plus_ast(&terms)
-      .unwrap_or(Expr::Integer(0));
+    let sum =
+      crate::functions::math_ast::plus_ast(&terms).unwrap_or(Expr::Integer(0));
     crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
   };
 

@@ -2760,9 +2760,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => {
       Value::Exact(BigUint::from(n.unsigned_abs()), BigUint::one())
     }
-    Expr::BigInteger(n) => {
-      Value::Exact(n.magnitude().clone(), BigUint::one())
-    }
+    Expr::BigInteger(n) => Value::Exact(n.magnitude().clone(), BigUint::one()),
     Expr::FunctionCall { name, args: ra }
       if name == "Rational" && ra.len() == 2 =>
     {
@@ -2828,9 +2826,8 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let bits = (((max_abs_k as f64) + 60.0) * (base as f64).log2()).ceil()
         as usize
         + 64;
-      let mut cc = astro_float::Consts::new().map_err(|e| {
-        InterpreterError::EvaluationError(format!("N: {e}"))
-      })?;
+      let mut cc = astro_float::Consts::new()
+        .map_err(|e| InterpreterError::EvaluationError(format!("N: {e}")))?;
       let rm = astro_float::RoundingMode::ToEven;
       match crate::functions::math_ast::numerical::expr_to_bigfloat(
         other, bits, rm, &mut cc,
@@ -2936,7 +2933,11 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Expr::List(_) = &args[1] {
     Ok(Expr::List(
-      positions.iter().map(|&k| digit_at(k)).collect::<Vec<_>>().into(),
+      positions
+        .iter()
+        .map(|&k| digit_at(k))
+        .collect::<Vec<_>>()
+        .into(),
     ))
   } else {
     Ok(digit_at(positions[0]))

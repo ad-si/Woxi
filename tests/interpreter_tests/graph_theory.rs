@@ -3899,7 +3899,10 @@ mod graph_assortativity {
       "0"
     );
     // Edgeless graphs too
-    assert_eq!(interpret("GraphAssortativity[Graph[{1}, {}]]").unwrap(), "0");
+    assert_eq!(
+      interpret("GraphAssortativity[Graph[{1}, {}]]").unwrap(),
+      "0"
+    );
   }
 
   #[test]

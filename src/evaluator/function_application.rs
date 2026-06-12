@@ -194,8 +194,10 @@ fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
       }
     }
   } else {
-    let args_str: Vec<String> =
-      args.iter().map(crate::syntax::expr_to_message_form).collect();
+    let args_str: Vec<String> = args
+      .iter()
+      .map(crate::syntax::expr_to_message_form)
+      .collect();
     for _ in keys {
       crate::emit_message(&format!(
         "Function::slot1: ({} & )[{}] is expected to have an Association as the first argument.",

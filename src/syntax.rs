@@ -4736,7 +4736,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Or]" | "\u{2228}" => 15,    // \[Or] (same as ||)
     "\\[Nor]" | "\u{22BD}" => 15,   // \[Nor] (Or level)
     "\\[Equivalent]" | "\u{29E6}" => 14, // \[Equivalent] (below Or)
-    "\\[Implies]" | "\u{F523}" => 13,    // \[Implies] (lowest logical, right-assoc)
+    "\\[Implies]" | "\u{F523}" => 13, // \[Implies] (lowest logical, right-assoc)
     "\\[NotElement]" | "\u{2209}" => 21, // NotElement (same level as comparisons)
     "\\[ReverseElement]" | "\u{220B}" => 21, // ReverseElement (same level as comparisons)
     "\\[Element]" | "\u{2208}" => 21, // Element (same level as comparisons)
@@ -4747,8 +4747,8 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Conditioned]" | "\u{F3D3}" => 12, // Conditioned (looser than ||, like ;)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 36, // Cross (same level as Dot)
     "\\[TensorProduct]" | "\u{F3DA}" => 36, // TensorProduct (same level as Dot)
-    "\\[Cap]" | "\u{2322}" => 36,        // Cap (⌢, infix → Cap[a, b])
-    "\\[Cup]" | "\u{2323}" => 36,        // Cup (⌣, infix → Cup[a, b])
+    "\\[Cap]" | "\u{2322}" => 36,         // Cap (⌢, infix → Cap[a, b])
+    "\\[Cup]" | "\u{2323}" => 36,         // Cup (⌣, infix → Cup[a, b])
     "\\[RightTee]" | "\u{22A2}" => 15, // RightTee (⊢, right-assoc, between -> and ==)
     "\\[DoubleRightTee]" | "\u{22A8}" => 15, // DoubleRightTee (⊨, right-assoc, same level)
     "\\[LeftTee]" | "\u{22A3}" => 15, // LeftTee (⊣, left-assoc, same level)
@@ -4759,7 +4759,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Function]" | "\u{F4A1}" => 3,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 21, // Comparisons
-    "~~" => 24,          // StringExpression (lower than Alternatives)
+    "~~" => 24,         // StringExpression (lower than Alternatives)
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
     "*" | "/" => 33, // Times/Divide

@@ -911,9 +911,7 @@ fn scale_by_coeffs(core: Expr, a: &ConvTerm, b: &ConvTerm) -> Expr {
   }
 }
 
-pub fn dirichlet_convolve_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "DirichletConvolve".to_string(),
     args: args.to_vec().into(),
@@ -944,11 +942,8 @@ pub fn dirichlet_convolve_ast(
         .map(|d| {
           let fd =
             crate::syntax::substitute_variable(f, &var, &Expr::Integer(*d));
-          let gq = crate::syntax::substitute_variable(
-            g,
-            &var,
-            &Expr::Integer(mv / d),
-          );
+          let gq =
+            crate::syntax::substitute_variable(g, &var, &Expr::Integer(mv / d));
           Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![fd, gq].into(),

@@ -310,9 +310,7 @@ pub fn extract_part_ast(
         return Ok(missing_for(index));
       }
       // Key[k] index: exact key-expression lookup (works for non-string keys)
-      Expr::FunctionCall { name, args }
-        if name == "Key" && args.len() == 1 =>
-      {
+      Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
         if let Some(v) = lookup(&args[0]) {
           return Ok(v.clone());
         }

@@ -3854,15 +3854,9 @@ mod boolean_minterms {
       interpret("BooleanMinterms[{{True, True}}, {a, b}]").unwrap(),
       "a && b"
     );
-    assert_eq!(
-      interpret("BooleanMinterms[{{False}}, {a}]").unwrap(),
-      " !a"
-    );
+    assert_eq!(interpret("BooleanMinterms[{{False}}, {a}]").unwrap(), " !a");
     // Short rows cover a prefix of the variables
-    assert_eq!(
-      interpret("BooleanMinterms[{{True}}, {a, b}]").unwrap(),
-      "a"
-    );
+    assert_eq!(interpret("BooleanMinterms[{{True}}, {a, b}]").unwrap(), "a");
   }
 
   #[test]

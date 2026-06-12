@@ -4870,7 +4870,6 @@ fn group_element_images(group: &Expr) -> Option<(Vec<Vec<usize>>, usize)> {
   None
 }
 
-
 /// Whether an expression is shaped like a group object (for ::grp messages).
 fn looks_like_group(e: &Expr) -> bool {
   matches!(
@@ -4998,8 +4997,7 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some((images, _)) = group_element_images(&args[0]) {
           let mut gens = Vec::new();
           for img in &images {
-            let fixes =
-              pts.iter().all(|&p| p > img.len() || img[p - 1] == p);
+            let fixes = pts.iter().all(|&p| p > img.len() || img[p - 1] == p);
             let identity = img.iter().enumerate().all(|(i, &v)| v == i + 1);
             if fixes && !identity {
               let img_i128: Vec<i128> =
@@ -5024,9 +5022,7 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let fixing: Vec<&Vec<usize>> = images
       .iter()
-      .filter(|img| {
-        pts.iter().all(|&p| p > img.len() || img[p - 1] == p)
-      })
+      .filter(|img| pts.iter().all(|&p| p > img.len() || img[p - 1] == p))
       .collect();
     if fixing.len() <= 2 {
       let gens: Vec<Expr> = fixing

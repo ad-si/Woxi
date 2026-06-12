@@ -10293,9 +10293,8 @@ mod partition_padding_and_messages {
     assert_eq!(interpret("Partition[x, 2]").unwrap(), "Partition[x, 2]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m.contains(
-        "Partition::npart: The expression x cannot be partitioned."
-      )),
+      msgs.iter().any(|m| m
+        .contains("Partition::npart: The expression x cannot be partitioned.")),
       "expected npart message, got {:?}",
       msgs
     );

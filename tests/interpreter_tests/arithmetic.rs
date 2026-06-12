@@ -5075,10 +5075,7 @@ mod number_digit_extended {
       interpret("NumberDigit[123.456, -14]").unwrap(),
       "Indeterminate"
     );
-    assert_eq!(
-      interpret("NumberDigit[0.1, -17]").unwrap(),
-      "Indeterminate"
-    );
+    assert_eq!(interpret("NumberDigit[0.1, -17]").unwrap(), "Indeterminate");
     assert_eq!(
       interpret("NumberDigit[1000000.0, -10]").unwrap(),
       "Indeterminate"
@@ -5101,10 +5098,7 @@ mod number_digit_extended {
       "expected badspec message, got {:?}",
       msgs
     );
-    assert_eq!(
-      interpret("NumberDigit[x, 1]").unwrap(),
-      "NumberDigit[x, 1]"
-    );
+    assert_eq!(interpret("NumberDigit[x, 1]").unwrap(), "NumberDigit[x, 1]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs

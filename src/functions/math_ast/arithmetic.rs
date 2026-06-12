@@ -2206,9 +2206,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // GeneratingFunction[f[n], n, x] before -f[0]).
   let only_indexed = |ps: &Option<Vec<(String, f64)>>| {
     ps.as_ref()
-      .map(|v| {
-        !v.is_empty() && v.iter().all(|p| p.0.contains("[0000000000"))
-      })
+      .map(|v| !v.is_empty() && v.iter().all(|p| p.0.contains("[0000000000")))
       .unwrap_or(false)
   };
   let (pairs_a, pairs_b) = if pairs_a.is_some() != pairs_b.is_some() {

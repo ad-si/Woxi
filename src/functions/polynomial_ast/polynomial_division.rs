@@ -179,7 +179,9 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Find the first divisor whose leading term divides the leading term of p.
     let mut reduced = false;
     for (i, info) in div_info.iter().enumerate() {
-      let Some((ddeg, dlc, de)) = info else { continue };
+      let Some((ddeg, dlc, de)) = info else {
+        continue;
+      };
       if *ddeg <= dp {
         // t = (lcp / dlc) * x^(dp - ddeg)
         let ratio = build_div(&lcp, dlc);

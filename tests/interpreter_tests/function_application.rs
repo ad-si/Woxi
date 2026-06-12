@@ -1846,10 +1846,7 @@ mod named_slots {
   #[test]
   fn named_slot_missing_key_emits_slota() {
     // The filled slots substitute; missing ones stay as #key
-    assert_eq!(
-      interpret(r#"(#a + #b &)[<|"a" -> 1|>]"#).unwrap(),
-      "1 + #b"
-    );
+    assert_eq!(interpret(r#"(#a + #b &)[<|"a" -> 1|>]"#).unwrap(), "1 + #b");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
@@ -1904,8 +1901,10 @@ mod part_of_atoms {
     assert_eq!(interpret(r#"5[["a"]]"#).unwrap(), r#"5[[a]]"#);
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m
-        .contains("Part::pspec1: Part specification a is not applicable.")),
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Part::pspec1: Part specification a is not applicable.")),
       "expected Part::pspec1 message, got {:?}",
       msgs
     );
@@ -1916,8 +1915,10 @@ mod part_of_atoms {
     assert_eq!(interpret(r#"{1, 2}[["a"]]"#).unwrap(), "{1, 2}[[a]]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m
-        .contains("Part::pspec1: Part specification a is not applicable.")),
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Part::pspec1: Part specification a is not applicable.")),
       "expected Part::pspec1 message, got {:?}",
       msgs
     );
@@ -1929,8 +1930,10 @@ mod part_of_atoms {
     assert_eq!(interpret(r#"x[["a", "b"]]"#).unwrap(), "x[[a,b]]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m
-        .contains("Part::pspec1: Part specification a is not applicable.")),
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Part::pspec1: Part specification a is not applicable.")),
       "expected Part::pspec1 message, got {:?}",
       msgs
     );

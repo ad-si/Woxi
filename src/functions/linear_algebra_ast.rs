@@ -177,9 +177,10 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     evaluate_expr_to_expr(&s).unwrap_or_else(|_| Expr::Integer(0))
   };
-  let is_rational =
-    |e: &Expr| matches!(e, Expr::Integer(_))
-      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational");
+  let is_rational = |e: &Expr| {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
 
   let mut result: Vec<Vec<Expr>> = Vec::new();
   for v in &matrix {
@@ -6890,7 +6891,5 @@ pub fn hermite_decomposition_ast(
         .into(),
     )
   };
-  Ok(Expr::List(
-    vec![to_matrix(&u), to_matrix(&h)].into(),
-  ))
+  Ok(Expr::List(vec![to_matrix(&u), to_matrix(&h)].into()))
 }

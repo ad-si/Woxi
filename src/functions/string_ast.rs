@@ -7314,9 +7314,9 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         match pos {
           Pos::One(n) => one(*n),
-          Pos::Many(ns) => Expr::List(
-            ns.iter().map(|&n| one(n)).collect::<Vec<_>>().into(),
-          ),
+          Pos::Many(ns) => {
+            Expr::List(ns.iter().map(|&n| one(n)).collect::<Vec<_>>().into())
+          }
         }
       }
       other => other.clone(),

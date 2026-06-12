@@ -1348,10 +1348,7 @@ mod part_on_associations {
   fn part_symbol_index_emits_pkspec1() {
     // A bare symbol is not a valid association part spec — pkspec1 +
     // unevaluated (it does NOT match a symbol key; that needs Key[...])
-    assert_eq!(
-      interpret("<|x -> 1|>[[x]]").unwrap(),
-      "<|x -> 1|>[[x]]"
-    );
+    assert_eq!(interpret("<|x -> 1|>[[x]]").unwrap(), "<|x -> 1|>[[x]]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
@@ -1365,10 +1362,7 @@ mod part_on_associations {
   #[test]
   fn part_key_wrapper_matches_any_key() {
     assert_eq!(interpret("<|x -> 1|>[[Key[x]]]").unwrap(), "1");
-    assert_eq!(
-      interpret(r#"<|"a" -> 1|>[[Key["a"]]]"#).unwrap(),
-      "1"
-    );
+    assert_eq!(interpret(r#"<|"a" -> 1|>[[Key["a"]]]"#).unwrap(), "1");
   }
 
   #[test]
@@ -1388,8 +1382,7 @@ mod part_on_associations {
     );
     // Negative step reverses the entries
     assert_eq!(
-      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[3 ;; 1 ;; -1]]"#)
-        .unwrap(),
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[3 ;; 1 ;; -1]]"#).unwrap(),
       "<|c -> 3, b -> 2, a -> 1|>"
     );
   }
@@ -1422,10 +1415,9 @@ mod part_on_associations {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs
-        .iter()
-        .any(|m| m
-          .contains("Part::partw: Part 5 of <|a -> 1|> does not exist.")),
+      msgs.iter().any(
+        |m| m.contains("Part::partw: Part 5 of <|a -> 1|> does not exist.")
+      ),
       "expected Part::partw message, got {:?}",
       msgs
     );

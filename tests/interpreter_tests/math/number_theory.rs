@@ -3912,8 +3912,10 @@ mod group_stabilizer_and_table {
       "PermutationGroup[{Cycles[{{1, 2}}]}]"
     );
     assert_eq!(
-      interpret("GroupStabilizer[PermutationGroup[{Cycles[{{1, 2, 3}}]}], {1}]")
-        .unwrap(),
+      interpret(
+        "GroupStabilizer[PermutationGroup[{Cycles[{{1, 2, 3}}]}], {1}]"
+      )
+      .unwrap(),
       "PermutationGroup[{}]"
     );
     assert_eq!(
@@ -3946,8 +3948,10 @@ mod group_stabilizer_and_table {
       "{{1, 2, 3, 4, 5, 6}, {2, 1, 4, 3, 6, 5}, {3, 5, 1, 6, 2, 4}, {4, 6, 2, 5, 1, 3}, {5, 3, 6, 1, 4, 2}, {6, 4, 5, 2, 3, 1}}"
     );
     assert_eq!(
-      interpret("GroupMultiplicationTable[PermutationGroup[{Cycles[{{1, 2}}]}]]")
-        .unwrap(),
+      interpret(
+        "GroupMultiplicationTable[PermutationGroup[{Cycles[{{1, 2}}]}]]"
+      )
+      .unwrap(),
       "{{1, 2}, {2, 1}}"
     );
     assert_eq!(
@@ -3960,9 +3964,8 @@ mod group_stabilizer_and_table {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m.contains(
-        "GroupMultiplicationTable::grp: x is not a valid group."
-      )),
+      msgs.iter().any(|m| m
+        .contains("GroupMultiplicationTable::grp: x is not a valid group.")),
       "expected grp message, got {:?}",
       msgs
     );

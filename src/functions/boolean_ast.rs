@@ -2844,7 +2844,8 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut row_len: Option<usize> = None;
     for i in spec_items.iter() {
       let Expr::List(cells) = i else { unreachable!() };
-      if cells.len() > nvars || *row_len.get_or_insert(cells.len()) != cells.len()
+      if cells.len() > nvars
+        || *row_len.get_or_insert(cells.len()) != cells.len()
       {
         bspec();
         return Ok(unevaluated());
@@ -2878,10 +2879,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   rows.dedup();
 
   // A specification covering every minterm simplifies to True
-  let covered: u64 = rows
-    .iter()
-    .map(|r| 1u64 << (nvars - r.len()))
-    .sum();
+  let covered: u64 = rows.iter().map(|r| 1u64 << (nvars - r.len())).sum();
   if covered >= (1u64 << nvars) {
     return Ok(Expr::Identifier("True".to_string()));
   }
