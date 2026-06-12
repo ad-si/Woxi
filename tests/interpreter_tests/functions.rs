@@ -3425,10 +3425,7 @@ mod boolean_satisfiability {
     assert_eq!(interpret("SatisfiableQ[True]").unwrap(), "True");
     assert_eq!(interpret("SatisfiableQ[False]").unwrap(), "False");
     assert_eq!(interpret("SatisfiableQ[Nand[a, a]]").unwrap(), "True");
-    assert_eq!(
-      interpret("SatisfiableQ[a && ! b, {a, b}]").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("SatisfiableQ[a && ! b, {a, b}]").unwrap(), "True");
     // Opaque subexpressions act as variables
     assert_eq!(interpret("SatisfiableQ[a && f[b]]").unwrap(), "True");
   }
@@ -3467,10 +3464,7 @@ mod boolean_satisfiability {
   fn satisfiability_count() {
     assert_eq!(interpret("SatisfiabilityCount[a && b]").unwrap(), "1");
     assert_eq!(interpret("SatisfiabilityCount[a || b]").unwrap(), "3");
-    assert_eq!(
-      interpret("SatisfiabilityCount[Xor[a, b, c]]").unwrap(),
-      "4"
-    );
+    assert_eq!(interpret("SatisfiabilityCount[Xor[a, b, c]]").unwrap(), "4");
     assert_eq!(interpret("SatisfiabilityCount[True]").unwrap(), "1");
     assert_eq!(interpret("SatisfiabilityCount[a && ! a]").unwrap(), "0");
     assert_eq!(
@@ -3525,10 +3519,7 @@ mod boolean_satisfiability {
   #[test]
   fn majority() {
     assert_eq!(interpret("Majority[True, False]").unwrap(), "False");
-    assert_eq!(
-      interpret("Majority[True, True, False]").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("Majority[True, True, False]").unwrap(), "True");
     assert_eq!(interpret("Majority[]").unwrap(), "False");
     // Decided regardless of the unknown
     assert_eq!(interpret("Majority[True, True, x]").unwrap(), "True");
@@ -3541,14 +3532,131 @@ mod boolean_satisfiability {
       interpret("Majority[x, x, False]").unwrap(),
       "Majority[False, x, x]"
     );
-    assert_eq!(
-      interpret("Majority[c, a, b]").unwrap(),
-      "Majority[a, b, c]"
-    );
+    assert_eq!(interpret("Majority[c, a, b]").unwrap(), "Majority[a, b, c]");
     // Satisfiability integration: majority of 3 has 4 satisfying rows
     assert_eq!(
       interpret("SatisfiabilityCount[Majority[a, b, c]]").unwrap(),
       "4"
     );
+  }
+}
+
+mod named_logical_operators {
+  use super::*;
+
+  #[test]
+  fn parse_and_evaluate() {
+    // Regression: these previously parsed as products like a*Implies*b
+    assert_eq!(interpret(r"a \[Implies] b").unwrap(), "Implies[a, b]");
+    assert_eq!(
+      interpret(r"{True \[And] False, True \[Or] False, True \[Implies] False, \[Not] True}")
+        .unwrap(),
+      "{False, True, False, False}"
+    );
+    assert_eq!(interpret(r"TautologyQ[a \[Or] \[Not] a]").unwrap(), "True");
+    assert_eq!(
+      interpret(r"SatisfiabilityCount[a \[Xor] b \[Xor] c]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn precedences() {
+    // Not > And/Nand > Xor > Or/Nor > Equivalent > Implies
+    assert_eq!(
+      interpret(r"FullForm[a \[And] b \[Or] c]").unwrap(),
+      "FullForm[(a && b) || c]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[a \[Xor] b \[And] c]").unwrap(),
+      "FullForm[Xor[a, b && c]]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[a \[Or] b \[Xor] c]").unwrap(),
+      "FullForm[a || Xor[b, c]]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[a \[Implies] b \[Or] c]").unwrap(),
+      "FullForm[Implies[a, b || c]]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[a \[Equivalent] b \[Implies] c]").unwrap(),
+      "FullForm[Implies[a \u{29e6} b, c]]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[a \[Nand] b \[And] c]").unwrap(),
+      "FullForm[Nand[a, b] && c]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[\[Not] a \[And] b]").unwrap(),
+      "FullForm[ !a && b]"
+    );
+  }
+
+  #[test]
+  fn implies_is_right_associative() {
+    assert_eq!(
+      interpret(r"FullForm[a \[Implies] b \[Implies] c]").unwrap(),
+      "FullForm[Implies[a, Implies[b, c]]]"
+    );
+  }
+
+  #[test]
+  fn flat_chains_collapse() {
+    assert_eq!(
+      interpret(r"FullForm[a \[Xor] b \[Xor] c]").unwrap(),
+      "FullForm[Xor[a, b, c]]"
+    );
+    assert_eq!(
+      interpret(r"FullForm[a \[Nand] b \[Nand] c]").unwrap(),
+      "FullForm[Nand[a, b, c]]"
+    );
+    assert_eq!(
+      interpret(r"a \[Equivalent] b \[Equivalent] c").unwrap(),
+      "a \u{29e6} b \u{29e6} c"
+    );
+  }
+
+  #[test]
+  fn equivalent_keeps_infix_in_full_form() {
+    assert_eq!(
+      interpret(r"FullForm[a \[Equivalent] b]").unwrap(),
+      "FullForm[a \u{29e6} b]"
+    );
+    assert_eq!(
+      interpret("InputForm[Equivalent[a, b]]").unwrap(),
+      "InputForm[a \u{29e6} b]"
+    );
+  }
+}
+
+mod rule_chains {
+  use super::*;
+
+  #[test]
+  fn rules_chain_right_associatively() {
+    // Regression: a -> b -> c inside lists and call arguments previously
+    // failed to parse
+    assert_eq!(interpret("{a -> b -> c}").unwrap(), "{a -> b -> c}");
+    assert_eq!(interpret("f[a -> b -> c]").unwrap(), "f[a -> b -> c]");
+    assert_eq!(
+      interpret("FullForm[{a -> b -> c}]").unwrap(),
+      "FullForm[{a -> b -> c}]"
+    );
+  }
+
+  #[test]
+  fn mixed_arrows_classify_by_outer_operator() {
+    assert_eq!(
+      interpret("FullForm[a -> b :> c]").unwrap(),
+      "FullForm[a -> b :> c]"
+    );
+    assert_eq!(
+      interpret("FullForm[a :> b -> c]").unwrap(),
+      "FullForm[a :> b -> c]"
+    );
+    // The AST distinguishes the arrows: ReplaceAll exercises the
+    // delayed/immediate split through a chained parse
+    assert_eq!(interpret("x /. x -> (a :> b)").unwrap(), "a :> b");
   }
 }

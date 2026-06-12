@@ -3167,9 +3167,15 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::ReplacementRule => {
-      let full_str = pair.as_str();
-      let is_delayed = full_str.contains(":>");
+      let pair_start = pair.as_span().start();
+      let full_str = pair.as_str().to_string();
       let children: Vec<_> = pair.into_inner().collect();
+      // The operator sits between the second-to-last and last children;
+      // checking only that span keeps chained rules with mixed arrows
+      // (a -> b :> c) classified correctly.
+      let op_from = children[children.len() - 2].as_span().end() - pair_start;
+      let op_to = children[children.len() - 1].as_span().start() - pair_start;
+      let is_delayed = full_str[op_from..op_to].contains(":>");
       // Grammar: ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | ":>") ~ ConditionExpr
       // 2 children: pattern -> replacement
       // 3 children: pattern /; condition -> replacement
@@ -4360,7 +4366,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   // already correct (e.g. `!a && b` → `And[Not[a], b]`).
   let leading_not_on_first = leading_not_at_start && !operators.is_empty() && {
     let first_op_prec = operator_precedence(&operators[0]);
-    first_op_prec > 6
+    first_op_prec > 18
   };
   if leading_not_on_first {
     // Undo the term-level wrap: terms[0] was set to Not[orig]; unwrap it.
@@ -4697,53 +4703,77 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 
 /// Get precedence of an operator (higher = binds tighter)
 /// Matches Wolfram Language operator precedence ordering.
+
+/// Build a call to a Flat logical head, collapsing a same-head left
+/// operand: Xor[a, b] \[Xor] c becomes Xor[a, b, c].
+fn flat_logical_call(head: &str, left: &Expr, right: &Expr) -> Expr {
+  let mut args: Vec<Expr> = match left {
+    Expr::FunctionCall { name, args } if name == head => {
+      args.iter().cloned().collect()
+    }
+    _ => vec![left.clone()],
+  };
+  args.push(right.clone());
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: args.into(),
+  }
+}
+
 fn operator_precedence(op: &str) -> u8 {
   match op {
     ">>" | ">>>" => 0,      // Put/PutAppend (lowest precedence)
-    "/:" => 1, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
-    "=" | ":=" | "=." => 2, // Assignment / Unset
-    "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
-    "/;" => 3, // Condition (higher than assignment, lower than Rule)
-    "->" | "\u{2192}" | ":>" => 4, // Rule/RuleDelayed (lower than boolean operators)
-    "||" => 5,                     // Or
-    "&&" => 6,                     // And
-    "\\[NotElement]" | "\u{2209}" => 7, // NotElement (same level as comparisons)
-    "\\[ReverseElement]" | "\u{220B}" => 7, // ReverseElement (same level as comparisons)
-    "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
-    "\\[DirectedEdge]" | "\u{F3D5}" => 7, // DirectedEdge (same level as comparisons)
-    "\\[UndirectedEdge]" | "\u{F3D4}" => 7, // UndirectedEdge (same level as comparisons)
-    "<->" => 7, // TwoWayRule (same level as comparisons, tighter than Rule)
-    "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
-    "\\[Conditioned]" | "\u{F3D3}" => 4, // Conditioned (looser than ||, like ;)
-    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
-    "\\[TensorProduct]" | "\u{F3DA}" => 12, // TensorProduct (same level as Dot)
-    "\\[Cap]" | "\u{2322}" => 12,        // Cap (⌢, infix → Cap[a, b])
-    "\\[Cup]" | "\u{2323}" => 12,        // Cup (⌣, infix → Cup[a, b])
-    "\\[RightTee]" | "\u{22A2}" => 5, // RightTee (⊢, right-assoc, between -> and ==)
-    "\\[DoubleRightTee]" | "\u{22A8}" => 5, // DoubleRightTee (⊨, right-assoc, same level)
-    "\\[LeftTee]" | "\u{22A3}" => 5, // LeftTee (⊣, left-assoc, same level)
-    "\\[DoubleLeftTee]" | "\u{2AE4}" => 5, // DoubleLeftTee (⫤, left-assoc, same level)
+    "/:" => 3, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
+    "=" | ":=" | "=." => 6, // Assignment / Unset
+    "^=" | "^:=" => 6, // UpSet/UpSetDelayed (same as assignment)
+    "/;" => 9, // Condition (higher than assignment, lower than Rule)
+    "->" | "\u{2192}" | ":>" => 12, // Rule/RuleDelayed (lower than boolean operators)
+    "||" => 15,                     // Or
+    "&&" => 18,                     // And
+    "\\[And]" | "\u{2227}" => 18,   // \[And] (same as &&)
+    "\\[Nand]" | "\u{22BC}" => 18,  // \[Nand] (And level)
+    "\\[Xor]" | "\u{22BB}" => 16,   // \[Xor] (between Or and And)
+    "\\[Or]" | "\u{2228}" => 15,    // \[Or] (same as ||)
+    "\\[Nor]" | "\u{22BD}" => 15,   // \[Nor] (Or level)
+    "\\[Equivalent]" | "\u{29E6}" => 14, // \[Equivalent] (below Or)
+    "\\[Implies]" | "\u{F523}" => 13,    // \[Implies] (lowest logical, right-assoc)
+    "\\[NotElement]" | "\u{2209}" => 21, // NotElement (same level as comparisons)
+    "\\[ReverseElement]" | "\u{220B}" => 21, // ReverseElement (same level as comparisons)
+    "\\[Element]" | "\u{2208}" => 21, // Element (same level as comparisons)
+    "\\[DirectedEdge]" | "\u{F3D5}" => 21, // DirectedEdge (same level as comparisons)
+    "\\[UndirectedEdge]" | "\u{F3D4}" => 21, // UndirectedEdge (same level as comparisons)
+    "<->" => 21, // TwoWayRule (same level as comparisons, tighter than Rule)
+    "\\[Distributed]" | "\u{F3D2}" => 21, // Distributed (same level as comparisons)
+    "\\[Conditioned]" | "\u{F3D3}" => 12, // Conditioned (looser than ||, like ;)
+    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 36, // Cross (same level as Dot)
+    "\\[TensorProduct]" | "\u{F3DA}" => 36, // TensorProduct (same level as Dot)
+    "\\[Cap]" | "\u{2322}" => 36,        // Cap (⌢, infix → Cap[a, b])
+    "\\[Cup]" | "\u{2323}" => 36,        // Cup (⌣, infix → Cup[a, b])
+    "\\[RightTee]" | "\u{22A2}" => 15, // RightTee (⊢, right-assoc, between -> and ==)
+    "\\[DoubleRightTee]" | "\u{22A8}" => 15, // DoubleRightTee (⊨, right-assoc, same level)
+    "\\[LeftTee]" | "\u{22A3}" => 15, // LeftTee (⊣, left-assoc, same level)
+    "\\[DoubleLeftTee]" | "\u{2AE4}" => 15, // DoubleLeftTee (⫤, left-assoc, same level)
     // wolframscript: \[Function] is lower than Set, Condition, and Rule —
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
-    "\\[Function]" | "\u{F4A1}" => 1,
+    "\\[Function]" | "\u{F4A1}" => 3,
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
-    | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
-    "~~" => 8,          // StringExpression (lower than Alternatives)
-    "|" => 9, // Alternatives (higher than StringExpression, Or, And, Rule)
-    "+" | "-" => 10, // Plus/Minus
-    "*" | "/" => 11, // Times/Divide
-    "<>" => 10, // StringJoin (same level as Plus)
-    "." => 12, // Dot (higher than arithmetic)
-    "@@@" | "@@" => 13, // Apply/MapApply
-    "/@" => 14, // Map (higher than Apply)
-    "@*" | "/*" => 15, // Composition/RightComposition (binds tighter than Map:
+    | "\u{2265}" | "===" | "=!=" => 21, // Comparisons
+    "~~" => 24,          // StringExpression (lower than Alternatives)
+    "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
+    "+" | "-" => 30, // Plus/Minus
+    "*" | "/" => 33, // Times/Divide
+    "<>" => 30, // StringJoin (same level as Plus)
+    "." => 36, // Dot (higher than arithmetic)
+    "@@@" | "@@" => 39, // Apply/MapApply
+    "/@" => 42, // Map (higher than Apply)
+    "@*" | "/*" => 45, // Composition/RightComposition (binds tighter than Map:
     // `Length@*f /@ list` parses as `(Length@*f) /@ list`)
-    "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
-    "^" | "^_NEG" => 16, // Power (`^_NEG` is `a^-b` with negated right operand)
-    s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
-    "@" => 18,  // Prefix application
-    "::" => 19, // MessageName (highest — a::b binds tighter than everything)
+    "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Power
+    "^" | "^_NEG" => 48, // Power (`^_NEG` is `a^-b` with negated right operand)
+    s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 51, // Tilde infix: a ~f~ b (higher than ^, lower than @)
+    "@" => 54,  // Prefix application
+    "::" => 57, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
 }
@@ -4797,6 +4827,8 @@ fn build_expr_with_precedence(
       || op_str == "/*"
       || op_str == "\\[RightTee]"
       || op_str == "\u{22A2}"
+      || op_str == "\\[Implies]"
+      || op_str == "\u{F523}"
       || op_str == "\\[DoubleRightTee]"
       || op_str == "\u{22A8}"
     {
@@ -4879,6 +4911,28 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       op: BinaryOperator::Or,
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
+    },
+    "\\[And]" | "\u{2227}" => Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "\\[Or]" | "\u{2228}" => Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    // Flat named logical operators: chains collapse into one call
+    // (a \[Xor] b \[Xor] c -> Xor[a, b, c]), matching wolframscript.
+    "\\[Xor]" | "\u{22BB}" => flat_logical_call("Xor", left, right),
+    "\\[Nand]" | "\u{22BC}" => flat_logical_call("Nand", left, right),
+    "\\[Nor]" | "\u{22BD}" => flat_logical_call("Nor", left, right),
+    "\\[Equivalent]" | "\u{29E6}" => {
+      flat_logical_call("Equivalent", left, right)
+    }
+    "\\[Implies]" | "\u{F523}" => Expr::FunctionCall {
+      name: "Implies".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
     },
     "<>" => Expr::BinaryOp {
       op: BinaryOperator::StringJoin,
@@ -9565,6 +9619,14 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       };
       format!("{} :> {}", expr_to_input_form(&args[0]), rhs_final)
     }
+    // Equivalent keeps its infix character in InputForm (and therefore
+    // inside FullForm wrappers): a ⧦ b, matching wolframscript.
+    Expr::FunctionCall { name, args }
+      if name == "Equivalent" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{29e6} ")
+    }
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
         "{} -> {}",
@@ -12336,6 +12398,9 @@ pub fn top_level_output(expr: &Expr) -> String {
               | "Equal"
               | "Unequal"
               | "Inequality"
+              // `Equivalent` displays with its infix character (a ⧦ b)
+              // even inside FullForm, matching wolframscript.
+              | "Equivalent"
               // `Power` keeps its `^` operator chain inside FullForm in
               // wolframscript's REPL: `FullForm[x^2]` prints as
               // `FullForm[x^2]` (with `ToString[…]` reaching the bare

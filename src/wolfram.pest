@@ -84,7 +84,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharBase = _{ !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+NamedCharBase = _{ !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -172,6 +172,13 @@ Operator = @{
   | "\\[RightTee]" | "\u{22A2}" // RightTee operator: a ⊢ b → RightTee[a, b]
   | "\\[DoubleLeftTee]" | "\u{2AE4}" // DoubleLeftTee operator: a ⫤ b → DoubleLeftTee[a, b]
   | "\\[LeftTee]" | "\u{22A3}" // LeftTee operator: a ⊣ b → LeftTee[a, b]
+  | "\\[Implies]" | "\u{F523}" // Implies operator (right-associative)
+  | "\\[Equivalent]" | "\u{29E6}" // Equivalent operator: a ⧦ b
+  | "\\[Nand]" | "\u{22BC}" // Nand operator
+  | "\\[Nor]" | "\u{22BD}" // Nor operator
+  | "\\[Xor]" | "\u{22BB}" // Xor operator
+  | "\\[And]" | "\u{2227}" // And operator (named form of &&)
+  | "\\[Or]" | "\u{2228}" // Or operator (named form of ||)
   | "/@"     // keep first
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
@@ -319,7 +326,7 @@ LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(ASCII_DIGIT+ ~ "^")) }
 LeadingPlus = { "+" ~ !"+" ~ !"=" }
 // LeadingNot marks prefix "!" as Not[expr]: !True, !x, !(a && b), etc.
 // Must not be followed by "=" (which would be != operator)
-LeadingNot = { "!" ~ !"=" ~ !"!" }
+LeadingNot = { "!" ~ !"=" ~ !"!" | "\\[Not]" | "\u{00AC}" }
 // FactorialSuffix: n! or n!! (Factorial / Factorial2)
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
@@ -600,7 +607,9 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | Pattern
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
 // The LHS is a ConditionExpr (expression that stops before -> and :>) with an optional /; condition.
 // Patterns (x_, x_Head, etc.) can appear as terms within the LHS expression.
-ReplacementRule = { ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ ConditionExpr }
+// The replacement side recurses so rule chains parse right-associatively:
+// a -> b -> c is Rule[a, Rule[b, c]] (matching wolframscript).
+ReplacementRule = { ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | ConditionExpr) }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
