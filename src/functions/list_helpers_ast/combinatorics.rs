@@ -3,96 +3,130 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
-/// AST-based Permutations: generate all permutations of a list.
-/// Permutations[{a, b, c}] -> all permutations
-/// Permutations[{a, b, c}, {k}] -> all permutations of length k
+/// Unified Permutations: `Permutations[list]` (full-length only),
+/// `Permutations[list, n]` (lengths 0..n), `Permutations[list, {n}]`,
+/// `{nmin, nmax}` (nmax may be Infinity), `{nmin, nmax, dn}` (dn
+/// nonzero, possibly negative), All and Infinity. Duplicate elements
+/// yield distinct permutations only; general heads keep their head.
+/// Atoms emit ::normal and invalid specs emit ::nninfseq.
 pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let list = &args[0];
-  let items = match list {
-    Expr::List(items) => items.clone(),
+  let original = || Expr::FunctionCall {
+    name: "Permutations".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  let (items, head): (&[Expr], Option<&str>) = match &args[0] {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Permutations".to_string(),
-        args: args.to_vec().into(),
-      });
+      crate::emit_message(&format!(
+        "Permutations::normal: Nonatomic expression expected at position 1 in {}.",
+        show(&original())
+      ));
+      return Ok(original());
+    }
+  };
+  let len = items.len() as i128;
+
+  let strict_int = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128()
+      }
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+  let nonneg = |e: &Expr| strict_int(e).filter(|n| *n >= 0);
+  let nonneg_or_inf = |e: &Expr| {
+    if is_infinity(e) {
+      Some(i128::MAX)
+    } else {
+      nonneg(e)
     }
   };
 
-  let n = items.len();
-
-  if args.len() >= 2 {
-    match &args[1] {
-      // {k} means exactly k-permutations
-      Expr::List(spec) if spec.len() == 1 => {
-        let k = expr_to_i128(&spec[0]).unwrap_or(n as i128) as usize;
-        if k > n {
-          return Ok(Expr::List(vec![].into()));
-        }
-        let mut result = Vec::new();
-        let indices: Vec<usize> = (0..n).collect();
-        generate_k_permutations(
-          &indices,
-          k,
-          &mut vec![],
-          &mut vec![false; n],
-          &items,
-          &mut result,
-        );
-        return Ok(Expr::List(result.into()));
+  let sizes: Option<Vec<i128>> = match args.get(1) {
+    None => Some(vec![len]),
+    Some(e) if matches!(e, Expr::Identifier(s) if s == "All") => {
+      Some((0..=len).collect())
+    }
+    Some(e) if is_infinity(e) => Some((0..=len).collect()),
+    Some(Expr::List(spec)) if spec.len() == 1 => {
+      nonneg(&spec[0]).map(|n| vec![n])
+    }
+    Some(Expr::List(spec)) if spec.len() == 2 => {
+      match (nonneg(&spec[0]), nonneg_or_inf(&spec[1])) {
+        (Some(lo), Some(hi)) => Some((lo..=hi.min(len)).collect()),
+        _ => None,
       }
-      // {kmin, kmax} means permutations of lengths kmin..=kmax
-      Expr::List(spec) if spec.len() == 2 => {
-        let kmin = expr_to_i128(&spec[0]).unwrap_or(0).max(0) as usize;
-        let kmax = expr_to_i128(&spec[1]).unwrap_or(n as i128) as usize;
-        let kmax = kmax.min(n);
-        let mut result = Vec::new();
-        let indices: Vec<usize> = (0..n).collect();
-        if kmin <= kmax {
-          for k in kmin..=kmax {
-            generate_k_permutations(
-              &indices,
-              k,
-              &mut vec![],
-              &mut vec![false; n],
-              &items,
-              &mut result,
-            );
+    }
+    Some(Expr::List(spec)) if spec.len() == 3 => {
+      match (
+        nonneg(&spec[0]),
+        nonneg_or_inf(&spec[1]),
+        strict_int(&spec[2]).filter(|s| *s != 0),
+      ) {
+        (Some(lo), Some(hi), Some(dn)) => {
+          let mut seq = Vec::new();
+          let mut k = lo;
+          let hi_eff = if dn > 0 { hi.min(len.max(lo)) } else { hi };
+          while (dn > 0 && k <= hi_eff) || (dn < 0 && k >= hi_eff) {
+            seq.push(k);
+            k += dn;
           }
+          Some(seq)
         }
-        return Ok(Expr::List(result.into()));
+        _ => None,
       }
-      // Plain integer k means all permutations of length 0 through k
-      _ => {
-        let max_k = expr_to_i128(&args[1]).unwrap_or(n as i128) as usize;
-        let max_k = max_k.min(n);
-        let mut result = Vec::new();
-        let indices: Vec<usize> = (0..n).collect();
-        for k in 0..=max_k {
-          generate_k_permutations(
-            &indices,
-            k,
-            &mut vec![],
-            &mut vec![false; n],
-            &items,
-            &mut result,
-          );
-        }
-        return Ok(Expr::List(result.into()));
-      }
+    }
+    Some(e) => nonneg(e).map(|n| (0..=n.min(len)).collect()),
+  };
+  let Some(sizes) = sizes else {
+    crate::emit_message(&format!(
+      "Permutations::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer.",
+      show(&original())
+    ));
+    return Ok(original());
+  };
+
+  let n = items.len();
+  let mut result: Vec<Expr> = Vec::new();
+  let indices: Vec<usize> = (0..n).collect();
+  for k in sizes {
+    if (0..=len).contains(&k) {
+      generate_k_permutations(
+        &indices,
+        k as usize,
+        &mut vec![],
+        &mut vec![false; n],
+        items,
+        &mut result,
+      );
     }
   }
 
-  // Default: full permutations (length n)
-  let mut result = Vec::new();
-  let indices: Vec<usize> = (0..n).collect();
-  generate_k_permutations(
-    &indices,
-    n,
-    &mut vec![],
-    &mut vec![false; n],
-    &items,
-    &mut result,
-  );
+  if let Some(h) = head {
+    result = result
+      .into_iter()
+      .map(|perm| match &perm {
+        Expr::List(elems) => Expr::FunctionCall {
+          name: h.to_string(),
+          args: elems.clone(),
+        },
+        _ => perm,
+      })
+      .collect();
+  }
   Ok(Expr::List(result.into()))
 }
 

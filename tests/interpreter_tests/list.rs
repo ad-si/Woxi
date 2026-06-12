@@ -12282,3 +12282,68 @@ mod subsets_specs_and_messages {
     );
   }
 }
+
+mod permutations_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn invalid_specs_emit_nninfseq() {
+    // Regression: -1 and symbols silently returned all permutations
+    assert_eq!(
+      interpret("Permutations[{a, b, c}, -1]").unwrap(),
+      "Permutations[{a, b, c}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Permutations::nninfseq: Position 2 of Permutations[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer."
+      )),
+      "expected nninfseq message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Permutations[{a, b, c}, x]").unwrap(),
+      "Permutations[{a, b, c}, x]"
+    );
+  }
+
+  #[test]
+  fn atomic_subjects_emit_normal() {
+    assert_eq!(interpret("Permutations[x]").unwrap(), "Permutations[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Permutations::normal: Nonatomic expression expected at position 1 in Permutations[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Permutations[3]").unwrap(), "Permutations[3]");
+  }
+
+  #[test]
+  fn general_heads_keep_their_head() {
+    // Regression: non-List heads stayed unevaluated
+    assert_eq!(
+      interpret("Permutations[f[a, b, c], {2}]").unwrap(),
+      "{f[a, b], f[a, c], f[b, a], f[b, c], f[c, a], f[c, b]}"
+    );
+  }
+
+  #[test]
+  fn step_and_infinity_specs() {
+    // Regression: step specs returned all permutations
+    assert_eq!(
+      interpret("Permutations[{a, b, c}, {0, 3, 2}]").unwrap(),
+      "{{}, {a, b}, {a, c}, {b, a}, {b, c}, {c, a}, {c, b}}"
+    );
+    assert_eq!(
+      interpret("Permutations[{a, b, c}, {3, 0, -2}]").unwrap(),
+      "{{a, b, c}, {a, c, b}, {b, a, c}, {b, c, a}, {c, a, b}, {c, b, a}, {a}, {b}, {c}}"
+    );
+    assert_eq!(
+      interpret("Permutations[{a, b, c}, {1, Infinity}]").unwrap(),
+      "{{a}, {b}, {c}, {a, b}, {a, c}, {b, a}, {b, c}, {c, a}, {c, b}, {a, b, c}, {a, c, b}, {b, a, c}, {b, c, a}, {c, a, b}, {c, b, a}}"
+    );
+  }
+}
