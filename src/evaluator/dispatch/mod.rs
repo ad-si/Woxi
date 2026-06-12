@@ -5007,6 +5007,12 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if matches!(name, "AdjacencyList" | "IncidenceList" | "EdgeIndex")
+    && (args.len() == 1 || args.len() == 2)
+  {
+    return crate::functions::graph::graph_accessor_ast(name, args);
+  }
+
   if name == "HermiteDecomposition" && args.len() == 1 {
     return crate::functions::linear_algebra_ast::hermite_decomposition_ast(
       args,

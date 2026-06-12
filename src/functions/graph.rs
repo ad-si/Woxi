@@ -3762,11 +3762,7 @@ pub fn graph_metric_ast(
       }
       evaluated(Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![
-          make_rational(num, den),
-          make_rational(1, n as i128),
-        ]
-        .into(),
+        args: vec![make_rational(num, den), make_rational(1, n as i128)].into(),
       })
     }
     "MeanGraphDistance" => {
@@ -3795,6 +3791,163 @@ pub fn graph_metric_ast(
       }
       // total counts ordered pairs; the denominator is n(n-1)
       evaluated(make_rational(total, (n as i128) * (n as i128 - 1)))
+    }
+    _ => Ok(unevaluated()),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph accessors: AdjacencyList, IncidenceList, EdgeIndex. Undirected
+// graphs; invalid vertices/edges emit ::inv, non-graphs stay unevaluated.
+
+pub fn graph_accessor_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  let (vertices, edge_exprs) = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+  let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
+  let n = vkeys.len();
+  let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(edge_exprs.len());
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+    {
+      let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]));
+      let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]));
+      match (a, b) {
+        (Some(a), Some(b)) => pairs.push((a, b)),
+        _ => return Ok(unevaluated()),
+      }
+    } else {
+      return Ok(unevaluated());
+    }
+  }
+  let inv = |what: &str, arg: &Expr| {
+    crate::emit_message(&format!(
+      "{}::inv: The argument {} in {} is not a valid {}.",
+      name,
+      crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(
+        &Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        },
+        crate::syntax::ExprForm::Output
+      ),
+      what
+    ));
+  };
+  // Neighbors of one vertex, in vertex-list order, deduplicated
+  let neighbors = |v: usize| -> Vec<usize> {
+    let mut out: Vec<usize> = pairs
+      .iter()
+      .filter_map(|&(a, b)| {
+        if a == v && b != v {
+          Some(b)
+        } else if b == v && a != v {
+          Some(a)
+        } else {
+          None
+        }
+      })
+      .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+  };
+
+  match (name, args.len()) {
+    ("AdjacencyList", 1) => Ok(Expr::List(
+      (0..n)
+        .map(|v| {
+          Expr::List(
+            neighbors(v)
+              .into_iter()
+              .map(|w| vertices[w].clone())
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )),
+    ("AdjacencyList", 2) => {
+      let key = expr_to_string(&args[1]);
+      let Some(v) = vkeys.iter().position(|k| *k == key) else {
+        inv("vertex", &args[1]);
+        return Ok(unevaluated());
+      };
+      Ok(Expr::List(
+        neighbors(v)
+          .into_iter()
+          .map(|w| vertices[w].clone())
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
+    ("IncidenceList", 2) => {
+      let key = expr_to_string(&args[1]);
+      let Some(v) = vkeys.iter().position(|k| *k == key) else {
+        inv("vertex", &args[1]);
+        return Ok(unevaluated());
+      };
+      Ok(Expr::List(
+        pairs
+          .iter()
+          .zip(edge_exprs.iter())
+          .filter(|((a, b), _)| *a == v || *b == v)
+          .map(|(_, e)| e.clone())
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
+    ("EdgeIndex", 2) => {
+      // The edge may be given as UndirectedEdge or TwoWayRule, in
+      // either endpoint order
+      let endpoints = match &args[1] {
+        Expr::FunctionCall {
+          name: ename,
+          args: eargs,
+        } if (ename == "UndirectedEdge" || ename == "TwoWayRule")
+          && eargs.len() == 2 =>
+        {
+          Some((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])))
+        }
+        _ => None,
+      };
+      let found = endpoints.as_ref().and_then(|(x, y)| {
+        let xi = vkeys.iter().position(|k| k == x)?;
+        let yi = vkeys.iter().position(|k| k == y)?;
+        pairs
+          .iter()
+          .position(|&(a, b)| (a == xi && b == yi) || (a == yi && b == xi))
+      });
+      match found {
+        Some(i) => Ok(Expr::Integer((i + 1) as i128)),
+        None => {
+          inv("edge", &args[1]);
+          Ok(unevaluated())
+        }
+      }
     }
     _ => Ok(unevaluated()),
   }

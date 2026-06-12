@@ -2222,7 +2222,7 @@ AssociationQ,Tests if an expression is an association,✅,pure,10.1,2268
 BarcodeRecognize,Image recognition,🚫,None,10.0,2268
 CountsBy,Counts elements grouped by a function,✅,None,10.0,2268
 FoldPairList,Folds a list returning emitted values and new states,✅,None,10.2,2268
-AdjacencyList,Graph operations,🚫,None,9.0,2276
+AdjacencyList,Neighbor lists of a vertex or of all vertices (vertex-list order),✅,pure,9.0,2276
 CloudShare,Cloud service,🚫,None,10.2,2276
 EffectiveInterest,Effective annual rate from nominal rate compounded over a period,✅,pure,8.0,2276
 FindHamiltonianCycle,Graph algorithm,🚫,None,8.0,2276
@@ -3161,7 +3161,7 @@ AxiomaticTheory,,,,12.0,3242
 Backward,,,,6.0,3242
 CenterArray,Center a list within a larger array,✅,none,11.0,3242
 DateFormat,,,,10.0,3242
-EdgeIndex,,,,8.0,3242
+EdgeIndex,1-based position of an edge in EdgeList (TwoWayRule or UndirectedEdge spec),✅,pure,8.0,3242
 MassTransportPDEComponent,,,,12.2,3242
 NightHemisphere,,,,10.0,3242
 NonNegativeReals,Domain of non-negative real numbers,✅,pure,12.0,3242
@@ -3196,7 +3196,7 @@ DeviceWrite,,🚫,,10.0,3280
 EstimatorGains,,,,8.0,3280
 FeatureExtract,,🚫,,11.0,3280
 FittedModel,,,,7.0,3280
-IncidenceList,,,,9.0,3280
+IncidenceList,Edges incident to a vertex in EdgeList order,✅,pure,9.0,3280
 NameQ,Test if a string is a defined symbol name,✅,pure,1.0,3280
 ParticleData,,🚫,,6.0,3280
 PermutationCyclesQ,True if valid Cycles form,✅,1,8.0,3280

@@ -3733,15 +3733,121 @@ mod graph_metrics {
     );
     // Disconnected graphs give Infinity
     assert_eq!(
-      interpret(
-        "MeanGraphDistance[Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]]"
-      )
-      .unwrap(),
+      interpret("MeanGraphDistance[Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]]")
+        .unwrap(),
       "Infinity"
     );
     assert_eq!(
       interpret("MeanGraphDistance[Graph[{1}, {}]]").unwrap(),
       "MeanGraphDistance[Graph[<1>, <0>]]"
     );
+  }
+}
+
+mod graph_accessors {
+  use super::*;
+
+  #[test]
+  fn adjacency_list() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]; AdjacencyList[g, 3]"
+      )
+      .unwrap(),
+      "{1, 2, 4}"
+    );
+    // One-argument form: all neighbor lists
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]; AdjacencyList[g]"
+      )
+      .unwrap(),
+      "{{2, 3}, {1, 3}, {1, 2, 4}, {3}}"
+    );
+    // Neighbors follow the vertex-list order, not value order
+    assert_eq!(
+      interpret("AdjacencyList[Graph[{3, 1, 2}, {3 <-> 1, 1 <-> 2}], 1]")
+        .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret("AdjacencyList[PetersenGraph[5, 2], 1]").unwrap(),
+      "{3, 4, 6}"
+    );
+    assert_eq!(
+      interpret("AdjacencyList[StarGraph[5], 1]").unwrap(),
+      "{2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn incidence_list() {
+    // Incident edges in EdgeList order with stored orientation
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]; IncidenceList[g, 3]"
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 3, 2 \u{f3d4} 3, 3 \u{f3d4} 4}"
+    );
+    assert_eq!(
+      interpret("IncidenceList[CycleGraph[5], 1]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 5}"
+    );
+  }
+
+  #[test]
+  fn edge_index() {
+    // TwoWayRule and UndirectedEdge specs, either endpoint order
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]; {EdgeIndex[g, 2 <-> 3], EdgeIndex[g, 3 <-> 2]}"
+      )
+      .unwrap(),
+      "{3, 3}"
+    );
+    assert_eq!(
+      interpret("EdgeIndex[CycleGraph[5], UndirectedEdge[1, 2]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("EdgeIndex[CycleGraph[5], 1 <-> 5]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments() {
+    assert_eq!(
+      interpret("AdjacencyList[CycleGraph[5], 9]").unwrap(),
+      "AdjacencyList[Graph[<5>, <5>], 9]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "AdjacencyList::inv: The argument 9 in AdjacencyList[Graph[<5>, <5>], 9] is not a valid vertex."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("EdgeIndex[CycleGraph[5], 1 <-> 3]").unwrap(),
+      "EdgeIndex[Graph[<5>, <5>], 1 <-> 3]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "EdgeIndex::inv: The argument 1 <-> 3 in EdgeIndex[Graph[<5>, <5>], 1 <-> 3] is not a valid edge."
+      )),
+      "expected inv message, got {:?}",
+      msgs
+    );
+    // Non-graphs stay silently unevaluated
+    assert_eq!(
+      interpret("AdjacencyList[x, 1]").unwrap(),
+      "AdjacencyList[x, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
   }
 }
