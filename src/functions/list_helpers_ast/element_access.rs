@@ -1246,73 +1246,244 @@ pub fn insert_ast(
 
 /// Extract[list, n] - extracts element at position n
 /// Extract[list, {n1, n2, ...}] - extracts element at nested position
-pub fn extract_ast(
-  list: &Expr,
-  index: &Expr,
-  head: Option<&Expr>,
-) -> Result<Expr, InterpreterError> {
-  let result = extract_ast_inner(list, index, head)?;
-  // If head is provided and the result is NOT from a multi-position spec
-  // (which already wraps each element), wrap the result with head.
-  if let Some(h) = head {
-    // For multi-position specs (list of lists), wrapping is already done inside.
-    // For single-position specs, wrap here.
-    let is_multi = matches!(index, Expr::List(indices)
-      if !indices.is_empty() && indices.iter().all(|i| matches!(i, Expr::List(_))));
-    if !is_multi {
-      return Ok(wrap_with_head(h, result));
-    }
-  }
-  Ok(result)
+/// A single component of an Extract path: a part index or an
+/// association key.
+enum ExtractComp {
+  Idx(i128),
+  Key(Expr),
 }
 
-fn wrap_with_head(head: &Expr, val: Expr) -> Expr {
-  match head {
-    Expr::Identifier(name) => Expr::FunctionCall {
-      name: name.clone(),
-      args: vec![val].into(),
-    },
-    _ => Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![head.clone(), val].into(),
-    },
-  }
+/// Outcome of resolving one path: the part, or which message to emit.
+enum ExtractOutcome {
+  Found(Expr),
+  /// Out-of-range index; Extract::partw always reports the *first*
+  /// component of the failing path and the original subject.
+  Partw,
+  /// Path descends below the depth of the object.
+  Partd,
+  /// Missing association key (with the inner association it was
+  /// looked up in); the result is Missing[KeyAbsent, Key[k]].
+  Keyw(Expr, Expr),
 }
 
-fn extract_ast_inner(
-  list: &Expr,
-  index: &Expr,
-  head: Option<&Expr>,
-) -> Result<Expr, InterpreterError> {
-  match index {
-    Expr::Integer(_) | Expr::BigInteger(_) => part_ast(list, index),
-    Expr::List(indices) => {
-      // Check if this is a list of position specs (list of lists)
-      let all_lists = !indices.is_empty()
-        && indices.iter().all(|i| matches!(i, Expr::List(_)));
-      if all_lists {
-        // Multiple positions: Extract[expr, {{p1}, {p2, p3}, ...}]
-        let mut results = Vec::new();
-        for pos_spec in indices {
-          let val = extract_ast_inner(list, pos_spec, None)?;
-          if let Some(h) = head {
-            results.push(wrap_with_head(h, val));
-          } else {
-            results.push(val);
+fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
+  let mut current = subject.clone();
+  for comp in path {
+    match comp {
+      ExtractComp::Idx(0) => {
+        current = match &current {
+          Expr::CurriedCall { func, .. } => (**func).clone(),
+          other => Expr::Identifier(
+            crate::evaluator::pattern_matching::get_expr_head(other),
+          ),
+        };
+      }
+      ExtractComp::Idx(n) => {
+        use crate::functions::expr_form::{ExprForm, decompose_expr};
+        let items: Vec<Expr> = match &current {
+          Expr::List(items) => items.to_vec(),
+          Expr::FunctionCall { args, .. } => args.to_vec(),
+          Expr::CurriedCall { args, .. } => args.clone(),
+          Expr::Association(pairs) => {
+            pairs.iter().map(|(_, v)| v.clone()).collect()
+          }
+          // Operator nodes (Plus, Power, …) decompose to head + children.
+          other => match decompose_expr(other) {
+            ExprForm::Composite { children, .. } => children,
+            ExprForm::Atom(_) => return ExtractOutcome::Partd,
+          },
+        };
+        let len = items.len() as i128;
+        let idx = if *n < 0 { len + n } else { n - 1 };
+        if idx < 0 || idx >= len {
+          return ExtractOutcome::Partw;
+        }
+        current = items[idx as usize].clone();
+      }
+      ExtractComp::Key(key) => {
+        let Expr::Association(pairs) = &current else {
+          return ExtractOutcome::Partd;
+        };
+        let key_str = crate::syntax::expr_to_string(key);
+        match pairs
+          .iter()
+          .find(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+        {
+          Some((_, v)) => {
+            let value = v.clone();
+            current = value;
+          }
+          None => {
+            return ExtractOutcome::Keyw(key.clone(), current.clone());
           }
         }
-        return Ok(Expr::List(results.into()));
       }
-      // Nested extraction: Extract[expr, {i, j, ...}]
-      let mut current = list.clone();
-      for idx in indices {
-        current = part_ast(&current, idx)?;
-      }
-      Ok(current)
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Extract: invalid index".into(),
-    )),
+  }
+  ExtractOutcome::Found(current)
+}
+
+/// Unified Extract: `Extract[expr, pos]`, `Extract[expr, {pos1, …}]`,
+/// and `Extract[expr, pos, h]` (h wraps each part and evaluates).
+/// Paths may contain integers (0 is the head, negatives count from the
+/// end), `Key[k]`, and strings (association keys). Emits ::psl1 for
+/// inapplicable specs, ::partw / ::partd for bad paths, and ::keyw
+/// (yielding Missing[KeyAbsent, …]) for absent keys.
+pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "Extract".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  let subject = &args[0];
+  let spec = &args[1];
+  let head = args.get(2);
+
+  let parse_comp = |e: &Expr| -> Option<ExtractComp> {
+    match e {
+      Expr::Integer(n) => Some(ExtractComp::Idx(*n)),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128().map(ExtractComp::Idx)
+      }
+      Expr::String(_) => Some(ExtractComp::Key(e.clone())),
+      Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
+        Some(ExtractComp::Key(args[0].clone()))
+      }
+      _ => None,
+    }
+  };
+  let psl1 = || {
+    crate::emit_message(&format!(
+      "Extract::psl1: Position specification {} in {} is not applicable.",
+      show(spec),
+      show(&original())
+    ));
+    Ok(original())
+  };
+
+  // Parse the spec into one or many paths. A list of lists is a
+  // multi-path spec; the empty list extracts nothing.
+  enum Paths {
+    Single(Vec<ExtractComp>),
+    Multi(Vec<Vec<ExtractComp>>),
+  }
+  let paths = match spec {
+    Expr::List(items) if items.iter().all(|e| matches!(e, Expr::List(_))) => {
+      let mut multi = Vec::new();
+      for item in items {
+        let Expr::List(comps) = item else {
+          unreachable!()
+        };
+        match comps.iter().map(parse_comp).collect::<Option<Vec<_>>>() {
+          Some(path) => multi.push(path),
+          None => return psl1(),
+        }
+      }
+      Paths::Multi(multi)
+    }
+    Expr::List(items) => {
+      match items.iter().map(parse_comp).collect::<Option<Vec<_>>>() {
+        Some(path) => Paths::Single(path),
+        None => return psl1(),
+      }
+    }
+    other => match parse_comp(other) {
+      Some(comp @ ExtractComp::Idx(_)) => Paths::Single(vec![comp]),
+      _ => return psl1(),
+    },
+  };
+
+  let wrap = |part: Expr| -> Result<Expr, InterpreterError> {
+    match head {
+      None => Ok(part),
+      Some(Expr::Identifier(h)) => {
+        crate::evaluator::evaluate_function_call_ast(h, &[part])
+      }
+      Some(h) => crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+        func: Box::new(h.clone()),
+        args: vec![part],
+      }),
+    }
+  };
+
+  let resolve_one =
+    |path: &[ExtractComp]| -> Result<Option<Expr>, InterpreterError> {
+      match extract_resolve(subject, path) {
+        ExtractOutcome::Found(part) => Ok(Some(wrap(part)?)),
+        ExtractOutcome::Partw => {
+          let first = match path.first() {
+            Some(ExtractComp::Idx(n)) => Expr::Integer(*n),
+            Some(ExtractComp::Key(k)) => Expr::FunctionCall {
+              name: "Key".to_string(),
+              args: vec![k.clone()].into(),
+            },
+            None => Expr::Integer(0),
+          };
+          crate::emit_message(&format!(
+            "Extract::partw: Part {} of {} does not exist.",
+            show(&first),
+            show(subject)
+          ));
+          Ok(None)
+        }
+        ExtractOutcome::Partd => {
+          let path_expr = Expr::List(
+            path
+              .iter()
+              .map(|c| match c {
+                ExtractComp::Idx(n) => Expr::Integer(*n),
+                ExtractComp::Key(k) => Expr::FunctionCall {
+                  name: "Key".to_string(),
+                  args: vec![k.clone()].into(),
+                },
+              })
+              .collect(),
+          );
+          crate::emit_message(&format!(
+            "Extract::partd: Part specification {} is longer than depth of object.",
+            show(&path_expr)
+          ));
+          Ok(None)
+        }
+        ExtractOutcome::Keyw(key, container) => {
+          crate::emit_message(&format!(
+            "Extract::keyw: Key {} does not exist in {}.",
+            show(&key),
+            show(&container)
+          ));
+          let missing = Expr::FunctionCall {
+            name: "Missing".to_string(),
+            args: vec![
+              Expr::String("KeyAbsent".to_string()),
+              Expr::FunctionCall {
+                name: "Key".to_string(),
+                args: vec![key].into(),
+              },
+            ]
+            .into(),
+          };
+          Ok(Some(missing))
+        }
+      }
+    };
+
+  match paths {
+    Paths::Single(path) => match resolve_one(&path)? {
+      Some(part) => Ok(part),
+      None => Ok(original()),
+    },
+    Paths::Multi(multi) => {
+      let mut out = Vec::with_capacity(multi.len());
+      for path in &multi {
+        match resolve_one(path)? {
+          Some(part) => out.push(part),
+          None => return Ok(original()),
+        }
+      }
+      Ok(Expr::List(out.into()))
+    }
   }
 }
 

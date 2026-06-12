@@ -11943,3 +11943,132 @@ mod level_specs_and_messages {
     );
   }
 }
+
+mod extract_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn key_and_string_paths() {
+    // Regression: Key paths returned unevaluated Part expressions
+    assert_eq!(
+      interpret("Extract[<|x -> 1, y -> 2|>, {Key[y]}]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Extract[<|x -> {1, 2}|>, {Key[x], 2}]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("Extract[<|\"k\" -> 5|>, {\"k\"}]").unwrap(), "5");
+    // Integer components index association values
+    assert_eq!(interpret("Extract[<|x -> 1, y -> 2|>, {2}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn missing_key_emits_keyw_and_returns_missing() {
+    assert_eq!(
+      interpret("Extract[<|x -> 1|>, {Key[z]}]").unwrap(),
+      "Missing[KeyAbsent, Key[z]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("Extract::keyw: Key z does not exist in <|x -> 1|>.")
+      ),
+      "expected keyw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn heads_and_atoms() {
+    // Regression: position 0 returned unevaluated Part expressions
+    assert_eq!(interpret("Extract[x, {0}]").unwrap(), "Symbol");
+    assert_eq!(interpret("Extract[5, {0}]").unwrap(), "Integer");
+    assert_eq!(interpret("Extract[f[a][b], {0}]").unwrap(), "f[a]");
+    assert_eq!(interpret("Extract[f[a][b], {0, 1}]").unwrap(), "a");
+    assert_eq!(interpret("Extract[f[a], {0}, Hold]").unwrap(), "Hold[f]");
+  }
+
+  #[test]
+  fn empty_spec_and_operator_form() {
+    // Regression: {} returned the whole expression instead of no parts
+    assert_eq!(interpret("Extract[{a, b, c}, {}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Extract[{a, b, c}, {{}}]").unwrap(),
+      "{{a, b, c}}"
+    );
+    // Regression: the operator form emitted ::argtu
+    assert_eq!(interpret("Extract[{2}][{a, b, c}]").unwrap(), "b");
+  }
+
+  #[test]
+  fn operator_nodes_decompose() {
+    // Regression: paths through Plus/Power nodes failed with ::partd
+    assert_eq!(
+      interpret("Extract[f[g[1, 2], h[x^2]], {{1, 2}, {2, 1, 1}}]").unwrap(),
+      "{2, x}"
+    );
+    assert_eq!(interpret("Extract[a + b + c, {2}]").unwrap(), "b");
+    assert_eq!(interpret("Extract[x^2, {2}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn wrap_head_evaluates() {
+    assert_eq!(interpret("Extract[{{1, 2}}, {{1}}, Total]").unwrap(), "{3}");
+  }
+
+  #[test]
+  fn bad_paths_emit_messages() {
+    // Regression: out-of-range raised a hard error
+    assert_eq!(
+      interpret("Extract[{a, b, c}, {5}]").unwrap(),
+      "Extract[{a, b, c}, {5}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("Extract::partw: Part 5 of {a, b, c} does not exist.")
+      ),
+      "expected partw message, got {:?}",
+      msgs
+    );
+    // partw always reports the first path component
+    assert_eq!(
+      interpret("Extract[{{a, b}, {c}}, {2, 7}]").unwrap(),
+      "Extract[{{a, b}, {c}}, {2, 7}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Extract::partw: Part 2 of {{a, b}, {c}} does not exist.")),
+      "expected partw with first component, got {:?}",
+      msgs
+    );
+    // Descending below the depth emits partd with the inner path
+    assert_eq!(
+      interpret("Extract[{a, b}, {{1, 1}}]").unwrap(),
+      "Extract[{a, b}, {{1, 1}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Extract::partd: Part specification {1, 1} is longer than depth of object."
+      )),
+      "expected partd message, got {:?}",
+      msgs
+    );
+    // Non-position specs emit psl1
+    assert_eq!(
+      interpret("Extract[{a, b, c}, {x}]").unwrap(),
+      "Extract[{a, b, c}, {x}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Extract::psl1: Position specification {x} in Extract[{a, b, c}, {x}] is not applicable."
+      )),
+      "expected psl1 message, got {:?}",
+      msgs
+    );
+  }
+}
