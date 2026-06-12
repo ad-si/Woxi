@@ -3410,3 +3410,145 @@ mod byte_array_to_string {
     );
   }
 }
+
+mod boolean_satisfiability {
+  use super::*;
+
+  #[test]
+  fn satisfiable_q() {
+    assert_eq!(interpret("SatisfiableQ[a && b]").unwrap(), "True");
+    assert_eq!(interpret("SatisfiableQ[a && ! a]").unwrap(), "False");
+    assert_eq!(
+      interpret("SatisfiableQ[(a || b) && (! a || ! b)]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("SatisfiableQ[True]").unwrap(), "True");
+    assert_eq!(interpret("SatisfiableQ[False]").unwrap(), "False");
+    assert_eq!(interpret("SatisfiableQ[Nand[a, a]]").unwrap(), "True");
+    assert_eq!(
+      interpret("SatisfiableQ[a && ! b, {a, b}]").unwrap(),
+      "True"
+    );
+    // Opaque subexpressions act as variables
+    assert_eq!(interpret("SatisfiableQ[a && f[b]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn satisfiable_q_boolv_message() {
+    // A variable list that leaves the expression non-Boolean emits boolv
+    // (showing the first failing assignment, all-True first)
+    assert_eq!(
+      interpret("SatisfiableQ[x && y, {x}]").unwrap(),
+      "SatisfiableQ[x && y, {x}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "SatisfiableQ::boolv: x && y is not Boolean valued at {True}."
+      )),
+      "expected boolv message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("SatisfiableQ[x && y && z, {x, y}]").unwrap(),
+      "SatisfiableQ[x && y && z, {x, y}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "SatisfiableQ::boolv: x && y && z is not Boolean valued at {True, True}."
+      )),
+      "expected boolv message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn satisfiability_count() {
+    assert_eq!(interpret("SatisfiabilityCount[a && b]").unwrap(), "1");
+    assert_eq!(interpret("SatisfiabilityCount[a || b]").unwrap(), "3");
+    assert_eq!(
+      interpret("SatisfiabilityCount[Xor[a, b, c]]").unwrap(),
+      "4"
+    );
+    assert_eq!(interpret("SatisfiabilityCount[True]").unwrap(), "1");
+    assert_eq!(interpret("SatisfiabilityCount[a && ! a]").unwrap(), "0");
+    assert_eq!(
+      interpret("SatisfiabilityCount[Implies[a, b]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("SatisfiabilityCount[Equivalent[a, b]]").unwrap(),
+      "2"
+    );
+    // Extra variables multiply the count
+    assert_eq!(
+      interpret("SatisfiabilityCount[a || b, {a, b, c}]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("SatisfiabilityCount[a && f[b]]").unwrap(), "1");
+    // Incomplete variable list: silently unevaluated (no boolv here)
+    assert_eq!(
+      interpret("SatisfiabilityCount[x && y, {x}]").unwrap(),
+      "SatisfiabilityCount[x && y, {x}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+
+  #[test]
+  fn boolean_variables() {
+    // Canonically sorted, deduplicated
+    assert_eq!(
+      interpret("BooleanVariables[a && b || ! c]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(interpret("BooleanVariables[c && a]").unwrap(), "{a, c}");
+    assert_eq!(interpret("BooleanVariables[True]").unwrap(), "{}");
+    assert_eq!(interpret("BooleanVariables[x]").unwrap(), "{x}");
+    // Lists are traversed
+    assert_eq!(
+      interpret("BooleanVariables[{a && q, z || b}]").unwrap(),
+      "{a, b, q, z}"
+    );
+    // Opaque subexpressions count as variables
+    assert_eq!(
+      interpret("BooleanVariables[a && f[b]]").unwrap(),
+      "{a, f[b]}"
+    );
+    assert_eq!(
+      interpret("BooleanVariables[Nand[p, Nor[q, r]]]").unwrap(),
+      "{p, q, r}"
+    );
+  }
+
+  #[test]
+  fn majority() {
+    assert_eq!(interpret("Majority[True, False]").unwrap(), "False");
+    assert_eq!(
+      interpret("Majority[True, True, False]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Majority[]").unwrap(), "False");
+    // Decided regardless of the unknown
+    assert_eq!(interpret("Majority[True, True, x]").unwrap(), "True");
+    // True/False pairs cancel
+    assert_eq!(interpret("Majority[True, False, x]").unwrap(), "x");
+    // Two arguments need both
+    assert_eq!(interpret("Majority[a, b]").unwrap(), "a && b");
+    // Orderless: symbolic forms sort canonically
+    assert_eq!(
+      interpret("Majority[x, x, False]").unwrap(),
+      "Majority[False, x, x]"
+    );
+    assert_eq!(
+      interpret("Majority[c, a, b]").unwrap(),
+      "Majority[a, b, c]"
+    );
+    // Satisfiability integration: majority of 3 has 4 satisfying rows
+    assert_eq!(
+      interpret("SatisfiabilityCount[Majority[a, b, c]]").unwrap(),
+      "4"
+    );
+  }
+}

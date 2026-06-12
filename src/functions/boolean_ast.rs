@@ -2493,3 +2493,290 @@ fn vector_compare_ast(
 
   Ok(Expr::Identifier("True".to_string()))
 }
+
+// ---------------------------------------------------------------------------
+// BooleanVariables / SatisfiableQ / SatisfiabilityCount
+// (SatisfiabilityInstances is not implemented: wolframscript's instance
+// ordering and free-variable assignments follow its internal BDD structure,
+// which is expression-dependent and not reproducible black-box.)
+
+/// Collect the Boolean variables of `expr` as expressions: anything that is
+/// not a logical connective, True/False, or a list counts as a variable —
+/// including opaque subexpressions like f[b] (matching wolframscript).
+fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
+  let push = |e: &Expr, out: &mut Vec<Expr>| {
+    if !out
+      .iter()
+      .any(|v| crate::evaluator::pattern_matching::expr_equal(v, e))
+    {
+      out.push(e.clone());
+    }
+  };
+  match expr {
+    Expr::Identifier(name) if name == "True" || name == "False" => {}
+    Expr::Identifier(_) => push(expr, out),
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "And"
+          | "Or"
+          | "Not"
+          | "Xor"
+          | "Xnor"
+          | "Nand"
+          | "Nor"
+          | "Implies"
+          | "Equivalent"
+          | "Majority"
+      ) =>
+    {
+      for arg in args.iter() {
+        collect_boolean_variable_exprs(arg, out);
+      }
+    }
+    Expr::List(items) => {
+      for item in items.iter() {
+        collect_boolean_variable_exprs(item, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or,
+      left,
+      right,
+    } => {
+      collect_boolean_variable_exprs(left, out);
+      collect_boolean_variable_exprs(right, out);
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand,
+    } => {
+      collect_boolean_variable_exprs(operand, out);
+    }
+    _ => push(expr, out),
+  }
+}
+
+/// Replace every occurrence of the subexpression `var` in `expr` by `val`.
+fn substitute_boolean_var(expr: &Expr, var: &Expr, val: &Expr) -> Expr {
+  if crate::evaluator::pattern_matching::expr_equal(expr, var) {
+    return val.clone();
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_boolean_var(a, var, val))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_boolean_var(left, var, val)),
+      right: Box::new(substitute_boolean_var(right, var, val)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_boolean_var(operand, var, val)),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|i| substitute_boolean_var(i, var, val))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// BooleanVariables[expr] - the Boolean variables, canonically sorted.
+pub fn boolean_variables_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "BooleanVariables".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let mut vars = Vec::new();
+  collect_boolean_variable_exprs(&args[0], &mut vars);
+  // compare_exprs follows Wolfram's Order convention: 1 means a sorts first
+  vars.sort_by(|a, b| {
+    (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
+  });
+  Ok(Expr::List(vars.into()))
+}
+
+/// Resolve the variable list for the 1- or 2-argument satisfiability forms.
+fn satisfiability_vars(args: &[Expr]) -> Option<Vec<Expr>> {
+  if args.len() == 2 {
+    match &args[1] {
+      Expr::List(items) => Some(items.iter().cloned().collect()),
+      single => Some(vec![single.clone()]),
+    }
+  } else {
+    let mut vars = Vec::new();
+    collect_boolean_variable_exprs(&args[0], &mut vars);
+    vars.sort_by(|a, b| {
+      (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
+    });
+    Some(vars)
+  }
+}
+
+/// Enumerate assignments (all-True first, descending) and classify each
+/// evaluation as True / False / non-Boolean. Returns (true_count, first
+/// non-Boolean assignment if any).
+fn count_satisfying(
+  expr: &Expr,
+  vars: &[Expr],
+) -> Result<(u64, Option<Vec<bool>>), InterpreterError> {
+  let n = vars.len();
+  let mut count = 0u64;
+  for idx in 0..(1u64 << n) {
+    let assignment: Vec<bool> =
+      (0..n).map(|j| (idx >> (n - 1 - j)) & 1 == 0).collect();
+    let mut substituted = expr.clone();
+    for (var, &b) in vars.iter().zip(&assignment) {
+      let val = Expr::Identifier(if b { "True" } else { "False" }.to_string());
+      substituted = substitute_boolean_var(&substituted, var, &val);
+    }
+    let result = evaluate_expr_to_expr(&substituted)?;
+    match &result {
+      Expr::Identifier(s) if s == "True" => count += 1,
+      Expr::Identifier(s) if s == "False" => {}
+      _ => return Ok((count, Some(assignment))),
+    }
+  }
+  Ok((count, None))
+}
+
+/// SatisfiableQ[expr] / SatisfiableQ[expr, vars]
+pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "SatisfiableQ".to_string(),
+    args: args.to_vec().into(),
+  };
+  let vars = match satisfiability_vars(args) {
+    Some(v) if v.len() <= 24 => v,
+    _ => return Ok(unevaluated()),
+  };
+  // Short-circuiting variant of count_satisfying: stop at the first True.
+  let n = vars.len();
+  for idx in 0..(1u64 << n) {
+    let assignment: Vec<bool> =
+      (0..n).map(|j| (idx >> (n - 1 - j)) & 1 == 0).collect();
+    let mut substituted = args[0].clone();
+    for (var, &b) in vars.iter().zip(&assignment) {
+      let val = Expr::Identifier(if b { "True" } else { "False" }.to_string());
+      substituted = substitute_boolean_var(&substituted, var, &val);
+    }
+    let result = evaluate_expr_to_expr(&substituted)?;
+    match &result {
+      Expr::Identifier(s) if s == "True" => {
+        return Ok(Expr::Identifier("True".to_string()));
+      }
+      Expr::Identifier(s) if s == "False" => {}
+      _ => {
+        let shown = Expr::List(
+          assignment
+            .iter()
+            .map(|&b| {
+              Expr::Identifier(if b { "True" } else { "False" }.to_string())
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        );
+        crate::emit_message(&format!(
+          "SatisfiableQ::boolv: {} is not Boolean valued at {}.",
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output),
+          crate::syntax::format_expr(&shown, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated());
+      }
+    }
+  }
+  Ok(Expr::Identifier("False".to_string()))
+}
+
+/// SatisfiabilityCount[expr] / SatisfiabilityCount[expr, vars]
+pub fn satisfiability_count_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "SatisfiabilityCount".to_string(),
+    args: args.to_vec().into(),
+  };
+  let vars = match satisfiability_vars(args) {
+    Some(v) if v.len() <= 24 => v,
+    _ => return Ok(unevaluated()),
+  };
+  match count_satisfying(&args[0], &vars)? {
+    (count, None) => Ok(Expr::Integer(count as i128)),
+    // Non-Boolean evaluation: stay unevaluated (wolframscript is silent
+    // here, unlike SatisfiableQ's boolv message)
+    (_, Some(_)) => Ok(unevaluated()),
+  }
+}
+
+
+/// Majority[b1, b2, ...] - True when more than half the arguments are True.
+/// Symbolic arguments simplify by cancelling True/False pairs and deciding
+/// early when the outcome no longer depends on the unknowns (matching
+/// wolframscript: Majority[True, False, x] -> x, Majority[a, b] -> a && b).
+pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let n = args.len();
+  let trues = args
+    .iter()
+    .filter(|a| matches!(a, Expr::Identifier(s) if s == "True"))
+    .count();
+  let falses = args
+    .iter()
+    .filter(|a| matches!(a, Expr::Identifier(s) if s == "False"))
+    .count();
+  let unknowns = n - trues - falses;
+  // Decided regardless of the unknowns
+  if 2 * trues > n {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  if 2 * (trues + unknowns) <= n {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+  // Cancel one True/False pair and re-evaluate
+  if trues >= 1 && falses >= 1 {
+    let mut rest: Vec<Expr> = args.to_vec();
+    let ti = rest
+      .iter()
+      .position(|a| matches!(a, Expr::Identifier(s) if s == "True"))
+      .unwrap();
+    rest.remove(ti);
+    let fi = rest
+      .iter()
+      .position(|a| matches!(a, Expr::Identifier(s) if s == "False"))
+      .unwrap();
+    rest.remove(fi);
+    return majority_ast(&rest);
+  }
+  // Purely symbolic simplifications
+  if n == 1 {
+    return Ok(args[0].clone());
+  }
+  if n == 2 && unknowns == 2 {
+    return evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "And".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  // Majority is Orderless: canonically sort the remaining arguments
+  let mut sorted = args.to_vec();
+  sorted.sort_by(|a, b| {
+    (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
+  });
+  Ok(Expr::FunctionCall {
+    name: "Majority".to_string(),
+    args: sorted.into(),
+  })
+}

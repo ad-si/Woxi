@@ -24,6 +24,18 @@ pub fn dispatch_boolean_functions(
     "Equivalent" => {
       return Some(crate::functions::boolean_ast::equivalent_ast(args));
     }
+    "Majority" => {
+      return Some(crate::functions::majority_ast(args));
+    }
+    "BooleanVariables" if args.len() == 1 => {
+      return Some(crate::functions::boolean_variables_ast(args));
+    }
+    "SatisfiableQ" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::satisfiable_q_ast(args));
+    }
+    "SatisfiabilityCount" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::satisfiability_count_ast(args));
+    }
     "TautologyQ" if args.len() == 1 => {
       return Some(crate::functions::boolean_ast::tautology_q_ast(args));
     }

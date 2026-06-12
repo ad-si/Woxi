@@ -3036,7 +3036,7 @@ PacletFind,,🚫,,12.1,3108
 PlayRange,,🚫,,2.0,3108
 PreviousCell,,🚫,,10.0,3108
 RadialAxisPlot,,🚫,,12.2,3108
-SatisfiabilityInstances,,,,7.0,3108
+SatisfiabilityInstances,Instance ordering and free-variable fill follow WL-internal BDD structure (not reproducible black-box),🚫,pure,7.0,3108
 StandbyDistribution,,,,9.0,3108
 SummationLayer,,🚫,,11.0,3108
 Typed,,,,12.0,3108
@@ -3210,7 +3210,7 @@ DeviceClose,,🚫,,10.0,3291
 DoubleLongLeftArrow,,,,3.0,3291
 HermiteDecomposition,,,,6.0,3291
 ListStreamDensityPlot,,🚫,,7.0,3291
-Majority,,,,7.0,3291
+Majority,True when more than half the arguments are True (Orderless; symbolic simplifications),✅,pure,7.0,3291
 MeshRegionQ,,,,10.0,3291
 SpeechRecognize,,🚫,,12.0,3291
 VerifyConvergence,,,,2.0,3291
@@ -3451,7 +3451,7 @@ AbsoluteCorrelation,,,,9.0,3566
 AnnotationValue,,,,12.1,3566
 AudioDelay,,🚫,,11.0,3566
 BasicRecurrentLayer,,🚫,,11.1,3566
-BooleanVariables,,,,7.0,3566
+BooleanVariables,Boolean variables of an expression (canonically sorted; opaque subexpressions count),✅,pure,7.0,3566
 ChannelListen,,🚫,,11.0,3566
 CompleteGraphQ,,,,8.0,3566
 DGaussianWavelet,,🚫,,8.0,3566
@@ -3516,7 +3516,7 @@ LogLogisticDistribution,,,,8.0,3612
 LongestCommonSequence,,,,7.0,3612
 NevilleThetaD,,,,3.0,3612
 NevilleThetaN,,,,3.0,3612
-SatisfiabilityCount,,,,7.0,3612
+SatisfiabilityCount,Number of satisfying assignments of a Boolean expression,✅,pure,7.0,3612
 StadiumShape,,,,10.2,3612
 BernoulliProcess,,🚫,,9.0,3636
 BinaryDeserialize,,,,11.1,3636
@@ -3937,7 +3937,7 @@ LocalTimeZone,,,,10.0,4052
 LunarEclipse,,🚫,,10.0,4052
 NotebooksMenu,,🚫,,4.0,4052
 RenewalProcess,,🚫,,9.0,4052
-SatisfiableQ,,,,7.0,4052
+SatisfiableQ,Tests whether a Boolean expression has a satisfying assignment,✅,pure,7.0,4052
 StoppingPowerData,,🚫,,10.1,4052
 StripBoxes,,🚫,,6.0,4052
 SurfaceData,,🚫,,10.0,4052
