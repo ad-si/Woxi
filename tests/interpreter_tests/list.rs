@@ -10320,7 +10320,10 @@ mod take_drop_specs_and_messages {
   #[test]
   fn overdrop_errors_instead_of_clamping() {
     // Regression: Drop[{a,b,c}, 5] silently returned {} before
-    assert_eq!(interpret("Drop[{a, b, c}, 5]").unwrap(), "Drop[{a, b, c}, 5]");
+    assert_eq!(
+      interpret("Drop[{a, b, c}, 5]").unwrap(),
+      "Drop[{a, b, c}, 5]"
+    );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
@@ -10400,18 +10403,110 @@ mod take_drop_specs_and_messages {
     assert_eq!(interpret("Take[x, 2]").unwrap(), "Take[x, 2]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m
-        .contains("Take::take: Cannot take positions 1 through 2 in x.")),
+      msgs.iter().any(
+        |m| m.contains("Take::take: Cannot take positions 1 through 2 in x.")
+      ),
       "expected take message, got {:?}",
       msgs
     );
     assert_eq!(interpret("Drop[x, 2]").unwrap(), "Drop[x, 2]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m
-        .contains("Drop::drop: Cannot drop positions 1 through 2 in x.")),
+      msgs.iter().any(
+        |m| m.contains("Drop::drop: Cannot drop positions 1 through 2 in x.")
+      ),
       "expected drop message, got {:?}",
       msgs
+    );
+  }
+}
+
+mod insert_positions_and_messages {
+  use super::*;
+
+  #[test]
+  fn nested_positions() {
+    // Regression: nested position paths previously threw hard errors
+    assert_eq!(
+      interpret("Insert[{{a, b}, {c, d}}, x, {2, 1}]").unwrap(),
+      "{{a, b}, {x, c, d}}"
+    );
+    assert_eq!(
+      interpret("Insert[{{a, b}, {c, d}}, x, {2, -1}]").unwrap(),
+      "{{a, b}, {c, d, x}}"
+    );
+    assert_eq!(
+      interpret("Insert[{{a, b}, {c, d}}, x, {{1, 1}, {2, 2}}]").unwrap(),
+      "{{x, a, b}, {c, x, d}}"
+    );
+  }
+
+  #[test]
+  fn out_of_range_emits_ins() {
+    // Regression: previously hard errors; note wolframscript's ins text
+    // has no trailing period and wraps scalar positions in a list
+    assert_eq!(
+      interpret("Insert[{a, b, c}, x, 5]").unwrap(),
+      "Insert[{a, b, c}, x, 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("Insert::ins: Cannot insert at position {5} in {a, b, c}")
+      ),
+      "expected ins message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Insert[{a, b, c}, x, 0]").unwrap(),
+      "Insert[{a, b, c}, x, 0]"
+    );
+    assert_eq!(
+      interpret("Insert[{a, b, c}, x, {2, 1}]").unwrap(),
+      "Insert[{a, b, c}, x, {2, 1}]"
+    );
+    // Multi-position failures name only the failing path
+    assert_eq!(
+      interpret("Insert[{a, b}, x, {{1}, {5}}]").unwrap(),
+      "Insert[{a, b}, x, {{1}, {5}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("Insert::ins: Cannot insert at position {5} in {a, b}")
+      ),
+      "expected ins message, got {:?}",
+      msgs
+    );
+    // Non-expression targets too
+    assert_eq!(interpret("Insert[y, x, 1]").unwrap(), "Insert[y, x, 1]");
+  }
+
+  #[test]
+  fn invalid_position_spec_emits_psl() {
+    assert_eq!(
+      interpret("Insert[{a, b}, x, y]").unwrap(),
+      "Insert[{a, b}, x, y]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Insert::psl: Position specification y in Insert[{a, b}, x, y] is not a machine-sized integer or a list of machine-sized integers."
+      )),
+      "expected psl message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("Insert[x, 2][{a, b, c}]").unwrap(),
+      "{a, x, b, c}"
+    );
+    assert_eq!(
+      interpret("Map[Insert[x, 2], {{a, b}, {c, d}}]").unwrap(),
+      "{{a, x, b}, {c, x, d}}"
     );
   }
 }

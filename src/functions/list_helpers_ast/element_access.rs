@@ -1051,118 +1051,181 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
 /// Insert[list, elem, n] - Insert element at position n (1-indexed).
 /// Threads through any non-atomic head, so e.g. Insert[f[a,b], x, 2] returns
 /// f[a, x, b].
+fn insert_ins_message(path: &[i128], list: &Expr) {
+  let pos = format!(
+    "{{{}}}",
+    path
+      .iter()
+      .map(|p| p.to_string())
+      .collect::<Vec<_>>()
+      .join(", ")
+  );
+  // wolframscript's Insert::ins text has no trailing period
+  crate::emit_message(&format!(
+    "Insert::ins: Cannot insert at position {} in {}",
+    pos,
+    crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+  ));
+}
+
+/// Insert `elem` along nested `paths` (lists of part indices; the last
+/// index is the insertion point). All positions refer to the original
+/// expression. Returns Err(failing_path) on any invalid position.
+fn insert_paths(
+  expr: &Expr,
+  elem: &Expr,
+  paths: &[Vec<i128>],
+) -> Result<Expr, Vec<i128>> {
+  let (items, head): (Vec<Expr>, Option<String>) = match expr {
+    Expr::List(items) => (items.iter().cloned().collect(), None),
+    Expr::FunctionCall { name, args } => {
+      (args.iter().cloned().collect(), Some(name.clone()))
+    }
+    _ => return Err(paths[0].clone()),
+  };
+  let len = items.len() as i128;
+
+  // Paths that descend deeper, grouped by their (0-based) first index
+  let mut deeper: std::collections::BTreeMap<usize, Vec<Vec<i128>>> =
+    Default::default();
+  // Insertion indices at this level (0-based slots in the original)
+  let mut here: Vec<usize> = Vec::new();
+  for path in paths {
+    let n = path[0];
+    if path.len() == 1 {
+      let idx = if n > 0 {
+        if n - 1 > len {
+          return Err(path.clone());
+        }
+        (n - 1) as usize
+      } else if n < 0 {
+        if n < -(len + 1) {
+          return Err(path.clone());
+        }
+        (len + 1 + n) as usize
+      } else {
+        return Err(path.clone());
+      };
+      here.push(idx);
+    } else {
+      // Part index for descent
+      let idx = if n > 0 {
+        if n > len {
+          return Err(path.clone());
+        }
+        (n - 1) as usize
+      } else if n < 0 {
+        if -n > len {
+          return Err(path.clone());
+        }
+        (len + n) as usize
+      } else {
+        return Err(path.clone());
+      };
+      deeper.entry(idx).or_default().push(path[1..].to_vec());
+    }
+  }
+
+  let mut result = items;
+  // Recurse first (uses original child contents), tracking failures with
+  // the full path restored
+  for (idx, sub_paths) in &deeper {
+    match insert_paths(&result[*idx], elem, sub_paths) {
+      Ok(new_child) => result[*idx] = new_child,
+      Err(mut failing) => {
+        // Restore the leading index of the failing path
+        let lead = paths
+          .iter()
+          .find(|p| p.len() > 1 && p[1..] == failing[..])
+          .map(|p| p[0])
+          .unwrap_or((*idx + 1) as i128);
+        failing.insert(0, lead);
+        return Err(failing);
+      }
+    }
+  }
+  // Insert at this level from rightmost to leftmost
+  here.sort_unstable();
+  for idx in here.into_iter().rev() {
+    result.insert(idx, elem.clone());
+  }
+  Ok(match head {
+    Some(name) => Expr::FunctionCall {
+      name,
+      args: result.into(),
+    },
+    None => Expr::List(result.into()),
+  })
+}
+
 pub fn insert_ast(
   list: &Expr,
   elem: &Expr,
   pos: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let (items, head): (Vec<Expr>, Option<String>) = match list {
-    Expr::List(items) => (items.to_vec(), None),
-    Expr::FunctionCall { name, args } => (args.to_vec(), Some(name.clone())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Insert".to_string(),
-        args: vec![list.clone(), elem.clone(), pos.clone()].into(),
-      });
-    }
+  let unevaluated = || Expr::FunctionCall {
+    name: "Insert".to_string(),
+    args: vec![list.clone(), elem.clone(), pos.clone()].into(),
   };
-
-  let len = items.len() as i128;
-
-  // Collect all insertion positions. Supports:
-  //   - Integer:              Insert[list, x, 2]
-  //   - {n}:                  Insert[list, x, {2}]     (single-level position)
-  //   - {{p1}, {p2}, ...}:    Insert[list, x, {{2}, {4}}]  (multiple positions)
-  let positions: Vec<i128> = match pos {
+  // Parse the position specification:
+  //   n              single top-level position
+  //   {p1, ..., pk}  one nested path
+  //   {{...}, ...}   several paths
+  let paths: Vec<Vec<i128>> = match pos {
     Expr::Integer(_) | Expr::BigInteger(_) => {
-      vec![expr_to_i128(pos).unwrap()]
+      vec![vec![expr_to_i128(pos).unwrap()]]
     }
-    Expr::List(inner) => {
-      // Two shapes:
-      // {n}          — single position at top level
-      // {{p1}, ...}  — list of (top-level) positions
-      if inner.iter().all(|i| matches!(i, Expr::List(_))) && !inner.is_empty() {
-        let mut ps = Vec::with_capacity(inner.len());
-        for sub in inner {
-          if let Expr::List(sub_items) = sub {
-            if sub_items.len() != 1 {
-              return Err(InterpreterError::EvaluationError(
-                "Insert: nested position specs are not supported".into(),
-              ));
-            }
-            match expr_to_i128(&sub_items[0]) {
-              Some(n) => ps.push(n),
-              None => {
-                return Err(InterpreterError::EvaluationError(
-                  "Insert: position must be an integer".into(),
-                ));
-              }
-            }
-          }
-        }
-        ps
-      } else if inner.len() == 1 {
-        match expr_to_i128(&inner[0]) {
-          Some(n) => vec![n],
-          None => {
-            return Err(InterpreterError::EvaluationError(
-              "Insert: position must be an integer".into(),
+    Expr::List(inner)
+      if !inner.is_empty()
+        && inner.iter().all(|i| matches!(i, Expr::List(_))) =>
+    {
+      let mut ps = Vec::with_capacity(inner.len());
+      for sub in inner.iter() {
+        let Expr::List(sub_items) = sub else { unreachable!() };
+        let path: Option<Vec<i128>> =
+          sub_items.iter().map(expr_to_i128).collect();
+        match path {
+          Some(p) if !p.is_empty() => ps.push(p),
+          _ => {
+            crate::emit_message(&format!(
+              "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+              crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+              crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
             ));
+            return Ok(unevaluated());
           }
         }
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "Insert: position must be an integer".into(),
-        ));
+      }
+      ps
+    }
+    Expr::List(inner) if !inner.is_empty() => {
+      match inner.iter().map(expr_to_i128).collect::<Option<Vec<i128>>>() {
+        Some(p) => vec![p],
+        None => {
+          crate::emit_message(&format!(
+            "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+            crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+            crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated());
+        }
       }
     }
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Insert: position must be an integer".into(),
+      crate::emit_message(&format!(
+        "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+        crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+        crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
       ));
+      return Ok(unevaluated());
     }
   };
-
-  // Normalize each position to a 0-based insert index into the ORIGINAL list.
-  // Wolfram semantics: when multiple positions are given they all refer to
-  // positions in the original list, not the list as it grows.
-  let mut insert_indices: Vec<usize> = Vec::with_capacity(positions.len());
-  for n in &positions {
-    let idx = if *n > 0 {
-      let p = (*n - 1) as usize;
-      if p > items.len() {
-        return Err(InterpreterError::EvaluationError(
-          "Insert: position out of bounds".into(),
-        ));
-      }
-      p
-    } else if *n < 0 {
-      if *n < -(len + 1) {
-        return Err(InterpreterError::EvaluationError(
-          "Insert: position out of bounds".into(),
-        ));
-      }
-      (len + 1 + *n) as usize
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "Insert: position cannot be 0".into(),
-      ));
-    };
-    insert_indices.push(idx);
-  }
-
-  // Insert from rightmost to leftmost so earlier indices stay valid.
-  insert_indices.sort_unstable();
-  let mut result = items;
-  for idx in insert_indices.into_iter().rev() {
-    result.insert(idx, elem.clone());
-  }
-  match head {
-    Some(name) => Ok(Expr::FunctionCall {
-      name,
-      args: result.into(),
-    }),
-    None => Ok(Expr::List(result.into())),
+  match insert_paths(list, elem, &paths) {
+    Ok(result) => Ok(result),
+    Err(failing) => {
+      insert_ins_message(&failing, list);
+      Ok(unevaluated())
+    }
   }
 }
 
