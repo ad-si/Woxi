@@ -432,6 +432,43 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 /// AST-based Take: take first n elements.
 /// Returns unevaluated if n exceeds list length (to let fallback handle error).
 /// Multi-dimensional Take: Take[list, spec1, spec2, ...]
+
+/// Emit the Take::take / Drop::drop message for an invalid position range.
+fn take_drop_message(fname: &str, from: i128, to: i128, list: &Expr) {
+  let (tag, verb) = if fname == "Take" {
+    ("take", "take")
+  } else {
+    ("drop", "drop")
+  };
+  crate::emit_message(&format!(
+    "{}::{}: Cannot {} positions {} through {} in {}.",
+    fname,
+    tag,
+    verb,
+    from,
+    to,
+    crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+  ));
+}
+
+/// The (from, to) display range of a Take/Drop spec, for messages.
+fn spec_range(n: &Expr) -> Option<(i128, i128)> {
+  match n {
+    Expr::Integer(v) if *v >= 0 => Some((1, *v)),
+    Expr::Integer(v) => Some((*v, -1)),
+    Expr::List(spec) => {
+      let nums: Option<Vec<i128>> =
+        spec.iter().map(super::utilities::expr_to_i128).collect();
+      match nums.as_deref() {
+        Some([i]) => Some((*i, *i)),
+        Some([i, j]) | Some([i, j, _]) => Some((*i, *j)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 pub fn take_multi_ast(
   list: &Expr,
   specs: &[Expr],
@@ -503,6 +540,9 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name: h, args } => (args.as_slice(), Some(h.as_str())),
     _ => {
+      if let Some((from, to)) = spec_range(n) {
+        take_drop_message("Take", from, to, list);
+      }
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()].into(),
@@ -521,6 +561,11 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Handle None: an empty take
+  if matches!(n, Expr::Identifier(name) if name == "None") {
+    return Ok(wrap(Vec::new()));
+  }
+
   // Handle Take[list, {start, end}] and Take[list, {start, end, step}]
   if let Expr::List(spec) = n {
     if spec.len() == 1 {
@@ -530,6 +575,11 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         if real_idx >= 1 && real_idx <= len {
           return Ok(wrap(vec![items[(real_idx - 1) as usize].clone()]));
         }
+        take_drop_message("Take", idx, idx, list);
+        return Ok(Expr::FunctionCall {
+          name: "Take".to_string(),
+          args: vec![list.clone(), n.clone()].into(),
+        });
       }
     } else if spec.len() >= 2 {
       let len = items.len() as i128;
@@ -543,12 +593,17 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         };
         let real_start = if start < 0 { len + start + 1 } else { start };
         let real_end = if end < 0 { len + end + 1 } else { end };
-        if real_start >= 1
+        // An adjacent reversed range (end == start - step) is an empty
+        // take; anything further reversed or out of range is an error
+        let adjacent_empty = step != 0 && real_end == real_start - step;
+        let in_range = real_start >= 1
           && real_end >= 1
           && real_start <= len
-          && real_end <= len
-          && step != 0
-        {
+          && real_end <= len;
+        let proper = step != 0
+          && ((step > 0 && real_end >= real_start)
+            || (step < 0 && real_end <= real_start));
+        if in_range && step != 0 && (proper || adjacent_empty) {
           let mut result = Vec::new();
           let mut i = real_start;
           while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
@@ -556,6 +611,13 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
             i += step;
           }
           return Ok(wrap(result));
+        }
+        if step != 0 {
+          take_drop_message("Take", start, end, list);
+          return Ok(Expr::FunctionCall {
+            name: "Take".to_string(),
+            args: vec![list.clone(), n.clone()].into(),
+          });
         }
       }
     }
@@ -661,6 +723,9 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name: h, args } => (args.as_slice(), Some(h.as_str())),
     _ => {
+      if let Some((from, to)) = spec_range(n) {
+        take_drop_message("Drop", from, to, list);
+      }
       return Ok(Expr::FunctionCall {
         name: "Drop".to_string(),
         args: vec![list.clone(), n.clone()].into(),
@@ -680,19 +745,41 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
   let len = items.len() as i128;
 
+  // Handle None (drop nothing) and All (drop everything)
+  if matches!(n, Expr::Identifier(name) if name == "None") {
+    return Ok(list.clone());
+  }
+  if matches!(n, Expr::Identifier(name) if name == "All") {
+    return Ok(wrap_drop(Vec::new()));
+  }
+
   // Drop[list, {m, n}] - drop elements m through n
   if let Expr::List(spec) = n {
     if spec.len() == 2
       && let (Some(m), Some(n_end)) =
         (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
     {
-      let start = if m > 0 { m - 1 } else { len + m };
-      let end = if n_end > 0 { n_end - 1 } else { len + n_end };
-      let start = start.max(0) as usize;
-      let end = (end + 1).max(0).min(len) as usize;
-      if start >= end {
+      let real_start = if m > 0 { m } else { len + m + 1 };
+      let real_end = if n_end > 0 { n_end } else { len + n_end + 1 };
+      // The adjacent reversed range drops nothing; anything further
+      // reversed or out of range is an error
+      if real_end == real_start - 1 {
         return Ok(list.clone());
       }
+      if real_start < 1
+        || real_end < 1
+        || real_start > len
+        || real_end > len
+        || real_end < real_start
+      {
+        take_drop_message("Drop", m, n_end, list);
+        return Ok(Expr::FunctionCall {
+          name: "Drop".to_string(),
+          args: vec![list.clone(), n.clone()].into(),
+        });
+      }
+      let start = (real_start - 1) as usize;
+      let end = real_end as usize;
       let mut result = items[..start].to_vec();
       result.extend_from_slice(&items[end..]);
       return Ok(wrap_drop(result));
@@ -703,10 +790,11 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     {
       let idx = if n_val > 0 { n_val - 1 } else { len + n_val };
       if idx < 0 || idx >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Drop: index {} out of range for list of length {}",
-          n_val, len
-        )));
+        take_drop_message("Drop", n_val, n_val, list);
+        return Ok(Expr::FunctionCall {
+          name: "Drop".to_string(),
+          args: vec![list.clone(), n.clone()].into(),
+        });
       }
       let idx = idx as usize;
       let mut result = items[..idx].to_vec();
@@ -798,11 +886,18 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  if count.unsigned_abs() > len.unsigned_abs() {
+    let (from, to) = if count >= 0 { (1, count) } else { (count, -1) };
+    take_drop_message("Drop", from, to, list);
+    return Ok(Expr::FunctionCall {
+      name: "Drop".to_string(),
+      args: vec![list.clone(), n.clone()].into(),
+    });
+  }
   if count >= 0 {
-    let drop_count = count.min(len) as usize;
-    Ok(wrap_drop(items[drop_count..].to_vec()))
+    Ok(wrap_drop(items[count as usize..].to_vec()))
   } else {
-    let keep = (len + count).max(0) as usize;
+    let keep = (len + count) as usize;
     Ok(wrap_drop(items[..keep].to_vec()))
   }
 }

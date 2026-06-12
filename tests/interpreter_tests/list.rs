@@ -10305,3 +10305,113 @@ mod partition_padding_and_messages {
     );
   }
 }
+
+mod take_drop_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn none_and_all_specs() {
+    assert_eq!(interpret("Take[{a, b, c}, None]").unwrap(), "{}");
+    assert_eq!(interpret("Drop[{a, b, c}, None]").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("Drop[{a, b, c}, All]").unwrap(), "{}");
+    assert_eq!(interpret("Take[{a, b, c}, All]").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn overdrop_errors_instead_of_clamping() {
+    // Regression: Drop[{a,b,c}, 5] silently returned {} before
+    assert_eq!(interpret("Drop[{a, b, c}, 5]").unwrap(), "Drop[{a, b, c}, 5]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Drop::drop: Cannot drop positions 1 through 5 in {a, b, c}."
+      )),
+      "expected drop message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c}, -5]").unwrap(),
+      "Drop[{a, b, c}, -5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Drop::drop: Cannot drop positions -5 through -1 in {a, b, c}."
+      )),
+      "expected drop message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn reversed_ranges() {
+    // The adjacent reversed range is an empty take / a no-op drop ...
+    assert_eq!(interpret("Take[{a, b, c, d}, {3, 2}]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Drop[{a, b, c, d}, {3, 2}]").unwrap(),
+      "{a, b, c, d}"
+    );
+    // ... but anything further reversed errors (previously silent
+    // wrong values)
+    assert_eq!(
+      interpret("Take[{a, b, c, d}, {3, 1}]").unwrap(),
+      "Take[{a, b, c, d}, {3, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Take::take: Cannot take positions 3 through 1 in {a, b, c, d}."
+      )),
+      "expected take message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c, d}, {3, 1}]").unwrap(),
+      "Drop[{a, b, c, d}, {3, 1}]"
+    );
+  }
+
+  #[test]
+  fn out_of_range_single_positions() {
+    assert_eq!(
+      interpret("Take[{a, b, c}, {0}]").unwrap(),
+      "Take[{a, b, c}, {0}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Take::take: Cannot take positions 0 through 0 in {a, b, c}."
+      )),
+      "expected take message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c}, {0}]").unwrap(),
+      "Drop[{a, b, c}, {0}]"
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c, d}, {2, 9}]").unwrap(),
+      "Drop[{a, b, c, d}, {2, 9}]"
+    );
+  }
+
+  #[test]
+  fn non_list_arguments_message() {
+    assert_eq!(interpret("Take[x, 2]").unwrap(), "Take[x, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Take::take: Cannot take positions 1 through 2 in x.")),
+      "expected take message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Drop[x, 2]").unwrap(), "Drop[x, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Drop::drop: Cannot drop positions 1 through 2 in x.")),
+      "expected drop message, got {:?}",
+      msgs
+    );
+  }
+}
