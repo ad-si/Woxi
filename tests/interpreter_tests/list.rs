@@ -12347,3 +12347,97 @@ mod permutations_specs_and_messages {
     );
   }
 }
+
+mod tuples_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn array_shape_specs() {
+    // Regression: Tuples[list, {n1, n2, ...}] stayed unevaluated
+    assert_eq!(
+      interpret("Tuples[{a, b}, {2, 2}]").unwrap(),
+      "{{{a, a}, {a, a}}, {{a, a}, {a, b}}, {{a, a}, {b, a}}, {{a, a}, {b, b}}, {{a, b}, {a, a}}, {{a, b}, {a, b}}, {{a, b}, {b, a}}, {{a, b}, {b, b}}, {{b, a}, {a, a}}, {{b, a}, {a, b}}, {{b, a}, {b, a}}, {{b, a}, {b, b}}, {{b, b}, {a, a}}, {{b, b}, {a, b}}, {{b, b}, {b, a}}, {{b, b}, {b, b}}}"
+    );
+    // The subject's head is applied at every level of the array
+    assert_eq!(
+      interpret("Tuples[g[a, b], {2, 2}]").unwrap(),
+      "{g[g[a, a], g[a, a]], g[g[a, a], g[a, b]], g[g[a, a], g[b, a]], g[g[a, a], g[b, b]], g[g[a, b], g[a, a]], g[g[a, b], g[a, b]], g[g[a, b], g[b, a]], g[g[a, b], g[b, b]], g[g[b, a], g[a, a]], g[g[b, a], g[a, b]], g[g[b, a], g[b, a]], g[g[b, a], g[b, b]], g[g[b, b], g[a, a]], g[g[b, b], g[a, b]], g[g[b, b], g[b, a]], g[g[b, b], g[b, b]]}"
+    );
+    assert_eq!(interpret("Tuples[{a, b}, {2, 0}]").unwrap(), "{{{}, {}}}");
+    assert_eq!(interpret("Tuples[{a, b}, {0}]").unwrap(), "{{}}");
+    // An empty shape yields the bare elements
+    assert_eq!(interpret("Tuples[{a, b}, {}]").unwrap(), "{a, b}");
+    assert_eq!(interpret("Tuples[g[a, b], {}]").unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn invalid_specs_emit_ilsmn() {
+    // Regression: invalid specs silently returned unevaluated without a message
+    assert_eq!(
+      interpret("Tuples[{a, b}, -1]").unwrap(),
+      "Tuples[{a, b}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Tuples::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of Tuples[{a, b}, -1]."
+      )),
+      "expected ilsmn message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Tuples[{a, b}, 2.0]").unwrap(),
+      "Tuples[{a, b}, 2.]"
+    );
+    assert_eq!(interpret("Tuples[{a, b}, x]").unwrap(), "Tuples[{a, b}, x]");
+    assert_eq!(
+      interpret("Tuples[{a, b}, {2, -1}]").unwrap(),
+      "Tuples[{a, b}, {2, -1}]"
+    );
+  }
+
+  #[test]
+  fn atomic_subjects_emit_normal() {
+    assert_eq!(interpret("Tuples[x]").unwrap(), "Tuples[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Tuples::normal: Nonatomic expression expected at position 1 in Tuples[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Tuples[x, 2]").unwrap(), "Tuples[x, 2]");
+    // Atomic elements in the one-argument form report their {1, i} position
+    assert_eq!(interpret("Tuples[{a, b}]").unwrap(), "Tuples[{a, b}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Tuples::normal: Nonatomic expression expected at position {1, 1} in Tuples[{a, b}]."
+      )),
+      "expected positional normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Tuples[{{a, b}, c}]").unwrap(),
+      "Tuples[{{a, b}, c}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Tuples::normal: Nonatomic expression expected at position {1, 2} in Tuples[{{a, b}, c}]."
+      )),
+      "expected positional normal message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn outer_head_determines_tuple_head() {
+    // Regression: non-List outer heads stayed unevaluated
+    assert_eq!(
+      interpret("Tuples[h[g[a, b], g[c]]]").unwrap(),
+      "{h[a, c], h[b, c]}"
+    );
+  }
+}

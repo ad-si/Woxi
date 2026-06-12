@@ -2287,44 +2287,67 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(build_dense_from_rules(&dims, default, &rules_list))
 }
 
-/// Tuples[list, n] - Generate all n-tuples from elements of list (Cartesian product).
+/// Unified Tuples: `Tuples[{list1, list2, …}]` (one element from each
+/// list, tuples take the outer head), `Tuples[list, n]` (all n-tuples,
+/// tuples take list's head) and `Tuples[list, {n1, n2, …}]` (all
+/// n1×n2×… arrays, list's head at every level; `{}` yields scalars).
+/// Atomic expressions emit ::normal (with `{1, i}` positions for atomic
+/// elements in the one-argument form) and invalid specs emit ::ilsmn.
 pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() == 1 {
-    // Tuples[{list1, list2, ...}] - Cartesian product of multiple lists
-    // Each element can be a List or a FunctionCall (extract args as elements)
-    let outer_items = match &args[0] {
-      Expr::List(items) => items,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Tuples".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
-    };
+  let original = || Expr::FunctionCall {
+    name: "Tuples".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  let emit_normal = |position: &str| {
+    crate::emit_message(&format!(
+      "Tuples::normal: Nonatomic expression expected at position {} in {}.",
+      position,
+      show(&original())
+    ));
+  };
 
-    // Extract elements from each sublist/expression
-    let mut lists: Vec<Vec<Expr>> = Vec::new();
-    for item in outer_items {
-      match item {
-        Expr::List(items) => lists.push(items.to_vec()),
-        Expr::FunctionCall { args: fc_args, .. } => {
-          lists.push(fc_args.to_vec());
-        }
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Tuples".to_string(),
-            args: args.to_vec().into(),
-          });
-        }
+  // Elements and head of a nonatomic expression (None for the List head).
+  fn parts(e: &Expr) -> Option<(&[Expr], Option<&str>)> {
+    match e {
+      Expr::List(items) => Some((items.as_slice(), None)),
+      Expr::FunctionCall { name, args } => {
+        Some((args.as_slice(), Some(name.as_str())))
       }
+      _ => None,
+    }
+  }
+  let wrap = |head: Option<&str>, elems: Vec<Expr>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: elems.into(),
+      },
+      None => Expr::List(elems.into()),
+    }
+  };
+
+  if args.len() == 1 {
+    // Tuples[{list1, list2, ...}] - one element from each list
+    let Some((outer_items, outer_head)) = parts(&args[0]) else {
+      emit_normal("1");
+      return Ok(original());
+    };
+    let mut lists: Vec<&[Expr]> = Vec::new();
+    for (i, item) in outer_items.iter().enumerate() {
+      let Some((elems, _)) = parts(item) else {
+        emit_normal(&format!("{{1, {}}}", i + 1));
+        return Ok(original());
+      };
+      lists.push(elems);
     }
 
-    // Cartesian product of all lists
     let mut result: Vec<Vec<Expr>> = vec![vec![]];
     for list in &lists {
       let mut new_result = Vec::new();
       for tuple in &result {
-        for item in list {
+        for item in *list {
           let mut new_tuple = tuple.clone();
           new_tuple.push(item.clone());
           new_result.push(new_tuple);
@@ -2332,82 +2355,84 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       result = new_result;
     }
-
     return Ok(Expr::List(
-      result.into_iter().map(|v| Expr::List(v.into())).collect(),
+      result
+        .into_iter()
+        .map(|v| wrap(outer_head, v))
+        .collect::<Vec<_>>()
+        .into(),
     ));
   }
 
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Tuples expects 1 or 2 arguments".into(),
-    ));
-  }
-
-  // Tuples[list, n] or Tuples[f[a,b,...], n]
-  let (items, head_name): (Vec<Expr>, Option<String>) = match &args[0] {
-    Expr::List(items) => (items.to_vec(), None),
-    Expr::FunctionCall {
-      name,
-      args: fc_args,
-    } => (fc_args.to_vec(), Some(name.clone())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Tuples".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+  // Tuples[list, n] or Tuples[list, {n1, n2, ...}]
+  let Some((items, head)) = parts(&args[0]) else {
+    emit_normal("1");
+    return Ok(original());
   };
 
-  let n = match &args[1] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Tuples".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-
-  if n == 0 {
-    let empty = if let Some(ref h) = head_name {
-      Expr::FunctionCall {
-        name: h.clone(),
-        args: vec![].into(),
+  let machine_nonneg = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) if (0..=i64::MAX as i128).contains(n) => {
+        Some(*n as usize)
       }
-    } else {
-      Expr::List(vec![].into())
-    };
-    return Ok(Expr::List(vec![empty].into()));
-  }
+      _ => None,
+    }
+  };
+  let dims: Option<Vec<usize>> = match &args[1] {
+    Expr::List(spec) => spec.iter().map(machine_nonneg).collect(),
+    e => machine_nonneg(e).map(|n| vec![n]),
+  };
+  let Some(dims) = dims else {
+    crate::emit_message(&format!(
+      "Tuples::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
+      show(&original())
+    ));
+    return Ok(original());
+  };
 
-  // Iterative Cartesian product
-  let mut result: Vec<Vec<Expr>> = vec![vec![]];
-
-  for _ in 0..n {
+  // All flat tuples of length n1*n2*..., in lexicographic order.
+  let total: usize = dims.iter().product();
+  let mut flat_tuples: Vec<Vec<Expr>> = vec![vec![]];
+  for _ in 0..total {
     let mut new_result = Vec::new();
-    for tuple in &result {
-      for item in &items {
+    for tuple in &flat_tuples {
+      for item in items {
         let mut new_tuple = tuple.clone();
         new_tuple.push(item.clone());
         new_result.push(new_tuple);
       }
     }
-    result = new_result;
+    flat_tuples = new_result;
   }
 
-  let wrap = |elems: Vec<Expr>| -> Expr {
-    if let Some(ref h) = head_name {
-      Expr::FunctionCall {
-        name: h.clone(),
-        args: elems.into(),
-      }
-    } else {
-      Expr::List(elems.into())
+  // Reshape a flat tuple into nested arrays of the given shape, applying
+  // the subject's head at every level. An empty shape yields the bare
+  // element (so a scalar n behaves identically to the shape {n}).
+  fn reshape(
+    flat: &[Expr],
+    dims: &[usize],
+    wrap: &dyn Fn(Option<&str>, Vec<Expr>) -> Expr,
+    head: Option<&str>,
+  ) -> Expr {
+    if dims.is_empty() {
+      return flat[0].clone();
     }
-  };
+    let chunk: usize = dims[1..].iter().product();
+    let elems: Vec<Expr> = (0..dims[0])
+      .map(|i| {
+        reshape(&flat[i * chunk..(i + 1) * chunk], &dims[1..], wrap, head)
+      })
+      .collect();
+    wrap(head, elems)
+  }
 
-  Ok(Expr::List(result.into_iter().map(wrap).collect()))
+  Ok(Expr::List(
+    flat_tuples
+      .into_iter()
+      .map(|t| reshape(&t, &dims, &wrap, head))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
 }
 
 /// DistanceMatrix[{v1, v2, ...}] - matrix of pairwise distances.
