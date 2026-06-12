@@ -10518,7 +10518,10 @@ mod delete_positions_and_messages {
   fn duplicate_and_equivalent_positions_collapse() {
     // Regression: {{2}, {2}} deleted two elements; positions dedupe
     // after normalization, so {{2}, {-2}} also deletes once
-    assert_eq!(interpret("Delete[{a, b, c}, {{2}, {2}}]").unwrap(), "{a, c}");
+    assert_eq!(
+      interpret("Delete[{a, b, c}, {{2}, {2}}]").unwrap(),
+      "{a, c}"
+    );
     assert_eq!(
       interpret("Delete[{a, b, c}, {{2}, {-2}}]").unwrap(),
       "{a, c}"
@@ -10560,9 +10563,8 @@ mod delete_positions_and_messages {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(|m| m.contains(
-        "Delete::partw: Part {1, 5} of {{a, b}} does not exist."
-      )),
+      msgs.iter().any(|m| m
+        .contains("Delete::partw: Part {1, 5} of {{a, b}} does not exist.")),
       "expected partw message, got {:?}",
       msgs
     );
@@ -10608,6 +10610,89 @@ mod delete_positions_and_messages {
     assert_eq!(
       interpret("Delete[{a, b, c}, 2.5]").unwrap(),
       "Delete[{a, b, c}, 2.5]"
+    );
+  }
+}
+
+mod replace_part_rules_and_patterns {
+  use super::*;
+
+  #[test]
+  fn first_matching_rule_wins() {
+    // Regression: the last duplicate rule used to win
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, {2 -> x, 2 -> y}]").unwrap(),
+      "{a, x, c}"
+    );
+  }
+
+  #[test]
+  fn pattern_positions() {
+    // A named pattern binds the part index
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, i_ :> 2 i]").unwrap(),
+      "{2, 4, 6}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, i_ -> i]").unwrap(),
+      "{1, 2, 3}"
+    );
+    // Wildcards in paths match every index at that level
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, {_, 1} -> x]").unwrap(),
+      "{{x, b}, {x, d}}"
+    );
+    // Repeated pattern variables bind consistently (the diagonal)
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, {i_, i_} :> 9]").unwrap(),
+      "{{9, b}, {c, 9}}"
+    );
+    // Conditions on the index
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, {i_ /; i > 1 :> 0}]").unwrap(),
+      "{a, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn head_replacement() {
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, 0 -> x]").unwrap(),
+      "x[a, b, c]"
+    );
+    assert_eq!(
+      interpret("ReplacePart[f[a, b], 0 -> g]").unwrap(),
+      "g[a, b]"
+    );
+  }
+
+  #[test]
+  fn operator_form_and_subjects() {
+    assert_eq!(
+      interpret("ReplacePart[2 -> x][{a, b, c}]").unwrap(),
+      "{a, x, c}"
+    );
+    assert_eq!(
+      interpret("Map[ReplacePart[1 -> q], {{a, b}, {c, d}}]").unwrap(),
+      "{{q, b}, {q, d}}"
+    );
+    // Atomic subjects come back unchanged, silently
+    assert_eq!(interpret("ReplacePart[y, 1 -> x]").unwrap(), "y");
+  }
+
+  #[test]
+  fn invalid_rule_spec_emits_reps() {
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, x]").unwrap(),
+      "ReplacePart[{a, b, c}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ReplacePart::reps: x is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing."
+      )),
+      "expected reps message, got {:?}",
+      msgs
     );
   }
 }

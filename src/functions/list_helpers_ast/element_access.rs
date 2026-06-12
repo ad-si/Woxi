@@ -1317,203 +1317,233 @@ fn extract_ast_inner(
 }
 
 /// ReplacePart[list, n -> val] - replaces element at position n
+/// ReplacePart[expr, rules] — replace parts by position. Positions may be
+/// integers, nested paths, lists of paths, or patterns matching index
+/// sequences (i_ binds the index; {_, 1} replaces the first element at
+/// every depth-2 branch). Each part position takes the FIRST matching
+/// rule; replaced parts are not re-examined. Atomic subjects come back
+/// unchanged; invalid rule specifications emit ::reps.
 pub fn replace_part_ast(
   expr: &Expr,
   rule: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Handle list of rules: ReplacePart[expr, {pos1 -> val1, pos2 -> val2}]
-  if let Expr::List(rules) = rule
-    && rules
-      .iter()
-      .all(|r| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }) || matches!(r, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed"))
-    {
-      let mut result = expr.clone();
-      for r in rules {
-        result = replace_part_ast(&result, r)?;
+  // Normalize the rule spec into an ordered list of (lhs, rhs, delayed)
+  let as_rule = |r: &Expr| -> Option<(Expr, Expr, bool)> {
+    match r {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some(((**pattern).clone(), (**replacement).clone(), false)),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Some(((**pattern).clone(), (**replacement).clone(), true)),
+      Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone(), name == "RuleDelayed"))
       }
-      return Ok(result);
-    }
-
-  // Extract position and value from the rule
-  let (pos, val, is_delayed) = match rule {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => (pattern.as_ref(), replacement.as_ref(), false),
-    Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => (pattern.as_ref(), replacement.as_ref(), true),
-    Expr::FunctionCall { name, args }
-      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
-    {
-      (&args[0], &args[1], name == "RuleDelayed")
-    }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ReplacePart".to_string(),
-        args: vec![expr.clone(), rule.clone()].into(),
-      });
+      _ => None,
     }
   };
-  // For RuleDelayed, evaluate the replacement each time it's used
-  let eval_val = |v: &Expr| -> Result<Expr, InterpreterError> {
-    if is_delayed {
-      crate::evaluator::evaluate_expr_to_expr(v)
-    } else {
-      Ok(v.clone())
+  let rules: Vec<(Expr, Expr, bool)> = match rule {
+    Expr::List(items) if items.iter().all(|r| as_rule(r).is_some()) => {
+      items.iter().map(|r| as_rule(r).unwrap()).collect()
     }
+    single => match as_rule(single) {
+      Some(r) => vec![r],
+      None => {
+        crate::emit_message(&format!(
+          "ReplacePart::reps: {} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
+          crate::syntax::format_expr(rule, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "ReplacePart".to_string(),
+          args: vec![expr.clone(), rule.clone()].into(),
+        });
+      }
+    },
   };
 
-  // Handle multiple positions: ReplacePart[expr, {{1}, {3}} -> val]
-  if let Expr::List(pos_list) = pos
-    && !pos_list.is_empty()
-    && pos_list.iter().all(|p| matches!(p, Expr::List(_)))
-  {
-    let mut result = expr.clone();
-    for p in pos_list {
-      let ev = eval_val(val)?;
-      let sub_rule = Expr::Rule {
-        pattern: Box::new(p.clone()),
-        replacement: Box::new(ev),
-      };
-      result = replace_part_ast(&result, &sub_rule)?;
-    }
-    return Ok(result);
+  // Expand each rule LHS into one or more path matchers (each a list of
+  // per-level components: integers or patterns)
+  #[derive(Clone)]
+  enum Comp {
+    Index(i128),
+    Pattern(Expr),
   }
-
-  // Determine the position specification
-  let positions: Vec<i128> = match pos {
-    Expr::Integer(_) | Expr::BigInteger(_) => {
-      vec![expr_to_i128(pos).unwrap_or(0)]
-    }
-    Expr::List(indices) => indices.iter().filter_map(expr_to_i128).collect(),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ReplacePart".to_string(),
-        args: vec![expr.clone(), rule.clone()].into(),
-      });
+  let to_comp = |e: &Expr| -> Comp {
+    match e {
+      Expr::Integer(n) => Comp::Index(*n),
+      other => Comp::Pattern(other.clone()),
     }
   };
-
-  if positions.is_empty() {
-    return Ok(expr.clone());
-  }
-
-  let ev = eval_val(val)?;
-
-  // Single flat position
-  if positions.len() == 1 {
-    let p = positions[0];
-    return replace_at_position(expr, p, &ev);
-  }
-
-  // Multi-part position {i, j, ...}
-  replace_at_deep_pos(expr, &positions, &ev)
-}
-
-/// Replace at a single position in an expression
-fn replace_at_position(
-  expr: &Expr,
-  pos: i128,
-  val: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let (items, head_name) = match expr {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ReplacePart".to_string(),
-        args: vec![
-          expr.clone(),
-          Expr::Rule {
-            pattern: Box::new(Expr::Integer(pos)),
-            replacement: Box::new(val.clone()),
-          },
-        ]
-        .into(),
-      });
+  // matcher -> (path components, rule index)
+  let mut matchers: Vec<(Vec<Comp>, usize)> = Vec::new();
+  for (ri, (lhs, _, _)) in rules.iter().enumerate() {
+    match lhs {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      {
+        // {{p1...}, {p2...}}: several paths for the same rule
+        for sub in items.iter() {
+          if let Expr::List(parts) = sub {
+            matchers.push((parts.iter().map(to_comp).collect(), ri));
+          }
+        }
+      }
+      Expr::List(items) if !items.is_empty() => {
+        matchers.push((items.iter().map(to_comp).collect(), ri));
+      }
+      other => matchers.push((vec![to_comp(other)], ri)),
     }
-  };
+  }
+  let max_depth = matchers.iter().map(|(m, _)| m.len()).max().unwrap_or(0);
 
-  if pos == 0 {
-    // Replace the head
-    let new_head = match val {
-      Expr::Identifier(s) => s.clone(),
-      Expr::FunctionCall { name, .. } => name.clone(),
-      _ => crate::syntax::expr_to_string(val),
+  // Walk the expression; at each child position try the matchers in rule
+  // order against the full path so far
+  fn walk(
+    expr: &Expr,
+    path: &mut Vec<(i128, i128)>, // (1-based index, level length)
+    matchers: &[(Vec<Comp>, usize)],
+    rules: &[(Expr, Expr, bool)],
+    max_depth: usize,
+  ) -> Result<Expr, InterpreterError> {
+    let (items, head): (&[Expr], Option<&str>) = match expr {
+      Expr::List(items) => (items.as_slice(), None),
+      Expr::FunctionCall { name, args } => {
+        (args.as_slice(), Some(name.as_str()))
+      }
+      _ => return Ok(expr.clone()),
     };
-    return Ok(Expr::FunctionCall {
-      name: new_head,
-      args: items.to_vec().into(),
-    });
+    let len = items.len() as i128;
+    // Position 0 at this level replaces the head
+    let mut new_head: Option<String> = None;
+    for (comps, ri) in matchers {
+      if comps.len() != path.len() + 1 {
+        continue;
+      }
+      let mut all_match = true;
+      for (comp, &(p_idx, p_len)) in comps.iter().zip(path.iter()) {
+        if let Comp::Index(n) = comp {
+          let norm = if *n >= 0 { *n } else { p_len + *n + 1 };
+          if norm != p_idx {
+            all_match = false;
+            break;
+          }
+        } else {
+          all_match = false; // patterns over head positions: unsupported
+          break;
+        }
+      }
+      if all_match
+        && matches!(comps.last(), Some(Comp::Index(0)))
+      {
+        let (_, rhs, _) = &rules[*ri];
+        let value = crate::evaluator::evaluate_expr_to_expr(rhs)?;
+        if let Expr::Identifier(h) = &value {
+          new_head = Some(h.clone());
+          break;
+        }
+      }
+    }
+    let len = len;
+    let mut out: Vec<Expr> = Vec::with_capacity(items.len());
+    'next_item: for (i0, item) in items.iter().enumerate() {
+      let idx = (i0 + 1) as i128;
+      path.push((idx, len));
+      // Try each matcher whose depth equals the current path length
+      for (comps, ri) in matchers {
+        if comps.len() != path.len() {
+          continue;
+        }
+        let mut bindings: Vec<(String, Expr)> = Vec::new();
+        let mut ok = true;
+        for (comp, &(p_idx, p_len)) in comps.iter().zip(path.iter()) {
+          match comp {
+            Comp::Index(n) => {
+              let norm = if *n >= 0 { *n } else { p_len + *n + 1 };
+              if norm != p_idx {
+                ok = false;
+                break;
+              }
+            }
+            Comp::Pattern(pat) => {
+              match crate::evaluator::pattern_matching::match_pattern(
+                &Expr::Integer(p_idx),
+                pat,
+              ) {
+                Some(bs) => {
+                  // Repeated pattern variables must bind consistently
+                  for (name, val) in bs {
+                    match bindings.iter().find(|(n, _)| *n == name) {
+                      Some((_, prev))
+                        if !crate::evaluator::pattern_matching::expr_equal(
+                          prev, &val,
+                        ) =>
+                      {
+                        ok = false;
+                        break;
+                      }
+                      Some(_) => {}
+                      None => bindings.push((name, val)),
+                    }
+                  }
+                  if !ok {
+                    break;
+                  }
+                }
+                None => {
+                  ok = false;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if ok {
+          let (_, rhs, _) = &rules[*ri];
+          let mut value = rhs.clone();
+          for (name, bound) in &bindings {
+            value = crate::syntax::substitute_variable(&value, name, bound);
+          }
+          let value = crate::evaluator::evaluate_expr_to_expr(&value)?;
+          out.push(value);
+          path.pop();
+          continue 'next_item;
+        }
+      }
+      // No rule applies here: recurse if deeper matchers exist
+      if path.len() < max_depth {
+        let replaced = walk(item, path, matchers, rules, max_depth)?;
+        out.push(replaced);
+      } else {
+        out.push(item.clone());
+      }
+      path.pop();
+    }
+    Ok(match (new_head, head) {
+      (Some(h), _) => Expr::FunctionCall {
+        name: h,
+        args: out.into(),
+      },
+      (None, Some(h)) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: out.into(),
+      },
+      (None, None) => Expr::List(out.into()),
+    })
   }
 
-  let len = items.len() as i128;
-  let idx = if pos > 0 && pos <= len {
-    (pos - 1) as usize
-  } else if pos < 0 && -pos <= len {
-    (len + pos) as usize
-  } else {
-    // Out-of-range position: silently return the original expression
-    // (matches wolframscript behavior).
+  if !matches!(expr, Expr::List(_) | Expr::FunctionCall { .. }) {
+    // Atomic subjects come back unchanged
     return Ok(expr.clone());
-  };
-
-  let mut result = items.to_vec();
-  result[idx] = val.clone();
-  match head_name {
-    Some(h) => Ok(Expr::FunctionCall {
-      name: h.to_string(),
-      args: result.into(),
-    }),
-    None => Ok(Expr::List(result.into())),
   }
+  walk(expr, &mut Vec::new(), &matchers, &rules, max_depth)
 }
 
-/// Replace at a deep multi-part position {i, j, ...}
-fn replace_at_deep_pos(
-  expr: &Expr,
-  positions: &[i128],
-  val: &Expr,
-) -> Result<Expr, InterpreterError> {
-  if positions.is_empty() {
-    return Ok(val.clone());
-  }
 
-  let pos = positions[0];
-  let (items, head_name) = match expr {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => return Ok(expr.clone()),
-  };
-
-  if pos == 0 {
-    // For position 0 at intermediate level, this doesn't make sense
-    return Ok(expr.clone());
-  }
-
-  let len = items.len() as i128;
-  let idx = if pos > 0 && pos <= len {
-    (pos - 1) as usize
-  } else if pos < 0 && -pos <= len {
-    (len + pos) as usize
-  } else {
-    return Ok(expr.clone());
-  };
-
-  let mut result = items.to_vec();
-  result[idx] = replace_at_deep_pos(&items[idx], &positions[1..], val)?;
-  match head_name {
-    Some(h) => Ok(Expr::FunctionCall {
-      name: h.to_string(),
-      args: result.into(),
-    }),
-    None => Ok(Expr::List(result.into())),
-  }
-}
-
-/// Delete[list, pos] - Delete an element at a position
 pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1600,7 +1630,8 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut positions: Vec<Vec<i128>> = Vec::new();
         for p in pos_list {
           if let Expr::List(inner) = p {
-            let raw: Vec<i128> = inner.iter().filter_map(expr_to_i128).collect();
+            let raw: Vec<i128> =
+              inner.iter().filter_map(expr_to_i128).collect();
             if raw.len() != inner.len() || raw.is_empty() {
               return Ok(Expr::FunctionCall {
                 name: "Delete".to_string(),
