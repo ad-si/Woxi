@@ -753,6 +753,18 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
   }
 }
 
+/// Parse a trailing max-count argument: a non-negative integer or
+/// `Infinity` (treated as no limit).
+fn parse_max_count(expr: &Expr) -> Result<Option<usize>, InterpreterError> {
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => Ok(None),
+    Expr::Integer(n) if *n >= 0 => Ok(Some(*n as usize)),
+    _ => Err(InterpreterError::EvaluationError(
+      "Cases: max-count must be a non-negative integer or Infinity".into(),
+    )),
+  }
+}
+
 /// Cases with level specification: Cases[list, pattern, levelspec]
 /// or Cases[list, pattern, levelspec, n] limiting the number of results.
 pub fn cases_with_level_ast(
@@ -878,142 +890,253 @@ fn collect_at_level_range(
 /// AST-based Position: find positions of elements matching a pattern,
 /// optionally restricted to a levelspec, and optionally limited to the
 /// first `n` matches in scan order.
-pub fn position_ast(
-  list: &Expr,
+/// Wolfram-style depth of an expression: atoms have depth 1, composites
+/// 1 + the maximum child depth (used for negative level specifications).
+fn position_depth(expr: &Expr) -> i64 {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  match expr {
+    Expr::Association(pairs) => {
+      1 + pairs
+        .iter()
+        .map(|(_, v)| position_depth(v))
+        .max()
+        .unwrap_or(0)
+    }
+    _ => match decompose_expr(expr) {
+      ExprForm::Atom(_) => 1,
+      ExprForm::Composite { children, .. } => {
+        1 + children.iter().map(position_depth).max().unwrap_or(0)
+      }
+    },
+  }
+}
+
+/// Does a part at positive level `len` whose subexpression has Wolfram
+/// depth `depth` fall within the level bounds? Negative bounds compare
+/// against the negative level -depth.
+fn position_level_match(len: usize, depth: i64, min: i64, max: i64) -> bool {
+  let l = len as i64;
+  let lower_ok = if min >= 0 { l >= min } else { depth <= -min };
+  let upper_ok = if max >= 0 { l <= max } else { depth >= -max };
+  lower_ok && upper_ok
+}
+
+/// Visit `expr` in Position's canonical order — head (when enabled),
+/// children left to right, then the expression itself — recording the
+/// paths of pattern matches. Returns false once the match limit is hit.
+#[allow(clippy::too_many_arguments)]
+fn position_visit(
+  expr: &Expr,
   pattern: &Expr,
-  level_spec: Option<&Expr>,
-  max_count: Option<&Expr>,
-) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    Expr::FunctionCall { args, .. } => args.as_slice(),
-    _ => {
-      let mut call_args = vec![list.clone(), pattern.clone()];
-      if let Some(ls) = level_spec {
-        call_args.push(ls.clone());
+  path: &mut Vec<Expr>,
+  out: &mut Vec<Expr>,
+  min: i64,
+  max: i64,
+  heads: bool,
+  limit: Option<usize>,
+) -> bool {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  let full = |out: &Vec<Expr>| limit.is_some_and(|n| out.len() >= n);
+
+  // Decompose into head + children; associations key their children.
+  enum Kids {
+    None,
+    Indexed(Vec<Expr>),
+    Keyed(Vec<(Expr, Expr)>),
+  }
+  let (head, kids): (Option<Expr>, Kids) = match expr {
+    Expr::Association(pairs) => (
+      Some(Expr::Identifier("Association".to_string())),
+      Kids::Keyed(pairs.clone()),
+    ),
+    Expr::CurriedCall { func, args } => {
+      (Some((**func).clone()), Kids::Indexed(args.clone()))
+    }
+    _ => match decompose_expr(expr) {
+      ExprForm::Atom(_) => (None, Kids::None),
+      ExprForm::Composite { head, children } => {
+        (Some(Expr::Identifier(head)), Kids::Indexed(children))
       }
-      if let Some(mc) = max_count {
-        call_args.push(mc.clone());
+    },
+  };
+
+  if heads && let Some(h) = &head {
+    path.push(Expr::Integer(0));
+    let go = position_visit(h, pattern, path, out, min, max, heads, limit);
+    path.pop();
+    if !go {
+      return false;
+    }
+  }
+
+  match kids {
+    Kids::None => {}
+    Kids::Indexed(children) => {
+      for (i, child) in children.iter().enumerate() {
+        path.push(Expr::Integer((i + 1) as i128));
+        let go =
+          position_visit(child, pattern, path, out, min, max, heads, limit);
+        path.pop();
+        if !go {
+          return false;
+        }
       }
-      return Ok(Expr::FunctionCall {
-        name: "Position".to_string(),
-        args: call_args.into(),
-      });
+    }
+    Kids::Keyed(pairs) => {
+      for (key, value) in &pairs {
+        path.push(Expr::FunctionCall {
+          name: "Key".to_string(),
+          args: vec![key.clone()].into(),
+        });
+        let go =
+          position_visit(value, pattern, path, out, min, max, heads, limit);
+        path.pop();
+        if !go {
+          return false;
+        }
+      }
+    }
+  }
+
+  if position_level_match(path.len(), position_depth(expr), min, max)
+    && matches_pattern_ast(expr, pattern)
+  {
+    out.push(Expr::List(path.clone().into()));
+    if full(out) {
+      return false;
+    }
+  }
+  true
+}
+
+/// Unified Position covering the full argument space:
+/// - `Position[expr, pattern]` — all levels including the head ({0}) and
+///   the whole expression ({}); Heads -> True is the default
+/// - `Position[expr, pattern, levelspec]` — n, {n}, {m, n}, negative
+///   levels counted from the leaves
+/// - `Position[expr, pattern, levelspec, n]` — at most n positions
+/// - a trailing `Heads -> …` option in any form
+///
+/// Invalid level specs emit `::level`, invalid counts `::innf`; both
+/// return the call unevaluated.
+pub fn position_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "Position".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  // Strip a trailing Heads -> … option (default is Heads -> True).
+  let heads_setting = |e: &Expr| -> Option<bool> {
+    let (lhs, rhs) = match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    if matches!(lhs, Expr::Identifier(s) if s == "Heads") {
+      Some(matches!(rhs, Expr::Identifier(v) if v == "True"))
+    } else {
+      None
+    }
+  };
+  let mut heads = true;
+  let mut positional: &[Expr] = args;
+  if let Some(last) = positional.last()
+    && let Some(h) = heads_setting(last)
+  {
+    heads = h;
+    positional = &positional[..positional.len() - 1];
+  }
+  if positional.len() < 2 || positional.len() > 4 {
+    return Ok(original());
+  }
+  let subject = &positional[0];
+  let pattern = &positional[1];
+
+  let strict_int = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => i64::try_from(*n).ok(),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i64()
+      }
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+  let bound = |e: &Expr| -> Option<i64> {
+    if is_infinity(e) {
+      Some(i64::MAX)
+    } else {
+      strict_int(e)
     }
   };
 
-  // Parse levelspec. Default is {1, Infinity} — any depth below the root.
-  let (min_level, max_level) = match level_spec {
-    Some(spec) => parse_level_spec(spec)?,
-    None => (1, i64::MAX),
+  let (min_level, max_level): (i64, i64) = match positional.get(2) {
+    None => (0, i64::MAX),
+    Some(spec) => {
+      let parsed = match spec {
+        Expr::List(items) if items.len() == 1 => {
+          bound(&items[0]).map(|n| (n, n))
+        }
+        Expr::List(items) if items.len() == 2 => {
+          match (bound(&items[0]), bound(&items[1])) {
+            (Some(m), Some(n)) => Some((m, n)),
+            _ => None,
+          }
+        }
+        other => bound(other).map(|n| (1, n)),
+      };
+      match parsed {
+        Some(b) => b,
+        None => {
+          crate::emit_message(&format!(
+            "Position::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+            show(spec)
+          ));
+          return Ok(original());
+        }
+      }
+    }
   };
 
-  // Parse the max-count argument. None means "no limit".
-  let limit = match max_count {
-    Some(expr) => parse_max_count(expr)?,
+  let limit: Option<usize> = match positional.get(3) {
     None => None,
+    Some(e) if is_infinity(e) => None,
+    Some(e) => match strict_int(e) {
+      Some(n) if n >= 0 => Some(n as usize),
+      _ => {
+        crate::emit_message(&format!(
+          "Position::innf: Non-negative integer or Infinity expected at position 4 in {}.",
+          show(&original())
+        ));
+        return Ok(original());
+      }
+    },
   };
-
-  // A limit of 0 short-circuits to the empty result.
   if limit == Some(0) {
     return Ok(Expr::List(Vec::new().into()));
   }
 
-  let mut positions = Vec::new();
-  let mut path = Vec::new();
-  position_recursive(
-    items,
-    pattern,
-    &mut path,
-    &mut positions,
-    1,
-    min_level,
-    max_level,
-    limit,
+  let mut out: Vec<Expr> = Vec::new();
+  let mut path: Vec<Expr> = Vec::new();
+  position_visit(
+    subject, pattern, &mut path, &mut out, min_level, max_level, heads, limit,
   );
-
-  Ok(Expr::List(positions.into()))
-}
-
-/// Parse the `n` argument of Position[expr, pat, levelspec, n].
-/// `n` may be a non-negative integer or `Infinity` (treated as no limit).
-fn parse_max_count(expr: &Expr) -> Result<Option<usize>, InterpreterError> {
-  match expr {
-    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => Ok(None),
-    Expr::Integer(n) if *n >= 0 => Ok(Some(*n as usize)),
-    _ => Err(InterpreterError::EvaluationError(
-      "Position: max-count must be a non-negative integer or Infinity".into(),
-    )),
-  }
-}
-
-/// Recursively find positions of elements matching pattern, filtering by
-/// the current depth against the levelspec. `depth` is the Mathematica
-/// level of the items in `items` (the children of the current expression).
-/// If `limit` is `Some(n)`, scanning stops once `n` positions have been
-/// recorded.
-fn position_recursive(
-  items: &[Expr],
-  pattern: &Expr,
-  path: &mut Vec<i128>,
-  positions: &mut Vec<Expr>,
-  depth: i64,
-  min_level: i64,
-  max_level: i64,
-  limit: Option<usize>,
-) {
-  for (i, item) in items.iter().enumerate() {
-    if let Some(n) = limit
-      && positions.len() >= n
-    {
-      return;
-    }
-    let idx = (i + 1) as i128;
-    path.push(idx);
-
-    // Check if this item matches and is within the requested depth range.
-    if depth >= min_level
-      && depth <= max_level
-      && matches_pattern_ast(item, pattern)
-    {
-      positions
-        .push(Expr::List(path.iter().map(|p| Expr::Integer(*p)).collect()));
-    }
-
-    // Recurse into sublists and function calls only if there might still
-    // be matches at a deeper level.
-    if depth < max_level && limit.is_none_or(|n| positions.len() < n) {
-      match item {
-        Expr::List(sub_items) => {
-          position_recursive(
-            sub_items,
-            pattern,
-            path,
-            positions,
-            depth + 1,
-            min_level,
-            max_level,
-            limit,
-          );
-        }
-        Expr::FunctionCall { args, .. } => {
-          position_recursive(
-            args,
-            pattern,
-            path,
-            positions,
-            depth + 1,
-            min_level,
-            max_level,
-            limit,
-          );
-        }
-        _ => {}
-      }
-    }
-
-    path.pop();
-  }
+  Ok(Expr::List(out.into()))
 }
 
 /// FirstPosition[list, pattern] - finds the position of the first element matching pattern

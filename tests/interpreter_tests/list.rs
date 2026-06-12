@@ -11500,3 +11500,133 @@ mod flatten_specs_and_messages {
     );
   }
 }
+
+mod position_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn heads_and_root_included_by_default() {
+    // Regression: Position[f[a, b], _] returned only {{1}, {2}};
+    // Heads -> True is the default and the root {} is included
+    assert_eq!(
+      interpret("Position[f[a, b], _]").unwrap(),
+      "{{0}, {1}, {2}, {}}"
+    );
+    assert_eq!(
+      interpret("Position[{{a}}, _]").unwrap(),
+      "{{0}, {1, 0}, {1, 1}, {1}, {}}"
+    );
+    assert_eq!(
+      interpret("Position[f[a, b], _, Heads -> False]").unwrap(),
+      "{{1}, {2}, {}}"
+    );
+    // Heads of nested subexpressions match symbol patterns
+    assert_eq!(
+      interpret("Position[f[a, f[b]], f, Heads -> True]").unwrap(),
+      "{{0}, {2, 0}}"
+    );
+    // Curried heads are reachable through position 0 of position 0
+    assert_eq!(
+      interpret("Position[h[a, b][c, h[d]], h, Heads -> True]").unwrap(),
+      "{{0, 0}, {2, 0}}"
+    );
+  }
+
+  #[test]
+  fn deep_default_level_finds_all_matches() {
+    // Regression: the depth-4 match inside a + (1 + x^2)^2 was missed
+    assert_eq!(
+      interpret("Position[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^_]").unwrap(),
+      "{{1, 2}, {3}, {4, 2, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn atomic_subjects() {
+    // Regression: Position[x, x] stayed unevaluated
+    assert_eq!(interpret("Position[x, x]").unwrap(), "{{}}");
+    assert_eq!(interpret("Position[x, y]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn negative_and_zero_levels() {
+    // Regression: negative level specs returned {}
+    assert_eq!(
+      interpret("Position[{a, b, c}, _, -1]").unwrap(),
+      "{{0}, {1}, {2}, {3}}"
+    );
+    assert_eq!(
+      interpret("Position[{{a}, b}, _, {-1}]").unwrap(),
+      "{{0}, {1, 0}, {1, 1}, {2}}"
+    );
+    assert_eq!(interpret("Position[{{a}, b}, _, {-2}]").unwrap(), "{{1}}");
+    assert_eq!(interpret("Position[{a, b}, _, {0}]").unwrap(), "{{}}");
+    assert_eq!(interpret("Position[{a, b, a}, a, 0]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn association_positions_use_keys() {
+    // Regression: associations stayed unevaluated
+    assert_eq!(
+      interpret(
+        "Position[<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 3, \"d\" -> 4|>, _Integer?PrimeQ]"
+      )
+      .unwrap(),
+      "{{Key[b]}, {Key[c]}}"
+    );
+    assert_eq!(
+      interpret("Position[<|a -> {1, 2}|>, 2]").unwrap(),
+      "{{Key[a], 2}}"
+    );
+    assert_eq!(
+      interpret("Position[<|a -> 1, b -> 2|>, _, Heads -> True]").unwrap(),
+      "{{0}, {Key[a]}, {Key[b]}, {}}"
+    );
+  }
+
+  #[test]
+  fn max_count_follows_traversal_order() {
+    assert_eq!(
+      interpret("Position[f[a, b], _, {0, Infinity}, 2]").unwrap(),
+      "{{0}, {1}}"
+    );
+    assert_eq!(interpret("Position[{a, b, a}, a, {1}, 0]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Position[{a, b, a}, a, {1}, 2, Heads -> False]").unwrap(),
+      "{{1}, {3}}"
+    );
+  }
+
+  #[test]
+  fn invalid_level_emits_level_message() {
+    // Regression: invalid specs raised a hard evaluation error
+    assert_eq!(
+      interpret("Position[{a, b, a}, a, x]").unwrap(),
+      "Position[{a, b, a}, a, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Position::level: Level specification x is not of the form n, {n} or {m, n}."
+      )),
+      "expected level message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn invalid_count_emits_innf() {
+    assert_eq!(
+      interpret("Position[{a, b, a}, a, {1}, -1]").unwrap(),
+      "Position[{a, b, a}, a, {1}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Position::innf: Non-negative integer or Infinity expected at position 4 in Position[{a, b, a}, a, {1}, -1]."
+      )),
+      "expected innf message, got {:?}",
+      msgs
+    );
+  }
+}
