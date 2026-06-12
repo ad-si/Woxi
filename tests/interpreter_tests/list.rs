@@ -11630,3 +11630,118 @@ mod position_specs_and_messages {
     );
   }
 }
+
+mod cases_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn negative_levels() {
+    // Regression: negative level specs returned {}
+    assert_eq!(
+      interpret("Cases[{1, {2, {3}}}, _Integer, {-1}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Cases[{1, {2, {3}}}, _Integer, {-2, -1}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn canonical_emission_order() {
+    // Regression: the root was emitted before its children
+    assert_eq!(
+      interpret("Cases[{1, 2, 3}, _, {0, Infinity}]").unwrap(),
+      "{1, 2, 3, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("Cases[{a, {b}}, _, {0, Infinity}]").unwrap(),
+      "{a, b, {b}, {a, {b}}}"
+    );
+  }
+
+  #[test]
+  fn atomic_subjects_give_empty_list() {
+    // Regression: atoms stayed unevaluated
+    assert_eq!(interpret("Cases[x, x]").unwrap(), "{}");
+    assert_eq!(interpret("Cases[x, _]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn associations_search_values() {
+    // Regression: associations stayed unevaluated
+    assert_eq!(
+      interpret("Cases[<|a -> 1, b -> 2, c -> x|>, _Integer]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Cases[<|a -> {1, 2}|>, _Integer, {2}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn heads_option_after_level_spec() {
+    // Regression: a Heads option in the 4th slot raised a hard error
+    assert_eq!(
+      interpret("Cases[f[a, b], _Symbol, {1}, Heads -> True]").unwrap(),
+      "{f, a, b}"
+    );
+    assert_eq!(
+      interpret("Cases[f[a, b], _, {0, Infinity}, Heads -> True]").unwrap(),
+      "{f, a, b, f[a, b]}"
+    );
+    // Curried heads appear at level 1
+    assert_eq!(
+      interpret("Cases[f[a][b], _, {1}, Heads -> True]").unwrap(),
+      "{f[a], b}"
+    );
+  }
+
+  #[test]
+  fn invalid_specs_emit_messages() {
+    // Regression: invalid level/count raised hard errors
+    assert_eq!(
+      interpret("Cases[{1, 2, 3}, _, x]").unwrap(),
+      "Cases[{1, 2, 3}, _, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Cases::level: Level specification x is not of the form n, {n} or {m, n}."
+      )),
+      "expected level message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Cases[{1, 2, 3}, _, {1}, -1]").unwrap(),
+      "Cases[{1, 2, 3}, _, {1}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Cases::innf: Non-negative integer or Infinity expected at position 4 in Cases[{1, 2, 3}, _, {1}, -1]."
+      )),
+      "expected innf message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn rule_expressions_match_structurally() {
+    // Regression: Rule subjects never matched Rule patterns
+    assert_eq!(
+      interpret("Cases[{a -> b, c -> d}, HoldPattern[_ -> _]]").unwrap(),
+      "{a -> b, c -> d}"
+    );
+    assert_eq!(
+      interpret("Cases[{a -> 1, b -> 2}, HoldPattern[k_ -> v_] :> v]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(interpret("MatchQ[a -> b, _Rule]").unwrap(), "True");
+    assert_eq!(
+      interpret("MatchQ[a :> b, HoldPattern[_ :> _]]").unwrap(),
+      "True"
+    );
+  }
+}

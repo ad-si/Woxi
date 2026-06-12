@@ -166,89 +166,6 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }))
 }
 
-/// AST-based Cases: select elements matching a pattern.
-pub fn cases_ast(
-  list: &Expr,
-  pattern: &Expr,
-) -> Result<Expr, InterpreterError> {
-  cases_impl(list, pattern, false)
-}
-
-/// Cases with the `Heads -> True` option. The head of the expression is
-/// treated as an additional level-1 candidate for matching.
-pub fn cases_heads_ast(
-  list: &Expr,
-  pattern: &Expr,
-) -> Result<Expr, InterpreterError> {
-  cases_impl(list, pattern, true)
-}
-
-fn cases_impl(
-  list: &Expr,
-  pattern: &Expr,
-  include_head: bool,
-) -> Result<Expr, InterpreterError> {
-  // Build the list of level-1 candidates. With `Heads -> True`, the head
-  // symbol is prepended.
-  let (items, head_candidate): (&[Expr], Option<Expr>) = match list {
-    Expr::List(items) => (
-      items.as_slice(),
-      if include_head {
-        Some(Expr::Identifier("List".to_string()))
-      } else {
-        None
-      },
-    ),
-    Expr::FunctionCall { name, args } => (
-      args.as_slice(),
-      if include_head {
-        Some(Expr::Identifier(name.clone()))
-      } else {
-        None
-      },
-    ),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Cases".to_string(),
-        args: vec![list.clone(), pattern.clone()].into(),
-      });
-    }
-  };
-
-  // Check if pattern is a Rule or RuleDelayed: lhs -> rhs or lhs :> rhs
-  let (match_pat, replacement) = extract_rule_parts(pattern);
-
-  let mut kept = Vec::new();
-
-  let try_match = |item: &Expr,
-                   kept: &mut Vec<Expr>|
-   -> Result<(), InterpreterError> {
-    if let Some(repl) = replacement {
-      if let Some(bindings) =
-        crate::evaluator::pattern_matching::match_pattern(item, match_pat)
-      {
-        let result =
-          crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
-        kept.push(result);
-      }
-    } else if crate::evaluator::pattern_matching::match_pattern(item, pattern)
-      .is_some()
-    {
-      kept.push(item.clone());
-    }
-    Ok(())
-  };
-
-  if let Some(head) = &head_candidate {
-    try_match(head, &mut kept)?;
-  }
-  for item in items {
-    try_match(item, &mut kept)?;
-  }
-
-  Ok(Expr::List(kept.into()))
-}
-
 /// Extract pattern and optional replacement from a Rule or RuleDelayed expression.
 /// Returns (pattern, Some(replacement)) for rules, or (original, None) for plain patterns.
 fn extract_rule_parts(expr: &Expr) -> (&Expr, Option<&Expr>) {
@@ -753,140 +670,6 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
   }
 }
 
-/// Parse a trailing max-count argument: a non-negative integer or
-/// `Infinity` (treated as no limit).
-fn parse_max_count(expr: &Expr) -> Result<Option<usize>, InterpreterError> {
-  match expr {
-    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => Ok(None),
-    Expr::Integer(n) if *n >= 0 => Ok(Some(*n as usize)),
-    _ => Err(InterpreterError::EvaluationError(
-      "Cases: max-count must be a non-negative integer or Infinity".into(),
-    )),
-  }
-}
-
-/// Cases with level specification: Cases[list, pattern, levelspec]
-/// or Cases[list, pattern, levelspec, n] limiting the number of results.
-pub fn cases_with_level_ast(
-  list: &Expr,
-  pattern: &Expr,
-  level_spec: &Expr,
-  max_count: Option<&Expr>,
-) -> Result<Expr, InterpreterError> {
-  let (min_level, max_level) = parse_level_spec(level_spec)?;
-
-  // Parse the optional max-count argument. None means "no limit".
-  let limit = match max_count {
-    Some(expr) => parse_max_count(expr)?,
-    None => None,
-  };
-
-  // n = 0 short-circuits to the empty list.
-  if limit == Some(0) {
-    return Ok(Expr::List(Vec::new().into()));
-  }
-
-  // Honor Rule / RuleDelayed patterns by extracting the LHS pattern and an
-  // optional RHS to substitute into when a match is found.
-  let (match_pat, replacement) = extract_rule_parts(pattern);
-
-  let mut results = Vec::new();
-  collect_at_level_range(
-    list,
-    match_pat,
-    replacement,
-    0,
-    min_level as usize,
-    max_level as usize,
-    limit,
-    &mut results,
-  )?;
-  Ok(Expr::List(results.into()))
-}
-
-/// Recursively collect elements matching pattern within a level range,
-/// optionally applying a Rule replacement and stopping once `limit` matches
-/// have been recorded.
-fn collect_at_level_range(
-  expr: &Expr,
-  pattern: &Expr,
-  replacement: Option<&Expr>,
-  current_level: usize,
-  min_level: usize,
-  max_level: usize,
-  limit: Option<usize>,
-  results: &mut Vec<Expr>,
-) -> Result<(), InterpreterError> {
-  if let Some(n) = limit
-    && results.len() >= n
-  {
-    return Ok(());
-  }
-
-  if current_level >= min_level && current_level <= max_level {
-    if let Some(repl) = replacement {
-      if let Some(bindings) =
-        crate::evaluator::pattern_matching::match_pattern(expr, pattern)
-      {
-        let result =
-          crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
-        results.push(result);
-      }
-    } else if matches_pattern_ast(expr, pattern) {
-      results.push(expr.clone());
-    }
-  }
-
-  if current_level >= max_level {
-    return Ok(());
-  }
-
-  // Recurse into sublists/subexpressions
-  match expr {
-    Expr::List(items) => {
-      for item in items {
-        if let Some(n) = limit
-          && results.len() >= n
-        {
-          break;
-        }
-        collect_at_level_range(
-          item,
-          pattern,
-          replacement,
-          current_level + 1,
-          min_level,
-          max_level,
-          limit,
-          results,
-        )?;
-      }
-    }
-    Expr::FunctionCall { args, .. } => {
-      for arg in args {
-        if let Some(n) = limit
-          && results.len() >= n
-        {
-          break;
-        }
-        collect_at_level_range(
-          arg,
-          pattern,
-          replacement,
-          current_level + 1,
-          min_level,
-          max_level,
-          limit,
-          results,
-        )?;
-      }
-    }
-    _ => {}
-  }
-
-  Ok(())
-}
-
 /// AST-based Position: find positions of elements matching a pattern,
 /// optionally restricted to a levelspec, and optionally limited to the
 /// first `n` matches in scan order.
@@ -1007,6 +790,229 @@ fn position_visit(
     }
   }
   true
+}
+
+/// Visit `expr` in canonical order — head (when enabled), children left
+/// to right, then the expression itself — collecting matched values (or
+/// rule right-hand sides) at the requested levels. Returns false once
+/// the match limit is hit.
+#[allow(clippy::too_many_arguments)]
+fn cases_visit(
+  expr: &Expr,
+  match_pat: &Expr,
+  replacement: Option<&Expr>,
+  level: usize,
+  out: &mut Vec<Expr>,
+  min: i64,
+  max: i64,
+  heads: bool,
+  limit: Option<usize>,
+) -> Result<bool, InterpreterError> {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+
+  let (head, kids): (Option<Expr>, Vec<Expr>) = match expr {
+    Expr::Association(pairs) => (
+      Some(Expr::Identifier("Association".to_string())),
+      pairs.iter().map(|(_, v)| v.clone()).collect(),
+    ),
+    Expr::CurriedCall { func, args } => (Some((**func).clone()), args.clone()),
+    _ => match decompose_expr(expr) {
+      ExprForm::Atom(_) => (None, Vec::new()),
+      ExprForm::Composite { head, children } => {
+        (Some(Expr::Identifier(head)), children)
+      }
+    },
+  };
+
+  if heads && let Some(h) = &head {
+    let go = cases_visit(
+      h,
+      match_pat,
+      replacement,
+      level + 1,
+      out,
+      min,
+      max,
+      heads,
+      limit,
+    )?;
+    if !go {
+      return Ok(false);
+    }
+  }
+  for child in &kids {
+    let go = cases_visit(
+      child,
+      match_pat,
+      replacement,
+      level + 1,
+      out,
+      min,
+      max,
+      heads,
+      limit,
+    )?;
+    if !go {
+      return Ok(false);
+    }
+  }
+
+  if position_level_match(level, position_depth(expr), min, max)
+    && let Some(bindings) =
+      crate::evaluator::pattern_matching::match_pattern(expr, match_pat)
+  {
+    match replacement {
+      Some(repl) => out.push(
+        crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?,
+      ),
+      None => out.push(expr.clone()),
+    }
+    if limit.is_some_and(|n| out.len() >= n) {
+      return Ok(false);
+    }
+  }
+  Ok(true)
+}
+
+/// Unified Cases covering the full argument space:
+/// - `Cases[expr, pattern]` — level-1 parts matching the pattern
+/// - `Cases[expr, pattern :> rhs]` — transformed matches
+/// - `Cases[expr, pattern, levelspec]` — n, {n}, {m, n}, negative levels
+/// - `Cases[expr, pattern, levelspec, n]` — at most n matches
+/// - a trailing `Heads -> …` option (default Heads -> False)
+///
+/// Matches are emitted in canonical order (children before the
+/// enclosing expression). Invalid level specs emit `::level`, invalid
+/// counts `::innf`; both return the call unevaluated.
+pub fn cases_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "Cases".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  // Strip a trailing Heads -> … option. Cases defaults to Heads -> False.
+  let heads_setting = |e: &Expr| -> Option<bool> {
+    let (lhs, rhs) = match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    if matches!(lhs, Expr::Identifier(s) if s == "Heads") {
+      Some(matches!(rhs, Expr::Identifier(v) if v == "True"))
+    } else {
+      None
+    }
+  };
+  let mut heads = false;
+  let mut positional: &[Expr] = args;
+  // The pattern argument itself may be a rule, so only strip an option
+  // from positions 3 and beyond.
+  if positional.len() > 2
+    && let Some(last) = positional.last()
+    && let Some(h) = heads_setting(last)
+  {
+    heads = h;
+    positional = &positional[..positional.len() - 1];
+  }
+  if positional.len() < 2 || positional.len() > 4 {
+    return Ok(original());
+  }
+  let subject = &positional[0];
+  let pattern = &positional[1];
+  let (match_pat, replacement) = extract_rule_parts(pattern);
+
+  let strict_int = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => i64::try_from(*n).ok(),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i64()
+      }
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+  let bound = |e: &Expr| -> Option<i64> {
+    if is_infinity(e) {
+      Some(i64::MAX)
+    } else {
+      strict_int(e)
+    }
+  };
+
+  let (min_level, max_level): (i64, i64) = match positional.get(2) {
+    None => (1, 1),
+    Some(spec) => {
+      let parsed = match spec {
+        Expr::List(items) if items.len() == 1 => {
+          bound(&items[0]).map(|n| (n, n))
+        }
+        Expr::List(items) if items.len() == 2 => {
+          match (bound(&items[0]), bound(&items[1])) {
+            (Some(m), Some(n)) => Some((m, n)),
+            _ => None,
+          }
+        }
+        other => bound(other).map(|n| (1, n)),
+      };
+      match parsed {
+        Some(b) => b,
+        None => {
+          crate::emit_message(&format!(
+            "Cases::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+            show(spec)
+          ));
+          return Ok(original());
+        }
+      }
+    }
+  };
+
+  let limit: Option<usize> = match positional.get(3) {
+    None => None,
+    Some(e) if is_infinity(e) => None,
+    Some(e) => match strict_int(e) {
+      Some(n) if n >= 0 => Some(n as usize),
+      _ => {
+        crate::emit_message(&format!(
+          "Cases::innf: Non-negative integer or Infinity expected at position 4 in {}.",
+          show(&original())
+        ));
+        return Ok(original());
+      }
+    },
+  };
+  if limit == Some(0) {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+
+  let mut out: Vec<Expr> = Vec::new();
+  cases_visit(
+    subject,
+    match_pat,
+    replacement,
+    0,
+    &mut out,
+    min_level,
+    max_level,
+    heads,
+    limit,
+  )?;
+  Ok(Expr::List(out.into()))
 }
 
 /// Unified Position covering the full argument space:

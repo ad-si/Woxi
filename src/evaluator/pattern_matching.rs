@@ -2821,6 +2821,37 @@ fn match_pattern_impl(
   {
     return match_pattern_impl(expr, &args[0]);
   }
+  // Rule/RuleDelayed have dedicated AST variants; canonicalize both sides
+  // to FunctionCall form so structural patterns like `_ -> _` match rule
+  // expressions.
+  let rule_to_call = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some(Expr::FunctionCall {
+        name: "Rule".to_string(),
+        args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+      }),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Some(Expr::FunctionCall {
+        name: "RuleDelayed".to_string(),
+        args: vec![(**pattern).clone(), (**replacement).clone()].into(),
+      }),
+      _ => None,
+    }
+  };
+  if let Some(p) = rule_to_call(pattern) {
+    let canon_expr = rule_to_call(expr);
+    return match_pattern_impl(canon_expr.as_ref().unwrap_or(expr), &p);
+  }
+  if matches!(pattern, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed")
+    && let Some(canon_expr) = rule_to_call(expr)
+  {
+    return match_pattern_impl(&canon_expr, pattern);
+  }
   match pattern {
     Expr::Pattern { name, head, .. } => {
       // Check head constraint if present

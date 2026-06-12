@@ -674,40 +674,8 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], max_iter,
       ));
     }
-    "Cases" if args.len() == 2 => {
-      return Some(list_helpers_ast::cases_ast(&args[0], &args[1]));
-    }
-    "Cases" if args.len() == 3 => {
-      // Cases accepts trailing options like Heads -> True. If the 3rd arg is
-      // a Rule, treat it as an option and fall through to the 2-arg path
-      // with a default levelspec of {1}.
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      }
-      | Expr::RuleDelayed {
-        pattern,
-        replacement,
-      } = &args[2]
-      {
-        let heads_on = matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Heads")
-          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True");
-        if heads_on {
-          return Some(list_helpers_ast::cases_heads_ast(&args[0], &args[1]));
-        }
-        return Some(list_helpers_ast::cases_ast(&args[0], &args[1]));
-      }
-      return Some(list_helpers_ast::cases_with_level_ast(
-        &args[0], &args[1], &args[2], None,
-      ));
-    }
-    "Cases" if args.len() == 4 => {
-      return Some(list_helpers_ast::cases_with_level_ast(
-        &args[0],
-        &args[1],
-        &args[2],
-        Some(&args[3]),
-      ));
+    "Cases" if args.len() >= 2 && args.len() <= 5 => {
+      return Some(list_helpers_ast::cases_unified_ast(args));
     }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
     // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
