@@ -5016,3 +5016,103 @@ mod set_precision {
     );
   }
 }
+
+mod number_digit_extended {
+  use super::*;
+
+  #[test]
+  fn exact_rationals_and_constants() {
+    // Previously unevaluated: rationals and symbolic numeric constants
+    assert_eq!(interpret("NumberDigit[5/7, -2]").unwrap(), "1");
+    assert_eq!(interpret("NumberDigit[1/3, -10]").unwrap(), "3");
+    assert_eq!(interpret("NumberDigit[1/7, -7]").unwrap(), "1");
+    assert_eq!(interpret("NumberDigit[-5/7, -1]").unwrap(), "7");
+    assert_eq!(interpret("NumberDigit[Pi, -3]").unwrap(), "1");
+    assert_eq!(interpret("NumberDigit[Pi, 0]").unwrap(), "3");
+    assert_eq!(interpret("NumberDigit[E, -4]").unwrap(), "2");
+    assert_eq!(interpret("NumberDigit[Sqrt[2], -5]").unwrap(), "1");
+    // Deep digits via arbitrary precision
+    assert_eq!(interpret("NumberDigit[Pi, -50]").unwrap(), "0");
+  }
+
+  #[test]
+  fn base_form() {
+    assert_eq!(interpret("NumberDigit[255, 1, 16]").unwrap(), "15");
+    assert_eq!(interpret("NumberDigit[255, 0, 16]").unwrap(), "15");
+    assert_eq!(interpret("NumberDigit[10, 2, 2]").unwrap(), "0");
+    assert_eq!(interpret("NumberDigit[2^200, 60, 2]").unwrap(), "0");
+    assert_eq!(
+      interpret("NumberDigit[100, 1, 1]").unwrap(),
+      "NumberDigit[100, 1, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "NumberDigit::rbase: Base 1 is not a real number greater than 1."
+      )),
+      "expected rbase message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn list_positions() {
+    assert_eq!(
+      interpret("NumberDigit[123.456, {2, 1, 0, -1}]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("NumberDigit[2/3, {-1, -2, -3}]").unwrap(),
+      "{6, 6, 6}"
+    );
+  }
+
+  #[test]
+  fn machine_precision_indeterminate() {
+    // Digits finer than one ulp of the machine real are Indeterminate
+    assert_eq!(interpret("NumberDigit[123.456, -13]").unwrap(), "0");
+    assert_eq!(
+      interpret("NumberDigit[123.456, -14]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("NumberDigit[0.1, -17]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("NumberDigit[1000000.0, -10]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(interpret("NumberDigit[1000000.0, -9]").unwrap(), "0");
+  }
+
+  #[test]
+  fn messages() {
+    // Non-integer position: badspec (previously a hard error)
+    assert_eq!(
+      interpret("NumberDigit[123.456, 1.5]").unwrap(),
+      "NumberDigit[123.456, 1.5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "NumberDigit::badspec: Argument 1.5 at position 2 should be an integer or a list of integers."
+      )),
+      "expected badspec message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("NumberDigit[x, 1]").unwrap(),
+      "NumberDigit[x, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("NumberDigit::num: Argument x should be a number.")),
+      "expected num message, got {:?}",
+      msgs
+    );
+  }
+}

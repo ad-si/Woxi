@@ -568,9 +568,9 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
     "GroupMultiplicationTable" if args.len() == 1 => {
-      return Some(
-        crate::functions::math_ast::group_multiplication_table_ast(args),
-      );
+      return Some(crate::functions::math_ast::group_multiplication_table_ast(
+        args,
+      ));
     }
     "GroupStabilizer" if args.len() == 2 => {
       return Some(crate::functions::math_ast::group_stabilizer_ast(args));
@@ -1780,7 +1780,7 @@ pub fn dispatch_math_functions(
     "NumberDecompose" if args.len() == 2 => {
       return Some(crate::functions::math_ast::number_decompose_ast(args));
     }
-    "NumberDigit" if args.len() == 2 => {
+    "NumberDigit" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::number_digit_ast(args));
     }
     "RealDigits" if !args.is_empty() && args.len() <= 4 => {

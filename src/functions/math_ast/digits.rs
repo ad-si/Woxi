@@ -2680,40 +2680,267 @@ fn gcd_convergents(a: i128, b: i128) -> i128 {
 /// Position 0 is the ones digit, positive n goes left (tens, hundreds, ...),
 /// negative n goes right (tenths, hundredths, ...).
 pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "NumberDigit expects exactly 2 arguments".into(),
-    ));
+  use num_bigint::BigUint;
+  use num_traits::{One, ToPrimitive};
+  let unevaluated = || Expr::FunctionCall {
+    name: "NumberDigit".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 && args.len() != 3 {
+    return Ok(unevaluated());
+  }
+  // Base (default 10); integers below 2 emit ::rbase
+  let base: u32 = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(b) if *b >= 2 && *b <= 1_000_000 => *b as u32,
+      Expr::Integer(b) => {
+        crate::emit_message(&format!(
+          "NumberDigit::rbase: Base {b} is not a real number greater than 1."
+        ));
+        return Ok(unevaluated());
+      }
+      _ => return Ok(unevaluated()),
+    }
+  } else {
+    10
+  };
+  // Position: an integer or a list of integers
+  let positions: Vec<i128> = match &args[1] {
+    Expr::Integer(k) => vec![*k],
+    Expr::List(items)
+      if items.iter().all(|i| matches!(i, Expr::Integer(_))) =>
+    {
+      items
+        .iter()
+        .map(|i| match i {
+          Expr::Integer(k) => *k,
+          _ => unreachable!(),
+        })
+        .collect()
+    }
+    other => {
+      crate::emit_message(&format!(
+        "NumberDigit::badspec: Argument {} at position 2 should be an integer or a list of integers.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  if positions.iter().any(|k| k.unsigned_abs() > 10_000) {
+    return Ok(unevaluated());
   }
 
-  let val = match &args[0] {
-    Expr::Integer(n) => *n as f64,
-    Expr::Real(f) => *f,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NumberDigit".to_string(),
-        args: args.to_vec().into(),
-      });
+  // Digit of the exact non-negative rational p/q at base^k:
+  // floor(p * base^max(0,-k) / (q * base^max(0,k))) mod base
+  let exact_digit = |p: &BigUint, q: &BigUint, k: i128| -> i128 {
+    let bb = BigUint::from(base);
+    let (num, den) = if k >= 0 {
+      (p.clone(), q * bb.pow(k as u32))
+    } else {
+      (p * bb.pow((-k) as u32), q.clone())
+    };
+    ((num / den) % bb).to_i128().unwrap_or(0)
+  };
+
+  enum Value {
+    Exact(BigUint, BigUint),
+    // Machine real: exact binary rational plus the ulp exponent (digits
+    // finer than one ulp are Indeterminate, matching wolframscript)
+    Machine(BigUint, BigUint, i64),
+    // Machine real in base 10: shortest round-trip decimal digits, the
+    // exponent of the leading digit, and the ulp exponent
+    Shortest(Vec<u8>, i64, i64),
+    Zero,
+    // Pre-extracted radix digits (symbolic numeric constants): value =
+    // 0.digits * base^exponent
+    Radix(Vec<u8>, i64),
+  }
+  let max_abs_k = positions.iter().map(|k| k.unsigned_abs()).max().unwrap();
+  let value = match &args[0] {
+    Expr::Integer(n) => {
+      Value::Exact(BigUint::from(n.unsigned_abs()), BigUint::one())
+    }
+    Expr::BigInteger(n) => {
+      Value::Exact(n.magnitude().clone(), BigUint::one())
+    }
+    Expr::FunctionCall { name, args: ra }
+      if name == "Rational" && ra.len() == 2 =>
+    {
+      match (&ra[0], &ra[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => Value::Exact(
+          BigUint::from(p.unsigned_abs()),
+          BigUint::from(q.unsigned_abs()),
+        ),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    Expr::Real(f) => {
+      let a = f.abs();
+      if a == 0.0 {
+        Value::Zero
+      } else if !a.is_finite() {
+        return Ok(unevaluated());
+      } else if base == 10 {
+        // wolframscript reads the digits off the shortest round-trip
+        // decimal representation (zeros beyond it), with digits finer
+        // than one ulp Indeterminate
+        let bits = a.to_bits();
+        let raw_exp = ((bits >> 52) & 0x7ff) as i64;
+        let e2 = if raw_exp == 0 { -1074 } else { raw_exp - 1075 };
+        // Shortest representation, normalized to digits + top exponent
+        let s = format!("{:e}", a); // like 2.10345e2
+        let (mant, exp10) = s.split_once('e').unwrap();
+        let exp10: i64 = exp10.parse().unwrap();
+        let digits: Vec<u8> = mant
+          .bytes()
+          .filter(|b| b.is_ascii_digit())
+          .map(|b| b - b'0')
+          .collect();
+        Value::Shortest(digits, exp10, e2)
+      } else {
+        // Non-decimal bases use the exact binary rational
+        let bits = a.to_bits();
+        let raw_exp = ((bits >> 52) & 0x7ff) as i64;
+        let mantissa = if raw_exp == 0 {
+          bits & 0xf_ffff_ffff_ffff
+        } else {
+          (bits & 0xf_ffff_ffff_ffff) | (1u64 << 52)
+        };
+        let e2 = if raw_exp == 0 { -1074 } else { raw_exp - 1075 };
+        let (p, q) = if e2 >= 0 {
+          (BigUint::from(mantissa) << (e2 as u64), BigUint::one())
+        } else {
+          (BigUint::from(mantissa), BigUint::one() << ((-e2) as u64))
+        };
+        Value::Machine(p, q, e2)
+      }
+    }
+    other => {
+      // Symbolic numerics (Pi, E, Sqrt[2], ...) via arbitrary precision;
+      // digit extraction uses radix conversion (base 2, 8, 10, 16 only)
+      let radix = match base {
+        2 => Some(astro_float::Radix::Bin),
+        8 => Some(astro_float::Radix::Oct),
+        10 => Some(astro_float::Radix::Dec),
+        16 => Some(astro_float::Radix::Hex),
+        _ => None,
+      };
+      let bits = (((max_abs_k as f64) + 60.0) * (base as f64).log2()).ceil()
+        as usize
+        + 64;
+      let mut cc = astro_float::Consts::new().map_err(|e| {
+        InterpreterError::EvaluationError(format!("N: {e}"))
+      })?;
+      let rm = astro_float::RoundingMode::ToEven;
+      match crate::functions::math_ast::numerical::expr_to_bigfloat(
+        other, bits, rm, &mut cc,
+      ) {
+        Ok(bf) => {
+          let Some(radix) = radix else {
+            return Ok(unevaluated());
+          };
+          if bf.is_zero() {
+            Value::Zero
+          } else {
+            match bf.convert_to_radix(radix, rm, &mut cc) {
+              Ok((_, digits, exponent)) => {
+                Value::Radix(digits, exponent as i64)
+              }
+              Err(_) => return Ok(unevaluated()),
+            }
+          }
+        }
+        Err(_) => {
+          crate::emit_message(&format!(
+            "NumberDigit::num: Argument {} should be a number.",
+            crate::syntax::format_expr(
+              &args[0],
+              crate::syntax::ExprForm::Output
+            )
+          ));
+          return Ok(unevaluated());
+        }
+      }
     }
   };
 
-  let pos = match expr_to_i128(&args[1]) {
-    Some(n) => n,
-    None => {
-      return Err(InterpreterError::EvaluationError(
-        "NumberDigit: position must be an integer".into(),
-      ));
+  let digit_at = |k: i128| -> Expr {
+    match &value {
+      Value::Zero => Expr::Integer(0),
+      Value::Exact(p, q) => Expr::Integer(exact_digit(p, q, k)),
+      Value::Machine(p, q, e2) => {
+        // Indeterminate when base^k is finer than one ulp (2^e2):
+        // exact comparison base^k < 2^e2
+        let bb = BigUint::from(base);
+        let (lhs, rhs) = if k >= 0 {
+          if *e2 >= 0 {
+            (bb.pow(k as u32), BigUint::one() << (*e2 as u64))
+          } else {
+            (bb.pow(k as u32) << ((-e2) as u64), BigUint::one())
+          }
+        } else if *e2 >= 0 {
+          (
+            BigUint::one(),
+            (BigUint::one() << (*e2 as u64)) * bb.pow((-k) as u32),
+          )
+        } else {
+          (BigUint::one() << ((-e2) as u64), bb.pow((-k) as u32))
+        };
+        if lhs < rhs {
+          Expr::Identifier("Indeterminate".to_string())
+        } else {
+          Expr::Integer(exact_digit(p, q, k))
+        }
+      }
+      Value::Shortest(digits, exp10, e2) => {
+        // Indeterminate when 10^k is finer than one ulp (2^e2)
+        let bb = BigUint::from(10u32);
+        let (lhs, rhs) = if k >= 0 {
+          if *e2 >= 0 {
+            (bb.pow(k as u32), BigUint::one() << (*e2 as u64))
+          } else {
+            (bb.pow(k as u32) << ((-e2) as u64), BigUint::one())
+          }
+        } else if *e2 >= 0 {
+          (
+            BigUint::one(),
+            (BigUint::one() << (*e2 as u64)) * bb.pow((-k) as u32),
+          )
+        } else {
+          (BigUint::one() << ((-e2) as u64), bb.pow((-k) as u32))
+        };
+        if lhs < rhs {
+          return Expr::Identifier("Indeterminate".to_string());
+        }
+        let idx = *exp10 as i128 - k;
+        if idx < 0 {
+          Expr::Integer(0)
+        } else if (idx as usize) < digits.len() {
+          Expr::Integer(digits[idx as usize] as i128)
+        } else {
+          Expr::Integer(0)
+        }
+      }
+      Value::Radix(digits, exponent) => {
+        let idx = *exponent as i128 - 1 - k;
+        if idx < 0 {
+          Expr::Integer(0)
+        } else if (idx as usize) < digits.len() {
+          Expr::Integer(digits[idx as usize] as i128)
+        } else {
+          Expr::Integer(0)
+        }
+      }
     }
   };
 
-  let abs_val = val.abs();
-
-  // Shift the number so the desired digit is in the ones place,
-  // then extract it: floor(abs_val / 10^pos) % 10
-  let factor = 10f64.powi(pos as i32);
-  let digit = ((abs_val / factor).floor() as i128) % 10;
-
-  Ok(Expr::Integer(digit))
+  if let Expr::List(_) = &args[1] {
+    Ok(Expr::List(
+      positions.iter().map(|&k| digit_at(k)).collect::<Vec<_>>().into(),
+    ))
+  } else {
+    Ok(digit_at(positions[0]))
+  }
 }
 
 /// NumberExpand[n] / NumberExpand[n, b] - place-value decomposition of
