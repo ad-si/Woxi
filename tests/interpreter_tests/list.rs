@@ -12807,3 +12807,142 @@ mod first_last_rest_most_messages {
     assert_eq!(interpret("Most[<|a -> 1, b -> 2|>]").unwrap(), "<|a -> 1|>");
   }
 }
+
+mod canonical_order_and_set_operations {
+  use super::*;
+
+  #[test]
+  fn equal_numerics_tie_break_by_type() {
+    // Regression: Sort/Order treated numerically equal Integer/Real/
+    // Rational atoms as fully equal
+    assert_eq!(interpret("Sort[{1.0, 1}]").unwrap(), "{1, 1.}");
+    assert_eq!(interpret("Sort[{3/2, 1.5}]").unwrap(), "{1.5, 3/2}");
+    assert_eq!(
+      interpret("Sort[{1., 1, 3/2, 1.5, 0}]").unwrap(),
+      "{0, 1, 1., 1.5, 3/2}"
+    );
+    assert_eq!(interpret("Order[1., 1]").unwrap(), "-1");
+    assert_eq!(interpret("Order[1.5, 3/2]").unwrap(), "1");
+    assert_eq!(interpret("Union[{1.0, 1}]").unwrap(), "{1, 1.}");
+    assert_eq!(
+      interpret("Union[{1.0, 1}, SameTest -> Equal]").unwrap(),
+      "{1}"
+    );
+  }
+
+  #[test]
+  fn string_collation_matches_wolfram() {
+    // Regression: plain Sort used codepoint order for Nordic letters and
+    // let a case difference outrank the whole-string comparison
+    assert_eq!(interpret("Sort[{\"ä\", \"å\"}]").unwrap(), "{å, ä}");
+    assert_eq!(
+      interpret("Sort[{\"MathML\", \"MAT\"}]").unwrap(),
+      "{MAT, MathML}"
+    );
+    assert_eq!(
+      interpret("Sort[{\"ab\", \"aB\", \"Ab\", \"AB\"}]").unwrap(),
+      "{ab, aB, Ab, AB}"
+    );
+  }
+
+  #[test]
+  fn set_operations_validate_subjects() {
+    // Regression: atoms produced {} or wrong values instead of messages
+    assert_eq!(interpret("Union[x, {a}]").unwrap(), "Union[x, {a}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Union::normal: Nonatomic expression expected at position 1 in Union[x, {a}]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Union[{a}, x]").unwrap(), "Union[{a}, x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("position 2 in Union[{a}, x]")),
+      "expected position-2 normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Intersection[x, {a}]").unwrap(),
+      "Intersection[x, {a}]"
+    );
+    assert_eq!(
+      interpret("Complement[x, {a}]").unwrap(),
+      "Complement[x, {a}]"
+    );
+  }
+
+  #[test]
+  fn set_operations_validate_heads() {
+    assert_eq!(interpret("Union[{a}, f[b]]").unwrap(), "Union[{a}, f[b]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Union::heads: Heads f and List at positions 2 and 1 are expected to be the same."
+      )),
+      "expected heads message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Complement[f[a, b], g[b]]").unwrap(),
+      "Complement[f[a, b], g[b]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Complement::heads: Heads g and f at positions 2 and 1 are expected to be the same."
+      )),
+      "expected heads message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn set_operations_keep_general_heads() {
+    // Regression: non-List heads returned {} or dropped elements
+    assert_eq!(interpret("Union[f[b, a], f[c]]").unwrap(), "f[a, b, c]");
+    assert_eq!(interpret("Intersection[f[b, a], f[a]]").unwrap(), "f[a]");
+    assert_eq!(
+      interpret("Complement[f[b, a, c], f[a]]").unwrap(),
+      "f[b, c]"
+    );
+  }
+
+  #[test]
+  fn complement_sorts_numerically() {
+    // Regression: Complement sorted by string representation, putting
+    // 10 before 2
+    assert_eq!(
+      interpret("Complement[{10, 9, 2}, {}]").unwrap(),
+      "{2, 9, 10}"
+    );
+  }
+
+  #[test]
+  fn reverse_and_ordering_emit_normal_for_atoms() {
+    assert_eq!(interpret("Reverse[x]").unwrap(), "Reverse[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Ordering[x]").unwrap(), "Ordering[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Ordering::normal: Nonatomic expression expected at position 1 in Ordering[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    // Ordering works on general heads
+    assert_eq!(interpret("Ordering[f[c, a, b]]").unwrap(), "{2, 3, 1}");
+  }
+}

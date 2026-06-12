@@ -905,10 +905,16 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       pattern: replacement.clone(),
       replacement: pattern.clone(),
     }),
-    _ => Ok(Expr::FunctionCall {
-      name: "Reverse".to_string(),
-      args: vec![list.clone()].into(),
-    }),
+    _ => {
+      crate::emit_message(&format!(
+        "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[{}].",
+        crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+      ));
+      Ok(Expr::FunctionCall {
+        name: "Reverse".to_string(),
+        args: vec![list.clone()].into(),
+      })
+    }
   }
 }
 

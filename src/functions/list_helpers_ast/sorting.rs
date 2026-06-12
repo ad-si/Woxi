@@ -209,7 +209,30 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if a_im != 0.0 && b_im == 0.0 {
             return std::cmp::Ordering::Greater;
           }
-          a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal)
+          match a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal) {
+            std::cmp::Ordering::Equal => {
+              // Numerically equal number atoms tie-break by type:
+              // Integer before Real before Rational. wolframscript:
+              // Sort[{1., 1}] = {1, 1.}, Sort[{3/2, 1.5}] = {1.5, 3/2}.
+              let type_rank = |e: &Expr| -> Option<u8> {
+                match e {
+                  Expr::Integer(_) | Expr::BigInteger(_) => Some(0),
+                  Expr::Real(_) | Expr::BigFloat(..) => Some(1),
+                  Expr::FunctionCall { name, args }
+                    if name == "Rational" && args.len() == 2 =>
+                  {
+                    Some(2)
+                  }
+                  _ => None,
+                }
+              };
+              match (type_rank(a), type_rank(b)) {
+                (Some(ra), Some(rb)) => ra.cmp(&rb),
+                _ => std::cmp::Ordering::Equal,
+              }
+            }
+            other => other,
+          }
         }
         other => other,
       }
@@ -389,9 +412,21 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
+  // Ordering works on any nonatomic expression; atoms emit ::normal.
+  let items: &[Expr] = match &args[0] {
+    Expr::List(items) => items.as_slice(),
+    Expr::FunctionCall { args: fc_args, .. } => fc_args.as_slice(),
     _ => {
+      crate::emit_message(&format!(
+        "Ordering::normal: Nonatomic expression expected at position 1 in {}.",
+        crate::syntax::format_expr(
+          &Expr::FunctionCall {
+            name: "Ordering".to_string(),
+            args: args.to_vec().into(),
+          },
+          crate::syntax::ExprForm::Output
+        )
+      ));
       return Ok(Expr::FunctionCall {
         name: "Ordering".to_string(),
         args: args.to_vec().into(),
@@ -698,7 +733,26 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     } else if an > bn {
       -1
     } else {
-      0
+      // Numerically equal number atoms tie-break by type: Integer
+      // before Real before Rational. wolframscript: Sort[{1., 1}] =
+      // {1, 1.} and Sort[{3/2, 1.5}] = {1.5, 3/2}.
+      let type_rank = |e: &Expr| -> Option<i64> {
+        match e {
+          Expr::Integer(_) | Expr::BigInteger(_) => Some(0),
+          Expr::Real(_) | Expr::BigFloat(..) => Some(1),
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            Some(2)
+          }
+          _ => None,
+        }
+      };
+      match (type_rank(a), type_rank(b)) {
+        (Some(ra), Some(rb)) if ra < rb => 1,
+        (Some(ra), Some(rb)) if ra > rb => -1,
+        _ => 0,
+      }
     };
   }
   // Numbers come before non-numbers
@@ -919,43 +973,52 @@ pub fn expr_sort_key(e: &Expr) -> String {
 
 /// Wolfram canonical string comparison (returns std::cmp::Ordering)
 fn wolfram_string_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-  let la = a.to_lowercase();
-  let lb = b.to_lowercase();
-  match la.cmp(&lb) {
-    std::cmp::Ordering::Equal => {
-      for (ca, cb) in a.chars().zip(b.chars()) {
-        if ca != cb {
-          if ca.to_lowercase().eq(cb.to_lowercase()) {
-            if ca.is_lowercase() {
-              return std::cmp::Ordering::Less;
-            } else {
-              return std::cmp::Ordering::Greater;
-            }
-          }
-          return ca.cmp(&cb);
-        }
-      }
-      a.len().cmp(&b.len())
-    }
-    other => other,
+  match wolfram_string_order(a, b) {
+    n if n > 0 => std::cmp::Ordering::Less,
+    n if n < 0 => std::cmp::Ordering::Greater,
+    _ => std::cmp::Ordering::Equal,
   }
 }
 
 /// Wolfram canonical string ordering: case-insensitive alphabetical, then lowercase < uppercase
 pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
+  // Collation rank: Wolfram sorts the Nordic letters å/ä/ö/æ/ø after
+  // `z` (in that order) and ñ after the plain Latin letters, not by
+  // Unicode codepoint. wolframscript: Sort[{"ä", "å"}] = {å, ä}.
+  fn collate(c: char) -> u32 {
+    match c {
+      'å' | 'Å' => 0x110000 + 27,
+      'ä' | 'Ä' => 0x110000 + 28,
+      'ö' | 'Ö' => 0x110000 + 29,
+      'æ' | 'Æ' => 0x110000 + 30,
+      'ø' | 'Ø' => 0x110000 + 31,
+      'ñ' | 'Ñ' => 0x100000 + ('n' as u32) + 1,
+      other => other as u32,
+    }
+  }
   let a_chars: Vec<char> = a.chars().collect();
   let b_chars: Vec<char> = b.chars().collect();
 
+  // Pass 1: case-insensitive comparison over the whole strings, with a
+  // shorter string sorting first on a prefix match. wolframscript:
+  // Sort[{"MathML", "MAT"}] = {MAT, MathML} — the case difference at
+  // the second letter must not outrank the length/letter comparison.
   for (ac, bc) in a_chars.iter().zip(b_chars.iter()) {
     let al = ac.to_lowercase().next().unwrap_or(*ac);
     let bl = bc.to_lowercase().next().unwrap_or(*bc);
-    if al != bl {
-      // Case-insensitive comparison first
-      return if al < bl { 1 } else { -1 };
+    if collate(al) != collate(bl) {
+      return if collate(al) < collate(bl) { 1 } else { -1 };
     }
-    // Same letter, different case: lowercase comes first
+  }
+  match a_chars.len().cmp(&b_chars.len()) {
+    std::cmp::Ordering::Less => return 1,
+    std::cmp::Ordering::Greater => return -1,
+    std::cmp::Ordering::Equal => {}
+  }
+  // Pass 2: case-insensitively equal strings tie-break at the first
+  // case difference, lowercase first: Sort[{"Ab", "aB"}] = {aB, Ab}.
+  for (ac, bc) in a_chars.iter().zip(b_chars.iter()) {
     if ac != bc {
-      // lowercase < uppercase in Wolfram ordering
       if ac.is_lowercase() && bc.is_uppercase() {
         return 1;
       } else if ac.is_uppercase() && bc.is_lowercase() {
@@ -963,12 +1026,7 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
       }
     }
   }
-  // If all compared chars are equal, shorter string comes first
-  match a_chars.len().cmp(&b_chars.len()) {
-    std::cmp::Ordering::Less => 1,
-    std::cmp::Ordering::Greater => -1,
-    std::cmp::Ordering::Equal => 0,
-  }
+  0
 }
 
 /// Helper: compare two Expr values for ordering (less-or-equal)

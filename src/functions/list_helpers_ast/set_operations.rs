@@ -180,13 +180,26 @@ pub fn delete_duplicates_ast(
 /// specified, elements are combined and sorted first, then the result is
 /// deduplicated by keeping the first occurrence of each equivalence class
 /// under `f[#1, #2]`.
-pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
-  use std::collections::HashSet;
+/// Split Union/Intersection/Complement arguments into subject element
+/// slices, their common head and an optional SameTest function. Atomic
+/// subjects emit ::normal and mismatched heads emit ::heads; in both
+/// cases the unevaluated call is returned as the Err value.
+#[allow(clippy::type_complexity)]
+fn collect_set_subjects<'a>(
+  fname: &str,
+  args: &'a [Expr],
+) -> Result<(Vec<&'a [Expr]>, Option<&'a str>, Option<&'a Expr>), Expr> {
+  let unevaluated = || Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
-  // Separate list arguments from option rules like SameTest -> f.
-  let mut list_args: Vec<&Expr> = Vec::new();
   let mut same_test: Option<&Expr> = None;
-  for a in lists {
+  let mut slices: Vec<&[Expr]> = Vec::new();
+  let mut heads: Vec<(usize, Option<&str>)> = Vec::new();
+  for (i, a) in args.iter().enumerate() {
     match a {
       Expr::Rule {
         pattern,
@@ -198,23 +211,80 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
       } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SameTest") =>
       {
         same_test = Some(replacement.as_ref());
-        continue;
       }
-      _ => {}
+      Expr::List(items) => {
+        slices.push(items.as_slice());
+        heads.push((i, None));
+      }
+      Expr::FunctionCall {
+        name,
+        args: fc_args,
+      } => {
+        slices.push(fc_args.as_slice());
+        heads.push((i, Some(name.as_str())));
+      }
+      _ => {
+        crate::emit_message(&format!(
+          "{}::normal: Nonatomic expression expected at position {} in {}.",
+          fname,
+          i + 1,
+          show(&unevaluated())
+        ));
+        return Err(unevaluated());
+      }
     }
-    list_args.push(a);
   }
+  if let Some((first_pos, first_head)) = heads.first().copied() {
+    for (i, h) in heads.iter().skip(1) {
+      if *h != first_head {
+        crate::emit_message(&format!(
+          "{}::heads: Heads {} and {} at positions {} and {} are expected to be the same.",
+          fname,
+          h.unwrap_or("List"),
+          first_head.unwrap_or("List"),
+          i + 1,
+          first_pos + 1
+        ));
+        return Err(unevaluated());
+      }
+    }
+  }
+  let head = heads.first().and_then(|(_, h)| *h);
+  Ok((slices, head, same_test))
+}
+
+/// Sort canonically via compare_exprs (1 = first argument precedes).
+fn sort_canonical(items: &mut [Expr]) {
+  items.sort_by(|a, b| match compare_exprs(a, b) {
+    n if n > 0 => std::cmp::Ordering::Less,
+    n if n < 0 => std::cmp::Ordering::Greater,
+    _ => std::cmp::Ordering::Equal,
+  });
+}
+
+pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
+  use std::collections::HashSet;
+
+  let (slices, head, same_test) = match collect_set_subjects("Union", lists) {
+    Ok(t) => t,
+    Err(unevaluated) => return Ok(unevaluated),
+  };
+  let wrap = |v: Vec<Expr>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: v.into(),
+      },
+      None => Expr::List(v.into()),
+    }
+  };
 
   let mut result = Vec::new();
 
   if same_test.is_none() {
     let mut seen: HashSet<String> = HashSet::new();
-    for list in list_args.iter() {
-      let items = match list {
-        Expr::List(items) => items,
-        _ => continue,
-      };
-      for item in items {
+    for items in &slices {
+      for item in *items {
         let key_str = crate::syntax::expr_to_string(item);
         if seen.insert(key_str) {
           result.push(item.clone());
@@ -224,26 +294,13 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     // Collect every element from every list, without plain
     // deduplication -- equivalence is decided later by SameTest.
-    for list in list_args.iter() {
-      if let Expr::List(items) = list {
-        for item in items {
-          result.push(item.clone());
-        }
-      }
+    for items in &slices {
+      result.extend(items.iter().cloned());
     }
   }
 
   // Union sorts its result in Mathematica
-  result.sort_by(|a, b| {
-    let ka = crate::syntax::expr_to_string(a);
-    let kb = crate::syntax::expr_to_string(b);
-    // Try numeric comparison first
-    if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-    } else {
-      ka.cmp(&kb)
-    }
-  });
+  sort_canonical(&mut result);
 
   if let Some(test) = same_test {
     // Deduplicate by equivalence. Each sorted element is compared
@@ -264,10 +321,10 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       reps.push(item);
     }
-    return Ok(Expr::List(reps.into()));
+    return Ok(wrap(reps));
   }
 
-  Ok(Expr::List(result.into()))
+  Ok(wrap(result))
 }
 
 /// AST-based Intersection: find common elements.
@@ -276,41 +333,34 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![].into()));
   }
 
-  // Strip a trailing `SameTest -> fn` option. When present, two elements
-  // are "equal" iff `fn[a, b]` evaluates to True. Matches wolframscript's
+  // SameTest -> fn makes two elements "equal" iff `fn[a, b]` evaluates
+  // to True. Matches wolframscript's
   // `Intersection[{1,2,3}, {2,3,4}, SameTest->Less]` → `{3}` (Less[1,2]
   // is True so 1 collapses with 2; Less[2,3] is True so 2 collapses with
   // 3; net result is whatever remains after pairwise SameTest dedup).
-  let mut same_test: Option<Expr> = None;
-  let lists_slice: &[Expr] = if let Some(last) = lists.last() {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = last
-      && matches!(
-        pattern.as_ref(),
-        Expr::Identifier(s) if s == "SameTest"
-      )
-    {
-      same_test = Some(*replacement.clone());
-      &lists[..lists.len() - 1]
-    } else {
-      lists
+  let (slices, head, same_test) =
+    match collect_set_subjects("Intersection", lists) {
+      Ok(t) => t,
+      Err(unevaluated) => return Ok(unevaluated),
+    };
+  let wrap = |v: Vec<Expr>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: v.into(),
+      },
+      None => Expr::List(v.into()),
     }
-  } else {
-    lists
   };
 
   if let Some(test) = same_test {
-    return intersection_with_same_test(lists_slice, &test);
+    return intersection_with_same_test(&slices, test).map(wrap);
   }
 
   use std::collections::HashSet;
 
-  // Start with elements from first list
-  let first_items = match &lists_slice[0] {
-    Expr::List(items) => items,
-    _ => return Ok(Expr::List(vec![].into())),
+  let Some(first_items) = slices.first() else {
+    return Ok(wrap(Vec::new()));
   };
 
   let mut common: HashSet<String> = first_items
@@ -319,11 +369,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   // Intersect with each subsequent list
-  for list in lists_slice.iter().skip(1) {
-    let items = match list {
-      Expr::List(items) => items,
-      _ => continue,
-    };
+  for items in slices.iter().skip(1) {
     let list_set: HashSet<String> =
       items.iter().map(crate::syntax::expr_to_string).collect();
     common = common.intersection(&list_set).cloned().collect();
@@ -335,22 +381,12 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter(|item| common.contains(&crate::syntax::expr_to_string(item)))
     .cloned()
     .collect();
-  result.sort_by(|a, b| {
-    let ord = compare_exprs(a, b);
-    // compare_exprs returns 1 if a precedes b (canonical order), -1 if b precedes a
-    if ord > 0 {
-      std::cmp::Ordering::Less
-    } else if ord < 0 {
-      std::cmp::Ordering::Greater
-    } else {
-      std::cmp::Ordering::Equal
-    }
-  });
+  sort_canonical(&mut result);
   result.dedup_by(|a, b| {
     crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
   });
 
-  Ok(Expr::List(result.into()))
+  Ok(wrap(result))
 }
 
 /// Intersection with a custom SameTest function. Two elements `a` and `b`
@@ -358,12 +394,12 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Within the result, elements are deduplicated pairwise via the same
 /// test. Element order in the result follows the first list.
 fn intersection_with_same_test(
-  lists: &[Expr],
+  slices: &[&[Expr]],
   test: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let first_items = match lists.first() {
-    Some(Expr::List(items)) => items.clone(),
-    _ => return Ok(Expr::List(vec![].into())),
+) -> Result<Vec<Expr>, InterpreterError> {
+  let first_items: Vec<Expr> = match slices.first() {
+    Some(items) => items.to_vec(),
+    None => return Ok(Vec::new()),
   };
 
   let test_eq = |a: &Expr, b: &Expr| -> bool {
@@ -382,20 +418,10 @@ fn intersection_with_same_test(
   // subsequent list.
   let mut filtered: Vec<Expr> = Vec::new();
   for item in &first_items {
-    let mut keep = true;
-    for list in lists.iter().skip(1) {
-      let other = match list {
-        Expr::List(items) => items,
-        _ => {
-          keep = false;
-          break;
-        }
-      };
-      if !other.iter().any(|o| test_eq(item, o)) {
-        keep = false;
-        break;
-      }
-    }
+    let keep = slices
+      .iter()
+      .skip(1)
+      .all(|other| other.iter().any(|o| test_eq(item, o)));
     if keep {
       filtered.push(item.clone());
     }
@@ -419,7 +445,7 @@ fn intersection_with_same_test(
     }
   }
 
-  Ok(Expr::List(deduped.into()))
+  Ok(deduped)
 }
 
 /// AST-based Complement: elements in first list not in others.
@@ -430,33 +456,28 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use std::collections::HashSet;
 
-  // Extract items from any expression (List or FunctionCall)
-  fn get_items(expr: &Expr) -> Option<(&[Expr], Option<&str>)> {
-    match expr {
-      Expr::List(items) => Some((items.as_slice(), None)),
-      Expr::FunctionCall { name, args } => {
-        Some((args.as_slice(), Some(name.as_str())))
-      }
-      _ => None,
-    }
-  }
+  let (slices, head, _same_test) =
+    match collect_set_subjects("Complement", lists) {
+      Ok(t) => t,
+      Err(unevaluated) => return Ok(unevaluated),
+    };
 
-  let (first_items, head_name) = match get_items(&lists[0]) {
-    Some(r) => r,
-    None => return Ok(Expr::List(vec![].into())),
+  let Some(first_items) = slices.first() else {
+    return Ok(Expr::List(vec![].into()));
   };
 
   // Get elements to exclude from all lists after the first
   let mut exclude: HashSet<String> = HashSet::new();
-  for list in lists.iter().skip(1) {
-    if let Some((items, _)) = get_items(list) {
-      for item in items {
-        exclude.insert(crate::syntax::expr_to_string(item));
-      }
+  for items in slices.iter().skip(1) {
+    for item in *items {
+      exclude.insert(crate::syntax::expr_to_string(item));
     }
   }
 
-  // Filter first list, also remove duplicates and sort
+  // Filter first list, also remove duplicates and sort canonically.
+  // (Accent collation — å/ä/ö after z — lives in wolfram_string_order,
+  // so `Complement[Alphabet["Swedish"], Alphabet["English"]]` lands on
+  // `{å, ä, ö}` rather than the codepoint-sorted `{ä, å, ö}`.)
   let mut seen = HashSet::new();
   let mut result: Vec<Expr> = first_items
     .iter()
@@ -466,45 +487,9 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .cloned()
     .collect();
+  sort_canonical(&mut result);
 
-  // Sort by string representation (Wolfram sorts Complement output).
-  // Use a Wolfram-like collation key for accented Latin characters:
-  // wolframscript places `å`, `ä`, `ö` (and similar) after `z` in
-  // Swedish/Norwegian/Danish alphabet order, not by Unicode codepoint.
-  // So `Complement[Alphabet["Swedish"], Alphabet["English"]]` lands on
-  // `{å, ä, ö}` rather than the codepoint-sorted `{ä, å, ö}`.
-  fn collation_key(s: &str) -> Vec<u32> {
-    s.chars()
-      .map(|c| match c {
-        // Swedish/Finnish: ..., z, å, ä, ö
-        'å' => 0x110000 + 27,
-        'ä' => 0x110000 + 28,
-        'ö' => 0x110000 + 29,
-        'Å' => 0x110000 + 27,
-        'Ä' => 0x110000 + 28,
-        'Ö' => 0x110000 + 29,
-        // Norwegian/Danish: ..., z, æ, ø, å (different order from Swedish,
-        // but the only Wolfram alphabets we care about here put each accent
-        // strictly after `z`, so codepoint order within the trailing block
-        // is fine)
-        'æ' => 0x110000 + 30,
-        'ø' => 0x110000 + 31,
-        'Æ' => 0x110000 + 30,
-        'Ø' => 0x110000 + 31,
-        // Spanish ñ comes after n
-        'ñ' => 0x100000 + ('n' as u32) + 1,
-        'Ñ' => 0x100000 + ('N' as u32) + 1,
-        other => other as u32,
-      })
-      .collect()
-  }
-  result.sort_by(|a, b| {
-    let ka = collation_key(&crate::syntax::expr_to_string(a));
-    let kb = collation_key(&crate::syntax::expr_to_string(b));
-    ka.cmp(&kb)
-  });
-
-  match head_name {
+  match head {
     Some(name) => Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: result.into(),
