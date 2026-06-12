@@ -3021,9 +3021,7 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // wolframscript's edge order when the neighborhood covers the whole graph
 // (and for explicitly-constructed graphs) is an igraph traversal artifact
 // that is not replicated.
-pub fn neighborhood_graph_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Expr::FunctionCall {
     name: "NeighborhoodGraph".to_string(),
     args: args.to_vec().into(),
@@ -3032,12 +3030,10 @@ pub fn neighborhood_graph_ast(
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return Ok(unevaluated()),
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return Ok(unevaluated()),
+    },
     _ => return Ok(unevaluated()),
   };
   let radius: i128 = if args.len() == 3 {
@@ -3117,8 +3113,7 @@ pub fn neighborhood_graph_ast(
   }
   // Single center: remaining vertices in vertex-list order
   if centers.len() == 1 {
-    let mut rest: Vec<usize> =
-      order[1..].iter().copied().collect();
+    let mut rest: Vec<usize> = order[1..].to_vec();
     rest.sort_unstable();
     order.truncate(1);
     order.extend(rest);
@@ -3173,4 +3168,203 @@ pub fn neighborhood_graph_ast(
     ]
     .into(),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Boolean graph predicates: HamiltonianGraphQ, BipartiteGraphQ,
+// CompleteGraphQ, LoopFreeGraphQ, PathGraphQ, EmptyGraphQ, SimpleGraphQ.
+// All return False for non-graph arguments (matching wolframscript).
+// Note: wolframscript's LoopFreeGraphQ[CycleGraph[1]] is True even though
+// the displayed edge list contains the self-loop 1<->1 (a provenance quirk
+// of its internal representation); Woxi's literal graph gives False there.
+
+/// Parse a Graph expression into (vertex count, edge index pairs including
+/// duplicates and self-loops). Returns None for non-graphs.
+fn parse_graph_pairs(expr: &Expr) -> Option<(usize, Vec<(usize, usize)>)> {
+  let (vertices, edge_exprs) = match expr {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
+  let mut pairs = Vec::with_capacity(edge_exprs.len());
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+    {
+      let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]))?;
+      let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]))?;
+      pairs.push((a, b));
+    } else {
+      return None;
+    }
+  }
+  Some((vkeys.len(), pairs))
+}
+
+fn bool_expr(b: bool) -> Expr {
+  Expr::Identifier(if b { "True" } else { "False" }.to_string())
+}
+
+pub fn graph_predicate_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (n, pairs) = match parse_graph_pairs(&args[0]) {
+    Some(g) => g,
+    None => return Ok(bool_expr(false)),
+  };
+  let has_loop = pairs.iter().any(|&(a, b)| a == b);
+  let mut simple_pairs: Vec<(usize, usize)> = pairs
+    .iter()
+    .filter(|&&(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .collect();
+  simple_pairs.sort_unstable();
+  let multi = {
+    let mut s = simple_pairs.clone();
+    s.dedup();
+    s.len() != simple_pairs.len()
+  };
+  simple_pairs.dedup();
+  let adj = |s: &[(usize, usize)]| {
+    let mut a: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(x, y) in s {
+      a[x].push(y);
+      a[y].push(x);
+    }
+    a
+  };
+
+  let result = match name {
+    "EmptyGraphQ" => pairs.is_empty(),
+    "LoopFreeGraphQ" => !has_loop,
+    "SimpleGraphQ" => !has_loop && !multi,
+    "CompleteGraphQ" => {
+      // Every pair adjacent exactly once, no loops (wolframscript:
+      // a doubled-edge K2 is not complete)
+      !has_loop
+        && !multi
+        && simple_pairs.len() == n * n.saturating_sub(1) / 2
+    }
+    "PathGraphQ" => {
+      // A simple connected graph with all degrees <= 2 — wolframscript
+      // counts cycles as path graphs. The null graph is not a path.
+      if n == 0 || has_loop || multi {
+        false
+      } else if n == 1 {
+        pairs.is_empty()
+      } else {
+        let a = adj(&simple_pairs);
+        (0..n).all(|v| a[v].len() <= 2) && connected_from(&a, 0) == n
+      }
+    }
+    "BipartiteGraphQ" => {
+      // 2-colorable (loops make it odd-cyclic)
+      if has_loop {
+        false
+      } else {
+        let a = adj(&simple_pairs);
+        let mut color = vec![-1i8; n];
+        let mut ok = true;
+        'outer: for start in 0..n {
+          if color[start] != -1 {
+            continue;
+          }
+          color[start] = 0;
+          let mut queue = std::collections::VecDeque::from([start]);
+          while let Some(u) = queue.pop_front() {
+            for &w in &a[u] {
+              if color[w] == -1 {
+                color[w] = 1 - color[u];
+                queue.push_back(w);
+              } else if color[w] == color[u] {
+                ok = false;
+                break 'outer;
+              }
+            }
+          }
+        }
+        ok
+      }
+    }
+    "HamiltonianGraphQ" => {
+      // wolframscript: K1 (even with a self-loop) and the doubled-edge
+      // 2-cycle count as Hamiltonian; the null graph does not
+      if n == 0 {
+        false
+      } else if n == 1 {
+        true
+      } else if n == 2 {
+        // Needs two parallel edges to form the 2-cycle
+        pairs.iter().filter(|&&(a, b)| a != b).count() >= 2
+      } else {
+        let a = adj(&simple_pairs);
+        if a.iter().any(|nb| nb.len() < 2)
+          || connected_from(&a, 0) != n
+        {
+          false
+        } else {
+          let mut visited = vec![false; n];
+          visited[0] = true;
+          hamiltonian_dfs(&a, 0, 1, &mut visited)
+        }
+      }
+    }
+    _ => false,
+  };
+  let _ = args;
+  Ok(bool_expr(result))
+}
+
+/// Number of vertices reachable from `start`.
+fn connected_from(adj: &[Vec<usize>], start: usize) -> usize {
+  let n = adj.len();
+  let mut seen = vec![false; n];
+  seen[start] = true;
+  let mut queue = std::collections::VecDeque::from([start]);
+  let mut count = 1;
+  while let Some(u) = queue.pop_front() {
+    for &w in &adj[u] {
+      if !seen[w] {
+        seen[w] = true;
+        count += 1;
+        queue.push_back(w);
+      }
+    }
+  }
+  count
+}
+
+fn hamiltonian_dfs(
+  adj: &[Vec<usize>],
+  current: usize,
+  depth: usize,
+  visited: &mut [bool],
+) -> bool {
+  let n = adj.len();
+  if depth == n {
+    return adj[current].contains(&0);
+  }
+  for &w in &adj[current] {
+    if !visited[w] {
+      visited[w] = true;
+      if hamiltonian_dfs(adj, w, depth + 1, visited) {
+        return true;
+      }
+      visited[w] = false;
+    }
+  }
+  false
 }

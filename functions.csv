@@ -3314,7 +3314,7 @@ CopyDirectory,,,,2.0,3402
 CreateChannel,,🚫,,11.0,3402
 DiscreteMinLimit,,,,11.2,3402
 GeoServer,,🚫,,10.1,3402
-HamiltonianGraphQ,,,,8.0,3402
+HamiltonianGraphQ,Tests whether a graph has a Hamiltonian cycle,✅,pure,8.0,3402
 HoeffdingD,,,,9.0,3402
 LevyDistribution,,,,7.0,3402
 MeanShift,,🚫,,8.0,3402
@@ -3392,7 +3392,7 @@ VoigtDistribution,,,,9.0,3474
 AddSides,Add an expression to both sides of an equation,✅,none,11.3,3491
 AlgebraicNumberTrace,,,,6.0,3491
 AudioIntervals,,🚫,,11.0,3491
-BipartiteGraphQ,,,,8.0,3491
+BipartiteGraphQ,Tests whether a graph is bipartite (2-colorable),✅,pure,8.0,3491
 CreateArchive,,,,8.0,3491
 DifferentialRoot,,,,7.0,3491
 FailureAction,,,,10.0,3491
@@ -3453,7 +3453,7 @@ AudioDelay,,🚫,,11.0,3566
 BasicRecurrentLayer,,🚫,,11.1,3566
 BooleanVariables,Boolean variables of an expression (canonically sorted; opaque subexpressions count),✅,pure,7.0,3566
 ChannelListen,,🚫,,11.0,3566
-CompleteGraphQ,,,,8.0,3566
+CompleteGraphQ,Tests whether a graph is complete (every pair adjacent exactly once),✅,pure,8.0,3566
 DGaussianWavelet,,🚫,,8.0,3566
 DMSString,,,,7.0,3566
 DefaultNewCellStyle,,🚫,,3.0,3566
@@ -3574,7 +3574,7 @@ JarqueBeraALMTest,,,,8.0,3678
 JuliaSetPoints,,,,10.0,3678
 ListSliceVectorPlot3D,,🚫,,10.2,3678
 LogGammaDistribution,,,,8.0,3678
-LoopFreeGraphQ,,,,8.0,3678
+LoopFreeGraphQ,Tests whether a graph has no self-loops,✅,pure,8.0,3678
 MomentConvert,,,,8.0,3678
 PoissonConsulDistribution,,,,8.0,3678
 SechDistribution,Hyperbolic secant distribution (Sech PDF and ArcTan CDF),✅,pure,8.0,3678
@@ -3668,14 +3668,14 @@ CornerFilter,,,,8.0,3765
 FunctionSingularities,,,,12.2,3765
 KalmanFilter,,,,9.0,3765
 MoyalDistribution,Moyal distribution (sign-folded PDF and Erfc CDF),✅,pure,8.0,3765
-PathGraphQ,,,,8.0,3765
+PathGraphQ,Tests whether a graph is a simple connected graph with all degrees at most 2,✅,pure,8.0,3765
 RegionResize,,,,11.0,3765
 AudioChannelMix,,🚫,,11.0,3785
 BayesianMinimization,,,,11.0,3785
 BuildingData,,🚫,,10.0,3785
 ChampernowneNumber,,,,7.0,3785
 DynamicSetting,,🚫,,6.0,3785
-EmptyGraphQ,,,,8.0,3785
+EmptyGraphQ,Tests whether a graph has no edges,✅,pure,8.0,3785
 FindVertexCover,,,,8.0,3785
 ImageFeatureTrack,,🚫,,9.0,3785
 KendallTau,,,,9.0,3785
@@ -3723,7 +3723,7 @@ PeronaMalikFilter,,🚫,,8.0,3823
 RiccatiSolve,,,,8.0,3823
 ShellRegion,,,,11.0,3823
 ShrinkingDelay,,,,6.0,3823
-SimpleGraphQ,,,,8.0,3823
+SimpleGraphQ,Tests whether a graph has no self-loops or multi-edges,✅,pure,8.0,3823
 VideoGenerator,,🚫,,12.2,3823
 AcousticPDEComponent,,🚫,,12.2,3843
 BattleLemarieWavelet,,🚫,,8.0,3843

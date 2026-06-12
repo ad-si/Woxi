@@ -5007,6 +5007,20 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if matches!(
+    name,
+    "HamiltonianGraphQ"
+      | "BipartiteGraphQ"
+      | "CompleteGraphQ"
+      | "LoopFreeGraphQ"
+      | "PathGraphQ"
+      | "EmptyGraphQ"
+      | "SimpleGraphQ"
+  ) && args.len() == 1
+  {
+    return crate::functions::graph::graph_predicate_ast(name, args);
+  }
+
   if name == "NeighborhoodGraph" && (args.len() == 2 || args.len() == 3) {
     return crate::functions::graph::neighborhood_graph_ast(args);
   }
@@ -10584,7 +10598,11 @@ fn compose_permutation_lists(args: &[Expr]) -> Option<Expr> {
     // Must be a permutation of {1, ..., len}.
     let mut sorted = p.clone();
     sorted.sort_unstable();
-    if sorted.iter().enumerate().any(|(i, &v)| v != (i as i128) + 1) {
+    if sorted
+      .iter()
+      .enumerate()
+      .any(|(i, &v)| v != (i as i128) + 1)
+    {
       return None;
     }
     perms.push(p);

@@ -3344,8 +3344,7 @@ mod neighborhood_graph {
     );
     // Radius 0 keeps only the center
     assert_eq!(
-      interpret("VertexList[NeighborhoodGraph[CycleGraph[5], 2, 0]]")
-        .unwrap(),
+      interpret("VertexList[NeighborhoodGraph[CycleGraph[5], 2, 0]]").unwrap(),
       "{2}"
     );
   }
@@ -3360,5 +3359,136 @@ mod neighborhood_graph {
       interpret("NeighborhoodGraph[x, 1]").unwrap(),
       "NeighborhoodGraph[x, 1]"
     );
+  }
+}
+
+mod graph_predicates {
+  use super::*;
+
+  #[test]
+  fn hamiltonian_graph_q() {
+    assert_eq!(interpret("HamiltonianGraphQ[CycleGraph[5]]").unwrap(), "True");
+    assert_eq!(
+      interpret("HamiltonianGraphQ[CompleteGraph[4]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("HamiltonianGraphQ[PathGraph[Range[4]]]").unwrap(),
+      "False"
+    );
+    // The Petersen graph is famously non-Hamiltonian
+    assert_eq!(
+      interpret("HamiltonianGraphQ[PetersenGraph[5, 2]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("HamiltonianGraphQ[StarGraph[4]]").unwrap(), "False");
+    assert_eq!(interpret("HamiltonianGraphQ[WheelGraph[7]]").unwrap(), "True");
+    assert_eq!(
+      interpret("HamiltonianGraphQ[GridGraph[{3, 3}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn hamiltonian_degenerate_cases() {
+    // wolframscript: K1 and the doubled-edge 2-cycle are Hamiltonian,
+    // the null graph and a simple K2 are not
+    assert_eq!(interpret("HamiltonianGraphQ[Graph[{1}, {}]]").unwrap(), "True");
+    assert_eq!(interpret("HamiltonianGraphQ[CycleGraph[1]]").unwrap(), "True");
+    assert_eq!(interpret("HamiltonianGraphQ[CycleGraph[2]]").unwrap(), "True");
+    assert_eq!(
+      interpret("HamiltonianGraphQ[Graph[{}, {}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("HamiltonianGraphQ[Graph[{1, 2}, {1 <-> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("HamiltonianGraphQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn bipartite_graph_q() {
+    assert_eq!(interpret("BipartiteGraphQ[CycleGraph[4]]").unwrap(), "True");
+    assert_eq!(interpret("BipartiteGraphQ[CycleGraph[5]]").unwrap(), "False");
+    assert_eq!(interpret("BipartiteGraphQ[StarGraph[5]]").unwrap(), "True");
+    assert_eq!(
+      interpret("BipartiteGraphQ[PetersenGraph[5, 2]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("BipartiteGraphQ[GridGraph[{3, 3}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("BipartiteGraphQ[Graph[{}, {}]]").unwrap(), "True");
+    assert_eq!(interpret("BipartiteGraphQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn complete_graph_q() {
+    assert_eq!(interpret("CompleteGraphQ[CompleteGraph[4]]").unwrap(), "True");
+    // K3 is a triangle
+    assert_eq!(interpret("CompleteGraphQ[CycleGraph[3]]").unwrap(), "True");
+    assert_eq!(interpret("CompleteGraphQ[CycleGraph[4]]").unwrap(), "False");
+    assert_eq!(interpret("CompleteGraphQ[Graph[{1}, {}]]").unwrap(), "True");
+    assert_eq!(interpret("CompleteGraphQ[Graph[{}, {}]]").unwrap(), "True");
+    // A doubled edge disqualifies completeness
+    assert_eq!(
+      interpret("CompleteGraphQ[Graph[{1, 2}, {1 <-> 2, 1 <-> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("CompleteGraphQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn loop_free_and_simple_q() {
+    assert_eq!(interpret("LoopFreeGraphQ[CycleGraph[5]]").unwrap(), "True");
+    assert_eq!(
+      interpret("LoopFreeGraphQ[Graph[{1, 2}, {1 <-> 1, 1 <-> 2}]]").unwrap(),
+      "False"
+    );
+    // Multi-edges are loop-free but not simple
+    assert_eq!(interpret("LoopFreeGraphQ[CycleGraph[2]]").unwrap(), "True");
+    assert_eq!(interpret("SimpleGraphQ[CycleGraph[2]]").unwrap(), "False");
+    assert_eq!(interpret("SimpleGraphQ[CycleGraph[1]]").unwrap(), "False");
+    assert_eq!(interpret("SimpleGraphQ[CycleGraph[5]]").unwrap(), "True");
+    assert_eq!(
+      interpret("SimpleGraphQ[Graph[{1, 2}, {1 <-> 2, 1 <-> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("LoopFreeGraphQ[x]").unwrap(), "False");
+    assert_eq!(interpret("SimpleGraphQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn path_graph_q() {
+    assert_eq!(
+      interpret("PathGraphQ[PathGraph[Range[4]]]").unwrap(),
+      "True"
+    );
+    // wolframscript counts cycles as path graphs (all degrees <= 2)
+    assert_eq!(interpret("PathGraphQ[CycleGraph[4]]").unwrap(), "True");
+    assert_eq!(interpret("PathGraphQ[Graph[{1}, {}]]").unwrap(), "True");
+    assert_eq!(
+      interpret("PathGraphQ[Graph[{1, 2, 3}, {1 <-> 2}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("PathGraphQ[StarGraph[4]]").unwrap(), "False");
+    assert_eq!(interpret("PathGraphQ[Graph[{}, {}]]").unwrap(), "False");
+    // Multi-edges disqualify
+    assert_eq!(interpret("PathGraphQ[CycleGraph[2]]").unwrap(), "False");
+    assert_eq!(
+      interpret("PathGraphQ[Graph[{3, 1, 2}, {3 <-> 1, 1 <-> 2}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("PathGraphQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn empty_graph_q() {
+    assert_eq!(interpret("EmptyGraphQ[Graph[{1, 2}, {}]]").unwrap(), "True");
+    assert_eq!(interpret("EmptyGraphQ[Graph[{}, {}]]").unwrap(), "True");
+    assert_eq!(interpret("EmptyGraphQ[CycleGraph[3]]").unwrap(), "False");
+    assert_eq!(interpret("EmptyGraphQ[x]").unwrap(), "False");
   }
 }
