@@ -1108,6 +1108,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TransitiveClosureGraph" => Some((1, 1)),
     "BipartiteGraphQ" => Some((1, 1)),
     "GlobalClusteringCoefficient" => Some((1, 1)),
+    "GraphAssortativity" => Some((1, 2)),
     "GraphDensity" => Some((1, 1)),
     "MeanClusteringCoefficient" => Some((1, 1)),
     "MeanGraphDistance" => Some((1, 1)),

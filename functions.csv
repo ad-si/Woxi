@@ -3349,7 +3349,7 @@ BrayCurtisDistance,Bray-Curtis distance between vectors,✅,none,6.0,3440
 EdgeCost,,,,9.0,3440
 GaborFilter,,🚫,,9.0,3440
 GeomagneticModelData,,🚫,,10.1,3440
-GraphAssortativity,,,,9.0,3440
+GraphAssortativity,Newman degree assortativity as an exact rational (0 for regular graphs),✅,pure,9.0,3440
 LearningRateMultipliers,,🚫,,11.1,3440
 MinIntervalSize,,,,10.0,3440
 PacletSiteUpdate,,🚫,,12.1,3440
@@ -4209,7 +4209,7 @@ DotLayer,,🚫,,11.1,4356
 DoubleVerticalBar,,,,3.0,4356
 DualSystemsModel,,,,8.0,4356
 EccentricityCentrality,,,,9.0,4356
-EdgeBetweennessCentrality,,,,9.0,4356
+EdgeBetweennessCentrality,Machine-real output carries WL's Brandes float accumulation-order noise (7.999999999999999 vs 8.) — not reproducible,🚫,pure,9.0,4356
 EncryptFile,,🚫,,11.1,4356
 ExtendedEntityClass,,🚫,,12.0,4356
 FindVertexCut,,,,9.0,4356

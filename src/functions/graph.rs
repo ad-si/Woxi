@@ -3812,12 +3812,10 @@ pub fn graph_accessor_ast(
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return Ok(unevaluated()),
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return Ok(unevaluated()),
+    },
     _ => return Ok(unevaluated()),
   };
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
@@ -3951,4 +3949,53 @@ pub fn graph_accessor_ast(
     }
     _ => Ok(unevaluated()),
   }
+}
+
+/// GraphAssortativity[g] — Newman's degree assortativity coefficient as an
+/// exact rational: the Pearson correlation of the endpoint degrees over
+/// all edges (both orientations). Regular and edgeless graphs give 0;
+/// non-graphs stay unevaluated.
+pub fn graph_assortativity_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GraphAssortativity".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (n, pairs) = match parse_graph_pairs(&args[0]) {
+    Some(g) => g,
+    None => return Ok(unevaluated()),
+  };
+  let mut simple: Vec<(usize, usize)> = pairs
+    .iter()
+    .filter(|&&(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .collect();
+  simple.sort_unstable();
+  simple.dedup();
+  if simple.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  let mut deg = vec![0i128; n];
+  for &(a, b) in &simple {
+    deg[a] += 1;
+    deg[b] += 1;
+  }
+  // Sums over both edge orientations
+  let m2 = 2 * simple.len() as i128;
+  let mut s_x: i128 = 0;
+  let mut s_xx: i128 = 0;
+  let mut s_xy: i128 = 0;
+  for &(a, b) in &simple {
+    let (da, db) = (deg[a], deg[b]);
+    s_x += da + db;
+    s_xx += da * da + db * db;
+    s_xy += 2 * da * db;
+  }
+  let num = m2 * s_xy - s_x * s_x;
+  let den = m2 * s_xx - s_x * s_x;
+  if den == 0 {
+    return Ok(Expr::Integer(0));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&make_rational(num, den))
 }

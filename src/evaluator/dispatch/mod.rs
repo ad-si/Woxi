@@ -5007,6 +5007,10 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if name == "GraphAssortativity" && args.len() == 1 {
+    return crate::functions::graph::graph_assortativity_ast(args);
+  }
+
   if matches!(name, "AdjacencyList" | "IncidenceList" | "EdgeIndex")
     && (args.len() == 1 || args.len() == 2)
   {

@@ -3810,10 +3810,7 @@ mod graph_accessors {
       interpret("EdgeIndex[CycleGraph[5], UndirectedEdge[1, 2]]").unwrap(),
       "1"
     );
-    assert_eq!(
-      interpret("EdgeIndex[CycleGraph[5], 1 <-> 5]").unwrap(),
-      "2"
-    );
+    assert_eq!(interpret("EdgeIndex[CycleGraph[5], 1 <-> 5]").unwrap(), "2");
   }
 
   #[test]
@@ -3849,5 +3846,67 @@ mod graph_accessors {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+  }
+}
+
+mod graph_assortativity {
+  use super::*;
+
+  #[test]
+  fn newman_coefficient_exact() {
+    // Triangle with a pendant, computed by hand: -5/7
+    assert_eq!(
+      interpret(
+        "GraphAssortativity[Graph[{1, 2, 3, 4}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "-5/7"
+    );
+    // Stars are maximally disassortative
+    assert_eq!(interpret("GraphAssortativity[StarGraph[5]]").unwrap(), "-1");
+    assert_eq!(interpret("GraphAssortativity[StarGraph[7]]").unwrap(), "-1");
+    assert_eq!(
+      interpret("GraphAssortativity[GridGraph[{2, 3}]]").unwrap(),
+      "-1/6"
+    );
+    assert_eq!(
+      interpret("GraphAssortativity[GridGraph[{3, 3}]]").unwrap(),
+      "-1/17"
+    );
+    assert_eq!(
+      interpret("GraphAssortativity[PathGraph[Range[5]]]").unwrap(),
+      "-1/3"
+    );
+    assert_eq!(
+      interpret("GraphAssortativity[WheelGraph[6]]").unwrap(),
+      "-1/3"
+    );
+  }
+
+  #[test]
+  fn regular_graphs_give_zero() {
+    assert_eq!(interpret("GraphAssortativity[CycleGraph[5]]").unwrap(), "0");
+    assert_eq!(
+      interpret("GraphAssortativity[PetersenGraph[5, 2]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("GraphAssortativity[Graph[{1, 2}, {1 <-> 2}]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("GraphAssortativity[HararyGraph[3, 8]]").unwrap(),
+      "0"
+    );
+    // Edgeless graphs too
+    assert_eq!(interpret("GraphAssortativity[Graph[{1}, {}]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(
+      interpret("GraphAssortativity[x]").unwrap(),
+      "GraphAssortativity[x]"
+    );
   }
 }
