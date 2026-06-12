@@ -1289,314 +1289,289 @@ pub fn rotate_multi_ast(
   }
 }
 
-/// Build a nested-list "filler" of shape `ns` filled with the scalar `pad`.
-/// E.g. `build_pad_shape(x, &[3, 2])` → `{{x, x}, {x, x}, {x, x}}`.
-fn build_pad_shape(pad: &Expr, ns: &[i128]) -> Expr {
-  if ns.is_empty() {
-    return pad.clone();
-  }
-  let n = ns[0].max(0) as usize;
-  let inner = build_pad_shape(pad, &ns[1..]);
-  Expr::List(vec![inner; n].into())
-}
-
-/// Multi-dimensional PadLeft with a scalar pad value. Recursively pads
-/// each level and prepends "filler" shapes for missing outer rows.
-pub fn pad_left_multidim(
-  list: &Expr,
-  ns: &[i128],
-  pad: &Expr,
-) -> Result<Expr, InterpreterError> {
-  pad_left_multidim_with_margin(list, ns, pad, &[])
-}
-
-/// Multidimensional PadLeft with a per-dimension margin (shift from the
-/// right/bottom edge). `PadLeft[list, {n1, ...}, pad, m]` positions the
-/// source so its last element on each axis ends at index `n - 1 - m`.
-/// Entries outside `[0, n)` are dropped; gaps before and after the
-/// source are filled with the pad-shape.
-pub fn pad_left_multidim_with_margin(
-  list: &Expr,
-  ns: &[i128],
-  pad: &Expr,
-  margins: &[i128],
-) -> Result<Expr, InterpreterError> {
-  if ns.is_empty() {
-    return Ok(list.clone());
-  }
-  let n = ns[0];
-  let rest = &ns[1..];
-  let margin = margins.first().copied().unwrap_or(0);
-  let inner_margins = if margins.len() <= 1 {
-    margins
-  } else {
-    &margins[1..]
-  };
-
-  let items: Vec<Expr> = match list {
-    Expr::List(items) => items.to_vec(),
-    _ => vec![],
-  };
-
-  let mut padded_children: Vec<Expr> = Vec::with_capacity(items.len());
-  for item in &items {
-    padded_children.push(pad_left_multidim_with_margin(
-      item,
-      rest,
-      pad,
-      inner_margins,
-    )?);
-  }
-
-  let len = padded_children.len() as i128;
-
-  if n <= 0 {
-    return Ok(Expr::List(vec![].into()));
-  }
-
-  if margin == 0 {
-    if len >= n {
-      // Truncate from the left (mirror single-dim PadLeft behavior).
-      let skip = (len - n) as usize;
-      return Ok(Expr::List(padded_children[skip..].to_vec().into()));
-    }
-    let filler = build_pad_shape(pad, rest);
-    let needed = (n - len) as usize;
-    let mut result: Vec<Expr> = vec![filler; needed];
-    result.extend(padded_children);
-    return Ok(Expr::List(result.into()));
-  }
-
-  // Non-zero margin: position the source so the last element ends at
-  // index `n - 1 - margin`, i.e. `list_start = n - len - margin`. Entries
-  // outside [0, n) are dropped and every gap is filled with the pad shape.
-  let list_start = n - len - margin;
-  let list_end = list_start + len;
-  let filler = build_pad_shape(pad, rest);
-  let mut result = Vec::with_capacity(n as usize);
-  for i in 0..n {
-    if i >= list_start && i < list_end {
-      result.push(padded_children[(i - list_start) as usize].clone());
-    } else {
-      result.push(filler.clone());
+/// Number of levels at which *every* node of `expr` is a list (the depth a
+/// list padding-specification may address). An empty list places no bound
+/// on the depth below it.
+fn pad_container_depth(expr: &Expr) -> usize {
+  fn list_depth(e: &Expr) -> usize {
+    match e {
+      Expr::List(items) => {
+        if items.is_empty() {
+          usize::MAX
+        } else {
+          match items.iter().map(list_depth).min().unwrap_or(0) {
+            usize::MAX => usize::MAX,
+            d => d + 1,
+          }
+        }
+      }
+      _ => 0,
     }
   }
-  Ok(Expr::List(result.into()))
-}
-
-/// Multi-dimensional PadRight with a scalar pad value.
-pub fn pad_right_multidim(
-  list: &Expr,
-  ns: &[i128],
-  pad: &Expr,
-) -> Result<Expr, InterpreterError> {
-  pad_right_multidim_with_margin(list, ns, pad, &[])
-}
-
-/// Multidimensional PadRight with a per-dimension margin (shift) vector.
-/// An empty `margins` slice means the caller didn't supply a 4th argument,
-/// so each dimension's margin defaults to 0. Matches Wolfram's semantics
-/// for `PadRight[list, {n1, n2, ...}, pad, m]` — the same `m` applies to
-/// every dimension.
-pub fn pad_right_multidim_with_margin(
-  list: &Expr,
-  ns: &[i128],
-  pad: &Expr,
-  margins: &[i128],
-) -> Result<Expr, InterpreterError> {
-  if ns.is_empty() {
-    return Ok(list.clone());
-  }
-  let n = ns[0];
-  let rest = &ns[1..];
-  let margin = margins.first().copied().unwrap_or(0);
-  let inner_margins = if margins.len() <= 1 {
-    margins
-  } else {
-    &margins[1..]
-  };
-
-  let items: Vec<Expr> = match list {
-    Expr::List(items) => items.to_vec(),
-    _ => vec![],
-  };
-
-  let mut padded_children: Vec<Expr> = Vec::with_capacity(items.len());
-  for item in &items {
-    padded_children.push(pad_right_multidim_with_margin(
-      item,
-      rest,
-      pad,
-      inner_margins,
-    )?);
-  }
-
-  let len = padded_children.len() as i128;
-
-  if n <= 0 {
-    return Ok(Expr::List(vec![].into()));
-  }
-
-  if margin == 0 {
-    if len >= n {
-      return Ok(Expr::List(padded_children[..n as usize].to_vec().into()));
+  match expr {
+    Expr::List(_) => list_depth(expr),
+    // A general head only counts for the top level; below it the spec
+    // must address lists.
+    Expr::FunctionCall { args, .. } => {
+      if args.is_empty() {
+        usize::MAX
+      } else {
+        match args.iter().map(list_depth).min().unwrap_or(0) {
+          usize::MAX => usize::MAX,
+          d => d + 1,
+        }
+      }
     }
-    let filler = build_pad_shape(pad, rest);
-    let needed = (n - len) as usize;
-    padded_children.extend(vec![filler; needed]);
-    return Ok(Expr::List(padded_children.into()));
+    _ => 0,
   }
-
-  // Non-zero margin: position the source children at index `margin`
-  // (0-indexed) in the output. Entries outside [0, n) are dropped; gaps
-  // before and after the source are filled with the pad-shape.
-  let list_start = margin;
-  let list_end = list_start + len;
-  let filler = build_pad_shape(pad, rest);
-  let mut result = Vec::with_capacity(n as usize);
-  for i in 0..n {
-    if i >= list_start && i < list_end {
-      result.push(padded_children[(i - list_start) as usize].clone());
-    } else {
-      result.push(filler.clone());
-    }
-  }
-  Ok(Expr::List(result.into()))
 }
 
-/// AST-based PadLeft: pad list on the left to length n.
-/// If n < len, truncates from the left.
-/// Get cyclic padding element at a given position (0-based).
-/// `anchor` controls the cycle alignment: the cycle aligns so that
-/// position `anchor` corresponds to cycle index 0.
-fn cyclic_pad_element(pad: &Expr, pos: i128, anchor: i128) -> Expr {
+/// Rectangular dimensions used by the one-argument forms
+/// `PadLeft[list]` / `PadRight[list]`: descend while every node at the
+/// current level is a list, recording the maximum length per level.
+fn ragged_dims(expr: &Expr) -> Vec<i128> {
+  let mut dims = Vec::new();
+  let mut level: Vec<&Expr> = vec![expr];
+  while level.iter().all(|e| matches!(e, Expr::List(_))) {
+    let mut max_len = 0usize;
+    let mut next: Vec<&Expr> = Vec::new();
+    for e in &level {
+      if let Expr::List(items) = e {
+        max_len = max_len.max(items.len());
+        next.extend(items.iter());
+      }
+    }
+    dims.push(max_len as i128);
+    if next.is_empty() {
+      break;
+    }
+    level = next;
+  }
+  dims
+}
+
+/// Padding element for column `c` (1-based) of a level of length `n` with
+/// margin `m`. Cyclic padding lists align to the content edge: PadLeft
+/// counts backwards from the content's last column, PadRight forwards
+/// from the content's first column.
+fn pad_value(pad: &Expr, c: i128, n: i128, m: i128, side_left: bool) -> Expr {
   match pad {
-    Expr::List(items) if !items.is_empty() => {
-      let cycle_len = items.len() as i128;
-      let idx = ((pos - anchor) % cycle_len + cycle_len) % cycle_len;
-      items[idx as usize].clone()
+    Expr::List(cycle) if !cycle.is_empty() => {
+      let len = cycle.len() as i128;
+      let idx = if side_left {
+        (c - (n - m) - 1).rem_euclid(len)
+      } else {
+        (c - m - 1).rem_euclid(len)
+      };
+      cycle[idx as usize].clone()
     }
     _ => pad.clone(),
   }
 }
 
-pub fn pad_left_ast(
-  list: &Expr,
-  n: i128,
+/// Pad one level: place `items` so they end at column `n - m` (PadLeft)
+/// or start at column `m + 1` (PadRight), fill the rest with padding, and
+/// recurse with the remaining spec. A negative length flips the side at
+/// that level only.
+fn pad_items(
+  items: &[Expr],
+  spec: &[i128],
+  margins: &[i128],
   pad: &Expr,
-  offset: Option<i128>,
-) -> Result<Expr, InterpreterError> {
-  let (items, head_name) = match list {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PadLeft".to_string(),
-        args: vec![list.clone(), Expr::Integer(n), pad.clone()].into(),
-      });
-    }
-  };
-
-  if n <= 0 {
-    return match head_name {
-      Some(h) => Ok(Expr::FunctionCall {
-        name: h.to_string(),
-        args: vec![].into(),
-      }),
-      None => Ok(Expr::List(vec![].into())),
-    };
+  is_left: bool,
+) -> Result<Vec<Expr>, InterpreterError> {
+  if spec.is_empty() {
+    return Ok(items.to_vec());
   }
+  let n_signed = spec[0];
+  let side_left = is_left != (n_signed < 0);
+  let n = n_signed.saturating_abs();
+  let m = margins.first().copied().unwrap_or(0);
+  let rest_spec = &spec[1..];
+  let rest_margins = if margins.is_empty() {
+    margins
+  } else {
+    &margins[1..]
+  };
 
   let len = items.len() as i128;
-  let n_usize = n as usize;
-
-  let result_items = if n < len && offset.is_none() {
-    let skip = (len - n) as usize;
-    items[skip..].to_vec()
-  } else if n == len && offset.is_none() {
-    items.to_vec()
+  let (start, end) = if side_left {
+    (n - m - len + 1, n - m)
   } else {
-    // PadLeft positions the original list so that its last element is at
-    // output index `n - 1 - m` (0-indexed), i.e. `list_start = n - len - m`.
-    // Elements whose target index falls outside `[0, n)` are dropped.
-    let m = offset.unwrap_or(0);
-    let list_start: i128 = n - len - m;
-    let list_end: i128 = list_start + len;
-    let mut result = Vec::with_capacity(n_usize);
-    for i in 0..n {
-      if i >= list_start && i < list_end {
-        result.push(items[(i - list_start) as usize].clone());
-      } else {
-        result.push(cyclic_pad_element(pad, i, list_end));
-      }
-    }
-    result
+    (m + 1, m + len)
   };
 
-  match head_name {
-    Some(h) => crate::evaluator::evaluate_function_call_ast(h, &result_items),
-    None => Ok(Expr::List(result_items.into())),
+  let mut out: Vec<Expr> = Vec::with_capacity(n.max(0) as usize);
+  for c in 1..=n {
+    if c >= start && c <= end {
+      let item = &items[(c - start) as usize];
+      if rest_spec.is_empty() {
+        out.push(item.clone());
+      } else {
+        let sub_items: &[Expr] = match item {
+          Expr::List(sub) => sub.as_slice(),
+          _ => &[],
+        };
+        out.push(Expr::List(
+          pad_items(sub_items, rest_spec, rest_margins, pad, is_left)?.into(),
+        ));
+      }
+    } else if rest_spec.is_empty() {
+      out.push(pad_value(pad, c, n, m, side_left));
+    } else {
+      out.push(Expr::List(
+        pad_items(&[], rest_spec, rest_margins, pad, is_left)?.into(),
+      ));
+    }
+  }
+  Ok(out)
+}
+
+fn pad_level(
+  expr: &Expr,
+  spec: &[i128],
+  margins: &[i128],
+  pad: &Expr,
+  is_left: bool,
+) -> Result<Expr, InterpreterError> {
+  let (items, head): (&[Expr], Option<&str>) = match expr {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
+    _ => (&[], None),
+  };
+  let out = pad_items(items, spec, margins, pad, is_left)?;
+  match head {
+    Some(h) => crate::evaluator::evaluate_function_call_ast(h, &out),
+    None => Ok(Expr::List(out.into())),
   }
 }
 
-/// AST-based PadRight: pad list on the right to length n.
-/// If n < len, truncates from the right.
-pub fn pad_right_ast(
-  list: &Expr,
-  n: i128,
-  pad: &Expr,
-  offset: Option<i128>,
-) -> Result<Expr, InterpreterError> {
-  let (items, head_name) = match list {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PadRight".to_string(),
-        args: vec![list.clone(), Expr::Integer(n), pad.clone()].into(),
-      });
+/// Unified PadLeft/PadRight engine covering the full argument space:
+/// - `Pad[list]` — pad a ragged array of lists with zeros to make it full
+/// - `Pad[list, n]` — scalar length; negative n pads the opposite side
+/// - `Pad[list, {n1, n2, …}]` — per-level lengths
+/// - `Pad[list, spec, x]` — scalar padding
+/// - `Pad[list, spec, {x1, x2, …}]` — cyclic padding; `{}` returns the
+///   list unchanged
+/// - `Pad[list, spec, pad, m]` — margin; a scalar broadcasts to all levels
+///
+/// Invalid input emits `::normal` / `::ilsm` / `::level` like
+/// wolframscript and returns the call unevaluated.
+pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let is_left = fname == "PadLeft";
+  let original = || Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  let ilsm = |pos: usize| {
+    crate::emit_message(&format!(
+      "{}::ilsm: List of machine-sized integers expected at position {} in {}.",
+      fname,
+      pos,
+      show(&original())
+    ));
+  };
+  let strict_int = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128()
+      }
+      _ => None,
     }
   };
 
-  if n <= 0 {
-    return match head_name {
-      Some(h) => Ok(Expr::FunctionCall {
-        name: h.to_string(),
-        args: vec![].into(),
-      }),
-      None => Ok(Expr::List(vec![].into())),
-    };
+  let subject = &args[0];
+  if !matches!(subject, Expr::List(_) | Expr::FunctionCall { .. }) {
+    crate::emit_message(&format!(
+      "{}::normal: Nonatomic expression expected at position 1 in {}.",
+      fname,
+      show(&original())
+    ));
+    return Ok(original());
   }
 
-  let len = items.len() as i128;
-  let n_usize = n as usize;
+  // One-argument ragged-fill form; non-List heads stay unevaluated.
+  if args.len() == 1 {
+    if !matches!(subject, Expr::List(_)) {
+      return Ok(original());
+    }
+    let dims = ragged_dims(subject);
+    return pad_level(subject, &dims, &[], &Expr::Integer(0), is_left);
+  }
 
-  let result_items = if n < len && offset.is_none() {
-    items[..n_usize].to_vec()
-  } else if n == len && offset.is_none() {
-    items.to_vec()
-  } else {
-    // PadRight positions the original list so its first element is at
-    // output index `m` (0-indexed), i.e. `list_start = m`. Elements whose
-    // target index falls outside `[0, n)` are dropped.
-    let m = offset.unwrap_or(0);
-    let list_start: i128 = m;
-    let list_end: i128 = list_start + len;
-    let mut result = Vec::with_capacity(n_usize);
-    for i in 0..n {
-      if i >= list_start && i < list_end {
-        result.push(items[(i - list_start) as usize].clone());
-      } else {
-        result.push(cyclic_pad_element(pad, i, list_start));
+  // Length specification: a machine integer or a list of them.
+  let (spec, spec_is_list): (Vec<i128>, bool) = match &args[1] {
+    Expr::List(items) => {
+      match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
+        Some(ns) => (ns, true),
+        None => {
+          ilsm(2);
+          return Ok(original());
+        }
       }
     }
-    result
+    other => match strict_int(other) {
+      Some(n) => (vec![n], false),
+      None => {
+        ilsm(2);
+        return Ok(original());
+      }
+    },
   };
 
-  match head_name {
-    Some(h) => crate::evaluator::evaluate_function_call_ast(h, &result_items),
-    None => Ok(Expr::List(result_items.into())),
+  let pad = args.get(2).cloned().unwrap_or(Expr::Integer(0));
+
+  // Margin: a scalar broadcasts to every level of the spec.
+  let margins: Vec<i128> = if args.len() >= 4 {
+    match &args[3] {
+      Expr::List(items) => {
+        match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
+          Some(ms) => ms,
+          None => {
+            ilsm(4);
+            return Ok(original());
+          }
+        }
+      }
+      other => match strict_int(other) {
+        Some(m) => vec![m; spec.len()],
+        None => {
+          ilsm(4);
+          return Ok(original());
+        }
+      },
+    }
+  } else {
+    Vec::new()
+  };
+
+  // An empty padding list leaves the input untouched (no truncation).
+  if matches!(&pad, Expr::List(items) if items.is_empty()) {
+    return Ok(subject.clone());
   }
+
+  // A list spec may not address more levels than the subject has.
+  if spec_is_list {
+    let depth = pad_container_depth(subject);
+    if spec.len() > depth {
+      // wolframscript never pluralizes the subject's level count.
+      crate::emit_message(&format!(
+        "{}::level: The padding specification {} involves {} levels; the list {} has only {} level.",
+        fname,
+        show(&args[1]),
+        spec.len(),
+        show(subject),
+        depth
+      ));
+      return Ok(original());
+    }
+  }
+
+  pad_level(subject, &spec, &margins, &pad, is_left)
 }
 
 /// AST-based Join: join multiple lists.

@@ -10828,3 +10828,187 @@ mod map_at_specs_and_messages {
     );
   }
 }
+
+mod pad_left_right_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn negative_length_pads_opposite_side() {
+    // Regression: negative n used to return {}
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, -5]").unwrap(),
+      "{a, b, c, 0, 0}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, -5, x]").unwrap(),
+      "{a, b, c, x, x}"
+    );
+    assert_eq!(
+      interpret("PadRight[{a, b, c}, -5, x]").unwrap(),
+      "{x, x, a, b, c}"
+    );
+    // Negative truncation keeps the opposite end
+    assert_eq!(interpret("PadLeft[{a, b, c}, -2]").unwrap(), "{a, b}");
+    assert_eq!(interpret("PadRight[{a, b, c}, -2]").unwrap(), "{b, c}");
+    // Cyclic padding follows the flipped side's alignment
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, -7, {x, y}]").unwrap(),
+      "{a, b, c, y, x, y, x}"
+    );
+    // Negative entries flip per level inside a list spec
+    assert_eq!(
+      interpret("PadLeft[{{a}, {b, c}}, {2, -1}]").unwrap(),
+      "{{a}, {b}}"
+    );
+  }
+
+  #[test]
+  fn one_argument_form() {
+    // Regression: a flat list used to map PadLeft over its elements
+    assert_eq!(interpret("PadLeft[{a, b, c}]").unwrap(), "{a, b, c}");
+    assert_eq!(interpret("PadRight[{a, b, c}]").unwrap(), "{a, b, c}");
+    // Ragged fill happens at every level, not just the innermost
+    assert_eq!(
+      interpret("PadLeft[{{{a}, {b, c}}, {{d, e}}}]").unwrap(),
+      "{{{0, a}, {b, c}}, {{0, 0}, {d, e}}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{{a}, {b, c}}, {{d, e}}}]").unwrap(),
+      "{{{a, 0}, {b, c}}, {{d, e}, {0, 0}}}"
+    );
+    // Mixed list/atom levels stop the fill
+    assert_eq!(interpret("PadLeft[{{a, b}, c}]").unwrap(), "{{a, b}, c}");
+    // Non-List heads stay unevaluated silently
+    assert_eq!(interpret("PadLeft[f[a, b]]").unwrap(), "PadLeft[f[a, b]]");
+  }
+
+  #[test]
+  fn multidim_cyclic_padding_aligns_per_row() {
+    // Regression: a cyclic padding list used to be inserted verbatim
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, {c}}, {2, 3}, {x, y}]").unwrap(),
+      "{{y, a, b}, {y, x, c}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{a}}, {2, 2}, {x, y}]").unwrap(),
+      "{{a, y}, {x, y}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, {c}}, {3, 3}, {x, y, z}]").unwrap(),
+      "{{x, y, z}, {x, a, b}, {x, y, c}}"
+    );
+    // Margins shift the cyclic alignment too
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, {c}}, {2, 4}, {x, y}, {0, 1}]").unwrap(),
+      "{{y, a, b, x}, {y, x, c, x}}"
+    );
+    // A scalar margin broadcasts to every level
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, {c}}, {2, 3}, {x, y}, 1]").unwrap(),
+      "{{x, c, x}, {x, y, x}}"
+    );
+  }
+
+  #[test]
+  fn empty_padding_list_returns_input_unchanged() {
+    // Regression: {} used to be treated as a literal pad element
+    assert_eq!(interpret("PadLeft[{a, b, c}, 6, {}]").unwrap(), "{a, b, c}");
+    // Even when the spec would truncate
+    assert_eq!(interpret("PadLeft[{a, b, c}, 2, {}]").unwrap(), "{a, b, c}");
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, {c}}, {2, 3}, {}]").unwrap(),
+      "{{a, b}, {c}}"
+    );
+  }
+
+  #[test]
+  fn margin_list_spec_one_dim() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, 5, x, {1}]").unwrap(),
+      "{x, a, b, c, x}"
+    );
+  }
+
+  #[test]
+  fn atomic_subject_emits_normal() {
+    assert_eq!(interpret("PadLeft[y, 3]").unwrap(), "PadLeft[y, 3]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "PadLeft::normal: Nonatomic expression expected at position 1 in PadLeft[y, 3]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_integer_length_emits_ilsm() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, x]").unwrap(),
+      "PadLeft[{a, b, c}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "PadLeft::ilsm: List of machine-sized integers expected at position 2 in PadLeft[{a, b, c}, x]."
+      )),
+      "expected ilsm message, got {:?}",
+      msgs
+    );
+    // Reals and mixed lists are not machine integers either
+    assert_eq!(interpret("PadLeft[{a}, 3.5]").unwrap(), "PadLeft[{a}, 3.5]");
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, {2, x}]").unwrap(),
+      "PadLeft[{a, b, c}, {2, x}]"
+    );
+  }
+
+  #[test]
+  fn non_integer_margin_emits_ilsm_position_4() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, 5, y, x]").unwrap(),
+      "PadLeft[{a, b, c}, 5, y, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "PadLeft::ilsm: List of machine-sized integers expected at position 4 in PadLeft[{a, b, c}, 5, y, x]."
+      )),
+      "expected ilsm message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn too_deep_spec_emits_level() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, {2, 2}]").unwrap(),
+      "PadLeft[{a, b, c}, {2, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "PadLeft::level: The padding specification {2, 2} involves 2 levels; the list {a, b, c} has only 1 level."
+      )),
+      "expected level message, got {:?}",
+      msgs
+    );
+    // A level with a non-list element caps the depth
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, c}, {2, 2}]").unwrap(),
+      "PadLeft[{{a, b}, c}, {2, 2}]"
+    );
+    // wolframscript keeps "level" singular regardless of the count
+    assert_eq!(
+      interpret("PadLeft[{{a, b}, {c}}, {2, 2, 2}]").unwrap(),
+      "PadLeft[{{a, b}, {c}}, {2, 2, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("has only 2 level.")),
+      "expected singular level message, got {:?}",
+      msgs
+    );
+  }
+}
