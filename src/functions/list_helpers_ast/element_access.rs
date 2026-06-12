@@ -116,6 +116,17 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
 
 /// AST-based First: return first element of list.
 /// First[list] or First[list, default] - returns default if list is empty.
+/// Emit `<F>::normal: Nonatomic expression expected at position 1 in
+/// <F>[expr].` for First/Last/Rest/Most applied to an atom.
+fn nonatomic_message(fname: &str, expr: &Expr) {
+  crate::emit_message(&format!(
+    "{}::normal: Nonatomic expression expected at position 1 in {}[{}].",
+    fname,
+    fname,
+    crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
+  ));
+}
+
 pub fn first_ast(
   list: &Expr,
   default: Option<&Expr>,
@@ -126,6 +137,10 @@ pub fn first_ast(
         if let Some(d) = default {
           return Ok(d.clone());
         }
+        crate::emit_message(&format!(
+          "First::nofirst: {} has zero length and no first element.",
+          crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+        ));
         return Ok(Expr::FunctionCall {
           name: "First".to_string(),
           args: vec![list.clone()].into(),
@@ -138,10 +153,9 @@ pub fn first_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          let expr_str = crate::syntax::expr_to_string(list);
           crate::emit_message(&format!(
-            "{} has zero length and no first element.",
-            expr_str
+            "First::nofirst: {} has zero length and no first element.",
+            crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
           Ok(Expr::FunctionCall {
             name: "First".to_string(),
@@ -184,10 +198,9 @@ pub fn first_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          let expr_str = crate::syntax::expr_to_string(list);
           crate::emit_message(&format!(
-            "{} has zero length and no first element.",
-            expr_str
+            "First::nofirst: {} has zero length and no first element.",
+            crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
           Ok(Expr::FunctionCall {
             name: "First".to_string(),
@@ -205,13 +218,21 @@ pub fn first_ast(
           if let Some(d) = default {
             return Ok(d.clone());
           }
-        } else {
-          return Ok(args[0].clone());
+          crate::emit_message(&format!(
+            "First::nofirst: {} has zero length and no first element.",
+            crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "First".to_string(),
+            args: vec![list.clone()].into(),
+          });
         }
+        return Ok(args[0].clone());
       }
       if let Some(d) = default {
         Ok(d.clone())
       } else {
+        nonatomic_message("First", list);
         Ok(Expr::FunctionCall {
           name: "First".to_string(),
           args: vec![list.clone()].into(),
@@ -233,6 +254,10 @@ pub fn last_ast(
         if let Some(d) = default {
           return Ok(d.clone());
         }
+        crate::emit_message(&format!(
+          "Last::nolast: {} has zero length and no last element.",
+          crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+        ));
         return Ok(Expr::FunctionCall {
           name: "Last".to_string(),
           args: vec![list.clone()].into(),
@@ -245,10 +270,9 @@ pub fn last_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          let expr_str = crate::syntax::expr_to_string(list);
           crate::emit_message(&format!(
-            "{} has zero length and no last element.",
-            expr_str
+            "Last::nolast: {} has zero length and no last element.",
+            crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
           Ok(Expr::FunctionCall {
             name: "Last".to_string(),
@@ -291,10 +315,9 @@ pub fn last_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          let expr_str = crate::syntax::expr_to_string(list);
           crate::emit_message(&format!(
-            "{} has zero length and no last element.",
-            expr_str
+            "Last::nolast: {} has zero length and no last element.",
+            crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
           Ok(Expr::FunctionCall {
             name: "Last".to_string(),
@@ -307,14 +330,26 @@ pub fn last_ast(
     }
     _ => {
       // Try decomposing BinaryOp/UnaryOp to canonical form
-      if let Some((_head, args)) = expr_to_head_args(list)
-        && !args.is_empty()
-      {
+      if let Some((_head, args)) = expr_to_head_args(list) {
+        if args.is_empty() {
+          if let Some(d) = default {
+            return Ok(d.clone());
+          }
+          crate::emit_message(&format!(
+            "Last::nolast: {} has zero length and no last element.",
+            crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "Last".to_string(),
+            args: vec![list.clone()].into(),
+          });
+        }
         return Ok(args[args.len() - 1].clone());
       }
       if let Some(d) = default {
         Ok(d.clone())
       } else {
+        nonatomic_message("Last", list);
         Ok(Expr::FunctionCall {
           name: "Last".to_string(),
           args: vec![list.clone()].into(),
@@ -326,33 +361,34 @@ pub fn last_ast(
 
 /// AST-based Rest: return all but first element.
 pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let norest = || {
+    crate::emit_message(&format!(
+      "Rest::norest: Cannot take Rest of expression {} with length zero.",
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    Ok(Expr::FunctionCall {
+      name: "Rest".to_string(),
+      args: vec![list.clone()].into(),
+    })
+  };
   match list {
+    Expr::Association(pairs) => {
+      if pairs.is_empty() {
+        norest()
+      } else {
+        Ok(Expr::Association(pairs[1..].to_vec()))
+      }
+    }
     Expr::List(items) => {
       if items.is_empty() {
-        let expr_str = crate::syntax::expr_to_string(list);
-        crate::emit_message(&format!(
-          "Cannot take Rest of expression {} with length zero.",
-          expr_str
-        ));
-        Ok(Expr::FunctionCall {
-          name: "Rest".to_string(),
-          args: vec![list.clone()].into(),
-        })
+        norest()
       } else {
         Ok(Expr::List(items[1..].to_vec().into()))
       }
     }
     Expr::FunctionCall { name, args } => {
       if args.is_empty() {
-        let expr_str = crate::syntax::expr_to_string(list);
-        crate::emit_message(&format!(
-          "Cannot take Rest of expression {} with length zero.",
-          expr_str
-        ));
-        Ok(Expr::FunctionCall {
-          name: "Rest".to_string(),
-          args: vec![list.clone()].into(),
-        })
+        norest()
       } else {
         // Evaluate so e.g. Times[x] reduces to x
         crate::evaluator::evaluate_function_call_ast(name, &args[1..])
@@ -362,45 +398,50 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       // Try decomposing BinaryOp/UnaryOp to canonical form
       if let Some((head, args)) = expr_to_head_args(list) {
         if args.is_empty() {
-          let expr_str = crate::syntax::expr_to_string(list);
-          crate::emit_message(&format!(
-            "Cannot take Rest of expression {} with length zero.",
-            expr_str
-          ));
-          return Ok(Expr::FunctionCall {
-            name: "Rest".to_string(),
-            args: vec![list.clone()].into(),
-          });
+          return norest();
         }
         // Evaluate so e.g. Times[x] reduces to x
         return crate::evaluator::evaluate_function_call_ast(&head, &args[1..]);
       }
-      Err(InterpreterError::EvaluationError(format!(
-        "Nonatomic expression expected at position 1 in Rest[{}].",
-        crate::syntax::expr_to_string(list)
-      )))
+      nonatomic_message("Rest", list);
+      Ok(Expr::FunctionCall {
+        name: "Rest".to_string(),
+        args: vec![list.clone()].into(),
+      })
     }
   }
 }
 
 /// AST-based Most: return all but last element.
 pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let nomost = || {
+    crate::emit_message(&format!(
+      "Most::nomost: Cannot take Most of expression {} with length zero.",
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    Ok(Expr::FunctionCall {
+      name: "Most".to_string(),
+      args: vec![list.clone()].into(),
+    })
+  };
   match list {
+    Expr::Association(pairs) => {
+      if pairs.is_empty() {
+        nomost()
+      } else {
+        Ok(Expr::Association(pairs[..pairs.len() - 1].to_vec()))
+      }
+    }
     Expr::List(items) => {
       if items.is_empty() {
-        Err(InterpreterError::EvaluationError(
-          "Most: list is empty".into(),
-        ))
+        nomost()
       } else {
         Ok(Expr::List(items[..items.len() - 1].to_vec().into()))
       }
     }
     Expr::FunctionCall { name, args } => {
       if args.is_empty() {
-        Err(InterpreterError::EvaluationError(format!(
-          "Cannot take Most of expression {}[] with length zero.",
-          name
-        )))
+        nomost()
       } else {
         crate::evaluator::evaluate_function_call_ast(
           name,
@@ -412,15 +453,14 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       // Try decomposing BinaryOp/UnaryOp to canonical form
       if let Some((head, args)) = expr_to_head_args(list) {
         if args.is_empty() {
-          return Err(InterpreterError::EvaluationError(
-            "Most: expression has length zero".into(),
-          ));
+          return nomost();
         }
         return crate::evaluator::evaluate_function_call_ast(
           &head,
           &args[..args.len() - 1],
         );
       }
+      nonatomic_message("Most", list);
       Ok(Expr::FunctionCall {
         name: "Most".to_string(),
         args: vec![list.clone()].into(),

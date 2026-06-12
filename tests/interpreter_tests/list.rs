@@ -4512,7 +4512,9 @@ mod rest_nonlist {
 
   #[test]
   fn rest_error_atomic() {
-    assert!(interpret("Rest[x]").is_err());
+    // wolframscript emits Rest::normal and returns the call unevaluated
+    // (verified 2026-06-12); the old hard-error behavior diverged.
+    assert_eq!(interpret("Rest[x]").unwrap(), "Rest[x]");
   }
 
   #[test]
@@ -12688,5 +12690,120 @@ mod take_drop_upto_specs_and_messages {
       "expected innf followed by seqs, got {:?}",
       msgs
     );
+  }
+}
+
+mod first_last_rest_most_messages {
+  use super::*;
+
+  #[test]
+  fn empty_subjects_emit_tagged_messages() {
+    // Regression: messages lacked the Tag::name prefix, and Most[{}]
+    // raised a hard error
+    assert_eq!(interpret("First[{}]").unwrap(), "First[{}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("First::nofirst: {} has zero length and no first element.")),
+      "expected nofirst message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Last[{}]").unwrap(), "Last[{}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Last::nolast: {} has zero length and no last element.")),
+      "expected nolast message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Rest[{}]").unwrap(), "Rest[{}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Rest::norest: Cannot take Rest of expression {} with length zero."
+      )),
+      "expected norest message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Most[{}]").unwrap(), "Most[{}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Most::nomost: Cannot take Most of expression {} with length zero."
+      )),
+      "expected nomost message, got {:?}",
+      msgs
+    );
+    // General heads and empty associations use the same messages
+    assert_eq!(interpret("First[f[]]").unwrap(), "First[f[]]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("First::nofirst: f[] has zero length and no first element.")),
+      "expected nofirst message for f[], got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("First[<||>]").unwrap(), "First[<||>]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "First::nofirst: <||> has zero length and no first element."
+      )),
+      "expected nofirst message for <||>, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn atomic_subjects_emit_normal() {
+    // Regression: atoms returned silently (First/Last/Most) or raised a
+    // hard error (Rest)
+    for f in ["First", "Last", "Rest", "Most"] {
+      let input = format!("{}[x]", f);
+      assert_eq!(interpret(&input).unwrap(), input);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "{}::normal: Nonatomic expression expected at position 1 in {}[x].",
+        f, f
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {:?}, got {:?}",
+        expected,
+        msgs
+      );
+    }
+    // Strings are atoms and display unquoted in the message
+    assert_eq!(interpret("First[\"abc\"]").unwrap(), "First[abc]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "First::normal: Nonatomic expression expected at position 1 in First[abc]."
+      )),
+      "expected normal message for string, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn defaults_suppress_messages() {
+    assert_eq!(interpret("First[x, d]").unwrap(), "d");
+    assert_eq!(interpret("Last[x, d]").unwrap(), "d");
+    assert_eq!(interpret("First[{}, d]").unwrap(), "d");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.is_empty(),
+      "default form must not emit messages, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn rest_and_most_work_on_associations() {
+    // Regression: Rest raised a hard error, Most returned unevaluated
+    assert_eq!(interpret("Rest[<|a -> 1, b -> 2|>]").unwrap(), "<|b -> 2|>");
+    assert_eq!(interpret("Most[<|a -> 1, b -> 2|>]").unwrap(), "<|a -> 1|>");
   }
 }

@@ -3157,81 +3157,9 @@ fn try_fast_function_call(
       }
       Some(Ok("False".to_string()))
     }
-    "First" => {
-      if args.len() != 1 {
-        return None;
-      }
-      let arg = args[0].trim();
-      // If the argument is a variable, look it up
-      let list_str = if arg
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-        && !arg.is_empty()
-        && arg.chars().next().unwrap().is_ascii_alphabetic()
-      {
-        // It's an identifier, look it up
-        match ENV.with(|e| e.borrow().get(arg).cloned()) {
-          Some(StoredValue::Raw(val)) => val,
-          Some(StoredValue::ExprVal(e)) => syntax::expr_to_string(&e),
-          _ => return None,
-        }
-      } else if arg.starts_with('{') && arg.ends_with('}') {
-        arg.to_string()
-      } else {
-        return None;
-      };
-
-      // Parse the list
-      if !list_str.starts_with('{') || !list_str.ends_with('}') {
-        return None;
-      }
-      let inner = &list_str[1..list_str.len() - 1];
-      let elems = split_args(inner);
-      if elems.is_empty() {
-        emit_message(&format!(
-          "{} has zero length and no first element.",
-          list_str
-        ));
-        return Some(Ok("First[{}]".to_string()));
-      }
-      Some(Ok(elems[0].trim().to_string()))
-    }
-    "Rest" => {
-      if args.len() != 1 {
-        return None;
-      }
-      let arg = args[0].trim();
-      // If the argument is a variable, look it up
-      let list_str = if arg
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-        && !arg.is_empty()
-        && arg.chars().next().unwrap().is_ascii_alphabetic()
-      {
-        match ENV.with(|e| e.borrow().get(arg).cloned()) {
-          Some(StoredValue::Raw(val)) => val,
-          Some(StoredValue::ExprVal(e)) => syntax::expr_to_string(&e),
-          _ => return None,
-        }
-      } else if arg.starts_with('{') && arg.ends_with('}') {
-        arg.to_string()
-      } else {
-        return None;
-      };
-
-      // Parse the list
-      if !list_str.starts_with('{') || !list_str.ends_with('}') {
-        return None;
-      }
-      let inner = &list_str[1..list_str.len() - 1];
-      let elems = split_args(inner);
-      if elems.is_empty() {
-        emit_message("Cannot take Rest of expression {} with length zero.");
-        return Some(Ok("Rest[{}]".to_string()));
-      }
-      let rest: Vec<_> = elems.iter().skip(1).map(|s| s.trim()).collect();
-      Some(Ok(format!("{{{}}}", rest.join(", "))))
-    }
+    // First/Rest intentionally have no fast path: the AST
+    // implementations carry the conformant ::nofirst/::norest/::normal
+    // message behavior.
     _ => None,
   }
 }
