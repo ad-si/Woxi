@@ -16,6 +16,36 @@ fn parse_nest_while_m(expr: &Expr) -> Option<list_helpers_ast::NestWhileM> {
   }
 }
 
+/// Validate the sequence-specification arguments of Take/Drop. On the
+/// first argument that is not a valid spec shape, emits ::seqs naming
+/// its position and returns the unevaluated call.
+fn invalid_seq_spec(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  for (i, spec) in args.iter().enumerate().skip(1) {
+    if !list_helpers_ast::seq_spec_shape_ok(spec) {
+      crate::emit_message(&format!(
+        "{}::seqs: Sequence specification (+n, -n, {{+n}}, {{-n}}, {{m, n}} or {{m, n, s}}) expected at position {} in {}.",
+        name,
+        i + 1,
+        crate::syntax::format_expr(
+          &Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec().into(),
+          },
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+  }
+  None
+}
+
 /// Check recursively whether an expression contains pattern elements (Blank, Pattern, etc.)
 fn has_pattern_element(expr: &Expr) -> bool {
   match expr {
@@ -1521,12 +1551,21 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::most_ast(&args[0]));
     }
     "Take" if args.len() >= 2 => {
+      if let Some(r) = invalid_seq_spec(name, args) {
+        return Some(r);
+      }
       return Some(list_helpers_ast::take_multi_ast(&args[0], &args[1..]));
     }
     "Drop" if args.len() == 2 => {
+      if let Some(r) = invalid_seq_spec(name, args) {
+        return Some(r);
+      }
       return Some(list_helpers_ast::drop_ast(&args[0], &args[1]));
     }
     "Drop" if args.len() == 3 => {
+      if let Some(r) = invalid_seq_spec(name, args) {
+        return Some(r);
+      }
       return Some(list_helpers_ast::drop_multi_ast(
         &args[0], &args[1], &args[2],
       ));

@@ -12552,3 +12552,141 @@ mod partition_specs_and_messages {
     );
   }
 }
+
+mod take_drop_upto_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn upto_range_endpoints_clamp_to_length() {
+    // Regression: UpTo inside {m, n} / {m, n, s} specs stayed unevaluated
+    assert_eq!(
+      interpret("Take[{a, b, c, d}, {2, UpTo[9]}]").unwrap(),
+      "{b, c, d}"
+    );
+    assert_eq!(
+      interpret("Take[{a, b, c, d, e, f}, {2, UpTo[9], 2}]").unwrap(),
+      "{b, d, f}"
+    );
+    assert_eq!(interpret("Take[{a, b, c}, {UpTo[5], 3}]").unwrap(), "{c}");
+    assert_eq!(
+      interpret("Drop[{a, b, c, d}, {2, UpTo[9]}]").unwrap(),
+      "{a}"
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c, d, e, f}, {2, UpTo[9], 2}]").unwrap(),
+      "{a, c, e}"
+    );
+    assert_eq!(
+      interpret("Take[{{a, b, c}, {d, e, f}}, 2, UpTo[2]]").unwrap(),
+      "{{a, b}, {d, e}}"
+    );
+  }
+
+  #[test]
+  fn upto_infinity_is_a_valid_count() {
+    assert_eq!(
+      interpret("Take[{a, b, c}, UpTo[Infinity]]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(interpret("Drop[{a, b, c}, UpTo[Infinity]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn invalid_specs_emit_seqs() {
+    // Regression: invalid specs silently returned unevaluated
+    assert_eq!(
+      interpret("Take[{a, b, c}, x]").unwrap(),
+      "Take[{a, b, c}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Take::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 2 in Take[{a, b, c}, x]."
+      )),
+      "expected seqs message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c}, x]").unwrap(),
+      "Drop[{a, b, c}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Drop::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 2 in Drop[{a, b, c}, x]."
+      )),
+      "expected seqs message, got {:?}",
+      msgs
+    );
+    // Zero step, reals, and a single-element UpTo list are invalid
+    assert_eq!(
+      interpret("Take[{a, b, c}, {1, 3, 0}]").unwrap(),
+      "Take[{a, b, c}, {1, 3, 0}]"
+    );
+    assert_eq!(
+      interpret("Drop[{a, b, c}, {1, 3, 0}]").unwrap(),
+      "Drop[{a, b, c}, {1, 3, 0}]"
+    );
+    assert_eq!(
+      interpret("Take[{a, b, c}, 2.5]").unwrap(),
+      "Take[{a, b, c}, 2.5]"
+    );
+    assert_eq!(
+      interpret("Take[{a, b, c}, {UpTo[2]}]").unwrap(),
+      "Take[{a, b, c}, {UpTo[2]}]"
+    );
+  }
+
+  #[test]
+  fn invalid_specs_in_later_arguments_name_their_position() {
+    assert_eq!(
+      interpret("Take[{{a, b, c}, {d, e, f}}, 2, x]").unwrap(),
+      "Take[{{a, b, c}, {d, e, f}}, 2, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Take::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 3 in Take[{{a, b, c}, {d, e, f}}, 2, x]."
+      )),
+      "expected position-3 seqs message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn upto_validates_its_argument() {
+    // Regression: UpTo[-1] and UpTo[1.5] silently stayed symbolic
+    assert_eq!(interpret("UpTo[-1]").unwrap(), "UpTo[-1]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "UpTo::innf: Non-negative integer or Infinity expected at position 1 in UpTo[-1]."
+      )),
+      "expected innf message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("UpTo[1.5]").unwrap(), "UpTo[1.5]");
+    // A symbolic argument is not validated
+    assert_eq!(interpret("UpTo[x]").unwrap(), "UpTo[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("UpTo::innf")),
+      "UpTo[x] must not emit innf, got {:?}",
+      msgs
+    );
+    // Inside Take, the UpTo argument message precedes Take::seqs
+    assert_eq!(
+      interpret("Take[{a, b, c}, UpTo[-1]]").unwrap(),
+      "Take[{a, b, c}, UpTo[-1]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("UpTo::innf"))
+        && msgs.iter().any(|m| m.contains(
+          "Take::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 2 in Take[{a, b, c}, UpTo[-1]]."
+        )),
+      "expected innf followed by seqs, got {:?}",
+      msgs
+    );
+  }
+}

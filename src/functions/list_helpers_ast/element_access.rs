@@ -452,6 +452,58 @@ fn take_drop_message(fname: &str, from: i128, to: i128, list: &Expr) {
 }
 
 /// The (from, to) display range of a Take/Drop spec, for messages.
+/// The count carried by a valid `UpTo[n]` wrapper: a non-negative
+/// integer, or effectively unbounded for `UpTo[Infinity]`.
+fn upto_count(e: &Expr) -> Option<i128> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "UpTo"
+    && args.len() == 1
+  {
+    return match &args[0] {
+      Expr::Integer(v) if *v >= 0 => Some(*v),
+      Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+        Some(i128::MAX)
+      }
+      Expr::FunctionCall { name: dn, args: da }
+        if dn == "DirectedInfinity"
+          && da.len() == 1
+          && matches!(&da[0], Expr::Integer(1)) =>
+      {
+        Some(i128::MAX)
+      }
+      _ => None,
+    };
+  }
+  None
+}
+
+/// Whether an expression has the shape of a valid Take/Drop sequence
+/// specification: ±n, All, None, UpTo[n], {i}, {i, j} or {i, j, s} with
+/// machine-sized integer entries, a nonzero step, and UpTo allowed for
+/// the i/j endpoints. Used to decide when to emit Take::seqs/Drop::seqs.
+pub fn seq_spec_shape_ok(spec: &Expr) -> bool {
+  const M: i128 = i64::MAX as i128;
+  let machine =
+    |e: &Expr| matches!(e, Expr::Integer(v) if (-M..=M).contains(v));
+  let endpoint = |e: &Expr| machine(e) || upto_count(e).is_some();
+  match spec {
+    Expr::Identifier(s) if s == "All" || s == "None" => true,
+    e if machine(e) || upto_count(e).is_some() => true,
+    Expr::List(parts) => match parts.as_slice() {
+      [i] => machine(i),
+      [i, j] => endpoint(i) && endpoint(j),
+      [i, j, s] => {
+        endpoint(i)
+          && endpoint(j)
+          && machine(s)
+          && !matches!(s, Expr::Integer(0))
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
 fn spec_range(n: &Expr) -> Option<(i128, i128)> {
   match n {
     Expr::Integer(v) if *v >= 0 => Some((1, *v)),
@@ -583,8 +635,13 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       }
     } else if spec.len() >= 2 {
       let len = items.len() as i128;
-      if let (Some(start), Some(end)) =
-        (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
+      // UpTo[k] endpoints clamp to the list length.
+      let endpoint = |e: &Expr| -> Option<i128> {
+        upto_count(e)
+          .map(|k| k.min(len))
+          .or_else(|| expr_to_i128(e))
+      };
+      if let (Some(start), Some(end)) = (endpoint(&spec[0]), endpoint(&spec[1]))
       {
         let step = if spec.len() == 3 {
           expr_to_i128(&spec[2]).unwrap_or(1)
@@ -628,19 +685,9 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Handle UpTo[n]: take up to n elements (clamp to list length)
-  if let Expr::FunctionCall {
-    name: up_name,
-    args: up_args,
-  } = n
-    && up_name == "UpTo"
-    && up_args.len() == 1
-    && let Some(max_count) = expr_to_i128(&up_args[0])
-  {
-    let len = items.len() as i128;
-    let actual = max_count.min(len);
-    if actual >= 0 {
-      return Ok(wrap(items[..actual as usize].to_vec()));
-    }
+  if let Some(max_count) = upto_count(n) {
+    let actual = max_count.min(items.len() as i128) as usize;
+    return Ok(wrap(items[..actual].to_vec()));
   }
 
   let count = match expr_to_i128(n) {
@@ -753,11 +800,17 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(wrap_drop(Vec::new()));
   }
 
+  // UpTo[k] endpoints clamp to the list length.
+  let endpoint = |e: &Expr| -> Option<i128> {
+    upto_count(e)
+      .map(|k| k.min(len))
+      .or_else(|| expr_to_i128(e))
+  };
+
   // Drop[list, {m, n}] - drop elements m through n
   if let Expr::List(spec) = n {
     if spec.len() == 2
-      && let (Some(m), Some(n_end)) =
-        (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
+      && let (Some(m), Some(n_end)) = (endpoint(&spec[0]), endpoint(&spec[1]))
     {
       let real_start = if m > 0 { m } else { len + m + 1 };
       let real_end = if n_end > 0 { n_end } else { len + n_end + 1 };
@@ -804,8 +857,8 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     // Drop[list, {m, n, s}] - drop elements m, m+s, m+2s, ..., up to n.
     if spec.len() == 3
       && let (Some(m), Some(n_end), Some(step)) = (
-        expr_to_i128(&spec[0]),
-        expr_to_i128(&spec[1]),
+        endpoint(&spec[0]),
+        endpoint(&spec[1]),
         expr_to_i128(&spec[2]),
       )
     {
@@ -863,15 +916,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Handle UpTo[n]: drop min(n, len) elements from the front.
-  if let Expr::FunctionCall {
-    name: up_name,
-    args: up_args,
-  } = n
-    && up_name == "UpTo"
-    && up_args.len() == 1
-    && let Some(max_count) = expr_to_i128(&up_args[0])
-    && max_count >= 0
-  {
+  if let Some(max_count) = upto_count(n) {
     let drop_count = max_count.min(len) as usize;
     return Ok(wrap_drop(items[drop_count..].to_vec()));
   }

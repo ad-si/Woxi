@@ -1924,7 +1924,6 @@ pub fn evaluate_function_call_ast_inner(
     | "CircleMinus"
     | "Glow"
     | "PrincipalValue"
-    | "UpTo"
     | "LetterCharacter"
     | "Longest"
     | "Shortest"
@@ -1937,6 +1936,39 @@ pub fn evaluate_function_call_ast_inner(
     | "PermutationGroup"
     | "Inactivate"
     | "LegendLabel" => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    // UpTo stays symbolic but validates its argument: anything numeric
+    // that is not a non-negative integer (or Infinity) emits ::innf.
+    "UpTo" => {
+      if args.len() == 1 {
+        let invalid = match &args[0] {
+          Expr::Integer(v) => *v < 0,
+          Expr::BigInteger(v) => v.sign() == num_bigint::Sign::Minus,
+          Expr::Real(_) | Expr::BigFloat(..) => true,
+          Expr::FunctionCall { name: dn, args: da }
+            if dn == "DirectedInfinity" =>
+          {
+            !(da.len() == 1 && matches!(&da[0], Expr::Integer(1)))
+          }
+          _ => false,
+        };
+        if invalid {
+          crate::emit_message(&format!(
+            "UpTo::innf: Non-negative integer or Infinity expected at position 1 in {}.",
+            crate::syntax::format_expr(
+              &Expr::FunctionCall {
+                name: "UpTo".to_string(),
+                args: args.to_vec().into(),
+              },
+              crate::syntax::ExprForm::Output
+            )
+          ));
+        }
+      }
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec().into(),
