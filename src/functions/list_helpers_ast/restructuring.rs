@@ -1006,191 +1006,183 @@ pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Riffle: interleave elements with separator.
 /// Riffle[{a, b, c}, x] -> {a, x, b, x, c}
-pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Riffle".to_string(),
-        args: vec![list.clone(), sep.clone()].into(),
-      });
+/// Interleave `items` with separators placed at the given 1-based output
+/// positions (sorted, distinct). A separator list cycles by insertion
+/// order; any other separator expression (including `{}`) is literal.
+fn riffle_build(items: &[Expr], sep: &Expr, positions: &[i128]) -> Expr {
+  let sep_at = |i: usize| -> Expr {
+    match sep {
+      Expr::List(xs) if !xs.is_empty() => xs[i % xs.len()].clone(),
+      other => other.clone(),
     }
   };
-
-  if items.is_empty() {
-    return Ok(Expr::List(vec![].into()));
-  }
-
-  // If sep is a list, interleave with cycling
-  // If sep has same length as items: full interleave {a1,s1,a2,s2,...,an,sn}
-  // Otherwise: insert n-1 separators cycling: {a1,s1,a2,s2,...,an}
-  if let Expr::List(sep_items) = sep {
-    if sep_items.is_empty() {
-      return Ok(list.clone());
-    }
-    let mut result = Vec::new();
-    if sep_items.len() == items.len() {
-      // Full interleave
-      for (i, item) in items.iter().enumerate() {
-        result.push(item.clone());
-        result.push(sep_items[i].clone());
-      }
+  let total = items.len() + positions.len();
+  let mut result: Vec<Expr> = Vec::with_capacity(total);
+  let mut item_idx = 0usize;
+  let mut sep_idx = 0usize;
+  for p in 1..=(total as i128) {
+    if sep_idx < positions.len() && positions[sep_idx] == p {
+      result.push(sep_at(sep_idx));
+      sep_idx += 1;
     } else {
-      // Insert n-1 separators, cycling through sep list
-      for (i, item) in items.iter().enumerate() {
-        result.push(item.clone());
-        if i < items.len() - 1 {
-          result.push(sep_items[i % sep_items.len()].clone());
-        }
-      }
-    }
-    return Ok(Expr::List(result.into()));
-  }
-
-  let mut result = Vec::new();
-  for (i, item) in items.iter().enumerate() {
-    result.push(item.clone());
-    if i < items.len() - 1 {
-      result.push(sep.clone());
+      result.push(items[item_idx].clone());
+      item_idx += 1;
     }
   }
-
-  Ok(Expr::List(result.into()))
+  Expr::List(result.into())
 }
 
-/// AST-based Riffle with step spec.
-/// Riffle[list, x, n] - insert x at every n-th output position while the
-///   list still has elements.
-/// Riffle[list, x, {a, b, s}] - insert x at positions a, a+s, a+2s, ... .
-///   If b is positive, insertions stop once they would exceed b.
-///   If b is negative (e.g. -1), insertions continue as long as the next
-///   position equals the current output index; a negative b allows a
-///   trailing insert past the last list element when the arithmetic
-///   progression lands on the output-length position.
-pub fn riffle_extended_ast(
-  list: &Expr,
-  sep: &Expr,
-  spec: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
+/// Unified Riffle covering the full argument space:
+/// - `Riffle[list, x]` — x between elements; a separator list cycles
+///   (equal length interleaves fully, with a trailing separator)
+/// - `Riffle[list, x, n]` — x at every nth output position
+/// - `Riffle[list, x, {imin, imax, di}]` — x at imin, imin+di, … , imax;
+///   negative positions anchor to the end of the *output* list
+///
+/// Invalid input emits ::listrp / ::rspec / ::sepos / ::npos / ::inclen
+/// like wolframscript and returns the call unevaluated.
+pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "Riffle".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  let items: &[Expr] = match &args[0] {
+    Expr::List(items) => items.as_slice(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Riffle".to_string(),
-        args: vec![list.clone(), sep.clone(), spec.clone()].into(),
-      });
+      crate::emit_message(&format!(
+        "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+        show(&original())
+      ));
+      return Ok(original());
     }
   };
+  let sep = &args[1];
+  let len = items.len() as i128;
 
-  // Parse the spec into (start, end_opt, step, is_simple).
-  // is_simple = true for `Riffle[list, x, n]` (no explicit end).
-  let (start, end_opt, step, is_simple) = match spec {
-    Expr::Integer(n) => (*n, None, *n, true),
-    Expr::List(spec_items) if spec_items.len() == 3 => {
-      let a = match &spec_items[0] {
-        Expr::Integer(n) => *n,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Riffle".to_string(),
-            args: vec![list.clone(), sep.clone(), spec.clone()].into(),
-          });
-        }
-      };
-      let b = match &spec_items[1] {
-        Expr::Integer(n) => *n,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Riffle".to_string(),
-            args: vec![list.clone(), sep.clone(), spec.clone()].into(),
-          });
-        }
-      };
-      let s = match &spec_items[2] {
-        Expr::Integer(n) => *n,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Riffle".to_string(),
-            args: vec![list.clone(), sep.clone(), spec.clone()].into(),
-          });
-        }
-      };
-      (a, Some(b), s, false)
+  if args.len() == 2 {
+    if items.is_empty() {
+      return Ok(Expr::List(vec![].into()));
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Riffle".to_string(),
-        args: vec![list.clone(), sep.clone(), spec.clone()].into(),
-      });
-    }
-  };
+    // An equal-length separator list interleaves fully, separator last.
+    let full = matches!(sep, Expr::List(xs) if !xs.is_empty() && xs.len() == items.len());
+    let count = if full { len } else { len - 1 };
+    let positions: Vec<i128> = (1..=count).map(|i| 2 * i).collect();
+    return Ok(riffle_build(items, sep, &positions));
+  }
 
-  if step <= 0 || start <= 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Riffle: start and step must be positive integers".into(),
+  let inclen = || {
+    crate::emit_message(&format!(
+      "Riffle::inclen: The start and end positions and the spacing between riffled elements given in {} cannot be satisfied for the input list of length {}.",
+      show(&args[2]),
+      len
     ));
-  }
-
-  // Collect separators: either a list (to cycle through) or a single value.
-  let sep_values: Vec<Expr> = match sep {
-    Expr::List(xs) if !xs.is_empty() => xs.to_vec(),
-    Expr::List(_) => return Ok(Expr::List(items)),
-    other => vec![other.clone()],
+    Ok(original())
+  };
+  let rspec = || {
+    crate::emit_message(&format!(
+      "Riffle::rspec: The third argument {} should be a positive integer or a list with three integers.",
+      show(&args[2])
+    ));
+    Ok(original())
   };
 
-  if items.is_empty() {
-    return Ok(Expr::List(vec![].into()));
-  }
-
-  let mut result: Vec<Expr> = Vec::new();
-  let mut list_idx: usize = 0;
-  let mut out_idx: i128 = 1;
-  let mut next_insert: i128 = start;
-  let mut insert_count: usize = 0;
-
-  loop {
-    let list_done = list_idx >= items.len();
-    let want_insert = next_insert == out_idx;
-
-    // For a positive `b`, insertions are only allowed while `next_insert <= b`.
-    let insert_allowed = match end_opt {
-      Some(b) if b > 0 => next_insert <= b,
-      _ => true,
-    };
-
-    if is_simple {
-      // Simple `Riffle[list, x, n]`: stop as soon as the list is exhausted,
-      // regardless of any pending insert at the current output position.
-      if list_done {
-        break;
+  match &args[2] {
+    // Scalar n: x at every nth output position. The separator count k is
+    // the smallest k >= 1 with floor((len + k)/n) == k; a riffle that
+    // cannot place any separator consistently emits ::inclen.
+    Expr::Integer(n) if *n >= 1 => {
+      let n = *n;
+      if n == 1 {
+        return inclen();
       }
-      if want_insert {
-        result.push(sep_values[insert_count % sep_values.len()].clone());
-        insert_count += 1;
-        next_insert += step;
+      if len == 0 {
+        return Ok(Expr::List(vec![].into()));
+      }
+      if len == 1 {
+        return Ok(args[0].clone());
+      }
+      let k = match (1..=len + 2).find(|k| (len + k) / n == *k) {
+        Some(k) => k,
+        None => return inclen(),
+      };
+      let positions: Vec<i128> = (1..=k).map(|i| i * n).collect();
+      Ok(riffle_build(items, sep, &positions))
+    }
+    Expr::List(spec_items) if spec_items.len() == 3 => {
+      let ints: Option<Vec<i128>> = spec_items
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(n) => Some(*n),
+          _ => None,
+        })
+        .collect();
+      let Some(ints) = ints else {
+        return rspec();
+      };
+      let (imin, imax, di) = (ints[0], ints[1], ints[2]);
+      if imin == 0 || imax == 0 {
+        crate::emit_message(&format!(
+          "Riffle::sepos: The start and end positions in {} should be nonzero machine-sized integers.",
+          show(&args[2])
+        ));
+        return Ok(original());
+      }
+      if di == 0 {
+        crate::emit_message(&format!(
+          "Riffle::npos: The spacing between riffled elements given in {} should be a positive machine-sized integer.",
+          show(&args[2])
+        ));
+        return Ok(original());
+      }
+
+      // Negative endpoints anchor to the output list, whose length depends
+      // on the separator count k. A count is self-consistent when the
+      // resolved range has exactly k positions, each leaving room for the
+      // elements before it (p_i <= len + i). Among consistent counts the
+      // largest wins, except when every count works (the range tracks the
+      // output end indefinitely) — then the smallest does.
+      let resolve = |e: i128, t: i128| if e > 0 { e } else { t + 1 + e };
+      let consistent = |k: i128| -> Option<Vec<i128>> {
+        let t = len + k;
+        let lo = resolve(imin, t);
+        let hi = resolve(imax, t);
+        let mut positions: Vec<i128> = Vec::new();
+        let mut p = lo;
+        while (di > 0 && p <= hi) || (di < 0 && p >= hi) {
+          positions.push(p);
+          p += di;
+        }
+        positions.sort_unstable();
+        if positions.len() as i128 != k {
+          return None;
+        }
+        let fits = positions
+          .iter()
+          .enumerate()
+          .all(|(i, p)| *p >= 1 && *p <= len + i as i128 + 1);
+        if fits { Some(positions) } else { None }
+      };
+      let k_max = len + imin.abs() + imax.abs() + di.abs() + 16;
+      let candidates: Vec<i128> =
+        (0..=k_max).filter(|k| consistent(*k).is_some()).collect();
+      let chosen = if consistent(k_max + 1).is_some() {
+        candidates.first().copied()
       } else {
-        result.push(items[list_idx].clone());
-        list_idx += 1;
+        candidates.last().copied()
+      };
+      match chosen {
+        Some(k) => {
+          let positions = consistent(k).unwrap();
+          Ok(riffle_build(items, sep, &positions))
+        }
+        None => inclen(),
       }
-      out_idx += 1;
-      continue;
     }
-
-    // `{a, b, s}` form.
-    if want_insert && insert_allowed {
-      result.push(sep_values[insert_count % sep_values.len()].clone());
-      insert_count += 1;
-      next_insert += step;
-      out_idx += 1;
-    } else if !list_done {
-      result.push(items[list_idx].clone());
-      list_idx += 1;
-      out_idx += 1;
-    } else {
-      break;
-    }
+    _ => rspec(),
   }
-
-  Ok(Expr::List(result.into()))
 }
 
 /// AST-based RotateLeft: rotate list left by n positions.

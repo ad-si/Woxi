@@ -11012,3 +11012,183 @@ mod pad_left_right_specs_and_messages {
     );
   }
 }
+
+mod riffle_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn empty_list_separator_is_literal() {
+    // Regression: {} used to be ignored instead of riffled in
+    assert_eq!(interpret("Riffle[{a, b}, {}]").unwrap(), "{a, {}, b}");
+    assert_eq!(interpret("Riffle[{a, b}, {}, 3]").unwrap(), "{a, b, {}}");
+  }
+
+  #[test]
+  fn scalar_n_trailing_separator() {
+    // Regression: the trailing separator cases used to drop the separator
+    assert_eq!(interpret("Riffle[{a, b}, x, 3]").unwrap(), "{a, b, x}");
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, 4]").unwrap(),
+      "{a, b, c, x}"
+    );
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, 5]").unwrap(),
+      "{a, b, c, d, x}"
+    );
+    // ... but a longer list places interior separators only
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e}, x, 5]").unwrap(),
+      "{a, b, c, d, x, e}"
+    );
+    // Single-element and empty lists pass through silently
+    assert_eq!(interpret("Riffle[{a}, x, 2]").unwrap(), "{a}");
+    assert_eq!(interpret("Riffle[{}, x, 3]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn scalar_n_unsatisfiable_emits_inclen() {
+    // n = 1 leaves no room for elements
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, 1]").unwrap(),
+      "Riffle[{a, b, c, d}, x, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Riffle::inclen: The start and end positions and the spacing between riffled elements given in 1 cannot be satisfied for the input list of length 4."
+      )),
+      "expected inclen message, got {:?}",
+      msgs
+    );
+    // A list shorter than n - 1 cannot reach position n
+    assert_eq!(
+      interpret("Riffle[{a, b}, x, 4]").unwrap(),
+      "Riffle[{a, b}, x, 4]"
+    );
+  }
+
+  #[test]
+  fn triple_spec_negative_anchors() {
+    // Regression: negative imin/imax used to raise a hard error
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, {-3, -1, 1}]").unwrap(),
+      "{a, b, c, d, x, x, x}"
+    );
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, {-1, -1, 1}]").unwrap(),
+      "{a, b, c, d, x}"
+    );
+    // Negative step walks the range downward
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, {4, 1, -2}]").unwrap(),
+      "{a, x, b, x, c}"
+    );
+    // An end-anchored range tracks the final output position
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, {1, -1, 2}]").unwrap(),
+      "{x, a, x, b, x, c, x, d, x}"
+    );
+    // Degenerate end-anchored range on an empty list stays empty
+    assert_eq!(interpret("Riffle[{}, x, {1, -1, 1}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn triple_spec_unsatisfiable_emits_inclen() {
+    // Regression: unreachable positions silently returned the input
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, {5, 10, 2}]").unwrap(),
+      "Riffle[{a, b, c}, x, {5, 10, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Riffle::inclen: The start and end positions and the spacing between riffled elements given in {5, 10, 2} cannot be satisfied for the input list of length 3."
+      )),
+      "expected inclen message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, {1, 7, 3}]").unwrap(),
+      "Riffle[{a, b, c}, x, {1, 7, 3}]"
+    );
+  }
+
+  #[test]
+  fn invalid_spec_emits_rspec() {
+    // Regression: nonpositive scalars used to raise a hard error
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, -2]").unwrap(),
+      "Riffle[{a, b, c, d}, x, -2]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Riffle::rspec: The third argument -2 should be a positive integer or a list with three integers."
+      )),
+      "expected rspec message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, {3}]").unwrap(),
+      "Riffle[{a, b, c, d}, x, {3}]"
+    );
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, 1.5]").unwrap(),
+      "Riffle[{a, b, c}, x, 1.5]"
+    );
+  }
+
+  #[test]
+  fn zero_positions_and_spacing_messages() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, {0, 4, 2}]").unwrap(),
+      "Riffle[{a, b, c}, x, {0, 4, 2}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Riffle::sepos: The start and end positions in {0, 4, 2} should be nonzero machine-sized integers."
+      )),
+      "expected sepos message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, x, {2, 4, 0}]").unwrap(),
+      "Riffle[{a, b, c}, x, {2, 4, 0}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Riffle::npos: The spacing between riffled elements given in {2, 4, 0} should be a positive machine-sized integer."
+      )),
+      "expected npos message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_list_subject_emits_listrp() {
+    // Regression: atoms and general heads returned unevaluated silently
+    assert_eq!(interpret("Riffle[y, x]").unwrap(), "Riffle[y, x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in Riffle[y, x]."
+      )),
+      "expected listrp message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Riffle[f[a, b], x]").unwrap(),
+      "Riffle[f[a, b], x]"
+    );
+  }
+
+  #[test]
+  fn equal_length_separator_list_interleaves_fully() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, {x, y, z}]").unwrap(),
+      "{a, x, b, y, c, z}"
+    );
+  }
+}

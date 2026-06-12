@@ -1820,13 +1820,8 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(result.into())));
       }
     }
-    "Riffle" if args.len() == 2 => {
-      return Some(list_helpers_ast::riffle_ast(&args[0], &args[1]));
-    }
-    "Riffle" if args.len() == 3 => {
-      return Some(list_helpers_ast::riffle_extended_ast(
-        &args[0], &args[1], &args[2],
-      ));
+    "Riffle" if args.len() == 2 || args.len() == 3 => {
+      return Some(list_helpers_ast::riffle_unified_ast(args));
     }
     "RotateLeft" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
