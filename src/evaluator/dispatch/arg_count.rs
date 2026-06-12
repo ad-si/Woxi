@@ -218,7 +218,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Cot" => Some((1, 1)),
     "CotDegrees" => Some((1, 1)),
     "Coth" => Some((1, 1)),
-    "Count" => Some((1, 3)),
+    "Count" => Some((1, 4)),
     "CountBy" => Some((2, 2)),
     "CountDistinct" => Some((1, 1)),
     "Counts" => Some((1, 1)),

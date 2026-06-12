@@ -11745,3 +11745,136 @@ mod cases_specs_and_messages {
     );
   }
 }
+
+mod count_delete_cases_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn count_root_heads_and_atoms() {
+    // Regression: the root was not counted at level 0
+    assert_eq!(
+      interpret("Count[{a, b, c}, _, {0, Infinity}]").unwrap(),
+      "4"
+    );
+    // Regression: a Heads option used to trip the argument-count check
+    assert_eq!(
+      interpret("Count[f[a, b], _Symbol, {1}, Heads -> True]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Count[x, x]").unwrap(), "0");
+    // General heads at level 0
+    assert_eq!(interpret("Count[f[a, b], _, {0}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn count_associations_and_messages() {
+    assert_eq!(
+      interpret("Count[<|x -> f[1], y -> 2|>, _Integer, Infinity]").unwrap(),
+      "2"
+    );
+    // Regression: invalid level raised a hard error
+    assert_eq!(
+      interpret("Count[{1, 2, 3}, _, x]").unwrap(),
+      "Count[{1, 2, 3}, _, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Count::level: Level specification x is not of the form n, {n} or {m, n}."
+      )),
+      "expected level message, got {:?}",
+      msgs
+    );
+    // A non-option fourth argument emits nonopt
+    assert_eq!(
+      interpret("Count[{1}, _, {1}, 5]").unwrap(),
+      "Count[{1}, _, {1}, 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Count::nonopt: Options expected (instead of 5) beyond position 3 in Count[{1}, _, {1}, 5]. An option must be a rule or a list of rules."
+      )),
+      "expected nonopt message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn delete_cases_deep_levels() {
+    // Regression: deletions below level 1 were lost when the rebuilt
+    // child kept the same length
+    assert_eq!(
+      interpret("DeleteCases[{1, {2, {3}}}, _Integer, {2}]").unwrap(),
+      "{1, {{3}}}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[{{1, a}, {2, b}}, _Integer, 2]").unwrap(),
+      "{{a}, {b}}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[{{1, a}, 2}, _Integer, {-1}]").unwrap(),
+      "{{a}}"
+    );
+    assert_eq!(
+      interpret("DeleteCases[f[g[1], 2], _Integer, Infinity]").unwrap(),
+      "f[g[]]"
+    );
+  }
+
+  #[test]
+  fn delete_cases_subjects() {
+    // Regression: general heads and associations stayed unevaluated
+    assert_eq!(
+      interpret("DeleteCases[f[1, a, 2], _Integer]").unwrap(),
+      "f[a]"
+    );
+    assert_eq!(
+      interpret("DeleteCases[<|a -> 1, b -> x|>, _Integer]").unwrap(),
+      "<|b -> x|>"
+    );
+    assert_eq!(
+      interpret("DeleteCases[<|a -> 1, b -> 2|>, _Integer, {1}, 1]").unwrap(),
+      "<|b -> 2|>"
+    );
+    // Deleting the root at level 0 yields Sequence[] (displays empty)
+    assert_eq!(interpret("DeleteCases[{1, a, 2}, _, {0}]").unwrap(), "");
+  }
+
+  #[test]
+  fn delete_cases_messages() {
+    // Regression: invalid level/count raised hard errors or were ignored
+    assert_eq!(
+      interpret("DeleteCases[{1, 2, 3}, _, y]").unwrap(),
+      "DeleteCases[{1, 2, 3}, _, y]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "DeleteCases::level: Level specification y is not of the form n, {n} or {m, n}."
+      )),
+      "expected level message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("DeleteCases[{1, 2, 3}, _, {1}, -1]").unwrap(),
+      "DeleteCases[{1, 2, 3}, _, {1}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "DeleteCases::innf: Non-negative integer or Infinity expected at position 4 in DeleteCases[{1, 2, 3}, _, {1}, -1]."
+      )),
+      "expected innf message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn delete_cases_count_limits_deletions() {
+    assert_eq!(
+      interpret("DeleteCases[{1, a, 2, b, 3}, _Integer, Infinity, 2]").unwrap(),
+      "{a, b, 3}"
+    );
+  }
+}

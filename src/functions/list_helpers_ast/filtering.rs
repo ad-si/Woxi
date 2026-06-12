@@ -1015,6 +1015,302 @@ pub fn cases_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(out.into()))
 }
 
+/// Unified Count: `Count[expr, pattern]`, `Count[expr, pattern,
+/// levelspec]`, plus a trailing `Heads -> …` option (default False).
+/// Counts matches on the same canonical walk as Cases. Invalid level
+/// specs emit `::level`; a non-option fourth argument emits `::nonopt`.
+pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "Count".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  let heads_setting = |e: &Expr| -> Option<bool> {
+    let (lhs, rhs) = match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    if matches!(lhs, Expr::Identifier(s) if s == "Heads") {
+      Some(matches!(rhs, Expr::Identifier(v) if v == "True"))
+    } else {
+      None
+    }
+  };
+  let mut heads = false;
+  let mut positional: &[Expr] = args;
+  if positional.len() > 2
+    && let Some(last) = positional.last()
+    && let Some(h) = heads_setting(last)
+  {
+    heads = h;
+    positional = &positional[..positional.len() - 1];
+  }
+  if positional.len() > 3 {
+    crate::emit_message(&format!(
+      "Count::nonopt: Options expected (instead of {}) beyond position 3 in {}. An option must be a rule or a list of rules.",
+      show(&positional[positional.len() - 1]),
+      show(&original())
+    ));
+    return Ok(original());
+  }
+  if positional.len() < 2 {
+    return Ok(original());
+  }
+  let subject = &positional[0];
+  let pattern = &positional[1];
+  let (match_pat, replacement) = extract_rule_parts(pattern);
+
+  let strict_int = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => i64::try_from(*n).ok(),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i64()
+      }
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+  let bound = |e: &Expr| -> Option<i64> {
+    if is_infinity(e) {
+      Some(i64::MAX)
+    } else {
+      strict_int(e)
+    }
+  };
+
+  let (min_level, max_level): (i64, i64) = match positional.get(2) {
+    None => (1, 1),
+    Some(spec) => {
+      let parsed = match spec {
+        Expr::List(items) if items.len() == 1 => {
+          bound(&items[0]).map(|n| (n, n))
+        }
+        Expr::List(items) if items.len() == 2 => {
+          match (bound(&items[0]), bound(&items[1])) {
+            (Some(m), Some(n)) => Some((m, n)),
+            _ => None,
+          }
+        }
+        other => bound(other).map(|n| (1, n)),
+      };
+      match parsed {
+        Some(b) => b,
+        None => {
+          crate::emit_message(&format!(
+            "Count::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+            show(spec)
+          ));
+          return Ok(original());
+        }
+      }
+    }
+  };
+
+  let mut out: Vec<Expr> = Vec::new();
+  cases_visit(
+    subject,
+    match_pat,
+    replacement,
+    0,
+    &mut out,
+    min_level,
+    max_level,
+    heads,
+    None,
+  )?;
+  Ok(Expr::Integer(out.len() as i128))
+}
+
+/// Rebuild `expr` with pattern matches at the requested levels removed.
+/// A node is checked before its children (a deleted parent prunes the
+/// subtree); returns None when the node itself is deleted.
+fn delete_cases_walk(
+  expr: &Expr,
+  match_pat: &Expr,
+  level: usize,
+  min: i64,
+  max: i64,
+  remaining: &mut Option<usize>,
+) -> Option<Expr> {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+
+  if remaining.is_none_or(|n| n > 0)
+    && position_level_match(level, position_depth(expr), min, max)
+    && crate::evaluator::pattern_matching::match_pattern(expr, match_pat)
+      .is_some()
+  {
+    if let Some(n) = remaining.as_mut() {
+      *n -= 1;
+    }
+    return None;
+  }
+
+  match expr {
+    Expr::Association(pairs) => {
+      let kept: Vec<(Expr, Expr)> = pairs
+        .iter()
+        .filter_map(|(k, v)| {
+          delete_cases_walk(v, match_pat, level + 1, min, max, remaining)
+            .map(|nv| (k.clone(), nv))
+        })
+        .collect();
+      Some(Expr::Association(kept))
+    }
+    Expr::CurriedCall { func, args } => {
+      let kept: Vec<Expr> = args
+        .iter()
+        .filter_map(|a| {
+          delete_cases_walk(a, match_pat, level + 1, min, max, remaining)
+        })
+        .collect();
+      Some(Expr::CurriedCall {
+        func: func.clone(),
+        args: kept,
+      })
+    }
+    _ => match decompose_expr(expr) {
+      ExprForm::Atom(_) => Some(expr.clone()),
+      ExprForm::Composite { head, children } => {
+        let kept: Vec<Expr> = children
+          .iter()
+          .filter_map(|c| {
+            delete_cases_walk(c, match_pat, level + 1, min, max, remaining)
+          })
+          .collect();
+        if head == "List" {
+          Some(Expr::List(kept.into()))
+        } else {
+          Some(Expr::FunctionCall {
+            name: head,
+            args: kept.into(),
+          })
+        }
+      }
+    },
+  }
+}
+
+/// Unified DeleteCases: `DeleteCases[expr, pattern]`,
+/// `DeleteCases[expr, pattern, levelspec]`, and
+/// `DeleteCases[expr, pattern, levelspec, n]` (at most n deletions).
+/// Deleting the whole expression (level 0) yields `Sequence[]`.
+/// Invalid level specs emit `::level`, invalid counts `::innf`.
+pub fn delete_cases_unified_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "DeleteCases".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  if args.len() < 2 || args.len() > 4 {
+    return Ok(original());
+  }
+  let subject = &args[0];
+  let pattern = &args[1];
+  let (match_pat, _) = extract_rule_parts(pattern);
+
+  let strict_int = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => i64::try_from(*n).ok(),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i64()
+      }
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+  let bound = |e: &Expr| -> Option<i64> {
+    if is_infinity(e) {
+      Some(i64::MAX)
+    } else {
+      strict_int(e)
+    }
+  };
+
+  let (min_level, max_level): (i64, i64) = match args.get(2) {
+    None => (1, 1),
+    Some(spec) => {
+      let parsed = match spec {
+        Expr::List(items) if items.len() == 1 => {
+          bound(&items[0]).map(|n| (n, n))
+        }
+        Expr::List(items) if items.len() == 2 => {
+          match (bound(&items[0]), bound(&items[1])) {
+            (Some(m), Some(n)) => Some((m, n)),
+            _ => None,
+          }
+        }
+        other => bound(other).map(|n| (1, n)),
+      };
+      match parsed {
+        Some(b) => b,
+        None => {
+          crate::emit_message(&format!(
+            "DeleteCases::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+            show(spec)
+          ));
+          return Ok(original());
+        }
+      }
+    }
+  };
+
+  let mut remaining: Option<usize> = match args.get(3) {
+    None => None,
+    Some(e) if is_infinity(e) => None,
+    Some(e) => match strict_int(e) {
+      Some(n) if n >= 0 => Some(n as usize),
+      _ => {
+        crate::emit_message(&format!(
+          "DeleteCases::innf: Non-negative integer or Infinity expected at position 4 in {}.",
+          show(&original())
+        ));
+        return Ok(original());
+      }
+    },
+  };
+
+  match delete_cases_walk(
+    subject,
+    match_pat,
+    0,
+    min_level,
+    max_level,
+    &mut remaining,
+  ) {
+    Some(result) => Ok(result),
+    None => Ok(Expr::FunctionCall {
+      name: "Sequence".to_string(),
+      args: vec![].into(),
+    }),
+  }
+}
+
 /// Unified Position covering the full argument space:
 /// - `Position[expr, pattern]` — all levels including the head ({0}) and
 ///   the whole expression ({}); Heads -> True is the default
@@ -1229,89 +1525,6 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// AST-based Count: count elements equal to pattern.
-pub fn count_ast(
-  list: &Expr,
-  pattern: &Expr,
-) -> Result<Expr, InterpreterError> {
-  count_ast_level(list, pattern, None)
-}
-
-pub fn count_ast_level(
-  list: &Expr,
-  pattern: &Expr,
-  level_spec: Option<&Expr>,
-) -> Result<Expr, InterpreterError> {
-  let assoc_values: Vec<Expr>;
-  let items = match list {
-    Expr::List(items) => items.as_slice(),
-    Expr::Association(pairs) => {
-      assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
-      assoc_values.as_slice()
-    }
-    _ => {
-      let mut args = vec![list.clone(), pattern.clone()];
-      if let Some(ls) = level_spec {
-        args.push(ls.clone());
-      }
-      return Ok(Expr::FunctionCall {
-        name: "Count".to_string(),
-        args: args.into(),
-      });
-    }
-  };
-
-  // Parse level spec
-  let (min_level, max_level) = match level_spec {
-    None => (1usize, 1usize),
-    Some(ls) => {
-      let (min, max) = parse_level_spec(ls)?;
-      (
-        min.max(0) as usize,
-        if max == i64::MAX {
-          usize::MAX
-        } else {
-          max as usize
-        },
-      )
-    }
-  };
-
-  let count = count_at_level(items, pattern, 1, min_level, max_level);
-  Ok(Expr::Integer(count as i128))
-}
-
-fn count_at_level(
-  items: &[Expr],
-  pattern: &Expr,
-  current_level: usize,
-  min_level: usize,
-  max_level: usize,
-) -> usize {
-  let mut count = 0;
-  for item in items {
-    if current_level >= min_level
-      && current_level <= max_level
-      && matches_pattern_ast(item, pattern)
-    {
-      count += 1;
-    }
-    // Recurse into sublists if we haven't reached max_level
-    if current_level < max_level
-      && let Expr::List(sub_items) = item
-    {
-      count += count_at_level(
-        sub_items,
-        pattern,
-        current_level + 1,
-        min_level,
-        max_level,
-      );
-    }
-  }
-  count
-}
-
 /// AST-based TakeWhile: take elements while predicate is true.
 pub fn take_while_ast(
   list: &Expr,
@@ -1338,146 +1551,6 @@ pub fn take_while_ast(
   }
 
   Ok(Expr::List(result.into()))
-}
-
-/// AST-based DeleteCases: remove elements matching pattern.
-pub fn delete_cases_ast(
-  list: &Expr,
-  pattern: &Expr,
-) -> Result<Expr, InterpreterError> {
-  delete_cases_with_count_ast(list, pattern, None)
-}
-
-/// DeleteCases[list, pattern, levelspec, n] - delete at most n matches
-pub fn delete_cases_with_count_ast(
-  list: &Expr,
-  pattern: &Expr,
-  max_count: Option<i128>,
-) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    // For non-list arguments wolframscript silently returns the input
-    // unchanged (there is nothing to delete from an atom or non-listy
-    // expression).
-    Expr::Identifier(_)
-    | Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::String(_)
-    | Expr::BigInteger(_)
-    | Expr::BigFloat(_, _)
-    | Expr::Constant(_) => return Ok(list.clone()),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DeleteCases".to_string(),
-        args: vec![list.clone(), pattern.clone()].into(),
-      });
-    }
-  };
-
-  let mut removed = 0i128;
-  let result: Vec<Expr> = items
-    .iter()
-    .filter(|item| {
-      if let Some(max) = max_count
-        && removed >= max
-      {
-        return true; // keep remaining items
-      }
-      if matches_pattern_ast(item, pattern) {
-        removed += 1;
-        false
-      } else {
-        true
-      }
-    })
-    .cloned()
-    .collect();
-
-  Ok(Expr::List(result.into()))
-}
-
-/// DeleteCases[list, pattern, levelspec] - delete matching elements at specified levels
-pub fn delete_cases_with_level_ast(
-  list: &Expr,
-  pattern: &Expr,
-  level_spec: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let (min_level, max_level) = parse_level_spec(level_spec)?;
-  let min = min_level.max(0) as usize;
-  let max = if max_level == i64::MAX {
-    usize::MAX
-  } else {
-    max_level as usize
-  };
-  Ok(delete_at_level_range(list, pattern, 0, min, max))
-}
-
-/// Recursively delete elements matching pattern within a level range
-fn delete_at_level_range(
-  expr: &Expr,
-  pattern: &Expr,
-  current_level: usize,
-  min_level: usize,
-  max_level: usize,
-) -> Expr {
-  match expr {
-    Expr::List(items) => {
-      let filtered: Vec<Expr> = items
-        .iter()
-        .filter(|item| {
-          // Check if this item should be deleted (matches at current_level+1)
-          let child_level = current_level + 1;
-          !(child_level >= min_level
-            && child_level <= max_level
-            && matches_pattern_ast(item, pattern))
-        })
-        .map(|item| {
-          // Recurse into sublists if we haven't reached max level
-          if current_level + 1 < max_level {
-            delete_at_level_range(
-              item,
-              pattern,
-              current_level + 1,
-              min_level,
-              max_level,
-            )
-          } else {
-            item.clone()
-          }
-        })
-        .collect();
-      Expr::List(filtered.into())
-    }
-    Expr::FunctionCall { name, args } => {
-      let filtered: Vec<Expr> = args
-        .iter()
-        .filter(|item| {
-          let child_level = current_level + 1;
-          !(child_level >= min_level
-            && child_level <= max_level
-            && matches_pattern_ast(item, pattern))
-        })
-        .map(|item| {
-          if current_level + 1 < max_level {
-            delete_at_level_range(
-              item,
-              pattern,
-              current_level + 1,
-              min_level,
-              max_level,
-            )
-          } else {
-            item.clone()
-          }
-        })
-        .collect();
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: filtered.into(),
-      }
-    }
-    _ => expr.clone(),
-  }
 }
 
 /// ContainsOnly[list, elems] - True if every element of list is in elems
