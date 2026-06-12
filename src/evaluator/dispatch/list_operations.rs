@@ -3900,8 +3900,67 @@ pub fn dispatch_list_operations(
       // Non-list input
       return Some(Ok(Expr::Identifier("False".to_string())));
     }
-    // FoldWhileList[f, x, list, test] — fold while test is True, returning intermediate results
-    "FoldWhileList" if args.len() == 4 => {
+    // FoldWhile / FoldWhileList — fold while test is True. The 3-argument
+    // form takes the first list element as the initial value.
+    "FoldWhile" | "FoldWhileList" if args.len() == 3 || args.len() == 4 => {
+      let (init, items) = if args.len() == 4 {
+        match &args[2] {
+          Expr::List(items) => {
+            (args[1].clone(), items.iter().cloned().collect::<Vec<_>>())
+          }
+          _ => return None,
+        }
+      } else {
+        match &args[1] {
+          Expr::List(items) if !items.is_empty() => (
+            items[0].clone(),
+            items.iter().skip(1).cloned().collect::<Vec<_>>(),
+          ),
+          _ => return None,
+        }
+      };
+      let f = &args[0];
+      let test = if args.len() == 4 { &args[3] } else { &args[2] };
+      let mut acc = init;
+      let mut results = vec![acc.clone()];
+      // The fold stops after the first result that fails the test (which
+      // is still included), matching wolframscript.
+      let passes = |v: &Expr| {
+        let r = apply_function_to_arg(test, v)
+          .unwrap_or(Expr::Identifier("False".to_string()));
+        matches!(&r, Expr::Identifier(s) if s == "True")
+      };
+      if passes(&acc) {
+        for item in &items {
+          let call = match f {
+            Expr::Identifier(fname) => Expr::FunctionCall {
+              name: fname.clone(),
+              args: vec![acc.clone(), item.clone()].into(),
+            },
+            Expr::Function { body } => crate::syntax::substitute_slots(
+              body,
+              &[acc.clone(), item.clone()],
+            ),
+            _ => Expr::FunctionCall {
+              name: expr_to_string(f),
+              args: vec![acc.clone(), item.clone()].into(),
+            },
+          };
+          acc = evaluate_expr_to_expr(&call).unwrap_or(call);
+          results.push(acc.clone());
+          if !passes(&acc) {
+            break;
+          }
+        }
+      }
+      return Some(Ok(if name == "FoldWhileList" {
+        Expr::List(results.into())
+      } else {
+        acc
+      }));
+    }
+    // (legacy 4-arg FoldWhileList arm, superseded above)
+    "FoldWhileListLegacy" if args.len() == 4 => {
       if let Expr::List(items) = &args[2] {
         let f = &args[0];
         let mut acc = args[1].clone();

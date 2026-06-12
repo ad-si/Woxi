@@ -3121,7 +3121,7 @@ VertexAdd,Add vertices to a graph,✅,pure,8.0,3191
 Boxes,,🚫,,6.0,3200
 CalendarType,,,,9.0,3200
 EntityPropertyClass,,🚫,,10.0,3200
-FoldWhile,,,,12.2,3200
+FoldWhile,Folds while a test holds returning the first failing value,✅,pure,12.2,3200
 MouseAnnotation,,🚫,,6.0,3200
 RectangleChart3D,,🚫,,7.0,3200
 RegionMoment,,,,10.4,3200
@@ -3133,7 +3133,7 @@ EigenvectorCentrality,,,,8.0,3215
 GreaterEqualThan,Operator form of GreaterEqual,✅,none,10.3,3215
 HalfSpace,,,,10.2,3215
 NegativeMultinomialDistribution,,,,8.0,3215
-NumeratorDenominator,,,,12.0,3215
+NumeratorDenominator,Gives the numerator and denominator as a pair,✅,pure,12.0,3215
 ResourceSearch,,🚫,,11.0,3215
 ReverseSortBy,Sort in reverse order by a function,✅,none,12.0,3215
 RunThrough,Symbol for running external commands,✅,effectful,1.0,3215
@@ -3187,7 +3187,7 @@ HiddenMarkovProcess,,🚫,,10.0,3265
 InterpolationPoints,,,,8.0,3265
 QuadraticOptimization,,,,12.0,3265
 SampledSoundFunction,,🚫,,2.0,3265
-StringExtract,,,,10.1,3265
+StringExtract,Extracts fields split by whitespace or chained delimiter rules,✅,pure,10.1,3265
 Tilde,,,,3.0,3265
 BrownianBridgeProcess,,🚫,,9.0,3280
 ChannelSend,,🚫,,11.0,3280
@@ -3239,7 +3239,7 @@ MatrixNormalDistribution,,,,10.3,3317
 PolyaAeppliDistribution,,,,8.0,3317
 SignTest,,,,8.0,3317
 TriangleConstruct,,,,12.0,3317
-BitGet,,,,6.0,3326
+BitGet,Bit k of an integer (two's complement for negatives),✅,pure,6.0,3326
 ChoiceButtons,,🚫,,7.0,3326
 DiscreteMaxLimit,,,,11.2,3326
 FromUnixTime,,,,10.1,3326
@@ -3255,7 +3255,7 @@ ControllerState,,,,6.0,3344
 DefaultValues,Returns the default values of a symbol,✅,pure,2.0,3344
 FindIndependentEdgeSet,,,,8.0,3344
 FindPostmanTour,,,,9.0,3344
-GoldenAngle,,,,10.2,3344
+GoldenAngle,The golden angle constant Pi(3 - Sqrt[5]),✅,pure,10.2,3344
 GroupStabilizer,,,,8.0,3344
 InputStream,Input stream object,✅,effectful,2.0,3344
 JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,3344

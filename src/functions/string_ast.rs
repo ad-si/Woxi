@@ -7158,3 +7158,169 @@ fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
     _ => None,
   }
 }
+
+/// StringExtract[s, n], StringExtract[s, {n1, ...}],
+/// StringExtract[s, "delim" -> n, ...] — extract whitespace-separated
+/// fields, or fields split by the given delimiters with chained rules
+/// drilling into nested fields. Out-of-range positions give
+/// Missing[PartAbsent, n]; invalid specifications emit ::patt.
+enum Pos {
+  One(i64),
+  Many(Vec<i64>),
+}
+
+pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "StringExtract".to_string(),
+    args: args.to_vec().into(),
+  };
+  // A list of strings maps the extraction over its elements
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      let mut sub_args = args.to_vec();
+      sub_args[0] = item.clone();
+      out.push(string_extract_ast(&sub_args)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+  let s = match &args[0] {
+    Expr::String(s) => s.clone(),
+    _ => {
+      crate::emit_message(&format!(
+        "StringExtract::strse: A string or list of strings is expected at position 1 in {}.",
+        crate::syntax::format_expr(
+          &Expr::FunctionCall {
+            name: "StringExtract".to_string(),
+            args: args.to_vec().into(),
+          },
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Ok(unevaluated());
+    }
+  };
+  // Parse the spec list: each step is (delimiter, positions)
+  let parse_pos = |e: &Expr| -> Option<Pos> {
+    match e {
+      Expr::Integer(n) if *n != 0 => Some(Pos::One(*n as i64)),
+      Expr::List(items) => {
+        let mut v = Vec::with_capacity(items.len());
+        for i in items.iter() {
+          match i {
+            Expr::Integer(n) if *n != 0 => v.push(*n as i64),
+            _ => return None,
+          }
+        }
+        Some(Pos::Many(v))
+      }
+      _ => None,
+    }
+  };
+  let mut steps: Vec<(Option<String>, Pos)> = Vec::new();
+  for spec in &args[1..] {
+    match spec {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        let delim = match pattern.as_ref() {
+          Expr::String(d) => d.clone(),
+          _ => {
+            crate::emit_message(&format!(
+              "StringExtract::patt: {} is not a valid extraction specification.",
+              crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+            ));
+            return Ok(unevaluated());
+          }
+        };
+        match parse_pos(replacement) {
+          Some(p) => steps.push((Some(delim), p)),
+          None => {
+            crate::emit_message(&format!(
+              "StringExtract::patt: {} is not a valid extraction specification.",
+              crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+            ));
+            return Ok(unevaluated());
+          }
+        }
+      }
+      other => match parse_pos(other) {
+        Some(p) => steps.push((None, p)),
+        None => {
+          crate::emit_message(&format!(
+            "StringExtract::patt: {} is not a valid extraction specification.",
+            crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated());
+        }
+      },
+    }
+  }
+
+  // Split into fields (default: whitespace runs; explicit delimiter:
+  // literal split with empty fields dropped, like StringSplit)
+  let split = |text: &str, delim: &Option<String>| -> Vec<String> {
+    match delim {
+      None => text.split_whitespace().map(str::to_string).collect(),
+      Some(d) => text
+        .split(d.as_str())
+        .filter(|f| !f.is_empty())
+        .map(str::to_string)
+        .collect(),
+    }
+  };
+  let pick = |fields: &[String], n: i64| -> Result<String, Expr> {
+    let len = fields.len() as i64;
+    let idx = if n > 0 { n - 1 } else { len + n };
+    if idx >= 0 && idx < len {
+      Ok(fields[idx as usize].clone())
+    } else {
+      Err(Expr::FunctionCall {
+        name: "Missing".to_string(),
+        args: vec![
+          Expr::String("PartAbsent".to_string()),
+          Expr::Integer(n as i128),
+        ]
+        .into(),
+      })
+    }
+  };
+
+  // Apply the steps recursively; a list of positions yields a list at
+  // that level, and later steps map over it.
+  fn apply_steps(
+    item: &Expr,
+    steps: &[(Option<String>, Pos)],
+    split: &dyn Fn(&str, &Option<String>) -> Vec<String>,
+    pick: &dyn Fn(&[String], i64) -> Result<String, Expr>,
+  ) -> Expr {
+    let Some((delim, pos)) = steps.first() else {
+      return item.clone();
+    };
+    match item {
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|i| apply_steps(i, steps, split, pick))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      Expr::String(text) => {
+        let fields = split(text, delim);
+        let one = |n: i64| match pick(&fields, n) {
+          Ok(f) => apply_steps(&Expr::String(f), &steps[1..], split, pick),
+          Err(m) => m,
+        };
+        match pos {
+          Pos::One(n) => one(*n),
+          Pos::Many(ns) => Expr::List(
+            ns.iter().map(|&n| one(n)).collect::<Vec<_>>().into(),
+          ),
+        }
+      }
+      other => other.clone(),
+    }
+  }
+  Ok(apply_steps(&Expr::String(s), &steps, &split, &pick))
+}

@@ -2062,6 +2062,61 @@ pub fn dispatch_math_functions(
     "Rationalize" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::rationalize_ast(args));
     }
+    // NumeratorDenominator[e] = {Numerator[e], Denominator[e]}
+    "NumeratorDenominator" if args.len() == 1 => {
+      let num = crate::evaluator::evaluate_function_call_ast(
+        "Numerator",
+        std::slice::from_ref(&args[0]),
+      );
+      let den = crate::evaluator::evaluate_function_call_ast(
+        "Denominator",
+        std::slice::from_ref(&args[0]),
+      );
+      return match (num, den) {
+        (Ok(n), Ok(d)) => Some(Ok(Expr::List(vec![n, d].into()))),
+        (Err(e), _) | (_, Err(e)) => Some(Err(e)),
+      };
+    }
+    // BitGet[n, k] — bit k of n, using two's complement for negative n
+    "BitGet" if args.len() == 2 => {
+      use num_bigint::BigInt;
+      use num_traits::{One, Signed, Zero};
+      let n: Option<BigInt> = match &args[0] {
+        Expr::Integer(v) => Some(BigInt::from(*v)),
+        Expr::BigInteger(v) => Some(v.clone()),
+        _ => None,
+      };
+      let k: Option<u64> = match &args[1] {
+        Expr::Integer(v) if *v >= 0 => Some(*v as u64),
+        Expr::BigInteger(v) if !v.is_negative() => {
+          use num_traits::ToPrimitive;
+          v.to_u64()
+        }
+        _ => None,
+      };
+      if let (Some(n), Some(k)) = (n, k) {
+        // Two's complement: bit k of negative n is the complement of
+        // bit k of (-n - 1)
+        let bit = if n.is_negative() {
+          let m = -n - BigInt::one();
+          if (m >> k) & BigInt::one() == BigInt::one() {
+            0
+          } else {
+            1
+          }
+        } else if (n >> k) & BigInt::one() == BigInt::one() {
+          1
+        } else {
+          0
+        };
+        let _ = BigInt::zero();
+        return Some(Ok(Expr::Integer(bit)));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "BitGet".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "Numerator" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::numerator_ast(args));
     }

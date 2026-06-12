@@ -1158,6 +1158,19 @@ pub fn expr_to_bigfloat(
       let two = BigFloat::from_i32(2, bits);
       Ok(numer.div(&two, bits, rm))
     }
+    Expr::Identifier(name) if name == "GoldenAngle" => {
+      // GoldenAngle = Pi * (3 - Sqrt[5]); the subtraction cancels leading
+      // bits, so work with guard bits and round at the end
+      let wbits = bits + 64;
+      let five = BigFloat::from_i32(5, wbits);
+      let sqrt5 = five.sqrt(wbits, rm);
+      let three = BigFloat::from_i32(3, wbits);
+      let factor = three.sub(&sqrt5, wbits, rm);
+      let pi = astro_float::Consts::new()
+        .map(|mut c| c.pi(wbits, rm))
+        .unwrap_or_else(|_| BigFloat::from_i32(0, wbits));
+      Ok(pi.mul(&factor, bits, rm))
+    }
     Expr::Identifier(name) if name == "EulerGamma" => {
       Ok(compute_euler_gamma(bits, rm, cc))
     }

@@ -257,6 +257,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "EulerGamma" => Some(0.5772156649015329),
       "Catalan" => Some(0.915_965_594_177_219),
       "GoldenRatio" => Some(1.618_033_988_749_895),
+      "GoldenAngle" => Some(2.399_963_229_728_653_5),
       "Glaisher" => Some(1.2824271291006226),
       "Khinchin" => Some(2.6854520010653064),
       "MachinePrecision" => Some(15.954589770191003),

@@ -3660,3 +3660,179 @@ mod rule_chains {
     assert_eq!(interpret("x /. x -> (a :> b)").unwrap(), "a :> b");
   }
 }
+
+mod fold_while {
+  use super::*;
+
+  #[test]
+  fn fold_while_basic() {
+    // Folds until the test fails; the failing value is returned
+    assert_eq!(
+      interpret("FoldWhile[Plus, {1, 2, 3, 4, 5, 6}, # < 6 &]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("FoldWhile[Times, 1, {2, 3, 4, 5}, # < 10 &]").unwrap(),
+      "24"
+    );
+    // Never-failing test folds the whole list
+    assert_eq!(
+      interpret("FoldWhile[Plus, {1, 2, 3}, # < 100 &]").unwrap(),
+      "6"
+    );
+    // Test failing on the initial value returns it unchanged
+    assert_eq!(interpret("FoldWhile[Plus, {5}, # < 3 &]").unwrap(), "5");
+    assert_eq!(interpret("FoldWhile[Plus, 10, {}, # < 3 &]").unwrap(), "10");
+  }
+
+  #[test]
+  fn fold_while_list_three_arg_form() {
+    // Regression: the 3-argument form previously warned
+    // FoldWhileList::argrx and stayed unevaluated
+    assert_eq!(
+      interpret("FoldWhileList[Plus, {1, 2, 3, 4, 5, 6}, # < 6 &]").unwrap(),
+      "{1, 3, 6}"
+    );
+    assert_eq!(
+      interpret("FoldWhileList[Times, 1, {2, 3, 4, 5}, # < 10 &]").unwrap(),
+      "{1, 2, 6, 24}"
+    );
+    assert_eq!(
+      interpret("FoldWhileList[Plus, {5}, # < 3 &]").unwrap(),
+      "{5}"
+    );
+  }
+}
+
+mod numerator_denominator {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("NumeratorDenominator[3/7]").unwrap(), "{3, 7}");
+    assert_eq!(interpret("NumeratorDenominator[5]").unwrap(), "{5, 1}");
+    assert_eq!(interpret("NumeratorDenominator[2.5]").unwrap(), "{2.5, 1}");
+    assert_eq!(interpret("NumeratorDenominator[x/y]").unwrap(), "{x, y}");
+    assert_eq!(
+      interpret("NumeratorDenominator[(a + b)/c^2]").unwrap(),
+      "{a + b, c^2}"
+    );
+  }
+}
+
+mod bit_get {
+  use super::*;
+
+  #[test]
+  fn positive_integers() {
+    // 11 = 1011b
+    assert_eq!(interpret("BitGet[11, 0]").unwrap(), "1");
+    assert_eq!(interpret("BitGet[11, 1]").unwrap(), "1");
+    assert_eq!(interpret("BitGet[11, 2]").unwrap(), "0");
+    assert_eq!(interpret("BitGet[11, 3]").unwrap(), "1");
+    assert_eq!(interpret("BitGet[11, 4]").unwrap(), "0");
+    assert_eq!(interpret("BitGet[2^100 + 8, 100]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative_uses_twos_complement() {
+    assert_eq!(interpret("BitGet[-1, 10]").unwrap(), "1");
+    // -6 = ...11111010
+    assert_eq!(interpret("BitGet[-6, 0]").unwrap(), "0");
+    assert_eq!(interpret("BitGet[-6, 1]").unwrap(), "1");
+    assert_eq!(interpret("BitGet[-6, 2]").unwrap(), "0");
+    assert_eq!(interpret("BitGet[-6, 100]").unwrap(), "1");
+  }
+
+  #[test]
+  fn invalid_arguments_stay_unevaluated() {
+    assert_eq!(interpret("BitGet[10, -1]").unwrap(), "BitGet[10, -1]");
+    assert_eq!(interpret("BitGet[2.5, 1]").unwrap(), "BitGet[2.5, 1]");
+    assert_eq!(interpret("BitGet[x, 2]").unwrap(), "BitGet[x, 2]");
+  }
+}
+
+mod golden_angle {
+  use super::*;
+
+  #[test]
+  fn symbolic_and_machine() {
+    assert_eq!(interpret("GoldenAngle").unwrap(), "GoldenAngle");
+    assert_eq!(interpret("N[GoldenAngle]").unwrap(), "2.3999632297286535");
+    // Note: N[GoldenAngle, p] for arbitrary p shares Woxi's known
+    // last-digits display drift for composite constants (Pi products).
+  }
+}
+
+mod string_extract {
+  use super::*;
+
+  #[test]
+  fn whitespace_fields() {
+    assert_eq!(
+      interpret(r#"StringExtract["aa bb cc dd", 2]"#).unwrap(),
+      "bb"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["aa bb cc dd", {1, 3}]"#).unwrap(),
+      "{aa, cc}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["aa bb cc", -1]"#).unwrap(),
+      "cc"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["one  two   three", {2, -1}]"#).unwrap(),
+      "{two, three}"
+    );
+  }
+
+  #[test]
+  fn delimiter_rules_drill_down() {
+    assert_eq!(
+      interpret(r#"StringExtract["a-b-c,d-e", "," -> 2]"#).unwrap(),
+      "d-e"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a-b-c,d-e", "," -> 1, "-" -> 3]"#).unwrap(),
+      "c"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a-b-c,d-e", "," -> {1, 2}, "-" -> 1]"#)
+        .unwrap(),
+      "{a, d}"
+    );
+  }
+
+  #[test]
+  fn out_of_range_gives_missing() {
+    assert_eq!(
+      interpret(r#"StringExtract["aa bb cc", 5]"#).unwrap(),
+      "Missing[PartAbsent, 5]"
+    );
+  }
+
+  #[test]
+  fn list_of_strings_maps() {
+    assert_eq!(
+      interpret(r#"StringExtract[{"a b", "c d"}, 2]"#).unwrap(),
+      "{b, d}"
+    );
+  }
+
+  #[test]
+  fn non_string_emits_strse() {
+    assert_eq!(
+      interpret("StringExtract[42, 1]").unwrap(),
+      "StringExtract[42, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringExtract::strse: A string or list of strings is expected at position 1 in StringExtract[42, 1]."
+      )),
+      "expected strse message, got {:?}",
+      msgs
+    );
+  }
+}
