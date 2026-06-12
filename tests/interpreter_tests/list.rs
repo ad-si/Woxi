@@ -12072,3 +12072,116 @@ mod extract_specs_and_messages {
     );
   }
 }
+
+mod flatten_at_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn atom_at_position_emits_flatp() {
+    // Regression: flattening an atom silently returned the input
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}}, 1]").unwrap(),
+      "FlattenAt[{a, {b, c}}, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FlattenAt::flatp: Expression a at position {1} of {a, {b, c}} has no parts and cannot be flattened."
+      )),
+      "expected flatp message, got {:?}",
+      msgs
+    );
+    // Position 0 reports the head expression
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}}, 0]").unwrap(),
+      "FlattenAt[{a, {b, c}}, 0]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FlattenAt::flatp: Expression List at position {0} of {a, {b, c}} has no parts and cannot be flattened."
+      )),
+      "expected flatp message for head, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn out_of_range_emits_partw() {
+    // Regression: out-of-range positions silently returned the input
+    assert_eq!(
+      interpret("FlattenAt[{a, {b}}, 5]").unwrap(),
+      "FlattenAt[{a, {b}}, 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("FlattenAt::partw: Part {5} of {a, {b}} does not exist.")),
+      "expected partw message, got {:?}",
+      msgs
+    );
+    // Deep paths report the full path
+    assert_eq!(
+      interpret("FlattenAt[{a, {b}}, {2, 5}]").unwrap(),
+      "FlattenAt[{a, {b}}, {2, 5}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("FlattenAt::partw: Part {2, 5} of {a, {b}} does not exist.")),
+      "expected deep partw message, got {:?}",
+      msgs
+    );
+    // Atomic subjects and associations are not indexable
+    assert_eq!(interpret("FlattenAt[x, 1]").unwrap(), "FlattenAt[x, 1]");
+    assert_eq!(
+      interpret("FlattenAt[<|x -> {1, 2}|>, 1]").unwrap(),
+      "FlattenAt[<|x -> {1, 2}|>, 1]"
+    );
+  }
+
+  #[test]
+  fn multi_position_validation_aborts_on_first_failure() {
+    // Regression: valid positions were applied despite invalid siblings
+    assert_eq!(
+      interpret("FlattenAt[{a, {b}}, {{1}, {2}}]").unwrap(),
+      "FlattenAt[{a, {b}}, {{1}, {2}}]"
+    );
+    assert_eq!(
+      interpret("FlattenAt[{a, {b}}, {{2}, {5}}]").unwrap(),
+      "FlattenAt[{a, {b}}, {{2}, {5}}]"
+    );
+  }
+
+  #[test]
+  fn non_position_spec_emits_psl() {
+    assert_eq!(
+      interpret("FlattenAt[{a, b}, x]").unwrap(),
+      "FlattenAt[{a, b}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    // The psl message shows the subject, not the full call
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FlattenAt::psl: Position specification x in {a, b} is not a machine-sized integer or a list of machine-sized integers."
+      )),
+      "expected psl message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("FlattenAt[{a, b}, 2.5]").unwrap(),
+      "FlattenAt[{a, b}, 2.5]"
+    );
+  }
+
+  #[test]
+  fn curried_and_operator_subjects() {
+    // Regression: CurriedCall subjects stayed unevaluated
+    assert_eq!(
+      interpret("FlattenAt[h[a][{b, c}, d], 1]").unwrap(),
+      "h[a][b, c, d]"
+    );
+    // Operator nodes splice their decomposed children
+    assert_eq!(interpret("FlattenAt[{a + b, c}, 1]").unwrap(), "{a, b, c}");
+  }
+}

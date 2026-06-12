@@ -143,11 +143,49 @@ fn parse_excluded_forms(arg: &Expr) -> Option<Vec<Expr>> {
 /// Splice the children of `expr` at the given position vectors. Positions are
 /// 1-based, may be negative (counted from the end), and apply at the level of
 /// the position's last index. Used by FlattenAt.
-fn flatten_at_positions(expr: &Expr, positions: &[Vec<i128>]) -> Expr {
-  let children: &[Expr] = match expr {
-    Expr::List(items) => items,
-    Expr::FunctionCall { args, .. } => args,
-    _ => return expr.clone(),
+/// Children of a node for FlattenAt traversal and splicing. Returns None
+/// for expressions without parts (atoms and associations, which are not
+/// integer-indexable here).
+fn flatten_at_children(expr: &Expr) -> Option<Vec<Expr>> {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  match expr {
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::FunctionCall { args, .. } => Some(args.to_vec()),
+    Expr::CurriedCall { args, .. } => Some(args.clone()),
+    Expr::Association(_) => None,
+    other => match decompose_expr(other) {
+      ExprForm::Composite { children, .. } => Some(children),
+      ExprForm::Atom(_) => None,
+    },
+  }
+}
+
+fn flatten_at_rebuild(expr: &Expr, children: Vec<Expr>) -> Expr {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  match expr {
+    Expr::List(_) => Expr::List(children.into()),
+    Expr::FunctionCall { name, .. } => Expr::FunctionCall {
+      name: name.clone(),
+      args: children.into(),
+    },
+    Expr::CurriedCall { func, .. } => Expr::CurriedCall {
+      func: func.clone(),
+      args: children,
+    },
+    other => match decompose_expr(other) {
+      ExprForm::Composite { head, .. } => Expr::FunctionCall {
+        name: head,
+        args: children.into(),
+      },
+      ExprForm::Atom(_) => other.clone(),
+    },
+  }
+}
+
+/// Apply validated flatten positions (paths into the original `expr`).
+fn flatten_at_apply(expr: &Expr, positions: &[Vec<i128>]) -> Expr {
+  let Some(children) = flatten_at_children(expr) else {
+    return expr.clone();
   };
   let len = children.len() as i128;
   let mut groups: std::collections::HashMap<usize, Vec<Vec<i128>>> =
@@ -173,28 +211,155 @@ fn flatten_at_positions(expr: &Expr, positions: &[Vec<i128>]) -> Expr {
   for (i, child) in children.iter().enumerate() {
     let idx = i + 1;
     let new_child = if let Some(deeper) = groups.get(&idx) {
-      flatten_at_positions(child, deeper)
+      flatten_at_apply(child, deeper)
     } else {
       child.clone()
     };
     if flatten_here.contains(&idx) {
-      match &new_child {
-        Expr::List(items) => result.extend(items.iter().cloned()),
-        Expr::FunctionCall { args, .. } => result.extend(args.iter().cloned()),
-        _ => result.push(new_child),
+      match flatten_at_children(&new_child) {
+        Some(parts) => result.extend(parts),
+        None => result.push(new_child),
       }
     } else {
       result.push(new_child);
     }
   }
-  match expr {
-    Expr::List(_) => Expr::List(result.into()),
-    Expr::FunctionCall { name, .. } => Expr::FunctionCall {
-      name: name.clone(),
-      args: result.into(),
+  flatten_at_rebuild(expr, result)
+}
+
+/// Unified FlattenAt: validates every position against the original
+/// expression — ::psl for non-position specs, ::partw for missing parts,
+/// ::flatp for parts without parts — aborting on the first failure, then
+/// splices the parts at the surviving (deduplicated) positions.
+fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || Expr::FunctionCall {
+    name: "FlattenAt".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  let subject = &args[0];
+  let spec = &args[1];
+
+  let strict_int = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128()
+      }
+      _ => None,
+    }
+  };
+  let psl = || {
+    crate::emit_message(&format!(
+      "FlattenAt::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+      show(spec),
+      show(subject)
+    ));
+    Ok(original())
+  };
+
+  let positions: Vec<Vec<i128>> = match spec {
+    Expr::List(items) if items.is_empty() => return Ok(subject.clone()),
+    Expr::List(items) if items.iter().all(|e| matches!(e, Expr::List(_))) => {
+      let mut multi = Vec::new();
+      for item in items {
+        let Expr::List(comps) = item else {
+          unreachable!()
+        };
+        match comps.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
+          Some(path) if !path.is_empty() => multi.push(path),
+          _ => return psl(),
+        }
+      }
+      multi
+    }
+    Expr::List(items) => {
+      match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
+        Some(path) => vec![path],
+        None => return psl(),
+      }
+    }
+    other => match strict_int(other) {
+      Some(n) => vec![vec![n]],
+      None => return psl(),
     },
-    _ => expr.clone(),
+  };
+
+  // Validate every path against the original subject; the first failure
+  // emits its message and leaves the whole call unevaluated.
+  for path in &positions {
+    let path_expr = Expr::List(
+      path
+        .iter()
+        .map(|n| Expr::Integer(*n))
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let mut current = subject.clone();
+    let mut failed: Option<&str> = None;
+    for (ci, comp) in path.iter().enumerate() {
+      let is_last = ci == path.len() - 1;
+      if *comp == 0 {
+        // Position 0 is the head: it never has parts to flatten.
+        current = match &current {
+          Expr::CurriedCall { func, .. } => (**func).clone(),
+          other => Expr::Identifier(
+            crate::evaluator::pattern_matching::get_expr_head(other),
+          ),
+        };
+        if is_last {
+          failed = Some("flatp");
+          break;
+        }
+        continue;
+      }
+      let Some(children) = flatten_at_children(&current) else {
+        failed = Some("partw");
+        break;
+      };
+      let len = children.len() as i128;
+      let idx = if *comp < 0 { len + comp } else { comp - 1 };
+      if idx < 0 || idx >= len {
+        failed = Some("partw");
+        break;
+      }
+      current = children[idx as usize].clone();
+      if is_last && flatten_at_children(&current).is_none() {
+        failed = Some("flatp");
+        break;
+      }
+    }
+    match failed {
+      Some("partw") => {
+        crate::emit_message(&format!(
+          "FlattenAt::partw: Part {} of {} does not exist.",
+          show(&path_expr),
+          show(subject)
+        ));
+        return Ok(original());
+      }
+      Some("flatp") => {
+        crate::emit_message(&format!(
+          "FlattenAt::flatp: Expression {} at position {} of {} has no parts and cannot be flattened.",
+          show(&current),
+          show(&path_expr),
+          show(subject)
+        ));
+        return Ok(original());
+      }
+      _ => {}
+    }
   }
+
+  // Deduplicate repeated paths, then splice.
+  let mut seen: std::collections::HashSet<Vec<i128>> = Default::default();
+  let deduped: Vec<Vec<i128>> = positions
+    .into_iter()
+    .filter(|p| seen.insert(p.clone()))
+    .collect();
+  Ok(flatten_at_apply(subject, &deduped))
 }
 
 pub fn dispatch_list_operations(
@@ -343,60 +508,7 @@ pub fn dispatch_list_operations(
       }));
     }
     "FlattenAt" if args.len() == 2 => {
-      let unevaluated = || {
-        Ok(Expr::FunctionCall {
-          name: "FlattenAt".to_string(),
-          args: args.to_vec().into(),
-        })
-      };
-      // Parse second arg into a list of position vectors.
-      let positions: Vec<Vec<i128>> = match &args[1] {
-        Expr::Integer(n) => vec![vec![*n]],
-        Expr::List(pos_list) => {
-          if pos_list.is_empty() {
-            return Some(Ok(args[0].clone()));
-          }
-          let all_ints = pos_list.iter().all(|p| matches!(p, Expr::Integer(_)));
-          let all_lists = pos_list.iter().all(|p| matches!(p, Expr::List(_)));
-          if all_ints {
-            let v: Vec<i128> = pos_list
-              .iter()
-              .map(|p| match p {
-                Expr::Integer(n) => *n,
-                _ => 0,
-              })
-              .collect();
-            vec![v]
-          } else if all_lists {
-            let mut out: Vec<Vec<i128>> = Vec::new();
-            for p in pos_list {
-              if let Expr::List(inner) = p {
-                if !inner.iter().all(|x| matches!(x, Expr::Integer(_))) {
-                  return Some(unevaluated());
-                }
-                let v: Vec<i128> = inner
-                  .iter()
-                  .map(|x| match x {
-                    Expr::Integer(n) => *n,
-                    _ => 0,
-                  })
-                  .collect();
-                out.push(v);
-              }
-            }
-            out
-          } else {
-            return Some(unevaluated());
-          }
-        }
-        _ => return Some(unevaluated()),
-      };
-      match &args[0] {
-        Expr::List(_) | Expr::FunctionCall { .. } => {
-          return Some(Ok(flatten_at_positions(&args[0], &positions)));
-        }
-        _ => return Some(unevaluated()),
-      }
+      return Some(flatten_at_unified(args));
     }
     "InversePermutation" if args.len() == 1 => {
       if let Expr::List(perm) = &args[0] {
