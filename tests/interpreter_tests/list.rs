@@ -10451,9 +10451,8 @@ mod insert_positions_and_messages {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(
-        |m| m.contains("Insert::ins: Cannot insert at position {5} in {a, b, c}")
-      ),
+      msgs.iter().any(|m| m
+        .contains("Insert::ins: Cannot insert at position {5} in {a, b, c}")),
       "expected ins message, got {:?}",
       msgs
     );
@@ -10472,9 +10471,10 @@ mod insert_positions_and_messages {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs.iter().any(
-        |m| m.contains("Insert::ins: Cannot insert at position {5} in {a, b}")
-      ),
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Insert::ins: Cannot insert at position {5} in {a, b}")),
       "expected ins message, got {:?}",
       msgs
     );
@@ -10507,6 +10507,107 @@ mod insert_positions_and_messages {
     assert_eq!(
       interpret("Map[Insert[x, 2], {{a, b}, {c, d}}]").unwrap(),
       "{{a, x, b}, {c, x, d}}"
+    );
+  }
+}
+
+mod delete_positions_and_messages {
+  use super::*;
+
+  #[test]
+  fn duplicate_and_equivalent_positions_collapse() {
+    // Regression: {{2}, {2}} deleted two elements; positions dedupe
+    // after normalization, so {{2}, {-2}} also deletes once
+    assert_eq!(interpret("Delete[{a, b, c}, {{2}, {2}}]").unwrap(), "{a, c}");
+    assert_eq!(
+      interpret("Delete[{a, b, c}, {{2}, {-2}}]").unwrap(),
+      "{a, c}"
+    );
+    assert_eq!(
+      interpret("Delete[{a, b, c, d}, {{-1}, {1}, {2}}]").unwrap(),
+      "{c}"
+    );
+  }
+
+  #[test]
+  fn mixed_depth_paths_apply_deepest_first() {
+    // Regression: applying {1} before {1, 2} corrupted the result
+    assert_eq!(
+      interpret("Delete[{{a, b}, {c, d}}, {{1, 2}, {1}}]").unwrap(),
+      "{{c, d}}"
+    );
+    assert_eq!(
+      interpret("Delete[{{a, b}, {c, d}}, {{1, 1}, {2, 2}}]").unwrap(),
+      "{{b}, {c}}"
+    );
+  }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(interpret("Delete[2][{a, b, c}]").unwrap(), "{a, c}");
+    assert_eq!(
+      interpret("Map[Delete[1], {{a, b}, {c, d}}]").unwrap(),
+      "{{b}, {d}}"
+    );
+  }
+
+  #[test]
+  fn partw_message_forms() {
+    // Out-of-range final index: full path and the original expression
+    assert_eq!(
+      interpret("Delete[{{a, b}}, {1, 5}]").unwrap(),
+      "Delete[{{a, b}}, {1, 5}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Delete::partw: Part {1, 5} of {{a, b}} does not exist."
+      )),
+      "expected partw message, got {:?}",
+      msgs
+    );
+    // Descent into an atom: the inner subject, scalar position
+    assert_eq!(
+      interpret("Delete[{a, b, c, d}, {2, 1}]").unwrap(),
+      "Delete[{a, b, c, d}, {2, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Delete::partw: Part 1 of b does not exist.")),
+      "expected partw message, got {:?}",
+      msgs
+    );
+    // Atomic subject
+    assert_eq!(interpret("Delete[y, 1]").unwrap(), "Delete[y, 1]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Delete::partw: Part 1 of y does not exist.")),
+      "expected partw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn pkspec_for_invalid_specs() {
+    assert_eq!(
+      interpret("Delete[{a, b, c}, y]").unwrap(),
+      "Delete[{a, b, c}, y]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Delete::pkspec: The expression y cannot be used as a part specification. Use Key[y] instead."
+      )),
+      "expected pkspec message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Delete[{a, b, c}, 2.5]").unwrap(),
+      "Delete[{a, b, c}, 2.5]"
     );
   }
 }

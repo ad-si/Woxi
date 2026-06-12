@@ -1181,7 +1181,9 @@ pub fn insert_ast(
     {
       let mut ps = Vec::with_capacity(inner.len());
       for sub in inner.iter() {
-        let Expr::List(sub_items) = sub else { unreachable!() };
+        let Expr::List(sub_items) = sub else {
+          unreachable!()
+        };
         let path: Option<Vec<i128>> =
           sub_items.iter().map(expr_to_i128).collect();
         match path {
@@ -1190,7 +1192,10 @@ pub fn insert_ast(
             crate::emit_message(&format!(
               "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
               crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
-              crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
+              crate::syntax::format_expr(
+                &unevaluated(),
+                crate::syntax::ExprForm::Output
+              )
             ));
             return Ok(unevaluated());
           }
@@ -1199,13 +1204,20 @@ pub fn insert_ast(
       ps
     }
     Expr::List(inner) if !inner.is_empty() => {
-      match inner.iter().map(expr_to_i128).collect::<Option<Vec<i128>>>() {
+      match inner
+        .iter()
+        .map(expr_to_i128)
+        .collect::<Option<Vec<i128>>>()
+      {
         Some(p) => vec![p],
         None => {
           crate::emit_message(&format!(
             "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
             crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
-            crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
+            crate::syntax::format_expr(
+              &unevaluated(),
+              crate::syntax::ExprForm::Output
+            )
           ));
           return Ok(unevaluated());
         }
@@ -1215,7 +1227,10 @@ pub fn insert_ast(
       crate::emit_message(&format!(
         "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
         crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
-        crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
+        crate::syntax::format_expr(
+          &unevaluated(),
+          crate::syntax::ExprForm::Output
+        )
       ));
       return Ok(unevaluated());
     }
@@ -1513,6 +1528,13 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (fargs.as_slice(), Some(name.as_str()))
     }
     _ => {
+      // Atomic subject: wolframscript shows the scalar position without
+      // braces here (Part 1 of y does not exist.)
+      crate::emit_message(&format!(
+        "Delete::partw: Part {} of {} does not exist.",
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
       return Ok(Expr::FunctionCall {
         name: "Delete".to_string(),
         args: args.to_vec().into(),
@@ -1549,17 +1571,83 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pos_list.iter().all(|p| matches!(p, Expr::List(_)));
 
       if is_multiple_positions && !pos_list.is_empty() {
-        // Multiple positions: Delete[expr, {{p1}, {p2}, ...}]
+        // Multiple positions: Delete[expr, {{p1}, {p2}, ...}]. Positions
+        // refer to the original expression: normalize negatives against
+        // it, deduplicate (deleting the same part twice deletes once),
+        // and apply deepest/rightmost first.
+        let partw_path = |path: &[i128]| {
+          let shown = if path.len() == 1 {
+            format!("{{{}}}", path[0])
+          } else {
+            format!(
+              "{{{}}}",
+              path
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+            )
+          };
+          crate::emit_message(&format!(
+            "Delete::partw: Part {} of {} does not exist.",
+            shown,
+            crate::syntax::format_expr(
+              &args[0],
+              crate::syntax::ExprForm::Output
+            )
+          ));
+        };
         let mut positions: Vec<Vec<i128>> = Vec::new();
         for p in pos_list {
           if let Expr::List(inner) = p {
-            let pos: Vec<i128> =
-              inner.iter().filter_map(expr_to_i128).collect();
-            if pos.len() == inner.len() {
-              positions.push(pos);
+            let raw: Vec<i128> = inner.iter().filter_map(expr_to_i128).collect();
+            if raw.len() != inner.len() || raw.is_empty() {
+              return Ok(Expr::FunctionCall {
+                name: "Delete".to_string(),
+                args: args.to_vec().into(),
+              });
             }
+            // Normalize each index against the original structure
+            let mut cursor = &args[0];
+            let mut norm = Vec::with_capacity(raw.len());
+            for (depth, &ix) in raw.iter().enumerate() {
+              let sub_items: &[Expr] = match cursor {
+                Expr::List(v) => v.as_slice(),
+                Expr::FunctionCall { args: fa, .. } => fa.as_slice(),
+                _ => {
+                  crate::emit_message(&format!(
+                    "Delete::partw: Part {} of {} does not exist.",
+                    raw[depth],
+                    crate::syntax::format_expr(
+                      cursor,
+                      crate::syntax::ExprForm::Output
+                    )
+                  ));
+                  return Ok(Expr::FunctionCall {
+                    name: "Delete".to_string(),
+                    args: args.to_vec().into(),
+                  });
+                }
+              };
+              let len = sub_items.len() as i128;
+              let pos_ix = if ix > 0 { ix } else { len + ix + 1 };
+              if pos_ix < 1 || pos_ix > len {
+                partw_path(&raw);
+                return Ok(Expr::FunctionCall {
+                  name: "Delete".to_string(),
+                  args: args.to_vec().into(),
+                });
+              }
+              norm.push(pos_ix);
+              if depth + 1 < raw.len() {
+                cursor = &sub_items[(pos_ix - 1) as usize];
+              }
+            }
+            positions.push(norm);
           }
         }
+        positions.sort();
+        positions.dedup();
         let mut result = args[0].clone();
         for pos in positions.iter().rev() {
           if pos.len() == 1 {
@@ -1572,12 +1660,8 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             match delete_at_deep_position(&result, pos)? {
               Ok(v) => result = v,
-              Err(fail) => {
-                crate::emit_message(&format!(
-                  "Delete::partw: Part {} of {} does not exist.",
-                  fail.index,
-                  crate::syntax::expr_to_string(&fail.subject)
-                ));
+              Err(_) => {
+                partw_path(pos);
                 return Ok(Expr::FunctionCall {
                   name: "Delete".to_string(),
                   args: args.to_vec().into(),
@@ -1597,11 +1681,35 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             match delete_at_deep_position(&args[0], &pos)? {
               Ok(v) => return Ok(v),
               Err(fail) => {
-                crate::emit_message(&format!(
-                  "Delete::partw: Part {} of {} does not exist.",
-                  fail.index,
-                  crate::syntax::expr_to_string(&fail.subject)
-                ));
+                // Descent into an atom names the inner subject (Part 1
+                // of b); an out-of-range final index names the full path
+                let atomic = !matches!(
+                  fail.subject,
+                  Expr::List(_) | Expr::FunctionCall { .. }
+                );
+                if atomic {
+                  crate::emit_message(&format!(
+                    "Delete::partw: Part {} of {} does not exist.",
+                    fail.index,
+                    crate::syntax::format_expr(
+                      &fail.subject,
+                      crate::syntax::ExprForm::Output
+                    )
+                  ));
+                } else {
+                  crate::emit_message(&format!(
+                    "Delete::partw: Part {{{}}} of {} does not exist.",
+                    pos
+                      .iter()
+                      .map(|p| p.to_string())
+                      .collect::<Vec<_>>()
+                      .join(", "),
+                    crate::syntax::format_expr(
+                      &args[0],
+                      crate::syntax::ExprForm::Output
+                    )
+                  ));
+                }
                 return Ok(Expr::FunctionCall {
                   name: "Delete".to_string(),
                   args: args.to_vec().into(),
@@ -1612,7 +1720,13 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    _ => {}
+    _ => {
+      crate::emit_message(&format!(
+        "Delete::pkspec: The expression {} cannot be used as a part specification. Use Key[{}] instead.",
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+      ));
+    }
   }
 
   Ok(Expr::FunctionCall {

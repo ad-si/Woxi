@@ -499,8 +499,7 @@ pub fn apply_function_to_arg(
       }
       // Insert[elem, pos] operator form: prepend the applied expression
       if name == "Insert" && args.len() == 2 {
-        let new_args =
-          vec![arg.clone(), args[0].clone(), args[1].clone()];
+        let new_args = vec![arg.clone(), args[0].clone(), args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
       // Curried function: f[a] applied to b becomes f[a, b]
@@ -522,6 +521,7 @@ pub fn apply_function_to_arg(
           | "AllMatch"
           | "AnyMatch"
           | "FlattenAt"
+          | "Delete"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -759,11 +759,8 @@ pub fn apply_curried_call(
       // Curried function: f[a][b] becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       if name == "Insert" && func_args.len() == 2 && args.len() == 1 {
-        let new_args = vec![
-          args[0].clone(),
-          func_args[0].clone(),
-          func_args[1].clone(),
-        ];
+        let new_args =
+          vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
       if matches!(
@@ -793,6 +790,7 @@ pub fn apply_curried_call(
           | "AllMatch"
           | "AnyMatch"
           | "FlattenAt"
+          | "Delete"
       ) && func_args.len() == 1
         && args.len() == 1
       {

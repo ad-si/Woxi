@@ -252,7 +252,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DedekindEta" => Some((1, 1)),
     "Default" => Some((1, 3)),
     "Definition" => Some((1, 1)),
-    "Delete" => Some((2, 2)),
+    "Delete" => Some((1, 2)),
     "DeleteAdjacentDuplicates" => Some((1, 1)),
     "DeleteCases" => Some((1, 4)),
     "DeleteDuplicates" => Some((1, 2)),
