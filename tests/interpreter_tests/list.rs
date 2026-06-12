@@ -11192,3 +11192,138 @@ mod riffle_specs_and_messages {
     );
   }
 }
+
+mod rotate_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn atomic_subject_emits_normal() {
+    // Regression: atoms returned unevaluated silently, and RotateRight
+    // leaked its RotateLeft[expr, -n] rewrite into the output
+    assert_eq!(interpret("RotateLeft[x, 2]").unwrap(), "RotateLeft[x, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "RotateLeft::normal: Nonatomic expression expected at position 1 in RotateLeft[x, 2]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("RotateRight[y, 1]").unwrap(), "RotateRight[y, 1]");
+    // The one-argument form keeps its original shape too
+    assert_eq!(interpret("RotateLeft[x]").unwrap(), "RotateLeft[x]");
+  }
+
+  #[test]
+  fn invalid_spec_emits_rspec_displayed_as_list() {
+    assert_eq!(
+      interpret("RotateLeft[{a, b, c}, x]").unwrap(),
+      "RotateLeft[{a, b, c}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    // A scalar spec is displayed wrapped in braces
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "RotateLeft::rspec: Rotation specification {x} should be a machine-sized integer or list of machine-sized integers."
+      )),
+      "expected rspec message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("RotateLeft[{a, b, c}, 1.5]").unwrap(),
+      "RotateLeft[{a, b, c}, 1.5]"
+    );
+    assert_eq!(
+      interpret("RotateLeft[{a, b, c}, {{1}}]").unwrap(),
+      "RotateLeft[{a, b, c}, {{1}}]"
+    );
+    assert_eq!(
+      interpret("RotateRight[{a, b, c}, {1, x}]").unwrap(),
+      "RotateRight[{a, b, c}, {1, x}]"
+    );
+  }
+
+  #[test]
+  fn deep_spec_on_atoms_emits_rotate_with_stop() {
+    // Regression: atoms below a deep spec became unevaluated
+    // RotateLeft[atom, n] junk instead of passing through
+    assert_eq!(
+      interpret("RotateLeft[{a, b, c}, {1, 2}]").unwrap(),
+      "{b, c, a}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    let rotate_count = msgs
+      .iter()
+      .filter(|m| {
+        m.contains("RotateLeft::rotate: Cannot rotate atomic expression")
+      })
+      .count();
+    // At most three ::rotate messages, then one General::stop
+    assert_eq!(
+      rotate_count, 3,
+      "expected 3 rotate messages, got {:?}",
+      msgs
+    );
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "General::stop: Further output of RotateLeft::rotate will be suppressed during this calculation."
+      )),
+      "expected stop message, got {:?}",
+      msgs
+    );
+    // Five atoms still emit only three messages
+    assert_eq!(
+      interpret("RotateLeft[{a, b, c, d, e}, {1, 1}]").unwrap(),
+      "{b, c, d, e, a}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    let rotate_count = msgs
+      .iter()
+      .filter(|m| m.contains("RotateLeft::rotate:"))
+      .count();
+    assert_eq!(
+      rotate_count, 3,
+      "expected 3 rotate messages, got {:?}",
+      msgs
+    );
+    // A single atom emits one message and no stop
+    assert_eq!(
+      interpret("RotateLeft[{{a, b}, c}, {1, 1}]").unwrap(),
+      "{c, {b, a}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("RotateLeft::rotate: Cannot rotate atomic expression c.")),
+      "expected rotate message for c, got {:?}",
+      msgs
+    );
+    assert!(
+      !msgs.iter().any(|m| m.contains("General::stop")),
+      "expected no stop message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn curried_and_association_subjects() {
+    // Regression: both used to return unevaluated
+    assert_eq!(
+      interpret("RotateLeft[h[a, b][c, d], 1]").unwrap(),
+      "h[a, b][d, c]"
+    );
+    assert_eq!(
+      interpret("RotateLeft[<|a -> 1, b -> 2|>]").unwrap(),
+      "<|b -> 2, a -> 1|>"
+    );
+    assert_eq!(
+      interpret("RotateRight[<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|c -> 3, a -> 1, b -> 2|>"
+    );
+    // Deeper shifts rotate association values
+    assert_eq!(
+      interpret("RotateLeft[<|a -> {1, 2}, b -> {3, 4}|>, {1, 1}]").unwrap(),
+      "<|b -> {4, 3}, a -> {2, 1}|>"
+    );
+  }
+}

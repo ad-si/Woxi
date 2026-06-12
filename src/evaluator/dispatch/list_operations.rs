@@ -1823,31 +1823,8 @@ pub fn dispatch_list_operations(
     "Riffle" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::riffle_unified_ast(args));
     }
-    "RotateLeft" if args.len() == 2 => {
-      if let Some(n) = expr_to_i128(&args[1]) {
-        return Some(list_helpers_ast::rotate_left_ast(&args[0], n));
-      }
-      if let Expr::List(shifts) = &args[1] {
-        return Some(list_helpers_ast::rotate_multi_ast(
-          &args[0], shifts, true,
-        ));
-      }
-    }
-    "RotateLeft" if args.len() == 1 => {
-      return Some(list_helpers_ast::rotate_left_ast(&args[0], 1));
-    }
-    "RotateRight" if args.len() == 2 => {
-      if let Some(n) = expr_to_i128(&args[1]) {
-        return Some(list_helpers_ast::rotate_right_ast(&args[0], n));
-      }
-      if let Expr::List(shifts) = &args[1] {
-        return Some(list_helpers_ast::rotate_multi_ast(
-          &args[0], shifts, false,
-        ));
-      }
-    }
-    "RotateRight" if args.len() == 1 => {
-      return Some(list_helpers_ast::rotate_right_ast(&args[0], 1));
+    "RotateLeft" | "RotateRight" if args.len() == 1 || args.len() == 2 => {
+      return Some(list_helpers_ast::rotate_unified_ast(name, args));
     }
     "PadLeft" | "PadRight" if !args.is_empty() && args.len() <= 4 => {
       return Some(list_helpers_ast::pad_ast(name, args));

@@ -1185,100 +1185,168 @@ pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// AST-based RotateLeft: rotate list left by n positions.
-pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
-  let (items, head_name): (&[Expr], Option<&str>) = match list {
-    Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "RotateLeft".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)].into(),
-      });
-    }
-  };
-
+/// Rotate `items` left by n (negative n rotates right).
+fn rotate_slice(items: &[Expr], n: i128) -> Vec<Expr> {
   if items.is_empty() {
-    return match head_name {
-      Some(name) => Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: vec![].into(),
-      }),
-      None => Ok(Expr::List(vec![].into())),
-    };
+    return Vec::new();
   }
-
   let len = items.len() as i128;
-  let shift = ((n % len) + len) % len;
-  let shift_usize = shift as usize;
-
-  let mut result = items[shift_usize..].to_vec();
-  result.extend_from_slice(&items[..shift_usize]);
-
-  match head_name {
-    Some(name) => Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: result.into(),
-    }),
-    None => Ok(Expr::List(result.into())),
-  }
+  let shift = n.rem_euclid(len) as usize;
+  let mut result = items[shift..].to_vec();
+  result.extend_from_slice(&items[..shift]);
+  result
 }
 
-/// AST-based RotateRight: rotate list right by n positions.
-pub fn rotate_right_ast(
-  list: &Expr,
-  n: i128,
-) -> Result<Expr, InterpreterError> {
-  rotate_left_ast(list, -n)
-}
-
-/// Multi-dimensional RotateLeft/RotateRight: rotate at each level.
-/// RotateLeft[matrix, {r, c}] rotates rows by r, then each row by c.
-pub fn rotate_multi_ast(
-  list: &Expr,
-  shifts: &[Expr],
-  left: bool,
-) -> Result<Expr, InterpreterError> {
+/// Rotate `expr` by `shifts[0]` (a left-rotation amount) at this level,
+/// then recurse into the rotated children with the remaining shifts.
+/// Atoms reached with shifts pending emit `::rotate` — at most three
+/// times, then one `General::stop` — and pass through unchanged.
+fn rotate_rec(
+  expr: &Expr,
+  shifts: &[i128],
+  fname: &str,
+  msg_count: &mut u32,
+) -> Expr {
   if shifts.is_empty() {
-    return Ok(list.clone());
+    return expr.clone();
+  }
+  let n = shifts[0];
+  let rest = &shifts[1..];
+  let recurse = |items: &[Expr], msg_count: &mut u32| -> Vec<Expr> {
+    rotate_slice(items, n)
+      .iter()
+      .map(|e| rotate_rec(e, rest, fname, msg_count))
+      .collect()
+  };
+  match expr {
+    Expr::List(items) => Expr::List(recurse(items, msg_count).into()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: recurse(args, msg_count).into(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: func.clone(),
+      args: recurse(args, msg_count),
+    },
+    Expr::Association(pairs) => {
+      // The pairs rotate at this level; deeper shifts apply to the values.
+      let rotated: Vec<(Expr, Expr)> = {
+        let len = pairs.len() as i128;
+        if len == 0 {
+          Vec::new()
+        } else {
+          let shift = n.rem_euclid(len) as usize;
+          let mut r = pairs[shift..].to_vec();
+          r.extend_from_slice(&pairs[..shift]);
+          r
+        }
+      };
+      Expr::Association(
+        rotated
+          .into_iter()
+          .map(|(k, v)| (k, rotate_rec(&v, rest, fname, msg_count)))
+          .collect(),
+      )
+    }
+    atom => {
+      *msg_count += 1;
+      if *msg_count <= 3 {
+        crate::emit_message(&format!(
+          "{}::rotate: Cannot rotate atomic expression {}.",
+          fname,
+          crate::syntax::format_expr(atom, crate::syntax::ExprForm::Output)
+        ));
+        if *msg_count == 3 {
+          crate::emit_message(&format!(
+            "General::stop: Further output of {}::rotate will be suppressed during this calculation.",
+            fname
+          ));
+        }
+      }
+      atom.clone()
+    }
+  }
+}
+
+/// Unified RotateLeft/RotateRight: `Rotate*[expr]`, `Rotate*[expr, n]`,
+/// and `Rotate*[expr, {n1, n2, …}]` (successive levels). Atomic subjects
+/// emit `::normal`; non-integer specs emit `::rspec`; both return the
+/// call unevaluated.
+pub fn rotate_unified_ast(
+  fname: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let is_left = fname == "RotateLeft";
+  let original = || Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  let subject = &args[0];
+  if !matches!(
+    subject,
+    Expr::List(_)
+      | Expr::FunctionCall { .. }
+      | Expr::CurriedCall { .. }
+      | Expr::Association(_)
+  ) {
+    crate::emit_message(&format!(
+      "{}::normal: Nonatomic expression expected at position 1 in {}.",
+      fname,
+      show(&original())
+    ));
+    return Ok(original());
   }
 
-  let first_shift = match expr_to_i128(&shifts[0]) {
-    Some(n) => {
-      if left {
-        n
-      } else {
-        -n
+  let strict_int = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128()
       }
-    }
-    None => {
-      let fn_name = if left { "RotateLeft" } else { "RotateRight" };
-      return Ok(Expr::FunctionCall {
-        name: fn_name.to_string(),
-        args: vec![list.clone(), Expr::List(shifts.to_vec().into())].into(),
-      });
+      _ => None,
     }
   };
-
-  // Rotate the top level
-  let rotated = rotate_left_ast(list, first_shift)?;
-
-  // If there are more shifts, apply them to each sublist
-  if shifts.len() > 1 {
-    let rest_shifts = &shifts[1..];
-    match &rotated {
-      Expr::List(items) => {
-        let mut new_items = Vec::new();
-        for item in items {
-          new_items.push(rotate_multi_ast(item, rest_shifts, left)?);
+  // The rspec message always displays the specification as a list.
+  let rspec = |spec: &Expr| {
+    let display = match spec {
+      Expr::List(_) => show(spec),
+      other => show(&Expr::List(vec![other.clone()].into())),
+    };
+    crate::emit_message(&format!(
+      "{}::rspec: Rotation specification {} should be a machine-sized integer or list of machine-sized integers.",
+      fname, display
+    ));
+  };
+  let shifts: Vec<i128> = match args.get(1) {
+    None => vec![1],
+    Some(Expr::List(items)) => {
+      match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
+        Some(ns) => ns,
+        None => {
+          rspec(&args[1]);
+          return Ok(original());
         }
-        Ok(Expr::List(new_items.into()))
       }
-      _ => Ok(rotated),
     }
-  } else {
-    Ok(rotated)
-  }
+    Some(other) => match strict_int(other) {
+      Some(n) => vec![n],
+      None => {
+        rspec(other);
+        return Ok(original());
+      }
+    },
+  };
+  let shifts: Vec<i128> = shifts
+    .into_iter()
+    .map(|n| if is_left { n } else { -n })
+    .collect();
+
+  let mut msg_count = 0u32;
+  Ok(rotate_rec(subject, &shifts, fname, &mut msg_count))
 }
 
 /// Number of levels at which *every* node of `expr` is a list (the depth a
