@@ -1111,6 +1111,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CompleteGraphQ" => Some((1, 2)),
     "EmptyGraphQ" => Some((1, 1)),
     "HamiltonianGraphQ" => Some((1, 1)),
+    "HermiteDecomposition" => Some((1, 1)),
     "LoopFreeGraphQ" => Some((1, 1)),
     "PathGraphQ" => Some((1, 1)),
     "PlanarGraphQ" => Some((1, 1)),

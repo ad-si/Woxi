@@ -4085,3 +4085,81 @@ mod times_unit_factor {
     assert_eq!(interpret("1*x").unwrap(), "x");
   }
 }
+
+mod hermite_decomposition {
+  use super::*;
+
+  #[test]
+  fn full_rank_square() {
+    assert_eq!(
+      interpret("HermiteDecomposition[{{2, 4}, {3, 5}}]").unwrap(),
+      "{{{-1, 1}, {3, -2}}, {{1, 1}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{6, 4}, {2, 8}}]").unwrap(),
+      "{{{0, 1}, {-1, 3}}, {{2, 8}, {0, 20}}}"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{-3, 5}, {7, -2}}]").unwrap(),
+      "{{{2, 1}, {7, 3}}, {{1, 8}, {0, 29}}}"
+    );
+    // Already in HNF: u is the identity
+    assert_eq!(
+      interpret("HermiteDecomposition[{{4, 0}, {0, 6}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {{4, 0}, {0, 6}}}"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{5}}]").unwrap(),
+      "{{{1}}, {{5}}}"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{0, 3}, {2, 0}}]").unwrap(),
+      "{{{0, 1}, {1, 0}}, {{2, 0}, {0, 3}}}"
+    );
+  }
+
+  #[test]
+  fn singular_and_rectangular() {
+    // Square singular: a zero row appears, the kernel row lands in u
+    assert_eq!(
+      interpret("HermiteDecomposition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]")
+        .unwrap(),
+      "{{{1, 0, 0}, {4, -1, 0}, {1, -2, 1}}, {{1, 2, 3}, {0, 3, 6}, {0, 0, 0}}}"
+    );
+    // Wide
+    assert_eq!(
+      interpret("HermiteDecomposition[{{2, 4, 6}}]").unwrap(),
+      "{{{1}}, {{2, 4, 6}}}"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{12, 18, 6}, {8, 4, 10}}]").unwrap(),
+      "{{{1, -1}, {2, -3}}, {{4, 14, -4}, {0, 24, -18}}}"
+    );
+    // Tall rank-1
+    assert_eq!(
+      interpret("HermiteDecomposition[{{1, 2}, {2, 4}, {3, 6}}]").unwrap(),
+      "{{{1, 0, 0}, {-2, 1, 0}, {-3, 0, 1}}, {{1, 2}, {0, 0}, {0, 0}}}"
+    );
+    // Tall full-column-rank
+    assert_eq!(
+      interpret("HermiteDecomposition[{{3, 1}, {1, 2}, {4, 3}}]").unwrap(),
+      "{{{0, 1, 0}, {-1, 3, 0}, {-1, -1, 1}}, {{1, 2}, {0, 5}, {0, 0}}}"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{0, 0}, {0, 0}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {{0, 0}, {0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn non_integer_stays_unevaluated() {
+    assert_eq!(
+      interpret("HermiteDecomposition[x]").unwrap(),
+      "HermiteDecomposition[x]"
+    );
+    assert_eq!(
+      interpret("HermiteDecomposition[{{1.5, 2}, {3, 4}}]").unwrap(),
+      "HermiteDecomposition[{{1.5, 2}, {3, 4}}]"
+    );
+  }
+}

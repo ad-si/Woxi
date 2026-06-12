@@ -6747,3 +6747,150 @@ pub fn coordinate_transform_ast(
   }
   Ok(Expr::List(evaluated.into()))
 }
+
+/// HermiteDecomposition[m] — {u, h} with u unimodular, u.m == h, and h in
+/// row Hermite normal form (positive pivots, entries above each pivot
+/// reduced into [0, pivot)). Integer matrices only; anything else stays
+/// unevaluated.
+///
+/// h is canonical and always matches wolframscript. u is only unique up to
+/// kernel-row mixing for rank-deficient tall matrices; in a minority of
+/// those cases wolframscript's internal operation sequence produces a
+/// different (equally valid) u than the Euclidean min-pivot reduction
+/// used here.
+pub fn hermite_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "HermiteDecomposition".to_string(),
+    args: args.to_vec().into(),
+  };
+  // Parse an integer matrix
+  let rows = match &args[0] {
+    Expr::List(rows) if !rows.is_empty() => rows,
+    _ => return Ok(unevaluated()),
+  };
+  let mut m: Vec<Vec<i128>> = Vec::with_capacity(rows.len());
+  let mut width: Option<usize> = None;
+  for r in rows.iter() {
+    let Expr::List(cells) = r else {
+      return Ok(unevaluated());
+    };
+    if *width.get_or_insert(cells.len()) != cells.len() {
+      return Ok(unevaluated());
+    }
+    let mut row = Vec::with_capacity(cells.len());
+    for c in cells.iter() {
+      match c {
+        Expr::Integer(v) => row.push(*v),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    m.push(row);
+  }
+  let nrows = m.len();
+  let ncols = width.unwrap_or(0);
+  if ncols == 0 {
+    return Ok(unevaluated());
+  }
+
+  // u starts as the identity and tracks every row operation
+  let mut u: Vec<Vec<i128>> = (0..nrows)
+    .map(|i| (0..nrows).map(|j| i128::from(i == j)).collect())
+    .collect();
+  let mut h = m;
+
+  let mut pivot_row = 0usize;
+  for col in 0..ncols {
+    if pivot_row >= nrows {
+      break;
+    }
+    // Reduce column `col` among rows >= pivot_row to a single nonzero
+    // entry via Euclidean row operations
+    loop {
+      // Row with the smallest nonzero |entry| in this column
+      let mut best: Option<usize> = None;
+      for r in pivot_row..nrows {
+        if h[r][col] != 0
+          && best.is_none_or(|b: usize| {
+            h[r][col].unsigned_abs() < h[b][col].unsigned_abs()
+          })
+        {
+          best = Some(r);
+        }
+      }
+      let Some(b) = best else {
+        break;
+      };
+      if b != pivot_row {
+        h.swap(b, pivot_row);
+        u.swap(b, pivot_row);
+      }
+      let p = h[pivot_row][col];
+      let mut done = true;
+      for r in (pivot_row + 1)..nrows {
+        if h[r][col] != 0 {
+          let q = h[r][col].div_euclid(p);
+          for c in 0..ncols {
+            h[r][c] -= q * h[pivot_row][c];
+          }
+          for c in 0..nrows {
+            u[r][c] -= q * u[pivot_row][c];
+          }
+          if h[r][col] != 0 {
+            done = false;
+          }
+        }
+      }
+      if done {
+        break;
+      }
+    }
+    if h[pivot_row][col] == 0 {
+      continue;
+    }
+    // Positive pivot
+    if h[pivot_row][col] < 0 {
+      for c in 0..ncols {
+        h[pivot_row][c] = -h[pivot_row][c];
+      }
+      for c in 0..nrows {
+        u[pivot_row][c] = -u[pivot_row][c];
+      }
+    }
+    // Reduce the entries above the pivot into [0, pivot)
+    let p = h[pivot_row][col];
+    for r in 0..pivot_row {
+      let q = h[r][col].div_euclid(p);
+      if q != 0 {
+        for c in 0..ncols {
+          h[r][c] -= q * h[pivot_row][c];
+        }
+        for c in 0..nrows {
+          u[r][c] -= q * u[pivot_row][c];
+        }
+      }
+    }
+    pivot_row += 1;
+  }
+
+  let to_matrix = |m: &[Vec<i128>]| {
+    Expr::List(
+      m.iter()
+        .map(|row| {
+          Expr::List(
+            row
+              .iter()
+              .map(|&v| Expr::Integer(v))
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  Ok(Expr::List(
+    vec![to_matrix(&u), to_matrix(&h)].into(),
+  ))
+}

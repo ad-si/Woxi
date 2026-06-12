@@ -3208,7 +3208,7 @@ AskFunction,,🚫,,10.4,3291
 Backslash,,,,3.0,3291
 DeviceClose,,🚫,,10.0,3291
 DoubleLongLeftArrow,,,,3.0,3291
-HermiteDecomposition,,,,6.0,3291
+HermiteDecomposition,Hermite normal form decomposition (unimodular u with u.m == h) for integer matrices,✅,pure,6.0,3291
 ListStreamDensityPlot,,🚫,,7.0,3291
 Majority,True when more than half the arguments are True (Orderless; symbolic simplifications),✅,pure,7.0,3291
 MeshRegionQ,,,,10.0,3291
