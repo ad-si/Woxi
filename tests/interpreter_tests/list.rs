@@ -12946,3 +12946,100 @@ mod canonical_order_and_set_operations {
     assert_eq!(interpret("Ordering[f[c, a, b]]").unwrap(), "{2, 3, 1}");
   }
 }
+
+mod gather_split_tally_messages {
+  use super::*;
+
+  #[test]
+  fn gather_family_emits_list_for_non_lists() {
+    // Regression: Gather/GatherBy raised hard errors, Tally was silent
+    assert_eq!(interpret("Gather[x]").unwrap(), "Gather[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Gather::list: List expected at position 1 in Gather[x].")),
+      "expected list message, got {:?}",
+      msgs
+    );
+    // Unlike Split, Gather and Tally reject general heads too
+    assert_eq!(
+      interpret("Gather[f[a, a, b]]").unwrap(),
+      "Gather[f[a, a, b]]"
+    );
+    assert_eq!(interpret("Tally[x]").unwrap(), "Tally[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("Tally::list: List expected at position 1 in Tally[x].")),
+      "expected list message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Tally[f[a, b, a]]").unwrap(), "Tally[f[a, b, a]]");
+    assert_eq!(interpret("GatherBy[x, g]").unwrap(), "GatherBy[x, g]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "GatherBy::list: List expected at position 1 in GatherBy[x, g]."
+      )),
+      "expected list message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn split_works_on_general_heads() {
+    // Regression: non-List heads raised a hard error
+    assert_eq!(interpret("Split[f[a, a, b]]").unwrap(), "f[f[a, a], f[b]]");
+    assert_eq!(
+      interpret("Split[f[a, a, b], SameQ]").unwrap(),
+      "f[f[a, a], f[b]]"
+    );
+  }
+
+  #[test]
+  fn split_emits_normal_for_atoms() {
+    assert_eq!(interpret("Split[x]").unwrap(), "Split[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Split::normal: Nonatomic expression expected at position 1 in Split[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Split[x, SameQ]").unwrap(), "Split[x, SameQ]");
+    // SplitBy delegates to Split, so the message shows the desugared test
+    assert_eq!(interpret("SplitBy[x, g]").unwrap(), "SplitBy[x, g]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Split::normal: Nonatomic expression expected at position 1 in Split[x, g[#1] === g[#2] & ]."
+      )),
+      "expected desugared normal message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn accumulate_emits_normal_for_atoms() {
+    assert_eq!(interpret("Accumulate[x]").unwrap(), "Accumulate[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Accumulate::normal: Nonatomic expression expected at position 1 in Accumulate[x]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+    // Differences stays silent on atoms in wolframscript
+    assert_eq!(interpret("Differences[x]").unwrap(), "Differences[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.is_empty(),
+      "Differences[x] must stay silent, got {:?}",
+      msgs
+    );
+  }
+}

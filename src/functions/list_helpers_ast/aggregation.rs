@@ -1213,13 +1213,26 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Gather[list] - gathers elements into sublists of identical elements
+/// Emit `<F>::list: List expected at position 1 in <call>.` and build
+/// the unevaluated call (Gather/GatherBy/Tally require a List subject).
+fn list_expected_message(fname: &str, args: Vec<Expr>) -> Expr {
+  let call = Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.into(),
+  };
+  crate::emit_message(&format!(
+    "{}::list: List expected at position 1 in {}.",
+    fname,
+    crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+  ));
+  call
+}
+
 pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Gather expects a list argument".into(),
-      ));
+      return Ok(list_expected_message("Gather", vec![list.clone()]));
     }
   };
   let mut groups: Vec<Vec<Expr>> = Vec::new();
@@ -1251,8 +1264,9 @@ pub fn gather_by_ast(
     let items = match list {
       Expr::List(items) => items.clone(),
       _ => {
-        return Err(InterpreterError::EvaluationError(
-          "GatherBy expects a list as first argument".into(),
+        return Ok(list_expected_message(
+          "GatherBy",
+          vec![list.clone(), func.clone()],
         ));
       }
     };
@@ -1261,8 +1275,9 @@ pub fn gather_by_ast(
   let items = match list {
     Expr::List(items) => items,
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "GatherBy expects a list as first argument".into(),
+      return Ok(list_expected_message(
+        "GatherBy",
+        vec![list.clone(), func.clone()],
       ));
     }
   };
@@ -1317,18 +1332,59 @@ fn gather_by_nested(
   Ok(Expr::List(result.into()))
 }
 
-/// Split[list] - splits into sublists of identical consecutive elements
-pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+/// Split works on any nonatomic expression, keeping its head on the
+/// result and every group; atoms emit `Split::normal` (with the given
+/// extra display arguments) and return None.
+fn split_subject<'a>(
+  list: &'a Expr,
+  display_args: &[Expr],
+) -> Option<(&'a [Expr], Option<&'a str>)> {
+  match list {
+    Expr::List(items) => Some((items.as_slice(), None)),
+    Expr::FunctionCall { name, args } => {
+      Some((args.as_slice(), Some(name.as_str())))
+    }
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Split expects a list argument".into(),
+      let mut call_args = vec![list.clone()];
+      call_args.extend(display_args.iter().cloned());
+      crate::emit_message(&format!(
+        "Split::normal: Nonatomic expression expected at position 1 in {}.",
+        crate::syntax::format_expr(
+          &Expr::FunctionCall {
+            name: "Split".to_string(),
+            args: call_args.into(),
+          },
+          crate::syntax::ExprForm::Output
+        )
       ));
+      None
+    }
+  }
+}
+
+fn wrap_groups(groups: Vec<Vec<Expr>>, head: Option<&str>) -> Expr {
+  let wrap = |v: Vec<Expr>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: v.into(),
+      },
+      None => Expr::List(v.into()),
     }
   };
+  wrap(groups.into_iter().map(wrap).collect())
+}
+
+/// Split[list] - splits into sublists of identical consecutive elements
+pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let Some((items, head)) = split_subject(list, &[]) else {
+    return Ok(Expr::FunctionCall {
+      name: "Split".to_string(),
+      args: vec![list.clone()].into(),
+    });
+  };
   if items.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    return Ok(wrap_groups(Vec::new(), head));
   }
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
   for item in items.iter().skip(1) {
@@ -1341,9 +1397,7 @@ pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(
-    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
-  ))
+  Ok(wrap_groups(groups, head))
 }
 
 /// Split[list, test] - splits list where consecutive elements satisfy test function
@@ -1351,17 +1405,14 @@ pub fn split_with_test_ast(
   list: &Expr,
   test: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Split".to_string(),
-        args: vec![list.clone(), test.clone()].into(),
-      });
-    }
+  let Some((items, head)) = split_subject(list, &[test.clone()]) else {
+    return Ok(Expr::FunctionCall {
+      name: "Split".to_string(),
+      args: vec![list.clone(), test.clone()].into(),
+    });
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    return Ok(wrap_groups(Vec::new(), head));
   }
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
   for item in items.iter().skip(1) {
@@ -1377,9 +1428,7 @@ pub fn split_with_test_ast(
       groups.push(vec![item.clone()]);
     }
   }
-  Ok(Expr::List(
-    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
-  ))
+  Ok(wrap_groups(groups, head))
 }
 
 /// SplitBy[list, f] - splits into sublists of consecutive elements with same f value
@@ -1420,9 +1469,21 @@ pub fn split_by_ast(
   let items = match list {
     Expr::List(items) => items,
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "SplitBy expects a list as first argument".into(),
+      // SplitBy delegates to Split, so wolframscript's message shows
+      // the desugared test: Split[x, g[#1] === g[#2] & ].
+      let show = |e: &Expr| {
+        crate::syntax::format_expr(e, crate::syntax::ExprForm::Output)
+      };
+      crate::emit_message(&format!(
+        "Split::normal: Nonatomic expression expected at position 1 in Split[{}, {}[#1] === {}[#2] & ].",
+        show(list),
+        show(func),
+        show(func)
       ));
+      return Ok(Expr::FunctionCall {
+        name: "SplitBy".to_string(),
+        args: vec![list.clone(), func.clone()].into(),
+      });
     }
   };
   if items.is_empty() {

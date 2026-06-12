@@ -9,10 +9,15 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
+      let call = Expr::FunctionCall {
         name: "Tally".to_string(),
         args: vec![list.clone()].into(),
-      });
+      };
+      crate::emit_message(&format!(
+        "Tally::list: List expected at position 1 in {}.",
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(call);
     }
   };
 

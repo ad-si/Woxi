@@ -106,6 +106,10 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
+      crate::emit_message(&format!(
+        "Accumulate::normal: Nonatomic expression expected at position 1 in Accumulate[{}].",
+        crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+      ));
       return Ok(Expr::FunctionCall {
         name: "Accumulate".to_string(),
         args: vec![list.clone()].into(),
