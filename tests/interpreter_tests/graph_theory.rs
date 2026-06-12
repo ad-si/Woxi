@@ -3003,10 +3003,7 @@ mod find_clique {
       .unwrap(),
       "{{1, 2, 3}}"
     );
-    assert_eq!(
-      interpret("FindClique[CycleGraph[6]]").unwrap(),
-      "{{1, 2}}"
-    );
+    assert_eq!(interpret("FindClique[CycleGraph[6]]").unwrap(), "{{1, 2}}");
   }
 
   #[test]
@@ -3153,6 +3150,139 @@ mod petersen_graph_labeling {
     assert_eq!(
       interpret("FindClique[PetersenGraph[5, 2]]").unwrap(),
       "{{1, 3}}"
+    );
+  }
+}
+
+mod subgraph {
+  use super::*;
+
+  #[test]
+  fn induced_subgraph() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1, 2, 3, 4, 5}, {1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4, 4 <-> 5}]; EdgeList[Subgraph[g, {1, 2, 3}]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}"
+    );
+    assert_eq!(
+      interpret("EdgeList[Subgraph[CompleteGraph[5], {2, 3, 5}]]").unwrap(),
+      "{2 \u{f3d4} 3, 2 \u{f3d4} 5, 3 \u{f3d4} 5}"
+    );
+    assert_eq!(
+      interpret("EdgeList[Subgraph[PetersenGraph[5, 2], {1, 3, 5, 6}]]")
+        .unwrap(),
+      "{1 \u{f3d4} 3, 3 \u{f3d4} 5, 1 \u{f3d4} 6}"
+    );
+  }
+
+  #[test]
+  fn keeps_given_vertex_order() {
+    assert_eq!(
+      interpret(
+        "g = CycleGraph[6]; {VertexList[Subgraph[g, {5, 2, 1}]], EdgeList[Subgraph[g, {5, 2, 1}]]}"
+      )
+      .unwrap(),
+      "{{5, 2, 1}, {2 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret("EdgeList[Subgraph[CycleGraph[6], {4, 3, 2}]]").unwrap(),
+      "{4 \u{f3d4} 3, 3 \u{f3d4} 2}"
+    );
+  }
+
+  #[test]
+  fn unknown_vertices_ignored() {
+    assert_eq!(
+      interpret("Subgraph[CycleGraph[5], {1, 9}]").unwrap(),
+      "Graph[<1>, <0>]"
+    );
+    assert_eq!(
+      interpret("Subgraph[CycleGraph[5], {}]").unwrap(),
+      "Graph[<0>, <0>]"
+    );
+  }
+
+  #[test]
+  fn single_vertex_spec_and_non_graph() {
+    assert_eq!(
+      interpret("Subgraph[CycleGraph[5], 3]").unwrap(),
+      "Graph[<1>, <0>]"
+    );
+    assert_eq!(interpret("Subgraph[x, {1}]").unwrap(), "Subgraph[x, {1}]");
+  }
+}
+
+mod line_graph {
+  use super::*;
+
+  #[test]
+  fn line_graph_of_generators() {
+    // Vertices index the edges in EdgeList order
+    assert_eq!(
+      interpret(
+        "{VertexList[LineGraph[CycleGraph[4]]], EdgeList[LineGraph[CycleGraph[4]]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 4}, {1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 4, 3 \u{f3d4} 4}}"
+    );
+    assert_eq!(
+      interpret("EdgeList[LineGraph[CycleGraph[5]]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 5, 3 \u{f3d4} 4, 4 \u{f3d4} 5}"
+    );
+    // The line graph of a star is a complete graph
+    assert_eq!(
+      interpret("EdgeList[LineGraph[StarGraph[5]]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 1 \u{f3d4} 4, 2 \u{f3d4} 3, 2 \u{f3d4} 4, 3 \u{f3d4} 4}"
+    );
+  }
+
+  #[test]
+  fn line_graph_of_complete_graph() {
+    assert_eq!(
+      interpret("LineGraph[CompleteGraph[4]]").unwrap(),
+      "Graph[<6>, <12>]"
+    );
+  }
+
+  #[test]
+  fn edgeless_and_non_graph() {
+    assert_eq!(
+      interpret("LineGraph[Graph[{1, 2}, {}]]").unwrap(),
+      "Graph[<0>, <0>]"
+    );
+    assert_eq!(interpret("LineGraph[x]").unwrap(), "LineGraph[x]");
+  }
+}
+
+mod cycle_graph_edge_order {
+  use super::*;
+
+  #[test]
+  fn edges_are_sorted() {
+    // Regression: the wrap-around edge previously appeared last as n <-> 1
+    assert_eq!(
+      interpret("EdgeList[CycleGraph[4]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 4, 2 \u{f3d4} 3, 3 \u{f3d4} 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[CycleGraph[6]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 6, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 5, 5 \u{f3d4} 6}"
+    );
+  }
+
+  #[test]
+  fn degenerate_cycles_are_literal() {
+    // wolframscript: CycleGraph[1] has a self-loop, CycleGraph[2] a
+    // doubled edge
+    assert_eq!(
+      interpret("EdgeList[CycleGraph[1]]").unwrap(),
+      "{1 \u{f3d4} 1}"
+    );
+    assert_eq!(
+      interpret("EdgeList[CycleGraph[2]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 2}"
     );
   }
 }

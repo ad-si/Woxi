@@ -2721,12 +2721,10 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return Ok(unevaluated()),
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return Ok(unevaluated()),
+    },
     _ => return Ok(unevaluated()),
   };
 
@@ -2746,22 +2744,18 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(unevaluated());
         }
       },
-      Expr::List(items) if items.len() == 2 => {
-        match (&items[0], &items[1]) {
-          (Expr::Integer(lo), Expr::Integer(hi))
-            if *lo >= 1 && *hi >= *lo =>
-          {
-            (*lo as usize, *hi as usize)
-          }
-          (Expr::Integer(lo), e) if *lo >= 1 && is_infinity(e) => {
-            (*lo as usize, usize::MAX)
-          }
-          _ => {
-            inv(&args[1]);
-            return Ok(unevaluated());
-          }
+      Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+        (Expr::Integer(lo), Expr::Integer(hi)) if *lo >= 1 && *hi >= *lo => {
+          (*lo as usize, *hi as usize)
         }
-      }
+        (Expr::Integer(lo), e) if *lo >= 1 && is_infinity(e) => {
+          (*lo as usize, usize::MAX)
+        }
+        _ => {
+          inv(&args[1]);
+          return Ok(unevaluated());
+        }
+      },
       other => {
         inv(other);
         return Ok(unevaluated());
@@ -2851,17 +2845,12 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Count::K(k) => {
-      let mut taken: Vec<Vec<usize>> =
-        qualifying.into_iter().take(k).collect();
-      taken.sort_by(|a, b| {
-        b.len().cmp(&a.len()).then_with(|| b.cmp(a))
-      });
+      let mut taken: Vec<Vec<usize>> = qualifying.into_iter().take(k).collect();
+      taken.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| b.cmp(a)));
       taken
     }
     Count::All => {
-      qualifying.sort_by(|a, b| {
-        b.len().cmp(&a.len()).then_with(|| b.cmp(a))
-      });
+      qualifying.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| b.cmp(a)));
       qualifying
     }
   };
@@ -2880,4 +2869,143 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect::<Vec<_>>()
       .into(),
   ))
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph[g, vertices] — the induced subgraph. The vertex list keeps the
+// given order (unknown vertices are ignored); edges are sorted by the
+// (max, min) positions of their endpoints in the given list, with the
+// earlier-position endpoint first — matching wolframscript for generator
+// graphs (CycleGraph, PetersenGraph, ...). Note: wolframscript's edge
+// display order for explicitly-constructed graphs is an igraph artifact
+// that is not replicated.
+pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "Subgraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let (vertices, edge_exprs) = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => {
+      match (&gargs[0], &gargs[1]) {
+        (Expr::List(v), Expr::List(e)) => (v, e),
+        _ => return Ok(unevaluated()),
+      }
+    }
+    _ => return Ok(unevaluated()),
+  };
+  // The vertex spec: a list, or a single vertex
+  let requested: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.iter().cloned().collect(),
+    single => vec![single.clone()],
+  };
+  // Keep only vertices of g, in the requested order, deduplicated
+  let mut sub_vertices: Vec<Expr> = Vec::new();
+  let mut sub_keys: Vec<String> = Vec::new();
+  for r in requested {
+    let key = expr_to_string(&r);
+    if vertices.iter().any(|v| expr_to_string(v) == key)
+      && !sub_keys.contains(&key)
+    {
+      sub_keys.push(key);
+      sub_vertices.push(r);
+    }
+  }
+  let pos_of = |e: &Expr| sub_keys.iter().position(|k| *k == expr_to_string(e));
+  let mut edges: Vec<((usize, usize), Expr)> = Vec::new();
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+      && let (Some(pa), Some(pb)) = (pos_of(&eargs[0]), pos_of(&eargs[1]))
+    {
+      let (first, second) = if pa <= pb {
+        (eargs[0].clone(), eargs[1].clone())
+      } else {
+        (eargs[1].clone(), eargs[0].clone())
+      };
+      edges.push((
+        (pa.max(pb), pa.min(pb)),
+        Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![first, second].into(),
+        },
+      ));
+    }
+  }
+  edges.sort_by_key(|(k, _)| *k);
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![
+      Expr::List(sub_vertices.into()),
+      Expr::List(edges.into_iter().map(|(_, e)| e).collect::<Vec<_>>().into()),
+    ]
+    .into(),
+  })
+}
+
+// LineGraph[g] — the line graph: one vertex per edge of g (numbered by
+// EdgeList position), with two vertices adjacent when the underlying
+// edges share an endpoint. Edges are listed in ascending canonical order,
+// matching wolframscript for generator graphs (the reversed display
+// orientation wolframscript uses for explicitly-constructed graphs is an
+// igraph artifact that is not replicated).
+pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "LineGraph".to_string(),
+    args: args.to_vec().into(),
+  };
+  let edge_exprs = match &args[0] {
+    Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } if gname == "Graph" && gargs.len() >= 2 => match &gargs[1] {
+      Expr::List(e) => e,
+      _ => return Ok(unevaluated()),
+    },
+    _ => return Ok(unevaluated()),
+  };
+  let mut endpoints: Vec<(String, String)> = Vec::new();
+  for e in edge_exprs.iter() {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "UndirectedEdge"
+      && eargs.len() == 2
+    {
+      endpoints
+        .push((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])));
+    } else {
+      return Ok(unevaluated());
+    }
+  }
+  let m = endpoints.len();
+  let vertices: Vec<Expr> = (1..=m).map(|i| Expr::Integer(i as i128)).collect();
+  let mut edges: Vec<Expr> = Vec::new();
+  for i in 0..m {
+    for j in (i + 1)..m {
+      let (a1, b1) = &endpoints[i];
+      let (a2, b2) = &endpoints[j];
+      if a1 == a2 || a1 == b2 || b1 == a2 || b1 == b2 {
+        edges.push(Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![
+            Expr::Integer((i + 1) as i128),
+            Expr::Integer((j + 1) as i128),
+          ]
+          .into(),
+        });
+      }
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
+  })
 }

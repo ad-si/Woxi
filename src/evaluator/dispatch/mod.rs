@@ -2349,26 +2349,23 @@ pub fn evaluate_function_call_ast_inner(
     if n >= 1 {
       let vertices: Vec<Expr> =
         (1..=n).map(|i| Expr::Integer(i as i128)).collect();
-      let mut edges = Vec::new();
-      if n >= 2 {
-        for i in 1..n {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(i as i128),
-              Expr::Integer((i + 1) as i128),
-            ]
-            .into(),
-          });
-        }
-        if n >= 3 {
-          // Close the cycle with edge n-1.
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![Expr::Integer(n as i128), Expr::Integer(1)].into(),
-          });
-        }
+      // wolframscript lists the cycle edges in sorted order:
+      // {1-2, 1-n, 2-3, 3-4, ...}. The construction is literal, so
+      // CycleGraph[1] has a self-loop and CycleGraph[2] a doubled edge.
+      let mut pairs: Vec<(usize, usize)> = Vec::new();
+      for i in 1..n {
+        pairs.push((i, i + 1));
       }
+      pairs.push((1, n));
+      pairs.sort_unstable();
+      let edges: Vec<Expr> = pairs
+        .into_iter()
+        .map(|(a, b)| Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)]
+            .into(),
+        })
+        .collect();
       let opts: Vec<Expr> = args[1..]
         .iter()
         .filter(|a| matches!(a, Expr::Rule { .. }))
@@ -3549,8 +3546,7 @@ pub fn evaluate_function_call_ast_inner(
       let b = n + 1 + (i + 1) % n;
       pairs.insert((a.min(b), a.max(b)));
     }
-    let edges: Vec<Expr> =
-      pairs.into_iter().map(|(a, b)| und(a, b)).collect();
+    let edges: Vec<Expr> = pairs.into_iter().map(|(a, b)| und(a, b)).collect();
     let vertices: Vec<Expr> =
       (1..=2 * n).map(|i| Expr::Integer(i as i128)).collect();
     let mut graph_args =
@@ -5012,6 +5008,14 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if name == "Subgraph" && args.len() == 2 {
+    return crate::functions::graph::subgraph_ast(args);
+  }
+
+  if name == "LineGraph" && args.len() == 1 {
+    return crate::functions::graph::line_graph_ast(args);
+  }
+
   if name == "FindClique" && (1..=3).contains(&args.len()) {
     return crate::functions::graph::find_clique_ast(args);
   }

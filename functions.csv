@@ -1181,7 +1181,7 @@ AnatomyData,,🚫,,10.3,1192
 FresnelS,Returns the Fresnel sine integral,✅,pure,3.0,1193
 CometData,,🚫,,10.0,1195
 HighlightImage,,🚫,,9.0,1195
-Subgraph,,🚫,,8.0,1197
+Subgraph,Induced subgraph on given vertices (keeps the given vertex order),✅,pure,8.0,1197
 Xor,Checks if exactly one condition is true,✅,pure,1.0,1197
 FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
@@ -2465,7 +2465,7 @@ EllipticLog,Symbol for elliptic logarithm function,✅,pure,1.0,2519
 FinancialBond,,🚫,,8.0,2519
 StableDistribution,Stable distribution with PDF/CDF for Cauchy and Normal special cases,✅,pure,8.0,2519
 AngerJ,Anger function AngerJ[nu z] which equals BesselJ for integer orders,✅,pure,7.0,2525
-LineGraph,,🚫,,8.0,2525
+LineGraph,Line graph: one vertex per edge with adjacency for shared endpoints,✅,pure,8.0,2525
 LocalizeVariables,,🚫,,6.0,2525
 MaxFilter,Maximum filter over a sliding window,✅,none,7.0,2525
 StringReplaceList,List of all single replacements in a string,✅,none,5.1,2525
