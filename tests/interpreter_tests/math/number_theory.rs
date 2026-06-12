@@ -3713,8 +3713,7 @@ mod cyclic_group_and_cycle_index {
       "x[1]^4/4 + x[2]^2/4 + x[4]/2"
     );
     assert_eq!(
-      interpret("CycleIndexPolynomial[SymmetricGroup[3], {a, b, c}]")
-        .unwrap(),
+      interpret("CycleIndexPolynomial[SymmetricGroup[3], {a, b, c}]").unwrap(),
       "a^3/6 + (a*b)/2 + c/3"
     );
     assert_eq!(
@@ -3733,8 +3732,7 @@ mod cyclic_group_and_cycle_index {
       "a^4/24 + (a^2*b)/4 + b^2/8 + (a*c)/3 + d/4"
     );
     assert_eq!(
-      interpret("CycleIndexPolynomial[AbelianGroup[{2, 2}], {a, b}]")
-        .unwrap(),
+      interpret("CycleIndexPolynomial[AbelianGroup[{2, 2}], {a, b}]").unwrap(),
       "a^4/4 + (a^2*b)/2 + b^2/4"
     );
   }
@@ -3779,8 +3777,7 @@ mod cyclic_group_and_cycle_index {
     );
     // Indexed-variable arguments compare numerically: x[5] before x[10]
     assert_eq!(
-      interpret("CycleIndexPolynomial[CyclicGroup[10], Array[x, 10]]")
-        .unwrap(),
+      interpret("CycleIndexPolynomial[CyclicGroup[10], Array[x, 10]]").unwrap(),
       "x[1]^10/10 + x[2]^5/10 + (2*x[5]^2)/5 + (2*x[10])/5"
     );
     assert_eq!(
@@ -3799,10 +3796,9 @@ mod cyclic_group_and_cycle_index {
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
-      msgs
-        .iter()
-        .any(|m| m
-          .contains("CycleIndexPolynomial::grp: x is not a valid group.")),
+      msgs.iter().any(
+        |m| m.contains("CycleIndexPolynomial::grp: x is not a valid group.")
+      ),
       "expected grp message, got {:?}",
       msgs
     );
@@ -3828,6 +3824,146 @@ mod cyclic_group_and_cycle_index {
         "CycleIndexPolynomial::argtu: CycleIndexPolynomial called with 1 argument; 2 or 3 arguments are expected."
       )),
       "expected argtu message, got {:?}",
+      msgs
+    );
+  }
+}
+
+mod group_stabilizer_and_table {
+  use super::*;
+
+  #[test]
+  fn symmetric_group_stabilizers() {
+    // Canonical generators on the remaining points: a transposition of
+    // the first two plus the full cycle
+    assert_eq!(
+      interpret("GroupStabilizer[SymmetricGroup[4], {1}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 3}}], Cycles[{{2, 3, 4}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[SymmetricGroup[4], {2}]").unwrap(),
+      "PermutationGroup[{Cycles[{{1, 3}}], Cycles[{{1, 3, 4}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[SymmetricGroup[4], {1, 2}]").unwrap(),
+      "PermutationGroup[{Cycles[{{3, 4}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[SymmetricGroup[5], {1}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 3}}], Cycles[{{2, 3, 4, 5}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[SymmetricGroup[3], {1, 2, 3}]").unwrap(),
+      "PermutationGroup[{}]"
+    );
+  }
+
+  #[test]
+  fn alternating_group_stabilizers() {
+    // Consecutive 3-cycles on the remaining points
+    assert_eq!(
+      interpret("GroupStabilizer[AlternatingGroup[4], {1}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 3, 4}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[AlternatingGroup[5], {1}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 3, 4}}], Cycles[{{3, 4, 5}}]}]"
+    );
+  }
+
+  #[test]
+  fn cyclic_and_dihedral_stabilizers() {
+    assert_eq!(
+      interpret("GroupStabilizer[CyclicGroup[6], {2}]").unwrap(),
+      "PermutationGroup[{}]"
+    );
+    // The reflection through the fixed vertex
+    assert_eq!(
+      interpret("GroupStabilizer[DihedralGroup[4], {1}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 4}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[DihedralGroup[6], {1}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 6}, {3, 5}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[DihedralGroup[4], {1, 3}]").unwrap(),
+      "PermutationGroup[{Cycles[{{2, 4}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[DihedralGroup[4], {1, 2}]").unwrap(),
+      "PermutationGroup[{}]"
+    );
+  }
+
+  #[test]
+  fn stabilizer_edge_cases() {
+    // Empty point list: the whole group
+    assert_eq!(
+      interpret("GroupStabilizer[SymmetricGroup[4], {}]").unwrap(),
+      "SymmetricGroup[4]"
+    );
+    // Forced (at most one nontrivial element) PermutationGroup stabilizers
+    assert_eq!(
+      interpret(
+        "GroupStabilizer[PermutationGroup[{Cycles[{{1, 2, 3}}], Cycles[{{1, 2}}]}], {3}]"
+      )
+      .unwrap(),
+      "PermutationGroup[{Cycles[{{1, 2}}]}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[PermutationGroup[{Cycles[{{1, 2, 3}}]}], {1}]")
+        .unwrap(),
+      "PermutationGroup[{}]"
+    );
+    assert_eq!(
+      interpret("GroupStabilizer[x, {1}]").unwrap(),
+      "GroupStabilizer[x, {1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("GroupStabilizer::grp: x is not a valid group.")),
+      "expected grp message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn multiplication_tables() {
+    assert_eq!(
+      interpret("GroupMultiplicationTable[CyclicGroup[4]]").unwrap(),
+      "{{1, 2, 3, 4}, {2, 3, 4, 1}, {3, 4, 1, 2}, {4, 1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("GroupMultiplicationTable[SymmetricGroup[3]]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6}, {2, 1, 4, 3, 6, 5}, {3, 5, 1, 6, 2, 4}, {4, 6, 2, 5, 1, 3}, {5, 3, 6, 1, 4, 2}, {6, 4, 5, 2, 3, 1}}"
+    );
+    // DihedralGroup[3] is isomorphic to S3 with the same element order
+    assert_eq!(
+      interpret("GroupMultiplicationTable[DihedralGroup[3]]").unwrap(),
+      "{{1, 2, 3, 4, 5, 6}, {2, 1, 4, 3, 6, 5}, {3, 5, 1, 6, 2, 4}, {4, 6, 2, 5, 1, 3}, {5, 3, 6, 1, 4, 2}, {6, 4, 5, 2, 3, 1}}"
+    );
+    assert_eq!(
+      interpret("GroupMultiplicationTable[PermutationGroup[{Cycles[{{1, 2}}]}]]")
+        .unwrap(),
+      "{{1, 2}, {2, 1}}"
+    );
+    assert_eq!(
+      interpret("GroupMultiplicationTable[CyclicGroup[1]]").unwrap(),
+      "{{1}}"
+    );
+    assert_eq!(
+      interpret("GroupMultiplicationTable[x]").unwrap(),
+      "GroupMultiplicationTable[x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "GroupMultiplicationTable::grp: x is not a valid group."
+      )),
+      "expected grp message, got {:?}",
       msgs
     );
   }

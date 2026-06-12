@@ -3256,7 +3256,7 @@ DefaultValues,Returns the default values of a symbol,✅,pure,2.0,3344
 FindIndependentEdgeSet,,,,8.0,3344
 FindPostmanTour,,,,9.0,3344
 GoldenAngle,The golden angle constant Pi(3 - Sqrt[5]),✅,pure,10.2,3344
-GroupStabilizer,,,,8.0,3344
+GroupStabilizer,Pointwise stabilizer subgroup with canonical generators (named groups; forced PermutationGroup cases),✅,pure,8.0,3344
 InputStream,Input stream object,✅,effectful,2.0,3344
 JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1.0,3344
 NHoldRest,,,,3.0,3344
@@ -3290,7 +3290,7 @@ ConformImages,,,,10.0,3378
 DMSList,Convert decimal degrees to degrees-minutes-seconds,✅,none,7.0,3378
 GeoArea,,🚫,,10.3,3378
 GraphRadius,Minimum vertex eccentricity,✅,1,8.0,3378
-GroupMultiplicationTable,,,,8.0,3378
+GroupMultiplicationTable,Multiplication table as element indices in GroupElements order,✅,pure,8.0,3378
 HeatTransferPDEComponent,,,,12.2,3378
 Icosahedron,,,,12.0,3378
 ProcessConnection,,🚫,,10.0,3378

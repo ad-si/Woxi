@@ -4532,8 +4532,7 @@ fn cyclic_group_elements(n: usize) -> Expr {
   }
   let mut elements = Vec::with_capacity(n);
   for k in 0..n {
-    let image: Vec<i128> =
-      (0..n).map(|i| ((i + k) % n + 1) as i128).collect();
+    let image: Vec<i128> = (0..n).map(|i| ((i + k) % n + 1) as i128).collect();
     elements.push(images_to_cycles(&image));
   }
   Expr::List(elements.into())
@@ -4627,11 +4626,8 @@ pub fn cycle_index_polynomial_ast(
           let degree = factors.iter().sum();
           (abelian_group_elements(&factors), degree)
         }),
-        "PermutationGroup" => {
-          permutation_group_closure(&gargs[0]).map(|(elements, degree)| {
-            (Expr::List(elements.into()), degree)
-          })
-        }
+        "PermutationGroup" => permutation_group_closure(&gargs[0])
+          .map(|(elements, degree)| (Expr::List(elements.into()), degree)),
         _ => None,
       }
     }
@@ -4687,9 +4683,8 @@ pub fn cycle_index_polynomial_ast(
     *type_counts.entry(mult).or_insert(0) += 1;
   }
 
-  let var_for = |k: usize| -> Expr {
-    vars.get(k - 1).cloned().unwrap_or(Expr::Integer(1))
-  };
+  let var_for =
+    |k: usize| -> Expr { vars.get(k - 1).cloned().unwrap_or(Expr::Integer(1)) };
   let terms: Vec<Expr> = type_counts
     .into_iter()
     .map(|(mult, count)| {
@@ -4727,9 +4722,7 @@ pub fn cycle_index_polynomial_ast(
 /// Expand PermutationGroup generators into the full group via BFS closure.
 /// Returns the elements (as Cycles exprs, ordered lexicographically by
 /// image list) and the degree (largest moved point among the generators).
-fn permutation_group_closure(
-  gens: &Expr,
-) -> Option<(Vec<Expr>, usize)> {
+fn permutation_group_closure(gens: &Expr) -> Option<(Vec<Expr>, usize)> {
   let gen_list = match gens {
     Expr::List(g) => g,
     _ => return None,
@@ -4777,7 +4770,8 @@ fn permutation_group_closure(
     }
     image
   };
-  let gen_images: Vec<Vec<usize>> = gen_lengths.iter().map(|c| to_image(c)).collect();
+  let gen_images: Vec<Vec<usize>> =
+    gen_lengths.iter().map(|c| to_image(c)).collect();
   let identity: Vec<usize> = (1..=degree).collect();
   let mut seen: std::collections::BTreeSet<Vec<usize>> =
     std::collections::BTreeSet::new();
@@ -4804,4 +4798,247 @@ fn permutation_group_closure(
     })
     .collect();
   Some((elements, degree))
+}
+
+/// Convert a Cycles expression into a 1-based image list over 1..n.
+fn cycles_to_image(e: &Expr, n: usize) -> Option<Vec<usize>> {
+  let mut image: Vec<usize> = (1..=n).collect();
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Cycles"
+    && args.len() == 1
+    && let Expr::List(cycles) = &args[0]
+  {
+    for c in cycles.iter() {
+      let Expr::List(points) = c else {
+        return None;
+      };
+      let pts: Vec<usize> = points
+        .iter()
+        .map(|p| match p {
+          Expr::Integer(v) if *v >= 1 && (*v as usize) <= n => {
+            Some(*v as usize)
+          }
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+      for w in 0..pts.len() {
+        image[pts[w] - 1] = pts[(w + 1) % pts.len()];
+      }
+    }
+    Some(image)
+  } else {
+    None
+  }
+}
+
+/// The elements of a supported group as (image lists, degree), in the
+/// same order GroupElements uses.
+fn group_element_images(group: &Expr) -> Option<(Vec<Vec<usize>>, usize)> {
+  if let Expr::FunctionCall { name, args } = group
+    && args.len() == 1
+  {
+    if name == "PermutationGroup" {
+      let (elements, degree) = permutation_group_closure(&args[0])?;
+      let images = elements
+        .iter()
+        .map(|e| cycles_to_image(e, degree))
+        .collect::<Option<Vec<_>>>()?;
+      return Some((images, degree));
+    }
+    let min_n = if name == "DihedralGroup" { 1 } else { 0 };
+    if let Expr::Integer(n) = &args[0]
+      && *n >= min_n
+    {
+      let n = *n as usize;
+      let elements = match name.as_str() {
+        "CyclicGroup" => cyclic_group_elements(n),
+        "SymmetricGroup" => symmetric_group_elements(n),
+        "AlternatingGroup" => alternating_group_elements(n),
+        "DihedralGroup" => dihedral_group_elements(n),
+        _ => return None,
+      };
+      let degree = n.max(1);
+      if let Expr::List(items) = &elements {
+        let images = items
+          .iter()
+          .map(|e| cycles_to_image(e, degree))
+          .collect::<Option<Vec<_>>>()?;
+        return Some((images, degree));
+      }
+    }
+  }
+  None
+}
+
+
+/// Whether an expression is shaped like a group object (for ::grp messages).
+fn looks_like_group(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "SymmetricGroup"
+          | "AlternatingGroup"
+          | "CyclicGroup"
+          | "DihedralGroup"
+          | "AbelianGroup"
+          | "PermutationGroup"
+      )
+  )
+}
+
+/// GroupMultiplicationTable[g] — entry (i, j) is the position (in
+/// GroupElements order) of the product of elements i and j (left-to-right
+/// composition, as in PermutationProduct).
+pub fn group_multiplication_table_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupMultiplicationTable".to_string(),
+    args: args.to_vec().into(),
+  };
+  let Some((images, _)) = group_element_images(&args[0]) else {
+    if !looks_like_group(&args[0]) {
+      crate::emit_message(&format!(
+        "GroupMultiplicationTable::grp: {} is not a valid group.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+    }
+    return Ok(unevaluated());
+  };
+  let index: std::collections::HashMap<&Vec<usize>, usize> = images
+    .iter()
+    .enumerate()
+    .map(|(i, img)| (img, i + 1))
+    .collect();
+  let mut rows = Vec::with_capacity(images.len());
+  for a in &images {
+    let mut row = Vec::with_capacity(images.len());
+    for b in &images {
+      // apply a, then b
+      let product: Vec<usize> = a.iter().map(|&v| b[v - 1]).collect();
+      match index.get(&product) {
+        Some(&i) => row.push(Expr::Integer(i as i128)),
+        None => return Ok(unevaluated()),
+      }
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(rows.into()))
+}
+
+/// GroupStabilizer[g, {p1, ...}] — the pointwise stabilizer subgroup.
+/// Supported for the named groups, matching wolframscript's canonical
+/// generator choices (SymmetricGroup: transposition + full cycle on the
+/// remaining points; AlternatingGroup: consecutive 3-cycles; Cyclic and
+/// Dihedral: the at-most-one nontrivial fixing element). The generic
+/// PermutationGroup form follows wolframscript's internal Schreier-Sims
+/// generator selection and is not replicated.
+pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "GroupStabilizer".to_string(),
+    args: args.to_vec().into(),
+  };
+  if !looks_like_group(&args[0]) {
+    crate::emit_message(&format!(
+      "GroupStabilizer::grp: {} is not a valid group.",
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated());
+  }
+  let Expr::List(pt_items) = &args[1] else {
+    return Ok(unevaluated());
+  };
+  // The empty point list stabilizes nothing: the whole group
+  if pt_items.is_empty() {
+    return Ok(args[0].clone());
+  }
+  let mut pts: Vec<usize> = Vec::new();
+  for p in pt_items.iter() {
+    match p {
+      Expr::Integer(v) if *v >= 1 => pts.push(*v as usize),
+      _ => return Ok(unevaluated()),
+    }
+  }
+  let permutation_group = |gens: Vec<Expr>| Expr::FunctionCall {
+    name: "PermutationGroup".to_string(),
+    args: vec![Expr::List(gens.into())].into(),
+  };
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && gargs.len() == 1
+    && let Expr::Integer(n) = &gargs[0]
+    && *n >= 0
+  {
+    let n = *n as usize;
+    let remaining: Vec<i128> = (1..=n as i128)
+      .filter(|v| !pts.contains(&(*v as usize)))
+      .collect();
+    match name.as_str() {
+      "SymmetricGroup" => {
+        let mut gens = Vec::new();
+        if remaining.len() >= 2 {
+          gens.push(make_cycles(vec![remaining[0], remaining[1]]));
+        }
+        if remaining.len() >= 3 {
+          gens.push(make_cycles(remaining.clone()));
+        }
+        return Ok(permutation_group(gens));
+      }
+      "AlternatingGroup" => {
+        let mut gens = Vec::new();
+        for w in remaining.windows(3) {
+          gens.push(make_cycles(w.to_vec()));
+        }
+        return Ok(permutation_group(gens));
+      }
+      "CyclicGroup" | "DihedralGroup" => {
+        // Enumerate and keep the (at most one) nontrivial element fixing
+        // every point
+        if let Some((images, _)) = group_element_images(&args[0]) {
+          let mut gens = Vec::new();
+          for img in &images {
+            let fixes =
+              pts.iter().all(|&p| p > img.len() || img[p - 1] == p);
+            let identity = img.iter().enumerate().all(|(i, &v)| v == i + 1);
+            if fixes && !identity {
+              let img_i128: Vec<i128> =
+                img.iter().map(|&v| v as i128).collect();
+              gens.push(images_to_cycles(&img_i128));
+            }
+          }
+          return Ok(permutation_group(gens));
+        }
+      }
+      _ => {}
+    }
+  }
+  // PermutationGroup: the stabilizer is computed by enumeration when its
+  // generator choice is forced (at most one nontrivial element);
+  // wolframscript's generator selection for larger stabilizers follows
+  // its internal Schreier-Sims chains and is not replicated.
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "PermutationGroup"
+    && gargs.len() == 1
+    && let Some((images, _)) = group_element_images(&args[0])
+  {
+    let fixing: Vec<&Vec<usize>> = images
+      .iter()
+      .filter(|img| {
+        pts.iter().all(|&p| p > img.len() || img[p - 1] == p)
+      })
+      .collect();
+    if fixing.len() <= 2 {
+      let gens: Vec<Expr> = fixing
+        .iter()
+        .filter(|img| img.iter().enumerate().any(|(i, &v)| v != i + 1))
+        .map(|img| {
+          let img_i128: Vec<i128> = img.iter().map(|&v| v as i128).collect();
+          images_to_cycles(&img_i128)
+        })
+        .collect();
+      return Ok(permutation_group(gens));
+    }
+  }
+  Ok(unevaluated())
 }

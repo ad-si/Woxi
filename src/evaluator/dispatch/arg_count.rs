@@ -476,6 +476,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GreaterThan" => Some((1, 1)),
     "GroupBy" => Some((1, 3)),
     "GroupElements" => Some((1, 1)),
+    "GroupMultiplicationTable" => Some((1, 1)),
+    "GroupStabilizer" => Some((2, 2)),
     "GroupGenerators" => Some((1, 1)),
     "GroupOrder" => Some((1, 1)),
     "HalfLine" => Some((1, 2)),

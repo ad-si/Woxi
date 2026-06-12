@@ -567,6 +567,14 @@ pub fn dispatch_math_functions(
     "GroupElements" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
+    "GroupMultiplicationTable" if args.len() == 1 => {
+      return Some(
+        crate::functions::math_ast::group_multiplication_table_ast(args),
+      );
+    }
+    "GroupStabilizer" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::group_stabilizer_ast(args));
+    }
     "CycleIndexPolynomial" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::cycle_index_polynomial_ast(
         args,
