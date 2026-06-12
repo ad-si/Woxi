@@ -1437,9 +1437,7 @@ pub fn replace_part_ast(
           break;
         }
       }
-      if all_match
-        && matches!(comps.last(), Some(Comp::Index(0)))
-      {
+      if all_match && matches!(comps.last(), Some(Comp::Index(0))) {
         let (_, rhs, _) = &rules[*ri];
         let value = crate::evaluator::evaluate_expr_to_expr(rhs)?;
         if let Expr::Identifier(h) = &value {
@@ -1542,7 +1540,6 @@ pub fn replace_part_ast(
   }
   walk(expr, &mut Vec::new(), &matchers, &rules, max_depth)
 }
-
 
 pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

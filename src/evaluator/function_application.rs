@@ -497,6 +497,12 @@ pub fn apply_function_to_arg(
       {
         return apply_curried_call(func, std::slice::from_ref(arg));
       }
+      // MapAt[f, pos] operator form: the applied expression goes in the
+      // middle
+      if name == "MapAt" && args.len() == 2 {
+        let new_args = vec![args[0].clone(), arg.clone(), args[1].clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       // Insert[elem, pos] operator form: prepend the applied expression
       if name == "Insert" && args.len() == 2 {
         let new_args = vec![arg.clone(), args[0].clone(), args[1].clone()];
@@ -759,6 +765,11 @@ pub fn apply_curried_call(
     } => {
       // Curried function: f[a][b] becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
+      if name == "MapAt" && func_args.len() == 2 && args.len() == 1 {
+        let new_args =
+          vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       if name == "Insert" && func_args.len() == 2 && args.len() == 1 {
         let new_args =
           vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];

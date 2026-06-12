@@ -352,51 +352,43 @@ fn map_with_heads(func: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// MapAt[f, list, pos] - Apply function at specific positions
-/// Supports single integer, list of integers, and negative indices
-/// Helper to apply a function at a deep position within an expression.
-fn map_at_deep(
-  func: &Expr,
-  expr: &Expr,
-  path: &[i128],
-) -> Result<Expr, InterpreterError> {
-  if path.is_empty() {
-    return apply_func_ast(func, expr);
-  }
-
-  let pos = path[0];
-  let rest = &path[1..];
-
-  let items = match expr {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(expr.clone());
-    }
-  };
-
-  let len = items.len() as i128;
-  let idx = if pos < 0 {
-    (len + pos) as usize
-  } else {
-    (pos - 1) as usize
-  };
-
-  if idx >= items.len() {
-    return Ok(expr.clone());
-  }
-
-  let mut new_items = items.clone();
-  new_items[idx] = map_at_deep(func, &items[idx], rest)?;
-  Ok(Expr::List(new_items))
-}
-
+/// MapAt[f, expr, spec] — apply f at the given positions. Supports
+/// integer positions (0 wraps the head: f[List][a, b, c]), nested paths,
+/// lists of paths, All, and Span; invalid positions emit MapAt::partw
+/// (always the full path with braces and the original expression) and
+/// non-position specs emit MapAt::psl, both staying unevaluated.
 pub fn map_at_ast(
   func: &Expr,
   list: &Expr,
   pos_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Association: <|k1 -> v1, ...|> supports integer-position MapAt that
-  // transforms the value at position n (1-based; negative counts from end).
+  let unevaluated = || Expr::FunctionCall {
+    name: "MapAt".to_string(),
+    args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
+  };
+  let partw = |path: &[i128]| {
+    crate::emit_message(&format!(
+      "MapAt::partw: Part {{{}}} of {} does not exist.",
+      path
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(", "),
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+  };
+  let psl = || {
+    crate::emit_message(&format!(
+      "MapAt::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+      crate::syntax::format_expr(pos_spec, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(
+        &unevaluated(),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+  };
+
+  // Association: integer-position MapAt transforms the value
   if let Expr::Association(pairs) = list
     && let Some(n) = expr_to_i128(pos_spec)
   {
@@ -407,10 +399,7 @@ pub fn map_at_ast(
       (n - 1) as usize
     };
     if idx >= pairs.len() {
-      return Ok(Expr::FunctionCall {
-        name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
-      });
+      return Ok(unevaluated());
     }
     let mut new_pairs = pairs.clone();
     let new_value = apply_func_ast(func, &new_pairs[idx].1)?;
@@ -418,90 +407,151 @@ pub fn map_at_ast(
     return Ok(Expr::Association(new_pairs));
   }
 
-  let items = match list {
-    Expr::List(items) => items,
+  // Apply f along one validated path (positions refer to the current
+  // result; 0 as the final index wraps the head). Err(()) = invalid.
+  fn apply_path(
+    func: &Expr,
+    expr: &Expr,
+    path: &[i128],
+  ) -> Result<Result<Expr, ()>, InterpreterError> {
+    let (items, head): (&[Expr], Option<&str>) = match expr {
+      Expr::List(items) => (items.as_slice(), None),
+      Expr::FunctionCall { name, args } => {
+        (args.as_slice(), Some(name.as_str()))
+      }
+      _ => return Ok(Err(())),
+    };
+    let len = items.len() as i128;
+    let n = path[0];
+    if n == 0 && path.len() == 1 {
+      // Wrap the head: f[head][args...]
+      let head_expr = Expr::Identifier(head.unwrap_or("List").to_string());
+      let wrapped = apply_func_ast(func, &head_expr)?;
+      return Ok(Ok(Expr::CurriedCall {
+        func: Box::new(wrapped),
+        args: items.to_vec(),
+      }));
+    }
+    let idx = if n > 0 { n - 1 } else { len + n };
+    if idx < 0 || idx >= len {
+      return Ok(Err(()));
+    }
+    let idx = idx as usize;
+    let mut new_items = items.to_vec();
+    if path.len() == 1 {
+      new_items[idx] = apply_func_ast(func, &items[idx])?;
+    } else {
+      match apply_path(func, &items[idx], &path[1..])? {
+        Ok(v) => new_items[idx] = v,
+        Err(()) => return Ok(Err(())),
+      }
+    }
+    Ok(Ok(match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: new_items.into(),
+      },
+      None => Expr::List(new_items.into()),
+    }))
+  }
+
+  let (items, head): (&[Expr], Option<&str>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
-      });
+      // Atomic subject: partw with the spec (when it is positional)
+      match pos_spec {
+        Expr::Integer(n) => partw(&[*n]),
+        Expr::List(parts) => {
+          if let Some(path) = parts
+            .iter()
+            .map(expr_to_i128)
+            .collect::<Option<Vec<i128>>>()
+          {
+            partw(&path);
+          } else {
+            psl();
+          }
+        }
+        _ => psl(),
+      }
+      return Ok(unevaluated());
     }
   };
-
   let len = items.len() as i128;
+  let wrap = |v: Vec<Expr>| match head {
+    Some(h) => Expr::FunctionCall {
+      name: h.to_string(),
+      args: v.into(),
+    },
+    None => Expr::List(v.into()),
+  };
 
   match pos_spec {
-    Expr::Integer(n) => {
-      // Single flat position
-      let idx = if *n < 0 {
-        (len + *n) as usize
-      } else {
-        (*n - 1) as usize
-      };
-      let mut new_items = items.clone();
-      if idx < new_items.len() {
-        new_items[idx] = apply_func_ast(func, &items[idx])?;
+    // All: map every top-level element
+    Expr::Identifier(s) if s == "All" => {
+      let mut new_items = Vec::with_capacity(items.len());
+      for item in items {
+        new_items.push(apply_func_ast(func, item)?);
       }
-      Ok(Expr::List(new_items))
+      Ok(wrap(new_items))
     }
-    Expr::BigInteger(_) => match expr_to_i128(pos_spec) {
-      Some(n) => {
-        let idx = if n < 0 {
-          (len + n) as usize
-        } else {
-          (n - 1) as usize
-        };
-        let mut new_items = items.clone();
-        if idx < new_items.len() {
-          new_items[idx] = apply_func_ast(func, &items[idx])?;
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let n = expr_to_i128(pos_spec).unwrap();
+      match apply_path(func, list, &[n])? {
+        Ok(v) => Ok(v),
+        Err(()) => {
+          partw(&[n]);
+          Ok(unevaluated())
         }
-        Ok(Expr::List(new_items))
       }
-      None => Ok(Expr::FunctionCall {
-        name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
-      }),
-    },
-    Expr::List(pos_list) => {
-      if pos_list.is_empty() {
-        return Ok(list.clone());
-      }
-      // Check if all elements are lists (multiple position specs) or all integers (deep position)
+    }
+    Expr::List(pos_list) if !pos_list.is_empty() => {
       let all_lists = pos_list.iter().all(|p| matches!(p, Expr::List(_)));
-      let all_ints = pos_list.iter().all(|p| expr_to_i128(p).is_some());
-
-      if all_ints {
-        // Deep position: {2, 1} means position 1 within position 2
-        let path: Vec<i128> =
-          pos_list.iter().filter_map(expr_to_i128).collect();
-        return map_at_deep(func, list, &path);
-      }
-
       if all_lists {
-        // Multiple positions: {{1}, {3}} or {{2,1}, {1,2}}
-        let mut result = list.clone();
+        // Multiple paths, applied in order
+        let mut paths: Vec<Vec<i128>> = Vec::with_capacity(pos_list.len());
         for p in pos_list {
-          if let Expr::List(inner) = p {
-            if inner.len() == 1 {
-              if let Some(n) = expr_to_i128(&inner[0]) {
-                result = map_at_deep(func, &result, &[n])?;
-              }
-            } else {
-              let path: Vec<i128> =
-                inner.iter().filter_map(expr_to_i128).collect();
-              if path.len() == inner.len() {
-                result = map_at_deep(func, &result, &path)?;
-              }
+          let Expr::List(inner) = p else { unreachable!() };
+          match inner
+            .iter()
+            .map(expr_to_i128)
+            .collect::<Option<Vec<i128>>>()
+          {
+            Some(path) if !path.is_empty() => paths.push(path),
+            _ => {
+              psl();
+              return Ok(unevaluated());
             }
           }
         }
-        return Ok(result);
+        let mut result = list.clone();
+        for path in &paths {
+          match apply_path(func, &result, path)? {
+            Ok(v) => result = v,
+            Err(()) => {
+              partw(path);
+              return Ok(unevaluated());
+            }
+          }
+        }
+        Ok(result)
+      } else if let Some(path) = pos_list
+        .iter()
+        .map(expr_to_i128)
+        .collect::<Option<Vec<i128>>>()
+      {
+        match apply_path(func, list, &path)? {
+          Ok(v) => Ok(v),
+          Err(()) => {
+            partw(&path);
+            Ok(unevaluated())
+          }
+        }
+      } else {
+        psl();
+        Ok(unevaluated())
       }
-
-      Ok(Expr::FunctionCall {
-        name: "MapAt".to_string(),
-        args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
-      })
     }
     // Span[start, end] or Span[start, end, step]
     Expr::FunctionCall {
@@ -514,14 +564,10 @@ pub fn map_at_ast(
       } else {
         1
       };
-
-      // Resolve end: All means len.
       let end_raw = match &span_args[1] {
         Expr::Identifier(s) if s == "All" => len,
         other => expr_to_i128(other).unwrap_or(len),
       };
-
-      // Normalize to 0-based indices.
       let start_idx = if start_raw < 0 {
         (len + start_raw) as usize
       } else {
@@ -532,26 +578,22 @@ pub fn map_at_ast(
       } else {
         (end_raw - 1) as usize
       };
-
-      let step = step as usize;
-      if step == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "MapAt: Span step cannot be 0".into(),
-        ));
+      if step <= 0 {
+        return Ok(unevaluated());
       }
-
-      let mut new_items = items.clone();
+      let step = step as usize;
+      let mut new_items = items.to_vec();
       let mut i = start_idx;
       while i <= end_idx && i < new_items.len() {
         new_items[i] = apply_func_ast(func, &items[i])?;
         i += step;
       }
-      Ok(Expr::List(new_items))
+      Ok(wrap(new_items))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "MapAt".to_string(),
-      args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
-    }),
+    _ => {
+      psl();
+      Ok(unevaluated())
+    }
   }
 }
 

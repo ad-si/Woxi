@@ -10696,3 +10696,135 @@ mod replace_part_rules_and_patterns {
     );
   }
 }
+
+mod map_at_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn out_of_range_emits_partw() {
+    // Regression: out-of-range positions used to silently return the list
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, 5]").unwrap(),
+      "MapAt[f, {a, b, c}, 5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(
+        |m| m.contains("MapAt::partw: Part {5} of {a, b, c} does not exist.")
+      ),
+      "expected partw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn deep_out_of_range_emits_full_path_partw() {
+    assert_eq!(
+      interpret("MapAt[f, {{a, b}}, {1, 5}]").unwrap(),
+      "MapAt[f, {{a, b}}, {1, 5}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("MapAt::partw: Part {1, 5} of {{a, b}} does not exist.")),
+      "expected partw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn atom_descent_emits_full_path_partw() {
+    // Descending into an atom reports the full path, not the inner subject
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d}, {2, 1}]").unwrap(),
+      "MapAt[f, {a, b, c, d}, {2, 1}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("MapAt::partw: Part {2, 1} of {a, b, c, d} does not exist.")),
+      "expected partw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn atomic_subject_emits_partw_with_braces() {
+    assert_eq!(interpret("MapAt[f, y, 1]").unwrap(), "MapAt[f, y, 1]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("MapAt::partw: Part {1} of y does not exist.")),
+      "expected partw message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_position_spec_emits_psl() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, x]").unwrap(),
+      "MapAt[f, {a, b, c}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "MapAt::psl: Position specification x in MapAt[f, {a, b, c}, x] is not a machine-sized integer or a list of machine-sized integers."
+      )),
+      "expected psl message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn function_call_subjects() {
+    // Regression: non-List heads used to be unsupported
+    assert_eq!(interpret("MapAt[f, h[a, b], 1]").unwrap(), "h[f[a], b]");
+    assert_eq!(interpret("MapAt[f, h[a, b], 0]").unwrap(), "f[h][a, b]");
+  }
+
+  #[test]
+  fn position_zero_wraps_head() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, 0]").unwrap(),
+      "f[List][a, b, c]"
+    );
+  }
+
+  #[test]
+  fn all_spec_maps_every_element() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, All]").unwrap(),
+      "{f[a], f[b], f[c]}"
+    );
+  }
+
+  #[test]
+  fn span_spec() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, 2 ;; 3]").unwrap(),
+      "{a, f[b], f[c]}"
+    );
+  }
+
+  #[test]
+  fn repeated_position_applies_twice() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, {{2}, {2}}]").unwrap(),
+      "{a, f[f[b]], c}"
+    );
+  }
+
+  #[test]
+  fn operator_form_inserts_expr_in_middle() {
+    // Regression: MapAt[f, pos][expr] used to emit a spurious argrx
+    assert_eq!(interpret("MapAt[f, 2][{a, b, c}]").unwrap(), "{a, f[b], c}");
+    assert_eq!(
+      interpret("Map[MapAt[f, 1], {{a, b}, {c, d}}]").unwrap(),
+      "{{f[a], b}, {f[c], d}}"
+    );
+  }
+}

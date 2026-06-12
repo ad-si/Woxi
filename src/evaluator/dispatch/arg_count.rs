@@ -692,7 +692,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Map" => Some((1, 3)),
     "MapAll" => Some((2, 2)),
     "MapApply" => Some((2, 2)),
-    "MapAt" => Some((3, 3)),
+    "MapAt" => Some((2, 3)),
     "MapIndexed" => Some((1, 4)),
     "MapThread" => Some((1, 3)),
     "MatchingDissimilarity" => Some((2, 2)),

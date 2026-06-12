@@ -228,9 +228,7 @@ fn string_take_drop(
       })
     }
     // A list of sub-specifications returns a list
-    Expr::List(elems)
-      if elems.iter().any(|e| matches!(e, Expr::List(_))) =>
-    {
+    Expr::List(elems) if elems.iter().any(|e| matches!(e, Expr::List(_))) => {
       let results: Result<Vec<Expr>, InterpreterError> = elems
         .iter()
         .map(|e| string_take_drop(fname, &[args[0].clone(), e.clone()]))
@@ -298,8 +296,7 @@ fn string_take_drop(
       }
     }
     other => {
-      let Some(count) =
-        crate::functions::list_helpers_ast::expr_to_i128(other)
+      let Some(count) = crate::functions::list_helpers_ast::expr_to_i128(other)
       else {
         return Ok(unevaluated());
       };
