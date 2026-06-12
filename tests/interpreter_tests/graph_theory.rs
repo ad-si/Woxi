@@ -3367,7 +3367,10 @@ mod graph_predicates {
 
   #[test]
   fn hamiltonian_graph_q() {
-    assert_eq!(interpret("HamiltonianGraphQ[CycleGraph[5]]").unwrap(), "True");
+    assert_eq!(
+      interpret("HamiltonianGraphQ[CycleGraph[5]]").unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("HamiltonianGraphQ[CompleteGraph[4]]").unwrap(),
       "True"
@@ -3381,8 +3384,14 @@ mod graph_predicates {
       interpret("HamiltonianGraphQ[PetersenGraph[5, 2]]").unwrap(),
       "False"
     );
-    assert_eq!(interpret("HamiltonianGraphQ[StarGraph[4]]").unwrap(), "False");
-    assert_eq!(interpret("HamiltonianGraphQ[WheelGraph[7]]").unwrap(), "True");
+    assert_eq!(
+      interpret("HamiltonianGraphQ[StarGraph[4]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("HamiltonianGraphQ[WheelGraph[7]]").unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("HamiltonianGraphQ[GridGraph[{3, 3}]]").unwrap(),
       "False"
@@ -3393,9 +3402,18 @@ mod graph_predicates {
   fn hamiltonian_degenerate_cases() {
     // wolframscript: K1 and the doubled-edge 2-cycle are Hamiltonian,
     // the null graph and a simple K2 are not
-    assert_eq!(interpret("HamiltonianGraphQ[Graph[{1}, {}]]").unwrap(), "True");
-    assert_eq!(interpret("HamiltonianGraphQ[CycleGraph[1]]").unwrap(), "True");
-    assert_eq!(interpret("HamiltonianGraphQ[CycleGraph[2]]").unwrap(), "True");
+    assert_eq!(
+      interpret("HamiltonianGraphQ[Graph[{1}, {}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("HamiltonianGraphQ[CycleGraph[1]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("HamiltonianGraphQ[CycleGraph[2]]").unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("HamiltonianGraphQ[Graph[{}, {}]]").unwrap(),
       "False"
@@ -3410,7 +3428,10 @@ mod graph_predicates {
   #[test]
   fn bipartite_graph_q() {
     assert_eq!(interpret("BipartiteGraphQ[CycleGraph[4]]").unwrap(), "True");
-    assert_eq!(interpret("BipartiteGraphQ[CycleGraph[5]]").unwrap(), "False");
+    assert_eq!(
+      interpret("BipartiteGraphQ[CycleGraph[5]]").unwrap(),
+      "False"
+    );
     assert_eq!(interpret("BipartiteGraphQ[StarGraph[5]]").unwrap(), "True");
     assert_eq!(
       interpret("BipartiteGraphQ[PetersenGraph[5, 2]]").unwrap(),
@@ -3426,7 +3447,10 @@ mod graph_predicates {
 
   #[test]
   fn complete_graph_q() {
-    assert_eq!(interpret("CompleteGraphQ[CompleteGraph[4]]").unwrap(), "True");
+    assert_eq!(
+      interpret("CompleteGraphQ[CompleteGraph[4]]").unwrap(),
+      "True"
+    );
     // K3 is a triangle
     assert_eq!(interpret("CompleteGraphQ[CycleGraph[3]]").unwrap(), "True");
     assert_eq!(interpret("CompleteGraphQ[CycleGraph[4]]").unwrap(), "False");
@@ -3490,5 +3514,93 @@ mod graph_predicates {
     assert_eq!(interpret("EmptyGraphQ[Graph[{}, {}]]").unwrap(), "True");
     assert_eq!(interpret("EmptyGraphQ[CycleGraph[3]]").unwrap(), "False");
     assert_eq!(interpret("EmptyGraphQ[x]").unwrap(), "False");
+  }
+}
+
+mod planar_graph_q {
+  use super::*;
+
+  #[test]
+  fn classic_planar_and_nonplanar() {
+    assert_eq!(interpret("PlanarGraphQ[CompleteGraph[4]]").unwrap(), "True");
+    assert_eq!(interpret("PlanarGraphQ[CompleteGraph[5]]").unwrap(), "False");
+    assert_eq!(interpret("PlanarGraphQ[CompleteGraph[6]]").unwrap(), "False");
+    // K3,3
+    assert_eq!(
+      interpret(
+        "PlanarGraphQ[Graph[{1, 2, 3, 4, 5, 6}, {1 <-> 4, 1 <-> 5, 1 <-> 6, 2 <-> 4, 2 <-> 5, 2 <-> 6, 3 <-> 4, 3 <-> 5, 3 <-> 6}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PlanarGraphQ[PetersenGraph[5, 2]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PlanarGraphQ[GridGraph[{4, 4}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("PlanarGraphQ[WheelGraph[8]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn boundary_cases() {
+    // K5 minus one edge is planar
+    assert_eq!(
+      interpret(
+        "PlanarGraphQ[Graph[Range[5], {1 <-> 2, 1 <-> 3, 1 <-> 4, 1 <-> 5, 2 <-> 3, 2 <-> 4, 2 <-> 5, 3 <-> 4, 3 <-> 5}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // The cube graph is planar; adding a crossing chord breaks it
+    assert_eq!(
+      interpret(
+        "PlanarGraphQ[Graph[Range[8], {1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 5 <-> 6, 6 <-> 7, 7 <-> 8, 8 <-> 5, 1 <-> 5, 2 <-> 6, 3 <-> 7, 4 <-> 8}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "PlanarGraphQ[Graph[Range[8], {1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 5 <-> 6, 6 <-> 7, 7 <-> 8, 8 <-> 5, 1 <-> 5, 2 <-> 6, 3 <-> 7, 4 <-> 8, 1 <-> 7}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    // Harary graphs: H(4, n) is planar for some n, not others
+    assert_eq!(interpret("PlanarGraphQ[HararyGraph[4, 7]]").unwrap(), "False");
+    assert_eq!(interpret("PlanarGraphQ[HararyGraph[4, 8]]").unwrap(), "True");
+    assert_eq!(interpret("PlanarGraphQ[HararyGraph[2, 9]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn decomposition_handles_components() {
+    // A disconnected graph containing K3,3 plus a path
+    assert_eq!(
+      interpret(
+        "PlanarGraphQ[Graph[Range[9], {1 <-> 4, 1 <-> 5, 1 <-> 6, 2 <-> 4, 2 <-> 5, 2 <-> 6, 3 <-> 4, 3 <-> 5, 3 <-> 6, 7 <-> 8, 8 <-> 9}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "PlanarGraphQ[Graph[{1, 2, 3, 4}, {1 <-> 2, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn degenerate_graphs_are_planar() {
+    assert_eq!(interpret("PlanarGraphQ[Graph[{}, {}]]").unwrap(), "True");
+    assert_eq!(interpret("PlanarGraphQ[Graph[{1}, {}]]").unwrap(), "True");
+    // Self-loops and doubled edges never affect planarity
+    assert_eq!(interpret("PlanarGraphQ[CycleGraph[1]]").unwrap(), "True");
+    assert_eq!(interpret("PlanarGraphQ[CycleGraph[2]]").unwrap(), "True");
+    assert_eq!(interpret("PlanarGraphQ[x]").unwrap(), "False");
   }
 }

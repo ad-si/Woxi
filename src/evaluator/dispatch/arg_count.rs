@@ -1105,6 +1105,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HamiltonianGraphQ" => Some((1, 1)),
     "LoopFreeGraphQ" => Some((1, 1)),
     "PathGraphQ" => Some((1, 1)),
+    "PlanarGraphQ" => Some((1, 1)),
     "SimpleGraphQ" => Some((1, 1)),
     "FindClique" => Some((1, 3)),
     "FindIndependentVertexSet" => Some((1, 2)),

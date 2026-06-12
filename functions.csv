@@ -3353,7 +3353,7 @@ GraphAssortativity,,,,9.0,3440
 LearningRateMultipliers,,🚫,,11.1,3440
 MinIntervalSize,,,,10.0,3440
 PacletSiteUpdate,,🚫,,12.1,3440
-PlanarGraphQ,,,,9.0,3440
+PlanarGraphQ,Tests whether a graph is planar (DMP face-embedding per biconnected component),✅,pure,9.0,3440
 ScaleOrigin,,,,9.0,3440
 SystemsModelParallelConnect,,🚫,,8.0,3440
 UnsavedVariables,,,,8.0,3440

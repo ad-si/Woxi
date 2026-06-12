@@ -3185,12 +3185,10 @@ fn parse_graph_pairs(expr: &Expr) -> Option<(usize, Vec<(usize, usize)>)> {
     Expr::FunctionCall {
       name: gname,
       args: gargs,
-    } if gname == "Graph" && gargs.len() >= 2 => {
-      match (&gargs[0], &gargs[1]) {
-        (Expr::List(v), Expr::List(e)) => (v, e),
-        _ => return None,
-      }
-    }
+    } if gname == "Graph" && gargs.len() >= 2 => match (&gargs[0], &gargs[1]) {
+      (Expr::List(v), Expr::List(e)) => (v, e),
+      _ => return None,
+    },
     _ => return None,
   };
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
@@ -3254,9 +3252,7 @@ pub fn graph_predicate_ast(
     "CompleteGraphQ" => {
       // Every pair adjacent exactly once, no loops (wolframscript:
       // a doubled-edge K2 is not complete)
-      !has_loop
-        && !multi
-        && simple_pairs.len() == n * n.saturating_sub(1) / 2
+      !has_loop && !multi && simple_pairs.len() == n * n.saturating_sub(1) / 2
     }
     "PathGraphQ" => {
       // A simple connected graph with all degrees <= 2 — wolframscript
@@ -3311,9 +3307,7 @@ pub fn graph_predicate_ast(
         pairs.iter().filter(|&&(a, b)| a != b).count() >= 2
       } else {
         let a = adj(&simple_pairs);
-        if a.iter().any(|nb| nb.len() < 2)
-          || connected_from(&a, 0) != n
-        {
+        if a.iter().any(|nb| nb.len() < 2) || connected_from(&a, 0) != n {
           false
         } else {
           let mut visited = vec![false; n];
@@ -3367,4 +3361,310 @@ fn hamiltonian_dfs(
     }
   }
   false
+}
+
+// ---------------------------------------------------------------------------
+// PlanarGraphQ — planarity testing via the Demoucron-Malgrange-Pertuiset
+// (DMP) face-embedding algorithm, run per biconnected component.
+// Self-loops, parallel edges, bridges, and components with < 5 vertices
+// never affect planarity.
+
+/// Biconnected components (as edge lists) of a simple graph.
+fn biconnected_components(
+  n: usize,
+  adj: &[Vec<usize>],
+) -> Vec<Vec<(usize, usize)>> {
+  let mut comps = Vec::new();
+  let mut disc = vec![0usize; n];
+  let mut low = vec![0usize; n];
+  let mut timer = 1usize;
+  let mut edge_stack: Vec<(usize, usize)> = Vec::new();
+  for start in 0..n {
+    if disc[start] != 0 {
+      continue;
+    }
+    let mut stack: Vec<(usize, usize, usize)> = vec![(start, usize::MAX, 0)];
+    disc[start] = timer;
+    low[start] = timer;
+    timer += 1;
+    while let Some(&mut (u, parent, ref mut i)) = stack.last_mut() {
+      if *i < adj[u].len() {
+        let w = adj[u][*i];
+        *i += 1;
+        if disc[w] == 0 {
+          edge_stack.push((u, w));
+          disc[w] = timer;
+          low[w] = timer;
+          timer += 1;
+          stack.push((w, u, 0));
+        } else if w != parent && disc[w] < disc[u] {
+          edge_stack.push((u, w));
+          low[u] = low[u].min(disc[w]);
+        }
+      } else {
+        stack.pop();
+        if let Some(&mut (p, _, _)) = stack.last_mut() {
+          low[p] = low[p].min(low[u]);
+          if low[u] >= disc[p] {
+            let mut comp = Vec::new();
+            while let Some(&(a, b)) = edge_stack.last() {
+              comp.push((a, b));
+              edge_stack.pop();
+              if a == p && b == u {
+                break;
+              }
+            }
+            if !comp.is_empty() {
+              comps.push(comp);
+            }
+          }
+        }
+      }
+    }
+  }
+  comps
+}
+
+/// DMP planarity test for one biconnected component given as an edge list.
+fn dmp_planar(edges: &[(usize, usize)]) -> bool {
+  let mut verts: Vec<usize> =
+    edges.iter().flat_map(|&(a, b)| [a, b]).collect();
+  verts.sort_unstable();
+  verts.dedup();
+  let k = verts.len();
+  // Fewer than 5 vertices, or too few edges to contain K5/K3,3
+  if k < 5 || edges.len() < 9 {
+    return true;
+  }
+  if edges.len() > 3 * k - 6 {
+    return false;
+  }
+  let index = |v: usize| verts.binary_search(&v).unwrap();
+  let es: Vec<(usize, usize)> =
+    edges.iter().map(|&(a, b)| (index(a), index(b))).collect();
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); k];
+  for &(a, b) in &es {
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+
+  // Initial cycle via an iterative DFS back edge
+  let mut parent = vec![usize::MAX; k];
+  let mut state = vec![0u8; k];
+  let mut dfs_stack = vec![(0usize, 0usize)];
+  state[0] = 1;
+  let mut back_edge: Option<(usize, usize)> = None;
+  while let Some(&mut (u, ref mut i)) = dfs_stack.last_mut() {
+    if *i < adj[u].len() {
+      let w = adj[u][*i];
+      *i += 1;
+      if state[w] == 0 {
+        state[w] = 1;
+        parent[w] = u;
+        dfs_stack.push((w, 0));
+      } else if state[w] == 1 && w != parent[u] {
+        back_edge = Some((u, w));
+        break;
+      }
+    } else {
+      state[u] = 2;
+      dfs_stack.pop();
+    }
+  }
+  let (mut cu, cw) = match back_edge {
+    Some(e) => e,
+    None => return true, // acyclic — cannot happen in a bicomp, but safe
+  };
+  let mut cycle = vec![cu];
+  while cu != cw {
+    cu = parent[cu];
+    cycle.push(cu);
+  }
+
+  let mut in_h = vec![false; k];
+  let mut h_edges: std::collections::BTreeSet<(usize, usize)> =
+    Default::default();
+  for &v in &cycle {
+    in_h[v] = true;
+  }
+  let clen = cycle.len();
+  for i in 0..clen {
+    let (a, b) = (cycle[i], cycle[(i + 1) % clen]);
+    h_edges.insert((a.min(b), a.max(b)));
+  }
+  // The initial cycle bounds two faces
+  let mut faces: Vec<Vec<usize>> = vec![cycle.clone(), cycle];
+
+  while h_edges.len() < es.len() {
+    // Fragments relative to H: chords between H-vertices, and connected
+    // components of G - V(H) together with their attachment edges.
+    // Each fragment carries one embeddable path between two attachments.
+    let mut fragments: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
+    for &(a, b) in &es {
+      if in_h[a] && in_h[b] && !h_edges.contains(&(a.min(b), a.max(b))) {
+        fragments.push((vec![a.min(b), a.max(b)], vec![a, b]));
+      }
+    }
+    let mut comp_id = vec![usize::MAX; k];
+    let mut n_comps = 0usize;
+    for v in 0..k {
+      if in_h[v] || comp_id[v] != usize::MAX {
+        continue;
+      }
+      comp_id[v] = n_comps;
+      let mut queue = std::collections::VecDeque::from([v]);
+      while let Some(u) = queue.pop_front() {
+        for &w in &adj[u] {
+          if !in_h[w] && comp_id[w] == usize::MAX {
+            comp_id[w] = n_comps;
+            queue.push_back(w);
+          }
+        }
+      }
+      n_comps += 1;
+    }
+    for c in 0..n_comps {
+      let members: Vec<usize> =
+        (0..k).filter(|&v| comp_id[v] == c).collect();
+      let mut attachments: Vec<usize> = members
+        .iter()
+        .flat_map(|&u| adj[u].iter().copied().filter(|&w| in_h[w]))
+        .collect();
+      attachments.sort_unstable();
+      attachments.dedup();
+      // In a biconnected graph every fragment has >= 2 attachments.
+      let a0 = attachments[0];
+      let a1 = attachments[1];
+      // BFS through the component from a neighbor of a0 to a neighbor of a1
+      let mut prev = vec![usize::MAX; k];
+      let mut queue = std::collections::VecDeque::new();
+      for &u in &members {
+        if adj[u].contains(&a0) {
+          prev[u] = a0;
+          queue.push_back(u);
+        }
+      }
+      let mut endpoint = usize::MAX;
+      while let Some(u) = queue.pop_front() {
+        if adj[u].contains(&a1) {
+          endpoint = u;
+          break;
+        }
+        for &w in &adj[u] {
+          if !in_h[w]
+            && comp_id[w] == c
+            && prev[w] == usize::MAX
+          {
+            prev[w] = u;
+            queue.push_back(w);
+          }
+        }
+      }
+      if endpoint == usize::MAX {
+        // a0's and a1's component neighborhoods did not connect — should
+        // not happen inside one component, but bail out conservatively
+        return false;
+      }
+      let mut path = vec![a1];
+      let mut cur = endpoint;
+      while cur != a0 {
+        path.push(cur);
+        cur = prev[cur];
+      }
+      path.push(a0);
+      fragments.push((attachments, path));
+    }
+
+    // Admissible faces per fragment; embed the most constrained fragment
+    let mut best: Option<(usize, usize, usize)> = None; // (count, frag, face)
+    for (fi, (attachments, _)) in fragments.iter().enumerate() {
+      let mut count = 0usize;
+      let mut first_face = usize::MAX;
+      for (fj, f) in faces.iter().enumerate() {
+        if attachments.iter().all(|a| f.contains(a)) {
+          count += 1;
+          if first_face == usize::MAX {
+            first_face = fj;
+          }
+        }
+      }
+      if count == 0 {
+        return false;
+      }
+      if best.is_none_or(|(c, _, _)| count < c) {
+        best = Some((count, fi, first_face));
+      }
+    }
+    let (_, fi, face_idx) = match best {
+      Some(b) => b,
+      None => return true, // no fragments left (unreachable: loop guard)
+    };
+    let path = fragments[fi].1.clone();
+
+    // Add the path to H
+    for w in path.windows(2) {
+      h_edges.insert((w[0].min(w[1]), w[0].max(w[1])));
+    }
+    for &v in &path {
+      in_h[v] = true;
+    }
+    // Split the face along the path
+    let face = faces.swap_remove(face_idx);
+    let pa = path[0];
+    let pb = *path.last().unwrap();
+    let ia = face.iter().position(|&v| v == pa).unwrap();
+    let ib = face.iter().position(|&v| v == pb).unwrap();
+    let len = face.len();
+    let interior: Vec<usize> = path[1..path.len() - 1].to_vec();
+    // Arc from pa forward to pb, plus the path interior walking back
+    let mut f1 = Vec::new();
+    let mut t = ia;
+    loop {
+      f1.push(face[t]);
+      if t == ib {
+        break;
+      }
+      t = (t + 1) % len;
+    }
+    f1.extend(interior.iter().rev().copied());
+    // Arc from pb forward to pa, plus the path interior walking forward
+    let mut f2 = Vec::new();
+    let mut t = ib;
+    loop {
+      f2.push(face[t]);
+      if t == ia {
+        break;
+      }
+      t = (t + 1) % len;
+    }
+    f2.extend(interior.iter().copied());
+    faces.push(f1);
+    faces.push(f2);
+  }
+  true
+}
+
+/// PlanarGraphQ[g]
+pub fn planar_graph_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (n, pairs) = match parse_graph_pairs(&args[0]) {
+    Some(g) => g,
+    None => return Ok(bool_expr(false)),
+  };
+  // Reduce to the underlying simple graph
+  let mut simple: Vec<(usize, usize)> = pairs
+    .iter()
+    .filter(|&&(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .collect();
+  simple.sort_unstable();
+  simple.dedup();
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b) in &simple {
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+  let planar = biconnected_components(n, &adj)
+    .iter()
+    .all(|comp| dmp_planar(comp));
+  Ok(bool_expr(planar))
 }

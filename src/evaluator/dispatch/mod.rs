@@ -5007,6 +5007,10 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if name == "PlanarGraphQ" && args.len() == 1 {
+    return crate::functions::graph::planar_graph_q_ast(args);
+  }
+
   if matches!(
     name,
     "HamiltonianGraphQ"
