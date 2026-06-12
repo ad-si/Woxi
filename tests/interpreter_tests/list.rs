@@ -10223,3 +10223,86 @@ mod commonest_filter {
     );
   }
 }
+
+mod partition_padding_and_messages {
+  use super::*;
+
+  #[test]
+  fn padded_overhang_extends_to_alignment() {
+    // Regression: rows kept appearing until the last element reaches its
+    // aligned position; Woxi previously stopped one row short
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {1, 1}, x]").unwrap(),
+      "{{a, b, c}, {b, c, d}, {c, d, x}, {d, x, x}}"
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {1, 1}, {x, y}]").unwrap(),
+      "{{a, b, c}, {b, c, d}, {c, d, x}, {d, x, y}}"
+    );
+  }
+
+  #[test]
+  fn cyclic_padding_is_indexed_by_global_position() {
+    // The padding list is indexed by the global list position mod its
+    // length, on both sides
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {1, 1}, {x, y, z}]").unwrap(),
+      "{{a, b, c}, {b, c, d}, {c, d, y}, {d, y, z}}"
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {-1, 1}, {x, y}]").unwrap(),
+      "{{x, y, a}, {y, a, b}, {a, b, c}, {b, c, d}, {c, d, x}, {d, x, y}}"
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {-1, 1}, z]").unwrap(),
+      "{{z, z, a}, {z, a, b}, {a, b, c}, {b, c, d}, {c, d, z}, {d, z, z}}"
+    );
+  }
+
+  #[test]
+  fn empty_padding_clips() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {-1, 1}, {}]").unwrap(),
+      "{{a}, {a, b}, {a, b, c}, {b, c, d}, {c, d}, {d}}"
+    );
+  }
+
+  #[test]
+  fn depth_spec_on_flat_list_emits_pdep() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e, f}, {2, 3}]").unwrap(),
+      "Partition[{a, b, c, d, e, f}, {2, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Partition::pdep: Depth 2 requested in object with dimensions {6}."
+      )),
+      "expected pdep message, got {:?}",
+      msgs
+    );
+    // Sufficient depth still works
+    assert_eq!(
+      interpret("Partition[Partition[Range[16], 4], {2, 2}]").unwrap(),
+      "{{{{1, 2}, {5, 6}}, {{3, 4}, {7, 8}}}, {{{9, 10}, {13, 14}}, {{11, 12}, {15, 16}}}}"
+    );
+  }
+
+  #[test]
+  fn non_list_emits_npart() {
+    assert_eq!(interpret("Partition[x, 2]").unwrap(), "Partition[x, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Partition::npart: The expression x cannot be partitioned."
+      )),
+      "expected npart message, got {:?}",
+      msgs
+    );
+    // Full argument lists survive the unevaluated reconstruction
+    assert_eq!(
+      interpret("Partition[x, 2, 1, {1, 1}, q]").unwrap(),
+      "Partition[x, 2, 1, {1, 1}, q]"
+    );
+  }
+}

@@ -982,6 +982,41 @@ pub fn dispatch_list_operations(
           Some(sizes.clone())
         };
         if let Some(offsets) = offsets {
+          // Depth check: a {n1, ..., nk} size spec needs a depth-k
+          // rectangular object, else Partition::pdep
+          let mut dims: Vec<usize> = Vec::new();
+          let mut cursor = &args[0];
+          while let Expr::List(rows) = cursor {
+            dims.push(rows.len());
+            match rows.first() {
+              Some(first)
+                if rows.iter().all(|r| {
+                  matches!(r, Expr::List(a) if matches!(first, Expr::List(b) if a.len() == b.len()))
+                }) =>
+              {
+                cursor = first;
+              }
+              _ => break,
+            }
+          }
+          if dims.len() < sizes.len() {
+            let dims_expr = Expr::List(
+              dims
+                .iter()
+                .map(|&d| Expr::Integer(d as i128))
+                .collect::<Vec<_>>()
+                .into(),
+            );
+            crate::emit_message(&format!(
+              "Partition::pdep: Depth {} requested in object with dimensions {}.",
+              sizes.len(),
+              expr_to_string(&dims_expr)
+            ));
+            return Some(Ok(Expr::FunctionCall {
+              name: "Partition".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
           return Some(list_helpers_ast::partition_multi_dim_ast(
             &args[0], &sizes, &offsets,
           ));

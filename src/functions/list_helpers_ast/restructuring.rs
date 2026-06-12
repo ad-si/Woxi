@@ -30,9 +30,23 @@ pub fn partition_ast(
   let items = match list {
     Expr::List(items) => items,
     _ => {
+      crate::emit_message(&format!(
+        "Partition::npart: The expression {} cannot be partitioned.",
+        crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+      ));
+      let mut full_args = vec![list.clone(), Expr::Integer(n)];
+      if let Some(d) = d {
+        full_args.push(Expr::Integer(d));
+      }
+      if let Some(a) = align {
+        full_args.push(a.clone());
+      }
+      if let Some(p) = pad {
+        full_args.push(p.clone());
+      }
       return Ok(Expr::FunctionCall {
         name: "Partition".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)].into(),
+        args: full_args.into(),
       });
     }
   };
@@ -129,48 +143,49 @@ pub fn partition_ast(
     return Ok(Expr::List(results.into()));
   }
 
-  // Overhang with padding (5-arg form with explicit pad)
-  let mut results = Vec::new();
-  let mut i = 0;
-  while i + n_usize <= len {
-    results.push(Expr::List(items[i..i + n_usize].to_vec().into()));
-    i += d_usize;
-  }
+  // Overhang with padding (5-arg form with explicit pad): walk the same
+  // offsets as the cyclic path, but fill out-of-range positions from the
+  // padding instead of wrapping. A cyclic padding list is indexed by the
+  // global list position mod its length (on both sides); the empty list
+  // clips rows to the in-range elements.
+  let start_offset: isize = if k_l > 0 {
+    -(k_l as isize - 1)
+  } else {
+    -(n as isize + k_l as isize)
+  };
+  let end_pos: isize = if k_r > 0 {
+    k_r as isize - 1
+  } else {
+    n as isize + k_r as isize
+  };
+  let last_start = len as isize - 1 - end_pos;
 
-  if let Some(pad_expr) = pad
-    && i < len
-  {
-    let remaining = &items[i..];
-    match pad_expr {
-      Expr::List(pad_elems) if pad_elems.is_empty() => {
-        // {} means allow short sublists (no padding)
-        results.push(Expr::List(remaining.to_vec().into()));
-      }
-      _ => {
-        // Pad with the given element(s) to fill to size n
-        let mut chunk = remaining.to_vec();
-        let pad_items: Vec<Expr> = match pad_expr {
-          Expr::List(items) => items.to_vec(),
-          other => vec![other.clone()],
-        };
-        if !pad_items.is_empty() {
-          let mut pad_idx = 0;
-          while chunk.len() < n_usize {
-            chunk.push(pad_items[pad_idx % pad_items.len()].clone());
-            pad_idx += 1;
+  let mut results = Vec::new();
+  let mut offset = start_offset;
+  while offset <= last_start {
+    let mut chunk: Vec<Expr> = Vec::with_capacity(n_usize);
+    for j in 0..n_usize {
+      let idx = offset + j as isize;
+      if idx >= 0 && (idx as usize) < len {
+        chunk.push(items[idx as usize].clone());
+      } else if let Some(pad_expr) = pad {
+        match pad_expr {
+          Expr::List(pad_elems) if pad_elems.is_empty() => {} // clip
+          Expr::List(pad_elems) => {
+            let m = pad_elems.len() as isize;
+            let pi = (((idx % m) + m) % m) as usize;
+            chunk.push(pad_elems[pi].clone());
           }
+          single => chunk.push(single.clone()),
         }
-        results.push(Expr::List(chunk.into()));
       }
     }
+    results.push(Expr::List(chunk.into()));
+    offset += d_usize as isize;
   }
-
   Ok(Expr::List(results.into()))
 }
 
-/// Multi-dimensional Partition: `Partition[tensor, {n_1, …, n_k}, {d_1, …, d_k}]`.
-/// Returns a nested list where each of the `k` dimensions of the input
-/// tensor is blocked with size `n_i` and offset `d_i`.
 pub fn partition_multi_dim_ast(
   expr: &Expr,
   sizes: &[i128],
