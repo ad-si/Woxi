@@ -135,254 +135,207 @@ fn generate_k_permutations(
   }
 }
 
-/// AST-based Subsets: generate subsets of a list.
-/// Subsets[{a, b, c}] -> all subsets
-/// Subsets[{a, b, c}, {k}] -> all subsets of size k
+/// Unified Subsets: `Subsets[list]`, `Subsets[list, nspec]`, and
+/// `Subsets[list, nspec, s]`. nspec may be All, Infinity, nmax, {n},
+/// {nmin, nmax} (nmax may be Infinity) or {nmin, nmax, dn} (dn nonzero,
+/// possibly negative). s follows Take semantics (negative counts from
+/// the end) with a ::take warning when the sequence is clipped. General
+/// heads keep their head; atoms emit ::normal; invalid specs emit
+/// ::nninfseq (position 2) or ::seq (position 3).
 pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let list = &args[0];
-  let items = match list {
-    Expr::List(items) => items.clone(),
+  let original = || Expr::FunctionCall {
+    name: "Subsets".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  let (items, head): (&[Expr], Option<&str>) = match &args[0] {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Subsets".to_string(),
-        args: args.to_vec().into(),
-      });
+      crate::emit_message(&format!(
+        "Subsets::normal: Nonatomic expression expected at position 1 in {}.",
+        show(&original())
+      ));
+      return Ok(original());
     }
   };
+  let len = items.len() as i128;
 
-  // Generate all subsets based on level spec (args[1])
-  let mut result = if args.len() >= 2 {
-    let is_all = matches!(&args[1], Expr::Identifier(s) if s == "All");
-    if is_all {
-      // All subsets
-      let n = items.len();
-      let mut r = Vec::new();
-      for k in 0..=n {
-        generate_combinations(&items, k, 0, &mut vec![], &mut r);
+  let strict_int = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        n.to_i128()
       }
-      r
+      _ => None,
+    }
+  };
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+  let nonneg = |e: &Expr| strict_int(e).filter(|n| *n >= 0);
+  let nonneg_or_inf = |e: &Expr| {
+    if is_infinity(e) {
+      Some(i128::MAX)
     } else {
-      match &args[1] {
-        // Subsets[list, {k}] - subsets of exactly size k
-        Expr::List(spec) if spec.len() == 1 => {
-          if let Some(k) = expr_to_i128(&spec[0]) {
-            let k = k.max(0) as usize;
-            let mut r = Vec::new();
-            generate_combinations(&items, k, 0, &mut vec![], &mut r);
-            r
-          } else {
-            return Ok(Expr::FunctionCall {
-              name: "Subsets".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
-        }
-        // Subsets[list, {min, max}] - subsets of sizes min through max
-        Expr::List(spec) if spec.len() == 2 => {
-          if let (Some(min), Some(max)) =
-            (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
-          {
-            let min = min.max(0) as usize;
-            let max = max.min(items.len() as i128).max(0) as usize;
-            let mut r = Vec::new();
-            for k in min..=max {
-              generate_combinations(&items, k, 0, &mut vec![], &mut r);
-            }
-            r
-          } else {
-            return Ok(Expr::FunctionCall {
-              name: "Subsets".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
-        }
-        // Subsets[list, {min, max, step}] - subsets of sizes min, min+step, ...
-        Expr::List(spec) if spec.len() == 3 => {
-          if let (Some(min), Some(max), Some(step)) = (
-            expr_to_i128(&spec[0]),
-            expr_to_i128(&spec[1]),
-            expr_to_i128(&spec[2]),
-          ) {
-            let min = min.max(0) as usize;
-            let max = max.min(items.len() as i128).max(0) as usize;
-            let step = step.max(1) as usize;
-            let mut r = Vec::new();
-            let mut k = min;
-            while k <= max {
-              generate_combinations(&items, k, 0, &mut vec![], &mut r);
-              k += step;
-            }
-            r
-          } else {
-            return Ok(Expr::FunctionCall {
-              name: "Subsets".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
-        }
-        // Subsets[list, n] - all subsets up to size n
-        _ => {
-          if let Some(max_k) = expr_to_i128(&args[1]) {
-            let max_k = max_k.min(items.len() as i128).max(0) as usize;
-            let mut r = Vec::new();
-            for k in 0..=max_k {
-              generate_combinations(&items, k, 0, &mut vec![], &mut r);
-            }
-            r
-          } else {
-            return Ok(Expr::FunctionCall {
-              name: "Subsets".to_string(),
-              args: args.to_vec().into(),
-            });
-          }
-        }
-      }
+      nonneg(e)
     }
-  } else {
-    // Subsets[list] - all subsets
-    let n = items.len();
-    let mut r = Vec::new();
-    for k in 0..=n {
-      generate_combinations(&items, k, 0, &mut vec![], &mut r);
-    }
-    r
   };
 
-  // Apply 3rd argument: plain integer = max count, list = Part specification
-  if args.len() >= 3 {
-    match &args[2] {
-      Expr::List(_) => {
-        // Part specification like {25} or {15, 1, -2}
-        result = apply_part_spec(&result, &args[2])?;
-      }
-      _ => {
-        // Plain integer = max count (take first n subsets)
-        if let Some(n) = expr_to_i128(&args[2]) {
-          let n = n.max(0) as usize;
-          result.truncate(n);
-        }
+  // The size sequence requested by nspec.
+  let sizes: Option<Vec<i128>> = match args.get(1) {
+    None => Some((0..=len).collect()),
+    Some(e) if matches!(e, Expr::Identifier(s) if s == "All") => {
+      Some((0..=len).collect())
+    }
+    Some(e) if is_infinity(e) => Some((0..=len).collect()),
+    Some(Expr::List(spec)) if spec.len() == 1 => {
+      nonneg(&spec[0]).map(|n| vec![n])
+    }
+    Some(Expr::List(spec)) if spec.len() == 2 => {
+      match (nonneg(&spec[0]), nonneg_or_inf(&spec[1])) {
+        (Some(lo), Some(hi)) => Some((lo..=hi.min(len)).collect()),
+        _ => None,
       }
     }
-  }
-
-  Ok(Expr::List(result.into()))
-}
-
-/// Apply a Part specification to select elements from a list of subsets.
-/// Spec can be: {i} for single element, {start, end} for range, {start, end, step} for stepped range.
-fn apply_part_spec(
-  items: &[Expr],
-  spec: &Expr,
-) -> Result<Vec<Expr>, InterpreterError> {
-  match spec {
-    Expr::List(indices) if indices.len() == 1 => {
-      // {i} - take single element (1-indexed)
-      if let Some(i) = expr_to_i128(&indices[0]) {
-        let idx = if i > 0 {
-          (i - 1) as usize
-        } else if i < 0 {
-          let len = items.len() as i128;
-          (len + i) as usize
-        } else {
-          return Err(InterpreterError::EvaluationError(
-            "Part: index 0 is not valid".into(),
-          ));
-        };
-        if idx < items.len() {
-          Ok(vec![items[idx].clone()])
-        } else {
-          Ok(vec![])
-        }
-      } else {
-        Ok(items.to_vec())
-      }
-    }
-    Expr::List(indices) if indices.len() == 2 => {
-      // {start, end} - range (1-indexed)
-      if let (Some(start), Some(end)) =
-        (expr_to_i128(&indices[0]), expr_to_i128(&indices[1]))
-      {
-        let len = items.len() as i128;
-        let s = if start > 0 { start - 1 } else { len + start };
-        let e = if end > 0 { end - 1 } else { len + end };
-        let mut selected = Vec::new();
-        if s <= e {
-          for i in s..=e {
-            if i >= 0 && (i as usize) < items.len() {
-              selected.push(items[i as usize].clone());
-            }
-          }
-        } else {
-          // Reverse range
-          let mut i = s;
-          while i >= e {
-            if i >= 0 && (i as usize) < items.len() {
-              selected.push(items[i as usize].clone());
-            }
-            i -= 1;
-          }
-        }
-        Ok(selected)
-      } else {
-        Ok(items.to_vec())
-      }
-    }
-    Expr::List(indices) if indices.len() == 3 => {
-      // {start, end, step} - stepped range (1-indexed)
-      if let (Some(start), Some(end), Some(step)) = (
-        expr_to_i128(&indices[0]),
-        expr_to_i128(&indices[1]),
-        expr_to_i128(&indices[2]),
+    Some(Expr::List(spec)) if spec.len() == 3 => {
+      match (
+        nonneg(&spec[0]),
+        nonneg_or_inf(&spec[1]),
+        strict_int(&spec[2]).filter(|s| *s != 0),
       ) {
-        let len = items.len() as i128;
-        let s = if start > 0 { start - 1 } else { len + start };
-        let e = if end > 0 { end - 1 } else { len + end };
-        let mut selected = Vec::new();
-        if step > 0 {
-          let mut i = s;
-          while i <= e {
-            if i >= 0 && (i as usize) < items.len() {
-              selected.push(items[i as usize].clone());
-            }
-            i += step;
+        (Some(lo), Some(hi), Some(dn)) => {
+          let mut seq = Vec::new();
+          let mut k = lo;
+          let hi_eff = if dn > 0 { hi.min(len.max(lo)) } else { hi };
+          while (dn > 0 && k <= hi_eff) || (dn < 0 && k >= hi_eff) {
+            seq.push(k);
+            k += dn;
           }
-        } else if step < 0 {
-          let mut i = s;
-          while i >= e {
-            if i >= 0 && (i as usize) < items.len() {
-              selected.push(items[i as usize].clone());
-            }
-            i += step; // step is negative
-          }
+          Some(seq)
         }
-        Ok(selected)
-      } else {
-        Ok(items.to_vec())
+        _ => None,
       }
     }
-    _ => {
-      // Single integer: take element at that index
-      if let Some(i) = expr_to_i128(spec) {
-        let idx = if i > 0 {
-          (i - 1) as usize
-        } else if i < 0 {
-          let len = items.len() as i128;
-          (len + i) as usize
-        } else {
-          return Err(InterpreterError::EvaluationError(
-            "Part: index 0 is not valid".into(),
-          ));
-        };
-        if idx < items.len() {
-          Ok(vec![items[idx].clone()])
-        } else {
-          Ok(vec![])
+    Some(e) => nonneg(e).map(|n| (0..=n.min(len)).collect()),
+  };
+  let Some(sizes) = sizes else {
+    crate::emit_message(&format!(
+      "Subsets::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer.",
+      show(&original())
+    ));
+    return Ok(original());
+  };
+
+  let mut result: Vec<Expr> = Vec::new();
+  for k in sizes {
+    if (0..=len).contains(&k) {
+      generate_combinations(items, k as usize, 0, &mut vec![], &mut result);
+    }
+  }
+
+  // The take argument follows Take semantics, clipping with a warning.
+  if let Some(take) = args.get(2) {
+    enum TakeSpec {
+      All,
+      Nothing,
+      Triple(i128, i128, i128),
+    }
+    let parsed = match take {
+      Expr::Identifier(s) if s == "All" => Some(TakeSpec::All),
+      Expr::Identifier(s) if s == "None" => Some(TakeSpec::Nothing),
+      Expr::List(spec) if spec.len() == 1 => {
+        strict_int(&spec[0]).map(|m| TakeSpec::Triple(m, m, 1))
+      }
+      Expr::List(spec) if spec.len() == 2 => {
+        match (strict_int(&spec[0]), strict_int(&spec[1])) {
+          (Some(m), Some(n)) => Some(TakeSpec::Triple(m, n, 1)),
+          _ => None,
         }
-      } else {
-        Ok(items.to_vec())
+      }
+      Expr::List(spec) if spec.len() == 3 => {
+        match (
+          strict_int(&spec[0]),
+          strict_int(&spec[1]),
+          strict_int(&spec[2]).filter(|s| *s != 0),
+        ) {
+          (Some(m), Some(n), Some(s)) => Some(TakeSpec::Triple(m, n, s)),
+          _ => None,
+        }
+      }
+      other => strict_int(other).map(|m| {
+        if m >= 0 {
+          TakeSpec::Triple(1, m, 1)
+        } else {
+          TakeSpec::Triple(m, -1, 1)
+        }
+      }),
+    };
+    let Some(parsed) = parsed else {
+      crate::emit_message(&format!(
+        "Subsets::seq: Position 3 of {} must be All, None, m, {{m}}, {{m, n}} or {{m, n, s}}, where m and n are integers, and s is a nonzero integer.",
+        show(&original())
+      ));
+      return Ok(original());
+    };
+    match parsed {
+      TakeSpec::All => {}
+      TakeSpec::Nothing => result.clear(),
+      TakeSpec::Triple(m, n, s) => {
+        let total = result.len() as i128;
+        let resolve = |x: i128| if x < 0 { total + 1 + x } else { x };
+        let (mr, nr) = (resolve(m), resolve(n));
+        let mut taken: Vec<Expr> = Vec::new();
+        let mut clipped = false;
+        let mut i = mr;
+        while (s > 0 && i <= nr) || (s < 0 && i >= nr) {
+          if i >= 1 && i <= total {
+            taken.push(result[(i - 1) as usize].clone());
+          } else {
+            clipped = true;
+          }
+          i += s;
+        }
+        if clipped {
+          let spec_display = Expr::List(
+            vec![Expr::Integer(m), Expr::Integer(n), Expr::Integer(s)].into(),
+          );
+          let two_arg = Expr::FunctionCall {
+            name: "Subsets".to_string(),
+            args: vec![args[0].clone(), args[1].clone()].into(),
+          };
+          crate::emit_message(&format!(
+            "Subsets::take: Warning: not all elements were found when attempting to take the sequence {} from {}, which has length {}.",
+            show(&spec_display),
+            show(&two_arg),
+            total
+          ));
+        }
+        result = taken;
       }
     }
   }
+
+  // General heads keep their head on every subset.
+  if let Some(h) = head {
+    result = result
+      .into_iter()
+      .map(|subset| match &subset {
+        Expr::List(elems) => Expr::FunctionCall {
+          name: h.to_string(),
+          args: elems.clone(),
+        },
+        _ => subset,
+      })
+      .collect();
+  }
+  Ok(Expr::List(result.into()))
 }
 
 /// Helper to generate combinations (subsets of size k)

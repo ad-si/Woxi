@@ -12185,3 +12185,100 @@ mod flatten_at_specs_and_messages {
     assert_eq!(interpret("FlattenAt[{a + b, c}, 1]").unwrap(), "{a, b, c}");
   }
 }
+
+mod subsets_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn infinity_and_range_specs() {
+    // Regression: Infinity stayed unevaluated
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, Infinity]").unwrap(),
+      "{{}, {a}, {b}, {c}, {a, b}, {a, c}, {b, c}, {a, b, c}}"
+    );
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, {1, Infinity}]").unwrap(),
+      "{{a}, {b}, {c}, {a, b}, {a, c}, {b, c}, {a, b, c}}"
+    );
+    // Negative step walks the sizes downward
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, {2, 0, -1}]").unwrap(),
+      "{{a, b}, {a, c}, {b, c}, {a}, {b}, {c}, {}}"
+    );
+  }
+
+  #[test]
+  fn general_heads_keep_their_head() {
+    // Regression: non-List heads stayed unevaluated
+    assert_eq!(
+      interpret("Subsets[f[a, b, c], {2}]").unwrap(),
+      "{f[a, b], f[a, c], f[b, c]}"
+    );
+    assert_eq!(
+      interpret("Subsets[f[a, b, c], 1]").unwrap(),
+      "{f[], f[a], f[b], f[c]}"
+    );
+  }
+
+  #[test]
+  fn take_argument_follows_take_semantics() {
+    // Regression: a negative take count returned {}
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, {2}, -1]").unwrap(),
+      "{{b, c}}"
+    );
+    assert_eq!(interpret("Subsets[{a, b, c}, {2}, None]").unwrap(), "{}");
+    // Clipped sequences warn but still return the available part
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, {2}, 10]").unwrap(),
+      "{{a, b}, {a, c}, {b, c}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Subsets::take: Warning: not all elements were found when attempting to take the sequence {1, 10, 1} from Subsets[{a, b, c}, {2}], which has length 3."
+      )),
+      "expected take warning, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Subsets[{a, b, c}, {2}, {10}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn invalid_specs_emit_messages() {
+    // Regression: -1 returned {{}} silently
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, -1]").unwrap(),
+      "Subsets[{a, b, c}, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Subsets::nninfseq: Position 2 of Subsets[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer."
+      )),
+      "expected nninfseq message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Subsets[{a, b, c}, {2}, x]").unwrap(),
+      "Subsets[{a, b, c}, {2}, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Subsets::seq: Position 3 of Subsets[{a, b, c}, {2}, x] must be All, None, m, {m}, {m, n} or {m, n, s}, where m and n are integers, and s is a nonzero integer."
+      )),
+      "expected seq message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Subsets[x, 2]").unwrap(), "Subsets[x, 2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Subsets::normal: Nonatomic expression expected at position 1 in Subsets[x, 2]."
+      )),
+      "expected normal message, got {:?}",
+      msgs
+    );
+  }
+}
