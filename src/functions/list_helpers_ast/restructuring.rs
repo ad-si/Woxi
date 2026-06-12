@@ -18,8 +18,9 @@ fn extract_rule_pair(expr: &Expr) -> Option<(Expr, Expr)> {
   }
 }
 
-/// AST-based Partition: break list into sublists of length n.
-/// Partition[{a, b, c, d, e}, 2] -> {{a, b}, {c, d}}
+/// AST-based Partition: break a list (or any nonatomic expression,
+/// whose head is kept on the result and every sublist) into sublists
+/// of length n. Partition[{a, b, c, d, e}, 2] -> {{a, b}, {c, d}}
 pub fn partition_ast(
   list: &Expr,
   n: i128,
@@ -27,8 +28,12 @@ pub fn partition_ast(
   align: Option<&Expr>,
   pad: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head): (&[Expr], Option<&str>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall {
+      name,
+      args: fc_args,
+    } => (fc_args.as_slice(), Some(name.as_str())),
     _ => {
       crate::emit_message(&format!(
         "Partition::npart: The expression {} cannot be partitioned.",
@@ -48,6 +53,15 @@ pub fn partition_ast(
         name: "Partition".to_string(),
         args: full_args.into(),
       });
+    }
+  };
+  let wrap = |elems: Vec<Expr>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: elems.into(),
+      },
+      None => Expr::List(elems.into()),
     }
   };
 
@@ -97,10 +111,10 @@ pub fn partition_ast(
     let mut results = Vec::new();
     let mut i = 0;
     while i + n_usize <= len {
-      results.push(Expr::List(items[i..i + n_usize].to_vec().into()));
+      results.push(wrap(items[i..i + n_usize].to_vec()));
       i += d_usize;
     }
-    return Ok(Expr::List(results.into()));
+    return Ok(wrap(results));
   }
 
   if is_cyclic && len > 0 {
@@ -137,10 +151,10 @@ pub fn partition_ast(
           ((offset + j as isize) % len as isize + len as isize) as usize % len;
         chunk.push(items[idx].clone());
       }
-      results.push(Expr::List(chunk.into()));
+      results.push(wrap(chunk));
       offset += d_usize as isize;
     }
-    return Ok(Expr::List(results.into()));
+    return Ok(wrap(results));
   }
 
   // Overhang with padding (5-arg form with explicit pad): walk the same
@@ -180,10 +194,10 @@ pub fn partition_ast(
         }
       }
     }
-    results.push(Expr::List(chunk.into()));
+    results.push(wrap(chunk));
     offset += d_usize as isize;
   }
-  Ok(Expr::List(results.into()))
+  Ok(wrap(results))
 }
 
 pub fn partition_multi_dim_ast(

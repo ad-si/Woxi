@@ -976,6 +976,52 @@ pub fn dispatch_list_operations(
       }
     }
     "Partition" if args.len() >= 2 && args.len() <= 5 => {
+      // The subject must be nonatomic; its head is kept on the result.
+      let (items, subject_head): (&[Expr], Option<&str>) = match &args[0] {
+        Expr::List(items) => (items.as_slice(), None),
+        Expr::FunctionCall {
+          name: fc_name,
+          args: fc_args,
+        } => (fc_args.as_slice(), Some(fc_name.as_str())),
+        _ => {
+          crate::emit_message(&format!(
+            "Partition::npart: The expression {} cannot be partitioned.",
+            crate::syntax::format_expr(
+              &args[0],
+              crate::syntax::ExprForm::Output
+            )
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "Partition".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      };
+      let unevaluated = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "Partition".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      let ilsmp = |position: usize| {
+        crate::emit_message(&format!(
+          "Partition::ilsmp: Single or list of positive machine-sized integers expected at position {} of {}.",
+          position,
+          crate::syntax::format_expr(
+            &Expr::FunctionCall {
+              name: "Partition".to_string(),
+              args: args.to_vec().into(),
+            },
+            crate::syntax::ExprForm::Output
+          )
+        ));
+      };
+      let positive_machine = |e: &Expr| -> Option<i128> {
+        match e {
+          Expr::Integer(n) if (1..=i64::MAX as i128).contains(n) => Some(*n),
+          _ => None,
+        }
+      };
       // Partition[list, UpTo[n]] — chunks of up to n, last chunk may be short.
       if args.len() == 2
         && let Expr::FunctionCall {
@@ -984,23 +1030,36 @@ pub fn dispatch_list_operations(
         } = &args[1]
         && ut_name == "UpTo"
         && ut_args.len() == 1
-        && let Some(n) = expr_to_i128(&ut_args[0])
-        && n > 0
-        && let Expr::List(items) = &args[0]
+        && let Some(n) = positive_machine(&ut_args[0])
       {
         let n_usize = n as usize;
+        let wrap = |elems: Vec<Expr>| -> Expr {
+          match subject_head {
+            Some(h) => Expr::FunctionCall {
+              name: h.to_string(),
+              args: elems.into(),
+            },
+            None => Expr::List(elems.into()),
+          }
+        };
         let mut chunks: Vec<Expr> = Vec::new();
         let mut i = 0usize;
         while i < items.len() {
           let end = (i + n_usize).min(items.len());
-          chunks.push(Expr::List(items[i..end].to_vec().into()));
+          chunks.push(wrap(items[i..end].to_vec()));
           i = end;
         }
-        return Some(Ok(Expr::List(chunks.into())));
+        return Some(Ok(wrap(chunks)));
       }
-      if let Some(n) = expr_to_i128(&args[1]) {
+      if let Some(n) = positive_machine(&args[1]) {
         let d = if args.len() >= 3 {
-          expr_to_i128(&args[2])
+          match positive_machine(&args[2]) {
+            Some(d) => Some(d),
+            None => {
+              ilsmp(3);
+              return unevaluated();
+            }
+          }
         } else {
           None
         };
@@ -1019,31 +1078,28 @@ pub fn dispatch_list_operations(
       // Multi-dimensional form: Partition[tensor, {n1, n2, ...}, d]
       // partitions each dimension in turn with block sizes `n_i` and a
       // uniform offset `d`.
-      if let Expr::List(ns) = &args[1]
-        && let Some(sizes) =
-          ns.iter().map(expr_to_i128).collect::<Option<Vec<_>>>()
-        && sizes.iter().all(|&s| s > 0)
-      {
+      if let Expr::List(ns) = &args[1] {
+        let Some(sizes) =
+          ns.iter().map(positive_machine).collect::<Option<Vec<_>>>()
+        else {
+          ilsmp(2);
+          return unevaluated();
+        };
         let offsets: Option<Vec<i128>> = if args.len() >= 3 {
           match &args[2] {
-            Expr::Integer(n) => Some(vec![*n; sizes.len()]),
-            Expr::List(ds) => {
-              let ds: Option<Vec<i128>> = ds.iter().map(expr_to_i128).collect();
-              match ds {
-                Some(v)
-                  if v.len() == sizes.len() && v.iter().all(|&x| x > 0) =>
-                {
-                  Some(v)
-                }
-                _ => None,
-              }
+            Expr::List(ds) if ds.len() == sizes.len() => {
+              ds.iter().map(positive_machine).collect()
             }
-            _ => None,
+            e => positive_machine(e).map(|n| vec![n; sizes.len()]),
           }
         } else {
           Some(sizes.clone())
         };
-        if let Some(offsets) = offsets {
+        let Some(offsets) = offsets else {
+          ilsmp(3);
+          return unevaluated();
+        };
+        {
           // Depth check: a {n1, ..., nk} size spec needs a depth-k
           // rectangular object, else Partition::pdep
           let mut dims: Vec<usize> = Vec::new();
@@ -1084,6 +1140,29 @@ pub fn dispatch_list_operations(
           ));
         }
       }
+      // Any other second argument is an invalid size spec. The message
+      // displays an UpTo wrapper's content; the return keeps the wrapper.
+      let mut display_args = args.to_vec();
+      if let Expr::FunctionCall {
+        name: ut_name,
+        args: ut_args,
+      } = &args[1]
+        && ut_name == "UpTo"
+        && ut_args.len() == 1
+      {
+        display_args[1] = ut_args[0].clone();
+      }
+      crate::emit_message(&format!(
+        "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 2 of {}.",
+        crate::syntax::format_expr(
+          &Expr::FunctionCall {
+            name: "Partition".to_string(),
+            args: display_args.into(),
+          },
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return unevaluated();
     }
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::permutations_ast(args));

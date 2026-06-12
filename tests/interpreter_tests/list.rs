@@ -12441,3 +12441,114 @@ mod tuples_specs_and_messages {
     );
   }
 }
+
+mod partition_specs_and_messages {
+  use super::*;
+
+  #[test]
+  fn general_heads_are_partitioned() {
+    // Regression: non-List heads wrongly emitted Partition::npart
+    assert_eq!(
+      interpret("Partition[f[a, b, c, d], 2]").unwrap(),
+      "f[f[a, b], f[c, d]]"
+    );
+    assert_eq!(
+      interpret("Partition[f[a, b, c, d, e], 2, 1]").unwrap(),
+      "f[f[a, b], f[b, c], f[c, d], f[d, e]]"
+    );
+    assert_eq!(
+      interpret("Partition[f[a, b, c], UpTo[2]]").unwrap(),
+      "f[f[a, b], f[c]]"
+    );
+    assert_eq!(
+      interpret("Partition[f[a, b, c, d, e], 3, 1, {1, 1}]").unwrap(),
+      "f[f[a, b, c], f[b, c, d], f[c, d, e], f[d, e, a], f[e, a, b]]"
+    );
+    assert_eq!(
+      interpret("Partition[f[a, b, c, d, e], 3, 1, {1, 1}, x]").unwrap(),
+      "f[f[a, b, c], f[b, c, d], f[c, d, e], f[d, e, x], f[e, x, x]]"
+    );
+  }
+
+  #[test]
+  fn invalid_sizes_emit_ilsmp() {
+    // Regression: Partition[{a, b, c}, 0] raised a hard evaluation error
+    assert_eq!(
+      interpret("Partition[{a, b, c}, 0]").unwrap(),
+      "Partition[{a, b, c}, 0]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 2 of Partition[{a, b, c}, 0]."
+      )),
+      "expected ilsmp message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c}, -1]").unwrap(),
+      "Partition[{a, b, c}, -1]"
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c}, x]").unwrap(),
+      "Partition[{a, b, c}, x]"
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, {2, 0}]").unwrap(),
+      "Partition[{a, b, c, d}, {2, 0}]"
+    );
+  }
+
+  #[test]
+  fn invalid_offsets_emit_ilsmp_at_position_3() {
+    // Regression: Partition[{a, b, c}, 2, 0] raised a hard evaluation error
+    assert_eq!(
+      interpret("Partition[{a, b, c}, 2, 0]").unwrap(),
+      "Partition[{a, b, c}, 2, 0]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 3 of Partition[{a, b, c}, 2, 0]."
+      )),
+      "expected ilsmp message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Partition[{a, b, c}, 2, x]").unwrap(),
+      "Partition[{a, b, c}, 2, x]"
+    );
+    assert_eq!(
+      interpret("Partition[{{a, b}, {c, d}}, {2, 2}, 0]").unwrap(),
+      "Partition[{{a, b}, {c, d}}, {2, 2}, 0]"
+    );
+  }
+
+  #[test]
+  fn atoms_emit_npart_before_size_checks() {
+    assert_eq!(interpret("Partition[x, 0]").unwrap(), "Partition[x, 0]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m
+        .contains("Partition::npart: The expression x cannot be partitioned.")),
+      "expected npart message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn invalid_upto_messages_show_the_inner_value() {
+    assert_eq!(
+      interpret("Partition[{a, b, c}, UpTo[0]]").unwrap(),
+      "Partition[{a, b, c}, UpTo[0]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 2 of Partition[{a, b, c}, 0]."
+      )),
+      "expected ilsmp message with unwrapped UpTo, got {:?}",
+      msgs
+    );
+  }
+}
