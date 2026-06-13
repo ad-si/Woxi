@@ -475,6 +475,68 @@ mod volume {
       "(Pi*r^2*Sqrt[(Subscript[x, 1] - Subscript[x, 2])^2 + (Subscript[y, 1] - Subscript[y, 2])^2 + (Subscript[z, 1] - Subscript[z, 2])^2])/3"
     );
   }
+
+  // A solid 3-D ball has volume (4/3) Pi r^3 (default unit ball is 3-D).
+  #[test]
+  fn ball_3d() {
+    assert_eq!(interpret("Volume[Ball[{0, 0, 0}, 3]]").unwrap(), "36*Pi");
+    assert_eq!(interpret("Volume[Ball[]]").unwrap(), "(4*Pi)/3");
+    assert_eq!(interpret("Volume[Ball[{1, 2, 3}]]").unwrap(), "(4*Pi)/3");
+    assert_eq!(
+      interpret("Volume[Ball[{0, 0, 3}, r]]").unwrap(),
+      "(4*Pi*r^3)/3"
+    );
+  }
+
+  // A ball that is not 3-dimensional has no 3-volume.
+  #[test]
+  fn ball_non_3d_undefined() {
+    assert_eq!(interpret("Volume[Ball[{0, 0}, 2]]").unwrap(), "Undefined");
+  }
+
+  // A solid 3-D ellipsoid has volume (4/3) Pi r1 r2 r3.
+  #[test]
+  fn ellipsoid_3d() {
+    assert_eq!(
+      interpret("Volume[Ellipsoid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "8*Pi"
+    );
+    assert_eq!(
+      interpret("Volume[Ellipsoid[{0, 0, 0}, {r1, r2, r3}]]").unwrap(),
+      "(4*Pi*r1*r2*r3)/3"
+    );
+    // A 2-D ellipse has no 3-volume.
+    assert_eq!(
+      interpret("Volume[Ellipsoid[{0, 0}, {2, 3}]]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  // Volume is the 3-dimensional measure, so regions of lower intrinsic
+  // dimension (and surfaces like Sphere) are Undefined.
+  #[test]
+  fn lower_dimensional_regions_undefined() {
+    assert_eq!(
+      interpret("Volume[Sphere[{0, 0, 0}, 2]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(interpret("Volume[Disk[]]").unwrap(), "Undefined");
+    assert_eq!(interpret("Volume[Rectangle[]]").unwrap(), "Undefined");
+    assert_eq!(
+      interpret("Volume[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(
+      interpret("Volume[Polygon[{{0, 0}, {1, 0}, {1, 1}}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(interpret("Volume[Circle[]]").unwrap(), "Undefined");
+    assert_eq!(
+      interpret("Volume[Line[{{0, 0}, {1, 1}}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(interpret("Volume[Point[{1, 2, 3}]]").unwrap(), "Undefined");
+  }
 }
 
 mod region_measure {
@@ -577,7 +639,10 @@ mod region_measure {
       interpret("RegionMeasure[Sphere[{0, 0, 0}, 2]]").unwrap(),
       "16*Pi"
     );
-    assert_eq!(interpret("RegionMeasure[Circle[{0, 0}, 2]]").unwrap(), "4*Pi");
+    assert_eq!(
+      interpret("RegionMeasure[Circle[{0, 0}, 2]]").unwrap(),
+      "4*Pi"
+    );
     assert_eq!(
       interpret("RegionMeasure[Line[{{0, 0}, {3, 4}}]]").unwrap(),
       "5"

@@ -5232,6 +5232,109 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
       }),
     };
   }
+
+  // Volume is the 3-dimensional measure, so it is only defined for solids of
+  // intrinsic dimension 3. Lower-dimensional regions (and surfaces) return
+  // Undefined; 3-D balls and ellipsoids get their closed-form volume.
+  let undefined = || Ok(Expr::Identifier("Undefined".to_string()));
+  if let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      // Ball[c, r] — the solid n-ball. Volume is defined only in 3-D, where
+      // it equals (4/3) Pi r^3; any other dimension is Undefined.
+      "Ball" => {
+        let (n, radius) = match args.len() {
+          0 => (3usize, Expr::Integer(1)),
+          1 | 2 => {
+            let Expr::List(center) = &args[0] else {
+              return Ok(Expr::FunctionCall {
+                name: "Volume".to_string(),
+                args: vec![expr.clone()].into(),
+              });
+            };
+            if center.is_empty() {
+              return undefined();
+            }
+            let radius = if args.len() == 2 {
+              args[1].clone()
+            } else {
+              Expr::Integer(1)
+            };
+            (center.len(), radius)
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Volume".to_string(),
+              args: vec![expr.clone()].into(),
+            });
+          }
+        };
+        if n != 3 {
+          return undefined();
+        }
+        // (4 Pi r^3) / 3
+        let vol = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(4),
+              Expr::Constant("Pi".to_string()),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![radius, Expr::Integer(3)].into(),
+              },
+            ]
+            .into(),
+          }),
+          right: Box::new(Expr::Integer(3)),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&vol);
+      }
+      // Ellipsoid[c, {r1, r2, r3}] — solid ellipsoid, 3-D volume
+      // (4/3) Pi r1 r2 r3. Any other dimension is Undefined.
+      "Ellipsoid" if args.len() == 2 => {
+        let (Expr::List(center), Expr::List(radii)) = (&args[0], &args[1])
+        else {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        };
+        if center.len() != radii.len() {
+          return Ok(Expr::FunctionCall {
+            name: "Volume".to_string(),
+            args: vec![expr.clone()].into(),
+          });
+        }
+        if radii.len() != 3 {
+          return undefined();
+        }
+        let vol = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(4),
+              Expr::Constant("Pi".to_string()),
+              radii[0].clone(),
+              radii[1].clone(),
+              radii[2].clone(),
+            ]
+            .into(),
+          }),
+          right: Box::new(Expr::Integer(3)),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&vol);
+      }
+      // A Sphere is a 2-D surface and the following are regions of dimension
+      // < 3, so their 3-volume is Undefined.
+      "Sphere" | "Disk" | "Rectangle" | "Triangle" | "Polygon"
+      | "RegularPolygon" | "Circle" | "Line" | "Point" => {
+        return undefined();
+      }
+      _ => {}
+    }
+  }
   Ok(Expr::FunctionCall {
     name: "Volume".to_string(),
     args: vec![expr.clone()].into(),
