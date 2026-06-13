@@ -1262,6 +1262,38 @@ mod string_patterns {
   }
 
   #[test]
+  fn string_cases_overlaps() {
+    // Default is non-overlapping.
+    assert_eq!(
+      interpret("StringCases[\"aaa\", \"aa\"]").unwrap(),
+      "{aa}"
+    );
+    assert_eq!(
+      interpret("StringCases[\"aaa\", \"aa\", Overlaps -> False]").unwrap(),
+      "{aa}"
+    );
+    // Overlaps -> True emits a match at every start position.
+    assert_eq!(
+      interpret("StringCases[\"aaa\", \"aa\", Overlaps -> True]").unwrap(),
+      "{aa, aa}"
+    );
+    assert_eq!(
+      interpret("StringCases[\"abababab\", \"aba\", Overlaps -> True]")
+        .unwrap(),
+      "{aba, aba, aba}"
+    );
+    // Works with character-class patterns too.
+    assert_eq!(
+      interpret(
+        "StringCases[\"a1b2\", LetterCharacter ~~ DigitCharacter, \
+         Overlaps -> True]"
+      )
+      .unwrap(),
+      "{a1, b2}"
+    );
+  }
+
+  #[test]
   fn string_cases_single_digit_character() {
     assert_eq!(
       interpret("StringCases[\"abc123\", DigitCharacter]").unwrap(),

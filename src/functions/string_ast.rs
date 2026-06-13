@@ -2091,23 +2091,31 @@ fn string_pattern_to_regex_inner(
 
 /// StringCases[s, patt] - find all substrings matching pattern
 pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 3 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "StringCases expects 2 or 3 arguments".into(),
+      "StringCases expects at least 2 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
 
-  // Parse optional max count (3rd argument)
-  let max_count: usize = if args.len() == 3 {
-    match &args[2] {
-      Expr::Integer(n) if *n >= 0 => *n as usize,
-      Expr::Identifier(s) if s == "Infinity" => usize::MAX,
-      _ => usize::MAX,
+  // Parse the optional trailing arguments: a max-count (Integer/Infinity)
+  // and/or an `Overlaps -> True | All` option (default: non-overlapping).
+  let mut max_count: usize = usize::MAX;
+  let mut overlaps = false;
+  for a in &args[2..] {
+    match a {
+      Expr::Integer(n) if *n >= 0 => max_count = *n as usize,
+      Expr::Identifier(id) if id == "Infinity" => max_count = usize::MAX,
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") => {
+        overlaps = matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "True" || v == "All");
+      }
+      _ => {}
     }
-  } else {
-    usize::MAX
-  };
+  }
 
   // Rule or list of rules: at each position, try each rule's LHS pattern;
   // on a match, emit the (capture-substituted) RHS and advance past it.
@@ -2144,7 +2152,14 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let evaluated =
             crate::evaluator::evaluate_expr_to_expr(&substituted)?;
           result.push(evaluated);
-          i += m.len();
+          // Overlapping matches advance one character past the start; the
+          // default skips the whole matched substring.
+          if overlaps {
+            let ch = s[i..].chars().next().unwrap();
+            i += ch.len_utf8();
+          } else {
+            i += m.len();
+          }
           matched = true;
           break;
         }
@@ -2167,7 +2182,30 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         e
       ))
     })?;
-    let matches: Vec<Expr> = if constraints.is_empty() {
+    let matches: Vec<Expr> = if overlaps {
+      // Overlapping: emit a match for every char start position where the
+      // (anchored) pattern matches, satisfying any back-reference constraints.
+      let mut out: Vec<Expr> = Vec::new();
+      for (idx, _) in s.char_indices() {
+        if out.len() >= max_count {
+          break;
+        }
+        if let Some(caps) = re.captures_at(&s, idx)
+          && let Some(m) = caps.get(0)
+          && m.start() == idx
+          && !m.as_str().is_empty()
+          && constraints.iter().all(|(orig, dup)| {
+            match (caps.name(orig), caps.name(dup)) {
+              (Some(a), Some(b)) => a.as_str() == b.as_str(),
+              _ => true,
+            }
+          })
+        {
+          out.push(Expr::String(m.as_str().to_string()));
+        }
+      }
+      out
+    } else if constraints.is_empty() {
       re.find_iter(&s)
         .take(max_count)
         .map(|m| Expr::String(m.as_str().to_string()))
@@ -2198,10 +2236,16 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut start = 0;
   while let Some(pos) = s[start..].find(&patt) {
     matches.push(Expr::String(patt.clone()));
-    start = start + pos + patt.len();
     if matches.len() >= max_count {
       break;
     }
+    // Overlapping advances one character past the match start.
+    start = if overlaps {
+      let match_start = start + pos;
+      match_start + s[match_start..].chars().next().map_or(1, char::len_utf8)
+    } else {
+      start + pos + patt.len()
+    };
   }
 
   Ok(Expr::List(matches.into()))
