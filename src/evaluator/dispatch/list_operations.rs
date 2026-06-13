@@ -46,6 +46,38 @@ fn invalid_seq_spec(
   None
 }
 
+/// A non-negative machine-sized integer, or None.
+fn nonneg_machine_int(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(n) if (0..=i64::MAX as i128).contains(n) => Some(*n),
+    _ => None,
+  }
+}
+
+/// Whether the expression is the symbol Infinity (or DirectedInfinity[1]).
+fn is_infinity_symbol(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+    || matches!(e, Expr::FunctionCall { name, args }
+      if name == "DirectedInfinity" && args.len() == 1
+      && matches!(&args[0], Expr::Integer(1)))
+}
+
+/// Emit `<F>::intnm: Non-negative machine-sized integer expected at
+/// position <pos> in <call>.` and return the unevaluated call.
+fn intnm_message(name: &str, args: &[Expr], pos: usize) -> Expr {
+  let call = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  crate::emit_message(&format!(
+    "{}::intnm: Non-negative machine-sized integer expected at position {} in {}.",
+    name,
+    pos,
+    crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+  ));
+  call
+}
+
 /// Check recursively whether an expression contains pattern elements (Blank, Pattern, etc.)
 fn has_pattern_element(expr: &Expr) -> bool {
   match expr {
@@ -797,18 +829,29 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::ordering_ast(args));
     }
     "Nest" if args.len() == 3 => {
-      if let Some(n) = expr_to_i128(&args[2]) {
-        return Some(list_helpers_ast::nest_ast(&args[0], &args[1], n));
-      }
+      let Some(n) = nonneg_machine_int(&args[2]) else {
+        return Some(Ok(intnm_message(name, args, 3)));
+      };
+      return Some(list_helpers_ast::nest_ast(&args[0], &args[1], n));
     }
     "NestList" if args.len() == 3 => {
-      if let Some(n) = expr_to_i128(&args[2]) {
-        return Some(list_helpers_ast::nest_list_ast(&args[0], &args[1], n));
-      }
+      let Some(n) = nonneg_machine_int(&args[2]) else {
+        return Some(Ok(intnm_message(name, args, 3)));
+      };
+      return Some(list_helpers_ast::nest_list_ast(&args[0], &args[1], n));
     }
     "FixedPoint" if args.len() >= 2 => {
+      // The optional third argument accepts Infinity (the default) or a
+      // non-negative machine integer; anything else emits ::intnm.
       let max_iter = if args.len() == 3 {
-        expr_to_i128(&args[2])
+        if is_infinity_symbol(&args[2]) {
+          None
+        } else {
+          match nonneg_machine_int(&args[2]) {
+            Some(n) => Some(n),
+            None => return Some(Ok(intnm_message(name, args, 3))),
+          }
+        }
       } else {
         None
       };
@@ -2367,6 +2410,21 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]));
     }
     "Array" if args.len() >= 2 && args.len() <= 4 => {
+      let valid_spec = match &args[1] {
+        Expr::List(ns) => ns.iter().all(|e| nonneg_machine_int(e).is_some()),
+        e => nonneg_machine_int(e).is_some(),
+      };
+      if !valid_spec {
+        let call = Expr::FunctionCall {
+          name: "Array".to_string(),
+          args: args.to_vec().into(),
+        };
+        crate::emit_message(&format!(
+          "Array::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
+          crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+        ));
+        return Some(Ok(call));
+      }
       if args.len() == 2
         && let Some(n) = expr_to_i128(&args[1])
       {

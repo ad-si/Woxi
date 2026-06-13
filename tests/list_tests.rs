@@ -532,7 +532,9 @@ mod list_tests {
 
   #[test]
   fn range_zero_step_errors() {
-    assert!(interpret("Range[1, 5, 0]").is_err());
+    // wolframscript emits Range::range and returns the call unevaluated
+    // (verified 2026-06-12); the old hard-error behavior diverged.
+    assert_eq!(interpret("Range[1, 5, 0]").unwrap(), "Range[1, 5, 0]");
   }
 
   #[test]

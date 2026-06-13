@@ -13043,3 +13043,118 @@ mod gather_split_tally_messages {
     );
   }
 }
+
+mod nest_array_range_messages {
+  use super::*;
+
+  #[test]
+  fn nest_family_emits_intnm() {
+    // Regression: Nest/NestList raised hard errors for negative counts
+    // and were silent for non-integer counts
+    assert_eq!(interpret("Nest[f, x, -1]").unwrap(), "Nest[f, x, -1]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Nest::intnm: Non-negative machine-sized integer expected at position 3 in Nest[f, x, -1]."
+      )),
+      "expected intnm message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("NestList[f, x, -1]").unwrap(),
+      "NestList[f, x, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "NestList::intnm: Non-negative machine-sized integer expected at position 3 in NestList[f, x, -1]."
+      )),
+      "expected intnm message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Nest[f, x, 2.5]").unwrap(), "Nest[f, x, 2.5]");
+    // Nest rejects Infinity, unlike FixedPoint
+    assert_eq!(
+      interpret("Nest[f, x, Infinity]").unwrap(),
+      "Nest[f, x, Infinity]"
+    );
+  }
+
+  #[test]
+  fn fixed_point_emits_intnm_but_accepts_infinity() {
+    // Regression: FixedPoint[f, x, -1] silently returned x
+    assert_eq!(
+      interpret("FixedPoint[f, x, -1]").unwrap(),
+      "FixedPoint[f, x, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "FixedPoint::intnm: Non-negative machine-sized integer expected at position 3 in FixedPoint[f, x, -1]."
+      )),
+      "expected intnm message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("FixedPoint[Function[x, Floor[x/2]], 100, Infinity]").unwrap(),
+      "0"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.is_empty(),
+      "FixedPoint with Infinity must stay silent, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn range_zero_step_emits_range_message() {
+    // Regression: zero steps raised hard errors
+    assert_eq!(interpret("Range[1, 5, 0]").unwrap(), "Range[1, 5, 0]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Range::range: Range specification in Range[1, 5, 0] does not have appropriate bounds."
+      )),
+      "expected range message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Range[1.0, 5.0, 0.0]").unwrap(),
+      "Range[1., 5., 0.]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Range::range: Range specification in Range[1., 5., 0.] does not have appropriate bounds."
+      )),
+      "expected range message for reals, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn array_invalid_specs_emit_ilsmn() {
+    // Regression: Array[f, -1] returned {} and Array[f, {2, -1}]
+    // returned {{}, {}}
+    for bad in [
+      "Array[f, -1]",
+      "Array[f, 2.5]",
+      "Array[f, m]",
+      "Array[f, {2, -1}]",
+    ] {
+      assert_eq!(interpret(bad).unwrap(), bad);
+    }
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Array::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of Array[f, {2, -1}]."
+      )),
+      "expected ilsmn message, got {:?}",
+      msgs
+    );
+    // Valid forms still work
+    assert_eq!(interpret("Array[f, 0]").unwrap(), "{}");
+    assert_eq!(interpret("Array[f, 3, 0]").unwrap(), "{f[0], f[1], f[2]}");
+  }
+}

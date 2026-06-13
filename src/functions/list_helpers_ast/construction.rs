@@ -403,9 +403,15 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     if step_n == 0 {
-      return Err(InterpreterError::EvaluationError(
-        "Range: step cannot be zero".into(),
+      let call = Expr::FunctionCall {
+        name: "Range".to_string(),
+        args: args.to_vec().into(),
+      };
+      crate::emit_message(&format!(
+        "Range::range: Range specification in {} does not have appropriate bounds.",
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
       ));
+      return Ok(call);
     }
 
     let mut results = Vec::new();
@@ -504,9 +510,15 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // range using the numeric count and render each element symbolically.
     if min_f.is_none() || max_f.is_none() {
       if let Some(0.0) = step_f {
-        return Err(InterpreterError::EvaluationError(
-          "Range: step cannot be zero".into(),
+        let call = Expr::FunctionCall {
+          name: "Range".to_string(),
+          args: args.to_vec().into(),
+        };
+        crate::emit_message(&format!(
+          "Range::range: Range specification in {} does not have appropriate bounds.",
+          crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
         ));
+        return Ok(call);
       }
       // ratio = (max - min) / step
       let ratio_expr = Expr::FunctionCall {
@@ -583,9 +595,15 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (min_f, max_f, step_f)
     {
       if step_val == 0.0 {
-        return Err(InterpreterError::EvaluationError(
-          "Range: step cannot be zero".into(),
+        let call = Expr::FunctionCall {
+          name: "Range".to_string(),
+          args: args.to_vec().into(),
+        };
+        crate::emit_message(&format!(
+          "Range::range: Range specification in {} does not have appropriate bounds.",
+          crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
         ));
+        return Ok(call);
       }
       let count = ((max_val - min_val) / step_val).floor() as i128 + 1;
       if count <= 0 {
@@ -632,9 +650,15 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   if step == 0.0 {
-    return Err(InterpreterError::EvaluationError(
-      "Range: step cannot be zero".into(),
+    let call = Expr::FunctionCall {
+      name: "Range".to_string(),
+      args: args.to_vec().into(),
+    };
+    crate::emit_message(&format!(
+      "Range::range: Range specification in {} does not have appropriate bounds.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
     ));
+    return Ok(call);
   }
 
   // Output elements are Real only when `min` or `step` is Real.
