@@ -431,7 +431,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FourierTransform" => Some((3, 3)),
     "FractionalPart" => Some((1, 1)),
     "FrechetDistribution" => Some((2, 3)),
-    "FreeQ" => Some((1, 2)),
+    "FreeQ" => Some((1, 3)),
     "FresnelC" => Some((1, 1)),
     "FresnelS" => Some((1, 1)),
     "FrenetSerretSystem" => Some((2, 2)),

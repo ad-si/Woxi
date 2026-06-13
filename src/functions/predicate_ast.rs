@@ -860,6 +860,51 @@ fn parse_level_spec(spec: &Expr) -> (i64, i64) {
 
 /// FreeQ[expr, form] - Tests if expr is free of form
 pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // FreeQ[expr, form, levelspec]: True when no part of expr at the
+  // given levels matches form. Invalid specs emit ::level.
+  if args.len() == 3 {
+    let is_level_int = |e: &Expr| {
+      matches!(e, Expr::Integer(_))
+        || matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+        || matches!(e, Expr::FunctionCall { name, args }
+          if name == "DirectedInfinity" && args.len() == 1)
+    };
+    let spec_ok = match &args[2] {
+      e if is_level_int(e) => true,
+      Expr::List(parts) => match parts.as_slice() {
+        [n] => matches!(n, Expr::Integer(_)),
+        [m, n] => is_level_int(m) && is_level_int(n),
+        _ => false,
+      },
+      _ => false,
+    };
+    if !spec_ok {
+      crate::emit_message(&format!(
+        "FreeQ::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+        crate::syntax::format_expr(&args[2], crate::syntax::ExprForm::Output)
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "FreeQ".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    let parts = crate::functions::list_helpers_ast::level_unified_ast(&[
+      args[0].clone(),
+      args[2].clone(),
+    ])?;
+    if let Expr::List(ref parts) = parts {
+      let any = parts.iter().any(|p| {
+        crate::functions::list_helpers_ast::matches_pattern_ast(p, &args[1])
+      });
+      return Ok(Expr::Identifier(
+        if any { "False" } else { "True" }.to_string(),
+      ));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "FreeQ".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "FreeQ expects exactly 2 arguments".into(),
@@ -1695,30 +1740,124 @@ pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// SubsetQ[list1, list2] - Tests if list2 is a subset of list1
+/// The display name of an expression's head, for ::heads messages.
+fn head_name(e: &Expr) -> String {
+  crate::evaluator::evaluate_function_call_ast("Head", std::slice::from_ref(e))
+    .map(|h| crate::syntax::format_expr(&h, crate::syntax::ExprForm::Output))
+    .unwrap_or_else(|_| "Symbol".to_string())
+}
+
+/// Element slices for the two subjects of SubsetQ/DisjointQ/
+/// IntersectingQ. Differing heads emit `<F>::heads: Heads <H1> and
+/// <H2> at positions 1 and 2 are expected to be the same.` and return
+/// the unevaluated call; matching nonatomic heads (List or any common
+/// head) yield their elements.
+#[allow(clippy::type_complexity)]
+fn same_head_elements<'a>(
+  fname: &str,
+  args: &'a [Expr],
+) -> Result<Option<(&'a [Expr], &'a [Expr])>, Expr> {
+  let elements = |e: &'a Expr| -> Option<(&'a str, &'a [Expr])> {
+    match e {
+      Expr::List(items) => Some(("List", items.as_slice())),
+      Expr::FunctionCall { name, args } => {
+        Some((name.as_str(), args.as_slice()))
+      }
+      _ => None,
+    }
+  };
+  match (elements(&args[0]), elements(&args[1])) {
+    (Some((h1, a)), Some((h2, b))) if h1 == h2 => Ok(Some((a, b))),
+    _ => {
+      let h1 = head_name(&args[0]);
+      let h2 = head_name(&args[1]);
+      if h1 != h2 {
+        crate::emit_message(&format!(
+          "{}::heads: Heads {} and {} at positions 1 and 2 are expected to be the same.",
+          fname, h1, h2
+        ));
+        return Err(Expr::FunctionCall {
+          name: fname.to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+      Ok(None)
+    }
+  }
+}
+
 pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "SubsetQ expects exactly 2 arguments".into(),
     ));
   }
-  match (&args[0], &args[1]) {
-    (Expr::List(superset), Expr::List(subset)) => {
-      // Check that every element in subset appears in superset
-      let superset_strs: Vec<String> =
-        superset.iter().map(crate::syntax::expr_to_string).collect();
-      for elem in subset {
-        let s = crate::syntax::expr_to_string(elem);
-        if !superset_strs.contains(&s) {
-          return Ok(Expr::Identifier("False".to_string()));
-        }
-      }
-      Ok(Expr::Identifier("True".to_string()))
+  let (superset, subset) = match same_head_elements("SubsetQ", args) {
+    Ok(Some(pair)) => pair,
+    Ok(None) => {
+      return Ok(Expr::FunctionCall {
+        name: "SubsetQ".to_string(),
+        args: args.to_vec().into(),
+      });
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "SubsetQ".to_string(),
-      args: args.to_vec().into(),
-    }),
+    Err(unevaluated) => return Ok(unevaluated),
+  };
+  // Check that every element in subset appears in superset
+  let superset_strs: Vec<String> =
+    superset.iter().map(crate::syntax::expr_to_string).collect();
+  for elem in subset {
+    let s = crate::syntax::expr_to_string(elem);
+    if !superset_strs.contains(&s) {
+      return Ok(Expr::Identifier("False".to_string()));
+    }
   }
+  Ok(Expr::Identifier("True".to_string()))
+}
+
+/// DisjointQ[a, b] - True if the subjects share no common elements.
+pub fn disjoint_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  intersecting_or_disjoint(args, "DisjointQ", false)
+}
+
+/// IntersectingQ[a, b] - True if the subjects share a common element.
+pub fn intersecting_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  intersecting_or_disjoint(args, "IntersectingQ", true)
+}
+
+fn intersecting_or_disjoint(
+  args: &[Expr],
+  fname: &str,
+  want_common: bool,
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{} expects exactly 2 arguments",
+      fname
+    )));
+  }
+  let (a, b) = match same_head_elements(fname, args) {
+    Ok(Some(pair)) => pair,
+    Ok(None) => {
+      return Ok(Expr::FunctionCall {
+        name: fname.to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    Err(unevaluated) => return Ok(unevaluated),
+  };
+  let a_strs: Vec<String> =
+    a.iter().map(crate::syntax::expr_to_string).collect();
+  let has_common = b
+    .iter()
+    .any(|e| a_strs.contains(&crate::syntax::expr_to_string(e)));
+  Ok(Expr::Identifier(
+    if has_common == want_common {
+      "True"
+    } else {
+      "False"
+    }
+    .to_string(),
+  ))
 }
 
 /// PossibleZeroQ[expr] - Tests if expr is possibly zero

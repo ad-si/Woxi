@@ -3999,7 +3999,7 @@ AttachCell,,,,12.2,4138
 AudioBlockMap,,🚫,,11.0,4138
 BioSequenceComplement,,🚫,,12.2,4138
 BottomHatTransform,,🚫,,7.0,4138
-ContainsExactly,,,,10.2,4138
+ContainsExactly,Test if two lists contain exactly the same elements,✅,none,10.2,4138
 ControllerMethod,,,,6.0,4138
 CriticalityFailureImportance,,,,9.0,4138
 DirichletTransform,,,,7.0,4138

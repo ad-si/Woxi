@@ -2343,6 +2343,26 @@ pub fn dispatch_list_operations(
         )));
       }
     }
+    // ContainsExactly[list1, list2] — True if the two Lists contain
+    // exactly the same elements as sets (duplicates ignored).
+    "ContainsExactly" if args.len() == 2 => {
+      if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
+        let set1: std::collections::HashSet<String> =
+          list1.iter().map(expr_to_string).collect();
+        let set2: std::collections::HashSet<String> =
+          list2.iter().map(expr_to_string).collect();
+        return Some(Ok(Expr::Identifier(
+          if set1 == set2 { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
+    // ContainsExactly[list2] — operator form, returns a callable.
+    "ContainsExactly" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "ContainsExactly".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "SquareMatrixQ" if args.len() == 1 => {
       let result = match &args[0] {
         Expr::List(rows) if !rows.is_empty() => {
@@ -3532,23 +3552,11 @@ pub fn dispatch_list_operations(
     }
     // IntersectingQ[list1, list2] — True if lists share any element
     "IntersectingQ" if args.len() == 2 => {
-      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
-        let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
-        let has_common = b.iter().any(|e| a_strs.contains(&expr_to_string(e)));
-        return Some(Ok(Expr::Identifier(
-          if has_common { "True" } else { "False" }.to_string(),
-        )));
-      }
+      return Some(crate::functions::predicate_ast::intersecting_q_ast(args));
     }
     // DisjointQ[list1, list2] — True if lists share no common elements
     "DisjointQ" if args.len() == 2 => {
-      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
-        let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
-        let has_common = b.iter().any(|e| a_strs.contains(&expr_to_string(e)));
-        return Some(Ok(Expr::Identifier(
-          if has_common { "False" } else { "True" }.to_string(),
-        )));
-      }
+      return Some(crate::functions::predicate_ast::disjoint_q_ast(args));
     }
     // FindPermutation[e1, e2] — find permutation that maps e1 to e2.
     // Accepts Lists or any two FunctionCalls with the same head.
