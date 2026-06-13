@@ -13158,3 +13158,77 @@ mod nest_array_range_messages {
     assert_eq!(interpret("Array[f, 3, 0]").unwrap(), "{f[0], f[1], f[2]}");
   }
 }
+
+mod quantifier_semantics {
+  use super::*;
+
+  #[test]
+  fn symbolic_predicates_stay_symbolic() {
+    // Regression: AllTrue[{a, b}, f] wrongly returned False (and
+    // AnyTrue False / NoneTrue True) instead of the symbolic combination
+    assert_eq!(interpret("AllTrue[{a, b}, f]").unwrap(), "f[a] && f[b]");
+    assert_eq!(interpret("AnyTrue[{a, b}, f]").unwrap(), "f[a] || f[b]");
+    assert_eq!(interpret("NoneTrue[{a, b}, f]").unwrap(), "Nor[f[a], f[b]]");
+  }
+
+  #[test]
+  fn atoms_yield_vacuous_results() {
+    // Regression: atoms returned unevaluated; wolframscript treats them
+    // as having no level-1 elements
+    assert_eq!(interpret("AllTrue[x, EvenQ]").unwrap(), "True");
+    assert_eq!(interpret("AnyTrue[x, EvenQ]").unwrap(), "False");
+    assert_eq!(interpret("NoneTrue[x, EvenQ]").unwrap(), "True");
+  }
+
+  #[test]
+  fn general_heads_are_traversed() {
+    // Regression: non-List heads returned unevaluated
+    assert_eq!(interpret("AllTrue[f[2, 4], EvenQ]").unwrap(), "True");
+    assert_eq!(interpret("AnyTrue[f[1, 2], EvenQ]").unwrap(), "True");
+    assert_eq!(interpret("NoneTrue[f[1, 3], EvenQ]").unwrap(), "True");
+  }
+
+  #[test]
+  fn level_argument_selects_exact_level() {
+    // Regression: the three-argument form was rejected with ::argrx
+    assert_eq!(
+      interpret("AllTrue[{{2, 4}, {6, 8}}, EvenQ, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("AllTrue[{2, {4}}, EvenQ, 2]").unwrap(), "True");
+    assert_eq!(
+      interpret("AnyTrue[{{1, 2}, {3, 4}}, EvenQ, 2]").unwrap(),
+      "True"
+    );
+    // Level 1 over sublists keeps the symbolic And of listable results
+    assert_eq!(
+      interpret("AllTrue[{{2, 4}, {6, 8}}, EvenQ, 1]").unwrap(),
+      "{True, True} && {True, True}"
+    );
+  }
+
+  #[test]
+  fn invalid_levels_emit_intnm() {
+    assert_eq!(
+      interpret("AllTrue[{1, 2}, EvenQ, x]").unwrap(),
+      "AllTrue[{1, 2}, EvenQ, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "AllTrue::intnm: Non-negative machine-sized integer expected at position 3 in AllTrue[{1, 2}, EvenQ, x]."
+      )),
+      "expected intnm message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("AllTrue[{1, 2}, EvenQ, {2}]").unwrap(),
+      "AllTrue[{1, 2}, EvenQ, {2}]"
+    );
+    // Plain boolean results still work
+    assert_eq!(interpret("AllTrue[{2, 4, 6}, EvenQ]").unwrap(), "True");
+    assert_eq!(interpret("AllTrue[{2, 3}, EvenQ]").unwrap(), "False");
+    assert_eq!(interpret("AnyTrue[{1, 2, 3}, EvenQ]").unwrap(), "True");
+    assert_eq!(interpret("NoneTrue[{1, 3}, EvenQ]").unwrap(), "True");
+  }
+}

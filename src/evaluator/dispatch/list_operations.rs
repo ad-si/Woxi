@@ -732,8 +732,8 @@ pub fn dispatch_list_operations(
     "AllSameBy" if args.len() == 2 => {
       return Some(list_helpers_ast::all_same_by_ast(args));
     }
-    "AllTrue" if args.len() == 2 => {
-      return Some(list_helpers_ast::all_true_ast(&args[0], &args[1]));
+    "AllTrue" if args.len() == 2 || args.len() == 3 => {
+      return Some(list_helpers_ast::all_true_ast(args));
     }
     "AllMatch" if (2..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::all_match_ast(args));
@@ -745,8 +745,8 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
-    "AnyTrue" if args.len() == 2 => {
-      return Some(list_helpers_ast::any_true_ast(&args[0], &args[1]));
+    "AnyTrue" if args.len() == 2 || args.len() == 3 => {
+      return Some(list_helpers_ast::any_true_ast(args));
     }
     "AnyMatch" if (2..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::any_match_ast(args));
@@ -758,8 +758,8 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
-    "NoneTrue" if args.len() == 2 => {
-      return Some(list_helpers_ast::none_true_ast(&args[0], &args[1]));
+    "NoneTrue" if args.len() == 2 || args.len() == 3 => {
+      return Some(list_helpers_ast::none_true_ast(args));
     }
     "Fold" if args.len() == 2 || args.len() == 3 => {
       if args.len() == 3 {

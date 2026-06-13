@@ -3,82 +3,61 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
-/// AST-based AllTrue: check if predicate is true for all elements.
-/// AllTrue[{a, b, c}, pred] -> True if pred[x] is True for all x
-pub fn all_true_ast(
-  list: &Expr,
-  pred: &Expr,
+/// Shared AllTrue/AnyTrue/NoneTrue implementation: apply the predicate
+/// to every element at exactly the requested level (default 1) and
+/// combine via And/Or/Nor, mirroring wolframscript: non-boolean test
+/// results stay symbolic (AllTrue[{a, b}, f] = f[a] && f[b]), atoms
+/// have no level-1 elements and yield the vacuous result, general
+/// heads and associations are traversed, and an invalid level emits
+/// ::intnm.
+fn quantifier_ast(
+  fname: &str,
+  combiner: &str,
+  args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "AllTrue".to_string(),
-        args: vec![list.clone(), pred.clone()].into(),
-      });
+  let level: usize = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(n) if (0..=i64::MAX as i128).contains(n) => *n as usize,
+      _ => {
+        let call = Expr::FunctionCall {
+          name: fname.to_string(),
+          args: args.to_vec().into(),
+        };
+        crate::emit_message(&format!(
+          "{}::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
+          fname,
+          crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(call);
+      }
     }
+  } else {
+    1
   };
 
-  for item in items {
-    let result = apply_func_ast(pred, item)?;
-    if expr_to_bool(&result) != Some(true) {
-      return Ok(bool_to_expr(false));
-    }
-  }
+  let mut elements = Vec::new();
+  collect_at_level(&args[0], level, &mut elements);
 
-  Ok(bool_to_expr(true))
+  let results: Result<Vec<Expr>, InterpreterError> = elements
+    .iter()
+    .map(|e| apply_func_ast(&args[1], e))
+    .collect();
+  crate::evaluator::evaluate_function_call_ast(combiner, &results?)
 }
 
-/// AST-based AnyTrue: check if predicate is true for any element.
-/// AnyTrue[{a, b, c}, pred] -> True if pred[x] is True for any x
-pub fn any_true_ast(
-  list: &Expr,
-  pred: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "AnyTrue".to_string(),
-        args: vec![list.clone(), pred.clone()].into(),
-      });
-    }
-  };
-
-  for item in items {
-    let result = apply_func_ast(pred, item)?;
-    if expr_to_bool(&result) == Some(true) {
-      return Ok(bool_to_expr(true));
-    }
-  }
-
-  Ok(bool_to_expr(false))
+/// AST-based AllTrue: And of the predicate over elements at a level.
+pub fn all_true_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  quantifier_ast("AllTrue", "And", args)
 }
 
-/// AST-based NoneTrue: check if predicate is false for all elements.
-/// NoneTrue[{a, b, c}, pred] -> True if pred[x] is False for all x
-pub fn none_true_ast(
-  list: &Expr,
-  pred: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "NoneTrue".to_string(),
-        args: vec![list.clone(), pred.clone()].into(),
-      });
-    }
-  };
+/// AST-based AnyTrue: Or of the predicate over elements at a level.
+pub fn any_true_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  quantifier_ast("AnyTrue", "Or", args)
+}
 
-  for item in items {
-    let result = apply_func_ast(pred, item)?;
-    if expr_to_bool(&result) == Some(true) {
-      return Ok(bool_to_expr(false));
-    }
-  }
-
-  Ok(bool_to_expr(true))
+/// AST-based NoneTrue: Nor of the predicate over elements at a level.
+pub fn none_true_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  quantifier_ast("NoneTrue", "Nor", args)
 }
 
 /// Helper: collect all parts at a given level depth.
