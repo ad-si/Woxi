@@ -4013,3 +4013,58 @@ mod cross_dot_shape_messages {
     assert_eq!(interpret("{{1, 2}, {3, 4}} . {5, 6}").unwrap(), "{17, 39}");
   }
 }
+
+mod map_thread_mptc_message {
+  use super::*;
+
+  #[test]
+  fn mptc_names_the_first_adjacent_mismatched_pair() {
+    // Regression: the message lacked the positions and dimensions
+    assert_eq!(
+      interpret("MapThread[f, {{a, b}, {c, d, e}}]").unwrap(),
+      "MapThread[f, {{a, b}, {c, d, e}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "MapThread::mptc: Incompatible dimensions of objects at positions {2, 1} and {2, 2} of MapThread[f, {{a, b}, {c, d, e}}]; dimensions are 2 and 3."
+      )),
+      "expected detailed mptc message, got {:?}",
+      msgs
+    );
+    // Adjacent comparison: the first two lists match, the third differs
+    assert_eq!(
+      interpret("MapThread[f, {{a, b}, {c, d}, {e}}]").unwrap(),
+      "MapThread[f, {{a, b}, {c, d}, {e}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "MapThread::mptc: Incompatible dimensions of objects at positions {2, 2} and {2, 3} of MapThread[f, {{a, b}, {c, d}, {e}}]; dimensions are 2 and 1."
+      )),
+      "expected adjacent-pair mptc message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn mptc_reports_level_n_mismatches() {
+    assert_eq!(
+      interpret("MapThread[f, {{{a, b}}, {{c, d}, {e, f}}}, 2]").unwrap(),
+      "MapThread[f, {{{a, b}}, {{c, d}, {e, f}}}, 2]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "MapThread::mptc: Incompatible dimensions of objects at positions {2, 1} and {2, 2} of MapThread[f, {{{a, b}}, {{c, d}, {e, f}}}, 2]; dimensions are 1 and 2."
+      )),
+      "expected level-2 mptc message, got {:?}",
+      msgs
+    );
+    // Valid forms still work
+    assert_eq!(
+      interpret("MapThread[f, {{a, b}, {c, d}}]").unwrap(),
+      "{f[a, c], f[b, d]}"
+    );
+  }
+}

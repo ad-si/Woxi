@@ -1002,11 +1002,67 @@ pub fn dispatch_list_operations(
           Err(InterpreterError::EvaluationError(msg))
             if msg.contains("same length") =>
           {
-            crate::emit_message(&format!(
-              "MapThread::mptc: Incompatible dimensions of objects in MapThread[{}, {}].",
-              crate::syntax::expr_to_string(&args[0]),
-              crate::syntax::expr_to_string(&args[1]),
-            ));
+            // wolframscript names the first offending pair and their
+            // dimensions: ... at positions {2, 1} and {2, j} of <call>;
+            // dimensions are d1 and dj.
+            let lvl = level.unwrap_or(1);
+            let dims_of = |e: &Expr| -> Vec<usize> {
+              let mut out = Vec::new();
+              let mut cur = e;
+              for _ in 0..lvl {
+                match cur {
+                  Expr::List(items) => {
+                    out.push(items.len());
+                    match items.first() {
+                      Some(first) => cur = first,
+                      None => break,
+                    }
+                  }
+                  _ => break,
+                }
+              }
+              out
+            };
+            // The first *adjacent* pair with differing dimensions is
+            // reported (wolframscript compares neighbors, not vs the
+            // first element).
+            let mismatch = if let Expr::List(tensors) = &args[1] {
+              let all_dims: Vec<Vec<usize>> =
+                tensors.iter().map(dims_of).collect();
+              let mut found = None;
+              'levels: for l in 0..lvl {
+                for j in 1..all_dims.len() {
+                  let da = all_dims[j - 1].get(l);
+                  let db = all_dims[j].get(l);
+                  if da != db
+                    && let (Some(da), Some(db)) = (da, db)
+                  {
+                    found = Some((j, j + 1, *da, *db));
+                    break 'levels;
+                  }
+                }
+              }
+              found
+            } else {
+              None
+            };
+            let call = crate::syntax::format_expr(
+              &Expr::FunctionCall {
+                name: "MapThread".to_string(),
+                args: args.to_vec().into(),
+              },
+              crate::syntax::ExprForm::Output,
+            );
+            match mismatch {
+              Some((i, j, da, db)) => crate::emit_message(&format!(
+                "MapThread::mptc: Incompatible dimensions of objects at positions {{2, {}}} and {{2, {}}} of {}; dimensions are {} and {}.",
+                i, j, call, da, db
+              )),
+              None => crate::emit_message(&format!(
+                "MapThread::mptc: Incompatible dimensions of objects in {}.",
+                call
+              )),
+            }
             Ok(Expr::FunctionCall {
               name: "MapThread".to_string(),
               args: args.to_vec().into(),
