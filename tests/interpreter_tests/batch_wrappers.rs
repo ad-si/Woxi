@@ -3072,6 +3072,22 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn count_distinct_by() {
+    // Count distinct values of f applied to each element.
+    assert_eq!(interpret("CountDistinctBy[{1, -1, 2}, Abs]").unwrap(), "2");
+    assert_eq!(
+      interpret("CountDistinctBy[{1, 2, 3, 4, 5}, EvenQ]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("CountDistinctBy[{\"a\", \"bb\", \"cc\", \"d\"}, StringLength]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("CountDistinctBy[{}, Abs]").unwrap(), "0");
+    assert_eq!(interpret("CountDistinctBy[{1, 2, 3}, #^2 &]").unwrap(), "3");
+  }
+  #[test]
   fn diagonalizable_matrix_q_true() {
     assert_eq!(
       interpret("DiagonalizableMatrixQ[{{1, 0}, {0, 2}}]").unwrap(),

@@ -221,6 +221,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Count" => Some((1, 4)),
     "CountBy" => Some((2, 2)),
     "CountDistinct" => Some((1, 1)),
+    "CountDistinctBy" => Some((2, 2)),
     "Counts" => Some((1, 1)),
     "CountsBy" => Some((1, 2)),
     "Covariance" => Some((1, 2)),

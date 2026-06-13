@@ -4356,7 +4356,7 @@ Chebyshev2FilterModel,,,,9.0,4527
 Containing,,,,10.2,4527
 ContraharmonicMean,,,,7.0,4527
 ControllerInformation,,,,6.0,4527
-CountDistinctBy,,,,10.0,4527
+CountDistinctBy,Counts distinct values of a function applied to each element,✅,pure,10.0,4527
 DaylightQ,,,,10.0,4527
 DeleteCloudExpression,,🚫,,10.4,4527
 DirectoryStack,,,,2.0,4527

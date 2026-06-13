@@ -2886,6 +2886,21 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::Integer(seen.len() as i128)));
       }
     }
+    // CountDistinctBy[list, f] — count distinct values of f applied to each
+    // element.
+    "CountDistinctBy" if args.len() == 2 => {
+      if let Expr::List(ref elems) = args[0] {
+        let mut seen = std::collections::HashSet::new();
+        for e in elems {
+          let key = match list_helpers_ast::apply_func_ast(&args[1], e) {
+            Ok(k) => k,
+            Err(err) => return Some(Err(err)),
+          };
+          seen.insert(expr_to_string(&key));
+        }
+        return Some(Ok(Expr::Integer(seen.len() as i128)));
+      }
+    }
     // SequencePosition[list, sublist] — find positions of subsequence (overlapping)
     "SequencePosition" if args.len() == 2 || args.len() == 3 => {
       if !matches!(&args[0], Expr::List(_)) {
