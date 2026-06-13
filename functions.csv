@@ -4914,6 +4914,7 @@ ContentLocationFunction,,,,11.0,5184
 ConwayGroupCo1,,,,8.0,5184
 Coproduct,,,,3.0,5184
 CreateDataSystemModel,,,,11.3,5184
+Curry,Creates a curried operator form of a function that collects arguments across successive applications,✅,pure,11.3,5184
 CurryApplied,,,,12.1,5184
 DatabinSubmit,,🚫,,12.2,5184
 DayCountConvention,,,,9.0,5184

@@ -573,11 +573,114 @@ pub fn apply_function_to_arg(
   }
 }
 
+/// Parse a `Curry[...]` operator form — possibly mid-accumulation — into its
+/// target function `f`, the slot permutation, and any already-collected args.
+/// Returns `None` when `func` is not a Curry form.
+///
+/// The permutation is 1-indexed in application order: output position `i`
+/// receives the `perm[i]`-th argument supplied (so `arranged[i] =
+/// collected[perm[i] - 1]`). A bare `Curry[f]` reverses two arguments
+/// (`{2, 1}`); `Curry[f, n]` collects `n` arguments in order (`{1, …, n}`);
+/// `Curry[f, {p1, …}]` uses the explicit permutation.
+fn parse_curry_form(func: &Expr) -> Option<(Expr, Vec<usize>, Vec<Expr>)> {
+  let parse_base = |cargs: &[Expr]| -> Option<(Expr, Vec<usize>)> {
+    match cargs.len() {
+      1 => Some((cargs[0].clone(), vec![2, 1])),
+      2 => {
+        let perm = match &cargs[1] {
+          Expr::Integer(n) if *n >= 1 => (1..=*n as usize).collect(),
+          Expr::List(items) if !items.is_empty() => {
+            let mut p = Vec::with_capacity(items.len());
+            for it in items {
+              match it {
+                Expr::Integer(k) if *k >= 1 => p.push(*k as usize),
+                _ => return None,
+              }
+            }
+            p
+          }
+          _ => return None,
+        };
+        Some((cargs[0].clone(), perm))
+      }
+      _ => None,
+    }
+  };
+  match func {
+    Expr::FunctionCall { name, args } if name == "Curry" => {
+      parse_base(args).map(|(f, perm)| (f, perm, Vec::new()))
+    }
+    Expr::CurriedCall { func: inner, args } => match inner.as_ref() {
+      Expr::FunctionCall { name, args: cargs } if name == "Curry" => {
+        parse_base(cargs).map(|(f, perm)| (f, perm, args.clone()))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Handle application of a `Curry[...]` operator form to `new_args`.
+/// Returns `None` when `func` is not a Curry form (so normal dispatch runs).
+fn try_apply_curry(
+  func: &Expr,
+  new_args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let (f, perm, acc) = parse_curry_form(func)?;
+  let n = perm.len();
+  let mut collected = acc;
+  collected.extend_from_slice(new_args);
+
+  if collected.len() < n {
+    // Not enough arguments yet: keep accumulating under the bare `Curry[…]`
+    // head (so `Head[Curry[f][a]]` stays `Curry[f]`).
+    let base = match func {
+      Expr::CurriedCall { func: inner, .. } => (**inner).clone(),
+      other => other.clone(),
+    };
+    return Some(Ok(Expr::CurriedCall {
+      func: Box::new(base),
+      args: collected,
+    }));
+  }
+
+  // Arrange the first `n` collected arguments by the permutation.
+  let mut head_args = Vec::with_capacity(n);
+  for &src in &perm {
+    if src < 1 || src > collected.len() {
+      // Out-of-range slot: leave unevaluated.
+      let base = match func {
+        Expr::CurriedCall { func: inner, .. } => (**inner).clone(),
+        other => other.clone(),
+      };
+      return Some(Ok(Expr::CurriedCall {
+        func: Box::new(base),
+        args: collected,
+      }));
+    }
+    head_args.push(collected[src - 1].clone());
+  }
+  let leftover = collected[n..].to_vec();
+
+  let applied = match apply_curried_call(&f, &head_args) {
+    Ok(e) => e,
+    Err(e) => return Some(Err(e)),
+  };
+  if leftover.is_empty() {
+    Some(Ok(applied))
+  } else {
+    Some(apply_curried_call(&applied, &leftover))
+  }
+}
+
 /// Apply a curried call: f[a][b, c] applies function result f[a] to args [b, c]
 pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  if let Some(result) = try_apply_curry(func, args) {
+    return result;
+  }
   match func {
     Expr::Identifier(name) => {
       // Simple function name applied to args

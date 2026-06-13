@@ -1984,3 +1984,87 @@ mod part_of_atoms {
     );
   }
 }
+
+mod curry {
+  use super::*;
+
+  // Bare `Curry[f]` builds a two-argument operator that applies its
+  // arguments in REVERSED order: `Curry[f][a][b]` is `f[b, a]`.
+  #[test]
+  fn bare_curry_reverses_two_args() {
+    assert_eq!(interpret("Curry[f][a][b]").unwrap(), "f[b, a]");
+    // Both arguments supplied in a single application are still reversed.
+    assert_eq!(interpret("Curry[f][a, b]").unwrap(), "f[b, a]");
+  }
+
+  #[test]
+  fn bare_curry_partial_application_keeps_head() {
+    // One argument is not enough; the operator keeps accumulating.
+    assert_eq!(interpret("Curry[f][a]").unwrap(), "Curry[f][a]");
+    assert_eq!(interpret("Head[Curry[f][a]]").unwrap(), "Curry[f]");
+  }
+
+  #[test]
+  fn bare_curry_extra_args_apply_to_result() {
+    // After collecting two args, further applications apply to the result.
+    assert_eq!(interpret("Curry[f][a][b][c]").unwrap(), "f[b, a][c]");
+  }
+
+  #[test]
+  fn bare_curry_on_builtins() {
+    // Curry[Power][2][3] -> Power[3, 2] -> 9 (reversed).
+    assert_eq!(interpret("Curry[Power][2][3]").unwrap(), "9");
+    // Curry[Subtract][3][10] -> Subtract[10, 3] -> 7.
+    assert_eq!(interpret("Curry[Subtract][3][10]").unwrap(), "7");
+  }
+
+  // `Curry[f, n]` collects `n` arguments in order across applications.
+  #[test]
+  fn curry_n_collects_in_order() {
+    assert_eq!(interpret("Curry[f, 2][a][b]").unwrap(), "f[a, b]");
+    assert_eq!(interpret("Curry[f, 3][a][b][c]").unwrap(), "f[a, b, c]");
+    assert_eq!(
+      interpret("Curry[f, 4][a][b][c][d]").unwrap(),
+      "f[a, b, c, d]"
+    );
+    assert_eq!(interpret("Curry[Plus, 3][1][2][3]").unwrap(), "6");
+  }
+
+  #[test]
+  fn curry_n_one_is_immediate() {
+    assert_eq!(interpret("Curry[f, 1][a]").unwrap(), "f[a]");
+    // With n satisfied, the next application applies to the result.
+    assert_eq!(interpret("Curry[f, 1][a][b]").unwrap(), "f[a][b]");
+  }
+
+  #[test]
+  fn curry_n_multiple_args_per_application() {
+    // Reaching the count in one application finishes immediately.
+    assert_eq!(interpret("Curry[f, 2][a, b][c]").unwrap(), "f[a, b][c]");
+    assert_eq!(interpret("Curry[f, 3][a, b][c]").unwrap(), "f[a, b, c]");
+    assert_eq!(interpret("Curry[f, 3][a][b, c]").unwrap(), "f[a, b, c]");
+  }
+
+  #[test]
+  fn curry_n_overshoot_leftover_applies_to_result() {
+    // Collecting more than n in one application leaves the surplus to apply
+    // to the produced result.
+    assert_eq!(interpret("Curry[f, 3][a, b][c, d]").unwrap(), "f[a, b, c][d]");
+    assert_eq!(
+      interpret("Curry[f, 2][a][b][c][d]").unwrap(),
+      "f[a, b][c][d]"
+    );
+  }
+
+  // `Curry[f, {p1, …}]` arranges the collected args by an explicit
+  // permutation: output position i receives the perm[i]-th supplied arg.
+  #[test]
+  fn curry_with_permutation_spec() {
+    assert_eq!(interpret("Curry[f, {1, 2}][a][b]").unwrap(), "f[a, b]");
+    assert_eq!(interpret("Curry[f, {2, 1}][a][b]").unwrap(), "f[b, a]");
+    assert_eq!(
+      interpret("Curry[f, {3, 1, 2}][a][b][c]").unwrap(),
+      "f[c, a, b]"
+    );
+  }
+}
