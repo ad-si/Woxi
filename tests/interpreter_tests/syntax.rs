@@ -3609,6 +3609,80 @@ mod number_form {
   }
 }
 
+mod percent_form {
+  use super::*;
+
+  // A non-negative machine real renders as x*100 with a "%" suffix and the
+  // trailing decimal point dropped (0.25 -> 25%, not 25.%).
+  #[test]
+  fn real_renders_as_percentage() {
+    assert_eq!(interpret("PercentForm[0.25]").unwrap(), "25%");
+    assert_eq!(interpret("PercentForm[0.5]").unwrap(), "50%");
+    assert_eq!(interpret("PercentForm[2.5]").unwrap(), "250%");
+    assert_eq!(interpret("PercentForm[100.0]").unwrap(), "10000%");
+  }
+
+  #[test]
+  fn fractional_percentages_keep_digits() {
+    assert_eq!(interpret("PercentForm[0.123]").unwrap(), "12.3%");
+    assert_eq!(interpret("PercentForm[0.999]").unwrap(), "99.9%");
+    assert_eq!(interpret("PercentForm[N[1/3]]").unwrap(), "33.33333333333333%");
+    assert_eq!(
+      interpret("PercentForm[0.1 + 0.2]").unwrap(),
+      "30.000000000000004%"
+    );
+  }
+
+  #[test]
+  fn zero_real() {
+    assert_eq!(interpret("PercentForm[0.0]").unwrap(), "0%");
+  }
+
+  // Integers, rationals, negative reals, and symbolic values are unchanged.
+  #[test]
+  fn non_real_values_unchanged() {
+    assert_eq!(interpret("PercentForm[1/4]").unwrap(), "1/4");
+    assert_eq!(interpret("PercentForm[3/8]").unwrap(), "3/8");
+    assert_eq!(interpret("PercentForm[1]").unwrap(), "1");
+    assert_eq!(interpret("PercentForm[-0.5]").unwrap(), "-0.5");
+  }
+
+  // PercentForm is not Listable; the renderer recurses into list structure,
+  // percent-formatting only the non-negative real leaves.
+  #[test]
+  fn renders_list_structure() {
+    assert_eq!(
+      interpret("PercentForm[{0.1, 0.25, 0.5}]").unwrap(),
+      "{10%, 25%, 50%}"
+    );
+    assert_eq!(
+      interpret("PercentForm[{0.1, {0.2, 0.3}}]").unwrap(),
+      "{10%, {20%, 30%}}"
+    );
+    assert_eq!(
+      interpret("PercentForm[{1/4, 0.5, 2}]").unwrap(),
+      "{1/4, 50%, 2}"
+    );
+  }
+
+  #[test]
+  fn head_is_preserved() {
+    assert_eq!(interpret("Head[PercentForm[0.25]]").unwrap(), "PercentForm");
+    assert_eq!(
+      interpret("Head[PercentForm[{0.1, 0.25}]]").unwrap(),
+      "PercentForm"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[PercentForm]").unwrap(),
+      "{NHoldRest, Protected}"
+    );
+  }
+}
+
 mod slot_sequence {
   use super::*;
 

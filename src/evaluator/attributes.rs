@@ -303,7 +303,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],
     "Superscript" => vec!["NHoldRest", "ReadProtected"],
-    "EngineeringForm" | "NumberForm" | "AccountingForm" => {
+    "EngineeringForm" | "NumberForm" | "AccountingForm" | "PercentForm" => {
       vec!["NHoldRest", "Protected"]
     }
 

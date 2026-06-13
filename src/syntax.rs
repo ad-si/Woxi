@@ -6508,6 +6508,26 @@ fn rewrite_assoc_to_long_form(expr: &Expr) -> Expr {
 }
 
 /// Unified expression formatter that handles both InputForm and OutputForm.
+/// Render the argument of `PercentForm[...]`. A non-negative machine real
+/// becomes `<x*100>%` (with any trailing decimal point dropped); a list is
+/// rendered element-wise (recursing so nested lists also format); every other
+/// value (integer, rational, negative real, symbolic) is shown unchanged.
+fn format_percent_form(expr: &Expr, form: ExprForm) -> String {
+  match expr {
+    Expr::Real(f) if *f >= 0.0 => {
+      let scaled = format_real(f * 100.0);
+      let trimmed = scaled.strip_suffix('.').unwrap_or(&scaled);
+      format!("{}%", trimmed)
+    }
+    Expr::List(items) => {
+      let parts: Vec<String> =
+        items.iter().map(|e| format_percent_form(e, form)).collect();
+      format!("{{{}}}", parts.join(", "))
+    }
+    other => format_expr(other, form),
+  }
+}
+
 pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
   let fmt_fn: fn(&Expr) -> String = match form {
@@ -6590,6 +6610,17 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // regardless of what primitives it wraps.
       if name == "Sound" && !args.is_empty() {
         return "-Sound-".to_string();
+      }
+      // PercentForm[x] — wolframscript renders a non-negative machine real
+      // as a percentage: x*100 with a trailing "%" (and the trailing decimal
+      // point dropped, so 0.25 -> 25%, 0.999 -> 99.9%). Integers, rationals,
+      // negative reals, and symbolic values display unchanged. PercentForm is
+      // not Listable (Attributes are {NHoldRest, Protected}); instead the
+      // renderer recurses into list structure, percent-formatting only the
+      // real leaves (PercentForm[{1/4, 0.5, 2}] -> {1/4, 50%, 2}). The head
+      // is preserved; only the rendering differs.
+      if name == "PercentForm" && args.len() == 1 {
+        return format_percent_form(&args[0], form);
       }
       // Graph[vertices, edges, opts...] — wolframscript prints the
       // summary `Graph[<n>, <m>]` (vertex count, edge count).

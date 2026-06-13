@@ -1881,6 +1881,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Repeated"
     | "RepeatedNull"
     | "NumberForm"
+    | "PercentForm"
     | "DigitBlock"
     | "Cubics"
     | "PageWidth"

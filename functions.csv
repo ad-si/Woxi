@@ -2082,7 +2082,7 @@ FileDate,Get file modification date,✅,,2.0,2121
 LongShortTermMemoryLayer,LSTM neural network layer,🚫,,11.1,2121
 Entropy,Shannon information entropy of the categorical distribution of a list's elements (base e by default; Entropy[b list] uses base b),✅,,7.0,2124
 IntegerExponent,Returns the largest power of a base dividing n,✅,pure,4.0,2124
-PercentForm,Format number as percentage,🚫,,12.0,2124
+PercentForm,Formats a non-negative real number as a percentage,✅,pure,12.0,2124
 GroupOrder,Order of a group,✅,pure,8.0,2129
 QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions,🚫,,10.0,2129
