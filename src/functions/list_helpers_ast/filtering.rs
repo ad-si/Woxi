@@ -124,6 +124,23 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let list = &args[0];
   let pattern = &args[1];
+
+  // 4-argument form FirstCase[expr, patt, default, levelspec]: the first
+  // element matching `patt` at the given levels (or `default`). Delegate the
+  // level traversal to Cases and take its first result.
+  if args.len() == 4 {
+    let cases = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Cases".to_string(),
+      args: vec![list.clone(), pattern.clone(), args[3].clone()].into(),
+    })?;
+    if let Expr::List(matches) = &cases
+      && let Some(first) = matches.first()
+    {
+      return Ok(first.clone());
+    }
+    return Ok(args[2].clone());
+  }
+
   let default = if args.len() >= 3 {
     Some(&args[2])
   } else {

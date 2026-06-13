@@ -885,7 +885,7 @@ pub fn dispatch_list_operations(
     }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
     // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
-    "FirstCase" if args.len() >= 2 && args.len() <= 3 => {
+    "FirstCase" if args.len() >= 2 && args.len() <= 4 => {
       return Some(list_helpers_ast::first_case_ast(args));
     }
     "Position" if args.len() >= 2 && args.len() <= 5 => {

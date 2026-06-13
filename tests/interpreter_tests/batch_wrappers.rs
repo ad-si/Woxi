@@ -2196,6 +2196,29 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn first_case_with_levelspec() {
+    // 4-arg form FirstCase[expr, patt, default, levelspec].
+    assert_eq!(
+      interpret("FirstCase[{1, 2, 3, 4}, _?EvenQ, x, Infinity]").unwrap(),
+      "2"
+    );
+    // Level {2}: search one level deeper, inside the sublist.
+    assert_eq!(
+      interpret("FirstCase[{1, {2, 3}, 4}, _?EvenQ, x, {2}]").unwrap(),
+      "2"
+    );
+    // Level 2 means levels 1..2; the first integer in traversal order.
+    assert_eq!(
+      interpret("FirstCase[{{1, 2}, {3, 4}}, _Integer, x, 2]").unwrap(),
+      "1"
+    );
+    // No match at the requested level returns the default.
+    assert_eq!(
+      interpret("FirstCase[{1, 3, 5}, _?EvenQ, missing, {1}]").unwrap(),
+      "missing"
+    );
+  }
+  #[test]
   fn weierstrass_sigma() {
     assert_eq!(
       interpret("WeierstrassSigma[x, y]").unwrap(),
@@ -3464,10 +3487,8 @@ mod batch_unevaluated_wrappers_2 {
       "{{1, 2}}"
     );
     assert_eq!(
-      interpret(
-        "SequencePosition[{1, 2, 1, 2, 1}, {1, 2}, Overlaps -> False]"
-      )
-      .unwrap(),
+      interpret("SequencePosition[{1, 2, 1, 2, 1}, {1, 2}, Overlaps -> False]")
+        .unwrap(),
       "{{1, 2}, {3, 4}}"
     );
   }

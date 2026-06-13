@@ -404,7 +404,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindRoot" => Some((2, usize::MAX)),
     "FindSequenceFunction" => Some((1, 2)),
     "First" => Some((1, 2)),
-    "FirstCase" => Some((2, 3)),
+    "FirstCase" => Some((2, 4)),
     "FirstPosition" => Some((2, usize::MAX)),
     "Fit" => Some((3, 3)),
     "FixedPoint" => Some((2, usize::MAX)),
