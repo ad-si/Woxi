@@ -660,6 +660,87 @@ mod region_measure {
   }
 }
 
+mod region_dimension {
+  use super::*;
+
+  // RegionDimension gives the intrinsic (manifold) dimension of a region,
+  // independent of the embedding dimension.
+  #[test]
+  fn fixed_dimension_regions() {
+    assert_eq!(interpret("RegionDimension[Point[{1, 2}]]").unwrap(), "0");
+    assert_eq!(
+      interpret("RegionDimension[Line[{{0, 0}, {1, 1}}]]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("RegionDimension[Circle[]]").unwrap(), "1");
+    assert_eq!(interpret("RegionDimension[Disk[]]").unwrap(), "2");
+    assert_eq!(interpret("RegionDimension[Rectangle[]]").unwrap(), "2");
+    assert_eq!(
+      interpret("RegionDimension[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[Polygon[{{0, 0}, {1, 0}, {1, 1}}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("RegionDimension[Cylinder[]]").unwrap(), "3");
+    assert_eq!(interpret("RegionDimension[Cone[]]").unwrap(), "3");
+  }
+
+  // A Ball / Cuboid takes the dimension of its defining coordinate vector
+  // (default 3); they generalize to any dimension.
+  #[test]
+  fn ball_and_cuboid_by_coordinates() {
+    assert_eq!(interpret("RegionDimension[Ball[]]").unwrap(), "3");
+    assert_eq!(interpret("RegionDimension[Ball[{0, 0}, 2]]").unwrap(), "2");
+    assert_eq!(
+      interpret("RegionDimension[Ball[{0, 0, 0, 0}, 2]]").unwrap(),
+      "4"
+    );
+    assert_eq!(interpret("RegionDimension[Cuboid[]]").unwrap(), "3");
+    assert_eq!(
+      interpret("RegionDimension[Cuboid[{0, 0}, {1, 2}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[Ellipsoid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "3"
+    );
+  }
+
+  // A Sphere is the (n-1)-dimensional surface of an n-ball.
+  #[test]
+  fn sphere_is_surface() {
+    assert_eq!(interpret("RegionDimension[Sphere[]]").unwrap(), "2");
+    assert_eq!(
+      interpret("RegionDimension[Sphere[{0, 0, 0}, 2]]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("RegionDimension[Sphere[{0, 0}, 2]]").unwrap(), "1");
+  }
+
+  // Simplex[n] is an n-simplex; Simplex[{p0,…,pk}] is a k-simplex.
+  // Parallelepiped is spanned by its list of vectors.
+  #[test]
+  fn simplex_and_parallelepiped() {
+    assert_eq!(interpret("RegionDimension[Simplex[2]]").unwrap(), "2");
+    assert_eq!(
+      interpret("RegionDimension[Simplex[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[Parallelepiped[{0, 0}, {{1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDimension[Annulus[{0, 0}, {1, 2}]]").unwrap(),
+      "2"
+    );
+  }
+}
+
 mod triangle {
   use super::*;
 

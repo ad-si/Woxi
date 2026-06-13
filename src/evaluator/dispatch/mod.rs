@@ -8937,6 +8937,13 @@ pub fn evaluate_function_call_ast_inner(
         // stays unevaluated (matching wolframscript). It is consumed by the
         // pattern matcher (MatchQ/Cases/Replace/…), so it is not "unimplemented".
         | "KeyValuePattern"
+        // Simplex/Annulus/Parallelepiped are symbolic geometric region
+        // objects whose canonical form stays unevaluated (matching
+        // wolframscript). They are consumed by region functions
+        // (RegionDimension/RegionMeasure/…), so they are not "unimplemented".
+        | "Simplex"
+        | "Annulus"
+        | "Parallelepiped"
     )
   {
     let args_str = args

@@ -1684,7 +1684,7 @@ ExponentFunction,Exponent display function,,unevaluated,2.0,1712
 SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
 ProductDistribution,Independent product of distributions (merged PDF plus component stats),✅,pure,8.0,1713
 Save,Saves definitions associated with symbols to a file,✅,effectful,1.0,1714
-RegionDimension,Dimension of a region,,unevaluated,10.0,1716
+RegionDimension,Intrinsic (manifold) dimension of a region,✅,pure,10.0,1716
 TogglerBar,Toggler bar control,,unevaluated,6.0,1716
 GeoElevationData,,🚫,,10.0,1717
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1.0,1718
@@ -2012,7 +2012,7 @@ WindowElements,Window UI elements option,🚫,,3.0,2048
 InputString,Symbol specifying input string type for Input,✅,pure,1.0,2051
 LinkRead,Read from WSTP link,🚫,,3.0,2051
 SelectionEvaluate,Evaluate selected notebook content,🚫,,3.0,2051
-Annulus,Annular region specification,🚫,,10.2,2054
+Annulus,Symbolic annular region; stays unevaluated and is consumed by region functions (RegionDimension/RegionMeasure/…),✅,unevaluated,10.2,2054
 GeometricAssertion,Assert geometric properties,🚫,,12.0,2054
 SphericalBesselY,Spherical Bessel function of second kind,✅,1,6.0,2054
 NestGraph,Nest graph operation,🚫,,10.2,2057
@@ -2119,7 +2119,7 @@ Annuity,Financial annuity (passthrough used by TimeValue),✅,pure,8.0,2162
 ColorQ,Test whether an expression is a color directive,✅,1,10.0,2162
 CompleteKaryTree,Complete k-ary tree graph with n levels (default branching k=2),✅,1,8.0,2162
 NotebookObject,Symbolic representation of an open notebook in the front end,🚫,None,3.0,2162
-Simplex,Simplex geometric region,🚫,,10.0,2162
+Simplex,Symbolic simplex geometric region; stays unevaluated and is consumed by region functions (RegionDimension/RegionMeasure/…),✅,unevaluated,10.0,2162
 ArrayComponents,Replaces identical array elements with integer component indices (with optional level and label rules),✅,pure,8.0,2165
 MorphologicalTransform,Applies morphological operations to binary images,🚫,None,8.0,2165
 WebImageSearch,Searches the web for images matching a query,🚫,None,11.1,2165
@@ -2275,7 +2275,7 @@ NArgMax,numeric optimization,✅,None,7.0,2320
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6.0,2320
 ControllerLinking,dynamic interaction,🚫,None,6.0,2321
 KeyValuePattern,Pattern object matching an association or list of rules that contains the given key-value rules (order-independent subset),✅,pure,10.4,2324
-Parallelepiped,3D geometric primitive,🚫,None,10.0,2324
+Parallelepiped,Symbolic parallelepiped region; stays unevaluated and is consumed by region functions (RegionDimension/RegionMeasure/…),✅,unevaluated,10.0,2324
 SendMail,email sending,🚫,None,7.0,2324
 FourierSinCoefficient,Half-range Fourier sine coefficient of polynomials,✅,pure,7.0,2329
 HeavisideLambda,Triangular pulse function: 1 - |x| for |x| < 1,✅,1,7.0,2329

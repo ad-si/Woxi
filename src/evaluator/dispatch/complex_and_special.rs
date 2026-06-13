@@ -1909,6 +1909,9 @@ pub fn dispatch_complex_and_special(
     "RegionBounds" if args.len() == 1 => {
       return Some(compute_region_bounds(&args[0]));
     }
+    "RegionDimension" if args.len() == 1 => {
+      return Some(compute_region_dimension(&args[0]));
+    }
     "RegionCentroid" if args.len() == 1 => {
       return Some(compute_region_centroid(&args[0]));
     }
@@ -4926,6 +4929,92 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
             // A flat coordinate list is a single point.
             return Ok(Expr::Integer(1));
           }
+        }
+        return unevaluated();
+      }
+      _ => {}
+    }
+  }
+  unevaluated()
+}
+
+/// Compute the intrinsic (manifold) dimension of a geometric region: the
+/// number of independent directions you can move within it. This is distinct
+/// from the embedding dimension — a Circle in the plane has dimension 1, a
+/// Sphere in 3-space has dimension 2.
+fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionDimension".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  // Length of a coordinate-list argument (a single point {x, y, …}).
+  let coord_len = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::List(items) if !items.is_empty() => Some(items.len()),
+      _ => None,
+    }
+  };
+  if let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      // Regions of fixed intrinsic dimension.
+      "Disk" | "Rectangle" | "Triangle" | "Polygon" | "RegularPolygon"
+      | "Annulus" => return Ok(Expr::Integer(2)),
+      "Circle" | "Line" | "HalfLine" | "InfiniteLine" => {
+        return Ok(Expr::Integer(1));
+      }
+      "Cylinder" | "Cone" | "Tetrahedron" => return Ok(Expr::Integer(3)),
+      "Point" => return Ok(Expr::Integer(0)),
+      // Ball / Ellipsoid are solid: their dimension is the length of the
+      // center vector (default unit ball / sphere lives in 3-space).
+      "Ball" | "Ellipsoid" => {
+        if args.is_empty() {
+          return Ok(Expr::Integer(3));
+        }
+        if let Some(n) = coord_len(&args[0]) {
+          return Ok(Expr::Integer(n as i128));
+        }
+        return unevaluated();
+      }
+      // Cuboid[p1, …] is a solid hyper-rectangle whose dimension is the
+      // length of its defining corner (default {0,0,0} → 3).
+      "Cuboid" => {
+        if args.is_empty() {
+          return Ok(Expr::Integer(3));
+        }
+        if let Some(n) = coord_len(&args[0]) {
+          return Ok(Expr::Integer(n as i128));
+        }
+        return unevaluated();
+      }
+      // A Sphere is the (n-1)-dimensional surface of an n-ball, so its
+      // dimension is (length of center) - 1; the default sphere is 3-D.
+      "Sphere" => {
+        if args.is_empty() {
+          return Ok(Expr::Integer(2));
+        }
+        if let Some(n) = coord_len(&args[0])
+          && n >= 1
+        {
+          return Ok(Expr::Integer(n as i128 - 1));
+        }
+        return unevaluated();
+      }
+      // Simplex[n] is an n-simplex; Simplex[{p0, …, pk}] is a k-simplex.
+      "Simplex" if args.len() == 1 => match &args[0] {
+        Expr::Integer(n) if *n >= 0 => return Ok(Expr::Integer(*n)),
+        Expr::List(pts) if !pts.is_empty() => {
+          return Ok(Expr::Integer(pts.len() as i128 - 1));
+        }
+        _ => return unevaluated(),
+      },
+      // Parallelepiped[p, {v1, …, vk}] is spanned by k vectors.
+      "Parallelepiped" if args.len() == 2 => {
+        if let Expr::List(vecs) = &args[1]
+          && !vecs.is_empty()
+        {
+          return Ok(Expr::Integer(vecs.len() as i128));
         }
         return unevaluated();
       }
