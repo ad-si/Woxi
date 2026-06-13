@@ -3940,3 +3940,76 @@ mod boolean_minterms {
     );
   }
 }
+
+mod cross_dot_shape_messages {
+  use super::*;
+
+  #[test]
+  fn cross_wrong_lengths_emit_nonn1() {
+    // Regression: wrong-length vectors silently returned unevaluated
+    assert_eq!(
+      interpret("Cross[{1, 2}, {3, 4}]").unwrap(),
+      "Cross[{1, 2}, {3, 4}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Cross::nonn1: The arguments are expected to be vectors of equal length, and the number of arguments is expected to be one less than their length."
+      )),
+      "expected nonn1 message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("Cross[{1, 2, 3}, {4, 5}]").unwrap(),
+      "Cross[{1, 2, 3}, {4, 5}]"
+    );
+    assert_eq!(interpret("Cross[{1, 2, 3}]").unwrap(), "Cross[{1, 2, 3}]");
+    // Symbolic arguments stay silent
+    assert_eq!(interpret("Cross[x, y]").unwrap(), "Cross[x, y]");
+    assert_eq!(interpret("Cross[x]").unwrap(), "Cross[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.is_empty(),
+      "symbolic Cross must stay silent, got {:?}",
+      msgs
+    );
+    // Valid forms still work
+    assert_eq!(
+      interpret("Cross[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "{-3, 6, -3}"
+    );
+    assert_eq!(interpret("Cross[{1, 2}]").unwrap(), "{-2, 1}");
+  }
+
+  #[test]
+  fn dot_incompatible_shapes_emit_dotsh() {
+    // Regression: shape mismatches raised hard errors
+    assert_eq!(
+      interpret("{1, 2} . {3, 4, 5}").unwrap(),
+      "{1, 2} . {3, 4, 5}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Dot::dotsh: Tensors {1, 2} and {3, 4, 5} have incompatible shapes."
+      )),
+      "expected dotsh message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("{{1, 2}} . {1, 2, 3}").unwrap(),
+      "{{1, 2}} . {1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("{1, 2} . {{1, 2}, {3, 4}, {5, 6}}").unwrap(),
+      "{1, 2} . {{1, 2}, {3, 4}, {5, 6}}"
+    );
+    assert_eq!(
+      interpret("{{1, 2}} . {{1, 2}, {3, 4}, {5, 6}}").unwrap(),
+      "{{1, 2}} . {{1, 2}, {3, 4}, {5, 6}}"
+    );
+    // Valid forms still work
+    assert_eq!(interpret("{1, 2} . {3, 4}").unwrap(), "11");
+    assert_eq!(interpret("{{1, 2}, {3, 4}} . {5, 6}").unwrap(), "{17, 39}");
+  }
+}

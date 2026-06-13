@@ -394,14 +394,25 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Vector . Vector → scalar
+  // Incompatible shapes emit ::dotsh and return the unevaluated form.
+  let dotsh = || {
+    crate::emit_message(&format!(
+      "Dot::dotsh: Tensors {} and {} have incompatible shapes.",
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+    ));
+    Ok(Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Vector . Vector -> scalar
   if let (Some(va), Some(vb)) =
     (expr_to_vector(&args[0]), expr_to_vector(&args[1]))
   {
     if va.len() != vb.len() {
-      return Err(InterpreterError::EvaluationError(
-        "Dot: vectors have incompatible lengths".into(),
-      ));
+      return dotsh();
     }
     let mut sum = Expr::Integer(0);
     for (a, b) in va.iter().zip(vb.iter()) {
@@ -416,9 +427,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let ncols = ma.first().map(|r| r.len()).unwrap_or(0);
     if ncols != vb.len() {
-      return Err(InterpreterError::EvaluationError(
-        "Dot: incompatible dimensions".into(),
-      ));
+      return dotsh();
     }
     let mut result = Vec::new();
     for row in &ma {
@@ -437,9 +446,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let b_rows = mb.len();
     if va.len() != b_rows {
-      return Err(InterpreterError::EvaluationError(
-        "Dot: incompatible dimensions".into(),
-      ));
+      return dotsh();
     }
     let b_cols = mb.first().map(|r| r.len()).unwrap_or(0);
     let mut result = Vec::with_capacity(b_cols);
@@ -460,9 +467,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let a_cols = ma.first().map(|r| r.len()).unwrap_or(0);
     let b_rows = mb.len();
     if a_cols != b_rows {
-      return Err(InterpreterError::EvaluationError(
-        "Dot: incompatible matrix dimensions".into(),
-      ));
+      return dotsh();
     }
     let b_cols = mb.first().map(|r| r.len()).unwrap_or(0);
     let mut result = Vec::new();
@@ -889,11 +894,15 @@ pub fn disk_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     // Cross[{x, y}] = {-y, x}
-    if let Expr::List(items) = &args[0]
-      && items.len() == 2
-    {
-      let neg_y = eval_sub(&Expr::Integer(0), &items[1]);
-      return Ok(Expr::List(vec![neg_y, items[0].clone()].into()));
+    if let Expr::List(items) = &args[0] {
+      if items.len() == 2 {
+        let neg_y = eval_sub(&Expr::Integer(0), &items[1]);
+        return Ok(Expr::List(vec![neg_y, items[0].clone()].into()));
+      }
+      // An explicit list of the wrong length emits ::nonn1.
+      crate::emit_message(
+        "Cross::nonn1: The arguments are expected to be vectors of equal length, and the number of arguments is expected to be one less than their length.",
+      );
     }
     return Ok(Expr::FunctionCall {
       name: "Cross".to_string(),
@@ -905,17 +914,21 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cross expects 1 or 2 arguments".into(),
     ));
   }
-  let va = match &args[0] {
-    Expr::List(items) if items.len() == 3 => items.clone(),
-    _ => {
+  // Explicit lists that are not two 3-vectors emit ::nonn1; symbolic
+  // arguments stay silently unevaluated.
+  let (va, vb) = match (&args[0], &args[1]) {
+    (Expr::List(a), Expr::List(b)) if a.len() == 3 && b.len() == 3 => {
+      (a.clone(), b.clone())
+    }
+    (Expr::List(_), Expr::List(_)) => {
+      crate::emit_message(
+        "Cross::nonn1: The arguments are expected to be vectors of equal length, and the number of arguments is expected to be one less than their length.",
+      );
       return Ok(Expr::FunctionCall {
         name: "Cross".to_string(),
         args: args.to_vec().into(),
       });
     }
-  };
-  let vb = match &args[1] {
-    Expr::List(items) if items.len() == 3 => items.clone(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Cross".to_string(),
