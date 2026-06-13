@@ -1939,6 +1939,11 @@ pub fn dispatch_complex_and_special(
         args: args.to_vec().into(),
       }));
     }
+    // PolygonAngle[poly] — interior angles at each vertex;
+    // PolygonAngle[poly, vertex] — interior angle at one vertex.
+    "PolygonAngle" if args.len() == 1 || args.len() == 2 => {
+      return Some(compute_polygon_angle(args));
+    }
     // QBinomial[n, k, q] — Gaussian binomial coefficient (q-binomial)
     "QBinomial" if args.len() == 3 => {
       if let (Expr::Integer(n), Expr::Integer(k)) = (&args[0], &args[1]) {
@@ -7268,6 +7273,155 @@ fn compute_planar_angle(
   };
 
   crate::evaluator::evaluate_expr_to_expr(&angle)
+}
+
+/// Numerically evaluate an expression to f64 (via `N`), or `None` if it does
+/// not reduce to a real number. Used only to decide convex vs. reflex turns.
+fn polygon_numeric(e: &Expr) -> Option<f64> {
+  let n = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![e.clone()].into(),
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&n).ok()? {
+    Expr::Real(f) => Some(f),
+    Expr::Integer(i) => Some(i as f64),
+    _ => None,
+  }
+}
+
+/// Extract a 2-D point's coordinates as f64, or `None` if non-numeric.
+fn polygon_point_2d(v: &Expr) -> Option<(f64, f64)> {
+  match v {
+    Expr::List(c) if c.len() == 2 => {
+      Some((polygon_numeric(&c[0])?, polygon_numeric(&c[1])?))
+    }
+    _ => None,
+  }
+}
+
+/// PolygonAngle[poly] / PolygonAngle[poly, vertex] — the interior angle(s) of
+/// a polygon. Each angle is the (unsigned) angle between the two edges meeting
+/// at a vertex; at a reflex (concave) vertex the interior angle is 2 Pi minus
+/// that, detected from the polygon's orientation and the local turn direction.
+fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "PolygonAngle".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // Accept Polygon[pts] or Triangle[pts].
+  let verts: Vec<Expr> = match &args[0] {
+    Expr::FunctionCall { name, args: ra }
+      if (name == "Polygon" || name == "Triangle") && !ra.is_empty() =>
+    {
+      match &ra[0] {
+        Expr::List(v) if v.len() >= 3 => v.iter().cloned().collect(),
+        _ => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  let n = verts.len();
+
+  // Polygon orientation via the shoelace sum (numeric when possible): the
+  // sign tells which turn direction corresponds to a convex vertex.
+  let orientation: Option<f64> = (|| {
+    let mut sum = 0.0;
+    for i in 0..n {
+      let (x1, y1) = polygon_point_2d(&verts[i])?;
+      let (x2, y2) = polygon_point_2d(&verts[(i + 1) % n])?;
+      sum += x1 * y2 - x2 * y1;
+    }
+    Some(sum)
+  })();
+
+  let interior_angle = |i: usize| -> Result<Expr, InterpreterError> {
+    let prev = &verts[(i + n - 1) % n];
+    let cur = &verts[i];
+    let next = &verts[(i + 1) % n];
+    let base = compute_planar_angle(prev, cur, next)?;
+    // Reflex correction only when every coordinate is numeric.
+    if let (Some(orient), Some((px, py)), Some((cx, cy)), Some((nx, ny))) = (
+      orientation,
+      polygon_point_2d(prev),
+      polygon_point_2d(cur),
+      polygon_point_2d(next),
+    ) {
+      // Cross product of the incoming and outgoing edge vectors.
+      let (e1x, e1y) = (cx - px, cy - py);
+      let (e2x, e2y) = (nx - cx, ny - cy);
+      let cross = e1x * e2y - e1y * e2x;
+      // A turn opposite to the polygon's orientation is a reflex vertex.
+      if cross * orient < 0.0 {
+        let reflex = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]
+                .into(),
+            },
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), base].into(),
+            },
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&reflex);
+      }
+    }
+    Ok(base)
+  };
+
+  // Two-argument form: the angle at the requested vertex.
+  if args.len() == 2 {
+    let target = polygon_point_2d(&args[1]);
+    for (i, v) in verts.iter().enumerate() {
+      let same = match (polygon_point_2d(v), target) {
+        (Some((vx, vy)), Some((tx, ty))) => {
+          (vx - tx).abs() < 1e-12 && (vy - ty).abs() < 1e-12
+        }
+        _ => expr_to_string(v) == expr_to_string(&args[1]),
+      };
+      if same {
+        return interior_angle(i);
+      }
+    }
+    return unevaluated();
+  }
+
+  // One-argument form: angles at every vertex. wolframscript lists them
+  // starting from the vertex with minimum x (ties broken by minimum y) and
+  // then follows the polygon's cyclic order — its canonical ordering for the
+  // list form. When the coordinates are not all numeric we cannot pick that
+  // start, so we fall back to input order.
+  let mut start = 0usize;
+  let mut best: Option<(f64, f64)> = None;
+  let mut all_numeric = true;
+  for (i, v) in verts.iter().enumerate() {
+    match polygon_point_2d(v) {
+      Some((x, y)) => {
+        if best.is_none_or(|(bx, by)| x < bx || (x == bx && y < by)) {
+          best = Some((x, y));
+          start = i;
+        }
+      }
+      None => {
+        all_numeric = false;
+        break;
+      }
+    }
+  }
+  if !all_numeric {
+    start = 0;
+  }
+  let mut angles = Vec::with_capacity(n);
+  for j in 0..n {
+    angles.push(interior_angle((start + j) % n)?);
+  }
+  Ok(Expr::List(angles.into()))
 }
 
 // ─── Insphere ──────────────────────────────────────────────────────────────

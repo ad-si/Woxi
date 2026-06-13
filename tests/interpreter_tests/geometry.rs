@@ -676,8 +676,7 @@ mod region_dimension {
     assert_eq!(interpret("RegionDimension[Disk[]]").unwrap(), "2");
     assert_eq!(interpret("RegionDimension[Rectangle[]]").unwrap(), "2");
     assert_eq!(
-      interpret("RegionDimension[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]")
-        .unwrap(),
+      interpret("RegionDimension[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
       "2"
     );
     assert_eq!(
@@ -717,7 +716,10 @@ mod region_dimension {
       interpret("RegionDimension[Sphere[{0, 0, 0}, 2]]").unwrap(),
       "2"
     );
-    assert_eq!(interpret("RegionDimension[Sphere[{0, 0}, 2]]").unwrap(), "1");
+    assert_eq!(
+      interpret("RegionDimension[Sphere[{0, 0}, 2]]").unwrap(),
+      "1"
+    );
   }
 
   // Simplex[n] is an n-simplex; Simplex[{p0,…,pk}] is a k-simplex.
@@ -1304,6 +1306,97 @@ mod planar_angle {
   #[test]
   fn invalid_input() {
     assert_eq!(interpret("PlanarAngle[0]").unwrap(), "PlanarAngle[0]");
+  }
+}
+
+mod polygon_angle {
+  use super::*;
+
+  // PolygonAngle[poly] gives the interior angle at each vertex.
+  #[test]
+  fn square_all_right_angles() {
+    assert_eq!(
+      interpret("PolygonAngle[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]")
+        .unwrap(),
+      "{Pi/2, Pi/2, Pi/2, Pi/2}"
+    );
+  }
+
+  #[test]
+  fn triangle_via_polygon_and_triangle_head() {
+    assert_eq!(
+      interpret("PolygonAngle[Polygon[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "{Pi/2, Pi/4, Pi/4}"
+    );
+    assert_eq!(
+      interpret("PolygonAngle[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "{Pi/2, Pi/4, Pi/4}"
+    );
+  }
+
+  #[test]
+  fn scalene_right_triangle() {
+    // 3-4-5 triangle: angles ArcCos[4/5], Pi/2, ArcCos[3/5].
+    assert_eq!(
+      interpret("PolygonAngle[Polygon[{{0, 0}, {4, 0}, {4, 3}}]]").unwrap(),
+      "{ArcCos[4/5], Pi/2, ArcCos[3/5]}"
+    );
+  }
+
+  // A reflex (concave) vertex has an interior angle greater than Pi.
+  #[test]
+  fn non_convex_has_reflex_angle() {
+    assert_eq!(
+      interpret(
+        "PolygonAngle[Polygon[{{0, 0}, {2, 0}, {2, 2}, {1, 1}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{Pi/2, Pi/2, Pi/4, (3*Pi)/2, Pi/4}"
+    );
+  }
+
+  // The list form starts at the vertex with minimum x (ties: minimum y) and
+  // then follows the polygon's cyclic order, matching wolframscript.
+  #[test]
+  fn list_starts_at_min_x_vertex() {
+    // Min-x vertex is {-1, 2} (the last), so the list is rotated to start
+    // there rather than at {0, 0}.
+    assert_eq!(
+      interpret(
+        "PolygonAngle[Polygon[{{0, 0}, {2, 0}, {3, 2}, {1, 3}, {-1, 2}}]]"
+      )
+      .unwrap(),
+      "{Pi/2, ArcCos[-(1/Sqrt[5])], ArcCos[-(1/Sqrt[5])], Pi/2, ArcCos[-3/5]}"
+    );
+  }
+
+  // PolygonAngle[poly, vertex] gives the interior angle at one vertex.
+  #[test]
+  fn single_vertex_angle() {
+    assert_eq!(
+      interpret(
+        "PolygonAngle[Polygon[{{0, 0}, {2, 0}, {2, 1}, {0, 1}}], {0, 0}]"
+      )
+      .unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("PolygonAngle[Polygon[{{0, 0}, {4, 0}, {4, 3}}], {4, 3}]")
+        .unwrap(),
+      "ArcCos[3/5]"
+    );
+  }
+
+  // The interior angles of a simple n-gon sum to (n-2) Pi.
+  #[test]
+  fn angles_sum_to_n_minus_2_pi() {
+    assert_eq!(
+      interpret(
+        "Total[PolygonAngle[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]]"
+      )
+      .unwrap(),
+      "2*Pi"
+    );
   }
 }
 

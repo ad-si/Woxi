@@ -845,6 +845,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Pick" => Some((1, 3)),
     "Piecewise" => Some((1, 2)),
     "PlanarAngle" => Some((1, 1)),
+    "PolygonAngle" => Some((1, 2)),
     "Plot" => Some((2, usize::MAX)),
     "Pochhammer" => Some((2, 2)),
     "Point" => Some((1, 1)),
