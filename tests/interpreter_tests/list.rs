@@ -6278,6 +6278,30 @@ mod join_non_list {
   }
 
   #[test]
+  fn group_by_list_of_classifiers_nested() {
+    // GroupBy[list, {f1, f2}] groups by f1, then sub-groups by f2.
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4}, {OddQ, # > 2 &}]").unwrap(),
+      "<|True -> <|False -> {1}, True -> {3}|>, \
+       False -> <|False -> {2}, True -> {4}|>|>"
+    );
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4, 5, 6}, {OddQ, # > 3 &}]").unwrap(),
+      "<|True -> <|False -> {1, 3}, True -> {5}|>, \
+       False -> <|False -> {2}, True -> {4, 6}|>|>"
+    );
+  }
+
+  #[test]
+  fn group_by_single_classifier_list_is_flat() {
+    // A one-element list classifier behaves like the bare function.
+    assert_eq!(
+      interpret("GroupBy[Range[6], {EvenQ}]").unwrap(),
+      "<|False -> {1, 3, 5}, True -> {2, 4, 6}|>"
+    );
+  }
+
+  #[test]
   fn counts_by_operator_form() {
     assert_eq!(
       interpret("CountsBy[Sign][{1, -1, 2, -2, 3}]").unwrap(),
@@ -8874,7 +8898,10 @@ mod cases {
   fn gather_with_test() {
     // Gather[list, test]: group via a custom equivalence test, comparing each
     // element against the representative (first element) of each group.
-    assert_case(r#"Gather[{1, 2, 3}, Abs[#1 - #2] < 2 &]"#, r#"{{1, 2}, {3}}"#);
+    assert_case(
+      r#"Gather[{1, 2, 3}, Abs[#1 - #2] < 2 &]"#,
+      r#"{{1, 2}, {3}}"#,
+    );
     assert_case(
       r#"Gather[{1, 2, 6, 7, 8, 3}, Abs[#1 - #2] < 2 &]"#,
       r#"{{1, 2}, {6, 7}, {8}, {3}}"#,

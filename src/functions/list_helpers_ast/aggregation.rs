@@ -214,6 +214,12 @@ pub fn group_by_ast(
     }
   };
 
+  // `GroupBy[list, {f1, f2, ...}]` groups by `f1`, then sub-groups each result
+  // by `f2`, and so on, producing nested associations.
+  if let Expr::List(funcs) = func {
+    return group_by_nested(items, funcs);
+  }
+
   // `GroupBy[list, f -> g]` groups by `f` but stores `g[element]` in each
   // group instead of the element itself.
   let (key_func, val_func): (&Expr, Option<&Expr>) = match func {
@@ -257,6 +263,46 @@ pub fn group_by_ast(
     })
     .collect();
 
+  Ok(Expr::Association(pairs))
+}
+
+/// Nested GroupBy: group `items` by `funcs[0]`, then recursively group each
+/// result by the remaining functions. With a single function this is the
+/// ordinary flat grouping; an empty list leaves the items ungrouped.
+fn group_by_nested(
+  items: &[Expr],
+  funcs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if funcs.is_empty() {
+    return Ok(Expr::List(items.to_vec().into()));
+  }
+
+  use std::collections::HashMap;
+  let mut groups: HashMap<String, Vec<Expr>> = HashMap::new();
+  let mut order: Vec<String> = Vec::new();
+  for item in items {
+    let key = apply_func_ast(&funcs[0], item)?;
+    let key_str = crate::syntax::expr_to_string(&key);
+    if let Some(group) = groups.get_mut(&key_str) {
+      group.push(item.clone());
+    } else {
+      order.push(key_str.clone());
+      groups.insert(key_str, vec![item.clone()]);
+    }
+  }
+
+  let rest = &funcs[1..];
+  let mut pairs: Vec<(Expr, Expr)> = Vec::with_capacity(order.len());
+  for k in order {
+    let group_items = groups.remove(&k).unwrap();
+    let key_expr = crate::syntax::string_to_expr(&k).unwrap_or(Expr::Raw(k));
+    let value = if rest.is_empty() {
+      Expr::List(group_items.into())
+    } else {
+      group_by_nested(&group_items, rest)?
+    };
+    pairs.push((key_expr, value));
+  }
   Ok(Expr::Association(pairs))
 }
 
@@ -1268,9 +1314,8 @@ pub fn gather_with_test_ast(
   let mut groups: Vec<Vec<Expr>> = Vec::new();
   'outer: for item in items {
     for group in groups.iter_mut() {
-      let result = super::utilities::apply_func_to_two_args(
-        test, &group[0], item,
-      )?;
+      let result =
+        super::utilities::apply_func_to_two_args(test, &group[0], item)?;
       if matches!(result, Expr::Identifier(ref s) if s == "True") {
         group.push(item.clone());
         continue 'outer;
