@@ -4390,6 +4390,29 @@ mod string_position_alternatives {
   }
 
   #[test]
+  fn string_position_patterns() {
+    // Alternatives and character-class / predicate patterns, not just
+    // literals and RegularExpression.
+    assert_eq!(
+      interpret(r#"StringPosition["abcabc", "a" | "c"]"#).unwrap(),
+      "{{1, 1}, {3, 3}, {4, 4}, {6, 6}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["a1b2", DigitCharacter]"#).unwrap(),
+      "{{2, 2}, {4, 4}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["aXbY", _?UpperCaseQ]"#).unwrap(),
+      "{{2, 2}, {4, 4}}"
+    );
+    // Literal and list-of-literal forms are unchanged.
+    assert_eq!(
+      interpret(r#"StringPosition["abcabc", {"a", "c"}]"#).unwrap(),
+      "{{1, 1}, {3, 3}, {4, 4}, {6, 6}}"
+    );
+  }
+
+  #[test]
   fn string_position_threads_over_list_of_strings() {
     assert_eq!(
       interpret(r#"StringPosition[{"abcabc", "xyabc"}, "b"]"#).unwrap(),
@@ -5929,6 +5952,20 @@ abb""#,
     assert_case(
       r#"StringSplit["abc,123", ","]; StringSplit["  abc    123  "]; StringSplit["  abc    123  ", WhitespaceCharacter]; StringSplit["abc,123.456", {",", "."}]; StringSplit["a  b    c", RegularExpression[" +"]]"#,
       r#"{"a", "b", "c"}"#,
+    );
+  }
+  #[test]
+  fn string_split_list_with_pattern() {
+    // A list of delimiters that contains a pattern (not just literals).
+    assert_case(r#"StringSplit["a1b2", {DigitCharacter}]"#, r#"{"a", "b"}"#);
+    assert_case(
+      r#"StringSplit["a1b2c3", {LetterCharacter}]"#,
+      r#"{"1", "2", "3"}"#,
+    );
+    // Mixed literal + pattern delimiters keep interior empties.
+    assert_case(
+      r#"StringSplit["x1y22z", {DigitCharacter, "y"}]"#,
+      r#"{"x", "", "", "", "z"}"#,
     );
   }
   #[test]

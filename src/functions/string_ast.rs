@@ -450,6 +450,17 @@ fn extract_ignore_case(options: &[Expr]) -> bool {
 }
 
 /// Check if an Expr is a RegularExpression[pattern] and extract the pattern string
+/// Whether a string pattern is a plain literal (a `String`, or a list whose
+/// every element is a `String`). Such patterns use exact substring matching
+/// rather than the regex converter, avoiding metacharacter surprises.
+fn is_literal_string_pattern(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(_) => true,
+    Expr::List(items) => items.iter().all(|it| matches!(it, Expr::String(_))),
+    _ => false,
+  }
+}
+
 fn extract_regex_pattern(expr: &Expr) -> Option<String> {
   match expr {
     Expr::FunctionCall { name, args }
@@ -530,10 +541,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let ignore_case = extract_ignore_case(&args[option_start..]);
 
-  // Check if delimiter is a RegularExpression or string pattern
-  let regex_from_pattern = if extract_regex_pattern(&args[1]).is_some() {
-    extract_regex_pattern(&args[1])
-  } else if !matches!(&args[1], Expr::String(_) | Expr::List(_)) {
+  // Check if the delimiter is a RegularExpression or string pattern. Plain
+  // string literals (and lists of them) use the literal-delimiter path below;
+  // any non-literal delimiter — a bare pattern, or a list that contains one
+  // (e.g. {DigitCharacter}) — goes through the pattern → regex converter.
+  let regex_from_pattern = if let Some(p) = extract_regex_pattern(&args[1]) {
+    Some(p)
+  } else if !is_literal_string_pattern(&args[1]) {
     string_pattern_to_regex(&args[1])
   } else {
     None
@@ -1271,8 +1285,17 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Check if the pattern is a RegularExpression
-  let regex_pat = extract_regex_pattern(&args[1]);
+  // Resolve the pattern to a regex. Plain string literals (and lists of
+  // them) use the exact literal path below; RegularExpression and every other
+  // string pattern (character classes, Alternatives, `_?test`, lists
+  // containing patterns, …) go through the shared pattern → regex converter.
+  let regex_pat = extract_regex_pattern(&args[1]).or_else(|| {
+    if is_literal_string_pattern(&args[1]) {
+      None
+    } else {
+      string_pattern_to_regex(&args[1])
+    }
+  });
 
   let s_chars: Vec<char> = s.chars().collect();
   // For each match: (start_index_0based, length_in_chars)
