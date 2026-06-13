@@ -214,6 +214,21 @@ mod bin_counts {
   }
 
   #[test]
+  fn bin_counts_partial_trailing_bin_dropped() {
+    // (max - min) not a multiple of dx: only whole bins are counted; the
+    // leftover values 9 and 10 fall in [9, 12), which exceeds max, so they
+    // are dropped rather than added to the last bin.
+    assert_eq!(
+      interpret("BinCounts[Range[10], {0, 10, 3}]").unwrap(),
+      "{2, 3, 3}"
+    );
+    assert_eq!(
+      interpret("BinCounts[Range[10], {0, 10, 4}]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
   fn bin_counts_with_dx() {
     // Bins aligned to dx multiples: [0,2),[2,4),[4,6) = {1,2,2}
     assert_eq!(
