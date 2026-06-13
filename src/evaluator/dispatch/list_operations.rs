@@ -3146,11 +3146,16 @@ pub fn dispatch_list_operations(
       }
     }
     // SequenceCount[list, sublist] — count non-overlapping occurrences
-    "SequenceCount" if args.len() == 2 => {
+    "SequenceCount" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
         if sub.is_empty() {
           return Some(Ok(Expr::Integer(0)));
         }
+        // Optional `Overlaps -> True | All` option (default: non-overlapping).
+        let overlaps = args.get(2).is_some_and(|opt| matches!(opt,
+          Expr::Rule { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps")
+              && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True" || v == "All")));
         let sub_len = sub.len();
         let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
         let mut count = 0i128;
@@ -3165,7 +3170,9 @@ pub fn dispatch_list_operations(
           }
           if matches {
             count += 1;
-            i += sub_len;
+            // Overlapping matches advance by one; non-overlapping skip the
+            // whole matched subsequence.
+            i += if overlaps { 1 } else { sub_len };
           } else {
             i += 1;
           }

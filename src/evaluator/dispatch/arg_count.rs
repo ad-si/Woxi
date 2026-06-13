@@ -994,7 +994,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SelectFirst" => Some((1, 3)),
     "SequenceAlignment" => Some((2, 2)),
     "SequenceCases" => Some((2, 2)),
-    "SequenceCount" => Some((2, 2)),
+    "SequenceCount" => Some((2, 3)),
     "SequencePosition" => Some((2, 2)),
     "SequenceReplace" => Some((2, 3)),
     "SequenceSplit" => Some((2, 2)),

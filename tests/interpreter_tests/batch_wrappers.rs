@@ -3407,6 +3407,34 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("SequenceCount[{1, 2, 3}, {4, 5}]").unwrap(), "0");
   }
   #[test]
+  fn sequence_count_default_non_overlapping() {
+    assert_eq!(interpret("SequenceCount[{1, 1, 1}, {1, 1}]").unwrap(), "1");
+    assert_eq!(
+      interpret("SequenceCount[{1, 1, 1}, {1, 1}, Overlaps -> False]").unwrap(),
+      "1"
+    );
+  }
+  #[test]
+  fn sequence_count_overlaps_true() {
+    assert_eq!(
+      interpret("SequenceCount[{1, 1, 1}, {1, 1}, Overlaps -> True]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 1, 2, 1}, {1, 2}, Overlaps -> True]")
+        .unwrap(),
+      "2"
+    );
+  }
+  #[test]
+  fn sequence_count_overlaps_all() {
+    assert_eq!(
+      interpret("SequenceCount[{1, 1, 1, 1}, {1, 1}, Overlaps -> All]")
+        .unwrap(),
+      "3"
+    );
+  }
+  #[test]
   fn sequence_position_basic() {
     assert_eq!(
       interpret("SequencePosition[{1, 2, 3, 1, 2}, {1, 2}]").unwrap(),
