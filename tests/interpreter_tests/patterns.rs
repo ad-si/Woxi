@@ -2531,6 +2531,20 @@ Options[r] := {Opt -> 3}"#,
     );
   }
   #[test]
+  fn first_position_levelspec() {
+    // 4-arg form: FirstPosition[expr, patt, default, levelspec].
+    // Level {1}: 3 is one level deeper, so the default is returned.
+    assert_case(r#"FirstPosition[{1, {2, 3}, 4}, 3, x, {1}]"#, r#"x"#);
+    // 4 is at level 1, so it is found.
+    assert_case(r#"FirstPosition[{1, {2, 3}, 4}, 4, x, {1}]"#, r#"{3}"#);
+    // Level {2}: search exactly one level deeper.
+    assert_case(r#"FirstPosition[{1, {2, 3}, 4}, 3, x, {2}]"#, r#"{2, 2}"#);
+    // Level n means levels 1..n.
+    assert_case(r#"FirstPosition[{1, {2, 3}, 4}, 2, x, 2]"#, r#"{2, 1}"#);
+    // Default (no levelspec) searches all levels.
+    assert_case(r#"FirstPosition[{1, {2, 3}, 4}, 3]"#, r#"{2, 2}"#);
+  }
+  #[test]
   fn position_1() {
     assert_case(
       r#"Position[{1, 2, 2, 1, 2, 3, 2}, 2]"#,

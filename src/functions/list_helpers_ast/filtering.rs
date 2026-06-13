@@ -1586,58 +1586,77 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Level bounds (lmin, lmax) measured as depth from the root (0 = the whole
+  // expression). The default searches all levels; a 4th argument restricts
+  // them: `n` -> levels 1..n, `{n}` -> exactly level n, `{a, b}` -> a..b,
+  // `Infinity` -> all.
+  const INF: i128 = i128::MAX;
+  let (lmin, lmax) = if args.len() >= 4 {
+    match parse_level_bounds(&args[3]) {
+      Some(b) => b,
+      None => (0, INF),
+    }
+  } else {
+    (0, INF)
+  };
+
+  #[allow(clippy::too_many_arguments)]
   fn find_first(
     expr: &Expr,
     pattern: &Expr,
     path: &mut Vec<i128>,
+    depth: i128,
+    lmin: i128,
+    lmax: i128,
   ) -> Option<Vec<i128>> {
-    let pattern_str = crate::syntax::expr_to_string(pattern);
-    let expr_str = crate::syntax::expr_to_string(expr);
-    if matches_pattern_simple(&expr_str, &pattern_str)
-      || matches_pattern_ast(expr, pattern)
-    {
-      return Some(path.clone());
+    if depth >= lmin && depth <= lmax {
+      let pattern_str = crate::syntax::expr_to_string(pattern);
+      let expr_str = crate::syntax::expr_to_string(expr);
+      if matches_pattern_simple(&expr_str, &pattern_str)
+        || matches_pattern_ast(expr, pattern)
+      {
+        return Some(path.clone());
+      }
+    }
+    if depth >= lmax {
+      return None;
     }
     // Recurse into every structurally composite expression — List args,
     // FunctionCall args, BinaryOp operands, UnaryOp operand — so patterns
     // like `x^2` can be found inside `1 + x^2` (a Plus) at position {1, 2}.
+    let recurse = |item: &Expr, idx: i128, path: &mut Vec<i128>| {
+      path.push(idx);
+      let r = find_first(item, pattern, path, depth + 1, lmin, lmax);
+      path.pop();
+      r
+    };
     match expr {
       Expr::List(items) => {
         for (i, item) in items.iter().enumerate() {
-          path.push((i + 1) as i128);
-          if let Some(result) = find_first(item, pattern, path) {
+          if let Some(result) = recurse(item, (i + 1) as i128, path) {
             return Some(result);
           }
-          path.pop();
         }
       }
       Expr::FunctionCall { args, .. } => {
         for (i, item) in args.iter().enumerate() {
-          path.push((i + 1) as i128);
-          if let Some(result) = find_first(item, pattern, path) {
+          if let Some(result) = recurse(item, (i + 1) as i128, path) {
             return Some(result);
           }
-          path.pop();
         }
       }
       Expr::BinaryOp { left, right, .. } => {
-        path.push(1);
-        if let Some(result) = find_first(left, pattern, path) {
+        if let Some(result) = recurse(left, 1, path) {
           return Some(result);
         }
-        path.pop();
-        path.push(2);
-        if let Some(result) = find_first(right, pattern, path) {
+        if let Some(result) = recurse(right, 2, path) {
           return Some(result);
         }
-        path.pop();
       }
       Expr::UnaryOp { operand, .. } => {
-        path.push(1);
-        if let Some(result) = find_first(operand, pattern, path) {
+        if let Some(result) = recurse(operand, 1, path) {
           return Some(result);
         }
-        path.pop();
       }
       _ => {}
     }
@@ -1645,11 +1664,36 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut path = Vec::new();
-  match find_first(&args[0], &args[1], &mut path) {
+  match find_first(&args[0], &args[1], &mut path, 0, lmin, lmax) {
     Some(indices) => {
       Ok(Expr::List(indices.into_iter().map(Expr::Integer).collect()))
     }
     None => Ok(default),
+  }
+}
+
+/// Parse a Wolfram level specification into inclusive `(min, max)` depth
+/// bounds. Returns `None` for unrecognized forms.
+fn parse_level_bounds(spec: &Expr) -> Option<(i128, i128)> {
+  const INF: i128 = i128::MAX;
+  let as_level = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::Identifier(s) if s == "Infinity" => Some(INF),
+      _ => None,
+    }
+  };
+  match spec {
+    Expr::Integer(n) => Some((1, *n)),
+    Expr::Identifier(s) if s == "Infinity" => Some((1, INF)),
+    Expr::List(items) if items.len() == 1 => {
+      let n = as_level(&items[0])?;
+      Some((n, n))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      Some((as_level(&items[0])?, as_level(&items[1])?))
+    }
+    _ => None,
   }
 }
 
