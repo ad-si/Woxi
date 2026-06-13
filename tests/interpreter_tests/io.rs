@@ -1314,6 +1314,50 @@ mod export_string {
     let result = interpret("ExportString[{{1,2},{3,4}}, \"TSV\"]").unwrap();
     assert_eq!(result, "1\t2\n3\t4\n");
   }
+
+  // ─── ExportString JSON ─────────────────────────────────────────────
+  // wolframscript pretty-prints JSON: tab-indented, one element per line,
+  // `"key":value` with no space after the colon, booleans/Null lowercased,
+  // empty containers inline as `[]` / `{}`, and Reals always carry a
+  // fractional digit (3.0, not Wolfram's bare `3.`).
+  #[test]
+  fn export_string_json_flat_list() {
+    clear_state();
+    let result = interpret("ExportString[{1, 2, 3}, \"JSON\"]").unwrap();
+    assert_eq!(result, "[\n\t1,\n\t2,\n\t3\n]");
+  }
+
+  #[test]
+  fn export_string_json_scalars() {
+    clear_state();
+    assert_eq!(interpret("ExportString[5, \"JSON\"]").unwrap(), "5");
+    assert_eq!(interpret("ExportString[3.5, \"JSON\"]").unwrap(), "3.5");
+    assert_eq!(interpret("ExportString[3.0, \"JSON\"]").unwrap(), "3.0");
+    assert_eq!(interpret("ExportString[\"hi\", \"JSON\"]").unwrap(), "\"hi\"");
+  }
+
+  #[test]
+  fn export_string_json_booleans_and_null() {
+    clear_state();
+    assert_eq!(interpret("ExportString[True, \"JSON\"]").unwrap(), "true");
+    assert_eq!(interpret("ExportString[False, \"JSON\"]").unwrap(), "false");
+    assert_eq!(interpret("ExportString[Null, \"JSON\"]").unwrap(), "null");
+  }
+
+  #[test]
+  fn export_string_json_empty_list_inline() {
+    clear_state();
+    assert_eq!(interpret("ExportString[{}, \"JSON\"]").unwrap(), "[]");
+  }
+
+  #[test]
+  fn export_string_json_nested_association() {
+    clear_state();
+    let result =
+      interpret("ExportString[<|\"a\" -> 1, \"b\" -> {2, 3}|>, \"JSON\"]")
+        .unwrap();
+    assert_eq!(result, "{\n\t\"a\":1,\n\t\"b\":[\n\t\t2,\n\t\t3\n\t]\n}");
+  }
 }
 
 mod grid_graphics {

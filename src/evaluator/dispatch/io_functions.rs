@@ -603,6 +603,11 @@ pub fn dispatch_io_functions(
         let sep = if format_str == "CSV" { ',' } else { '\t' };
         return Some(Ok(Expr::String(export_string_csv(&args[0], sep))));
       }
+      if format_str == "JSON" || format_str == "RawJSON" {
+        if let Some(json) = export_string_json(&args[0], 0) {
+          return Some(Ok(Expr::String(json)));
+        }
+      }
       // Return unevaluated for unsupported formats
       return Some(Ok(Expr::FunctionCall {
         name: "ExportString".to_string(),
@@ -2591,6 +2596,96 @@ fn csv_cell(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => format!("\"{}\"", s.replace('"', "\"\"")),
     _ => crate::syntax::expr_to_string(expr),
+  }
+}
+
+/// Serialize an expression to Wolfram's pretty-printed JSON (tab-indented,
+/// `"key":value` with no space after the colon, `true`/`false`/`null`, empty
+/// containers inline as `[]` / `{}`). `indent` is the tab depth of the value's
+/// opening bracket. Returns `None` for any value JSON cannot represent, so the
+/// caller leaves `ExportString` unevaluated.
+fn export_string_json(expr: &Expr, indent: usize) -> Option<String> {
+  // Format a Real as JSON: a finite decimal with at least one fractional
+  // digit (3.0 -> "3.0", not Wolfram's bare "3.").
+  fn real_json(f: f64) -> Option<String> {
+    if !f.is_finite() {
+      return None;
+    }
+    let s = format!("{}", f);
+    Some(if s.contains('.') || s.contains('e') || s.contains('E') {
+      s
+    } else {
+      format!("{}.0", s)
+    })
+  }
+  fn escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    for c in s.chars() {
+      match c {
+        '"' => out.push_str("\\\""),
+        '\\' => out.push_str("\\\\"),
+        '\n' => out.push_str("\\n"),
+        '\t' => out.push_str("\\t"),
+        '\r' => out.push_str("\\r"),
+        _ => out.push(c),
+      }
+    }
+    out
+  }
+  match expr {
+    Expr::Integer(n) => Some(n.to_string()),
+    Expr::BigInteger(n) => Some(n.to_string()),
+    Expr::Real(f) => real_json(*f),
+    Expr::String(s) => Some(format!("\"{}\"", escape(s))),
+    Expr::Identifier(s) if s == "True" => Some("true".to_string()),
+    Expr::Identifier(s) if s == "False" => Some("false".to_string()),
+    Expr::Identifier(s) if s == "Null" || s == "None" => {
+      Some("null".to_string())
+    }
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Some("[]".to_string());
+      }
+      let inner = "\t".repeat(indent + 1);
+      let mut parts = Vec::with_capacity(items.len());
+      for it in items.iter() {
+        parts.push(format!(
+          "{}{}",
+          inner,
+          export_string_json(it, indent + 1)?
+        ));
+      }
+      Some(format!(
+        "[\n{}\n{}]",
+        parts.join(",\n"),
+        "\t".repeat(indent)
+      ))
+    }
+    Expr::Association(pairs) => {
+      if pairs.is_empty() {
+        return Some("{}".to_string());
+      }
+      let inner = "\t".repeat(indent + 1);
+      let mut parts = Vec::with_capacity(pairs.len());
+      for (k, v) in pairs.iter() {
+        let key = match k {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        parts.push(format!(
+          "{}\"{}\":{}",
+          inner,
+          escape(&key),
+          export_string_json(v, indent + 1)?
+        ));
+      }
+      Some(format!(
+        "{{\n{}\n{}}}",
+        parts.join(",\n"),
+        "\t".repeat(indent)
+      ))
+    }
+    _ => None,
   }
 }
 
