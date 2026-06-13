@@ -3621,6 +3621,18 @@ mod cases {
     assert_case(r#"TakeSmallest[{100, -1, 50, 10}, 2]"#, r#"{-1, 10}"#);
   }
   #[test]
+  fn take_largest_smallest_upto() {
+    // UpTo[n] takes min(n, available) elements without erroring.
+    assert_case(r#"TakeLargest[{1, 2, 3}, UpTo[5]]"#, r#"{3, 2, 1}"#);
+    assert_case(r#"TakeLargest[{5, 2, 8, 1, 9}, UpTo[3]]"#, r#"{9, 8, 5}"#);
+    assert_case(r#"TakeSmallest[{5, 2, 8, 1}, UpTo[2]]"#, r#"{1, 2}"#);
+    // UpTo within range behaves like the plain count.
+    assert_case(r#"TakeLargest[{1, 2, 3}, UpTo[2]]"#, r#"{3, 2}"#);
+    // The By variants honor UpTo too.
+    assert_case(r#"TakeLargestBy[{1, 2, 3}, # &, UpTo[5]]"#, r#"{3, 2, 1}"#);
+    assert_case(r#"TakeSmallestBy[{5, 2, 8, 1}, # &, UpTo[2]]"#, r#"{1, 2}"#);
+  }
+  #[test]
   fn a() {
     assert_case(r#"a[b] ^:= x; x = 2; a[b]"#, r#"2"#);
   }

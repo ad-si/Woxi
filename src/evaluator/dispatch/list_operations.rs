@@ -54,6 +54,27 @@ fn nonneg_machine_int(e: &Expr) -> Option<i128> {
   }
 }
 
+/// Resolve a count spec that may be a plain integer or `UpTo[n]`.
+/// A plain integer is returned as-is; `UpTo[n]` is clamped to the length of
+/// `list` (so "take up to n" never asks for more than is available).
+fn count_or_upto(spec: &Expr, list: &Expr) -> Option<i128> {
+  if let Some(n) = expr_to_i128(spec) {
+    return Some(n);
+  }
+  if let Expr::FunctionCall { name, args } = spec
+    && name == "UpTo"
+    && args.len() == 1
+    && let Some(n) = expr_to_i128(&args[0])
+  {
+    let len = match list {
+      Expr::List(items) => items.len() as i128,
+      _ => return Some(n),
+    };
+    return Some(n.min(len));
+  }
+  None
+}
+
 /// Whether the expression is the symbol Infinity (or DirectedInfinity[1]).
 fn is_infinity_symbol(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
@@ -2222,7 +2243,7 @@ pub fn dispatch_list_operations(
       return Some(Ok(wrap_head_at_depth(expr, p, n)));
     }
     "TakeLargest" if args.len() == 2 => {
-      if let Some(n) = expr_to_i128(&args[1]) {
+      if let Some(n) = count_or_upto(&args[1], &args[0]) {
         return Some(list_helpers_ast::take_largest_ast(&args[0], n));
       }
     }
@@ -2236,7 +2257,7 @@ pub fn dispatch_list_operations(
       }
     }
     "TakeSmallest" if args.len() == 2 => {
-      if let Some(n) = expr_to_i128(&args[1]) {
+      if let Some(n) = count_or_upto(&args[1], &args[0]) {
         return Some(list_helpers_ast::take_smallest_ast(&args[0], n));
       }
     }
@@ -2526,9 +2547,7 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::gather_ast(&args[0]));
     }
     "Gather" if args.len() == 2 => {
-      return Some(list_helpers_ast::gather_with_test_ast(
-        &args[0], &args[1],
-      ));
+      return Some(list_helpers_ast::gather_with_test_ast(&args[0], &args[1]));
     }
     "GatherBy" if args.len() >= 2 => {
       // GatherBy[list, f1, f2, ...] is equivalent to GatherBy[list, {f1, f2, ...}]

@@ -2195,6 +2195,21 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// TakeLargestBy[list, f, n] - take the n largest elements sorted by f
+/// Resolve a `TakeLargestBy`/`TakeSmallestBy` count: a non-negative integer,
+/// or `UpTo[n]` clamped to `len`. Returns `None` for anything else.
+fn take_count_or_upto(spec: &Expr, len: usize) -> Option<usize> {
+  match spec {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    Expr::FunctionCall { name, args } if name == "UpTo" && args.len() == 1 => {
+      match &args[0] {
+        Expr::Integer(n) if *n >= 0 => Some((*n as usize).min(len)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2211,9 +2226,9 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let f = &args[1];
-  let n = match &args[2] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
-    _ => {
+  let n = match take_count_or_upto(&args[2], list.len()) {
+    Some(n) => n,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "TakeLargestBy".to_string(),
         args: args.to_vec().into(),
@@ -2265,9 +2280,9 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let f = &args[1];
-  let n = match &args[2] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
-    _ => {
+  let n = match take_count_or_upto(&args[2], list.len()) {
+    Some(n) => n,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "TakeSmallestBy".to_string(),
         args: args.to_vec().into(),
