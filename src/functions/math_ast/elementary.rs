@@ -42,6 +42,12 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "Undefined") {
     return Ok(Expr::Identifier("Undefined".to_string()));
   }
+  // Abs[Interval[{a, b}, ...]] → the interval of absolute values.
+  if let Some(result) =
+    crate::functions::interval_ast::abs_interval(&args[0])
+  {
+    return Ok(result);
+  }
   // Handle any expression containing Infinity → Infinity
   if contains_infinity(&args[0]) {
     return Ok(Expr::Identifier("Infinity".to_string()));

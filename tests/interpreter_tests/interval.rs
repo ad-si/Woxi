@@ -406,7 +406,10 @@ fn positive_interval_all_positive() {
 fn sign_interval_all_negative() {
   assert_eq!(interpret("Positive[Interval[{-5, -1}]]").unwrap(), "False");
   assert_eq!(interpret("Negative[Interval[{-5, -1}]]").unwrap(), "True");
-  assert_eq!(interpret("NonPositive[Interval[{-5, -1}]]").unwrap(), "True");
+  assert_eq!(
+    interpret("NonPositive[Interval[{-5, -1}]]").unwrap(),
+    "True"
+  );
 }
 
 #[test]
@@ -427,5 +430,46 @@ fn sign_interval_straddling_zero_is_indeterminate() {
   assert_eq!(
     interpret("Negative[Interval[{-1, 5}]]").unwrap(),
     "Negative[Interval[{-1, 5}]]"
+  );
+}
+
+// ─── Abs on intervals ────────────────────────────────────────────────────────
+
+#[test]
+fn abs_interval_straddling_zero() {
+  // Contains 0 → lower bound becomes 0.
+  assert_eq!(
+    interpret("Abs[Interval[{-2, 3}]]").unwrap(),
+    "Interval[{0, 3}]"
+  );
+  assert_eq!(
+    interpret("Abs[Interval[{-3, 1}]]").unwrap(),
+    "Interval[{0, 3}]"
+  );
+}
+
+#[test]
+fn abs_interval_one_sided() {
+  assert_eq!(
+    interpret("Abs[Interval[{2, 5}]]").unwrap(),
+    "Interval[{2, 5}]"
+  );
+  // All negative: endpoints flip.
+  assert_eq!(
+    interpret("Abs[Interval[{-5, -2}]]").unwrap(),
+    "Interval[{2, 5}]"
+  );
+}
+
+#[test]
+fn abs_interval_multiple_segments_merge() {
+  assert_eq!(
+    interpret("Abs[Interval[{1, 2}, {4, 5}]]").unwrap(),
+    "Interval[{1, 2}, {4, 5}]"
+  );
+  // Symmetric segments collapse onto one another.
+  assert_eq!(
+    interpret("Abs[Interval[{-5, -2}, {2, 5}]]").unwrap(),
+    "Interval[{2, 5}]"
   );
 }

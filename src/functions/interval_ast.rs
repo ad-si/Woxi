@@ -32,6 +32,41 @@ fn has_interval(args: &[Expr]) -> bool {
   args.iter().any(|a| is_interval(a).is_some())
 }
 
+/// `Abs[Interval[...]]` — the interval of absolute values. For each span
+/// `[a, b]`: if it contains 0 the result runs from 0 to max(|a|, |b|);
+/// otherwise from min(|a|, |b|) to max(|a|, |b|). Spans are renormalized
+/// (merging any that now overlap). Returns `None` unless every endpoint is
+/// numeric.
+pub fn abs_interval(expr: &Expr) -> Option<Expr> {
+  let spans = is_interval(expr)?;
+  let zero = Expr::Integer(0);
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    // Require numeric endpoints; otherwise leave Abs unevaluated.
+    expr_to_f64(a)?;
+    expr_to_f64(b)?;
+    let abs_a =
+      crate::evaluator::evaluate_function_call_ast("Abs", &[a.clone()]).ok()?;
+    let abs_b =
+      crate::evaluator::evaluate_function_call_ast("Abs", &[b.clone()]).ok()?;
+    let contains_zero = matches!(
+      compare_numeric(a, &zero),
+      Some(Ordering::Less | Ordering::Equal)
+    ) && matches!(
+      compare_numeric(b, &zero),
+      Some(Ordering::Greater | Ordering::Equal)
+    );
+    let lo = if contains_zero {
+      zero.clone()
+    } else {
+      numeric_min(&abs_a, &abs_b)
+    };
+    let hi = numeric_max(&abs_a, &abs_b);
+    out.push((lo, hi));
+  }
+  Some(make_interval(normalize_intervals(out)))
+}
+
 /// Compare two numeric expressions. Returns None if not comparable.
 fn compare_numeric(a: &Expr, b: &Expr) -> Option<Ordering> {
   let fa = expr_to_f64(a)?;
