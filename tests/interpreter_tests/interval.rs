@@ -391,3 +391,41 @@ fn centered_interval_intersection_disjoint_returns_empty() {
     "Interval[]"
   );
 }
+
+// ─── Sign predicates on intervals ────────────────────────────────────────────
+
+#[test]
+fn positive_interval_all_positive() {
+  assert_eq!(interpret("Positive[Interval[{1, 5}]]").unwrap(), "True");
+  assert_eq!(interpret("Negative[Interval[{1, 5}]]").unwrap(), "False");
+  assert_eq!(interpret("NonNegative[Interval[{1, 5}]]").unwrap(), "True");
+  assert_eq!(interpret("NonPositive[Interval[{1, 5}]]").unwrap(), "False");
+}
+
+#[test]
+fn sign_interval_all_negative() {
+  assert_eq!(interpret("Positive[Interval[{-5, -1}]]").unwrap(), "False");
+  assert_eq!(interpret("Negative[Interval[{-5, -1}]]").unwrap(), "True");
+  assert_eq!(interpret("NonPositive[Interval[{-5, -1}]]").unwrap(), "True");
+}
+
+#[test]
+fn sign_interval_touching_zero() {
+  // [0,5]: not strictly positive, but non-negative.
+  assert_eq!(interpret("Positive[Interval[{0, 5}]]").unwrap(), "False");
+  assert_eq!(interpret("NonNegative[Interval[{0, 5}]]").unwrap(), "True");
+  // [-5,0]: not strictly negative, but non-positive.
+  assert_eq!(interpret("NonPositive[Interval[{-5, 0}]]").unwrap(), "True");
+}
+
+#[test]
+fn sign_interval_straddling_zero_is_indeterminate() {
+  assert_eq!(
+    interpret("Positive[Interval[{-1, 5}]]").unwrap(),
+    "Positive[Interval[{-1, 5}]]"
+  );
+  assert_eq!(
+    interpret("Negative[Interval[{-1, 5}]]").unwrap(),
+    "Negative[Interval[{-1, 5}]]"
+  );
+}

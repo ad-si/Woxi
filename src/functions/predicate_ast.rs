@@ -533,11 +533,50 @@ fn is_known_negative(expr: &Expr) -> Option<bool> {
   }
 }
 
+/// Sign predicate on a single-segment `Interval[{a, b}]`. Returns `Some` with
+/// the result (a Boolean, or the unevaluated call when the interval straddles
+/// zero and the sign is indeterminate), or `None` when `expr` is not such an
+/// interval. `name` selects Positive / Negative / NonNegative / NonPositive.
+fn interval_sign(expr: &Expr, name: &str) -> Option<Expr> {
+  let (a, b) = match expr {
+    Expr::FunctionCall {
+      name: head,
+      args: iargs,
+    } if head == "Interval" && iargs.len() == 1 => match &iargs[0] {
+      Expr::List(seg) if seg.len() == 2 => {
+        let a = super::math_ast::try_eval_to_f64(&seg[0])?;
+        let b = super::math_ast::try_eval_to_f64(&seg[1])?;
+        (a, b)
+      }
+      _ => return None,
+    },
+    _ => return None,
+  };
+  // Strict straddle: the sign cannot be determined.
+  if a < 0.0 && b > 0.0 {
+    return Some(Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![expr.clone()].into(),
+    });
+  }
+  let val = match name {
+    "Positive" => a > 0.0,
+    "Negative" => b < 0.0,
+    "NonNegative" => a >= 0.0,
+    "NonPositive" => b <= 0.0,
+    _ => return None,
+  };
+  Some(bool_expr(val))
+}
+
 pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "PositiveQ expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(r) = interval_sign(&args[0], "Positive") {
+    return Ok(r);
   }
   // Positive on a non-real complex value is False.
   if has_nonzero_imag_part(&args[0]) {
@@ -563,6 +602,9 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NegativeQ expects exactly 1 argument".into(),
     ));
   }
+  if let Some(r) = interval_sign(&args[0], "Negative") {
+    return Ok(r);
+  }
   // Negative on a non-real complex value is False.
   if has_nonzero_imag_part(&args[0]) {
     return Ok(bool_expr(false));
@@ -586,6 +628,9 @@ pub fn non_positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NonPositiveQ expects exactly 1 argument".into(),
     ));
   }
+  if let Some(r) = interval_sign(&args[0], "NonPositive") {
+    return Ok(r);
+  }
   // NonPositive: x <= 0, i.e. negative or zero
   if is_zero(&args[0]) {
     return Ok(bool_expr(true));
@@ -605,6 +650,9 @@ pub fn non_negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "NonNegativeQ expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(r) = interval_sign(&args[0], "NonNegative") {
+    return Ok(r);
   }
   // NonNegative: x >= 0, i.e. positive or zero
   if is_zero(&args[0]) {
