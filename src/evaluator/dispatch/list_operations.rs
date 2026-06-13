@@ -68,6 +68,7 @@ fn count_or_upto(spec: &Expr, list: &Expr) -> Option<i128> {
   {
     let len = match list {
       Expr::List(items) => items.len() as i128,
+      Expr::Association(pairs) => pairs.len() as i128,
       _ => return Some(n),
     };
     return Some(n.min(len));

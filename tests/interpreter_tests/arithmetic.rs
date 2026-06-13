@@ -2356,10 +2356,7 @@ mod expand_threading {
 
   #[test]
   fn norm_matrix_infinity_is_max_row_sum() {
-    assert_eq!(
-      interpret("Norm[{{1, 2}, {3, 4}}, Infinity]").unwrap(),
-      "7"
-    );
+    assert_eq!(interpret("Norm[{{1, 2}, {3, 4}}, Infinity]").unwrap(), "7");
   }
 
   #[test]
@@ -3663,6 +3660,29 @@ mod cases {
     // The By variants honor UpTo too.
     assert_case(r#"TakeLargestBy[{1, 2, 3}, # &, UpTo[5]]"#, r#"{3, 2, 1}"#);
     assert_case(r#"TakeSmallestBy[{5, 2, 8, 1}, # &, UpTo[2]]"#, r#"{1, 2}"#);
+  }
+  #[test]
+  fn take_largest_smallest_association() {
+    // On an association, rank by value; the result is an association sorted
+    // by value (descending for largest, ascending for smallest).
+    assert_case(
+      r#"TakeSmallest[<|"a" -> 3, "b" -> 1, "c" -> 2|>, 2]"#,
+      r#"<|b -> 1, c -> 2|>"#,
+    );
+    assert_case(
+      r#"TakeLargest[<|"a" -> 3, "b" -> 1, "c" -> 2|>, 2]"#,
+      r#"<|a -> 3, c -> 2|>"#,
+    );
+    // Ties keep their original order.
+    assert_case(
+      r#"TakeLargest[<|"a" -> 3, "b" -> 1, "c" -> 3|>, 2]"#,
+      r#"<|a -> 3, c -> 3|>"#,
+    );
+    // UpTo clamps to the number of entries.
+    assert_case(
+      r#"TakeSmallest[<|"a" -> 3, "b" -> 1, "c" -> 2|>, UpTo[5]]"#,
+      r#"<|b -> 1, c -> 2, a -> 3|>"#,
+    );
   }
   #[test]
   fn a() {

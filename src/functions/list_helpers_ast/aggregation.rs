@@ -985,6 +985,34 @@ fn take_expr_to_f64(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// TakeLargest/TakeSmallest over an association: rank entries by their
+/// (numeric) value and return an association of the `n` extreme key -> value
+/// pairs, sorted by value (descending for largest, ascending for smallest;
+/// stable, so ties keep their original order).
+fn take_extreme_assoc(
+  pairs: &[(Expr, Expr)],
+  n: i128,
+  largest: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  // Require every value to be numeric; otherwise let the caller leave the
+  // call unevaluated.
+  let mut keyed: Vec<((Expr, Expr), f64)> = Vec::with_capacity(pairs.len());
+  for (k, v) in pairs {
+    let val = take_expr_to_f64(v)?;
+    keyed.push(((k.clone(), v.clone()), val));
+  }
+  if n < 0 || n as usize > keyed.len() {
+    return None;
+  }
+  keyed.sort_by(|a, b| {
+    let o = a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal);
+    if largest { o.reverse() } else { o }
+  });
+  let result: Vec<(Expr, Expr)> =
+    keyed.into_iter().take(n as usize).map(|(kv, _)| kv).collect();
+  Some(Ok(Expr::Association(result)))
+}
+
 /// AST-based TakeLargest: take n largest elements.
 ///
 /// Non-numeric elements (like `Missing[...]`) are silently dropped,
@@ -993,6 +1021,11 @@ pub fn take_largest_ast(
   list: &Expr,
   n: i128,
 ) -> Result<Expr, InterpreterError> {
+  if let Expr::Association(pairs) = list
+    && let Some(result) = take_extreme_assoc(pairs, n, true)
+  {
+    return result;
+  }
   let items = match list {
     Expr::List(items) => items,
     _ => {
@@ -1118,6 +1151,11 @@ pub fn take_smallest_ast(
   list: &Expr,
   n: i128,
 ) -> Result<Expr, InterpreterError> {
+  if let Expr::Association(pairs) = list
+    && let Some(result) = take_extreme_assoc(pairs, n, false)
+  {
+    return result;
+  }
   let items = match list {
     Expr::List(items) => items,
     _ => {
