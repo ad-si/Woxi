@@ -57,7 +57,7 @@ pub fn dispatch_string_functions(
     "StringRiffle" if !args.is_empty() => {
       return Some(crate::functions::string_ast::string_riffle_ast(args));
     }
-    "StringPosition" if args.len() == 2 || args.len() == 3 => {
+    "StringPosition" if args.len() >= 2 => {
       // Wolfram emits StringPosition::strse and returns the call
       // unevaluated whenever the first argument isn't a String or list
       // of Strings (e.g. an unbound symbol in a script). Mirror that

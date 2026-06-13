@@ -1264,10 +1264,7 @@ mod string_patterns {
   #[test]
   fn string_cases_overlaps() {
     // Default is non-overlapping.
-    assert_eq!(
-      interpret("StringCases[\"aaa\", \"aa\"]").unwrap(),
-      "{aa}"
-    );
+    assert_eq!(interpret("StringCases[\"aaa\", \"aa\"]").unwrap(), "{aa}");
     assert_eq!(
       interpret("StringCases[\"aaa\", \"aa\", Overlaps -> False]").unwrap(),
       "{aa}"
@@ -4332,6 +4329,33 @@ mod string_position_alternatives {
     assert_eq!(
       interpret(r#"StringPosition["abcdefabc", {"d", "a"}]"#).unwrap(),
       "{{1, 1}, {4, 4}, {7, 7}}"
+    );
+  }
+
+  #[test]
+  fn string_position_overlaps() {
+    // StringPosition reports overlapping matches by default.
+    assert_eq!(
+      interpret(r#"StringPosition["aaa", "aa"]"#).unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["aaa", "aa", Overlaps -> True]"#).unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+    // Overlaps -> False keeps matches greedily, skipping overlaps.
+    assert_eq!(
+      interpret(r#"StringPosition["aaa", "aa", Overlaps -> False]"#).unwrap(),
+      "{{1, 2}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["aaaa", "aa", Overlaps -> False]"#).unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["abababab", "aba", Overlaps -> False]"#)
+        .unwrap(),
+      "{{1, 3}, {5, 7}}"
     );
   }
 

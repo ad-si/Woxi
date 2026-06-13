@@ -1228,9 +1228,9 @@ fn string_riffle_recursive(
 
 /// StringPosition[s, sub] - find all positions of substring
 pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 3 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "StringPosition expects 2 or 3 arguments".into(),
+      "StringPosition expects at least 2 arguments".into(),
     ));
   }
 
@@ -1248,11 +1248,27 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let s = expr_to_str(&args[0])?;
-  let max_results = if args.len() == 3 {
-    expr_to_int(&args[2]).ok().map(|n| n as usize)
-  } else {
-    None
-  };
+  // Trailing arguments: an optional count limit (Integer) and/or an
+  // `Overlaps -> True | False | All` option. StringPosition reports
+  // overlapping matches by default.
+  let mut max_results: Option<usize> = None;
+  let mut overlaps = true;
+  for a in &args[2..] {
+    match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") => {
+        overlaps = !matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "False");
+      }
+      other => {
+        if let Ok(n) = expr_to_int(other) {
+          max_results = Some(n as usize);
+        }
+      }
+    }
+  }
 
   // Check if the pattern is a RegularExpression
   let regex_pat = extract_regex_pattern(&args[1]);
@@ -1318,6 +1334,20 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // multiple alternatives matching at the same span don't yield repeats.
   raw_matches.sort();
   raw_matches.dedup();
+
+  // `Overlaps -> False` keeps matches greedily left-to-right, skipping any
+  // that begin before the end of the previously kept match.
+  if !overlaps {
+    let mut filtered: Vec<(usize, usize)> = Vec::new();
+    let mut next_start = 0usize;
+    for (start, len) in raw_matches {
+      if start >= next_start {
+        filtered.push((start, len));
+        next_start = start + len;
+      }
+    }
+    raw_matches = filtered;
+  }
 
   let mut positions = Vec::new();
   for (start, len) in raw_matches {
@@ -2109,7 +2139,8 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Rule {
         pattern,
         replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") => {
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") =>
+      {
         overlaps = matches!(replacement.as_ref(),
           Expr::Identifier(v) if v == "True" || v == "All");
       }

@@ -1066,7 +1066,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StringPadRight" => Some((2, 3)),
     "StringPart" => Some((2, 2)),
     "StringPartition" => Some((2, 3)),
-    "StringPosition" => Some((2, 3)),
+    "StringPosition" => Some((2, usize::MAX)),
     "StringQ" => Some((1, 1)),
     "StringRepeat" => Some((2, 3)),
     "StringReplace" => Some((2, 3)),
