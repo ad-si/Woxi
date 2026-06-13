@@ -831,20 +831,19 @@ fn has_ignore_case_option(args: &[Expr]) -> bool {
 /// StringReplace[s, pattern -> replacement] - replaces occurrences
 /// StringReplace[s, {rule1, rule2, ...}] - applies multiple rules
 pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 3 {
+  if args.len() < 2 || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "StringReplace expects 2 or 3 arguments".into(),
+      "StringReplace expects 2 to 4 arguments".into(),
     ));
   }
 
-  let max_replacements = if args.len() == 3 {
-    match &args[2] {
-      Expr::Integer(n) => Some(*n as usize),
-      _ => None,
-    }
-  } else {
-    None
-  };
+  // The optional replacement limit is the first integer after the rules; the
+  // `IgnoreCase -> True` option may appear as a trailing argument.
+  let max_replacements = args[2..].iter().find_map(|a| match a {
+    Expr::Integer(n) => Some(*n as usize),
+    _ => None,
+  });
+  let ignore_case = has_ignore_case_option(args);
 
   // Handle list of strings as first arg
   if let Expr::List(strings) = &args[0] {
@@ -877,7 +876,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
   }
 
-  fn extract_rule(expr: &Expr) -> Result<ReplaceRule, InterpreterError> {
+  fn extract_rule(
+    expr: &Expr,
+    ignore_case: bool,
+  ) -> Result<ReplaceRule, InterpreterError> {
     let (pattern_expr, replacement_expr, is_delayed) = match expr {
       Expr::Rule {
         pattern,
@@ -896,9 +898,23 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     // For simple string literals, use direct matching (delayed doesn't matter
-    // since there are no pattern variables to bind)
+    // since there are no pattern variables to bind). With IgnoreCase, compile
+    // the escaped literal as a case-insensitive regex instead.
     if let Expr::String(pat_str) = pattern_expr {
       let replacement = expr_to_str(replacement_expr)?;
+      if ignore_case && !pat_str.is_empty() {
+        let re = compile_regex(&format!("(?i){}", regex::escape(pat_str)))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "StringReplace: invalid pattern regex: {}",
+              e
+            ))
+          })?;
+        return Ok(ReplaceRule::Regex {
+          regex: re,
+          replacement,
+        });
+      }
       return Ok(ReplaceRule::Simple {
         pattern: pat_str.clone(),
         replacement,
@@ -907,6 +923,11 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // For complex patterns (Alternatives, StringExpression, etc.), use regex
     if let Some(regex_str) = string_pattern_to_regex(pattern_expr) {
+      let regex_str = if ignore_case {
+        format!("(?i){}", regex_str)
+      } else {
+        regex_str
+      };
       let re = compile_regex(&regex_str).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "StringReplace: invalid pattern regex: {}",
@@ -941,6 +962,19 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Fallback: try expr_to_str for identifiers etc.
     if let Ok(pat_str) = expr_to_str(pattern_expr) {
       let replacement = expr_to_str(replacement_expr)?;
+      if ignore_case && !pat_str.is_empty() {
+        let re = compile_regex(&format!("(?i){}", regex::escape(&pat_str)))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "StringReplace: invalid pattern regex: {}",
+              e
+            ))
+          })?;
+        return Ok(ReplaceRule::Regex {
+          regex: re,
+          replacement,
+        });
+      }
       return Ok(ReplaceRule::Simple {
         pattern: pat_str,
         replacement,
@@ -957,11 +991,11 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(rule_list) => {
       let mut v = Vec::new();
       for rule in rule_list {
-        v.push(extract_rule(rule)?);
+        v.push(extract_rule(rule, ignore_case)?);
       }
       v
     }
-    rule => vec![extract_rule(rule)?],
+    rule => vec![extract_rule(rule, ignore_case)?],
   };
 
   // Scan-based replacement: scan left-to-right, at each position try each rule

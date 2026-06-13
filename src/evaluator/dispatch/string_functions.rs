@@ -42,7 +42,7 @@ pub fn dispatch_string_functions(
     "StringContainsQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_contains_q_ast(args));
     }
-    "StringReplace" if args.len() == 2 || args.len() == 3 => {
+    "StringReplace" if (2..=4).contains(&args.len()) => {
       return Some(crate::functions::string_ast::string_replace_ast(args));
     }
     "ToUpperCase" if args.len() == 1 => {

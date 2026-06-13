@@ -519,6 +519,68 @@ mod string_replace {
       "product: A x B"
     );
   }
+
+  // IgnoreCase -> True makes a literal pattern match regardless of case.
+  #[test]
+  fn ignore_case_single_rule() {
+    assert_eq!(
+      interpret(r#"StringReplace["aAbB", "a" -> "1", IgnoreCase -> True]"#)
+        .unwrap(),
+      "11bB"
+    );
+  }
+
+  #[test]
+  fn ignore_case_multichar_literal() {
+    assert_eq!(
+      interpret(r#"StringReplace["ABC abc", "abc" -> "X", IgnoreCase -> True]"#)
+        .unwrap(),
+      "X X"
+    );
+  }
+
+  #[test]
+  fn ignore_case_multiple_rules() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["aAbB", {"a" -> "1", "b" -> "2"}, IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "1122"
+    );
+  }
+
+  // IgnoreCase also applies to alternatives and other compound patterns.
+  #[test]
+  fn ignore_case_alternatives() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["abcABC", "b" | "c" -> "_", IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "a__A__"
+    );
+  }
+
+  // The replacement limit and the IgnoreCase option can be combined.
+  #[test]
+  fn ignore_case_with_limit() {
+    assert_eq!(
+      interpret(r#"StringReplace["aAaA", "a" -> "x", 2, IgnoreCase -> True]"#)
+        .unwrap(),
+      "xxaA"
+    );
+  }
+
+  // IgnoreCase -> False keeps the default case-sensitive behaviour.
+  #[test]
+  fn ignore_case_false_is_case_sensitive() {
+    assert_eq!(
+      interpret(r#"StringReplace["aAbB", "a" -> "1", IgnoreCase -> False]"#)
+        .unwrap(),
+      "1AbB"
+    );
+  }
 }
 
 mod to_character_code {
