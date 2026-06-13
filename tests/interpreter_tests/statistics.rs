@@ -315,6 +315,22 @@ mod bin_lists {
   }
 
   #[test]
+  fn bin_lists_partial_trailing_bin_dropped() {
+    // (max - min) is not a multiple of dx: only whole bins [0,3),[3,6),[6,9)
+    // are produced; the leftover values 9 and 10 fall outside and are dropped.
+    assert_eq!(
+      interpret("BinLists[Range[10], {0, 10, 3}]").unwrap(),
+      "{{1, 2}, {3, 4, 5}, {6, 7, 8}}"
+    );
+    // dx = 4 → bins [0,4),[4,8); the [8,12) range exceeds max, so 9 and 10
+    // are dropped (and only two bins exist).
+    assert_eq!(
+      interpret("BinLists[Range[10], {0, 10, 4}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6, 7}}"
+    );
+  }
+
+  #[test]
   fn bin_lists_with_dx() {
     assert_eq!(
       interpret("BinLists[{1, 2, 3, 4, 5}, 2]").unwrap(),

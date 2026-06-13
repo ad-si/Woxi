@@ -1008,8 +1008,11 @@ fn take_extreme_assoc(
     let o = a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal);
     if largest { o.reverse() } else { o }
   });
-  let result: Vec<(Expr, Expr)> =
-    keyed.into_iter().take(n as usize).map(|(kv, _)| kv).collect();
+  let result: Vec<(Expr, Expr)> = keyed
+    .into_iter()
+    .take(n as usize)
+    .map(|(kv, _)| kv)
+    .collect();
   Some(Ok(Expr::Association(result)))
 }
 
@@ -2002,14 +2005,19 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let num_bins = ((max_val - min_val) / dx).round() as usize;
+  // Only whole bins [min + i*dx, min + (i+1)*dx) that fit within [min, max]
+  // are produced — a trailing partial range (e.g. {0, 10, 3} leaves [9, 10])
+  // is dropped. Values outside any bin are not capped into the last one.
+  let num_bins = ((max_val - min_val) / dx + 1e-9).floor().max(0.0) as usize;
   let mut bins: Vec<Vec<Expr>> = vec![Vec::new(); num_bins];
 
   for &(v, expr) in &values {
-    if v >= min_val && v < max_val {
-      let bin = ((v - min_val) / dx) as usize;
-      let bin = bin.min(num_bins - 1);
-      bins[bin].push(expr.clone());
+    if v < min_val {
+      continue;
+    }
+    let idx = ((v - min_val) / dx).floor();
+    if idx >= 0.0 && (idx as usize) < num_bins {
+      bins[idx as usize].push(expr.clone());
     }
   }
 
