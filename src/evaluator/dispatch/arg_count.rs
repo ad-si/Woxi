@@ -624,7 +624,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "KeyTake" => Some((2, 2)),
     "KeyUnion" => Some((1, 2)),
     "KeyValueMap" => Some((2, 2)),
-    "KroneckerProduct" => Some((2, 2)),
+    "KroneckerProduct" => Some((2, usize::MAX)),
     "KCoreComponents" => Some((2, 3)),
     "KroneckerSymbol" => Some((2, 2)),
     "Kurtosis" => Some((1, 1)),

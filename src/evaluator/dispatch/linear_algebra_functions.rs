@@ -431,7 +431,7 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::lower_triangularize_ast(args),
       );
     }
-    "KroneckerProduct" if args.len() == 2 => {
+    "KroneckerProduct" if args.len() >= 2 => {
       return Some(kronecker_product_ast(args));
     }
     "CharacteristicPolynomial" if args.len() == 2 => {
@@ -2315,71 +2315,148 @@ fn is_zero_expr(expr: &Expr) -> bool {
   }
 }
 
-/// KroneckerProduct[A, B] — tensor (Kronecker) product of two matrices.
-fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let a_rows = match &args[0] {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "KroneckerProduct".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-  let b_rows = match &args[1] {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "KroneckerProduct".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
+/// Classification of a KroneckerProduct operand by tensor rank.
+enum KronArg<'a> {
+  /// Rank-1 tensor (vector of scalars).
+  Vector(Vec<&'a Expr>),
+  /// Rank-2 tensor (matrix, list of equal-length rows).
+  Matrix(Vec<Vec<&'a Expr>>),
+}
 
-  // Extract as matrix of expressions
-  let a: Vec<Vec<&Expr>> = a_rows
-    .iter()
-    .filter_map(|r| match r {
-      Expr::List(cols) => Some(cols.iter().collect()),
-      _ => None,
-    })
-    .collect();
-  let b: Vec<Vec<&Expr>> = b_rows
-    .iter()
-    .filter_map(|r| match r {
-      Expr::List(cols) => Some(cols.iter().collect()),
-      _ => None,
-    })
-    .collect();
-
-  if a.is_empty() || b.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+/// Classify an `Expr` as a KroneckerProduct vector or matrix operand.
+/// Returns `None` for anything that is not a vector or rectangular matrix.
+fn classify_kron_arg(expr: &Expr) -> Option<KronArg<'_>> {
+  let rows = match expr {
+    Expr::List(rows) => rows,
+    _ => return None,
+  };
+  if rows.is_empty() {
+    return None;
   }
+  // Matrix if every element is itself a list; vector if none are.
+  if rows.iter().all(|r| matches!(r, Expr::List(_))) {
+    let mat: Vec<Vec<&Expr>> = rows
+      .iter()
+      .map(|r| match r {
+        Expr::List(cols) => cols.iter().collect(),
+        _ => unreachable!(),
+      })
+      .collect();
+    // Require rectangular shape.
+    let n = mat[0].len();
+    if mat.iter().any(|r| r.len() != n) {
+      return None;
+    }
+    Some(KronArg::Matrix(mat))
+  } else if rows.iter().any(|r| matches!(r, Expr::List(_))) {
+    // Ragged (mix of lists and scalars) — not a valid tensor.
+    None
+  } else {
+    Some(KronArg::Vector(rows.iter().collect()))
+  }
+}
 
-  let m = a.len();
-  let n = a[0].len();
-  let p = b.len();
-  let q = b[0].len();
+fn kron_times(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  crate::functions::math_ast::times_ast(&[a.clone(), b.clone()])
+}
 
-  let mut result = Vec::with_capacity(m * p);
-  for i in 0..m {
-    for k in 0..p {
-      let mut row = Vec::with_capacity(n * q);
-      for j in 0..n {
-        for l in 0..q {
-          // result[i*p+k][j*q+l] = a[i][j] * b[k][l]
-          let product = crate::functions::math_ast::times_ast(&[
-            a[i][j].clone(),
-            b[k][l].clone(),
-          ])?;
-          row.push(product);
+/// KroneckerProduct of two operands of rank 1 or 2, matching wolframscript:
+/// - vector⊗vector → m×n outer-product matrix
+/// - vector⊗matrix → (m·p)×q matrix
+/// - matrix⊗vector → m×(n·q) matrix
+/// - matrix⊗matrix → (m·p)×(n·q) block matrix
+fn kronecker_product_pair(
+  a: &KronArg<'_>,
+  b: &KronArg<'_>,
+) -> Result<Expr, InterpreterError> {
+  let result: Vec<Expr> = match (a, b) {
+    (KronArg::Vector(u), KronArg::Vector(v)) => {
+      let mut rows = Vec::with_capacity(u.len());
+      for &ui in u {
+        let mut row = Vec::with_capacity(v.len());
+        for &vj in v {
+          row.push(kron_times(ui, vj)?);
+        }
+        rows.push(Expr::List(row.into()));
+      }
+      rows
+    }
+    (KronArg::Vector(u), KronArg::Matrix(m)) => {
+      // (|u|·rows)×cols : result[i*p+k][l] = u[i] * m[k][l]
+      let mut rows = Vec::with_capacity(u.len() * m.len());
+      for &ui in u {
+        for mk in m {
+          let mut row = Vec::with_capacity(mk.len());
+          for &mkl in mk {
+            row.push(kron_times(ui, mkl)?);
+          }
+          rows.push(Expr::List(row.into()));
         }
       }
-      result.push(Expr::List(row.into()));
+      rows
     }
+    (KronArg::Matrix(m), KronArg::Vector(v)) => {
+      // rows×(cols·|v|) : result[i][j*q+l] = m[i][j] * v[l]
+      let mut rows = Vec::with_capacity(m.len());
+      for mi in m {
+        let mut row = Vec::with_capacity(mi.len() * v.len());
+        for &mij in mi {
+          for &vl in v {
+            row.push(kron_times(mij, vl)?);
+          }
+        }
+        rows.push(Expr::List(row.into()));
+      }
+      rows
+    }
+    (KronArg::Matrix(a), KronArg::Matrix(b)) => {
+      let (m, n) = (a.len(), a[0].len());
+      let (p, q) = (b.len(), b[0].len());
+      let mut rows = Vec::with_capacity(m * p);
+      for i in 0..m {
+        for k in 0..p {
+          let mut row = Vec::with_capacity(n * q);
+          for j in 0..n {
+            for l in 0..q {
+              row.push(kron_times(a[i][j], b[k][l])?);
+            }
+          }
+          rows.push(Expr::List(row.into()));
+        }
+      }
+      rows
+    }
+  };
+  Ok(Expr::List(result.into()))
+}
+
+/// KroneckerProduct[a, b, ...] — generalized tensor (Kronecker) product.
+/// Supports vectors and matrices and folds left over any number of args.
+fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "KroneckerProduct".to_string(),
+    args: args.to_vec().into(),
+  };
+
+  // Classify the first operand.
+  let mut acc_owned = args[0].clone();
+  if classify_kron_arg(&acc_owned).is_none() {
+    return Ok(unevaluated());
   }
 
-  Ok(Expr::List(result.into()))
+  for next in &args[1..] {
+    let a = match classify_kron_arg(&acc_owned) {
+      Some(a) => a,
+      None => return Ok(unevaluated()),
+    };
+    let b = match classify_kron_arg(next) {
+      Some(b) => b,
+      None => return Ok(unevaluated()),
+    };
+    acc_owned = kronecker_product_pair(&a, &b)?;
+  }
+
+  Ok(acc_owned)
 }
 
 fn gcd_i128(mut a: i128, mut b: i128) -> i128 {

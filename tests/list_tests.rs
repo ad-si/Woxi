@@ -185,6 +185,41 @@ mod list_tests {
   }
 
   #[test]
+  fn kronecker_product() {
+    // vector ⊗ vector → outer-product matrix
+    assert_eq!(
+      interpret("KroneckerProduct[{1, 2}, {3, 4}]").unwrap(),
+      "{{3, 4}, {6, 8}}"
+    );
+    // unequal-length vectors → m×n matrix
+    assert_eq!(
+      interpret("KroneckerProduct[{1, 2, 3}, {4, 5}]").unwrap(),
+      "{{4, 5}, {8, 10}, {12, 15}}"
+    );
+    // vector ⊗ matrix → (|v|·rows)×cols
+    assert_eq!(
+      interpret("KroneckerProduct[{1, 2}, {{1, 0}, {0, 1}}]").unwrap(),
+      "{{1, 0}, {0, 1}, {2, 0}, {0, 2}}"
+    );
+    // matrix ⊗ vector → rows×(cols·|v|)
+    assert_eq!(
+      interpret("KroneckerProduct[{{1, 0}, {0, 1}}, {3, 4}]").unwrap(),
+      "{{3, 4, 0, 0}, {0, 0, 3, 4}}"
+    );
+    // matrix ⊗ matrix → block matrix
+    assert_eq!(
+      interpret("KroneckerProduct[{{1, 2}, {3, 4}}, {{0, 1}, {1, 0}}]")
+        .unwrap(),
+      "{{0, 1, 0, 2}, {1, 0, 2, 0}, {0, 3, 0, 4}, {3, 0, 4, 0}}"
+    );
+    // n-ary: folds left over all arguments
+    assert_eq!(
+      interpret("KroneckerProduct[{1, 2}, {3, 4}, {5, 6}]").unwrap(),
+      "{{15, 18, 20, 24}, {30, 36, 40, 48}}"
+    );
+  }
+
+  #[test]
   fn replace_part() {
     assert_eq!(
       interpret("ReplacePart[{a, b, c}, 2 -> x]").unwrap(),

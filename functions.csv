@@ -617,7 +617,7 @@ EvaluationNotebook,Return the current evaluation notebook,✅,none,3.0,621
 ListPlot3D,Creates a 3D plot from data,✅,pure,1.0,622
 Slider,,🚫,,6.0,623
 DiracDelta,Dirac delta generalized function,✅,pure,4.0,624
-KroneckerProduct,Kronecker (tensor) product of matrices,✅,pure,6.0,625
+KroneckerProduct,Kronecker (tensor) product of vectors and matrices,✅,pure,6.0,625
 ScriptMinSize,Minimum size for sub/superscripts,✅,none,3.0,626
 DownValues,Returns the downvalues of a symbol,✅,pure,2.0,627
 Numerator,Returns the numerator of a rational expression,✅,pure,1.0,628
