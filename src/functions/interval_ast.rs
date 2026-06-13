@@ -32,6 +32,25 @@ fn has_interval(args: &[Expr]) -> bool {
   args.iter().any(|a| is_interval(a).is_some())
 }
 
+/// Apply a monotonic non-decreasing function (`Floor`, `Ceiling`, `Round`,
+/// `IntegerPart`) to an `Interval[...]`, mapping each span's endpoints and
+/// renormalizing. Returns `None` unless `expr` is an interval with numeric
+/// endpoints.
+pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  let spans = is_interval(expr)?;
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    expr_to_f64(a)?;
+    expr_to_f64(b)?;
+    let fa =
+      crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
+    let fb =
+      crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    out.push((fa, fb));
+  }
+  Some(make_interval(normalize_intervals(out)))
+}
+
 /// `Abs[Interval[...]]` — the interval of absolute values. For each span
 /// `[a, b]`: if it contains 0 the result runs from 0 to max(|a|, |b|);
 /// otherwise from min(|a|, |b|) to max(|a|, |b|). Spans are renormalized

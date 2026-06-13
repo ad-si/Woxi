@@ -494,3 +494,34 @@ fn abs_interval_multiple_segments_merge() {
     "Interval[{2, 5}]"
   );
 }
+
+// ─── Floor / Ceiling / Round on intervals ────────────────────────────────────
+
+#[test]
+fn floor_ceiling_round_interval() {
+  // Monotonic non-decreasing functions map the span endpoints.
+  assert_eq!(
+    interpret("Round[Interval[{1.2, 3.8}]]").unwrap(),
+    "Interval[{1, 4}]"
+  );
+  assert_eq!(
+    interpret("Floor[Interval[{1.2, 3.8}]]").unwrap(),
+    "Interval[{1, 3}]"
+  );
+  assert_eq!(
+    interpret("Ceiling[Interval[{1.2, 3.8}]]").unwrap(),
+    "Interval[{2, 4}]"
+  );
+}
+
+#[test]
+fn floor_interval_negative_and_multi_span() {
+  assert_eq!(
+    interpret("Floor[Interval[{-2, 2}]]").unwrap(),
+    "Interval[{-2, 2}]"
+  );
+  assert_eq!(
+    interpret("Round[Interval[{1, 3}, {5, 7}]]").unwrap(),
+    "Interval[{1, 3}, {5, 7}]"
+  );
+}

@@ -43,9 +43,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Undefined".to_string()));
   }
   // Abs[Interval[{a, b}, ...]] → the interval of absolute values.
-  if let Some(result) =
-    crate::functions::interval_ast::abs_interval(&args[0])
-  {
+  if let Some(result) = crate::functions::interval_ast::abs_interval(&args[0]) {
     return Ok(result);
   }
   // Handle any expression containing Infinity → Infinity
@@ -1177,6 +1175,12 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Floor expects 1 or 2 arguments".into(),
     ));
   }
+  if args.len() == 1
+    && let Some(r) =
+      crate::functions::interval_ast::map_monotonic_interval("Floor", &args[0])
+  {
+    return Ok(r);
+  }
   if args.len() == 2 {
     return floor_ceil_two_arg(&args[0], &args[1], true);
   }
@@ -1235,6 +1239,13 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Ceiling expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 1
+    && let Some(r) = crate::functions::interval_ast::map_monotonic_interval(
+      "Ceiling", &args[0],
+    )
+  {
+    return Ok(r);
   }
   if args.len() == 2 {
     return floor_ceil_two_arg(&args[0], &args[1], false);
@@ -1372,6 +1383,12 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Round expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 1
+    && let Some(r) =
+      crate::functions::interval_ast::map_monotonic_interval("Round", &args[0])
+  {
+    return Ok(r);
   }
   if args.len() == 2 {
     // Round[x, a] - round x to nearest multiple of a
