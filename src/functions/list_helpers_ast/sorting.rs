@@ -523,11 +523,75 @@ fn by_key_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
 /// MinimalBy[list, f] - Returns all elements that minimize f
 /// MinimalBy[list, f, n] - Returns the n elements with smallest f values
+/// MinimalBy/MaximalBy over an association: rank each (key, value) pair by
+/// `func` applied to the *value*, returning an association of the selected
+/// pairs. Without `n`, keep every pair tying the extreme value (in original
+/// order). With `n`, keep the `n` pairs sorted by the criterion (stable).
+fn minimal_maximal_by_assoc(
+  pairs: &[(Expr, Expr)],
+  func: &Expr,
+  n: Option<i128>,
+  maximal: bool,
+) -> Result<Expr, InterpreterError> {
+  if pairs.is_empty() {
+    return Ok(Expr::Association(vec![]));
+  }
+  // (key, value, criterion = func[value])
+  let keyed: Vec<((Expr, Expr), Expr)> = pairs
+    .iter()
+    .map(|(k, v)| Ok(((k.clone(), v.clone()), apply_func_ast(func, v)?)))
+    .collect::<Result<_, InterpreterError>>()?;
+
+  match n {
+    Some(n_val) => {
+      let mut indexed: Vec<(usize, &Expr)> =
+        keyed.iter().enumerate().map(|(i, (_, c))| (i, c)).collect();
+      indexed.sort_by(|(_, a), (_, b)| {
+        if maximal {
+          by_key_cmp(b, a)
+        } else {
+          by_key_cmp(a, b)
+        }
+      });
+      let take = (n_val.max(0) as usize).min(keyed.len());
+      let result: Vec<(Expr, Expr)> = indexed
+        .into_iter()
+        .take(take)
+        .map(|(i, _)| keyed[i].0.clone())
+        .collect();
+      Ok(Expr::Association(result))
+    }
+    None => {
+      let extreme = keyed
+        .iter()
+        .map(|(_, c)| c)
+        .min_by(|a, b| if maximal { by_key_cmp(b, a) } else { by_key_cmp(a, b) })
+        .cloned();
+      let result: Vec<(Expr, Expr)> = match extreme {
+        Some(ex) => {
+          let ex_str = crate::syntax::expr_to_string(&ex);
+          keyed
+            .into_iter()
+            .filter(|(_, c)| crate::syntax::expr_to_string(c) == ex_str)
+            .map(|(kv, _)| kv)
+            .collect()
+        }
+        None => vec![],
+      };
+      Ok(Expr::Association(result))
+    }
+  }
+}
+
 pub fn minimal_by_ast(
   list: &Expr,
   func: &Expr,
   n: Option<i128>,
 ) -> Result<Expr, InterpreterError> {
+  // Association form: rank by f applied to each value, return an association.
+  if let Expr::Association(pairs) = list {
+    return minimal_maximal_by_assoc(pairs, func, n, false);
+  }
   let items = match list {
     Expr::List(items) if !items.is_empty() => items,
     Expr::List(_) => return Ok(Expr::List(vec![].into())),
@@ -594,6 +658,10 @@ pub fn maximal_by_ast(
   func: &Expr,
   n: Option<i128>,
 ) -> Result<Expr, InterpreterError> {
+  // Association form: rank by f applied to each value, return an association.
+  if let Expr::Association(pairs) = list {
+    return minimal_maximal_by_assoc(pairs, func, n, true);
+  }
   let items = match list {
     Expr::List(items) if !items.is_empty() => items,
     Expr::List(_) => return Ok(Expr::List(vec![].into())),

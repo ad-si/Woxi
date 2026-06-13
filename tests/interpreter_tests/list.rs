@@ -6231,6 +6231,33 @@ mod join_non_list {
   }
 
   #[test]
+  fn minimal_maximal_by_association() {
+    // On an association, rank by f applied to each value; result is an
+    // association of the selected key -> value pairs.
+    assert_eq!(
+      interpret("MinimalBy[<|\"a\" -> 3, \"b\" -> 1|>, # &]").unwrap(),
+      "<|b -> 1|>"
+    );
+    // Ties keep every extreme entry in original order.
+    assert_eq!(
+      interpret("MaximalBy[<|\"a\" -> 3, \"b\" -> 1, \"c\" -> 3|>, # &]")
+        .unwrap(),
+      "<|a -> 3, c -> 3|>"
+    );
+    // The n-form keeps the n best, sorted by the criterion (stable).
+    assert_eq!(
+      interpret("MinimalBy[<|\"a\" -> 2, \"b\" -> 3, \"c\" -> 1|>, # &, 2]")
+        .unwrap(),
+      "<|c -> 1, a -> 2|>"
+    );
+    assert_eq!(
+      interpret("MaximalBy[<|\"a\" -> 2, \"b\" -> 3, \"c\" -> 1|>, # &, 2]")
+        .unwrap(),
+      "<|b -> 3, a -> 2|>"
+    );
+  }
+
+  #[test]
   fn group_by_operator_form() {
     assert_eq!(
       interpret("GroupBy[Sign][{1, -1, 2, -2, 3}]").unwrap(),
