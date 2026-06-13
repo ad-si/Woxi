@@ -2214,7 +2214,10 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let num_bins = ((max_val - min_val) / dx).round() as usize;
+  // Only whole bins [min + i*dx, min + (i+1)*dx) that fit within [min, max]
+  // are produced; a trailing partial range is dropped and out-of-range values
+  // are not capped into the last bin.
+  let num_bins = ((max_val - min_val) / dx + 1e-9).floor().max(0.0) as usize;
   if num_bins == 0 {
     return Ok(Expr::List(
       vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
@@ -2223,10 +2226,12 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut counts = vec![0i128; num_bins];
   for &v in &values {
-    if v >= min_val && v <= max_val {
-      let bin = ((v - min_val) / dx) as usize;
-      let bin = bin.min(num_bins - 1);
-      counts[bin] += 1;
+    if v < min_val {
+      continue;
+    }
+    let idx = ((v - min_val) / dx).floor();
+    if idx >= 0.0 && (idx as usize) < num_bins {
+      counts[idx as usize] += 1;
     }
   }
 

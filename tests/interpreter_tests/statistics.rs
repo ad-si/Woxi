@@ -487,6 +487,25 @@ mod histogram_list {
   }
 
   #[test]
+  fn explicit_bin_spec_partial_trailing() {
+    // (max - min) is not a multiple of dx: only whole bins are produced and
+    // the max boundary value is excluded.
+    assert_eq!(
+      interpret("HistogramList[Range[10], {0, 10, 3}]").unwrap(),
+      "{{0, 3, 6, 9}, {2, 3, 3}}"
+    );
+    assert_eq!(
+      interpret("HistogramList[Range[10], {0, 10, 4}]").unwrap(),
+      "{{0, 4, 8}, {3, 4}}"
+    );
+    // Even division: the value at max is excluded (last bin counts {8, 9}).
+    assert_eq!(
+      interpret("HistogramList[Range[10], {0, 10, 2}]").unwrap(),
+      "{{0, 2, 4, 6, 8, 10}, {1, 2, 2, 2, 2}}"
+    );
+  }
+
+  #[test]
   fn symbolic_returns_unevaluated() {
     assert_eq!(interpret("HistogramList[x]").unwrap(), "HistogramList[x]");
   }
