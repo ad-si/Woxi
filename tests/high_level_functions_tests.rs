@@ -320,6 +320,35 @@ mod high_level_functions_tests {
         "{Abc, Def}"
       );
     }
+    #[test]
+    fn test_capitalize_all_words() {
+      assert_eq!(
+        interpret(r#"Capitalize["the cat AND dog", "AllWords"]"#).unwrap(),
+        "The Cat AND Dog"
+      );
+    }
+    #[test]
+    fn test_capitalize_first_word() {
+      assert_eq!(
+        interpret(r#"Capitalize["the quick brown fox", "FirstWord"]"#).unwrap(),
+        "The quick brown fox"
+      );
+    }
+    #[test]
+    fn test_capitalize_long_words() {
+      // Words with more than three letters are capitalized.
+      assert_eq!(
+        interpret(r#"Capitalize["the quick brown fox", "LongWords"]"#).unwrap(),
+        "the Quick Brown fox"
+      );
+    }
+    #[test]
+    fn test_capitalize_preserves_punctuation() {
+      assert_eq!(
+        interpret(r#"Capitalize["a-b c.d", "AllWords"]"#).unwrap(),
+        "A-b C.d"
+      );
+    }
   }
 
   mod decapitalize_tests {

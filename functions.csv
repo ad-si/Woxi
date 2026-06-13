@@ -2586,7 +2586,7 @@ SpheroidalS2,,🚫,,6.0,2642
 SubtractSides,Subtract an expression from both sides of an equation,✅,none,11.3,2642
 Uninstall,,🚫,,2.0,2642
 CantorMesh,Create a 1D or 2D Cantor set mesh at a given level of iteration,✅,pure,11.1,2650
-Capitalize,Capitalizes the first letter of a string,✅,pure,10.1,2650
+Capitalize,Capitalizes letters in a string (first word or AllWords/FirstWord/LongWords),✅,pure,10.1,2650
 GeoCenter,,🚫,,10.0,2650
 HeaderLines,option for header lines in imports,✅,Symbolic,10.0,2650
 IntersectingQ,Test whether two lists share any element,✅,none,10.0,2650

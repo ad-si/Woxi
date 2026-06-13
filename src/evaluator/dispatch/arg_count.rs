@@ -134,7 +134,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CanberraDistance" => Some((2, 2)),
     "Cancel" => Some((1, 1)),
     "CantorStaircase" => Some((1, 1)),
-    "Capitalize" => Some((1, 1)),
+    "Capitalize" => Some((1, 2)),
     "Cases" => Some((1, 5)),
     "CatalanNumber" => Some((1, 1)),
     "Catenate" => Some((1, 1)),

@@ -5626,26 +5626,94 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Capitalize[string] - capitalizes the first letter of the string
 pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Capitalize expects exactly 1 argument".into(),
+      "Capitalize expects 1 or 2 arguments".into(),
     ));
   }
+  // Thread over a list of strings, preserving the optional type argument.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| capitalize_ast(&[item.clone()]))
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        capitalize_ast(&call)
+      })
       .collect();
     return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
-  if s.is_empty() {
-    return Ok(Expr::String(s));
+
+  // Capitalize the first character of a whitespace-delimited word.
+  let cap_word = |w: &str| -> String {
+    let mut chars = w.chars();
+    match chars.next() {
+      Some(c) => format!("{}{}", c.to_uppercase(), chars.as_str()),
+      None => String::new(),
+    }
+  };
+
+  // The two-argument form selects which words to capitalize.
+  if args.len() == 2 {
+    let kind = match &args[1] {
+      Expr::String(k) => k.clone(),
+      _ => crate::syntax::expr_to_string(&args[1]),
+    };
+    if !matches!(
+      kind.as_str(),
+      "AllWords" | "FirstWord" | "LongWords"
+    ) {
+      // "TitleCase" depends on part-of-speech data we do not model; any
+      // other value is invalid (Capitalize::nform). Leave unevaluated.
+      if kind != "TitleCase" {
+        crate::emit_message(&format!(
+          "Capitalize::nform: Argument {} is not \"AllWords\", \"FirstWord\", \"LongWords\" or \"TitleCase\".",
+          crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+        ));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Capitalize".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+    // Rebuild the string, capitalizing the selected words while preserving
+    // the original whitespace runs.
+    let mut result = String::new();
+    let mut word_idx = 0usize;
+    for (is_ws, seg) in split_keep_whitespace(&s) {
+      if is_ws {
+        result.push_str(&seg);
+      } else {
+        let cap = match kind.as_str() {
+          "AllWords" => true,
+          "FirstWord" => word_idx == 0,
+          "LongWords" => seg.chars().count() > 3,
+          _ => unreachable!(),
+        };
+        result.push_str(&if cap { cap_word(&seg) } else { seg.clone() });
+        word_idx += 1;
+      }
+    }
+    return Ok(Expr::String(result));
   }
-  let mut chars = s.chars();
-  let first = chars.next().unwrap().to_uppercase().to_string();
-  let rest: String = chars.collect();
-  Ok(Expr::String(format!("{}{}", first, rest)))
+
+  // One-argument form: capitalize only the first character of the string.
+  Ok(Expr::String(cap_word(&s)))
+}
+
+/// Split a string into alternating (is_whitespace, segment) runs, preserving
+/// the original characters so they can be rejoined unchanged.
+fn split_keep_whitespace(s: &str) -> Vec<(bool, String)> {
+  let mut out: Vec<(bool, String)> = Vec::new();
+  for c in s.chars() {
+    let is_ws = c.is_whitespace();
+    match out.last_mut() {
+      Some((last_ws, run)) if *last_ws == is_ws => run.push(c),
+      _ => out.push((is_ws, c.to_string())),
+    }
+  }
+  out
 }
 
 // ─── Decapitalize ──────────────────────────────────────────────────

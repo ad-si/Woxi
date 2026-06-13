@@ -229,7 +229,7 @@ pub fn dispatch_string_functions(
     "StringDelete" if args.len() >= 2 => {
       return Some(crate::functions::string_ast::string_delete_ast(args));
     }
-    "Capitalize" if args.len() == 1 => {
+    "Capitalize" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::capitalize_ast(args));
     }
     "Decapitalize" if args.len() == 1 => {
