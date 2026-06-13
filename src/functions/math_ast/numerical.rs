@@ -2034,6 +2034,83 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return norm_ast(&[Expr::List(flat.into())]);
   }
 
+  // Matrix norms: args[0] is a rectangular list of lists. These differ from
+  // the element-wise vector norms below:
+  //   p = 1        → maximum absolute column sum
+  //   p = Infinity → maximum absolute row sum
+  //   p = 2        → spectral norm (largest singular value)
+  //                  = Sqrt[Max[Eigenvalues[Transpose[A].A]]]
+  if let Expr::List(rows) = &args[0]
+    && !rows.is_empty()
+    && rows.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let mat: Vec<Vec<Expr>> = rows
+      .iter()
+      .map(|r| match r {
+        Expr::List(c) => c.to_vec(),
+        _ => unreachable!(),
+      })
+      .collect();
+    let ncols = mat[0].len();
+    if ncols > 0 && mat.iter().all(|r| r.len() == ncols) {
+      use crate::evaluator::evaluate_expr_to_expr;
+      let abs = |e: &Expr| Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![e.clone()].into(),
+      };
+      let sum = |terms: Vec<Expr>| Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      let max_of = |terms: Vec<Expr>| Expr::FunctionCall {
+        name: "Max".to_string(),
+        args: terms.into(),
+      };
+
+      if is_infinity {
+        // Maximum absolute row sum.
+        let row_sums: Vec<Expr> = mat
+          .iter()
+          .map(|row| sum(row.iter().map(&abs).collect()))
+          .collect();
+        return evaluate_expr_to_expr(&max_of(row_sums));
+      }
+      if p_val == Some(1.0) {
+        // Maximum absolute column sum.
+        let col_sums: Vec<Expr> = (0..ncols)
+          .map(|j| sum(mat.iter().map(|row| abs(&row[j])).collect()))
+          .collect();
+        return evaluate_expr_to_expr(&max_of(col_sums));
+      }
+      if p_val == Some(2.0) {
+        // Spectral norm: Sqrt[Max[Eigenvalues[Transpose[A].A]]].
+        let a = args[0].clone();
+        let at = Expr::FunctionCall {
+          name: "Transpose".to_string(),
+          args: vec![a.clone()].into(),
+        };
+        let ata = Expr::FunctionCall {
+          name: "Dot".to_string(),
+          args: vec![at, a].into(),
+        };
+        let eig = Expr::FunctionCall {
+          name: "Eigenvalues".to_string(),
+          args: vec![ata].into(),
+        };
+        let sqrt = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![max_of(vec![eig])].into(),
+        };
+        return evaluate_expr_to_expr(&sqrt);
+      }
+      // Other matrix p-norms are not defined; leave unevaluated.
+      return Ok(Expr::FunctionCall {
+        name: "Norm".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  }
+
   match &args[0] {
     Expr::List(items) => {
       let p = p_val.unwrap_or(2.0);

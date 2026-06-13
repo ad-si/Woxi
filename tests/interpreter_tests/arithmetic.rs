@@ -2339,6 +2339,38 @@ mod expand_threading {
   }
 
   #[test]
+  fn norm_matrix_spectral() {
+    // Default matrix norm is the spectral norm (largest singular value).
+    assert_eq!(
+      interpret("Norm[{{1, 2}, {3, 4}}]").unwrap(),
+      "Sqrt[15 + Sqrt[221]]"
+    );
+    assert_eq!(interpret("Norm[{{3, 0}, {0, 4}}]").unwrap(), "4");
+  }
+
+  #[test]
+  fn norm_matrix_one_is_max_column_sum() {
+    assert_eq!(interpret("Norm[{{1, 2}, {3, 4}}, 1]").unwrap(), "6");
+    assert_eq!(interpret("Norm[{{1, -2}, {-3, 4}}, 1]").unwrap(), "6");
+  }
+
+  #[test]
+  fn norm_matrix_infinity_is_max_row_sum() {
+    assert_eq!(
+      interpret("Norm[{{1, 2}, {3, 4}}, Infinity]").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn norm_matrix_frobenius() {
+    assert_eq!(
+      interpret(r#"Norm[{{1, 2}, {3, 4}}, "Frobenius"]"#).unwrap(),
+      "Sqrt[30]"
+    );
+  }
+
+  #[test]
   fn string_replace_operator_form() {
     assert_eq!(
       interpret("StringReplace[\"y\" -> \"ies\"][\"city\"]").unwrap(),
