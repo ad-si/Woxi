@@ -7416,6 +7416,57 @@ mod list_correlate {
       "{1, 1, 2}"
     );
   }
+
+  // ListCorrelate[ker, list, {kL, kR}] aligns kernel element kL with the
+  // first list element and kR with the last, wrapping cyclically (no kernel
+  // reversal, unlike ListConvolve). {1, 1} gives a length-n cyclic result.
+  #[test]
+  fn cyclic_overhang_one_one() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, 2}, {3, 4, 5}, {1, 1}]").unwrap(),
+      "{11, 14, 11}"
+    );
+  }
+
+  // An integer overhang k is shorthand for {k, k}.
+  #[test]
+  fn integer_overhang_shorthand() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, 2}, {3, 4, 5}, 1]").unwrap(),
+      "{11, 14, 11}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{1, 2}, {3, 4, 5}, -1]").unwrap(),
+      "{11, 11, 14}"
+    );
+  }
+
+  // {1, -1} reproduces the default ("valid") 2-argument result.
+  #[test]
+  fn overhang_one_minus_one_matches_default() {
+    assert_eq!(
+      interpret("ListCorrelate[{x, y}, {a, b, c, d}, {1, -1}]").unwrap(),
+      "{a*x + b*y, b*x + c*y, c*x + d*y}"
+    );
+  }
+
+  // {-1, 1} gives the extended (full) cyclic correlation of length n+m-1.
+  #[test]
+  fn overhang_minus_one_one_full() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, 1, 1}, {1, 2, 3, 4, 5}, {-1, 1}]").unwrap(),
+      "{10, 8, 6, 9, 12, 10, 8}"
+    );
+  }
+
+  // A 4th argument supplies a scalar padding used instead of cyclic wrap.
+  #[test]
+  fn scalar_padding() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, 1}, {1, 2, 3, 4}, {1, 1}, 0]").unwrap(),
+      "{3, 5, 7, 4}"
+    );
+  }
 }
 
 mod probability {

@@ -663,7 +663,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LinearSolve" => Some((2, 2)),
     "LiouvilleLambda" => Some((1, 1)),
     "ListConvolve" => Some((2, 4)),
-    "ListCorrelate" => Some((2, 2)),
+    "ListCorrelate" => Some((2, 4)),
     "ListFourierSequenceTransform" => Some((2, 2)),
     "ListQ" => Some((1, 1)),
     "LocationTest" => Some((1, 3)),
