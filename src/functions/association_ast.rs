@@ -5,6 +5,29 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// Emit `<F>::<tag>: The argument <subject> is not a valid <what>.` and
+/// build the unevaluated call, matching wolframscript's message family
+/// for association functions applied to invalid subjects.
+fn invalid_subject_message(
+  fname: &str,
+  tag: &str,
+  what: &str,
+  subject: &Expr,
+  args: &[Expr],
+) -> Expr {
+  crate::emit_message(&format!(
+    "{}::{}: The argument {} is not a valid {}.",
+    fname,
+    tag,
+    crate::syntax::format_expr(subject, crate::syntax::ExprForm::Output),
+    what
+  ));
+  Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
 /// Helper to extract key from a rule expression
 fn extract_rule_key(expr: &Expr) -> Option<Expr> {
   match expr {
@@ -105,8 +128,12 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       Ok(rargs[0].clone())
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Keys expects an association".into(),
+    _ => Ok(invalid_subject_message(
+      "Keys",
+      "invrl",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -132,8 +159,12 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       Ok(rargs[1].clone())
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Values expects an association".into(),
+    _ => Ok(invalid_subject_message(
+      "Values",
+      "invrl",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -161,9 +192,26 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::Association(filtered))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeyDropFrom expects an association as first argument".into(),
-    )),
+    Expr::Identifier(sym) => {
+      crate::emit_message(&format!(
+        "KeyDropFrom::blnoval: The symbol {} at position 1 should have an immediate value defined.",
+        sym
+      ));
+      Ok(Expr::FunctionCall {
+        name: "KeyDropFrom".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    other => {
+      crate::emit_message(&format!(
+        "KeyDropFrom::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      ));
+      Ok(Expr::FunctionCall {
+        name: "KeyDropFrom".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
@@ -188,9 +236,31 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Identifier("False".to_string()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeyExistsQ expects an association as first argument".into(),
-    )),
+    // A list of rules is also a valid subject.
+    Expr::List(items)
+      if items.iter().all(|e| extract_rule_key(e).is_some()) =>
+    {
+      for item in items.iter() {
+        if let Some(k) = extract_rule_key(item) {
+          let k_str = crate::syntax::expr_to_string(&k);
+          if k_str.trim_matches('"') == key_cmp {
+            return Ok(Expr::Identifier("True".to_string()));
+          }
+        }
+      }
+      Ok(Expr::Identifier("False".to_string()))
+    }
+    other => {
+      // Unlike its siblings, KeyExistsQ answers False after the message.
+      invalid_subject_message(
+        "KeyExistsQ",
+        "invrl",
+        "Association or a list of rules",
+        other,
+        args,
+      );
+      Ok(Expr::Identifier("False".to_string()))
+    }
   }
 }
 
@@ -254,8 +324,12 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Lookup expects an association as first argument".into(),
+    _ => Ok(invalid_subject_message(
+      "Lookup",
+      "invrl",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -400,8 +474,12 @@ pub fn key_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
       Ok(Expr::Association(sorted))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeySort expects an association".into(),
+    _ => Ok(invalid_subject_message(
+      "KeySort",
+      "invrl",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -466,8 +544,12 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Association(new_items))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "AssociationMap expects an association or list as second argument".into(),
+    _ => Ok(invalid_subject_message(
+      "AssociationMap",
+      "invrp",
+      "Association or a list",
+      &args[1],
+      args,
     )),
   }
 }
@@ -534,8 +616,12 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let assocs = match &args[0] {
     Expr::List(items) => items.clone(),
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Merge: first argument must be a list of associations".into(),
+      return Ok(invalid_subject_message(
+        "Merge",
+        "list1",
+        "list of Associations or rules or lists of rules",
+        &args[0],
+        args,
       ));
     }
   };
@@ -597,8 +683,12 @@ pub fn key_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::Association(results?))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeyMap expects an association as second argument".into(),
+    _ => Ok(invalid_subject_message(
+      "KeyMap",
+      "invak",
+      "Association",
+      &args[1],
+      args,
     )),
   }
 }
@@ -624,8 +714,12 @@ pub fn key_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Association(result))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeySelect expects an association as first argument".into(),
+    _ => Ok(invalid_subject_message(
+      "KeySelect",
+      "invru",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -668,8 +762,12 @@ pub fn key_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Association(result))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeyTake expects an association as first argument".into(),
+    _ => Ok(invalid_subject_message(
+      "KeyTake",
+      "invrl",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -710,8 +808,12 @@ pub fn key_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::Association(result))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeyDrop expects an association as first argument".into(),
+    _ => Ok(invalid_subject_message(
+      "KeyDrop",
+      "invrl",
+      "Association or a list of rules",
+      &args[0],
+      args,
     )),
   }
 }
@@ -771,8 +873,12 @@ pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "KeyValueMap expects an association as second argument".into(),
+    _ => Ok(invalid_subject_message(
+      "KeyValueMap",
+      "invak",
+      "Association",
+      &args[1],
+      args,
     )),
   }
 }
@@ -792,8 +898,12 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let assocs = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "KeyUnion: first argument must be a list of associations".into(),
+      return Ok(invalid_subject_message(
+        "KeyUnion",
+        "invar",
+        "list of Associations or rules",
+        &args[0],
+        args,
       ));
     }
   };

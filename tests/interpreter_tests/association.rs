@@ -1431,3 +1431,152 @@ mod part_on_associations {
     );
   }
 }
+
+mod invalid_subject_messages {
+  use super::*;
+
+  #[test]
+  fn invrl_family_emits_message_and_returns_unevaluated() {
+    // Regression: Keys/Values/Lookup/KeyTake/KeyDrop/KeySort raised
+    // hard errors for invalid subjects
+    for (input, func) in [
+      ("Keys[x]", "Keys"),
+      ("Values[x]", "Values"),
+      ("KeySort[x]", "KeySort"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), input);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "{}::invrl: The argument x is not a valid Association or a list of rules.",
+        func
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {:?}, got {:?}",
+        expected,
+        msgs
+      );
+    }
+    assert_eq!(interpret("Lookup[x, a]").unwrap(), "Lookup[x, a]");
+    assert_eq!(interpret("KeyTake[x, {a}]").unwrap(), "KeyTake[x, {a}]");
+    assert_eq!(interpret("KeyDrop[x, {a}]").unwrap(), "KeyDrop[x, {a}]");
+    // Non-List heads are invalid subjects too
+    assert_eq!(
+      interpret("Keys[f[a -> 1, b -> 2]]").unwrap(),
+      "Keys[f[a -> 1, b -> 2]]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Keys::invrl: The argument f[a -> 1, b -> 2] is not a valid Association or a list of rules."
+      )),
+      "expected invrl message for general head, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn function_specific_tags() {
+    // Each function has its own message tag and wording
+    assert_eq!(interpret("KeyValueMap[f, x]").unwrap(), "KeyValueMap[f, x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KeyValueMap::invak: The argument x is not a valid Association."
+      )),
+      "expected invak message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("KeyMap[f, x]").unwrap(), "KeyMap[f, x]");
+    assert_eq!(interpret("KeySelect[x, f]").unwrap(), "KeySelect[x, f]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KeySelect::invru: The argument x is not a valid Association or a list of rules."
+      )),
+      "expected invru message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("AssociationMap[f, x]").unwrap(),
+      "AssociationMap[f, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "AssociationMap::invrp: The argument x is not a valid Association or a list."
+      )),
+      "expected invrp message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("Merge[x, Total]").unwrap(), "Merge[x, Total]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Merge::list1: The argument x is not a valid list of Associations or rules or lists of rules."
+      )),
+      "expected list1 message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("KeyUnion[x]").unwrap(), "KeyUnion[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KeyUnion::invar: The argument x is not a valid list of Associations or rules."
+      )),
+      "expected invar message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn key_exists_q_answers_false_after_message() {
+    // Regression: hard error; wolframscript answers False
+    assert_eq!(interpret("KeyExistsQ[x, a]").unwrap(), "False");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KeyExistsQ::invrl: The argument x is not a valid Association or a list of rules."
+      )),
+      "expected invrl message, got {:?}",
+      msgs
+    );
+    // Lists of rules are valid subjects (regression: hard error)
+    assert_eq!(
+      interpret("KeyExistsQ[{a -> 1, b -> 2}, a]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("KeyExistsQ[{a -> 1, b -> 2}, c]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn key_drop_from_validates_its_variable() {
+    // Undefined symbol → blnoval; non-symbol → rvalue
+    assert_eq!(interpret("KeyDropFrom[u, a]").unwrap(), "KeyDropFrom[u, a]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KeyDropFrom::blnoval: The symbol u at position 1 should have an immediate value defined."
+      )),
+      "expected blnoval message, got {:?}",
+      msgs
+    );
+    assert_eq!(interpret("KeyDropFrom[5, a]").unwrap(), "KeyDropFrom[5, a]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "KeyDropFrom::rvalue: 5 is not a variable with a value, so its value cannot be changed."
+      )),
+      "expected rvalue message, got {:?}",
+      msgs
+    );
+    // The mutating happy path still works
+    assert_eq!(
+      interpret("m = <|a -> 1, b -> 2|>; KeyDropFrom[m, a]; m").unwrap(),
+      "<|b -> 2|>"
+    );
+  }
+}

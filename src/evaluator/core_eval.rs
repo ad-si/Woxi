@@ -1614,6 +1614,11 @@ pub fn evaluate_expr_to_expr_inner(
               }
             }
             _ => {
+              // Undefined symbol: wolframscript emits ::blnoval.
+              crate::emit_message(&format!(
+                "KeyDropFrom::blnoval: The symbol {} at position 1 should have an immediate value defined.",
+                var_name
+              ));
               return Ok(Expr::FunctionCall {
                 name: "KeyDropFrom".to_string(),
                 args: vec![args[0].clone(), key].into(),
