@@ -1623,6 +1623,53 @@ pub fn replace_part_ast(
     },
   };
 
+  // Association subject: positions are integer indices, `Key[k]`, bare keys,
+  // or single-element wrappers thereof. Apply each rule's RHS to the value at
+  // the resolved position.
+  if let Expr::Association(pairs) = expr {
+    fn assoc_target(
+      spec: &Expr,
+      pairs: &[(Expr, Expr)],
+    ) -> Option<usize> {
+      match spec {
+        Expr::Integer(n) => {
+          let len = pairs.len() as i128;
+          let idx = if *n < 0 { len + *n } else { *n - 1 };
+          if idx >= 0 && (idx as usize) < pairs.len() {
+            Some(idx as usize)
+          } else {
+            None
+          }
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Key" && args.len() == 1 =>
+        {
+          let ks = crate::syntax::expr_to_string(&args[0]);
+          pairs.iter().position(|(k, _)| {
+            crate::syntax::expr_to_string(k) == ks
+          })
+        }
+        Expr::String(_) | Expr::Identifier(_) => {
+          let ks = crate::syntax::expr_to_string(spec);
+          pairs.iter().position(|(k, _)| {
+            crate::syntax::expr_to_string(k) == ks
+          })
+        }
+        Expr::List(items) if items.len() == 1 => {
+          assoc_target(&items[0], pairs)
+        }
+        _ => None,
+      }
+    }
+    let mut new_pairs = pairs.clone();
+    for (lhs, rhs, _delayed) in &rules {
+      if let Some(idx) = assoc_target(lhs, &new_pairs) {
+        new_pairs[idx].1 = crate::evaluator::evaluate_expr_to_expr(rhs)?;
+      }
+    }
+    return Ok(Expr::Association(new_pairs));
+  }
+
   // Expand each rule LHS into one or more path matchers (each a list of
   // per-level components: integers or patterns)
   #[derive(Clone)]

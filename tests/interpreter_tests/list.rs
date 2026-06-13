@@ -6467,6 +6467,32 @@ mod join_non_list {
   }
 
   #[test]
+  fn replace_part_association() {
+    // Key[k], a bare key, and an integer position all replace a value.
+    assert_eq!(
+      interpret(r#"ReplacePart[<|"a" -> 1, "b" -> 2|>, Key["a"] -> 9]"#)
+        .unwrap(),
+      "<|a -> 9, b -> 2|>"
+    );
+    assert_eq!(
+      interpret(r#"ReplacePart[<|"a" -> 1, "b" -> 2|>, "a" -> 9]"#).unwrap(),
+      "<|a -> 9, b -> 2|>"
+    );
+    assert_eq!(
+      interpret(r#"ReplacePart[<|"a" -> 1, "b" -> 2|>, 1 -> 9]"#).unwrap(),
+      "<|a -> 9, b -> 2|>"
+    );
+    // Multiple rules at once.
+    assert_eq!(
+      interpret(
+        r#"ReplacePart[<|"a" -> 1, "b" -> 2, "c" -> 3|>, {1 -> x, 3 -> z}]"#
+      )
+      .unwrap(),
+      "<|a -> x, b -> 2, c -> z|>"
+    );
+  }
+
+  #[test]
   fn map_on_power_expression() {
     // Map[f, x^2] applies f to each part of Power[x, 2]
     assert_eq!(interpret("Map[f, x^2]").unwrap(), "f[x]^f[2]");
