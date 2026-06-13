@@ -2468,6 +2468,35 @@ mod string_form {
   }
 
   #[test]
+  fn string_template_fills_slots() {
+    // Named slots from an association.
+    assert_eq!(
+      interpret(r#"StringTemplate["Hi `name`"][<|"name" -> "Bob"|>]"#).unwrap(),
+      "Hi Bob"
+    );
+    // Positional slots from arguments.
+    assert_eq!(
+      interpret(r#"StringTemplate["`1` + `2`"][3, 4]"#).unwrap(),
+      "3 + 4"
+    );
+    // Sequential `` slots.
+    assert_eq!(
+      interpret(r#"StringTemplate["`` and ``"][7, 8]"#).unwrap(),
+      "7 and 8"
+    );
+    // Repeated positional reference.
+    assert_eq!(
+      interpret(r#"StringTemplate["`1`-`1`-`2`"][3, 4]"#).unwrap(),
+      "3-3-4"
+    );
+    // An unfilled slot renders as the empty string.
+    assert_eq!(
+      interpret(r#"StringTemplate["a `x` b `y`"][<|"x" -> 1|>]"#).unwrap(),
+      "a 1 b "
+    );
+  }
+
+  #[test]
   fn to_string_multiple_placeholders() {
     assert_eq!(
       interpret("ToString[StringForm[\"x=`` and y=``.\", 5, 10]]").unwrap(),

@@ -4236,6 +4236,78 @@ pub fn format_string_form(template: &str, values: &[Expr]) -> String {
   result
 }
 
+/// Apply a `StringTemplate[template]` to arguments, filling its slots:
+///   `` `` ``        sequential positional argument
+///   `` `n` ``       the n-th positional argument
+///   `` `name` ``    the value for key `name` (from a single association arg)
+/// Positional arguments come from the call args; named slots are filled from a
+/// single association argument. An unfilled slot renders as the empty string,
+/// matching wolframscript.
+pub fn apply_string_template(
+  template: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let tmpl = match template {
+    Expr::String(s) => s.clone(),
+    _ => {
+      return Ok(Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "StringTemplate".to_string(),
+          args: vec![template.clone()].into(),
+        }),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Named bindings from a single association argument.
+  let mut named: std::collections::HashMap<String, Expr> =
+    std::collections::HashMap::new();
+  if args.len() == 1
+    && let Expr::Association(pairs) = &args[0]
+  {
+    for (k, v) in pairs {
+      let key = match k {
+        Expr::String(s) => s.clone(),
+        other => crate::syntax::expr_to_string(other),
+      };
+      named.insert(key, v.clone());
+    }
+  }
+
+  let chars: Vec<char> = tmpl.chars().collect();
+  let mut result = String::new();
+  let mut i = 0;
+  let mut seq: usize = 0;
+  while i < chars.len() {
+    if chars[i] == '`'
+      && let Some(rel) = chars[i + 1..].iter().position(|&c| c == '`')
+    {
+      let close = i + 1 + rel;
+      let content: String = chars[i + 1..close].iter().collect();
+      let value: Option<&Expr> = if content.is_empty() {
+        seq += 1;
+        args.get(seq - 1)
+      } else if content.chars().all(|c| c.is_ascii_digit()) {
+        let n: usize = content.parse().unwrap_or(0);
+        seq = n;
+        n.checked_sub(1).and_then(|j| args.get(j))
+      } else {
+        named.get(&content)
+      };
+      if let Some(v) = value {
+        result.push_str(&crate::syntax::expr_to_output(v));
+      }
+      // Unfilled slots contribute nothing.
+      i = close + 1;
+      continue;
+    }
+    result.push(chars[i]);
+    i += 1;
+  }
+  Ok(Expr::String(result))
+}
+
 /// ToExpression[s] / ToExpression[s, form] / ToExpression[s, form, h]
 /// - Parse and evaluate `s` as code. `form` (InputForm, StandardForm, ...)
 ///   is accepted but the parser is the same regardless.

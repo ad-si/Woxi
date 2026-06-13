@@ -626,6 +626,13 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "StringTemplate" && func_args.len() == 1 => {
+      // StringTemplate[template][args…] — fill the template's slots.
+      crate::functions::string_ast::apply_string_template(&func_args[0], args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "Query" && args.len() == 1 => {
       // Query[ops...][data] — successive-level query application
       crate::functions::query_ast::apply_query(func_args, &args[0])
