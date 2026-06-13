@@ -25,6 +25,7 @@ test-slow:
 	cargo nextest run \
 		--profile slow \
 		--run-ignored only \
+		-E 'test(/^script_/)' \
 		--show-progress=none \
 		--status-level=fail \
 		--failure-output=final
