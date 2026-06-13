@@ -3069,6 +3069,60 @@ mod high_level_functions_tests {
     }
   }
 
+  mod string_count_option_tests {
+    use super::*;
+
+    #[test]
+    fn test_default_is_non_overlapping() {
+      assert_eq!(interpret(r#"StringCount["aaaa", "aa"]"#).unwrap(), "2");
+      assert_eq!(
+        interpret(r#"StringCount["aaaa", "aa", Overlaps -> False]"#).unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn test_overlaps_true_counts_every_start() {
+      assert_eq!(
+        interpret(r#"StringCount["aaaa", "aa", Overlaps -> True]"#).unwrap(),
+        "3"
+      );
+      assert_eq!(
+        interpret(r#"StringCount["abababab", "aba", Overlaps -> True]"#)
+          .unwrap(),
+        "3"
+      );
+    }
+
+    #[test]
+    fn test_ignore_case_option() {
+      assert_eq!(
+        interpret(r#"StringCount["AAaa", "aa", IgnoreCase -> True]"#).unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn test_overlaps_and_ignore_case_combined() {
+      assert_eq!(
+        interpret(
+          r#"StringCount["AAAA", "aa", Overlaps -> True, IgnoreCase -> True]"#
+        )
+        .unwrap(),
+        "3"
+      );
+    }
+
+    #[test]
+    fn test_overlaps_threads_over_list() {
+      assert_eq!(
+        interpret(r#"StringCount[{"aaa", "aaaa"}, "aa", Overlaps -> True]"#)
+          .unwrap(),
+        "{2, 3}"
+      );
+    }
+  }
+
   mod associate_to_tests {
     use super::*;
 

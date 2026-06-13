@@ -4299,38 +4299,117 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringCount[s, sub] - count occurrences of substring or pattern
 pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "StringCount expects exactly 2 arguments".into(),
+      "StringCount expects at least 2 arguments".into(),
     ));
   }
 
-  // Thread over list of strings in the first argument.
+  // Thread over list of strings in the first argument, preserving any options.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|s| string_count_ast(&[s.clone(), args[1].clone()]))
+      .map(|s| {
+        let mut call = vec![s.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_count_ast(&call)
+      })
       .collect();
     return Ok(Expr::List(results?.into()));
   }
 
   let s = expr_to_str(&args[0])?;
+  let ignore_case = has_ignore_case_option(args);
+  let overlaps = has_overlaps_option(args);
 
   // Try regex-based pattern first (handles RegularExpression, string patterns,
   // lists-of-patterns as alternatives, etc.)
   if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let re = compile_regex(&regex_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-    })?;
-    return Ok(Expr::Integer(re.find_iter(&s).count() as i128));
+    let count = if overlaps {
+      // Overlapping matches: count every start position where the pattern
+      // matches, anchored at that position.
+      let anchored_pat = if ignore_case {
+        format!("^(?i:{})", regex_pat)
+      } else {
+        format!("^(?:{})", regex_pat)
+      };
+      let anchored = compile_regex(&anchored_pat).map_err(|e| {
+        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      })?;
+      count_overlapping_regex(&anchored, &s)
+    } else {
+      let full = if ignore_case {
+        format!("(?i:{})", regex_pat)
+      } else {
+        regex_pat
+      };
+      let re = compile_regex(&full).map_err(|e| {
+        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      })?;
+      re.find_iter(&s).count()
+    };
+    return Ok(Expr::Integer(count as i128));
   }
 
-  // Fallback to plain string matching
+  // Fallback to plain string matching.
   let sub = expr_to_str(&args[1])?;
   if sub.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  Ok(Expr::Integer(s.matches(&sub).count() as i128))
+  let (hay, needle) = if ignore_case {
+    (s.to_lowercase(), sub.to_lowercase())
+  } else {
+    (s.clone(), sub.clone())
+  };
+  let count = if overlaps {
+    count_overlapping_substring(&hay, &needle)
+  } else {
+    hay.matches(&needle).count()
+  };
+  Ok(Expr::Integer(count as i128))
+}
+
+/// Whether `Overlaps -> True` appears in the option arguments.
+fn has_overlaps_option(args: &[Expr]) -> bool {
+  for arg in args.iter().skip(2) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && crate::syntax::expr_to_string(pattern) == "Overlaps"
+      && crate::syntax::expr_to_string(replacement) == "True"
+    {
+      return true;
+    }
+  }
+  false
+}
+
+/// Count overlapping occurrences of `needle` in `hay` — one per start position
+/// (in chars) where `needle` occurs.
+fn count_overlapping_substring(hay: &str, needle: &str) -> usize {
+  if needle.is_empty() {
+    return 0;
+  }
+  let mut count = 0;
+  for (i, _) in hay.char_indices() {
+    if hay[i..].starts_with(needle) {
+      count += 1;
+    }
+  }
+  count
+}
+
+/// Count overlapping regex matches — one per char start position where the
+/// (start-anchored) regex matches.
+fn count_overlapping_regex(anchored: &regex::Regex, hay: &str) -> usize {
+  let mut count = 0;
+  for (i, _) in hay.char_indices() {
+    if anchored.is_match(&hay[i..]) {
+      count += 1;
+    }
+  }
+  count
 }
 
 /// StringFreeQ[s, sub] - check if string does NOT contain substring or pattern
