@@ -4311,6 +4311,13 @@ mod cases {
     );
   }
   #[test]
+  fn extract_association_key() {
+    // Key[k] and a bare string key extract the value at that key.
+    assert_case(r#"Extract[<|"a" -> 1, "b" -> 2|>, Key["a"]]"#, r#"1"#);
+    assert_case(r#"Extract[<|"a" -> 1, "b" -> 2|>, "b"]"#, r#"2"#);
+    assert_case(r#"Extract[<|a -> 1, b -> 2|>, Key[b]]"#, r#"2"#);
+  }
+  #[test]
   fn divide_16() {
     assert_case(r#";; // FullForm"#, r#"FullForm[Span[1, All]]"#);
   }

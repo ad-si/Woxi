@@ -1474,9 +1474,11 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => return psl1(),
       }
     }
+    // A bare position component (integer index, `Key[k]`, or a string key)
+    // is a single-element path.
     other => match parse_comp(other) {
-      Some(comp @ ExtractComp::Idx(_)) => Paths::Single(vec![comp]),
-      _ => return psl1(),
+      Some(comp) => Paths::Single(vec![comp]),
+      None => return psl1(),
     },
   };
 
