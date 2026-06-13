@@ -5,6 +5,22 @@ use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 // ─── Apart ──────────────────────────────────────────────────────────
 
+/// Flatten a (possibly nested) `Plus` chain into its individual summands,
+/// leaving every other expression (including `UnaryOp::Minus` terms) intact.
+fn flatten_plus(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      flatten_plus(left, out);
+      flatten_plus(right, out);
+    }
+    other => out.push(other.clone()),
+  }
+}
+
 /// Apart[expr] - Partial fraction decomposition
 pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -101,7 +117,12 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         right: Box::new(den_expanded.clone()),
       };
       let apart_remainder = apart_proper_fraction(&frac, var)?;
-      return Ok(add_exprs(&quot_expr, &apart_remainder));
+      // Splice the polynomial quotient in front of the partial-fraction
+      // terms as one flat sum so the result reads `q + f1 + f2`, not the
+      // parenthesized `q + (f1 + f2)`.
+      let mut parts = vec![quot_expr];
+      flatten_plus(&apart_remainder, &mut parts);
+      return Ok(build_sum(parts));
     }
 
     return apart_proper_fraction(&divide_expr, var);
@@ -215,6 +236,12 @@ pub fn apart_proper_fraction(
     if ad < 0 {
       an = -an;
       ad = -ad;
+    }
+
+    // A zero residue contributes nothing — skip it rather than emitting a
+    // spurious `0/(...)` term (e.g. Apart[(x + 1)/(x^2 + x)] is just 1/x).
+    if an == 0 {
+      continue;
     }
 
     // Build linear factor: when root is 0, just use the variable directly

@@ -1122,6 +1122,41 @@ mod apart {
     // quotes around held strings inside comparisons (e.g. `a == A`).
     assert_eq!(interpret("Apart[a == \"A\"]").unwrap(), "a == A");
   }
+
+  // A factor whose residue is zero must not produce a spurious `0/(...)`
+  // term: (x + 1)/(x^2 + x) = (x + 1)/(x (x + 1)) = 1/x.
+  #[test]
+  fn apart_drops_zero_residue_term() {
+    assert_eq!(interpret("Apart[(x + 1)/(x^2 + x)]").unwrap(), "x^(-1)");
+  }
+
+  // A removable factor (the numerator cancels one root) leaves only the
+  // surviving partial fraction: (x - 3)/((x - 3)(x + 1)) = 1/(x + 1).
+  #[test]
+  fn apart_cancelling_factor() {
+    assert_eq!(
+      interpret("Apart[(x - 3)/(x^2 - 2 x - 3)]").unwrap(),
+      "(1 + x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn apart_numerator_x_over_two_factors() {
+    assert_eq!(
+      interpret("Apart[x/((x - 1) (x - 2))]").unwrap(),
+      "2/(-2 + x) - (-1 + x)^(-1)"
+    );
+  }
+
+  // A constant polynomial part is spliced in as a flat sum (no spurious
+  // parentheses around the partial-fraction part).
+  #[test]
+  fn apart_with_constant_quotient_is_flat() {
+    assert_eq!(
+      interpret("Apart[(x^2 + 1)/(x^2 - 1)]").unwrap(),
+      "1 + (-1 + x)^(-1) - (1 + x)^(-1)"
+    );
+  }
 }
 
 mod switch {
