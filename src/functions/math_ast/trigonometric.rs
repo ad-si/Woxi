@@ -214,6 +214,12 @@ pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
 }
 
 /// Exact Sin value for k*Pi/n. Returns None if no simple exact form.
+/// Parse a fixed trig closed-form literal into an `Expr`. The argument is a
+/// constant Wolfram expression, so parsing never fails at runtime.
+fn lit(s: &str) -> Expr {
+  crate::syntax::string_to_expr(s).expect("valid trig literal")
+}
+
 pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   // Normalize to [0, 2*Pi) i.e., k mod 2n, with k in [0, 2n)
   let period = 2 * n;
@@ -289,6 +295,14 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
         right: Box::new(make_sqrt(Expr::Integer(2))),
       }),
     },
+    // sin(Pi/5) = Sqrt[5/8 - Sqrt[5]/8]
+    (1, 5) => lit("Sqrt[5/8 - Sqrt[5]/8]"),
+    // sin(2*Pi/5) = Sqrt[5/8 + Sqrt[5]/8]
+    (2, 5) => lit("Sqrt[5/8 + Sqrt[5]/8]"),
+    // sin(Pi/10) = (-1 + Sqrt[5])/4
+    (1, 10) => lit("(-1 + Sqrt[5])/4"),
+    // sin(3*Pi/10) = (1 + Sqrt[5])/4
+    (3, 10) => lit("(1 + Sqrt[5])/4"),
     // sin(Pi/2) = 1
     (1, 2) => Expr::Integer(1),
     _ => return None,
@@ -370,6 +384,14 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
         right: Box::new(make_sqrt(Expr::Integer(2))),
       }),
     },
+    // cos(Pi/5) = (1 + Sqrt[5])/4
+    (1, 5) => lit("(1 + Sqrt[5])/4"),
+    // cos(2*Pi/5) = (-1 + Sqrt[5])/4
+    (2, 5) => lit("(-1 + Sqrt[5])/4"),
+    // cos(Pi/10) = Sqrt[5/8 + Sqrt[5]/8]
+    (1, 10) => lit("Sqrt[5/8 + Sqrt[5]/8]"),
+    // cos(3*Pi/10) = Sqrt[5/8 - Sqrt[5]/8]
+    (3, 10) => lit("Sqrt[5/8 - Sqrt[5]/8]"),
     // cos(Pi/2) = 0
     (1, 2) => Expr::Integer(0),
     _ => return None,

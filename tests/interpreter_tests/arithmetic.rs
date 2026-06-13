@@ -2658,6 +2658,39 @@ mod expand_threading {
     assert_eq!(interpret("Sin[Pi + I]").unwrap(), "-I*Sinh[1]");
   }
 
+  // ─── Exact fifth/tenth-angle trig values ──────────────────────────
+  #[test]
+  fn cos_fifth_angles() {
+    assert_eq!(interpret("Cos[Pi/5]").unwrap(), "(1 + Sqrt[5])/4");
+    assert_eq!(interpret("Cos[2 Pi/5]").unwrap(), "(-1 + Sqrt[5])/4");
+    assert_eq!(interpret("Cos[Pi/10]").unwrap(), "Sqrt[5/8 + Sqrt[5]/8]");
+    assert_eq!(interpret("Cos[3 Pi/10]").unwrap(), "Sqrt[5/8 - Sqrt[5]/8]");
+  }
+
+  #[test]
+  fn sin_fifth_angles() {
+    assert_eq!(interpret("Sin[Pi/5]").unwrap(), "Sqrt[5/8 - Sqrt[5]/8]");
+    assert_eq!(interpret("Sin[2 Pi/5]").unwrap(), "Sqrt[5/8 + Sqrt[5]/8]");
+    assert_eq!(interpret("Sin[Pi/10]").unwrap(), "(-1 + Sqrt[5])/4");
+    assert_eq!(interpret("Sin[3 Pi/10]").unwrap(), "(1 + Sqrt[5])/4");
+  }
+
+  #[test]
+  fn sin_fifth_angles_second_quadrant() {
+    // sin(Pi - x) = sin(x): these stay positive, so they match exactly.
+    assert_eq!(interpret("Sin[3 Pi/5]").unwrap(), "Sqrt[5/8 + Sqrt[5]/8]");
+    assert_eq!(interpret("Sin[4 Pi/5]").unwrap(), "Sqrt[5/8 - Sqrt[5]/8]");
+    assert_eq!(interpret("Sin[7 Pi/10]").unwrap(), "(1 + Sqrt[5])/4");
+    assert_eq!(interpret("Sin[9 Pi/10]").unwrap(), "(-1 + Sqrt[5])/4");
+  }
+
+  #[test]
+  fn fifth_angle_gcd_reduction() {
+    // 2*Pi/10 reduces to Pi/5.
+    assert_eq!(interpret("Sin[2 Pi/10]").unwrap(), "Sqrt[5/8 - Sqrt[5]/8]");
+    assert_eq!(interpret("Cos[2 Pi/10]").unwrap(), "(1 + Sqrt[5])/4");
+  }
+
   // ─── Hyperbolic parity ────────────────────────────────────────────
 
   #[test]
