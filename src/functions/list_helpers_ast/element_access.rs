@@ -1581,6 +1581,41 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// every depth-2 branch). Each part position takes the FIRST matching
 /// rule; replaced parts are not re-examined. Atomic subjects come back
 /// unchanged; invalid rule specifications emit ::reps.
+/// Resolve a single MapAt/Delete/ReplacePart position spec against an
+/// association's ordered pairs. Accepts an integer index (1-based, negative
+/// from the end), `Key[k]`, a bare key (`String`/`Identifier`), and
+/// single-element wrappers `{Key[k]}` / `{k}`. Returns `None` for anything
+/// that does not identify an existing entry.
+fn assoc_position_index(
+  spec: &Expr,
+  pairs: &[(Expr, Expr)],
+) -> Option<usize> {
+  match spec {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let n = expr_to_i128(spec)?;
+      let len = pairs.len() as i128;
+      let idx = if n < 0 { len + n } else { n - 1 };
+      (idx >= 0 && (idx as usize) < pairs.len()).then_some(idx as usize)
+    }
+    Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
+      let ks = crate::syntax::expr_to_string(&args[0]);
+      pairs
+        .iter()
+        .position(|(k, _)| crate::syntax::expr_to_string(k) == ks)
+    }
+    Expr::String(_) | Expr::Identifier(_) => {
+      let ks = crate::syntax::expr_to_string(spec);
+      pairs
+        .iter()
+        .position(|(k, _)| crate::syntax::expr_to_string(k) == ks)
+    }
+    Expr::List(items) if items.len() == 1 => {
+      assoc_position_index(&items[0], pairs)
+    }
+    _ => None,
+  }
+}
+
 pub fn replace_part_ast(
   expr: &Expr,
   rule: &Expr,
@@ -1627,43 +1662,9 @@ pub fn replace_part_ast(
   // or single-element wrappers thereof. Apply each rule's RHS to the value at
   // the resolved position.
   if let Expr::Association(pairs) = expr {
-    fn assoc_target(
-      spec: &Expr,
-      pairs: &[(Expr, Expr)],
-    ) -> Option<usize> {
-      match spec {
-        Expr::Integer(n) => {
-          let len = pairs.len() as i128;
-          let idx = if *n < 0 { len + *n } else { *n - 1 };
-          if idx >= 0 && (idx as usize) < pairs.len() {
-            Some(idx as usize)
-          } else {
-            None
-          }
-        }
-        Expr::FunctionCall { name, args }
-          if name == "Key" && args.len() == 1 =>
-        {
-          let ks = crate::syntax::expr_to_string(&args[0]);
-          pairs.iter().position(|(k, _)| {
-            crate::syntax::expr_to_string(k) == ks
-          })
-        }
-        Expr::String(_) | Expr::Identifier(_) => {
-          let ks = crate::syntax::expr_to_string(spec);
-          pairs.iter().position(|(k, _)| {
-            crate::syntax::expr_to_string(k) == ks
-          })
-        }
-        Expr::List(items) if items.len() == 1 => {
-          assoc_target(&items[0], pairs)
-        }
-        _ => None,
-      }
-    }
     let mut new_pairs = pairs.clone();
     for (lhs, rhs, _delayed) in &rules {
-      if let Some(idx) = assoc_target(lhs, &new_pairs) {
+      if let Some(idx) = assoc_position_index(lhs, &new_pairs) {
         new_pairs[idx].1 = crate::evaluator::evaluate_expr_to_expr(rhs)?;
       }
     }
@@ -1851,6 +1852,41 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Delete expects exactly 2 arguments".into(),
     ));
+  }
+
+  // Association subject: positions are integer indices, `Key[k]`, bare keys,
+  // single-element wrappers thereof, or a list `{{p1}, {p2}, …}` of such.
+  // Delete the entries at the resolved positions; unresolved positions (e.g.
+  // an absent key) are silently skipped.
+  if let Expr::Association(pairs) = &args[0] {
+    let mut indices: Vec<usize> = Vec::new();
+    match &args[1] {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|p| matches!(p, Expr::List(_))) =>
+      {
+        for sub in items {
+          if let Expr::List(parts) = sub
+            && parts.len() == 1
+            && let Some(i) = assoc_position_index(&parts[0], pairs)
+          {
+            indices.push(i);
+          }
+        }
+      }
+      other => {
+        if let Some(i) = assoc_position_index(other, pairs) {
+          indices.push(i);
+        }
+      }
+    }
+    indices.sort_unstable();
+    indices.dedup();
+    let mut new_pairs = pairs.clone();
+    for i in indices.into_iter().rev() {
+      new_pairs.remove(i);
+    }
+    return Ok(Expr::Association(new_pairs));
   }
 
   // Extract items and optional head name from List or FunctionCall

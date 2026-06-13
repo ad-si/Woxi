@@ -939,6 +939,36 @@ mod delete {
       "{b, d, e}"
     );
   }
+
+  #[test]
+  fn delete_association() {
+    // Key[k], a bare key, and an integer position delete an entry.
+    assert_eq!(
+      interpret(r#"Delete[<|"a" -> 1, "b" -> 2|>, Key["a"]]"#).unwrap(),
+      "<|b -> 2|>"
+    );
+    assert_eq!(
+      interpret(r#"Delete[<|"a" -> 1, "b" -> 2|>, "a"]"#).unwrap(),
+      "<|b -> 2|>"
+    );
+    assert_eq!(
+      interpret(r#"Delete[<|"a" -> 1, "b" -> 2, "c" -> 3|>, 2]"#).unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+    // Multiple positions delete several entries.
+    assert_eq!(
+      interpret(
+        r#"Delete[<|"a" -> 1, "b" -> 2, "c" -> 3|>, {{Key["a"]}, {Key["c"]}}]"#
+      )
+      .unwrap(),
+      "<|b -> 2|>"
+    );
+    // An absent key leaves the association unchanged.
+    assert_eq!(
+      interpret(r#"Delete[<|"a" -> 1, "b" -> 2|>, Key["z"]]"#).unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
 }
 
 mod insert {
