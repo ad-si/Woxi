@@ -173,6 +173,19 @@ pub fn differences_n_ast(
   list: &Expr,
   n: usize,
 ) -> Result<Expr, InterpreterError> {
+  differences_step_ast(list, n, 1)
+}
+
+/// Differences[list, n, s] - n-th order differences with step `s`.
+///
+/// Each pass replaces the list with `Drop[#, s] - Drop[#, -s]`, i.e.
+/// `{list[s+1] - list[1], list[s+2] - list[2], ...}`, applied `n` times.
+/// `s = 1` gives the ordinary successive differences.
+pub fn differences_step_ast(
+  list: &Expr,
+  n: usize,
+  s: usize,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
@@ -183,16 +196,17 @@ pub fn differences_n_ast(
     }
   };
 
+  let s = s.max(1);
   let mut current = items;
   for _ in 0..n {
-    if current.len() <= 1 {
+    if current.len() <= s {
       return Ok(Expr::List(vec![].into()));
     }
     let mut next = Vec::new();
-    for i in 1..current.len() {
+    for i in s..current.len() {
       let diff = crate::evaluator::evaluate_function_call_ast(
         "Subtract",
-        &[current[i].clone(), current[i - 1].clone()],
+        &[current[i].clone(), current[i - s].clone()],
       )?;
       next.push(diff);
     }

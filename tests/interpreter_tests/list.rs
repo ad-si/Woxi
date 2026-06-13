@@ -6087,6 +6087,33 @@ mod join_non_list {
   }
 
   #[test]
+  fn differences_with_step() {
+    // Differences[list, n, s]: n-th differences with step s.
+    // Step 2, order 1: {list[3]-list[1], list[4]-list[2]}.
+    assert_eq!(
+      interpret("Differences[{1, 3, 6, 10}, 1, 2]").unwrap(),
+      "{5, 7}"
+    );
+    // Step 3, order 1.
+    assert_eq!(
+      interpret("Differences[{10, 20, 30, 40}, 1, 3]").unwrap(),
+      "{30}"
+    );
+    // Order 2 with step 2.
+    assert_eq!(
+      interpret("Differences[{1, 2, 3, 4, 5, 6}, 2, 2]").unwrap(),
+      "{0, 0}"
+    );
+    // Step longer than the list yields an empty result.
+    assert_eq!(interpret("Differences[{1, 2}, 1, 2]").unwrap(), "{}");
+    // Explicit step 1 matches ordinary differences.
+    assert_eq!(
+      interpret("Differences[{1, 3, 6, 10}, 1, 1]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
   fn clip_three_args() {
     assert_eq!(interpret("Clip[0.5, {0, 1}, {-1, 1}]").unwrap(), "0.5");
     assert_eq!(interpret("Clip[-0.5, {0, 1}, {-1, 1}]").unwrap(), "-1");

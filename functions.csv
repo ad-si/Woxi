@@ -463,7 +463,7 @@ Dotted,Dotted line style directive,✅,none,6.0,466
 StringMatchQ,Tests if string matches a pattern with wildcards,✅,pure,1.0,467
 VectorQ,Tests if an expression is a vector,✅,pure,1.0,468
 GoldenRatio,The golden ratio constant,✅,pure,1.0,469
-Differences,Returns successive differences between consecutive elements,✅,pure,6.0,470
+Differences,Returns successive differences between elements (supports order and step arguments),✅,pure,6.0,470
 Spacer,Creates empty space of a specified size for layout,✅,pure,6.0,471
 CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
 Riffle,Inserts an element between each pair of elements,✅,pure,6.0,473

@@ -1805,6 +1805,18 @@ pub fn dispatch_list_operations(
         }
       }
     }
+    "Differences" if args.len() == 3 => {
+      // Differences[list, n, s] — n-th differences with step s.
+      if let (Some(n), Some(s)) =
+        (expr_to_i128(&args[1]), expr_to_i128(&args[2]))
+        && n >= 0
+        && s >= 1
+      {
+        return Some(list_helpers_ast::differences_step_ast(
+          &args[0], n as usize, s as usize,
+        ));
+      }
+    }
     "Ratios" if args.len() == 1 || args.len() == 2 => {
       let n = if args.len() == 2 {
         match expr_to_i128(&args[1]) {
