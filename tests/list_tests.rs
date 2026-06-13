@@ -220,6 +220,39 @@ mod list_tests {
   }
 
   #[test]
+  fn partition_alignment() {
+    // Basic forms (no overhang).
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, 2, 1]").unwrap(),
+      "{{1, 2}, {2, 3}, {3, 4}, {4, 5}}"
+    );
+    // Cyclic alignment {kL, kR} with no padding.
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, 3, 2, {1, 1}]").unwrap(),
+      "{{1, 2, 3}, {3, 4, 5}, {5, 1, 2}}"
+    );
+    // Scalar alignment k is shorthand for {k, k}: cyclic, no padding.
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e}, 2, 1, 2]").unwrap(),
+      "{{e, a}, {a, b}, {b, c}, {c, d}, {d, e}}"
+    );
+    // Scalar alignment with explicit padding keeps and pads the tail block.
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 2, 1, 1, x]").unwrap(),
+      "{{a, b}, {b, c}, {c, d}, {d, x}}"
+    );
+    // Scalar alignment 2 with padding pads both ends.
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e}, 3, 2, 2, x]").unwrap(),
+      "{{x, a, b}, {b, c, d}, {d, e, x}}"
+    );
+  }
+
+  #[test]
   fn replace_part() {
     assert_eq!(
       interpret("ReplacePart[{a, b, c}, 2 -> x]").unwrap(),

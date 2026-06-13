@@ -80,26 +80,23 @@ pub fn partition_ast(
   }
   let len = items.len();
 
-  // Parse alignment spec {kL, kR}
-  let (k_l, k_r) = if let Some(align_expr) = align {
-    if let Expr::List(elems) = align_expr {
-      if elems.len() == 2 {
-        if let (Some(kl), Some(kr)) = (
-          super::utilities::expr_to_i128(&elems[0]),
-          super::utilities::expr_to_i128(&elems[1]),
-        ) {
-          (kl, kr)
-        } else {
-          (1, -1) // default: no overhang
-        }
-      } else {
-        (1, -1)
+  // Parse alignment spec {kL, kR}. A single integer k is shorthand for
+  // {k, k} (Partition[list, n, d, k] == Partition[list, n, d, {k, k}]).
+  let (k_l, k_r) = match align {
+    Some(Expr::List(elems)) if elems.len() == 2 => {
+      match (
+        super::utilities::expr_to_i128(&elems[0]),
+        super::utilities::expr_to_i128(&elems[1]),
+      ) {
+        (Some(kl), Some(kr)) => (kl, kr),
+        _ => (1, -1), // default: no overhang
       }
-    } else {
-      (1, -1)
     }
-  } else {
-    (1, -1) // default: Partition drops incomplete partitions
+    Some(other) => match super::utilities::expr_to_i128(other) {
+      Some(k) => (k, k),
+      None => (1, -1),
+    },
+    None => (1, -1), // default: Partition drops incomplete partitions
   };
 
   // Cyclic wrapping: {1, 1} or {-1, -1} or other alignment
