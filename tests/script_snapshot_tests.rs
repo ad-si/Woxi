@@ -135,6 +135,30 @@ macro_rules! script_test {
   };
 }
 
+/// Like `script_test!`, but marks the test `#[ignore]` so it is skipped by
+/// the default `cargo test` / `cargo nextest run` (and therefore by
+/// `make test`). These scripts are heavy algorithmic RosettaCode programs
+/// that take tens of seconds in debug builds — they dominate the suite's
+/// wall-clock and are purely about throughput, not language correctness
+/// that isn't already covered by faster unit tests.
+///
+/// Run them on demand for full correctness coverage with:
+///
+///   make test-slow   # cargo nextest run --profile slow --run-ignored only
+///
+/// Performance of the heaviest of these is tracked separately by the
+/// criterion benchmarks (see `benches/interpreter.rs`).
+macro_rules! slow_script_test {
+  ($test_name:ident, $file:expr) => {
+    #[test]
+    #[ignore = "slow: heavy script; run via `make test-slow` (correctness) \
+                or benchmarks (performance)"]
+    fn $test_name() {
+      run_script_snapshot($file);
+    }
+  };
+}
+
 script_test!(script_99_bottles_of_beer, "99_bottles_of_beer.wls");
 script_test!(script_abc_problem, "abc_problem.wls");
 script_test!(script_fizzbuzz_1, "fizzbuzz_1.wls");
@@ -145,7 +169,7 @@ script_test!(script_fizzbuzz_5, "fizzbuzz_5.wls");
 script_test!(script_hello_world, "hello_world.wls");
 script_test!(script_n_queens_problem_1, "n-queens_problem_1.wls");
 script_test!(script_n_queens_problem_2, "n-queens_problem_2.wls");
-script_test!(script_lindenmayer, "lindenmayer.wls");
+slow_script_test!(script_lindenmayer, "lindenmayer.wls");
 script_test!(script_fibonacci_sequence, "fibonacci_sequence.wls");
 script_test!(script_least_common_multiple, "least_common_multiple.wls");
 script_test!(script_leap_year, "leap_year.wls");
@@ -435,7 +459,7 @@ script_test!(script_combinations, "combinations.wls");
 script_test!(script_comma_quibbling, "comma_quibbling.wls");
 script_test!(script_command_line_arguments, "command-line_arguments.wls");
 script_test!(script_comments, "comments.wls");
-script_test!(script_continued_fraction, "continued_fraction.wls");
+slow_script_test!(script_continued_fraction, "continued_fraction.wls");
 script_test!(
   script_continued_fraction_arithmetic_construct_from_rational_number,
   "continued_fraction_arithmetic_construct_from_rational_number.wls"
@@ -889,7 +913,7 @@ script_test!(
   script_terminal_control_inverse_video,
   "terminal_control_inverse_video.wls"
 );
-script_test!(
+slow_script_test!(
   script_terminal_control_preserve_screen,
   "terminal_control_preserve_screen.wls"
 );
@@ -938,34 +962,34 @@ script_test!(
 );
 
 // === Slow-but-matching RosettaCode scripts (60s timeout safe) ===
-script_test!(script_aks_test_for_primes, "aks_test_for_primes.wls");
-script_test!(
+slow_script_test!(script_aks_test_for_primes, "aks_test_for_primes.wls");
+slow_script_test!(
   script_arithmetic_geometric_mean_calculate_pi,
   "arithmetic-geometric_mean_calculate_pi.wls"
 );
-script_test!(script_barnsley_fern, "barnsley_fern.wls");
+slow_script_test!(script_barnsley_fern, "barnsley_fern.wls");
 script_test!(script_fractran, "fractran.wls");
-script_test!(
+slow_script_test!(
   script_largest_number_divisible_by_its_digits,
   "largest_number_divisible_by_its_digits.wls"
 );
-script_test!(script_list_comprehensions, "list_comprehensions.wls");
-script_test!(script_munching_squares, "munching_squares.wls");
-script_test!(
+slow_script_test!(script_list_comprehensions, "list_comprehensions.wls");
+slow_script_test!(script_munching_squares, "munching_squares.wls");
+slow_script_test!(
   script_n9_billion_names_of_god_the_integer,
   "9_billion_names_of_god_the_integer.wls"
 );
-script_test!(
+slow_script_test!(
   script_partition_an_integer_x_into_n_primes,
   "partition_an_integer_x_into_n_primes.wls"
 );
-script_test!(script_probabilistic_choice, "probabilistic_choice.wls");
-script_test!(script_square_free_integers, "square-free_integers.wls");
+slow_script_test!(script_probabilistic_choice, "probabilistic_choice.wls");
+slow_script_test!(script_square_free_integers, "square-free_integers.wls");
 script_test!(
   script_sum_multiples_of_3_and_5,
   "sum_multiples_of_3_and_5.wls"
 );
-script_test!(script_sum_to_100, "sum_to_100.wls");
+slow_script_test!(script_sum_to_100, "sum_to_100.wls");
 
 // === Additional matching scripts (post-bugfixes) ===
 script_test!(script_archimedean_spiral, "archimedean_spiral.wls");
@@ -986,7 +1010,7 @@ script_test!(
   script_catalan_numbers_pascals_triangle,
   "catalan_numbers_pascals_triangle.wls"
 );
-script_test!(script_chaos_game, "chaos_game.wls");
+slow_script_test!(script_chaos_game, "chaos_game.wls");
 script_test!(
   script_color_of_a_screen_pixel,
   "color_of_a_screen_pixel.wls"
@@ -1041,7 +1065,7 @@ script_test!(
   script_assigning_values_to_an_array,
   "assigning_values_to_an_array.wls"
 );
-script_test!(
+slow_script_test!(
   script_sequence_of_non_squares,
   "sequence_of_non-squares.wls"
 );
@@ -1058,7 +1082,7 @@ script_test!(
 );
 script_test!(script_koch_curve, "koch_curve.wls");
 script_test!(script_langtons_ant, "langtons_ant.wls");
-script_test!(script_left_factorials, "left_factorials.wls");
+slow_script_test!(script_left_factorials, "left_factorials.wls");
 script_test!(
   script_longest_string_challenge,
   "longest_string_challenge.wls"
@@ -1197,7 +1221,7 @@ script_test!(script_abstract_type, "abstract_type.wls");
 //     AppendTo[x[[i]], v] Part-target mutation ===
 script_test!(script_lychrel_numbers, "lychrel_numbers.wls");
 script_test!(script_sieve_of_eratosthenes, "sieve_of_eratosthenes.wls");
-script_test!(
+slow_script_test!(
   script_digital_root_multiplicative_digital_root,
   "digital_root_multiplicative_digital_root.wls"
 );
@@ -1269,7 +1293,7 @@ script_test!(
   "parsing_shunting-yard_algorithm.wls"
 );
 // === Unlocked by factorization-based Divisors/DivisorSum/DivisorSigma ===
-script_test!(
+slow_script_test!(
   script_aliquot_sequence_classifications,
   "aliquot_sequence_classifications.wls"
 );
@@ -1277,7 +1301,7 @@ script_test!(
 //     Ceiling, and Sort/MaximalBy comparison. Heavy: builds the 99- and
 //     999-denominator tables (~500k memoized fractions), so it gets a wide
 //     slow-timeout override in .config/nextest.toml. ===
-script_test!(script_egyptian_fractions, "egyptian_fractions.wls");
+slow_script_test!(script_egyptian_fractions, "egyptian_fractions.wls");
 
 // === RosettaCode tasks that already matched wolframscript verbatim ===
 script_test!(script_delegates, "delegates.wls");
@@ -1325,7 +1349,7 @@ script_test!(
   "find_the_missing_permutation.wls"
 );
 
-script_test!(script_lucas_lehmer_test, "lucas-lehmer_test.wls");
+slow_script_test!(script_lucas_lehmer_test, "lucas-lehmer_test.wls");
 
 script_test!(script_named_parameters, "named_parameters.wls");
 
@@ -1344,7 +1368,7 @@ script_test!(script_arithmetic_complex, "arithmetic_complex.wls");
 
 script_test!(script_collections, "collections.wls");
 
-script_test!(script_ludic_numbers, "ludic_numbers.wls");
+slow_script_test!(script_ludic_numbers, "ludic_numbers.wls");
 
 script_test!(script_undefined_values, "undefined_values.wls");
 
@@ -1366,7 +1390,7 @@ script_test!(script_exceptions, "exceptions.wls");
 
 script_test!(script_bernoulli_numbers, "bernoulli_numbers.wls");
 
-script_test!(script_topswops, "topswops.wls");
+slow_script_test!(script_topswops, "topswops.wls");
 
 // === Manually-fixed RC scripts (source had pre-existing bugs) ===
 // Each of these had a real bug in the RC task source — undefined symbol,
@@ -1452,7 +1476,7 @@ script_test!(
   "percolation_mean_run_density.wls"
 );
 script_test!(script_atomic_updates, "atomic_updates.wls");
-script_test!(script_best_shuffle, "best_shuffle.wls");
+slow_script_test!(script_best_shuffle, "best_shuffle.wls");
 script_test!(script_count_in_octal, "count_in_octal.wls");
 script_test!(script_queue_usage, "queue_usage.wls");
 script_test!(

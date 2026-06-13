@@ -174,6 +174,41 @@ fn bench_script_build_summary(c: &mut Criterion) {
   });
 }
 
+// --- heavy `#[ignore]`d RosettaCode scripts ------------------------------
+
+/// Load one of the heavy `slow_script_test!` snapshots from `tests/scripts/`
+/// and run it end-to-end. Those tests are excluded from `make test` because
+/// they take tens of seconds in debug builds; their throughput (dominated by
+/// raw list/`Expr` allocation) is tracked here instead so a regression is
+/// caught even though the correctness check only runs under `make test-slow`.
+fn run_script_file(name: &str) {
+  let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    .join("tests/scripts")
+    .join(name);
+  let content = std::fs::read_to_string(&path).expect("read script");
+  let code = woxi::without_shebang(&content);
+  woxi::clear_state();
+  // Capture stdout so the script's Print[] output doesn't contaminate
+  // criterion's reporting.
+  let _ =
+    woxi::interpret_with_stdout(black_box(&code)).expect("interpret failed");
+}
+
+fn bench_script_egyptian_fractions(c: &mut Criterion) {
+  // The heaviest snapshot: builds the 99- and 999-denominator tables
+  // (~500k memoized fraction expansions). Pure allocation-throughput canary.
+  c.bench_function("script_egyptian_fractions", |b| {
+    b.iter(|| run_script_file("egyptian_fractions.wls"))
+  });
+}
+
+fn bench_script_aliquot_sequence_classifications(c: &mut Criterion) {
+  // Factorization-bound: repeated DivisorSum over growing sequences.
+  c.bench_function("script_aliquot_sequence_classifications", |b| {
+    b.iter(|| run_script_file("aliquot_sequence_classifications.wls"))
+  });
+}
+
 criterion_group! {
   // Sample size kept at the criterion minimum (10) so the
   // `script_build_summary` end-to-end bench finishes in reasonable time.
@@ -196,4 +231,18 @@ criterion_group! {
     bench_module_call_overhead,
     bench_script_build_summary
 }
-criterion_main!(interpreter);
+
+criterion_group! {
+  // The heavy `#[ignore]`d scripts each take tens of seconds per iteration
+  // in release builds, so a single sample of 10 already runs for minutes.
+  // Kept in a separate group so `cargo bench heavy` / `cargo bench
+  // egyptian` can target them without running the micro-benchmarks.
+  name = heavy_scripts;
+  config = Criterion::default()
+    .measurement_time(Duration::from_secs(8))
+    .sample_size(10);
+  targets =
+    bench_script_egyptian_fractions,
+    bench_script_aliquot_sequence_classifications
+}
+criterion_main!(interpreter, heavy_scripts);

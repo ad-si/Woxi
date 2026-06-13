@@ -6,15 +6,6 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 # The most specific overrides must therefore come BEFORE the broad
 # `/^script_/` rule below, or they will be shadowed by it.
 
-# Two RosettaCode scripts run close to the 180s ceiling standalone in
-# debug builds (~80s and ~120s) and reliably exceed it under full
-# parallel load with 17k+ tests competing for CPU. Give them a wider
-# window; release builds are ~10x faster, so this only affects `make
-# test`.
-[[profile.default.overrides]]
-filter = 'test(script_arithmetic_geometric_mean_calculate_pi) + test(script_largest_number_divisible_by_its_digits)'
-slow-timeout = { period = "360s", terminate-after = 1 }
-
 # `D[x^x, {x, 10}]` is intentionally a heavy regression test for the Plus
 # comparator panic — order 10 matches the originally panicking input. It
 # takes ~10s standalone in debug builds and can brush against the default
@@ -23,18 +14,29 @@ slow-timeout = { period = "360s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
-# The Egyptian-fractions task builds the 99- and 999-denominator tables —
-# ~500k memoized fraction expansions plus two MaximalBy scans over the full
-# 999 table. It runs ~40s in release but ~270s standalone in debug, and more
-# under full parallel load, so it needs a wider window than the broad script
-# rule below. (The algorithm itself is linear; the time is raw list/Expr
-# allocation throughput over half a million expansions.)
-[[profile.default.overrides]]
-filter = 'test(script_egyptian_fractions)'
-slow-timeout = { period = "600s", terminate-after = 1 }
-
-# Some script_snapshot_tests run heavy RosettaCode programs that take
-# tens of seconds in debug builds. Give them a generous budget.
+# The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
+# seconds in debug builds; under full parallel load they can brush past the
+# default 20s timeout. Give them a safety ceiling. The genuinely heavy
+# scripts (tens of seconds each in debug) are marked `#[ignore]` via the
+# `slow_script_test!` macro and run only via `make test-slow` under the
+# `slow` profile below — they never run during `make test`.
 [[profile.default.overrides]]
 filter = 'test(/^script_/)'
-slow-timeout = { period = "180s", terminate-after = 1 }
+slow-timeout = { period = "120s", terminate-after = 1 }
+
+# Profile for `make test-slow` (`cargo nextest run --profile slow
+# --run-ignored only`). The heavy `#[ignore]`d scripts run with heavy
+# mutual CPU contention and are ~270s+ standalone in debug builds, so give
+# every test a very wide window.
+#
+# NOTE: a custom profile inherits `[[profile.default.overrides]]`, and the
+# active profile's own overrides are evaluated *before* the inherited ones.
+# Without the explicit `script_` override below, the default profile's
+# 120s `/^script_/` rule would shadow this profile's 900s base and the
+# heavy scripts would (wrongly) time out at 120s.
+[profile.slow]
+slow-timeout = { period = "900s", terminate-after = 1 }
+
+[[profile.slow.overrides]]
+filter = 'test(/^script_/)'
+slow-timeout = { period = "900s", terminate-after = 1 }

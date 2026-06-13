@@ -15,6 +15,21 @@ test-unit:
 		--failure-output=final
 
 
+# Run the heavy `#[ignore]`d script snapshot tests (see `slow_script_test!`
+# in tests/script_snapshot_tests.rs). These are excluded from `make test`
+# because they take tens of seconds each in debug builds and dominate the
+# suite's wall-clock; their performance is tracked by the benchmarks. This
+# target re-runs them for full correctness coverage on demand.
+.PHONY: test-slow
+test-slow:
+	cargo nextest run \
+		--profile slow \
+		--run-ignored only \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
 # Alias the CLI command to test before running the tests.
 # E.g. `wolframscript -c` or `woxi eval`
 #
@@ -46,7 +61,8 @@ test-shebang: install
 .PHONY: test-scripts-wolframscript
 test-scripts-wolframscript:
 	@echo "Testing scripts with wolframscript against snapshots …"
-	WOXI_USE_WOLFRAM=true cargo nextest run script_ --test-threads=1
+	WOXI_USE_WOLFRAM=true cargo nextest run \
+		--profile slow --run-ignored all script_ --test-threads=1
 	@echo "All wolframscript script tests passed."
 
 
@@ -62,7 +78,7 @@ test: test-unit
 
 
 .PHONY: test-all
-test-all: test-unit test-cli test-shebang
+test-all: test-unit test-slow test-cli test-shebang
 
 
 .PHONY: test-conformance
