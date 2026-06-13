@@ -4816,10 +4816,123 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       _ => {}
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "RegionMeasure".to_string(),
-    args: vec![expr.clone()].into(),
-  })
+
+  // For the remaining primitives, RegionMeasure is the measure of the
+  // region's *intrinsic* dimension, so it delegates to the matching helper:
+  //   2D regions / surfaces → Area, 3D solids → Volume, curves → ArcLength.
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionMeasure".to_string(),
+      args: vec![expr.clone()].into(),
+    })
+  };
+  // A delegated helper may return its own unevaluated wrapper (Area[…],
+  // Volume[…], ArcLength[…]) when it cannot handle the shape; in that case
+  // present it back as an unevaluated RegionMeasure instead.
+  let or_unevaluated = |result: Result<Expr, InterpreterError>| match &result {
+    Ok(Expr::FunctionCall { name, .. })
+      if matches!(name.as_str(), "Area" | "Volume" | "ArcLength") =>
+    {
+      unevaluated()
+    }
+    _ => result,
+  };
+
+  if let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      // 2-dimensional regions: area.
+      "Disk" | "Rectangle" | "Triangle" | "Polygon" => {
+        return or_unevaluated(compute_area(expr));
+      }
+      // A Sphere is a 2-dimensional surface embedded in 3-space, so its
+      // measure is the surface area (Area already returns 4 Pi r^2).
+      "Sphere" => {
+        return or_unevaluated(compute_area(expr));
+      }
+      // 3-dimensional solids: volume.
+      "Cuboid" | "Cylinder" | "Cone" => {
+        return or_unevaluated(compute_volume(expr));
+      }
+      // 1-dimensional curves: arc length.
+      "Circle" | "Line" => {
+        return or_unevaluated(compute_arc_length(expr));
+      }
+      // Ball[c, r] is an n-ball whose dimension is the length of its center
+      // vector (default {0, 0, 0}, radius 1). Its measure is the closed-form
+      // n-ball volume  Pi^(n/2) r^n / Gamma[n/2 + 1].
+      "Ball" => {
+        let (n, radius) = match args.len() {
+          0 => (3usize, Expr::Integer(1)),
+          1 | 2 => {
+            let Expr::List(center) = &args[0] else {
+              return unevaluated();
+            };
+            if center.is_empty() {
+              return unevaluated();
+            }
+            let radius = if args.len() == 2 {
+              args[1].clone()
+            } else {
+              Expr::Integer(1)
+            };
+            (center.len(), radius)
+          }
+          _ => return unevaluated(),
+        };
+        let half_n = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Integer(n as i128)),
+          right: Box::new(Expr::Integer(2)),
+        };
+        let pi_pow = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Constant("Pi".to_string()), half_n.clone()].into(),
+        };
+        let r_pow = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![radius, Expr::Integer(n as i128)].into(),
+        };
+        let gamma = Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![half_n, Expr::Integer(1)].into(),
+          }]
+          .into(),
+        };
+        let measure = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![pi_pow, r_pow].into(),
+          }),
+          right: Box::new(gamma),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&measure);
+      }
+      // Point — 0-dimensional, so the measure is the counting measure:
+      // a single point ({x, y, …}) has measure 1; a list of points
+      // ({{…}, {…}, …}) has measure equal to the number of points.
+      "Point" if args.len() == 1 => {
+        if let Expr::List(items) = &args[0]
+          && !items.is_empty()
+        {
+          let all_points = items.iter().all(|e| matches!(e, Expr::List(_)));
+          if all_points {
+            return Ok(Expr::Integer(items.len() as i128));
+          }
+          let any_points = items.iter().any(|e| matches!(e, Expr::List(_)));
+          if !any_points {
+            // A flat coordinate list is a single point.
+            return Ok(Expr::Integer(1));
+          }
+        }
+        return unevaluated();
+      }
+      _ => {}
+    }
+  }
+  unevaluated()
 }
 
 /// Compute the axis-aligned bounding box of a geometric region as a list of

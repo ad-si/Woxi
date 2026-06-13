@@ -508,6 +508,91 @@ mod region_measure {
       "6*Pi"
     );
   }
+
+  // RegionMeasure returns the measure of a region's intrinsic dimension:
+  // 2D regions → area, 3D solids → volume, curves → length.
+  #[test]
+  fn disk_area() {
+    assert_eq!(interpret("RegionMeasure[Disk[{0, 0}, 2]]").unwrap(), "4*Pi");
+    assert_eq!(interpret("RegionMeasure[Disk[]]").unwrap(), "Pi");
+    assert_eq!(
+      interpret("RegionMeasure[Disk[{0, 0}, {2, 3}]]").unwrap(),
+      "6*Pi"
+    );
+  }
+
+  #[test]
+  fn rectangle_area() {
+    assert_eq!(
+      interpret("RegionMeasure[Rectangle[{0, 0}, {2, 3}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("RegionMeasure[Rectangle[]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn triangle_and_polygon_area() {
+    assert_eq!(
+      interpret("RegionMeasure[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("RegionMeasure[Polygon[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}]]")
+        .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn cuboid_cylinder_cone_volume() {
+    assert_eq!(
+      interpret("RegionMeasure[Cuboid[{0, 0, 0}, {1, 2, 3}]]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("RegionMeasure[Cylinder[]]").unwrap(), "2*Pi");
+    assert_eq!(interpret("RegionMeasure[Cone[]]").unwrap(), "(2*Pi)/3");
+  }
+
+  // An n-ball's measure is its closed-form volume Pi^(n/2) r^n / Gamma[n/2+1];
+  // the dimension is the length of the center vector (default 3D).
+  #[test]
+  fn ball_volume_by_dimension() {
+    assert_eq!(interpret("RegionMeasure[Ball[]]").unwrap(), "(4*Pi)/3");
+    assert_eq!(interpret("RegionMeasure[Ball[{1, 1}]]").unwrap(), "Pi");
+    assert_eq!(
+      interpret("RegionMeasure[Ball[{0, 0, 0}, 3]]").unwrap(),
+      "36*Pi"
+    );
+    // 4-ball of radius 2: Pi^2/2 * 2^4 = 8 Pi^2.
+    assert_eq!(
+      interpret("RegionMeasure[Ball[{0, 0, 0, 0}, 2]]").unwrap(),
+      "8*Pi^2"
+    );
+  }
+
+  // A Sphere is a 2D surface → surface area; Circle/Line are curves → length.
+  #[test]
+  fn surface_and_curve_measures() {
+    assert_eq!(
+      interpret("RegionMeasure[Sphere[{0, 0, 0}, 2]]").unwrap(),
+      "16*Pi"
+    );
+    assert_eq!(interpret("RegionMeasure[Circle[{0, 0}, 2]]").unwrap(), "4*Pi");
+    assert_eq!(
+      interpret("RegionMeasure[Line[{{0, 0}, {3, 4}}]]").unwrap(),
+      "5"
+    );
+  }
+
+  // A Point is 0-dimensional, so its measure is the counting measure.
+  #[test]
+  fn point_counting_measure() {
+    assert_eq!(interpret("RegionMeasure[Point[{1, 2}]]").unwrap(), "1");
+    assert_eq!(
+      interpret("RegionMeasure[Point[{{1, 2}, {3, 4}}]]").unwrap(),
+      "2"
+    );
+  }
 }
 
 mod triangle {
