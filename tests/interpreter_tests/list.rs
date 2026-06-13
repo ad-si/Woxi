@@ -1041,6 +1041,35 @@ mod insert {
       "g[x, a, b, x, c, d]"
     );
   }
+
+  #[test]
+  fn insert_association() {
+    // Insert a key -> value pair at an integer position.
+    assert_eq!(
+      interpret(r#"Insert[<|"a" -> 1, "b" -> 2|>, "c" -> 9, 2]"#).unwrap(),
+      "<|a -> 1, c -> 9, b -> 2|>"
+    );
+    // Front and end positions.
+    assert_eq!(
+      interpret(r#"Insert[<|"a" -> 1, "b" -> 2|>, "c" -> 9, 1]"#).unwrap(),
+      "<|c -> 9, a -> 1, b -> 2|>"
+    );
+    assert_eq!(
+      interpret(r#"Insert[<|"a" -> 1, "b" -> 2|>, "c" -> 9, -1]"#).unwrap(),
+      "<|a -> 1, b -> 2, c -> 9|>"
+    );
+    // Insert before a key with Key[...].
+    assert_eq!(
+      interpret(r#"Insert[<|"a" -> 1, "b" -> 2|>, "c" -> 9, Key["b"]]"#)
+        .unwrap(),
+      "<|a -> 1, c -> 9, b -> 2|>"
+    );
+    // A non-rule element leaves the association unchanged.
+    assert_eq!(
+      interpret(r#"Insert[<|"a" -> 1, "b" -> 2|>, 9, 1]"#).unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
 }
 
 mod dimensions {

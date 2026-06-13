@@ -1252,6 +1252,68 @@ pub fn insert_ast(
     name: "Insert".to_string(),
     args: vec![list.clone(), elem.clone(), pos.clone()].into(),
   };
+
+  // Association subject: the inserted element must be a `key -> value` rule,
+  // and the position (an integer or `Key[k]`) gives where the new pair is
+  // placed. Integer `n` inserts before the n-th entry (negatives count from
+  // the end, -1 = after the last); `Key[k]` inserts before key `k`.
+  if let Expr::Association(pairs) = list {
+    let kv = match elem {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Some(((**pattern).clone(), (**replacement).clone())),
+      Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      _ => None,
+    };
+    let Some((key, val)) = kv else {
+      crate::emit_message(&format!(
+        "Insert::invdt: The argument {} is not a rule or a list of rules.",
+        crate::syntax::format_expr(elem, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(list.clone());
+    };
+    let len = pairs.len() as i128;
+    let idx: Option<usize> = match pos {
+      Expr::Integer(_) | Expr::BigInteger(_) => expr_to_i128(pos).and_then(|n| {
+        let i = if n >= 0 { n - 1 } else { len + n + 1 };
+        (0..=len).contains(&i).then_some(i as usize)
+      }),
+      Expr::FunctionCall { name, args }
+        if name == "Key" && args.len() == 1 =>
+      {
+        let ks = crate::syntax::expr_to_string(&args[0]);
+        pairs
+          .iter()
+          .position(|(k, _)| crate::syntax::expr_to_string(k) == ks)
+      }
+      _ => None,
+    };
+    match idx {
+      Some(i) => {
+        let mut new_pairs = pairs.clone();
+        new_pairs.insert(i, (key, val));
+        return Ok(Expr::Association(new_pairs));
+      }
+      None => {
+        crate::emit_message(&format!(
+          "Insert::ins: Cannot insert at position {} in {}",
+          crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+          crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated());
+      }
+    }
+  }
+
   // Parse the position specification:
   //   n              single top-level position
   //   {p1, ..., pk}  one nested path
@@ -1586,10 +1648,7 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// from the end), `Key[k]`, a bare key (`String`/`Identifier`), and
 /// single-element wrappers `{Key[k]}` / `{k}`. Returns `None` for anything
 /// that does not identify an existing entry.
-fn assoc_position_index(
-  spec: &Expr,
-  pairs: &[(Expr, Expr)],
-) -> Option<usize> {
+fn assoc_position_index(spec: &Expr, pairs: &[(Expr, Expr)]) -> Option<usize> {
   match spec {
     Expr::Integer(_) | Expr::BigInteger(_) => {
       let n = expr_to_i128(spec)?;
