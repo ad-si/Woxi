@@ -1229,18 +1229,84 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let unevaluated = || Expr::FunctionCall {
+    name: "IntegerDigits".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  // Position 1: an explicit non-integer number emits ::int; symbolic
+  // subjects stay silently unevaluated.
+  let is_integer_subject =
+    matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_));
+  if !is_integer_subject {
+    let is_explicit_non_integer =
+      matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
+        || matches!(&args[0], Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2);
+    if is_explicit_non_integer {
+      crate::emit_message(&format!(
+        "IntegerDigits::int: Integer expected at position 1 in {}.",
+        show(&unevaluated())
+      ));
+    }
+    return Ok(unevaluated());
+  }
+
+  // Position 2: an explicit base below 2 (or a non-integer number)
+  // emits ::ibase; symbolic bases stay silently unevaluated.
+  if args.len() >= 2 {
+    let base_ok = matches!(&args[1], Expr::Integer(b) if *b >= 2);
+    if !base_ok {
+      let is_explicit_bad_base = matches!(
+        &args[1],
+        Expr::Integer(_)
+          | Expr::BigInteger(_)
+          | Expr::Real(_)
+          | Expr::BigFloat(..)
+      ) || matches!(&args[1], Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2);
+      if is_explicit_bad_base {
+        crate::emit_message(&format!(
+          "IntegerDigits::ibase: Base {} is not an integer greater than 1.",
+          show(&args[1])
+        ));
+      }
+      return Ok(unevaluated());
+    }
+  }
+
+  // Position 3: a non-negative machine integer; explicit other numbers
+  // emit ::intnm; symbolic lengths stay silently unevaluated.
+  if args.len() == 3 {
+    let len_ok = matches!(&args[2], Expr::Integer(n) if (0..=i64::MAX as i128).contains(n));
+    if !len_ok {
+      let is_explicit_bad_len = matches!(
+        &args[2],
+        Expr::Integer(_)
+          | Expr::BigInteger(_)
+          | Expr::Real(_)
+          | Expr::BigFloat(..)
+      ) || matches!(&args[2], Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2);
+      if is_explicit_bad_len {
+        crate::emit_message(&format!(
+          "IntegerDigits::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
+          show(&unevaluated())
+        ));
+      }
+      return Ok(unevaluated());
+    }
+  }
+
   // Fast path: small integer input + small/default integer base — avoid
   // BigInt allocations for typical 1..i128 sized values.
   if let Expr::Integer(n_i128) = &args[0] {
     let base_i128: i128 = if args.len() >= 2 {
       match expr_to_i128(&args[1]) {
         Some(b) if b >= 2 => b,
-        Some(_) => {
-          return Err(InterpreterError::EvaluationError(
-            "IntegerDigits: base must be an integer >= 2".into(),
-          ));
-        }
-        None => 0, // signal fallback
+        _ => 0, // unreachable after validation; signal fallback
       }
     } else {
       10
@@ -1258,23 +1324,17 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         digits.reverse();
       }
-      if args.len() == 3 {
-        match expr_to_i128(&args[2]) {
-          Some(len) if len >= 0 => {
-            let len = len as usize;
-            if digits.len() < len {
-              let mut padded = vec![Expr::Integer(0); len - digits.len()];
-              padded.append(&mut digits);
-              digits = padded;
-            } else if digits.len() > len {
-              digits = digits[digits.len() - len..].to_vec();
-            }
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(
-              "IntegerDigits: length must be a non-negative integer".into(),
-            ));
-          }
+      if args.len() == 3
+        && let Some(len) = expr_to_i128(&args[2])
+        && len >= 0
+      {
+        let len = len as usize;
+        if digits.len() < len {
+          let mut padded = vec![Expr::Integer(0); len - digits.len()];
+          padded.append(&mut digits);
+          digits = padded;
+        } else if digits.len() > len {
+          digits = digits[digits.len() - len..].to_vec();
         }
       }
       return Ok(Expr::List(digits.into()));
@@ -1284,21 +1344,14 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "IntegerDigits".to_string(),
-        args: args.to_vec().into(),
-      });
+      return Ok(unevaluated());
     }
   };
 
   let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => BigInt::from(b),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "IntegerDigits: base must be an integer >= 2".into(),
-        ));
-      }
+      _ => return Ok(unevaluated()),
     }
   } else {
     BigInt::from(10)
@@ -1319,25 +1372,19 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Handle optional length parameter
-  if args.len() == 3 {
-    match expr_to_i128(&args[2]) {
-      Some(len) if len >= 0 => {
-        let len = len as usize;
-        if digits.len() < len {
-          // Pad with zeros on the left
-          let mut padded = vec![Expr::Integer(0); len - digits.len()];
-          padded.append(&mut digits);
-          digits = padded;
-        } else if digits.len() > len {
-          // Truncate from the left (keep least significant digits)
-          digits = digits[digits.len() - len..].to_vec();
-        }
-      }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "IntegerDigits: length must be a non-negative integer".into(),
-        ));
-      }
+  if args.len() == 3
+    && let Some(len) = expr_to_i128(&args[2])
+    && len >= 0
+  {
+    let len = len as usize;
+    if digits.len() < len {
+      // Pad with zeros on the left
+      let mut padded = vec![Expr::Integer(0); len - digits.len()];
+      padded.append(&mut digits);
+      digits = padded;
+    } else if digits.len() > len {
+      // Truncate from the left (keep least significant digits)
+      digits = digits[digits.len() - len..].to_vec();
     }
   }
 

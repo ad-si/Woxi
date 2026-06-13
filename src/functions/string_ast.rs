@@ -4695,21 +4695,53 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(result));
   }
 
-  let base = if args.len() >= 2 {
-    expr_to_int(&args[1])? as u32
+  let unevaluated = || Expr::FunctionCall {
+    name: "IntegerString".to_string(),
+    args: args.to_vec().into(),
+  };
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  // Position 1 must be an integer; explicit non-integer numbers (even
+  // integral reals like 2.) emit ::int, symbols stay silent.
+  if !matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_)) {
+    let is_explicit_non_integer =
+      matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
+        || matches!(&args[0], Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2);
+    if is_explicit_non_integer {
+      crate::emit_message(&format!(
+        "IntegerString::int: Integer expected at position 1 in {}.",
+        show(&unevaluated())
+      ));
+    }
+    return Ok(unevaluated());
+  }
+
+  // Position 2: an explicit base outside 2..36 emits ::basf; symbolic
+  // bases stay silently unevaluated.
+  let base: u32 = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(b) if (2..=36).contains(b) => *b as u32,
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => {
+        crate::emit_message(&format!(
+          "IntegerString::basf: Requested base {} should be an integer between 2 and 36.",
+          show(&args[1])
+        ));
+        return Ok(unevaluated());
+      }
+      _ => return Ok(unevaluated()),
+    }
   } else {
     10
   };
 
-  if !(2..=36).contains(&base) {
-    return Err(InterpreterError::EvaluationError(
-      "IntegerString: base must be between 2 and 36".into(),
-    ));
-  }
-
   // IntegerString uses absolute value (drops sign). Handle BigInteger
   // directly via num-bigint's to_str_radix; fall back to i128 for
-  // smaller integers and Real with zero fractional part.
+  // smaller integers.
   let mut result = match &args[0] {
     Expr::BigInteger(n) => {
       use num_bigint::Sign;

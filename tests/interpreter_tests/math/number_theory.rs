@@ -3971,3 +3971,133 @@ mod group_stabilizer_and_table {
     );
   }
 }
+
+mod integer_digits_string_messages {
+  use super::*;
+
+  #[test]
+  fn invalid_bases_emit_ibase() {
+    // Regression: bases below 2 raised hard errors
+    assert_eq!(
+      interpret("IntegerDigits[10, 1]").unwrap(),
+      "IntegerDigits[10, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "IntegerDigits::ibase: Base 1 is not an integer greater than 1."
+      )),
+      "expected ibase message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("IntegerDigits[10, 0]").unwrap(),
+      "IntegerDigits[10, 0]"
+    );
+    assert_eq!(
+      interpret("IntegerDigits[10, 2.5]").unwrap(),
+      "IntegerDigits[10, 2.5]"
+    );
+    // Symbolic bases stay silently unevaluated
+    assert_eq!(
+      interpret("IntegerDigits[10, x]").unwrap(),
+      "IntegerDigits[10, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.is_empty(),
+      "symbolic base must stay silent, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn non_integer_subjects_emit_int() {
+    // Regression: silent unevaluated return without the ::int message
+    assert_eq!(
+      interpret("IntegerDigits[2.5]").unwrap(),
+      "IntegerDigits[2.5]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "IntegerDigits::int: Integer expected at position 1 in IntegerDigits[2.5]."
+      )),
+      "expected int message, got {:?}",
+      msgs
+    );
+    // Integral reals are still not integers
+    assert_eq!(
+      interpret("IntegerDigits[2.0]").unwrap(),
+      "IntegerDigits[2.]"
+    );
+    assert_eq!(
+      interpret("IntegerString[2.0]").unwrap(),
+      "IntegerString[2.]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "IntegerString::int: Integer expected at position 1 in IntegerString[2.]."
+      )),
+      "expected int message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
+  fn invalid_lengths_emit_intnm() {
+    // Regression: negative lengths raised hard errors
+    assert_eq!(
+      interpret("IntegerDigits[5, 2, -1]").unwrap(),
+      "IntegerDigits[5, 2, -1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "IntegerDigits::intnm: Non-negative machine-sized integer expected at position 3 in IntegerDigits[5, 2, -1]."
+      )),
+      "expected intnm message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("IntegerDigits[5, 2, 2.5]").unwrap(),
+      "IntegerDigits[5, 2, 2.5]"
+    );
+    // Symbolic lengths stay silently unevaluated
+    assert_eq!(
+      interpret("IntegerDigits[5, 2, m]").unwrap(),
+      "IntegerDigits[5, 2, m]"
+    );
+  }
+
+  #[test]
+  fn integer_string_invalid_bases_emit_basf() {
+    // Regression: bases outside 2..36 raised hard errors
+    assert_eq!(
+      interpret("IntegerString[255, 1]").unwrap(),
+      "IntegerString[255, 1]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "IntegerString::basf: Requested base 1 should be an integer between 2 and 36."
+      )),
+      "expected basf message, got {:?}",
+      msgs
+    );
+    assert_eq!(
+      interpret("IntegerString[255, 40]").unwrap(),
+      "IntegerString[255, 40]"
+    );
+    // Symbolic arguments stay silently unevaluated
+    assert_eq!(
+      interpret("IntegerString[255, x]").unwrap(),
+      "IntegerString[255, x]"
+    );
+    assert_eq!(interpret("IntegerString[n]").unwrap(), "IntegerString[n]");
+    // Valid forms still work
+    assert_eq!(interpret("IntegerString[255, 16]").unwrap(), "ff");
+    assert_eq!(interpret("IntegerDigits[255, 16]").unwrap(), "{15, 15}");
+  }
+}
