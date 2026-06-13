@@ -269,6 +269,55 @@ mod list_tests {
   }
 
   #[test]
+  fn replace_list() {
+    // Enumerates every way a sequence pattern can match, with a fixed
+    // Blank slot (b_) between two BlankNullSequence slots.
+    assert_eq!(
+      interpret("ReplaceList[{1, 2, 3}, {a___, b_, c___} :> {b}]").unwrap(),
+      "{{1}, {2}, {3}}"
+    );
+    // RuleDelayed and Rule behave the same here.
+    assert_eq!(
+      interpret("ReplaceList[{1, 2, 3}, {a___, b_, c___} -> {b}]").unwrap(),
+      "{{1}, {2}, {3}}"
+    );
+    // Two adjacent fixed slots — every adjacent pair.
+    assert_eq!(
+      interpret("ReplaceList[{1, 2, 3, 4, 5}, {___, x_, y_, ___} :> x + y]")
+        .unwrap(),
+      "{3, 5, 7, 9}"
+    );
+    // Head-constrained slot only matches integer elements.
+    assert_eq!(
+      interpret("ReplaceList[{1, a, 2, b}, {___, x_Integer, ___} -> x]")
+        .unwrap(),
+      "{1, 2}"
+    );
+    // Flat (Orderless) partition enumeration over Plus.
+    assert_eq!(
+      interpret("ReplaceList[a + b + c, x_ + y_ -> {x, y}]").unwrap(),
+      "{{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, \
+       {b + c, a}}"
+    );
+    // Whole-expression match where the result equals the input.
+    assert_eq!(
+      interpret("ReplaceList[{1, 2, 3}, x_ -> x]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(interpret("ReplaceList[f[a, b], x_ -> x]").unwrap(), "{f[a, b]}");
+    // ReplaceList does not descend into subparts (level-0 only).
+    assert_eq!(interpret("ReplaceList[{1, 2, 3}, 2 -> x]").unwrap(), "{}");
+    // No match at all.
+    assert_eq!(interpret("ReplaceList[a, b -> x]").unwrap(), "{}");
+    // Cap the number of matches with the third argument.
+    assert_eq!(
+      interpret("ReplaceList[{1, 2, 3, 4}, {___, x_, y_, ___} :> {x, y}, 2]")
+        .unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+
+  #[test]
   fn array() {
     assert_eq!(interpret("Array[#^2 &, 3]").unwrap(), "{1, 4, 9}");
     assert_eq!(interpret("Array[# + 1 &, 4]").unwrap(), "{2, 3, 4, 5}");

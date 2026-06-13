@@ -1608,12 +1608,22 @@ pub fn dispatch_complex_and_special(
         }
         return Some(Ok(Expr::List(combined.into())));
       }
-      // Try the list-sequence enumerator first.
-      if let Expr::List(expr_elems) = &args[0]
-        && let Expr::Rule {
+      // Try the list-sequence enumerator first. Both `->` (Rule) and `:>`
+      // (RuleDelayed) carry the same pattern/replacement shape here; the
+      // replacement is substituted then evaluated either way.
+      let rule_parts = match &args[1] {
+        Expr::Rule {
           pattern,
           replacement,
-        } = &args[1]
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => Some((pattern, replacement)),
+        _ => None,
+      };
+      if let Expr::List(expr_elems) = &args[0]
+        && let Some((pattern, replacement)) = rule_parts
         && let Expr::List(pat_elems) = pattern.as_ref()
         && let Some(all_bindings) =
           enumerate_list_sequence_matches(expr_elems, pat_elems)
@@ -1689,20 +1699,45 @@ pub fn dispatch_complex_and_special(
           }
         }
       }
-      let result = match apply_replace_ast(&args[0], &args[1])
-        .and_then(|r| evaluate_expr_to_expr(&r))
-      {
-        Ok(r) => r,
-        Err(e) => return Some(Err(e)),
+      // Fallback: ReplaceList matches the rule against the WHOLE expression
+      // (level 0) only — it does not descend into subparts. Test the single
+      // top-level match directly with the pattern matcher so that a rule
+      // whose result equals the input (e.g. `x_ -> x`) is still reported,
+      // instead of inferring "no match" from string equality.
+      let rule_top = match &args[1] {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => Some((pattern.clone(), replacement.clone())),
+        _ => None,
       };
-      // `apply_replace_ast` returns the original expr unchanged when no
-      // top-level match fires, so compare strings to detect a match.
-      let before = crate::syntax::expr_to_string(&args[0]);
-      let after = crate::syntax::expr_to_string(&result);
-      if before == after {
-        return Some(Ok(Expr::List(vec![].into())));
+      if let Some((pattern, replacement)) = rule_top {
+        match crate::evaluator::pattern_matching::match_pattern(
+          &args[0], &pattern,
+        ) {
+          Some(bindings) => {
+            let mut rhs = replacement.as_ref().clone();
+            for (name, value) in bindings {
+              rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
+            }
+            let evaluated = match evaluate_expr_to_expr(&rhs) {
+              Ok(r) => r,
+              Err(e) => return Some(Err(e)),
+            };
+            return Some(Ok(Expr::List(vec![evaluated].into())));
+          }
+          None => return Some(Ok(Expr::List(vec![].into()))),
+        }
       }
-      return Some(Ok(Expr::List(vec![result].into())));
+      // Second argument is not a rule — leave unevaluated.
+      return Some(Ok(Expr::FunctionCall {
+        name: "ReplaceList".to_string(),
+        args: args.to_vec().into(),
+      }));
     }
     "Replace" if args.len() == 3 || args.len() == 4 => {
       // Replace[expr, rules, levelspec] or
@@ -2317,24 +2352,40 @@ fn enumerate_list_sequence_matches(
   expr_elems: &[Expr],
   pattern_elems: &[Expr],
 ) -> Option<Vec<Vec<(String, Expr)>>> {
-  // Parse each pattern slot into (name, min_count, max_count_unbounded).
+  use crate::evaluator::pattern_matching::get_expr_head;
+  // Parse each pattern slot into (name, min, max, head-constraint).
+  // `max == None` means unbounded — consume as many as available.
   struct Slot<'a> {
     name: &'a str,
     min: usize,
-    // `None` means unbounded — consume the rest.
+    max: Option<usize>,
+    head: Option<&'a str>,
   }
+  // Map a blank_type (1=Blank, 2=BlankSequence, 3=BlankNullSequence) to
+  // (min, max).
+  let bounds = |blank_type: u8| -> Option<(usize, Option<usize>)> {
+    match blank_type {
+      1 => Some((1, Some(1))),
+      2 => Some((1, None)),
+      3 => Some((0, None)),
+      _ => None,
+    }
+  };
   let mut slots: Vec<Slot> = Vec::with_capacity(pattern_elems.len());
   for p in pattern_elems {
-    let (name, min): (&str, usize) = match p {
+    let slot: Slot = match p {
       Expr::Pattern {
-        name, blank_type, ..
+        name,
+        blank_type,
+        head,
       } => {
-        let min = match blank_type {
-          2 => 1usize,
-          3 => 0,
-          _ => return None,
-        };
-        (name.as_str(), min)
+        let (min, max) = bounds(*blank_type)?;
+        Slot {
+          name: name.as_str(),
+          min,
+          max,
+          head: head.as_deref(),
+        }
       }
       Expr::FunctionCall {
         name: fname,
@@ -2345,33 +2396,30 @@ fn enumerate_list_sequence_matches(
         } else {
           ""
         };
-        let min = match &fargs[1] {
-          Expr::FunctionCall {
-            name: bname,
-            args: bargs,
-          } if bargs.is_empty() && bname == "BlankSequence" => 1usize,
-          Expr::FunctionCall {
-            name: bname,
-            args: bargs,
-          } if bargs.is_empty() && bname == "BlankNullSequence" => 0,
-          _ => return None,
-        };
-        (name, min)
+        let (blank_kind, head) = parse_blank_fc(&fargs[1])?;
+        let (min, max) = bounds(blank_kind)?;
+        Slot {
+          name,
+          min,
+          max,
+          head,
+        }
       }
-      Expr::FunctionCall {
-        name: bname,
-        args: bargs,
-      } if bargs.is_empty() && bname == "BlankSequence" => ("", 1),
-      Expr::FunctionCall {
-        name: bname,
-        args: bargs,
-      } if bargs.is_empty() && bname == "BlankNullSequence" => ("", 0),
-      _ => return None,
+      _ => {
+        let (blank_kind, head) = parse_blank_fc(p)?;
+        let (min, max) = bounds(blank_kind)?;
+        Slot {
+          name: "",
+          min,
+          max,
+          head,
+        }
+      }
     };
-    slots.push(Slot { name, min });
+    slots.push(slot);
   }
 
-  // Brute-force enumeration: each slot with min=m takes >= m elements.
+  // Brute-force enumeration: each slot takes between `min` and `max` elements.
   let n = expr_elems.len();
   let k = slots.len();
   if k == 0 {
@@ -2381,36 +2429,37 @@ fn enumerate_list_sequence_matches(
       Some(vec![])
     };
   }
-  // Total minimum; verify feasibility.
   let total_min: usize = slots.iter().map(|s| s.min).sum();
   if total_min > n {
     return Some(vec![]);
   }
-  // Enumerate all compositions of (n − total_min) into k non-negative parts,
-  // where slot i gets `extras[i] + slots[i].min` elements.
-  let slack = n - total_min;
+
+  // Recurse over slot counts, respecting per-slot max bounds and head
+  // constraints on the consumed elements.
   let mut results: Vec<Vec<(String, Expr)>> = Vec::new();
-  let mut extras = vec![0usize; k];
+  let mut counts = vec![0usize; k];
+  #[allow(clippy::too_many_arguments)]
   fn recurse(
     idx: usize,
-    remaining: usize,
-    extras: &mut Vec<usize>,
+    pos: usize,
+    counts: &mut Vec<usize>,
     slots: &[Slot<'_>],
     expr_elems: &[Expr],
     results: &mut Vec<Vec<(String, Expr)>>,
   ) {
-    if idx + 1 == slots.len() {
-      extras[idx] = remaining;
-      // Build this binding set.
-      let mut pos = 0;
+    let n = expr_elems.len();
+    if idx == slots.len() {
+      if pos != n {
+        return;
+      }
+      // Build the binding set from the chosen counts.
+      let mut p = 0;
       let mut bindings: Vec<(String, Expr)> = Vec::new();
       for (i, slot) in slots.iter().enumerate() {
-        let len = slot.min + extras[i];
-        let slice = &expr_elems[pos..pos + len];
-        pos += len;
+        let len = counts[i];
+        let slice = &expr_elems[p..p + len];
+        p += len;
         if !slot.name.is_empty() {
-          // Bind to a Sequence so substitute_variable can splice/wrap
-          // appropriately. Single elements stay atomic.
           let value = if len == 1 {
             slice[0].clone()
           } else {
@@ -2423,17 +2472,62 @@ fn enumerate_list_sequence_matches(
         }
       }
       results.push(bindings);
-      extras[idx] = 0;
       return;
     }
-    for e in 0..=remaining {
-      extras[idx] = e;
-      recurse(idx + 1, remaining - e, extras, slots, expr_elems, results);
+    let slot = &slots[idx];
+    // Remaining minimum required by later slots.
+    let later_min: usize = slots[idx + 1..].iter().map(|s| s.min).sum();
+    let avail = n - pos;
+    let max_take = avail.saturating_sub(later_min);
+    let upper = match slot.max {
+      Some(m) => m.min(max_take),
+      None => max_take,
+    };
+    for take in slot.min..=upper {
+      // Verify the head constraint on every element this slot consumes.
+      if let Some(h) = slot.head
+        && !expr_elems[pos..pos + take]
+          .iter()
+          .all(|e| get_expr_head(e) == h)
+      {
+        continue;
+      }
+      counts[idx] = take;
+      recurse(idx + 1, pos + take, counts, slots, expr_elems, results);
     }
-    extras[idx] = 0;
+    counts[idx] = 0;
   }
-  recurse(0, slack, &mut extras, &slots, expr_elems, &mut results);
+  recurse(0, 0, &mut counts, &slots, expr_elems, &mut results);
   Some(results)
+}
+
+/// Parse a blank-like expression into (blank_type, head-constraint).
+/// Returns `None` for anything that is not a Blank/BlankSequence/
+/// BlankNullSequence (with an optional single head argument).
+fn parse_blank_fc(expr: &Expr) -> Option<(u8, Option<&str>)> {
+  match expr {
+    Expr::Pattern {
+      blank_type, head, ..
+    } => Some((*blank_type, head.as_deref())),
+    Expr::FunctionCall { name, args } => {
+      let kind = match name.as_str() {
+        "Blank" => 1u8,
+        "BlankSequence" => 2,
+        "BlankNullSequence" => 3,
+        _ => return None,
+      };
+      let head = match args.first() {
+        None => None,
+        Some(Expr::Identifier(s)) => Some(s.as_str()),
+        Some(_) => return None,
+      };
+      if args.len() > 1 {
+        return None;
+      }
+      Some((kind, head))
+    }
+    _ => None,
+  }
 }
 
 /// Format Information output for a built-in symbol.
