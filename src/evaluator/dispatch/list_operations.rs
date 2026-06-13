@@ -850,6 +850,9 @@ pub fn dispatch_list_operations(
     "Ordering" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::ordering_ast(args));
     }
+    "OrderingBy" if args.len() == 2 || args.len() == 3 => {
+      return Some(list_helpers_ast::ordering_by_ast(args));
+    }
     "Nest" if args.len() == 3 => {
       let Some(n) = nonneg_machine_int(&args[2]) else {
         return Some(Ok(intnm_message(name, args, 3)));

@@ -846,6 +846,21 @@ mod ordering {
   }
 
   #[test]
+  fn ordering_by() {
+    // Positions that order the list by f applied to each element.
+    assert_eq!(interpret("OrderingBy[{3, 1, 2}, # &]").unwrap(), "{2, 3, 1}");
+    assert_eq!(interpret("OrderingBy[{3, 1, 2}, -# &]").unwrap(), "{1, 3, 2}");
+    assert_eq!(
+      interpret("OrderingBy[{{3, 1}, {1, 2}, {2, 5}}, Last]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("OrderingBy[{-3, 1, -2}, Abs]").unwrap(), "{2, 3, 1}");
+    // n limits the count: positive keeps the first n, negative the last |n|.
+    assert_eq!(interpret("OrderingBy[{3, 1, 2}, # &, 2]").unwrap(), "{2, 3}");
+    assert_eq!(interpret("OrderingBy[{3, 1, 2}, # &, -1]").unwrap(), "{1}");
+  }
+
+  #[test]
   fn all_with_greater() {
     assert_eq!(
       interpret("Ordering[{3, 1, 2, 4, 5}, All, Greater]").unwrap(),

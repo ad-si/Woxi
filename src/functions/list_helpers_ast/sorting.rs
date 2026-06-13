@@ -503,6 +503,56 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// OrderingBy[list, f] / OrderingBy[list, f, n] — the positions that order
+/// `list` by `f` applied to each element (ascending, stable). `n` limits the
+/// number of positions: positive keeps the first `n`, negative the last `|n|`,
+/// `All` keeps them all.
+pub fn ordering_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "OrderingBy expects 2 or 3 arguments".into(),
+    ));
+  }
+  let items: &[Expr] = match &args[0] {
+    Expr::List(items) => items.as_slice(),
+    Expr::FunctionCall { args: fc_args, .. } => fc_args.as_slice(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "OrderingBy".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+
+  let func = &args[1];
+  let mut keyed: Vec<(usize, Expr)> = Vec::with_capacity(items.len());
+  for (i, item) in items.iter().enumerate() {
+    keyed.push((i, apply_func_ast(func, item)?));
+  }
+  keyed.sort_by(|a, b| by_key_cmp(&a.1, &b.1));
+
+  let mut result: Vec<Expr> = keyed
+    .iter()
+    .map(|(idx, _)| Expr::Integer((*idx + 1) as i128))
+    .collect();
+
+  if args.len() == 3 {
+    let is_all = matches!(&args[2], Expr::Identifier(n) if n == "All");
+    if !is_all && let Some(n) = expr_to_i128(&args[2]) {
+      if n >= 0 {
+        result.truncate(n as usize);
+      } else {
+        let abs_n = n.unsigned_abs() as usize;
+        if abs_n <= result.len() {
+          result = result.split_off(result.len() - abs_n);
+        }
+      }
+    }
+  }
+
+  Ok(Expr::List(result.into()))
+}
+
 /// Comparator for *By key expressions: numeric when possible, lexicographic fallback.
 fn by_key_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Exact ordering for integer/rational keys first: parsing them as f64
@@ -565,7 +615,13 @@ fn minimal_maximal_by_assoc(
       let extreme = keyed
         .iter()
         .map(|(_, c)| c)
-        .min_by(|a, b| if maximal { by_key_cmp(b, a) } else { by_key_cmp(a, b) })
+        .min_by(|a, b| {
+          if maximal {
+            by_key_cmp(b, a)
+          } else {
+            by_key_cmp(a, b)
+          }
+        })
         .cloned();
       let result: Vec<(Expr, Expr)> = match extreme {
         Some(ex) => {

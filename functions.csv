@@ -4137,7 +4137,7 @@ MemoryConstraint,,,,10.0,4262
 NondimensionalizationTransform,,,,11.3,4262
 ObservabilityGramian,,,,8.0,4262
 OperatorApplied,,,,12.1,4262
-OrderingBy,,,,12.0,4262
+OrderingBy,Gives the positions that order a list by a function applied to each element,✅,pure,12.0,4262
 PoissonWindow,,,,9.0,4262
 QuartileSkewness,,,,6.0,4262
 SequencePredict,,🚫,,11.1,4262
