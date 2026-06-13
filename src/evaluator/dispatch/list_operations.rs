@@ -2785,6 +2785,15 @@ pub fn dispatch_list_operations(
     "ListConvolve" if args.len() == 2 => {
       return Some(list_convolve_ast(&args[0], &args[1]));
     }
+    // ListConvolve[ker, list, k] / [ker, list, {kL, kR}] — cyclic convolution
+    // with an alignment (overhang) spec; an optional 4th argument supplies a
+    // scalar padding used instead of cyclic wraparound.
+    "ListConvolve" if args.len() == 3 || args.len() == 4 => {
+      let padding = args.get(3);
+      return Some(list_convolve_overhang(
+        &args[0], &args[1], &args[2], padding, args,
+      ));
+    }
     // ListCorrelate[kernel, list] — discrete cross-correlation
     "ListCorrelate" if args.len() == 2 => {
       return Some(list_correlate_ast(&args[0], &args[1]));
@@ -5282,6 +5291,108 @@ fn list_convolve_ast(
     result.push(evaluated);
   }
 
+  Ok(Expr::List(result.into()))
+}
+
+/// `ListConvolve[ker, list, {kL, kR}]` (and the `k` shorthand and optional
+/// scalar padding). The overhang spec `{kL, kR}` aligns kernel element `kL`
+/// with the first list element and `kR` with the last (kernel indices may be
+/// negative, counting from the end). The output has length
+/// `n + kR_pos - kL_pos`, and
+/// `result[t] = sum_i ker[i] * list[t + kL_pos - i]`,
+/// where out-of-range list indices wrap cyclically — or take the padding
+/// value when a 4th argument is given.
+fn list_convolve_overhang(
+  kernel: &Expr,
+  list: &Expr,
+  spec: &Expr,
+  padding: Option<&Expr>,
+  all_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ListConvolve".to_string(),
+      args: all_args.to_vec().into(),
+    })
+  };
+  let (Expr::List(ker), Expr::List(data)) = (kernel, list) else {
+    return unevaluated();
+  };
+  let m = ker.len();
+  let n = data.len();
+  if m == 0 || n == 0 {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  // Normalise a (possibly negative) kernel index into 1..=m.
+  let norm = |k: i128| -> Option<usize> {
+    let pos = if k < 0 { m as i128 + 1 + k } else { k };
+    if (1..=m as i128).contains(&pos) {
+      Some(pos as usize)
+    } else {
+      None
+    }
+  };
+  let (kl, kr) = match spec {
+    Expr::Integer(k) => {
+      let p = match norm(*k) {
+        Some(p) => p,
+        None => return unevaluated(),
+      };
+      (p, p)
+    }
+    Expr::List(items) if items.len() == 2 => {
+      match (&items[0], &items[1]) {
+        (Expr::Integer(a), Expr::Integer(b)) => {
+          match (norm(*a), norm(*b)) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return unevaluated(),
+          }
+        }
+        _ => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  // A list-valued padding (cyclic padding from a list) is not supported.
+  if matches!(padding, Some(Expr::List(_))) {
+    return unevaluated();
+  }
+
+  let out_len = n as i128 + kr as i128 - kl as i128;
+  if out_len <= 0 {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  let mut result = Vec::with_capacity(out_len as usize);
+  for t in 1..=out_len {
+    let mut terms = Vec::with_capacity(m);
+    for i in 1..=m {
+      let idx = t + kl as i128 - i as i128; // 1-based index into data
+      let elem = match padding {
+        Some(p) => {
+          if (1..=n as i128).contains(&idx) {
+            data[(idx - 1) as usize].clone()
+          } else {
+            p.clone()
+          }
+        }
+        None => {
+          let w = (idx - 1).rem_euclid(n as i128) as usize;
+          data[w].clone()
+        }
+      };
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![ker[i - 1].clone(), elem].into(),
+      });
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    };
+    result.push(evaluate_expr_to_expr(&sum).unwrap_or(sum));
+  }
   Ok(Expr::List(result.into()))
 }
 

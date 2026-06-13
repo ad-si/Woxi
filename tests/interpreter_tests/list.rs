@@ -7337,6 +7337,57 @@ mod list_convolve {
   fn kernel_equals_list() {
     assert_eq!(interpret("ListConvolve[{1, 2}, {3, 4}]").unwrap(), "{10}");
   }
+
+  // ListConvolve[ker, list, {kL, kR}] aligns kernel element kL with the
+  // first list element and kR with the last, wrapping cyclically. {1, 1}
+  // gives a full cyclic convolution of length n.
+  #[test]
+  fn cyclic_overhang_one_one() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {3, 4, 5}, {1, 1}]").unwrap(),
+      "{13, 10, 13}"
+    );
+  }
+
+  // An integer overhang k is shorthand for {k, k}.
+  #[test]
+  fn integer_overhang_shorthand() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {3, 4, 5}, 1]").unwrap(),
+      "{13, 10, 13}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {3, 4, 5}, -1]").unwrap(),
+      "{10, 13, 13}"
+    );
+  }
+
+  // {-1, 1} reproduces the default ("valid") 2-argument result.
+  #[test]
+  fn overhang_minus_one_one_matches_default() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 1, 1}, {1, 2, 3, 4, 5}, {-1, 1}]").unwrap(),
+      "{6, 9, 12}"
+    );
+  }
+
+  // {1, -1} gives the extended (full) cyclic convolution of length n+m-1.
+  #[test]
+  fn overhang_one_minus_one_full() {
+    assert_eq!(
+      interpret("ListConvolve[{x, y}, {a, b, c, d}, {1, -1}]").unwrap(),
+      "{a*x + d*y, b*x + a*y, c*x + b*y, d*x + c*y, a*x + d*y}"
+    );
+  }
+
+  // A 4th argument supplies a scalar padding used instead of cyclic wrap.
+  #[test]
+  fn scalar_padding() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 1}, {1, 2, 3, 4}, {1, 1}, 0]").unwrap(),
+      "{1, 3, 5, 7}"
+    );
+  }
 }
 
 mod list_correlate {
