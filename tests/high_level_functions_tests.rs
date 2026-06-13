@@ -446,6 +446,49 @@ mod high_level_functions_tests {
         "he wrd"
       );
     }
+    #[test]
+    fn test_string_delete_digit_character() {
+      assert_eq!(
+        interpret(r#"StringDelete["a1b2c3", DigitCharacter]"#).unwrap(),
+        "abc"
+      );
+    }
+    #[test]
+    fn test_string_delete_letter_character() {
+      assert_eq!(
+        interpret(r#"StringDelete["a1b2c3", LetterCharacter]"#).unwrap(),
+        "123"
+      );
+    }
+    #[test]
+    fn test_string_delete_number_string_pattern() {
+      assert_eq!(
+        interpret(r#"StringDelete["one1two2", NumberString]"#).unwrap(),
+        "onetwo"
+      );
+    }
+    #[test]
+    fn test_string_delete_mixed_pattern_list() {
+      assert_eq!(
+        interpret(r#"StringDelete["a1b2c3", {DigitCharacter, "a"}]"#).unwrap(),
+        "bc"
+      );
+    }
+    #[test]
+    fn test_string_delete_ignore_case() {
+      assert_eq!(
+        interpret(r#"StringDelete["abcABC", "abc", IgnoreCase -> True]"#)
+          .unwrap(),
+        ""
+      );
+    }
+    #[test]
+    fn test_string_delete_pattern_threads_list() {
+      assert_eq!(
+        interpret(r#"StringDelete[{"a1", "b2"}, DigitCharacter]"#).unwrap(),
+        "{a, b}"
+      );
+    }
   }
 
   mod word_boundary_tests {

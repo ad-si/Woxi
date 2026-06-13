@@ -5369,21 +5369,43 @@ pub fn string_replace_part_ast(
 
 /// StringDelete[string, sub] - deletes all occurrences of sub from string
 pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "StringDelete expects exactly 2 arguments".into(),
+      "StringDelete expects at least 2 arguments".into(),
     ));
   }
-  // Thread over list of strings in the first argument.
+  // Thread over list of strings in the first argument, preserving options.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| string_delete_ast(&[item.clone(), args[1].clone()]))
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_delete_ast(&call)
+      })
       .collect();
     return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
-  // Handle list of patterns: delete each one
+  let ignore_case = has_ignore_case_option(args);
+
+  // Deleting is replacing every match of the pattern with the empty string.
+  // Reuse the shared string-pattern → regex conversion so character classes
+  // (DigitCharacter, …), blanks, alternation lists, and string literals all
+  // work, matching StringReplace[s, patt -> ""].
+  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    let full = if ignore_case {
+      format!("(?i:{})", regex_pat)
+    } else {
+      regex_pat
+    };
+    let re = compile_regex(&full).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+    })?;
+    return Ok(Expr::String(re.replace_all(&s, "").into_owned()));
+  }
+
+  // Fallback: plain substring deletion (single pattern or list of literals).
   if let Expr::List(items) = &args[1] {
     let mut result = s;
     for item in items {

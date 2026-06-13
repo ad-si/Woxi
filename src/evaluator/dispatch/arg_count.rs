@@ -1054,7 +1054,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StringCases" => Some((1, 3)),
     "StringContainsQ" => Some((2, 3)),
     "StringCount" => Some((2, usize::MAX)),
-    "StringDelete" => Some((2, 2)),
+    "StringDelete" => Some((2, usize::MAX)),
     "StringDrop" => Some((2, 2)),
     "StringEndsQ" => Some((2, 3)),
     "StringExtract" => Some((2, usize::MAX)),

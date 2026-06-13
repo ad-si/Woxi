@@ -1701,7 +1701,7 @@ Between,Tests if a value is between bounds,✅,pure,10.3,1728
 Deployed,Deployed option,,unevaluated,6.0,1730
 FindGeometricTransform,Find geometric transformation,,unevaluated,8.0,1730
 DirichletDistribution,Dirichlet distribution,,unevaluated,8.0,1733
-StringDelete,Deletes all occurrences of a substring,✅,pure,10.1,1733
+StringDelete,Deletes all occurrences of a substring or string pattern,✅,pure,10.1,1733
 RiemannSiegelTheta,Riemann-Siegel theta function on the critical line for real numeric arguments,✅,pure,2.0,1734
 RandomInstance,Random geometric instance,,unevaluated,12.0,1736
 TrigFactor,Factor trig expressions (Sin+Cos and half-angle and double-angle families),✅,pure,3.0,1736
