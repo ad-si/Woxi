@@ -2727,6 +2727,40 @@ mod expand_threading {
     assert_eq!(interpret("Cos[9 Pi/8]").unwrap(), "-Cos[Pi/8]");
   }
 
+  #[test]
+  fn octant_reduction_full_period() {
+    // Angles beyond 2*Pi reduce to the canonical first-octant form.
+    assert_eq!(interpret("Sin[17 Pi/8]").unwrap(), "Sin[Pi/8]");
+    assert_eq!(interpret("Cos[17 Pi/8]").unwrap(), "Cos[Pi/8]");
+    assert_eq!(interpret("Tan[9 Pi/8]").unwrap(), "Tan[Pi/8]");
+  }
+
+  // ─── Tan/Cot/Sec/Csc first-octant canonicalization ────────────────
+  #[test]
+  fn tan_cot_octant_reduction() {
+    // 3Pi/8 > Pi/4: Tan <-> Cot co-function.
+    assert_eq!(interpret("Tan[3 Pi/8]").unwrap(), "Cot[Pi/8]");
+    assert_eq!(interpret("Cot[3 Pi/8]").unwrap(), "Tan[Pi/8]");
+    // Already first-octant: unchanged.
+    assert_eq!(interpret("Tan[Pi/8]").unwrap(), "Tan[Pi/8]");
+    assert_eq!(interpret("Cot[2 Pi/9]").unwrap(), "Cot[(2*Pi)/9]");
+    // Other denominators / signs.
+    assert_eq!(interpret("Tan[2 Pi/7]").unwrap(), "Cot[(3*Pi)/14]");
+    assert_eq!(interpret("Tan[5 Pi/8]").unwrap(), "-Cot[Pi/8]");
+  }
+
+  #[test]
+  fn sec_csc_octant_reduction() {
+    // 3Pi/8 > Pi/4: Sec <-> Csc co-function.
+    assert_eq!(interpret("Sec[3 Pi/8]").unwrap(), "Csc[Pi/8]");
+    assert_eq!(interpret("Csc[3 Pi/8]").unwrap(), "Sec[Pi/8]");
+    // Quadrant sign + co-function.
+    assert_eq!(interpret("Sec[5 Pi/7]").unwrap(), "-Csc[(3*Pi)/14]");
+    assert_eq!(interpret("Csc[5 Pi/16]").unwrap(), "Sec[(3*Pi)/16]");
+    // Already first-octant: unchanged.
+    assert_eq!(interpret("Sec[2 Pi/9]").unwrap(), "Sec[(2*Pi)/9]");
+  }
+
   // ─── Hyperbolic parity ────────────────────────────────────────────
 
   #[test]

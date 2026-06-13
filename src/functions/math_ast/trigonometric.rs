@@ -230,40 +230,38 @@ fn build_trig_angle_call(head: &str, m: i64, d: i64) -> Expr {
   lit(&format!("{}[{}]", head, angle))
 }
 
-/// Canonical first-octant fallback for `Sin`/`Cos` of `k*Pi/n` when there is no
-/// exact radical value. `is_sin` picks Sin vs Cos; `(kr, nr)` is the
-/// first-quadrant reference angle in `[0, Pi/2]` with sign `sign`; `k0`/`n` is
-/// the periodic-reduced input used to detect the already-canonical case.
+/// Canonical first-octant fallback for a trig function of `k*Pi/n` when there
+/// is no exact radical value. `self_head`/`cofunc_head` are the function and
+/// its co-function (Sin/Cos, Tan/Cot, Sec/Csc). `(kr, nr)` is the
+/// first-quadrant reference angle in `[0, Pi/2]` with sign `sign`; `k_orig`/`n`
+/// is the original coprime input used to detect the already-canonical case.
 ///
 /// Wolfram canonicalizes any such angle to the first octant `[0, Pi/4]`:
 /// angles above `Pi/4` fold to the co-function of their complement
-/// (`Sin[x] = Cos[Pi/2 - x]`). Returns `None` when the input is already the
-/// canonical form, so the caller leaves it unevaluated (and no loop occurs).
+/// (`Sin[x] = Cos[Pi/2 - x]`, `Tan[x] = Cot[Pi/2 - x]`, …). Returns `None` only
+/// when the input is already the canonical form, so the caller leaves it
+/// unevaluated (and no re-evaluation loop occurs).
 fn octant_fallback(
-  is_sin: bool,
+  self_head: &str,
+  cofunc_head: &str,
   kr: i64,
   nr: i64,
   sign: i64,
-  k0: i64,
+  k_orig: i64,
   n: i64,
 ) -> Option<Expr> {
+  // Already canonical: the original angle is in [0, Pi/4] and positive.
+  if sign == 1 && k_orig >= 0 && 4 * k_orig <= n {
+    return None;
+  }
   let result = if 4 * kr > nr {
     // Reference angle exceeds Pi/4 → co-function of the complement.
     let cm = nr - 2 * kr;
     let cd = 2 * nr;
     let g = gcd(cm as i128, cd as i128) as i64;
-    build_trig_angle_call(
-      if is_sin { "Cos" } else { "Sin" },
-      cm / g,
-      cd / g,
-    )
+    build_trig_angle_call(cofunc_head, cm / g, cd / g)
   } else {
-    // Reference angle <= Pi/4. Only return a genuine reduction; if the input
-    // is already first-octant positive, leave it unevaluated.
-    if sign == 1 && 4 * k0 <= n {
-      return None;
-    }
-    build_trig_angle_call(if is_sin { "Sin" } else { "Cos" }, kr, nr)
+    build_trig_angle_call(self_head, kr, nr)
   };
   Some(if sign == -1 {
     negate_expr(result)
@@ -273,6 +271,7 @@ fn octant_fallback(
 }
 
 pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
+  let k_orig = k;
   // Normalize to [0, 2*Pi) i.e., k mod 2n, with k in [0, 2n)
   let period = 2 * n;
   let k = ((k % period) + period) % period;
@@ -358,7 +357,7 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
     // sin(Pi/2) = 1
     (1, 2) => Expr::Integer(1),
     // No radical form: fold to the canonical first-octant Sin/Cos.
-    _ => return octant_fallback(true, kr, nr, sign, k, n),
+    _ => return octant_fallback("Sin", "Cos", kr, nr, sign, k_orig, n),
   };
 
   if sign == -1 {
@@ -374,6 +373,7 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
 
 /// Exact Cos value for k*Pi/n. Uses cos(x) = sin(Pi/2 - x).
 pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
+  let k_orig = k;
   // cos(k*Pi/n) = sin(Pi/2 - k*Pi/n) = sin((n - 2k)*Pi/(2n))
   // Simplify: cos(k*Pi/n) = sin((n/2 - k)*Pi/n) -- only works if n is even
   // Better: use direct table
@@ -448,7 +448,7 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
     // cos(Pi/2) = 0
     (1, 2) => Expr::Integer(0),
     // No radical form: fold to the canonical first-octant Sin/Cos.
-    _ => return octant_fallback(false, kr, nr, sign, k, n),
+    _ => return octant_fallback("Cos", "Sin", kr, nr, sign, k_orig, n),
   };
 
   if sign == -1 {
@@ -465,6 +465,7 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
 /// Exact Tan value for k*Pi/n.
 /// Tan has period Pi, so normalize k mod n. Undefined when cos = 0.
 pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
+  let k_orig = k;
   // Tan has period Pi, so reduce k*Pi/n mod Pi => (k mod n)*Pi/n
   let k_mod = ((k % n) + n) % n; // in [0, n)
   // Use symmetry: tan(-x) = -tan(x), tan(Pi - x) = -tan(x)
@@ -508,7 +509,8 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
-    _ => return None,
+    // No radical form: fold to the canonical first-octant Tan/Cot.
+    _ => return octant_fallback("Tan", "Cot", kr, nr, sign, k_orig, n),
   };
 
   if sign == -1 {
@@ -523,6 +525,7 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
 }
 
 pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
+  let k_orig = k;
   // Sec has period 2*Pi, and Sec(-x) = Sec(x), Sec(Pi-x) = -Sec(x)
   // Reduce to [0, 2*Pi)
   let k_mod = ((k % (2 * n)) + 2 * n) % (2 * n);
@@ -553,7 +556,8 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
     (1, 4) => make_sqrt(Expr::Integer(2)),
     // Sec(Pi/3) = 2
     (1, 3) => Expr::Integer(2),
-    _ => return None,
+    // No radical form: fold to the canonical first-octant Sec/Csc.
+    _ => return octant_fallback("Sec", "Csc", kr, nr, sign, k_orig, n),
   };
 
   if sign == -1 {
@@ -564,6 +568,7 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
 }
 
 pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
+  let k_orig = k;
   // Csc has period 2*Pi, Csc(-x) = -Csc(x), Csc(Pi-x) = Csc(x)
   // Reduce to [0, 2*Pi)
   let k_mod = ((k % (2 * n)) + 2 * n) % (2 * n);
@@ -596,7 +601,8 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
-    _ => return None,
+    // No radical form: fold to the canonical first-octant Csc/Sec.
+    _ => return octant_fallback("Csc", "Sec", kr, nr, sign1, k_orig, n),
   };
 
   if sign1 == -1 {
@@ -607,6 +613,7 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
 }
 
 pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
+  let k_orig = k;
   // Cot has period Pi, Cot(-x) = -Cot(x)
   // Reduce k*Pi/n mod Pi => (k mod n)*Pi/n
   let k_mod = ((k % n) + n) % n;
@@ -639,7 +646,8 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
       left: Box::new(Expr::Integer(1)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
-    _ => return None,
+    // No radical form: fold to the canonical first-octant Cot/Tan.
+    _ => return octant_fallback("Cot", "Tan", kr, nr, sign, k_orig, n),
   };
 
   if sign == -1 {
