@@ -2691,6 +2691,42 @@ mod expand_threading {
     assert_eq!(interpret("Cos[2 Pi/10]").unwrap(), "(1 + Sqrt[5])/4");
   }
 
+  // ─── First-octant canonicalization (no radical form) ──────────────
+  // Wolfram folds Sin/Cos of k*Pi/n to the first octant [0, Pi/4] using
+  // co-function identities, keeping the reference angle symbolic when there
+  // is no nice radical form.
+  #[test]
+  fn eighth_angles_canonical() {
+    // Pi/8 itself is already first-octant: stays unevaluated.
+    assert_eq!(interpret("Sin[Pi/8]").unwrap(), "Sin[Pi/8]");
+    assert_eq!(interpret("Cos[Pi/8]").unwrap(), "Cos[Pi/8]");
+    // 3Pi/8 > Pi/4 → co-function of Pi/8.
+    assert_eq!(interpret("Sin[3 Pi/8]").unwrap(), "Cos[Pi/8]");
+    assert_eq!(interpret("Cos[3 Pi/8]").unwrap(), "Sin[Pi/8]");
+    // Second/third quadrant signs.
+    assert_eq!(interpret("Sin[5 Pi/8]").unwrap(), "Cos[Pi/8]");
+    assert_eq!(interpret("Cos[5 Pi/8]").unwrap(), "-Sin[Pi/8]");
+    assert_eq!(interpret("Sin[7 Pi/8]").unwrap(), "Sin[Pi/8]");
+    assert_eq!(interpret("Cos[7 Pi/8]").unwrap(), "-Cos[Pi/8]");
+  }
+
+  #[test]
+  fn octant_reduction_other_denominators() {
+    assert_eq!(interpret("Sin[3 Pi/7]").unwrap(), "Cos[Pi/14]");
+    assert_eq!(interpret("Cos[5 Pi/7]").unwrap(), "-Sin[(3*Pi)/14]");
+    assert_eq!(interpret("Sin[5 Pi/16]").unwrap(), "Cos[(3*Pi)/16]");
+    assert_eq!(interpret("Cos[7 Pi/16]").unwrap(), "Sin[Pi/16]");
+    // Already first-octant: unchanged.
+    assert_eq!(interpret("Sin[2 Pi/9]").unwrap(), "Sin[(2*Pi)/9]");
+  }
+
+  #[test]
+  fn octant_reduction_negative_and_periodic() {
+    assert_eq!(interpret("Sin[-3 Pi/8]").unwrap(), "-Cos[Pi/8]");
+    assert_eq!(interpret("Sin[9 Pi/8]").unwrap(), "-Sin[Pi/8]");
+    assert_eq!(interpret("Cos[9 Pi/8]").unwrap(), "-Cos[Pi/8]");
+  }
+
   // ─── Hyperbolic parity ────────────────────────────────────────────
 
   #[test]

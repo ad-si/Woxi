@@ -220,6 +220,58 @@ fn lit(s: &str) -> Expr {
   crate::syntax::string_to_expr(s).expect("valid trig literal")
 }
 
+/// Build `head[m*Pi/d]` (e.g. `Cos[Pi/14]`, `Sin[(3*Pi)/16]`).
+fn build_trig_angle_call(head: &str, m: i64, d: i64) -> Expr {
+  let angle = if m == 1 {
+    format!("Pi/{}", d)
+  } else {
+    format!("({}*Pi)/{}", m, d)
+  };
+  lit(&format!("{}[{}]", head, angle))
+}
+
+/// Canonical first-octant fallback for `Sin`/`Cos` of `k*Pi/n` when there is no
+/// exact radical value. `is_sin` picks Sin vs Cos; `(kr, nr)` is the
+/// first-quadrant reference angle in `[0, Pi/2]` with sign `sign`; `k0`/`n` is
+/// the periodic-reduced input used to detect the already-canonical case.
+///
+/// Wolfram canonicalizes any such angle to the first octant `[0, Pi/4]`:
+/// angles above `Pi/4` fold to the co-function of their complement
+/// (`Sin[x] = Cos[Pi/2 - x]`). Returns `None` when the input is already the
+/// canonical form, so the caller leaves it unevaluated (and no loop occurs).
+fn octant_fallback(
+  is_sin: bool,
+  kr: i64,
+  nr: i64,
+  sign: i64,
+  k0: i64,
+  n: i64,
+) -> Option<Expr> {
+  let result = if 4 * kr > nr {
+    // Reference angle exceeds Pi/4 → co-function of the complement.
+    let cm = nr - 2 * kr;
+    let cd = 2 * nr;
+    let g = gcd(cm as i128, cd as i128) as i64;
+    build_trig_angle_call(
+      if is_sin { "Cos" } else { "Sin" },
+      cm / g,
+      cd / g,
+    )
+  } else {
+    // Reference angle <= Pi/4. Only return a genuine reduction; if the input
+    // is already first-octant positive, leave it unevaluated.
+    if sign == 1 && 4 * k0 <= n {
+      return None;
+    }
+    build_trig_angle_call(if is_sin { "Sin" } else { "Cos" }, kr, nr)
+  };
+  Some(if sign == -1 {
+    negate_expr(result)
+  } else {
+    result
+  })
+}
+
 pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   // Normalize to [0, 2*Pi) i.e., k mod 2n, with k in [0, 2n)
   let period = 2 * n;
@@ -305,7 +357,8 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
     (3, 10) => lit("(1 + Sqrt[5])/4"),
     // sin(Pi/2) = 1
     (1, 2) => Expr::Integer(1),
-    _ => return None,
+    // No radical form: fold to the canonical first-octant Sin/Cos.
+    _ => return octant_fallback(true, kr, nr, sign, k, n),
   };
 
   if sign == -1 {
@@ -394,7 +447,8 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
     (3, 10) => lit("Sqrt[5/8 - Sqrt[5]/8]"),
     // cos(Pi/2) = 0
     (1, 2) => Expr::Integer(0),
-    _ => return None,
+    // No radical form: fold to the canonical first-octant Sin/Cos.
+    _ => return octant_fallback(false, kr, nr, sign, k, n),
   };
 
   if sign == -1 {
