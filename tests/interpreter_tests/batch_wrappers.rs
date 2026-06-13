@@ -3456,6 +3456,30 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn sequence_position_overlaps_false() {
+    // The default is Overlaps -> True; Overlaps -> False skips past matches.
+    assert_eq!(
+      interpret("SequencePosition[{1, 1, 1}, {1, 1}, Overlaps -> False]")
+        .unwrap(),
+      "{{1, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "SequencePosition[{1, 2, 1, 2, 1}, {1, 2}, Overlaps -> False]"
+      )
+      .unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+  #[test]
+  fn sequence_position_overlaps_true_explicit() {
+    assert_eq!(
+      interpret("SequencePosition[{1, 1, 1}, {1, 1}, Overlaps -> True]")
+        .unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+  #[test]
   fn sequence_position_symbolic() {
     assert_eq!(
       interpret("SequencePosition[{a, b, c, a, b, c}, {a, b}]").unwrap(),

@@ -1763,7 +1763,7 @@ Find,Finds a file on the search path,🚧,effectful,2.0,1793
 PaneSelector,Pane selector control,,unevaluated,6.0,1793
 URLExecute,Execute URL request,,unevaluated,10.0,1794
 FileBaseName,Returns the base name of a file (without directory and extension),✅,pure,7.0,1796
-SequencePosition,Find positions of a subsequence in a list,✅,pure,10.1,1796
+SequencePosition,Find positions of a subsequence in a list (overlapping by default; Overlaps option),✅,pure,10.1,1796
 ColorCombine,Combine color channels,,unevaluated,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
 Highlighted,Highlighted display,,unevaluated,10.4,1800

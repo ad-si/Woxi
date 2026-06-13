@@ -2850,7 +2850,7 @@ pub fn dispatch_list_operations(
       }
     }
     // SequencePosition[list, sublist] — find positions of subsequence (overlapping)
-    "SequencePosition" if args.len() == 2 => {
+    "SequencePosition" if args.len() == 2 || args.len() == 3 => {
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequencePosition::list: List expected at position 1 in SequencePosition[{}, {}].",
@@ -2866,13 +2866,16 @@ pub fn dispatch_list_operations(
         if sub.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
         }
+        // Default Overlaps -> True; `Overlaps -> False` skips past each match.
+        let overlaps = !args.get(2).is_some_and(|opt| matches!(opt,
+          Expr::Rule { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps")
+              && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")));
         let sub_len = sub.len();
         let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
         let mut results: Vec<Expr> = Vec::new();
-        for i in 0..list.len() {
-          if i + sub_len > list.len() {
-            break;
-          }
+        let mut i = 0;
+        while i + sub_len <= list.len() {
           let mut matches = true;
           for j in 0..sub_len {
             if expr_to_string(&list[i + j]) != sub_strs[j] {
@@ -2888,6 +2891,9 @@ pub fn dispatch_list_operations(
               ]
               .into(),
             ));
+            i += if overlaps { 1 } else { sub_len };
+          } else {
+            i += 1;
           }
         }
         return Some(Ok(Expr::List(results.into())));
