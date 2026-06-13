@@ -2317,13 +2317,15 @@ pub fn evaluate_interpolating_function(
     };
     let y_val = y0 + t * (y1 - y0);
     Ok(real_or_integer(y_val))
-  } else if order == 2 {
-    // Quadratic interpolation using local Lagrange polynomials
-    let y_val = lagrange_interpolate(data_points, x_clamped, n, idx, order)?;
-    Ok(real_or_integer(y_val))
   } else {
-    // Cubic interpolation using natural cubic spline
-    let y_val = cubic_spline_evaluate(data_points, x_clamped, n)?;
+    // Order >= 2: piecewise local polynomial interpolation through the
+    // nearest (order + 1) points. This matches wolframscript's default
+    // `Interpolation`, which reproduces any polynomial of degree <= order
+    // exactly — unlike a natural cubic spline, whose zero-curvature
+    // boundary conditions distort the fit (e.g. x^2 data would not yield
+    // exact values).
+    let eff_order = order.min(n - 1);
+    let y_val = lagrange_interpolate(data_points, x_clamped, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
 }
@@ -2347,73 +2349,6 @@ fn find_interval(
     }
   }
   Ok(lo)
-}
-
-/// Evaluate a natural cubic spline at x_val.
-fn cubic_spline_evaluate(
-  data_points: &[Expr],
-  x_val: f64,
-  n: usize,
-) -> Result<f64, InterpreterError> {
-  // Extract all x and y values
-  let mut xs = Vec::with_capacity(n);
-  let mut ys = Vec::with_capacity(n);
-  for pt in data_points {
-    let (x, y) = extract_point(pt)?;
-    xs.push(x);
-    ys.push(y);
-  }
-
-  // Compute natural cubic spline coefficients
-  // Using the tridiagonal algorithm for natural splines
-  let nm1 = n - 1;
-  let mut h = vec![0.0; nm1];
-  for i in 0..nm1 {
-    h[i] = xs[i + 1] - xs[i];
-  }
-
-  // Set up tridiagonal system for second derivatives (moments)
-  let mut alpha = vec![0.0; nm1];
-  for i in 1..nm1 {
-    alpha[i] =
-      3.0 / h[i] * (ys[i + 1] - ys[i]) - 3.0 / h[i - 1] * (ys[i] - ys[i - 1]);
-  }
-
-  // Solve tridiagonal system (natural boundary: M[0] = M[n-1] = 0)
-  let mut l = vec![1.0; n];
-  let mut mu = vec![0.0; n];
-  let mut z = vec![0.0; n];
-
-  for i in 1..nm1 {
-    l[i] = 2.0 * (xs[i + 1] - xs[i - 1]) - h[i - 1] * mu[i - 1];
-    mu[i] = h[i] / l[i];
-    z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i];
-  }
-
-  let mut c = vec![0.0; n];
-  let mut b = vec![0.0; nm1];
-  let mut d = vec![0.0; nm1];
-
-  for j in (0..nm1).rev() {
-    c[j] = z[j] - mu[j] * c[j + 1];
-    b[j] = (ys[j + 1] - ys[j]) / h[j] - h[j] * (c[j + 1] + 2.0 * c[j]) / 3.0;
-    d[j] = (c[j + 1] - c[j]) / (3.0 * h[j]);
-  }
-
-  // Find the interval
-  let mut idx = 0;
-  for i in 0..nm1 {
-    if x_val >= xs[i] {
-      idx = i;
-    }
-  }
-  if idx >= nm1 {
-    idx = nm1 - 1;
-  }
-
-  let dx = x_val - xs[idx];
-  let result = ys[idx] + b[idx] * dx + c[idx] * dx * dx + d[idx] * dx * dx * dx;
-  Ok(result)
 }
 
 /// Lagrange polynomial interpolation using (order+1) nearest points.

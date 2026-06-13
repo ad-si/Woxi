@@ -4738,6 +4738,46 @@ mod interpolation {
     let val: f64 = result.parse().expect("should be a number");
     assert!((val - 2.25).abs() < 0.001, "Expected 2.25, got {}", val);
   }
+
+  // Default order-3 interpolation must reproduce a degree-<=3 polynomial
+  // EXACTLY. wolframscript uses local (divided-difference) polynomial
+  // interpolation, not a natural cubic spline whose zero-curvature boundary
+  // conditions would distort the fit. These check the exact values a spline
+  // got wrong (e.g. 6.2 instead of 6.25).
+  #[test]
+  fn cubic_reproduces_quadratic_exactly() {
+    // {1,4,9,16} is x^2 at x=1..4; cubic through 4 points → exact 2.5^2.
+    assert_eq!(interpret("Interpolation[{1,4,9,16}][2.5]").unwrap(), "6.25");
+    assert_eq!(interpret("Interpolation[{1,4,9,16}][3.5]").unwrap(), "12.25");
+    // Five-point x^2 data still exact under the local cubic stencil.
+    assert_eq!(
+      interpret("Interpolation[{1,4,9,16,25}][2.5]").unwrap(),
+      "6.25"
+    );
+  }
+
+  #[test]
+  fn cubic_reproduces_cubic_exactly() {
+    // {0,1,8,27,64} is x^3 at x=1..5; default cubic must be exact: 2.5^3.
+    assert_eq!(
+      interpret("Interpolation[{0,1,8,27,64}][2.5]").unwrap(),
+      "3.375"
+    );
+  }
+
+  #[test]
+  fn cubic_local_lagrange_nonpolynomial() {
+    // Non-polynomial data: local cubic Lagrange through the nearest 4 points.
+    // Verified against wolframscript (2.3125 / 3.9375).
+    assert_eq!(
+      interpret("Interpolation[{2,3,5,7,11}][1.5]").unwrap(),
+      "2.3125"
+    );
+    assert_eq!(
+      interpret("Interpolation[{2,3,5,7,11}][2.5]").unwrap(),
+      "3.9375"
+    );
+  }
 }
 
 mod list_interpolation {
