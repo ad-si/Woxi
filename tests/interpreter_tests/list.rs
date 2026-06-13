@@ -848,15 +848,27 @@ mod ordering {
   #[test]
   fn ordering_by() {
     // Positions that order the list by f applied to each element.
-    assert_eq!(interpret("OrderingBy[{3, 1, 2}, # &]").unwrap(), "{2, 3, 1}");
-    assert_eq!(interpret("OrderingBy[{3, 1, 2}, -# &]").unwrap(), "{1, 3, 2}");
+    assert_eq!(
+      interpret("OrderingBy[{3, 1, 2}, # &]").unwrap(),
+      "{2, 3, 1}"
+    );
+    assert_eq!(
+      interpret("OrderingBy[{3, 1, 2}, -# &]").unwrap(),
+      "{1, 3, 2}"
+    );
     assert_eq!(
       interpret("OrderingBy[{{3, 1}, {1, 2}, {2, 5}}, Last]").unwrap(),
       "{1, 2, 3}"
     );
-    assert_eq!(interpret("OrderingBy[{-3, 1, -2}, Abs]").unwrap(), "{2, 3, 1}");
+    assert_eq!(
+      interpret("OrderingBy[{-3, 1, -2}, Abs]").unwrap(),
+      "{2, 3, 1}"
+    );
     // n limits the count: positive keeps the first n, negative the last |n|.
-    assert_eq!(interpret("OrderingBy[{3, 1, 2}, # &, 2]").unwrap(), "{2, 3}");
+    assert_eq!(
+      interpret("OrderingBy[{3, 1, 2}, # &, 2]").unwrap(),
+      "{2, 3}"
+    );
     assert_eq!(interpret("OrderingBy[{3, 1, 2}, # &, -1]").unwrap(), "{1}");
   }
 
@@ -1460,6 +1472,28 @@ mod map_at {
     assert_eq!(
       interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2|>, 3]"#).unwrap(),
       "MapAt[f, <|a -> 1, b -> 2|>, 3]"
+    );
+  }
+
+  #[test]
+  fn map_at_association_key() {
+    // Key[k], a bare key, and the {Key[k]} wrapper all target that key's value.
+    assert_eq!(
+      interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2|>, Key["a"]]"#).unwrap(),
+      "<|a -> f[1], b -> 2|>"
+    );
+    assert_eq!(
+      interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2|>, "b"]"#).unwrap(),
+      "<|a -> 1, b -> f[2]|>"
+    );
+    assert_eq!(
+      interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2|>, {Key["a"]}]"#).unwrap(),
+      "<|a -> f[1], b -> 2|>"
+    );
+    // Symbol keys via Key[sym].
+    assert_eq!(
+      interpret(r#"MapAt[f, <|a -> 1, b -> 2|>, Key[b]]"#).unwrap(),
+      "<|a -> 1, b -> f[2]|>"
     );
   }
 }

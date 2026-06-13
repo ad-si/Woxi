@@ -357,6 +357,23 @@ fn map_with_heads(func: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
 /// lists of paths, All, and Span; invalid positions emit MapAt::partw
 /// (always the full path with braces and the original expression) and
 /// non-position specs emit MapAt::psl, both staying unevaluated.
+/// Extract the target key from a MapAt position specification for an
+/// association: `Key[k]`, a bare key (`String`/`Identifier`), or a
+/// single-element wrapper `{Key[k]}` / `{k}`. Integer positions return `None`
+/// (they are handled positionally).
+fn extract_assoc_key(spec: &Expr) -> Option<&Expr> {
+  match spec {
+    Expr::FunctionCall { name, args }
+      if name == "Key" && args.len() == 1 =>
+    {
+      Some(&args[0])
+    }
+    Expr::String(_) | Expr::Identifier(_) => Some(spec),
+    Expr::List(items) if items.len() == 1 => extract_assoc_key(&items[0]),
+    _ => None,
+  }
+}
+
 pub fn map_at_ast(
   func: &Expr,
   list: &Expr,
@@ -388,7 +405,7 @@ pub fn map_at_ast(
     ));
   };
 
-  // Association: integer-position MapAt transforms the value
+  // Association: integer-position MapAt transforms the value at that position.
   if let Expr::Association(pairs) = list
     && let Some(n) = expr_to_i128(pos_spec)
   {
@@ -405,6 +422,30 @@ pub fn map_at_ast(
     let new_value = apply_func_ast(func, &new_pairs[idx].1)?;
     new_pairs[idx].1 = new_value;
     return Ok(Expr::Association(new_pairs));
+  }
+
+  // Association: key-based MapAt transforms the value stored at that key.
+  // Accepts `Key[k]`, a bare key, and single-element wrappers `{Key[k]}` /
+  // `{k}`.
+  if let Expr::Association(pairs) = list
+    && let Some(key) = extract_assoc_key(pos_spec)
+  {
+    let key_str = crate::syntax::expr_to_string(key);
+    if let Some(idx) = pairs
+      .iter()
+      .position(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+    {
+      let mut new_pairs = pairs.clone();
+      new_pairs[idx].1 = apply_func_ast(func, &new_pairs[idx].1)?;
+      return Ok(Expr::Association(new_pairs));
+    }
+    // Key not present: emit partw and leave unevaluated.
+    crate::emit_message(&format!(
+      "MapAt::partw: Part {} of {} does not exist.",
+      crate::syntax::format_expr(pos_spec, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated());
   }
 
   // Apply f along one validated path (positions refer to the current
