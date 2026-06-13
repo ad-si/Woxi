@@ -279,6 +279,27 @@ fn interval_member_q_multi_span_true() {
   );
 }
 
+#[test]
+fn interval_member_q_list_threads() {
+  // A list of test points threads, returning one Boolean per point.
+  assert_eq!(
+    interpret("IntervalMemberQ[Interval[{1, 5}], {2, 7}]").unwrap(),
+    "{True, False}"
+  );
+  assert_eq!(
+    interpret("IntervalMemberQ[Interval[{1, 5}], {0, 3, 6}]").unwrap(),
+    "{False, True, False}"
+  );
+  assert_eq!(
+    interpret("IntervalMemberQ[Interval[{1, 3}, {5, 7}], {2, 4, 6}]").unwrap(),
+    "{True, False, True}"
+  );
+  assert_eq!(
+    interpret("IntervalMemberQ[Interval[{1, 5}], {}]").unwrap(),
+    "{}"
+  );
+}
+
 // ─── Comparisons ────────────────────────────────────────────────────────────
 
 #[test]

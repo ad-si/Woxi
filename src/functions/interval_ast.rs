@@ -319,6 +319,16 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // A list of test points threads: IntervalMemberQ[iv, {p1, p2, …}] returns
+  // {IntervalMemberQ[iv, p1], …}.
+  if let Expr::List(points) = &args[1] {
+    let results: Result<Vec<Expr>, InterpreterError> = points
+      .iter()
+      .map(|p| interval_member_q_ast(&[args[0].clone(), p.clone()]))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
+
   // Second arg could be a point or an Interval
   if let Some(sub_spans) = is_interval(&args[1]) {
     // Sub-interval check: every sub-span of args[1] must be contained in some span of args[0]
