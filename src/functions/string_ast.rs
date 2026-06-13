@@ -1258,7 +1258,8 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Rule {
         pattern,
         replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") => {
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps") =>
+      {
         overlaps = !matches!(replacement.as_ref(),
           Expr::Identifier(v) if v == "False");
       }
@@ -1897,6 +1898,39 @@ fn string_pattern_to_regex_inner(
         Some(maybe_named_group(name, inner, seen))
       } else {
         Some(inner.to_string())
+      }
+    }
+
+    // A blank with a character-class predicate test, e.g. `_?LetterQ`,
+    // `x_?DigitQ`, `__?UpperCaseQ`. Map the known single-character predicates
+    // to the matching regex character class; the blank type controls the
+    // repetition (Blank → one char, BlankSequence → one or more, etc.).
+    Expr::PatternTest {
+      name,
+      head: None,
+      blank_type,
+      test,
+    } => {
+      let class = match test.as_ref() {
+        Expr::Identifier(t) => match t.as_str() {
+          "LetterQ" => "[a-zA-Z\\p{L}]",
+          "DigitQ" => "[0-9]",
+          "UpperCaseQ" => "[A-Z\\p{Lu}]",
+          "LowerCaseQ" => "[a-z\\p{Ll}]",
+          _ => return None,
+        },
+        _ => return None,
+      };
+      let inner = match blank_type {
+        1 => class.to_string(),
+        2 => format!("{}+", class),
+        3 => format!("{}*", class),
+        _ => return None,
+      };
+      if name.is_empty() {
+        Some(inner)
+      } else {
+        Some(maybe_named_group(name, &inner, seen))
       }
     }
 

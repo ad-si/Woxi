@@ -1249,6 +1249,36 @@ mod string_patterns {
   }
 
   #[test]
+  fn string_pattern_predicate_tests() {
+    // `_?pred` character-predicate patterns map to regex character classes.
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", x_?LetterQ]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", x__?DigitQ]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("StringCases[\"a1b2c3\", _?DigitQ]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("StringCases[\"aXbYcZ\", _?UpperCaseQ]").unwrap(),
+      "{X, Y, Z}"
+    );
+    assert_eq!(
+      interpret("StringCases[\"aXbY\", x_?LowerCaseQ -> x]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("StringReplace[\"abcABC\", a_?LowerCaseQ :> ToUpperCase[a]]")
+        .unwrap(),
+      "ABCABC"
+    );
+  }
+
+  #[test]
   fn string_cases_digit_character_repeated() {
     assert_eq!(
       interpret("StringCases[\"The year is 2025\", DigitCharacter ..]")
