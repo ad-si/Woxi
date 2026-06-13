@@ -1157,6 +1157,56 @@ mod apart {
       "1 + (-1 + x)^(-1) - (1 + x)^(-1)"
     );
   }
+
+  // Repeated (squared) denominator factors: each root of multiplicity m
+  // contributes terms 1/(x-r), …, 1/(x-r)^m, highest power first.
+  #[test]
+  fn apart_squared_factor() {
+    assert_eq!(
+      interpret("Apart[1/(x^2 (x + 1))]").unwrap(),
+      "x^(-2) - x^(-1) + (1 + x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn apart_repeated_linear_factor_only() {
+    assert_eq!(interpret("Apart[1/(x + 2)^2]").unwrap(), "(2 + x)^(-2)");
+    assert_eq!(interpret("Apart[3/(x + 2)^2]").unwrap(), "3/(2 + x)^2");
+    assert_eq!(
+      interpret("Apart[(2 x + 5)/(x + 2)^2]").unwrap(),
+      "(2 + x)^(-2) + 2/(2 + x)"
+    );
+  }
+
+  #[test]
+  fn apart_squared_factor_with_simple_factor() {
+    assert_eq!(
+      interpret("Apart[1/((x - 1)^2 (x + 1))]").unwrap(),
+      "1/(2*(-1 + x)^2) - 1/(4*(-1 + x)) + 1/(4*(1 + x))"
+    );
+  }
+
+  #[test]
+  fn apart_cubic_repeated_factor() {
+    assert_eq!(
+      interpret("Apart[1/((x - 1)^3 (x + 2))]").unwrap(),
+      "1/(3*(-1 + x)^3) - 1/(9*(-1 + x)^2) + 1/(27*(-1 + x)) - 1/(27*(2 + x))"
+    );
+  }
+
+  #[test]
+  fn apart_pure_power_denominator() {
+    assert_eq!(interpret("Apart[1/x^3]").unwrap(), "x^(-3)");
+    assert_eq!(interpret("Apart[5/(x - 1)^2]").unwrap(), "5/(-1 + x)^2");
+  }
+
+  #[test]
+  fn apart_two_repeated_factors() {
+    assert_eq!(
+      interpret("Apart[1/(x^2 (x + 1)^2)]").unwrap(),
+      "x^(-2) - 2/x + (1 + x)^(-2) + 2/(1 + x)"
+    );
+  }
 }
 
 mod switch {

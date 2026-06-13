@@ -208,6 +208,33 @@ pub fn apart_proper_fraction(
     return Ok(expr.clone());
   }
 
+  // If any root is repeated, the distinct-root residue formula below divides
+  // by zero. Use the general linear-system decomposition, which handles
+  // multiplicities (e.g. Apart[1/(x^2 (x + 1))]).
+  let has_repeated = {
+    let mut sorted = roots.clone();
+    sorted.sort();
+    sorted.windows(2).any(|w| w[0] == w[1])
+  };
+  if has_repeated {
+    let overall_factor = gcd_coeff * sign;
+    let rem_const = if remaining.len() == 1 && remaining[0] != 0 {
+      remaining[0]
+    } else {
+      1
+    };
+    if let Some(result) = apart_repeated_roots(
+      &num_coeffs,
+      &roots,
+      rem_const,
+      overall_factor,
+      var,
+    ) {
+      return Ok(result);
+    }
+    return Ok(expr.clone());
+  }
+
   let mut result_terms = Vec::new();
   let overall_factor = gcd_coeff * sign;
 
@@ -297,6 +324,218 @@ pub fn apart_proper_fraction(
   } else {
     Ok(build_sum(result_terms))
   }
+}
+
+/// A reduced rational number with a positive denominator. Used for the
+/// repeated-root partial-fraction linear solve.
+#[derive(Clone, Copy)]
+struct Rat {
+  n: i128,
+  d: i128,
+}
+
+impl Rat {
+  fn new(mut n: i128, mut d: i128) -> Rat {
+    if d < 0 {
+      n = -n;
+      d = -d;
+    }
+    let g = gcd_i128(n.abs(), d.abs()).max(1);
+    Rat { n: n / g, d: d / g }
+  }
+  fn int(n: i128) -> Rat {
+    Rat { n, d: 1 }
+  }
+  fn is_zero(self) -> bool {
+    self.n == 0
+  }
+  fn sub(self, o: Rat) -> Rat {
+    Rat::new(self.n * o.d - o.n * self.d, self.d * o.d)
+  }
+  fn mul(self, o: Rat) -> Rat {
+    Rat::new(self.n * o.n, self.d * o.d)
+  }
+  fn div(self, o: Rat) -> Rat {
+    Rat::new(self.n * o.d, self.d * o.n)
+  }
+}
+
+/// Partial-fraction decomposition for a proper fraction whose denominator
+/// factors completely into integer linear factors, allowing repeated roots.
+///
+/// The denominator is `scale * prod_i (x - r_i)^{m_i}` where
+/// `scale = overall_factor * rem_const`. We solve for the coefficients
+/// `A_{i,k}` in `N(x)/D(x) = sum_{i,k} A_{i,k}/(x - r_i)^k` by matching
+/// polynomial coefficients — a square linear system over the rationals.
+/// Returns `None` if the system is singular (shouldn't happen for a genuine
+/// proper fraction) so the caller can leave the input unevaluated.
+fn apart_repeated_roots(
+  num_coeffs: &[i128],
+  roots: &[i128],
+  rem_const: i128,
+  overall_factor: i128,
+  var: &str,
+) -> Option<Expr> {
+  let scale = overall_factor.checked_mul(rem_const)?;
+  if scale == 0 {
+    return None;
+  }
+  let degree = roots.len();
+  if degree == 0 {
+    return None;
+  }
+
+  // Distinct roots with multiplicity, ordered by descending root value so the
+  // emitted factors (-root + x) appear in ascending order, matching
+  // wolframscript.
+  let mut distinct: Vec<i128> = roots.to_vec();
+  distinct.sort_by(|a, b| b.cmp(a));
+  distinct.dedup();
+  let multiplicity =
+    |r: i128| -> usize { roots.iter().filter(|&&x| x == r).count() };
+
+  // Monic product M(x) = prod (x - r_i)^{m_i}.
+  let mut m_poly = vec![1i128];
+  for &r in roots {
+    // Multiply by (x - r): coeffs are [-r, 1].
+    let mut next = vec![0i128; m_poly.len() + 1];
+    for (i, &c) in m_poly.iter().enumerate() {
+      next[i] += c * (-r);
+      next[i + 1] += c;
+    }
+    m_poly = next;
+  }
+
+  // Basis: for each distinct root (descending) and power k from its
+  // multiplicity down to 1, the polynomial B = M(x)/(x - r)^k.
+  struct Basis {
+    root: i128,
+    k: usize,
+    coeffs: Vec<i128>,
+  }
+  let mut basis: Vec<Basis> = Vec::with_capacity(degree);
+  for &r in &distinct {
+    let m = multiplicity(r);
+    // M / (x - r)^j for j = 1..=m, computed incrementally.
+    let mut reduced = m_poly.clone();
+    let mut by_power: Vec<Vec<i128>> = Vec::with_capacity(m);
+    for _ in 0..m {
+      reduced = divide_by_root(&reduced, r);
+      by_power.push(reduced.clone());
+    }
+    // Emit powers high → low so higher powers print first.
+    for k in (1..=m).rev() {
+      basis.push(Basis {
+        root: r,
+        k,
+        coeffs: by_power[k - 1].clone(),
+      });
+    }
+  }
+  if basis.len() != degree {
+    return None;
+  }
+
+  // Build the d×d system  M_sys · a = b  with rows = coefficient of x^p.
+  let mut mat: Vec<Vec<Rat>> = vec![vec![Rat::int(0); degree]; degree];
+  for (j, b) in basis.iter().enumerate() {
+    for (p, &c) in b.coeffs.iter().enumerate() {
+      if p < degree {
+        mat[p][j] = Rat::int(c);
+      }
+    }
+  }
+  let mut rhs: Vec<Rat> = (0..degree)
+    .map(|p| Rat::new(*num_coeffs.get(p).unwrap_or(&0), scale))
+    .collect();
+
+  // Gaussian elimination over the rationals.
+  for col in 0..degree {
+    let pivot = (col..degree).find(|&r| !mat[r][col].is_zero())?;
+    mat.swap(col, pivot);
+    rhs.swap(col, pivot);
+    let inv = mat[col][col];
+    for j in col..degree {
+      mat[col][j] = mat[col][j].div(inv);
+    }
+    rhs[col] = rhs[col].div(inv);
+    for r in 0..degree {
+      if r != col && !mat[r][col].is_zero() {
+        let factor = mat[r][col];
+        for j in col..degree {
+          mat[r][j] = mat[r][j].sub(factor.mul(mat[col][j]));
+        }
+        rhs[r] = rhs[r].sub(factor.mul(rhs[col]));
+      }
+    }
+  }
+
+  // Assemble the result terms (already in the canonical output order).
+  let mut terms: Vec<Expr> = Vec::new();
+  for (j, b) in basis.iter().enumerate() {
+    let a = rhs[j];
+    if a.is_zero() {
+      continue;
+    }
+    let neg = a.n < 0;
+    let an = a.n.abs();
+    let ad = a.d; // already positive
+    let linear_factor = if b.root == 0 {
+      Expr::Identifier(var.to_string())
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-b.root)),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      }
+    };
+    // The factor raised to the term's power: f for k == 1, f^k otherwise.
+    let den_factor = if b.k == 1 {
+      linear_factor.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(linear_factor.clone()),
+        right: Box::new(Expr::Integer(b.k as i128)),
+      }
+    };
+    let frac = if ad == 1 && an == 1 {
+      // (factor)^(-k)
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(linear_factor),
+        right: Box::new(Expr::Integer(-(b.k as i128))),
+      }
+    } else if ad == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(an)),
+        right: Box::new(den_factor),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(an)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(ad)),
+          right: Box::new(den_factor),
+        }),
+      }
+    };
+    if neg {
+      terms.push(Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(frac),
+      });
+    } else {
+      terms.push(frac);
+    }
+  }
+  if terms.is_empty() {
+    return None;
+  }
+  Some(build_sum(terms))
 }
 
 /// Polynomial long division returning (quotient, remainder) as coefficient vectors
