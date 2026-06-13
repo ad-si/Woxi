@@ -6228,6 +6228,29 @@ mod join_non_list {
   }
 
   #[test]
+  fn group_by_key_value_rule() {
+    // GroupBy[list, f -> g] groups by f and stores g[element].
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4}, EvenQ -> (#^2 &)]").unwrap(),
+      "<|False -> {1, 9}, True -> {4, 16}|>"
+    );
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4, 5, 6}, Mod[#, 3] & -> (# * 10 &)]")
+        .unwrap(),
+      "<|1 -> {10, 40}, 2 -> {20, 50}, 0 -> {30, 60}|>"
+    );
+  }
+
+  #[test]
+  fn group_by_key_value_rule_with_reducer() {
+    // GroupBy[list, f -> g, reducer] reduces the transformed groups.
+    assert_eq!(
+      interpret("GroupBy[Range[10], EvenQ -> (#^2 &), Total]").unwrap(),
+      "<|False -> 165, True -> 220|>"
+    );
+  }
+
+  #[test]
   fn counts_by_operator_form() {
     assert_eq!(
       interpret("CountsBy[Sign][{1, -1, 2, -2, 3}]").unwrap(),

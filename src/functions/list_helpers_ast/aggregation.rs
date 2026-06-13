@@ -214,18 +214,36 @@ pub fn group_by_ast(
     }
   };
 
+  // `GroupBy[list, f -> g]` groups by `f` but stores `g[element]` in each
+  // group instead of the element itself.
+  let (key_func, val_func): (&Expr, Option<&Expr>) = match func {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), Some(replacement.as_ref())),
+    _ => (func, None),
+  };
+
   use std::collections::HashMap;
   let mut groups: HashMap<String, Vec<Expr>> = HashMap::new();
   let mut order: Vec<String> = Vec::new();
 
   for item in items {
-    let key = apply_func_ast(func, item)?;
+    let key = apply_func_ast(key_func, item)?;
     let key_str = crate::syntax::expr_to_string(&key);
+    let value = match val_func {
+      Some(g) => apply_func_ast(g, item)?,
+      None => item.clone(),
+    };
     if let Some(group) = groups.get_mut(&key_str) {
-      group.push(item.clone());
+      group.push(value);
     } else {
       order.push(key_str.clone());
-      groups.insert(key_str, vec![item.clone()]);
+      groups.insert(key_str, vec![value]);
     }
   }
 
