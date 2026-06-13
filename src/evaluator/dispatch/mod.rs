@@ -8838,7 +8838,6 @@ pub fn evaluate_function_call_ast_inner(
       | "MaxPlotPoints"
       | "AnimationRepetitions"
       | "ARMAProcess"
-      | "FileNameTake"
       | "UndoTrackedVariables"
       | "VectorColorFunction"
       | "NotebookGet"

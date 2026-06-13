@@ -385,6 +385,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FileNameJoin" => Some((1, 2)),
     "FileNames" => Some((0, 3)),
     "FileNameSplit" => Some((1, 1)),
+    "FileNameTake" => Some((1, 2)),
     "FilterRules" => Some((2, 2)),
     "Find" => Some((2, 2)),
     "FindArgMax" => Some((2, 2)),

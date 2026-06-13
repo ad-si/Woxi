@@ -2832,6 +2832,55 @@ mod file_name_split {
   }
 }
 
+mod file_name_take {
+  use super::*;
+
+  // FileNameTake[path] returns the last path component.
+  #[test]
+  fn default_is_last_component() {
+    assert_eq!(interpret(r#"FileNameTake["/a/b/c.txt"]"#).unwrap(), "c.txt");
+    assert_eq!(interpret(r#"FileNameTake["a/b/c"]"#).unwrap(), "c");
+    assert_eq!(interpret(r#"FileNameTake["c.txt"]"#).unwrap(), "c.txt");
+    // A trailing slash is ignored.
+    assert_eq!(interpret(r#"FileNameTake["/a/b/"]"#).unwrap(), "b");
+  }
+
+  // A positive count takes the first n components; the absolute-path root
+  // counts as the first component and renders as "/".
+  #[test]
+  fn positive_count_takes_leading_components() {
+    assert_eq!(interpret(r#"FileNameTake["/a/b/c.txt", 1]"#).unwrap(), "/");
+    assert_eq!(interpret(r#"FileNameTake["/a/b/c.txt", 2]"#).unwrap(), "/a");
+  }
+
+  // A negative count takes the last |n| components.
+  #[test]
+  fn negative_count_takes_trailing_components() {
+    assert_eq!(
+      interpret(r#"FileNameTake["/a/b/c.txt", -1]"#).unwrap(),
+      "c.txt"
+    );
+    assert_eq!(
+      interpret(r#"FileNameTake["/a/b/c.txt", -2]"#).unwrap(),
+      "b/c.txt"
+    );
+    assert_eq!(
+      interpret(r#"FileNameTake["/usr/local/bin", -2]"#).unwrap(),
+      "local/bin"
+    );
+  }
+
+  // A {m, n} range takes components m through n (1-indexed, inclusive).
+  #[test]
+  fn range_takes_component_slice() {
+    assert_eq!(
+      interpret(r#"FileNameTake["/a/b/c.txt", {2, 3}]"#).unwrap(),
+      "a/b"
+    );
+    assert_eq!(interpret(r#"FileNameTake["a/b/c", {1, 2}]"#).unwrap(), "a/b");
+  }
+}
+
 mod file_name_depth {
   use super::*;
 

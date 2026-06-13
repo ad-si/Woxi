@@ -2525,6 +2525,75 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::String(result)));
       }
     }
+    "FileNameTake" if !args.is_empty() && args.len() <= 2 => {
+      if let Expr::String(path) = &args[0] {
+        // Path components, matching FileNameSplit: split on '/', dropping
+        // empty segments except a leading one (the absolute-root marker).
+        let components: Vec<String> = path
+          .split('/')
+          .enumerate()
+          .filter(|(i, part)| !(*i > 0 && part.is_empty()))
+          .map(|(_, part)| part.to_string())
+          .collect();
+        let total = components.len() as i128;
+        // Root-aware join: a slice consisting only of the leading "" marker
+        // (or otherwise joining to nothing) is the absolute root "/".
+        let join = |parts: &[String]| -> String {
+          let joined = parts.join("/");
+          if joined.is_empty() && !parts.is_empty() {
+            "/".to_string()
+          } else {
+            joined
+          }
+        };
+        // Resolve the take specification into a 0-indexed `[start, end)` range.
+        let slice: Option<(usize, usize)> = match args.get(1) {
+          // Default: just the last component.
+          None => {
+            if total == 0 {
+              Some((0, 0))
+            } else {
+              Some(((total - 1) as usize, total as usize))
+            }
+          }
+          Some(Expr::Integer(n)) => {
+            if *n >= 0 {
+              Some((0, (*n).clamp(0, total) as usize))
+            } else {
+              Some(((total + *n).max(0) as usize, total as usize))
+            }
+          }
+          Some(Expr::List(range)) if range.len() == 2 => {
+            if let (Expr::Integer(m), Expr::Integer(nn)) =
+              (&range[0], &range[1])
+            {
+              let resolve =
+                |idx: i128| if idx < 0 { total + idx } else { idx - 1 };
+              let s = resolve(*m);
+              let e = resolve(*nn);
+              if s < 0 || e >= total || s > e {
+                None
+              } else {
+                Some((s as usize, (e + 1) as usize))
+              }
+            } else {
+              None
+            }
+          }
+          _ => None,
+        };
+        if let Some((s, e)) = slice
+          && s <= e
+          && e <= components.len()
+        {
+          return Some(Ok(Expr::String(join(&components[s..e]))));
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileNameTake".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // Input[] / Input[prompt] / InputString[] / InputString[prompt] —
     // wolframscript in script mode prints the prompt to stdout (no trailing
     // newline) and returns `EndOfFile` since interactive stdin isn't
