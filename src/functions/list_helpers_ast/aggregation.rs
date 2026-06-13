@@ -1249,6 +1249,40 @@ pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// Gather[list, test] - gather into sublists using a custom equivalence test.
+/// Each element joins the first existing group whose first (representative)
+/// element satisfies `test[rep, elem]`, otherwise it starts a new group.
+pub fn gather_with_test_ast(
+  list: &Expr,
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(list_expected_message(
+        "Gather",
+        vec![list.clone(), test.clone()],
+      ));
+    }
+  };
+  let mut groups: Vec<Vec<Expr>> = Vec::new();
+  'outer: for item in items {
+    for group in groups.iter_mut() {
+      let result = super::utilities::apply_func_to_two_args(
+        test, &group[0], item,
+      )?;
+      if matches!(result, Expr::Identifier(ref s) if s == "True") {
+        group.push(item.clone());
+        continue 'outer;
+      }
+    }
+    groups.push(vec![item.clone()]);
+  }
+  Ok(Expr::List(
+    groups.into_iter().map(|v| Expr::List(v.into())).collect(),
+  ))
+}
+
 /// GatherBy[list, f] - gathers elements into sublists by applying f.
 /// GatherBy[list, {f1, f2, ...}] - nested gather: first by `f1`, then each
 /// resulting group is recursively gathered by `f2`, and so on.

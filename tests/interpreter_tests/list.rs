@@ -8871,6 +8871,22 @@ mod cases {
     );
   }
   #[test]
+  fn gather_with_test() {
+    // Gather[list, test]: group via a custom equivalence test, comparing each
+    // element against the representative (first element) of each group.
+    assert_case(r#"Gather[{1, 2, 3}, Abs[#1 - #2] < 2 &]"#, r#"{{1, 2}, {3}}"#);
+    assert_case(
+      r#"Gather[{1, 2, 6, 7, 8, 3}, Abs[#1 - #2] < 2 &]"#,
+      r#"{{1, 2}, {6, 7}, {8}, {3}}"#,
+    );
+    // Equality test reproduces the plain Gather grouping.
+    assert_case(
+      r#"Gather[{1, 1, 2, 3, 2}, #1 == #2 &]"#,
+      r#"{{1, 1}, {2, 2}, {3}}"#,
+    );
+    assert_case(r#"Gather[{}, #1 == #2 &]"#, r#"{}"#);
+  }
+  #[test]
   fn flatten_1() {
     assert_case(
       r#"Flatten[{{a, b}, {c, {d}, e}, {f, {g, h}}}]"#,

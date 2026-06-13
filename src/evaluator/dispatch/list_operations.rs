@@ -2525,6 +2525,11 @@ pub fn dispatch_list_operations(
     "Gather" if args.len() == 1 => {
       return Some(list_helpers_ast::gather_ast(&args[0]));
     }
+    "Gather" if args.len() == 2 => {
+      return Some(list_helpers_ast::gather_with_test_ast(
+        &args[0], &args[1],
+      ));
+    }
     "GatherBy" if args.len() >= 2 => {
       // GatherBy[list, f1, f2, ...] is equivalent to GatherBy[list, {f1, f2, ...}]
       let func = if args.len() == 2 {
