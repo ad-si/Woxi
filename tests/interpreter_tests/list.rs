@@ -4566,6 +4566,25 @@ mod take_largest_by {
       "{5, 4}"
     );
   }
+
+  // On an association, f ranks the values and the result keeps the matching
+  // key->value pairs, ordered largest-first.
+  #[test]
+  fn take_largest_by_association() {
+    assert_eq!(
+      interpret("TakeLargestBy[<|a -> 3, b -> 1, c -> 2|>, # &, 2]").unwrap(),
+      "<|a -> 3, c -> 2|>"
+    );
+  }
+
+  #[test]
+  fn take_largest_by_association_with_function() {
+    assert_eq!(
+      interpret("TakeLargestBy[<|\"x\" -> 5, \"y\" -> 2, \"z\" -> 8|>, Abs, 2]")
+        .unwrap(),
+      "<|z -> 8, x -> 5|>"
+    );
+  }
 }
 
 mod take_smallest_by {
@@ -4576,6 +4595,22 @@ mod take_smallest_by {
     assert_eq!(
       interpret("TakeSmallestBy[{-1, -2, -3, 4, 5}, Abs, 2]").unwrap(),
       "{-1, -2}"
+    );
+  }
+
+  #[test]
+  fn take_smallest_by_association() {
+    assert_eq!(
+      interpret("TakeSmallestBy[<|a -> 3, b -> 1, c -> 2|>, # &, 2]").unwrap(),
+      "<|b -> 1, c -> 2|>"
+    );
+  }
+
+  #[test]
+  fn take_smallest_by_association_with_function() {
+    assert_eq!(
+      interpret("TakeSmallestBy[<|a -> -3, b -> 1, c -> 2|>, Abs, 1]").unwrap(),
+      "<|b -> 1|>"
     );
   }
 }

@@ -2266,11 +2266,56 @@ fn take_count_or_upto(spec: &Expr, len: usize) -> Option<usize> {
   }
 }
 
+/// Shared helper for TakeLargestBy/TakeSmallestBy on an association: rank the
+/// key→value pairs by `f` applied to each value and keep the top/bottom `n`,
+/// returning an association ordered by that ranking.
+fn take_by_assoc(
+  pairs: &[(Expr, Expr)],
+  f: &Expr,
+  n: usize,
+  largest: bool,
+) -> Result<Expr, InterpreterError> {
+  let mut with_keys: Vec<(Expr, (Expr, Expr))> = Vec::new();
+  for (k, v) in pairs {
+    let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![f.clone(), Expr::List(vec![v.clone()].into())].into(),
+    })?;
+    with_keys.push((key, (k.clone(), v.clone())));
+  }
+  with_keys.sort_by(|a, b| {
+    let ord = compare_exprs(&a.0, &b.0);
+    // ord > 0 means a.key < b.key.
+    let base = if ord > 0 {
+      std::cmp::Ordering::Greater
+    } else if ord < 0 {
+      std::cmp::Ordering::Less
+    } else {
+      std::cmp::Ordering::Equal
+    };
+    if largest { base } else { base.reverse() }
+  });
+  let result: Vec<(Expr, Expr)> =
+    with_keys.into_iter().take(n).map(|(_, kv)| kv).collect();
+  Ok(Expr::Association(result))
+}
+
 pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "TakeLargestBy expects exactly 3 arguments".into(),
     ));
+  }
+  if let Expr::Association(pairs) = &args[0] {
+    match take_count_or_upto(&args[2], pairs.len()) {
+      Some(n) => return take_by_assoc(pairs, &args[1], n, true),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "TakeLargestBy".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
   }
   let list = match &args[0] {
     Expr::List(items) => items,
@@ -2325,6 +2370,17 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "TakeSmallestBy expects exactly 3 arguments".into(),
     ));
+  }
+  if let Expr::Association(pairs) = &args[0] {
+    match take_count_or_upto(&args[2], pairs.len()) {
+      Some(n) => return take_by_assoc(pairs, &args[1], n, false),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "TakeSmallestBy".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
   }
   let list = match &args[0] {
     Expr::List(items) => items,
