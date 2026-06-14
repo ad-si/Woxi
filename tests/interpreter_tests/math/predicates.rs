@@ -1616,6 +1616,24 @@ mod cases {
   fn even_q_3() {
     assert_case(r#"EvenQ[4]; EvenQ[-3]; EvenQ[n]"#, r#"False"#);
   }
+  // EvenQ/OddQ apply only to integers: a machine Real, even a whole-valued
+  // one like 2.0, is not an integer, so both return False.
+  #[test]
+  fn even_q_real_is_false() {
+    assert_case(r#"EvenQ[2.0]"#, r#"False"#);
+  }
+  #[test]
+  fn even_q_real_whole_is_false() {
+    assert_case(r#"EvenQ[2.0]; EvenQ[6.0]"#, r#"False"#);
+  }
+  #[test]
+  fn odd_q_real_is_false() {
+    assert_case(r#"OddQ[3.0]"#, r#"False"#);
+  }
+  #[test]
+  fn odd_q_real_whole_is_false() {
+    assert_case(r#"OddQ[3.0]; OddQ[5.0]"#, r#"False"#);
+  }
   #[test]
   fn integer_q_1() {
     assert_case(r#"IntegerQ[3]"#, r#"True"#);

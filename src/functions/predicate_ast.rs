@@ -416,13 +416,15 @@ pub fn even_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "EvenQ expects exactly 1 argument".into(),
     ));
   }
+  // EvenQ applies only to actual integers. A machine Real (even a
+  // whole-valued one like 2.0) is not an integer, so wolframscript returns
+  // False, e.g. EvenQ[2.0] = False.
   let is_even = match &args[0] {
     Expr::Integer(n) => n % 2 == 0,
     Expr::BigInteger(n) => {
       use num_traits::Zero;
       (n % num_bigint::BigInt::from(2)).is_zero()
     }
-    Expr::Real(f) if f.fract() == 0.0 => (*f as i64) % 2 == 0,
     _ => return Ok(bool_expr(false)),
   };
   Ok(bool_expr(is_even))
@@ -435,13 +437,14 @@ pub fn odd_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "OddQ expects exactly 1 argument".into(),
     ));
   }
+  // OddQ applies only to actual integers; a machine Real (e.g. 3.0) is not
+  // an integer, so wolframscript returns False.
   let is_odd = match &args[0] {
     Expr::Integer(n) => n % 2 != 0,
     Expr::BigInteger(n) => {
       use num_traits::Zero;
       !(n % num_bigint::BigInt::from(2)).is_zero()
     }
-    Expr::Real(f) if f.fract() == 0.0 => (*f as i64) % 2 != 0,
     _ => return Ok(bool_expr(false)),
   };
   Ok(bool_expr(is_odd))
