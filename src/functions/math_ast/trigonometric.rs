@@ -2861,6 +2861,69 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
 }
 
 /// Sinh[x] - Hyperbolic sine
+/// Hyperbolic functions of a natural logarithm reduce to rational
+/// functions of the logarithm's argument, since `Log[u]` makes
+/// `E^Log[u] = u`. wolframscript:
+///   Sinh[Log[u]] = (u^2 - 1)/(2 u)   Cosh[Log[u]] = (u^2 + 1)/(2 u)
+///   Tanh[Log[u]] = (u^2 - 1)/(u^2 + 1)  Coth[Log[u]] = (u^2 + 1)/(u^2 - 1)
+///   Sech[Log[u]] = (2 u)/(u^2 + 1)      Csch[Log[u]] = (2 u)/(u^2 - 1)
+/// Only a bare single-argument `Log[u]` triggers this (matching
+/// wolframscript, which leaves e.g. `Sinh[2 Log[2]]` unevaluated).
+/// Returns the evaluated rational form, or `None` when the argument is
+/// not a single-argument `Log`.
+fn hyperbolic_of_log(
+  name: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  use crate::syntax::BinaryOperator as B;
+  let u = match arg {
+    Expr::FunctionCall { name: n, args } if n == "Log" && args.len() == 1 => {
+      &args[0]
+    }
+    _ => return None,
+  };
+  // When `u` is a power with a non-integer exponent (e.g. Sqrt[2] =
+  // 2^(1/2)), wolframscript first rewrites Log[u] = exponent*Log[base]
+  // (so Sinh[Log[Sqrt[2]]] stays as Sinh[Log[2]/2]). Woxi does not perform
+  // that Log-of-power extraction, so firing here would yield a value-correct
+  // but differently-shaped result; leave such arguments unevaluated instead.
+  let exponent = match u {
+    Expr::BinaryOp {
+      op: B::Power,
+      right,
+      ..
+    } => Some(right.as_ref()),
+    Expr::FunctionCall { name: n, args } if n == "Power" && args.len() == 2 => {
+      Some(&args[1])
+    }
+    _ => None,
+  };
+  if let Some(exp) = exponent
+    && !matches!(exp, Expr::Integer(_))
+  {
+    return None;
+  }
+  let bin = |op: B, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let u2 = bin(B::Power, u.clone(), Expr::Integer(2));
+  let u2_minus_1 = bin(B::Minus, u2.clone(), Expr::Integer(1));
+  let u2_plus_1 = bin(B::Plus, u2, Expr::Integer(1));
+  let two_u = bin(B::Times, Expr::Integer(2), u.clone());
+  let result = match name {
+    "Sinh" => bin(B::Divide, u2_minus_1, two_u),
+    "Cosh" => bin(B::Divide, u2_plus_1, two_u),
+    "Tanh" => bin(B::Divide, u2_minus_1, u2_plus_1),
+    "Coth" => bin(B::Divide, u2_plus_1, u2_minus_1),
+    "Sech" => bin(B::Divide, two_u, u2_plus_1),
+    "Csch" => bin(B::Divide, two_u, u2_minus_1),
+    _ => return None,
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&result))
+}
+
 pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -2881,6 +2944,10 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.sinh())),
     _ => {}
+  }
+  // Sinh[Log[u]] = (u^2 - 1)/(2 u)
+  if let Some(res) = hyperbolic_of_log("Sinh", &args[0]) {
+    return res;
   }
   // Odd function: Sinh[-x] → -Sinh[x]
   if let Some(pos) = try_extract_negated(&args[0]) {
@@ -2915,6 +2982,10 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => return Ok(Expr::Real(f.cosh())),
     _ => {}
   }
+  // Cosh[Log[u]] = (u^2 + 1)/(2 u)
+  if let Some(res) = hyperbolic_of_log("Cosh", &args[0]) {
+    return res;
+  }
   // Even function: Cosh[-x] → Cosh[x]
   if let Some(pos) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Cosh", &[pos]);
@@ -2946,6 +3017,10 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
     _ => {}
+  }
+  // Tanh[Log[u]] = (u^2 - 1)/(u^2 + 1)
+  if let Some(res) = hyperbolic_of_log("Tanh", &args[0]) {
+    return res;
   }
   // Odd function: Tanh[-x] → -Tanh[x]
   if let Some(pos) = try_extract_negated(&args[0]) {
@@ -2981,6 +3056,10 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  // Coth[Log[u]] = (u^2 + 1)/(u^2 - 1)
+  if let Some(res) = hyperbolic_of_log("Coth", &args[0]) {
+    return res;
+  }
   // Odd function: Coth[-x] → -Coth[x]
   if let Some(pos) = try_extract_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Coth", &[pos])?;
@@ -3006,6 +3085,10 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
     _ => {}
+  }
+  // Sech[Log[u]] = (2 u)/(u^2 + 1)
+  if let Some(res) = hyperbolic_of_log("Sech", &args[0]) {
+    return res;
   }
   // Even function: Sech[-x] → Sech[x]
   if let Some(pos) = try_extract_negated(&args[0]) {
@@ -3035,6 +3118,10 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     return Ok(Expr::Real(1.0 / s));
+  }
+  // Csch[Log[u]] = (2 u)/(u^2 - 1)
+  if let Some(res) = hyperbolic_of_log("Csch", &args[0]) {
+    return res;
   }
   // Odd function: Csch[-x] → -Csch[x]
   if let Some(pos) = try_extract_negated(&args[0]) {

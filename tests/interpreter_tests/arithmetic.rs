@@ -2811,6 +2811,66 @@ mod expand_threading {
     assert_eq!(interpret("Tanh[-x]").unwrap(), "-Tanh[x]");
   }
 
+  // ─── Hyperbolic of Log ────────────────────────────────────────────
+  // f[Log[u]] reduces to a rational function of u, since E^Log[u] = u.
+
+  #[test]
+  fn sinh_of_log_rational() {
+    assert_eq!(interpret("Sinh[Log[2]]").unwrap(), "3/4");
+    assert_eq!(interpret("Sinh[Log[5]]").unwrap(), "12/5");
+    assert_eq!(interpret("Sinh[Log[2/3]]").unwrap(), "-5/12");
+  }
+
+  #[test]
+  fn cosh_of_log_rational() {
+    assert_eq!(interpret("Cosh[Log[2]]").unwrap(), "5/4");
+    assert_eq!(interpret("Cosh[Log[3]]").unwrap(), "5/3");
+    assert_eq!(interpret("Cosh[Log[2/3]]").unwrap(), "13/12");
+  }
+
+  #[test]
+  fn tanh_coth_of_log_rational() {
+    assert_eq!(interpret("Tanh[Log[2]]").unwrap(), "3/5");
+    assert_eq!(interpret("Coth[Log[3]]").unwrap(), "5/4");
+  }
+
+  #[test]
+  fn sech_csch_of_log_rational() {
+    assert_eq!(interpret("Sech[Log[2]]").unwrap(), "4/5");
+    assert_eq!(interpret("Csch[Log[2]]").unwrap(), "4/3");
+  }
+
+  #[test]
+  fn hyperbolic_of_log_symbolic() {
+    assert_eq!(interpret("Sinh[Log[x]]").unwrap(), "(-1 + x^2)/(2*x)");
+    assert_eq!(interpret("Cosh[Log[x]]").unwrap(), "(1 + x^2)/(2*x)");
+    assert_eq!(interpret("Tanh[Log[x]]").unwrap(), "(-1 + x^2)/(1 + x^2)");
+    assert_eq!(interpret("Coth[Log[x]]").unwrap(), "(1 + x^2)/(-1 + x^2)");
+    assert_eq!(interpret("Sech[Log[x]]").unwrap(), "(2*x)/(1 + x^2)");
+    assert_eq!(interpret("Csch[Log[x]]").unwrap(), "(2*x)/(-1 + x^2)");
+  }
+
+  // Integer powers inside the Log still reduce (Log[x^2]).
+  #[test]
+  fn sinh_of_log_integer_power() {
+    assert_eq!(interpret("Sinh[Log[x^2]]").unwrap(), "(-1 + x^4)/(2*x^2)");
+    assert_eq!(interpret("Sinh[Log[4]]").unwrap(), "15/8");
+  }
+
+  // Sign extraction composes with the reduction.
+  #[test]
+  fn sinh_of_negated_log() {
+    assert_eq!(interpret("Sinh[-Log[2]]").unwrap(), "-3/4");
+    assert_eq!(interpret("Tanh[Log[1/2]]").unwrap(), "-3/5");
+  }
+
+  // wolframscript leaves a non-unit Log coefficient unevaluated, as does
+  // Woxi: only a bare Log[u] triggers the reduction.
+  #[test]
+  fn scaled_log_not_reduced() {
+    assert_eq!(interpret("Sinh[2 Log[2]]").unwrap(), "Sinh[2*Log[2]]");
+  }
+
   // ─── N[trig, prec] with complex arguments ─────────────────────────
 
   #[test]
