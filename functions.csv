@@ -3242,7 +3242,7 @@ TriangleConstruct,,,,12.0,3317
 BitGet,Bit k of an integer (two's complement for negatives),✅,pure,6.0,3326
 ChoiceButtons,,🚫,,7.0,3326
 DiscreteMaxLimit,,,,11.2,3326
-FromUnixTime,,,,10.1,3326
+FromUnixTime,Converts seconds since the Unix epoch to a DateObject,✅,pure,10.1,3326
 GenerateAsymmetricKeyPair,,🚫,,10.1,3326
 RepeatingElement,,,,10.1,3326
 SetEnvironment,"Sets or unsets an environment variable (rule {name -> value} or list of rules; None unsets)",✅,io,9.0,3326

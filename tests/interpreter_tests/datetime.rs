@@ -1091,3 +1091,88 @@ mod julian_date {
     assert_eq!(interpret("JulianDate[x]").unwrap(), "JulianDate[x]");
   }
 }
+
+mod from_unix_time {
+  use super::*;
+
+  #[test]
+  fn epoch_and_known_instants() {
+    // The Unix epoch itself.
+    assert_eq!(
+      interpret("FromUnixTime[0, TimeZone -> 0]").unwrap(),
+      "DateObject[{1970, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    // 2020-01-01T00:00:00Z.
+    assert_eq!(
+      interpret("FromUnixTime[1577836800, TimeZone -> 0]").unwrap(),
+      "DateObject[{2020, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    // A billion seconds after the epoch.
+    assert_eq!(
+      interpret("FromUnixTime[1000000000, TimeZone -> 0]").unwrap(),
+      "DateObject[{2001, 9, 9, 1, 46, 40}, Instant, Gregorian, 0.]"
+    );
+    // Sub-minute precision survives.
+    assert_eq!(
+      interpret("FromUnixTime[1577836845, TimeZone -> 0]").unwrap(),
+      "DateObject[{2020, 1, 1, 0, 0, 45}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn time_zone_offsets_shift_the_displayed_time() {
+    assert_eq!(
+      interpret("FromUnixTime[0, TimeZone -> 1]").unwrap(),
+      "DateObject[{1970, 1, 1, 1, 0, 0}, Instant, Gregorian, 1.]"
+    );
+    assert_eq!(
+      interpret("FromUnixTime[0, TimeZone -> -5]").unwrap(),
+      "DateObject[{1969, 12, 31, 19, 0, 0}, Instant, Gregorian, -5.]"
+    );
+    // Fractional offsets are supported.
+    assert_eq!(
+      interpret("FromUnixTime[0, TimeZone -> 5.5]").unwrap(),
+      "DateObject[{1970, 1, 1, 5, 30, 0}, Instant, Gregorian, 5.5]"
+    );
+  }
+
+  #[test]
+  fn head_is_date_object() {
+    assert_eq!(
+      interpret("Head[FromUnixTime[0, TimeZone -> 0]]").unwrap(),
+      "DateObject"
+    );
+  }
+}
+
+mod unix_time {
+  use super::*;
+
+  #[test]
+  fn from_date_list() {
+    // A full date list, interpreted as UTC.
+    assert_eq!(
+      interpret("UnixTime[{2020, 1, 1, 0, 0, 0}]").unwrap(),
+      "1577836800"
+    );
+    // Short date lists default the missing components.
+    assert_eq!(interpret("UnixTime[{2020, 1, 1}]").unwrap(), "1577836800");
+  }
+
+  #[test]
+  fn round_trips_with_from_unix_time() {
+    // UnixTime undoes FromUnixTime regardless of the display time zone.
+    assert_eq!(
+      interpret("UnixTime[FromUnixTime[1577836800, TimeZone -> 0]]").unwrap(),
+      "1577836800"
+    );
+    assert_eq!(
+      interpret("UnixTime[FromUnixTime[1577836800, TimeZone -> -5]]").unwrap(),
+      "1577836800"
+    );
+    assert_eq!(
+      interpret("UnixTime[FromUnixTime[1000000000, TimeZone -> 5.5]]").unwrap(),
+      "1000000000"
+    );
+  }
+}
