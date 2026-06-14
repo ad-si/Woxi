@@ -3496,3 +3496,50 @@ mod stieltjes_gamma {
     );
   }
 }
+
+mod gamma_at_zero {
+  use super::*;
+
+  // Gamma[a, 0] is the ordinary gamma Gamma[a] for Re[a] > 0.
+  #[test]
+  fn positive_half_integer() {
+    assert_eq!(interpret("Gamma[1/2, 0]").unwrap(), "Sqrt[Pi]");
+    assert_eq!(interpret("Gamma[5/2, 0]").unwrap(), "(3*Sqrt[Pi])/4");
+  }
+
+  #[test]
+  fn positive_integer() {
+    assert_eq!(interpret("Gamma[1, 0]").unwrap(), "1");
+    assert_eq!(interpret("Gamma[2, 0]").unwrap(), "1");
+    assert_eq!(interpret("Gamma[3, 0]").unwrap(), "2");
+  }
+
+  #[test]
+  fn positive_rational_without_closed_form() {
+    assert_eq!(interpret("Gamma[7/3, 0]").unwrap(), "Gamma[7/3]");
+  }
+
+  // The incomplete form diverges at the origin for Re[a] <= 0.
+  #[test]
+  fn zero_first_argument_is_infinity() {
+    assert_eq!(interpret("Gamma[0, 0]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn negative_first_argument_is_complex_infinity() {
+    assert_eq!(interpret("Gamma[-1, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Gamma[-1/2, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Gamma[-3/2, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn symbolic_first_argument_stays_unevaluated() {
+    assert_eq!(interpret("Gamma[a, 0]").unwrap(), "Gamma[a, 0]");
+  }
+
+  // Nonzero second argument is unaffected.
+  #[test]
+  fn nonzero_second_argument_unchanged() {
+    assert_eq!(interpret("Gamma[1/2, 2]").unwrap(), "Gamma[1/2, 2]");
+  }
+}

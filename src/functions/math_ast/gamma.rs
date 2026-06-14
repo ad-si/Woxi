@@ -442,6 +442,22 @@ fn gamma_incomplete_upper(
   a: &Expr,
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Gamma[a, 0] is the ordinary gamma function Gamma[a] when Re[a] > 0, and
+  // diverges otherwise: Gamma[0, 0] = Infinity, Gamma[a, 0] = ComplexInfinity
+  // for real a < 0. (Note this differs from Gamma[a] at non-positive a, where
+  // the incomplete form diverges even though Gamma[a] itself may be finite.)
+  if matches!(z, Expr::Integer(0))
+    && let Some(a_val) = try_eval_to_f64(a)
+  {
+    if a_val > 0.0 {
+      return gamma_ast(std::slice::from_ref(a));
+    } else if a_val == 0.0 {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    } else {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+  }
+
   // Special case: Gamma[1, z] = E^(-z)
   if matches!(a, Expr::Integer(1)) {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
