@@ -125,13 +125,66 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       ))
     }
 
-    // Binomial[n, k] for specific integer k values
+    // Factorial[n] (i.e. n!) → Gamma[1 + n]
+    "Factorial" if args.len() == 1 => Some(mk_call(
+      "Gamma",
+      vec![mk_plus(mk_int(1), args[0].clone())],
+    )),
+
+    // Binomial[n, k]: a specific integer k expands to a polynomial; an
+    // otherwise symbolic k expands to the Gamma-function form
+    //   Gamma[1 + n] / (Gamma[1 + k] * Gamma[1 - k + n]).
     "Binomial" if args.len() == 2 => {
       if let Expr::Integer(k) = &args[1] {
         expand_binomial_integer_k(&args[0], *k)
       } else {
-        None
+        let n = &args[0];
+        let k = &args[1];
+        Some(mk_div(
+          mk_call("Gamma", vec![mk_plus(mk_int(1), n.clone())]),
+          mk_times(
+            mk_call("Gamma", vec![mk_plus(mk_int(1), k.clone())]),
+            mk_call(
+              "Gamma",
+              vec![mk_call(
+                "Plus",
+                vec![
+                  mk_int(1),
+                  mk_times(mk_int(-1), k.clone()),
+                  n.clone(),
+                ],
+              )],
+            ),
+          ),
+        ))
       }
+    }
+
+    // CatalanNumber[n] → (2^(2 n) Gamma[1/2 + n]) / (Sqrt[Pi] Gamma[2 + n])
+    "CatalanNumber" if args.len() == 1 => {
+      let n = &args[0];
+      Some(mk_div(
+        mk_times(
+          mk_power(mk_int(2), mk_times(mk_int(2), n.clone())),
+          mk_call("Gamma", vec![mk_plus(mk_ratio(1, 2), n.clone())]),
+        ),
+        mk_times(
+          mk_call("Sqrt", vec![mk_id("Pi")]),
+          mk_call("Gamma", vec![mk_plus(mk_int(2), n.clone())]),
+        ),
+      ))
+    }
+
+    // Subfactorial[n] → Gamma[1 + n, -1] / E
+    "Subfactorial" if args.len() == 1 => {
+      let n = &args[0];
+      Some(mk_div(
+        mk_call(
+          "Gamma",
+          vec![mk_plus(mk_int(1), n.clone()), mk_int(-1)],
+        ),
+        mk_id("E"),
+      ))
     }
 
     // Haversine[x] → (1 - Cos[x]) / 2

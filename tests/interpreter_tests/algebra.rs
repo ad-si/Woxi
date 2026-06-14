@@ -5531,6 +5531,45 @@ mod function_expand {
     assert_eq!(interpret("FunctionExpand[Gamma[1/2]]").unwrap(), "Sqrt[Pi]");
   }
 
+  // Factorial[n] (n!) expands to the Gamma function.
+  #[test]
+  fn factorial() {
+    assert_eq!(
+      interpret("FunctionExpand[Factorial[n]]").unwrap(),
+      "Gamma[1 + n]"
+    );
+    assert_eq!(interpret("FunctionExpand[n!]").unwrap(), "Gamma[1 + n]");
+    // A concrete factorial still evaluates numerically.
+    assert_eq!(interpret("FunctionExpand[Factorial[5]]").unwrap(), "120");
+  }
+
+  // Binomial with a symbolic second argument expands to the Gamma form.
+  #[test]
+  fn binomial_symbolic_k() {
+    assert_eq!(
+      interpret("FunctionExpand[Binomial[n, k]]").unwrap(),
+      "Gamma[1 + n]/(Gamma[1 + k]*Gamma[1 - k + n])"
+    );
+  }
+
+  #[test]
+  fn catalan_number() {
+    assert_eq!(
+      interpret("FunctionExpand[CatalanNumber[n]]").unwrap(),
+      "(2^(2*n)*Gamma[1/2 + n])/(Sqrt[Pi]*Gamma[2 + n])"
+    );
+    // A concrete value still evaluates.
+    assert_eq!(interpret("FunctionExpand[CatalanNumber[3]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn subfactorial() {
+    assert_eq!(
+      interpret("FunctionExpand[Subfactorial[n]]").unwrap(),
+      "Gamma[1 + n, -1]/E"
+    );
+  }
+
   #[test]
   fn passthrough() {
     // Functions without expansion rules pass through
