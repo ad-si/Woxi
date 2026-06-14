@@ -5989,14 +5989,16 @@ pub fn damerau_levenshtein_distance_ast(
   Ok(Expr::Integer(dp[n][m] as i128))
 }
 
-/// The (start index in `a`, length) of the longest contiguous run of tokens
-/// common to `a` and `b`. Returns (0, 0) when there is no common token.
-fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize) {
+/// The (start index in `a`, start index in `b`, length) of the longest
+/// contiguous run of tokens common to `a` and `b`. Ties resolve to the
+/// earliest run. Returns (0, 0, 0) when there is no common token.
+fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize, usize) {
   let n = a.len();
   let m = b.len();
   let mut dp = vec![vec![0usize; m + 1]; n + 1];
   let mut max_len = 0usize;
   let mut end_i = 0usize; // end position in `a`
+  let mut end_j = 0usize; // end position in `b`
   for i in 1..=n {
     for j in 1..=m {
       if a[i - 1] == b[j - 1] {
@@ -6004,11 +6006,24 @@ fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize) {
         if dp[i][j] > max_len {
           max_len = dp[i][j];
           end_i = i;
+          end_j = j;
         }
       }
     }
   }
-  (end_i - max_len, max_len)
+  (end_i - max_len, end_j - max_len, max_len)
+}
+
+/// Token sequences for LongestCommonSubsequence-family functions: a string's
+/// characters or a list's elements (compared by their output form).
+fn lcs_tokens(expr: &Expr) -> Option<Vec<String>> {
+  match expr {
+    Expr::List(items) => {
+      Some(items.iter().map(crate::syntax::expr_to_output).collect())
+    }
+    Expr::String(s) => Some(s.chars().map(|c| c.to_string()).collect()),
+    _ => None,
+  }
 }
 
 /// LongestCommonSubsequence[s1, s2] — Wolfram's LongestCommonSubsequence
@@ -6025,9 +6040,11 @@ pub fn longest_common_subsequence_ast(
 
   // List inputs compare whole elements and return the matching sublist.
   if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
-    let t1: Vec<String> = l1.iter().map(crate::syntax::expr_to_output).collect();
-    let t2: Vec<String> = l2.iter().map(crate::syntax::expr_to_output).collect();
-    let (start, len) = longest_common_run(&t1, &t2);
+    let t1: Vec<String> =
+      l1.iter().map(crate::syntax::expr_to_output).collect();
+    let t2: Vec<String> =
+      l2.iter().map(crate::syntax::expr_to_output).collect();
+    let (start, _, len) = longest_common_run(&t1, &t2);
     let sub: Vec<Expr> = l1[start..start + len].to_vec();
     return Ok(Expr::List(sub.into()));
   }
@@ -6038,9 +6055,46 @@ pub fn longest_common_subsequence_ast(
   let chars2: Vec<char> = s2.chars().collect();
   let t1: Vec<String> = chars1.iter().map(|c| c.to_string()).collect();
   let t2: Vec<String> = chars2.iter().map(|c| c.to_string()).collect();
-  let (start, len) = longest_common_run(&t1, &t2);
+  let (start, _, len) = longest_common_run(&t1, &t2);
   let result: String = chars1[start..start + len].iter().collect();
   Ok(Expr::String(result))
+}
+
+/// LongestCommonSubsequencePositions[s1, s2] — the 1-indexed inclusive
+/// {start, end} spans of the longest common contiguous run within each
+/// argument: `{{start1, end1}, {start2, end2}}`. Returns `{}` when there is
+/// no common element.
+pub fn longest_common_subsequence_positions_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LongestCommonSubsequencePositions expects exactly 2 arguments".into(),
+    ));
+  }
+  let (t1, t2) = match (lcs_tokens(&args[0]), lcs_tokens(&args[1])) {
+    (Some(t1), Some(t2)) => (t1, t2),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LongestCommonSubsequencePositions".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let (start1, start2, len) = longest_common_run(&t1, &t2);
+  if len == 0 {
+    return Ok(Expr::List(vec![].into()));
+  }
+  let span = |start: usize| {
+    Expr::List(
+      vec![
+        Expr::Integer((start + 1) as i128),
+        Expr::Integer((start + len) as i128),
+      ]
+      .into(),
+    )
+  };
+  Ok(Expr::List(vec![span(start1), span(start2)].into()))
 }
 
 /// SequenceAlignment[s1, s2] — aligns two strings using Needleman-Wunsch

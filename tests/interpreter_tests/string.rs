@@ -4302,12 +4302,15 @@ mod longest_common_subsequence_tests {
       "{2, 3}"
     );
     assert_eq!(
-      interpret("LongestCommonSubsequence[{1, 2, 3, 4, 1}, {3, 4, 1, 2, 1, 3}]")
-        .unwrap(),
+      interpret(
+        "LongestCommonSubsequence[{1, 2, 3, 4, 1}, {3, 4, 1, 2, 1, 3}]"
+      )
+      .unwrap(),
       "{3, 4, 1}"
     );
     assert_eq!(
-      interpret("LongestCommonSubsequence[{a, b, c, d}, {x, b, c, y}]").unwrap(),
+      interpret("LongestCommonSubsequence[{a, b, c, d}, {x, b, c, y}]")
+        .unwrap(),
       "{b, c}"
     );
   }
@@ -7895,6 +7898,62 @@ mod string_take_drop_specs {
     assert_eq!(
       interpret(r#"StringTake[{"abcdef", "xyz"}, 2]"#).unwrap(),
       "{ab, xy}"
+    );
+  }
+}
+
+mod longest_common_subsequence_positions_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn strings() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequencePositions["abcde", "ace"]"#).unwrap(),
+      "{{1, 1}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequencePositions["abc", "xbc"]"#).unwrap(),
+      "{{2, 3}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequencePositions["1234", "1224533324"]"#)
+        .unwrap(),
+      "{{1, 2}, {1, 2}}"
+    );
+  }
+
+  // Ties resolve to the earliest run in each argument.
+  #[test]
+  fn earliest_tie() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequencePositions["abcabc", "abc"]"#)
+        .unwrap(),
+      "{{1, 3}, {1, 3}}"
+    );
+  }
+
+  #[test]
+  fn lists() {
+    assert_eq!(
+      interpret("LongestCommonSubsequencePositions[{1, 2, 3}, {2, 3}]").unwrap(),
+      "{{2, 3}, {1, 2}}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSubsequencePositions[{1, 2, 3}, {1, 2, 3}]")
+        .unwrap(),
+      "{{1, 3}, {1, 3}}"
+    );
+  }
+
+  #[test]
+  fn no_common_is_empty() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequencePositions["abc", "xyz"]"#).unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSubsequencePositions[{1, 2}, {3, 4}]").unwrap(),
+      "{}"
     );
   }
 }

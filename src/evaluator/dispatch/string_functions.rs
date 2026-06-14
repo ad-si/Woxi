@@ -137,6 +137,13 @@ pub fn dispatch_string_functions(
         crate::functions::string_ast::longest_common_subsequence_ast(args),
       );
     }
+    "LongestCommonSubsequencePositions" if args.len() == 2 => {
+      return Some(
+        crate::functions::string_ast::longest_common_subsequence_positions_ast(
+          args,
+        ),
+      );
+    }
     "StringCount" if args.len() >= 2 => {
       return Some(crate::functions::string_ast::string_count_ast(args));
     }

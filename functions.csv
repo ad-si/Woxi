@@ -3441,7 +3441,7 @@ ExponentStep,,,,3.0,3537
 GeoDistanceList,,🚫,,10.4,3537
 InverseFourierCosTransform,,,,4.0,3537
 LessLess,,,,3.0,3537
-LongestCommonSubsequencePositions,,,,10.2,3537
+LongestCommonSubsequencePositions,Returns the {start end} spans of the longest contiguous common subsequence in two strings or lists,✅,pure,10.2,3537
 PeriodogramArray,,🚫,,9.0,3537
 PoleZeroMarkers,,,,8.0,3537
 ReverseGraph,,,,8.0,3537
