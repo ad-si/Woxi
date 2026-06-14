@@ -785,6 +785,9 @@ pub fn dispatch_math_functions(
     "HarmonicMean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::harmonic_mean_ast(args));
     }
+    "ContraharmonicMean" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::contraharmonic_mean_ast(args));
+    }
     "RootMeanSquare" if args.len() == 1 => {
       return Some(crate::functions::math_ast::root_mean_square_ast(args));
     }

@@ -1206,6 +1206,57 @@ fn harmonic_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(col_means.into()))
 }
 
+/// ContraharmonicMean[list] / ContraharmonicMean[list, p] — the Lehmer mean
+/// `Total[list^p] / Total[list^(p-1)]` (default `p = 2`). With the default it
+/// reduces to the usual contraharmonic mean `Total[list^2] / Total[list]`. The
+/// element-wise Power and the columnwise Total handle nested lists, exact
+/// rationals, reals, and symbolic entries uniformly.
+pub fn contraharmonic_mean_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ContraharmonicMean".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  // The first argument must be a non-empty list.
+  match &args[0] {
+    Expr::List(items) if !items.is_empty() => {}
+    _ => return unevaluated(),
+  }
+  let list = &args[0];
+  let p = if args.len() == 2 {
+    // The exponent must be a scalar, not a list.
+    if matches!(&args[1], Expr::List(_)) {
+      crate::emit_message(&format!(
+        "ContraharmonicMean::scalar: Argument {} at position 2 is not a scalar.",
+        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+      ));
+      return unevaluated();
+    }
+    args[1].clone()
+  } else {
+    Expr::Integer(2)
+  };
+
+  use crate::evaluator::evaluate_function_call_ast;
+  let p_minus_1 =
+    evaluate_function_call_ast("Subtract", &[p.clone(), Expr::Integer(1)])?;
+  let numerator = evaluate_function_call_ast(
+    "Total",
+    &[evaluate_function_call_ast("Power", &[list.clone(), p])?],
+  )?;
+  let denominator = evaluate_function_call_ast(
+    "Total",
+    &[evaluate_function_call_ast("Power", &[list.clone(), p_minus_1])?],
+  )?;
+  evaluate_function_call_ast("Divide", &[numerator, denominator])
+}
+
 /// Covariance[list1, list2] - Sample covariance of two numeric lists
 pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

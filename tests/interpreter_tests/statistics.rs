@@ -133,6 +133,78 @@ mod harmonic_mean {
   }
 }
 
+mod contraharmonic_mean {
+  use super::*;
+
+  #[test]
+  fn default_is_total_of_squares_over_total() {
+    assert_eq!(
+      interpret("ContraharmonicMean[{1, 2, 3, 4}]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("ContraharmonicMean[{2, 4, 6}]").unwrap(), "14/3");
+    assert_eq!(interpret("ContraharmonicMean[{5}]").unwrap(), "5");
+  }
+
+  #[test]
+  fn reals_and_symbols() {
+    let result = interpret("ContraharmonicMean[{1.5, 2.5, 3.5}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.7666666666666666).abs() < 1e-12);
+    assert_eq!(
+      interpret("ContraharmonicMean[{a, b}]").unwrap(),
+      "(a^2 + b^2)/(a + b)"
+    );
+  }
+
+  #[test]
+  fn columnwise_on_a_matrix() {
+    assert_eq!(
+      interpret("ContraharmonicMean[{{1, 2}, {3, 4}}]").unwrap(),
+      "{5/2, 10/3}"
+    );
+  }
+
+  #[test]
+  fn lehmer_mean_with_exponent() {
+    // ContraharmonicMean[list, p] = Total[list^p] / Total[list^(p-1)].
+    assert_eq!(
+      interpret("ContraharmonicMean[{1, 2, 3, 4}, 3]").unwrap(),
+      "10/3"
+    );
+    // p = 1 is the arithmetic mean; p = 0 is the harmonic mean.
+    assert_eq!(
+      interpret("ContraharmonicMean[{1, 2, 3, 4}, 1]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("ContraharmonicMean[{1, 2, 3, 4}, 0]").unwrap(),
+      "48/25"
+    );
+    assert_eq!(
+      interpret("ContraharmonicMean[{a, b}, 3]").unwrap(),
+      "(a^3 + b^3)/(a^2 + b^2)"
+    );
+  }
+
+  #[test]
+  fn invalid_inputs_stay_unevaluated() {
+    assert_eq!(
+      interpret("ContraharmonicMean[{}]").unwrap(),
+      "ContraharmonicMean[{}]"
+    );
+    assert_eq!(
+      interpret("ContraharmonicMean[5]").unwrap(),
+      "ContraharmonicMean[5]"
+    );
+    // The exponent must be a scalar.
+    assert_eq!(
+      interpret("ContraharmonicMean[{1, 2}, {3, 4}]").unwrap(),
+      "ContraharmonicMean[{1, 2}, {3, 4}]"
+    );
+  }
+}
+
 mod root_mean_square {
   use super::*;
 

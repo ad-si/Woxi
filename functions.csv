@@ -4354,7 +4354,7 @@ AudioAmplify,,🚫,,11.0,4527
 AudioChannelSeparate,,🚫,,11.0,4527
 Chebyshev2FilterModel,,,,9.0,4527
 Containing,,,,10.2,4527
-ContraharmonicMean,,,,7.0,4527
+ContraharmonicMean,Contraharmonic (Lehmer) mean of a list,✅,pure,7.0,4527
 ControllerInformation,,,,6.0,4527
 CountDistinctBy,Counts distinct values of a function applied to each element,✅,pure,10.0,4527
 DaylightQ,,,,10.0,4527
