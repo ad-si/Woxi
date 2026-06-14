@@ -1577,11 +1577,135 @@ fn is_leibniz_body(body: &Expr, var_name: &str) -> bool {
   true
 }
 
+/// Match a geometric-series body `c * base^var` where `base` is free of `var`
+/// and symbolic (not a plain number), and `var` appears only as the exponent.
+/// Returns `(coefficient, base)`.
+fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
+  use crate::syntax::BinaryOperator;
+
+  // Flatten the multiplicative factors of `body`. A `Divide` contributes its
+  // denominator as a reciprocal factor `denominator^(-1)`.
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        collect(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        out.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        });
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  // Is `f` exactly `base^var` (var only as the exponent)? Returns the base.
+  fn power_base<'a>(f: &'a Expr, var_name: &str) -> Option<&'a Expr> {
+    let (base, exp) = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    match exp {
+      Expr::Identifier(n) if n == var_name => Some(base),
+      _ => None,
+    }
+  }
+  let is_plain_number = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+
+  let mut factors = Vec::new();
+  collect(body, &mut factors);
+
+  let mut base: Option<&Expr> = None;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if base.is_none()
+      && let Some(b) = power_base(f, var_name)
+    {
+      base = Some(b);
+      continue;
+    }
+    // Every other factor must be free of the summation variable.
+    if !crate::functions::calculus_ast::is_constant_wrt(f, var_name) {
+      return None;
+    }
+    coeff_factors.push(f.clone());
+  }
+
+  let base = base?;
+  // The base must be free of the variable and genuinely symbolic; a numeric
+  // base needs the existing convergence-aware handlers instead.
+  if !crate::functions::calculus_ast::is_constant_wrt(base, var_name)
+    || is_plain_number(base)
+  {
+    return None;
+  }
+
+  let coeff = match coeff_factors.len() {
+    0 => Expr::Integer(1),
+    1 => coeff_factors.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff_factors.into(),
+    },
+  };
+  Some((coeff, base.clone()))
+}
+
 fn try_infinite_sum(
   body: &Expr,
   var_name: &str,
   min: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
+  // Geometric series Sum[c base^var, {var, 0, Infinity}] = c / (1 - base) for
+  // a symbolic base. Only the min == 0 form is matched, because wolframscript
+  // canonicalizes the min >= 1 result to a different (though equivalent) form.
+  if min == 0
+    && let Some((coeff, base)) = match_geometric_base(body, var_name)
+  {
+    use crate::syntax::BinaryOperator;
+    let one_minus_base = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(base),
+      }),
+    };
+    let closed = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(coeff),
+      right: Box::new(one_minus_base),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
   if min == 0 && is_leibniz_body(body, var_name) {
     return Ok(Some(Expr::BinaryOp {

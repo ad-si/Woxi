@@ -167,6 +167,49 @@ mod sum {
     );
   }
 
+  // Symbolic geometric series Sum[c base^k, {k, 0, Infinity}] = c/(1 - base).
+  #[test]
+  fn infinite_sum_geometric_symbolic() {
+    assert_eq!(
+      interpret("Sum[r^k, {k, 0, Infinity}]").unwrap(),
+      "(1 - r)^(-1)"
+    );
+    assert_eq!(
+      interpret("Sum[x^n, {n, 0, Infinity}]").unwrap(),
+      "(1 - x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn infinite_sum_geometric_with_coefficient() {
+    assert_eq!(
+      interpret("Sum[a r^k, {k, 0, Infinity}]").unwrap(),
+      "a/(1 - r)"
+    );
+    assert_eq!(
+      interpret("Sum[3 r^k, {k, 0, Infinity}]").unwrap(),
+      "3/(1 - r)"
+    );
+  }
+
+  #[test]
+  fn infinite_sum_geometric_with_divisor() {
+    assert_eq!(
+      interpret("Sum[r^k/5, {k, 0, Infinity}]").unwrap(),
+      "1/(5*(1 - r))"
+    );
+  }
+
+  // A non-constant coefficient or a non-`k` exponent must not be treated as a
+  // plain geometric series.
+  #[test]
+  fn infinite_sum_geometric_not_misapplied() {
+    assert_eq!(
+      interpret("Sum[k r^k, {k, 0, Infinity}]").unwrap(),
+      "Sum[k*r^k, {k, 0, Infinity}]"
+    );
+  }
+
   #[test]
   fn sum_with_step() {
     // Sum[i, {i, 1, 10, 2}] -> 1 + 3 + 5 + 7 + 9 = 25
