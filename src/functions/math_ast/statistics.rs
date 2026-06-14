@@ -1823,10 +1823,6 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return symbolic();
   }
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => return symbolic(),
-  };
   let r = match expr_to_num(&args[1]) {
     Some(r) if r >= 0.0 && r.fract() == 0.0 => r as usize,
     _ => return symbolic(),
@@ -1834,6 +1830,30 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if r == 0 {
     return Ok(Expr::Integer(0));
   }
+
+  // Distribution form: Cumulant[dist, r] from the raw moments E[x^j].
+  if let Some(dist) = as_distribution(&args[0]) {
+    let var = fresh_moment_var(dist);
+    let mut mu = Vec::with_capacity(r + 1);
+    mu.push(Expr::Integer(0)); // index 0 unused
+    for j in 1..=r {
+      match distribution_raw_moment(dist, j as i128, &var)? {
+        Some(m) => mu.push(m),
+        None => return symbolic(),
+      }
+    }
+    let result = cumulant_from_raw_moments(&mu, r)?;
+    let expanded = Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![result].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&expanded);
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => return symbolic(),
+  };
 
   let n = items.len() as i128;
 
@@ -1867,11 +1887,19 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     mu.push(raw_moment(j)?);
   }
 
-  // k[0] unused; build k[1..=r] via the recursion.
+  cumulant_from_raw_moments(&mu, r)
+}
+
+/// The r-th cumulant from raw moments mu[1..=r] via the recursion
+///     k_n = mu'_n - Sum_{m=1}^{n-1} Binomial[n-1, m-1] k_m mu'_{n-m}
+/// (mu[0] is an unused placeholder). All arithmetic stays symbolic.
+fn cumulant_from_raw_moments(
+  mu: &[Expr],
+  r: usize,
+) -> Result<Expr, InterpreterError> {
   let mut k: Vec<Expr> = Vec::with_capacity(r + 1);
-  k.push(Expr::Integer(0));
+  k.push(Expr::Integer(0)); // k[0] unused
   for nn in 1..=r {
-    // start with mu'_nn
     let mut acc = mu[nn].clone();
     for m in 1..nn {
       let binom = binomial_i128((nn - 1) as i128, (m - 1) as i128);
@@ -1889,7 +1917,6 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     k.push(acc);
   }
-
   Ok(k[r].clone())
 }
 

@@ -1560,7 +1560,7 @@ Thinning,Morphological thinning,,unevaluated,8.0,1582
 Tolerance,Tolerance specification,,unevaluated,2.0,1583
 NetInitialize,Initialize a neural net,,unevaluated,11.0,1584
 BoundaryMeshRegion,Boundary mesh region,,unevaluated,10.0,1586
-Cumulant,Computes the r-th cumulant of the data in a list,✅,pure,8.0,1586
+Cumulant,Computes the r-th cumulant of a list or distribution,✅,pure,8.0,1586
 BooleanConvert,Convert Boolean expressions,✅,pure,7.0,1588
 GeometricBrownianMotionProcess,Geometric Brownian motion,,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593

@@ -3002,9 +3002,18 @@ mod distribution_moments {
   // Moment[dist, n] is the raw moment E[x^n].
   #[test]
   fn raw_moments() {
-    assert_eq!(interpret("Moment[NormalDistribution[0, 1], 4]").unwrap(), "3");
-    assert_eq!(interpret("Moment[ExponentialDistribution[2], 3]").unwrap(), "3/4");
-    assert_eq!(interpret("Moment[UniformDistribution[{0, 1}], 3]").unwrap(), "1/4");
+    assert_eq!(
+      interpret("Moment[NormalDistribution[0, 1], 4]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Moment[ExponentialDistribution[2], 3]").unwrap(),
+      "3/4"
+    );
+    assert_eq!(
+      interpret("Moment[UniformDistribution[{0, 1}], 3]").unwrap(),
+      "1/4"
+    );
     assert_eq!(
       interpret("Moment[PoissonDistribution[m], 3]").unwrap(),
       "m + 3*m^2 + m^3"
@@ -3059,7 +3068,10 @@ mod distribution_moments {
   // Skewness = m3 / m2^(3/2).
   #[test]
   fn skewness() {
-    assert_eq!(interpret("Skewness[ExponentialDistribution[2]]").unwrap(), "2");
+    assert_eq!(
+      interpret("Skewness[ExponentialDistribution[2]]").unwrap(),
+      "2"
+    );
     assert_eq!(
       interpret("Skewness[PoissonDistribution[m]]").unwrap(),
       "1/Sqrt[m]"
@@ -3073,15 +3085,70 @@ mod distribution_moments {
   // Kurtosis = m4 / m2^2.
   #[test]
   fn kurtosis() {
-    assert_eq!(interpret("Kurtosis[NormalDistribution[0, 1]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Kurtosis[NormalDistribution[0, 1]]").unwrap(),
+      "3"
+    );
     assert_eq!(
       interpret("Kurtosis[NormalDistribution[mu, sigma]]").unwrap(),
       "3"
     );
-    assert_eq!(interpret("Kurtosis[ExponentialDistribution[1]]").unwrap(), "9");
+    assert_eq!(
+      interpret("Kurtosis[ExponentialDistribution[1]]").unwrap(),
+      "9"
+    );
     assert_eq!(
       interpret("Kurtosis[PoissonDistribution[m]]").unwrap(),
       "3 + m^(-1)"
     );
+  }
+}
+
+mod distribution_cumulants {
+  use super::*;
+
+  // First cumulant is the mean, second is the variance.
+  #[test]
+  fn low_order() {
+    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 1]").unwrap(), "m");
+    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 2]").unwrap(), "m");
+    assert_eq!(
+      interpret("Cumulant[NormalDistribution[mu, sigma], 1]").unwrap(),
+      "mu"
+    );
+    assert_eq!(
+      interpret("Cumulant[NormalDistribution[mu, sigma], 2]").unwrap(),
+      "sigma^2"
+    );
+    assert_eq!(
+      interpret("Cumulant[UniformDistribution[{0, 1}], 2]").unwrap(),
+      "1/12"
+    );
+  }
+
+  // All Poisson cumulants equal the rate; Normal cumulants vanish past order 2.
+  #[test]
+  fn higher_order_symbolic() {
+    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 3]").unwrap(), "m");
+    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 4]").unwrap(), "m");
+    assert_eq!(
+      interpret("Cumulant[NormalDistribution[0, 1], 3]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Cumulant[NormalDistribution[mu, sigma], 4]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Cumulant[ExponentialDistribution[a], 2]").unwrap(),
+      "a^(-2)"
+    );
+  }
+
+  // Exponential cumulants: kappa_n = (n-1)! / lambda^n.
+  #[test]
+  fn exponential_numeric() {
+    assert_eq!(interpret("Cumulant[ExponentialDistribution[1], 3]").unwrap(), "2");
+    assert_eq!(interpret("Cumulant[ExponentialDistribution[1], 4]").unwrap(), "6");
   }
 }
