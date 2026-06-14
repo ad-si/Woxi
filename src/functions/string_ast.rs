@@ -1318,6 +1318,9 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // IgnoreCase -> True makes the pattern match regardless of case: the regex
+  // path gets the `(?i)` flag and the literal path compares case-folded.
+  let ignore_case = has_ignore_case_option(args);
 
   // Resolve the pattern to a regex. Plain string literals (and lists of
   // them) use the exact literal path below; RegularExpression and every other
@@ -1337,7 +1340,12 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Some(pat) = regex_pat.as_ref() {
     // Regex-based matching: find all overlapping matches
-    if let Ok(re) = compile_regex(pat) {
+    let pat = if ignore_case {
+      format!("(?i){}", pat)
+    } else {
+      pat.clone()
+    };
+    if let Ok(re) = compile_regex(&pat) {
       for start_char in 0..s_chars.len() {
         // Get byte offset for this character position
         let byte_offset: usize =
@@ -1376,7 +1384,10 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for i in 0..=s_chars.len() - sub_chars.len() {
         let mut matched = true;
         for (j, &sub_char) in sub_chars.iter().enumerate() {
-          if s_chars[i + j] != sub_char {
+          let c = s_chars[i + j];
+          let eq = c == sub_char
+            || (ignore_case && c.to_lowercase().eq(sub_char.to_lowercase()));
+          if !eq {
             matched = false;
             break;
           }

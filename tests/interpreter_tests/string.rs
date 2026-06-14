@@ -1319,6 +1319,57 @@ mod ignore_case {
       "{a}"
     );
   }
+
+  // StringPosition reports the span of every case-insensitive match.
+  #[test]
+  fn string_position_ignore_case_literal() {
+    assert_eq!(
+      interpret(r#"StringPosition["aAa", "a", IgnoreCase -> True]"#).unwrap(),
+      "{{1, 1}, {2, 2}, {3, 3}}"
+    );
+    assert_eq!(
+      interpret(r#"StringPosition["ABCabc", "abc", IgnoreCase -> True]"#)
+        .unwrap(),
+      "{{1, 3}, {4, 6}}"
+    );
+  }
+
+  #[test]
+  fn string_position_ignore_case_alternatives() {
+    assert_eq!(
+      interpret(r#"StringPosition["aAbB", "a" | "b", IgnoreCase -> True]"#)
+        .unwrap(),
+      "{{1, 1}, {2, 2}, {3, 3}, {4, 4}}"
+    );
+  }
+
+  // Overlapping case-insensitive multi-character matches are all reported.
+  #[test]
+  fn string_position_ignore_case_overlapping() {
+    assert_eq!(
+      interpret(r#"StringPosition["AbAbAb", "ab", IgnoreCase -> True]"#)
+        .unwrap(),
+      "{{1, 2}, {3, 4}, {5, 6}}"
+    );
+  }
+
+  // The count limit and IgnoreCase combine.
+  #[test]
+  fn string_position_ignore_case_with_limit() {
+    assert_eq!(
+      interpret(r#"StringPosition["aAa", "a", 2, IgnoreCase -> True]"#).unwrap(),
+      "{{1, 1}, {2, 2}}"
+    );
+  }
+
+  // IgnoreCase -> False keeps the default case-sensitive behaviour.
+  #[test]
+  fn string_position_ignore_case_false() {
+    assert_eq!(
+      interpret(r#"StringPosition["aAa", "a", IgnoreCase -> False]"#).unwrap(),
+      "{{1, 1}, {3, 3}}"
+    );
+  }
 }
 
 mod string_patterns {

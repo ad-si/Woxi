@@ -911,7 +911,7 @@ JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1.0,919
 NestWhileList,Returns intermediate results from NestWhile,✅,pure,4.0,920
 MaxCellMeasure,,🚫,,10.0,921
 RuntimeOptions,,🚫,,8.0,922
-StringPosition,Finds all positions of a substring or pattern (overlapping by default; Overlaps option),✅,pure,2.0,923
+StringPosition,Finds all positions of a substring or pattern (overlapping by default; Overlaps and IgnoreCase options),✅,pure,2.0,923
 Roots,Finds roots of polynomial equations as Or conditions,✅,pure,1.0,924
 InputNotebook,Requires external services or GUI infrastructure,🚫,io,3.0,926
 ListAnimate,,🚫,,6.0,926
