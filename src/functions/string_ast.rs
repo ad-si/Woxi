@@ -5414,6 +5414,54 @@ pub fn lower_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── PrintableASCIIQ ───────────────────────────────────────────────
+
+/// PrintableASCIIQ[string] - True if every character is printable ASCII
+/// (character codes 32 through 126 inclusive; the empty string is True).
+/// Threads over a flat list of strings, returning a list of booleans.
+/// A non-string argument — or a list that is not entirely strings — emits
+/// the `::strse` message and stays unevaluated.
+pub fn printable_ascii_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "PrintableASCIIQ".to_string(),
+    args: args.to_vec().into(),
+  };
+  let strse = || {
+    crate::emit_message(&format!(
+      "PrintableASCIIQ::strse: A string or list of strings is expected at position 1 in {}.",
+      crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
+    ));
+  };
+  let bool_expr = |b: bool| {
+    Expr::Identifier(if b { "True" } else { "False" }.to_string())
+  };
+  let is_printable =
+    |s: &str| s.chars().all(|c| (32..=126).contains(&(c as u32)));
+
+  match &args[0] {
+    Expr::String(s) => Ok(bool_expr(is_printable(s))),
+    Expr::List(items) => {
+      if items.iter().all(|e| matches!(e, Expr::String(_))) {
+        let results: Vec<Expr> = items
+          .iter()
+          .map(|e| match e {
+            Expr::String(s) => bool_expr(is_printable(s)),
+            _ => unreachable!(),
+          })
+          .collect();
+        Ok(Expr::List(results.into()))
+      } else {
+        strse();
+        Ok(unevaluated())
+      }
+    }
+    _ => {
+      strse();
+      Ok(unevaluated())
+    }
+  }
+}
+
 // ─── StringInsert ──────────────────────────────────────────────────
 
 /// StringInsert[string, snew, n] - inserts snew at position n in string

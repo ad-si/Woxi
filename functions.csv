@@ -3638,7 +3638,7 @@ MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 MomentEvaluate,,,,8.0,3737
 NHoldFirst,,,,3.0,3737
 NumberMultiplier,,,,3.0,3737
-PrintableASCIIQ,,,,10.1,3737
+PrintableASCIIQ,Tests whether a string consists only of printable ASCII characters,✅,pure,10.1,3737
 StateOutputEstimator,,,,8.0,3737
 SurvivalDistribution,,,,8.0,3737
 SuzukiDistribution,,,,8.0,3737

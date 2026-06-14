@@ -810,6 +810,73 @@ mod lower_case_q {
   }
 }
 
+mod printable_ascii_q {
+  use super::*;
+
+  #[test]
+  fn printable_strings() {
+    assert_eq!(
+      interpret("PrintableASCIIQ[\"Hello World 123!\"]").unwrap(),
+      "True"
+    );
+    // The empty string and a single space are printable.
+    assert_eq!(interpret("PrintableASCIIQ[\"\"]").unwrap(), "True");
+    assert_eq!(interpret("PrintableASCIIQ[\" \"]").unwrap(), "True");
+    // The full printable range, codes 32..126.
+    assert_eq!(
+      interpret("PrintableASCIIQ[FromCharacterCode[Range[32, 126]]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_printable_strings() {
+    // Non-ASCII letters.
+    assert_eq!(interpret("PrintableASCIIQ[\"héllo\"]").unwrap(), "False");
+    // Control characters (tab, newline, DEL, and code 31) are not printable.
+    assert_eq!(interpret("PrintableASCIIQ[\"a\tb\"]").unwrap(), "False");
+    assert_eq!(interpret("PrintableASCIIQ[\"a\nb\"]").unwrap(), "False");
+    assert_eq!(
+      interpret("PrintableASCIIQ[FromCharacterCode[127]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PrintableASCIIQ[FromCharacterCode[31]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn threads_over_list_of_strings() {
+    assert_eq!(
+      interpret("PrintableASCIIQ[{\"abc\", \"déf\"}]").unwrap(),
+      "{True, False}"
+    );
+    assert_eq!(interpret("PrintableASCIIQ[{}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn non_string_stays_unevaluated() {
+    // Non-strings, or lists that are not entirely strings, stay unevaluated.
+    assert_eq!(
+      interpret("PrintableASCIIQ[123]").unwrap(),
+      "PrintableASCIIQ[123]"
+    );
+    assert_eq!(
+      interpret("PrintableASCIIQ[x]").unwrap(),
+      "PrintableASCIIQ[x]"
+    );
+    assert_eq!(
+      interpret("PrintableASCIIQ[{\"abc\", 5}]").unwrap(),
+      "PrintableASCIIQ[{abc, 5}]"
+    );
+    assert_eq!(
+      interpret("PrintableASCIIQ[{{\"ab\"}, \"cd\"}]").unwrap(),
+      "PrintableASCIIQ[{{ab}, cd}]"
+    );
+  }
+}
+
 mod digit_q {
   use super::*;
 

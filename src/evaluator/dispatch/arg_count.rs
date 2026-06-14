@@ -682,6 +682,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Longitude" => Some((1, 1)),
     "Lookup" => Some((2, usize::MAX)),
     "LowerCaseQ" => Some((1, 1)),
+    "PrintableASCIIQ" => Some((1, 1)),
     "LowerTriangularize" => Some((1, 2)),
     "LowerTriangularMatrixQ" => Some((1, 1)),
     "LowpassFilter" => Some((2, 4)),

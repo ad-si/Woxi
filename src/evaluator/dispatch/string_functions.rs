@@ -214,6 +214,9 @@ pub fn dispatch_string_functions(
     "LowerCaseQ" if args.len() == 1 => {
       return Some(crate::functions::string_ast::lower_case_q_ast(args));
     }
+    "PrintableASCIIQ" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::printable_ascii_q_ast(args));
+    }
     "DigitQ" if args.len() == 1 => {
       return Some(crate::functions::string_ast::digit_q_ast(args));
     }
