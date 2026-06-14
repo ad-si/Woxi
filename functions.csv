@@ -4139,7 +4139,7 @@ ObservabilityGramian,,,,8.0,4262
 OperatorApplied,Builds an operator that applies a function to arguments supplied one at a time,✅,pure,12.1,4262
 OrderingBy,Gives the positions that order a list by a function applied to each element,✅,pure,12.0,4262
 PoissonWindow,,,,9.0,4262
-QuartileSkewness,,,,6.0,4262
+QuartileSkewness,Bowley (quartile) skewness coefficient of a list,✅,pure,6.0,4262
 SequencePredict,,🚫,,11.1,4262
 SnDispersion,,,,11.1,4262
 SokalSneathDissimilarity,Sokal-Sneath dissimilarity between binary vectors,✅,pure,6.0,4262

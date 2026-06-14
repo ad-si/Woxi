@@ -187,9 +187,15 @@ pub fn dispatch_math_functions(
                   num, pos_den,
                 ));
               } else {
-                results.push(crate::functions::math_ast::num_to_expr(
-                  (w_lo as f64 * lo_v + w_hi as f64 * hi_v) / pos_den as f64,
-                ));
+                let v =
+                  (w_lo as f64 * lo_v + w_hi as f64 * hi_v) / pos_den as f64;
+                // Machine-real inputs stay real even when the interpolated
+                // value is integral (e.g. 5.0 must print as `5.`, not `5`).
+                if any_real {
+                  results.push(Expr::Real(v));
+                } else {
+                  results.push(crate::functions::math_ast::num_to_expr(v));
+                }
               }
             } else {
               // Symbolic fallback
@@ -267,6 +273,41 @@ pub fn dispatch_math_functions(
           right: Box::new(Expr::Integer(2)),
         };
         return Some(crate::evaluator::evaluate_expr_to_expr(&half_iqr));
+      }
+    }
+    // QuartileSkewness = (Q1 - 2 Q2 + Q3) / (Q3 - Q1), the Bowley skewness.
+    // Reduces to Indeterminate (0/0) when all three quartiles coincide.
+    "QuartileSkewness" if args.len() == 1 => {
+      if let Some(Ok(Expr::List(ref qs))) =
+        dispatch_math_functions("Quartiles", args)
+        && qs.len() == 3
+      {
+        use crate::syntax::BinaryOperator::{Divide, Minus, Plus, Times};
+        // numerator = Q1 - 2*Q2 + Q3
+        let numerator = Expr::BinaryOp {
+          op: Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: Minus,
+            left: Box::new(qs[0].clone()),
+            right: Box::new(Expr::BinaryOp {
+              op: Times,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(qs[1].clone()),
+            }),
+          }),
+          right: Box::new(qs[2].clone()),
+        };
+        let denominator = Expr::BinaryOp {
+          op: Minus,
+          left: Box::new(qs[2].clone()),
+          right: Box::new(qs[0].clone()),
+        };
+        let skew = Expr::BinaryOp {
+          op: Divide,
+          left: Box::new(numerator),
+          right: Box::new(denominator),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&skew));
       }
     }
     "Abs" if args.len() == 1 => {

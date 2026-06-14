@@ -570,6 +570,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "InterpolatingPolynomial" => Some((2, 2)),
     "InterquartileRange" => Some((1, 1)),
     "QuartileDeviation" => Some((1, 1)),
+    "QuartileSkewness" => Some((1, 1)),
     "IntersectingQ" => Some((2, 2)),
     "Inverse" => Some((1, 1)),
     "InverseChiSquareDistribution" => Some((1, 1)),

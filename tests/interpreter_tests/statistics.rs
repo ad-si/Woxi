@@ -239,6 +239,44 @@ mod quartile_deviation {
   }
 }
 
+mod quartile_skewness {
+  use super::*;
+
+  #[test]
+  fn bowley_skewness() {
+    // (Q1 - 2 Q2 + Q3) / (Q3 - Q1).
+    assert_eq!(
+      interpret("QuartileSkewness[{1, 2, 3, 4, 5, 6, 7, 8}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("QuartileSkewness[{1, 1, 1, 2, 10}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("QuartileSkewness[{2, 4, 4, 4, 5, 5, 7, 9}]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn reals() {
+    assert_eq!(
+      interpret("QuartileSkewness[{1.0, 2.0, 3.0, 4.0, 8.0}]").unwrap(),
+      "0.23076923076923078"
+    );
+  }
+
+  #[test]
+  fn coincident_quartiles_are_indeterminate() {
+    // Q3 == Q1 gives 0/0 -> Indeterminate.
+    assert_eq!(
+      interpret("QuartileSkewness[{5, 5, 5, 5}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}
+
 mod quartiles_edge_cases {
   use super::*;
 
@@ -262,6 +300,12 @@ mod quartiles_edge_cases {
     assert_eq!(
       interpret("InterquartileRange[{1.0, 2.0, 3.0, 4.0, 5.0}]").unwrap(),
       "2.5"
+    );
+    // An interpolated quartile that lands on an integral value still prints
+    // as a machine real (5., not 5).
+    assert_eq!(
+      interpret("Quartiles[{1.0, 2.0, 3.0, 4.0, 8.0}]").unwrap(),
+      "{1.75, 3., 5.}"
     );
   }
 
