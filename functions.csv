@@ -2974,7 +2974,7 @@ ExponentialPowerDistribution,Generalized normal (exponential power) distribution
 FourierDST,Discrete sine transform of a real list (DST types 1-4; default type 2),✅,pure,6.0,3048
 JulianDate,Julian date of a date list or the current instant,✅,impure,10.2,3048
 ListSliceDensityPlot3D,,🚫,,10.2,3048
-LongestCommonSubsequence,Returns the longest common subsequence of two lists,✅,pure,7.0,3048
+LongestCommonSubsequence,Returns the longest contiguous subsequence common to two strings or lists,✅,pure,7.0,3048
 NotebookDynamicExpression,,🚫,,8.0,3048
 RangeFilter,,🚫,,8.0,3048
 SectorChart3D,,🚫,,7.0,3048

@@ -4293,6 +4293,36 @@ mod longest_common_subsequence_tests {
       "bc"
     );
   }
+
+  // List arguments compare whole elements and return the matching sublist.
+  #[test]
+  fn lists_return_sublist() {
+    assert_eq!(
+      interpret("LongestCommonSubsequence[{1, 2, 3}, {2, 3}]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSubsequence[{1, 2, 3, 4, 1}, {3, 4, 1, 2, 1, 3}]")
+        .unwrap(),
+      "{3, 4, 1}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSubsequence[{a, b, c, d}, {x, b, c, y}]").unwrap(),
+      "{b, c}"
+    );
+  }
+
+  #[test]
+  fn lists_identical_and_disjoint() {
+    assert_eq!(
+      interpret("LongestCommonSubsequence[{1, 2, 3}, {1, 2, 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("LongestCommonSubsequence[{1, 2}, {3, 4}]").unwrap(),
+      "{}"
+    );
+  }
 }
 
 mod string_count_patterns {

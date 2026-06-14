@@ -5989,30 +5989,17 @@ pub fn damerau_levenshtein_distance_ast(
   Ok(Expr::Integer(dp[n][m] as i128))
 }
 
-/// LongestCommonSubsequence[s1, s2] - longest common (non-contiguous) subsequence
-pub fn longest_common_subsequence_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "LongestCommonSubsequence expects exactly 2 arguments".into(),
-    ));
-  }
-  let s1 = expr_to_str(&args[0])?;
-  let s2 = expr_to_str(&args[1])?;
-  let chars1: Vec<char> = s1.chars().collect();
-  let chars2: Vec<char> = s2.chars().collect();
-  let n = chars1.len();
-  let m = chars2.len();
-
-  // DP table for longest common substring (contiguous)
-  // Wolfram's LongestCommonSubsequence finds the longest contiguous match
+/// The (start index in `a`, length) of the longest contiguous run of tokens
+/// common to `a` and `b`. Returns (0, 0) when there is no common token.
+fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize) {
+  let n = a.len();
+  let m = b.len();
   let mut dp = vec![vec![0usize; m + 1]; n + 1];
   let mut max_len = 0usize;
-  let mut end_i = 0usize; // end position in chars1
+  let mut end_i = 0usize; // end position in `a`
   for i in 1..=n {
     for j in 1..=m {
-      if chars1[i - 1] == chars2[j - 1] {
+      if a[i - 1] == b[j - 1] {
         dp[i][j] = dp[i - 1][j - 1] + 1;
         if dp[i][j] > max_len {
           max_len = dp[i][j];
@@ -6021,8 +6008,38 @@ pub fn longest_common_subsequence_ast(
       }
     }
   }
+  (end_i - max_len, max_len)
+}
 
-  let result: String = chars1[end_i - max_len..end_i].iter().collect();
+/// LongestCommonSubsequence[s1, s2] — Wolfram's LongestCommonSubsequence
+/// returns the longest *contiguous* match. Strings yield the matching
+/// substring; lists yield the matching sublist of elements.
+pub fn longest_common_subsequence_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LongestCommonSubsequence expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // List inputs compare whole elements and return the matching sublist.
+  if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
+    let t1: Vec<String> = l1.iter().map(crate::syntax::expr_to_output).collect();
+    let t2: Vec<String> = l2.iter().map(crate::syntax::expr_to_output).collect();
+    let (start, len) = longest_common_run(&t1, &t2);
+    let sub: Vec<Expr> = l1[start..start + len].to_vec();
+    return Ok(Expr::List(sub.into()));
+  }
+
+  let s1 = expr_to_str(&args[0])?;
+  let s2 = expr_to_str(&args[1])?;
+  let chars1: Vec<char> = s1.chars().collect();
+  let chars2: Vec<char> = s2.chars().collect();
+  let t1: Vec<String> = chars1.iter().map(|c| c.to_string()).collect();
+  let t2: Vec<String> = chars2.iter().map(|c| c.to_string()).collect();
+  let (start, len) = longest_common_run(&t1, &t2);
+  let result: String = chars1[start..start + len].iter().collect();
   Ok(Expr::String(result))
 }
 
