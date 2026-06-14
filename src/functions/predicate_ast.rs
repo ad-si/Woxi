@@ -276,10 +276,11 @@ impl QuadNum {
     if self.d != o.d {
       return None;
     }
-    let cross =
-      qi_add(qi_mul(self.a, o.b), qi_mul(self.b, o.a));
-    let rat =
-      qi_add(qi_mul(self.a, o.a), qi_mul(qi_mul(self.b, o.b), (self.d, 1)));
+    let cross = qi_add(qi_mul(self.a, o.b), qi_mul(self.b, o.a));
+    let rat = qi_add(
+      qi_mul(self.a, o.a),
+      qi_mul(qi_mul(self.b, o.b), (self.d, 1)),
+    );
     Some(QuadNum {
       a: rat,
       b: cross,
@@ -290,8 +291,10 @@ impl QuadNum {
   fn inv(self) -> Option<QuadNum> {
     let denom = qi_add(
       qi_mul(self.a, self.a),
-      (-qi_mul(qi_mul(self.b, self.b), (self.d, 1)).0,
-       qi_mul(qi_mul(self.b, self.b), (self.d, 1)).1),
+      (
+        -qi_mul(qi_mul(self.b, self.b), (self.d, 1)).0,
+        qi_mul(qi_mul(self.b, self.b), (self.d, 1)).1,
+      ),
     );
     if denom.0 == 0 {
       return None;

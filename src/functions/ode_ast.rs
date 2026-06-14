@@ -2270,9 +2270,7 @@ fn interpolating_function_property(
       xs.last().unwrap().clone(),
     ])])),
     // Each grid coordinate wrapped in a one-element list.
-    "Grid" => Some(list1(
-      xs.into_iter().map(|x| list1(vec![x])).collect(),
-    )),
+    "Grid" => Some(list1(xs.into_iter().map(|x| list1(vec![x])).collect())),
     // The grid coordinates of each dimension (here, one dimension).
     "Coordinates" => Some(list1(vec![list1(xs)])),
     // The sampled values at the grid points.
@@ -2391,7 +2389,8 @@ pub fn evaluate_interpolating_function(
     // boundary conditions distort the fit (e.g. x^2 data would not yield
     // exact values).
     let eff_order = order.min(n - 1);
-    let y_val = lagrange_interpolate(data_points, x_clamped, n, idx, eff_order)?;
+    let y_val =
+      lagrange_interpolate(data_points, x_clamped, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
 }

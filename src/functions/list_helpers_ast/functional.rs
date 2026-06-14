@@ -1175,7 +1175,8 @@ pub fn array_reduce_ast(
       return unevaluated();
     }
   }
-  let mut level_set: Vec<usize> = raw_levels.iter().map(|&l| l as usize).collect();
+  let mut level_set: Vec<usize> =
+    raw_levels.iter().map(|&l| l as usize).collect();
   level_set.sort_unstable();
   level_set.dedup();
 

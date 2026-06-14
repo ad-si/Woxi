@@ -1283,13 +1283,13 @@ pub fn insert_ast(
     };
     let len = pairs.len() as i128;
     let idx: Option<usize> = match pos {
-      Expr::Integer(_) | Expr::BigInteger(_) => expr_to_i128(pos).and_then(|n| {
-        let i = if n >= 0 { n - 1 } else { len + n + 1 };
-        (0..=len).contains(&i).then_some(i as usize)
-      }),
-      Expr::FunctionCall { name, args }
-        if name == "Key" && args.len() == 1 =>
-      {
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        expr_to_i128(pos).and_then(|n| {
+          let i = if n >= 0 { n - 1 } else { len + n + 1 };
+          (0..=len).contains(&i).then_some(i as usize)
+        })
+      }
+      Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
         let ks = crate::syntax::expr_to_string(&args[0]);
         pairs
           .iter()

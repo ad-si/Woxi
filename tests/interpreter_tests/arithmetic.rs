@@ -5410,10 +5410,7 @@ mod mod_exact_symbolic {
   #[test]
   fn machine_real_stays_numeric() {
     assert_eq!(interpret("Mod[10.5, 3]").unwrap(), "1.5");
-    assert_eq!(
-      interpret("Mod[Pi, 2.0]").unwrap(),
-      "1.1415926535897931"
-    );
+    assert_eq!(interpret("Mod[Pi, 2.0]").unwrap(), "1.1415926535897931");
   }
 
   // Purely symbolic (non-numeric) arguments stay unevaluated.

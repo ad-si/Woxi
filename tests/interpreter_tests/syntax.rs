@@ -3626,7 +3626,10 @@ mod percent_form {
   fn fractional_percentages_keep_digits() {
     assert_eq!(interpret("PercentForm[0.123]").unwrap(), "12.3%");
     assert_eq!(interpret("PercentForm[0.999]").unwrap(), "99.9%");
-    assert_eq!(interpret("PercentForm[N[1/3]]").unwrap(), "33.33333333333333%");
+    assert_eq!(
+      interpret("PercentForm[N[1/3]]").unwrap(),
+      "33.33333333333333%"
+    );
     assert_eq!(
       interpret("PercentForm[0.1 + 0.2]").unwrap(),
       "30.000000000000004%"

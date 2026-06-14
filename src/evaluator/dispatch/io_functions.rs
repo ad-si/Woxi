@@ -612,10 +612,10 @@ pub fn dispatch_io_functions(
           &args[0], '\t', false, false,
         ))));
       }
-      if format_str == "JSON" || format_str == "RawJSON" {
-        if let Some(json) = export_string_json(&args[0], 0) {
-          return Some(Ok(Expr::String(json)));
-        }
+      if (format_str == "JSON" || format_str == "RawJSON")
+        && let Some(json) = export_string_json(&args[0], 0)
+      {
+        return Some(Ok(Expr::String(json)));
       }
       // Return unevaluated for unsupported formats
       return Some(Ok(Expr::FunctionCall {
@@ -2731,11 +2731,7 @@ fn export_string_json(expr: &Expr, indent: usize) -> Option<String> {
       let inner = "\t".repeat(indent + 1);
       let mut parts = Vec::with_capacity(items.len());
       for it in items.iter() {
-        parts.push(format!(
-          "{}{}",
-          inner,
-          export_string_json(it, indent + 1)?
-        ));
+        parts.push(format!("{}{}", inner, export_string_json(it, indent + 1)?));
       }
       Some(format!(
         "[\n{}\n{}]",

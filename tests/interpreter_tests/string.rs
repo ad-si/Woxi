@@ -533,8 +533,10 @@ mod string_replace {
   #[test]
   fn ignore_case_multichar_literal() {
     assert_eq!(
-      interpret(r#"StringReplace["ABC abc", "abc" -> "X", IgnoreCase -> True]"#)
-        .unwrap(),
+      interpret(
+        r#"StringReplace["ABC abc", "abc" -> "X", IgnoreCase -> True]"#
+      )
+      .unwrap(),
       "X X"
     );
   }
@@ -1424,7 +1426,8 @@ mod ignore_case {
   #[test]
   fn string_position_ignore_case_with_limit() {
     assert_eq!(
-      interpret(r#"StringPosition["aAa", "a", 2, IgnoreCase -> True]"#).unwrap(),
+      interpret(r#"StringPosition["aAa", "a", 2, IgnoreCase -> True]"#)
+        .unwrap(),
       "{{1, 1}, {2, 2}}"
     );
   }

@@ -126,10 +126,9 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     }
 
     // Factorial[n] (i.e. n!) → Gamma[1 + n]
-    "Factorial" if args.len() == 1 => Some(mk_call(
-      "Gamma",
-      vec![mk_plus(mk_int(1), args[0].clone())],
-    )),
+    "Factorial" if args.len() == 1 => {
+      Some(mk_call("Gamma", vec![mk_plus(mk_int(1), args[0].clone())]))
+    }
 
     // Binomial[n, k]: a specific integer k expands to a polynomial; an
     // otherwise symbolic k expands to the Gamma-function form
@@ -148,11 +147,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
               "Gamma",
               vec![mk_call(
                 "Plus",
-                vec![
-                  mk_int(1),
-                  mk_times(mk_int(-1), k.clone()),
-                  n.clone(),
-                ],
+                vec![mk_int(1), mk_times(mk_int(-1), k.clone()), n.clone()],
               )],
             ),
           ),
@@ -179,10 +174,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     "Subfactorial" if args.len() == 1 => {
       let n = &args[0];
       Some(mk_div(
-        mk_call(
-          "Gamma",
-          vec![mk_plus(mk_int(1), n.clone()), mk_int(-1)],
-        ),
+        mk_call("Gamma", vec![mk_plus(mk_int(1), n.clone()), mk_int(-1)]),
         mk_id("E"),
       ))
     }

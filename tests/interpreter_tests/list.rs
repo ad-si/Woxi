@@ -4666,8 +4666,10 @@ mod take_largest_by {
   #[test]
   fn take_largest_by_association_with_function() {
     assert_eq!(
-      interpret("TakeLargestBy[<|\"x\" -> 5, \"y\" -> 2, \"z\" -> 8|>, Abs, 2]")
-        .unwrap(),
+      interpret(
+        "TakeLargestBy[<|\"x\" -> 5, \"y\" -> 2, \"z\" -> 8|>, Abs, 2]"
+      )
+      .unwrap(),
       "<|z -> 8, x -> 5|>"
     );
   }
@@ -7268,16 +7270,10 @@ mod nearest_to {
   #[test]
   fn operator_form_finds_nearest() {
     // NearestTo[x][data] == Nearest[data, x].
-    assert_eq!(
-      interpret("NearestTo[3.2][{1, 2, 3, 4, 5}]").unwrap(),
-      "{3}"
-    );
+    assert_eq!(interpret("NearestTo[3.2][{1, 2, 3, 4, 5}]").unwrap(), "{3}");
     assert_eq!(interpret("NearestTo[3][{1, 5, 8}]").unwrap(), "{1, 5}");
     // Ties return both nearest elements.
-    assert_eq!(
-      interpret("NearestTo[2.5][{1, 2, 3, 4}]").unwrap(),
-      "{2, 3}"
-    );
+    assert_eq!(interpret("NearestTo[2.5][{1, 2, 3, 4}]").unwrap(), "{2, 3}");
   }
 
   #[test]
@@ -7292,10 +7288,7 @@ mod nearest_to {
   #[test]
   fn bare_operator_stays_symbolic() {
     assert_eq!(interpret("NearestTo[3.2]").unwrap(), "NearestTo[3.2]");
-    assert_eq!(
-      interpret("NearestTo[3.2, 2]").unwrap(),
-      "NearestTo[3.2, 2]"
-    );
+    assert_eq!(interpret("NearestTo[3.2, 2]").unwrap(), "NearestTo[3.2, 2]");
   }
 
   #[test]

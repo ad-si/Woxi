@@ -3147,8 +3147,10 @@ mod batch_unevaluated_wrappers_2 {
       "2"
     );
     assert_eq!(
-      interpret("CountDistinctBy[{\"a\", \"bb\", \"cc\", \"d\"}, StringLength]")
-        .unwrap(),
+      interpret(
+        "CountDistinctBy[{\"a\", \"bb\", \"cc\", \"d\"}, StringLength]"
+      )
+      .unwrap(),
       "2"
     );
     assert_eq!(interpret("CountDistinctBy[{}, Abs]").unwrap(), "0");

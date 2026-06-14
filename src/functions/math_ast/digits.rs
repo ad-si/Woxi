@@ -3251,10 +3251,7 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let taken: Vec<Expr> = unit_exprs[unit_exprs.len() - k..].to_vec();
   crate::evaluator::evaluate_function_call_ast(
     "Dot",
-    &[
-      Expr::List(coeff_exprs.clone()),
-      Expr::List(taken.into()),
-    ],
+    &[Expr::List(coeff_exprs.clone()), Expr::List(taken.into())],
   )
 }
 

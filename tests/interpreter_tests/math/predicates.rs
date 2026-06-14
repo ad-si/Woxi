@@ -1981,7 +1981,10 @@ mod quadratic_irrational_q {
   #[test]
   fn perfect_square_surd_is_false() {
     assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[4]]").unwrap(), "False");
-    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[9/4]]").unwrap(), "False");
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[9/4]]").unwrap(),
+      "False"
+    );
   }
 
   // Plain rationals and integers are not quadratic irrationals.
@@ -1994,9 +1997,18 @@ mod quadratic_irrational_q {
   // a + b*sqrt(d) forms with non-zero rational a, b remain quadratic.
   #[test]
   fn affine_combinations_are_true() {
-    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2] + 1]").unwrap(), "True");
-    assert_eq!(interpret("QuadraticIrrationalQ[3 Sqrt[2]]").unwrap(), "True");
-    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2]/3]").unwrap(), "True");
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[2] + 1]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[3 Sqrt[2]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[2]/3]").unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("QuadraticIrrationalQ[(2 + 3 Sqrt[7])/5]").unwrap(),
       "True"
@@ -2025,7 +2037,10 @@ mod quadratic_irrational_q {
       "True"
     );
     assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[8]]").unwrap(), "True");
-    assert_eq!(interpret("QuadraticIrrationalQ[1/Sqrt[2]]").unwrap(), "True");
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[1/Sqrt[2]]").unwrap(),
+      "True"
+    );
   }
 
   // Sums of surds from different fields have degree 4, not 2.
@@ -2045,7 +2060,10 @@ mod quadratic_irrational_q {
     assert_eq!(interpret("QuadraticIrrationalQ[2^(1/3)]").unwrap(), "False");
     assert_eq!(interpret("QuadraticIrrationalQ[1.5]").unwrap(), "False");
     assert_eq!(interpret("QuadraticIrrationalQ[x]").unwrap(), "False");
-    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[-2]]").unwrap(), "False");
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[-2]]").unwrap(),
+      "False"
+    );
   }
 
   // Expressions that simplify to a rational before the test are False.
@@ -2055,6 +2073,9 @@ mod quadratic_irrational_q {
       interpret("QuadraticIrrationalQ[Sqrt[3] - Sqrt[3]]").unwrap(),
       "False"
     );
-    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2]^2]").unwrap(), "False");
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[2]^2]").unwrap(),
+      "False"
+    );
   }
 }

@@ -2049,7 +2049,10 @@ mod curry {
   fn curry_n_overshoot_leftover_applies_to_result() {
     // Collecting more than n in one application leaves the surplus to apply
     // to the produced result.
-    assert_eq!(interpret("Curry[f, 3][a, b][c, d]").unwrap(), "f[a, b, c][d]");
+    assert_eq!(
+      interpret("Curry[f, 3][a, b][c, d]").unwrap(),
+      "f[a, b, c][d]"
+    );
     assert_eq!(
       interpret("Curry[f, 2][a][b][c][d]").unwrap(),
       "f[a, b][c][d]"

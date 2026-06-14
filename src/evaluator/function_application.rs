@@ -907,9 +907,7 @@ pub fn apply_curried_call(
       }
       // NearestTo[x][data] -> Nearest[data, x];
       // NearestTo[x, n][data] -> Nearest[data, x, n].
-      if name == "NearestTo"
-        && (func_args.len() == 1 || func_args.len() == 2)
-      {
+      if name == "NearestTo" && (func_args.len() == 1 || func_args.len() == 2) {
         let mut new_args = args.to_vec();
         new_args.extend(func_args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);

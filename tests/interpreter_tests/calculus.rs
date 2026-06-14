@@ -4751,8 +4751,10 @@ mod interpolation {
   #[test]
   fn property_explicit_pairs() {
     assert_eq!(
-      interpret(r#"Interpolation[{{0, 0}, {2, 4}, {4, 16}, {6, 36}}]["Domain"]"#)
-        .unwrap(),
+      interpret(
+        r#"Interpolation[{{0, 0}, {2, 4}, {4, 16}, {6, 36}}]["Domain"]"#
+      )
+      .unwrap(),
       "{{0, 6}}"
     );
     assert_eq!(
@@ -4804,7 +4806,10 @@ mod interpolation {
   fn cubic_reproduces_quadratic_exactly() {
     // {1,4,9,16} is x^2 at x=1..4; cubic through 4 points → exact 2.5^2.
     assert_eq!(interpret("Interpolation[{1,4,9,16}][2.5]").unwrap(), "6.25");
-    assert_eq!(interpret("Interpolation[{1,4,9,16}][3.5]").unwrap(), "12.25");
+    assert_eq!(
+      interpret("Interpolation[{1,4,9,16}][3.5]").unwrap(),
+      "12.25"
+    );
     // Five-point x^2 data still exact under the local cubic stencil.
     assert_eq!(
       interpret("Interpolation[{1,4,9,16,25}][2.5]").unwrap(),

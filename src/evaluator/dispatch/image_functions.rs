@@ -88,17 +88,15 @@ fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
       }
     }
     Value::String(s) => Expr::String(s.clone()),
-    Value::Array(items) => Expr::List(
-      items.iter().map(|v| json_value_to_expr(v, raw)).collect(),
-    ),
+    Value::Array(items) => {
+      Expr::List(items.iter().map(|v| json_value_to_expr(v, raw)).collect())
+    }
     Value::Object(map) => {
       if raw {
         Expr::Association(
           map
             .iter()
-            .map(|(k, v)| {
-              (Expr::String(k.clone()), json_value_to_expr(v, raw))
-            })
+            .map(|(k, v)| (Expr::String(k.clone()), json_value_to_expr(v, raw)))
             .collect(),
         )
       } else {
@@ -704,12 +702,12 @@ pub fn dispatch_image_functions(
       // the corresponding atoms. Invalid JSON yields $Failed.
       if format == "JSON" || format == "RawJSON" {
         let raw = format == "RawJSON";
-        return Some(Ok(match serde_json::from_str::<serde_json::Value>(
-          &content,
-        ) {
-          Ok(value) => json_value_to_expr(&value, raw),
-          Err(_) => Expr::Identifier("$Failed".to_string()),
-        }));
+        return Some(Ok(
+          match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(value) => json_value_to_expr(&value, raw),
+            Err(_) => Expr::Identifier("$Failed".to_string()),
+          },
+        ));
       }
       // `TSV` is tab-separated; `Table` splits each line on runs of
       // whitespace. Both reuse the CSV element machinery (number auto-typing,

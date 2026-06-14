@@ -164,8 +164,10 @@ mod permanent {
       "450"
     );
     assert_eq!(
-      interpret("Permanent[{{1, 1, 1, 1}, {2, 2, 2, 2}, {3, 3, 3, 3}, {4, 4, 4, 4}}]")
-        .unwrap(),
+      interpret(
+        "Permanent[{{1, 1, 1, 1}, {2, 2, 2, 2}, {3, 3, 3, 3}, {4, 4, 4, 4}}]"
+      )
+      .unwrap(),
       "576"
     );
     assert_eq!(interpret("Permanent[{{5}}]").unwrap(), "5");

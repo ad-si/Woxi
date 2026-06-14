@@ -1040,7 +1040,8 @@ pub fn key_intersection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter(|k| {
       let ks = crate::syntax::expr_to_string(k);
       all_assocs[1..].iter().all(|a| {
-        a.iter().any(|(k2, _)| crate::syntax::expr_to_string(k2) == ks)
+        a.iter()
+          .any(|(k2, _)| crate::syntax::expr_to_string(k2) == ks)
       })
     })
     .collect();
@@ -1091,9 +1092,7 @@ pub fn key_complement_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let items: Vec<(Expr, Expr)> = all_assocs[0]
     .iter()
-    .filter(|(k, _)| {
-      !other_keys.contains(&crate::syntax::expr_to_string(k))
-    })
+    .filter(|(k, _)| !other_keys.contains(&crate::syntax::expr_to_string(k)))
     .cloned()
     .collect();
 

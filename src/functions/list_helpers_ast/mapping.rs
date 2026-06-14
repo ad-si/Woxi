@@ -363,9 +363,7 @@ fn map_with_heads(func: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
 /// (they are handled positionally).
 fn extract_assoc_key(spec: &Expr) -> Option<&Expr> {
   match spec {
-    Expr::FunctionCall { name, args }
-      if name == "Key" && args.len() == 1 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
       Some(&args[0])
     }
     Expr::String(_) | Expr::Identifier(_) => Some(spec),

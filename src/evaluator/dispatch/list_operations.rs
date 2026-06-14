@@ -5661,17 +5661,13 @@ fn list_correlate_overhang(
       };
       (p, p)
     }
-    Expr::List(items) if items.len() == 2 => {
-      match (&items[0], &items[1]) {
-        (Expr::Integer(a), Expr::Integer(b)) => {
-          match (norm(*a), norm(*b)) {
-            (Some(a), Some(b)) => (a, b),
-            _ => return unevaluated(),
-          }
-        }
+    Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+      (Expr::Integer(a), Expr::Integer(b)) => match (norm(*a), norm(*b)) {
+        (Some(a), Some(b)) => (a, b),
         _ => return unevaluated(),
-      }
-    }
+      },
+      _ => return unevaluated(),
+    },
     _ => return unevaluated(),
   };
   // A list-valued padding (cyclic padding from a list) is not supported.

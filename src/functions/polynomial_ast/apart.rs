@@ -223,13 +223,9 @@ pub fn apart_proper_fraction(
     } else {
       1
     };
-    if let Some(result) = apart_repeated_roots(
-      &num_coeffs,
-      &roots,
-      rem_const,
-      overall_factor,
-      var,
-    ) {
+    if let Some(result) =
+      apart_repeated_roots(&num_coeffs, &roots, rem_const, overall_factor, var)
+    {
       return Ok(result);
     }
     return Ok(expr.clone());

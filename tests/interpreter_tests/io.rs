@@ -1360,7 +1360,10 @@ mod export_string {
     assert_eq!(interpret("ExportString[5, \"JSON\"]").unwrap(), "5");
     assert_eq!(interpret("ExportString[3.5, \"JSON\"]").unwrap(), "3.5");
     assert_eq!(interpret("ExportString[3.0, \"JSON\"]").unwrap(), "3.0");
-    assert_eq!(interpret("ExportString[\"hi\", \"JSON\"]").unwrap(), "\"hi\"");
+    assert_eq!(
+      interpret("ExportString[\"hi\", \"JSON\"]").unwrap(),
+      "\"hi\""
+    );
   }
 
   #[test]
@@ -2904,7 +2907,10 @@ mod file_name_take {
       interpret(r#"FileNameTake["/a/b/c.txt", {2, 3}]"#).unwrap(),
       "a/b"
     );
-    assert_eq!(interpret(r#"FileNameTake["a/b/c", {1, 2}]"#).unwrap(), "a/b");
+    assert_eq!(
+      interpret(r#"FileNameTake["a/b/c", {1, 2}]"#).unwrap(),
+      "a/b"
+    );
   }
 }
 

@@ -240,10 +240,7 @@ mod lucas_l_builtin {
   // Large negative index still uses big-integer arithmetic.
   #[test]
   fn lucas_large_negative_index() {
-    assert_eq!(
-      interpret("LucasL[-100]").unwrap(),
-      "792070839848372253127"
-    );
+    assert_eq!(interpret("LucasL[-100]").unwrap(), "792070839848372253127");
   }
 
   #[test]
@@ -3462,7 +3459,10 @@ mod number_compose {
   #[test]
   fn reconstructs_from_coefficients_and_units() {
     assert_case(r#"NumberCompose[{1, 2, 3}, {100, 10, 1}]"#, r#"123"#);
-    assert_case(r#"NumberCompose[{1, 2, 3, 4}, {100, 10, 1, 0.1}]"#, r#"123.4"#);
+    assert_case(
+      r#"NumberCompose[{1, 2, 3, 4}, {100, 10, 1, 0.1}]"#,
+      r#"123.4"#,
+    );
     // Exact rational arithmetic.
     assert_case(r#"NumberCompose[{2, 5, 3}, {12, 1, 1/12}]"#, r#"117/4"#);
     // Equal adjacent units are allowed (nonincreasing).

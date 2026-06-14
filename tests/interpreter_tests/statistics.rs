@@ -138,10 +138,7 @@ mod contraharmonic_mean {
 
   #[test]
   fn default_is_total_of_squares_over_total() {
-    assert_eq!(
-      interpret("ContraharmonicMean[{1, 2, 3, 4}]").unwrap(),
-      "3"
-    );
+    assert_eq!(interpret("ContraharmonicMean[{1, 2, 3, 4}]").unwrap(), "3");
     assert_eq!(interpret("ContraharmonicMean[{2, 4, 6}]").unwrap(), "14/3");
     assert_eq!(interpret("ContraharmonicMean[{5}]").unwrap(), "5");
   }

@@ -1623,7 +1623,9 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         left,
         right,
       } => (left.as_ref(), right.as_ref()),
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         (&args[0], &args[1])
       }
       _ => return None,

@@ -606,7 +606,10 @@ mod im_tests {
     // Unlike RealValuedNumberQ, numeric constants and exact irrationals count.
     assert_eq!(interpret("RealValuedNumericQ[Pi]").unwrap(), "True");
     assert_eq!(interpret("RealValuedNumericQ[E]").unwrap(), "True");
-    assert_eq!(interpret("RealValuedNumericQ[GoldenRatio]").unwrap(), "True");
+    assert_eq!(
+      interpret("RealValuedNumericQ[GoldenRatio]").unwrap(),
+      "True"
+    );
     assert_eq!(interpret("RealValuedNumericQ[Sqrt[2]]").unwrap(), "True");
     assert_eq!(interpret("RealValuedNumericQ[Pi + E]").unwrap(), "True");
   }

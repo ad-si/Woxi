@@ -2377,8 +2377,8 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // from the pattern in case).
   let patt = expr_to_str(&args[1])?;
   if ignore_case && !patt.is_empty() {
-    let re = compile_regex(&format!("(?i){}", regex::escape(&patt)))
-      .map_err(|e| {
+    let re =
+      compile_regex(&format!("(?i){}", regex::escape(&patt))).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "Invalid string pattern: {}",
           e
@@ -5429,31 +5429,28 @@ pub fn printable_ascii_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let strse = || {
     crate::emit_message(&format!(
       "PrintableASCIIQ::strse: A string or list of strings is expected at position 1 in {}.",
-      crate::syntax::format_expr(&unevaluated(), crate::syntax::ExprForm::Output)
+      crate::syntax::format_expr(
+        &unevaluated(),
+        crate::syntax::ExprForm::Output
+      )
     ));
   };
-  let bool_expr = |b: bool| {
-    Expr::Identifier(if b { "True" } else { "False" }.to_string())
-  };
+  let bool_expr =
+    |b: bool| Expr::Identifier(if b { "True" } else { "False" }.to_string());
   let is_printable =
     |s: &str| s.chars().all(|c| (32..=126).contains(&(c as u32)));
 
   match &args[0] {
     Expr::String(s) => Ok(bool_expr(is_printable(s))),
-    Expr::List(items) => {
-      if items.iter().all(|e| matches!(e, Expr::String(_))) {
-        let results: Vec<Expr> = items
-          .iter()
-          .map(|e| match e {
-            Expr::String(s) => bool_expr(is_printable(s)),
-            _ => unreachable!(),
-          })
-          .collect();
-        Ok(Expr::List(results.into()))
-      } else {
-        strse();
-        Ok(unevaluated())
-      }
+    Expr::List(items) if items.iter().all(|e| matches!(e, Expr::String(_))) => {
+      let results: Vec<Expr> = items
+        .iter()
+        .map(|e| match e {
+          Expr::String(s) => bool_expr(is_printable(s)),
+          _ => unreachable!(),
+        })
+        .collect();
+      Ok(Expr::List(results.into()))
     }
     _ => {
       strse();
@@ -5780,10 +5777,7 @@ pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::String(k) => k.clone(),
       _ => crate::syntax::expr_to_string(&args[1]),
     };
-    if !matches!(
-      kind.as_str(),
-      "AllWords" | "FirstWord" | "LongWords"
-    ) {
+    if !matches!(kind.as_str(), "AllWords" | "FirstWord" | "LongWords") {
       // "TitleCase" depends on part-of-speech data we do not model; any
       // other value is invalid (Capitalize::nform). Leave unevaluated.
       if kind != "TitleCase" {

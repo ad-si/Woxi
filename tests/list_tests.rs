@@ -159,10 +159,7 @@ mod list_tests {
     // Apply replaces the head with `func` regardless of what `func` is —
     // not only symbols/functions. Regression: Woxi used to error with
     // "Apply: first argument must be a function".
-    assert_eq!(
-      interpret("Apply[{g, h}, {1, 2}]").unwrap(),
-      "{g, h}[1, 2]"
-    );
+    assert_eq!(interpret("Apply[{g, h}, {1, 2}]").unwrap(), "{g, h}[1, 2]");
     assert_eq!(interpret("Apply[3, {1, 2}]").unwrap(), "3[1, 2]");
     assert_eq!(interpret("Apply[f[a], {1, 2}]").unwrap(), "f[a][1, 2]");
     // Applicable compound heads reduce.
@@ -213,10 +210,7 @@ mod list_tests {
       interpret("FindRepeat[{1, 2, 3, 1, 2, 3}, 3]").unwrap(),
       "{}"
     );
-    assert_eq!(
-      interpret("FindRepeat[{1, 2, 3, 4, 5}, 2]").unwrap(),
-      "{}"
-    );
+    assert_eq!(interpret("FindRepeat[{1, 2, 3, 4, 5}, 2]").unwrap(), "{}");
     // Strings.
     assert_eq!(interpret("FindRepeat[\"abcabc\"]").unwrap(), "abc");
     assert_eq!(interpret("FindRepeat[\"abcd\"]").unwrap(), "abcd");
@@ -260,8 +254,7 @@ mod list_tests {
       "{{1, 3}, {2, 4}}"
     );
     assert_eq!(
-      interpret("ArrayReduce[#[[1]] - #[[2]] &, {{1, 2}, {3, 4}}, 1]")
-        .unwrap(),
+      interpret("ArrayReduce[#[[1]] - #[[2]] &, {{1, 2}, {3, 4}}, 1]").unwrap(),
       "{-2, -2}"
     );
     // A 1-D vector.
@@ -271,10 +264,8 @@ mod list_tests {
     );
     // A 3-D array, reducing single and multiple dimensions.
     assert_eq!(
-      interpret(
-        "ArrayReduce[Total, {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 1]"
-      )
-      .unwrap(),
+      interpret("ArrayReduce[Total, {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 1]")
+        .unwrap(),
       "{{6, 8}, {10, 12}}"
     );
     assert_eq!(
@@ -499,7 +490,10 @@ mod list_tests {
       interpret("ReplaceList[{1, 2, 3}, x_ -> x]").unwrap(),
       "{{1, 2, 3}}"
     );
-    assert_eq!(interpret("ReplaceList[f[a, b], x_ -> x]").unwrap(), "{f[a, b]}");
+    assert_eq!(
+      interpret("ReplaceList[f[a, b], x_ -> x]").unwrap(),
+      "{f[a, b]}"
+    );
     // ReplaceList does not descend into subparts (level-0 only).
     assert_eq!(interpret("ReplaceList[{1, 2, 3}, 2 -> x]").unwrap(), "{}");
     // No match at all.
@@ -567,10 +561,7 @@ mod list_tests {
     );
     // Operator form: Comap[funs][x] == Comap[funs, x].
     assert_eq!(interpret("Comap[{f, g}][x]").unwrap(), "{f[x], g[x]}");
-    assert_eq!(
-      interpret("Comap[{Min, Max}][{3, 1, 2}]").unwrap(),
-      "{1, 3}"
-    );
+    assert_eq!(interpret("Comap[{Min, Max}][{3, 1, 2}]").unwrap(), "{1, 3}");
     // Operator form alone stays symbolic until applied.
     assert_eq!(interpret("Comap[{f, g}]").unwrap(), "Comap[{f, g}]");
     // Empty list.

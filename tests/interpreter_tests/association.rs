@@ -852,10 +852,7 @@ mod key_complement {
 
   #[test]
   fn non_list_argument_stays_unevaluated() {
-    assert_eq!(
-      interpret("KeyComplement[5]").unwrap(),
-      "KeyComplement[5]"
-    );
+    assert_eq!(interpret("KeyComplement[5]").unwrap(), "KeyComplement[5]");
   }
 }
 

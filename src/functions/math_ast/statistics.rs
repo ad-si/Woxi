@@ -1252,7 +1252,10 @@ pub fn contraharmonic_mean_ast(
   )?;
   let denominator = evaluate_function_call_ast(
     "Total",
-    &[evaluate_function_call_ast("Power", &[list.clone(), p_minus_1])?],
+    &[evaluate_function_call_ast(
+      "Power",
+      &[list.clone(), p_minus_1],
+    )?],
   )?;
   evaluate_function_call_ast("Divide", &[numerator, denominator])
 }
@@ -1370,7 +1373,9 @@ fn average_ranks(items: &[Expr]) -> Option<Vec<Expr>> {
     .collect::<Option<_>>()?;
   let mut order: Vec<usize> = (0..n).collect();
   order.sort_by(|&a, &b| {
-    vals[a].partial_cmp(&vals[b]).unwrap_or(std::cmp::Ordering::Equal)
+    vals[a]
+      .partial_cmp(&vals[b])
+      .unwrap_or(std::cmp::Ordering::Equal)
   });
   let mut ranks = vec![Expr::Integer(0); n];
   let mut i = 0;
@@ -1404,7 +1409,7 @@ pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let rctneqln = || {
     crate::emit_message(
-      "SpearmanRho::rctneqln: The arguments to SpearmanRho are not a pair of vectors or matrices of equal length."
+      "SpearmanRho::rctneqln: The arguments to SpearmanRho are not a pair of vectors or matrices of equal length.",
     );
     unevaluated()
   };
