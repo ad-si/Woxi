@@ -2238,6 +2238,16 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {}
     }
   }
+  // IgnoreCase -> True makes every pattern match case-insensitively; it is
+  // applied by prefixing the compiled regexes with the `(?i)` flag.
+  let ignore_case = has_ignore_case_option(args);
+  let with_ci = |pat: &str| -> String {
+    if ignore_case {
+      format!("(?i){}", pat)
+    } else {
+      pat.to_string()
+    }
+  };
 
   // Rule or list of rules: at each position, try each rule's LHS pattern;
   // on a match, emit the (capture-substituted) RHS and advance past it.
@@ -2245,7 +2255,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut compiled: Vec<(regex::Regex, Vec<(String, String)>, Expr)> =
       Vec::with_capacity(rules.len());
     for (pat, constraints, rhs) in &rules {
-      let re = compile_regex(pat).map_err(|e| {
+      let re = compile_regex(&with_ci(pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "Invalid string pattern: {}",
           e
@@ -2298,7 +2308,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((regex_str, constraints)) =
     string_pattern_to_regex_with_state(&args[1])
   {
-    let re = compile_regex(&regex_str).map_err(|e| {
+    let re = compile_regex(&with_ci(&regex_str)).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Invalid string pattern: {}",
         e
@@ -2351,8 +2361,25 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(matches.into()));
   }
 
-  // Fall back to literal string matching
+  // Fall back to literal string matching. Under IgnoreCase, search case-
+  // insensitively and emit the actual matched substring (which may differ
+  // from the pattern in case).
   let patt = expr_to_str(&args[1])?;
+  if ignore_case && !patt.is_empty() {
+    let re = compile_regex(&format!("(?i){}", regex::escape(&patt)))
+      .map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {}",
+          e
+        ))
+      })?;
+    let matches: Vec<Expr> = re
+      .find_iter(&s)
+      .take(max_count)
+      .map(|m| Expr::String(m.as_str().to_string()))
+      .collect();
+    return Ok(Expr::List(matches.into()));
+  }
 
   let mut matches = Vec::new();
   let mut start = 0;

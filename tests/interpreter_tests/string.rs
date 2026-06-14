@@ -1268,6 +1268,57 @@ mod ignore_case {
       "{True, False}"
     );
   }
+
+  // StringCases collects every case-insensitive match, returning the actual
+  // matched substrings (which may differ in case from the pattern).
+  #[test]
+  fn string_cases_ignore_case_literal() {
+    assert_eq!(
+      interpret(r#"StringCases["aAbA", "a", IgnoreCase -> True]"#).unwrap(),
+      "{a, A, A}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["ABCabc", "abc", IgnoreCase -> True]"#).unwrap(),
+      "{ABC, abc}"
+    );
+  }
+
+  #[test]
+  fn string_cases_ignore_case_alternatives() {
+    assert_eq!(
+      interpret(r#"StringCases["aAbB", "a" | "b", IgnoreCase -> True]"#)
+        .unwrap(),
+      "{a, A, b, B}"
+    );
+  }
+
+  // The rule (pattern -> replacement) form also honors IgnoreCase.
+  #[test]
+  fn string_cases_ignore_case_rule() {
+    assert_eq!(
+      interpret(r#"StringCases["Hello", "l" -> "L", IgnoreCase -> True]"#)
+        .unwrap(),
+      "{L, L}"
+    );
+  }
+
+  // The match limit and IgnoreCase combine.
+  #[test]
+  fn string_cases_ignore_case_with_limit() {
+    assert_eq!(
+      interpret(r#"StringCases["aAaA", "a", 2, IgnoreCase -> True]"#).unwrap(),
+      "{a, A}"
+    );
+  }
+
+  // IgnoreCase -> False keeps the default case-sensitive behaviour.
+  #[test]
+  fn string_cases_ignore_case_false() {
+    assert_eq!(
+      interpret(r#"StringCases["aAbA", "a", IgnoreCase -> False]"#).unwrap(),
+      "{a}"
+    );
+  }
 }
 
 mod string_patterns {

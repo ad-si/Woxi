@@ -559,7 +559,7 @@ AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2.0,562
 ExampleData,,🚫,,6.0,563
 TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Initialization,Option for initialization code,✅,none,6.0,565
-StringCases,Returns substrings matching a pattern (supports a count limit and the Overlaps option),✅,pure,5.1,566
+StringCases,Returns substrings matching a pattern (supports a count limit and the Overlaps and IgnoreCase options),✅,pure,5.1,566
 Subtract,Subtracts one number from another,✅,pure,1.0,567
 Listable,Attribute for automatic threading over lists,✅,pure,1.0,568
 ExpIntegralEi,Exponential integral Ei,✅,pure,1.0,569
