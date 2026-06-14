@@ -2218,6 +2218,37 @@ mod batch_unevaluated_wrappers_2 {
       "missing"
     );
   }
+  // On an association, FirstCase tests the values and returns the first match.
+  #[test]
+  fn first_case_association() {
+    assert_eq!(
+      interpret("FirstCase[<|a -> 1, b -> 2, c -> 4|>, _?EvenQ]").unwrap(),
+      "2"
+    );
+  }
+  #[test]
+  fn first_case_association_no_match_default() {
+    assert_eq!(
+      interpret(r#"FirstCase[<|a -> 1, b -> 3|>, _?EvenQ, "none"]"#).unwrap(),
+      "none"
+    );
+  }
+  #[test]
+  fn first_case_association_condition() {
+    assert_eq!(
+      interpret("FirstCase[<|a -> 1, b -> 2|>, x_ /; x > 1]").unwrap(),
+      "2"
+    );
+  }
+  // The rule (pattern -> rhs) form applies on associations too.
+  #[test]
+  fn first_case_association_rule() {
+    assert_eq!(
+      interpret(r#"FirstCase[<|a -> 1, b -> 2|>, _?EvenQ -> "found"]"#)
+        .unwrap(),
+      "found"
+    );
+  }
   #[test]
   fn weierstrass_sigma() {
     assert_eq!(

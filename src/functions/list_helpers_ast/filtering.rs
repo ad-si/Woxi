@@ -147,10 +147,12 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  let items = match list {
-    Expr::List(items) => items,
+  // Scan the elements of a list or, for an association, its values.
+  let items: Vec<&Expr> = match list {
+    Expr::List(items) => items.iter().collect(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v).collect(),
     _ => {
-      // Non-list: return Missing["NotFound"] or default
+      // Other heads: return Missing["NotFound"] or the default.
       return Ok(default.cloned().unwrap_or_else(|| Expr::FunctionCall {
         name: "Missing".to_string(),
         args: vec![Expr::String("NotFound".to_string())].into(),
