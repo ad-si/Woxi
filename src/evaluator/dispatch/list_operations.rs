@@ -3048,7 +3048,7 @@ pub fn dispatch_list_operations(
     }
     // SequenceCases[list, sublist] — find matching subsequences
     // Supports: plain list, Condition[list, test], Rule/RuleDelayed[list, rhs]
-    "SequenceCases" if args.len() == 2 => {
+    "SequenceCases" if (2..=4).contains(&args.len()) => {
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequenceCases::list: List expected at position 1 in SequenceCases[{}, {}].",
@@ -3059,6 +3059,26 @@ pub fn dispatch_list_operations(
           name: "SequenceCases".to_string(),
           args: args.to_vec().into(),
         }));
+      }
+      // Trailing arguments: an optional count limit (Integer/Infinity) and an
+      // `Overlaps -> True | False | All` option (default: non-overlapping).
+      let mut max_count: usize = usize::MAX;
+      let mut overlaps = false;
+      for a in &args[2..] {
+        match a {
+          Expr::Integer(n) if *n >= 0 => max_count = *n as usize,
+          Expr::Identifier(id) if id == "Infinity" => max_count = usize::MAX,
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(),
+            Expr::Identifier(n) if n == "Overlaps") =>
+          {
+            overlaps = matches!(replacement.as_ref(),
+              Expr::Identifier(v) if v == "True" || v == "All");
+          }
+          _ => {}
+        }
       }
       if let Expr::List(list) = &args[0] {
         // Extract the list pattern and optional replacement from
@@ -3113,7 +3133,7 @@ pub fn dispatch_list_operations(
         if has_patterns {
           let mut results: Vec<Expr> = Vec::new();
           let mut i = 0;
-          while i < list.len() {
+          while i < list.len() && results.len() < max_count {
             let mut matched = false;
             let remaining = list.len() - i;
             let min_len = if has_sequence { 1 } else { sub.len() };
@@ -3142,7 +3162,9 @@ pub fn dispatch_list_operations(
                 } else {
                   results.push(subseq);
                 }
-                i += len;
+                // Overlapping matches advance one element past the start; the
+                // default skips the whole matched subsequence.
+                i += if overlaps { 1 } else { len };
                 matched = true;
                 break;
               }
@@ -3158,7 +3180,7 @@ pub fn dispatch_list_operations(
           let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
           let mut results: Vec<Expr> = Vec::new();
           let mut i = 0;
-          while i + sub_len <= list.len() {
+          while i + sub_len <= list.len() && results.len() < max_count {
             let mut matches = true;
             for j in 0..sub_len {
               if expr_to_string(&list[i + j]) != sub_strs[j] {
@@ -3168,7 +3190,7 @@ pub fn dispatch_list_operations(
             }
             if matches {
               results.push(Expr::List(list[i..i + sub_len].to_vec().into()));
-              i += sub_len;
+              i += if overlaps { 1 } else { sub_len };
             } else {
               i += 1;
             }

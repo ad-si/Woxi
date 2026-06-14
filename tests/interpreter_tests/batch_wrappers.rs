@@ -3701,6 +3701,52 @@ mod batch_unevaluated_wrappers_2 {
       "{{1, 2, 3}}"
     );
   }
+  // Overlaps -> True reports overlapping subsequence matches.
+  #[test]
+  fn sequence_cases_overlaps_condition() {
+    assert_eq!(
+      interpret(
+        "SequenceCases[Range[6], {x_, y_} /; y == x + 1, Overlaps -> True]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_overlaps_fixed_length() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4, 5}, {_, _, _}, Overlaps -> True]")
+        .unwrap(),
+      "{{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_overlaps_literal() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 1, 2, 1}, {1, 2}, Overlaps -> True]")
+        .unwrap(),
+      "{{1, 2}, {1, 2}}"
+    );
+  }
+  // A count limit keeps only the first n matches.
+  #[test]
+  fn sequence_cases_count_limit() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4}, {a_, b_}, 2]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+  // The count limit and Overlaps combine.
+  #[test]
+  fn sequence_cases_count_with_overlaps() {
+    assert_eq!(
+      interpret(
+        "SequenceCases[{1, 2, 3, 4, 5, 6}, {_, _}, 2, Overlaps -> True]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
   #[test]
   fn chebyshev_distance_basic() {
     assert_eq!(interpret("ChebyshevDistance[{1, 2}, {3, 5}]").unwrap(), "3");

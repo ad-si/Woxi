@@ -1718,7 +1718,7 @@ BernoulliGraphDistribution,Erdős–Rényi G(n p) random graph distribution (rec
 ClusteringComponents,Clustering components,✅,unevaluated,8.0,1748
 MandelbrotSetPlot,Mandelbrot set plot,,unevaluated,10.0,1748
 Language,Language option,,unevaluated,3.0,1749
-SequenceCases,Find matching subsequences in a list,✅,pure,10.1,1751
+SequenceCases,Finds matching subsequences in a list (supports a count limit and the Overlaps option),✅,pure,10.1,1751
 TimeConstraint,Time constraint option,,unevaluated,3.0,1751
 DoubleRightTee,Inert operator displayed with the ⊨ symbol,✅,pure,3.0,1752
 Matrices,Matrix domain,,unevaluated,9.0,1753
