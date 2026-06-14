@@ -4287,7 +4287,7 @@ IndependentVertexSetQ,,,,8.0,4437
 LQOutputRegulatorGains,,,,8.0,4437
 LinkFunction,,🚫,,7.0,4437
 MardiaCombinedTest,,,,8.0,4437
-MersennePrimeExponentQ,,,,10.4,4437
+MersennePrimeExponentQ,Tests whether 2^n-1 is a Mersenne prime,✅,pure,10.4,4437
 MinusPlus,,,,3.0,4437
 MixedGraphQ,,,,10.0,4437
 NetAppend,,🚫,,11.3,4437

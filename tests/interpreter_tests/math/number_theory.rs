@@ -2654,6 +2654,40 @@ mod mersenne_prime_exponent {
   }
 }
 
+mod mersenne_prime_exponent_q {
+  use super::*;
+
+  // n with 2^n - 1 prime (known Mersenne prime exponents).
+  #[test]
+  fn exponents_are_true() {
+    assert_eq!(interpret("MersennePrimeExponentQ[2]").unwrap(), "True");
+    assert_eq!(interpret("MersennePrimeExponentQ[7]").unwrap(), "True");
+    assert_eq!(interpret("MersennePrimeExponentQ[13]").unwrap(), "True");
+    assert_eq!(interpret("MersennePrimeExponentQ[127]").unwrap(), "True");
+    assert_eq!(interpret("MersennePrimeExponentQ[521]").unwrap(), "True");
+  }
+
+  // Primes whose Mersenne number is composite, and non-primes.
+  #[test]
+  fn non_exponents_are_false() {
+    assert_eq!(interpret("MersennePrimeExponentQ[11]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[23]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[1]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[4]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[0]").unwrap(), "False");
+  }
+
+  // Non-integers and symbols are False (not unevaluated), matching
+  // wolframscript.
+  #[test]
+  fn non_integer_is_false() {
+    assert_eq!(interpret("MersennePrimeExponentQ[x]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[-3]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[7/2]").unwrap(), "False");
+    assert_eq!(interpret("MersennePrimeExponentQ[5.0]").unwrap(), "False");
+  }
+}
+
 mod cases {
   use super::super::super::case_helpers::assert_case;
 

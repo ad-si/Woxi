@@ -2051,7 +2051,8 @@ pub fn dispatch_math_functions(
         // e.g. PrimitiveRoot[10] = 7 (from 2 mod 5), not the smaller 3.
         if n_val % 2 == 0 {
           let m = n_val / 2;
-          if m > 1 && is_odd_prime_power(m)
+          if m > 1
+            && is_odd_prime_power(m)
             && let Some(g) = smallest_pr(m)
           {
             let result = if g % 2 == 0 { g + m } else { g };
@@ -2250,6 +2251,11 @@ pub fn dispatch_math_functions(
     }
     "MersennePrimeExponent" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mersenne_prime_exponent_ast(
+        args,
+      ));
+    }
+    "MersennePrimeExponentQ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::mersenne_prime_exponent_q_ast(
         args,
       ));
     }
