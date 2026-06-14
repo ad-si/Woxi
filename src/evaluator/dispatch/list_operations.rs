@@ -2611,6 +2611,9 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
+    "FindRepeat" if args.len() == 1 || args.len() == 2 => {
+      return Some(list_helpers_ast::find_repeat_ast(args));
+    }
     "Apply" if args.len() == 2 => {
       return Some(list_helpers_ast::apply_ast(&args[0], &args[1]));
     }

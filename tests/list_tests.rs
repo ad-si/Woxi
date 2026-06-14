@@ -173,6 +173,63 @@ mod list_tests {
   }
 
   #[test]
+  fn find_repeat() {
+    // Finds the shortest tiling sub-sequence; a partial final rep is allowed.
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 3, 1, 2, 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 3, 1, 2, 3, 1}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("FindRepeat[{5, 5, 5, 5}]").unwrap(), "{5}");
+    // No repetition: the whole list is returned.
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 3, 4, 5}]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    // A lead-in element breaks the tiling from the start.
+    assert_eq!(
+      interpret("FindRepeat[{7, 1, 2, 1, 2, 1, 2}]").unwrap(),
+      "{7, 1, 2, 1, 2, 1, 2}"
+    );
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 1, 2, 3}]").unwrap(),
+      "{1, 2, 1, 2, 3}"
+    );
+    // Reals compare by value.
+    assert_eq!(
+      interpret("FindRepeat[{1.5, 2.5, 1.5, 2.5}]").unwrap(),
+      "{1.5, 2.5}"
+    );
+    // Second argument: the pattern must repeat at least n whole times.
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 1, 2, 1, 2}, 2]").unwrap(),
+      "{1, 2}"
+    );
+    // When no period repeats n times, the empty list is returned.
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 3, 1, 2, 3}, 3]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("FindRepeat[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{}"
+    );
+    // Strings.
+    assert_eq!(interpret("FindRepeat[\"abcabc\"]").unwrap(), "abc");
+    assert_eq!(interpret("FindRepeat[\"abcd\"]").unwrap(), "abcd");
+    // Associations reduce over their values, keeping the keys.
+    assert_eq!(
+      interpret("FindRepeat[<|1 -> a, 2 -> b, 3 -> a, 4 -> b|>]").unwrap(),
+      "<|1 -> a, 2 -> b|>"
+    );
+    // Empty list.
+    assert_eq!(interpret("FindRepeat[{}]").unwrap(), "{}");
+  }
+
+  #[test]
   fn array_reduce() {
     // Reduce a matrix over each dimension; f gets the gathered elements.
     assert_eq!(

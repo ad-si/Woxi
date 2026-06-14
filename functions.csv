@@ -3774,7 +3774,7 @@ Diamond,,,,3.0,3889
 FileFormat,,✅,,6.0,3889
 FileTemplateApply,,,,10.0,3889
 FindLibrary,,,,8.0,3889
-FindRepeat,,,,11.2,3889
+FindRepeat,Finds the shortest repeating sub-sequence that tiles a list string or association,✅,pure,11.2,3889
 FourierDCTMatrix,,,,9.0,3889
 HandlerFunctionsKeys,,🚫,,11.0,3889
 HostLookup,,🚫,,10.3,3889

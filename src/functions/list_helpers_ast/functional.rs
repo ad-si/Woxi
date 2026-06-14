@@ -1211,3 +1211,92 @@ pub fn array_reduce_ast(
 
   Ok(reshape_flat(&flat_results, &remaining_sizes))
 }
+
+/// Smallest period `p` in `[1, len]` such that element `i` equals element
+/// `i % p` for every `i`, and the pattern fits at least `min_reps` whole times
+/// (`len / p >= min_reps`). Returns `None` when no such period exists.
+fn find_repeat_period(strs: &[String], min_reps: i128) -> Option<usize> {
+  let len = strs.len();
+  for p in 1..=len {
+    let tiles = (0..len).all(|i| strs[i] == strs[i % p]);
+    if tiles && (len / p) as i128 >= min_reps {
+      return Some(p);
+    }
+  }
+  None
+}
+
+/// FindRepeat[seq] / FindRepeat[seq, n] finds the shortest sub-sequence that,
+/// tiled, reproduces `seq` (a partial final repetition is allowed). The
+/// optional `n` requires the pattern to repeat at least `n` whole times;
+/// when no such period exists the empty sequence is returned. Works on lists,
+/// strings, and associations (over their values, keeping the keys).
+///
+///   FindRepeat[{1, 2, 3, 1, 2, 3}]    -> {1, 2, 3}
+///   FindRepeat[{1, 2, 3, 4, 5}]       -> {1, 2, 3, 4, 5}
+///   FindRepeat[{1, 2, 3, 1, 2, 3}, 3] -> {}
+///   FindRepeat["abcabc"]              -> "abc"
+pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let arg = &args[0];
+  let min_reps: i128 = if args.len() >= 2 {
+    match expr_to_i128(&args[1]) {
+      Some(n) if n >= 1 => n,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "FindRepeat".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  match arg {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Ok(Expr::List(vec![].into()));
+      }
+      let strs: Vec<String> =
+        items.iter().map(crate::syntax::expr_to_string).collect();
+      match find_repeat_period(&strs, min_reps) {
+        Some(p) => Ok(Expr::List(items[..p].to_vec().into())),
+        None => Ok(Expr::List(vec![].into())),
+      }
+    }
+    Expr::String(s) => {
+      let chars: Vec<char> = s.chars().collect();
+      if chars.is_empty() {
+        return Ok(Expr::String(String::new()));
+      }
+      let strs: Vec<String> = chars.iter().map(|c| c.to_string()).collect();
+      match find_repeat_period(&strs, min_reps) {
+        Some(p) => Ok(Expr::String(chars[..p].iter().collect())),
+        None => Ok(Expr::String(String::new())),
+      }
+    }
+    Expr::Association(pairs) => {
+      if pairs.is_empty() {
+        return Ok(Expr::Association(vec![]));
+      }
+      let strs: Vec<String> = pairs
+        .iter()
+        .map(|(_, v)| crate::syntax::expr_to_string(v))
+        .collect();
+      match find_repeat_period(&strs, min_reps) {
+        Some(p) => Ok(Expr::Association(pairs[..p].to_vec())),
+        None => Ok(Expr::Association(vec![])),
+      }
+    }
+    _ => {
+      crate::emit_message(&format!(
+        "FindRepeat::arg1: The first argument {} to FindRepeat is expected to be a list, an association or a string.",
+        crate::syntax::expr_to_string(arg)
+      ));
+      Ok(Expr::FunctionCall {
+        name: "FindRepeat".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+  }
+}
