@@ -869,6 +869,9 @@ pub fn dispatch_math_functions(
     "Correlation" if args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_ast(args));
     }
+    "SpearmanRho" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::spearman_rho_ast(args));
+    }
     "CentralMoment" if args.len() == 2 => {
       return Some(crate::functions::math_ast::central_moment_ast(args));
     }

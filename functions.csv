@@ -3500,7 +3500,7 @@ RadicalBox,Low-level box construct for nth root display,✅,pure,3.0,3593
 SaveConnection,,🚫,,12.0,3593
 SequenceFoldList,,,,10.2,3593
 ShapiroWilkTest,,,,8.0,3593
-SpearmanRho,,,,9.0,3593
+SpearmanRho,Spearman rank-correlation coefficient of two lists,✅,pure,9.0,3593
 ApplyTo,,,,12.2,3612
 BandstopFilter,Apply a bandstop filter to data,✅,pure,9.0,3612
 BlockchainBlockData,,🚫,,11.3,3612

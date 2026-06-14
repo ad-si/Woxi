@@ -1359,6 +1359,73 @@ fn transpose_rows(rows: &[Expr]) -> Option<Vec<Vec<Expr>>> {
 }
 
 /// Correlation[list1, list2] - Pearson correlation coefficient
+/// Average ranks (1-based) of a numeric list. Tied values share the mean of
+/// the positions they occupy, so ranks stay exact (Integer or Rational).
+/// Returns `None` if any element is non-numeric.
+fn average_ranks(items: &[Expr]) -> Option<Vec<Expr>> {
+  let n = items.len();
+  let vals: Vec<f64> = items
+    .iter()
+    .map(crate::functions::math_ast::try_eval_to_f64)
+    .collect::<Option<_>>()?;
+  let mut order: Vec<usize> = (0..n).collect();
+  order.sort_by(|&a, &b| {
+    vals[a].partial_cmp(&vals[b]).unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let mut ranks = vec![Expr::Integer(0); n];
+  let mut i = 0;
+  while i < n {
+    let mut j = i;
+    while j + 1 < n && vals[order[j + 1]] == vals[order[i]] {
+      j += 1;
+    }
+    // Positions i+1 ..= j+1 (1-based); shared rank = mean of positions.
+    let count = (j - i + 1) as i128;
+    let sum_pos: i128 = ((i as i128 + 1)..=(j as i128 + 1)).sum();
+    let rank = crate::functions::math_ast::make_rational(sum_pos, count);
+    for &idx in &order[i..=j] {
+      ranks[idx] = rank.clone();
+    }
+    i = j + 1;
+  }
+  Some(ranks)
+}
+
+/// SpearmanRho[v1, v2] — Spearman rank-correlation coefficient: the Pearson
+/// correlation of the average-rank vectors of the two equal-length numeric
+/// lists. Mismatched lengths or non-numeric vectors emit the `::rctneqln`
+/// message and stay unevaluated.
+pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "SpearmanRho".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let rctneqln = || {
+    crate::emit_message(
+      "SpearmanRho::rctneqln: The arguments to SpearmanRho are not a pair of vectors or matrices of equal length."
+    );
+    unevaluated()
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let (x, y) = match (&args[0], &args[1]) {
+    (Expr::List(x), Expr::List(y)) if x.len() == y.len() && x.len() >= 2 => {
+      (x, y)
+    }
+    _ => return rctneqln(),
+  };
+  let (Some(rx), Some(ry)) = (average_ranks(x), average_ranks(y)) else {
+    return rctneqln();
+  };
+  crate::evaluator::evaluate_function_call_ast(
+    "Correlation",
+    &[Expr::List(rx.into()), Expr::List(ry.into())],
+  )
+}
+
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {

@@ -239,6 +239,52 @@ mod quartile_deviation {
   }
 }
 
+mod spearman_rho {
+  use super::*;
+
+  #[test]
+  fn rank_correlation_no_ties() {
+    assert_eq!(
+      interpret("SpearmanRho[{1, 2, 3, 4, 5}, {2, 3, 1, 5, 4}]").unwrap(),
+      "3/5"
+    );
+    // Identical and reversed rankings give +1 and -1.
+    assert_eq!(
+      interpret("SpearmanRho[{1, 2, 3, 4, 5}, {1, 2, 3, 4, 5}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("SpearmanRho[{1, 2, 3, 4, 5}, {5, 4, 3, 2, 1}]").unwrap(),
+      "-1"
+    );
+  }
+
+  #[test]
+  fn handles_ties_with_average_ranks() {
+    assert_eq!(
+      interpret("SpearmanRho[{1, 1, 2, 3}, {1, 2, 2, 4}]").unwrap(),
+      "5/6"
+    );
+    // Ties can make the exact result irrational.
+    assert_eq!(
+      interpret("SpearmanRho[{1, 2, 2, 2, 3}, {5, 4, 4, 3, 1}]").unwrap(),
+      "-4/Sqrt[19]"
+    );
+  }
+
+  #[test]
+  fn mismatched_or_non_numeric_stays_unevaluated() {
+    assert_eq!(
+      interpret("SpearmanRho[{1, 2, 3}, {1, 2}]").unwrap(),
+      "SpearmanRho[{1, 2, 3}, {1, 2}]"
+    );
+    assert_eq!(
+      interpret("SpearmanRho[{a, b, c}, {1, 2, 3}]").unwrap(),
+      "SpearmanRho[{a, b, c}, {1, 2, 3}]"
+    );
+  }
+}
+
 mod quartile_skewness {
   use super::*;
 
