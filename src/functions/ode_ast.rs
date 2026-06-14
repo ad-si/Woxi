@@ -2224,6 +2224,65 @@ fn real_or_integer(v: f64) -> Expr {
   Expr::Real(v)
 }
 
+/// Convert a whole-number `Real` to an `Integer` (the grid coordinates of an
+/// implicit-grid interpolation are integers in wolframscript even though they
+/// are stored as reals); other values pass through unchanged.
+fn whole_real_to_int(e: &Expr) -> Expr {
+  match e {
+    Expr::Real(f) if f.fract() == 0.0 && f.abs() < 9e15 => {
+      Expr::Integer(*f as i128)
+    }
+    other => other.clone(),
+  }
+}
+
+/// Answer an `InterpolatingFunction[…]["property"]` query from the stored
+/// `{x, y}` grid data. Returns `None` for unrecognized properties so the call
+/// stays unevaluated.
+fn interpolating_function_property(
+  data: &Expr,
+  order: usize,
+  prop: &str,
+) -> Option<Expr> {
+  let Expr::List(pairs) = data else {
+    return None;
+  };
+  let mut xs: Vec<Expr> = Vec::with_capacity(pairs.len());
+  let mut ys: Vec<Expr> = Vec::with_capacity(pairs.len());
+  for p in pairs.iter() {
+    if let Expr::List(pair) = p
+      && pair.len() == 2
+    {
+      xs.push(whole_real_to_int(&pair[0]));
+      ys.push(pair[1].clone());
+    } else {
+      return None;
+    }
+  }
+  if xs.is_empty() {
+    return None;
+  }
+  let list1 = |items: Vec<Expr>| Expr::List(items.into());
+  match prop {
+    // The interpolation domain, as a list of {min, max} per dimension.
+    "Domain" => Some(list1(vec![list1(vec![
+      xs.first().unwrap().clone(),
+      xs.last().unwrap().clone(),
+    ])])),
+    // Each grid coordinate wrapped in a one-element list.
+    "Grid" => Some(list1(
+      xs.into_iter().map(|x| list1(vec![x])).collect(),
+    )),
+    // The grid coordinates of each dimension (here, one dimension).
+    "Coordinates" => Some(list1(vec![list1(xs)])),
+    // The sampled values at the grid points.
+    "ValuesOnGrid" => Some(list1(ys)),
+    "InterpolationOrder" => Some(list1(vec![Expr::Integer(order as i128)])),
+    "DerivativeOrder" => Some(Expr::Integer(0)),
+    _ => None,
+  }
+}
+
 /// Evaluate InterpolatingFunction[domain, data][x_val]
 /// or InterpolatingFunction[domain, data, order][x_val]
 pub fn evaluate_interpolating_function(
@@ -2246,6 +2305,13 @@ pub fn evaluate_interpolating_function(
   } else {
     1 // Default for NDSolve-generated (backwards compat)
   };
+
+  // Property access: InterpolatingFunction[…]["Domain"], ["Grid"], etc.
+  if let Expr::String(prop) = &call_args[0]
+    && let Some(result) = interpolating_function_property(data, order, prop)
+  {
+    return Ok(result);
+  }
 
   let x_val_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
   let x_val = match &x_val_expr {

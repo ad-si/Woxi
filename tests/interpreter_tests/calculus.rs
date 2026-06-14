@@ -4708,6 +4708,62 @@ mod interpolation {
     );
   }
 
+  // InterpolatingFunction[…]["property"] returns grid metadata. The implicit
+  // grid coordinates are reported as integers.
+  #[test]
+  fn property_domain() {
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["Domain"]"#).unwrap(),
+      "{{1, 4}}"
+    );
+  }
+
+  #[test]
+  fn property_grid_and_values() {
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["Grid"]"#).unwrap(),
+      "{{1}, {2}, {3}, {4}}"
+    );
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["ValuesOnGrid"]"#).unwrap(),
+      "{1, 4, 9, 16}"
+    );
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["Coordinates"]"#).unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+  }
+
+  #[test]
+  fn property_orders() {
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["InterpolationOrder"]"#)
+        .unwrap(),
+      "{3}"
+    );
+    assert_eq!(
+      interpret(r#"Interpolation[{1, 4, 9, 16}]["DerivativeOrder"]"#).unwrap(),
+      "0"
+    );
+  }
+
+  // Explicit {x, y} pairs report their own grid.
+  #[test]
+  fn property_explicit_pairs() {
+    assert_eq!(
+      interpret(r#"Interpolation[{{0, 0}, {2, 4}, {4, 16}, {6, 36}}]["Domain"]"#)
+        .unwrap(),
+      "{{0, 6}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Interpolation[{{0, 0}, {2, 4}, {4, 16}, {6, 36}}]["ValuesOnGrid"]"#
+      )
+      .unwrap(),
+      "{0, 4, 16, 36}"
+    );
+  }
+
   #[test]
   fn symbolic_argument_returns_unevaluated() {
     let result = interpret("f = Interpolation[{1, 2, 3, 4}]; f[x]").unwrap();
