@@ -2793,6 +2793,24 @@ mod chebyshev_t {
   fn at_zero() {
     assert_eq!(interpret("ChebyshevT[4, 0]").unwrap(), "1");
   }
+
+  // T is even in its order: T_{-n}(x) = T_n(x).
+  #[test]
+  fn negative_index() {
+    assert_eq!(interpret("ChebyshevT[-1, x]").unwrap(), "x");
+    assert_eq!(interpret("ChebyshevT[-2, x]").unwrap(), "-1 + 2*x^2");
+    assert_eq!(interpret("ChebyshevT[-3, x]").unwrap(), "-3*x + 4*x^3");
+    assert_eq!(
+      interpret("ChebyshevT[-5, x]").unwrap(),
+      "5*x - 20*x^3 + 16*x^5"
+    );
+  }
+
+  #[test]
+  fn negative_index_numeric() {
+    assert_eq!(interpret("ChebyshevT[-3, 2]").unwrap(), "26");
+    assert_eq!(interpret("ChebyshevT[-4, 1/2]").unwrap(), "-1/2");
+  }
 }
 
 mod chebyshev_u {
@@ -2861,6 +2879,30 @@ mod chebyshev_u {
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("ChebyshevU[n, x]").unwrap(), "ChebyshevU[n, x]");
+  }
+
+  // Reflection: U_{-1}(x) = 0 and U_{-n}(x) = -U_{n-2}(x) for n >= 2.
+  #[test]
+  fn negative_index() {
+    assert_eq!(interpret("ChebyshevU[-1, x]").unwrap(), "0");
+    assert_eq!(interpret("ChebyshevU[-2, x]").unwrap(), "-1");
+    assert_eq!(interpret("ChebyshevU[-3, x]").unwrap(), "-2*x");
+    assert_eq!(interpret("ChebyshevU[-4, x]").unwrap(), "1 - 4*x^2");
+    assert_eq!(interpret("ChebyshevU[-5, x]").unwrap(), "4*x - 8*x^3");
+  }
+
+  #[test]
+  fn negative_index_table() {
+    assert_eq!(
+      interpret("Table[ChebyshevU[-n, x], {n, 1, 6}]").unwrap(),
+      "{0, -1, -2*x, 1 - 4*x^2, 4*x - 8*x^3, -1 + 12*x^2 - 16*x^4}"
+    );
+  }
+
+  #[test]
+  fn negative_index_numeric() {
+    assert_eq!(interpret("ChebyshevU[-4, 3]").unwrap(), "-35");
+    assert_eq!(interpret("ChebyshevU[-5, 1/2]").unwrap(), "1");
   }
 }
 

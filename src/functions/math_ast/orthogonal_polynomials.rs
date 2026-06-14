@@ -1725,7 +1725,8 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
+    // T is even in its order: T_{-n}(x) = T_n(x), so use |n|.
+    Expr::Integer(n) => n.unsigned_abs() as usize,
     _ => {
       // Complex (or non-integer) order with a numeric x: use the closed
       // form T_n(x) = Cos[n * ArcCos[x]] so wolframscript-style numeric
@@ -1934,6 +1935,24 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ChebyshevU expects exactly 2 arguments".into(),
     ));
+  }
+
+  // Negative-index reflection: U_{-1}(x) = 0 and U_{-n}(x) = -U_{n-2}(x)
+  // for n >= 2. Reduce to a non-negative order and negate.
+  if let Expr::Integer(m) = &args[0]
+    && *m < 0
+  {
+    if *m == -1 {
+      return Ok(Expr::Integer(0));
+    }
+    let pos = chebyshev_u_ast(&[Expr::Integer(-*m - 2), args[1].clone()])?;
+    // Expand so the leading -1 distributes over a polynomial result
+    // (e.g. -U_2(x) = -(-1 + 4 x^2) becomes 1 - 4 x^2).
+    let negated = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), pos].into(),
+    };
+    return crate::evaluator::evaluate_function_call_ast("Expand", &[negated]);
   }
 
   let n = match &args[0] {
