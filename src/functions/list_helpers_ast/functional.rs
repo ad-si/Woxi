@@ -1043,3 +1043,171 @@ fn inner_recursive(
     Ok(Expr::List(results.into()))
   }
 }
+
+/// Full rectangular dimensions of a nested-list array, or `None` if the
+/// expression is ragged or not a list. A 1-D vector returns `[n]`.
+fn full_array_dims(expr: &Expr) -> Option<Vec<usize>> {
+  match expr {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Some(vec![0]);
+      }
+      let sub: Vec<Option<Vec<usize>>> =
+        items.iter().map(full_array_dims).collect();
+      // All children atoms -> 1-D vector.
+      if sub.iter().all(Option::is_none) {
+        return Some(vec![items.len()]);
+      }
+      // Otherwise every child must be a list with identical dimensions.
+      let first = sub[0].clone()?;
+      if sub.iter().all(|s| s.as_ref() == Some(&first)) {
+        let mut dims = vec![items.len()];
+        dims.extend(first);
+        Some(dims)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Fetch the element of a nested-list array at a full 0-indexed multi-index.
+fn array_elem_at(array: &Expr, index: &[usize]) -> Option<Expr> {
+  let mut cur = array;
+  for &i in index {
+    match cur {
+      Expr::List(items) => cur = items.get(i)?,
+      _ => return None,
+    }
+  }
+  Some(cur.clone())
+}
+
+/// Row-major Cartesian product of the given axis sizes. Empty `sizes` yields a
+/// single empty index (the scalar case).
+fn cartesian_indices(sizes: &[usize]) -> Vec<Vec<usize>> {
+  let mut result = vec![Vec::new()];
+  for &s in sizes {
+    let mut next = Vec::with_capacity(result.len() * s);
+    for prefix in &result {
+      for i in 0..s {
+        let mut p = prefix.clone();
+        p.push(i);
+        next.push(p);
+      }
+    }
+    result = next;
+  }
+  result
+}
+
+/// Reshape a flat list into a nested list of the given shape. Empty shape
+/// returns the single scalar element.
+fn reshape_flat(flat: &[Expr], shape: &[usize]) -> Expr {
+  if shape.is_empty() {
+    return flat[0].clone();
+  }
+  let chunk: usize = shape[1..].iter().product();
+  let mut out = Vec::with_capacity(shape[0]);
+  for i in 0..shape[0] {
+    out.push(reshape_flat(&flat[i * chunk..(i + 1) * chunk], &shape[1..]));
+  }
+  Expr::List(out.into())
+}
+
+/// ArrayReduce[f, array, levels] reduces a full rectangular array over the
+/// dimension(s) given by `levels`, applying `f` to the flat list of elements
+/// gathered along those dimensions (row-major order). The result is indexed by
+/// the remaining dimensions, in ascending order.
+///
+///   ArrayReduce[Total, {{1, 2}, {3, 4}}, 1]      -> {4, 6}
+///   ArrayReduce[Total, {{1, 2}, {3, 4}}, 2]      -> {3, 7}
+///   ArrayReduce[Total, {{1, 2}, {3, 4}}, {1, 2}] -> 10
+pub fn array_reduce_ast(
+  func: &Expr,
+  array: &Expr,
+  levels: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ArrayReduce".to_string(),
+      args: vec![func.clone(), array.clone(), levels.clone()].into(),
+    })
+  };
+
+  let dims = match full_array_dims(array) {
+    Some(d) if !d.is_empty() && !d.contains(&0) => d,
+    _ => return unevaluated(),
+  };
+  let rank = dims.len();
+
+  // Parse the level spec into a list of raw 1-indexed dims (any integer).
+  let raw_levels: Vec<i128> = match levels {
+    Expr::Integer(n) => vec![*n],
+    Expr::List(items) => {
+      let mut v = Vec::with_capacity(items.len());
+      for it in items {
+        match it {
+          Expr::Integer(n) => v.push(*n),
+          _ => return unevaluated(),
+        }
+      }
+      v
+    }
+    _ => return unevaluated(),
+  };
+  // Validate: non-positive -> arlowlev, beyond the array depth -> arhighlev.
+  // Match wolframscript's message and the unevaluated return.
+  for &l in &raw_levels {
+    if l < 1 {
+      crate::emit_message(&format!(
+        "ArrayReduce::arlowlev: Level specification {} should be positive.",
+        l
+      ));
+      return unevaluated();
+    }
+    if l as usize > rank {
+      crate::emit_message(&format!(
+        "ArrayReduce::arhighlev: Level specification {} is higher than array depth.",
+        l
+      ));
+      return unevaluated();
+    }
+  }
+  let mut level_set: Vec<usize> = raw_levels.iter().map(|&l| l as usize).collect();
+  level_set.sort_unstable();
+  level_set.dedup();
+
+  let remaining: Vec<usize> =
+    (1..=rank).filter(|d| !level_set.contains(d)).collect();
+  let remaining_sizes: Vec<usize> =
+    remaining.iter().map(|&d| dims[d - 1]).collect();
+  let level_sizes: Vec<usize> =
+    level_set.iter().map(|&d| dims[d - 1]).collect();
+
+  let remaining_indices = cartesian_indices(&remaining_sizes);
+  let level_indices = cartesian_indices(&level_sizes);
+
+  let mut flat_results = Vec::with_capacity(remaining_indices.len());
+  for r_idx in &remaining_indices {
+    let mut gathered = Vec::with_capacity(level_indices.len());
+    for l_idx in &level_indices {
+      let mut full = vec![0usize; rank];
+      for (pos, &dim) in remaining.iter().enumerate() {
+        full[dim - 1] = r_idx[pos];
+      }
+      for (pos, &dim) in level_set.iter().enumerate() {
+        full[dim - 1] = l_idx[pos];
+      }
+      match array_elem_at(array, &full) {
+        Some(e) => gathered.push(e),
+        None => return unevaluated(),
+      }
+    }
+    let applied = apply_func_ast(func, &Expr::List(gathered.into()))?;
+    flat_results.push(applied);
+  }
+
+  Ok(reshape_flat(&flat_results, &remaining_sizes))
+}

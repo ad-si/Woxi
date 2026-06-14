@@ -804,6 +804,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Operate" => Some((2, 3)),
     "Comap" => Some((1, 3)),
     "ComapApply" => Some((1, 2)),
+    "ArrayReduce" => Some((3, 3)),
     "OperatorApplied" => Some((1, 2)),
     "OptionQ" => Some((1, 1)),
     "Options" => Some((1, 2)),

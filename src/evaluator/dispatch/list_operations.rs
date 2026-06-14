@@ -2606,6 +2606,11 @@ pub fn dispatch_list_operations(
     "Catenate" if args.len() == 1 => {
       return Some(list_helpers_ast::catenate_ast(&args[0]));
     }
+    "ArrayReduce" if args.len() == 3 => {
+      return Some(list_helpers_ast::array_reduce_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "Apply" if args.len() == 2 => {
       return Some(list_helpers_ast::apply_ast(&args[0], &args[1]));
     }

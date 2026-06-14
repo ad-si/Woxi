@@ -4831,7 +4831,7 @@ ValuePreprocessingFunction,,,,11.2,5013
 VerticalBar,,,,3.0,5013
 WithCleanup,,,,12.2,5013
 AcousticNormalVelocityValue,,🚫,,12.2,5079
-ArrayReduce,,,,12.2,5079
+ArrayReduce,Reduces an array over specified dimensions by applying a function,✅,pure,12.2,5079
 AsymptoticLess,,,,11.3,5079
 AttentionLayer,,🚫,,12.0,5079
 AudioIdentify,,🚫,,12.0,5079

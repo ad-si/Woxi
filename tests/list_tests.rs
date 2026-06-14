@@ -173,6 +173,79 @@ mod list_tests {
   }
 
   #[test]
+  fn array_reduce() {
+    // Reduce a matrix over each dimension; f gets the gathered elements.
+    assert_eq!(
+      interpret("ArrayReduce[Total, {{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{4, 6}"
+    );
+    assert_eq!(
+      interpret("ArrayReduce[Total, {{1, 2}, {3, 4}}, 2]").unwrap(),
+      "{3, 7}"
+    );
+    // Reducing every dimension yields a scalar.
+    assert_eq!(
+      interpret("ArrayReduce[Total, {{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
+      "10"
+    );
+    // Works with any reducing function.
+    assert_eq!(
+      interpret("ArrayReduce[Max, {{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(
+      interpret("ArrayReduce[Mean, {{1, 2, 3}, {4, 5, 6}}, 2]").unwrap(),
+      "{2, 5}"
+    );
+    // The gathered list is in row-major order over the reduced dims.
+    assert_eq!(
+      interpret("ArrayReduce[Identity, {{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(
+      interpret("ArrayReduce[#[[1]] - #[[2]] &, {{1, 2}, {3, 4}}, 1]")
+        .unwrap(),
+      "{-2, -2}"
+    );
+    // A 1-D vector.
+    assert_eq!(
+      interpret("ArrayReduce[Total, {1, 2, 3, 4}, 1]").unwrap(),
+      "10"
+    );
+    // A 3-D array, reducing single and multiple dimensions.
+    assert_eq!(
+      interpret(
+        "ArrayReduce[Total, {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 1]"
+      )
+      .unwrap(),
+      "{{6, 8}, {10, 12}}"
+    );
+    assert_eq!(
+      interpret(
+        "ArrayReduce[Identity, {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {1, 3}]"
+      )
+      .unwrap(),
+      "{{1, 2, 5, 6}, {3, 4, 7, 8}}"
+    );
+    assert_eq!(
+      interpret(
+        "ArrayReduce[Total, {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {2, 3}]"
+      )
+      .unwrap(),
+      "{10, 26}"
+    );
+    // Out-of-range level specs stay unevaluated.
+    assert_eq!(
+      interpret("ArrayReduce[Total, {{1, 2}, {3, 4}}, 3]").unwrap(),
+      "ArrayReduce[Total, {{1, 2}, {3, 4}}, 3]"
+    );
+    assert_eq!(
+      interpret("ArrayReduce[Total, {{1, 2}, {3, 4}}, 0]").unwrap(),
+      "ArrayReduce[Total, {{1, 2}, {3, 4}}, 0]"
+    );
+  }
+
+  #[test]
   fn comap_apply() {
     // ComapApply applies each function to the spread sequence of arguments.
     assert_eq!(
