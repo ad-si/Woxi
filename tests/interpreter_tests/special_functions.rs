@@ -3543,3 +3543,67 @@ mod gamma_at_zero {
     assert_eq!(interpret("Gamma[1/2, 2]").unwrap(), "Gamma[1/2, 2]");
   }
 }
+
+mod hurwitz_zeta {
+  use super::*;
+
+  // Positive integer s with positive integer a reduces to Zeta[s] minus a
+  // finite tail.
+  #[test]
+  fn positive_s_positive_integer_a() {
+    assert_eq!(interpret("HurwitzZeta[2, 1]").unwrap(), "Pi^2/6");
+    assert_eq!(interpret("HurwitzZeta[2, 2]").unwrap(), "-1 + Pi^2/6");
+    assert_eq!(interpret("HurwitzZeta[2, 3]").unwrap(), "-5/4 + Pi^2/6");
+    assert_eq!(interpret("HurwitzZeta[2, 5]").unwrap(), "-205/144 + Pi^2/6");
+    assert_eq!(interpret("HurwitzZeta[4, 1]").unwrap(), "Pi^4/90");
+  }
+
+  #[test]
+  fn a_equals_one_is_riemann_zeta() {
+    assert_eq!(interpret("HurwitzZeta[3, 1]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("HurwitzZeta[-3, 1]").unwrap(), "1/120");
+  }
+
+  #[test]
+  fn half_integer_a() {
+    assert_eq!(interpret("HurwitzZeta[2, 1/2]").unwrap(), "Pi^2/2");
+  }
+
+  // s <= 0 uses the Bernoulli-polynomial value; agrees with Zeta[s, a].
+  #[test]
+  fn nonpositive_s_positive_a() {
+    assert_eq!(interpret("HurwitzZeta[0, 3]").unwrap(), "-5/2");
+    assert_eq!(interpret("HurwitzZeta[-1, 3]").unwrap(), "-37/12");
+    assert_eq!(interpret("HurwitzZeta[-2, 2]").unwrap(), "-1");
+  }
+
+  // For a non-positive integer the sum hits a pole at k = -a when s > 0.
+  #[test]
+  fn pole_at_nonpositive_integer_a() {
+    assert_eq!(interpret("HurwitzZeta[2, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("HurwitzZeta[2, -3]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("HurwitzZeta[3, -1]").unwrap(), "ComplexInfinity");
+  }
+
+  // For s <= 0 a non-positive integer a is finite (Bernoulli polynomial),
+  // unlike Wolfram's analytically continued Zeta[s, a].
+  #[test]
+  fn nonpositive_s_nonpositive_integer_a() {
+    assert_eq!(interpret("HurwitzZeta[0, -3]").unwrap(), "7/2");
+    assert_eq!(interpret("HurwitzZeta[-1, -3]").unwrap(), "-73/12");
+    assert_eq!(interpret("HurwitzZeta[-2, -3]").unwrap(), "14");
+  }
+
+  // The pole of the Riemann zeta at s = 1 carries over for any a.
+  #[test]
+  fn pole_at_s_one() {
+    assert_eq!(interpret("HurwitzZeta[1, 1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("HurwitzZeta[1, 2]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated_with_own_head() {
+    assert_eq!(interpret("HurwitzZeta[s, 3]").unwrap(), "HurwitzZeta[s, 3]");
+    assert_eq!(interpret("Head[HurwitzZeta[s, 3]]").unwrap(), "HurwitzZeta");
+  }
+}

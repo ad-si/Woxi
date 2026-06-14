@@ -1057,6 +1057,9 @@ pub fn dispatch_math_functions(
     "Zeta" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::zeta_ast(args));
     }
+    "HurwitzZeta" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::hurwitz_zeta_public_ast(args));
+    }
     "DirichletEta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dirichlet_eta_ast(args));
     }

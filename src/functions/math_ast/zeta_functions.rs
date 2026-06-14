@@ -106,6 +106,53 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Hurwitz zeta function Zeta[s, a]
+/// HurwitzZeta[s, a] — the Hurwitz zeta function Sum_{k>=0} 1/(k+a)^s.
+///
+/// It coincides with the two-argument `Zeta[s, a]` everywhere except when `a`
+/// is a non-positive integer: there the defining sum has a pole at k = -a, so
+/// HurwitzZeta diverges (ComplexInfinity) for s > 0, whereas Wolfram's
+/// `Zeta[s, a]` uses an analytic continuation that stays finite. For s <= 0
+/// both reduce to the same Bernoulli-polynomial value, so we delegate to the
+/// existing two-argument Zeta evaluation in every non-pole case.
+pub fn hurwitz_zeta_public_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "HurwitzZeta".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let s = &args[0];
+  let a = &args[1];
+
+  // Pole: a non-positive integer with s > 0 makes the term 1/(k + a)^s at
+  // k = -a equal to 1/0^s = ComplexInfinity.
+  if let Expr::Integer(a_int) = a
+    && *a_int <= 0
+    && let Some(s_val) = expr_to_f64(s)
+    && s_val > 0.0
+  {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
+  // Otherwise HurwitzZeta agrees with the two-argument Zeta. Reuse it.
+  let result = zeta_ast(args)?;
+
+  // When Zeta could not simplify it returns the unevaluated head `Zeta[s, a]`;
+  // re-wrap that as HurwitzZeta to preserve the head.
+  if let Expr::FunctionCall { name, args: r } = &result
+    && name == "Zeta"
+    && r.len() == 2
+  {
+    return unevaluated();
+  }
+  Ok(result)
+}
+
 fn hurwitz_zeta_ast(
   s_expr: &Expr,
   a_expr: &Expr,
