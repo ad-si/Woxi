@@ -95,6 +95,39 @@ mod degree_constant {
   }
 
   #[test]
+  fn fifth_tenth_angle_exact_values() {
+    // Tan / Cot / Sec / Csc at multiples of Pi/5 and Pi/10 (regression).
+    assert_eq!(interpret("Tan[Pi/5]").unwrap(), "Sqrt[5 - 2*Sqrt[5]]");
+    assert_eq!(interpret("Tan[2 Pi/5]").unwrap(), "Sqrt[5 + 2*Sqrt[5]]");
+    assert_eq!(interpret("Tan[Pi/10]").unwrap(), "Sqrt[1 - 2/Sqrt[5]]");
+    assert_eq!(interpret("Tan[3 Pi/10]").unwrap(), "Sqrt[1 + 2/Sqrt[5]]");
+
+    assert_eq!(interpret("Cot[Pi/5]").unwrap(), "Sqrt[1 + 2/Sqrt[5]]");
+    assert_eq!(interpret("Cot[2 Pi/5]").unwrap(), "Sqrt[1 - 2/Sqrt[5]]");
+    assert_eq!(interpret("Cot[Pi/10]").unwrap(), "Sqrt[5 + 2*Sqrt[5]]");
+    assert_eq!(interpret("Cot[3 Pi/10]").unwrap(), "Sqrt[5 - 2*Sqrt[5]]");
+
+    assert_eq!(interpret("Sec[Pi/5]").unwrap(), "-1 + Sqrt[5]");
+    assert_eq!(interpret("Sec[2 Pi/5]").unwrap(), "1 + Sqrt[5]");
+    assert_eq!(interpret("Sec[Pi/10]").unwrap(), "1/Sqrt[5/8 + Sqrt[5]/8]");
+    assert_eq!(
+      interpret("Sec[3 Pi/10]").unwrap(),
+      "1/Sqrt[5/8 - Sqrt[5]/8]"
+    );
+
+    assert_eq!(interpret("Csc[Pi/5]").unwrap(), "1/Sqrt[5/8 - Sqrt[5]/8]");
+    assert_eq!(interpret("Csc[2 Pi/5]").unwrap(), "1/Sqrt[5/8 + Sqrt[5]/8]");
+    assert_eq!(interpret("Csc[Pi/10]").unwrap(), "1 + Sqrt[5]");
+    assert_eq!(interpret("Csc[3 Pi/10]").unwrap(), "-1 + Sqrt[5]");
+
+    // Sign-folding into other quadrants distributes the negation over sums.
+    assert_eq!(interpret("Cot[-Pi/5]").unwrap(), "-Sqrt[1 + 2/Sqrt[5]]");
+    assert_eq!(interpret("Cot[4 Pi/5]").unwrap(), "-Sqrt[1 + 2/Sqrt[5]]");
+    assert_eq!(interpret("Tan[3 Pi/5]").unwrap(), "-Sqrt[5 + 2*Sqrt[5]]");
+    assert_eq!(interpret("Sec[4 Pi/5]").unwrap(), "1 - Sqrt[5]");
+  }
+
+  #[test]
   fn sin_degree_all_quadrants() {
     assert_eq!(interpret("Sin[45 Degree]").unwrap(), "1/Sqrt[2]");
     assert_eq!(interpret("Sin[90 Degree]").unwrap(), "1");

@@ -509,6 +509,14 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
+    // tan(Pi/5) = Sqrt[5 - 2*Sqrt[5]]
+    (1, 5) => lit("Sqrt[5 - 2*Sqrt[5]]"),
+    // tan(2*Pi/5) = Sqrt[5 + 2*Sqrt[5]]
+    (2, 5) => lit("Sqrt[5 + 2*Sqrt[5]]"),
+    // tan(Pi/10) = Sqrt[1 - 2/Sqrt[5]]
+    (1, 10) => lit("Sqrt[1 - 2/Sqrt[5]]"),
+    // tan(3*Pi/10) = Sqrt[1 + 2/Sqrt[5]]
+    (3, 10) => lit("Sqrt[1 + 2/Sqrt[5]]"),
     // No radical form: fold to the canonical first-octant Tan/Cot.
     _ => return octant_fallback("Tan", "Cot", kr, nr, sign, k_orig, n),
   };
@@ -556,6 +564,14 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
     (1, 4) => make_sqrt(Expr::Integer(2)),
     // Sec(Pi/3) = 2
     (1, 3) => Expr::Integer(2),
+    // Sec(Pi/5) = -1 + Sqrt[5]
+    (1, 5) => lit("-1 + Sqrt[5]"),
+    // Sec(2*Pi/5) = 1 + Sqrt[5]
+    (2, 5) => lit("1 + Sqrt[5]"),
+    // Sec(Pi/10) = 1/Sqrt[5/8 + Sqrt[5]/8]
+    (1, 10) => lit("1/Sqrt[5/8 + Sqrt[5]/8]"),
+    // Sec(3*Pi/10) = 1/Sqrt[5/8 - Sqrt[5]/8]
+    (3, 10) => lit("1/Sqrt[5/8 - Sqrt[5]/8]"),
     // No radical form: fold to the canonical first-octant Sec/Csc.
     _ => return octant_fallback("Sec", "Csc", kr, nr, sign, k_orig, n),
   };
@@ -601,6 +617,14 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
       left: Box::new(Expr::Integer(2)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
+    // Csc(Pi/5) = 1/Sqrt[5/8 - Sqrt[5]/8]
+    (1, 5) => lit("1/Sqrt[5/8 - Sqrt[5]/8]"),
+    // Csc(2*Pi/5) = 1/Sqrt[5/8 + Sqrt[5]/8]
+    (2, 5) => lit("1/Sqrt[5/8 + Sqrt[5]/8]"),
+    // Csc(Pi/10) = 1 + Sqrt[5]
+    (1, 10) => lit("1 + Sqrt[5]"),
+    // Csc(3*Pi/10) = -1 + Sqrt[5]
+    (3, 10) => lit("-1 + Sqrt[5]"),
     // No radical form: fold to the canonical first-octant Csc/Sec.
     _ => return octant_fallback("Csc", "Sec", kr, nr, sign1, k_orig, n),
   };
@@ -646,6 +670,14 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
       left: Box::new(Expr::Integer(1)),
       right: Box::new(make_sqrt(Expr::Integer(3))),
     },
+    // Cot(Pi/5) = Sqrt[1 + 2/Sqrt[5]]
+    (1, 5) => lit("Sqrt[1 + 2/Sqrt[5]]"),
+    // Cot(2*Pi/5) = Sqrt[1 - 2/Sqrt[5]]
+    (2, 5) => lit("Sqrt[1 - 2/Sqrt[5]]"),
+    // Cot(Pi/10) = Sqrt[5 + 2*Sqrt[5]]
+    (1, 10) => lit("Sqrt[5 + 2*Sqrt[5]]"),
+    // Cot(3*Pi/10) = Sqrt[5 - 2*Sqrt[5]]
+    (3, 10) => lit("Sqrt[5 - 2*Sqrt[5]]"),
     // No radical form: fold to the canonical first-octant Cot/Tan.
     _ => return octant_fallback("Cot", "Tan", kr, nr, sign, k_orig, n),
   };
@@ -680,6 +712,19 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       return Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }].into(),
+      };
+    }
+    // -(a + b) => (-a) + (-b): distribute over a sum so the result keeps the
+    // flattened additive form Wolfram displays (e.g. -(-1 + Sqrt[5]) => 1 - Sqrt[5]).
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Plus =>
+    {
+      let left = std::mem::replace(left, Box::new(Expr::Integer(0)));
+      let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
+      return Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(negate_expr(*left)),
+        right: Box::new(negate_expr(*right)),
       };
     }
     // -(a/b) => Times[-1, a/b] to match Wolfram output style
