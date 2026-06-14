@@ -8948,6 +8948,10 @@ pub fn evaluate_function_call_ast_inner(
         // OperatorApplied[f][x][y] (handled in parse_curry_form), so it is
         // not "unimplemented".
         | "OperatorApplied"
+        // NearestTo[x, …] is the operator form of Nearest: it stays
+        // unevaluated until applied as NearestTo[x][data] (handled in the
+        // curried-call machinery), so it is not "unimplemented".
+        | "NearestTo"
     )
   {
     let args_str = args

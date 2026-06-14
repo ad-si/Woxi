@@ -946,6 +946,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RealSign" => Some((1, 1)),
     "RealValuedNumberQ" => Some((1, 1)),
     "RealValuedNumericQ" => Some((1, 1)),
+    "NearestTo" => Some((1, 2)),
     "Reap" => Some((1, 3)),
     "RecurrenceTable" => Some((3, 3)),
     "Reduce" => Some((2, 3)),

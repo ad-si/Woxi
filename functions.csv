@@ -4226,7 +4226,7 @@ LeftVector,,,,3.0,4356
 LinearSolveFunction,,,,5.0,4356
 LossFunction,,,,11.3,4356
 NCache,,,,6.0,4356
-NearestTo,,,,11.3,4356
+NearestTo,Operator form of Nearest that finds the elements nearest to a value,✅,pure,11.3,4356
 NumberFieldIntegralBasis,,,,6.0,4356
 ParentCell,,🚫,,10.0,4356
 ParzenWindow,,,,9.0,4356

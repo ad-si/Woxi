@@ -7262,6 +7262,55 @@ mod nearest {
   }
 }
 
+mod nearest_to {
+  use super::*;
+
+  #[test]
+  fn operator_form_finds_nearest() {
+    // NearestTo[x][data] == Nearest[data, x].
+    assert_eq!(
+      interpret("NearestTo[3.2][{1, 2, 3, 4, 5}]").unwrap(),
+      "{3}"
+    );
+    assert_eq!(interpret("NearestTo[3][{1, 5, 8}]").unwrap(), "{1, 5}");
+    // Ties return both nearest elements.
+    assert_eq!(
+      interpret("NearestTo[2.5][{1, 2, 3, 4}]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn operator_form_with_count() {
+    // NearestTo[x, n][data] == Nearest[data, x, n].
+    assert_eq!(
+      interpret("NearestTo[3.2, 2][{1, 2, 3, 4, 5}]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn bare_operator_stays_symbolic() {
+    assert_eq!(interpret("NearestTo[3.2]").unwrap(), "NearestTo[3.2]");
+    assert_eq!(
+      interpret("NearestTo[3.2, 2]").unwrap(),
+      "NearestTo[3.2, 2]"
+    );
+  }
+
+  #[test]
+  fn works_as_a_mapping_function() {
+    assert_eq!(
+      interpret("Map[NearestTo[3.5], {{1, 2, 3}, {10, 20}}]").unwrap(),
+      "{{3}, {10}}"
+    );
+    assert_eq!(
+      interpret("NearestTo[3.5] /@ {{1, 2, 3}, {10, 20}}").unwrap(),
+      "{{3}, {10}}"
+    );
+  }
+}
+
 mod array_pad {
   use super::*;
 

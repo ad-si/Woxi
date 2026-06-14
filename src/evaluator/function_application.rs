@@ -508,6 +508,13 @@ pub fn apply_function_to_arg(
         let new_args = vec![arg.clone(), args[0].clone(), args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
+      // NearestTo[x][data] -> Nearest[data, x] (operator form of Nearest),
+      // so `Map[NearestTo[x], lists]` finds the nearest in each list.
+      if name == "NearestTo" && (args.len() == 1 || args.len() == 2) {
+        let mut new_args = vec![arg.clone()];
+        new_args.extend(args.iter().cloned());
+        return evaluate_function_call_ast("Nearest", &new_args);
+      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)
@@ -897,6 +904,15 @@ pub fn apply_curried_call(
         let new_args =
           vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
+      }
+      // NearestTo[x][data] -> Nearest[data, x];
+      // NearestTo[x, n][data] -> Nearest[data, x, n].
+      if name == "NearestTo"
+        && (func_args.len() == 1 || func_args.len() == 2)
+      {
+        let mut new_args = args.to_vec();
+        new_args.extend(func_args.iter().cloned());
+        return evaluate_function_call_ast("Nearest", &new_args);
       }
       if matches!(
         name.as_str(),
