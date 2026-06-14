@@ -2199,6 +2199,17 @@ pub fn dispatch_list_operations(
         Some(&args[2]),
       ));
     }
+    "ComapApply" if args.len() == 1 => {
+      // Operator form: ComapApply[funs] stays symbolic until applied via the
+      // curried form ComapApply[funs][args].
+      return Some(Ok(Expr::FunctionCall {
+        name: "ComapApply".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "ComapApply" if args.len() == 2 => {
+      return Some(list_helpers_ast::comap_apply_ast(&args[0], &args[1]));
+    }
     "Operate" if args.len() == 2 || args.len() == 3 => {
       let p = &args[0];
       let expr = &args[1];

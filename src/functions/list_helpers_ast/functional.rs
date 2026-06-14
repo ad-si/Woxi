@@ -527,9 +527,14 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Apply: first argument must be a function".into(),
-    )),
+    // Apply replaces the head of `list` with `func`, whatever `func` is:
+    //   Apply[{g, h}, {1, 2}]          -> {g, h}[1, 2]
+    //   Apply[3, {1, 2}]               -> 3[1, 2]
+    //   Apply[f[a], {1, 2}]            -> f[a][1, 2]
+    //   Apply[Composition[f, g], {1, 2}] -> f[g[1, 2]]
+    // Build the curried application and evaluate it so applicable heads
+    // (Composition, pure functions, …) reduce while inert heads stay symbolic.
+    _ => crate::evaluator::apply_curried_call(func, &items),
   }
 }
 
@@ -709,9 +714,8 @@ fn apply_func_as_head(
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Apply: first argument must be a function".into(),
-    )),
+    // Apply replaces the head with `func` regardless of what `func` is.
+    _ => crate::evaluator::apply_curried_call(func, items),
   }
 }
 

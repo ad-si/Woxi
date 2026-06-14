@@ -155,6 +155,71 @@ mod list_tests {
   }
 
   #[test]
+  fn apply_replaces_head_with_any_expr() {
+    // Apply replaces the head with `func` regardless of what `func` is —
+    // not only symbols/functions. Regression: Woxi used to error with
+    // "Apply: first argument must be a function".
+    assert_eq!(
+      interpret("Apply[{g, h}, {1, 2}]").unwrap(),
+      "{g, h}[1, 2]"
+    );
+    assert_eq!(interpret("Apply[3, {1, 2}]").unwrap(), "3[1, 2]");
+    assert_eq!(interpret("Apply[f[a], {1, 2}]").unwrap(), "f[a][1, 2]");
+    // Applicable compound heads reduce.
+    assert_eq!(
+      interpret("Apply[Composition[f, g], {1, 2}]").unwrap(),
+      "f[g[1, 2]]"
+    );
+  }
+
+  #[test]
+  fn comap_apply() {
+    // ComapApply applies each function to the spread sequence of arguments.
+    assert_eq!(
+      interpret("ComapApply[{f, g}, {1, 2}]").unwrap(),
+      "{f[1, 2], g[1, 2]}"
+    );
+    assert_eq!(
+      interpret("ComapApply[{f, g, h}, {a, b}]").unwrap(),
+      "{f[a, b], g[a, b], h[a, b]}"
+    );
+    // Real functions are evaluated.
+    assert_eq!(
+      interpret("ComapApply[{Plus, Times}, {3, 4}]").unwrap(),
+      "{7, 12}"
+    );
+    // Associations map over their values, keeping the keys.
+    assert_eq!(
+      interpret("ComapApply[<|a -> f, b -> g|>, {1, 2}]").unwrap(),
+      "<|a -> f[1, 2], b -> g[1, 2]|>"
+    );
+    // General heads keep their structure.
+    assert_eq!(
+      interpret("ComapApply[h[f, g], {1, 2}]").unwrap(),
+      "h[f[1, 2], g[1, 2]]"
+    );
+    // Atomic first argument is returned unchanged.
+    assert_eq!(interpret("ComapApply[f, {1, 2}]").unwrap(), "f");
+    assert_eq!(interpret("ComapApply[3, {1, 2}]").unwrap(), "3");
+    // Default level {1}: a nested list is applied as a whole head.
+    assert_eq!(
+      interpret("ComapApply[{f, {g, h}}, {1, 2}]").unwrap(),
+      "{f[1, 2], {g, h}[1, 2]}"
+    );
+    // Non-list second argument: Apply on an atom leaves it unchanged.
+    assert_eq!(interpret("ComapApply[{f, g}, x]").unwrap(), "{x, x}");
+    // Operator form.
+    assert_eq!(
+      interpret("ComapApply[{f, g}][{1, 2}]").unwrap(),
+      "{f[1, 2], g[1, 2]}"
+    );
+    assert_eq!(
+      interpret("ComapApply[{f, g}]").unwrap(),
+      "ComapApply[{f, g}]"
+    );
+  }
+
+  #[test]
   fn identity() {
     assert_eq!(interpret("Identity[5]").unwrap(), "5");
     assert_eq!(interpret("Identity[{1, 2, 3}]").unwrap(), "{1, 2, 3}");

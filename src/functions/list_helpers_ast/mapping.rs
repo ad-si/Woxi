@@ -1456,6 +1456,29 @@ pub fn comap_ast(
   }
 }
 
+/// ComapApply[funs, args] applies each element of `funs` to the sequence of
+/// `args` (like `Apply`), preserving the structure of `funs`. Equivalent to
+/// `Map[Apply[#, args]&, funs]` at level `{1}`.
+///
+/// Examples:
+///   ComapApply[{f, g}, {1, 2}]           -> {f[1, 2], g[1, 2]}
+///   ComapApply[<|a -> f, b -> g|>, {1}]  -> <|a -> f[1], b -> g[1]|>
+///   ComapApply[h[f, g], {1, 2}]          -> h[f[1, 2], g[1, 2]]
+///   ComapApply[f, {1, 2}]               -> f   (atomic: unchanged)
+pub fn comap_apply_ast(
+  funs: &Expr,
+  args: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Synthetic pure function `Apply[#1, args]` applied to each element of `funs`.
+  let applier = Expr::Function {
+    body: Box::new(Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![Expr::Slot(1), args.clone()].into(),
+    }),
+  };
+  map_ast(&applier, funs)
+}
+
 /// ComposeList[{f, g, h}, x] -> {x, f[x], g[f[x]], h[g[f[x]]]}
 pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
