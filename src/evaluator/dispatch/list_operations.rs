@@ -2181,6 +2181,24 @@ pub fn dispatch_list_operations(
       let head_filter = crate::syntax::expr_to_string(&args[1]);
       return Some(list_helpers_ast::through_ast(&args[0], Some(&head_filter)));
     }
+    "Comap" if args.len() == 1 => {
+      // Operator form: Comap[funs] stays symbolic until applied to an argument
+      // via the curried form Comap[funs][x].
+      return Some(Ok(Expr::FunctionCall {
+        name: "Comap".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
+    "Comap" if args.len() == 2 => {
+      return Some(list_helpers_ast::comap_ast(&args[0], &args[1], None));
+    }
+    "Comap" if args.len() == 3 => {
+      return Some(list_helpers_ast::comap_ast(
+        &args[0],
+        &args[1],
+        Some(&args[2]),
+      ));
+    }
     "Operate" if args.len() == 2 || args.len() == 3 => {
       let p = &args[0];
       let expr = &args[1];

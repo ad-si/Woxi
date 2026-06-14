@@ -1429,6 +1429,33 @@ pub fn through_ast(
   }
 }
 
+/// Comap[funs, x] applies each element of `funs` to `x`, preserving the
+/// structure of `funs`. Equivalent to `Map[#[x]&, funs, lev]` with a default
+/// level spec of `{1}`.
+///
+/// Examples:
+///   Comap[{f, g, h}, x]            -> {f[x], g[x], h[x]}
+///   Comap[<|a -> f, b -> g|>, x]   -> <|a -> f[x], b -> g[x]|>
+///   Comap[h[f, g], x]             -> h[f[x], g[x]]
+///   Comap[f, x]                   -> f   (atomic: unchanged)
+pub fn comap_ast(
+  funs: &Expr,
+  arg: &Expr,
+  level_spec: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  // Synthetic pure function `#1[arg]` applied to each element of `funs`.
+  let applier = Expr::Function {
+    body: Box::new(Expr::CurriedCall {
+      func: Box::new(Expr::Slot(1)),
+      args: vec![arg.clone()],
+    }),
+  };
+  match level_spec {
+    Some(lev) => map_with_level_ast(&applier, funs, lev),
+    None => map_ast(&applier, funs),
+  }
+}
+
 /// ComposeList[{f, g, h}, x] -> {x, f[x], g[f[x]], h[g[f[x]]]}
 pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

@@ -334,6 +334,55 @@ mod list_tests {
   }
 
   #[test]
+  fn comap() {
+    // Comap applies each function in a list to the same argument.
+    assert_eq!(
+      interpret("Comap[{f, g, h}, x]").unwrap(),
+      "{f[x], g[x], h[x]}"
+    );
+    // The whole second argument is passed to each function.
+    assert_eq!(
+      interpret("Comap[{f, g}, {1, 2}]").unwrap(),
+      "{f[{1, 2}], g[{1, 2}]}"
+    );
+    // Real functions are evaluated.
+    assert_eq!(
+      interpret("Comap[{Total, Mean, Max}, {1, 2, 3, 4}]").unwrap(),
+      "{10, 5/2, 4}"
+    );
+    // Associations map over their values, keeping the keys.
+    assert_eq!(
+      interpret("Comap[<|a -> f, b -> g|>, x]").unwrap(),
+      "<|a -> f[x], b -> g[x]|>"
+    );
+    // The structure of a general head is preserved.
+    assert_eq!(interpret("Comap[h[f, g], x]").unwrap(), "h[f[x], g[x]]");
+    // Atomic first argument is returned unchanged.
+    assert_eq!(interpret("Comap[f, x]").unwrap(), "f");
+    assert_eq!(interpret("Comap[3, x]").unwrap(), "3");
+    // Default level is {1}: nested lists are applied as a whole.
+    assert_eq!(
+      interpret("Comap[{f, {g, h}}, x]").unwrap(),
+      "{f[x], {g, h}[x]}"
+    );
+    // An explicit level spec descends further.
+    assert_eq!(
+      interpret("Comap[{f, {g, h}}, x, 2]").unwrap(),
+      "{f[x], {g[x], h[x]}[x]}"
+    );
+    // Operator form: Comap[funs][x] == Comap[funs, x].
+    assert_eq!(interpret("Comap[{f, g}][x]").unwrap(), "{f[x], g[x]}");
+    assert_eq!(
+      interpret("Comap[{Min, Max}][{3, 1, 2}]").unwrap(),
+      "{1, 3}"
+    );
+    // Operator form alone stays symbolic until applied.
+    assert_eq!(interpret("Comap[{f, g}]").unwrap(), "Comap[{f, g}]");
+    // Empty list.
+    assert_eq!(interpret("Comap[{}, x]").unwrap(), "{}");
+  }
+
+  #[test]
   fn delete_cases_with_count() {
     // DeleteCases[list, pattern, levelspec, n] deletes at most n matches
     assert_eq!(
