@@ -1602,15 +1602,16 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (0, INF)
   };
 
-  #[allow(clippy::too_many_arguments)]
+  // Path components are integer indices for list/function/operator positions
+  // and `Key[k]` for association positions.
   fn find_first(
     expr: &Expr,
     pattern: &Expr,
-    path: &mut Vec<i128>,
+    path: &mut Vec<Expr>,
     depth: i128,
     lmin: i128,
     lmax: i128,
-  ) -> Option<Vec<i128>> {
+  ) -> Option<Vec<Expr>> {
     if depth >= lmin && depth <= lmax {
       let pattern_str = crate::syntax::expr_to_string(pattern);
       let expr_str = crate::syntax::expr_to_string(expr);
@@ -1626,8 +1627,8 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Recurse into every structurally composite expression — List args,
     // FunctionCall args, BinaryOp operands, UnaryOp operand — so patterns
     // like `x^2` can be found inside `1 + x^2` (a Plus) at position {1, 2}.
-    let recurse = |item: &Expr, idx: i128, path: &mut Vec<i128>| {
-      path.push(idx);
+    let recurse = |item: &Expr, component: Expr, path: &mut Vec<Expr>| {
+      path.push(component);
       let r = find_first(item, pattern, path, depth + 1, lmin, lmax);
       path.pop();
       r
@@ -1635,28 +1636,44 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr {
       Expr::List(items) => {
         for (i, item) in items.iter().enumerate() {
-          if let Some(result) = recurse(item, (i + 1) as i128, path) {
+          if let Some(result) =
+            recurse(item, Expr::Integer((i + 1) as i128), path)
+          {
+            return Some(result);
+          }
+        }
+      }
+      // An association element is located by its key: `Key[k]`.
+      Expr::Association(pairs) => {
+        for (k, v) in pairs {
+          let key = Expr::FunctionCall {
+            name: "Key".to_string(),
+            args: vec![k.clone()].into(),
+          };
+          if let Some(result) = recurse(v, key, path) {
             return Some(result);
           }
         }
       }
       Expr::FunctionCall { args, .. } => {
         for (i, item) in args.iter().enumerate() {
-          if let Some(result) = recurse(item, (i + 1) as i128, path) {
+          if let Some(result) =
+            recurse(item, Expr::Integer((i + 1) as i128), path)
+          {
             return Some(result);
           }
         }
       }
       Expr::BinaryOp { left, right, .. } => {
-        if let Some(result) = recurse(left, 1, path) {
+        if let Some(result) = recurse(left, Expr::Integer(1), path) {
           return Some(result);
         }
-        if let Some(result) = recurse(right, 2, path) {
+        if let Some(result) = recurse(right, Expr::Integer(2), path) {
           return Some(result);
         }
       }
       Expr::UnaryOp { operand, .. } => {
-        if let Some(result) = recurse(operand, 1, path) {
+        if let Some(result) = recurse(operand, Expr::Integer(1), path) {
           return Some(result);
         }
       }
@@ -1667,9 +1684,7 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut path = Vec::new();
   match find_first(&args[0], &args[1], &mut path, 0, lmin, lmax) {
-    Some(indices) => {
-      Ok(Expr::List(indices.into_iter().map(Expr::Integer).collect()))
-    }
+    Some(indices) => Ok(Expr::List(indices.into())),
     None => Ok(default),
   }
 }

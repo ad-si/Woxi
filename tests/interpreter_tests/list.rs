@@ -4302,6 +4302,45 @@ mod first_position {
       "{1, 2}"
     );
   }
+
+  // An association element's position is reported by its key, {Key[k]}.
+  #[test]
+  fn association_value() {
+    assert_eq!(
+      interpret("FirstPosition[<|a -> 1, b -> 2, c -> 2|>, 2]").unwrap(),
+      "{Key[b]}"
+    );
+  }
+
+  #[test]
+  fn association_pattern() {
+    assert_eq!(
+      interpret("FirstPosition[<|a -> 1, b -> 2|>, _?EvenQ]").unwrap(),
+      "{Key[b]}"
+    );
+  }
+
+  #[test]
+  fn association_no_match_default() {
+    assert_eq!(
+      interpret(r#"FirstPosition[<|a -> 1, b -> 3|>, _?EvenQ, "none"]"#)
+        .unwrap(),
+      "none"
+    );
+  }
+
+  // Keys and integer indices mix in nested positions.
+  #[test]
+  fn association_nested_paths() {
+    assert_eq!(
+      interpret("FirstPosition[{<|a -> 1, b -> 2|>}, 2]").unwrap(),
+      "{1, Key[b]}"
+    );
+    assert_eq!(
+      interpret("FirstPosition[<|a -> {1, 2}, b -> 3|>, 2]").unwrap(),
+      "{Key[a], 2}"
+    );
+  }
 }
 
 mod ranked {
