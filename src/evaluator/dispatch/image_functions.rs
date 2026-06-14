@@ -645,9 +645,32 @@ pub fn dispatch_image_functions(
         };
         return Some(Ok(Expr::List(items.into())));
       }
-      // `String` / `Plaintext` return the input verbatim.
-      if format == "String" || format == "Plaintext" {
+      // `String` / `Plaintext` / `Text` return the input verbatim.
+      if format == "String" || format == "Plaintext" || format == "Text" {
         return Some(Ok(Expr::String(content)));
+      }
+      // `TSV` is tab-separated; `Table` splits each line on runs of
+      // whitespace. Both reuse the CSV element machinery (number auto-typing,
+      // {{…}, …} shape) after splitting into string rows.
+      if format == "TSV" || format == "Table" {
+        let trimmed = content.strip_suffix('\n').unwrap_or(&content);
+        let rows: Vec<Vec<String>> = if trimmed.is_empty() {
+          Vec::new()
+        } else {
+          trimmed
+            .split('\n')
+            .map(|line| {
+              if format == "TSV" {
+                line.split('\t').map(|s| s.to_string()).collect()
+              } else {
+                line.split_whitespace().map(|s| s.to_string()).collect()
+              }
+            })
+            .collect()
+        };
+        return Some(Ok(crate::functions::csv_ast::csv_import_element(
+          &rows, None,
+        )));
       }
       // `Words` splits on ASCII whitespace and drops empty fragments.
       if format == "Words" {

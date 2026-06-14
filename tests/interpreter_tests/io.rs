@@ -3622,6 +3622,46 @@ mod import_string {
       "Hello world"
     );
   }
+
+  // "Text" also returns the input verbatim.
+  #[test]
+  fn import_string_text_returns_input_verbatim() {
+    assert_eq!(
+      interpret(r#"ImportString["Hello world", "Text"]"#).unwrap(),
+      "Hello world"
+    );
+  }
+
+  // "TSV" parses tab-separated rows with number auto-typing.
+  #[test]
+  fn import_string_tsv() {
+    assert_eq!(
+      interpret("ImportString[\"1\\t2\\n3\\t4\", \"TSV\"]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    // Commas are not delimiters in TSV.
+    assert_eq!(
+      interpret("ImportString[\"x,y\\n1,2\", \"TSV\"]").unwrap(),
+      "{{x,y}, {1,2}}"
+    );
+  }
+
+  // "Table" splits each line on runs of whitespace.
+  #[test]
+  fn import_string_table() {
+    assert_eq!(
+      interpret(r#"ImportString["1 2 3\n4 5 6", "Table"]"#).unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}}"
+    );
+    assert_eq!(
+      interpret(r#"ImportString["1.5 2\n3 4", "Table"]"#).unwrap(),
+      "{{1.5, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret(r#"ImportString["a b\nc d", "Table"]"#).unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+  }
 }
 
 mod file_names {
