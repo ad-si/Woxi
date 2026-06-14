@@ -749,6 +749,25 @@ mod binomial {
     assert_eq!(interpret("Binomial[-3, 2]").unwrap(), "6");
   }
 
+  // Negative k is zero when n >= 0.
+  #[test]
+  fn negative_k_nonneg_n() {
+    assert_eq!(interpret("Binomial[2, -1]").unwrap(), "0");
+    assert_eq!(interpret("Binomial[5, -3]").unwrap(), "0");
+  }
+
+  // Both arguments negative: Binomial[n, k] = (-1)^(n+k) Binomial[-k-1, -n-1].
+  #[test]
+  fn negative_n_negative_k() {
+    assert_eq!(interpret("Binomial[-3, -3]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[-1, -1]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[-3, -5]").unwrap(), "6");
+    assert_eq!(interpret("Binomial[-1, -3]").unwrap(), "1");
+    // Zero when -k-1 < -n-1 (i.e. k > n).
+    assert_eq!(interpret("Binomial[-2, -1]").unwrap(), "0");
+    assert_eq!(interpret("Binomial[-5, -2]").unwrap(), "0");
+  }
+
   #[test]
   fn zero_zero() {
     assert_eq!(interpret("Binomial[0, 0]").unwrap(), "1");
@@ -847,6 +866,19 @@ mod multinomial {
   fn all_ones() {
     // Multinomial[1,1,1] = 3! / (1!*1!*1!) = 6
     assert_eq!(interpret("Multinomial[1, 1, 1]").unwrap(), "6");
+  }
+
+  // Negative integer arguments are handled by the cumulative binomial
+  // product rather than erroring; e.g. a (-1)! pole in the denominator
+  // sends the result to 0, but other cases stay finite.
+  #[test]
+  fn negative_integer_args() {
+    assert_eq!(interpret("Multinomial[1, 2, -1]").unwrap(), "0");
+    assert_eq!(interpret("Multinomial[-1, 1]").unwrap(), "0");
+    assert_eq!(interpret("Multinomial[-2, 5]").unwrap(), "0");
+    assert_eq!(interpret("Multinomial[-3, 1]").unwrap(), "-2");
+    assert_eq!(interpret("Multinomial[1, 1, -5]").unwrap(), "12");
+    assert_eq!(interpret("Multinomial[0, -1]").unwrap(), "1");
   }
 
   #[test]

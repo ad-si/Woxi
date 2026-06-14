@@ -3079,7 +3079,15 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute binomial coefficient for arbitrary integers (generalized)
 pub fn binomial_coeff(n: i128, k: i128) -> i128 {
   if k < 0 {
-    return 0;
+    // Binomial[n, k] with negative k is zero unless n is also a negative
+    // integer, where wolframscript uses
+    //   Binomial[n, k] = (-1)^(n+k) Binomial[-k-1, -n-1].
+    // e.g. Binomial[-3, -3] = 1 and Binomial[-3, -5] = 6.
+    if n >= 0 {
+      return 0;
+    }
+    let sign = if (n + k) % 2 == 0 { 1 } else { -1 };
+    return sign * binomial_coeff(-k - 1, -n - 1);
   }
   if k == 0 {
     return 1;
@@ -3125,15 +3133,14 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec().into(),
   };
 
-  // Fast path: all positive integers → integer arithmetic.
+  // Fast path: all integers → integer arithmetic via the cumulative
+  // binomial product Multinomial[n1,..,nk] = prod_j Binomial[n1+..+nj, nj].
+  // This is valid for negative integers too (binomial_coeff handles the
+  // negative cases), e.g. Multinomial[1, 2, -1] = 0 and
+  // Multinomial[-3, 1] = -2, matching wolframscript.
   let mut int_vals: Option<Vec<i128>> = Some(Vec::with_capacity(args.len()));
   for a in args {
     if let Expr::Integer(n) = a {
-      if *n < 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Multinomial: arguments must be non-negative integers".into(),
-        ));
-      }
       int_vals.as_mut().unwrap().push(*n);
     } else {
       int_vals = None;
