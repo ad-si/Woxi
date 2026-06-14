@@ -2807,6 +2807,42 @@ mod batch_unevaluated_wrappers_2 {
       "{1, 1, 0}"
     );
   }
+  // FoldPair folds f[state, e] -> {emit, newState} and returns the last emit.
+  #[test]
+  fn fold_pair_add_mul() {
+    assert_eq!(
+      interpret("FoldPair[{#1 + #2, #1*#2}&, 1, {2, 3}]").unwrap(),
+      "5"
+    );
+  }
+  #[test]
+  fn fold_pair_list_head_function() {
+    // f = List makes each step emit the state and carry the element forward.
+    assert_eq!(interpret("FoldPair[List, 1, {2, 3, 4}]").unwrap(), "3");
+  }
+  #[test]
+  fn fold_pair_constant_state() {
+    assert_eq!(
+      interpret("FoldPair[{#1 - #2, #2}&, 100, {10, 20, 30}]").unwrap(),
+      "-10"
+    );
+  }
+  // The 4-argument form returns g applied to the final {emit, state} pair.
+  #[test]
+  fn fold_pair_post_function() {
+    assert_eq!(
+      interpret("FoldPair[{2 #1, #1 + #2}&, 1, {10, 20}, g]").unwrap(),
+      "g[{22, 31}]"
+    );
+  }
+  // FoldPair on an empty list stays unevaluated.
+  #[test]
+  fn fold_pair_empty_list() {
+    assert_eq!(
+      interpret("FoldPair[{#1, #2}&, x, {}]").unwrap(),
+      "FoldPair[{#1, #2} & , x, {}]"
+    );
+  }
   #[test]
   fn join_across_basic() {
     assert_eq!(

@@ -3796,7 +3796,7 @@ CellFrameLabelMargins,,🚫,,4.0,3916
 CloudExpression,,🚫,,10.4,3916
 DynamicImage,,🚫,,10.4,3916
 FisherHypergeometricDistribution,,,,8.0,3916
-FoldPair,,,,10.2,3916
+FoldPair,Folds a pair-returning function over a list and returns the last emitted value,✅,pure,10.2,3916
 GenerateSymmetricKey,,🚫,,10.1,3916
 GuidedFilter,,,,10.2,3916
 ImageApplyIndexed,,🚫,,10.0,3916

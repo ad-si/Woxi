@@ -2835,6 +2835,80 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::Association(pairs)));
       }
     }
+    // FoldPair[f, x, {e1, …}] — like Fold, but f[state, ei] returns a pair
+    // {emit, newState}; the result is the *last* emitted value. The 4-argument
+    // form FoldPair[f, x, list, g] returns g applied to the final
+    // {emit, newState} pair.
+    "FoldPair" if args.len() == 3 || args.len() == 4 => {
+      if let Expr::List(ref elems) = args[2] {
+        // FoldPair on an empty list stays unevaluated (matching wolframscript).
+        if elems.is_empty() {
+          return Some(Ok(Expr::FunctionCall {
+            name: "FoldPair".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+        let f = &args[0];
+        let mut state = args[1].clone();
+        // Always overwritten on the first (guaranteed) iteration.
+        let mut last_emit = args[1].clone();
+        let apply2 = |func: &Expr, a: &Expr, b: &Expr| -> Expr {
+          match func {
+            Expr::Function { body } => {
+              crate::syntax::substitute_slots(body, &[a.clone(), b.clone()])
+            }
+            Expr::Identifier(fname) => Expr::FunctionCall {
+              name: fname.clone(),
+              args: vec![a.clone(), b.clone()].into(),
+            },
+            _ => Expr::FunctionCall {
+              name: expr_to_string(func),
+              args: vec![a.clone(), b.clone()].into(),
+            },
+          }
+        };
+        for elem in elems {
+          let applied = apply2(f, &state, elem);
+          let result = crate::evaluator::evaluate_expr_to_expr(&applied)
+            .unwrap_or(applied);
+          match &result {
+            Expr::List(pair) if pair.len() == 2 => {
+              last_emit = pair[0].clone();
+              state = pair[1].clone();
+            }
+            // f did not return a length-2 list: leave unevaluated.
+            _ => {
+              return Some(Ok(Expr::FunctionCall {
+                name: "FoldPair".to_string(),
+                args: args.to_vec().into(),
+              }));
+            }
+          }
+        }
+        if args.len() == 4 {
+          // Apply the post-processing function g to the final pair.
+          let pair = Expr::List(vec![last_emit, state].into());
+          let applied = match &args[3] {
+            Expr::Function { body } => {
+              crate::syntax::substitute_slots(body, &[pair])
+            }
+            Expr::Identifier(gname) => Expr::FunctionCall {
+              name: gname.clone(),
+              args: vec![pair].into(),
+            },
+            other => Expr::FunctionCall {
+              name: expr_to_string(other),
+              args: vec![pair].into(),
+            },
+          };
+          return Some(Ok(
+            crate::evaluator::evaluate_expr_to_expr(&applied)
+              .unwrap_or(applied),
+          ));
+        }
+        return Some(Ok(last_emit));
+      }
+    }
     // FoldPairList[f, x, list] — fold with pair output {emit, newState}
     "FoldPairList" if args.len() == 3 => {
       if let Expr::List(ref elems) = args[2] {
