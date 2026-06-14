@@ -4534,6 +4534,44 @@ mod contains_only {
   }
 }
 
+mod take_while {
+  use super::*;
+
+  #[test]
+  fn take_while_list() {
+    assert_eq!(
+      interpret("TakeWhile[{1, 2, 3, 4, 1}, # < 3 &]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  // On an association, the predicate tests the values and the leading run of
+  // key->value pairs is kept.
+  #[test]
+  fn take_while_association() {
+    assert_eq!(
+      interpret("TakeWhile[<|a -> 1, b -> 2, c -> 5|>, # < 3 &]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn take_while_association_all() {
+    assert_eq!(
+      interpret("TakeWhile[<|a -> 1, b -> 2, c -> 5|>, # < 10 &]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 5|>"
+    );
+  }
+
+  #[test]
+  fn take_while_association_none() {
+    assert_eq!(
+      interpret("TakeWhile[<|a -> 5, b -> 2|>, # < 3 &]").unwrap(),
+      "<||>"
+    );
+  }
+}
+
 mod length_while {
   use super::*;
 
@@ -4553,6 +4591,15 @@ mod length_while {
   #[test]
   fn length_while_all() {
     assert_eq!(interpret("LengthWhile[{1, 2, 3}, # < 5 &]").unwrap(), "3");
+  }
+
+  // LengthWhile counts the leading run of an association's values.
+  #[test]
+  fn length_while_association() {
+    assert_eq!(
+      interpret("LengthWhile[<|a -> 1, b -> 2, c -> 5|>, # < 3 &]").unwrap(),
+      "2"
+    );
   }
 }
 

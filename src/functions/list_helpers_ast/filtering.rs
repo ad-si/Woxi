@@ -1702,6 +1702,21 @@ pub fn take_while_ast(
   list: &Expr,
   pred: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // On an association, the predicate is tested against each value and the
+  // leading run of key->value pairs is kept.
+  if let Expr::Association(pairs) = list {
+    let mut result: Vec<(Expr, Expr)> = Vec::new();
+    for (k, v) in pairs {
+      let test_result = apply_func_ast(pred, v)?;
+      if expr_to_bool(&test_result) == Some(true) {
+        result.push((k.clone(), v.clone()));
+      } else {
+        break;
+      }
+    }
+    return Ok(Expr::Association(result));
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {
@@ -1826,8 +1841,12 @@ pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LengthWhile expects exactly 2 arguments".into(),
     ));
   }
-  let list = match &args[0] {
-    Expr::List(items) => items,
+  let crit = &args[1];
+  // On an association, count the leading run whose *values* satisfy the
+  // criterion.
+  let items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LengthWhile".to_string(),
@@ -1835,9 +1854,8 @@ pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let crit = &args[1];
   let mut count: i128 = 0;
-  for item in list {
+  for item in &items {
     let test = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Apply".to_string(),
       args: vec![crit.clone(), Expr::List(vec![item.clone()].into())].into(),
