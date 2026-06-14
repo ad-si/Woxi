@@ -1601,8 +1601,140 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
+/// A distribution is any expression whose head ends in "Distribution".
+fn as_distribution(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::FunctionCall { name, .. } if name.ends_with("Distribution") => {
+      Some(expr)
+    }
+    _ => None,
+  }
+}
+
+/// Whether the symbol `sym` occurs anywhere in `expr`.
+fn expr_has_symbol(expr: &Expr, sym: &str) -> bool {
+  match expr {
+    Expr::Identifier(s) => s == sym,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| expr_has_symbol(a, sym))
+    }
+    Expr::List(items) => items.iter().any(|a| expr_has_symbol(a, sym)),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_has_symbol(left, sym) || expr_has_symbol(right, sym)
+    }
+    Expr::UnaryOp { operand, .. } => expr_has_symbol(operand, sym),
+    _ => false,
+  }
+}
+
+/// An integration-variable name not occurring in the distribution.
+fn fresh_moment_var(dist: &Expr) -> String {
+  for c in ["x", "y", "z", "u", "w"] {
+    if !expr_has_symbol(dist, c) {
+      return c.to_string();
+    }
+  }
+  "xMomentVar".to_string()
+}
+
+/// Raw moment E[x^n] of a distribution via Expectation. Returns None when the
+/// Expectation cannot be evaluated in closed form.
+fn distribution_raw_moment(
+  dist: &Expr,
+  n: i128,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let powered = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(Expr::Identifier(var.to_string())),
+    right: Box::new(Expr::Integer(n)),
+  };
+  let distributed = Expr::FunctionCall {
+    name: "Distributed".to_string(),
+    args: vec![Expr::Identifier(var.to_string()), dist.clone()].into(),
+  };
+  let exp = Expr::FunctionCall {
+    name: "Expectation".to_string(),
+    args: vec![powered, distributed].into(),
+  };
+  let result = crate::evaluator::evaluate_expr_to_expr(&exp)?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Expectation")
+  {
+    Ok(None)
+  } else {
+    Ok(Some(result))
+  }
+}
+
+/// Moment[dist, n] / CentralMoment[dist, n] for a known distribution.
+/// `central` selects between the raw moment E[x^n] and the central moment
+/// E[(x - mean)^n]; the latter is assembled from raw moments by the binomial
+/// theorem so the result stays exact. Returns None when unsupported.
+fn distribution_moment(
+  dist: &Expr,
+  n_expr: &Expr,
+  central: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  let n = match expr_to_num(n_expr) {
+    Some(v) if v >= 0.0 && v.fract() == 0.0 => v as i128,
+    _ => return Ok(None),
+  };
+  let var = fresh_moment_var(dist);
+
+  if !central {
+    return distribution_raw_moment(dist, n, &var);
+  }
+
+  let mean = mean_ast(&[dist.clone()])?;
+  // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
+  let mut terms = Vec::with_capacity((n + 1) as usize);
+  for k in 0..=n {
+    let raw = match distribution_raw_moment(dist, k, &var)? {
+      Some(r) => r,
+      None => return Ok(None),
+    };
+    let binom = Expr::Integer(binomial_i128(n, k));
+    // (-mean)^(n-k); guard the n==k case to avoid 0^0 when mean == 0.
+    let neg_mean_pow = if n - k == 0 {
+      Expr::Integer(1)
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), mean.clone()].into(),
+        }),
+        right: Box::new(Expr::Integer(n - k)),
+      }
+    };
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![binom, neg_mean_pow, raw].into(),
+    });
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  // Expand so symbolic-parameter results collapse to their reduced form
+  // (e.g. the Normal third central moment cancels to 0, Poisson's to m).
+  let expanded = Expr::FunctionCall {
+    name: "Expand".to_string(),
+    args: vec![sum].into(),
+  };
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&expanded)?))
+}
+
 /// CentralMoment[list, r] - r-th central moment of a numeric list
 pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Distribution form: CentralMoment[dist, n].
+  if args.len() == 2
+    && let Some(dist) = as_distribution(&args[0])
+    && let Some(result) = distribution_moment(dist, &args[1], true)?
+  {
+    return Ok(result);
+  }
+
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "CentralMoment".to_string(),
@@ -1795,7 +1927,22 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     left: Box::new(m4),
     right: Box::new(m2_squared),
   };
+  let result = maybe_expand_for_distribution(&args[0], result);
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// For distribution arguments, distribute the moment-ratio division so that
+/// e.g. `(m + 3 m^2)/m^2` reduces to Wolfram's `3 + m^(-1)`. Numeric (list)
+/// results are unaffected.
+fn maybe_expand_for_distribution(arg: &Expr, result: Expr) -> Expr {
+  if as_distribution(arg).is_some() {
+    Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![result].into(),
+    }
+  } else {
+    result
+  }
 }
 
 /// Skewness[list] - CentralMoment[list, 3] / CentralMoment[list, 2]^(3/2)
@@ -1823,6 +1970,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     left: Box::new(m3),
     right: Box::new(m2_pow),
   };
+  let result = maybe_expand_for_distribution(&args[0], result);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -2085,6 +2233,13 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Moment".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // Distribution form: Moment[dist, n] = E[x^n].
+  if let Some(dist) = as_distribution(&args[0])
+    && let Some(result) = distribution_moment(dist, &args[1], false)?
+  {
+    return Ok(result);
   }
 
   let items = match &args[0] {

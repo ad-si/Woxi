@@ -1090,7 +1090,7 @@ EntityList,Lists all entities of a given type,✅,pure,10.0,1100
 FieldSize,,🚫,,6.0,1102
 LogNormalDistribution,Represents a log-normal distribution,✅,1,6.0,1102
 UpperTriangularize,Zero out elements below a diagonal,✅,pure,7.0,1103
-Moment,Raw statistical moment,✅,pure,8.0,1104
+Moment,Raw statistical moment of a list or distribution,✅,pure,8.0,1104
 SymbolName,Returns the name of a symbol as a string,✅,pure,3.0,1105
 Goto,Jumps to a Label,✅,pure,1.0,1106
 AdjacencyGraph,Creates a graph from an adjacency matrix,✅,1,8.0,1107
@@ -1331,7 +1331,7 @@ ExtentSize,,🚫,,8.0,1345
 CoshIntegral,Hyperbolic cosine integral Chi(z),✅,pure,3.0,1347
 SampleRate,,🚫,,2.0,1347
 LegendLayout,,🚫,,9.0,1348
-CentralMoment,Computes the k-th central moment of a list,✅,pure,6.0,1349
+CentralMoment,Computes the k-th central moment of a list or distribution,✅,pure,6.0,1349
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2.0,1351
 GeoDistance,,🚫,,7.0,1351
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1.0,1353
@@ -1381,7 +1381,7 @@ DotDashed,Dot-dashed line style directive,✅,none,6.0,1399
 ListLogLinearPlot,Plots data with logarithmic x-axis,✅,pure,6.0,1399
 ParametricRegion,Represent a parametric region,🚫,pure,10.0,1400
 DialogReturn,Return from a dialog,🚫,io,6.0,1401
-Skewness,Computes the skewness of a list,✅,pure,6.0,1402
+Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
 TreePlot,Plot a tree graph,🚫,pure,6.0,1405
@@ -1395,7 +1395,7 @@ Here,Current geo location,🚫,io,10.0,1413
 ImageTransformation,Apply geometric transformation to image,🚫,io,8.0,1413
 GroupElements,Elements of a group,✅,pure,8.0,1414
 EllipticNomeQ,Elliptic nome function,✅,pure,3.0,1415
-Kurtosis,Computes the kurtosis of a list,✅,pure,6.0,1416
+Kurtosis,Computes the kurtosis of a list or distribution,✅,pure,6.0,1416
 CellAutoOverwrite,Cell auto-overwrite option,🚫,io,3.0,1417
 NotebookOpen,Open a notebook file,🚫,io,3.0,1418
 VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8.0,1419

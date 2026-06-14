@@ -2995,3 +2995,93 @@ mod zipf_distribution {
     );
   }
 }
+
+mod distribution_moments {
+  use super::*;
+
+  // Moment[dist, n] is the raw moment E[x^n].
+  #[test]
+  fn raw_moments() {
+    assert_eq!(interpret("Moment[NormalDistribution[0, 1], 4]").unwrap(), "3");
+    assert_eq!(interpret("Moment[ExponentialDistribution[2], 3]").unwrap(), "3/4");
+    assert_eq!(interpret("Moment[UniformDistribution[{0, 1}], 3]").unwrap(), "1/4");
+    assert_eq!(
+      interpret("Moment[PoissonDistribution[m], 3]").unwrap(),
+      "m + 3*m^2 + m^3"
+    );
+  }
+
+  // CentralMoment[dist, n] = E[(x - mean)^n].
+  #[test]
+  fn central_moments_numeric() {
+    assert_eq!(
+      interpret("CentralMoment[NormalDistribution[0, 1], 4]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("CentralMoment[ExponentialDistribution[2], 3]").unwrap(),
+      "1/4"
+    );
+    assert_eq!(
+      interpret("CentralMoment[ExponentialDistribution[1], 4]").unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret("CentralMoment[UniformDistribution[{0, 1}], 4]").unwrap(),
+      "1/80"
+    );
+    assert_eq!(
+      interpret("CentralMoment[GammaDistribution[2, 3], 2]").unwrap(),
+      "18"
+    );
+  }
+
+  #[test]
+  fn central_moments_symbolic_parameters() {
+    assert_eq!(
+      interpret("CentralMoment[PoissonDistribution[m], 2]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("CentralMoment[PoissonDistribution[m], 3]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("CentralMoment[NormalDistribution[mu, sigma], 4]").unwrap(),
+      "3*sigma^4"
+    );
+    assert_eq!(
+      interpret("CentralMoment[ExponentialDistribution[a], 3]").unwrap(),
+      "2/a^3"
+    );
+  }
+
+  // Skewness = m3 / m2^(3/2).
+  #[test]
+  fn skewness() {
+    assert_eq!(interpret("Skewness[ExponentialDistribution[2]]").unwrap(), "2");
+    assert_eq!(
+      interpret("Skewness[PoissonDistribution[m]]").unwrap(),
+      "1/Sqrt[m]"
+    );
+    assert_eq!(
+      interpret("Skewness[NormalDistribution[mu, sigma]]").unwrap(),
+      "0"
+    );
+  }
+
+  // Kurtosis = m4 / m2^2.
+  #[test]
+  fn kurtosis() {
+    assert_eq!(interpret("Kurtosis[NormalDistribution[0, 1]]").unwrap(), "3");
+    assert_eq!(
+      interpret("Kurtosis[NormalDistribution[mu, sigma]]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Kurtosis[ExponentialDistribution[1]]").unwrap(), "9");
+    assert_eq!(
+      interpret("Kurtosis[PoissonDistribution[m]]").unwrap(),
+      "3 + m^(-1)"
+    );
+  }
+}
