@@ -555,6 +555,63 @@ fn determinant(matrix: &[Vec<Expr>]) -> Expr {
   det
 }
 
+/// Permanent[matrix] — the matrix permanent, `Sum[Product[m[i, sigma(i)]]]`
+/// over all permutations sigma. Like the determinant but without the
+/// alternating signs. Works for numeric and symbolic square matrices.
+pub fn permanent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Permanent expects exactly 1 argument".into(),
+    ));
+  }
+  let matsq = || {
+    crate::emit_message(&format!(
+      "Permanent::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+    Ok(Expr::FunctionCall {
+      name: "Permanent".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => return matsq(),
+  };
+  let n = matrix.len();
+  if n == 0 || matrix.iter().any(|row| row.len() != n) {
+    return matsq();
+  }
+
+  // Sum over all column permutations of the product of selected entries.
+  fn accumulate(
+    matrix: &[Vec<Expr>],
+    used: &mut [bool],
+    row: usize,
+    partial: &Expr,
+    total: &mut Expr,
+  ) {
+    let n = matrix.len();
+    if row == n {
+      *total = eval_add(total, partial);
+      return;
+    }
+    for col in 0..n {
+      if !used[col] {
+        used[col] = true;
+        let next = eval_mul(partial, &matrix[row][col]);
+        accumulate(matrix, used, row + 1, &next, total);
+        used[col] = false;
+      }
+    }
+  }
+
+  let mut used = vec![false; n];
+  let mut total = Expr::Integer(0);
+  accumulate(&matrix, &mut used, 0, &Expr::Integer(1), &mut total);
+  Ok(crate::functions::expand_and_combine(&total))
+}
+
 /// Inverse[matrix] - matrix inverse (integer matrices → rational entries)
 pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

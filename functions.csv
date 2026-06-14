@@ -3304,7 +3304,7 @@ KillProcess,,🚫,,10.0,3389
 LyapunovSolve,,,,8.0,3389
 NotebookPrint,,🚫,,3.0,3389
 ObservableModelQ,,,,8.0,3389
-Permanent,,,,10.2,3389
+Permanent,Permanent of a square matrix,✅,pure,10.2,3389
 PlaneCurveData,,🚫,,10.0,3389
 WaveletBestBasis,,🚫,,8.0,3389
 WeakStationarity,,,,9.0,3389

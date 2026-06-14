@@ -152,6 +152,43 @@ mod det {
   }
 }
 
+mod permanent {
+  use super::*;
+
+  #[test]
+  fn numeric_matrices() {
+    // Like the determinant but with all-positive signs: 1*4 + 2*3 = 10.
+    assert_eq!(interpret("Permanent[{{1, 2}, {3, 4}}]").unwrap(), "10");
+    assert_eq!(
+      interpret("Permanent[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "450"
+    );
+    assert_eq!(
+      interpret("Permanent[{{1, 1, 1, 1}, {2, 2, 2, 2}, {3, 3, 3, 3}, {4, 4, 4, 4}}]")
+        .unwrap(),
+      "576"
+    );
+    assert_eq!(interpret("Permanent[{{5}}]").unwrap(), "5");
+    assert_eq!(interpret("Permanent[IdentityMatrix[3]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic_matrix() {
+    assert_eq!(
+      interpret("Permanent[{{a, b}, {c, d}}]").unwrap(),
+      "b*c + a*d"
+    );
+  }
+
+  #[test]
+  fn non_square_stays_unevaluated() {
+    assert_eq!(
+      interpret("Permanent[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "Permanent[{{1, 2, 3}, {4, 5, 6}}]"
+    );
+  }
+}
+
 mod inverse {
   use super::*;
 
