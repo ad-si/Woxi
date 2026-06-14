@@ -2008,31 +2008,67 @@ pub fn dispatch_math_functions(
           }));
         }
         let n_val = *n;
-        // Compute EulerPhi[n]
-        let phi = crate::functions::math_ast::euler_phi_i128(n_val);
-        // Find smallest g >= 2 with multiplicative order == phi
-        // (or g=1 for n=2)
-        let start = if n_val == 2 { 1 } else { 2 };
-        for g in start..n_val {
-          if crate::functions::math_ast::gcd_i128(g, n_val) != 1 {
-            continue;
+        // Smallest primitive root modulo `m` (g with multiplicative order
+        // equal to EulerPhi[m]), or None when m has no primitive root.
+        let smallest_pr = |m: i128| -> Option<i128> {
+          let phi = crate::functions::math_ast::euler_phi_i128(m);
+          let start = if m == 2 { 1 } else { 2 };
+          for g in start..m {
+            if crate::functions::math_ast::gcd_i128(g, m) != 1 {
+              continue;
+            }
+            let mut power = g % m;
+            let mut order = 1i128;
+            while power != 1 && order <= phi {
+              power = (power * g) % m;
+              order += 1;
+            }
+            if power == 1 && order == phi {
+              return Some(g);
+            }
           }
-          // Check multiplicative order of g mod n
-          let mut power = g % n_val;
-          let mut order = 1i128;
-          while power != 1 && order <= phi {
-            power = (power * g) % n_val;
-            order += 1;
+          None
+        };
+        // Is `m` an odd prime power p^k (k >= 1)?
+        let is_odd_prime_power = |mut m: i128| -> bool {
+          if m < 3 || m % 2 == 0 {
+            return false;
           }
-          if power == 1 && order == phi {
-            return Some(Ok(Expr::Integer(g)));
+          let mut p = 3i128;
+          while p * p <= m && m % p != 0 {
+            p += 2;
+          }
+          let p = if m % p == 0 { p } else { m };
+          while m % p == 0 {
+            m /= p;
+          }
+          m == 1
+        };
+        // For n = 2 p^k (p an odd prime), wolframscript derives the
+        // primitive root from p^k rather than searching mod n directly: it
+        // takes g = PrimitiveRoot[p^k] and, when g is even, uses g + p^k so
+        // that the result is odd (primitive roots mod 2m must be odd).
+        // e.g. PrimitiveRoot[10] = 7 (from 2 mod 5), not the smaller 3.
+        if n_val % 2 == 0 {
+          let m = n_val / 2;
+          if m > 1 && is_odd_prime_power(m)
+            && let Some(g) = smallest_pr(m)
+          {
+            let result = if g % 2 == 0 { g + m } else { g };
+            return Some(Ok(Expr::Integer(result)));
           }
         }
-        // No primitive root exists (e.g., n=8)
-        return Some(Ok(Expr::FunctionCall {
-          name: "PrimitiveRoot".to_string(),
-          args: args.to_vec().into(),
-        }));
+        // General case: smallest primitive root modulo n directly.
+        match smallest_pr(n_val) {
+          Some(g) => return Some(Ok(Expr::Integer(g))),
+          None => {
+            // No primitive root exists (e.g., n=8, n=12).
+            return Some(Ok(Expr::FunctionCall {
+              name: "PrimitiveRoot".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
       }
     }
     "CoprimeQ" if args.len() >= 2 => {

@@ -2739,7 +2739,7 @@ DifferenceRoot,,🚫,,7.0,2798
 ListPicker,,🚫,,9.0,2798
 MeanAround,Computes the mean and uncertainty of Around values,✅,pure,12.0,2798
 PeakDetect,Detects peaks in a list of values with optional sharpness filtering,✅,pure,10.0,2798
-PrimitiveRoot,Finds the smallest primitive root modulo n,✅,pure,6.0,2798
+PrimitiveRoot,Finds a primitive root modulo n,✅,pure,6.0,2798
 CellEvaluationFunction,,🚫,,6.0,2807
 CurrencyConvert,,🚫,,10.0,2807
 ExpandFileName,expand a file name to an absolute path,✅,none,7.0,2807

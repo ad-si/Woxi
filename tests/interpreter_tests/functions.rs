@@ -2910,11 +2910,41 @@ mod primitive_root {
   fn no_primitive_root() {
     // n=8 has no primitive root
     assert_eq!(interpret("PrimitiveRoot[8]").unwrap(), "PrimitiveRoot[8]");
+    assert_eq!(interpret("PrimitiveRoot[12]").unwrap(), "PrimitiveRoot[12]");
+    assert_eq!(interpret("PrimitiveRoot[15]").unwrap(), "PrimitiveRoot[15]");
   }
 
   #[test]
   fn n_too_small() {
     assert_eq!(interpret("PrimitiveRoot[1]").unwrap(), "PrimitiveRoot[1]");
+  }
+
+  // n = 2 p^k: wolframscript lifts the primitive root of p^k. When that
+  // root g is even it uses g + p^k so the result is odd, e.g.
+  // PrimitiveRoot[10] = 7 (from 2 mod 5), not the smaller valid root 3.
+  #[test]
+  fn twice_odd_prime_power_even_root_lifted() {
+    assert_eq!(interpret("PrimitiveRoot[10]").unwrap(), "7");
+    assert_eq!(interpret("PrimitiveRoot[18]").unwrap(), "11");
+    assert_eq!(interpret("PrimitiveRoot[22]").unwrap(), "13");
+    assert_eq!(interpret("PrimitiveRoot[50]").unwrap(), "27");
+    assert_eq!(interpret("PrimitiveRoot[250]").unwrap(), "127");
+  }
+
+  // When the root of p^k is already odd, no lift is needed.
+  #[test]
+  fn twice_odd_prime_power_odd_root() {
+    assert_eq!(interpret("PrimitiveRoot[6]").unwrap(), "5");
+    assert_eq!(interpret("PrimitiveRoot[14]").unwrap(), "3");
+    assert_eq!(interpret("PrimitiveRoot[98]").unwrap(), "3");
+  }
+
+  // Odd prime powers still use the smallest root directly.
+  #[test]
+  fn odd_prime_power() {
+    assert_eq!(interpret("PrimitiveRoot[9]").unwrap(), "2");
+    assert_eq!(interpret("PrimitiveRoot[25]").unwrap(), "2");
+    assert_eq!(interpret("PrimitiveRoot[49]").unwrap(), "3");
   }
 }
 
