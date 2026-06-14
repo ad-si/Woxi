@@ -273,6 +273,55 @@ pub fn dispatch_datetime_functions(
         }));
       }
     }
+    // FromAbsoluteTime[n] — the instant `n` seconds after the Wolfram epoch
+    // (1900-01-01 00:00:00), as a DateObject. Unlike FromUnixTime there is no
+    // time-zone shift: the absolute time maps directly to the UTC calendar
+    // date and the DateObject carries a zero offset.
+    "FromAbsoluteTime" if args.len() == 1 => {
+      let Some(wolfram_secs) = (match &args[0] {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        _ => None,
+      }) else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FromAbsoluteTime".to_string(),
+          args: args.to_vec().into(),
+        }));
+      };
+      #[cfg(feature = "cli")]
+      {
+        let (y, mo, d, h, mi, s) = wolfram_seconds_to_ymdhms(wolfram_secs);
+        let date_list = Expr::List(
+          vec![
+            Expr::Integer(y as i128),
+            Expr::Integer(mo as i128),
+            Expr::Integer(d as i128),
+            Expr::Integer(h as i128),
+            Expr::Integer(mi as i128),
+            Expr::Integer(s as i128),
+          ]
+          .into(),
+        );
+        return Some(Ok(Expr::FunctionCall {
+          name: "DateObject".to_string(),
+          args: vec![
+            date_list,
+            Expr::String("Instant".to_string()),
+            Expr::String("Gregorian".to_string()),
+            Expr::Real(0.0),
+          ]
+          .into(),
+        }));
+      }
+      #[cfg(not(feature = "cli"))]
+      {
+        let _ = wolfram_secs;
+        return Some(Ok(Expr::FunctionCall {
+          name: "FromAbsoluteTime".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+    }
     "JulianDate" if args.len() <= 1 => {
       return Some(crate::functions::datetime_ast::julian_date_ast(args));
     }

@@ -1145,6 +1145,51 @@ mod from_unix_time {
   }
 }
 
+mod from_absolute_time {
+  use super::*;
+
+  #[test]
+  fn epoch_and_known_instants() {
+    // The Wolfram epoch itself (1900-01-01), with a zero time-zone offset.
+    assert_eq!(
+      interpret("FromAbsoluteTime[0]").unwrap(),
+      "DateObject[{1900, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    // One day later.
+    assert_eq!(
+      interpret("FromAbsoluteTime[86400]").unwrap(),
+      "DateObject[{1900, 1, 2, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    // The Unix epoch is 2208988800 seconds after the Wolfram epoch.
+    assert_eq!(
+      interpret("FromAbsoluteTime[2208988800]").unwrap(),
+      "DateObject[{1970, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+    // 2000-01-01.
+    assert_eq!(
+      interpret("FromAbsoluteTime[3155673600]").unwrap(),
+      "DateObject[{2000, 1, 1, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // FromAbsoluteTime inverts AbsoluteTime.
+  #[test]
+  fn round_trips_with_absolute_time() {
+    assert_eq!(
+      interpret("FromAbsoluteTime[AbsoluteTime[{2024, 6, 14}]]").unwrap(),
+      "DateObject[{2024, 6, 14, 0, 0, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  #[test]
+  fn head_is_date_object() {
+    assert_eq!(
+      interpret("Head[FromAbsoluteTime[0]]").unwrap(),
+      "DateObject"
+    );
+  }
+}
+
 mod unix_time {
   use super::*;
 
