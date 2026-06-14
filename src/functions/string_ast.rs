@@ -6106,19 +6106,23 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Handle both strings and lists
-  let (is_string, chars1, chars2) = match (&args[0], &args[1]) {
+  // Handle both strings and lists. For lists we keep the original elements
+  // (`orig1`/`orig2`) so segments can be emitted as element sublists rather
+  // than concatenated strings; `chars1`/`chars2` are only used for comparison.
+  let (is_string, chars1, chars2, orig1, orig2) = match (&args[0], &args[1]) {
     (Expr::String(s1), Expr::String(s2)) => {
       let c1: Vec<String> = s1.chars().map(|c| c.to_string()).collect();
       let c2: Vec<String> = s2.chars().map(|c| c.to_string()).collect();
-      (true, c1, c2)
+      (true, c1, c2, Vec::<Expr>::new(), Vec::<Expr>::new())
     }
     (Expr::List(l1), Expr::List(l2)) => {
       let c1: Vec<String> =
         l1.iter().map(crate::syntax::expr_to_output).collect();
       let c2: Vec<String> =
         l2.iter().map(crate::syntax::expr_to_output).collect();
-      (false, c1, c2)
+      let o1: Vec<Expr> = l1.iter().cloned().collect();
+      let o2: Vec<Expr> = l2.iter().cloned().collect();
+      (false, c1, c2, o1, o2)
     }
     _ => {
       return Ok(Expr::FunctionCall {
@@ -6184,6 +6188,19 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   aligned1.reverse();
   aligned2.reverse();
 
+  // Emit a segment from indices into the first (`from_first`) or second
+  // sequence: a concatenated string for string input, a sublist of the
+  // original elements for list input.
+  let make_seg = |idxs: &[usize], from_first: bool| -> Expr {
+    if is_string {
+      let src = if from_first { &chars1 } else { &chars2 };
+      Expr::String(idxs.iter().map(|&x| src[x].clone()).collect::<String>())
+    } else {
+      let src = if from_first { &orig1 } else { &orig2 };
+      Expr::List(idxs.iter().map(|&x| src[x].clone()).collect::<Vec<_>>().into())
+    }
+  };
+
   // Build result segments
   let mut result: Vec<Expr> = Vec::new();
   let mut k = 0;
@@ -6194,81 +6211,52 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let i1 = aligned1[k].unwrap();
       let j1 = aligned2[k].unwrap();
       if chars1[i1] == chars2[j1] {
-        // Matching segment
-        let mut match_str = chars1[i1].clone();
+        // Matching segment (both sides identical, so emit one piece).
+        let mut idxs = vec![i1];
         k += 1;
         while k < len
           && aligned1[k].is_some()
           && aligned2[k].is_some()
           && chars1[aligned1[k].unwrap()] == chars2[aligned2[k].unwrap()]
         {
-          match_str.push_str(&chars1[aligned1[k].unwrap()]);
+          idxs.push(aligned1[k].unwrap());
           k += 1;
         }
-        if is_string {
-          result.push(Expr::String(match_str));
-        } else {
-          // Re-parse as list elements
-          let items: Vec<Expr> = match_str
-            .split("")
-            .filter(|s| !s.is_empty())
-            .map(|_| {
-              // This is simplified; for lists we need original exprs
-              Expr::Identifier("?".to_string())
-            })
-            .collect();
-          // Actually for lists, collect the original exprs
-          let start_i = i1;
-          let count = match_str.len(); // This won't work well for lists
-          let _ = (start_i, count, items);
-          result.push(Expr::String(match_str));
-        }
+        result.push(make_seg(&idxs, true));
       } else {
-        // Mismatch
-        let mut diff1 = chars1[i1].clone();
-        let mut diff2 = chars2[j1].clone();
+        // Mismatch: a {removed, inserted} pair.
+        let mut idx1 = vec![i1];
+        let mut idx2 = vec![j1];
         k += 1;
         while k < len
           && aligned1[k].is_some()
           && aligned2[k].is_some()
           && chars1[aligned1[k].unwrap()] != chars2[aligned2[k].unwrap()]
         {
-          diff1.push_str(&chars1[aligned1[k].unwrap()]);
-          diff2.push_str(&chars2[aligned2[k].unwrap()]);
+          idx1.push(aligned1[k].unwrap());
+          idx2.push(aligned2[k].unwrap());
           k += 1;
         }
-        if is_string {
-          result.push(Expr::List(
-            vec![Expr::String(diff1), Expr::String(diff2)].into(),
-          ));
-        } else {
-          result.push(Expr::List(
-            vec![Expr::String(diff1), Expr::String(diff2)].into(),
-          ));
-        }
+        result.push(Expr::List(
+          vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
+        ));
       }
     } else {
-      // Gap
-      let mut diff1 = String::new();
-      let mut diff2 = String::new();
+      // Gap on one side: a {removed, inserted} pair where one side is empty.
+      let mut idx1 = Vec::new();
+      let mut idx2 = Vec::new();
       while k < len && (aligned1[k].is_none() || aligned2[k].is_none()) {
         if let Some(i1) = aligned1[k] {
-          diff1.push_str(&chars1[i1]);
+          idx1.push(i1);
         }
         if let Some(j1) = aligned2[k] {
-          diff2.push_str(&chars2[j1]);
+          idx2.push(j1);
         }
         k += 1;
       }
-      if is_string {
-        result.push(Expr::List(
-          vec![Expr::String(diff1), Expr::String(diff2)].into(),
-        ));
-      } else {
-        result.push(Expr::List(
-          vec![Expr::String(diff1), Expr::String(diff2)].into(),
-        ));
-      }
+      result.push(Expr::List(
+        vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
+      ));
     }
   }
 

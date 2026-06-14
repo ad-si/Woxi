@@ -139,6 +139,39 @@ fn sequence_alignment_empty() {
   );
 }
 
+// List inputs keep elements as sublists rather than concatenating them.
+#[test]
+fn sequence_alignment_list_deletion() {
+  assert_eq!(
+    interpret("SequenceAlignment[{1, 2, 3}, {1, 3}]").unwrap(),
+    "{{1}, {{2}, {}}, {3}}"
+  );
+}
+
+#[test]
+fn sequence_alignment_list_substitution() {
+  assert_eq!(
+    interpret("SequenceAlignment[{a, b, c}, {a, x, c}]").unwrap(),
+    "{{a}, {{b}, {x}}, {c}}"
+  );
+}
+
+#[test]
+fn sequence_alignment_list_identical() {
+  assert_eq!(
+    interpret("SequenceAlignment[{1, 2, 3}, {1, 2, 3}]").unwrap(),
+    "{{1, 2, 3}}"
+  );
+}
+
+#[test]
+fn sequence_alignment_list_disjoint() {
+  assert_eq!(
+    interpret("SequenceAlignment[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+    "{{{1, 2, 3}, {4, 5, 6}}}"
+  );
+}
+
 // ─── StationaryDistribution ─────────────────────────────────────────────────
 
 #[test]
