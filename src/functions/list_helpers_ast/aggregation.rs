@@ -204,6 +204,58 @@ pub fn group_by_ast(
   list: &Expr,
   func: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // On an association, group its values by `f` (or `f -> g`). Each group is a
+  // sub-association preserving the original keys, so e.g.
+  // GroupBy[<|a -> 1, b -> 2, c -> 3|>, EvenQ] gives
+  // <|False -> <|a -> 1, c -> 3|>, True -> <|b -> 2|>|>.
+  if let Expr::Association(assoc_pairs) = list {
+    if matches!(func, Expr::List(_)) {
+      // The nested {f1, f2, …} form on associations is not supported.
+      return Ok(Expr::FunctionCall {
+        name: "GroupBy".to_string(),
+        args: vec![list.clone(), func.clone()].into(),
+      });
+    }
+    let (key_func, val_func): (&Expr, Option<&Expr>) = match func {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), Some(replacement.as_ref())),
+      _ => (func, None),
+    };
+    use std::collections::HashMap;
+    let mut groups: HashMap<String, Vec<(Expr, Expr)>> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for (k, v) in assoc_pairs {
+      let key = apply_func_ast(key_func, v)?;
+      let key_str = crate::syntax::expr_to_string(&key);
+      let stored = match val_func {
+        Some(g) => apply_func_ast(g, v)?,
+        None => v.clone(),
+      };
+      if let Some(group) = groups.get_mut(&key_str) {
+        group.push((k.clone(), stored));
+      } else {
+        order.push(key_str.clone());
+        groups.insert(key_str, vec![(k.clone(), stored)]);
+      }
+    }
+    let pairs: Vec<(Expr, Expr)> = order
+      .into_iter()
+      .map(|ks| {
+        let entries = groups.remove(&ks).unwrap();
+        let key_expr =
+          crate::syntax::string_to_expr(&ks).unwrap_or(Expr::Raw(ks));
+        (key_expr, Expr::Association(entries))
+      })
+      .collect();
+    return Ok(Expr::Association(pairs));
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {

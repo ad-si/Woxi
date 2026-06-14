@@ -6494,6 +6494,38 @@ mod join_non_list {
     );
   }
 
+  // On an association, GroupBy groups the values, keeping each group as a
+  // sub-association that preserves the original keys.
+  #[test]
+  fn group_by_association() {
+    assert_eq!(
+      interpret("GroupBy[<|a -> 1, b -> 2, c -> 3, d -> 4|>, EvenQ]").unwrap(),
+      "<|False -> <|a -> 1, c -> 3|>, True -> <|b -> 2, d -> 4|>|>"
+    );
+  }
+
+  // A reducer is applied to each group's sub-association.
+  #[test]
+  fn group_by_association_with_reducer() {
+    assert_eq!(
+      interpret("GroupBy[<|a -> 1, b -> 2, c -> 4|>, EvenQ, Total]").unwrap(),
+      "<|False -> 1, True -> 6|>"
+    );
+    assert_eq!(
+      interpret("GroupBy[<|a -> 1, b -> 2, c -> 3|>, OddQ, Length]").unwrap(),
+      "<|True -> 2, False -> 1|>"
+    );
+  }
+
+  // The f -> g form transforms each stored value before grouping.
+  #[test]
+  fn group_by_association_key_value_rule() {
+    assert_eq!(
+      interpret("GroupBy[<|a -> 1, b -> 2|>, OddQ -> (# + 10 &)]").unwrap(),
+      "<|True -> <|a -> 11|>, False -> <|b -> 12|>|>"
+    );
+  }
+
   #[test]
   fn group_by_list_of_classifiers_nested() {
     // GroupBy[list, {f1, f2}] groups by f1, then sub-groups by f2.
