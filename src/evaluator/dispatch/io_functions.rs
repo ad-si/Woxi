@@ -601,7 +601,16 @@ pub fn dispatch_io_functions(
       }
       if format_str == "CSV" || format_str == "TSV" {
         let sep = if format_str == "CSV" { ',' } else { '\t' };
-        return Some(Ok(Expr::String(export_string_csv(&args[0], sep))));
+        return Some(Ok(Expr::String(export_string_csv(
+          &args[0], sep, true, true,
+        ))));
+      }
+      // "Table" is tab-separated like TSV but leaves strings unquoted and
+      // emits no trailing newline.
+      if format_str == "Table" {
+        return Some(Ok(Expr::String(export_string_csv(
+          &args[0], '\t', false, false,
+        ))));
       }
       if format_str == "JSON" || format_str == "RawJSON" {
         if let Some(json) = export_string_json(&args[0], 0) {
@@ -2658,12 +2667,16 @@ fn io_stream_path(expr: &Expr) -> Option<String> {
   }
 }
 
-/// Render a single CSV/TSV cell. Numeric/symbolic atoms are emitted bare;
-/// strings are always wrapped in `"…"` (matching wolframscript) with
-/// embedded `"` characters doubled.
-fn csv_cell(expr: &Expr) -> String {
+/// Render a single delimited-table cell. Numeric/symbolic atoms are emitted
+/// bare. When `quote_strings` is set (CSV/TSV) strings are wrapped in `"…"`
+/// with embedded `"` doubled, matching wolframscript; the `"Table"` format
+/// passes `false`, emitting strings verbatim.
+fn csv_cell(expr: &Expr, quote_strings: bool) -> String {
   match expr {
-    Expr::String(s) => format!("\"{}\"", s.replace('"', "\"\"")),
+    Expr::String(s) if quote_strings => {
+      format!("\"{}\"", s.replace('"', "\"\""))
+    }
+    Expr::String(s) => s.clone(),
     _ => crate::syntax::expr_to_string(expr),
   }
 }
@@ -2763,16 +2776,22 @@ fn export_string_json(expr: &Expr, indent: usize) -> Option<String> {
 /// rendered one element per row. Other expressions become a single row.
 /// Each row is terminated with a newline (Wolfram's `ExportString` always
 /// emits a trailing newline after the last record).
-fn export_string_csv(expr: &Expr, sep: char) -> String {
+fn export_string_csv(
+  expr: &Expr,
+  sep: char,
+  quote_strings: bool,
+  trailing_newline: bool,
+) -> String {
+  let cell = |e: &Expr| csv_cell(e, quote_strings);
   let row_strs = |row: &Expr| -> String {
     if let Expr::List(items) = row {
       items
         .iter()
-        .map(csv_cell)
+        .map(&cell)
         .collect::<Vec<_>>()
         .join(&sep.to_string())
     } else {
-      csv_cell(row)
+      cell(row)
     }
   };
   let rows: Vec<String> = match expr {
@@ -2781,13 +2800,15 @@ fn export_string_csv(expr: &Expr, sep: char) -> String {
       if any_nested {
         items.iter().map(row_strs).collect()
       } else {
-        items.iter().map(csv_cell).collect()
+        items.iter().map(&cell).collect()
       }
     }
-    _ => vec![csv_cell(expr)],
+    _ => vec![cell(expr)],
   };
   let mut out = rows.join("\n");
-  out.push('\n');
+  if trailing_newline {
+    out.push('\n');
+  }
   out
 }
 

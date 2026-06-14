@@ -1315,6 +1315,33 @@ mod export_string {
     assert_eq!(result, "1\t2\n3\t4\n");
   }
 
+  // ─── ExportString Table ────────────────────────────────────────────
+  // "Table" is tab-separated like TSV but leaves strings unquoted and emits
+  // no trailing newline.
+  #[test]
+  fn export_string_table_2d_int_list() {
+    clear_state();
+    let result =
+      interpret("ExportString[{{1,2,3},{4,5,6}}, \"Table\"]").unwrap();
+    assert_eq!(result, "1\t2\t3\n4\t5\t6");
+  }
+
+  #[test]
+  fn export_string_table_flat_list_one_per_row() {
+    clear_state();
+    let result = interpret("ExportString[{1,2,3}, \"Table\"]").unwrap();
+    assert_eq!(result, "1\n2\n3");
+  }
+
+  #[test]
+  fn export_string_table_strings_unquoted() {
+    clear_state();
+    let result =
+      interpret("ExportString[{{\"a\",\"b c\"},{\"d\",\"e\"}}, \"Table\"]")
+        .unwrap();
+    assert_eq!(result, "a\tb c\nd\te");
+  }
+
   // ─── ExportString JSON ─────────────────────────────────────────────
   // wolframscript pretty-prints JSON: tab-indented, one element per line,
   // `"key":value` with no space after the colon, booleans/Null lowercased,
