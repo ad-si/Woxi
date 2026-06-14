@@ -210,6 +210,45 @@ mod sum {
     );
   }
 
+  // Exponential series Sum[base^k/k!, {k, 0, Infinity}] = E^base.
+  #[test]
+  fn infinite_sum_exponential() {
+    assert_eq!(interpret("Sum[x^k/k!, {k, 0, Infinity}]").unwrap(), "E^x");
+    assert_eq!(interpret("Sum[1/k!, {k, 0, Infinity}]").unwrap(), "E");
+    assert_eq!(interpret("Sum[2^k/k!, {k, 0, Infinity}]").unwrap(), "E^2");
+    assert_eq!(
+      interpret("Sum[(-1)^k/k!, {k, 0, Infinity}]").unwrap(),
+      "E^(-1)"
+    );
+  }
+
+  #[test]
+  fn infinite_sum_exponential_with_coefficient() {
+    assert_eq!(
+      interpret("Sum[3 x^k/k!, {k, 0, Infinity}]").unwrap(),
+      "3*E^x"
+    );
+  }
+
+  // Starting at k = 1 drops the constant k = 0 term: E^base - 1.
+  #[test]
+  fn infinite_sum_exponential_from_one() {
+    assert_eq!(interpret("Sum[1/k!, {k, 1, Infinity}]").unwrap(), "-1 + E");
+    assert_eq!(
+      interpret("Sum[x^k/k!, {k, 1, Infinity}]").unwrap(),
+      "-1 + E^x"
+    );
+  }
+
+  // A non-constant coefficient (k/k!) is not the c base^k/k! shape.
+  #[test]
+  fn infinite_sum_exponential_not_misapplied() {
+    assert_eq!(
+      interpret("Sum[k/k!, {k, 1, Infinity}]").unwrap(),
+      "Sum[k/k!, {k, 1, Infinity}]"
+    );
+  }
+
   #[test]
   fn sum_with_step() {
     // Sum[i, {i, 1, 10, 2}] -> 1 + 3 + 5 + 7 + 9 = 25

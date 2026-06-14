@@ -1677,6 +1677,112 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   Some((coeff, base.clone()))
 }
 
+/// Match an exponential-series body `c * base^var / var!` where `base` is free
+/// of `var` (numeric or symbolic) and `var` appears only as the exponent of
+/// `base` and inside the factorial. Returns `(coefficient, base)`; the base
+/// defaults to `1` when there is no explicit `base^var` factor (e.g. `1/k!`).
+fn match_exponential_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
+  use crate::syntax::BinaryOperator;
+
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        collect(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        out.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        });
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  // Split a power factor into (base, exponent).
+  fn as_power(f: &Expr) -> Option<(&Expr, &Expr)> {
+    match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      _ => None,
+    }
+  }
+  let is_factorial_of_var = |e: &Expr| -> bool {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Factorial" && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(n) if n == var_name))
+  };
+
+  let mut factors = Vec::new();
+  collect(body, &mut factors);
+
+  let mut have_factorial = false;
+  let mut base: Option<&Expr> = None;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Some((b, e)) = as_power(f) {
+      // The `1/var!` factor.
+      if matches!(e, Expr::Integer(-1)) && is_factorial_of_var(b) {
+        if have_factorial {
+          return None; // more than one factorial factor
+        }
+        have_factorial = true;
+        continue;
+      }
+      // The `base^var` factor.
+      if base.is_none()
+        && matches!(e, Expr::Identifier(n) if n == var_name)
+        && crate::functions::calculus_ast::is_constant_wrt(b, var_name)
+      {
+        base = Some(b);
+        continue;
+      }
+    }
+    // Any remaining factor must be free of the summation variable.
+    if !crate::functions::calculus_ast::is_constant_wrt(f, var_name) {
+      return None;
+    }
+    coeff_factors.push(f.clone());
+  }
+
+  if !have_factorial {
+    return None;
+  }
+  let base = base.cloned().unwrap_or(Expr::Integer(1));
+  let coeff = match coeff_factors.len() {
+    0 => Expr::Integer(1),
+    1 => coeff_factors.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff_factors.into(),
+    },
+  };
+  Some((coeff, base))
+}
+
 fn try_infinite_sum(
   body: &Expr,
   var_name: &str,
@@ -1704,6 +1810,34 @@ fn try_infinite_sum(
       right: Box::new(one_minus_base),
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
+  }
+
+  // Exponential series Sum[c base^var / var!, {var, m, Infinity}]. The base
+  // may be numeric or symbolic (the series converges everywhere).
+  //   m == 0:                 c E^base
+  //   m == 1 with c == 1:     E^base - 1
+  // Larger m, or m == 1 with a coefficient, are skipped because
+  // wolframscript canonicalizes those results to a different (though
+  // equivalent) form.
+  if let Some((coeff, base)) = match_exponential_base(body, var_name) {
+    let e_to_base = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Constant("E".to_string()), base].into(),
+    };
+    if min == 0 {
+      let result = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff, e_to_base].into(),
+      };
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+    }
+    if min == 1 && matches!(coeff, Expr::Integer(1)) {
+      let result = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![e_to_base, Expr::Integer(-1)].into(),
+      };
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
+    }
   }
 
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
