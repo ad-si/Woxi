@@ -4366,6 +4366,15 @@ fn partitions_q(n: usize) -> BigInt {
 
 /// PrimeOmega[n] - number of prime factors with multiplicity
 pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // wolframscript leaves PrimeOmega[0] unevaluated (0 has no prime
+  // factorization); without this guard FactorInteger[0] = {{0, 1}} would
+  // be miscounted as one prime factor.
+  if matches!(&args[0], Expr::Integer(0)) {
+    return Ok(Expr::FunctionCall {
+      name: "PrimeOmega".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   let factors = factor_integer_ast(args)?;
   if let Expr::List(ref pairs) = factors {
     let mut total: i128 = 0;
@@ -4394,6 +4403,15 @@ pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// PrimeNu[n] - number of distinct prime factors
 pub fn prime_nu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // wolframscript leaves PrimeNu[0] unevaluated (0 has no prime
+  // factorization); without this guard FactorInteger[0] = {{0, 1}} would
+  // be miscounted as one distinct prime.
+  if matches!(&args[0], Expr::Integer(0)) {
+    return Ok(Expr::FunctionCall {
+      name: "PrimeNu".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   let factors = factor_integer_ast(args)?;
   if let Expr::List(ref pairs) = factors {
     let mut count: i128 = 0;

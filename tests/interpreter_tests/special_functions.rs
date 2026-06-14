@@ -1056,6 +1056,19 @@ mod prime_omega {
     // 100 = 2^2 * 5^2, so PrimeOmega = 2 + 2 = 4
     assert_eq!(interpret("PrimeOmega[100]").unwrap(), "4");
   }
+
+  // PrimeOmega counts factors of |n|, so it is defined on negatives.
+  #[test]
+  fn negative_uses_absolute_value() {
+    assert_eq!(interpret("PrimeOmega[-12]").unwrap(), "3");
+    assert_eq!(interpret("PrimeOmega[-1]").unwrap(), "0");
+  }
+
+  // 0 has no prime factorization; wolframscript leaves it unevaluated.
+  #[test]
+  fn zero_unevaluated() {
+    assert_eq!(interpret("PrimeOmega[0]").unwrap(), "PrimeOmega[0]");
+  }
 }
 
 mod prime_nu {
@@ -1081,6 +1094,19 @@ mod prime_nu {
   fn three_distinct_factors() {
     // 60 = 2^2 * 3 * 5, so PrimeNu = 3
     assert_eq!(interpret("PrimeNu[60]").unwrap(), "3");
+  }
+
+  // PrimeNu counts distinct primes of |n|, so it is defined on negatives.
+  #[test]
+  fn negative_uses_absolute_value() {
+    assert_eq!(interpret("PrimeNu[-12]").unwrap(), "2");
+    assert_eq!(interpret("PrimeNu[-1]").unwrap(), "0");
+  }
+
+  // 0 has no prime factorization; wolframscript leaves it unevaluated.
+  #[test]
+  fn zero_unevaluated() {
+    assert_eq!(interpret("PrimeNu[0]").unwrap(), "PrimeNu[0]");
   }
 }
 
