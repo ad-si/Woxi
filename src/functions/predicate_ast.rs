@@ -121,6 +121,46 @@ pub fn real_valued_number_q_ast(
   Ok(bool_expr(is_real))
 }
 
+/// RealValuedNumericQ[expr] - True if `expr` is a numeric quantity whose value
+/// is a real number. Unlike RealValuedNumberQ (which requires an explicit real
+/// number literal), this accepts any numeric expression — constants, exact
+/// irrationals, and numeric functions — provided its value is real:
+/// `RealValuedNumericQ[Pi]`, `RealValuedNumericQ[Sqrt[2]]`,
+/// `RealValuedNumericQ[Sin[1]]` are all True, while `I`, complex numbers,
+/// `Sqrt[-1]`, symbols, and strings are False.
+pub fn real_valued_numeric_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RealValuedNumericQ expects exactly 1 argument".into(),
+    ));
+  }
+  // Must be numeric to begin with.
+  if !is_numeric_q(&args[0]) {
+    return Ok(bool_expr(false));
+  }
+  // Numerically evaluate and check the result is a real-number atom (not a
+  // complex value, which carries the head Complex or stays as `I`).
+  let n_call = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![args[0].clone()].into(),
+  };
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&n_call)?;
+  let is_real = matches!(
+    evaluated,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+  ) || matches!(
+    &evaluated,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2
+  );
+  Ok(bool_expr(is_real))
+}
+
 /// IntegerQ[expr] - Tests if the expression is an integer (not a real like 3.0)
 pub fn integer_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

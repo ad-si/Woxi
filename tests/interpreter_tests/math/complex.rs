@@ -592,6 +592,55 @@ mod im_tests {
     );
   }
 
+  // ── RealValuedNumericQ ───────────────────────────────────
+
+  #[test]
+  fn real_valued_numeric_q_explicit_numbers() {
+    assert_eq!(interpret("RealValuedNumericQ[2]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[2.5]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[3/4]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_valued_numeric_q_constants_and_exact_irrationals() {
+    // Unlike RealValuedNumberQ, numeric constants and exact irrationals count.
+    assert_eq!(interpret("RealValuedNumericQ[Pi]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[E]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[GoldenRatio]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[Sqrt[2]]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[Pi + E]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_valued_numeric_q_numeric_functions() {
+    assert_eq!(interpret("RealValuedNumericQ[Sin[1]]").unwrap(), "True");
+    assert_eq!(interpret("RealValuedNumericQ[Log[2]]").unwrap(), "True");
+    // A real-valued result from complex-valued inputs still counts.
+    assert_eq!(
+      interpret("RealValuedNumericQ[Abs[3 + 4 I]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn real_valued_numeric_q_complex_is_false() {
+    assert_eq!(interpret("RealValuedNumericQ[I]").unwrap(), "False");
+    assert_eq!(interpret("RealValuedNumericQ[2 + 3 I]").unwrap(), "False");
+    assert_eq!(interpret("RealValuedNumericQ[Sqrt[-1]]").unwrap(), "False");
+    assert_eq!(interpret("RealValuedNumericQ[Log[-1]]").unwrap(), "False");
+    // 0.0 * I is a complex machine number, not real-valued.
+    assert_eq!(interpret("RealValuedNumericQ[0.0 * I]").unwrap(), "False");
+  }
+
+  #[test]
+  fn real_valued_numeric_q_non_numeric_is_false() {
+    assert_eq!(interpret("RealValuedNumericQ[x]").unwrap(), "False");
+    assert_eq!(interpret("RealValuedNumericQ[\"a\"]").unwrap(), "False");
+    assert_eq!(interpret("RealValuedNumericQ[True]").unwrap(), "False");
+    // Infinity is not numeric in the Wolfram Language sense.
+    assert_eq!(interpret("RealValuedNumericQ[Infinity]").unwrap(), "False");
+  }
+
   // Reciprocals swap Underflow[] and Overflow[] to match Wolfram's semantics:
   // 1 / Underflow[] is infinite, 1 / Overflow[] is indistinguishable from 0.
   #[test]

@@ -192,6 +192,11 @@ pub fn dispatch_predicate_functions(
         args,
       ));
     }
+    "RealValuedNumericQ" if args.len() == 1 => {
+      return Some(crate::functions::predicate_ast::real_valued_numeric_q_ast(
+        args,
+      ));
+    }
     "Element" if args.len() == 2 => {
       return Some(element_ast(&args[0], &args[1]));
     }
