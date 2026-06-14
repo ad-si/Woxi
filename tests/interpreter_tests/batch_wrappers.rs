@@ -3559,6 +3559,46 @@ mod batch_unevaluated_wrappers_2 {
       "{{1, 2}, {4, 5}}"
     );
   }
+  // SequencePosition matches blank patterns, not just literals.
+  #[test]
+  fn sequence_position_blank_pattern() {
+    assert_eq!(
+      interpret("SequencePosition[{a, b, c}, {x_}]").unwrap(),
+      "{{1, 1}, {2, 2}, {3, 3}}"
+    );
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3, 4, 5}, {_, _, _}]").unwrap(),
+      "{{1, 3}, {2, 4}, {3, 5}}"
+    );
+  }
+  // A Condition pattern is honored.
+  #[test]
+  fn sequence_position_condition() {
+    assert_eq!(
+      interpret("SequencePosition[Range[6], {x_, y_} /; y == x + 1]").unwrap(),
+      "{{1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}}"
+    );
+  }
+  // A sequence (BlankSequence) pattern reports each matching span.
+  #[test]
+  fn sequence_position_sequence_pattern() {
+    assert_eq!(
+      interpret("SequencePosition[{a, 1, 2, 3, b}, {__Integer}]").unwrap(),
+      "{{2, 4}, {3, 4}, {4, 4}}"
+    );
+  }
+  // A count limit keeps only the first n matches (overlapping by default).
+  #[test]
+  fn sequence_position_count_limit() {
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3, 4}, {_, _}, 2]").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("SequencePosition[{1, 1, 1, 1}, {1, 1}, 1]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
   #[test]
   fn sequence_cases_literal() {
     assert_eq!(

@@ -2997,7 +2997,7 @@ pub fn dispatch_list_operations(
       }
     }
     // SequencePosition[list, sublist] — find positions of subsequence (overlapping)
-    "SequencePosition" if args.len() == 2 || args.len() == 3 => {
+    "SequencePosition" if (2..=4).contains(&args.len()) => {
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequencePosition::list: List expected at position 1 in SequencePosition[{}, {}].",
@@ -3009,38 +3009,118 @@ pub fn dispatch_list_operations(
           args: args.to_vec().into(),
         }));
       }
-      if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
+      // Trailing arguments: an optional count limit (Integer/Infinity) and an
+      // `Overlaps -> True | False | All` option. Unlike SequenceCases,
+      // SequencePosition reports overlapping matches by default.
+      let mut max_count: usize = usize::MAX;
+      let mut overlaps = true;
+      for a in &args[2..] {
+        match a {
+          Expr::Integer(n) if *n >= 0 => max_count = *n as usize,
+          Expr::Identifier(id) if id == "Infinity" => max_count = usize::MAX,
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(),
+            Expr::Identifier(n) if n == "Overlaps") =>
+          {
+            overlaps = !matches!(replacement.as_ref(),
+              Expr::Identifier(v) if v == "False");
+          }
+          _ => {}
+        }
+      }
+      if let Expr::List(list) = &args[0] {
+        // The pattern may be wrapped in `Pattern[name, …]` (from `name : …`)
+        // or `Condition[…, test]`; unwrap to the inner list for length
+        // calculations while keeping the full pattern for matching.
+        let match_pat = &args[1];
+        let mut list_pat = match_pat;
+        loop {
+          match list_pat {
+            Expr::FunctionCall {
+              name,
+              args: inner_args,
+            } if name == "Pattern" && inner_args.len() == 2 => {
+              list_pat = &inner_args[1];
+            }
+            Expr::FunctionCall {
+              name,
+              args: cond_args,
+            } if name == "Condition" && cond_args.len() == 2 => {
+              list_pat = &cond_args[0];
+            }
+            _ => break,
+          }
+        }
+        let sub = match list_pat {
+          Expr::List(items) => items,
+          _ => return Some(Ok(Expr::List(vec![].into()))),
+        };
         if sub.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
         }
-        // Default Overlaps -> True; `Overlaps -> False` skips past each match.
-        let overlaps = !args.get(2).is_some_and(|opt| matches!(opt,
-          Expr::Rule { pattern, replacement }
-            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps")
-              && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")));
-        let sub_len = sub.len();
-        let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
+
+        let has_patterns = sub.iter().any(has_pattern_element);
+        let has_sequence = sub.iter().any(has_sequence_pattern);
         let mut results: Vec<Expr> = Vec::new();
-        let mut i = 0;
-        while i + sub_len <= list.len() {
-          let mut matches = true;
-          for j in 0..sub_len {
-            if expr_to_string(&list[i + j]) != sub_strs[j] {
-              matches = false;
+        let pos = |start: usize, len: usize| -> Expr {
+          Expr::List(
+            vec![
+              Expr::Integer((start + 1) as i128),
+              Expr::Integer((start + len) as i128),
+            ]
+            .into(),
+          )
+        };
+
+        if has_patterns {
+          let mut i = 0;
+          while i < list.len() && results.len() < max_count {
+            let mut matched = false;
+            let remaining = list.len() - i;
+            let min_len = if has_sequence { 1 } else { sub.len() };
+            let try_max = if has_sequence { remaining } else { sub.len() };
+            if remaining < min_len {
               break;
             }
+            let try_max = try_max.min(remaining);
+            for len in (min_len..=try_max).rev() {
+              let subseq = Expr::List(list[i..i + len].to_vec().into());
+              if crate::evaluator::pattern_matching::match_pattern(
+                &subseq, match_pat,
+              )
+              .is_some()
+              {
+                results.push(pos(i, len));
+                i += if overlaps { 1 } else { len };
+                matched = true;
+                break;
+              }
+            }
+            if !matched {
+              i += 1;
+            }
           }
-          if matches {
-            results.push(Expr::List(
-              vec![
-                Expr::Integer((i + 1) as i128),
-                Expr::Integer((i + sub_len) as i128),
-              ]
-              .into(),
-            ));
-            i += if overlaps { 1 } else { sub_len };
-          } else {
-            i += 1;
+        } else {
+          // Literal subsequence match.
+          let sub_len = sub.len();
+          let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
+          let mut i = 0;
+          while i + sub_len <= list.len() && results.len() < max_count {
+            let mut is_match = true;
+            for j in 0..sub_len {
+              if expr_to_string(&list[i + j]) != sub_strs[j] {
+                is_match = false;
+                break;
+              }
+            }
+            if is_match {
+              results.push(pos(i, sub_len));
+              i += if overlaps { 1 } else { sub_len };
+            } else {
+              i += 1;
+            }
           }
         }
         return Some(Ok(Expr::List(results.into())));
