@@ -247,6 +247,41 @@ mod lucas_l_builtin {
   }
 }
 
+mod catalan_number_builtin {
+  use super::*;
+
+  #[test]
+  fn non_negative() {
+    assert_eq!(interpret("CatalanNumber[0]").unwrap(), "1");
+    assert_eq!(interpret("CatalanNumber[1]").unwrap(), "1");
+    assert_eq!(interpret("CatalanNumber[5]").unwrap(), "42");
+    assert_eq!(interpret("CatalanNumber[10]").unwrap(), "16796");
+  }
+
+  // The analytic continuation collapses at negative integers:
+  // CatalanNumber[-1] = -1 and CatalanNumber[-n] = 0 for n >= 2.
+  #[test]
+  fn negative_index() {
+    assert_eq!(interpret("CatalanNumber[-1]").unwrap(), "-1");
+    assert_eq!(interpret("CatalanNumber[-2]").unwrap(), "0");
+    assert_eq!(interpret("CatalanNumber[-3]").unwrap(), "0");
+    assert_eq!(interpret("CatalanNumber[-100]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_index_table() {
+    assert_eq!(
+      interpret("Table[CatalanNumber[-n], {n, 1, 6}]").unwrap(),
+      "{-1, 0, 0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("CatalanNumber[n]").unwrap(), "CatalanNumber[n]");
+  }
+}
+
 mod euler_phi {
   use super::*;
 

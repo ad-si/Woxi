@@ -1389,7 +1389,13 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n,
-    _ => {
+    // Analytic continuation collapses at negative integers: the only
+    // non-zero value is CatalanNumber[-1] = -1; CatalanNumber[-n] = 0 for
+    // n >= 2 (the Gamma in the numerator stays finite while the
+    // denominator Gamma[2 + n] has a pole).
+    Some(-1) => return Ok(Expr::Integer(-1)),
+    Some(_) => return Ok(Expr::Integer(0)),
+    None => {
       return Ok(Expr::FunctionCall {
         name: "CatalanNumber".to_string(),
         args: args.to_vec().into(),
