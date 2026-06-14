@@ -1947,3 +1947,96 @@ mod equal_accuracy_form {
     assert_eq!(interpret("13.1416``4 == 13.5``4").unwrap(), "False");
   }
 }
+
+mod quadratic_irrational_q {
+  use super::*;
+
+  // A bare quadratic surd is a quadratic irrational.
+  #[test]
+  fn plain_surd_is_true() {
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2]]").unwrap(), "True");
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[3]]").unwrap(), "True");
+  }
+
+  // Surds whose radicand is a perfect square (or whole) collapse to a
+  // rational and are therefore not quadratic irrationals.
+  #[test]
+  fn perfect_square_surd_is_false() {
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[4]]").unwrap(), "False");
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[9/4]]").unwrap(), "False");
+  }
+
+  // Plain rationals and integers are not quadratic irrationals.
+  #[test]
+  fn rationals_are_false() {
+    assert_eq!(interpret("QuadraticIrrationalQ[2]").unwrap(), "False");
+    assert_eq!(interpret("QuadraticIrrationalQ[1/2]").unwrap(), "False");
+  }
+
+  // a + b*sqrt(d) forms with non-zero rational a, b remain quadratic.
+  #[test]
+  fn affine_combinations_are_true() {
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2] + 1]").unwrap(), "True");
+    assert_eq!(interpret("QuadraticIrrationalQ[3 Sqrt[2]]").unwrap(), "True");
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2]/3]").unwrap(), "True");
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[(2 + 3 Sqrt[7])/5]").unwrap(),
+      "True"
+    );
+  }
+
+  // GoldenRatio = (1 + Sqrt[5])/2 is the canonical quadratic irrational.
+  #[test]
+  fn golden_ratio_is_true() {
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[GoldenRatio]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[(1 + Sqrt[5])/2]").unwrap(),
+      "True"
+    );
+  }
+
+  // Products and quotients of surds that reduce to a single field stay
+  // quadratic; the reciprocal of a surd does too.
+  #[test]
+  fn surd_products_and_reciprocals() {
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[2] Sqrt[3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[8]]").unwrap(), "True");
+    assert_eq!(interpret("QuadraticIrrationalQ[1/Sqrt[2]]").unwrap(), "True");
+  }
+
+  // Sums of surds from different fields have degree 4, not 2.
+  #[test]
+  fn cross_field_sum_is_false() {
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "False"
+    );
+  }
+
+  // Transcendentals, higher-degree algebraics, machine reals, symbols,
+  // and non-real surds are all rejected.
+  #[test]
+  fn non_quadratic_inputs_are_false() {
+    assert_eq!(interpret("QuadraticIrrationalQ[Pi]").unwrap(), "False");
+    assert_eq!(interpret("QuadraticIrrationalQ[2^(1/3)]").unwrap(), "False");
+    assert_eq!(interpret("QuadraticIrrationalQ[1.5]").unwrap(), "False");
+    assert_eq!(interpret("QuadraticIrrationalQ[x]").unwrap(), "False");
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[-2]]").unwrap(), "False");
+  }
+
+  // Expressions that simplify to a rational before the test are False.
+  #[test]
+  fn simplifying_to_rational_is_false() {
+    assert_eq!(
+      interpret("QuadraticIrrationalQ[Sqrt[3] - Sqrt[3]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("QuadraticIrrationalQ[Sqrt[2]^2]").unwrap(), "False");
+  }
+}

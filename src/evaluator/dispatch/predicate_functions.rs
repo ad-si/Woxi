@@ -201,6 +201,11 @@ pub fn dispatch_predicate_functions(
     "IntegerQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::integer_q_ast(args));
     }
+    "QuadraticIrrationalQ" if args.len() == 1 => {
+      return Some(crate::functions::predicate_ast::quadratic_irrational_q_ast(
+        args,
+      ));
+    }
     "MachineNumberQ" if args.len() == 1 => {
       fn contains_real(e: &Expr) -> bool {
         match e {

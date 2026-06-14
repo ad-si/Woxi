@@ -133,6 +133,282 @@ pub fn integer_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(is_integer))
 }
 
+/// An exact element of a real quadratic field: `a + b*sqrt(d)` with `a`, `b`
+/// rational and `d` a square-free integer > 1 (so a non-zero `b` means the
+/// value is a quadratic irrational). A pure rational has `b == 0`.
+#[derive(Clone, Copy)]
+struct QuadNum {
+  a: (i128, i128), // rational part (num, den), den > 0
+  b: (i128, i128), // sqrt coefficient (num, den), den > 0
+  d: i128,         // square-free radicand > 1 (only meaningful when b != 0)
+}
+
+fn qi_gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  a.max(1)
+}
+
+fn qi_reduce(n: i128, d: i128) -> (i128, i128) {
+  if d == 0 {
+    return (n, 0);
+  }
+  let g = qi_gcd(n, d);
+  let (mut n, mut d) = (n / g, d / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  (n, d)
+}
+
+fn qi_add(x: (i128, i128), y: (i128, i128)) -> (i128, i128) {
+  qi_reduce(x.0 * y.1 + y.0 * x.1, x.1 * y.1)
+}
+
+fn qi_mul(x: (i128, i128), y: (i128, i128)) -> (i128, i128) {
+  qi_reduce(x.0 * y.0, x.1 * y.1)
+}
+
+impl QuadNum {
+  fn rational(n: i128, den: i128) -> QuadNum {
+    QuadNum {
+      a: qi_reduce(n, den),
+      b: (0, 1),
+      d: 1,
+    }
+  }
+  fn is_rational(&self) -> bool {
+    self.b.0 == 0
+  }
+  /// Add two quadratic numbers, requiring a common field (or one rational).
+  fn add(self, o: QuadNum) -> Option<QuadNum> {
+    if self.is_rational() {
+      return Some(QuadNum {
+        a: qi_add(self.a, o.a),
+        b: o.b,
+        d: o.d,
+      });
+    }
+    if o.is_rational() {
+      return Some(QuadNum {
+        a: qi_add(self.a, o.a),
+        b: self.b,
+        d: self.d,
+      });
+    }
+    if self.d != o.d {
+      return None; // different quadratic fields
+    }
+    Some(QuadNum {
+      a: qi_add(self.a, o.a),
+      b: qi_add(self.b, o.b),
+      d: self.d,
+    })
+  }
+  fn neg(self) -> QuadNum {
+    QuadNum {
+      a: (-self.a.0, self.a.1),
+      b: (-self.b.0, self.b.1),
+      d: self.d,
+    }
+  }
+  /// Multiply: (a1 + b1√d)(a2 + b2√d) = (a1a2 + b1b2 d) + (a1b2 + a2b1)√d.
+  fn mul(self, o: QuadNum) -> Option<QuadNum> {
+    if self.is_rational() {
+      return Some(QuadNum {
+        a: qi_mul(self.a, o.a),
+        b: qi_mul(self.a, o.b),
+        d: o.d,
+      });
+    }
+    if o.is_rational() {
+      return Some(QuadNum {
+        a: qi_mul(self.a, o.a),
+        b: qi_mul(self.b, o.a),
+        d: self.d,
+      });
+    }
+    if self.d != o.d {
+      return None;
+    }
+    let cross =
+      qi_add(qi_mul(self.a, o.b), qi_mul(self.b, o.a));
+    let rat =
+      qi_add(qi_mul(self.a, o.a), qi_mul(qi_mul(self.b, o.b), (self.d, 1)));
+    Some(QuadNum {
+      a: rat,
+      b: cross,
+      d: self.d,
+    })
+  }
+  /// Inverse: 1/(a + b√d) = (a - b√d) / (a² - b² d).
+  fn inv(self) -> Option<QuadNum> {
+    let denom = qi_add(
+      qi_mul(self.a, self.a),
+      (-qi_mul(qi_mul(self.b, self.b), (self.d, 1)).0,
+       qi_mul(qi_mul(self.b, self.b), (self.d, 1)).1),
+    );
+    if denom.0 == 0 {
+      return None;
+    }
+    Some(QuadNum {
+      a: qi_mul(self.a, (denom.1, denom.0)),
+      b: qi_mul((-self.b.0, self.b.1), (denom.1, denom.0)),
+      d: self.d,
+    })
+  }
+}
+
+/// Extract `k` and square-free `m` from `n = k^2 * m` for a positive integer.
+fn qi_square_free(mut n: i128) -> (i128, i128) {
+  let mut k = 1i128;
+  let mut f = 2i128;
+  while f * f <= n {
+    while n % (f * f) == 0 {
+      n /= f * f;
+      k *= f;
+    }
+    f += 1;
+  }
+  (k, n)
+}
+
+/// Check if an expression is Rational[-1, 2].
+fn is_neg_half(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1))
+        && matches!(&args[1], Expr::Integer(2))
+  )
+}
+
+/// `Sqrt[r]` for an exact rational radicand `r`, as a quadratic number.
+fn sqrt_of_rational(rad: &Expr) -> Option<QuadNum> {
+  let (p, q) = match rad {
+    Expr::Integer(n) => (*n, 1),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) => (*p, *q),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  if p <= 0 || q <= 0 {
+    return None; // not a positive real radicand
+  }
+  // sqrt(p/q) = sqrt(p*q)/q.
+  let (k, m) = qi_square_free(p * q);
+  if m == 1 {
+    Some(QuadNum::rational(k, q))
+  } else {
+    Some(QuadNum {
+      a: (0, 1),
+      b: qi_reduce(k, q),
+      d: m,
+    })
+  }
+}
+
+/// Try to interpret an exact expression as an element of a single real
+/// quadratic field. Returns `None` for anything outside (machine reals,
+/// symbols, non-real radicals, higher-degree algebraics, …).
+fn as_quad_num(expr: &Expr) -> Option<QuadNum> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  // Sqrt[r] (matches both the Power[r, 1/2] and Sqrt[r] representations).
+  if let Some(rad) = crate::functions::is_sqrt(expr) {
+    return sqrt_of_rational(rad);
+  }
+  match expr {
+    Expr::Integer(n) => Some(QuadNum::rational(*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some(QuadNum::rational(*p, *q))
+      } else {
+        None
+      }
+    }
+    // 1/Sqrt[r], represented as Power[r, Rational[-1, 2]].
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if is_neg_half(right) => sqrt_of_rational(left)?.inv(),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_neg_half(&args[1]) =>
+    {
+      sqrt_of_rational(&args[0])?.inv()
+    }
+    Expr::Constant(c) | Expr::Identifier(c) if c == "GoldenRatio" => {
+      // (1 + Sqrt[5]) / 2.
+      Some(QuadNum {
+        a: (1, 2),
+        b: (1, 2),
+        d: 5,
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l = as_quad_num(left)?;
+      let r = as_quad_num(right)?;
+      match op {
+        BinaryOperator::Plus => l.add(r),
+        BinaryOperator::Times => l.mul(r),
+        BinaryOperator::Divide => l.mul(r.inv()?),
+        _ => None,
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(as_quad_num(operand)?.neg()),
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      let mut acc = as_quad_num(&args[0])?;
+      for a in &args[1..] {
+        acc = acc.add(as_quad_num(a)?)?;
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      let mut acc = as_quad_num(&args[0])?;
+      for a in &args[1..] {
+        acc = acc.mul(as_quad_num(a)?)?;
+      }
+      Some(acc)
+    }
+    _ => None,
+  }
+}
+
+/// QuadraticIrrationalQ[x] - True if x is a real quadratic irrational.
+pub fn quadratic_irrational_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "QuadraticIrrationalQ expects exactly 1 argument".into(),
+    ));
+  }
+  let is_qi = match as_quad_num(&args[0]) {
+    Some(q) => !q.is_rational() && q.d > 1,
+    None => false,
+  };
+  Ok(bool_expr(is_qi))
+}
+
 /// EvenQ[n] - Tests if a number is even
 pub fn even_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
