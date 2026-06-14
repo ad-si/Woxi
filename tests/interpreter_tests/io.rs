@@ -3662,6 +3662,59 @@ mod import_string {
       "{{a, b}, {c, d}}"
     );
   }
+
+  // "JSON" parses arrays into lists and scalars/true/false/null into atoms.
+  #[test]
+  fn import_string_json_arrays_and_scalars() {
+    assert_eq!(
+      interpret(r#"ImportString["[1, 2, 3]", "JSON"]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(r#"ImportString["[1, [2, 3], 4]", "JSON"]"#).unwrap(),
+      "{1, {2, 3}, 4}"
+    );
+    assert_eq!(interpret(r#"ImportString["42", "JSON"]"#).unwrap(), "42");
+    assert_eq!(
+      interpret(r#"ImportString["[true, false, null]", "JSON"]"#).unwrap(),
+      "{True, False, Null}"
+    );
+  }
+
+  // A JSON object becomes a list of string-keyed rules in source order.
+  #[test]
+  fn import_string_json_object_to_rules() {
+    assert_eq!(
+      interpret("ImportString[\"{\\\"a\\\": 1, \\\"b\\\": 2}\", \"JSON\"]")
+        .unwrap(),
+      "{a -> 1, b -> 2}"
+    );
+    // Key order is preserved (not sorted).
+    assert_eq!(
+      interpret("ImportString[\"{\\\"b\\\": 1, \\\"a\\\": 2}\", \"JSON\"]")
+        .unwrap(),
+      "{b -> 1, a -> 2}"
+    );
+  }
+
+  // "RawJSON" turns objects into associations instead.
+  #[test]
+  fn import_string_raw_json_object_to_association() {
+    assert_eq!(
+      interpret("ImportString[\"{\\\"a\\\": 1, \\\"b\\\": 2}\", \"RawJSON\"]")
+        .unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  // Invalid JSON yields $Failed.
+  #[test]
+  fn import_string_json_invalid_returns_failed() {
+    assert_eq!(
+      interpret(r#"ImportString["[1, 2", "JSON"]"#).unwrap(),
+      "$Failed"
+    );
+  }
 }
 
 mod file_names {

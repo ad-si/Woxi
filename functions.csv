@@ -798,7 +798,7 @@ BarLegend,Color bar legend for plots,✅,none,9.0,805
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6.0,806
 MatrixExp,Computes the matrix exponential,✅,pure,2.0,807
 ImageResolution,Option for image resolution in DPI,✅,none,3.0,808
-ImportString,Imports data from a string (CSV/TSV/Table/Lines/Words/Text formats),✅,pure,4.0,809
+ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text formats),✅,pure,4.0,809
 RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812

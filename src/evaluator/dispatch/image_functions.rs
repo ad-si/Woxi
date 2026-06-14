@@ -67,6 +67,55 @@ fn emit_to_stdout(msg: &str) {
   crate::capture_stdout_raw("\n");
 }
 
+/// Convert a parsed JSON value to a Woxi expression, matching
+/// `ImportString[…, "JSON"]`: arrays become lists, scalars/true/false/null map
+/// to atoms. A JSON object becomes a list of `key -> value` rules for the
+/// "JSON" format, or an `Association` for "RawJSON" (`raw == true`); both keep
+/// the source key order.
+fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
+  use serde_json::Value;
+  match value {
+    Value::Null => Expr::Identifier("Null".to_string()),
+    Value::Bool(true) => Expr::Identifier("True".to_string()),
+    Value::Bool(false) => Expr::Identifier("False".to_string()),
+    Value::Number(n) => {
+      if let Some(i) = n.as_i64() {
+        Expr::Integer(i as i128)
+      } else if let Some(u) = n.as_u64() {
+        Expr::Integer(u as i128)
+      } else {
+        Expr::Real(n.as_f64().unwrap_or(0.0))
+      }
+    }
+    Value::String(s) => Expr::String(s.clone()),
+    Value::Array(items) => Expr::List(
+      items.iter().map(|v| json_value_to_expr(v, raw)).collect(),
+    ),
+    Value::Object(map) => {
+      if raw {
+        Expr::Association(
+          map
+            .iter()
+            .map(|(k, v)| {
+              (Expr::String(k.clone()), json_value_to_expr(v, raw))
+            })
+            .collect(),
+        )
+      } else {
+        Expr::List(
+          map
+            .iter()
+            .map(|(k, v)| Expr::Rule {
+              pattern: Box::new(Expr::String(k.clone())),
+              replacement: Box::new(json_value_to_expr(v, raw)),
+            })
+            .collect(),
+        )
+      }
+    }
+  }
+}
+
 pub fn dispatch_image_functions(
   name: &str,
   args: &[Expr],
@@ -648,6 +697,19 @@ pub fn dispatch_image_functions(
       // `String` / `Plaintext` / `Text` return the input verbatim.
       if format == "String" || format == "Plaintext" || format == "Text" {
         return Some(Ok(Expr::String(content)));
+      }
+      // `JSON` parses the string into nested lists: a JSON array becomes a
+      // List, a JSON object becomes a list of `key -> value` rules (string
+      // keys, insertion order preserved), and scalars/true/false/null map to
+      // the corresponding atoms. Invalid JSON yields $Failed.
+      if format == "JSON" || format == "RawJSON" {
+        let raw = format == "RawJSON";
+        return Some(Ok(match serde_json::from_str::<serde_json::Value>(
+          &content,
+        ) {
+          Ok(value) => json_value_to_expr(&value, raw),
+          Err(_) => Expr::Identifier("$Failed".to_string()),
+        }));
       }
       // `TSV` is tab-separated; `Table` splits each line on runs of
       // whitespace. Both reuse the CSV element machinery (number auto-typing,
