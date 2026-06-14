@@ -8943,6 +8943,11 @@ pub fn evaluate_function_call_ast_inner(
         | "Simplex"
         | "Annulus"
         | "Parallelepiped"
+        // OperatorApplied[f, …] is a symbolic operator object that stays
+        // unevaluated until applied to arguments via the curried form
+        // OperatorApplied[f][x][y] (handled in parse_curry_form), so it is
+        // not "unimplemented".
+        | "OperatorApplied"
     )
   {
     let args_str = args

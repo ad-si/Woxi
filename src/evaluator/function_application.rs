@@ -556,6 +556,14 @@ pub fn apply_function_to_arg(
       // already implements the lookup (and Missing[…] for absent keys).
       apply_curried_call(func, std::slice::from_ref(arg))
     }
+    Expr::CurriedCall { .. } => {
+      // A curried operator used as a mapping function, e.g.
+      // `Map[Curry[Power][2], list]` or `OperatorApplied[f][a] /@ list`.
+      // Route through apply_curried_call so a partially-applied curry
+      // operator fires once its final argument arrives, and any other
+      // curried head accumulates the extra argument.
+      apply_curried_call(func, std::slice::from_ref(arg))
+    }
     _ => {
       // Fallback: create a function call expression
       let func_str = expr_to_string(func);
@@ -606,12 +614,16 @@ fn parse_curry_form(func: &Expr) -> Option<(Expr, Vec<usize>, Vec<Expr>)> {
       _ => None,
     }
   };
+  // `OperatorApplied` is the public-facing spelling of the same operator:
+  // `OperatorApplied[f]` reverses two args, `OperatorApplied[f, n]` collects n
+  // in order, `OperatorApplied[f, {perm}]` uses the explicit permutation.
+  let is_curry = |n: &str| n == "Curry" || n == "OperatorApplied";
   match func {
-    Expr::FunctionCall { name, args } if name == "Curry" => {
+    Expr::FunctionCall { name, args } if is_curry(name) => {
       parse_base(args).map(|(f, perm)| (f, perm, Vec::new()))
     }
     Expr::CurriedCall { func: inner, args } => match inner.as_ref() {
-      Expr::FunctionCall { name, args: cargs } if name == "Curry" => {
+      Expr::FunctionCall { name, args: cargs } if is_curry(name) => {
         parse_base(cargs).map(|(f, perm)| (f, perm, args.clone()))
       }
       _ => None,

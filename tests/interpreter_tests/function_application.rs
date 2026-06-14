@@ -2067,4 +2067,82 @@ mod curry {
       "f[c, a, b]"
     );
   }
+
+  // A partially-applied curry operator used as a mapping function must fire
+  // once its final argument arrives. Regression: it previously stayed
+  // unevaluated (`{Curry[Power][2][1], …}`).
+  #[test]
+  fn partial_curry_as_map_function() {
+    assert_eq!(
+      interpret("Map[Curry[Power][2], {1, 2, 3}]").unwrap(),
+      "{1, 4, 9}"
+    );
+    // A plain (non-curry) curried head still accumulates symbolically.
+    assert_eq!(
+      interpret("Map[g[a][b], {1, 2}]").unwrap(),
+      "{g[a][b][1], g[a][b][2]}"
+    );
+  }
+}
+
+mod operator_applied {
+  use super::*;
+
+  // `OperatorApplied` is the public spelling of the same operator as `Curry`.
+  // Bare `OperatorApplied[f]` reverses two arguments.
+  #[test]
+  fn bare_reverses_two_args() {
+    assert_eq!(interpret("OperatorApplied[f][a][b]").unwrap(), "f[b, a]");
+    assert_eq!(interpret("OperatorApplied[Power][2][3]").unwrap(), "9");
+    assert_eq!(interpret("OperatorApplied[Subtract][2][10]").unwrap(), "8");
+  }
+
+  #[test]
+  fn partial_application_keeps_head() {
+    assert_eq!(
+      interpret("OperatorApplied[f][a]").unwrap(),
+      "OperatorApplied[f][a]"
+    );
+    assert_eq!(
+      interpret("Head[OperatorApplied[f]]").unwrap(),
+      "OperatorApplied"
+    );
+    // The bare operator object stays unevaluated.
+    assert_eq!(
+      interpret("OperatorApplied[f]").unwrap(),
+      "OperatorApplied[f]"
+    );
+  }
+
+  // `OperatorApplied[f, n]` collects n arguments in order.
+  #[test]
+  fn n_collects_in_order() {
+    assert_eq!(interpret("OperatorApplied[f, 1][a]").unwrap(), "f[a]");
+    assert_eq!(interpret("OperatorApplied[f, 2][a][b]").unwrap(), "f[a, b]");
+    assert_eq!(
+      interpret("OperatorApplied[f, 3][a][b][c]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+
+  // `OperatorApplied[f, {perm}]` arranges by an explicit permutation.
+  #[test]
+  fn permutation_spec() {
+    assert_eq!(
+      interpret("OperatorApplied[f, {2, 1}][a][b]").unwrap(),
+      "f[b, a]"
+    );
+    assert_eq!(
+      interpret("OperatorApplied[f, {1, 3, 2}][a][b][c]").unwrap(),
+      "f[a, c, b]"
+    );
+  }
+
+  #[test]
+  fn as_map_function() {
+    assert_eq!(
+      interpret("Map[OperatorApplied[Power][2], {1, 2, 3}]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
 }
