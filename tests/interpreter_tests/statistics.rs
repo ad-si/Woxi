@@ -205,6 +205,76 @@ mod contraharmonic_mean {
   }
 }
 
+mod quartile_deviation {
+  use super::*;
+
+  #[test]
+  fn half_the_interquartile_range() {
+    // QuartileDeviation = (Q3 - Q1) / 2.
+    assert_eq!(
+      interpret("QuartileDeviation[{1, 2, 3, 4, 5, 6, 7, 8}]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("QuartileDeviation[{1, 3, 5, 7, 9}]").unwrap(),
+      "5/2"
+    );
+    assert_eq!(
+      interpret("QuartileDeviation[{2, 4, 4, 4, 5, 5, 7, 9}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn reals_stay_real() {
+    assert_eq!(
+      interpret("QuartileDeviation[{1.0, 2.0, 3.0, 4.0, 5.0}]").unwrap(),
+      "1.25"
+    );
+  }
+
+  #[test]
+  fn single_element_is_zero() {
+    assert_eq!(interpret("QuartileDeviation[{5}]").unwrap(), "0");
+  }
+}
+
+mod quartiles_edge_cases {
+  use super::*;
+
+  // Regression: Quartiles of a single-element list used to panic with an
+  // index underflow; it now returns the element repeated, matching
+  // wolframscript.
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Quartiles[{5}]").unwrap(), "{5, 5, 5}");
+    assert_eq!(interpret("InterquartileRange[{5}]").unwrap(), "0");
+  }
+
+  // Regression: machine-real inputs must produce machine-real quartiles, not
+  // a mix of exact rationals and reals.
+  #[test]
+  fn real_inputs_stay_real() {
+    assert_eq!(
+      interpret("Quartiles[{1.0, 2.0, 3.0, 4.0, 5.0}]").unwrap(),
+      "{1.75, 3., 4.25}"
+    );
+    assert_eq!(
+      interpret("InterquartileRange[{1.0, 2.0, 3.0, 4.0, 5.0}]").unwrap(),
+      "2.5"
+    );
+  }
+
+  // Integer inputs still give exact rational quartiles.
+  #[test]
+  fn integer_inputs_stay_exact() {
+    assert_eq!(
+      interpret("Quartiles[{1, 2, 3, 4, 5, 6, 7, 8}]").unwrap(),
+      "{5/2, 9/2, 13/2}"
+    );
+  }
+}
+
 mod root_mean_square {
   use super::*;
 

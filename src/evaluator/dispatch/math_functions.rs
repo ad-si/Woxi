@@ -144,6 +144,16 @@ pub fn dispatch_math_functions(
           fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
         });
         let n = sorted.len() as i128;
+        // Machine-real inputs must yield machine-real quartiles, not exact
+        // rationals (e.g. Quartiles[{1., 2., 3., 4., 5.}] → {1.75, 3., 4.25}).
+        let any_real = sorted
+          .iter()
+          .any(|e| matches!(e, Expr::Real(_) | Expr::BigFloat(_, _)));
+        // Convert a 1-based position to a 0-based index, clamped to [1, n] so
+        // positions outside the data fall back to the first/last element. This
+        // also keeps single-element lists from underflowing (Quartiles[{5}] →
+        // {5, 5, 5}).
+        let clamp_idx = |i: i128| -> usize { (i.clamp(1, n) - 1) as usize };
         let mut results = Vec::new();
         for (qn, qd) in [(1i128, 4i128), (1, 2), (3, 4)] {
           // pos = 1/2 + n * q = 1/2 + n*qn/qd
@@ -155,12 +165,12 @@ pub fn dispatch_math_functions(
           // frac = frac_num / pos_den
           if frac_num == 0 {
             // Exact position
-            results.push(sorted[(j - 1) as usize].clone());
+            results.push(sorted[clamp_idx(j)].clone());
           } else {
             // Interpolate: (1 - frac)*sorted[j-1] + frac*sorted[j]
             // = ((pos_den - frac_num)*sorted[j-1] + frac_num*sorted[j]) / pos_den
-            let lo = &sorted[(j - 1) as usize];
-            let hi = &sorted[j as usize];
+            let lo = &sorted[clamp_idx(j)];
+            let hi = &sorted[clamp_idx(j + 1)];
             let w_lo = pos_den - frac_num;
             let w_hi = frac_num;
             // Try integer arithmetic
@@ -170,7 +180,7 @@ pub fn dispatch_math_functions(
             ) {
               let lo_i = lo_v as i128;
               let hi_i = hi_v as i128;
-              if lo_i as f64 == lo_v && hi_i as f64 == hi_v {
+              if !any_real && lo_i as f64 == lo_v && hi_i as f64 == hi_v {
                 // Exact rational: (w_lo*lo_i + w_hi*hi_i) / pos_den
                 let num = w_lo * lo_i + w_hi * hi_i;
                 results.push(crate::functions::math_ast::make_rational(
@@ -239,6 +249,24 @@ pub fn dispatch_math_functions(
           right: Box::new(qs[0].clone()),
         };
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
+      }
+    }
+    // QuartileDeviation = (Q3 - Q1) / 2, i.e. half the interquartile range.
+    "QuartileDeviation" if args.len() == 1 => {
+      if let Some(Ok(Expr::List(ref qs))) =
+        dispatch_math_functions("Quartiles", args)
+        && qs.len() == 3
+      {
+        let half_iqr = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(qs[2].clone()),
+            right: Box::new(qs[0].clone()),
+          }),
+          right: Box::new(Expr::Integer(2)),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&half_iqr));
       }
     }
     "Abs" if args.len() == 1 => {
