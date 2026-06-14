@@ -1862,7 +1862,9 @@ fn factor_integer_rational(
       {
         if *p == -1 {
           has_neg_one = true;
-        } else {
+        } else if *p != 1 {
+          // Drop the trivial unit factor from FactorInteger[1] = {{1, 1}};
+          // wolframscript: FactorInteger[1/6] = {{2, -1}, {3, -1}}.
           *factor_map.entry(*p).or_insert(0) += e;
         }
       }
@@ -1878,7 +1880,7 @@ fn factor_integer_rational(
       {
         if *p == -1 {
           has_neg_one = !has_neg_one;
-        } else {
+        } else if *p != 1 {
           *factor_map.entry(*p).or_insert(0) -= e;
         }
       }
@@ -1904,8 +1906,9 @@ fn factor_integer_rational(
 
 pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   if n == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "FactorInteger: argument cannot be zero".into(),
+    // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
     ));
   }
 
@@ -1971,8 +1974,9 @@ pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
   use num_traits::{One, Signed, Zero};
 
   if n.is_zero() {
-    return Err(InterpreterError::EvaluationError(
-      "FactorInteger: argument cannot be zero".into(),
+    // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
     ));
   }
 

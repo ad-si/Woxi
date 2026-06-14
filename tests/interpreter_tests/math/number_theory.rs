@@ -18,6 +18,27 @@ mod factor_integer {
     assert_eq!(interpret("FactorInteger[1]").unwrap(), "{{1, 1}}");
   }
 
+  // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1) rather
+  // than raising an error.
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("FactorInteger[0]").unwrap(), "{{0, 1}}");
+  }
+
+  // Unit-numerator rationals must not carry a spurious {1, 1} factor.
+  #[test]
+  fn unit_numerator_rational() {
+    assert_eq!(
+      interpret("FactorInteger[1/6]").unwrap(),
+      "{{2, -1}, {3, -1}}"
+    );
+    assert_eq!(interpret("FactorInteger[1/2]").unwrap(), "{{2, -1}}");
+    assert_eq!(
+      interpret("FactorInteger[1/12]").unwrap(),
+      "{{2, -2}, {3, -1}}"
+    );
+  }
+
   #[test]
   fn negative() {
     assert_eq!(
