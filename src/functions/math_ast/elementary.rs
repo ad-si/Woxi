@@ -1621,6 +1621,45 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(make_rational(rem, common_d));
   }
 
+  // Exact symbolic path: when both operands are exact (no machine reals)
+  // but at least one is an exact real constant such as Pi, E, GoldenRatio,
+  // or Sqrt[2] (so the rational fast-path above did not fire), keep the
+  // result exact via the defining identity Mod[m, n] = m - n*Floor[m/n].
+  // wolframscript: Mod[Pi, 1] = -3 + Pi, Mod[5, Pi] = 5 - Pi.
+  if !mod_contains_inexact(m) && !mod_contains_inexact(n) {
+    if let (Some(_), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
+      if b == 0.0 {
+        crate::emit_message(&format!(
+          "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
+          crate::syntax::expr_to_string(m)
+        ));
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+      // floor_quot = Floor[m/n]; evaluating the quotient first lets exact
+      // cancellations (e.g. 2*Pi/Pi -> 2) happen so the floor is exact.
+      let quotient = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(m.clone()),
+        right: Box::new(n.clone()),
+      };
+      let floor_quot = Expr::FunctionCall {
+        name: "Floor".to_string(),
+        args: vec![quotient].into(),
+      };
+      // result = m - n*Floor[m/n]
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(m.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(n.clone()),
+          right: Box::new(floor_quot),
+        }),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+  }
+
   // Float fallback
   if let (Some(a), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
     if b == 0.0 {
@@ -1639,6 +1678,20 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     name: "Mod".to_string(),
     args: vec![m.clone(), n.clone()].into(),
   })
+}
+
+/// True if `expr` contains any machine real (`Real`/`BigFloat`) atom, i.e.
+/// it is not an exact expression.
+fn mod_contains_inexact(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => mod_contains_inexact(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      mod_contains_inexact(left) || mod_contains_inexact(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(mod_contains_inexact),
+    _ => false,
+  }
 }
 
 /// Mod[m, n, d] - 3-argument form: m - n * Floor[(m - d) / n]
@@ -1671,6 +1724,53 @@ pub fn mod3_ast(
     let res_n = mn * nd - nn * md * fl;
     let res_d = md * nd;
     return Ok(make_rational(res_n, res_d));
+  }
+
+  // Exact symbolic path: keep the result exact via the defining identity
+  // Mod[m, n, d] = m - n*Floor[(m - d)/n] when all operands are exact and
+  // numerically real. wolframscript: Mod[Pi, 2, -1] = -4 + Pi.
+  if !mod_contains_inexact(m)
+    && !mod_contains_inexact(n)
+    && !mod_contains_inexact(d)
+  {
+    if let (Some(_), Some(b), Some(_)) =
+      (try_eval_to_f64(m), try_eval_to_f64(n), try_eval_to_f64(d))
+    {
+      if b == 0.0 {
+        crate::emit_message(&format!(
+          "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
+          crate::syntax::expr_to_string(m),
+          crate::syntax::expr_to_string(d)
+        ));
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+      // floor_quot = Floor[(m - d)/n]
+      let diff = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(m.clone()),
+        right: Box::new(d.clone()),
+      };
+      let quotient = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(diff),
+        right: Box::new(n.clone()),
+      };
+      let floor_quot = Expr::FunctionCall {
+        name: "Floor".to_string(),
+        args: vec![quotient].into(),
+      };
+      // result = m - n*Floor[(m - d)/n]
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(m.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(n.clone()),
+          right: Box::new(floor_quot),
+        }),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
   }
 
   // Float fallback

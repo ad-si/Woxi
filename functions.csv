@@ -126,7 +126,7 @@ Gamma,Returns the gamma function value,✅,pure,1.0,130
 Integer,Head type for integer numbers,✅,pure,1.0,131
 RandomReal,Generates a pseudorandom real number,✅,contextual,6.0,132
 ClearAll,Clears all values and definitions for symbols,✅,stateful,1.0,133
-Mod,Returns the remainder of integer division,✅,pure,1.0,134
+Mod,Returns the remainder on division (m - n Floor[m/n]),✅,pure,1.0,134
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137

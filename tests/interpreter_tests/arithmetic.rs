@@ -5284,3 +5284,90 @@ mod number_digit_extended {
     );
   }
 }
+
+// Mod[m, n] with exact real (but non-rational) operands must stay exact,
+// following Mod[m, n] = m - n*Floor[m/n], rather than collapsing to a
+// machine-precision real. Regression for `Mod[GoldenRatio, 1]` returning
+// 0.618... instead of `-1 + GoldenRatio`.
+mod mod_exact_symbolic {
+  use super::*;
+
+  #[test]
+  fn golden_ratio_mod_one() {
+    assert_eq!(
+      interpret("Mod[GoldenRatio, 1]").unwrap(),
+      "-1 + GoldenRatio"
+    );
+  }
+
+  #[test]
+  fn pi_mod_integer() {
+    assert_eq!(interpret("Mod[Pi, 1]").unwrap(), "-3 + Pi");
+    assert_eq!(interpret("Mod[Pi, 2]").unwrap(), "-2 + Pi");
+  }
+
+  #[test]
+  fn e_mod_one() {
+    assert_eq!(interpret("Mod[E, 1]").unwrap(), "-2 + E");
+    assert_eq!(interpret("Mod[2 E, 1]").unwrap(), "-5 + 2*E");
+  }
+
+  #[test]
+  fn sqrt_mod_one() {
+    assert_eq!(interpret("Mod[Sqrt[2], 1]").unwrap(), "-1 + Sqrt[2]");
+    assert_eq!(interpret("Mod[Sqrt[10], 2]").unwrap(), "-2 + Sqrt[10]");
+  }
+
+  #[test]
+  fn integer_mod_irrational() {
+    assert_eq!(interpret("Mod[5, Pi]").unwrap(), "5 - Pi");
+  }
+
+  #[test]
+  fn negative_irrational_dividend() {
+    assert_eq!(interpret("Mod[-Pi, 2]").unwrap(), "4 - Pi");
+    assert_eq!(interpret("Mod[-E, 1]").unwrap(), "3 - E");
+  }
+
+  // Exact cancellation: the floor is taken after the symbolic quotient
+  // simplifies, so multiples of the modulus reduce to exact zero / fraction.
+  #[test]
+  fn commensurate_irrationals_cancel() {
+    assert_eq!(interpret("Mod[2 Pi, Pi]").unwrap(), "0");
+    assert_eq!(interpret("Mod[3 Pi/2, Pi]").unwrap(), "Pi/2");
+    assert_eq!(interpret("Mod[5 Pi, 2 Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Mod[10 E, E]").unwrap(), "0");
+  }
+
+  // Modulus larger than the dividend leaves it unchanged (Floor = 0).
+  #[test]
+  fn dividend_below_modulus() {
+    assert_eq!(interpret("Mod[GoldenRatio, 2]").unwrap(), "GoldenRatio");
+    assert_eq!(interpret("Mod[EulerGamma, 1]").unwrap(), "EulerGamma");
+  }
+
+  // Machine-real operands keep the numeric (inexact) result.
+  #[test]
+  fn machine_real_stays_numeric() {
+    assert_eq!(interpret("Mod[10.5, 3]").unwrap(), "1.5");
+    assert_eq!(
+      interpret("Mod[Pi, 2.0]").unwrap(),
+      "1.1415926535897931"
+    );
+  }
+
+  // Purely symbolic (non-numeric) arguments stay unevaluated.
+  #[test]
+  fn non_numeric_symbol_unevaluated() {
+    assert_eq!(interpret("Mod[a, 1]").unwrap(), "Mod[a, 1]");
+    assert_eq!(interpret("Mod[x, 2]").unwrap(), "Mod[x, 2]");
+  }
+
+  // Three-argument offset form also stays exact.
+  #[test]
+  fn three_arg_exact() {
+    assert_eq!(interpret("Mod[Pi, 2, -1]").unwrap(), "-4 + Pi");
+    assert_eq!(interpret("Mod[Pi, 1, 1]").unwrap(), "-2 + Pi");
+    assert_eq!(interpret("Mod[7 Pi/2, Pi, 1]").unwrap(), "Pi/2");
+  }
+}
