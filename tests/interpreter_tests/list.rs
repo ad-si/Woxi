@@ -269,6 +269,34 @@ mod subsequences {
   fn subsequences_zero_length() {
     assert_eq!(interpret("Subsequences[{a, b}, {0, 0}]").unwrap(), "{{}}");
   }
+
+  // Subsequences[list, n] gives every contiguous subsequence of length 0..n,
+  // not only those of length exactly n.
+  #[test]
+  fn subsequences_max_length_integer() {
+    assert_eq!(
+      interpret("Subsequences[{1, 2, 3}, 2]").unwrap(),
+      "{{}, {1}, {2}, {3}, {1, 2}, {2, 3}}"
+    );
+    assert_eq!(
+      interpret("Subsequences[{1, 2, 3, 4}, 2]").unwrap(),
+      "{{}, {1}, {2}, {3}, {4}, {1, 2}, {2, 3}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn subsequences_integer_bounds() {
+    assert_eq!(interpret("Subsequences[{1, 2, 3, 4}, 0]").unwrap(), "{{}}");
+    assert_eq!(
+      interpret("Subsequences[{1, 2, 3, 4}, 1]").unwrap(),
+      "{{}, {1}, {2}, {3}, {4}}"
+    );
+    // n exceeding the length is clamped to the full set.
+    assert_eq!(
+      interpret("Subsequences[{1, 2, 3}, 5]").unwrap(),
+      "{{}, {1}, {2}, {3}, {1, 2}, {2, 3}, {1, 2, 3}}"
+    );
+  }
 }
 
 mod tuples {

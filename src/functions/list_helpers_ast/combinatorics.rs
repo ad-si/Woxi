@@ -392,6 +392,7 @@ fn generate_combinations(
 }
 
 /// Subsequences[list] - all contiguous subsequences
+/// Subsequences[list, n] - contiguous subsequences of length 0 through n
 /// Subsequences[list, {n}] - contiguous subsequences of length n
 /// Subsequences[list, {nmin, nmax}] - lengths in range
 /// Subsequences[{a, b, c}] => {{}, {a}, {b}, {c}, {a, b}, {b, c}, {a, b, c}}
@@ -446,8 +447,9 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::Integer(_) | Expr::BigInteger(_) => {
+        // Subsequences[list, n] gives lengths 0 through n, not exactly n.
         let k = expr_to_i128(&args[1]).unwrap_or(0) as usize;
-        (k, k)
+        (0, k)
       }
       _ => {
         return Ok(Expr::FunctionCall {
