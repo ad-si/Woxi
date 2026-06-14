@@ -1567,7 +1567,7 @@ DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,comp
 MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593
 MovingMap,Apply a function to a sliding window,✅,computation,10.0,1593
 SelectComponents,Select image components,,unevaluated,8.0,1593
-CoprimeQ,Tests if two integers are coprime,✅,pure,6.0,1597
+CoprimeQ,Tests whether integers are pairwise coprime (Listable),✅,pure,6.0,1597
 NotebookPut,Create notebook from expression,,unevaluated,3.0,1597
 PositiveDefiniteMatrixQ,Test if a matrix is positive definite,✅,computation,6.0,1597
 ThreeJSymbol,Wigner 3-j symbol,✅,pure,2.0,1597

@@ -2951,9 +2951,22 @@ pub fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
 
 /// CoprimeQ[a, b, ...] - Tests if integers are pairwise coprime
 pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "CoprimeQ expects at least 2 arguments".into(),
+      "CoprimeQ expects at least 1 argument".into(),
+    ));
+  }
+
+  // Single argument: CoprimeQ[n] tests whether n is a unit (GCD[n] == 1),
+  // which for integers means |n| == 1. wolframscript: CoprimeQ[1] = True,
+  // CoprimeQ[5] = CoprimeQ[x] = False. This case is reached on its own and
+  // as the per-element result of the Listable threading of a single list,
+  // e.g. CoprimeQ[{6, 35}] -> {CoprimeQ[6], CoprimeQ[35]} -> {False, False}.
+  if args.len() == 1 {
+    let is_unit =
+      matches!(expr_to_i128(&args[0]), Some(n) if n.unsigned_abs() == 1);
+    return Ok(Expr::Identifier(
+      if is_unit { "True" } else { "False" }.to_string(),
     ));
   }
 

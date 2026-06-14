@@ -2072,7 +2072,7 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "CoprimeQ" if args.len() >= 2 => {
+    "CoprimeQ" if !args.is_empty() => {
       return Some(crate::functions::math_ast::coprime_q_ast(args));
     }
     "Re" if args.len() == 1 => {

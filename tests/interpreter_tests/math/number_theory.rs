@@ -1860,6 +1860,41 @@ mod coprime_q {
   fn three_not_coprime() {
     assert_eq!(interpret("CoprimeQ[2, 4, 5]").unwrap(), "False");
   }
+
+  // Single argument tests whether n is a unit (|n| == 1).
+  #[test]
+  fn single_argument() {
+    assert_eq!(interpret("CoprimeQ[1]").unwrap(), "True");
+    assert_eq!(interpret("CoprimeQ[-1]").unwrap(), "True");
+    assert_eq!(interpret("CoprimeQ[5]").unwrap(), "False");
+    assert_eq!(interpret("CoprimeQ[0]").unwrap(), "False");
+    assert_eq!(interpret("CoprimeQ[x]").unwrap(), "False");
+  }
+
+  // CoprimeQ is Listable: it threads element-wise over list arguments.
+  #[test]
+  fn listable_single_list() {
+    assert_eq!(interpret("CoprimeQ[{6, 35}]").unwrap(), "{False, False}");
+    assert_eq!(
+      interpret("CoprimeQ[{1, 2, 3}]").unwrap(),
+      "{True, False, False}"
+    );
+  }
+
+  #[test]
+  fn listable_multiple_lists() {
+    // Threads pairwise: {CoprimeQ[2,4], CoprimeQ[3,9]}.
+    assert_eq!(
+      interpret("CoprimeQ[{2, 3}, {4, 9}]").unwrap(),
+      "{False, False}"
+    );
+    // Scalar broadcasts: {CoprimeQ[2,5], CoprimeQ[3,5]}.
+    assert_eq!(interpret("CoprimeQ[{2, 3}, 5]").unwrap(), "{True, True}");
+    assert_eq!(
+      interpret("CoprimeQ[{2, 4}, {3, 9}, {5, 25}]").unwrap(),
+      "{True, True}"
+    );
+  }
 }
 
 mod prime_power_q {

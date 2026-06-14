@@ -206,7 +206,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Coordinates" => Some((0, 1)),
     "CoordinatesFromCartesian" => Some((1, 2)),
     "CoordinatesToCartesian" => Some((1, 2)),
-    "CoprimeQ" => Some((2, usize::MAX)),
+    "CoprimeQ" => Some((1, usize::MAX)),
     "Correlation" => Some((2, 2)),
     "CorrelationDistance" => Some((2, 2)),
     "Cos" => Some((1, 1)),
