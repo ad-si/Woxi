@@ -27,6 +27,14 @@ pub fn dispatch_association_functions(
     "KeyUnion" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::association_ast::key_union_ast(args));
     }
+    "KeyIntersection" if args.len() == 1 => {
+      return Some(crate::functions::association_ast::key_intersection_ast(
+        args,
+      ));
+    }
+    "KeyComplement" if args.len() == 1 => {
+      return Some(crate::functions::association_ast::key_complement_ast(args));
+    }
     "KeyValueMap" if args.len() == 2 => {
       return Some(crate::functions::association_ast::key_value_map_ast(args));
     }

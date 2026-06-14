@@ -626,6 +626,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "KeySortBy" => Some((2, 2)),
     "KeyTake" => Some((2, 2)),
     "KeyUnion" => Some((1, 2)),
+    "KeyIntersection" => Some((1, 1)),
+    "KeyComplement" => Some((1, 1)),
     "KeyValueMap" => Some((2, 2)),
     "KroneckerProduct" => Some((2, usize::MAX)),
     "KCoreComponents" => Some((2, 3)),

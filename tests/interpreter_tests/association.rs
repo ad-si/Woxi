@@ -771,6 +771,94 @@ mod key_union {
   }
 }
 
+mod key_intersection {
+  use super::*;
+
+  #[test]
+  fn keeps_only_common_keys() {
+    // Each association is restricted to the keys common to all, with its own
+    // values.
+    assert_eq!(
+      interpret("KeyIntersection[{<|a -> 1, b -> 2|>, <|b -> 3, c -> 4|>}]")
+        .unwrap(),
+      "{<|b -> 2|>, <|b -> 3|>}"
+    );
+  }
+
+  #[test]
+  fn single_association_unchanged() {
+    assert_eq!(
+      interpret("KeyIntersection[{<|a -> 1, b -> 2|>}]").unwrap(),
+      "{<|a -> 1, b -> 2|>}"
+    );
+  }
+
+  #[test]
+  fn no_common_keys_gives_empty_associations() {
+    assert_eq!(
+      interpret("KeyIntersection[{<|a -> 1|>, <|b -> 2|>}]").unwrap(),
+      "{<||>, <||>}"
+    );
+  }
+
+  #[test]
+  fn common_keys_ordered_by_first_association() {
+    // The key order follows the first association and is applied to all.
+    assert_eq!(
+      interpret("KeyIntersection[{<|b -> 1, a -> 2|>, <|a -> 3, b -> 4|>}]")
+        .unwrap(),
+      "{<|b -> 1, a -> 2|>, <|b -> 4, a -> 3|>}"
+    );
+  }
+
+  #[test]
+  fn non_list_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("KeyIntersection[5]").unwrap(),
+      "KeyIntersection[5]"
+    );
+  }
+}
+
+mod key_complement {
+  use super::*;
+
+  #[test]
+  fn first_keys_absent_from_the_rest() {
+    assert_eq!(
+      interpret(
+        "KeyComplement[{<|a -> 1, b -> 2, c -> 5|>, <|b -> 3|>, <|c -> 4|>}]"
+      )
+      .unwrap(),
+      "<|a -> 1|>"
+    );
+  }
+
+  #[test]
+  fn single_association_unchanged() {
+    assert_eq!(
+      interpret("KeyComplement[{<|a -> 1, b -> 2|>}]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn all_keys_removed_gives_empty_association() {
+    assert_eq!(
+      interpret("KeyComplement[{<|a -> 1|>, <|a -> 9|>}]").unwrap(),
+      "<||>"
+    );
+  }
+
+  #[test]
+  fn non_list_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("KeyComplement[5]").unwrap(),
+      "KeyComplement[5]"
+    );
+  }
+}
+
 mod association_list_operations {
   use super::*;
 

@@ -3094,7 +3094,7 @@ CumulantGeneratingFunction,,,,8.0,3176
 DimensionReduction,,🚫,,10.1,3176
 FactorialMomentGeneratingFunction,,,,8.0,3176
 HadamardMatrix,Hadamard matrix of size n,✅,none,9.0,3176
-KeyIntersection,,,,10.0,3176
+KeyIntersection,Restricts each association to the keys common to all,✅,pure,10.0,3176
 LeftRightArrow,,,,3.0,3176
 LightMagenta,Named light color evaluating to RGBColor[1 0.9 1],✅,pure,6.0,3176
 MellinTransform,,,,11.0,3176
@@ -5219,7 +5219,7 @@ IncludeDefinitions,,,,12.0,5486
 IncludeQuantities,,,,10.0,5486
 IncludeWindowTimes,,,,10.0,5486
 InflationMethod,,🚫,,10.0,5486
-KeyComplement,,,,10.1,5486
+KeyComplement,Returns the first association restricted to keys absent from the rest,✅,pure,10.1,5486
 LessSlantEqual,,,,3.0,5486
 LibraryFunctionInformation,,,,8.0,5486
 LinearFractionalOptimization,,,,12.0,5486

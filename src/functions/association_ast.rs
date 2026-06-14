@@ -978,3 +978,124 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result.into()))
 }
+
+/// Extract the inner associations from a `KeyComplement`/`KeyIntersection`
+/// argument: a single list of associations. Returns the `::invar` message form
+/// when the argument is not a list of associations.
+fn key_set_op_assocs(
+  fname: &str,
+  args: &[Expr],
+) -> Result<Vec<Vec<(Expr, Expr)>>, Expr> {
+  let assocs = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Err(invalid_subject_message(
+        fname,
+        "invar",
+        "list of Associations or rules",
+        &args[0],
+        args,
+      ));
+    }
+  };
+  let mut all_assocs: Vec<Vec<(Expr, Expr)>> = Vec::new();
+  for assoc in assocs {
+    match assoc {
+      Expr::Association(items) => all_assocs.push(items.clone()),
+      _ => {
+        return Err(invalid_subject_message(
+          fname,
+          "invar",
+          "list of Associations or rules",
+          &args[0],
+          args,
+        ));
+      }
+    }
+  }
+  Ok(all_assocs)
+}
+
+/// KeyIntersection[{assoc1, assoc2, ...}] restricts every association to the
+/// keys common to all of them. The common keys are ordered as they appear in
+/// the first association, and each result keeps that association's own values.
+pub fn key_intersection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KeyIntersection expects 1 argument".into(),
+    ));
+  }
+  let all_assocs = match key_set_op_assocs("KeyIntersection", args) {
+    Ok(a) => a,
+    Err(e) => return Ok(e),
+  };
+  if all_assocs.is_empty() {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  // Common keys, ordered by the first association.
+  let common_keys: Vec<Expr> = all_assocs[0]
+    .iter()
+    .map(|(k, _)| k.clone())
+    .filter(|k| {
+      let ks = crate::syntax::expr_to_string(k);
+      all_assocs[1..].iter().all(|a| {
+        a.iter().any(|(k2, _)| crate::syntax::expr_to_string(k2) == ks)
+      })
+    })
+    .collect();
+
+  let result: Vec<Expr> = all_assocs
+    .iter()
+    .map(|assoc| {
+      let items: Vec<(Expr, Expr)> = common_keys
+        .iter()
+        .map(|k| {
+          let ks = crate::syntax::expr_to_string(k);
+          let v = assoc
+            .iter()
+            .find(|(k2, _)| crate::syntax::expr_to_string(k2) == ks)
+            .map(|(_, v)| v.clone())
+            .unwrap();
+          (k.clone(), v)
+        })
+        .collect();
+      Expr::Association(items)
+    })
+    .collect();
+
+  Ok(Expr::List(result.into()))
+}
+
+/// KeyComplement[{assoc1, assoc2, ...}] returns the first association
+/// restricted to the keys that appear in none of the others, keeping the first
+/// association's order and values.
+pub fn key_complement_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KeyComplement expects 1 argument".into(),
+    ));
+  }
+  let all_assocs = match key_set_op_assocs("KeyComplement", args) {
+    Ok(a) => a,
+    Err(e) => return Ok(e),
+  };
+  if all_assocs.is_empty() {
+    return Ok(Expr::Association(vec![]));
+  }
+
+  let other_keys: Vec<String> = all_assocs[1..]
+    .iter()
+    .flat_map(|a| a.iter().map(|(k, _)| crate::syntax::expr_to_string(k)))
+    .collect();
+
+  let items: Vec<(Expr, Expr)> = all_assocs[0]
+    .iter()
+    .filter(|(k, _)| {
+      !other_keys.contains(&crate::syntax::expr_to_string(k))
+    })
+    .cloned()
+    .collect();
+
+  Ok(Expr::Association(items))
+}
