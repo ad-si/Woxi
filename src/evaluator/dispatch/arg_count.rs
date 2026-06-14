@@ -1105,6 +1105,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NumberDigit" => Some((2, 3)),
     "NumberExpand" => Some((1, 2)),
     "NumberDecompose" => Some((2, 2)),
+    "NumberCompose" => Some((2, 2)),
     "Fibonorial" => Some((1, 1)),
     "LogBarnesG" => Some((1, 1)),
     "DirichletCharacter" => Some((3, 3)),

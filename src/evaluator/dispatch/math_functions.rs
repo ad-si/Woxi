@@ -1780,6 +1780,9 @@ pub fn dispatch_math_functions(
     "NumberDecompose" if args.len() == 2 => {
       return Some(crate::functions::math_ast::number_decompose_ast(args));
     }
+    "NumberCompose" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::number_compose_ast(args));
+    }
     "NumberDigit" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::number_digit_ast(args));
     }

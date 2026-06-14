@@ -3456,6 +3456,81 @@ mod number_decompose {
   }
 }
 
+mod number_compose {
+  use super::super::super::case_helpers::assert_case;
+
+  #[test]
+  fn reconstructs_from_coefficients_and_units() {
+    assert_case(r#"NumberCompose[{1, 2, 3}, {100, 10, 1}]"#, r#"123"#);
+    assert_case(r#"NumberCompose[{1, 2, 3, 4}, {100, 10, 1, 0.1}]"#, r#"123.4"#);
+    // Exact rational arithmetic.
+    assert_case(r#"NumberCompose[{2, 5, 3}, {12, 1, 1/12}]"#, r#"117/4"#);
+    // Equal adjacent units are allowed (nonincreasing).
+    assert_case(r#"NumberCompose[{1, 2}, {10, 10}]"#, r#"30"#);
+    // Negative coefficients carry through.
+    assert_case(r#"NumberCompose[{1, -2, 3}, {100, 10, 1}]"#, r#"83"#);
+  }
+
+  #[test]
+  fn round_trips_with_number_decompose() {
+    assert_case(
+      r#"NumberCompose[NumberDecompose[123.456, {100, 10, 1, 0.1}], {100, 10, 1, 0.1}]"#,
+      r#"123.456"#,
+    );
+  }
+
+  #[test]
+  fn shorter_coefficients_align_to_the_trailing_units() {
+    // {1, 2} pairs with the last two units {10, 1}: 1*10 + 2*1 = 12.
+    assert_case(r#"NumberCompose[{1, 2}, {100, 10, 1}]"#, r#"12"#);
+    assert_case(r#"NumberCompose[{3}, {100, 10, 1}]"#, r#"3"#);
+    assert_case(r#"NumberCompose[{}, {10, 1}]"#, r#"0"#);
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_case(
+      r#"NumberCompose[{a, b, c}, {100, 10, 1}]"#,
+      r#"100*a + 10*b + c"#,
+    );
+  }
+
+  #[test]
+  fn too_many_coefficients_stays_unevaluated() {
+    // The coefficient list cannot be longer than the unit list (ulen),
+    // checked before unit validation.
+    assert_case(
+      r#"NumberCompose[{1, 2, 3, 4}, {100, 10, 1}]"#,
+      r#"NumberCompose[{1, 2, 3, 4}, {100, 10, 1}]"#,
+    );
+    assert_case(
+      r#"NumberCompose[{1, 2, 3}, {1, 10}]"#,
+      r#"NumberCompose[{1, 2, 3}, {1, 10}]"#,
+    );
+  }
+
+  #[test]
+  fn invalid_units_stay_unevaluated() {
+    // Units must be nonincreasing positive numbers (psv).
+    assert_case(
+      r#"NumberCompose[{1, 2}, {1, 10}]"#,
+      r#"NumberCompose[{1, 2}, {1, 10}]"#,
+    );
+    assert_case(
+      r#"NumberCompose[{1, 2}, {10, 0}]"#,
+      r#"NumberCompose[{1, 2}, {10, 0}]"#,
+    );
+    assert_case(
+      r#"NumberCompose[{1, 2}, {10, -1}]"#,
+      r#"NumberCompose[{1, 2}, {10, -1}]"#,
+    );
+    assert_case(
+      r#"NumberCompose[{1, 2}, {10, y}]"#,
+      r#"NumberCompose[{1, 2}, {10, y}]"#,
+    );
+  }
+}
+
 mod fibonorial {
   use super::super::super::case_helpers::assert_case;
 

@@ -4451,7 +4451,7 @@ KVertexConnectedGraphQ,,,,10.0,4612
 LambdaComponents,,,,9.0,4612
 NetDrop,,🚫,,11.3,4612
 NetFoldOperator,,🚫,,11.1,4612
-NumberCompose,,,,10.2,4612
+NumberCompose,Reconstructs a number from a list of coefficients and units,✅,pure,10.2,4612
 OperatingSystem,,,,7.0,4612
 PillaiTrace,,,,9.0,4612
 PrivateKey,,🚫,,10.1,4612

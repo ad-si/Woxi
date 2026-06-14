@@ -3175,6 +3175,89 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// NumberCompose[coeffs, units] reconstructs a number from a list of
+/// coefficients and a list of units (the inverse of NumberDecompose). The
+/// units must be nonincreasing positive numbers, and `coeffs` cannot be longer
+/// than `units`; the coefficients are paired with the trailing (last `k`)
+/// units, so `NumberCompose[{1, 2, 3}, {100, 10, 1}]` is `123` and the shorter
+/// `NumberCompose[{1, 2}, {100, 10, 1}]` is `12`.
+pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| Expr::FunctionCall {
+    name: "NumberCompose".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated(args));
+  }
+  let coeff_exprs = match &args[0] {
+    Expr::List(items) => items,
+    _ => return Ok(unevaluated(args)),
+  };
+  let unit_exprs = match &args[1] {
+    Expr::List(items) => items,
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // The coefficient list cannot be longer than the unit list. This is checked
+  // before the unit list is validated (matching wolframscript).
+  if coeff_exprs.len() > unit_exprs.len() {
+    crate::emit_message(&format!(
+      "NumberCompose::ulen: List {} of coefficients cannot be longer than list {} of units.",
+      crate::syntax::expr_to_string(&args[0]),
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    return Ok(unevaluated(args));
+  }
+
+  // Units must be nonincreasing positive numbers.
+  let to_f64 = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(r) => Some(*r),
+      Expr::BigInteger(b) => b.to_string().parse::<f64>().ok(),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
+            Some(*p as f64 / *q as f64)
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let psv = |args: &[Expr]| {
+    crate::emit_message(&format!(
+      "NumberCompose::psv: {} is not a list of nonincreasing positive numbers.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
+    Ok(unevaluated(args))
+  };
+  let unit_vals: Vec<f64> = match unit_exprs.iter().map(&to_f64).collect() {
+    Some(u) => u,
+    None => return psv(args),
+  };
+  let nonincreasing_positive = unit_vals.iter().all(|&u| u > 0.0)
+    && unit_vals.windows(2).all(|w| w[0] >= w[1]);
+  if !nonincreasing_positive {
+    return psv(args);
+  }
+
+  // Pair the coefficients with the trailing units (right-aligned) and sum the
+  // products via Dot, which handles exact rational and symbolic coefficients.
+  let k = coeff_exprs.len();
+  let taken: Vec<Expr> = unit_exprs[unit_exprs.len() - k..].to_vec();
+  crate::evaluator::evaluate_function_call_ast(
+    "Dot",
+    &[
+      Expr::List(coeff_exprs.clone()),
+      Expr::List(taken.into()),
+    ],
+  )
+}
+
 /// MinkowskiQuestionMark[x] - Minkowski's question-mark function via
 /// the dyadic continued-fraction formula Wolfram uses:
 /// ?([a0; a1, a2, ...]) = a0 + sum_k (-1)^(k+1) * 2^(1 - (a1+...+ak)),
