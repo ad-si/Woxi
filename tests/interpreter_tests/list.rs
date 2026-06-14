@@ -4729,6 +4729,34 @@ mod pick {
       "{a, b, d}"
     );
   }
+
+  // On an association, the selector list is parallel to the values; the
+  // matching key->value pairs are kept as a sub-association.
+  #[test]
+  fn pick_association_boolean() {
+    assert_eq!(
+      interpret("Pick[<|a -> 1, b -> 2, c -> 3|>, {True, False, True}]")
+        .unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn pick_association_none() {
+    assert_eq!(
+      interpret("Pick[<|a -> 1, b -> 2|>, {False, False}]").unwrap(),
+      "<||>"
+    );
+  }
+
+  // The pattern form keeps entries whose selector matches.
+  #[test]
+  fn pick_association_with_pattern() {
+    assert_eq!(
+      interpret("Pick[<|a -> 1, b -> 2, c -> 3|>, {1, 0, 1}, 1]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
 }
 
 mod rest_nonlist {

@@ -1951,6 +1951,20 @@ fn pick_recursive(
       }
       Ok(Expr::List(result.into()))
     }
+    // Pick[assoc, sel] / Pick[assoc, sel, patt] — the selector list is
+    // parallel to the association's values; keep the matching key->value
+    // pairs as a sub-association.
+    (Expr::Association(pairs), Expr::List(sel_items))
+      if pairs.len() == sel_items.len() =>
+    {
+      let mut result: Vec<(Expr, Expr)> = Vec::new();
+      for ((k, v), s) in pairs.iter().zip(sel_items.iter()) {
+        if matches_selector(s, pattern) {
+          result.push((k.clone(), v.clone()));
+        }
+      }
+      Ok(Expr::Association(result))
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Pick".to_string(),
       args: if let Some(p) = pattern {
