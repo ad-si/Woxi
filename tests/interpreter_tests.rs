@@ -299,6 +299,26 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_modifier_circumflex_as_power() {
+    // Regression: the modifier-letter circumflex `ˆ` (U+02C6, emitted by the
+    // macOS `^` dead key) must act as the Power operator, identical to `^`.
+    clear_state();
+    assert_eq!(interpret("2ˆ10").unwrap(), interpret("2^10").unwrap());
+    assert_eq!(interpret("2ˆ10").unwrap(), "1024");
+    clear_state();
+    assert_eq!(interpret("xˆ2 /. x->3").unwrap(), "9");
+    clear_state();
+    assert_eq!(
+      interpret("r=(1.+2. I)ˆI; {r, Abs[r], Im[r]}").unwrap(),
+      "{0.2291401859804338 + 0.23817011512167555*I, \
+       0.3304999675767306, 0.23817011512167555}"
+    );
+    // The circumflex must stay literal inside string content.
+    clear_state();
+    assert_eq!(interpret("\"aˆb\"").unwrap(), "aˆb");
+  }
+
+  #[test]
   fn test_comment_after_condition_in_set_delayed() {
     // SetDelayed with Condition and inline comment should work
     clear_state();

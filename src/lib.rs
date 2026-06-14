@@ -1027,6 +1027,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   } else {
     input
   };
+  // Treat the modifier-letter circumflex `ˆ` (U+02C6) as the Power operator.
+  let input = if input.contains('\u{02C6}') {
+    std::borrow::Cow::Owned(normalize_circumflex_operator(&input))
+  } else {
+    input
+  };
   let trimmed = input.trim();
 
   // Fast path for simple literals that don't need parsing
@@ -2568,6 +2574,41 @@ fn generate_output_svg(expr: &syntax::Expr) {
 /// Outside strings, escapes are expanded directly. Other escape sequences
 /// like `\n`, `\[Name]`, `\"` are left untouched for the string parser /
 /// named-character handler to deal with.
+/// Normalize the modifier-letter circumflex `ˆ` (U+02C6) to the ASCII caret
+/// `^` so it acts as the Power operator. Some keyboards (notably macOS, where
+/// the `^` dead key emits a lone modifier circumflex) produce U+02C6 instead of
+/// U+005E. Because U+02C6 is a Unicode letter (category Lm), the grammar would
+/// otherwise swallow it into an identifier (e.g. `xˆ2` → symbol `xˆ`), so we
+/// fix it at the source. Characters inside string literals are left untouched.
+pub fn normalize_circumflex_operator(input: &str) -> String {
+  if !input.contains('\u{02C6}') {
+    return input.to_string();
+  }
+  let mut result = String::with_capacity(input.len());
+  let mut in_string = false;
+  let mut chars = input.chars().peekable();
+  while let Some(ch) = chars.next() {
+    if ch == '"' {
+      in_string = !in_string;
+      result.push(ch);
+      continue;
+    }
+    if in_string {
+      result.push(ch);
+      // Preserve escapes (e.g. `\"`) verbatim so a quote inside the escape
+      // doesn't flip the string state.
+      if ch == '\\'
+        && let Some(next) = chars.next()
+      {
+        result.push(next);
+      }
+      continue;
+    }
+    result.push(if ch == '\u{02C6}' { '^' } else { ch });
+  }
+  result
+}
+
 pub fn expand_char_escapes(input: &str) -> String {
   // Fast path: no backslash means nothing to do.
   if !input.contains('\\') {
@@ -3211,6 +3252,8 @@ pub fn interpret_to_expr(
   } else {
     input.to_string()
   };
+  // Treat the modifier-letter circumflex `ˆ` (U+02C6) as the Power operator.
+  let normalized = normalize_circumflex_operator(&normalized);
 
   let mut pairs = parse(&normalized).map_err(|e| {
     InterpreterError::EvaluationError(format!("Parse error: {}", e))
