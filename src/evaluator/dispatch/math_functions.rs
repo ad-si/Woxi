@@ -1977,6 +1977,11 @@ pub fn dispatch_math_functions(
       if let (Expr::Integer(a), Expr::Integer(n)) = (&args[0], &args[1])
         && *n > 0
       {
+        // Modulo 1 every integer is congruent (the ring is trivial), so the
+        // order is 1 for any a. wolframscript: MultiplicativeOrder[a, 1] = 1.
+        if *n == 1 {
+          return Some(Ok(Expr::Integer(1)));
+        }
         let a_mod = ((*a % *n) + *n) % *n;
         if a_mod != 0 && crate::functions::math_ast::gcd_i128(a_mod, *n) == 1 {
           let mut power = a_mod;

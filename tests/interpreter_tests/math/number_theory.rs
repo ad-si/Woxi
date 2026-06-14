@@ -1189,6 +1189,45 @@ mod modular_inverse {
   }
 }
 
+mod multiplicative_order {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("MultiplicativeOrder[2, 7]").unwrap(), "3");
+    assert_eq!(interpret("MultiplicativeOrder[3, 10]").unwrap(), "4");
+    assert_eq!(interpret("MultiplicativeOrder[2, 9]").unwrap(), "6");
+  }
+
+  // Modulo 1 the ring is trivial, so the order is 1 for any a.
+  #[test]
+  fn modulus_one() {
+    assert_eq!(interpret("MultiplicativeOrder[3, 1]").unwrap(), "1");
+    assert_eq!(interpret("MultiplicativeOrder[1, 1]").unwrap(), "1");
+    assert_eq!(interpret("MultiplicativeOrder[0, 1]").unwrap(), "1");
+    assert_eq!(interpret("MultiplicativeOrder[-3, 1]").unwrap(), "1");
+    assert_eq!(interpret("MultiplicativeOrder[100, 1]").unwrap(), "1");
+  }
+
+  // Not coprime / zero base → no order exists, stays unevaluated.
+  #[test]
+  fn non_coprime_unevaluated() {
+    assert_eq!(
+      interpret("MultiplicativeOrder[4, 6]").unwrap(),
+      "MultiplicativeOrder[4, 6]"
+    );
+    assert_eq!(
+      interpret("MultiplicativeOrder[0, 5]").unwrap(),
+      "MultiplicativeOrder[0, 5]"
+    );
+  }
+
+  #[test]
+  fn negative_base() {
+    assert_eq!(interpret("MultiplicativeOrder[-1, 5]").unwrap(), "2");
+  }
+}
+
 mod bit_length {
   use super::*;
 
