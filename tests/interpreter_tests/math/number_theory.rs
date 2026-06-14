@@ -188,6 +188,65 @@ mod fibonacci_builtin {
   }
 }
 
+mod lucas_l_builtin {
+  use super::*;
+
+  #[test]
+  fn lucas_small() {
+    assert_eq!(interpret("LucasL[0]").unwrap(), "2");
+    assert_eq!(interpret("LucasL[1]").unwrap(), "1");
+    assert_eq!(interpret("LucasL[10]").unwrap(), "123");
+  }
+
+  // L_{-n} = (-1)^n L_n.
+  #[test]
+  fn lucas_negative_index() {
+    assert_eq!(interpret("LucasL[-1]").unwrap(), "-1");
+    assert_eq!(interpret("LucasL[-2]").unwrap(), "3");
+    assert_eq!(interpret("LucasL[-3]").unwrap(), "-4");
+    assert_eq!(interpret("LucasL[-4]").unwrap(), "7");
+    assert_eq!(interpret("LucasL[-10]").unwrap(), "123");
+  }
+
+  #[test]
+  fn lucas_negative_index_table() {
+    assert_eq!(
+      interpret("Table[LucasL[-n], {n, 1, 8}]").unwrap(),
+      "{-1, 3, -4, 7, -11, 18, -29, 47}"
+    );
+  }
+
+  // Large negative index still uses big-integer arithmetic.
+  #[test]
+  fn lucas_large_negative_index() {
+    assert_eq!(
+      interpret("LucasL[-100]").unwrap(),
+      "792070839848372253127"
+    );
+  }
+
+  #[test]
+  fn lucas_polynomial_small() {
+    assert_eq!(interpret("LucasL[0, x]").unwrap(), "2");
+    assert_eq!(interpret("LucasL[1, x]").unwrap(), "x");
+    assert_eq!(interpret("LucasL[5, 3]").unwrap(), "393");
+  }
+
+  // L_{-n}(x) = (-1)^n L_n(x).
+  #[test]
+  fn lucas_polynomial_negative_index() {
+    assert_eq!(interpret("LucasL[-1, x]").unwrap(), "-x");
+    assert_eq!(interpret("LucasL[-2, x]").unwrap(), "2 + x^2");
+    assert_eq!(interpret("LucasL[-3, x]").unwrap(), "-3*x - x^3");
+    assert_eq!(interpret("LucasL[-5, 3]").unwrap(), "-393");
+  }
+
+  #[test]
+  fn lucas_symbolic_unevaluated() {
+    assert_eq!(interpret("LucasL[n]").unwrap(), "LucasL[n]");
+  }
+}
+
 mod euler_phi {
   use super::*;
 

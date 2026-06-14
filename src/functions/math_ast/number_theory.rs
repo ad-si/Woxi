@@ -523,22 +523,35 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 2 {
     // Two-argument form: Lucas polynomial in x.
-    let n = match expr_to_i128(&args[0]) {
-      Some(n) if n >= 0 => n as usize,
-      _ => {
+    // Negative index uses the reflection LucasL[-n, x] = (-1)^n LucasL[n, x].
+    let n_raw = match expr_to_i128(&args[0]) {
+      Some(n) => n,
+      None => {
         return Ok(Expr::FunctionCall {
           name: "LucasL".to_string(),
           args: args.to_vec().into(),
         });
       }
     };
+    let negate = n_raw < 0 && n_raw % 2 != 0;
+    let n = n_raw.unsigned_abs() as usize;
     let x = &args[1];
+    let apply_sign = |e: Expr| -> Result<Expr, InterpreterError> {
+      if negate {
+        crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[Expr::Integer(-1), e],
+        )
+      } else {
+        Ok(e)
+      }
+    };
     // L_0(x) = 2; L_1(x) = x.
     if n == 0 {
       return Ok(Expr::Integer(2));
     }
     if n == 1 {
-      return Ok(x.clone());
+      return apply_sign(x.clone());
     }
     // Build via the recurrence symbolically, expanding after each step
     // so `LucasL[5, y]` returns `5*y + 5*y^3 + y^5` rather than a
@@ -562,33 +575,38 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       prev = curr;
       curr = expanded;
     }
-    return Ok(curr);
+    return apply_sign(curr);
   }
 
-  let n = match expr_to_i128(&args[0]) {
-    Some(n) if n >= 0 => n as usize,
-    _ => {
+  // Negative index uses the reflection LucasL[-n] = (-1)^n LucasL[n].
+  let n_raw = match expr_to_i128(&args[0]) {
+    Some(n) => n,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "LucasL".to_string(),
         args: args.to_vec().into(),
       });
     }
   };
+  let negate = n_raw < 0 && n_raw % 2 != 0;
+  let n = n_raw.unsigned_abs() as usize;
   // L(0) = 2, L(1) = 1, L(n) = L(n-1) + L(n-2)
   if n == 0 {
     return Ok(Expr::Integer(2));
   }
-  if n == 1 {
-    return Ok(Expr::Integer(1));
-  }
-  let mut a = BigInt::from(2);
-  let mut b = BigInt::from(1);
-  for _ in 2..=n {
-    let c = &a + &b;
-    a = b;
-    b = c;
-  }
-  Ok(bigint_to_expr(b))
+  let result = if n == 1 {
+    BigInt::from(1)
+  } else {
+    let mut a = BigInt::from(2);
+    let mut b = BigInt::from(1);
+    for _ in 2..=n {
+      let c = &a + &b;
+      a = b;
+      b = c;
+    }
+    b
+  };
+  Ok(bigint_to_expr(if negate { -result } else { result }))
 }
 
 /// ChineseRemainder[{r1,r2,...}, {m1,m2,...}] - Chinese Remainder Theorem
