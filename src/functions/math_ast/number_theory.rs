@@ -2567,9 +2567,12 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let k = match expr_to_i128(&args[0]) {
-    Some(k) if k >= 0 => k as u32,
-    _ => {
+  // The order may be negative. Since divisors pair as d <-> n/d,
+  //   DivisorSigma[-p, n] = sum_{d|n} d^{-p} = sigma_p(n) / n^p  (a rational).
+  // Non-integer orders (symbolic/rational/real) are not handled here.
+  let order = match expr_to_i128(&args[0]) {
+    Some(k) => k,
+    None => {
       return Err(InterpreterError::EvaluationError(
         "DivisorSigma: first argument must be a non-negative integer".into(),
       ));
@@ -2594,11 +2597,13 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Compute sigma_p(n) = sum of p-th powers of divisors, where p = |order|.
+  let p = order.unsigned_abs() as u32;
   let mut sum: u128 = 0;
   match divisors_u128(n) {
     Some(divs) => {
       for d in divs {
-        sum += d.pow(k);
+        sum += d.pow(p);
       }
     }
     None => {
@@ -2606,16 +2611,22 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let sqrt_n = (n as f64).sqrt() as u128;
       for i in 1..=sqrt_n {
         if n % i == 0 {
-          sum += i.pow(k);
+          sum += i.pow(p);
           if i != n / i {
-            sum += (n / i).pow(k);
+            sum += (n / i).pow(p);
           }
         }
       }
     }
   }
 
-  Ok(Expr::Integer(sum as i128))
+  if order >= 0 {
+    Ok(Expr::Integer(sum as i128))
+  } else {
+    // Negative order: divide by n^p to get the exact rational sigma_p(n)/n^p.
+    let denom = n.pow(p);
+    Ok(make_rational(sum as i128, denom as i128))
+  }
 }
 
 /// MoebiusMu[n] - Returns the Möbius function value

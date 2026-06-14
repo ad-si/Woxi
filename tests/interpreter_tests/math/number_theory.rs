@@ -2536,6 +2536,32 @@ mod divisor_sigma {
       "DivisorSigma[0, x]"
     );
   }
+
+  // Negative order: DivisorSigma[-p, n] = sigma_p(n)/n^p, an exact rational.
+  #[test]
+  fn negative_order() {
+    assert_eq!(interpret("DivisorSigma[-1, 12]").unwrap(), "7/3");
+    assert_eq!(interpret("DivisorSigma[-1, 6]").unwrap(), "2");
+    assert_eq!(interpret("DivisorSigma[-2, 12]").unwrap(), "35/24");
+    assert_eq!(interpret("DivisorSigma[-3, 4]").unwrap(), "73/64");
+    assert_eq!(interpret("DivisorSigma[-1, 7]").unwrap(), "8/7");
+    assert_eq!(interpret("DivisorSigma[-1, 1]").unwrap(), "1");
+  }
+
+  // Negative order uses |n| as well.
+  #[test]
+  fn negative_order_negative_modulus() {
+    assert_eq!(interpret("DivisorSigma[-1, -12]").unwrap(), "7/3");
+  }
+
+  // Negative order at 0 still has no divisor sum → unevaluated.
+  #[test]
+  fn negative_order_zero_modulus() {
+    assert_eq!(
+      interpret("DivisorSigma[-1, 0]").unwrap(),
+      "DivisorSigma[-1, 0]"
+    );
+  }
 }
 
 mod carmichael_lambda {
