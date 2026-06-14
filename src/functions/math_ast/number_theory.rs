@@ -2578,9 +2578,12 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = match expr_to_i128(&args[1]) {
     Some(0) => {
-      return Err(InterpreterError::EvaluationError(
-        "DivisorSigma: second argument cannot be zero".into(),
-      ));
+      // 0 has no (finite) divisor sum; wolframscript leaves it unevaluated
+      // rather than raising an error.
+      return Ok(Expr::FunctionCall {
+        name: "DivisorSigma".to_string(),
+        args: args.to_vec().into(),
+      });
     }
     Some(n) => n.unsigned_abs(),
     None => {

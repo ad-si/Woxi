@@ -2495,6 +2495,49 @@ mod divisors_tests {
   }
 }
 
+mod divisor_sigma {
+  use super::*;
+
+  #[test]
+  fn sum_of_divisors() {
+    assert_eq!(interpret("DivisorSigma[1, 12]").unwrap(), "28");
+    assert_eq!(interpret("DivisorSigma[0, 12]").unwrap(), "6");
+    assert_eq!(interpret("DivisorSigma[2, 10]").unwrap(), "130");
+  }
+
+  // Sigma uses |n|, so it is defined on negatives.
+  #[test]
+  fn negative_uses_absolute_value() {
+    assert_eq!(interpret("DivisorSigma[1, -12]").unwrap(), "28");
+  }
+
+  // 0 has no finite divisor sum; wolframscript leaves it unevaluated
+  // rather than raising an error.
+  #[test]
+  fn zero_unevaluated() {
+    assert_eq!(
+      interpret("DivisorSigma[1, 0]").unwrap(),
+      "DivisorSigma[1, 0]"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[0, 0]").unwrap(),
+      "DivisorSigma[0, 0]"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[2, 0]").unwrap(),
+      "DivisorSigma[2, 0]"
+    );
+  }
+
+  #[test]
+  fn symbolic_modulus_unevaluated() {
+    assert_eq!(
+      interpret("DivisorSigma[0, x]").unwrap(),
+      "DivisorSigma[0, x]"
+    );
+  }
+}
+
 mod carmichael_lambda {
   use super::*;
 
