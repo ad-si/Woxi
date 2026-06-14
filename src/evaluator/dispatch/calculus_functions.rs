@@ -690,6 +690,9 @@ pub fn dispatch_calculus_functions(
         args,
       ));
     }
+    "CountRoots" if args.len() == 2 => {
+      return Some(crate::functions::count_roots_ast::count_roots_ast(args));
+    }
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
     }

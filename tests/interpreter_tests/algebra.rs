@@ -7209,3 +7209,96 @@ mod subresultants {
     );
   }
 }
+
+mod count_roots {
+  use super::*;
+
+  #[test]
+  fn all_reals_simple() {
+    assert_eq!(interpret("CountRoots[x^2 - 1, x]").unwrap(), "2");
+    assert_eq!(interpret("CountRoots[x^2 + 1, x]").unwrap(), "0");
+    assert_eq!(interpret("CountRoots[x^3 - x, x]").unwrap(), "3");
+    assert_eq!(interpret("CountRoots[x^4 + 1, x]").unwrap(), "0");
+    assert_eq!(interpret("CountRoots[x^6 - 1, x]").unwrap(), "2");
+  }
+
+  #[test]
+  fn counts_with_multiplicity() {
+    assert_eq!(interpret("CountRoots[(x - 2)^3, x]").unwrap(), "3");
+    assert_eq!(interpret("CountRoots[(x^2 - 2)^2, x]").unwrap(), "4");
+    assert_eq!(
+      interpret("CountRoots[(x - 1)^2 (x - 2)^3 (x - 3), x]").unwrap(),
+      "6"
+    );
+    // Triple root at the origin.
+    assert_eq!(interpret("CountRoots[x^3, x]").unwrap(), "3");
+  }
+
+  #[test]
+  fn closed_interval_includes_endpoints() {
+    let p = "(x - 1) (x - 2) (x - 3) (x - 4)";
+    assert_eq!(interpret(&format!("CountRoots[{p}, {{x, 0, 5}}]")).unwrap(), "4");
+    assert_eq!(interpret(&format!("CountRoots[{p}, {{x, 2, 4}}]")).unwrap(), "3");
+    assert_eq!(interpret(&format!("CountRoots[{p}, {{x, 2, 3}}]")).unwrap(), "2");
+  }
+
+  #[test]
+  fn interval_with_irrational_roots() {
+    // Sqrt[2] ~ 1.414 lies in [0, 2] but not [0, 1].
+    assert_eq!(interpret("CountRoots[x^2 - 2, {x, 0, 1}]").unwrap(), "0");
+    assert_eq!(interpret("CountRoots[x^2 - 2, {x, 0, 2}]").unwrap(), "1");
+    assert_eq!(interpret("CountRoots[x^2 - 2, x]").unwrap(), "2");
+  }
+
+  #[test]
+  fn rational_roots_and_bounds() {
+    assert_eq!(
+      interpret("CountRoots[(x - 1/2) (x - 3/2), x]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("CountRoots[(x - 1/2) (x - 3/2), {x, 0, 1}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn infinite_bounds() {
+    assert_eq!(
+      interpret("CountRoots[(x - 1) (x - 2) (x - 3) (x - 4), {x, -Infinity, Infinity}]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("CountRoots[(x + 5) (x - 5), {x, -Infinity, 0}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("CountRoots[(x + 5) (x - 5), {x, 0, Infinity}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn multiplicity_inside_interval() {
+    // Double root at 1, triple at 2, simple at 3; on [1, 2]: 2 + 3 = 5.
+    assert_eq!(
+      interpret("CountRoots[(x - 1)^2 (x - 2)^3 (x - 3), {x, 1, 2}]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn constants_and_linear() {
+    assert_eq!(interpret("CountRoots[5, x]").unwrap(), "0");
+    assert_eq!(interpret("CountRoots[x, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn non_polynomial_stays_unevaluated() {
+    assert_eq!(
+      interpret("CountRoots[Sin[x], x]").unwrap(),
+      "CountRoots[Sin[x], x]"
+    );
+  }
+}

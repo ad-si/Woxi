@@ -458,6 +458,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TrigFactor" => Some((1, 1)),
     "Subresultants" => Some((3, 3)),
     "FunctionRange" => Some((3, 3)),
+    "CountRoots" => Some((2, 2)),
     "FunctionExpand" => Some((1, 1)),
     "FunctionDomain" => Some((2, 3)),
     "Gamma" => Some((1, 2)),
