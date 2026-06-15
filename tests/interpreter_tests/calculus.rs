@@ -3948,6 +3948,32 @@ mod tanh_sech_csch_coth {
   fn d_tanh_chain_rule() {
     assert_eq!(interpret("D[Tanh[2*x], x]").unwrap(), "2*Sech[2*x]^2");
   }
+
+  // Gudermannian / InverseGudermannian / Haversine derivatives.
+  #[test]
+  fn d_gudermannian() {
+    assert_eq!(interpret("D[Gudermannian[x], x]").unwrap(), "Sech[x]");
+    assert_eq!(
+      interpret("D[Gudermannian[x^2], x]").unwrap(),
+      "2*x*Sech[x^2]"
+    );
+  }
+
+  #[test]
+  fn d_inverse_gudermannian() {
+    assert_eq!(interpret("D[InverseGudermannian[x], x]").unwrap(), "Sec[x]");
+    assert_eq!(
+      interpret("D[InverseGudermannian[3*x], x]").unwrap(),
+      "3*Sec[3*x]"
+    );
+  }
+
+  #[test]
+  fn d_haversine() {
+    assert_eq!(interpret("D[Haversine[x], x]").unwrap(), "Sin[x]/2");
+    assert_eq!(interpret("D[Haversine[3*x], x]").unwrap(), "(3*Sin[3*x])/2");
+    assert_eq!(interpret("D[Haversine[x^2], x]").unwrap(), "x*Sin[x^2]");
+  }
 }
 
 mod inverse_trig_derivatives {

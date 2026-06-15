@@ -1737,6 +1737,50 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             right: Box::new(df),
           }))
         }
+        "Gudermannian" if args.len() == 1 => {
+          // d/dx[gd(f(x))] = Sech[f(x)] * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Sech".to_string(),
+              args: args.clone(),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "InverseGudermannian" if args.len() == 1 => {
+          // d/dx[gd^-1(f(x))] = Sec[f(x)] * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Sec".to_string(),
+              args: args.clone(),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Haversine" if args.len() == 1 => {
+          // d/dx[haversine(f(x))] = Sin[f(x)]/2 * f'(x)
+          let df = differentiate(&args[0], var)?;
+          let half = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          };
+          Ok(simplify(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              half,
+              Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: args.clone(),
+              },
+              df,
+            ]
+            .into(),
+          }))
+        }
         "Tan" if args.len() == 1 => {
           // d/dx[tan(f(x))] = sec^2(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
