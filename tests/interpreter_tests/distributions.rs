@@ -3282,3 +3282,91 @@ mod binomial_distribution_cdf {
     );
   }
 }
+
+mod discrete_quantile {
+  use super::*;
+
+  // Quantile[dist, q] is the smallest integer k with CDF[k] >= q.
+  #[test]
+  fn binomial() {
+    assert_eq!(
+      interpret("Quantile[BinomialDistribution[10, 1/2], 1/2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("Quantile[BinomialDistribution[10, 1/2], 3/4]").unwrap(),
+      "6"
+    );
+    // The least positive probability still lands on the support minimum.
+    assert_eq!(
+      interpret("Quantile[BinomialDistribution[10, 1/2], 1/1024]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn poisson_and_geometric() {
+    assert_eq!(
+      interpret("Quantile[PoissonDistribution[3], 1/2]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Quantile[PoissonDistribution[3], 99/100]").unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret("Quantile[GeometricDistribution[1/3], 1/2]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn bernoulli_and_discrete_uniform() {
+    assert_eq!(
+      interpret("Quantile[BernoulliDistribution[1/4], 3/4]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[DiscreteUniformDistribution[{1, 6}], 1/2]").unwrap(),
+      "3"
+    );
+  }
+
+  // q = 0 gives the support minimum, q = 1 the maximum (Infinity if unbounded).
+  #[test]
+  fn boundary_probabilities() {
+    assert_eq!(
+      interpret("Quantile[BinomialDistribution[10, 1/2], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[BinomialDistribution[10, 1/2], 1]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Quantile[DiscreteUniformDistribution[{1, 6}], 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Quantile[DiscreteUniformDistribution[{1, 6}], 1]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Quantile[PoissonDistribution[3], 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  // InverseCDF coincides with Quantile for discrete distributions.
+  #[test]
+  fn inverse_cdf_matches_quantile() {
+    assert_eq!(
+      interpret("InverseCDF[BinomialDistribution[10, 1/2], 1/2]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("InverseCDF[PoissonDistribution[3], 0.9]").unwrap(),
+      "5"
+    );
+  }
+}

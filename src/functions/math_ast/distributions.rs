@@ -556,7 +556,87 @@ pub fn quantile_distribution_closed_form(
       let z = crate::functions::math_ast::inverse_erf_f64(2.0 * q_num - 1.0);
       Some(Expr::Real(m_num + s_num * std::f64::consts::SQRT_2 * z))
     }
+    "BinomialDistribution"
+    | "PoissonDistribution"
+    | "GeometricDistribution"
+    | "BernoulliDistribution"
+    | "DiscreteUniformDistribution" => {
+      quantile_discrete(dist_name, dargs, q, q_num)
+    }
     _ => None,
+  }
+}
+
+/// The integer support `(min, max)` of a discrete distribution; `max` is `None`
+/// for unbounded support.
+fn discrete_support(
+  dist_name: &str,
+  dargs: &[Expr],
+) -> Option<(i128, Option<i128>)> {
+  let as_int = |e: &Expr| {
+    crate::functions::math_ast::expr_to_num(e)
+      .filter(|v| v.fract() == 0.0)
+      .map(|v| v as i128)
+  };
+  match dist_name {
+    "BinomialDistribution" if dargs.len() == 2 => {
+      Some((0, Some(as_int(&dargs[0])?)))
+    }
+    "PoissonDistribution" if dargs.len() == 1 => Some((0, None)),
+    "GeometricDistribution" if dargs.len() == 1 => Some((0, None)),
+    "BernoulliDistribution" if dargs.len() == 1 => Some((0, Some(1))),
+    "DiscreteUniformDistribution" if dargs.len() == 1 => match &dargs[0] {
+      Expr::List(b) if b.len() == 2 => {
+        Some((as_int(&b[0])?, Some(as_int(&b[1])?)))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Quantile/InverseCDF for a discrete distribution: the smallest integer k in
+/// the support with CDF[dist, k] >= q. q <= 0 gives the support minimum and
+/// q >= 1 the support maximum (Infinity for unbounded support).
+fn quantile_discrete(
+  dist_name: &str,
+  dargs: &[Expr],
+  q: &Expr,
+  q_num: f64,
+) -> Option<Expr> {
+  let (kmin, kmax) = discrete_support(dist_name, dargs)?;
+  let infinity = || Expr::Identifier("Infinity".to_string());
+  if q_num <= 0.0 {
+    return Some(int(kmin));
+  }
+  if q_num >= 1.0 {
+    return Some(kmax.map(int).unwrap_or_else(infinity));
+  }
+  let dist = Expr::FunctionCall {
+    name: dist_name.to_string(),
+    args: dargs.to_vec().into(),
+  };
+  let mut k = kmin;
+  loop {
+    let cdf_k = eval(Expr::FunctionCall {
+      name: "CDF".to_string(),
+      args: vec![dist.clone(), int(k)].into(),
+    })
+    .ok()?;
+    let cmp =
+      eval(comparison(cdf_k, ComparisonOp::GreaterEqual, q.clone())).ok()?;
+    if matches!(&cmp, Expr::Identifier(s) if s == "True") {
+      return Some(int(k));
+    }
+    k += 1;
+    if let Some(m) = kmax
+      && k >= m
+    {
+      return Some(int(m));
+    }
+    if k - kmin > 1_000_000 {
+      return None; // safety valve for pathological inputs
+    }
   }
 }
 

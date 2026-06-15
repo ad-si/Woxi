@@ -728,7 +728,7 @@ FromCharacterCode,Converts character codes to a string,✅,pure,2.0,735
 Div,Compute the divergence of a vector field,✅,pure,9.0,736
 ToBoxes,Converts an expression to its box form representation for typesetting,✅,pure,3.0,737
 CompilationTarget,Option for compilation target,✅,none,8.0,738
-Quantile,Compute quantiles of a dataset,✅,pure,5.0,739
+Quantile,Compute quantiles of a dataset or distribution,✅,pure,5.0,739
 Scan,Applies a function to each element for side effects,✅,pure,1.0,740
 GeoGraphics,Creates geographic maps and visualizations,🚫,io,10.0,741
 Annotation,Attach an annotation to an expression,✅,none,6.0,742
