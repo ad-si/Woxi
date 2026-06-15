@@ -2351,7 +2351,9 @@ pub fn quantile_parametric(
   })?;
   let k = match &k_expr {
     Expr::Integer(v) => *v,
-    other => try_eval_to_f64(other).map(|f| f.floor() as i128).unwrap_or(0),
+    other => try_eval_to_f64(other)
+      .map(|f| f.floor() as i128)
+      .unwrap_or(0),
   };
   // frac = x - k
   let frac = ev(&plus(x, Expr::Integer(-k)))?;

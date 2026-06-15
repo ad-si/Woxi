@@ -996,12 +996,43 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     "~".to_string()
   };
 
+  // Wolfram orders the symbolic factors of a spherical harmonic as
+  //   E^(i m φ)  <  Sqrt[…/Pi]  <  Cos-polynomial  <  Sin[θ]
+  // which a plain alphabetical key gets wrong whenever a bare `Cos[θ]` factor
+  // is present (it would sort before `E`/`Pi`). Bucket each factor into a
+  // category first, then fall back to the alphabetical key within a bucket.
+  let category = |e: &Expr| -> u8 {
+    if let Some((base, _)) = as_power(e) {
+      if matches!(&base, Expr::Constant(s) if s == "E") {
+        return 0; // E^(i m φ)
+      }
+      if let Expr::FunctionCall { name: bn, args: ba } = &base
+        && bn == "Times"
+        && ba.iter().any(|f| {
+          matches!(as_power(f), Some((pb, pe))
+            if matches!(&pb, Expr::Constant(s) if s == "Pi")
+              && matches!(&pe, Expr::Integer(-1)))
+        })
+      {
+        return 1; // normalization Sqrt[…/Pi]
+      }
+      if matches!(&base, Expr::FunctionCall { name, .. } if name == "Sin") {
+        return 3; // Sin[θ]^k sorts last
+      }
+    }
+    if matches!(e, Expr::FunctionCall { name, .. } if name == "Sin") {
+      return 3; // Sin[θ] sorts last
+    }
+    2 // Cos[θ] and the Cos-polynomial
+  };
   others.sort_by(|a, b| {
-    let ka = sort_key(a);
-    let kb = sort_key(b);
-    let la = ka.to_lowercase();
-    let lb = kb.to_lowercase();
-    la.cmp(&lb).then_with(|| ka.cmp(&kb))
+    category(a).cmp(&category(b)).then_with(|| {
+      let ka = sort_key(a);
+      let kb = sort_key(b);
+      ka.to_lowercase()
+        .cmp(&kb.to_lowercase())
+        .then_with(|| ka.cmp(&kb))
+    })
   });
 
   let mut new_args: Vec<Expr> = Vec::with_capacity(args.len());
@@ -3376,20 +3407,70 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     }
     false
   };
-  let is_one_half = |e: &Expr| -> bool {
-    matches!(e, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!(&args[0], Expr::Integer(1)) && matches!(&args[1], Expr::Integer(2)))
+  // Sin[θ]; and Sin[θ]^e, collapsing the exponent 1 back to bare Sin[θ].
+  let sin = || Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![theta.clone()].into(),
   };
+  let sin_pow = |e2: Expr| -> Expr {
+    if matches!(&e2, Expr::Integer(1)) {
+      sin()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![sin(), e2].into(),
+      }
+    }
+  };
+  // Double an exponent e → 2e (reduced), so (1 - Cos[θ]^2)^e becomes
+  // Sin[θ]^(2e): 1/2 → 1 (Sin), 3/2 → 3 (Sin^3), 1 → 2 (Sin^2).
+  let double_exp = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::Integer(n) => Some(Expr::Integer(2 * n)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+          let mut num = 2 * a;
+          let mut den = *b;
+          let g = gcd_i128_local(num, den);
+          if g != 0 {
+            num /= g;
+            den /= g;
+          }
+          if den < 0 {
+            num = -num;
+            den = -den;
+          }
+          if den == 1 {
+            Some(Expr::Integer(num))
+          } else {
+            Some(Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
+            })
+          }
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  };
+  // Bare (1 - Cos[θ]^2) → Sin[θ]^2.
+  if is_one_minus_cos_sq(expr) {
+    return sin_pow(Expr::Integer(2));
+  }
   match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left,
       right,
     } => {
-      if is_one_minus_cos_sq(left) && is_one_half(right) {
-        return Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![theta.clone()].into(),
-        };
+      if is_one_minus_cos_sq(left)
+        && let Some(e2) = double_exp(right)
+      {
+        return sin_pow(e2);
       }
       Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Power,
@@ -3398,11 +3479,10 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
       }
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if is_one_minus_cos_sq(&args[0]) && is_one_half(&args[1]) {
-        return Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![theta.clone()].into(),
-        };
+      if is_one_minus_cos_sq(&args[0])
+        && let Some(e2) = double_exp(&args[1])
+      {
+        return sin_pow(e2);
       }
       Expr::FunctionCall {
         name: name.clone(),

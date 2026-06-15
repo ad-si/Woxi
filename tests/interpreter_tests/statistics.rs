@@ -4466,7 +4466,8 @@ mod quantile_parametric {
   fn frac_zero_returns_lower_value() {
     // When x is an integer, the result is s[[x]] regardless of c (discontinuity).
     assert_eq!(
-      interpret(&format!("Quantile[{D10}, 3/10, {{{{0,0}},{{1,0}}}}]")).unwrap(),
+      interpret(&format!("Quantile[{D10}, 3/10, {{{{0,0}},{{1,0}}}}]"))
+        .unwrap(),
       "3"
     );
   }

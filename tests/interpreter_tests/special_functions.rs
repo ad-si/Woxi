@@ -3607,3 +3607,66 @@ mod hurwitz_zeta {
     assert_eq!(interpret("Head[HurwitzZeta[s, 3]]").unwrap(), "HurwitzZeta");
   }
 }
+
+// SphericalHarmonicY symbolic canonical form: factor ordering and the
+// (1 - Cos^2)^k -> Sin^(2k) rewrite. All expected values from wolframscript.
+mod spherical_harmonic_canonical_form {
+  use super::*;
+
+  // A lone Cos[theta] factor must sort after the Sqrt[.../Pi] factor.
+  #[test]
+  fn lone_cos_orders_after_sqrt() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[1, 0, t, p]").unwrap(),
+      "(Sqrt[3/Pi]*Cos[t])/2"
+    );
+  }
+
+  // Ordering with all of E^(i m phi), Sqrt, Cos and Sin present.
+  #[test]
+  fn full_factor_ordering() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[2, 1, t, p]").unwrap(),
+      "-1/2*(E^(I*p)*Sqrt[15/(2*Pi)]*Cos[t]*Sin[t])"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[3, 1, t, p]").unwrap(),
+      "-1/8*(E^(I*p)*Sqrt[21/Pi]*(-1 + 5*Cos[t]^2)*Sin[t])"
+    );
+  }
+
+  // (1 - Cos[t]^2) -> Sin[t]^2 for even |m|.
+  #[test]
+  fn even_m_sin_squared() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[2, 2, t, p]").unwrap(),
+      "(E^((2*I)*p)*Sqrt[15/(2*Pi)]*Sin[t]^2)/4"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[3, 2, t, p]").unwrap(),
+      "(E^((2*I)*p)*Sqrt[105/(2*Pi)]*Cos[t]*Sin[t]^2)/4"
+    );
+  }
+
+  // (1 - Cos[t]^2)^(3/2) -> Sin[t]^3 for odd |m| = 3.
+  #[test]
+  fn odd_m_sin_cubed() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[3, 3, t, p]").unwrap(),
+      "-1/8*(E^((3*I)*p)*Sqrt[35/Pi]*Sin[t]^3)"
+    );
+  }
+
+  // Regression guards: cases that already matched must stay correct.
+  #[test]
+  fn unchanged_cases() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[2, 0, t, p]").unwrap(),
+      "(Sqrt[5/Pi]*(-1 + 3*Cos[t]^2))/4"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[1, 1, t, p]").unwrap(),
+      "-1/2*(E^(I*p)*Sqrt[3/(2*Pi)]*Sin[t])"
+    );
+  }
+}
