@@ -670,6 +670,36 @@ mod eigenvalues {
     );
   }
 
+  // Symbolic triangular/diagonal matrices: the eigenvalues are the diagonal
+  // entries in matrix order (not the unsimplified quadratic formula).
+  #[test]
+  fn eigenvalues_symbolic_diagonal() {
+    assert_eq!(
+      interpret("Eigenvalues[{{a, 0}, {0, b}}]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[DiagonalMatrix[{x, y, z}]]").unwrap(),
+      "{x, y, z}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_symbolic_triangular() {
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {0, d}}]").unwrap(),
+      "{a, d}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, 0}, {c, d}}]").unwrap(),
+      "{a, d}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b, c}, {0, d, e}, {0, 0, f}}]").unwrap(),
+      "{a, d, f}"
+    );
+  }
+
   #[test]
   fn eigenvalues_2x2_zero() {
     assert_eq!(

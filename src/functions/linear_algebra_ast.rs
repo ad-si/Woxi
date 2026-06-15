@@ -1552,6 +1552,25 @@ fn synthetic_div(coeffs: &[i128], root: i128) -> Vec<i128> {
 
 /// Sort eigenvalues: Wolfram sorts by absolute value descending,
 /// then by value descending for ties.
+/// True if every entry of the matrix evaluates to a real number.
+fn matrix_all_numeric(matrix: &[Vec<Expr>]) -> bool {
+  matrix
+    .iter()
+    .all(|row| row.iter().all(|e| try_eval_to_f64(e).is_some()))
+}
+
+/// True if the matrix is upper- or lower-triangular (a zero on every entry
+/// strictly below, or strictly above, the main diagonal).
+fn is_triangular_matrix(matrix: &[Vec<Expr>]) -> bool {
+  let n = matrix.len();
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+  };
+  let upper = (0..n).all(|i| (0..i).all(|j| is_zero(&matrix[i][j])));
+  let lower = (0..n).all(|i| (i + 1..n).all(|j| is_zero(&matrix[i][j])));
+  upper || lower
+}
+
 fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
   // Wolfram's Eigenvalues sorts by decreasing magnitude; when the magnitudes
   // tie (e.g. {1, -1}), the tiebreaker is *ascending* value (so {-1, 1}
@@ -1823,6 +1842,17 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       return Ok(Expr::List(vec![Expr::Real(e1), Expr::Real(e2)].into()));
     }
+  }
+
+  // Triangular (incl. diagonal) matrices with symbolic entries: the
+  // eigenvalues are the diagonal entries, in matrix order. (All-numeric
+  // matrices are handled by the integer/float paths above, which also sort,
+  // so this only fires when at least one entry is symbolic — otherwise the
+  // generic characteristic-polynomial path would print an unsimplified
+  // `(a + b ± Sqrt[a² − 2ab + b²]) / 2` instead of `{a, b}`.)
+  if !matrix_all_numeric(&matrix) && is_triangular_matrix(&matrix) {
+    let diag: Vec<Expr> = (0..n).map(|i| matrix[i][i].clone()).collect();
+    return Ok(Expr::List(diag.into()));
   }
 
   // Symbolic 2×2 rotation-matrix shortcut: `[[a, b], [-b, a]]` has
