@@ -163,6 +163,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
+    "BinomialDistribution" => pdf_binomial(dargs, x),
     "HypergeometricDistribution" => pdf_hypergeometric(dargs, x),
     "BinormalDistribution" => pdf_binormal(dargs, x),
     "InverseGammaDistribution" => pdf_inverse_gamma(dargs, x),
@@ -914,6 +915,33 @@ fn pdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond1 = comparison(x, ComparisonOp::Equal, int(1));
 
   eval(piecewise(vec![(one_minus_p, cond0), (p, cond1)], int(0)))
+}
+
+/// PDF[BinomialDistribution[n, p], k] =
+///   Piecewise[{{Binomial[n, k] p^k (1-p)^(n-k), 0 <= k <= n}}, 0]
+fn pdf_binomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BinomialDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let p = dargs[1].clone();
+
+  let binom = Expr::FunctionCall {
+    name: "Binomial".to_string(),
+    args: vec![n.clone(), x.clone()].into(),
+  };
+  let p_k = power(p.clone(), x.clone());
+  // (1 - p)^(n - k); pre-evaluate the base and exponent so they collapse.
+  let q_nk = power(eval(minus(int(1), p))?, eval(minus(n.clone(), x.clone()))?);
+  let density = eval(times(binom, times(p_k, q_nk)))?;
+  // 0 <= k <= n.
+  let cond = Expr::Comparison {
+    operands: vec![int(0), x, n],
+    operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+  };
+  eval(piecewise(vec![(density, cond)], int(0)))
 }
 
 /// PDF[HypergeometricDistribution[n, ns, nt], k] =

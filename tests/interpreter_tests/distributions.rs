@@ -3110,8 +3110,14 @@ mod distribution_cumulants {
   // First cumulant is the mean, second is the variance.
   #[test]
   fn low_order() {
-    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 1]").unwrap(), "m");
-    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 2]").unwrap(), "m");
+    assert_eq!(
+      interpret("Cumulant[PoissonDistribution[m], 1]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Cumulant[PoissonDistribution[m], 2]").unwrap(),
+      "m"
+    );
     assert_eq!(
       interpret("Cumulant[NormalDistribution[mu, sigma], 1]").unwrap(),
       "mu"
@@ -3129,8 +3135,14 @@ mod distribution_cumulants {
   // All Poisson cumulants equal the rate; Normal cumulants vanish past order 2.
   #[test]
   fn higher_order_symbolic() {
-    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 3]").unwrap(), "m");
-    assert_eq!(interpret("Cumulant[PoissonDistribution[m], 4]").unwrap(), "m");
+    assert_eq!(
+      interpret("Cumulant[PoissonDistribution[m], 3]").unwrap(),
+      "m"
+    );
+    assert_eq!(
+      interpret("Cumulant[PoissonDistribution[m], 4]").unwrap(),
+      "m"
+    );
     assert_eq!(
       interpret("Cumulant[NormalDistribution[0, 1], 3]").unwrap(),
       "0"
@@ -3148,7 +3160,70 @@ mod distribution_cumulants {
   // Exponential cumulants: kappa_n = (n-1)! / lambda^n.
   #[test]
   fn exponential_numeric() {
-    assert_eq!(interpret("Cumulant[ExponentialDistribution[1], 3]").unwrap(), "2");
-    assert_eq!(interpret("Cumulant[ExponentialDistribution[1], 4]").unwrap(), "6");
+    assert_eq!(
+      interpret("Cumulant[ExponentialDistribution[1], 3]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Cumulant[ExponentialDistribution[1], 4]").unwrap(),
+      "6"
+    );
+  }
+}
+
+mod binomial_distribution_pdf {
+  use super::*;
+
+  #[test]
+  fn exact_values() {
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/2], 5]").unwrap(),
+      "63/256"
+    );
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/3], 4]").unwrap(),
+      "4480/19683"
+    );
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[5, 1/4], 2]").unwrap(),
+      "135/512"
+    );
+  }
+
+  #[test]
+  fn boundaries() {
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/2], 0]").unwrap(),
+      "1/1024"
+    );
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/2], 10]").unwrap(),
+      "1/1024"
+    );
+  }
+
+  // Outside the support 0 <= k <= n the density is zero.
+  #[test]
+  fn out_of_support_is_zero() {
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/2], 11]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/2], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn symbolic_piecewise() {
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[n, p], k]").unwrap(),
+      "Piecewise[{{(1 - p)^(-k + n)*p^k*Binomial[n, k], 0 <= k <= n}}, 0]"
+    );
+    assert_eq!(
+      interpret("PDF[BinomialDistribution[10, 1/2], x]").unwrap(),
+      "Piecewise[{{Binomial[10, x]/1024, 0 <= x <= 10}}, 0]"
+    );
   }
 }
