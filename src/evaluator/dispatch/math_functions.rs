@@ -85,7 +85,7 @@ pub fn dispatch_math_functions(
         args: args.to_vec().into(),
       }));
     }
-    "Quantile" if args.len() == 2 => {
+    "Quantile" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::quantile_ast(args));
     }
     "Quartiles" if args.len() == 1 => {

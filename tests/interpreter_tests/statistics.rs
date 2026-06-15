@@ -4397,3 +4397,94 @@ mod fisher_ratio_test {
     );
   }
 }
+
+// Parametric 3-arg Quantile[list, q, {{a,b},{c,d}}] (Hyndman-Fan).
+// All expected values verified against wolframscript.
+mod quantile_parametric {
+  use super::*;
+
+  const D10: &str = "{1,2,3,4,5,6,7,8,9,10}";
+
+  #[test]
+  fn type1_inverse_cdf_default() {
+    // {{0,0},{1,0}} is the 2-arg default; discontinuous (step) at integer x.
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 1/4, {{{{0,0}},{{1,0}}}}]")).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 1/2, {{{{0,0}},{{1,0}}}}]")).unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 3/4, {{{{0,0}},{{1,0}}}}]")).unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn type7_linear_interpolation() {
+    // {{0,1},{0,1}} interpolates linearly between order statistics.
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 1/4, {{{{0,1}},{{0,1}}}}]")).unwrap(),
+      "11/4"
+    );
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 1/2, {{{{0,1}},{{0,1}}}}]")).unwrap(),
+      "11/2"
+    );
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 3/4, {{{{0,1}},{{0,1}}}}]")).unwrap(),
+      "33/4"
+    );
+  }
+
+  #[test]
+  fn other_parameter_sets() {
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 1/2, {{{{1/2,0}},{{0,1}}}}]"))
+        .unwrap(),
+      "11/2"
+    );
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 1/4, {{{{1,-1}},{{0,1}}}}]"))
+        .unwrap(),
+      "13/4"
+    );
+    assert_eq!(
+      interpret("Quantile[{10,20,30,40,50}, 1/5, {{1/2,0},{1/2,0}}]").unwrap(),
+      "15"
+    );
+    // c=d=0 with non-integer x rounds down to the lower order statistic.
+    assert_eq!(
+      interpret("Quantile[{10,20,30,40,50}, 1/2, {{0,0},{0,0}}]").unwrap(),
+      "20"
+    );
+  }
+
+  #[test]
+  fn frac_zero_returns_lower_value() {
+    // When x is an integer, the result is s[[x]] regardless of c (discontinuity).
+    assert_eq!(
+      interpret(&format!("Quantile[{D10}, 3/10, {{{{0,0}},{{1,0}}}}]")).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn list_of_quantiles() {
+    assert_eq!(
+      interpret(&format!(
+        "Quantile[{D10}, {{1/4, 1/2, 3/4}}, {{{{0,1}},{{0,1}}}}]"
+      ))
+      .unwrap(),
+      "{11/4, 11/2, 33/4}"
+    );
+  }
+
+  #[test]
+  fn two_arg_form_unchanged() {
+    assert_eq!(interpret("Quantile[{1,2,3,4,5}, 1/2]").unwrap(), "3");
+    assert_eq!(interpret("Quantile[{1,2,3,4}, 0.25]").unwrap(), "1");
+  }
+}

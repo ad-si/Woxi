@@ -2157,10 +2157,57 @@ pub fn rational_ceil(num: i128, den: i128) -> i128 {
 /// Quantile[list, q] - the q-th quantile of the list
 /// Quantile[list, {q1, q2, ...}] - multiple quantiles
 pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "Quantile expects exactly 2 arguments".into(),
+      "Quantile expects 2 or 3 arguments".into(),
     ));
+  }
+  // 3-argument parametric form Quantile[list, q, {{a,b},{c,d}}] (Hyndman-Fan).
+  // The parameter list must be {{a,b},{c,d}} with exact numeric entries; the
+  // 2-argument form is the special case {{0,0},{1,0}}.
+  if args.len() == 3 {
+    let params = match &args[2] {
+      Expr::List(rows)
+        if rows.len() == 2
+          && matches!(&rows[0], Expr::List(r) if r.len() == 2)
+          && matches!(&rows[1], Expr::List(r) if r.len() == 2) =>
+      {
+        let (Expr::List(r0), Expr::List(r1)) = (&rows[0], &rows[1]) else {
+          unreachable!()
+        };
+        (r0[0].clone(), r0[1].clone(), r1[0].clone(), r1[1].clone())
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Quantile".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    let items = match &args[0] {
+      Expr::List(items) if !items.is_empty() => items,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Quantile".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
+    };
+    let mut sorted: Vec<&Expr> = items.iter().collect();
+    sorted.sort_by(|a, b| {
+      try_eval_to_f64(a)
+        .partial_cmp(&try_eval_to_f64(b))
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let (a, b, c, d) = params;
+    if let Expr::List(qs) = &args[1] {
+      let results: Result<Vec<Expr>, _> = qs
+        .iter()
+        .map(|q| quantile_parametric(&sorted, q, &a, &b, &c, &d))
+        .collect();
+      return Ok(Expr::List(results?.into()));
+    }
+    return quantile_parametric(&sorted, &args[1], &a, &b, &c, &d);
   }
   // Quantile[dist, q] for a distribution — first try closed-form heads,
   // then fall back to the numerical CDF-inversion for ProbabilityDistribution.
@@ -2249,6 +2296,78 @@ pub fn quantile_single(
   let idx = (q_val * n as f64).ceil() as usize;
   let idx = idx.max(1).min(n);
   Ok(sorted[idx - 1].clone())
+}
+
+/// Hyndman-Fan parametric quantile Quantile[list, q, {{a,b},{c,d}}].
+/// With s = Sort[list] and n = Length[list]:
+///   x = a + (n + b) q,  k = Floor[x],  frac = x - k
+///   frac == 0 → s[[clamp(k)]]
+///   else      → s[[clamp(k)]] + (c + d frac) (s[[clamp(k+1)]] - s[[clamp(k)]])
+/// where clamp pins indices to [1, n]. All arithmetic runs through the
+/// evaluator so exact rationals stay exact and machine reals propagate.
+pub fn quantile_parametric(
+  sorted: &[&Expr],
+  q: &Expr,
+  a: &Expr,
+  b: &Expr,
+  c: &Expr,
+  d: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as ev;
+  let plus = |x: Expr, y: Expr| Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![x, y].into(),
+  };
+  let times = |x: Expr, y: Expr| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![x, y].into(),
+  };
+  // q must be numeric (Integer, Rational, or Real); otherwise leave symbolic.
+  if try_eval_to_f64(q).is_none() {
+    return Ok(Expr::FunctionCall {
+      name: "Quantile".to_string(),
+      args: vec![
+        Expr::List(sorted.iter().cloned().cloned().collect()),
+        q.clone(),
+        Expr::List(
+          vec![
+            Expr::List(vec![a.clone(), b.clone()].into()),
+            Expr::List(vec![c.clone(), d.clone()].into()),
+          ]
+          .into(),
+        ),
+      ]
+      .into(),
+    });
+  }
+  let n = sorted.len() as i128;
+  // x = a + (n + b) * q
+  let nb = ev(&plus(Expr::Integer(n), b.clone()))?;
+  let x = ev(&plus(a.clone(), times(nb, q.clone())))?;
+  // k = Floor[x]
+  let k_expr = ev(&Expr::FunctionCall {
+    name: "Floor".to_string(),
+    args: vec![x.clone()].into(),
+  })?;
+  let k = match &k_expr {
+    Expr::Integer(v) => *v,
+    other => try_eval_to_f64(other).map(|f| f.floor() as i128).unwrap_or(0),
+  };
+  // frac = x - k
+  let frac = ev(&plus(x, Expr::Integer(-k)))?;
+  let frac_is_zero = matches!(&frac, Expr::Integer(0))
+    || matches!(&frac, Expr::Real(f) if *f == 0.0);
+  let clamp = |i: i128| -> usize { i.max(1).min(n) as usize };
+  let lo = sorted[clamp(k) - 1].clone();
+  if frac_is_zero {
+    return Ok(lo);
+  }
+  let hi = sorted[clamp(k + 1) - 1].clone();
+  // w = c + d * frac
+  let w = ev(&plus(c.clone(), times(d.clone(), frac)))?;
+  // result = lo + w * (hi - lo)
+  let diff = ev(&plus(hi, times(Expr::Integer(-1), lo.clone())))?;
+  ev(&plus(lo, times(w, diff)))
 }
 
 // ─── Moment ──────────────────────────────────────────────────────────
