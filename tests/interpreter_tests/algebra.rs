@@ -7818,10 +7818,16 @@ mod arccot_exact {
     assert_eq!(interpret("ArcCot[-3]").unwrap(), "-ArcCot[3]");
   }
 
-  // Inexact arguments still evaluate numerically.
+  // Inexact arguments still evaluate numerically. The exact last ULP of the
+  // result depends on the platform's libm (macOS/wolframscript give
+  // 0.46364760900080615; glibc on Linux CI differs by one ULP), so compare
+  // numerically rather than by exact string — matching how the other
+  // floating-point tests in this suite assert (see `rms_reals`).
   #[test]
   fn real_argument_is_numeric() {
-    assert_eq!(interpret("ArcCot[2.0]").unwrap(), "0.46364760900080615");
+    let result = interpret("ArcCot[2.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.46364760900080615).abs() < 1e-12);
   }
 }
 
