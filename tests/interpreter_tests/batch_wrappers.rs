@@ -4390,6 +4390,38 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // One-argument forms: subtract / divide by the right-hand side.
+  #[test]
+  fn subtract_sides_one_arg() {
+    assert_eq!(interpret("SubtractSides[a == b]").unwrap(), "a - b == 0");
+  }
+  #[test]
+  fn subtract_sides_one_arg_compound() {
+    assert_eq!(
+      interpret("SubtractSides[a + b == c]").unwrap(),
+      "a + b - c == 0"
+    );
+  }
+  #[test]
+  fn subtract_sides_one_arg_inequality() {
+    // Works for any relation: subtracting the rhs preserves the direction.
+    assert_eq!(interpret("SubtractSides[a <= b]").unwrap(), "a - b <= 0");
+  }
+  #[test]
+  fn divide_sides_one_arg_symbolic() {
+    // Dividing by a possibly-zero rhs is guarded.
+    assert_eq!(
+      interpret("DivideSides[a == b]").unwrap(),
+      "Piecewise[{{a/b == 1, b != 0}}, a == b]"
+    );
+  }
+  #[test]
+  fn divide_sides_one_arg_numeric() {
+    // A nonzero numeric rhs needs no guard.
+    assert_eq!(interpret("DivideSides[a*b == 3]").unwrap(), "(a*b)/3 == 1");
+    assert_eq!(interpret("DivideSides[2*x == 6]").unwrap(), "x/3 == 1");
+  }
+
   // DayCount
   #[test]
   fn day_count_basic() {

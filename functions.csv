@@ -2583,7 +2583,7 @@ CDFDeploy,,🚫,,8.0,2642
 FourierMatrix,Discrete Fourier transform matrix,✅,1,9.0,2642
 RecurrenceFilter,Apply an IIR/FIR recurrence filter to data,✅,pure,9.0,2642
 SpheroidalS2,,🚫,,6.0,2642
-SubtractSides,Subtract an expression from both sides of an equation; an equation second argument pairs the sides,✅,none,11.3,2642
+SubtractSides,Subtract an expression from both sides of an equation; one-arg form subtracts the rhs giving lhs-rhs==0; an equation second argument pairs the sides,✅,none,11.3,2642
 Uninstall,,🚫,,2.0,2642
 CantorMesh,Create a 1D or 2D Cantor set mesh at a given level of iteration,✅,pure,11.1,2650
 Capitalize,Capitalizes letters in a string (first word or AllWords/FirstWord/LongWords),✅,pure,10.1,2650
@@ -2936,7 +2936,7 @@ Video,,🚫,,12.1,2999
 Booleans,Domain of booleans,✅,1,4.0,3008
 ClosenessCentrality,Closeness centrality of graph vertices,✅,1,8.0,3008
 CreateDataStructure,,,,12.1,3008
-DivideSides,Divide both sides of an equation by an expression; an equation second argument pairs the sides (guarded by c != 0),✅,none,11.3,3008
+DivideSides,Divide both sides of an equation by an expression; one-arg form divides by the rhs giving lhs/rhs==1; an equation second argument pairs the sides (guarded by c != 0),✅,none,11.3,3008
 ImageAspectRatio,Ratio of image height to width as an exact rational,✅,pure,8.0,3008
 PascalDistribution,Pascal distribution (number of trials until n successes),✅,pure,8.0,3008
 QFactorial,Compute the q-analog of the factorial,✅,pure,7.0,3008

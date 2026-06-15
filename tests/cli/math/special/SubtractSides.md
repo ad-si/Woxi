@@ -7,6 +7,13 @@ $ wo 'SubtractSides[x + 3 == 5, 3]'
 x == 2
 ```
 
+With one argument, the right-hand side is subtracted from both sides.
+
+```scrut
+$ wo 'SubtractSides[a + b == c]'
+a + b - c == 0
+```
+
 When the second argument is itself an equation, the matching sides are paired.
 
 ```scrut

@@ -4272,6 +4272,57 @@ pub fn dispatch_math_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
+    // SubtractSides[rel] — subtract the right-hand side from both sides,
+    // giving `lhs - rhs OP 0` (valid for any relation).
+    "SubtractSides" if args.len() == 1 => {
+      if let Expr::Comparison { operands, .. } = &args[0]
+        && operands.len() == 2
+      {
+        let neg = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), operands[1].clone()].into(),
+        };
+        if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
+          return Some(evaluate_expr_to_expr(&result));
+        }
+      }
+    }
+    // DivideSides[rel] — divide both sides by the right-hand side, giving
+    // `lhs/rhs == 1` (guarded by rhs != 0 when rhs may be zero). Restricted to
+    // equations; dividing an inequality needs sign-dependent reasoning.
+    "DivideSides" if args.len() == 1 => {
+      if let Expr::Comparison {
+        operands,
+        operators,
+      } = &args[0]
+        && operands.len() == 2
+        && operators.first() == Some(&crate::syntax::ComparisonOp::Equal)
+        && !is_zero_literal(&operands[1])
+      {
+        let rhs = operands[1].clone();
+        let inv = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![rhs.clone(), Expr::Integer(-1)].into(),
+        };
+        if let Some(divided) = apply_to_sides(&args[0], &inv, "Times")
+          && let Ok(divided) = evaluate_expr_to_expr(&divided)
+        {
+          if is_nonzero_number(&rhs) {
+            return Some(Ok(divided));
+          }
+          let cond = Expr::Comparison {
+            operands: vec![rhs, Expr::Integer(0)],
+            operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          };
+          let branch = Expr::List(vec![divided, cond].into());
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![Expr::List(vec![branch].into()), args[0].clone()].into(),
+          };
+          return Some(evaluate_expr_to_expr(&pw));
+        }
+      }
+    }
     // SubtractSides[rel, expr] — subtract expr from both sides
     "SubtractSides" if args.len() == 2 => {
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Subtract) {
@@ -6885,6 +6936,26 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
   }
 }
 
+/// True when `e` is a literal zero (integer or real).
+fn is_zero_literal(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+}
+
+/// True when `e` is a numeric literal that is provably non-zero (so dividing by
+/// it needs no `!= 0` guard). Rationals are stored as Rational[p, q].
+fn is_nonzero_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n != 0,
+    Expr::Real(f) => *f != 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Integer(p) if *p != 0)
+    }
+    _ => false,
+  }
+}
+
 /// Per-operand combiner for the `*Sides` family.
 #[derive(Clone, Copy)]
 enum SideOp {
@@ -6984,11 +7055,7 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
       let branch = Expr::List(vec![paired, cond].into());
       Some(Expr::FunctionCall {
         name: "Piecewise".to_string(),
-        args: vec![
-          Expr::List(vec![branch].into()),
-          relation.clone(),
-        ]
-        .into(),
+        args: vec![Expr::List(vec![branch].into()), relation.clone()].into(),
       })
     }
     _ => Some(paired),
