@@ -5100,6 +5100,65 @@ mod inverse_laplace_transform {
     );
   }
 
+  // Negative constant term gives the hyperbolic forms:
+  //   1/(s^2 - a^2) -> Sinh[a t]/a,  s/(s^2 - a^2) -> Cosh[a t].
+  // (Previously 1/(s^2 - 1) produced a malformed `--1*Sinh[t]`.)
+  #[test]
+  fn sinh_t() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 - 1), s, t]").unwrap(),
+      "Sinh[t]"
+    );
+  }
+
+  #[test]
+  fn cosh_t() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s^2 - 1), s, t]").unwrap(),
+      "Cosh[t]"
+    );
+  }
+
+  #[test]
+  fn sinh_3t() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 - 9), s, t]").unwrap(),
+      "Sinh[3*t]/3"
+    );
+  }
+
+  #[test]
+  fn cosh_3t() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s^2 - 9), s, t]").unwrap(),
+      "Cosh[3*t]"
+    );
+  }
+
+  #[test]
+  fn sinh_at_symbolic() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 - a^2), s, t]").unwrap(),
+      "Sinh[a*t]/a"
+    );
+  }
+
+  #[test]
+  fn cosh_at_symbolic() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s^2 - a^2), s, t]").unwrap(),
+      "Cosh[a*t]"
+    );
+  }
+
+  #[test]
+  fn sinh_irrational() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 - 2), s, t]").unwrap(),
+      "Sinh[Sqrt[2]*t]/Sqrt[2]"
+    );
+  }
+
   #[test]
   fn exp_neg_at() {
     assert_eq!(

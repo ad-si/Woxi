@@ -1618,11 +1618,15 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         }
       }
 
-      // L^-1[(s^2 + a^2)^(-1)] = Sin[a*t] / a
+      // L^-1[(s^2 + a^2)^(-1)] = Sin[a*t] / a, and the hyperbolic counterpart
+      // L^-1[(s^2 - a^2)^(-1)] = Sinh[a*t] / a (a negative constant term).
       if matches!(fargs[1], Expr::Integer(-1))
         && let Some(a_squared) = extract_s_squared_plus_const(fargs[0], s)
       {
-        let a = sqrt_of_expr(&a_squared);
+        let (a, func) = match negative_const_magnitude(&a_squared) {
+          Some(c) => (sqrt_of_expr(&c), "Sinh"),
+          None => (sqrt_of_expr(&a_squared), "Sin"),
+        };
         return Some(Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
@@ -1631,7 +1635,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
               args: vec![a.clone(), Expr::Integer(-1)].into(),
             },
             Expr::FunctionCall {
-              name: "Sin".to_string(),
+              name: func.to_string(),
               args: vec![Expr::FunctionCall {
                 name: "Times".to_string(),
                 args: vec![a, Expr::Identifier(t.to_string())].into(),
@@ -1677,16 +1681,21 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
       };
 
       if let Some(denom) = denom_base {
-        // Check if denom is s^2 + a^2
+        // Check if denom is s^2 +/- a^2. A negative constant term gives the
+        // hyperbolic forms: s/(s^2 - a^2) → Cosh[a t], 1/(s^2 - a^2) → Sinh[a t]/a.
         if let Some(a_squared) = extract_s_squared_plus_const(denom, s) {
+          let (a, cos_name, sin_name) =
+            match negative_const_magnitude(&a_squared) {
+              Some(c) => (sqrt_of_expr(&c), "Cosh", "Sinh"),
+              None => (sqrt_of_expr(&a_squared), "Cos", "Sin"),
+            };
           // numerator / (s^2 + a^2)
           if let Expr::Identifier(n) = numerator
             && n == s
           {
-            // s / (s^2 + a^2) → Cos[a * t]
-            let a = sqrt_of_expr(&a_squared);
+            // s / (s^2 + a^2) → Cos[a t]  (or Cosh[a t])
             return Some(Expr::FunctionCall {
-              name: "Cos".to_string(),
+              name: cos_name.to_string(),
               args: vec![Expr::FunctionCall {
                 name: "Times".to_string(),
                 args: vec![a, Expr::Identifier(t.to_string())].into(),
@@ -1696,7 +1705,6 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           }
           // For numerator/(s^2 + a^2) → (numerator/a) * Sin[a*t]
           if !depends_on(numerator, s) {
-            let a = sqrt_of_expr(&a_squared);
             return Some(Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
@@ -1706,7 +1714,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
                   args: vec![a.clone(), Expr::Integer(-1)].into(),
                 },
                 Expr::FunctionCall {
-                  name: "Sin".to_string(),
+                  name: sin_name.to_string(),
                   args: vec![Expr::FunctionCall {
                     name: "Times".to_string(),
                     args: vec![a, Expr::Identifier(t.to_string())].into(),
@@ -1769,6 +1777,37 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
   }
 
   None
+}
+
+/// If `c` is a negative constant (a negative number, `Times[-1, X]`, or a
+/// negative rational), return its positive magnitude. Used to route a
+/// `1/(s^2 - c)` denominator to the hyperbolic Sinh/Cosh inverse transforms.
+fn negative_const_magnitude(c: &Expr) -> Option<Expr> {
+  match c {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      Some(args[1].clone())
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-p), Expr::Integer(*q)].into(),
+        })
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
 }
 
 /// Extract offset from s + c or Plus[s, c] form. Returns the constant part.
