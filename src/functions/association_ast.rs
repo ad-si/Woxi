@@ -630,22 +630,56 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Collect all key-value pairs, grouping values by key
   let mut key_values: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (key_str, key_expr, values)
 
-  for assoc in &assocs {
-    if let Expr::Association(items) = assoc {
-      for (k, v) in items {
-        let k_str = crate::syntax::expr_to_string(k);
-        if let Some(entry) =
-          key_values.iter_mut().find(|(ks, _, _)| *ks == k_str)
-        {
-          entry.2.push(v.clone());
-        } else {
-          key_values.push((k_str, k.clone(), vec![v.clone()]));
+  // Each element may be an Association, a single rule (`k -> v`), or a list
+  // of rules. Collect the (key, value) pairs from all of them, preserving
+  // first-seen key order. wolframscript accepts all three shapes.
+  let push_pair = |key_values: &mut Vec<(String, Expr, Vec<Expr>)>,
+                   k: &Expr,
+                   v: &Expr| {
+    let k_str = crate::syntax::expr_to_string(k);
+    if let Some(entry) = key_values.iter_mut().find(|(ks, _, _)| *ks == k_str) {
+      entry.2.push(v.clone());
+    } else {
+      key_values.push((k_str, k.clone(), vec![v.clone()]));
+    }
+  };
+
+  fn rule_parts(item: &Expr) -> Option<(&Expr, &Expr)> {
+    match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Some((pattern, replacement)),
+      _ => None,
+    }
+  }
+
+  for item in &assocs {
+    match item {
+      Expr::Association(items) => {
+        for (k, v) in items {
+          push_pair(&mut key_values, k, v);
         }
       }
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "Merge: all elements must be associations".into(),
-      ));
+      _ if rule_parts(item).is_some() => {
+        let (k, v) = rule_parts(item).unwrap();
+        push_pair(&mut key_values, k, v);
+      }
+      Expr::List(items) if items.iter().all(|i| rule_parts(i).is_some()) => {
+        for i in items.iter() {
+          let (k, v) = rule_parts(i).unwrap();
+          push_pair(&mut key_values, k, v);
+        }
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Merge: all elements must be associations".into(),
+        ));
+      }
     }
   }
 

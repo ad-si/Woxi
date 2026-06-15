@@ -287,6 +287,28 @@ mod merge {
       "<|a -> 3, b -> 3|>"
     );
   }
+
+  #[test]
+  fn merge_list_of_rules() {
+    // wolframscript accepts a flat list of rules, grouping by key.
+    assert_eq!(
+      interpret("Merge[{a -> 1, a -> 2, b -> 3}, Total]").unwrap(),
+      "<|a -> 3, b -> 3|>"
+    );
+  }
+
+  #[test]
+  fn merge_list_of_rule_lists() {
+    assert_eq!(
+      interpret("Merge[{{a -> 1, b -> 2}, {a -> 10}}, Total]").unwrap(),
+      "<|a -> 11, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn merge_single_rule() {
+    assert_eq!(interpret("Merge[{a -> 1}, Total]").unwrap(), "<|a -> 1|>");
+  }
 }
 
 mod key_map {
