@@ -4877,6 +4877,56 @@ mod laplace_transform {
     assert_eq!(interpret("LaplaceTransform[5*t, t, s]").unwrap(), "5/s^2");
   }
 
+  // Hyperbolic functions: L[Cosh[a t]] = s/(s^2 - a^2), L[Sinh[a t]] = a/(s^2 - a^2).
+  #[test]
+  fn cosh_t() {
+    assert_eq!(
+      interpret("LaplaceTransform[Cosh[t], t, s]").unwrap(),
+      "s/(-1 + s^2)"
+    );
+  }
+
+  #[test]
+  fn sinh_t() {
+    assert_eq!(
+      interpret("LaplaceTransform[Sinh[t], t, s]").unwrap(),
+      "(-1 + s^2)^(-1)"
+    );
+  }
+
+  #[test]
+  fn cosh_at() {
+    assert_eq!(
+      interpret("LaplaceTransform[Cosh[a*t], t, s]").unwrap(),
+      "s/(-a^2 + s^2)"
+    );
+  }
+
+  #[test]
+  fn sinh_at() {
+    assert_eq!(
+      interpret("LaplaceTransform[Sinh[a*t], t, s]").unwrap(),
+      "a/(-a^2 + s^2)"
+    );
+  }
+
+  #[test]
+  fn cosh_3t() {
+    assert_eq!(
+      interpret("LaplaceTransform[Cosh[3*t], t, s]").unwrap(),
+      "s/(-9 + s^2)"
+    );
+  }
+
+  // L[DiracDelta[t]] = 1.
+  #[test]
+  fn dirac_delta() {
+    assert_eq!(
+      interpret("LaplaceTransform[DiracDelta[t], t, s]").unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn bessel_j0() {
     assert_eq!(

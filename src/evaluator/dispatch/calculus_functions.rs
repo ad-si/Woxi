@@ -1070,6 +1070,55 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       });
     }
 
+    // L[DiracDelta[t], t, s] = 1
+    if fname == "DiracDelta"
+      && fargs.len() == 1
+      && matches!(fargs[0], Expr::Identifier(name) if name == t)
+    {
+      return Some(Expr::Integer(1));
+    }
+
+    // L[Cosh[a*t], t, s] = s/(s^2 - a^2);  L[Sinh[a*t], t, s] = a/(s^2 - a^2)
+    if (fname == "Cosh" || fname == "Sinh")
+      && fargs.len() == 1
+      && let Some(a) = extract_linear_coeff(fargs[0], t)
+    {
+      // denom = s^2 - a^2  (Wolfram prints this as `-a^2 + s^2`)
+      let denom = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![s.clone(), Expr::Integer(2)].into(),
+          },
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![a.clone(), Expr::Integer(2)].into(),
+              },
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      };
+      let numerator = if fname == "Cosh" { s.clone() } else { a };
+      return Some(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          numerator,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![denom, Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      });
+    }
+
     // L[BesselJ[n, a*t], t, s] = a^n / (Sqrt[a^2 + s^2] * (s + Sqrt[a^2 + s^2])^n)
     if fname == "BesselJ"
       && fargs.len() == 2
