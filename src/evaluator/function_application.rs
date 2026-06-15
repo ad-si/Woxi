@@ -342,9 +342,6 @@ pub fn apply_apply_ast(
       }
       evaluate_function_call_ast(func_name, &items)
     }
-    Expr::FunctionCall {
-      name: func_name, ..
-    } => evaluate_function_call_ast(func_name, &items),
     Expr::Function { body } => {
       // Anonymous function applied to a list
       // For single-arg anonymous functions, apply to first element
@@ -366,10 +363,11 @@ pub fn apply_apply_ast(
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       evaluate_expr_to_expr(&substituted)
     }
-    _ => Ok(Expr::Apply {
-      func: Box::new(func.clone()),
-      list: Box::new(list.clone()),
-    }),
+    // Apply replaces the head of `list` with the whole `func`, whatever it
+    // is: `g[a] @@ {1, 2}` → `g[a][1, 2]`, `Composition[f, g] @@ {1, 2}` →
+    // `f[g[1, 2]]`. Build the curried application and evaluate it so
+    // applicable heads reduce while inert heads stay symbolic.
+    _ => apply_curried_call(func, &items),
   }
 }
 

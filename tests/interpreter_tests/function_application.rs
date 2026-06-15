@@ -2213,3 +2213,54 @@ mod reverse_applied {
     );
   }
 }
+
+mod apply_operator_composite_head {
+  use super::*;
+
+  // `@@` replaces the head with the whole left-hand expression, not just its
+  // head symbol: `g[a] @@ {1, 2}` is `g[a][1, 2]`, not `g[1, 2]`.
+  #[test]
+  fn composite_function_call_head() {
+    assert_eq!(interpret("g[a] @@ {1, 2}").unwrap(), "g[a][1, 2]");
+    assert_eq!(interpret("h[x] @@ {1, 2}").unwrap(), "h[x][1, 2]");
+  }
+
+  #[test]
+  fn operator_heads_reduce() {
+    assert_eq!(
+      interpret("Composition[f, g] @@ {1, 2}").unwrap(),
+      "f[g[1, 2]]"
+    );
+    assert_eq!(
+      interpret("OperatorApplied[Rule] @@ {1, 2}").unwrap(),
+      "2 -> 1"
+    );
+  }
+
+  // MapApply (@@@) threads the composite head over each sublist.
+  #[test]
+  fn map_apply_composite_head() {
+    assert_eq!(
+      interpret("ReverseApplied[Rule] @@@ {{1, 2}, {3, 4}}").unwrap(),
+      "{2 -> 1, 4 -> 3}"
+    );
+    assert_eq!(
+      interpret("Composition[f, g] @@@ {{1, 2}}").unwrap(),
+      "{f[g[1, 2]]}"
+    );
+  }
+
+  // An arithmetic head stays an inert curried call, correctly parenthesized.
+  #[test]
+  fn arithmetic_head_stays_inert() {
+    assert_eq!(interpret("(f + g) @@ {1, 2}").unwrap(), "(f + g)[1, 2]");
+  }
+
+  // Plain symbol and head-variable cases still work.
+  #[test]
+  fn simple_heads_unaffected() {
+    assert_eq!(interpret("f @@ {1, 2}").unwrap(), "f[1, 2]");
+    assert_eq!(interpret("Plus @@ {1, 2, 3}").unwrap(), "6");
+    assert_eq!(interpret("myf = Plus; myf @@ {1, 2, 3}").unwrap(), "6");
+  }
+}

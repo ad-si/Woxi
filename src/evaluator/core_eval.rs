@@ -2658,8 +2658,13 @@ pub fn evaluate_expr_to_expr_inner(
       apply_map_ast(func, &evaluated_list)
     }
     Expr::Apply { func, list } => {
+      // Apply does not hold its head, so evaluate it (matching the function
+      // form `Apply[f, list]`). This normalizes a compound head such as
+      // `f + g` to `Plus[f, g]`, so `(f + g) @@ {1, 2}` yields `(f + g)[1, 2]`
+      // rather than mis-associating as `f + g[1, 2]`.
+      let evaluated_func = evaluate_expr_to_expr(func)?;
       let evaluated_list = evaluate_expr_to_expr(list)?;
-      apply_apply_ast(func, &evaluated_list)
+      apply_apply_ast(&evaluated_func, &evaluated_list)
     }
     Expr::MapApply { func, list } => {
       let evaluated_list = evaluate_expr_to_expr(list)?;
