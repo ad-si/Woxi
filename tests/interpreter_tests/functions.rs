@@ -1160,10 +1160,7 @@ mod array_predicates {
   #[test]
   fn vector_q_test_listq_allows_nested() {
     // With an explicit test, list elements are allowed if they pass it.
-    assert_eq!(
-      interpret("VectorQ[{{1}, {2, 3}}, ListQ]").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("VectorQ[{{1}, {2, 3}}, ListQ]").unwrap(), "True");
   }
 
   #[test]

@@ -117,7 +117,7 @@ pub fn dispatch_polynomial_functions(
         vars,
       ]));
     }
-    "CoefficientRules" if args.len() == 2 => {
+    "CoefficientRules" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::coefficient_rules_ast(
         args,
       ));

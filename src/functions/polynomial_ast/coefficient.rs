@@ -830,9 +830,19 @@ fn term_power_of_var(term: &Expr, var: &str) -> i128 {
 /// Returns a list of rules mapping exponent vectors to coefficients,
 /// sorted in descending lexicographic order of the exponent vectors.
 pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // One-argument form: CoefficientRules[poly] auto-detects the variables via
+  // Variables[poly] (whose ordering already matches Wolfram) and delegates to
+  // the two-argument form.
+  if args.len() == 1 {
+    let vars = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Variables".to_string(),
+      args: vec![args[0].clone()].into(),
+    })?;
+    return coefficient_rules_ast(&[args[0].clone(), vars]);
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "CoefficientRules expects 2 arguments".into(),
+      "CoefficientRules expects 1 or 2 arguments".into(),
     ));
   }
 
@@ -857,12 +867,9 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  if vars.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "CoefficientRules".to_string(),
-      args: args.to_vec().into(),
-    });
-  }
+  // Note: an empty `vars` list is valid — it arises for a constant polynomial
+  // (e.g. CoefficientRules[5] -> {{} -> 5}), where every term has an empty
+  // exponent vector and the term itself is the coefficient.
 
   // Expand the polynomial
   let expanded = super::expand::expand_and_combine(&args[0]);

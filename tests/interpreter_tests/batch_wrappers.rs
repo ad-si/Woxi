@@ -643,6 +643,32 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn coefficient_rules_one_arg() {
+    // One-argument form auto-detects variables via Variables[poly].
+    assert_eq!(
+      interpret("CoefficientRules[(x + y)^3]").unwrap(),
+      "{{3, 0} -> 1, {2, 1} -> 3, {1, 2} -> 3, {0, 3} -> 1}"
+    );
+    assert_eq!(
+      interpret("CoefficientRules[x^2 + 2*x + 1]").unwrap(),
+      "{{2} -> 1, {1} -> 2, {0} -> 1}"
+    );
+    // Variable order follows Variables[]: Variables[a*x^2 + b] == {b, a, x}.
+    assert_eq!(
+      interpret("CoefficientRules[a*x^2 + b]").unwrap(),
+      "{{1, 0, 0} -> 1, {0, 1, 2} -> 1}"
+    );
+    // Variables[3*x^2*y + 2*y] == {y, x}.
+    assert_eq!(
+      interpret("CoefficientRules[3*x^2*y + 2*y]").unwrap(),
+      "{{1, 2} -> 3, {1, 0} -> 2}"
+    );
+    // Constant polynomial: empty exponent vector.
+    assert_eq!(interpret("CoefficientRules[5]").unwrap(), "{{} -> 5}");
+    // Zero polynomial.
+    assert_eq!(interpret("CoefficientRules[0]").unwrap(), "{}");
+  }
+  #[test]
   fn thinning() {
     assert_eq!(interpret("Thinning[x]").unwrap(), "Thinning[x]");
   }
