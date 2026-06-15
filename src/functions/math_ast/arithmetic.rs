@@ -6111,6 +6111,41 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // SeriesData ^ n (positive integer n): repeated Cauchy product, so e.g.
+  // (Series[…])^2 squares the series. A pure O-term (empty coefficients) just
+  // scales its order: O[x^(a/d)]^n = O[x^(n*a/d)].
+  if let Expr::FunctionCall { name, args: sa } = base
+    && name == "SeriesData"
+    && sa.len() == 6
+    && let Expr::Integer(n) = exp
+    && (2..=1024).contains(n)
+  {
+    if let (Expr::List(coeffs), Expr::Integer(nmin), Expr::Integer(nmax)) =
+      (&sa[2], &sa[3], &sa[4])
+      && coeffs.is_empty()
+    {
+      return Ok(Expr::FunctionCall {
+        name: "SeriesData".to_string(),
+        args: vec![
+          sa[0].clone(),
+          sa[1].clone(),
+          Expr::List(vec![].into()),
+          Expr::Integer(nmin * n),
+          Expr::Integer(nmax * n),
+          sa[5].clone(),
+        ]
+        .into(),
+      });
+    }
+    let copies: Vec<Expr> =
+      std::iter::repeat_n(base.clone(), *n as usize).collect();
+    let product = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: copies.into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&product);
+  }
+
   // Rational[n, d] ^ integer k — compute exactly with big integers so it works
   // for BigInteger components. Without this, `(1/big)^(-1)` (a reciprocal with
   // a large denominator) stayed unevaluated, so e.g. IntegerQ[1/(1/big)] was

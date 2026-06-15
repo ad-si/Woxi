@@ -9031,6 +9031,57 @@ fn try_fast_series(
 }
 
 /// Series[expr, {x, x0, n}] - Taylor series expansion
+/// Normalize a `SeriesData[var, x0, coeffs, nmin, nmax, den]` by trimming
+/// leading zero coefficients (advancing `nmin`) and trailing zero coefficients
+/// (keeping `nmax`), matching wolframscript. Returns `Some(normalized)` only
+/// when this actually changes the expression, so an already-normal SeriesData
+/// is left unevaluated (no re-evaluation churn).
+pub fn normalize_series_data(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 6 {
+    return None;
+  }
+  let Expr::List(items) = &args[2] else {
+    return None;
+  };
+  let nmin = match &args[3] {
+    Expr::Integer(n) => *n,
+    _ => return None,
+  };
+  let nmax = match &args[4] {
+    Expr::Integer(n) => *n,
+    _ => return None,
+  };
+  let mut coeffs: Vec<Expr> = items.to_vec();
+  let mut new_nmin = nmin;
+  while !coeffs.is_empty() && matches!(&coeffs[0], Expr::Integer(0)) {
+    coeffs.remove(0);
+    new_nmin += 1;
+  }
+  while !coeffs.is_empty()
+    && matches!(coeffs.last(), Some(Expr::Integer(0)))
+  {
+    coeffs.pop();
+  }
+  // All-zero series collapses to the empty O[(var-x0)^nmax] form (nmin = nmax).
+  let out_nmin = if coeffs.is_empty() { nmax } else { new_nmin };
+  // No change → leave as-is.
+  if out_nmin == nmin && coeffs.len() == items.len() {
+    return None;
+  }
+  Some(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      args[0].clone(),
+      args[1].clone(),
+      Expr::List(coeffs.into()),
+      Expr::Integer(out_nmin),
+      args[4].clone(),
+      args[5].clone(),
+    ]
+    .into(),
+  })
+}
+
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(

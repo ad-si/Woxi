@@ -545,6 +545,15 @@ pub fn dispatch_calculus_functions(
     "Series" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::series_ast(args));
     }
+    // Normalize a directly-constructed SeriesData (trim leading/trailing zero
+    // coefficients). Falls through (left unevaluated) when already normal.
+    "SeriesData" if args.len() == 6 => {
+      if let Some(normalized) =
+        crate::functions::calculus_ast::normalize_series_data(args)
+      {
+        return Some(Ok(normalized));
+      }
+    }
     "AsymptoticSolve" if args.len() == 3 => {
       return Some(crate::functions::calculus_ast::asymptotic_solve_ast(args));
     }

@@ -1186,6 +1186,42 @@ mod series {
     );
   }
 
+  // A directly-constructed SeriesData is normalized: leading zeros advance
+  // nmin, trailing zeros are dropped (nmax kept). Verified against wolframscript.
+  #[test]
+  fn series_data_normalizes_zeros() {
+    assert_eq!(
+      interpret("SeriesData[x, 0, {1, 2, 0}, 0, 3, 1]").unwrap(),
+      "SeriesData[x, 0, {1, 2}, 0, 3, 1]"
+    );
+    assert_eq!(
+      interpret("SeriesData[x, 0, {0, 1, 0}, 1, 3, 1]").unwrap(),
+      "SeriesData[x, 0, {1}, 2, 3, 1]"
+    );
+    assert_eq!(
+      interpret("SeriesData[x, 0, {0, 0, 5}, 0, 4, 1]").unwrap(),
+      "SeriesData[x, 0, {5}, 2, 4, 1]"
+    );
+    // Already-normal SeriesData is unchanged.
+    assert_eq!(
+      interpret("SeriesData[x, 0, {1, 2, 3}, 0, 3, 1]").unwrap(),
+      "SeriesData[x, 0, {1, 2, 3}, 0, 3, 1]"
+    );
+  }
+
+  // SeriesData^n: O[x]^n scales the order; a real series is squared/cubed.
+  #[test]
+  fn series_data_power() {
+    assert_eq!(
+      interpret("O[x]^3").unwrap(),
+      "SeriesData[x, 0, {}, 3, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[Exp[x], {x, 0, 2}]^2").unwrap(),
+      "SeriesData[x, 0, {1, 2, 2}, 0, 3, 1]"
+    );
+  }
+
   #[test]
   fn series_sin_around_pi() {
     assert_eq!(
