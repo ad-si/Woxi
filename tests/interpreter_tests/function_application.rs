@@ -2149,3 +2149,67 @@ mod operator_applied {
     );
   }
 }
+
+mod reverse_applied {
+  use super::*;
+
+  // ReverseApplied[f][x1, …, xn] = f[xn, …, x1] (all arguments reversed).
+  #[test]
+  fn reverses_all_arguments() {
+    assert_eq!(interpret("ReverseApplied[f][a, b]").unwrap(), "f[b, a]");
+    assert_eq!(
+      interpret("ReverseApplied[f][a, b, c]").unwrap(),
+      "f[c, b, a]"
+    );
+    assert_eq!(interpret("ReverseApplied[f][a]").unwrap(), "f[a]");
+    assert_eq!(interpret("ReverseApplied[f][]").unwrap(), "f[]");
+  }
+
+  #[test]
+  fn applies_to_builtins() {
+    assert_eq!(interpret("ReverseApplied[Subtract][2, 10]").unwrap(), "8");
+    assert_eq!(interpret("ReverseApplied[Divide][2, 10]").unwrap(), "5");
+    assert_eq!(interpret("ReverseApplied[Plus][1, 2, 3]").unwrap(), "6");
+    assert_eq!(
+      interpret("ReverseApplied[List][1, 2, 3, 4]").unwrap(),
+      "{4, 3, 2, 1}"
+    );
+  }
+
+  // ReverseApplied[f, n] reverses only the first n arguments.
+  #[test]
+  fn reverses_first_n_arguments() {
+    assert_eq!(
+      interpret("ReverseApplied[f, 2][a, b, c]").unwrap(),
+      "f[b, a, c]"
+    );
+    assert_eq!(
+      interpret("ReverseApplied[f, 3][a, b, c, d]").unwrap(),
+      "f[c, b, a, d]"
+    );
+    assert_eq!(interpret("ReverseApplied[f, 1][a, b]").unwrap(), "f[a, b]");
+  }
+
+  // It fires on the first application and does not accumulate like Curry.
+  #[test]
+  fn does_not_accumulate() {
+    assert_eq!(interpret("ReverseApplied[f][a][b]").unwrap(), "f[a][b]");
+  }
+
+  // The explicit Apply form also reverses.
+  #[test]
+  fn via_apply() {
+    assert_eq!(
+      interpret("Apply[ReverseApplied[Rule], {1, 2}]").unwrap(),
+      "2 -> 1"
+    );
+  }
+
+  #[test]
+  fn unapplied_stays_symbolic() {
+    assert_eq!(
+      interpret("Head[ReverseApplied[f]]").unwrap(),
+      "ReverseApplied"
+    );
+  }
+}

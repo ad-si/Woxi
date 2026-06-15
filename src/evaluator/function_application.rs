@@ -693,11 +693,48 @@ fn try_apply_curry(
 }
 
 /// Apply a curried call: f[a][b, c] applies function result f[a] to args [b, c]
+/// Handle application of a `ReverseApplied[f]` / `ReverseApplied[f, n]`
+/// operator to `new_args`. `ReverseApplied[f]` reverses all supplied
+/// arguments (`ReverseApplied[f][x1, …, xn]` = `f[xn, …, x1]`); the `n` form
+/// reverses only the first `n`. Unlike Curry it does not accumulate — it
+/// fires on the first application with whatever arguments are given.
+fn try_apply_reverse_applied(
+  func: &Expr,
+  new_args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::FunctionCall { name, args } = func else {
+    return None;
+  };
+  if name != "ReverseApplied" {
+    return None;
+  }
+  let (f, n) = match args.len() {
+    1 => (&args[0], None),
+    2 => match &args[1] {
+      Expr::Integer(k) if *k >= 0 => (&args[0], Some(*k as usize)),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let mut head_args = new_args.to_vec();
+  match n {
+    None => head_args.reverse(),
+    Some(n) => {
+      let k = n.min(head_args.len());
+      head_args[..k].reverse();
+    }
+  }
+  Some(apply_curried_call(f, &head_args))
+}
+
 pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if let Some(result) = try_apply_curry(func, args) {
+    return result;
+  }
+  if let Some(result) = try_apply_reverse_applied(func, args) {
     return result;
   }
   match func {
