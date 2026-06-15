@@ -74,6 +74,21 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(true) => Ok(Expr::Identifier("False".to_string())),
     Some(false) => Ok(Expr::Identifier("True".to_string())),
     None => {
+      // Double negation: Not[Not[x]] → x. The inner operand is already in
+      // normal form (it was produced by evaluating the inner Not).
+      if let Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Not,
+        operand,
+      } = &evaluated
+      {
+        return Ok((**operand).clone());
+      }
+      if let Expr::FunctionCall { name, args: inner } = &evaluated
+        && name == "Not"
+        && inner.len() == 1
+      {
+        return Ok(inner[0].clone());
+      }
       // Negate a single comparison: Not[a > b] → a <= b, etc.
       if let Expr::Comparison {
         operands,
@@ -1003,6 +1018,11 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Duplicate operands are redundant (Equivalent[a, b, a] == Equivalent[a, b]),
+  // matching wolframscript. Keep first-occurrence order.
+  let mut seen = std::collections::HashSet::new();
+  remaining.retain(|e| seen.insert(crate::syntax::expr_to_string(e)));
+
   // If we have both True and False, it's False
   if has_true && has_false {
     return Ok(Expr::Identifier("False".to_string()));
@@ -1042,6 +1062,11 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "And".to_string(),
       args: negated.into(),
     });
+  }
+  // No boolean literal: a single distinct operand (e.g. Equivalent[a, a]) is
+  // vacuously True; otherwise keep the deduplicated chain symbolic.
+  if remaining.len() <= 1 {
+    return Ok(Expr::Identifier("True".to_string()));
   }
   Ok(Expr::FunctionCall {
     name: "Equivalent".to_string(),

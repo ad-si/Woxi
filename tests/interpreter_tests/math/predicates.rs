@@ -725,6 +725,30 @@ mod equivalent_logic {
   fn false_with_symbolic_reduces_to_not() {
     assert_eq!(interpret("Equivalent[a, False]").unwrap(), "Not[a]");
   }
+
+  // Duplicate operands are redundant: a single distinct operand is vacuously
+  // True; otherwise the deduplicated chain stays symbolic. (wolframscript)
+  #[test]
+  fn duplicate_operands_collapse_to_true() {
+    assert_eq!(interpret("Equivalent[a, a]").unwrap(), "True");
+    assert_eq!(interpret("Equivalent[a, a, a]").unwrap(), "True");
+  }
+
+  #[test]
+  fn duplicate_operands_deduplicated() {
+    assert_eq!(
+      interpret("Equivalent[a, b, a]").unwrap(),
+      "a \u{29e6} b"
+    );
+    assert_eq!(
+      interpret("Equivalent[a, a, b]").unwrap(),
+      "a \u{29e6} b"
+    );
+    assert_eq!(
+      interpret("Equivalent[a, b, b]").unwrap(),
+      "a \u{29e6} b"
+    );
+  }
 }
 
 mod list_equality {

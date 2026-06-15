@@ -131,7 +131,7 @@ Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
 Dynamic,,🚫,,6.0,138
-Not,Checks if a condition is false,✅,pure,1.0,139
+Not,Logical negation of an expression,✅,pure,1.0,139
 Last,Returns the last element of a list,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
 Increment,Increments a variable by 1 and returns the old value,✅,stateful,1.0,142

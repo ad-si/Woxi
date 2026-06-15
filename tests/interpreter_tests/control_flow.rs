@@ -808,6 +808,16 @@ mod not_logical {
     assert_eq!(interpret("Not[a && b]").unwrap(), " !(a && b)");
   }
 
+  // Double negation is eliminated: Not[Not[x]] -> x (wolframscript).
+  #[test]
+  fn not_double_negation() {
+    clear_state();
+    assert_eq!(interpret("Not[Not[a]]").unwrap(), "a");
+    assert_eq!(interpret("Not[!a]").unwrap(), "a");
+    assert_eq!(interpret("Not[Not[Not[a]]]").unwrap(), " !a");
+    assert_eq!(interpret("Not[Not[a && b]]").unwrap(), "a && b");
+  }
+
   #[test]
   fn not_greater() {
     clear_state();

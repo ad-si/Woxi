@@ -2276,8 +2276,7 @@ pub fn dispatch_math_functions(
         name: "BernsteinBasis".to_string(),
         args: args.to_vec().into(),
       };
-      let (Some(d), Some(n)) =
-        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+      let (Some(d), Some(n)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
       else {
         return Some(Ok(unevaluated()));
       };
@@ -2307,7 +2306,7 @@ pub fn dispatch_math_functions(
         return Some(Ok(unevaluated()));
       }
       // Outside the unit interval the basis polynomial is exactly 0.
-      if xf < 0.0 || xf > 1.0 {
+      if !(0.0..=1.0).contains(&xf) {
         return Some(Ok(Expr::Integer(0)));
       }
       // At the boundaries use exact 0/1 so the result is an exact integer
