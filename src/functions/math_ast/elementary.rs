@@ -734,6 +734,18 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
+  // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
+  // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
+  if matches!(&args[0], Expr::Identifier(s) if s == "I")
+    || matches!(&args[0],
+      Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand }
+        if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I"))
+  {
+    return crate::functions::math_ast::power_two(
+      &args[0],
+      &make_rational(1, 2),
+    );
+  }
   // Handle Sqrt[Quantity[mag, unit]] by delegating to Power[quantity, 1/2]
   if crate::functions::quantity_ast::is_quantity(&args[0]).is_some() {
     let half = make_rational(1, 2);

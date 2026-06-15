@@ -6230,6 +6230,58 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // I^(p/q) → (-1)^(p/(2q)). Since I = (-1)^(1/2), Wolfram canonicalises a
+  // non-integer rational power of the imaginary unit into a (-1)^y form,
+  // pulling out a sign when y lands in [1, 2):  (-1)^y = -(-1)^(y-1).
+  if matches!(base, Expr::Identifier(s) if s == "I")
+    && let Expr::FunctionCall {
+      name: rn,
+      args: rargs,
+    } = exp
+    && rn == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+    && *q > 0
+  {
+    let (p, q) = (*p, *q);
+    // y = p / (2q), reduced mod 2 into [0, 2).
+    let y_den = 2 * q;
+    let y_num = p.rem_euclid(2 * y_den);
+    let g = crate::functions::math_ast::gcd(y_num.abs(), y_den);
+    let (mut yn, mut yd) = (y_num / g, y_den / g);
+    let mut sign = 1i128;
+    if yn >= yd {
+      // y in [1, 2): (-1)^y = -(-1)^(y-1).
+      yn -= yd;
+      sign = -1;
+      let g2 = crate::functions::math_ast::gcd(yn.abs(), yd);
+      if g2 > 1 {
+        yn /= g2;
+        yd /= g2;
+      }
+    }
+    if yn == 0 {
+      return Ok(Expr::Integer(sign)); // (-1)^0 = 1
+    }
+    let y_expr = if yd == 1 {
+      Expr::Integer(yn)
+    } else {
+      crate::functions::math_ast::make_rational_pub(yn, yd)
+    };
+    let neg_one_pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Integer(-1), y_expr].into(),
+    };
+    return if sign == 1 {
+      Ok(neg_one_pow)
+    } else {
+      crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Integer(-1), neg_one_pow],
+      )
+    };
+  }
+
   // Reciprocals of Underflow[] / Overflow[] swap to the other:
   //   1 / Underflow[] -> Overflow[]
   //   1 / Overflow[]  -> Underflow[]

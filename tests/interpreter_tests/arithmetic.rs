@@ -5163,6 +5163,23 @@ qué tal?"; a/b//MakeBoxes"#,
   fn minus_24() {
     assert_case(r#"(-I)^(2/3)"#, r#"-(-1)^(2/3)"#);
   }
+  // I^(p/q) = (-1)^(p/(2q)), Wolfram's canonical form for the imaginary unit.
+  #[test]
+  fn imaginary_unit_rational_power() {
+    assert_case(r#"I^(1/2)"#, r#"(-1)^(1/4)"#);
+    assert_case(r#"I^(1/3)"#, r#"(-1)^(1/6)"#);
+    assert_case(r#"I^(2/3)"#, r#"(-1)^(1/3)"#);
+    assert_case(r#"I^(3/2)"#, r#"(-1)^(3/4)"#);
+    assert_case(r#"I^(5/2)"#, r#"-(-1)^(1/4)"#);
+    assert_case(r#"I^(-1/2)"#, r#"-(-1)^(3/4)"#);
+  }
+  #[test]
+  fn sqrt_of_imaginary_unit() {
+    assert_case(r#"Sqrt[I]"#, r#"(-1)^(1/4)"#);
+    assert_case(r#"Sqrt[-I]"#, r#"-(-1)^(3/4)"#);
+    // Round-trips: (Sqrt[I])^2 = I.
+    assert_case(r#"Sqrt[I]^2"#, r#"I"#);
+  }
   #[test]
   fn power_15() {
     assert_case(r#"(a^"w")^2"#, r#"a^(2*"w")"#);
