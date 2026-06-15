@@ -344,10 +344,7 @@ mod element {
   // Symbolic arguments stay unevaluated.
   #[test]
   fn element_symbolic_unevaluated() {
-    assert_eq!(
-      interpret("Element[x, Reals]").unwrap(),
-      "Element[x, Reals]"
-    );
+    assert_eq!(interpret("Element[x, Reals]").unwrap(), "Element[x, Reals]");
   }
 
   #[test]

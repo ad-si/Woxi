@@ -2742,6 +2742,36 @@ mod expand_threading {
     assert_eq!(interpret("Re[a]").unwrap(), "Re[a]");
   }
 
+  // Re/Im pull real coefficients out of products: Re[c x] = c Re[x].
+  #[test]
+  fn re_im_pull_real_coefficient() {
+    assert_eq!(interpret("Re[2 a]").unwrap(), "2*Re[a]");
+    assert_eq!(interpret("Im[3 b]").unwrap(), "3*Im[b]");
+    assert_eq!(interpret("Re[2 b I]").unwrap(), "-2*Im[b]");
+  }
+
+  // Re/Im split a symbolic Plus along its explicit-I terms; the non-I terms
+  // stay grouped. Verified against wolframscript.
+  #[test]
+  fn re_im_distribute_over_plus() {
+    assert_eq!(interpret("Re[a + b I]").unwrap(), "-Im[b] + Re[a]");
+    assert_eq!(interpret("Im[a + b I]").unwrap(), "Im[a] + Re[b]");
+    assert_eq!(interpret("Re[x + y + z I]").unwrap(), "-Im[z] + Re[x + y]");
+    assert_eq!(interpret("Re[a - b I]").unwrap(), "Im[b] + Re[a]");
+    assert_eq!(
+      interpret("Re[2 a + 3 b I]").unwrap(),
+      "-3*Im[b] + 2*Re[a]"
+    );
+    assert_eq!(interpret("Im[a + b I + c]").unwrap(), "Im[a + c] + Re[b]");
+  }
+
+  // A plain Plus with no imaginary terms is not distributed.
+  #[test]
+  fn re_im_plain_plus_not_distributed() {
+    assert_eq!(interpret("Re[a + b]").unwrap(), "Re[a + b]");
+    assert_eq!(interpret("Im[a + b]").unwrap(), "Im[a + b]");
+  }
+
   // Arg of a real-valued expression: 0 for positive, Pi for negative.
   #[test]
   fn arg_real_valued_expressions() {

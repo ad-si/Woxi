@@ -3,6 +3,98 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// True if `t` carries the imaginary unit `I` as a direct factor (possibly
+/// nested inside Times/negation): `I`, `b I`, `-2 b I`, etc.
+fn has_i_factor(t: &Expr) -> bool {
+  match t {
+    Expr::Identifier(s) if s == "I" => true,
+    Expr::UnaryOp { operand, .. } => has_i_factor(operand),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().any(has_i_factor)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => has_i_factor(left) || has_i_factor(right),
+    _ => false,
+  }
+}
+
+/// Distribute Re/Im (`head` is "Re" or "Im") over a Times or Plus:
+///   - Times: pull out provably-real factors, `Re[r q] = r Re[q]`
+///     (so `Re[2 a] = 2 Re[a]`).
+///   - Plus: split off the terms that carry an explicit `I`,
+///     `Re[rest + b I] = Re[rest] - Im[b]` (the non-I terms stay grouped).
+/// Returns None when neither simplification applies. The constructed pieces are
+/// re-evaluated, so nested `Re[I x]`/`Im[I x]` collapse via the recursion.
+fn distribute_re_im(
+  head: &str,
+  expr: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let apply = |x: Expr| Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![x].into(),
+  };
+  // Times: Re[real_factors * rest] = (real_factors) * Re[rest].
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && args.len() >= 2
+  {
+    let (real_f, other_f): (Vec<Expr>, Vec<Expr>) =
+      args.iter().cloned().partition(|e| is_real_valued(e));
+    if !real_f.is_empty() && !other_f.is_empty() {
+      let real_prod = match times_ast(&real_f) {
+        Ok(p) => p,
+        Err(e) => return Some(Err(e)),
+      };
+      let other = if other_f.len() == 1 {
+        other_f.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: other_f.into(),
+        }
+      };
+      let combined = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![real_prod, apply(other)].into(),
+      };
+      return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
+    }
+  }
+  // Plus: split out the terms carrying an explicit I.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Plus"
+    && args.len() >= 2
+    && args.iter().any(has_i_factor)
+  {
+    let (i_terms, rest): (Vec<Expr>, Vec<Expr>) =
+      args.iter().cloned().partition(has_i_factor);
+    let mut parts: Vec<Expr> = Vec::new();
+    if !rest.is_empty() {
+      let rest_expr = if rest.len() == 1 {
+        rest.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: rest.into(),
+        }
+      };
+      parts.push(apply(rest_expr));
+    }
+    for it in i_terms {
+      parts.push(apply(it));
+    }
+    let combined = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: parts.into(),
+    };
+    return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
+  }
+  None
+}
+
 /// Re[z] - Real part of a complex number (for real numbers, returns the number itself)
 pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -57,17 +149,13 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle I * expr (symbolic): Re[I * expr] = -Im[expr]
   if let Some(factor) = extract_i_times_any(&args[0]) {
-    return Ok(crate::syntax::Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Integer(-1),
-        Expr::FunctionCall {
-          name: "Im".to_string(),
-          args: vec![factor].into(),
-        },
-      ]
-      .into(),
-    });
+    let im = im_ast(&[factor])?;
+    return times_ast(&[Expr::Integer(-1), im]);
+  }
+
+  // Distribute over Times (pull real factors) / Plus (split I terms).
+  if let Some(result) = distribute_re_im("Re", &args[0]) {
+    return result;
   }
 
   // Symbolic: return unevaluated
@@ -127,10 +215,12 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle I * expr (symbolic): Im[I * expr] = Re[expr]
   if let Some(factor) = extract_i_times_any(&args[0]) {
-    return Ok(Expr::FunctionCall {
-      name: "Re".to_string(),
-      args: vec![factor].into(),
-    });
+    return re_ast(&[factor]);
+  }
+
+  // Distribute over Times (pull real factors) / Plus (split I terms).
+  if let Some(result) = distribute_re_im("Im", &args[0]) {
+    return result;
   }
 
   // Symbolic: return unevaluated

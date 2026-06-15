@@ -36,7 +36,7 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let info = extract_assumption_info(&assumption_expr);
         let result = refine_expr(&args[0], &info, &assumption_expr);
-        return Ok(result);
+        return Ok(fold_refine_zeros(&result));
       }
     }
     return Ok(args[0].clone());
@@ -51,7 +51,45 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Recursively simplify the expression under the assumption
   let result = refine_expr(expr, &info, assumption);
 
-  Ok(result)
+  Ok(fold_refine_zeros(&result))
+}
+
+/// Fold the trivial arithmetic identities that assumption substitutions can
+/// leave behind — `Times[…, 0, …] → 0` and `Plus[…, 0, …]` with the zeros
+/// dropped — without re-evaluating any other heads (so e.g. `Log[-x]` is left
+/// intact). Recurses only through Plus and Times.
+fn fold_refine_zeros(expr: &Expr) -> Expr {
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let folded: Vec<Expr> = args.iter().map(fold_refine_zeros).collect();
+      if folded.iter().any(&is_zero) {
+        return Expr::Integer(0);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: folded.into(),
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let kept: Vec<Expr> = args
+        .iter()
+        .map(fold_refine_zeros)
+        .filter(|e| !is_zero(e))
+        .collect();
+      match kept.len() {
+        0 => Expr::Integer(0),
+        1 => kept.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: name.clone(),
+          args: kept.into(),
+        },
+      }
+    }
+    _ => expr.clone(),
+  }
 }
 
 /// Information extracted from assumptions
