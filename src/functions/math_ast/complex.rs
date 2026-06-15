@@ -1632,7 +1632,7 @@ fn denominator_trig(expr: &Expr) -> Option<Expr> {
 /// return Some((base, -neg_exp)) i.e. the base and the positive exponent.
 /// E.g. Power[x, -2] → Some((x, 2)), Power[x, -1] → Some((x, 1)),
 ///      Power[y, Times[-1, m]] → Some((y, m)).
-fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
+pub fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,

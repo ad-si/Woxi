@@ -9514,6 +9514,219 @@ fn parse_integer_series(e: &Expr) -> Option<ParsedSeries> {
   None
 }
 
+/// True when a value obtained by substituting the expansion point is a
+/// non-finite placeholder (`Indeterminate`, `ComplexInfinity`, a
+/// `DirectedInfinity`, or `Infinity`). Such a value means the direct Taylor
+/// evaluation has hit a removable singularity or a pole, so the quotient
+/// long-division fallback should be tried instead.
+fn is_singular_series_value(e: &Expr) -> bool {
+  match e {
+    Expr::Constant(name) | Expr::Identifier(name) => {
+      name == "Indeterminate"
+        || name == "ComplexInfinity"
+        || name == "Infinity"
+    }
+    Expr::FunctionCall { name, .. } => name == "DirectedInfinity",
+    _ => false,
+  }
+}
+
+/// Split an expression into `(numerator, denominator)` for series long
+/// division. Unlike `Numerator`/`Denominator` (which canonicalize, e.g.
+/// `1/Sin[x] → Csc[x]` with denominator 1), this keeps the literal quotient so
+/// the denominator's vanishing factor is exposed. Handles `a/b`,
+/// `Power[base, negative]`, and `Times[...]` with negative-power factors.
+fn split_for_series(expr: &Expr) -> Option<(Expr, Expr)> {
+  let times_of = |factors: Vec<Expr>| match factors.len() {
+    0 => Expr::Integer(1),
+    1 => factors.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    },
+  };
+  // Power[base, n] with n < 0 (in any of its AST spellings) → base^(-n) as a
+  // denominator factor.
+  let neg_power_den = |factor: &Expr| -> Option<Expr> {
+    let (base, pos_exp) =
+      crate::functions::math_ast::complex::get_negative_power_exponent(factor)?;
+    Some(if matches!(pos_exp, Expr::Integer(1)) {
+      base
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![base, pos_exp].into(),
+      }
+    })
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => Some(((**left).clone(), (**right).clone())),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut num_f = Vec::new();
+      let mut den_f = Vec::new();
+      for a in args.iter() {
+        if let Some(d) = neg_power_den(a) {
+          den_f.push(d);
+        } else {
+          num_f.push(a.clone());
+        }
+      }
+      if den_f.is_empty() {
+        None
+      } else {
+        Some((times_of(num_f), times_of(den_f)))
+      }
+    }
+    // Bare reciprocal power, e.g. Power[x, -2] or Sin[x]^-1.
+    _ => neg_power_den(expr).map(|den| (Expr::Integer(1), den)),
+  }
+}
+
+/// Power→coefficient map of an integer-power series, keyed by exponent.
+/// Coefficients that are literally zero are dropped so the lowest key is the
+/// valuation. A constant (var-independent) expression maps to a single
+/// coefficient at power 0. Returns None when the expression is neither an
+/// integer-power series nor a constant.
+fn series_coeff_map(
+  e: &Expr,
+  var_name: &str,
+) -> Option<std::collections::BTreeMap<i128, Expr>> {
+  let mut map = std::collections::BTreeMap::new();
+  if let Some(ps) = parse_integer_series(e) {
+    for (i, c) in ps.coeffs.iter().enumerate() {
+      let power = ps.nmin + i as i128;
+      if !matches!(c, Expr::Integer(0)) {
+        map.insert(power, c.clone());
+      }
+    }
+    return Some(map);
+  }
+  // Bare constant (e.g. numerator `1`): series_ast returns the value itself.
+  if is_constant_wrt(e, var_name) {
+    if !matches!(e, Expr::Integer(0)) {
+      map.insert(0, e.clone());
+    }
+    return Some(map);
+  }
+  None
+}
+
+/// Series of a quotient `num / den` about `x0` to the requested `order`, used
+/// when the direct Taylor evaluation fails because numerator and denominator
+/// both vanish at `x0` (removable singularity, e.g. `Sin[x]/x`) or only the
+/// denominator vanishes (pole, e.g. `Cot[x]`). Expands numerator and
+/// denominator into power series and performs power-series long division:
+/// `num = den * quotient` solved coefficient by coefficient. Returns None when
+/// either piece is not an integer-power series or the numerator is zero.
+fn try_series_quotient(
+  num: &Expr,
+  den: &Expr,
+  var_name: &str,
+  x0: &Expr,
+  order: i128,
+) -> Option<Expr> {
+  // Expand numerator and denominator to a generous order so the long-division
+  // recurrence has enough terms even after the leading powers cancel.
+  let guard: i128 = 8;
+  let make_args = |f: &Expr| {
+    vec![
+      f.clone(),
+      Expr::List(
+        vec![
+          Expr::Identifier(var_name.to_string()),
+          x0.clone(),
+          Expr::Integer(order + guard),
+        ]
+        .into(),
+      ),
+    ]
+  };
+  let num_s = series_ast(&make_args(num)).ok()?;
+  let den_s = series_ast(&make_args(den)).ok()?;
+
+  let num_map = series_coeff_map(&num_s, var_name)?;
+  let den_map = series_coeff_map(&den_s, var_name)?;
+
+  // Valuations (lowest nonzero power) of numerator and denominator.
+  let m = *den_map.keys().next()?; // denominator must be nonzero
+  let bm = den_map.get(&m)?.clone();
+  let p = match num_map.keys().next() {
+    Some(p) => *p,
+    None => return Some(Expr::Integer(0)), // numerator identically zero
+  };
+  let q_min = p - m;
+
+  // Solve num = den * quotient for the quotient coefficients c_l, ascending.
+  // c_l = (a_{l+m} - sum_{j>m} b_j c_{l+m-j}) / b_m
+  let mut c_map: std::collections::BTreeMap<i128, Expr> =
+    std::collections::BTreeMap::new();
+  for l in q_min..=order {
+    let target = l + m;
+    let mut terms: Vec<Expr> =
+      vec![num_map.get(&target).cloned().unwrap_or(Expr::Integer(0))];
+    for (&j, bj) in den_map.iter() {
+      if j == m {
+        continue;
+      }
+      if let Some(cl) = c_map.get(&(target - j)) {
+        let prod = crate::functions::math_ast::times_ast(&[
+          Expr::Integer(-1),
+          bj.clone(),
+          cl.clone(),
+        ])
+        .ok()?;
+        terms.push(prod);
+      }
+    }
+    let numer = crate::functions::math_ast::plus_ast(&terms).ok()?;
+    let quot = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(numer),
+      right: Box::new(bm.clone()),
+    };
+    let cl = crate::evaluator::evaluate_expr_to_expr(&quot).ok()?;
+    c_map.insert(l, cl);
+  }
+
+  // Assemble the coefficient vector from q_min..=order, then trim leading and
+  // trailing zeros the way the direct path does.
+  let mut coefficients: Vec<Expr> = (q_min..=order)
+    .map(|l| c_map.get(&l).cloned().unwrap_or(Expr::Integer(0)))
+    .collect();
+  let mut nmin = q_min;
+  while !coefficients.is_empty()
+    && matches!(coefficients[0], Expr::Integer(0))
+  {
+    coefficients.remove(0);
+    nmin += 1;
+  }
+  if coefficients.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  while coefficients.len() > 1
+    && matches!(coefficients.last(), Some(Expr::Integer(0)))
+  {
+    coefficients.pop();
+  }
+
+  Some(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name.to_string()),
+      x0.clone(),
+      Expr::List(coefficients.into()),
+      Expr::Integer(nmin),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ]
+    .into(),
+  })
+}
+
 /// Truncated product of two power→coefficient maps, dropping terms at power
 /// `>= max_power`. Coefficients are arbitrary expressions.
 fn series_poly_mul(
@@ -10514,6 +10727,23 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(reg_term),
       };
       return Ok(result);
+    }
+  }
+
+  // Quotient with a removable singularity or pole at x0: the direct Taylor
+  // loop below evaluates f^(k)(x0) by substitution, which yields Indeterminate
+  // or ComplexInfinity when numerator and denominator both vanish (e.g.
+  // Sin[x]/x → 1 - x^2/6 + ...). Detect that case and fall back to
+  // power-series long division of numerator by denominator.
+  {
+    let probe = crate::syntax::substitute_variable(&args[0], &var_name, &x0);
+    if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&probe)
+      && is_singular_series_value(&val)
+      && let Some((num, den)) = split_for_series(&args[0])
+      && let Some(series) =
+        try_series_quotient(&num, &den, &var_name, &x0, order)
+    {
+      return Ok(series);
     }
   }
 

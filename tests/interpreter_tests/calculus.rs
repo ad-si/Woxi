@@ -1245,6 +1245,68 @@ mod series {
     assert_eq!(interpret("Series[0, {x, 0, 3}]").unwrap(), "0");
   }
 
+  // Quotients with a removable singularity at the expansion point: the direct
+  // Taylor evaluation hits 0/0, so Series falls back to power-series long
+  // division of numerator by denominator.
+  #[test]
+  fn series_sinc_removable() {
+    assert_eq!(
+      interpret("Series[Sin[x]/x, {x, 0, 4}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, -1/6, 0, 1/120}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_x_over_exp_minus_one() {
+    // Bernoulli generating function: 1 - x/2 + x^2/12 - x^4/720.
+    assert_eq!(
+      interpret("Series[x/(E^x - 1), {x, 0, 4}]").unwrap(),
+      "SeriesData[x, 0, {1, -1/2, 1/12, 0, -1/720}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_one_minus_cos_over_x_squared() {
+    assert_eq!(
+      interpret("Series[(1 - Cos[x])/x^2, {x, 0, 4}]").unwrap(),
+      "SeriesData[x, 0, {1/2, 0, -1/24, 0, 1/720}, 0, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_x_minus_sin_over_x_cubed() {
+    assert_eq!(
+      interpret("Series[(x - Sin[x])/x^3, {x, 0, 4}]").unwrap(),
+      "SeriesData[x, 0, {1/6, 0, -1/120, 0, 1/5040}, 0, 5, 1]"
+    );
+  }
+
+  // Genuine poles: the quotient has a negative leading power (Laurent series).
+  #[test]
+  fn series_reciprocal_sin_pole() {
+    assert_eq!(
+      interpret("Series[1/Sin[x], {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 1/6, 0, 7/360}, -1, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn series_reciprocal_x_squared_pole() {
+    assert_eq!(
+      interpret("Series[1/x^2, {x, 0, 3}]").unwrap(),
+      "SeriesData[x, 0, {1}, -2, 4, 1]"
+    );
+  }
+
+  // Removable singularity away from 0: expansion about x0 = 1.
+  #[test]
+  fn series_sinc_shifted_center() {
+    assert_eq!(
+      interpret("Normal[Series[Sin[x - 1]/(x - 1), {x, 1, 3}]]").unwrap(),
+      "1 - (-1 + x)^2/6"
+    );
+  }
+
   #[test]
   fn series_tan_order5() {
     assert_eq!(
