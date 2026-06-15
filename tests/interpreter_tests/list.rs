@@ -8287,6 +8287,48 @@ mod replace_level_spec {
       "{1, {4, {9}}}"
     );
   }
+
+  // A bare integer levelspec `n` means levels {1, n}, not {0, n}: level 0
+  // (the whole expression) is excluded, so the rule is applied once per
+  // element rather than once per element and again to the whole result.
+  #[test]
+  fn replace_with_integer_level_one() {
+    assert_eq!(
+      interpret("Replace[{1, 2, 3}, x_ -> x^2, 1]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+
+  #[test]
+  fn replace_with_integer_level_shallowest_match() {
+    // At levels {1, 2} the sublists already match at level 1, so each is
+    // replaced with 0 and level 2 is never the deciding level.
+    assert_eq!(
+      interpret("Replace[{{1, 2}, {3, 4}}, x_ -> 0, 1]").unwrap(),
+      "{0, 0}"
+    );
+    assert_eq!(
+      interpret("Replace[{{1, 2}, {3, 4}}, x_ -> 0, 2]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn replace_with_integer_level_in_head_chain() {
+    assert_eq!(
+      interpret("Replace[f[g[h[0]]], x_ -> q, 2]").unwrap(),
+      "f[q]"
+    );
+  }
+
+  #[test]
+  fn replace_with_integer_level_zero_is_empty() {
+    // Levels {1, 0} is an empty range, so nothing is replaced.
+    assert_eq!(
+      interpret("Replace[{1, 2, 3}, x_ -> x^2, 0]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
 }
 
 mod cases_count_level_spec {

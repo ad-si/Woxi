@@ -882,7 +882,11 @@ pub fn apply_replace_with_level_ast(
     }
   };
   let (min_level, max_level) = match level_spec {
-    Expr::Integer(n) => (0i64, *n as i64),
+    // A bare integer levelspec `n` means levels {1, n} (1 through n), NOT
+    // level 0. Replace's level-0 default only applies when no levelspec is
+    // given; an explicit `0` yields the empty range {1, 0} (no replacement),
+    // matching wolframscript.
+    Expr::Integer(n) => (1i64, *n as i64),
     // `All` means every level including the head — equivalent to {0, Infinity}.
     Expr::Identifier(s) | Expr::Constant(s) if s == "All" => (0i64, i64::MAX),
     Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
