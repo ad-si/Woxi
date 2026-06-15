@@ -883,7 +883,7 @@ RotateLabel,,🚫,,2.0,890
 Eliminate,Eliminates variables from a system of equations,✅,pure,1.0,891
 TimeZone,,🚫,,2.0,892
 InfiniteLine,Geometric primitive representing an infinite line,✅,none,10.0,893
-GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x),✅,pure,1.0,894
+GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form GegenbauerC[n;x] is the renormalized (2/n) ChebyshevT[n;x],✅,pure,1.0,894
 SetterBar,,🚫,,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
 PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897

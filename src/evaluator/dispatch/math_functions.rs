@@ -1288,7 +1288,7 @@ pub fn dispatch_math_functions(
     "ChebyshevU" if args.len() == 2 => {
       return Some(crate::functions::math_ast::chebyshev_u_ast(args));
     }
-    "GegenbauerC" if args.len() == 3 => {
+    "GegenbauerC" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::gegenbauer_c_ast(args));
     }
     "ZernikeR" if args.len() == 3 => {

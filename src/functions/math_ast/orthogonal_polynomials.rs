@@ -2341,11 +2341,51 @@ pub fn chebyshev_u_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   Some(curr.into_iter().map(|c| (c, 1i128)).collect())
 }
 
-/// GegenbauerC[n, lambda, x] - Gegenbauer (ultraspherical) polynomial
+/// GegenbauerC[n, x] - two-argument (renormalized) Gegenbauer polynomial.
+/// Defined via the Chebyshev T relation
+///   GegenbauerC[n, x] = (2/n) ChebyshevT[n, x]   (integer n >= 1)
+/// and GegenbauerC[0, x] = ComplexInfinity.
+fn gegenbauer_c_two_arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Prefactor 2/n. For n == 0 it diverges (ComplexInfinity); for integer n
+  // we use an exact rational; for symbolic n we keep 2/n unevaluated so the
+  // result matches Wolfram's general form (2*ChebyshevT[n, x])/n.
+  let prefactor = match &args[0] {
+    Expr::Integer(0) => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    Expr::Integer(n) => make_rational(2, *n),
+    other => Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(other.clone()),
+    },
+  };
+
+  // (2/n) * ChebyshevT[n, x], evaluated so the rational prefactor combines
+  // with the polynomial into Wolfram's canonical form.
+  let cheb = Expr::FunctionCall {
+    name: "ChebyshevT".to_string(),
+    args: vec![args[0].clone(), args[1].clone()].into(),
+  };
+  let prod = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![prefactor, cheb].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&prod)
+}
+
+/// GegenbauerC[n, lambda, x] - Gegenbauer (ultraspherical) polynomial.
+/// Also handles the two-argument form GegenbauerC[n, x], which is the
+/// limiting (lambda -> 0) renormalization satisfying
+///   GegenbauerC[n, x] = (2/n) ChebyshevT[n, x]  for integer n >= 1,
+/// with GegenbauerC[0, x] = ComplexInfinity.
 pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 {
+    return gegenbauer_c_two_arg_ast(args);
+  }
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "GegenbauerC expects exactly 3 arguments".into(),
+      "GegenbauerC expects 2 or 3 arguments".into(),
     ));
   }
 

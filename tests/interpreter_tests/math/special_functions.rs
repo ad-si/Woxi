@@ -3310,6 +3310,81 @@ mod gegenbauer_c {
       "GegenbauerC[n, m, x]"
     );
   }
+
+  // Two-argument (renormalized) form: GegenbauerC[n, x] = (2/n) ChebyshevT[n, x]
+
+  #[test]
+  fn two_arg_zero() {
+    // (2/n) blows up at n = 0
+    assert_eq!(interpret("GegenbauerC[0, x]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn two_arg_n1() {
+    assert_eq!(interpret("GegenbauerC[1, x]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn two_arg_n2() {
+    assert_eq!(interpret("GegenbauerC[2, x]").unwrap(), "-1 + 2*x^2");
+  }
+
+  #[test]
+  fn two_arg_n3() {
+    assert_eq!(
+      interpret("GegenbauerC[3, x]").unwrap(),
+      "(2*(-3*x + 4*x^3))/3"
+    );
+  }
+
+  #[test]
+  fn two_arg_n4() {
+    assert_eq!(
+      interpret("GegenbauerC[4, x]").unwrap(),
+      "(1 - 8*x^2 + 8*x^4)/2"
+    );
+  }
+
+  #[test]
+  fn two_arg_n5() {
+    assert_eq!(
+      interpret("GegenbauerC[5, x]").unwrap(),
+      "(2*(5*x - 20*x^3 + 16*x^5))/5"
+    );
+  }
+
+  #[test]
+  fn two_arg_integer_arg() {
+    // ChebyshevT[2, 3] = 17, times (2/2) = 17
+    assert_eq!(interpret("GegenbauerC[2, 3]").unwrap(), "17");
+  }
+
+  #[test]
+  fn two_arg_values_at_one() {
+    // GegenbauerC[n, 1] = (2/n) ChebyshevT[n, 1] = 2/n
+    assert_eq!(
+      interpret("Table[GegenbauerC[n, 1], {n, 1, 5}]").unwrap(),
+      "{2, 1, 2/3, 1/2, 2/5}"
+    );
+  }
+
+  #[test]
+  fn two_arg_real() {
+    let result: f64 = interpret("GegenbauerC[3, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - (-0.6666666666666666)).abs() < 1e-12);
+  }
+
+  #[test]
+  fn two_arg_symbolic_n() {
+    // General form: (2/n) ChebyshevT[n, x]
+    assert_eq!(
+      interpret("GegenbauerC[n, x]").unwrap(),
+      "(2*ChebyshevT[n, x])/n"
+    );
+  }
 }
 
 mod fourier {

@@ -468,7 +468,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GammaRegularized" => Some((2, 2)),
     "Gather" => Some((1, 2)),
     "GatherBy" => Some((2, usize::MAX)),
-    "GegenbauerC" => Some((3, 3)),
+    "GegenbauerC" => Some((2, 3)),
     "ZernikeR" => Some((3, 3)),
     "GeneratingFunction" => Some((3, 3)),
     "GeometricDistribution" => Some((1, 1)),
