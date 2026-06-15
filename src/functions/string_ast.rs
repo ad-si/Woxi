@@ -2948,9 +2948,11 @@ fn round_real_to_6_sig_digits(f: f64) -> f64 {
   if f == 0.0 || !f.is_finite() {
     return f;
   }
-  let magnitude = f.abs().log10().floor();
-  let factor = 10f64.powf(5.0 - magnitude);
-  (f * factor).round() / factor
+  // Round to 6 significant digits via scientific formatting. Multiplying by a
+  // 10^k factor (which is not exactly representable in f64) loses precision —
+  // e.g. 1.5e10 would round-trip to 1.4999999999999998e10. Formatting to 5
+  // digits after the point in `e` notation rounds correctly.
+  format!("{:.5e}", f).parse().unwrap_or(f)
 }
 
 /// Recursively replace each `Expr::Real(f)` in `expr` with its
