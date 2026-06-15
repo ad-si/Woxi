@@ -5842,6 +5842,37 @@ mod trig_of_inverse_trig {
     );
     assert_eq!(interpret("Cos[ArcTan[2 y]]").unwrap(), "1/Sqrt[1 + 4*y^2]");
   }
+
+  // Reciprocal trig (Sec/Csc/Cot) of inverse trig.
+  #[test]
+  fn sec_of_inverse() {
+    assert_eq!(interpret("Sec[ArcSin[x]]").unwrap(), "1/Sqrt[1 - x^2]");
+    assert_eq!(interpret("Sec[ArcCos[x]]").unwrap(), "x^(-1)");
+    assert_eq!(interpret("Sec[ArcTan[x]]").unwrap(), "Sqrt[1 + x^2]");
+  }
+
+  #[test]
+  fn csc_of_inverse() {
+    assert_eq!(interpret("Csc[ArcSin[x]]").unwrap(), "x^(-1)");
+    assert_eq!(interpret("Csc[ArcCos[x]]").unwrap(), "1/Sqrt[1 - x^2]");
+    assert_eq!(interpret("Csc[ArcTan[x]]").unwrap(), "Sqrt[1 + x^2]/x");
+  }
+
+  #[test]
+  fn cot_of_inverse() {
+    assert_eq!(interpret("Cot[ArcSin[x]]").unwrap(), "Sqrt[1 - x^2]/x");
+    assert_eq!(interpret("Cot[ArcCos[x]]").unwrap(), "x/Sqrt[1 - x^2]");
+    assert_eq!(interpret("Cot[ArcTan[x]]").unwrap(), "x^(-1)");
+  }
+
+  // The bare reciprocal canonicalizes like wolframscript: x^(-1) for an
+  // atom, 1/(2 x) for a product, x^(-2) for x^2.
+  #[test]
+  fn reciprocal_compound_forms() {
+    assert_eq!(interpret("Csc[ArcSin[2 x]]").unwrap(), "1/(2*x)");
+    assert_eq!(interpret("Csc[ArcSin[x^2]]").unwrap(), "x^(-2)");
+    assert_eq!(interpret("Cot[ArcTan[2 x]]").unwrap(), "1/(2*x)");
+  }
 }
 
 mod imaginary_argument_trig {

@@ -894,6 +894,41 @@ fn divide(num: Expr, den: Expr) -> Expr {
   }
 }
 
+/// The bare reciprocal `1/x`, canonicalized the way wolframscript prints it:
+/// `x^(-1)` for an atom, `1/(2 x)` for a product, `x^(-2)` for `x^2`, …
+fn power_neg_one(x: &Expr) -> Expr {
+  let p = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![x.clone(), Expr::Integer(-1)].into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&p).unwrap_or(p)
+}
+
+/// Reciprocal trig (Sec/Csc/Cot) of an inverse-trig function, collapsed to its
+/// algebraic form (the reciprocals of the Sin/Cos/Tan identities). Returns
+/// `None` when the argument is not `ArcSin`/`ArcCos`/`ArcTan` of one argument.
+fn reciprocal_trig_of_inverse(outer: &str, inner: &Expr) -> Option<Expr> {
+  let (name, x) = match inner {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      (name.as_str(), &args[0])
+    }
+    _ => return None,
+  };
+  let result = match (outer, name) {
+    ("Sec", "ArcSin") => divide(Expr::Integer(1), sqrt_one_minus_sq(x)),
+    ("Sec", "ArcCos") => power_neg_one(x),
+    ("Sec", "ArcTan") => sqrt_one_plus_sq(x),
+    ("Csc", "ArcSin") => power_neg_one(x),
+    ("Csc", "ArcCos") => divide(Expr::Integer(1), sqrt_one_minus_sq(x)),
+    ("Csc", "ArcTan") => divide(sqrt_one_plus_sq(x), x.clone()),
+    ("Cot", "ArcSin") => divide(sqrt_one_minus_sq(x), x.clone()),
+    ("Cot", "ArcCos") => divide(x.clone(), sqrt_one_minus_sq(x)),
+    ("Cot", "ArcTan") => power_neg_one(x),
+    _ => return None,
+  };
+  Some(result)
+}
+
 /// try exact Pi-fraction lookup, otherwise return unevaluated.
 pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1380,6 +1415,10 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(neg) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Sec", &[neg]);
   }
+  // Sec of an inverse trig function → algebraic form.
+  if let Some(r) = reciprocal_trig_of_inverse("Sec", &args[0]) {
+    return Ok(r);
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1415,6 +1454,10 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner = crate::evaluator::evaluate_function_call_ast("Csc", &[neg])?;
     return Ok(negate_expr(inner));
   }
+  // Csc of an inverse trig function → algebraic form.
+  if let Some(r) = reciprocal_trig_of_inverse("Csc", &args[0]) {
+    return Ok(r);
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1449,6 +1492,10 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(neg) = try_extract_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Cot", &[neg])?;
     return Ok(negate_expr(inner));
+  }
+  // Cot of an inverse trig function → algebraic form.
+  if let Some(r) = reciprocal_trig_of_inverse("Cot", &args[0]) {
+    return Ok(r);
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
