@@ -7310,6 +7310,99 @@ fn plus_divergence(expr: &Expr, var: &str) -> Option<i32> {
   }
 }
 
+/// Structurally determine whether `expr` decays to 0 as `var -> +Infinity`.
+/// Recognizes a negative constant power of a diverging base (1/Log[x],
+/// 1/Sqrt[x], Log[x]^(-2), x^(-1/3)) and products of such with finite
+/// factors (2/Log[x]). Returns false whenever it can't prove decay, so the
+/// numeric path still gets a chance.
+fn tends_to_zero(expr: &Expr, var: &str) -> bool {
+  // A negative constant power of a base that diverges to +/-Infinity.
+  if let Some((base, exp)) = extract_power(expr)
+    && is_constant_wrt(&exp, var)
+    && let Some(ev) = crate::functions::math_ast::try_eval_to_f64(&exp)
+    && ev < 0.0
+    && diverges_pos_infinity(&base, var).is_some()
+  {
+    return true;
+  }
+  // A product whose factors are all finite constants or decaying, with at
+  // least one decaying factor (e.g. 2/Log[x]). A diverging factor (x/Log[x])
+  // disqualifies it.
+  let factors: Option<Vec<Expr>> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => Some(vec![(**left).clone(), (**right).clone()]),
+    _ => None,
+  };
+  if let Some(factors) = factors {
+    let mut saw_zero = false;
+    for f in &factors {
+      if is_constant_wrt(f, var) {
+        continue; // finite factor
+      } else if tends_to_zero(f, var) {
+        saw_zero = true;
+      } else {
+        return false; // diverging or unclassifiable factor
+      }
+    }
+    return saw_zero;
+  }
+  false
+}
+
+/// Detect decay-to-a-finite-value limits at +Infinity that the numeric path
+/// misses for slowly-decaying terms: a pure 1/g(x) -> 0, or a sum whose only
+/// var-dependent terms decay to 0 (1 + 1/Log[x] -> 1, 5 - 3/Sqrt[x] -> 5).
+fn limit_decay_at_infinity(
+  expr: &Expr,
+  var: &str,
+  point: &Expr,
+) -> Option<Expr> {
+  if !is_infinity(point) {
+    return None;
+  }
+  if tends_to_zero(expr, var) {
+    return Some(Expr::Integer(0));
+  }
+  // Sum: every var-dependent term must decay to 0; the limit is then the sum
+  // of the constant terms.
+  let terms: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => return None,
+  };
+  let mut constant_terms: Vec<Expr> = Vec::new();
+  let mut saw_decaying = false;
+  for t in &terms {
+    if is_constant_wrt(t, var) {
+      constant_terms.push(t.clone());
+    } else if tends_to_zero(t, var) {
+      saw_decaying = true;
+    } else {
+      return None; // a term that neither stays constant nor decays
+    }
+  }
+  if !saw_decaying {
+    return None;
+  }
+  let sum = match constant_terms.len() {
+    0 => Expr::Integer(0),
+    1 => constant_terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: constant_terms.into(),
+    },
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum).ok()
+}
+
 /// Handle limits at infinity.
 /// Strategies:
 /// 1. If expr is constant wrt var, return it directly
@@ -7461,6 +7554,13 @@ fn limit_at_infinity(
         operand: Box::new(Expr::Identifier("Infinity".to_string())),
       }
     });
+  }
+
+  // Structural detection of decay to a finite value for slowly-decaying
+  // reciprocals the numeric path misses: 1/Log[x] -> 0, 2/Log[x] -> 0,
+  // 1 + 1/Log[x] -> 1, 5 - 3/Sqrt[x] -> 5.
+  if let Some(result) = limit_decay_at_infinity(expr, var_name, point) {
+    return Ok(result);
   }
 
   // For simple expressions, try evaluating at two large values to detect convergence

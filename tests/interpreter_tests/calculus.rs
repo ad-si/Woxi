@@ -1546,6 +1546,51 @@ mod limit {
     assert_eq!(interpret("Limit[1/x^3, x -> 0]").unwrap(), "Indeterminate");
   }
 
+  // Reciprocals of slowly-diverging forms decay to 0 (and sums of those with
+  // constants tend to the constant part) — detected structurally because the
+  // numeric path's threshold misses the slow decay.
+  #[test]
+  fn limit_reciprocal_log_decays_to_zero() {
+    assert_eq!(interpret("Limit[1/Log[x], x -> Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Limit[1/Log[x]^2, x -> Infinity]").unwrap(), "0");
+    assert_eq!(
+      interpret("Limit[1/Log[Log[x]], x -> Infinity]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn limit_reciprocal_sqrt_decays_to_zero() {
+    assert_eq!(interpret("Limit[1/Sqrt[x], x -> Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Limit[1/x^(1/3), x -> Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_scaled_reciprocal_decays_to_zero() {
+    assert_eq!(interpret("Limit[2/Log[x], x -> Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_constant_plus_decaying_term() {
+    assert_eq!(
+      interpret("Limit[1 + 1/Log[x], x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[5 - 3/Sqrt[x], x -> Infinity]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn limit_divergent_plus_decaying_still_diverges() {
+    // The divergent term dominates; decay detection must not hijack this.
+    assert_eq!(
+      interpret("Limit[x + 1/Log[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
   // 0 * Infinity indeterminate products at a finite point, resolved by
   // rewriting as an Infinity/Infinity quotient and applying L'Hopital.
   #[test]
