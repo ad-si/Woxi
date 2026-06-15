@@ -1750,7 +1750,7 @@ TextRecognize,Recognize text in image,✅,unevaluated,8.0,1779
 LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7.0,1781
 WeierstrassZeta,Weierstrass zeta function,,unevaluated,3.0,1781
 CatalanNumber,Returns the nth Catalan number,✅,pure,6.0,1788
-DateValue,Date value extraction,,unevaluated,10.0,1788
+DateValue,Extracts a named component or property of a date,✅,pure,10.0,1788
 DensityPlot3D,3D density plot,,unevaluated,10.2,1788
 DynamicModuleValues,,🚫,,6.0,1788
 FRatioDistribution,F-ratio distribution,,unevaluated,6.0,1788

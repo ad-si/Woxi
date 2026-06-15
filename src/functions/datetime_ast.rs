@@ -1423,6 +1423,103 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Day of the year (1–366) for a Gregorian date.
+fn day_of_year(year: i64, month: i64, day: i64) -> i64 {
+  let mut doy = day;
+  for m in 1..month {
+    doy += days_in_month(year, m);
+  }
+  doy
+}
+
+/// Number of ISO-8601 weeks in a year (52 or 53).
+fn iso_weeks_in_year(year: i64) -> i64 {
+  let p = |y: i64| ((y + y / 4 - y / 100 + y / 400) % 7 + 7) % 7;
+  if p(year) == 4 || p(year - 1) == 3 { 53 } else { 52 }
+}
+
+/// ISO-8601 week number of a Gregorian date.
+fn iso_week(year: i64, month: i64, day: i64) -> i64 {
+  let doy = day_of_year(year, month, day);
+  // ISO weekday: Monday = 1 … Sunday = 7 (day_of_week returns Monday = 0).
+  let iso_weekday = day_of_week(year, month, day) + 1;
+  let week = (doy - iso_weekday + 10) / 7;
+  if week < 1 {
+    iso_weeks_in_year(year - 1)
+  } else if week > iso_weeks_in_year(year) {
+    1
+  } else {
+    week
+  }
+}
+
+/// DateValue[date, property] — a named component of a date.
+pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DateValue".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let Some(date_list) = resolve_date_to_list(&args[0]) else {
+    return unevaluated();
+  };
+  let Some(comps) = extract_date_components(&date_list) else {
+    return unevaluated();
+  };
+  if comps.len() < 3 {
+    return unevaluated();
+  }
+  let y = comps[0] as i64;
+  let mo = comps[1] as i64;
+  let d = comps[2] as i64;
+  let h = comps.get(3).map(|v| *v as i64).unwrap_or(0);
+  let mi = comps.get(4).map(|v| *v as i64).unwrap_or(0);
+  let sec = comps.get(5).map(|v| *v as i64).unwrap_or(0);
+
+  let property = |prop: &str| -> Option<Expr> {
+    let int = |n: i64| Expr::Integer(n as i128);
+    Some(match prop {
+      "Year" => int(y),
+      "Month" => int(mo),
+      "Day" => int(d),
+      "Hour" => int(h),
+      "Minute" => int(mi),
+      "Second" => int(sec),
+      "DayName" => {
+        Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
+      }
+      "MonthName" => Expr::Identifier(month_name(mo).to_string()),
+      "Quarter" => int((mo - 1) / 3 + 1),
+      "DayOfYear" => int(day_of_year(y, mo, d)),
+      "ISOWeekDay" => int(day_of_week(y, mo, d) + 1),
+      "Week" => int(iso_week(y, mo, d)),
+      _ => return None,
+    })
+  };
+
+  match &args[1] {
+    Expr::String(prop) => property(prop).map_or_else(unevaluated, Ok),
+    Expr::List(props) => {
+      let mut values = Vec::with_capacity(props.len());
+      for p in props.iter() {
+        match p {
+          Expr::String(s) => match property(s) {
+            Some(v) => values.push(v),
+            None => return unevaluated(),
+          },
+          _ => return unevaluated(),
+        }
+      }
+      Ok(Expr::List(values.into()))
+    }
+    _ => unevaluated(),
+  }
+}
+
 /// Resolve a date expression (date list, date string, DateObject) to a
 /// normalized {year, month, day, hour, min, sec} Expr::List.
 /// Returns None if the expression cannot be interpreted as a date.

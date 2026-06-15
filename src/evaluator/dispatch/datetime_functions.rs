@@ -36,6 +36,9 @@ pub fn dispatch_datetime_functions(
     "DayName" if args.len() == 1 => {
       return Some(crate::functions::datetime_ast::day_name_ast(args));
     }
+    "DateValue" if args.len() == 2 => {
+      return Some(crate::functions::datetime_ast::date_value_ast(args));
+    }
     // DateInterval[{date1, date2}] — create a date interval
     "DateInterval" if args.len() == 1 => {
       if let Expr::List(dates) = &args[0]

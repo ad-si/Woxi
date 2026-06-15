@@ -1221,3 +1221,93 @@ mod unix_time {
     );
   }
 }
+
+mod date_value {
+  use super::*;
+
+  #[test]
+  fn calendar_components() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "Year"]"#).unwrap(),
+      "2024"
+    );
+    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Month"]"#).unwrap(), "6");
+    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Day"]"#).unwrap(), "15");
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15, 10, 30, 0}, "Hour"]"#).unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn named_components() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "DayName"]"#).unwrap(),
+      "Saturday"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "MonthName"]"#).unwrap(),
+      "June"
+    );
+    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Quarter"]"#).unwrap(), "2");
+  }
+
+  #[test]
+  fn day_of_year_and_iso_weekday() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "DayOfYear"]"#).unwrap(),
+      "167"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 2, 29}, "DayOfYear"]"#).unwrap(),
+      "60"
+    );
+    // Saturday is ISO weekday 6 (Monday = 1).
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "ISOWeekDay"]"#).unwrap(),
+      "6"
+    );
+  }
+
+  // ISO-8601 week number, including the year-boundary edge cases.
+  #[test]
+  fn iso_week_number() {
+    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Week"]"#).unwrap(), "24");
+    assert_eq!(interpret(r#"DateValue[{2024, 1, 1}, "Week"]"#).unwrap(), "1");
+    // 2021-01-01 belongs to ISO week 53 of 2020.
+    assert_eq!(interpret(r#"DateValue[{2021, 1, 1}, "Week"]"#).unwrap(), "53");
+    // 2024-12-30 belongs to ISO week 1 of 2025.
+    assert_eq!(interpret(r#"DateValue[{2024, 12, 30}, "Week"]"#).unwrap(), "1");
+  }
+
+  #[test]
+  fn list_of_properties() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, {"Year", "Month", "Day"}]"#)
+        .unwrap(),
+      "{2024, 6, 15}"
+    );
+  }
+
+  // DateObject and date-string inputs are accepted too.
+  #[test]
+  fn accepts_date_object_and_string() {
+    assert_eq!(
+      interpret(r#"DateValue[DateObject[{2024, 6, 15}], "DayName"]"#).unwrap(),
+      "Saturday"
+    );
+    assert_eq!(
+      interpret(r#"DateValue["2024-06-15", "MonthName"]"#).unwrap(),
+      "June"
+    );
+  }
+
+  // Unrecognized element specs stay unevaluated.
+  #[test]
+  fn unknown_property_unevaluated() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "DayOfWeek"]"#).unwrap(),
+      "DateValue[{2024, 6, 15}, DayOfWeek]"
+    );
+  }
+}
