@@ -4265,12 +4265,18 @@ pub fn dispatch_math_functions(
     }
     // AddSides[rel, expr] — add expr to both sides of a relation
     "AddSides" if args.len() == 2 => {
+      if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Add) {
+        return Some(evaluate_expr_to_expr(&result));
+      }
       if let Some(result) = apply_to_sides(&args[0], &args[1], "Plus") {
         return Some(evaluate_expr_to_expr(&result));
       }
     }
     // SubtractSides[rel, expr] — subtract expr from both sides
     "SubtractSides" if args.len() == 2 => {
+      if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Subtract) {
+        return Some(evaluate_expr_to_expr(&result));
+      }
       let neg = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![Expr::Integer(-1), args[1].clone()].into(),
@@ -4281,12 +4287,18 @@ pub fn dispatch_math_functions(
     }
     // MultiplySides[rel, expr] — multiply both sides by expr
     "MultiplySides" if args.len() == 2 => {
+      if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Multiply) {
+        return Some(evaluate_expr_to_expr(&result));
+      }
       if let Some(result) = apply_to_sides(&args[0], &args[1], "Times") {
         return Some(evaluate_expr_to_expr(&result));
       }
     }
     // DivideSides[rel, expr] — divide both sides by expr
     "DivideSides" if args.len() == 2 => {
+      if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Divide) {
+        return Some(evaluate_expr_to_expr(&result));
+      }
       let inv = Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![args[1].clone(), Expr::Integer(-1)].into(),
@@ -6870,6 +6882,116 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
     })
   } else {
     None
+  }
+}
+
+/// Per-operand combiner for the `*Sides` family.
+#[derive(Clone, Copy)]
+enum SideOp {
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
+}
+
+/// Handle the case where the second argument of a `*Sides` function is itself
+/// a two-sided equation `c == d`: the corresponding sides are combined, so
+/// e.g. SubtractSides[a == b, c == d] -> a - c == b - d. For DivideSides the
+/// result is guarded by `c != 0`, matching wolframscript. Returns None unless
+/// both relations have exactly two operands and the second is an equation.
+fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
+  let (
+    Expr::Comparison {
+      operands,
+      operators,
+    },
+    Expr::Comparison {
+      operands: v_ops,
+      operators: v_operators,
+    },
+  ) = (relation, second)
+  else {
+    return None;
+  };
+  if operands.len() != 2 || v_ops.len() != 2 {
+    return None;
+  }
+  // The second argument must be an equation for the pairing to be meaningful.
+  if v_operators.first() != Some(&crate::syntax::ComparisonOp::Equal) {
+    return None;
+  }
+  // Multiplying/dividing an inequality requires sign-dependent reasoning
+  // (the direction can flip), which Wolfram expresses with a larger
+  // Piecewise. Only handle the clean case where the first relation is an
+  // equation; Add/Subtract preserve any relation's direction.
+  if matches!(op, SideOp::Multiply | SideOp::Divide)
+    && operators.first() != Some(&crate::syntax::ComparisonOp::Equal)
+  {
+    return None;
+  }
+
+  let combine = |a: &Expr, b: &Expr| -> Expr {
+    match op {
+      SideOp::Add => Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![a.clone(), b.clone()].into(),
+      },
+      SideOp::Subtract => Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          a.clone(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), b.clone()].into(),
+          },
+        ]
+        .into(),
+      },
+      SideOp::Multiply => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![a.clone(), b.clone()].into(),
+      },
+      SideOp::Divide => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          a.clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![b.clone(), Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      },
+    }
+  };
+
+  let paired = Expr::Comparison {
+    operands: vec![
+      combine(&operands[0], &v_ops[0]),
+      combine(&operands[1], &v_ops[1]),
+    ],
+    operators: operators.clone(),
+  };
+
+  match op {
+    // Dividing by `c` is only reversible when c != 0, so guard it like
+    // wolframscript: Piecewise[{{paired, c != 0}}, relation].
+    SideOp::Divide => {
+      let cond = Expr::Comparison {
+        operands: vec![v_ops[0].clone(), Expr::Integer(0)],
+        operators: vec![crate::syntax::ComparisonOp::NotEqual],
+      };
+      let branch = Expr::List(vec![paired, cond].into());
+      Some(Expr::FunctionCall {
+        name: "Piecewise".to_string(),
+        args: vec![
+          Expr::List(vec![branch].into()),
+          relation.clone(),
+        ]
+        .into(),
+      })
+    }
+    _ => Some(paired),
   }
 }
 

@@ -4337,6 +4337,59 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("ApplySides[f, x == y]").unwrap(), "f[x] == f[y]");
   }
 
+  // When the second argument is itself an equation, the corresponding sides
+  // are paired: SubtractSides[a == b, c == d] -> a - c == b - d.
+  #[test]
+  fn add_sides_equation_second_arg() {
+    assert_eq!(
+      interpret("AddSides[a == b, c == d]").unwrap(),
+      "a + c == b + d"
+    );
+  }
+  #[test]
+  fn subtract_sides_equation_second_arg() {
+    assert_eq!(
+      interpret("SubtractSides[a == b, c == d]").unwrap(),
+      "a - c == b - d"
+    );
+  }
+  #[test]
+  fn multiply_sides_equation_second_arg() {
+    assert_eq!(
+      interpret("MultiplySides[a == b, c == d]").unwrap(),
+      "a*c == b*d"
+    );
+  }
+  #[test]
+  fn divide_sides_equation_second_arg() {
+    // Dividing by c is reversible only when c != 0, so the result is guarded.
+    assert_eq!(
+      interpret("DivideSides[a == b, c == d]").unwrap(),
+      "Piecewise[{{a/c == b/d, c != 0}}, a == b]"
+    );
+  }
+  #[test]
+  fn add_sides_inequality_with_equation() {
+    assert_eq!(
+      interpret("AddSides[a < b, c == d]").unwrap(),
+      "a + c < b + d"
+    );
+  }
+  #[test]
+  fn subtract_sides_inequality_with_equation() {
+    assert_eq!(
+      interpret("SubtractSides[a <= b, c == d]").unwrap(),
+      "a - c <= b - d"
+    );
+  }
+  #[test]
+  fn subtract_sides_equation_simplifies() {
+    assert_eq!(
+      interpret("SubtractSides[2*x == 6, x == 1]").unwrap(),
+      "x == 5"
+    );
+  }
+
   // DayCount
   #[test]
   fn day_count_basic() {
