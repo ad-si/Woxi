@@ -4780,6 +4780,58 @@ mod string_contains_free_patterns {
       "{llo,  hi}"
     );
   }
+
+  // Wolfram requires the padding (3rd arg) to be a non-empty string; for a
+  // list, an empty string, or a number it returns the call unevaluated
+  // (StringPadLeft::stringnz / StringPadRight::stringnz) rather than coercing.
+  #[test]
+  fn pad_left_list_padding_unevaluated() {
+    assert_eq!(
+      interpret(r#"StringPadLeft["7", 3, {"0"}]"#).unwrap(),
+      "StringPadLeft[7, 3, {0}]"
+    );
+  }
+
+  #[test]
+  fn pad_left_empty_padding_unevaluated() {
+    assert_eq!(
+      interpret(r#"StringPadLeft["7", 3, ""]"#).unwrap(),
+      "StringPadLeft[7, 3, ]"
+    );
+  }
+
+  #[test]
+  fn pad_left_number_padding_unevaluated() {
+    assert_eq!(
+      interpret(r#"StringPadLeft["7", 3, 5]"#).unwrap(),
+      "StringPadLeft[7, 3, 5]"
+    );
+  }
+
+  #[test]
+  fn pad_left_bad_padding_unevaluated_even_when_truncating() {
+    // The padding is validated before the (otherwise pure) truncation.
+    assert_eq!(
+      interpret(r#"StringPadLeft["abcd", 2, {"0"}]"#).unwrap(),
+      "StringPadLeft[abcd, 2, {0}]"
+    );
+  }
+
+  #[test]
+  fn pad_right_list_padding_unevaluated() {
+    assert_eq!(
+      interpret(r#"StringPadRight["7", 3, {"0"}]"#).unwrap(),
+      "StringPadRight[7, 3, {0}]"
+    );
+  }
+
+  #[test]
+  fn pad_right_empty_padding_unevaluated() {
+    assert_eq!(
+      interpret(r#"StringPadRight["7", 3, ""]"#).unwrap(),
+      "StringPadRight[7, 3, ]"
+    );
+  }
 }
 
 mod string_position_alternatives {

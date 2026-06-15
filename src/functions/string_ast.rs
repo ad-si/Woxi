@@ -4587,6 +4587,17 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // The padding (3rd argument) must be a non-empty string. Wolfram emits
+  // StringPadLeft::stringnz and returns the call unevaluated for anything
+  // else (empty string, a number, a list), even when the result would be a
+  // pure truncation, so validate before threading or padding.
+  if args.len() == 3 && !matches!(&args[2], Expr::String(p) if !p.is_empty()) {
+    return Ok(Expr::FunctionCall {
+      name: "StringPadLeft".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Thread over list of strings in the first argument.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
@@ -4610,8 +4621,7 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let target_len = n as usize;
   let pad_str = if args.len() == 3 {
-    let p = expr_to_str(&args[2])?;
-    if p.is_empty() { " ".to_string() } else { p }
+    expr_to_str(&args[2])?
   } else {
     " ".to_string()
   };
@@ -4645,6 +4655,17 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // The padding (3rd argument) must be a non-empty string. Wolfram emits
+  // StringPadRight::stringnz and returns the call unevaluated for anything
+  // else (empty string, a number, a list), even when the result would be a
+  // pure truncation, so validate before threading or padding.
+  if args.len() == 3 && !matches!(&args[2], Expr::String(p) if !p.is_empty()) {
+    return Ok(Expr::FunctionCall {
+      name: "StringPadRight".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+
   // Thread over list of strings in the first argument.
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
@@ -4668,8 +4689,7 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let target_len = n as usize;
   let pad_str = if args.len() == 3 {
-    let p = expr_to_str(&args[2])?;
-    if p.is_empty() { " ".to_string() } else { p }
+    expr_to_str(&args[2])?
   } else {
     " ".to_string()
   };
