@@ -97,6 +97,7 @@ struct AssumptionInfo {
   positive_vars: Vec<String>, // x > 0 (strictly positive)
   nonnegative_vars: Vec<String>, // x >= 0
   negative_vars: Vec<String>, // x < 0 (strictly negative)
+  nonpositive_vars: Vec<String>, // x <= 0
   real_vars: Vec<String>,
   integer_vars: Vec<String>,
   /// Raw assumptions preserved for advanced reasoning
@@ -109,23 +110,30 @@ fn extract_assumption_info(assumption: &Expr) -> AssumptionInfo {
     positive_vars: Vec::new(),
     nonnegative_vars: Vec::new(),
     negative_vars: Vec::new(),
+    nonpositive_vars: Vec::new(),
     real_vars: Vec::new(),
     integer_vars: Vec::new(),
     raw_assumptions: Vec::new(),
   };
   extract_assumptions_inner(assumption, &mut info);
-  // Positive vars are also non-negative
+  // Positive vars are also non-negative; negative vars are also non-positive.
   for v in &info.positive_vars {
     if !info.nonnegative_vars.contains(v) {
       info.nonnegative_vars.push(v.clone());
     }
   }
-  // Positive/negative/nonnegative vars are also real
+  for v in &info.negative_vars {
+    if !info.nonpositive_vars.contains(v) {
+      info.nonpositive_vars.push(v.clone());
+    }
+  }
+  // Any var with a known sign (or sign bound) is also real.
   for v in info
     .positive_vars
     .iter()
     .chain(info.negative_vars.iter())
     .chain(info.nonnegative_vars.iter())
+    .chain(info.nonpositive_vars.iter())
     .cloned()
     .collect::<Vec<_>>()
   {
@@ -134,6 +142,16 @@ fn extract_assumption_info(assumption: &Expr) -> AssumptionInfo {
     }
   }
   info
+}
+
+/// True for a strictly negative numeric constant (integer, real, rational).
+fn is_negative_constant(expr: &Expr) -> bool {
+  is_nonpositive_constant(expr) && !is_zero_constant(expr)
+}
+
+/// True for a numeric zero constant.
+fn is_zero_constant(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(0)) || matches!(expr, Expr::Real(f) if *f == 0.0)
 }
 
 /// Check if an expression is a non-negative numeric constant (integer, real, or rational).
@@ -227,26 +245,36 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
         }
       }
 
-      // x < c, x <= c where c <= 0 → negative
-      if matches!(
-        op,
-        crate::syntax::ComparisonOp::Less
-          | crate::syntax::ComparisonOp::LessEqual
-      ) && let Expr::Identifier(name) = left
-        && is_nonpositive_constant(right)
-      {
-        info.negative_vars.push(name.clone());
+      // x < c where c <= 0 → negative (x < c <= 0).
+      // x <= c where c < 0  → negative; where c == 0 → nonpositive.
+      if let Expr::Identifier(name) = left {
+        if matches!(op, crate::syntax::ComparisonOp::Less)
+          && is_nonpositive_constant(right)
+        {
+          info.negative_vars.push(name.clone());
+        } else if matches!(op, crate::syntax::ComparisonOp::LessEqual) {
+          if is_negative_constant(right) {
+            info.negative_vars.push(name.clone());
+          } else if is_zero_constant(right) {
+            info.nonpositive_vars.push(name.clone());
+          }
+        }
       }
 
-      // c > x, c >= x where c <= 0 → negative
-      if matches!(
-        op,
-        crate::syntax::ComparisonOp::Greater
-          | crate::syntax::ComparisonOp::GreaterEqual
-      ) && let Expr::Identifier(name) = right
-        && is_nonpositive_constant(left)
-      {
-        info.negative_vars.push(name.clone());
+      // c > x where c <= 0 → negative.
+      // c >= x where c < 0  → negative; where c == 0 → nonpositive.
+      if let Expr::Identifier(name) = right {
+        if matches!(op, crate::syntax::ComparisonOp::Greater)
+          && is_nonpositive_constant(left)
+        {
+          info.negative_vars.push(name.clone());
+        } else if matches!(op, crate::syntax::ComparisonOp::GreaterEqual) {
+          if is_negative_constant(left) {
+            info.negative_vars.push(name.clone());
+          } else if is_zero_constant(left) {
+            info.nonpositive_vars.push(name.clone());
+          }
+        }
       }
     }
     // Element[x, domain] or Element[Alternatives[a, b, ...], domain]
@@ -428,6 +456,31 @@ fn check_comparison_under_assumption(
             if is_nonnegative_constant(right) && rhs_is_zero =>
           {
             return Some(false);
+          }
+          _ => {}
+        }
+      }
+      if info.nonpositive_vars.contains(var_name) {
+        // x <= 0: x > 0 is impossible, x <= 0 holds. The strict/nonstrict
+        // lower cases (x < 0, x >= 0) stay undetermined since x may be 0.
+        match op {
+          crate::syntax::ComparisonOp::Greater if rhs_is_zero => {
+            return Some(false);
+          }
+          crate::syntax::ComparisonOp::LessEqual if rhs_is_zero => {
+            return Some(true);
+          }
+          _ => {}
+        }
+      }
+      if info.nonnegative_vars.contains(var_name) {
+        // x >= 0: x < 0 is impossible, x >= 0 holds.
+        match op {
+          crate::syntax::ComparisonOp::Less if rhs_is_zero => {
+            return Some(false);
+          }
+          crate::syntax::ComparisonOp::GreaterEqual if rhs_is_zero => {
+            return Some(true);
           }
           _ => {}
         }
@@ -659,8 +712,12 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         {
           return make_power_or_identity(base, reduced);
         }
-        if info.negative_vars.contains(var_name) && n % 2 == 0 {
-          // x^n is positive when n is even, so (x^n)^(1/m) = |x|^(n/m)
+        if (info.negative_vars.contains(var_name)
+          || info.nonpositive_vars.contains(var_name))
+          && n % 2 == 0
+        {
+          // x^n is non-negative when n is even, so (x^n)^(1/m) = |x|^(n/m),
+          // and |x| = -x for x <= 0 (including 0).
           let abs_power = make_power_or_identity(base, reduced);
           // If reduced is even, (-x)^reduced = x^reduced
           if reduced % 2 == 0 {
@@ -931,6 +988,37 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
     }
 
+    // Sign predicates → True/False when the sign is pinned by assumptions.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "Positive" | "Negative" | "NonNegative" | "NonPositive"
+        ) =>
+    {
+      let a = refine_expr(&args[0], info, assumption);
+      let verdict = match name.as_str() {
+        "Positive" if is_known_positive(&a, info) => Some(true),
+        "Positive" if is_known_nonpositive(&a, info) => Some(false),
+        "Negative" if is_known_negative_expr(&a, info) => Some(true),
+        "Negative" if is_known_nonnegative(&a, info) => Some(false),
+        "NonNegative" if is_known_nonnegative(&a, info) => Some(true),
+        "NonNegative" if is_known_negative_expr(&a, info) => Some(false),
+        "NonPositive" if is_known_nonpositive(&a, info) => Some(true),
+        "NonPositive" if is_known_positive(&a, info) => Some(false),
+        _ => None,
+      };
+      match verdict {
+        Some(b) => {
+          Expr::Identifier(if b { "True" } else { "False" }.to_string())
+        }
+        None => Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![a].into(),
+        },
+      }
+    }
+
     // Element[expr, domain] → True/False under assumptions
     Expr::FunctionCall { name, args }
       if name == "Element" && args.len() == 2 =>
@@ -1152,7 +1240,10 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
         || info.nonnegative_vars.contains(name)
       {
         Some(expr.clone())
-      } else if info.negative_vars.contains(name) {
+      } else if info.negative_vars.contains(name)
+        || info.nonpositive_vars.contains(name)
+      {
+        // Abs[x] = -x for x <= 0 (and at x = 0, -0 = 0).
         Some(Expr::UnaryOp {
           op: UnaryOperator::Minus,
           operand: Box::new(expr.clone()),
@@ -1490,7 +1581,59 @@ fn is_known_positive(expr: &Expr, info: &AssumptionInfo) -> bool {
 fn is_known_negative_expr(expr: &Expr, info: &AssumptionInfo) -> bool {
   match expr {
     Expr::Integer(n) => *n < 0,
+    Expr::Real(f) => *f < 0.0,
     Expr::Identifier(name) => info.negative_vars.contains(name),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      is_negative_constant(expr)
+    }
+    // -e is negative when e is positive.
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_known_positive(operand, info),
+    // A product of a positive and a negative factor.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      (is_known_positive(left, info) && is_known_negative_expr(right, info))
+        || (is_known_negative_expr(left, info)
+          && is_known_positive(right, info))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (is_known_positive(&args[0], info)
+        && is_known_negative_expr(&args[1], info))
+        || (is_known_negative_expr(&args[0], info)
+          && is_known_positive(&args[1], info))
+    }
+    _ => false,
+  }
+}
+
+/// Check if an expression is known to be non-positive (<= 0).
+fn is_known_nonpositive(expr: &Expr, info: &AssumptionInfo) -> bool {
+  if is_known_negative_expr(expr, info) {
+    return true;
+  }
+  match expr {
+    Expr::Integer(n) => *n <= 0,
+    Expr::Real(f) => *f <= 0.0,
+    Expr::Identifier(name) => {
+      info.nonpositive_vars.contains(name) || info.negative_vars.contains(name)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      is_nonpositive_constant(expr)
+    }
+    // -e is non-positive when e is non-negative.
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_known_nonnegative(operand, info),
     _ => false,
   }
 }

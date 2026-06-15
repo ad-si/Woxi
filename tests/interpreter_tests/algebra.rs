@@ -4772,6 +4772,56 @@ mod refine {
     );
   }
 
+  // --- Sign predicates under assumptions ---
+
+  #[test]
+  fn positive_predicate() {
+    assert_eq!(interpret("Refine[Positive[x], x > 0]").unwrap(), "True");
+    assert_eq!(interpret("Refine[Positive[x], x < 0]").unwrap(), "False");
+    assert_eq!(interpret("Refine[Positive[x], x <= 0]").unwrap(), "False");
+    assert_eq!(interpret("Refine[Positive[x + 1], x > 0]").unwrap(), "True");
+    assert_eq!(interpret("Refine[Positive[2 x], x > 0]").unwrap(), "True");
+  }
+
+  #[test]
+  fn negative_predicate() {
+    assert_eq!(interpret("Refine[Negative[x], x < 0]").unwrap(), "True");
+    assert_eq!(interpret("Refine[Negative[x], x > 0]").unwrap(), "False");
+    assert_eq!(interpret("Refine[Negative[-x], x > 0]").unwrap(), "True");
+  }
+
+  #[test]
+  fn nonnegative_predicate() {
+    assert_eq!(interpret("Refine[NonNegative[x], x >= 0]").unwrap(), "True");
+    assert_eq!(interpret("Refine[NonNegative[x], x < 0]").unwrap(), "False");
+    assert_eq!(
+      interpret("Refine[NonNegative[x^2], Element[x, Reals]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn nonpositive_predicate() {
+    assert_eq!(interpret("Refine[NonPositive[x], x < 0]").unwrap(), "True");
+    assert_eq!(interpret("Refine[NonPositive[x], x <= 0]").unwrap(), "True");
+  }
+
+  // x <= 0 means non-positive, NOT strictly negative: these stay unevaluated
+  // (x could be 0), and Sqrt[x^2] still collapses to -x.
+  #[test]
+  fn nonpositive_assumption_is_not_strict() {
+    assert_eq!(
+      interpret("Refine[Negative[x], x <= 0]").unwrap(),
+      "Negative[x]"
+    );
+    assert_eq!(
+      interpret("Refine[NonNegative[x], x <= 0]").unwrap(),
+      "NonNegative[x]"
+    );
+    assert_eq!(interpret("Refine[Sqrt[x^2], x <= 0]").unwrap(), "-x");
+    assert_eq!(interpret("Refine[Abs[x], x <= 0]").unwrap(), "-x");
+  }
+
   // --- Trig with integer multiples of Pi ---
 
   #[test]
