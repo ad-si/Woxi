@@ -32,10 +32,14 @@ fn has_interval(args: &[Expr]) -> bool {
   args.iter().any(|a| is_interval(a).is_some())
 }
 
-/// Apply a monotonic non-decreasing function (`Floor`, `Ceiling`, `Round`,
-/// `IntegerPart`) to an `Interval[...]`, mapping each span's endpoints and
-/// renormalizing. Returns `None` unless `expr` is an interval with numeric
-/// endpoints.
+/// Apply a monotonic function (`Floor`, `Ceiling`, `Round`, `IntegerPart`,
+/// `Sqrt`, `Exp`, `Log`, …) to an `Interval[...]`, mapping each span's
+/// endpoints and renormalizing (which re-sorts, so both increasing and
+/// decreasing monotonic functions are handled). Returns `None` unless `expr`
+/// is an interval whose endpoints — and their images — are real and numeric,
+/// so an out-of-domain endpoint (e.g. `Sqrt` of a negative bound, giving a
+/// complex image) leaves the call unevaluated rather than producing a bogus
+/// interval.
 pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
   let spans = is_interval(expr)?;
   let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
@@ -46,6 +50,9 @@ pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
       crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
     let fb =
       crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    // Require real-numeric images so the endpoints stay orderable.
+    expr_to_f64(&fa)?;
+    expr_to_f64(&fb)?;
     out.push((fa, fb));
   }
   Some(make_interval(normalize_intervals(out)))

@@ -525,3 +525,56 @@ fn floor_interval_negative_and_multi_span() {
     "Interval[{1, 3}, {5, 7}]"
   );
 }
+
+// ─── Monotonic elementary functions over intervals ──────────────────────────
+
+#[test]
+fn sqrt_interval() {
+  assert_eq!(
+    interpret("Sqrt[Interval[{4, 9}]]").unwrap(),
+    "Interval[{2, 3}]"
+  );
+  assert_eq!(
+    interpret("Sqrt[Interval[{0, 16}]]").unwrap(),
+    "Interval[{0, 4}]"
+  );
+  // Multiple spans map independently.
+  assert_eq!(
+    interpret("Sqrt[Interval[{1, 4}, {9, 16}]]").unwrap(),
+    "Interval[{1, 2}, {3, 4}]"
+  );
+}
+
+#[test]
+fn exp_interval() {
+  assert_eq!(
+    interpret("Exp[Interval[{0, 1}]]").unwrap(),
+    "Interval[{1, E}]"
+  );
+  assert_eq!(
+    interpret("Exp[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{E^(-1), E}]"
+  );
+}
+
+#[test]
+fn log_interval() {
+  assert_eq!(
+    interpret("Log[Interval[{1, E}]]").unwrap(),
+    "Interval[{0, 1}]"
+  );
+  // Symbolic endpoint is preserved.
+  assert_eq!(
+    interpret("Log[Interval[{1, 100}]]").unwrap(),
+    "Interval[{0, Log[100]}]"
+  );
+}
+
+// Out-of-domain endpoints (a complex image) leave the call unevaluated.
+#[test]
+fn sqrt_interval_out_of_domain_unevaluated() {
+  assert_eq!(
+    interpret("Sqrt[Interval[{-1, 4}]]").unwrap(),
+    "Sqrt[Interval[{-1, 4}]]"
+  );
+}

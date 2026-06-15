@@ -521,6 +521,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sqrt expects exactly 1 argument".into(),
     ));
   }
+  // Sqrt is monotonic increasing on [0, ∞): map it over each interval span.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("Sqrt", &args[0])
+  {
+    return Ok(r);
+  }
   // Strip a top-level Unevaluated wrapper before computing.
   if let Expr::FunctionCall { name, args: u_args } = &args[0]
     && name == "Unevaluated"

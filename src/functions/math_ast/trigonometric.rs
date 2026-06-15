@@ -1296,6 +1296,12 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Exp expects 1 argument".into(),
     ));
   }
+  // Exp is monotonic increasing on ℝ: map it over each interval span.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("Exp", &args[0])
+  {
+    return Ok(r);
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1776,6 +1782,13 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")
   {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  // Log is monotonic increasing on (0, ∞): map it over each interval span.
+  if args.len() == 1
+    && let Some(r) =
+      crate::functions::interval_ast::map_monotonic_interval("Log", &args[0])
+  {
+    return Ok(r);
   }
   // Log[Overflow[]] = Overflow[] (matches wolframscript)
   if !args.is_empty()
