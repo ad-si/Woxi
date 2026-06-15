@@ -158,8 +158,12 @@ pub fn extended_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Accepts integers and rationals. For rationals,
 /// `LCM[a/b, c/d] = LCM[a, c] / GCD[b, d]`.
 pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // LCM[] stays unevaluated in wolframscript (unlike GCD[], which is 0).
   if args.is_empty() {
-    return Ok(Expr::Integer(1));
+    return Ok(Expr::FunctionCall {
+      name: "LCM".to_string(),
+      args: vec![].into(),
+    });
   }
 
   let mut fractions: Vec<(BigInt, BigInt)> = Vec::with_capacity(args.len());
@@ -3007,6 +3011,19 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Binomial expects exactly 2 arguments".into(),
     ));
+  }
+  // Binomial[k, k] = 1 for any k (including symbolic), matching wolframscript.
+  // Inexact arguments (machine reals) yield 1. rather than the exact integer.
+  if crate::syntax::expr_to_string(&args[0])
+    == crate::syntax::expr_to_string(&args[1])
+  {
+    let inexact = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+      || matches!(&args[1], Expr::Real(_) | Expr::BigFloat(_, _));
+    return Ok(if inexact {
+      Expr::Real(1.0)
+    } else {
+      Expr::Integer(1)
+    });
   }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
     (Some(n), Some(k)) => Ok(Expr::Integer(binomial_coeff(n, k))),

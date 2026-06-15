@@ -5536,3 +5536,46 @@ mod zero_divisor {
     );
   }
 }
+
+// Binomial[k, k] = 1 (any k) and LCM[] identity, verified against wolframscript.
+mod binomial_diagonal_and_lcm_empty {
+  use super::*;
+
+  #[test]
+  fn binomial_diagonal_symbolic() {
+    assert_eq!(interpret("Binomial[n, n]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[n + 1, n + 1]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[2 n, 2 n]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[a, a]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[Pi, Pi]").unwrap(), "1");
+  }
+
+  #[test]
+  fn binomial_diagonal_exact_numeric() {
+    assert_eq!(interpret("Binomial[5, 5]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[1/2, 1/2]").unwrap(), "1");
+    assert_eq!(interpret("Binomial[-3, -3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn binomial_diagonal_inexact() {
+    // Machine reals yield 1. (Real), not the exact integer.
+    assert_eq!(interpret("Binomial[0.5, 0.5]").unwrap(), "1.");
+    assert_eq!(interpret("Binomial[2.5, 2.5]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn binomial_offdiagonal_unaffected() {
+    assert_eq!(interpret("Binomial[10, 3]").unwrap(), "120");
+    assert_eq!(interpret("Binomial[n, 2]").unwrap(), "((-1 + n)*n)/2");
+    assert_eq!(interpret("Binomial[n, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn lcm_empty_stays_symbolic() {
+    // LCM[] is left unevaluated (unlike GCD[], which is 0).
+    assert_eq!(interpret("LCM[]").unwrap(), "LCM[]");
+    assert_eq!(interpret("GCD[]").unwrap(), "0");
+    assert_eq!(interpret("LCM[4, 6]").unwrap(), "12");
+  }
+}
