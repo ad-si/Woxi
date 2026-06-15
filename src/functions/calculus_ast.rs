@@ -8053,6 +8053,14 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             // Fall through to try other methods
           }
+          v if is_infinity(v) || is_negative_infinity(v) => {
+            // Direct substitution produced a real, directed +/-Infinity
+            // (e.g. Log[0] -> -Infinity); that signed value is the limit.
+            // ComplexInfinity / DirectedInfinity (an unsigned or genuinely
+            // two-sided divergence such as 1/x at 0) are handled by the arm
+            // above and stay Indeterminate, so they are not affected.
+            return result;
+          }
           _ => {
             // Check if it evaluates to a number via N[]
             if crate::functions::math_ast::try_eval_to_f64(val).is_some() {

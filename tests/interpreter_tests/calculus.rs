@@ -1445,6 +1445,39 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  // Direct substitution to a real, directed +/-Infinity (e.g. Log[0]) is
+  // the limit. ComplexInfinity poles (1/x at 0) stay Indeterminate.
+  #[test]
+  fn limit_log_at_zero() {
+    assert_eq!(interpret("Limit[Log[x], x -> 0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn limit_negative_log_at_zero() {
+    assert_eq!(interpret("Limit[-Log[x], x -> 0]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn limit_scaled_log_at_zero() {
+    assert_eq!(interpret("Limit[3 Log[x], x -> 0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn limit_shifted_log_at_zero() {
+    assert_eq!(interpret("Limit[Log[x] + 5, x -> 0]").unwrap(), "-Infinity");
+    assert_eq!(
+      interpret("Limit[2 Log[x] - 1, x -> 0]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_simple_pole_stays_indeterminate() {
+    // ComplexInfinity, not a signed Infinity: the two sides disagree.
+    assert_eq!(interpret("Limit[1/x, x -> 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Limit[1/x^3, x -> 0]").unwrap(), "Indeterminate");
+  }
+
   // 0 * Infinity indeterminate products at a finite point, resolved by
   // rewriting as an Infinity/Infinity quotient and applying L'Hopital.
   #[test]
