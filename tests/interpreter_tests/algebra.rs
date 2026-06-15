@@ -442,6 +442,36 @@ mod simplify {
     assert_eq!(interpret("Simplify[Sin[y]^2 + Cos[y]^2 + 1]").unwrap(), "2");
   }
 
+  // The hyperbolic Pythagorean identity Cosh[x]^2 - Sinh[x]^2 = 1.
+  #[test]
+  fn hyperbolic_pythagorean_identity() {
+    assert_eq!(
+      interpret("Simplify[Cosh[x]^2 - Sinh[x]^2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("FullSimplify[Cosh[x]^2 - Sinh[x]^2]").unwrap(),
+      "1"
+    );
+    // Sinh^2 - Cosh^2 = -1 (the Cosh coefficient wins).
+    assert_eq!(
+      interpret("Simplify[Sinh[x]^2 - Cosh[x]^2]").unwrap(),
+      "-1"
+    );
+  }
+
+  #[test]
+  fn hyperbolic_pythagorean_with_coefficient() {
+    assert_eq!(
+      interpret("Simplify[3 Cosh[x]^2 - 3 Sinh[x]^2]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Simplify[2 Cosh[x]^2 - 2 Sinh[x]^2 + 5]").unwrap(),
+      "7"
+    );
+  }
+
   #[test]
   fn pythagorean_induced_singularity() {
     // Simplify[1/(Sin[1]^2 + Cos[1]^2 - 1)] cancels to 1/0 → ComplexInfinity.

@@ -4794,23 +4794,51 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
     if used[i] {
       continue;
     }
-    if let Some((coeff_i, arg_i, is_sin_i)) = extract_trig_squared(&terms[i]) {
+    if let Some((coeff_i, arg_i, head_i)) = extract_trig_squared(&terms[i]) {
       // Look for matching pair
       for j in (i + 1)..terms.len() {
         if used[j] {
           continue;
         }
-        if let Some((coeff_j, arg_j, is_sin_j)) =
+        if let Some((coeff_j, arg_j, head_j)) =
           extract_trig_squared(&terms[j])
-          && is_sin_i != is_sin_j
           && expr_to_string(&arg_i) == expr_to_string(&arg_j)
-          && expr_to_string(&coeff_i) == expr_to_string(&coeff_j)
         {
-          // Found matching pair: coeff*Sin[x]^2 + coeff*Cos[x]^2 = coeff
-          result_terms.push(coeff_i.clone());
-          used[i] = true;
-          used[j] = true;
-          break;
+          let is_sincos = matches!(
+            (head_i.as_str(), head_j.as_str()),
+            ("Sin", "Cos") | ("Cos", "Sin")
+          );
+          let is_coshsinh = matches!(
+            (head_i.as_str(), head_j.as_str()),
+            ("Cosh", "Sinh") | ("Sinh", "Cosh")
+          );
+          // Sin[x]^2 + Cos[x]^2 = 1: equal coefficients collapse to the coeff.
+          if is_sincos
+            && expr_to_string(&coeff_i) == expr_to_string(&coeff_j)
+          {
+            result_terms.push(coeff_i.clone());
+            used[i] = true;
+            used[j] = true;
+            break;
+          }
+          // Cosh[x]^2 - Sinh[x]^2 = 1: the coefficients are negatives, and the
+          // result is the Cosh coefficient (so Sinh^2 - Cosh^2 → -1).
+          if is_coshsinh
+            && matches!(
+              crate::functions::math_ast::plus_ast(&[
+                coeff_i.clone(),
+                coeff_j.clone()
+              ]),
+              Ok(Expr::Integer(0))
+            )
+          {
+            let cosh_coeff =
+              if head_i == "Cosh" { &coeff_i } else { &coeff_j };
+            result_terms.push(cosh_coeff.clone());
+            used[i] = true;
+            used[j] = true;
+            break;
+          }
         }
       }
     }
@@ -4832,14 +4860,30 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
   }
 }
 
-/// Try to extract (coefficient, argument, is_sin) from a term like coeff*Sin[arg]^2 or coeff*Cos[arg]^2.
-pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, bool)> {
-  // Pattern: Sin[arg]^2 or Cos[arg]^2 (coefficient = 1)
+/// Try to extract (coefficient, argument, head) from a term like
+/// `coeff * Sin[arg]^2` where head is "Sin"/"Cos"/"Cosh"/"Sinh".
+pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, String)> {
+  // Negated term `-f[arg]^2` (a UnaryOp Minus, as produced when collecting the
+  // terms of `a - b`): negate the coefficient of the inner term.
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = term
+  {
+    let (coeff, arg, head) = extract_trig_squared(operand)?;
+    let neg = crate::functions::math_ast::times_ast(&[
+      Expr::Integer(-1),
+      coeff,
+    ])
+    .ok()?;
+    return Some((neg, arg, head));
+  }
+  // Pattern: f[arg]^2 (coefficient = 1)
   if let Some((func, arg)) = match_trig_squared(term) {
-    return Some((Expr::Integer(1), arg, func == "Sin"));
+    return Some((Expr::Integer(1), arg, func.to_string()));
   }
 
-  // Pattern: coeff * Sin[arg]^2 or coeff * Cos[arg]^2
+  // Pattern: coeff * f[arg]^2
   let factors = collect_multiplicative_factors(term);
   if factors.len() < 2 {
     return None;
@@ -4848,6 +4892,7 @@ pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, bool)> {
   // Find the trig^2 factor
   for (idx, f) in factors.iter().enumerate() {
     if let Some((func, arg)) = match_trig_squared(f) {
+      let head = func.to_string();
       let mut coeff_factors: Vec<Expr> = Vec::new();
       for (j, g) in factors.iter().enumerate() {
         if j != idx {
@@ -4859,30 +4904,38 @@ pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, bool)> {
       } else {
         build_product(coeff_factors)
       };
-      return Some((coeff, arg, func == "Sin"));
+      return Some((coeff, arg, head));
     }
   }
   None
 }
 
-/// Match Sin[arg]^2 or Cos[arg]^2, returning ("Sin"/"Cos", arg).
+/// Match Sin/Cos/Cosh/Sinh of an argument squared, returning
+/// (head, arg) — e.g. `Cosh[x]^2 → ("Cosh", x)`.
 pub fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
-  match expr {
+  let (base, exp) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } if matches!(right.as_ref(), Expr::Integer(2)) => {
-      if let Expr::FunctionCall { name, args } = left.as_ref()
-        && (name == "Sin" || name == "Cos")
-        && args.len() == 1
-      {
-        return Some((name.as_str(), args[0].clone()));
-      }
-      None
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      (&args[0], &args[1])
     }
-    _ => None,
+    _ => return None,
+  };
+  if !matches!(exp, Expr::Integer(2)) {
+    return None;
   }
+  if let Expr::FunctionCall { name, args } = base
+    && matches!(name.as_str(), "Sin" | "Cos" | "Cosh" | "Sinh")
+    && args.len() == 1
+  {
+    return Some((name.as_str(), args[0].clone()));
+  }
+  None
 }
 
 /// Simplify a product, combining powers.
