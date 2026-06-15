@@ -989,6 +989,12 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = imaginary_arg_reduction("Sin", &args[0]) {
     return r;
   }
+  // Sin[Interval[...]] → range over the interval.
+  if let Some(r) =
+    crate::functions::interval_ast::trig_interval("Sin", &args[0])
+  {
+    return Ok(r);
+  }
   // Sin[-x] → -Sin[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Sin", &[neg])?;
@@ -1190,6 +1196,12 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(r) = imaginary_arg_reduction("Cos", &args[0]) {
     return r;
+  }
+  // Cos[Interval[...]] → range over the interval.
+  if let Some(r) =
+    crate::functions::interval_ast::trig_interval("Cos", &args[0])
+  {
+    return Ok(r);
   }
   // Cos[-x] → Cos[x] (even function)
   if let Some(neg) = try_extract_negated(&args[0]) {

@@ -58,6 +58,53 @@ pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
   Some(make_interval(normalize_intervals(out)))
 }
 
+/// True if some `offset + period*k` (integer `k`) lies in `[af, bf]`.
+fn critical_point_in(offset: f64, period: f64, af: f64, bf: f64) -> bool {
+  let eps = 1e-9;
+  let k_lo = ((af - offset) / period - eps).ceil();
+  let k_hi = ((bf - offset) / period + eps).floor();
+  k_lo <= k_hi
+}
+
+/// `Sin[Interval[...]]` / `Cos[Interval[...]]` — the range of the (bounded)
+/// trig function over each span. The bounds are the endpoint images unless a
+/// maximum point (value 1) or minimum point (value -1) falls inside the span.
+/// Returns `None` unless every endpoint and its image is real-numeric.
+pub fn trig_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  // (offset of a maximum, offset of a minimum), period 2*Pi.
+  let (max_offset, min_offset) = match head {
+    "Sin" => (std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2),
+    "Cos" => (0.0, std::f64::consts::PI),
+    _ => return None,
+  };
+  let period = std::f64::consts::TAU;
+  let spans = is_interval(expr)?;
+  let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
+  for (a, b) in spans {
+    let af = expr_to_f64(a)?;
+    let bf = expr_to_f64(b)?;
+    // Endpoint images, kept symbolic (1/2, Sqrt[3]/2, …) but required numeric.
+    let fa =
+      crate::evaluator::evaluate_function_call_ast(head, &[a.clone()]).ok()?;
+    let fb =
+      crate::evaluator::evaluate_function_call_ast(head, &[b.clone()]).ok()?;
+    expr_to_f64(&fa)?;
+    expr_to_f64(&fb)?;
+    let lo = if critical_point_in(min_offset, period, af, bf) {
+      Expr::Integer(-1)
+    } else {
+      numeric_min(&fa, &fb)
+    };
+    let hi = if critical_point_in(max_offset, period, af, bf) {
+      Expr::Integer(1)
+    } else {
+      numeric_max(&fa, &fb)
+    };
+    out.push((lo, hi));
+  }
+  Some(make_interval(normalize_intervals(out)))
+}
+
 /// `Abs[Interval[...]]` — the interval of absolute values. For each span
 /// `[a, b]`: if it contains 0 the result runs from 0 to max(|a|, |b|);
 /// otherwise from min(|a|, |b|) to max(|a|, |b|). Spans are renormalized

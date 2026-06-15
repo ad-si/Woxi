@@ -680,3 +680,58 @@ fn interval_power_interval_negative_base_unevaluated() {
     "Interval[{-2, 3}]^Interval[{2, 3}]"
   );
 }
+
+// ─── Sin/Cos of intervals (range over the span) ─────────────────────────────
+
+#[test]
+fn sin_interval_monotonic_segment() {
+  assert_eq!(
+    interpret("Sin[Interval[{Pi/6, Pi/3}]]").unwrap(),
+    "Interval[{1/2, Sqrt[3]/2}]"
+  );
+}
+
+#[test]
+fn sin_interval_includes_maximum() {
+  // Pi/2 (where Sin = 1) lies inside, so the upper bound is 1.
+  assert_eq!(
+    interpret("Sin[Interval[{0, Pi}]]").unwrap(),
+    "Interval[{0, 1}]"
+  );
+}
+
+#[test]
+fn sin_interval_includes_both_extrema() {
+  assert_eq!(
+    interpret("Sin[Interval[{0, 2 Pi}]]").unwrap(),
+    "Interval[{-1, 1}]"
+  );
+  assert_eq!(
+    interpret("Sin[Interval[{-Pi/2, Pi/2}]]").unwrap(),
+    "Interval[{-1, 1}]"
+  );
+}
+
+#[test]
+fn sin_interval_descending_segment() {
+  assert_eq!(
+    interpret("Sin[Interval[{Pi, 2 Pi}]]").unwrap(),
+    "Interval[{-1, 0}]"
+  );
+}
+
+#[test]
+fn cos_interval_ranges() {
+  assert_eq!(
+    interpret("Cos[Interval[{0, Pi}]]").unwrap(),
+    "Interval[{-1, 1}]"
+  );
+  assert_eq!(
+    interpret("Cos[Interval[{0, Pi/2}]]").unwrap(),
+    "Interval[{0, 1}]"
+  );
+  assert_eq!(
+    interpret("Cos[Interval[{Pi/3, 2 Pi/3}]]").unwrap(),
+    "Interval[{-1/2, 1/2}]"
+  );
+}
