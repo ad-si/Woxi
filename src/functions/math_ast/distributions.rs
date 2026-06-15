@@ -1198,6 +1198,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
+    "BinomialDistribution" => cdf_binomial(dargs, x),
     "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
@@ -1383,6 +1384,49 @@ fn cdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   eval(piecewise(
     vec![(int(0), cond_neg), (one_minus_p, cond_middle)],
     int(1),
+  ))
+}
+
+/// CDF[BinomialDistribution[n, p], k] =
+///   Piecewise[{{BetaRegularized[1 - p, n - Floor[k], 1 + Floor[k]],
+///               0 <= k < n}, {1, k >= n}}, 0]
+fn cdf_binomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BinomialDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let p = dargs[1].clone();
+
+  let floor_k = Expr::FunctionCall {
+    name: "Floor".to_string(),
+    args: vec![x.clone()].into(),
+  };
+  // BetaRegularized[1 - p, n - Floor[k], 1 + Floor[k]] is the regularized
+  // incomplete beta form of the binomial CDF; it collapses to the exact
+  // rational at numeric points and stays symbolic otherwise.
+  let value = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![
+      minus(int(1), p),
+      minus(n.clone(), floor_k.clone()),
+      plus(int(1), floor_k),
+    ]
+    .into(),
+  };
+  let cond_mid = comparison3(
+    int(0),
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::Less,
+    n.clone(),
+  );
+  let cond_high = comparison(x, ComparisonOp::GreaterEqual, n);
+
+  eval(piecewise(
+    vec![(value, cond_mid), (int(1), cond_high)],
+    int(0),
   ))
 }
 

@@ -3227,3 +3227,58 @@ mod binomial_distribution_pdf {
     );
   }
 }
+
+mod binomial_distribution_cdf {
+  use super::*;
+
+  #[test]
+  fn exact_values() {
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[10, 1/2], 5]").unwrap(),
+      "319/512"
+    );
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[10, 1/3], 4]").unwrap(),
+      "15488/19683"
+    );
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[5, 1/4], 2]").unwrap(),
+      "459/512"
+    );
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[10, 1/2], 0]").unwrap(),
+      "1/1024"
+    );
+  }
+
+  // At and beyond the top of the support the CDF saturates at 1; below 0 it is 0.
+  #[test]
+  fn saturation() {
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[10, 1/2], 10]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[10, 1/2], 11]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("CDF[BinomialDistribution[10, 1/2], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  // CDF and PDF are consistent: F(k) - F(k-1) = f(k).
+  #[test]
+  fn consistent_with_pdf() {
+    assert_eq!(
+      interpret(
+        "CDF[BinomialDistribution[10, 1/3], 4] \
+         - CDF[BinomialDistribution[10, 1/3], 3] \
+         == PDF[BinomialDistribution[10, 1/3], 4]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
