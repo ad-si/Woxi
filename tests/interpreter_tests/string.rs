@@ -1237,6 +1237,46 @@ mod operator_form {
   }
 
   #[test]
+  fn string_match_q_curried() {
+    assert_eq!(
+      interpret("StringMatchQ[\"*G*\"][\"CTG1\"]").unwrap(),
+      "True"
+    );
+  }
+
+  // The bare operator form (not yet applied) stays as an operator, exactly
+  // like Wolfram, instead of erroring on the missing second argument.
+  #[test]
+  fn string_contains_q_operator_unevaluated() {
+    assert_eq!(
+      interpret("StringContainsQ[\"G\"]").unwrap(),
+      "StringContainsQ[G]"
+    );
+  }
+
+  #[test]
+  fn string_starts_q_operator_in_select() {
+    assert_eq!(
+      interpret(
+        "Select[{\"CAC1\", \"CTG1\", \"ACT1\", \"CGA1\", \"CTC1\"}, StringStartsQ[\"C\"]]"
+      )
+      .unwrap(),
+      "{CAC1, CTG1, CGA1, CTC1}"
+    );
+  }
+
+  #[test]
+  fn string_ends_q_operator_in_select() {
+    assert_eq!(
+      interpret(
+        "Select[{\"CAC1\", \"CTG1\", \"ACT1\", \"CGA1\", \"CTC1\"}, StringEndsQ[\"C1\"]]"
+      )
+      .unwrap(),
+      "{CAC1, CTC1}"
+    );
+  }
+
+  #[test]
   fn member_q_curried() {
     assert_eq!(interpret("MemberQ[2][{1, 2, 3}]").unwrap(), "True");
   }

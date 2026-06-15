@@ -4,6 +4,13 @@ Tests if string matches a pattern.
 `*` matches any sequence of characters (including empty).
 `@` matches one or more characters, excluding uppercase letters.
 
+The one-argument operator form applies to a string later, e.g. inside `Select`.
+
+```scrut
+$ wo 'Select[{"CAC1", "CTG1", "ACT1", "CGA1", "CTC1"}, StringMatchQ["*G*"]]'
+{CTG1, CGA1}
+```
+
 Exact match:
 
 ```scrut
