@@ -1740,6 +1740,35 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::sort_ast(&args[0]));
     }
     "Sort" if args.len() == 2 => {
+      // Sort[assoc, p] - sort the association entries by their values using p,
+      // mirroring Sort[assoc] (which orders by value). Keys ride along.
+      if let Expr::Association(entries) = &args[0] {
+        let mut sorted = entries.clone();
+        let comparator = args[1].clone();
+        let cmp_values = |a: &Expr, b: &Expr| -> std::cmp::Ordering {
+          if let Expr::Identifier(name) = &comparator {
+            match name.as_str() {
+              "Greater" => {
+                return list_helpers_ast::canonical_cmp(a, b).reverse();
+              }
+              "Less" => return list_helpers_ast::canonical_cmp(a, b),
+              _ => {}
+            }
+          }
+          match crate::functions::list_helpers_ast::apply_func_to_two_args(
+            &comparator,
+            a,
+            b,
+          ) {
+            Ok(Expr::Identifier(ref s)) if s == "True" => {
+              std::cmp::Ordering::Less
+            }
+            _ => std::cmp::Ordering::Greater,
+          }
+        };
+        sorted.sort_by(|(_, va), (_, vb)| cmp_values(va, vb));
+        return Some(Ok(Expr::Association(sorted)));
+      }
       // Sort[list, p] - sort using comparator p
       // p[a, b] returns True if a should come before b
       let (items, head_name) = match &args[0] {

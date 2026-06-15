@@ -1716,6 +1716,20 @@ mod sort_canonical {
   }
 
   #[test]
+  fn sort_association_with_comparator() {
+    // Sort[assoc, p] orders entries by their values using p.
+    assert_eq!(
+      interpret("Sort[<|\"a\" -> 3, \"b\" -> 1, \"c\" -> 2|>, Greater]")
+        .unwrap(),
+      "<|a -> 3, c -> 2, b -> 1|>"
+    );
+    assert_eq!(
+      interpret("Sort[<|\"a\" -> 3, \"b\" -> 1, \"c\" -> 2|>, Less]").unwrap(),
+      "<|b -> 1, c -> 2, a -> 3|>"
+    );
+  }
+
+  #[test]
   fn sort_with_pure_function_greater() {
     assert_eq!(
       interpret("Sort[{5, 2, 8, 1, 9}, #1 > #2 &]").unwrap(),
