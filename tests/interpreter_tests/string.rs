@@ -2039,6 +2039,31 @@ mod hash {
       "Hash[{a, b, c}, xyzstr]"
     );
   }
+
+  // Standard IEEE CRC-32 of the string's bytes.
+  #[test]
+  fn crc32_integer() {
+    assert_eq!(interpret(r#"Hash["abc", "CRC32"]"#).unwrap(), "891568578");
+    assert_eq!(interpret(r#"Hash["", "CRC32"]"#).unwrap(), "0");
+    assert_eq!(
+      interpret(r#"Hash["Hello, World!", "CRC32"]"#).unwrap(),
+      "3964322768"
+    );
+  }
+
+  #[test]
+  fn crc32_hex_string() {
+    assert_eq!(
+      interpret(r#"Hash["abc", "CRC32", "HexString"]"#).unwrap(),
+      "352441c2"
+    );
+  }
+
+  // Adler-32 checksum of the string's bytes.
+  #[test]
+  fn adler32_integer() {
+    assert_eq!(interpret(r#"Hash["abc", "Adler32"]"#).unwrap(), "38600999");
+  }
 }
 
 mod string_riffle_extended {
@@ -7908,7 +7933,8 @@ mod longest_common_subsequence_positions_tests {
   #[test]
   fn strings() {
     assert_eq!(
-      interpret(r#"LongestCommonSubsequencePositions["abcde", "ace"]"#).unwrap(),
+      interpret(r#"LongestCommonSubsequencePositions["abcde", "ace"]"#)
+        .unwrap(),
       "{{1, 1}, {1, 1}}"
     );
     assert_eq!(
@@ -7935,7 +7961,8 @@ mod longest_common_subsequence_positions_tests {
   #[test]
   fn lists() {
     assert_eq!(
-      interpret("LongestCommonSubsequencePositions[{1, 2, 3}, {2, 3}]").unwrap(),
+      interpret("LongestCommonSubsequencePositions[{1, 2, 3}, {2, 3}]")
+        .unwrap(),
       "{{2, 3}, {1, 2}}"
     );
     assert_eq!(

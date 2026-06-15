@@ -1315,7 +1315,7 @@ AngleBracket,Symbolic representation of angle brackets,✅,,3.0,1329
 GeoPath,,🚫,,10.0,1330
 MixtureDistribution,,✅,,8.0,1331
 RemoveBackground,,🚫,,10.0,1332
-Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅,pure,1.0,1333
+Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512/CRC32/Adler32,✅,pure,1.0,1333
 DeleteSmallComponents,,🚫,,8.0,1334
 DeleteMissing,Delete Missing elements from a list,✅,,10.0,1338
 GalaxyData,,🚫,,10.0,1338

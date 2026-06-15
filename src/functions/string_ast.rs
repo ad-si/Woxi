@@ -6197,7 +6197,13 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::String(idxs.iter().map(|&x| src[x].clone()).collect::<String>())
     } else {
       let src = if from_first { &orig1 } else { &orig2 };
-      Expr::List(idxs.iter().map(|&x| src[x].clone()).collect::<Vec<_>>().into())
+      Expr::List(
+        idxs
+          .iter()
+          .map(|&x| src[x].clone())
+          .collect::<Vec<_>>()
+          .into(),
+      )
     }
   };
 
@@ -6489,6 +6495,34 @@ pub fn alphabetic_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Hash[s] or Hash[s, type] or Hash[s, type, format]
+/// Standard IEEE 802.3 CRC-32 (the zlib/PNG variant, polynomial 0xEDB88320).
+fn crc32(data: &[u8]) -> u32 {
+  let mut crc: u32 = 0xFFFF_FFFF;
+  for &byte in data {
+    crc ^= byte as u32;
+    for _ in 0..8 {
+      crc = if crc & 1 != 0 {
+        (crc >> 1) ^ 0xEDB8_8320
+      } else {
+        crc >> 1
+      };
+    }
+  }
+  !crc
+}
+
+/// Adler-32 checksum (RFC 1950).
+fn adler32(data: &[u8]) -> u32 {
+  const MOD: u32 = 65521;
+  let mut a: u32 = 1;
+  let mut b: u32 = 0;
+  for &byte in data {
+    a = (a + byte as u32) % MOD;
+    b = (b + a) % MOD;
+  }
+  (b << 16) | a
+}
+
 pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -6546,6 +6580,8 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|b| format!("{:02x}", b))
         .collect::<String>()
     }
+    "CRC32" => format!("{:08x}", crc32(s.as_bytes())),
+    "Adler32" => format!("{:08x}", adler32(s.as_bytes())),
     "SHA384" => {
       use sha2::Digest;
       let result = sha2::Sha384::digest(s.as_bytes());
