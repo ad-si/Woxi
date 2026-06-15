@@ -4800,8 +4800,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
         if used[j] {
           continue;
         }
-        if let Some((coeff_j, arg_j, head_j)) =
-          extract_trig_squared(&terms[j])
+        if let Some((coeff_j, arg_j, head_j)) = extract_trig_squared(&terms[j])
           && expr_to_string(&arg_i) == expr_to_string(&arg_j)
         {
           let is_sincos = matches!(
@@ -4813,9 +4812,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
             ("Cosh", "Sinh") | ("Sinh", "Cosh")
           );
           // Sin[x]^2 + Cos[x]^2 = 1: equal coefficients collapse to the coeff.
-          if is_sincos
-            && expr_to_string(&coeff_i) == expr_to_string(&coeff_j)
-          {
+          if is_sincos && expr_to_string(&coeff_i) == expr_to_string(&coeff_j) {
             result_terms.push(coeff_i.clone());
             used[i] = true;
             used[j] = true;
@@ -4832,8 +4829,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
               Ok(Expr::Integer(0))
             )
           {
-            let cosh_coeff =
-              if head_i == "Cosh" { &coeff_i } else { &coeff_j };
+            let cosh_coeff = if head_i == "Cosh" { &coeff_i } else { &coeff_j };
             result_terms.push(cosh_coeff.clone());
             used[i] = true;
             used[j] = true;
@@ -4871,11 +4867,9 @@ pub fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, String)> {
   } = term
   {
     let (coeff, arg, head) = extract_trig_squared(operand)?;
-    let neg = crate::functions::math_ast::times_ast(&[
-      Expr::Integer(-1),
-      coeff,
-    ])
-    .ok()?;
+    let neg =
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), coeff])
+        .ok()?;
     return Some((neg, arg, head));
   }
   // Pattern: f[arg]^2 (coefficient = 1)
@@ -4919,9 +4913,7 @@ pub fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
       left,
       right,
     } => (left.as_ref(), right.as_ref()),
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       (&args[0], &args[1])
     }
     _ => return None,

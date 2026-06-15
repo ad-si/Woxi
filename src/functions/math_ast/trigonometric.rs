@@ -771,6 +771,89 @@ pub fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
   matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
 }
 
+/// If `arg` has the imaginary unit `I` as a factor, return the product of the
+/// remaining factors `z` (so `arg == I*z`). Handles `I` alone (z = 1) and the
+/// `Times` form (`I x`, `2 I x`, `-I x`, …).
+fn extract_imaginary_factor(arg: &Expr) -> Option<Expr> {
+  if matches!(arg, Expr::Identifier(s) if s == "I") {
+    return Some(Expr::Integer(1));
+  }
+  if let Expr::FunctionCall { name, args } = arg
+    && name == "Times"
+  {
+    let mut i_count = 0;
+    let mut other: Vec<Expr> = Vec::new();
+    for a in args {
+      if matches!(a, Expr::Identifier(s) if s == "I") {
+        i_count += 1;
+      } else {
+        other.push(a.clone());
+      }
+    }
+    if i_count == 1 {
+      return Some(match other.len() {
+        0 => Expr::Integer(1),
+        1 => other.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: other.into(),
+        },
+      });
+    }
+  }
+  None
+}
+
+/// Reduce a (hyperbolic) trig function of an imaginary argument `I*z` to its
+/// counterpart, matching wolframscript:
+///   Cos[I z]=Cosh[z], Sin[I z]=I Sinh[z], Tan[I z]=I Tanh[z],
+///   Cot[I z]=-I Coth[z], Sec[I z]=Sech[z], Csc[I z]=-I Csch[z], and the
+///   hyperbolic duals Cosh[I z]=Cos[z], Sinh[I z]=I Sin[z], etc.
+/// Returns None when the argument is not of the form `I*z`.
+pub fn imaginary_arg_reduction(
+  func: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let z = extract_imaginary_factor(arg)?;
+  // (counterpart, leading factor): 0 = none, 1 = I, -1 = -I.
+  let (target, factor): (&str, i8) = match func {
+    "Cos" => ("Cosh", 0),
+    "Sin" => ("Sinh", 1),
+    "Tan" => ("Tanh", 1),
+    "Cot" => ("Coth", -1),
+    "Sec" => ("Sech", 0),
+    "Csc" => ("Csch", -1),
+    "Cosh" => ("Cos", 0),
+    "Sinh" => ("Sin", 1),
+    "Tanh" => ("Tan", 1),
+    "Coth" => ("Cot", -1),
+    "Sech" => ("Sec", 0),
+    "Csch" => ("Csc", -1),
+    _ => return None,
+  };
+  let inner = match crate::evaluator::evaluate_function_call_ast(target, &[z]) {
+    Ok(v) => v,
+    Err(e) => return Some(Err(e)),
+  };
+  let result = match factor {
+    0 => inner,
+    1 => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Identifier("I".to_string()), inner].into(),
+    },
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(-1),
+        Expr::Identifier("I".to_string()),
+        inner,
+      ]
+      .into(),
+    },
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&result))
+}
+
 /// Sin, Cos, Tan - Trigonometric functions (fully symbolic)
 /// Only evaluate to float for Real arguments. For integer/symbolic args,
 /// try exact Pi-fraction lookup, otherwise return unevaluated.
@@ -779,6 +862,9 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Sin expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = imaginary_arg_reduction("Sin", &args[0]) {
+    return r;
   }
   // Sin[-x] → -Sin[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
@@ -965,6 +1051,9 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cos expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Cos", &args[0]) {
+    return r;
+  }
   // Cos[-x] → Cos[x] (even function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Cos", &[neg]);
@@ -1126,6 +1215,9 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Tan expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Tan", &args[0]) {
+    return r;
+  }
   // Tan[-x] → -Tan[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Tan", &[neg])?;
@@ -1201,6 +1293,9 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sec expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Sec", &args[0]) {
+    return r;
+  }
   // Sec[-x] → Sec[x] (even function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Sec", &[neg]);
@@ -1231,6 +1326,9 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Csc expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = imaginary_arg_reduction("Csc", &args[0]) {
+    return r;
   }
   // Csc[-x] → -Csc[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
@@ -1263,6 +1361,9 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Cot expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = imaginary_arg_reduction("Cot", &args[0]) {
+    return r;
   }
   // Cot[-x] → -Cot[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {
@@ -3035,6 +3136,9 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sinh expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Sinh", &args[0]) {
+    return r;
+  }
   // Sinh is monotonic increasing on ℝ: map over interval spans.
   if let Some(r) =
     crate::functions::interval_ast::map_monotonic_interval("Sinh", &args[0])
@@ -3078,6 +3182,9 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cosh expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Cosh", &args[0]) {
+    return r;
+  }
   // Cosh[ArcCosh[x]] = x
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcCosh"
@@ -3113,6 +3220,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Tanh expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = imaginary_arg_reduction("Tanh", &args[0]) {
+    return r;
   }
   // Tanh is monotonic increasing on ℝ: map over interval spans.
   if let Some(r) =
@@ -3157,6 +3267,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Coth expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Coth", &args[0]) {
+    return r;
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -3195,6 +3308,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sech expects 1 argument".into(),
     ));
   }
+  if let Some(r) = imaginary_arg_reduction("Sech", &args[0]) {
+    return r;
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -3223,6 +3339,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Csch expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = imaginary_arg_reduction("Csch", &args[0]) {
+    return r;
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));

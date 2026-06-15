@@ -445,19 +445,13 @@ mod simplify {
   // The hyperbolic Pythagorean identity Cosh[x]^2 - Sinh[x]^2 = 1.
   #[test]
   fn hyperbolic_pythagorean_identity() {
-    assert_eq!(
-      interpret("Simplify[Cosh[x]^2 - Sinh[x]^2]").unwrap(),
-      "1"
-    );
+    assert_eq!(interpret("Simplify[Cosh[x]^2 - Sinh[x]^2]").unwrap(), "1");
     assert_eq!(
       interpret("FullSimplify[Cosh[x]^2 - Sinh[x]^2]").unwrap(),
       "1"
     );
     // Sinh^2 - Cosh^2 = -1 (the Cosh coefficient wins).
-    assert_eq!(
-      interpret("Simplify[Sinh[x]^2 - Cosh[x]^2]").unwrap(),
-      "-1"
-    );
+    assert_eq!(interpret("Simplify[Sinh[x]^2 - Cosh[x]^2]").unwrap(), "-1");
   }
 
   #[test]

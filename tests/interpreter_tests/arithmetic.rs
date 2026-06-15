@@ -5775,3 +5775,47 @@ mod sign_simplifications {
     assert_eq!(interpret("Sign[2 I]").unwrap(), "I");
   }
 }
+
+// Trig/hyperbolic of an imaginary argument I*z reduce to the counterpart
+// function (Cos[I z] = Cosh[z], Sin[I z] = I Sinh[z], …). Verified against
+// wolframscript.
+mod imaginary_argument_trig {
+  use super::*;
+
+  #[test]
+  fn trig_of_imaginary() {
+    assert_eq!(interpret("Cos[I x]").unwrap(), "Cosh[x]");
+    assert_eq!(interpret("Sin[I x]").unwrap(), "I*Sinh[x]");
+    assert_eq!(interpret("Tan[I x]").unwrap(), "I*Tanh[x]");
+    assert_eq!(interpret("Cot[I x]").unwrap(), "-I*Coth[x]");
+    assert_eq!(interpret("Sec[I x]").unwrap(), "Sech[x]");
+    assert_eq!(interpret("Csc[I x]").unwrap(), "-I*Csch[x]");
+  }
+
+  #[test]
+  fn hyperbolic_of_imaginary() {
+    assert_eq!(interpret("Cosh[I x]").unwrap(), "Cos[x]");
+    assert_eq!(interpret("Sinh[I x]").unwrap(), "I*Sin[x]");
+    assert_eq!(interpret("Tanh[I x]").unwrap(), "I*Tan[x]");
+  }
+
+  #[test]
+  fn imaginary_with_coefficient() {
+    assert_eq!(interpret("Cos[2 I x]").unwrap(), "Cosh[2*x]");
+    assert_eq!(interpret("Sin[3 I x]").unwrap(), "I*Sinh[3*x]");
+    assert_eq!(interpret("Sin[-I x]").unwrap(), "-I*Sinh[x]");
+    assert_eq!(interpret("Cos[I a b]").unwrap(), "Cosh[a*b]");
+    // Bare I → z = 1.
+    assert_eq!(interpret("Cos[I]").unwrap(), "Cosh[1]");
+    assert_eq!(interpret("Sin[I]").unwrap(), "I*Sinh[1]");
+  }
+
+  // Real / even-odd arguments are unaffected by the reduction.
+  #[test]
+  fn real_arguments_unaffected() {
+    assert_eq!(interpret("Cos[-x]").unwrap(), "Cos[x]");
+    assert_eq!(interpret("Sin[-x]").unwrap(), "-Sin[x]");
+    assert_eq!(interpret("Cos[x]").unwrap(), "Cos[x]");
+    assert_eq!(interpret("Cos[Pi/3]").unwrap(), "1/2");
+  }
+}
