@@ -2476,7 +2476,7 @@ Upsample,Upsample a list by inserting zeros,✅,none,9.0,2528
 DEigensystem,,🚫,,10.3,2533
 DiscreteWaveletPacketTransform,,🚫,,8.0,2533
 MengerMesh,,🚫,,11.1,2533
-PolynomialLCM,Least common multiple of polynomials,✅,1,2.0,2533
+PolynomialLCM,Least common multiple of polynomials,✅,pure,2.0,2533
 TensorWedge,Exterior (wedge) product of vectors/tensors,✅,pure,9.0,2533
 SmithDecomposition,gives the Smith normal form decomposition of an integer matrix,✅,none,10.2,2535
 SpheroidalPS,,🚫,,6.0,2535

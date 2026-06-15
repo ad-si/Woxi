@@ -3647,6 +3647,64 @@ mod polynomial_remainder {
   }
 }
 
+mod polynomial_lcm {
+  use super::*;
+
+  // PolynomialLCM[a, b] = (a / gcd) * b, displayed as an unexpanded product
+  // matching Wolfram's factored form rather than the expanded polynomial.
+  #[test]
+  fn factored_two_factors() {
+    assert_eq!(
+      interpret("PolynomialLCM[x^2 - 1, x - 1]").unwrap(),
+      "(-1 + x)*(1 + x)"
+    );
+  }
+
+  #[test]
+  fn factored_with_repeated_root() {
+    assert_eq!(
+      interpret("PolynomialLCM[x^2 - 1, x^2 + 2 x + 1]").unwrap(),
+      "(-1 + x)*(1 + 2*x + x^2)"
+    );
+  }
+
+  #[test]
+  fn factored_distinct_quadratics() {
+    assert_eq!(
+      interpret("PolynomialLCM[x^2 + 3 x + 2, x^2 + 4 x + 3]").unwrap(),
+      "(2 + x)*(3 + 4*x + x^2)"
+    );
+  }
+
+  #[test]
+  fn numeric_coefficients() {
+    assert_eq!(interpret("PolynomialLCM[2 x, 3 x]").unwrap(), "6*x");
+  }
+
+  #[test]
+  fn integer_arguments() {
+    assert_eq!(interpret("PolynomialLCM[6, 4]").unwrap(), "12");
+  }
+
+  // When one polynomial divides the other the quotient is 1, so the LCM is the
+  // multiple itself (a single, expanded factor).
+  #[test]
+  fn divisible_pair_single_factor() {
+    assert_eq!(
+      interpret("PolynomialLCM[x - 1, x^2 - 1]").unwrap(),
+      "-1 + x^2"
+    );
+  }
+
+  #[test]
+  fn three_arguments() {
+    assert_eq!(
+      interpret("PolynomialLCM[x^2 - 1, x - 1, x + 1]").unwrap(),
+      "(-1 + x)*(1 + x)"
+    );
+  }
+}
+
 mod polynomial_reduce {
   use super::*;
 
