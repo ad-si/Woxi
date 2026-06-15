@@ -866,7 +866,7 @@ pub fn dispatch_math_functions(
     "RootMeanSquare" if args.len() == 1 => {
       return Some(crate::functions::math_ast::root_mean_square_ast(args));
     }
-    "Covariance" if args.len() == 2 => {
+    "Covariance" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::covariance_ast(args));
     }
     "CovarianceFunction" if args.len() == 3 => {

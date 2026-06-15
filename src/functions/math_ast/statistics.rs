@@ -1263,43 +1263,15 @@ pub fn contraharmonic_mean_ast(
   evaluate_function_call_ast("Divide", &[numerator, denominator])
 }
 
-/// Covariance[list1, list2] - Sample covariance of two numeric lists
-pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
-      name: "Covariance".to_string(),
-      args: args.to_vec().into(),
-    });
-  }
-  let (xs, ys) = match (&args[0], &args[1]) {
-    (Expr::List(xs), Expr::List(ys))
-      if xs.len() == ys.len() && xs.len() >= 2 =>
-    {
-      (xs, ys)
-    }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Covariance".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
-  };
-  // Check all elements are numeric
-  let all_numeric = xs.iter().all(|x| expr_to_num(x).is_some())
-    && ys.iter().all(|y| expr_to_num(y).is_some());
-  if !all_numeric {
-    return Ok(Expr::FunctionCall {
-      name: "Covariance".to_string(),
-      args: args.to_vec().into(),
-    });
-  }
-
-  // Compute means symbolically
-  let mean_x = mean_ast(&[args[0].clone()])?;
-  let mean_y = mean_ast(&[args[1].clone()])?;
+/// Sample covariance of two equal-length scalar lists, computed symbolically
+/// as `Sum[(x_i - meanx)*Conjugate[y_i - meany]] / (n - 1)`. The Conjugate on
+/// the second argument matches Wolfram's (Hermitian) convention; for real data
+/// it evaluates away. Works for both numeric and symbolic entries.
+fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mean_x = mean_ast(&[Expr::List(xs.to_vec().into())])?;
+  let mean_y = mean_ast(&[Expr::List(ys.to_vec().into())])?;
 
   let n = xs.len();
-  // Compute sum of (x_i - mean_x) * (y_i - mean_y) symbolically
   let mut terms = Vec::with_capacity(n);
   for (x, y) in xs.iter().zip(ys.iter()) {
     let dx = Expr::BinaryOp {
@@ -1312,16 +1284,19 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       left: Box::new(y.clone()),
       right: Box::new(mean_y.clone()),
     };
+    let conj_dy = Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: vec![dy].into(),
+    };
     let product = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Times,
       left: Box::new(dx),
-      right: Box::new(dy),
+      right: Box::new(conj_dy),
     };
     let val = crate::evaluator::evaluate_expr_to_expr(&product)?;
     terms.push(val);
   }
 
-  // Sum and divide by (n-1)
   let sum_expr = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: terms.into(),
@@ -1333,6 +1308,66 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     right: Box::new(Expr::Integer((n - 1) as i128)),
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// True when every entry of the list is a numeric scalar. Covariance is only
+/// closed-formed here for numeric data; symbolic data is left unevaluated to
+/// avoid emitting an unsimplified expression that diverges from Wolfram's form.
+fn all_numeric_scalars(items: &[Expr]) -> bool {
+  items.iter().all(|e| expr_to_num(e).is_some())
+}
+
+/// Covariance[list1, list2] - sample covariance of two equal-length lists.
+/// Covariance[matrix] - covariance matrix of the columns of an n×p matrix.
+pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Covariance".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Single-argument matrix form: covariance matrix of the columns.
+  if args.len() == 1 {
+    let Expr::List(rows) = &args[0] else {
+      return unevaluated();
+    };
+    if rows.len() < 2 {
+      return unevaluated();
+    }
+    let Some(cols) = transpose_rows(rows) else {
+      return unevaluated();
+    };
+    if !cols.iter().all(|c| all_numeric_scalars(c)) {
+      return unevaluated();
+    }
+    // Build the symmetric p×p covariance matrix.
+    let mut matrix_rows = Vec::with_capacity(cols.len());
+    for ci in &cols {
+      let mut row = Vec::with_capacity(cols.len());
+      for cj in &cols {
+        row.push(covariance_pair(ci, cj)?);
+      }
+      matrix_rows.push(Expr::List(row.into()));
+    }
+    return Ok(Expr::List(matrix_rows.into()));
+  }
+
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let (xs, ys) = match (&args[0], &args[1]) {
+    (Expr::List(xs), Expr::List(ys))
+      if xs.len() == ys.len()
+        && xs.len() >= 2
+        && all_numeric_scalars(xs)
+        && all_numeric_scalars(ys) =>
+    {
+      (xs, ys)
+    }
+    _ => return unevaluated(),
+  };
+  covariance_pair(xs, ys)
 }
 
 /// Transpose a rectangular `rows` of `Expr::List` rows into a Vec of columns.

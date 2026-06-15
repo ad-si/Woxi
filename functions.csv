@@ -1506,7 +1506,7 @@ FindDistributionParameters,Estimate distribution parameters,✅,pure,8.0,1528
 NetEncoder,Neural network encoder,✅,pure,11.0,1528
 LayeredGraphPlot,Layered graph plot,✅,pure,6.0,1529
 AssociationMap,Maps a function over an association,✅,pure,10.0,1530
-Covariance,Computes the covariance of two lists,✅,pure,6.0,1534
+Covariance,Covariance of two lists; with a single matrix gives the covariance matrix of its columns,✅,pure,6.0,1534
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10.0,1534
 NProbability,Numerical probability,✅,pure,8.0,1534
 WordCharacter,String pattern for word characters,✅,pure,5.1,1534

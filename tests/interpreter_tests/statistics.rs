@@ -1104,6 +1104,51 @@ mod covariance {
       "10/3"
     );
   }
+
+  // Single-argument matrix form: covariance matrix of the columns.
+
+  #[test]
+  fn covariance_matrix_2x2() {
+    assert_eq!(
+      interpret("Covariance[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{{4, 4}, {4, 4}}"
+    );
+  }
+
+  #[test]
+  fn covariance_matrix_3x3() {
+    assert_eq!(
+      interpret("Covariance[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {2, 1, 0}}]")
+        .unwrap(),
+      "{{7, 8, 9}, {8, 10, 12}, {9, 12, 15}}"
+    );
+  }
+
+  #[test]
+  fn covariance_matrix_rational_entries() {
+    assert_eq!(
+      interpret("Covariance[{{1, 2}, {3, 5}, {6, 4}, {8, 9}}]").unwrap(),
+      "{{29/3, 23/3}, {23/3, 26/3}}"
+    );
+  }
+
+  #[test]
+  fn covariance_matrix_off_diagonal_rational() {
+    assert_eq!(
+      interpret("Covariance[{{1, 4}, {2, 8}, {3, 7}}]").unwrap(),
+      "{{1, 3/2}, {3/2, 13/3}}"
+    );
+  }
+
+  #[test]
+  fn covariance_symbolic_unevaluated() {
+    // Symbolic data is left unevaluated rather than emitting an unsimplified
+    // form that diverges from Wolfram's closed form.
+    assert_eq!(
+      interpret("Covariance[{a, b}, {x, y}]").unwrap(),
+      "Covariance[{a, b}, {x, y}]"
+    );
+  }
 }
 
 mod correlation {

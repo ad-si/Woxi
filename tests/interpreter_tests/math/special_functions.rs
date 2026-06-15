@@ -3370,10 +3370,8 @@ mod gegenbauer_c {
 
   #[test]
   fn two_arg_real() {
-    let result: f64 = interpret("GegenbauerC[3, 0.5]")
-      .unwrap()
-      .parse()
-      .unwrap();
+    let result: f64 =
+      interpret("GegenbauerC[3, 0.5]").unwrap().parse().unwrap();
     assert!((result - (-0.6666666666666666)).abs() < 1e-12);
   }
 
