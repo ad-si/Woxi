@@ -4012,6 +4012,22 @@ mod inverse_hyperbolic_derivatives {
     assert_eq!(interpret("D[ArcTanh[x], x]").unwrap(), "(1 - x^2)^(-1)");
   }
 
+  // ArcCoth shares ArcTanh's derivative 1/(1 - x^2).
+  #[test]
+  fn d_arccoth() {
+    assert_eq!(interpret("D[ArcCoth[x], x]").unwrap(), "(1 - x^2)^(-1)");
+  }
+
+  #[test]
+  fn d_arccoth_chain_rule() {
+    assert_eq!(interpret("D[ArcCoth[x^2], x]").unwrap(), "(2*x)/(1 - x^4)");
+    assert_eq!(interpret("D[ArcCoth[3*x], x]").unwrap(), "3/(1 - 9*x^2)");
+    assert_eq!(
+      interpret("D[ArcCoth[Sin[x]], x]").unwrap(),
+      "Cos[x]/(1 - Sin[x]^2)"
+    );
+  }
+
   #[test]
   fn d_arcsinh_chain_rule() {
     assert_eq!(
