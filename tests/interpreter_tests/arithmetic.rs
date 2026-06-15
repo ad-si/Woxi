@@ -2406,6 +2406,47 @@ mod expand_threading {
     );
   }
 
+  // These functions are Listable and thread over any list argument.
+  #[test]
+  fn power_mod_threads_over_lists() {
+    assert_eq!(interpret("PowerMod[{2, 3}, 2, 5]").unwrap(), "{4, 4}");
+    assert_eq!(interpret("PowerMod[2, {2, 3}, 5]").unwrap(), "{4, 3}");
+    assert_eq!(interpret("PowerMod[{2, 3}, {2, 3}, 5]").unwrap(), "{4, 2}");
+  }
+
+  #[test]
+  fn bit_set_clear_thread_over_lists() {
+    assert_eq!(interpret("BitSet[{4, 8}, 1]").unwrap(), "{6, 10}");
+    assert_eq!(interpret("BitClear[{15, 7}, 0]").unwrap(), "{14, 6}");
+  }
+
+  #[test]
+  fn jacobi_symbol_threads_over_lists() {
+    assert_eq!(interpret("JacobiSymbol[{3, 5}, 7]").unwrap(), "{-1, -1}");
+    assert_eq!(interpret("JacobiSymbol[3, {7, 11}]").unwrap(), "{-1, 1}");
+  }
+
+  #[test]
+  fn integer_exponent_threads_over_lists() {
+    assert_eq!(
+      interpret("IntegerExponent[{100, 1000}, 10]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(interpret("IntegerExponent[1000, {2, 5}]").unwrap(), "{3, 3}");
+  }
+
+  #[test]
+  fn newly_listable_functions_report_attributes() {
+    for f in ["PowerMod", "BitSet", "BitClear", "JacobiSymbol", "IntegerExponent"]
+    {
+      assert_eq!(
+        interpret(&format!("Attributes[{f}]")).unwrap(),
+        "{Listable, Protected}",
+        "{f} should be Listable and Protected"
+      );
+    }
+  }
+
   #[test]
   fn mod_zero_modulus() {
     assert_eq!(interpret("Mod[5, 0]").unwrap(), "Indeterminate");
