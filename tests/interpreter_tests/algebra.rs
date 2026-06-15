@@ -7351,3 +7351,46 @@ mod arctan_two_arg {
     assert_eq!(interpret("ArcTan[-1]").unwrap(), "-1/4*Pi");
   }
 }
+
+mod arccot_exact {
+  use super::*;
+
+  // ArcCot keeps exact arguments symbolic unless they reduce to a closed
+  // form; it must not numericize an exact integer like ArcCot[2].
+  #[test]
+  fn integer_arguments_stay_symbolic() {
+    assert_eq!(interpret("ArcCot[2]").unwrap(), "ArcCot[2]");
+    assert_eq!(interpret("ArcCot[3]").unwrap(), "ArcCot[3]");
+  }
+
+  #[test]
+  fn closed_form_values() {
+    assert_eq!(interpret("ArcCot[0]").unwrap(), "Pi/2");
+    assert_eq!(interpret("ArcCot[1]").unwrap(), "Pi/4");
+    assert_eq!(interpret("ArcCot[Sqrt[3]]").unwrap(), "Pi/6");
+    assert_eq!(interpret("ArcCot[1/Sqrt[3]]").unwrap(), "Pi/3");
+  }
+
+  #[test]
+  fn limits_at_infinity() {
+    assert_eq!(interpret("ArcCot[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("ArcCot[-Infinity]").unwrap(), "0");
+  }
+
+  // Odd function: the sign factors out.
+  #[test]
+  fn odd_function() {
+    assert_eq!(interpret("ArcCot[-1]").unwrap(), "-1/4*Pi");
+    assert_eq!(interpret("ArcCot[-2]").unwrap(), "-ArcCot[2]");
+    assert_eq!(interpret("ArcCot[-3]").unwrap(), "-ArcCot[3]");
+  }
+
+  // Inexact arguments still evaluate numerically.
+  #[test]
+  fn real_argument_is_numeric() {
+    assert_eq!(
+      interpret("ArcCot[2.0]").unwrap(),
+      "0.46364760900080615"
+    );
+  }
+}

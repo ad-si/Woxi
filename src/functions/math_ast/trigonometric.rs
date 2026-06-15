@@ -3492,26 +3492,50 @@ pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCot expects 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(0) => return Ok(pi_over_n(2)), // Pi/2
-    Expr::Integer(1) => return Ok(pi_over_n(4)), // Pi/4
-    Expr::Integer(-1) => {
-      // -Pi/4
-      return Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
-        operand: Box::new(pi_over_n(4)),
-      });
-    }
-    Expr::Real(f) => return Ok(Expr::Real((1.0 / f).atan())),
-    _ => {}
+  let x = &args[0];
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ArcCot".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // ArcCot[±Infinity] = 0; ArcCot[0] = Pi/2.
+  if matches!(x, Expr::Identifier(s) if s == "Infinity")
+    || crate::functions::math_ast::is_neg_infinity(x)
+  {
+    return Ok(Expr::Integer(0));
   }
-  if let Some(f) = try_eval_to_f64(&args[0]) {
+  if matches!(x, Expr::Integer(0)) {
+    return Ok(pi_over_n(2));
+  }
+  // Only inexact arguments evaluate numerically; exact ones stay symbolic
+  // unless they reduce to a closed form below (e.g. ArcCot[2] = ArcCot[2]).
+  if let Expr::Real(f) = x {
     return Ok(Expr::Real((1.0 / f).atan()));
   }
-  Ok(Expr::FunctionCall {
-    name: "ArcCot".to_string(),
-    args: args.to_vec().into(),
-  })
+  // Odd function: ArcCot[-x] = -ArcCot[x].
+  if let Some(neg) = try_extract_negated(x) {
+    let inner = crate::evaluator::evaluate_function_call_ast("ArcCot", &[neg])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
+  // For positive exact x, ArcCot[x] = ArcTan[1/x]; keep that only when it
+  // reduces to a closed form (Pi/4, Pi/6, …). Otherwise stay ArcCot[x],
+  // matching Wolfram (which keeps ArcCot[2], not ArcTan[1/2]).
+  if matches!(try_eval_to_f64(x), Some(v) if v > 0.0) {
+    let recip = crate::evaluator::evaluate_function_call_ast(
+      "Divide",
+      &[Expr::Integer(1), x.clone()],
+    )?;
+    let at = crate::evaluator::evaluate_function_call_ast("ArcTan", &[recip])?;
+    if !matches!(&at, Expr::FunctionCall { name, .. } if name == "ArcTan") {
+      return Ok(at);
+    }
+  }
+  unevaluated()
 }
 
 pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
