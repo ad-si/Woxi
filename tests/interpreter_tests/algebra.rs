@@ -7388,9 +7388,50 @@ mod arccot_exact {
   // Inexact arguments still evaluate numerically.
   #[test]
   fn real_argument_is_numeric() {
+    assert_eq!(interpret("ArcCot[2.0]").unwrap(), "0.46364760900080615");
+  }
+}
+
+mod arccsch_arccoth_exact {
+  use super::*;
+
+  // ArcCsch keeps exact arguments symbolic (it had numericized ArcCsch[2]).
+  #[test]
+  fn arccsch_exact_symbolic() {
+    assert_eq!(interpret("ArcCsch[2]").unwrap(), "ArcCsch[2]");
+    assert_eq!(interpret("ArcCsch[1]").unwrap(), "ArcCsch[1]");
+  }
+
+  #[test]
+  fn arccsch_special_and_odd() {
+    assert_eq!(interpret("ArcCsch[0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ArcCsch[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("ArcCsch[-Infinity]").unwrap(), "0");
+    assert_eq!(interpret("ArcCsch[-2]").unwrap(), "-ArcCsch[2]");
+    assert_eq!(interpret("ArcCsch[-1/2]").unwrap(), "-ArcCsch[1/2]");
+  }
+
+  #[test]
+  fn arccsch_real_numeric() {
     assert_eq!(
-      interpret("ArcCot[2.0]").unwrap(),
-      "0.46364760900080615"
+      interpret("ArcCsch[2.0]").unwrap(),
+      "0.48121182505960347"
     );
+  }
+
+  // ArcCoth gains the odd-function negation and ±Infinity limits.
+  #[test]
+  fn arccoth_odd_and_infinity() {
+    assert_eq!(interpret("ArcCoth[-2]").unwrap(), "-ArcCoth[2]");
+    assert_eq!(interpret("ArcCoth[-1/2]").unwrap(), "-ArcCoth[1/2]");
+    assert_eq!(interpret("ArcCoth[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("ArcCoth[-Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arccoth_existing_values_unchanged() {
+    assert_eq!(interpret("ArcCoth[1]").unwrap(), "Infinity");
+    assert_eq!(interpret("ArcCoth[-1]").unwrap(), "-Infinity");
+    assert_eq!(interpret("ArcCoth[2]").unwrap(), "ArcCoth[2]");
   }
 }

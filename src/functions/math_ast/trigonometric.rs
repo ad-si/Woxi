@@ -3378,6 +3378,12 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCoth expects 1 argument".into(),
     ));
   }
+  // ArcCoth[±Infinity] = 0.
+  if matches!(&args[0], Expr::Identifier(s) if s == "Infinity")
+    || crate::functions::math_ast::is_neg_infinity(&args[0])
+  {
+    return Ok(Expr::Integer(0));
+  }
   match &args[0] {
     Expr::Integer(0) => {
       // ArcCoth[0] = (I/2)*Pi
@@ -3454,6 +3460,16 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     _ => {}
+  }
+  // Odd function: ArcCoth[-x] = -ArcCoth[x] (exact negatives not handled
+  // above, e.g. ArcCoth[-2] = -ArcCoth[2]).
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    let inner =
+      crate::evaluator::evaluate_function_call_ast("ArcCoth", &[neg])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
   }
   Ok(Expr::FunctionCall {
     name: "ArcCoth".to_string(),
@@ -3614,13 +3630,29 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCsch expects 1 argument".into(),
     ));
   }
-  if let Expr::Integer(0) = &args[0] {
+  let x = &args[0];
+  if let Expr::Integer(0) = x {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
-  if let Some(f) = try_eval_to_f64(&args[0])
-    && f != 0.0
+  // ArcCsch[±Infinity] = 0.
+  if matches!(x, Expr::Identifier(s) if s == "Infinity")
+    || crate::functions::math_ast::is_neg_infinity(x)
   {
+    return Ok(Expr::Integer(0));
+  }
+  // Only inexact arguments evaluate numerically; exact ones (e.g. ArcCsch[2])
+  // stay symbolic, matching Wolfram.
+  if let Expr::Real(f) = x {
     return Ok(Expr::Real((1.0 / f).asinh()));
+  }
+  // Odd function: ArcCsch[-x] = -ArcCsch[x].
+  if let Some(neg) = try_extract_negated(x) {
+    let inner =
+      crate::evaluator::evaluate_function_call_ast("ArcCsch", &[neg])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
   }
   Ok(Expr::FunctionCall {
     name: "ArcCsch".to_string(),
