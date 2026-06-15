@@ -23,11 +23,9 @@ pub fn dispatch_math_functions(
     "Divide" if args.len() == 2 => {
       return Some(crate::functions::math_ast::divide_ast(args));
     }
-    "Power" if args.len() == 1 => {
-      // OneIdentity: Power[x] -> x
-      return Some(Ok(args[0].clone()));
-    }
-    "Power" if args.len() == 2 => {
+    "Power" => {
+      // power_ast handles every arity: Power[] = 1, Power[x] = x, and
+      // Power[a, b, c, ...] folds right-associatively (a^(b^(c^...))).
       return Some(crate::functions::math_ast::power_ast(args));
     }
     "Entropy" => {

@@ -2038,6 +2038,55 @@ pub fn evaluate_expr_to_expr_inner(
       let left_val = evaluate_expr_to_expr(left)?;
       let right_val = evaluate_expr_to_expr(right)?;
 
+      // Splice Sequence operands into the corresponding n-ary operation, e.g.
+      // `Sequence[1, 2] + Sequence[3, 4]` -> `Plus[1, 2, 3, 4]` = 10. Map
+      // subtraction and division onto Plus/Times (with a negated/reciprocal
+      // second operand) so the spliced arguments combine the same way Wolfram
+      // does (`Sequence[1, 2] - 3` -> `Plus[1, 2, -3]` = 0). Re-evaluating the
+      // function-call form runs `flatten_sequences`, which performs the splice.
+      {
+        let is_seq = |e: &Expr| {
+          matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence")
+        };
+        if is_seq(&left_val) || is_seq(&right_val) {
+          let neg = |e: Expr| Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), e].into(),
+          };
+          let recip = |e: Expr| Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![e, Expr::Integer(-1)].into(),
+          };
+          let spliced: Option<(&str, Expr, Expr)> = match op {
+            BinaryOperator::Plus => {
+              Some(("Plus", left_val.clone(), right_val.clone()))
+            }
+            BinaryOperator::Times => {
+              Some(("Times", left_val.clone(), right_val.clone()))
+            }
+            BinaryOperator::Power => {
+              Some(("Power", left_val.clone(), right_val.clone()))
+            }
+            BinaryOperator::StringJoin => {
+              Some(("StringJoin", left_val.clone(), right_val.clone()))
+            }
+            BinaryOperator::Minus => {
+              Some(("Plus", left_val.clone(), neg(right_val.clone())))
+            }
+            BinaryOperator::Divide => {
+              Some(("Times", left_val.clone(), recip(right_val.clone())))
+            }
+            _ => None,
+          };
+          if let Some((name, l, r)) = spliced {
+            return evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: name.to_string(),
+              args: vec![l, r].into(),
+            });
+          }
+        }
+      }
+
       // For operators with corresponding function names (Plus, Times, Power, etc.),
       // check if there are user-defined rules (e.g. upvalues from TagSetDelayed).
       // If so, route through evaluate_function_call_ast which checks FUNC_DEFS first.

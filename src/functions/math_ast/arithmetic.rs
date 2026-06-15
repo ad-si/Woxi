@@ -6075,10 +6075,19 @@ fn inner_exp_abs_lt_one(exp: &Expr) -> bool {
 
 /// Power[a, b] - Exponentiation with list threading
 pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Power expects exactly 2 arguments".into(),
-    ));
+  // Power[] = 1, Power[x] = x, and Power[a, b, c, ...] folds right-
+  // associatively to a^(b^(c^...)) (e.g. Power[2, 3, 2] = 2^(3^2) = 512).
+  match args.len() {
+    0 => return Ok(Expr::Integer(1)),
+    1 => return Ok(args[0].clone()),
+    2 => {}
+    _ => {
+      let tail = power_ast(&args[1..])?;
+      if matches!(&args[0], Expr::List(_)) || matches!(&tail, Expr::List(_)) {
+        return thread_binary_over_lists(&[args[0].clone(), tail], power_two);
+      }
+      return power_two(&args[0], &tail);
+    }
   }
 
   // Check for list threading

@@ -887,7 +887,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Positive" => Some((1, 1)),
     "PositiveDefiniteMatrixQ" => Some((1, 1)),
     "PositiveSemidefiniteMatrixQ" => Some((1, 1)),
-    "Power" => Some((1, 2)),
+    "Power" => Some((0, usize::MAX)),
     "PowerExpand" => Some((1, 2)),
     "PowerMod" => Some((3, 3)),
     "PowerModList" => Some((3, 3)),

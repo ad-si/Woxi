@@ -861,6 +861,93 @@ mod big_integer {
   }
 }
 
+mod nary_power {
+  use super::*;
+
+  // Power folds right-associatively: Power[a, b, c] = a^(b^c).
+  #[test]
+  fn three_args_numeric() {
+    assert_eq!(interpret("Power[2, 3, 2]").unwrap(), "512");
+  }
+
+  #[test]
+  fn three_args_symbolic() {
+    assert_eq!(interpret("Power[x, y, z]").unwrap(), "x^y^z");
+  }
+
+  #[test]
+  fn four_args() {
+    assert_eq!(interpret("Power[2, 3, 2, 1]").unwrap(), "512");
+  }
+
+  #[test]
+  fn one_arg_is_identity() {
+    assert_eq!(interpret("Power[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn zero_args_is_one() {
+    assert_eq!(interpret("Power[]").unwrap(), "1");
+  }
+
+  #[test]
+  fn two_args_unchanged() {
+    assert_eq!(interpret("Power[2, 3]").unwrap(), "8");
+  }
+}
+
+mod sequence_in_operators {
+  use super::*;
+
+  // Sequence operands splice into the n-ary form of arithmetic operators.
+  #[test]
+  fn plus_two_sequences() {
+    assert_eq!(
+      interpret("Sequence[1, 2] + Sequence[3, 4]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn plus_mixed() {
+    assert_eq!(interpret("1 + Sequence[2, 3, 4]").unwrap(), "10");
+  }
+
+  #[test]
+  fn times_sequences() {
+    assert_eq!(
+      interpret("Sequence[2, 3] * Sequence[4, 5]").unwrap(),
+      "120"
+    );
+  }
+
+  #[test]
+  fn times_scalar() {
+    assert_eq!(interpret("2 Sequence[3, 4]").unwrap(), "24");
+  }
+
+  // Subtraction and division map onto Plus/Times after splicing.
+  #[test]
+  fn minus_splices_into_plus() {
+    assert_eq!(interpret("Sequence[1, 2] - 3").unwrap(), "0");
+  }
+
+  #[test]
+  fn divide_splices_into_times() {
+    assert_eq!(interpret("Sequence[10, 20]/2").unwrap(), "100");
+  }
+
+  #[test]
+  fn power_splices() {
+    assert_eq!(interpret("x^Sequence[2, 3]").unwrap(), "x^8");
+  }
+
+  #[test]
+  fn symbolic_plus() {
+    assert_eq!(interpret("a + Sequence[b, c]").unwrap(), "a + b + c");
+  }
+}
+
 mod power_with_negative_exponent {
   use super::*;
 
