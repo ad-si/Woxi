@@ -1546,6 +1546,20 @@ mod limit {
     assert_eq!(interpret("Limit[1/x^3, x -> 0]").unwrap(), "Indeterminate");
   }
 
+  // Functions that stay symbolic at an exact integer argument (ArcCot,
+  // ArcCoth) but evaluate under N[...]; the numeric limit heuristic now
+  // falls back to N so these resolve.
+  #[test]
+  fn limit_arccot_at_infinity() {
+    assert_eq!(interpret("Limit[ArcCot[x], x -> Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Limit[ArcCot[x], x -> -Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_arccoth_at_infinity() {
+    assert_eq!(interpret("Limit[ArcCoth[x], x -> Infinity]").unwrap(), "0");
+  }
+
   // Reciprocals of slowly-diverging forms decay to 0 (and sums of those with
   // constants tend to the constant part) — detected structurally because the
   // numeric path's threshold misses the slow decay.

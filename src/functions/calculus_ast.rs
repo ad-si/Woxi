@@ -7670,7 +7670,18 @@ fn limit_at_infinity(
 fn eval_at_large_n(expr: &Expr, var: &str, n: i128) -> Option<f64> {
   let subst = crate::syntax::substitute_variable(expr, var, &Expr::Integer(n));
   let val = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
-  crate::functions::math_ast::try_eval_to_f64(&val)
+  if let Some(f) = crate::functions::math_ast::try_eval_to_f64(&val) {
+    return Some(f);
+  }
+  // Some functions stay symbolic at an exact integer argument but evaluate
+  // numerically under N[...] (e.g. ArcCot[1000000]); fall back to that so the
+  // numeric limit heuristic can still classify them.
+  let napprox = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![val].into(),
+  };
+  let nval = crate::evaluator::evaluate_expr_to_expr(&napprox).ok()?;
+  crate::functions::math_ast::try_eval_to_f64(&nval)
 }
 
 /// Check if an expression is a "clean" value (integer, real, constant, or rational)
