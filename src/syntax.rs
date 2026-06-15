@@ -4825,6 +4825,9 @@ fn build_expr_with_precedence(
       || op_str == "/@"
       || op_str == "@*"
       || op_str == "/*"
+      || op_str == "->"
+      || op_str == "\u{2192}"
+      || op_str == ":>"
       || op_str == "\\[RightTee]"
       || op_str == "\u{22A2}"
       || op_str == "\\[Implies]"
@@ -9118,6 +9121,16 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // Convention: a value of `RuleDelayed { pattern, replacement }` whose
       // `pattern` equals the key marks an entry that was originally `key :> v`,
       // since `Expr::Association` doesn't otherwise track Rule vs RuleDelayed.
+      // A key that is itself a rule needs parentheses so the entry's own
+      // `->` isn't misread (e.g. `<|(a -> b) -> 1|>`).
+      let fmt_key = |k: &Expr| -> String {
+        match k {
+          Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+            format!("({})", fmt(k))
+          }
+          _ => fmt(k),
+        }
+      };
       let parts: Vec<String> = items
         .iter()
         .map(|(k, v)| match v {
@@ -9125,9 +9138,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             pattern,
             replacement,
           } if assoc_marker_matches(k, pattern) => {
-            format!("{} :> {}", fmt(k), fmt(replacement))
+            format!("{} :> {}", fmt_key(k), fmt(replacement))
           }
-          _ => format!("{} -> {}", fmt(k), fmt(v)),
+          _ => format!("{} -> {}", fmt_key(k), fmt(v)),
         })
         .collect();
       format!("<|{}|>", parts.join(", "))
@@ -9136,18 +9149,34 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       pattern,
       replacement,
     } => {
+      // Parenthesize the LHS when it is itself a rule: `->` is
+      // right-associative, so `(a -> b) -> c` must keep its parentheses
+      // (otherwise it would read as `a -> (b -> c)`).
+      let lhs = match pattern.as_ref() {
+        Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+          format!("({})", fmt(pattern))
+        }
+        _ => fmt(pattern),
+      };
       // Parenthesize RHS if it's a pure function (& has low precedence)
       let rhs_str = fmt(replacement);
       let rhs_final = match replacement.as_ref() {
         Expr::Function { .. } => format!("({})", rhs_str),
         _ => rhs_str,
       };
-      format!("{} -> {}", fmt(pattern), rhs_final)
+      format!("{} -> {}", lhs, rhs_final)
     }
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => {
+      // Parenthesize the LHS when it is itself a rule (see Expr::Rule).
+      let lhs = match pattern.as_ref() {
+        Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+          format!("({})", fmt(pattern))
+        }
+        _ => fmt(pattern),
+      };
       // Parenthesize RHS if it's an assignment so the := operator is
       // correctly disambiguated from the :> operator visually.
       let rhs_str = fmt(replacement);
@@ -9162,7 +9191,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         }
         _ => rhs_str,
       };
-      format!("{} :> {}", fmt(pattern), rhs_final)
+      format!("{} :> {}", lhs, rhs_final)
     }
     // ReplaceAll, ReplaceRepeated, Map, Apply, etc.: always use InputForm
     Expr::ReplaceAll { expr, rules } => {
@@ -9570,6 +9599,18 @@ fn escape_string_for_input_form(s: &str) -> String {
   escaped
 }
 
+/// Render the left-hand side of a rule for InputForm, parenthesizing it when
+/// it is itself a rule (`->` is right-associative, so `(a -> b) -> c` must
+/// keep its parentheses).
+fn input_form_rule_lhs(e: &Expr) -> String {
+  match e {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+      format!("({})", expr_to_input_form(e))
+    }
+    _ => expr_to_input_form(e),
+  }
+}
+
 /// Render Expr in InputForm - like expr_to_output but strings are quoted.
 pub fn expr_to_input_form(expr: &Expr) -> String {
   match expr {
@@ -9596,7 +9637,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
             )
           }
           _ => {
-            format!("{} -> {}", expr_to_input_form(k), expr_to_input_form(v))
+            format!("{} -> {}", input_form_rule_lhs(k), expr_to_input_form(v))
           }
         })
         .collect();
@@ -9608,7 +9649,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     } => {
       format!(
         "{} -> {}",
-        expr_to_input_form(pattern),
+        input_form_rule_lhs(pattern),
         expr_to_input_form(replacement)
       )
     }
@@ -9631,7 +9672,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         }
         _ => rhs_str,
       };
-      format!("{} :> {}", expr_to_input_form(pattern), rhs_final)
+      format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
     }
     Expr::FunctionCall { name, args }
       if name == "RuleDelayed" && args.len() == 2 =>

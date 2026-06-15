@@ -1169,6 +1169,40 @@ mod rule_display {
     assert_eq!(interpret("Rule[a, b] === (a -> b)").unwrap(), "True");
   }
 
+  // `->` is right-associative: a -> b -> c parses as a -> (b -> c).
+  #[test]
+  fn rule_right_associative() {
+    assert_eq!(
+      interpret("ToString[FullForm[a -> b -> c]]").unwrap(),
+      "Rule[a, Rule[b, c]]"
+    );
+    assert_eq!(interpret("a -> b -> c").unwrap(), "a -> b -> c");
+  }
+
+  // A rule whose LHS is itself a rule keeps its parentheses on display.
+  #[test]
+  fn rule_lhs_rule_parenthesized() {
+    assert_eq!(
+      interpret("ToString[FullForm[(a -> b) -> c]]").unwrap(),
+      "Rule[Rule[a, b], c]"
+    );
+    assert_eq!(interpret("(a -> b) -> c").unwrap(), "(a -> b) -> c");
+    assert_eq!(interpret("(a :> b) -> c").unwrap(), "(a :> b) -> c");
+  }
+
+  // The same parenthesization applies to rule-valued association keys.
+  #[test]
+  fn rule_keyed_association_parenthesized() {
+    assert_eq!(
+      interpret("<|(a -> b) -> 1|>").unwrap(),
+      "<|(a -> b) -> 1|>"
+    );
+    assert_eq!(
+      interpret("Normal[<|(a -> b) -> 1|>]").unwrap(),
+      "{(a -> b) -> 1}"
+    );
+  }
+
   #[test]
   fn rule_function_call_in_replace_all() {
     assert_eq!(interpret("f[a, b] /. Rule[a, 1]").unwrap(), "f[1, b]");
