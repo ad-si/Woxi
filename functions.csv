@@ -3058,7 +3058,7 @@ Dodecahedron,,,,12.0,3124
 EulerianGraphQ,Test whether a graph has an Eulerian circuit,✅,pure,8.0,3124
 CellEventActions,,🚫,,6.0,3134
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
-DayMatchQ,,,,9.0,3134
+DayMatchQ,Tests whether a date matches a day-of-week specification,✅,pure,9.0,3134
 ExponentialFamily,,,,7.0,3134
 FileHash,,✅,,6.0,3134
 HararyGraph,Minimal k-connected Harary graph on n vertices,✅,pure,8.0,3134

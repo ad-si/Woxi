@@ -1435,7 +1435,11 @@ fn day_of_year(year: i64, month: i64, day: i64) -> i64 {
 /// Number of ISO-8601 weeks in a year (52 or 53).
 fn iso_weeks_in_year(year: i64) -> i64 {
   let p = |y: i64| ((y + y / 4 - y / 100 + y / 400) % 7 + 7) % 7;
-  if p(year) == 4 || p(year - 1) == 3 { 53 } else { 52 }
+  if p(year) == 4 || p(year - 1) == 3 {
+    53
+  } else {
+    52
+  }
 }
 
 /// ISO-8601 week number of a Gregorian date.
@@ -1516,6 +1520,60 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::List(values.into()))
     }
+    _ => unevaluated(),
+  }
+}
+
+/// DayMatchQ[date, daytype] — whether a date matches a day-of-week
+/// specification. Supports the weekday names (as symbols or strings) and the
+/// string categories "Weekday"/"Weekend". Calendar-dependent specs
+/// ("BusinessDay", "Holiday"), bare category symbols, and lists are left
+/// unevaluated, matching Wolfram.
+pub fn day_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DayMatchQ".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let Some(date_list) = resolve_date_to_list(&args[0]) else {
+    return unevaluated();
+  };
+  let Some(comps) = extract_date_components(&date_list) else {
+    return unevaluated();
+  };
+  if comps.len() < 3 {
+    return unevaluated();
+  }
+  // day_of_week: Monday = 0 … Sunday = 6.
+  let dow = day_of_week(comps[0] as i64, comps[1] as i64, comps[2] as i64);
+  let weekday_name = day_name(dow);
+
+  const DAY_NAMES: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ];
+
+  let boolean = |b: bool| {
+    Ok(Expr::Identifier(if b { "True" } else { "False" }.to_string()))
+  };
+
+  match &args[1] {
+    // A weekday name (symbol or string) matches that day of the week.
+    Expr::Identifier(s) | Expr::String(s) if DAY_NAMES.contains(&s.as_str()) => {
+      boolean(s == weekday_name)
+    }
+    // String-only categories.
+    Expr::String(s) if s == "Weekend" => boolean(dow >= 5),
+    Expr::String(s) if s == "Weekday" => boolean(dow <= 4),
     _ => unevaluated(),
   }
 }

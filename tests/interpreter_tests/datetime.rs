@@ -1231,8 +1231,14 @@ mod date_value {
       interpret(r#"DateValue[{2024, 6, 15}, "Year"]"#).unwrap(),
       "2024"
     );
-    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Month"]"#).unwrap(), "6");
-    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Day"]"#).unwrap(), "15");
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "Month"]"#).unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "Day"]"#).unwrap(),
+      "15"
+    );
     assert_eq!(
       interpret(r#"DateValue[{2024, 6, 15, 10, 30, 0}, "Hour"]"#).unwrap(),
       "10"
@@ -1249,7 +1255,10 @@ mod date_value {
       interpret(r#"DateValue[{2024, 6, 15}, "MonthName"]"#).unwrap(),
       "June"
     );
-    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Quarter"]"#).unwrap(), "2");
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "Quarter"]"#).unwrap(),
+      "2"
+    );
   }
 
   #[test]
@@ -1272,12 +1281,24 @@ mod date_value {
   // ISO-8601 week number, including the year-boundary edge cases.
   #[test]
   fn iso_week_number() {
-    assert_eq!(interpret(r#"DateValue[{2024, 6, 15}, "Week"]"#).unwrap(), "24");
-    assert_eq!(interpret(r#"DateValue[{2024, 1, 1}, "Week"]"#).unwrap(), "1");
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 6, 15}, "Week"]"#).unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 1, 1}, "Week"]"#).unwrap(),
+      "1"
+    );
     // 2021-01-01 belongs to ISO week 53 of 2020.
-    assert_eq!(interpret(r#"DateValue[{2021, 1, 1}, "Week"]"#).unwrap(), "53");
+    assert_eq!(
+      interpret(r#"DateValue[{2021, 1, 1}, "Week"]"#).unwrap(),
+      "53"
+    );
     // 2024-12-30 belongs to ISO week 1 of 2025.
-    assert_eq!(interpret(r#"DateValue[{2024, 12, 30}, "Week"]"#).unwrap(), "1");
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 12, 30}, "Week"]"#).unwrap(),
+      "1"
+    );
   }
 
   #[test]
@@ -1308,6 +1329,72 @@ mod date_value {
     assert_eq!(
       interpret(r#"DateValue[{2024, 6, 15}, "DayOfWeek"]"#).unwrap(),
       "DateValue[{2024, 6, 15}, DayOfWeek]"
+    );
+  }
+}
+
+mod day_match_q {
+  use super::*;
+
+  // 2024-06-15 is a Saturday; 2024-06-17 a Monday.
+  #[test]
+  fn weekday_name_symbol() {
+    assert_eq!(
+      interpret("DayMatchQ[{2024, 6, 15}, Saturday]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DayMatchQ[{2024, 6, 15}, Sunday]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("DayMatchQ[{2024, 6, 17}, Monday]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn weekday_name_string() {
+    assert_eq!(
+      interpret(r#"DayMatchQ[{2024, 6, 15}, "Saturday"]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn weekend_and_weekday_categories() {
+    assert_eq!(
+      interpret(r#"DayMatchQ[{2024, 6, 15}, "Weekend"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"DayMatchQ[{2024, 6, 17}, "Weekend"]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"DayMatchQ[{2024, 6, 17}, "Weekday"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"DayMatchQ[{2024, 6, 15}, "Weekday"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn accepts_date_object() {
+    assert_eq!(
+      interpret("DayMatchQ[DateObject[{2024, 6, 15}], Saturday]").unwrap(),
+      "True"
+    );
+  }
+
+  // A bare category symbol (not a string) stays unevaluated, like Wolfram.
+  #[test]
+  fn bare_category_symbol_unevaluated() {
+    assert_eq!(
+      interpret("DayMatchQ[{2024, 6, 15}, Weekend]").unwrap(),
+      "DayMatchQ[{2024, 6, 15}, Weekend]"
     );
   }
 }
