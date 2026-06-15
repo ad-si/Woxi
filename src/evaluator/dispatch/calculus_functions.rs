@@ -1570,8 +1570,20 @@ fn inverse_laplace_2d(
 
 /// Try to compute inverse Laplace transform symbolically.
 fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
-  // If expr doesn't depend on s, it's a constant * DiracDelta(t) — not commonly needed
-  // Just skip this case and return None for constants
+  // L^-1[c] = c * DiracDelta[t] for c independent of s.
+  if !depends_on(expr, s) {
+    let dirac = Expr::FunctionCall {
+      name: "DiracDelta".to_string(),
+      args: vec![Expr::Identifier(t.to_string())].into(),
+    };
+    if matches!(expr, Expr::Integer(1)) {
+      return Some(dirac);
+    }
+    return Some(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![expr.clone(), dirac].into(),
+    });
+  }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
     // L^-1[s^(-n)] = t^(n-1) / Gamma[n]
@@ -1616,6 +1628,33 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             .into(),
           });
         }
+      }
+
+      // L^-1[E^(k s)] = DiracDelta[t + k] (time shift). The exponent must be a
+      // pure multiple of s (no s-independent additive part), otherwise the
+      // constant factor E^b would be lost.
+      let is_e = matches!(fargs[0], Expr::Constant(b) if b == "E")
+        || matches!(fargs[0], Expr::Identifier(b) if b == "E");
+      let exponent_is_sum = matches!(fargs[1], Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          fargs[1],
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            ..
+          }
+        );
+      if is_e
+        && !exponent_is_sum
+        && let Some(k) = extract_linear_coeff(fargs[1], s)
+      {
+        return Some(Expr::FunctionCall {
+          name: "DiracDelta".to_string(),
+          args: vec![Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![Expr::Identifier(t.to_string()), k].into(),
+          }]
+          .into(),
+        });
       }
 
       // L^-1[(s^2 + a^2)^(-1)] = Sin[a*t] / a, and the hyperbolic counterpart

@@ -5175,6 +5175,64 @@ mod inverse_laplace_transform {
     );
   }
 
+  // L^-1[c] = c DiracDelta[t] for an s-independent constant.
+  #[test]
+  fn constant_one_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1, s, t]").unwrap(),
+      "DiracDelta[t]"
+    );
+  }
+
+  #[test]
+  fn constant_scaled_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[5, s, t]").unwrap(),
+      "5*DiracDelta[t]"
+    );
+  }
+
+  #[test]
+  fn constant_symbol_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[a, s, t]").unwrap(),
+      "a*DiracDelta[t]"
+    );
+  }
+
+  // L^-1[E^(-c s)] = DiracDelta[t - c] (time shift).
+  #[test]
+  fn exp_shift_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[E^(-s), s, t]").unwrap(),
+      "DiracDelta[-1 + t]"
+    );
+  }
+
+  #[test]
+  fn exp_shift_two_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[E^(-2 s), s, t]").unwrap(),
+      "DiracDelta[-2 + t]"
+    );
+  }
+
+  #[test]
+  fn exp_shift_symbolic_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[E^(-a s), s, t]").unwrap(),
+      "DiracDelta[-a + t]"
+    );
+  }
+
+  #[test]
+  fn exp_shift_scaled_dirac() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[3 E^(-2 s), s, t]").unwrap(),
+      "3*DiracDelta[-2 + t]"
+    );
+  }
+
   // ─── Two-variable InverseLaplaceTransform ───────────────────────────
   // wolframscript:
   //   InverseLaplaceTransform[1/(p*q), {p, q}, {x, y}]      -> 1
