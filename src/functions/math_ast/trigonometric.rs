@@ -852,6 +852,48 @@ pub fn imaginary_arg_reduction(
 
 /// Sin, Cos, Tan - Trigonometric functions (fully symbolic)
 /// Only evaluate to float for Real arguments. For integer/symbolic args,
+/// `Sqrt[1 +- x^2]` with the inner `1 +- x^2` evaluated so that a compound
+/// argument's square expands (e.g. `(2 y)^2 -> 4 y^2`), matching wolframscript.
+fn sqrt_one_pm_sq(x: &Expr, plus: bool) -> Expr {
+  let x_sq = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(x.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let inner = Expr::BinaryOp {
+    op: if plus {
+      crate::syntax::BinaryOperator::Plus
+    } else {
+      crate::syntax::BinaryOperator::Minus
+    },
+    left: Box::new(Expr::Integer(1)),
+    right: Box::new(x_sq),
+  };
+  let inner = crate::evaluator::evaluate_expr_to_expr(&inner).unwrap_or(inner);
+  Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![inner].into(),
+  }
+}
+
+/// `Sqrt[1 - x^2]` (used for trig-of-inverse-trig identities).
+fn sqrt_one_minus_sq(x: &Expr) -> Expr {
+  sqrt_one_pm_sq(x, false)
+}
+
+/// `Sqrt[1 + x^2]`.
+fn sqrt_one_plus_sq(x: &Expr) -> Expr {
+  sqrt_one_pm_sq(x, true)
+}
+
+fn divide(num: Expr, den: Expr) -> Expr {
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(num),
+    right: Box::new(den),
+  }
+}
+
 /// try exact Pi-fraction lookup, otherwise return unevaluated.
 pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -873,6 +915,20 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && ia.len() == 1
   {
     return Ok(ia[0].clone());
+  }
+  // Sin[ArcCos[x]] = Sqrt[1 - x^2]
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcCos"
+    && ia.len() == 1
+  {
+    return Ok(sqrt_one_minus_sq(&ia[0]));
+  }
+  // Sin[ArcTan[x]] = x / Sqrt[1 + x^2]
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcTan"
+    && ia.len() == 1
+  {
+    return Ok(divide(ia[0].clone(), sqrt_one_plus_sq(&ia[0])));
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -1061,6 +1117,20 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(ia[0].clone());
   }
+  // Cos[ArcSin[x]] = Sqrt[1 - x^2]
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcSin"
+    && ia.len() == 1
+  {
+    return Ok(sqrt_one_minus_sq(&ia[0]));
+  }
+  // Cos[ArcTan[x]] = 1 / Sqrt[1 + x^2]
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcTan"
+    && ia.len() == 1
+  {
+    return Ok(divide(Expr::Integer(1), sqrt_one_plus_sq(&ia[0])));
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1225,6 +1295,20 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && ia.len() == 1
   {
     return Ok(ia[0].clone());
+  }
+  // Tan[ArcSin[x]] = x / Sqrt[1 - x^2]
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcSin"
+    && ia.len() == 1
+  {
+    return Ok(divide(ia[0].clone(), sqrt_one_minus_sq(&ia[0])));
+  }
+  // Tan[ArcCos[x]] = Sqrt[1 - x^2] / x
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcCos"
+    && ia.len() == 1
+  {
+    return Ok(divide(sqrt_one_minus_sq(&ia[0]), ia[0].clone()));
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));

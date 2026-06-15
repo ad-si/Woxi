@@ -5803,6 +5803,47 @@ mod sign_simplifications {
 // Trig/hyperbolic of an imaginary argument I*z reduce to the counterpart
 // function (Cos[I z] = Cosh[z], Sin[I z] = I Sinh[z], …). Verified against
 // wolframscript.
+mod trig_of_inverse_trig {
+  use super::*;
+
+  // Diagonal inverse identities.
+  #[test]
+  fn same_function_collapses() {
+    assert_eq!(interpret("Sin[ArcSin[x]]").unwrap(), "x");
+    assert_eq!(interpret("Cos[ArcCos[x]]").unwrap(), "x");
+    assert_eq!(interpret("Tan[ArcTan[x]]").unwrap(), "x");
+  }
+
+  // Cross combinations auto-simplify to algebraic forms.
+  #[test]
+  fn sin_of_arccos_arctan() {
+    assert_eq!(interpret("Sin[ArcCos[x]]").unwrap(), "Sqrt[1 - x^2]");
+    assert_eq!(interpret("Sin[ArcTan[x]]").unwrap(), "x/Sqrt[1 + x^2]");
+  }
+
+  #[test]
+  fn cos_of_arcsin_arctan() {
+    assert_eq!(interpret("Cos[ArcSin[x]]").unwrap(), "Sqrt[1 - x^2]");
+    assert_eq!(interpret("Cos[ArcTan[x]]").unwrap(), "1/Sqrt[1 + x^2]");
+  }
+
+  #[test]
+  fn tan_of_arcsin_arccos() {
+    assert_eq!(interpret("Tan[ArcSin[x]]").unwrap(), "x/Sqrt[1 - x^2]");
+    assert_eq!(interpret("Tan[ArcCos[x]]").unwrap(), "Sqrt[1 - x^2]/x");
+  }
+
+  // Compound arguments expand the inner square: (3 x)^2 -> 9 x^2.
+  #[test]
+  fn compound_argument_expands() {
+    assert_eq!(
+      interpret("Sin[ArcTan[3 x]]").unwrap(),
+      "(3*x)/Sqrt[1 + 9*x^2]"
+    );
+    assert_eq!(interpret("Cos[ArcTan[2 y]]").unwrap(), "1/Sqrt[1 + 4*y^2]");
+  }
+}
+
 mod imaginary_argument_trig {
   use super::*;
 
