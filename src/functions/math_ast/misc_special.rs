@@ -2037,6 +2037,9 @@ fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
 /// Computed via power series: (t/(e^t-1))^a = sum h_k t^k, B_n^(a) = n! * h_n.
 /// Each h_k is a polynomial in a with rational coefficients.
 pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 3 {
+    return norlund_b_poly_ast(args);
+  }
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "NorlundB".to_string(),
@@ -2106,6 +2109,48 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Symbolic case: build the polynomial expression
   evaluate_norlund_symbolic(&poly, a_expr)
+}
+
+/// NorlundB[n, a, x] - Nörlund polynomial B_n^(a)(x).
+/// Expressed through the generalized Bernoulli numbers B_k^(a) = NorlundB[k, a]:
+///   B_n^(a)(x) = Sum_{k=0}^n Binomial[n, k] B_k^(a) x^(n-k).
+fn norlund_b_poly_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NorlundB".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
+  };
+  let a = &args[1];
+  let x = &args[2];
+
+  let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
+  for k in 0..=n {
+    let binom = Expr::FunctionCall {
+      name: "Binomial".to_string(),
+      args: vec![Expr::Integer(n as i128), Expr::Integer(k as i128)].into(),
+    };
+    let nb = Expr::FunctionCall {
+      name: "NorlundB".to_string(),
+      args: vec![Expr::Integer(k as i128), a.clone()].into(),
+    };
+    let x_pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![x.clone(), Expr::Integer((n - k) as i128)].into(),
+    };
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![binom, nb, x_pow].into(),
+    });
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
 /// Build the symbolic polynomial expression from coefficients.

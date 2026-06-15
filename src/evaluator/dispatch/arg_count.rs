@@ -786,7 +786,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NonNegative" => Some((1, 1)),
     "NonPositive" => Some((1, 1)),
     "Nor" => Some((0, usize::MAX)),
-    "NorlundB" => Some((2, 2)),
+    "NorlundB" => Some((2, 3)),
     "Norm" => Some((1, 2)),
     "Normal" => Some((1, 1)),
     "Normalize" => Some((1, 2)),

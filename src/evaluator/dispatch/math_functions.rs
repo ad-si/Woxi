@@ -2473,7 +2473,7 @@ pub fn dispatch_math_functions(
     "BernoulliB" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::bernoulli_b_ast(args));
     }
-    "NorlundB" if args.len() == 2 => {
+    "NorlundB" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::norlund_b_ast(args));
     }
     "PrimeZetaP" if args.len() == 1 => {

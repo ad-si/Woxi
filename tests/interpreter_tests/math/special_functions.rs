@@ -5947,6 +5947,55 @@ mod norlund_b {
   fn numeric_five_two() {
     assert_eq!(interpret("NorlundB[5, 2]").unwrap(), "1/6");
   }
+
+  // Three-argument Nörlund polynomial form B_n^(a)(x).
+
+  #[test]
+  fn poly_zero() {
+    assert_eq!(interpret("NorlundB[0, a, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn poly_one() {
+    assert_eq!(interpret("NorlundB[1, a, x]").unwrap(), "-1/2*a + x");
+  }
+
+  #[test]
+  fn poly_two() {
+    assert_eq!(
+      interpret("NorlundB[2, a, x]").unwrap(),
+      "-1/12*a + a^2/4 - a*x + x^2"
+    );
+  }
+
+  #[test]
+  fn poly_numeric_a_degree_three() {
+    assert_eq!(
+      interpret("NorlundB[3, 1, x]").unwrap(),
+      "x/2 - (3*x^2)/2 + x^3"
+    );
+  }
+
+  #[test]
+  fn poly_numeric_a_degree_four() {
+    assert_eq!(
+      interpret("NorlundB[4, 1, x]").unwrap(),
+      "-1/30 + x^2 - 2*x^3 + x^4"
+    );
+  }
+
+  #[test]
+  fn poly_a_zero_is_power() {
+    // B_n^(0)(x) = x^n
+    assert_eq!(interpret("NorlundB[3, 0, x]").unwrap(), "x^3");
+  }
+
+  #[test]
+  fn poly_fully_numeric() {
+    assert_eq!(interpret("NorlundB[2, 5, 3]").unwrap(), "-1/6");
+    assert_eq!(interpret("NorlundB[5, 1, 2]").unwrap(), "5");
+    assert_eq!(interpret("NorlundB[6, 3, 1/2]").unwrap(), "131/1344");
+  }
 }
 
 mod congruent {
