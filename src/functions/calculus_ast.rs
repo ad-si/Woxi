@@ -2515,6 +2515,60 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             })
           })
         }
+        // InverseErf[z]:  D = (Sqrt[Pi]/2) E^(InverseErf[z]^2) z'
+        // InverseErfc[z]: D = -(Sqrt[Pi]/2) E^(InverseErfc[z]^2) z'
+        "InverseErf" | "InverseErfc" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          // E^(F[z]^2) * Sqrt[Pi] / 2.
+          let f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::FunctionCall {
+              name: name.clone(),
+              args: args.clone(),
+            }),
+            right: Box::new(Expr::Integer(2)),
+          };
+          let core = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: Box::new(Expr::Constant("E".to_string())),
+                  right: Box::new(f_sq),
+                },
+                Expr::FunctionCall {
+                  name: "Sqrt".to_string(),
+                  args: vec![Expr::Constant("Pi".to_string())].into(),
+                },
+              ]
+              .into(),
+            }),
+            right: Box::new(Expr::Integer(2)),
+          };
+          // InverseErfc carries an overall minus sign.
+          let g = if name == "InverseErf" {
+            core
+          } else {
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(core),
+            }
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            simplify(g)
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
         // Gamma[z]: D[Gamma[z], z] = Gamma[z] * PolyGamma[0, z]
         "Gamma" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;

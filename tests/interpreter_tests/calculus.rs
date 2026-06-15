@@ -2857,6 +2857,31 @@ mod erf {
     );
   }
 
+  // Inverse error functions: D[InverseErf[z]] = (Sqrt[Pi]/2) E^(InverseErf[z]^2).
+  #[test]
+  fn d_inverse_erf() {
+    assert_eq!(
+      interpret("D[InverseErf[x], x]").unwrap(),
+      "(E^InverseErf[x]^2*Sqrt[Pi])/2"
+    );
+    assert_eq!(
+      interpret("D[InverseErf[x^2], x]").unwrap(),
+      "E^InverseErf[x^2]^2*Sqrt[Pi]*x"
+    );
+  }
+
+  #[test]
+  fn d_inverse_erfc() {
+    assert_eq!(
+      interpret("D[InverseErfc[x], x]").unwrap(),
+      "-1/2*(E^InverseErfc[x]^2*Sqrt[Pi])"
+    );
+    assert_eq!(
+      interpret("D[InverseErfc[2 x], x]").unwrap(),
+      "-(E^InverseErfc[2*x]^2*Sqrt[Pi])"
+    );
+  }
+
   #[test]
   fn n_erf_1() {
     // N[Erf[1], 20] — small argument, Taylor series path
