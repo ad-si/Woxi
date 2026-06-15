@@ -1563,12 +1563,16 @@ pub fn day_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ];
 
   let boolean = |b: bool| {
-    Ok(Expr::Identifier(if b { "True" } else { "False" }.to_string()))
+    Ok(Expr::Identifier(
+      if b { "True" } else { "False" }.to_string(),
+    ))
   };
 
   match &args[1] {
     // A weekday name (symbol or string) matches that day of the week.
-    Expr::Identifier(s) | Expr::String(s) if DAY_NAMES.contains(&s.as_str()) => {
+    Expr::Identifier(s) | Expr::String(s)
+      if DAY_NAMES.contains(&s.as_str()) =>
+    {
       boolean(s == weekday_name)
     }
     // String-only categories.
@@ -1576,6 +1580,71 @@ pub fn day_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::String(s) if s == "Weekday" => boolean(dow <= 4),
     _ => unevaluated(),
   }
+}
+
+/// The seven weekday names, indexed to match `day_of_week` (Monday = 0).
+const WEEKDAY_NAMES: [&str; 7] = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+/// DayRound[date, daytype] — round `date` to the nearest day of the given
+/// weekday using the default next-day convention (the next occurrence on or
+/// after `date`). Returns a `DateObject[…, Day]`. Only the weekday-name form
+/// (symbol or string) is supported; calendar categories and the 3-argument
+/// rounding form are left unevaluated, matching Wolfram's package-only forms.
+pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DayRound".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let target_dow = match &args[1] {
+    Expr::Identifier(s) | Expr::String(s) => {
+      match WEEKDAY_NAMES.iter().position(|n| n == s) {
+        Some(i) => i as i64,
+        None => return unevaluated(),
+      }
+    }
+    _ => return unevaluated(),
+  };
+  let Some(date_list) = resolve_date_to_list(&args[0]) else {
+    return unevaluated();
+  };
+  let Some(comps) = extract_date_components(&date_list) else {
+    return unevaluated();
+  };
+  if comps.len() < 3 {
+    return unevaluated();
+  }
+  let (y, m, d) = (comps[0] as i64, comps[1] as i64, comps[2] as i64);
+  let current_dow = day_of_week(y, m, d);
+  let days_forward = (target_dow - current_dow).rem_euclid(7);
+  let (ny, nm, nd) =
+    absolute_days_to_date(date_to_absolute_days(y, m, d) + days_forward);
+
+  // Build DateObject[{ny, nm, nd}] and let it normalize to Day granularity.
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![Expr::List(
+      vec![
+        Expr::Integer(ny as i128),
+        Expr::Integer(nm as i128),
+        Expr::Integer(nd as i128),
+      ]
+      .into(),
+    )]
+    .into(),
+  })
 }
 
 /// Resolve a date expression (date list, date string, DateObject) to a

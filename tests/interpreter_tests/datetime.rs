@@ -1398,3 +1398,54 @@ mod day_match_q {
     );
   }
 }
+
+mod day_round {
+  use super::*;
+
+  // 2024-06-15 is a Saturday. DayRound advances to the next occurrence of the
+  // weekday (the default next-day convention), staying put when it matches.
+  #[test]
+  fn rounds_forward_to_next_weekday() {
+    assert_eq!(
+      interpret("DayRound[{2024, 6, 15}, Saturday]").unwrap(),
+      "DateObject[{2024, 6, 15}, Day]"
+    );
+    assert_eq!(
+      interpret("DayRound[{2024, 6, 15}, Monday]").unwrap(),
+      "DateObject[{2024, 6, 17}, Day]"
+    );
+    assert_eq!(
+      interpret("DayRound[{2024, 6, 15}, Sunday]").unwrap(),
+      "DateObject[{2024, 6, 16}, Day]"
+    );
+    // Friday is the previous day, but rounding still goes forward a week.
+    assert_eq!(
+      interpret("DayRound[{2024, 6, 15}, Friday]").unwrap(),
+      "DateObject[{2024, 6, 21}, Day]"
+    );
+  }
+
+  #[test]
+  fn crosses_month_and_year_boundaries() {
+    assert_eq!(
+      interpret("DayRound[{2024, 6, 30}, Monday]").unwrap(),
+      "DateObject[{2024, 7, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("DayRound[{2024, 12, 31}, Sunday]").unwrap(),
+      "DateObject[{2025, 1, 5}, Day]"
+    );
+  }
+
+  #[test]
+  fn accepts_string_name_and_date_object() {
+    assert_eq!(
+      interpret(r#"DayRound[{2024, 6, 15}, "Monday"]"#).unwrap(),
+      "DateObject[{2024, 6, 17}, Day]"
+    );
+    assert_eq!(
+      interpret("DayRound[DateObject[{2024, 6, 15}], Monday]").unwrap(),
+      "DateObject[{2024, 6, 17}, Day]"
+    );
+  }
+}

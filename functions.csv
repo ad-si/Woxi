@@ -3275,7 +3275,7 @@ PriceGraphDistribution,,,,8.0,3353
 SocketConnect,,🚫,,10.3,3353
 AlgebraicNumberPolynomial,,,,6.0,3363
 ArgumentsOptions,,,,12.2,3363
-DayRound,,,,9.0,3363
+DayRound,Rounds a date to the nearest day of a given weekday,✅,pure,9.0,3363
 Equilibrium,,,,3.0,3363
 FindMeshDefects,,,,11.0,3363
 Interactive,,🚫,,9.0,3363
