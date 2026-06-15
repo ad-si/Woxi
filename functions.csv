@@ -1529,7 +1529,7 @@ LightOrange,Named light color evaluating to RGBColor[1 0.9 0.8],✅,pure,6.0,155
 AnimationRepetitions,Animation repetition option,✅,pure,6.0,1552
 ARMAProcess,Autoregressive moving average process,✅,pure,9.0,1553
 DivideBy,Divides a variable by a value,✅,stateful,1.0,1555
-QuotientRemainder,Returns the quotient and remainder of integer division,✅,pure,,1555
+QuotientRemainder,Returns the quotient and remainder of integer division,✅,pure,2.0,1555
 ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1.0,1557
 FileNameTake,Extract file name from path,✅,pure,7.0,1557
 UndoTrackedVariables,Variables tracked for undo,✅,pure,10.0,1559

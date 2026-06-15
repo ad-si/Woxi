@@ -405,6 +405,14 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::quotient_ast(args));
     }
     "QuotientRemainder" if args.len() == 2 => {
+      // QuotientRemainder[n, 0] stays unevaluated (wolframscript), unlike the
+      // 2-list {Quotient, Mod} we would otherwise assemble.
+      if crate::functions::math_ast::is_literal_zero(&args[1]) {
+        return Some(Ok(Expr::FunctionCall {
+          name: "QuotientRemainder".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       let q = match crate::functions::math_ast::quotient_ast(args) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),

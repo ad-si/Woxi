@@ -1867,10 +1867,11 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             left,
             right,
           } => Some((left.as_ref(), right.as_ref())),
-          Expr::FunctionCall {
-            name,
-            args: pa,
-          } if name == "Power" && pa.len() == 2 => Some((&pa[0], &pa[1])),
+          Expr::FunctionCall { name, args: pa }
+            if name == "Power" && pa.len() == 2 =>
+          {
+            Some((&pa[0], &pa[1]))
+          }
           _ => None,
         };
         if let Some((base, exp)) = power_parts {

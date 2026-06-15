@@ -1555,6 +1555,35 @@ pub fn mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   mod2_ast(&args[0], &args[1])
 }
 
+/// True if `expr` is a literal zero: `Integer(0)`, `BigInteger(0)`,
+/// `Rational(0, q)`, or `Real(0.0)`. Used for division-by-zero detection in
+/// Mod / Quotient / QuotientRemainder.
+pub fn is_literal_zero(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(0) => true,
+    Expr::Real(f) => *f == 0.0,
+    Expr::BigInteger(n) => {
+      use num_traits::Zero;
+      n.is_zero()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Integer(0))
+    }
+    _ => false,
+  }
+}
+
+/// True if `a` and `b` are exactly-equal rational literals (so `a - b == 0`).
+/// Symbolic operands return `false`.
+fn exact_rational_equal(a: &Expr, b: &Expr) -> bool {
+  match (try_as_rational(a), try_as_rational(b)) {
+    (Some((an, ad)), Some((bn, bd))) => an * bd == bn * ad,
+    _ => false,
+  }
+}
+
 /// Helper to extract (numerator, denominator) from Integer or Rational
 pub fn try_as_rational(expr: &Expr) -> Option<(i128, i128)> {
   match expr {
@@ -1574,6 +1603,16 @@ pub fn try_as_rational(expr: &Expr) -> Option<(i128, i128)> {
 
 /// Mod[m, n] - 2-argument form
 pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Mod[m, 0] => Indeterminate for any m (including symbolic), matching
+  // wolframscript. The numeric branches below also guard against zero, but
+  // this catches the case where m is symbolic and never reaches them.
+  if is_literal_zero(n) {
+    crate::emit_message(&format!(
+      "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
+      crate::syntax::expr_to_string(m)
+    ));
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   // BigInteger fast-path so `Mod[2^200, 10^100]` doesn't fall through
   // to the float branch and lose precision. Mirrors the
   // `((m % n) + n) % n` rule the small-integer path uses.
@@ -1707,6 +1746,15 @@ pub fn mod3_ast(
   n: &Expr,
   d: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Mod[m, 0, d] => Indeterminate for any m (including symbolic).
+  if is_literal_zero(n) {
+    crate::emit_message(&format!(
+      "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
+      crate::syntax::expr_to_string(m),
+      crate::syntax::expr_to_string(d)
+    ));
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   // Try exact rational arithmetic
   if let (Some((mn, md)), Some((nn, nd)), Some((dn, dd))) =
     (try_as_rational(m), try_as_rational(n), try_as_rational(d))
@@ -1819,6 +1867,32 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Quotient expects 2 or 3 arguments; {} given",
       args.len()
     )));
+  }
+
+  // Zero divisor (args[1] == 0). Matches wolframscript:
+  //   Quotient[n, 0]    -> ComplexInfinity   (Quotient[0, 0] -> Indeterminate)
+  //   Quotient[n, 0, d] -> ComplexInfinity   ((n - d) == 0 -> Indeterminate)
+  // A symbolic numerator is treated as non-zero, hence ComplexInfinity.
+  if is_literal_zero(&args[1]) {
+    let numerator_is_zero = if args.len() == 3 {
+      exact_rational_equal(&args[0], &args[2])
+    } else {
+      is_literal_zero(&args[0])
+    };
+    let call = crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "Quotient".to_string(),
+      args: args.to_vec().into(),
+    });
+    if numerator_is_zero {
+      crate::emit_message(&format!(
+        "Quotient::indet: Indeterminate expression {call} encountered."
+      ));
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    crate::emit_message(&format!(
+      "Quotient::infy: Infinite expression {call} encountered."
+    ));
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 
   // 3-argument form: Quotient[n, m, d] = Floor[(n - d) / m]

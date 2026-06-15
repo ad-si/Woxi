@@ -5477,3 +5477,62 @@ mod mod_exact_symbolic {
     assert_eq!(interpret("Mod[7 Pi/2, Pi, 1]").unwrap(), "Pi/2");
   }
 }
+
+// Division-by-zero behavior for Mod / Quotient / QuotientRemainder.
+// Verified against wolframscript (InputForm).
+mod zero_divisor {
+  use super::*;
+
+  #[test]
+  fn mod_by_zero_is_indeterminate() {
+    assert_eq!(interpret("Mod[3, 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Mod[0, 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Mod[3.5, 0]").unwrap(), "Indeterminate");
+    // Symbolic dividend is still Indeterminate, not left as Mod[a, 0].
+    assert_eq!(interpret("Mod[a, 0]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn mod3_by_zero_is_indeterminate() {
+    assert_eq!(interpret("Mod[3, 0, 2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Mod[a, 0, 2]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn quotient_by_zero_is_complex_infinity() {
+    assert_eq!(interpret("Quotient[3, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Quotient[-5, 0]").unwrap(), "ComplexInfinity");
+    // Symbolic dividend is treated as non-zero -> ComplexInfinity.
+    assert_eq!(interpret("Quotient[a, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn quotient_zero_over_zero_is_indeterminate() {
+    assert_eq!(interpret("Quotient[0, 0]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn quotient3_by_zero() {
+    // Effective numerator (n - d): non-zero -> ComplexInfinity, zero -> Indeterminate.
+    assert_eq!(interpret("Quotient[3, 0, 1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Quotient[5, 0, 1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Quotient[1, 0, 1]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Quotient[0, 0, 0]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn quotient_remainder_by_zero_stays_symbolic() {
+    assert_eq!(
+      interpret("QuotientRemainder[3, 0]").unwrap(),
+      "QuotientRemainder[3, 0]"
+    );
+    assert_eq!(
+      interpret("QuotientRemainder[0, 0]").unwrap(),
+      "QuotientRemainder[0, 0]"
+    );
+    assert_eq!(
+      interpret("QuotientRemainder[a, 0]").unwrap(),
+      "QuotientRemainder[a, 0]"
+    );
+  }
+}
