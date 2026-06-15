@@ -225,6 +225,54 @@ mod integrate_with_sum {
     assert_eq!(interpret("Integrate[Cot[x], x]").unwrap(), "Log[Sin[x]]");
   }
 
+  // ∫ g'/g dx = Log[g] for a transcendental g (logarithmic-derivative rule).
+  #[test]
+  fn integrate_one_over_x_log_x() {
+    assert_eq!(
+      interpret("Integrate[1/(x Log[x]), x]").unwrap(),
+      "Log[Log[x]]"
+    );
+  }
+
+  #[test]
+  fn integrate_cos_over_sin() {
+    assert_eq!(
+      interpret("Integrate[Cos[x]/Sin[x], x]").unwrap(),
+      "Log[Sin[x]]"
+    );
+  }
+
+  #[test]
+  fn integrate_exp_over_one_plus_exp() {
+    assert_eq!(
+      interpret("Integrate[E^x/(1 + E^x), x]").unwrap(),
+      "Log[1 + E^x]"
+    );
+  }
+
+  #[test]
+  fn integrate_one_over_x_one_plus_log() {
+    assert_eq!(
+      interpret("Integrate[1/(x (1 + Log[x])), x]").unwrap(),
+      "Log[1 + Log[x]]"
+    );
+  }
+
+  #[test]
+  fn integrate_scaled_log_derivative() {
+    assert_eq!(
+      interpret("Integrate[1/(2 x Log[x]), x]").unwrap(),
+      "Log[Log[x]]/2"
+    );
+  }
+
+  // Not a logarithmic derivative (the ratio isn't constant): must NOT collapse
+  // to Log, but integrate to Log[x]^2/2 via the existing path.
+  #[test]
+  fn integrate_log_over_x_not_log_derivative() {
+    assert_eq!(interpret("Integrate[Log[x]/x, x]").unwrap(), "Log[x]^2/2");
+  }
+
   #[test]
   fn integrate_sin_cos_product() {
     // ∫ Sin[x]*Cos[x] dx = -1/2*Cos[x]^2

@@ -5843,6 +5843,78 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
 }
 
 /// Integrate an expression with respect to a variable
+/// ∫ c·g'(x)/g(x) dx = c·Log[g(x)]. Detects an integrand that is a constant
+/// multiple of the logarithmic derivative of some sub-expression `g` (a
+/// denominator factor). This catches transcendental `g` — Log[x], Sin[x],
+/// 1 + E^x, … — that the polynomial-only rational path does not.
+///
+/// The test is exact: if `integrand · g / g'` evaluates to a value free of
+/// `var`, then `integrand == c · g'/g` identically, so the antiderivative is
+/// `c · Log[g]`.
+fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
+  // Decompose into a denominator. Either a literal `a / b` or the canonical
+  // Times[..., Power[d, -k]] form.
+  let den = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      right,
+      ..
+    } => (**right).clone(),
+    _ => extract_quotient_from_times(expr).map(|(_, d)| d)?,
+  };
+
+  // Candidate `g`s: the whole denominator and each of its factors.
+  let mut candidates = vec![den.clone()];
+  candidates.extend(
+    crate::functions::polynomial_ast::collect_multiplicative_factors(&den),
+  );
+
+  for g in candidates {
+    if is_constant_wrt(&g, var) {
+      continue;
+    }
+    let dg = match differentiate(&g, var) {
+      Ok(d) => d,
+      Err(_) => continue,
+    };
+    // ratio = integrand · g / g'
+    let ratio = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        expr.clone(),
+        g.clone(),
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![dg, Expr::Integer(-1)].into(),
+        },
+      ]
+      .into(),
+    };
+    let ratio_val = match crate::evaluator::evaluate_expr_to_expr(&ratio) {
+      Ok(v) => v,
+      Err(_) => continue,
+    };
+    if !is_constant_wrt(&ratio_val, var)
+      || matches!(&ratio_val, Expr::Integer(0))
+    {
+      continue;
+    }
+    let log_g = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![g].into(),
+    };
+    return Some(if matches!(&ratio_val, Expr::Integer(1)) {
+      log_g
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![ratio_val, log_g].into(),
+      }
+    });
+  }
+  None
+}
+
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   // General constant check: ∫ c dy = c*y for any expression c independent of y
   // (handles compound expressions like x^2, Sin[x], etc. when integrating w.r.t. a different variable)
@@ -5858,6 +5930,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   // univariate polynomial: wolframscript emits a `RootSum[…]` shape.
   if let Some(rs) = try_integrate_one_over_poly_rootsum(expr, var) {
     return Some(rs);
+  }
+
+  // ∫ c·g'(x)/g(x) dx = c·Log[g(x)] for a sub-expression g (covers
+  // transcendental g such as Log[x], Sin[x], 1 + E^x).
+  if let Some(result) = try_integrate_log_derivative(expr, var) {
+    return Some(result);
   }
 
   match expr {
