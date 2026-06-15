@@ -14,6 +14,14 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `fourier_matrix_boundary_materializes` materializes a large matrix and is
+# allocation-heavy: ~10s solo, but it exceeds the 20s default timeout under the
+# parallel contention of a full CI run (the job otherwise fails here). Give it
+# a wider window.
+[[profile.default.overrides]]
+filter = 'test(fourier_matrix_boundary_materializes)'
+slow-timeout = { period = "90s", terminate-after = 1 }
+
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
 # seconds in debug builds; under full parallel load they can brush past the
 # default 20s timeout. Give them a safety ceiling. The genuinely heavy
