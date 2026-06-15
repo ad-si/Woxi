@@ -7599,6 +7599,76 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             return format!("{}/{}", inner_str, d);
           }
         }
+        // Handle Times[Rational[-1, d], Plus[t1, t2, ...]] as
+        // "(-t1 - t2 - ...)/d" by negating each summand (matching
+        // wolframscript: (-1/2)(a + b) renders as (-a - b)/2, not -1/2*a + b).
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!(&rargs[0], Expr::Integer(-1))
+          && let Expr::Integer(d) = &rargs[1]
+          && *d > 0
+          && let Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } = &args[1]
+          && pname == "Plus"
+        {
+          // Negate one summand for display, collapsing a leading -1.
+          let negate = |t: &Expr| -> Expr {
+            match t {
+              Expr::Integer(k) => Expr::Integer(-k),
+              Expr::FunctionCall { name, args: ra }
+                if name == "Rational" && ra.len() == 2 =>
+              {
+                if let Expr::Integer(k) = &ra[0] {
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(-k), ra[1].clone()].into(),
+                  }
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), t.clone()].into(),
+                  }
+                }
+              }
+              // -1 * rest → rest (double negation cancels)
+              Expr::FunctionCall { name, args: fa }
+                if name == "Times"
+                  && fa.len() >= 2
+                  && matches!(&fa[0], Expr::Integer(-1)) =>
+              {
+                if fa.len() == 2 {
+                  fa[1].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: fa[1..].to_vec().into(),
+                  }
+                }
+              }
+              Expr::UnaryOp {
+                op: UnaryOperator::Minus,
+                operand,
+              } => (**operand).clone(),
+              _ => Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), t.clone()].into(),
+              },
+            }
+          };
+          let neg_terms: Vec<Expr> = pargs.iter().map(negate).collect();
+          let neg_plus = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: neg_terms.into(),
+          };
+          return format!("({})/{}", fmt(&neg_plus), d);
+        }
         // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
         if args.len() == 2
           && let Expr::FunctionCall {

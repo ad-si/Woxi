@@ -5843,3 +5843,36 @@ mod imaginary_argument_trig {
     assert_eq!(interpret("Cos[Pi/3]").unwrap(), "1/2");
   }
 }
+
+// Times[Rational[-1, d], Plus[...]] renders by negating each summand, matching
+// wolframscript: (-1/2)(a + b) → (-a - b)/2 (not the prior buggy -1/2*a + b).
+mod negative_half_times_sum_display {
+  use super::*;
+
+  #[test]
+  fn negates_each_summand() {
+    assert_eq!(interpret("(-1/2)*(a + b)").unwrap(), "(-a - b)/2");
+    assert_eq!(interpret("(-1/2)*(a + b + c)").unwrap(), "(-a - b - c)/2");
+    assert_eq!(interpret("-1*((a + b)/2)").unwrap(), "(-a - b)/2");
+  }
+
+  // Already-negative summands collapse the double negation.
+  #[test]
+  fn collapses_double_negation() {
+    assert_eq!(interpret("(-1/2)*(2 - x)").unwrap(), "(-2 + x)/2");
+    assert_eq!(interpret("(-1/3)*(2 - x)").unwrap(), "(-2 + x)/3");
+    assert_eq!(interpret("(-1/2)*(a - b)").unwrap(), "(-a + b)/2");
+    assert_eq!(interpret("(-1/2)*(2 + x)").unwrap(), "(-2 - x)/2");
+  }
+
+  // A non-sum factor or a numerator other than -1 are unaffected.
+  #[test]
+  fn other_cases_unchanged() {
+    assert_eq!(interpret("Times[Rational[-1, 2], x]").unwrap(), "-1/2*x");
+    assert_eq!(
+      interpret("(-3/2)*(a + b)").unwrap(),
+      "(-3*(a + b))/2"
+    );
+    assert_eq!(interpret("(1/2)*(a + b)").unwrap(), "(a + b)/2");
+  }
+}

@@ -1456,7 +1456,10 @@ mod monomial_list {
       interpret("MonomialList[x^2 + 2 x y + y^2]").unwrap(),
       "{x^2, 2*x*y, y^2}"
     );
-    assert_eq!(interpret("MonomialList[1 + x + x^2]").unwrap(), "{x^2, x, 1}");
+    assert_eq!(
+      interpret("MonomialList[1 + x + x^2]").unwrap(),
+      "{x^2, x, 1}"
+    );
     assert_eq!(
       interpret("MonomialList[3 x y + 2 x^2]").unwrap(),
       "{2*x^2, 3*x*y}"
