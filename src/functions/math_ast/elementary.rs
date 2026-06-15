@@ -256,7 +256,9 @@ fn power_with_real_exponent(expr: &Expr) -> Option<(&Expr, &Expr)> {
   };
   let exp_is_real_numeric = match exp {
     Expr::Integer(_) | Expr::Real(_) => true,
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       matches!((&args[0], &args[1]), (Expr::Integer(_), Expr::Integer(_)))
     }
     _ => false,

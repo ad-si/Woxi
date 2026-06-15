@@ -1457,6 +1457,22 @@ fn iso_week(year: i64, month: i64, day: i64) -> i64 {
   }
 }
 
+/// ISO-8601 week-numbering year of a Gregorian date. Differs from the calendar
+/// year near January 1 / December 31 (e.g. 2023-01-01 belongs to ISO year
+/// 2022, week 52).
+fn iso_week_year(year: i64, month: i64, day: i64) -> i64 {
+  let doy = day_of_year(year, month, day);
+  let iso_weekday = day_of_week(year, month, day) + 1;
+  let week = (doy - iso_weekday + 10) / 7;
+  if week < 1 {
+    year - 1
+  } else if week > iso_weeks_in_year(year) {
+    year + 1
+  } else {
+    year
+  }
+}
+
 /// DateValue[date, property] — a named component of a date.
 pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
@@ -1497,10 +1513,15 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
       }
       "MonthName" => Expr::Identifier(month_name(mo).to_string()),
+      "DayNameShort" => {
+        Expr::String(day_name_short(day_of_week(y, mo, d)).to_string())
+      }
       "Quarter" => int((mo - 1) / 3 + 1),
       "DayOfYear" => int(day_of_year(y, mo, d)),
       "ISOWeekDay" => int(day_of_week(y, mo, d) + 1),
       "Week" => int(iso_week(y, mo, d)),
+      "ISOWeek" => int(iso_week(y, mo, d)),
+      "ISOWeekYear" => int(iso_week_year(y, mo, d)),
       _ => return None,
     })
   };

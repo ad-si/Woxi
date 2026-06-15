@@ -1261,6 +1261,56 @@ mod date_value {
     );
   }
 
+  // "DayNameShort" returns the short weekday name as a string.
+  #[test]
+  fn day_name_short() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "DayNameShort"]"#).unwrap(),
+      "Fri"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 12, 25}, "DayNameShort"]"#).unwrap(),
+      "Wed"
+    );
+  }
+
+  // ISO-8601 week date: "ISOWeek" and "ISOWeekYear", which differ from the
+  // calendar values near year boundaries. Verified against wolframscript.
+  #[test]
+  fn iso_week_and_year() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "ISOWeek"]"#).unwrap(),
+      "11"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "ISOWeekYear"]"#).unwrap(),
+      "2024"
+    );
+  }
+
+  #[test]
+  fn iso_week_year_boundaries() {
+    // 2023-01-01 is a Sunday → ISO week 52 of 2022.
+    assert_eq!(
+      interpret(r#"DateValue[{2023, 1, 1}, "ISOWeek"]"#).unwrap(),
+      "52"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2023, 1, 1}, "ISOWeekYear"]"#).unwrap(),
+      "2022"
+    );
+    // 2021-01-01 is a Friday → ISO week 53 of 2020.
+    assert_eq!(
+      interpret(r#"DateValue[{2021, 1, 1}, "ISOWeekYear"]"#).unwrap(),
+      "2020"
+    );
+    // 2025-12-29 is a Monday → ISO week 1 of 2026.
+    assert_eq!(
+      interpret(r#"DateValue[{2025, 12, 29}, "ISOWeekYear"]"#).unwrap(),
+      "2026"
+    );
+  }
+
   #[test]
   fn day_of_year_and_iso_weekday() {
     assert_eq!(
