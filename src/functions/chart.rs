@@ -169,6 +169,11 @@ pub(crate) struct ChartOptions {
   pub chart_legends_auto: bool,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
+  /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
+  pub bar_origin_left: bool,
+  /// `LabelingFunction -> f` — applied to each bar value to produce a label
+  /// drawn at the bar's end. Stored unevaluated and applied per value.
+  pub labeling_function: Option<Expr>,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -238,6 +243,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     chart_legends_auto: false,
     plot_range_x: None,
     plot_range_y: None,
+    bar_origin_left: false,
+    labeling_function: None,
   };
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -342,6 +349,16 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           opts.plot_range_x = rx;
           opts.plot_range_y = ry;
         }
+        "BarOrigin" => {
+          // Left/Right give horizontal bars; Bottom/Top stay vertical.
+          if let Expr::Identifier(side) = replacement.as_ref() {
+            opts.bar_origin_left = matches!(side.as_str(), "Left" | "Right");
+          }
+        }
+        "LabelingFunction" => {
+          // Stored unevaluated (it's a pure function applied per value).
+          opts.labeling_function = Some(replacement.as_ref().clone());
+        }
         "ChartStyle" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
@@ -385,7 +402,7 @@ fn svg_header(w: u32, h: u32, full_width: bool) -> String {
 
 /// Format a numeric value for display in chart tooltips.
 /// Integers (or values very close to integers) are shown without decimals.
-fn format_chart_value(v: f64) -> String {
+pub(crate) fn format_chart_value(v: f64) -> String {
   if (v - v.round()).abs() < 1e-10 {
     format!("{}", v as i64)
   } else {
@@ -402,6 +419,36 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let opts = parse_chart_options(args);
+
+  // LabelingFunction -> f produces a label drawn at each bar's end.
+  let bar_labels: Vec<String> = match &opts.labeling_function {
+    Some(func) => groups
+      .iter()
+      .flat_map(|g| g.iter())
+      .map(|&v| apply_labeling_function(func, v).unwrap_or_default())
+      .collect(),
+    None => Vec::new(),
+  };
+
+  if opts.bar_origin_left {
+    let svg = crate::functions::plot::generate_horizontal_bar_svg(
+      &groups,
+      opts.svg_width,
+      opts.svg_height,
+      opts.full_width,
+      &opts.chart_labels,
+      opts.plot_label.as_ref(),
+      opts
+        .axes_label
+        .as_ref()
+        .map(|(x, y)| (x.as_str(), y.as_str())),
+      &opts.chart_style,
+      &opts.chart_legends,
+      opts.plot_range_x,
+      &bar_labels,
+    )?;
+    return Ok(crate::graphics_result(svg));
+  }
 
   let svg = generate_bar_svg(
     &groups,
@@ -421,6 +468,30 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
   )?;
   Ok(crate::graphics_result(svg))
+}
+
+/// Apply a `LabelingFunction` to a single bar value, returning the display
+/// string. Handles bare functions (`Round[#, 0.01] &`) and the `Placed[expr,
+/// position]` wrapper (the position only affects placement, which the caller
+/// fixes at the bar end, so only `expr` matters here).
+fn apply_labeling_function(func: &Expr, value: f64) -> Option<String> {
+  let call = Expr::CurriedCall {
+    func: Box::new(func.clone()),
+    args: vec![Expr::Real(value)],
+  };
+  let result = evaluate_expr_to_expr(&call).ok()?;
+  let inner = match &result {
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  match inner {
+    Expr::String(s) => Some(s.clone()),
+    _ => Some(crate::syntax::expr_to_string(inner)),
+  }
 }
 
 /// Extract pie-chart rows. A flat list `{v1, v2, ...}` becomes a single

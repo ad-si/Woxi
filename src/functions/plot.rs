@@ -2624,6 +2624,352 @@ pub(crate) fn generate_bar_svg(
   Ok(buf)
 }
 
+/// Generate SVG for a horizontal BarChart (`BarOrigin -> Left`).
+///
+/// Categories run down the left edge (first input at the bottom, matching
+/// wolframscript), bars grow rightward from zero, and the value axis with its
+/// ticks sits along the bottom. `bar_labels` (from `LabelingFunction`) are
+/// drawn just past each bar's end. Unlike the vertical renderer this builds
+/// the SVG directly rather than via plotters, since the axes are swapped.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_horizontal_bar_svg(
+  groups: &[Vec<f64>],
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+  chart_labels: &[crate::functions::chart::ChartLabel],
+  plot_label: Option<&StyledLabel>,
+  axes_label: Option<(&str, &str)>,
+  chart_style: &[WoxiColor],
+  chart_legends: &[String],
+  plot_range_x: Option<(f64, f64)>,
+  bar_labels: &[String],
+) -> Result<String, InterpreterError> {
+  let sf = RESOLUTION_SCALE as f64;
+  let render_width = svg_width * RESOLUTION_SCALE;
+  let render_height = svg_height * RESOLUTION_SCALE;
+  let rw = render_width as f64;
+  let rh = render_height as f64;
+
+  let n = groups.len();
+  let k = groups.iter().map(|g| g.len()).max().unwrap_or(1).max(1);
+
+  // Value axis (horizontal): anchored at 0 with 10% headroom unless an
+  // explicit PlotRange overrides it.
+  let (x_min, x_max) = if let Some((a, b)) = plot_range_x {
+    (a, b)
+  } else {
+    let m = groups
+      .iter()
+      .flat_map(|g| g.iter())
+      .cloned()
+      .fold(f64::NEG_INFINITY, f64::max)
+      .max(0.0)
+      * 1.1;
+    (0.0, if m <= 0.0 { 1.0 } else { m })
+  };
+  let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
+
+  let (bg, axis_gray, _light, label_fill, title_default_fill) = plot_theme();
+  let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
+  let axis_stroke =
+    format!("rgb({},{},{})", axis_gray.0, axis_gray.1, axis_gray.2);
+
+  let font_size = sf * 18.0;
+  let title_font_size = sf * 22.0;
+  let char_w = font_size * 0.55;
+
+  let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
+  let has_chart_labels = chart_labels.iter().any(|l| !l.text.is_empty());
+  let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
+  let (x_axis_label, y_axis_label) = match axes_label {
+    Some((x, y)) => (x, y),
+    None => ("", ""),
+  };
+
+  // Margins.
+  let top_margin = if has_plot_label { 44.0 * sf } else { 16.0 * sf };
+  let bottom_area = 44.0 * sf
+    + if !x_axis_label.is_empty() {
+      26.0 * sf
+    } else {
+      0.0
+    };
+
+  // Left area: widest category label (capped) plus a rotated y-axis label.
+  let max_cat_len = chart_labels
+    .iter()
+    .map(|l| l.text.chars().count())
+    .max()
+    .unwrap_or(0);
+  let cat_label_area = if has_chart_labels {
+    (max_cat_len as f64 * char_w + 14.0 * sf).min(rw * 0.45)
+  } else {
+    14.0 * sf
+  };
+  let y_axis_label_area = if y_axis_label.is_empty() {
+    0.0
+  } else {
+    26.0 * sf
+  };
+  let left_area = cat_label_area + y_axis_label_area;
+
+  // Right area: value labels (drawn past each bar) plus any legend block.
+  let max_vlabel_len = bar_labels
+    .iter()
+    .map(|s| s.chars().count())
+    .max()
+    .unwrap_or(0);
+  let value_label_area = if has_value_labels {
+    max_vlabel_len as f64 * char_w + 14.0 * sf
+  } else {
+    0.0
+  };
+  let legend_area = if chart_legends.is_empty() {
+    0.0
+  } else {
+    let maxlen = chart_legends
+      .iter()
+      .map(|l| l.chars().count())
+      .max()
+      .unwrap_or(0);
+    sf * 12.0 + sf * 6.0 + maxlen as f64 * sf * 10.0 + sf * 16.0
+  };
+  let right_margin = 14.0 * sf + value_label_area + legend_area;
+
+  let plot_x0 = left_area;
+  let plot_y0 = top_margin;
+  let plot_w = (rw - plot_x0 - right_margin).max(1.0);
+  let plot_h = (rh - top_margin - bottom_area).max(1.0);
+  let axis_bottom = plot_y0 + plot_h;
+
+  let map_x =
+    |v: f64| -> f64 { plot_x0 + (v - x_min) / (x_max - x_min) * plot_w };
+  let bar_base = map_x(x_min.max(0.0));
+
+  let mut svg = String::new();
+  if full_width {
+    svg.push_str(&format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {render_width} {render_height}\" \
+       preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" \
+       viewBox=\"0 0 {render_width} {render_height}\" \
+       preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+  }
+  svg.push_str(&format!(
+    "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_fill}\"/>\n"
+  ));
+
+  // Bars. Category index 0 sits at the bottom band.
+  let band_h = plot_h / n.max(1) as f64;
+  let gap_frac = 0.2;
+  for (gi, group) in groups.iter().enumerate() {
+    let band_bottom = axis_bottom - gi as f64 * band_h;
+    let band_top = band_bottom - band_h;
+    let inner_top = band_top + band_h * gap_frac / 2.0;
+    let inner_h = band_h * (1.0 - gap_frac);
+    let sub_h = inner_h / k as f64;
+    for (bi, &val) in group.iter().enumerate() {
+      let (r, g, b) = if !chart_style.is_empty() {
+        let idx = if k > 1 { bi } else { gi };
+        let c = &chart_style[idx % chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else if k > 1 {
+        PLOT_COLORS[bi % PLOT_COLORS.len()]
+      } else if !chart_legends.is_empty() {
+        PLOT_COLORS[gi % PLOT_COLORS.len()]
+      } else {
+        PLOT_COLORS[0]
+      };
+      let y0 = inner_top + bi as f64 * sub_h;
+      let x_end = map_x(val);
+      let (rx, rwid) = if x_end >= bar_base {
+        (bar_base, x_end - bar_base)
+      } else {
+        (x_end, bar_base - x_end)
+      };
+      let tooltip = crate::functions::chart::format_chart_value(val);
+      svg.push_str(&format!(
+        "<rect x=\"{rx:.2}\" y=\"{y0:.2}\" width=\"{rwid:.2}\" height=\"{sub_h:.2}\" \
+         fill=\"rgb({r},{g},{b})\"><title>{tooltip}</title></rect>\n"
+      ));
+    }
+  }
+
+  // Axis lines: left (categories) and bottom (values).
+  let stroke_w = sf;
+  svg.push_str(&format!(
+    "<line x1=\"{plot_x0:.2}\" y1=\"{plot_y0:.2}\" x2=\"{plot_x0:.2}\" y2=\"{axis_bottom:.2}\" \
+     stroke=\"{axis_stroke}\" stroke-width=\"{stroke_w:.2}\"/>\n"
+  ));
+  let plot_right = plot_x0 + plot_w;
+  svg.push_str(&format!(
+    "<line x1=\"{plot_x0:.2}\" y1=\"{axis_bottom:.2}\" x2=\"{plot_right:.2}\" y2=\"{axis_bottom:.2}\" \
+     stroke=\"{axis_stroke}\" stroke-width=\"{stroke_w:.2}\"/>\n"
+  ));
+
+  // Value-axis ticks along the bottom.
+  let x_major = nice_step(x_max - x_min, 5);
+  if x_major > 0.0 {
+    let tick_len = MAJOR_TICK_LEN as f64 * sf;
+    let start = (x_min / x_major).ceil() * x_major;
+    let mut v = start;
+    let mut guard = 0;
+    while v <= x_max + x_major * 1e-6 && guard < 1000 {
+      guard += 1;
+      let tx = map_x(v);
+      svg.push_str(&format!(
+        "<line x1=\"{tx:.2}\" y1=\"{axis_bottom:.2}\" x2=\"{tx:.2}\" y2=\"{:.2}\" \
+         stroke=\"{axis_stroke}\" stroke-width=\"{stroke_w:.2}\"/>\n",
+        axis_bottom + tick_len
+      ));
+      svg.push_str(&format!(
+        "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+        axis_bottom + tick_len + font_size,
+        html_escape(&format_tick(v))
+      ));
+      v += x_major;
+    }
+  }
+
+  // Category labels: right-aligned just left of each band.
+  if has_chart_labels {
+    for (i, label) in chart_labels.iter().enumerate().take(n) {
+      if label.text.is_empty() {
+        continue;
+      }
+      let band_center = axis_bottom - (i as f64 + 0.5) * band_h;
+      let lx = plot_x0 - 8.0 * sf;
+      svg.push_str(&format!(
+        "<text x=\"{lx:.2}\" y=\"{:.2}\" text-anchor=\"end\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+        band_center + font_size * 0.35,
+        html_escape(&label.text)
+      ));
+    }
+  }
+
+  // Value labels (LabelingFunction) just past each bar end.
+  if has_value_labels {
+    let mut flat = 0usize;
+    for (gi, group) in groups.iter().enumerate() {
+      let band_bottom = axis_bottom - gi as f64 * band_h;
+      let band_top = band_bottom - band_h;
+      let inner_top = band_top + band_h * gap_frac / 2.0;
+      let inner_h = band_h * (1.0 - gap_frac);
+      let sub_h = inner_h / k as f64;
+      for (bi, &val) in group.iter().enumerate() {
+        let text = bar_labels.get(flat).cloned().unwrap_or_default();
+        flat += 1;
+        if text.is_empty() {
+          continue;
+        }
+        let y0 = inner_top + bi as f64 * sub_h;
+        let lx = map_x(val).max(bar_base) + 6.0 * sf;
+        svg.push_str(&format!(
+          "<text x=\"{lx:.2}\" y=\"{:.2}\" text-anchor=\"start\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+          y0 + sub_h / 2.0 + font_size * 0.35,
+          html_escape(&text)
+        ));
+      }
+    }
+  }
+
+  // Axis labels.
+  if !x_axis_label.is_empty() {
+    let cx = plot_x0 + plot_w / 2.0;
+    let ty = axis_bottom + bottom_area - 6.0 * sf;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+      html_escape(x_axis_label)
+    ));
+  }
+  if !y_axis_label.is_empty() {
+    let cy = plot_y0 + plot_h / 2.0;
+    let lx = 14.0 * sf;
+    svg.push_str(&format!(
+      "<text x=\"{lx:.2}\" y=\"{cy:.2}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\" \
+       transform=\"rotate(-90,{lx:.2},{cy:.2})\">{}</text>\n",
+      html_escape(y_axis_label)
+    ));
+  }
+
+  // Plot label, centered above the plot.
+  if let Some(sl) = plot_label
+    && !sl.text.is_empty()
+  {
+    let cx = plot_x0 + plot_w / 2.0;
+    let ty = top_margin - title_font_size * 0.4;
+    let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    let fill = sl
+      .color
+      .as_ref()
+      .map(|c| c.to_svg_rgb())
+      .unwrap_or_else(|| title_default_fill.to_string());
+    let mut style_attrs = String::new();
+    if sl.bold {
+      style_attrs.push_str(" font-weight=\"bold\"");
+    }
+    if sl.italic {
+      style_attrs.push_str(" font-style=\"italic\"");
+    }
+    svg.push_str(&format!(
+      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
+      html_escape(&sl.text)
+    ));
+  }
+
+  // Legends to the right of the plot.
+  if !chart_legends.is_empty() {
+    let legend_font = sf * 16.0;
+    let swatch = sf * 12.0;
+    let swatch_gap = sf * 6.0;
+    let legend_x = plot_x0 + plot_w + value_label_area + 14.0 * sf;
+    let legend_y_start = plot_y0 + sf * 8.0;
+    let line_height = sf * 22.0;
+    for (i, label) in chart_legends.iter().enumerate() {
+      let (cr, cg, cb) = if !chart_style.is_empty() {
+        let c = &chart_style[i % chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[i % PLOT_COLORS.len()]
+      };
+      let ly = legend_y_start + i as f64 * line_height;
+      svg.push_str(&format!(
+        "<rect x=\"{legend_x:.2}\" y=\"{ly:.2}\" width=\"{swatch:.0}\" height=\"{swatch:.0}\" \
+         fill=\"rgb({cr},{cg},{cb})\"/>\n"
+      ));
+      svg.push_str(&format!(
+        "<text x=\"{:.2}\" y=\"{:.2}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
+         fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
+        legend_x + swatch + swatch_gap,
+        ly + swatch / 2.0,
+        html_escape(label)
+      ));
+    }
+  }
+
+  svg.push_str("</svg>");
+  Ok(svg)
+}
+
 /// Generate SVG for a BubbleChart — a scatter plot with variable-radius
 /// circles drawn over labeled x/y axes. Each input triple is `(x, y, z)`
 /// where `z` drives the bubble area (matching Mathematica's convention).
