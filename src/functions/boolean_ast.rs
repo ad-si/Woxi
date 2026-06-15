@@ -428,12 +428,14 @@ pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
     (
       Expr::FunctionCall { name: n1, args: a1 },
       Expr::FunctionCall { name: n2, args: a2 },
-    ) if n1 == n2 && a1.len() == a2.len() => {
-      a1.iter().zip(a2.iter()).all(|(x, y)| all_components_equal(x, y))
-    }
-    (Expr::List(l1), Expr::List(l2)) if l1.len() == l2.len() => {
-      l1.iter().zip(l2.iter()).all(|(x, y)| all_components_equal(x, y))
-    }
+    ) if n1 == n2 && a1.len() == a2.len() => a1
+      .iter()
+      .zip(a2.iter())
+      .all(|(x, y)| all_components_equal(x, y)),
+    (Expr::List(l1), Expr::List(l2)) if l1.len() == l2.len() => l1
+      .iter()
+      .zip(l2.iter())
+      .all(|(x, y)| all_components_equal(x, y)),
     _ => {
       if let (Some(va), Some(vb)) = (try_eval_to_f64(a), try_eval_to_f64(b)) {
         va == vb
@@ -548,7 +550,10 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Only ever concludes True here; mismatches fall through to the symbolic
   // form (Wolfram leaves `f[1.] == f[2]` unevaluated, not False).
   if matches!(&args[0], Expr::FunctionCall { .. } | Expr::List(_))
-    && args.iter().skip(1).all(|a| all_components_equal(&args[0], a))
+    && args
+      .iter()
+      .skip(1)
+      .all(|a| all_components_equal(&args[0], a))
   {
     return Ok(Expr::Identifier("True".to_string()));
   }
@@ -585,17 +590,22 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // *adjacent* pair is structurally identical (a != a != b → False, but
   // a != b != a stays unevaluated). For all-numeric / all-string args,
   // any duplicate (even non-adjacent) collapses to False.
+  // Two operands also count as "equal" when they share head and arity with
+  // every leaf determinably equal, e.g. RGBColor[0., 0., 1.] != RGBColor[0,
+  // 0, 1] is False.
   if !has_free {
     for i in 0..strs.len() {
       for j in i + 1..strs.len() {
-        if strs[i] == strs[j] {
+        if strs[i] == strs[j] || all_components_equal(&args[i], &args[j]) {
           return Ok(Expr::Identifier("False".to_string()));
         }
       }
     }
   } else {
     for i in 0..strs.len() - 1 {
-      if strs[i] == strs[i + 1] {
+      if strs[i] == strs[i + 1]
+        || all_components_equal(&args[i], &args[i + 1])
+      {
         return Ok(Expr::Identifier("False".to_string()));
       }
     }

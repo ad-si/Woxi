@@ -3948,3 +3948,39 @@ mod structural_numeric_equal {
     assert_eq!(interpret("f[1.] == f[2]").unwrap(), "f[1.] == f[2]");
   }
 }
+
+mod structural_numeric_unequal {
+  use super::*;
+
+  // `!=` is the negation of structural-numeric Equal: determinably-equal
+  // operands are not unequal.
+  #[test]
+  fn determinably_equal_operands_are_not_unequal() {
+    assert_eq!(
+      interpret("RGBColor[0., 0., 1.] != RGBColor[0, 0, 1]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("f[1.] != f[1]").unwrap(), "False");
+    assert_eq!(
+      interpret("point[{0., 0.}] != point[{0, 0}]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("Unequal[f[1.], f[1]]").unwrap(), "False");
+  }
+
+  // A determinably-different component leaves the operator comparison
+  // unevaluated, matching Wolfram.
+  #[test]
+  fn mismatch_stays_symbolic() {
+    assert_eq!(interpret("f[1.] != f[2]").unwrap(), "f[1.] != f[2]");
+  }
+
+  // SameQ stays structurally strict: 1. and 1 are not identical.
+  #[test]
+  fn sameq_remains_strict() {
+    assert_eq!(
+      interpret("RGBColor[0., 0., 1.] === RGBColor[0, 0, 1]").unwrap(),
+      "False"
+    );
+  }
+}

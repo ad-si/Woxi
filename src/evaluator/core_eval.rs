@@ -2432,6 +2432,11 @@ pub fn evaluate_expr_to_expr_inner(
               l != r
             } else if expr_to_string(left) == expr_to_string(right) {
               false
+            } else if crate::functions::boolean_ast::all_components_equal(
+              left, right,
+            ) {
+              // Determinably equal component-wise → `!=` is False.
+              false
             } else if has_free_symbols(left) || has_free_symbols(right) {
               // Symbolic: return unevaluated
               return Ok(Expr::Comparison {
