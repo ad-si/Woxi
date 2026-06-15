@@ -632,3 +632,51 @@ fn arctanh_interval_out_of_domain_unevaluated() {
     "ArcTanh[Interval[{0, 2}]]"
   );
 }
+
+// Interval ^ Interval: for non-negative bases the image is the min/max over
+// the four corner values. Verified against wolframscript.
+#[test]
+fn interval_power_interval_basic() {
+  assert_eq!(
+    interpret("Interval[{2, 3}]^Interval[{2, 3}]").unwrap(),
+    "Interval[{4, 27}]"
+  );
+}
+
+#[test]
+fn interval_power_interval_base_straddles_one() {
+  assert_eq!(
+    interpret("Interval[{1/2, 2}]^Interval[{2, 3}]").unwrap(),
+    "Interval[{1/8, 8}]"
+  );
+}
+
+#[test]
+fn interval_power_interval_negative_exponent_span() {
+  assert_eq!(
+    interpret("Interval[{2, 3}]^Interval[{-1, 1}]").unwrap(),
+    "Interval[{1/3, 3}]"
+  );
+  assert_eq!(
+    interpret("Interval[{3, 5}]^Interval[{-2, -1}]").unwrap(),
+    "Interval[{1/25, 1/3}]"
+  );
+}
+
+#[test]
+fn interval_power_interval_base_contains_zero() {
+  // 0^positive = 0, so the lower corner is 0.
+  assert_eq!(
+    interpret("Interval[{0, 2}]^Interval[{2, 3}]").unwrap(),
+    "Interval[{0, 8}]"
+  );
+}
+
+#[test]
+fn interval_power_interval_negative_base_unevaluated() {
+  // A base spanning negative values is left unevaluated (wolframscript).
+  assert_eq!(
+    interpret("Interval[{-2, 3}]^Interval[{2, 3}]").unwrap(),
+    "Interval[{-2, 3}]^Interval[{2, 3}]"
+  );
+}

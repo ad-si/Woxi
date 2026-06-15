@@ -578,6 +578,39 @@ pub fn try_interval_power(
 ) -> Option<Result<Expr, InterpreterError>> {
   let spans = is_interval(base)?;
 
+  // Interval ^ Interval. For a non-negative base, x^y is monotonic in each
+  // variable separately (∂/∂x = y x^(y-1) and ∂/∂y = x^y ln x each keep a
+  // fixed sign over the box), so the image is bounded by the four corner
+  // values. Negative bases are left unevaluated, matching wolframscript.
+  if let Some(exp_spans) = is_interval(exp) {
+    let mut result_spans = Vec::new();
+    for (blo, bhi) in &spans {
+      if expr_to_f64(blo)? < 0.0 {
+        return None;
+      }
+      for (elo, ehi) in &exp_spans {
+        let corners = [
+          eval_binop(blo, elo, "Power").ok()?,
+          eval_binop(blo, ehi, "Power").ok()?,
+          eval_binop(bhi, elo, "Power").ok()?,
+          eval_binop(bhi, ehi, "Power").ok()?,
+        ];
+        // Every corner must be a finite real (e.g. 0^0 / 0^-1 bail out).
+        for c in &corners {
+          expr_to_f64(c)?;
+        }
+        let mut lo = corners[0].clone();
+        let mut hi = corners[0].clone();
+        for c in &corners[1..] {
+          lo = numeric_min(&lo, c);
+          hi = numeric_max(&hi, c);
+        }
+        result_spans.push((lo, hi));
+      }
+    }
+    return Some(Ok(make_interval(normalize_intervals(result_spans))));
+  }
+
   // exp must be numeric
   let exp_f = expr_to_f64(exp)?;
 

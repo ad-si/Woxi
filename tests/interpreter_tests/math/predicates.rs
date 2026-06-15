@@ -736,18 +736,9 @@ mod equivalent_logic {
 
   #[test]
   fn duplicate_operands_deduplicated() {
-    assert_eq!(
-      interpret("Equivalent[a, b, a]").unwrap(),
-      "a \u{29e6} b"
-    );
-    assert_eq!(
-      interpret("Equivalent[a, a, b]").unwrap(),
-      "a \u{29e6} b"
-    );
-    assert_eq!(
-      interpret("Equivalent[a, b, b]").unwrap(),
-      "a \u{29e6} b"
-    );
+    assert_eq!(interpret("Equivalent[a, b, a]").unwrap(), "a \u{29e6} b");
+    assert_eq!(interpret("Equivalent[a, a, b]").unwrap(), "a \u{29e6} b");
+    assert_eq!(interpret("Equivalent[a, b, b]").unwrap(), "a \u{29e6} b");
   }
 }
 
