@@ -2206,6 +2206,69 @@ mod full_simplify {
     assert_eq!(interpret("FullSimplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }
 
+  // Denesting nested radicals: Sqrt[a + b Sqrt[c]] -> Sqrt[d] +/- Sqrt[e]
+  // when a^2 - b^2 c is a perfect square.
+  #[test]
+  fn denest_two_surds() {
+    assert_eq!(
+      interpret("FullSimplify[Sqrt[5 + 2 Sqrt[6]]]").unwrap(),
+      "Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn denest_integer_plus_surd() {
+    assert_eq!(
+      interpret("FullSimplify[Sqrt[3 + 2 Sqrt[2]]]").unwrap(),
+      "1 + Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn denest_with_coefficient_four() {
+    assert_eq!(
+      interpret("FullSimplify[Sqrt[7 + 4 Sqrt[3]]]").unwrap(),
+      "2 + Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn denest_minus_sign() {
+    assert_eq!(
+      interpret("FullSimplify[Sqrt[7 - 2 Sqrt[10]]]").unwrap(),
+      "-Sqrt[2] + Sqrt[5]"
+    );
+  }
+
+  #[test]
+  fn denest_sum_combines() {
+    assert_eq!(
+      interpret(
+        "FullSimplify[Sqrt[5 + 2 Sqrt[6]] + Sqrt[5 - 2 Sqrt[6]]]"
+      )
+      .unwrap(),
+      "2*Sqrt[3]"
+    );
+  }
+
+  // Non-denestable radical (a^2 - b^2 c not a perfect square) stays nested.
+  #[test]
+  fn non_denestable_stays_nested() {
+    assert_eq!(
+      interpret("FullSimplify[Sqrt[5 + 2 Sqrt[5]]]").unwrap(),
+      "Sqrt[5 + 2*Sqrt[5]]"
+    );
+  }
+
+  // Plain Simplify must NOT denest (only FullSimplify does).
+  #[test]
+  fn simplify_does_not_denest() {
+    assert_eq!(
+      interpret("Simplify[Sqrt[3 + 2 Sqrt[2]]]").unwrap(),
+      "Sqrt[3 + 2*Sqrt[2]]"
+    );
+  }
+
   // Gamma[a]/Gamma[b], a - b = k a positive integer: the rising-factorial
   // product. Leaf-count gated, so k <= 3 reduces but k = 4 keeps the ratio.
   #[test]

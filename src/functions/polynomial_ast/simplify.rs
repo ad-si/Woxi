@@ -4080,12 +4080,206 @@ fn try_complementary_inverse_trig(expr: &Expr) -> Option<Expr> {
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
 
+/// Integer square root of a non-negative `i128`, or None when `n` is not a
+/// perfect square.
+fn perfect_sqrt_i128(n: i128) -> Option<i128> {
+  if n < 0 {
+    return None;
+  }
+  let mut x = (n as f64).sqrt() as i128;
+  while x > 0 && x * x > n {
+    x -= 1;
+  }
+  while (x + 1) * (x + 1) <= n {
+    x += 1;
+  }
+  if x * x == n { Some(x) } else { None }
+}
+
+/// If `e` is `Sqrt[radicand]` (i.e. `Power[radicand, 1/2]` in either spelling),
+/// return the radicand.
+fn as_sqrt(e: &Expr) -> Option<&Expr> {
+  let is_half = |x: &Expr| {
+    matches!(x, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2
+        && matches!(&args[0], Expr::Integer(1))
+        && matches!(&args[1], Expr::Integer(2)))
+  };
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_half(&args[1]) =>
+    {
+      Some(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if is_half(right) => Some(left),
+    _ => None,
+  }
+}
+
+/// Classify a summand of the inner radicand as either an integer constant or
+/// `b * Sqrt[c]` (integer `b`, `c`). Returns None for any other shape.
+fn classify_radical_term(t: &Expr) -> Option<(i128, Option<i128>)> {
+  // (a, None) = integer constant a; (b, Some(c)) = b * Sqrt[c].
+  if let Expr::Integer(n) = t {
+    return Some((*n, None));
+  }
+  if let Some(rad) = as_sqrt(t)
+    && let Expr::Integer(c) = rad
+  {
+    return Some((1, Some(*c)));
+  }
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = t
+  {
+    let (v, c) = classify_radical_term(operand)?;
+    return Some((-v, c));
+  }
+  // Times of an integer coefficient and a single Sqrt factor.
+  let factors: Vec<&Expr> = match t {
+    Expr::FunctionCall { name, args } if name == "Times" => args.iter().collect(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+  let mut coeff: i128 = 1;
+  let mut radicand: Option<i128> = None;
+  for f in factors {
+    if let Expr::Integer(n) = f {
+      coeff *= n;
+    } else if let Some(Expr::Integer(c)) = as_sqrt(f) {
+      if radicand.is_some() {
+        return None;
+      }
+      radicand = Some(*c);
+    } else {
+      return None;
+    }
+  }
+  radicand.map(|c| (coeff, Some(c)))
+}
+
+/// Denest a single `Sqrt[a + b Sqrt[c]]` into `Sqrt[d] +/- Sqrt[e]` when the
+/// discriminant `a^2 - b^2 c` is a perfect square and the radicands `d, e` are
+/// non-negative integers. Returns None when `e` is not of this form.
+fn denest_one_sqrt(e: &Expr) -> Option<Expr> {
+  let radicand = as_sqrt(e)?;
+  let terms = collect_additive_terms(radicand);
+  if terms.len() != 2 {
+    return None;
+  }
+  let mut a: Option<i128> = None;
+  let mut surd: Option<(i128, i128)> = None;
+  for t in &terms {
+    match classify_radical_term(t)? {
+      (v, None) => {
+        if a.is_some() {
+          return None;
+        }
+        a = Some(v);
+      }
+      (b, Some(c)) => {
+        if surd.is_some() {
+          return None;
+        }
+        surd = Some((b, c));
+      }
+    }
+  }
+  let a = a?;
+  let (b, c) = surd?;
+  if a <= 0 {
+    return None;
+  }
+  let disc = a * a - b * b * c;
+  let s = perfect_sqrt_i128(disc)?;
+  if (a + s) % 2 != 0 {
+    return None;
+  }
+  let d = (a + s) / 2;
+  let e_val = (a - s) / 2;
+  if e_val < 0 {
+    return None;
+  }
+  let sqrt_of = |n: i128| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::Integer(n),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      },
+    ]
+    .into(),
+  };
+  let sqrt_d = sqrt_of(d);
+  let sqrt_e = sqrt_of(e_val);
+  // b > 0: Sqrt[e] + Sqrt[d]; b < 0: Sqrt[d] - Sqrt[e].
+  let neg_sqrt_e = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), sqrt_e.clone()].into(),
+  };
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: if b >= 0 {
+      vec![sqrt_e, sqrt_d]
+    } else {
+      vec![neg_sqrt_e, sqrt_d]
+    }
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum).ok()
+}
+
+/// Recursively denest every `Sqrt[a + b Sqrt[c]]` sub-expression.
+fn denest_nested_radicals(expr: &Expr) -> Expr {
+  let recursed = match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(denest_nested_radicals).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(denest_nested_radicals(left)),
+      right: Box::new(denest_nested_radicals(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(denest_nested_radicals(operand)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(denest_nested_radicals).collect())
+    }
+    other => other.clone(),
+  };
+  denest_one_sqrt(&recursed).unwrap_or(recursed)
+}
+
 pub fn full_simplify_expr(expr: &Expr) -> Expr {
   // Thread over Lists
   if let Expr::List(items) = expr {
     let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
     return Expr::List(results.into());
   }
+
+  // Denest nested radicals (Sqrt[a + b Sqrt[c]] -> Sqrt[d] +/- Sqrt[e]) up
+  // front; if anything changed, continue simplifying the denested form so that
+  // e.g. Sqrt[5+2Sqrt[6]] + Sqrt[5-2Sqrt[6]] combines to 2 Sqrt[3].
+  let denested = denest_nested_radicals(expr);
+  if crate::syntax::expr_to_string(&denested)
+    != crate::syntax::expr_to_string(expr)
+  {
+    return full_simplify_expr(&denested);
+  }
+  let expr = &denested;
 
   // ArcSin[u] + ArcCos[u] -> Pi/2 (and the ArcSec/ArcCsc pair).
   if let Some(result) = try_complementary_inverse_trig(expr) {
