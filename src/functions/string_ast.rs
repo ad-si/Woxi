@@ -834,10 +834,7 @@ fn has_ignore_case_option(args: &[Expr]) -> bool {
 /// replacement string: `$0` is the whole match, `$1`…`$n` (and `${n}`) the
 /// numbered groups. A `$` not followed by a digit or `{` (including `$$`) is
 /// left verbatim, matching Wolfram.
-fn expand_dollar_replacement(
-  template: &str,
-  caps: &regex::Captures,
-) -> String {
+fn expand_dollar_replacement(template: &str, caps: &regex::Captures) -> String {
   let mut out = String::new();
   let mut chars = template.chars().peekable();
   while let Some(c) = chars.next() {
@@ -894,6 +891,30 @@ fn expand_dollar_replacement(
     }
   }
   out
+}
+
+/// Expand `$0`/`$1`/… regex backreferences in every string literal within an
+/// expression (used for StringCases RegularExpression transforms).
+fn expand_dollar_in_expr(expr: &Expr, caps: &regex::Captures) -> Expr {
+  match expr {
+    Expr::String(s) => Expr::String(expand_dollar_replacement(s, caps)),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| expand_dollar_in_expr(e, caps))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| expand_dollar_in_expr(e, caps))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    other => other.clone(),
+  }
 }
 
 pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2352,23 +2373,23 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Rule or list of rules: at each position, try each rule's LHS pattern;
   // on a match, emit the (capture-substituted) RHS and advance past it.
   if let Some(rules) = extract_cases_rules(&args[1]) {
-    let mut compiled: Vec<(regex::Regex, Vec<(String, String)>, Expr)> =
+    let mut compiled: Vec<(regex::Regex, Vec<(String, String)>, Expr, bool)> =
       Vec::with_capacity(rules.len());
-    for (pat, constraints, rhs) in &rules {
+    for (pat, constraints, rhs, expand_dollar) in &rules {
       let re = compile_regex(&with_ci(pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!(
           "Invalid string pattern: {}",
           e
         ))
       })?;
-      compiled.push((re, constraints.clone(), rhs.clone()));
+      compiled.push((re, constraints.clone(), rhs.clone(), *expand_dollar));
     }
 
     let mut result: Vec<Expr> = Vec::new();
     let mut i = 0;
     while i < s.len() && result.len() < max_count {
       let mut matched = false;
-      for (re, constraints, rhs) in &compiled {
+      for (re, constraints, rhs, expand_dollar) in &compiled {
         if let Some(caps) = re.captures_at(&s, i)
           && let Some(m) = caps.get(0)
           && m.start() == i
@@ -2380,7 +2401,10 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           })
         {
-          let substituted = substitute_captures(rhs, &caps);
+          let mut substituted = substitute_captures(rhs, &caps);
+          if *expand_dollar {
+            substituted = expand_dollar_in_expr(&substituted, &caps);
+          }
           let evaluated =
             crate::evaluator::evaluate_expr_to_expr(&substituted)?;
           result.push(evaluated);
@@ -2506,8 +2530,8 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// converted to a regex.
 fn extract_cases_rules(
   expr: &Expr,
-) -> Option<Vec<(String, Vec<(String, String)>, Expr)>> {
-  fn one(e: &Expr) -> Option<(String, Vec<(String, String)>, Expr)> {
+) -> Option<Vec<(String, Vec<(String, String)>, Expr, bool)>> {
+  fn one(e: &Expr) -> Option<(String, Vec<(String, String)>, Expr, bool)> {
     let (pat, rep) = match e {
       Expr::Rule {
         pattern,
@@ -2520,7 +2544,12 @@ fn extract_cases_rules(
       _ => return None,
     };
     let (regex_str, constraints) = string_pattern_to_regex_with_state(pat)?;
-    Some((regex_str, constraints, rep.clone()))
+    // RegularExpression patterns expand $0/$1/… in the replacement.
+    let expand_dollar = matches!(
+      pat,
+      Expr::FunctionCall { name, .. } if name == "RegularExpression"
+    );
+    Some((regex_str, constraints, rep.clone(), expand_dollar))
   }
   match expr {
     Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(vec![one(expr)?]),

@@ -403,8 +403,10 @@ mod string_replace {
       "Smith, John"
     );
     assert_eq!(
-      interpret(r#"StringReplace["hello", RegularExpression["(l+)"] -> "[$1]"]"#)
-        .unwrap(),
+      interpret(
+        r#"StringReplace["hello", RegularExpression["(l+)"] -> "[$1]"]"#
+      )
+      .unwrap(),
       "he[ll]o"
     );
   }
@@ -1587,6 +1589,41 @@ mod string_patterns {
     assert_eq!(
       interpret("StringCases[\"abc123def456\", DigitCharacter ..]").unwrap(),
       "{123, 456}"
+    );
+  }
+
+  // RegularExpression transforms expand $0/$1/... to capture groups.
+  #[test]
+  fn string_cases_regex_capture_groups() {
+    assert_eq!(
+      interpret(
+        r#"StringCases["a1b2", RegularExpression["[a-z](\\d)"] -> "$1"]"#
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringCases["a1b2", RegularExpression["([a-z])(\\d)"] :> "$2$1"]"#
+      )
+      .unwrap(),
+      "{1a, 2b}"
+    );
+    // The transform can be a list of strings.
+    assert_eq!(
+      interpret(
+        r#"StringCases["2024-01", RegularExpression["(\\d+)-(\\d+)"] :> {"$1", "$2"}]"#
+      )
+      .unwrap(),
+      "{{2024, 01}}"
+    );
+    // $0 is the whole match.
+    assert_eq!(
+      interpret(
+        r#"StringCases["a1b2", RegularExpression["([a-z])(\\d)"] -> "$0"]"#
+      )
+      .unwrap(),
+      "{a1, b2}"
     );
   }
 
