@@ -5509,3 +5509,39 @@ mod cases {
     );
   }
 }
+
+mod json_import {
+  use super::*;
+
+  fn json_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/sample.json")
+  }
+
+  #[test]
+  fn import_raw_json_returns_association() {
+    let path = json_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", "RawJSON"]"#)).unwrap(),
+      "<|name -> Ada, age -> 36, tags -> {x, y}|>"
+    );
+  }
+
+  #[test]
+  fn import_json_returns_rules() {
+    let path = json_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", "JSON"]"#)).unwrap(),
+      "{name -> Ada, age -> 36, tags -> {x, y}}"
+    );
+  }
+
+  #[test]
+  fn import_default_json_extension_returns_rules() {
+    let path = json_path();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}"]"#)).unwrap(),
+      "{name -> Ada, age -> 36, tags -> {x, y}}"
+    );
+  }
+}

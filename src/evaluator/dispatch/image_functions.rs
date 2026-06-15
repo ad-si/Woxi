@@ -15,6 +15,41 @@ fn import_extension(path: &str) -> String {
   cleaned.rsplit('.').next().unwrap_or("").to_lowercase()
 }
 
+/// Read the textual contents of a path that is either a local file or an
+/// `http(s)://` URL. Used by formats (JSON/RawJSON) that parse text.
+#[cfg(not(target_arch = "wasm32"))]
+fn import_read_text(
+  path: &str,
+  is_url: bool,
+) -> Result<String, InterpreterError> {
+  if is_url {
+    crate::functions::xlsx_ast::download_url(path)
+      .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+  } else {
+    std::fs::read_to_string(path).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Import: cannot open \"{}\": {}",
+        path, e
+      ))
+    })
+  }
+}
+
+/// Import a file (local or URL) as JSON/RawJSON, parsing it into the same
+/// nested structure that `ImportString[..., "JSON"|"RawJSON"]` produces.
+#[cfg(not(target_arch = "wasm32"))]
+fn import_json(
+  path: &str,
+  is_url: bool,
+  raw: bool,
+) -> Result<Expr, InterpreterError> {
+  let content = import_read_text(path, is_url)?;
+  Ok(match serde_json::from_str::<serde_json::Value>(&content) {
+    Ok(value) => json_value_to_expr(&value, raw),
+    Err(_) => Expr::Identifier("$Failed".to_string()),
+  })
+}
+
 /// Import a Netpbm (PPM / PGM / PBM / PNM) file.
 ///
 /// Matches wolframscript's behaviour for the two common failure modes:
@@ -383,6 +418,19 @@ pub fn dispatch_image_functions(
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
 
+      if ext == "json" {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          return Some(import_json(&path, is_url, false));
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: JSON import is not available in the browser".into(),
+          )));
+        }
+      }
+
       if is_url {
         if ext == "csv" {
           #[cfg(not(target_arch = "wasm32"))]
@@ -488,6 +536,21 @@ pub fn dispatch_image_functions(
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
+
+      if let Expr::String(fmt) = &args[1]
+        && (fmt == "JSON" || fmt == "RawJSON")
+      {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          return Some(import_json(&path, is_url, fmt == "RawJSON"));
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: JSON import is not available in the browser".into(),
+          )));
+        }
+      }
 
       if ext == "csv" {
         let element = match &args[1] {
