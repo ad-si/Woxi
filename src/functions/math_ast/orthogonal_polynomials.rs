@@ -3,6 +3,155 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
+/// Binomial coefficient C(top, bot) for small non-negative integer arguments.
+fn binomial_i128(top: i128, bot: i128) -> i128 {
+  if bot < 0 || bot > top {
+    return 0;
+  }
+  let bot = bot.min(top - bot);
+  let mut result: i128 = 1;
+  for i in 0..bot {
+    result = result * (top - i) / (i + 1);
+  }
+  result
+}
+
+/// True for an exact numeric value (no free symbols), so the Jacobi series can
+/// be collapsed to a closed number rather than kept in the `(x-1)` form.
+fn jacobi_x_is_exact_numeric(x: &Expr) -> bool {
+  match x {
+    Expr::Integer(_) => true,
+    Expr::FunctionCall { name, .. } if name == "Rational" || name == "Complex" => {
+      true
+    }
+    _ => false,
+  }
+}
+
+/// JacobiP[n, a, b, x] for non-negative integer n, a, b. Reproduces Wolfram's
+/// display form: the Legendre polynomial expanded in x when a == b == 0,
+/// otherwise the Taylor sum about x = 1,
+///   P_n^{(a,b)}(x) = Sum_{k=0}^n C(n+a, n-k) (n+a+b+1)_k / (2^k k!) (x-1)^k
+/// kept unexpanded for symbolic x and evaluated for exact-numeric x.
+fn jacobi_p_integer_ab(
+  n: usize,
+  a: i128,
+  b: i128,
+  x: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // a == b == 0 is the Legendre polynomial; Wolfram displays it expanded in x.
+  if a == 0 && b == 0 {
+    let leg = Expr::FunctionCall {
+      name: "LegendreP".to_string(),
+      args: vec![Expr::Integer(n as i128), x.clone()].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&leg);
+  }
+
+  // Wolfram keeps n = 0, 1 in their low-degree closed forms (1 and the linear
+  // (a - b + (2+a+b) x)/2) rather than the (x-1) sum used for n >= 2.
+  if n == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  if n == 1 {
+    let a_e = Expr::Integer(a);
+    let b_e = Expr::Integer(b);
+    let two_plus_ab = crate::functions::math_ast::plus_ast(&[
+      Expr::Integer(2),
+      a_e.clone(),
+      b_e.clone(),
+    ])?;
+    let coeff_x =
+      crate::functions::math_ast::times_ast(&[two_plus_ab, x.clone()])?;
+    let neg_b =
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b_e])?;
+    let numer =
+      crate::functions::math_ast::plus_ast(&[a_e, neg_b, coeff_x])?;
+    let half = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+    };
+    return crate::functions::math_ast::times_ast(&[half, numer]);
+  }
+
+  use crate::functions::math_ast::{gcd, make_rational_pub};
+  let ni = n as i128;
+  // (x - 1) as Plus[-1, x] so it prints as `(-1 + x)`.
+  let x_minus_1 = Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(x.clone()),
+  };
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for k in 0..=ni {
+    let binom = binomial_i128(ni + a, ni - k);
+    // (n+a+b+1)_k = prod_{i=0}^{k-1} (n+a+b+1+i)
+    let mut poch: i128 = 1;
+    for i in 0..k {
+      poch *= ni + a + b + 1 + i;
+    }
+    // 2^k * k!
+    let mut denom: i128 = 1;
+    for _ in 0..k {
+      denom *= 2;
+    }
+    for i in 1..=k {
+      denom *= i;
+    }
+    let num = binom * poch;
+    if num == 0 {
+      continue;
+    }
+    let g = gcd(num.abs(), denom.abs()).max(1);
+    let (cn, cd) = (num / g, denom / g);
+    let coeff = if cd == 1 {
+      Expr::Integer(cn)
+    } else {
+      make_rational_pub(cn, cd)
+    };
+    let term = if k == 0 {
+      coeff
+    } else {
+      let power = if k == 1 {
+        x_minus_1.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(x_minus_1.clone()),
+          right: Box::new(Expr::Integer(k)),
+        }
+      };
+      if cn == 1 && cd == 1 {
+        power
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(coeff),
+          right: Box::new(power),
+        }
+      }
+    };
+    terms.push(term);
+  }
+
+  // Build the sum keeping k-ascending order (matches Wolfram's display).
+  let sum = match terms.len() {
+    0 => Expr::Integer(0),
+    1 => terms.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    },
+  };
+
+  if jacobi_x_is_exact_numeric(x) {
+    crate::evaluator::evaluate_expr_to_expr(&sum)
+  } else {
+    Ok(sum)
+  }
+}
+
 /// JacobiP[n, a, b, x] - Jacobi polynomial P_n^{(a,b)}(x)
 /// Uses the three-term recurrence relation for numerical evaluation.
 pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -45,6 +194,18 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Exact closed form for non-negative integer a, b and exact-or-symbolic x.
+  // Keeps results exact (e.g. JacobiP[2,1,1,1/2] -> 3/16, not 0.1875) and
+  // produces Wolfram's (x-1) display form for symbolic x. Inexact x (Real)
+  // falls through to the float recurrence below.
+  if let (Expr::Integer(ai), Expr::Integer(bi)) = (&args[1], &args[2])
+    && *ai >= 0
+    && *bi >= 0
+    && !matches!(&args[3], Expr::Real(_) | Expr::BigFloat(_, _))
+  {
+    return jacobi_p_integer_ab(n, *ai, *bi, &args[3]);
+  }
 
   // Try numerical evaluation
   let a_f = try_eval_to_f64(&args[1]);

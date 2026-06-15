@@ -2276,6 +2276,49 @@ mod cases {
       r#"1410.0201167451296 + 5797.298553127177*I"#,
     );
   }
+  // Integer a, b: Wolfram's display form is the Taylor sum about x = 1 for
+  // n >= 2, the linear closed form for n = 1, and the expanded Legendre
+  // polynomial when a == b == 0.
+  #[test]
+  fn jacobi_p_int_n2() {
+    assert_case(
+      r#"JacobiP[2, 1, 1, x]"#,
+      r#"3 + (15*(-1 + x))/2 + (15*(-1 + x)^2)/4"#,
+    );
+  }
+  #[test]
+  fn jacobi_p_int_n3() {
+    assert_case(
+      r#"JacobiP[3, 1, 2, x]"#,
+      r#"4 + 21*(-1 + x) + 28*(-1 + x)^2 + (21*(-1 + x)^3)/2"#,
+    );
+  }
+  #[test]
+  fn jacobi_p_int_asymmetric() {
+    assert_case(
+      r#"JacobiP[2, 0, 1, x]"#,
+      r#"1 + 4*(-1 + x) + (5*(-1 + x)^2)/2"#,
+    );
+  }
+  #[test]
+  fn jacobi_p_legendre_when_zero_params() {
+    // JacobiP[n, 0, 0, x] == LegendreP[n, x], shown expanded in x.
+    assert_case(r#"JacobiP[3, 0, 0, x]"#, r#"(-3*x + 5*x^3)/2"#);
+  }
+  #[test]
+  fn jacobi_p_n1_linear_form() {
+    assert_case(r#"JacobiP[1, 2, 0, x]"#, r#"(2 + 4*x)/2"#);
+  }
+  #[test]
+  fn jacobi_p_n1_collapses() {
+    assert_case(r#"JacobiP[1, 1, 1, x]"#, r#"2*x"#);
+  }
+  #[test]
+  fn jacobi_p_exact_rational_point() {
+    // Exact rational argument stays exact (not 0.1875).
+    assert_case(r#"JacobiP[2, 1, 1, 1/2]"#, r#"3/16"#);
+  }
+
   #[test]
   fn laguerre_l_1() {
     assert_case(
