@@ -3681,6 +3681,54 @@ mod dsolve {
     );
   }
 
+  // Initial conditions pin the constant: the ODE must not be misread as an
+  // initial condition (its point is the variable x, not a number).
+  #[test]
+  fn first_order_initial_condition() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x], y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> E^x}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x], y[0] == 2}, y[x], x]").unwrap(),
+      "{{y[x] -> 2*E^x}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == -y[x], y[0] == 3}, y[x], x]").unwrap(),
+      "{{y[x] -> 3/E^x}}"
+    );
+  }
+
+  #[test]
+  fn first_order_forcing_with_ic() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == 2 x, y[0] == 0}, y[x], x]").unwrap(),
+      "{{y[x] -> x^2}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == 2 x, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> 1 + x^2}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == Cos[x], y[0] == 0}, y[x], x]").unwrap(),
+      "{{y[x] -> Sin[x]}}"
+    );
+  }
+
+  #[test]
+  fn second_order_initial_conditions() {
+    assert_eq!(
+      interpret("DSolve[{y''[x] == -y[x], y[0] == 0, y'[0] == 1}, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> Sin[x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y''[x] == -y[x], y[0] == 1, y'[0] == 0}, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> Cos[x]}}"
+    );
+  }
+
   #[test]
   fn second_order_zero_rhs() {
     // y''[x] == 0 → y[x] -> C[1] + x*C[2]

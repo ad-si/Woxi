@@ -121,7 +121,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut ics = Vec::new();
       let mut ode = None;
       for item in items {
-        if is_initial_condition(item, &y_name) {
+        if is_initial_condition(item, &y_name, &x_name) {
           ics.push(item.clone());
         } else {
           if ode.is_some() {
@@ -492,8 +492,12 @@ fn normalize_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Check if an expression is an initial condition like y[0] == 1 or y'[0] == 0
-fn is_initial_condition(expr: &Expr, y_name: &str) -> bool {
+/// Check if an expression is an initial condition like `y[0] == 1` or
+/// `y'[0] == 0`. The condition's point must NOT be the independent variable
+/// `x`; otherwise `y[x] == …` / `y'[x] == …` (i.e. the ODE itself) would be
+/// misclassified as an initial condition.
+fn is_initial_condition(expr: &Expr, y_name: &str, x_name: &str) -> bool {
+  let is_ode_point = |p: &Expr| matches!(p, Expr::Identifier(s) if s == x_name);
   if let Expr::Comparison {
     operands,
     operators,
@@ -508,11 +512,11 @@ fn is_initial_condition(expr: &Expr, y_name: &str) -> bool {
       && name == y_name
       && args.len() == 1
     {
-      return true;
+      return !is_ode_point(&args[0]);
     }
-    // Derivative[n][y][val] — curried form
-    if let Some(_) = extract_derivative_order_and_point(lhs, y_name) {
-      return true;
+    // Derivative[n][y][val] — curried/flattened form
+    if let Some((_, point)) = extract_derivative_order_and_point(lhs, y_name) {
+      return !is_ode_point(&point);
     }
   }
   false
