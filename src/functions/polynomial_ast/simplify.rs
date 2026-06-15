@@ -3996,11 +3996,100 @@ fn simplify_with_assumptions(
 
 /// FullSimplify: more aggressive than Simplify.
 /// Expands, applies trig identities, factors out common terms, and tries factoring.
+/// Extract `(coeff, head, arg)` from `c * Head[arg]` for an inverse-trig head.
+fn extract_coeff_inverse_trig(term: &Expr) -> Option<(Expr, String, Expr)> {
+  let is_inv = |h: &str| {
+    matches!(
+      h,
+      "ArcSin" | "ArcCos" | "ArcSec" | "ArcCsc" | "ArcTan" | "ArcCot"
+    )
+  };
+  let inv_call = |e: &Expr| -> Option<(String, Expr)> {
+    if let Expr::FunctionCall { name, args } = e
+      && is_inv(name)
+      && args.len() == 1
+    {
+      Some((name.clone(), args[0].clone()))
+    } else {
+      None
+    }
+  };
+  if let Some((h, a)) = inv_call(term) {
+    return Some((Expr::Integer(1), h, a));
+  }
+  let factors: Vec<&Expr> = match term {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      vec![&args[0], &args[1]]
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+  for (i, j) in [(0, 1), (1, 0)] {
+    if let Some((h, a)) = inv_call(factors[i]) {
+      return Some((factors[j].clone(), h, a));
+    }
+  }
+  None
+}
+
+/// FullSimplify-only identity: `c ArcSin[u] + c ArcCos[u] -> c Pi/2`, likewise
+/// `ArcSec[u] + ArcCsc[u]`. These pairs sum to Pi/2 for every argument (unlike
+/// ArcTan + ArcCot, which is +-Pi/2 by sign, so it is excluded). Only a bare
+/// two-term sum qualifies, matching wolframscript (which leaves
+/// `ArcSin[x] + ArcCos[x] + z` untouched).
+fn try_complementary_inverse_trig(expr: &Expr) -> Option<Expr> {
+  let terms: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      vec![&args[0], &args[1]]
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+  let (c0, h0, a0) = extract_coeff_inverse_trig(terms[0])?;
+  let (c1, h1, a1) = extract_coeff_inverse_trig(terms[1])?;
+  if expr_to_string(&a0) != expr_to_string(&a1)
+    || expr_to_string(&c0) != expr_to_string(&c1)
+  {
+    return None;
+  }
+  let mut heads = [h0.as_str(), h1.as_str()];
+  heads.sort_unstable();
+  if !matches!(
+    (heads[0], heads[1]),
+    ("ArcCos", "ArcSin") | ("ArcCsc", "ArcSec")
+  ) {
+    return None;
+  }
+  // c * Pi / 2
+  let result = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![c0, Expr::Constant("Pi".to_string())].into(),
+    }),
+    right: Box::new(Expr::Integer(2)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
 pub fn full_simplify_expr(expr: &Expr) -> Expr {
   // Thread over Lists
   if let Expr::List(items) = expr {
     let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
     return Expr::List(results.into());
+  }
+
+  // ArcSin[u] + ArcCos[u] -> Pi/2 (and the ArcSec/ArcCsc pair).
+  if let Some(result) = try_complementary_inverse_trig(expr) {
+    return result;
   }
 
   // Combine Abs quotients/products before other simplification

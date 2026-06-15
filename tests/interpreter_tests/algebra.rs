@@ -2206,6 +2206,46 @@ mod full_simplify {
     assert_eq!(interpret("FullSimplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }
 
+  // ArcSin[u] + ArcCos[u] -> Pi/2 (and the ArcSec/ArcCsc pair). A
+  // FullSimplify-only identity, applied only to a bare two-term sum.
+  #[test]
+  fn complementary_inverse_trig() {
+    assert_eq!(
+      interpret("FullSimplify[ArcSin[x] + ArcCos[x]]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("FullSimplify[ArcSec[x] + ArcCsc[x]]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("FullSimplify[ArcSin[2 x] + ArcCos[2 x]]").unwrap(),
+      "Pi/2"
+    );
+    assert_eq!(
+      interpret("FullSimplify[2 ArcSin[x] + 2 ArcCos[x]]").unwrap(),
+      "Pi"
+    );
+  }
+
+  // Must NOT reduce: ArcTan + ArcCot is +-Pi/2 by sign; an extra term blocks
+  // it; and plain Simplify never applies it.
+  #[test]
+  fn complementary_inverse_trig_no_false_positive() {
+    assert_eq!(
+      interpret("FullSimplify[ArcTan[x] + ArcCot[x]]").unwrap(),
+      "ArcCot[x] + ArcTan[x]"
+    );
+    assert_eq!(
+      interpret("FullSimplify[ArcSin[x] + ArcCos[x] + z]").unwrap(),
+      "z + ArcCos[x] + ArcSin[x]"
+    );
+    assert_eq!(
+      interpret("Simplify[ArcSin[x] + ArcCos[x]]").unwrap(),
+      "ArcCos[x] + ArcSin[x]"
+    );
+  }
+
   #[test]
   fn trig_ratio_cot() {
     assert_eq!(interpret("Simplify[Cos[x]/Sin[x]]").unwrap(), "Cot[x]");
