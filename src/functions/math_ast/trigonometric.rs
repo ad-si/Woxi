@@ -2172,6 +2172,12 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcSin expects exactly 1 argument".into(),
     ));
   }
+  // ArcSin is monotonic increasing on [-1, 1]: map over interval spans.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("ArcSin", &args[0])
+  {
+    return Ok(r);
+  }
   // ArcSin[-x] → -ArcSin[x] (odd function)
   // Only apply for symbolic (non-numeric) arguments; for numeric arguments
   // the existing Exact/Real paths below produce the canonical form.
@@ -2321,6 +2327,13 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCos expects exactly 1 argument".into(),
     ));
   }
+  // ArcCos is monotonic decreasing on [-1, 1]: map over interval spans
+  // (normalization re-sorts the swapped endpoints).
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("ArcCos", &args[0])
+  {
+    return Ok(r);
+  }
   // Exact values: ArcCos[0] = Pi/2, ArcCos[1] = 0, ArcCos[-1] = Pi
   match &args[0] {
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
@@ -2465,6 +2478,12 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcTan expects exactly 1 argument".into(),
     ));
+  }
+  // ArcTan is monotonic increasing on ℝ: map over interval spans.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("ArcTan", &args[0])
+  {
+    return Ok(r);
   }
   // ArcTan[ComplexInfinity] = Indeterminate; ArcTan[Indeterminate] = Indeterminate
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity" || s == "Indeterminate")
@@ -2988,6 +3007,12 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sinh expects 1 argument".into(),
     ));
   }
+  // Sinh is monotonic increasing on ℝ: map over interval spans.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("Sinh", &args[0])
+  {
+    return Ok(r);
+  }
   // Sinh[ArcSinh[x]] = x
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcSinh"
@@ -3060,6 +3085,12 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Tanh expects 1 argument".into(),
     ));
+  }
+  // Tanh is monotonic increasing on ℝ: map over interval spans.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("Tanh", &args[0])
+  {
+    return Ok(r);
   }
   // Tanh[ArcTanh[x]] = x
   if let Expr::FunctionCall { name, args: ia } = &args[0]
@@ -3199,6 +3230,12 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcSinh expects 1 argument".into(),
     ));
   }
+  // ArcSinh is monotonic increasing on ℝ: map over interval spans.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("ArcSinh", &args[0])
+  {
+    return Ok(r);
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.asinh())),
@@ -3299,6 +3336,12 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcTanh expects 1 argument".into(),
     ));
+  }
+  // ArcTanh is monotonic increasing on (-1, 1): map over interval spans.
+  if let Some(r) =
+    crate::functions::interval_ast::map_monotonic_interval("ArcTanh", &args[0])
+  {
+    return Ok(r);
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),

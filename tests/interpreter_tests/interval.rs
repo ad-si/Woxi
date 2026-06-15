@@ -578,3 +578,57 @@ fn sqrt_interval_out_of_domain_unevaluated() {
     "Sqrt[Interval[{-1, 4}]]"
   );
 }
+
+#[test]
+fn hyperbolic_interval() {
+  assert_eq!(
+    interpret("Sinh[Interval[{0, 1}]]").unwrap(),
+    "Interval[{0, Sinh[1]}]"
+  );
+  assert_eq!(
+    interpret("Tanh[Interval[{0, 1}]]").unwrap(),
+    "Interval[{0, Tanh[1]}]"
+  );
+  assert_eq!(
+    interpret("ArcSinh[Interval[{0, 1}]]").unwrap(),
+    "Interval[{0, ArcSinh[1]}]"
+  );
+  assert_eq!(
+    interpret("ArcTanh[Interval[{0, 1/2}]]").unwrap(),
+    "Interval[{0, ArcTanh[1/2]}]"
+  );
+}
+
+#[test]
+fn inverse_trig_interval_increasing() {
+  assert_eq!(
+    interpret("ArcTan[Interval[{0, 1}]]").unwrap(),
+    "Interval[{0, Pi/4}]"
+  );
+  assert_eq!(
+    interpret("ArcSin[Interval[{0, 1/2}]]").unwrap(),
+    "Interval[{0, Pi/6}]"
+  );
+  assert_eq!(
+    interpret("ArcSin[Interval[{-1, 1}]]").unwrap(),
+    "Interval[{-1/2*Pi, Pi/2}]"
+  );
+}
+
+// ArcCos is decreasing, so the mapped endpoints come back swapped and sorted.
+#[test]
+fn arccos_interval_decreasing() {
+  assert_eq!(
+    interpret("ArcCos[Interval[{0, 1/2}]]").unwrap(),
+    "Interval[{Pi/3, Pi/2}]"
+  );
+}
+
+// Out-of-domain endpoints leave the call unevaluated.
+#[test]
+fn arctanh_interval_out_of_domain_unevaluated() {
+  assert_eq!(
+    interpret("ArcTanh[Interval[{0, 2}]]").unwrap(),
+    "ArcTanh[Interval[{0, 2}]]"
+  );
+}
