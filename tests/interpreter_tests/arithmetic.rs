@@ -5663,3 +5663,51 @@ mod binomial_diagonal_and_lcm_empty {
     assert_eq!(interpret("LCM[4, 6]").unwrap(), "12");
   }
 }
+
+// Abs pulls real-constant factors out of a product (as their magnitude),
+// drops |I| = 1, and is idempotent. All verified against wolframscript.
+mod abs_simplifications {
+  use super::*;
+
+  #[test]
+  fn abs_negative_real_constant_stays_exact() {
+    // Regression: Abs[-Pi] used to numericize to 3.14159...
+    assert_eq!(interpret("Abs[-Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Abs[-Sqrt[2]]").unwrap(), "Sqrt[2]");
+  }
+
+  #[test]
+  fn abs_pulls_real_coefficient() {
+    assert_eq!(interpret("Abs[2 x]").unwrap(), "2*Abs[x]");
+    assert_eq!(interpret("Abs[-2 x]").unwrap(), "2*Abs[x]");
+    assert_eq!(interpret("Abs[-3 x y]").unwrap(), "3*Abs[x*y]");
+    assert_eq!(interpret("Abs[-Pi x]").unwrap(), "Pi*Abs[x]");
+    assert_eq!(interpret("Abs[x/2]").unwrap(), "Abs[x]/2");
+  }
+
+  #[test]
+  fn abs_negation_removed() {
+    assert_eq!(interpret("Abs[-x]").unwrap(), "Abs[x]");
+    assert_eq!(interpret("Abs[-a]").unwrap(), "Abs[a]");
+  }
+
+  #[test]
+  fn abs_imaginary_unit_dropped() {
+    assert_eq!(interpret("Abs[I x]").unwrap(), "Abs[x]");
+    assert_eq!(interpret("Abs[-I x]").unwrap(), "Abs[x]");
+  }
+
+  #[test]
+  fn abs_idempotent() {
+    assert_eq!(interpret("Abs[Abs[x]]").unwrap(), "Abs[x]");
+  }
+
+  // Fully symbolic products and genuine complex values are unchanged.
+  #[test]
+  fn abs_unaffected_cases() {
+    assert_eq!(interpret("Abs[a x]").unwrap(), "Abs[a*x]");
+    assert_eq!(interpret("Abs[x]").unwrap(), "Abs[x]");
+    assert_eq!(interpret("Abs[3 + 4 I]").unwrap(), "5");
+    assert_eq!(interpret("Abs[2 Pi]").unwrap(), "2*Pi");
+  }
+}

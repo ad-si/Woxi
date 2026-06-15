@@ -68,6 +68,65 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return abs_ast(&[cargs[0].clone()]);
   }
+  // Abs[Abs[x]] = Abs[x] (idempotent).
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "Abs"
+    && inner.len() == 1
+  {
+    return Ok(args[0].clone());
+  }
+  // Abs[Times[...]]: pull out real-constant factors as their magnitude and
+  // drop the unit-modulus factor I (|I| = 1), keeping the remaining factors
+  // under a single Abs. E.g. Abs[-2 x] = 2 Abs[x], Abs[I x] = Abs[x],
+  // Abs[-Pi] = Pi. Matches wolframscript.
+  {
+    let mut factors: Vec<&Expr> = Vec::new();
+    let is_times = collect_times_factors(&args[0], &mut factors);
+    if is_times && factors.len() >= 2 {
+      let mut pulled: Vec<Expr> = Vec::new();
+      let mut kept: Vec<Expr> = Vec::new();
+      let mut simplified = false;
+      for f in &factors {
+        if crate::functions::math_ast::complex::is_strictly_positive_real(f) {
+          pulled.push((*f).clone());
+          simplified = true;
+        } else if let Some(absval) = negative_literal_abs(f) {
+          pulled.push(absval);
+          simplified = true;
+        } else if is_imaginary_unit(f) {
+          simplified = true; // |I| = 1, drop it
+        } else {
+          kept.push((*f).clone());
+        }
+      }
+      if simplified {
+        let mut all = pulled;
+        if !kept.is_empty() {
+          let kept_prod = if kept.len() == 1 {
+            kept.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: kept.into(),
+            }
+          };
+          all.push(Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![kept_prod].into(),
+          });
+        }
+        let result = match all.len() {
+          0 => Expr::Integer(1),
+          1 => all.into_iter().next().unwrap(),
+          _ => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: all.into(),
+          },
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
+    }
+  }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
     let g_r = gcd(rn, rd);
@@ -146,6 +205,28 @@ fn mentions_imaginary_unit(expr: &Expr) -> bool {
     }
     Expr::UnaryOp { operand, .. } => mentions_imaginary_unit(operand),
     _ => false,
+  }
+}
+
+/// If `f` is a negative numeric literal (Integer, Real, or Rational), return
+/// its absolute value as an exact Expr; otherwise None. Used by `Abs` to pull
+/// the magnitude of a negative coefficient out of a product.
+fn negative_literal_abs(f: &Expr) -> Option<Expr> {
+  match f {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-*n)),
+    Expr::Real(x) if *x < 0.0 => Some(Expr::Real(-*x)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1])
+        && ((*p < 0) ^ (*q < 0))
+      {
+        Some(make_rational(p.abs(), q.abs()))
+      } else {
+        None
+      }
+    }
+    _ => None,
   }
 }
 
