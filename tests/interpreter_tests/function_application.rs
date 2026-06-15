@@ -2264,3 +2264,54 @@ mod apply_operator_composite_head {
     assert_eq!(interpret("myf = Plus; myf @@ {1, 2, 3}").unwrap(), "6");
   }
 }
+
+mod map_operator_composite_head {
+  use super::*;
+
+  // Map applies the whole composite head to each element as a curried call:
+  // g[a] /@ {1, 2} → {g[a][1], g[a][2]}, not {g[a, 1], g[a, 2]}.
+  #[test]
+  fn map_composite_function_call_head() {
+    assert_eq!(
+      interpret("g[a] /@ {1, 2}").unwrap(),
+      "{g[a][1], g[a][2]}"
+    );
+    assert_eq!(
+      interpret("Map[g[a], {1, 2}]").unwrap(),
+      "{g[a][1], g[a][2]}"
+    );
+    assert_eq!(
+      interpret("g[a, b] /@ {1, 2}").unwrap(),
+      "{g[a, b][1], g[a, b][2]}"
+    );
+  }
+
+  #[test]
+  fn map_operator_heads_reduce() {
+    assert_eq!(
+      interpret("Composition[f, g] /@ {1, 2}").unwrap(),
+      "{f[g[1]], f[g[2]]}"
+    );
+    assert_eq!(
+      interpret("OperatorApplied[Power][2] /@ {1, 2, 3}").unwrap(),
+      "{1, 4, 9}"
+    );
+    assert_eq!(
+      interpret("ReverseApplied[f] /@ {{1, 2}, {3, 4}}").unwrap(),
+      "{f[{1, 2}], f[{3, 4}]}"
+    );
+  }
+
+  // Postfix (//) and prefix (@) with a composite head also curry.
+  #[test]
+  fn postfix_and_prefix_composite_head() {
+    assert_eq!(interpret("x // g[a]").unwrap(), "g[a][x]");
+    assert_eq!(interpret("g[a] @ x").unwrap(), "g[a][x]");
+  }
+
+  // Plain heads are unaffected.
+  #[test]
+  fn simple_head_unaffected() {
+    assert_eq!(interpret("f /@ {1, 2}").unwrap(), "{f[1], f[2]}");
+  }
+}

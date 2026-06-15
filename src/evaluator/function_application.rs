@@ -549,9 +549,11 @@ pub fn apply_function_to_arg(
           args: vec![arg.clone()],
         })
       } else {
-        let mut new_args = args.clone();
-        new_args.push(arg.clone());
-        evaluate_function_call_ast(name, &new_args)
+        // A composite head h[…] applied to an argument is a curried call
+        // h[…][arg] (e.g. `g[a] /@ {1, 2}` → {g[a][1], g[a][2]}), not the
+        // flattened h[…, arg]. apply_curried_call reduces operator heads
+        // (Composition, OperatorApplied, …) and leaves inert heads symbolic.
+        apply_curried_call(func, std::slice::from_ref(arg))
       }
     }
     Expr::Association(_) => {
