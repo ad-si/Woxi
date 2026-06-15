@@ -153,7 +153,7 @@ NDSolve,Solves ordinary differential equations numerically,✅,contextual,2.0,15
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
-CountryData,,🚫,,6.0,161
+CountryData,Returns properties (e.g. Population) for countries from a bundled static dataset,✅,pure,6.0,161
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3.0,162
 White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
 Optional,Represents a pattern with an optional default value,✅,pure,1.0,164
@@ -802,7 +802,7 @@ ImportString,Imports data from a string (CSV/TSV/Table/JSON/Lines/Words/Text for
 RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
-Interpreter,Requires external services or GUI infrastructure,🚫,io,10.0,813
+Interpreter,Resolves a free-form Country name to an Entity from a bundled dataset,✅,pure,10.0,813
 ConvexHullMesh,Requires external services or GUI infrastructure,🚫,io,10.0,814
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816

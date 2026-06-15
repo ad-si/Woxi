@@ -592,6 +592,15 @@ fn resolve_entity_lookup(
   entity_name: &str,
   property: &str,
 ) -> Result<Expr, InterpreterError> {
+  // Built-in Country knowledge base, used unless the user has registered a
+  // custom "Country" EntityStore (which then takes precedence).
+  if type_name == "Country"
+    && !is_type_registered("Country")
+    && let Some(val) =
+      crate::functions::country_data::country_property(entity_name, property)
+  {
+    return Ok(val);
+  }
   match lookup_entity_property(type_name, entity_name, property) {
     Some(
       ref val @ Expr::FunctionCall {

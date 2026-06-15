@@ -815,6 +815,13 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "Interpreter" && func_args.len() == 1 => {
+      // Interpreter["Country"][input] — resolve input to an Entity.
+      crate::functions::country_data::apply_interpreter(&func_args[0], args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "EntityStore" && func_args.len() == 1 => {
       // EntityStore[...][Entity["type", "name"], "property"] — callable store form
       crate::functions::entity_ast::entity_store_property_access(

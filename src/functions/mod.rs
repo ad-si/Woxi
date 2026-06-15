@@ -7,6 +7,7 @@ pub mod chart;
 pub mod control_flow_ast;
 pub mod convolve_ast;
 pub mod count_roots_ast;
+pub mod country_data;
 pub mod csv_ast;
 pub mod dataset_ast;
 pub mod datetime_ast;

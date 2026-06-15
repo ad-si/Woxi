@@ -1512,6 +1512,18 @@ pub fn evaluate_function_call_ast_inner(
     "EntityClassList" => {
       return crate::functions::entity_ast::entity_class_list_ast(args);
     }
+    "CountryData" => {
+      return crate::functions::country_data::country_data_ast(args);
+    }
+    // Interpreter["Country"] stays symbolic until applied to an input via the
+    // curried form Interpreter["Country"][name] (see apply_curried_call).
+    // Returning here avoids the "not yet implemented" warning.
+    "Interpreter" => {
+      return Ok(Expr::FunctionCall {
+        name: "Interpreter".to_string(),
+        args: args.to_vec().into(),
+      });
+    }
     _ => {}
   }
 

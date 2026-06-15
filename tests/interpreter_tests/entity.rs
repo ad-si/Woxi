@@ -353,3 +353,74 @@ mod entity_store_tests {
     );
   }
 }
+
+mod country_data_tests {
+  use super::*;
+
+  #[test]
+  fn interpreter_country_resolves_to_entity() {
+    clear_state();
+    assert_eq!(
+      interpret("Interpreter[\"Country\"][\"Germany\"]").unwrap(),
+      "Entity[Country, Germany]"
+    );
+  }
+
+  #[test]
+  fn interpreter_country_resolves_aliases() {
+    clear_state();
+    assert_eq!(
+      interpret("Interpreter[\"Country\"][\"USA\"]").unwrap(),
+      "Entity[Country, United States]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Interpreter[\"Country\"][\"Bosnia & Herzegovina\"]").unwrap(),
+      "Entity[Country, Bosnia and Herzegovina]"
+    );
+  }
+
+  #[test]
+  fn interpreter_country_unknown_is_not_an_entity() {
+    clear_state();
+    // Non-sovereign names don't resolve, so Head is Missing (not Entity).
+    assert_eq!(
+      interpret("Head[Interpreter[\"Country\"][\"Scotland\"]]").unwrap(),
+      "Missing"
+    );
+  }
+
+  #[test]
+  fn entity_value_population_is_a_quantity() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[EntityValue[Entity[\"Country\", \"Germany\"], \"Population\"]]"
+      )
+      .unwrap(),
+      "Quantity"
+    );
+  }
+
+  #[test]
+  fn population_in_millions_is_numeric() {
+    clear_state();
+    // The notebook's popMillions kernel: Quantity magnitude / 10^6.
+    assert_eq!(
+      interpret(
+        "NumericQ[QuantityMagnitude[EntityValue[Interpreter[\"Country\"][\"Japan\"], \"Population\"]]/10.^6]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn country_data_population() {
+    clear_state();
+    assert_eq!(
+      interpret("CountryData[\"Qatar\", \"Population\"]").unwrap(),
+      "Quantity[2695122, People]"
+    );
+  }
+}
