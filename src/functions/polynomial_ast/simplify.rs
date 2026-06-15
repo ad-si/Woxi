@@ -917,6 +917,20 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       }
     }
 
+    // Conjugate[x] → x when x is known real.
+    Expr::FunctionCall { name, args }
+      if name == "Conjugate" && args.len() == 1 =>
+    {
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      if is_known_real(&refined_arg, info) {
+        return refined_arg;
+      }
+      Expr::FunctionCall {
+        name: "Conjugate".to_string(),
+        args: vec![refined_arg].into(),
+      }
+    }
+
     // Element[expr, domain] → True/False under assumptions
     Expr::FunctionCall { name, args }
       if name == "Element" && args.len() == 2 =>

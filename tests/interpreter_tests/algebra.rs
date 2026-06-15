@@ -4726,6 +4726,52 @@ mod refine {
     );
   }
 
+  // --- Conjugate of a real-valued expression ---
+
+  // Conjugate[x] -> x when x is known real (Element[x, Reals], x > 0, ...).
+  #[test]
+  fn conjugate_real_var() {
+    assert_eq!(
+      interpret("Refine[Conjugate[x], Element[x, Reals]]").unwrap(),
+      "x"
+    );
+    assert_eq!(interpret("Refine[Conjugate[x], x > 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn conjugate_real_compound() {
+    assert_eq!(
+      interpret(
+        "Refine[Conjugate[x + y], Element[x, Reals] && Element[y, Reals]]"
+      )
+      .unwrap(),
+      "x + y"
+    );
+    assert_eq!(
+      interpret("Refine[Conjugate[2 x], Element[x, Reals]]").unwrap(),
+      "2*x"
+    );
+    assert_eq!(
+      interpret("Refine[Conjugate[x^2], Element[x, Reals]]").unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn conjugate_unknown_or_imaginary_unchanged() {
+    // No realness assumption: Conjugate stays put.
+    assert_eq!(
+      interpret("Refine[Conjugate[x], Element[x, Complexes]]").unwrap(),
+      "Conjugate[x]"
+    );
+    // I*x with x real is imaginary, so Conjugate flips its sign rather than
+    // vanishing.
+    assert_eq!(
+      interpret("Refine[Conjugate[I x], Element[x, Reals]]").unwrap(),
+      "-I*x"
+    );
+  }
+
   // --- Trig with integer multiples of Pi ---
 
   #[test]
