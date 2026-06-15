@@ -2432,13 +2432,21 @@ mod expand_threading {
       interpret("IntegerExponent[{100, 1000}, 10]").unwrap(),
       "{2, 3}"
     );
-    assert_eq!(interpret("IntegerExponent[1000, {2, 5}]").unwrap(), "{3, 3}");
+    assert_eq!(
+      interpret("IntegerExponent[1000, {2, 5}]").unwrap(),
+      "{3, 3}"
+    );
   }
 
   #[test]
   fn newly_listable_functions_report_attributes() {
-    for f in ["PowerMod", "BitSet", "BitClear", "JacobiSymbol", "IntegerExponent"]
-    {
+    for f in [
+      "PowerMod",
+      "BitSet",
+      "BitClear",
+      "JacobiSymbol",
+      "IntegerExponent",
+    ] {
       assert_eq!(
         interpret(&format!("Attributes[{f}]")).unwrap(),
         "{Listable, Protected}",

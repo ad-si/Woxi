@@ -1854,6 +1854,51 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(pow_args[1].clone());
         }
       }
+      // Log[base^exp] = exp*Log[base] when base is a positive real (integer >= 2
+      // or a positive real constant) and exp is a non-integer rational.
+      // Matches wolframscript: Log[Sqrt[2]] -> Log[2]/2, Log[3^(2/5)] ->
+      // (2 Log[3])/5, Log[5^(-1/2)] -> -1/2 Log[5], Log[Pi^(1/2)] -> Log[Pi]/2.
+      // Integer bases with |exp| > 1 are pre-reduced to a product (e.g.
+      // 2^(3/2) -> 2 Sqrt[2]), so they never reach Log as a pure Power.
+      {
+        let power_parts: Option<(&Expr, &Expr)> = match &args[0] {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left,
+            right,
+          } => Some((left.as_ref(), right.as_ref())),
+          Expr::FunctionCall {
+            name,
+            args: pa,
+          } if name == "Power" && pa.len() == 2 => Some((&pa[0], &pa[1])),
+          _ => None,
+        };
+        if let Some((base, exp)) = power_parts {
+          let base_is_positive_real = match base {
+            Expr::Integer(n) => *n >= 2,
+            Expr::Constant(c) | Expr::Identifier(c) => matches!(
+              c.as_str(),
+              "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
+            ),
+            _ => false,
+          };
+          let exp_is_noninteger_rational = matches!(
+            exp,
+            Expr::FunctionCall { name, args: ra }
+              if name == "Rational" && ra.len() == 2
+          );
+          if base_is_positive_real && exp_is_noninteger_rational {
+            let log_base = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![base.clone()].into(),
+            };
+            return crate::evaluator::evaluate_function_call_ast(
+              "Times",
+              &[exp.clone(), log_base],
+            );
+          }
+        }
+      }
       // Log[I] = I*Pi/2
       if matches!(&args[0], Expr::Identifier(s) if s == "I") {
         return crate::evaluator::evaluate_function_call_ast(

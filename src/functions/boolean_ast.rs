@@ -603,8 +603,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     for i in 0..strs.len() - 1 {
-      if strs[i] == strs[i + 1]
-        || all_components_equal(&args[i], &args[i + 1])
+      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
       {
         return Ok(Expr::Identifier("False".to_string()));
       }

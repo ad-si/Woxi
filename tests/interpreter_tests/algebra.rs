@@ -7413,10 +7413,7 @@ mod arccsch_arccoth_exact {
 
   #[test]
   fn arccsch_real_numeric() {
-    assert_eq!(
-      interpret("ArcCsch[2.0]").unwrap(),
-      "0.48121182505960347"
-    );
+    assert_eq!(interpret("ArcCsch[2.0]").unwrap(), "0.48121182505960347");
   }
 
   // ArcCoth gains the odd-function negation and ±Infinity limits.
@@ -7433,5 +7430,70 @@ mod arccsch_arccoth_exact {
     assert_eq!(interpret("ArcCoth[1]").unwrap(), "Infinity");
     assert_eq!(interpret("ArcCoth[-1]").unwrap(), "-Infinity");
     assert_eq!(interpret("ArcCoth[2]").unwrap(), "ArcCoth[2]");
+  }
+}
+
+#[cfg(test)]
+mod log_power_exact {
+  use woxi::interpret;
+
+  // Log[Sqrt[n]] = Log[n]/2 for positive integers (verified against wolframscript)
+  #[test]
+  fn log_sqrt_integer() {
+    assert_eq!(interpret("Log[Sqrt[2]]").unwrap(), "Log[2]/2");
+    assert_eq!(interpret("Log[Sqrt[15]]").unwrap(), "Log[15]/2");
+    assert_eq!(interpret("Log[Sqrt[7]]").unwrap(), "Log[7]/2");
+  }
+
+  // Log[n^(p/q)] = (p/q) Log[n] for fractional exponents
+  #[test]
+  fn log_integer_fractional_power() {
+    assert_eq!(interpret("Log[3^(2/5)]").unwrap(), "(2*Log[3])/5");
+    assert_eq!(interpret("Log[2^(1/3)]").unwrap(), "Log[2]/3");
+    assert_eq!(interpret("Log[6^(2/3)]").unwrap(), "(2*Log[6])/3");
+  }
+
+  // Negative fractional exponent
+  #[test]
+  fn log_integer_negative_power() {
+    assert_eq!(interpret("Log[5^(-1/2)]").unwrap(), "-1/2*Log[5]");
+  }
+
+  // Positive real constant bases: Pi, EulerGamma, GoldenRatio, Catalan
+  #[test]
+  fn log_constant_power() {
+    assert_eq!(interpret("Log[Pi^(1/2)]").unwrap(), "Log[Pi]/2");
+    assert_eq!(interpret("Log[Pi^(3/2)]").unwrap(), "(3*Log[Pi])/2");
+    assert_eq!(
+      interpret("Log[EulerGamma^(1/2)]").unwrap(),
+      "Log[EulerGamma]/2"
+    );
+    assert_eq!(
+      interpret("Log[GoldenRatio^(1/2)]").unwrap(),
+      "Log[GoldenRatio]/2"
+    );
+    assert_eq!(interpret("Log[Catalan^(1/3)]").unwrap(), "Log[Catalan]/3");
+  }
+
+  // LogGamma[1/2] = Log[Sqrt[Pi]] must now simplify to Log[Pi]/2
+  #[test]
+  fn log_gamma_half() {
+    assert_eq!(interpret("LogGamma[1/2]").unwrap(), "Log[Pi]/2");
+  }
+
+  // Symbolic bases must NOT simplify (sign unknown); E base handled separately;
+  // integer base with |exp|>1 stays a product; perfect powers reduce first.
+  #[test]
+  fn log_power_passthrough_and_special() {
+    assert_eq!(interpret("Log[Sqrt[x]]").unwrap(), "Log[Sqrt[x]]");
+    assert_eq!(interpret("Log[E^(1/2)]").unwrap(), "1/2");
+    assert_eq!(interpret("Log[2^(3/2)]").unwrap(), "Log[2*Sqrt[2]]");
+    assert_eq!(interpret("Log[8^(1/3)]").unwrap(), "Log[2]");
+  }
+
+  // Numeric value is unchanged by the symbolic simplification
+  #[test]
+  fn log_sqrt_numeric() {
+    assert_eq!(interpret("N[Log[Sqrt[2]]]").unwrap(), "0.34657359027997264");
   }
 }

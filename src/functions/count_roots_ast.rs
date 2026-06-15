@@ -54,11 +54,17 @@ impl Rat {
   }
 
   fn from_int(n: BigInt) -> Rat {
-    Rat { n, d: BigInt::one() }
+    Rat {
+      n,
+      d: BigInt::one(),
+    }
   }
 
   fn zero() -> Rat {
-    Rat { n: BigInt::zero(), d: BigInt::one() }
+    Rat {
+      n: BigInt::zero(),
+      d: BigInt::one(),
+    }
   }
 
   fn is_zero(&self) -> bool {
@@ -93,7 +99,10 @@ impl Rat {
   }
 
   fn neg(&self) -> Rat {
-    Rat { n: -&self.n, d: self.d.clone() }
+    Rat {
+      n: -&self.n,
+      d: self.d.clone(),
+    }
   }
 }
 
@@ -294,10 +303,10 @@ fn distinct_roots_in(q: &Poly, a: Bound, b: Bound) -> i32 {
   // V(a) - V(b) counts distinct roots in the half-open interval (a, b].
   let mut count = variations(&chain, a) - variations(&chain, b);
   // Promote to the closed interval by including a finite left endpoint root.
-  if let Bound::Finite(x) = a {
-    if q.sign_at(x) == 0 {
-      count += 1;
-    }
+  if let Bound::Finite(x) = a
+    && q.sign_at(x) == 0
+  {
+    count += 1;
   }
   count.max(0)
 }
@@ -340,7 +349,9 @@ fn rat_from_expr(e: &Expr) -> Option<Rat> {
   match e {
     Expr::Integer(n) => Some(Rat::from_int(BigInt::from(*n))),
     Expr::BigInteger(n) => Some(Rat::from_int(n.clone())),
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
       let n = match &args[0] {
         Expr::Integer(n) => BigInt::from(*n),
         Expr::BigInteger(n) => n.clone(),
@@ -363,11 +374,12 @@ fn rat_from_expr(e: &Expr) -> Option<Rat> {
 /// Extract ascending rational coefficients of `f` in `var` via CoefficientList;
 /// None if `f` is not a univariate polynomial with rational coefficients.
 fn poly_from(f: &Expr, var: &str) -> Option<Poly> {
-  let coeff_list = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "CoefficientList".to_string(),
-    args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
-  })
-  .ok()?;
+  let coeff_list =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "CoefficientList".to_string(),
+      args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
+    })
+    .ok()?;
   let items = match &coeff_list {
     Expr::List(items) => items,
     _ => return None,
@@ -395,10 +407,15 @@ fn is_neg_infinity(e: &Expr) -> bool {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
       is_neg(&args[0]) && is_pos_infinity(&args[1])
     }
-    Expr::BinaryOp { op: BinaryOperator::Times, left, right } => {
-      is_neg(left) && is_pos_infinity(right)
-    }
-    Expr::UnaryOp { op: UnaryOperator::Minus, operand } => is_pos_infinity(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => is_neg(left) && is_pos_infinity(right),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_pos_infinity(operand),
     _ => false,
   }
 }
@@ -437,7 +454,9 @@ pub fn count_roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Determine the variable and the (optional) interval.
   let (var, lo, hi): (String, ParsedBound, ParsedBound) = match &args[1] {
-    Expr::Identifier(v) => (v.clone(), ParsedBound::NegInf, ParsedBound::PosInf),
+    Expr::Identifier(v) => {
+      (v.clone(), ParsedBound::NegInf, ParsedBound::PosInf)
+    }
     Expr::List(items) if items.len() == 3 => {
       let v = match &items[0] {
         Expr::Identifier(v) => v.clone(),
@@ -471,10 +490,10 @@ pub fn count_roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Empty interval guard for finite bounds with lo > hi.
-  if let (ParsedBound::Finite(a), ParsedBound::Finite(b)) = (&lo, &hi) {
-    if a.sub(b).sign() > 0 {
-      return Ok(Expr::Integer(0));
-    }
+  if let (ParsedBound::Finite(a), ParsedBound::Finite(b)) = (&lo, &hi)
+    && a.sub(b).sign() > 0
+  {
+    return Ok(Expr::Integer(0));
   }
 
   let lo_bound = match &lo {

@@ -967,15 +967,15 @@ pub fn dispatch_list_operations(
       // NumericalOrder[2.5, 5/2] = 0 where Order[2.5, 5/2] = 1. Falls back to
       // canonical ordering when the operands are not numerically comparable.
       use crate::functions::math_ast::try_eval_to_f64;
-      let result = match (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
-      {
-        (Some(a), Some(b)) if a < b => 1,
-        (Some(a), Some(b)) if a > b => -1,
-        (Some(_), Some(_)) => 0,
-        _ => crate::functions::list_helpers_ast::compare_exprs(
-          &args[0], &args[1],
-        ) as i128,
-      };
+      let result =
+        match (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1])) {
+          (Some(a), Some(b)) if a < b => 1,
+          (Some(a), Some(b)) if a > b => -1,
+          (Some(_), Some(_)) => 0,
+          _ => crate::functions::list_helpers_ast::compare_exprs(
+            &args[0], &args[1],
+          ) as i128,
+        };
       return Some(Ok(Expr::Integer(result)));
     }
     "OrderedQ" if args.len() == 1 => {

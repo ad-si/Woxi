@@ -3332,10 +3332,7 @@ mod to_string_machine_reals {
     assert_eq!(interpret("ToString[15000000000.]").unwrap(), "1.5*^10");
     assert_eq!(interpret("ToString[12000000000.]").unwrap(), "1.2*^10");
     assert_eq!(interpret("ToString[2.0*^10]").unwrap(), "2.*^10");
-    assert_eq!(
-      interpret("ToString[123456789012.]").unwrap(),
-      "1.23457*^11"
-    );
+    assert_eq!(interpret("ToString[123456789012.]").unwrap(), "1.23457*^11");
   }
 
   #[test]
@@ -3346,10 +3343,7 @@ mod to_string_machine_reals {
     );
     assert_eq!(interpret("ToString[123.456789]").unwrap(), "123.457");
     assert_eq!(interpret("ToString[2.718281828]").unwrap(), "2.71828");
-    assert_eq!(
-      interpret("ToString[0.0001234567]").unwrap(),
-      "0.000123457"
-    );
+    assert_eq!(interpret("ToString[0.0001234567]").unwrap(), "0.000123457");
   }
 
   // InputForm keeps full precision.
