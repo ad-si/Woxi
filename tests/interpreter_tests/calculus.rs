@@ -1650,6 +1650,62 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  // Indeterminate power forms f^g, resolved via Exp[Limit[g Log[f]]].
+  // 0^0 forms:
+  #[test]
+  fn limit_x_pow_x() {
+    assert_eq!(interpret("Limit[x^x, x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn limit_x_pow_sin_x() {
+    assert_eq!(interpret("Limit[x^Sin[x], x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn limit_sin_x_pow_x() {
+    assert_eq!(interpret("Limit[Sin[x]^x, x -> 0]").unwrap(), "1");
+  }
+
+  // 1^Infinity forms:
+  #[test]
+  fn limit_one_plus_x_pow_recip_x() {
+    assert_eq!(interpret("Limit[(1 + x)^(1/x), x -> 0]").unwrap(), "E");
+  }
+
+  #[test]
+  fn limit_cos_pow_recip_x_squared() {
+    // (Cos[x])^(1/x^2) -> Exp[-1/2] = 1/Sqrt[E]; the numerical fallback would
+    // wrongly give 1.
+    assert_eq!(
+      interpret("Limit[(Cos[x])^(1/x^2), x -> 0]").unwrap(),
+      "1/Sqrt[E]"
+    );
+  }
+
+  // Infinity^0 form:
+  #[test]
+  fn limit_recip_x_pow_x() {
+    assert_eq!(interpret("Limit[(1/x)^x, x -> 0]").unwrap(), "1");
+  }
+
+  // Product 0 * Infinity at a finite point: the L'Hopital rewrite must use the
+  // 0/0 orientation (Log[2-x]/Cot[Pi x/2]) — the Infinity/Infinity orientation
+  // differentiates Tan into ever-larger expressions that never resolve. This
+  // case previously did not terminate; here we only require that it resolves
+  // quickly to the correct numeric value (2/Pi ~ 0.6366).
+  #[test]
+  fn limit_tan_times_log_product_terminates() {
+    let out = interpret("Limit[Tan[Pi x/2] Log[2 - x], x -> 1]").unwrap();
+    let val: f64 = out.parse().unwrap_or_else(|_| {
+      panic!("expected a numeric limit, got {out}");
+    });
+    assert!(
+      (val - std::f64::consts::FRAC_2_PI).abs() < 1e-6,
+      "expected ~2/Pi, got {val}"
+    );
+  }
+
   // Direct substitution to a real, directed +/-Infinity (e.g. Log[0]) is
   // the limit. ComplexInfinity poles (1/x at 0) stay Indeterminate.
   #[test]

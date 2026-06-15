@@ -8663,39 +8663,253 @@ fn limit_zero_times_infinity(
     return None;
   }
 
-  // N = (product of diverging factors), D = (product of the rest).
-  // Rewrite N * D as N / (1/D) — an Infinity/Infinity form — and apply one
-  // L'Hopital step: d/dx[N] / d/dx[1/D].
-  let numerator = product_of(inf_factors);
-  let denominator = product_of(rest_factors);
-  let recip_d = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
-    left: Box::new(Expr::Integer(1)),
-    right: Box::new(denominator),
-  };
-  let dn = differentiate(&numerator, var).ok()?;
-  let d_recip = differentiate(&recip_d, var).ok()?;
-  // Evaluate (not just `simplify`) the quotient so fractional/negative powers
-  // recombine — e.g. (1/x)/(-1/2 x^(-3/2)) collapses to -2 Sqrt[x], which the
-  // recursive Limit can then resolve by direct substitution.
-  let quotient = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
-    left: Box::new(dn),
-    right: Box::new(d_recip),
-  };
-  let new_expr =
-    crate::evaluator::evaluate_expr_to_expr(&quotient).unwrap_or(quotient);
+  // N = (product of diverging factors), D = (product of the rest, which
+  // includes the vanishing factor so D -> 0). A product N * D can be rewritten
+  // as a quotient two ways, and the choice decides whether one L'Hopital step
+  // resolves it or the derivatives blow up:
+  //   * 0/0 form:        D / (1/N)   — differentiate D (the zero) over 1/N
+  //   * Infinity/Inf:    N / (1/D)   — differentiate N (the divergence) over 1/D
+  // The 0/0 orientation is tried first: for e.g. Tan[Pi x/2] Log[2-x] it gives
+  // Log[2-x] / Cot[Pi x/2], which resolves in one step to 2/Pi, whereas the
+  // Infinity/Infinity orientation differentiates Tan into ever-larger Sec/Log
+  // powers that never resolve. The original orientation is kept as a fallback
+  // for forms the 0/0 one cannot close.
+  let inf_part = product_of(inf_factors);
+  let rest_part = product_of(rest_factors);
 
-  LIMIT_PRODUCT_DEPTH.with(|d| d.set(depth + 1));
-  let result = limit_ast(&[new_expr, rule_arg.clone()]);
-  LIMIT_PRODUCT_DEPTH.with(|d| d.set(depth));
-
-  match result {
-    Ok(val) if !matches!(&val, Expr::FunctionCall { name, .. } if name == "Limit") => {
-      Some(val)
+  // Build `d/dx[num] / d/dx[1/den]` (one L'Hopital step on `num / (1/den)`),
+  // then recurse. Returns None if the step doesn't resolve or blows up.
+  let try_orientation = |num: &Expr, den: &Expr| -> Option<Expr> {
+    let recip = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(den.clone()),
+    };
+    let dn = differentiate(num, var).ok()?;
+    let d_recip = differentiate(&recip, var).ok()?;
+    // Evaluate (not just `simplify`) the quotient so fractional/negative powers
+    // recombine — e.g. (1/x)/(-1/2 x^(-3/2)) collapses to -2 Sqrt[x], which the
+    // recursive Limit can then resolve by direct substitution.
+    let quotient = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(dn),
+      right: Box::new(d_recip),
+    };
+    let new_expr =
+      crate::evaluator::evaluate_expr_to_expr(&quotient).unwrap_or(quotient);
+    // Skip an orientation whose derivative ratio has already blown up.
+    if expr_node_count_capped(&new_expr, 160) >= 160 {
+      return None;
     }
-    _ => None,
+    LIMIT_PRODUCT_DEPTH.with(|d| d.set(depth + 1));
+    let result = limit_ast(&[new_expr, rule_arg.clone()]);
+    LIMIT_PRODUCT_DEPTH.with(|d| d.set(depth));
+    match result {
+      Ok(val) if !matches!(&val, Expr::FunctionCall { name, .. } if name == "Limit") => {
+        Some(val)
+      }
+      _ => None,
+    }
+  };
+
+  try_orientation(&rest_part, &inf_part)
+    .or_else(|| try_orientation(&inf_part, &rest_part))
+}
+
+thread_local! {
+  static LIMIT_POWER_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+  static LIMIT_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// RAII guard that decrements the global `limit_ast` recursion counter on every
+/// exit path. Bounds repeated L'Hôpital / product-rewrite recursion so a
+/// pathological limit (e.g. `Limit[Tan[Pi x/2] Log[2 - x], x -> 1]`, whose
+/// derivatives grow without ever resolving) returns unevaluated instead of
+/// hanging.
+struct LimitDepthGuard;
+impl Drop for LimitDepthGuard {
+  fn drop(&mut self) {
+    LIMIT_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
   }
+}
+
+/// Total node count of an expression, capped at `limit` (returns early once the
+/// cap is reached). Used to detect L'Hôpital derivative blow-up cheaply.
+fn expr_node_count_capped(expr: &Expr, limit: usize) -> usize {
+  fn go(expr: &Expr, count: &mut usize, limit: usize) {
+    if *count >= limit {
+      return;
+    }
+    *count += 1;
+    match expr {
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        for a in args.iter() {
+          go(a, count, limit);
+        }
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        go(left, count, limit);
+        go(right, count, limit);
+      }
+      Expr::UnaryOp { operand, .. } => go(operand, count, limit),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        go(pattern, count, limit);
+        go(replacement, count, limit);
+      }
+      _ => {}
+    }
+  }
+  let mut count = 0;
+  go(expr, &mut count, limit);
+  count
+}
+
+/// True for a (resolved) limit value that is `±Infinity`, `ComplexInfinity`, or
+/// a `DirectedInfinity[...]` — but NOT `Indeterminate`. Used to classify the
+/// exponent/base of a power-form limit.
+fn is_infinite_value(expr: &Expr) -> bool {
+  is_infinity(expr)
+    || is_negative_infinity(expr)
+    || matches!(expr, Expr::Identifier(name) if name == "ComplexInfinity")
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+}
+
+/// Numerically check that `result` is the limit of `fg` (a power `f^g`) as
+/// `var -> point`, by sampling `fg` just off the point and comparing. Used to
+/// guard the symbolic power-form transform against a mis-evaluated inner limit:
+/// only a result that agrees with the actual values near the point is accepted.
+fn power_limit_matches_numerically(
+  fg: &Expr,
+  result: &Expr,
+  var: &str,
+  point: &Expr,
+) -> bool {
+  let x0 = match crate::functions::math_ast::try_eval_to_f64(point) {
+    Some(v) if v.is_finite() => v,
+    _ => return false,
+  };
+  let target = match crate::functions::math_ast::try_eval_to_f64(result) {
+    Some(v) if v.is_finite() => v,
+    _ => return false,
+  };
+  let tol = 0.03 * (1.0 + target.abs()) + 1e-9;
+  for &delta in &[1e-5_f64, -1e-5, 1e-4, -1e-4] {
+    let sample = Expr::Real(x0 + delta);
+    let sub = crate::syntax::substitute_variable(fg, var, &sample);
+    if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&sub)
+      && v.is_finite()
+      && (v - target).abs() <= tol
+    {
+      return true;
+    }
+  }
+  false
+}
+
+/// Resolve an indeterminate power-form limit `Limit[f^g, x -> x0]`. The forms
+/// `0^0`, `1^Infinity`, and `Infinity^0` are indeterminate; for each, the limit
+/// equals `Exp[Limit[g * Log[f], x -> x0]]`. The base/exponent sub-limits are
+/// classified (with `Indeterminate` treated as a possibly-infinite candidate,
+/// since Woxi returns Indeterminate for e.g. `Limit[1/x, x -> 0]`), and the
+/// transformed result is accepted only after a numerical cross-check so a
+/// mis-evaluated inner limit can never produce a wrong answer. Returns None
+/// when `expr` is not a power, the form is not a candidate, the transformed
+/// limit is not finite, or the numerical check fails.
+fn limit_power_form(
+  args: &[Expr],
+  var_name: &str,
+  point: &Expr,
+) -> Option<Expr> {
+  let (base, exp) = match &args[0] {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => ((**left).clone(), (**right).clone()),
+    Expr::FunctionCall { name, args: pargs }
+      if name == "Power" && pargs.len() == 2 =>
+    {
+      (pargs[0].clone(), pargs[1].clone())
+    }
+    _ => return None,
+  };
+
+  // Guard against unbounded re-entry (the transformed limit is itself a Limit).
+  let depth = LIMIT_POWER_DEPTH.with(|d| d.get());
+  if depth > 4 {
+    return None;
+  }
+
+  // Build inner-limit argument lists that preserve the point (and direction).
+  let inner_args = |e: Expr| {
+    let mut v = vec![e, args[1].clone()];
+    if args.len() == 3 {
+      v.push(args[2].clone());
+    }
+    v
+  };
+
+  LIMIT_POWER_DEPTH.with(|d| d.set(depth + 1));
+  let base_lim = limit_ast(&inner_args(base.clone()));
+  let exp_lim = limit_ast(&inner_args(exp.clone()));
+  LIMIT_POWER_DEPTH.with(|d| d.set(depth));
+
+  let (base_lim, exp_lim) = match (base_lim, exp_lim) {
+    (Ok(b), Ok(e)) => (b, e),
+    _ => return None,
+  };
+
+  let is_indet =
+    |e: &Expr| matches!(e, Expr::Identifier(n) | Expr::Constant(n) if n == "Indeterminate");
+  let base_zero = matches!(&base_lim, Expr::Integer(0))
+    || matches!(&base_lim, Expr::Real(f) if *f == 0.0);
+  let base_one = matches!(&base_lim, Expr::Integer(1))
+    || matches!(&base_lim, Expr::Real(f) if *f == 1.0);
+  let base_inf = is_infinite_value(&base_lim) || is_indet(&base_lim);
+  let exp_zero = matches!(&exp_lim, Expr::Integer(0))
+    || matches!(&exp_lim, Expr::Real(f) if *f == 0.0);
+  let exp_inf = is_infinite_value(&exp_lim) || is_indet(&exp_lim);
+
+  // Candidate indeterminate forms: 0^0, 1^Infinity, Infinity^0.
+  let candidate = (base_zero && exp_zero)
+    || (base_one && exp_inf)
+    || (base_inf && exp_zero);
+  if !candidate {
+    return None;
+  }
+
+  // L = Limit[g * Log[f], x -> x0]; the power limit is Exp[L].
+  let g_log_f = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      exp,
+      Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![base].into(),
+      },
+    ]
+    .into(),
+  };
+  LIMIT_POWER_DEPTH.with(|d| d.set(depth + 1));
+  let l = limit_ast(&inner_args(g_log_f));
+  LIMIT_POWER_DEPTH.with(|d| d.set(depth));
+  let l = l.ok()?;
+  if !is_finite_limit_value(&l) {
+    return None;
+  }
+
+  let exp_l = Expr::FunctionCall {
+    name: "Exp".to_string(),
+    args: vec![l].into(),
+  };
+  let result = crate::evaluator::evaluate_expr_to_expr(&exp_l).ok()?;
+  if !power_limit_matches_numerically(&args[0], &result, var_name, point) {
+    return None;
+  }
+  Some(result)
 }
 
 /// Limit[expr, x -> x0] - Compute the limit of expr as x approaches x0
@@ -8706,6 +8920,19 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Limit expects 2 or 3 arguments".into(),
     ));
   }
+
+  // Bound recursion: repeated L'Hôpital / product rewrites can differentiate an
+  // expression that never resolves, exploding its size. Past the bound, return
+  // the call unevaluated rather than hanging.
+  let cur_depth = LIMIT_DEPTH.with(|d| d.get());
+  if cur_depth > 16 {
+    return Ok(Expr::FunctionCall {
+      name: "Limit".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  LIMIT_DEPTH.with(|d| d.set(cur_depth + 1));
+  let _depth_guard = LimitDepthGuard;
 
   // Parse optional Direction from 3rd argument
   let direction = if args.len() == 3 {
@@ -8856,7 +9083,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           left: Box::new(simplify(df)),
           right: Box::new(simplify(dg)),
         };
-        return limit_ast(&[new_expr, args[1].clone()]);
+        // Bail out of L'Hôpital if the derivative ratio has blown up: some
+        // forms (e.g. Tan-based products) differentiate into ever-larger
+        // expressions that never resolve, so recursing would only get slower.
+        // Fall through to the numerical methods instead.
+        if expr_node_count_capped(&new_expr, 160) < 160 {
+          return limit_ast(&[new_expr, args[1].clone()]);
+        }
       }
     }
   }
@@ -8869,6 +9102,14 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) =
     limit_zero_times_infinity(&args[0], &var_name, &point, &args[1])
   {
+    return Ok(result);
+  }
+
+  // Indeterminate power forms f^g (0^0, 1^Infinity, Infinity^0): resolve via
+  // Exp[Limit[g Log[f]]] for an exact symbolic result, before the numerical
+  // fallback (which would otherwise yield an approximate or wrong value, e.g.
+  // (Cos[x])^(1/x^2) -> 1 instead of 1/Sqrt[E]).
+  if let Some(result) = limit_power_form(args, &var_name, &point) {
     return Ok(result);
   }
 
@@ -9522,9 +9763,7 @@ fn parse_integer_series(e: &Expr) -> Option<ParsedSeries> {
 fn is_singular_series_value(e: &Expr) -> bool {
   match e {
     Expr::Constant(name) | Expr::Identifier(name) => {
-      name == "Indeterminate"
-        || name == "ComplexInfinity"
-        || name == "Infinity"
+      name == "Indeterminate" || name == "ComplexInfinity" || name == "Infinity"
     }
     Expr::FunctionCall { name, .. } => name == "DirectedInfinity",
     _ => false,
@@ -9698,8 +9937,7 @@ fn try_series_quotient(
     .map(|l| c_map.get(&l).cloned().unwrap_or(Expr::Integer(0)))
     .collect();
   let mut nmin = q_min;
-  while !coefficients.is_empty()
-    && matches!(coefficients[0], Expr::Integer(0))
+  while !coefficients.is_empty() && matches!(coefficients[0], Expr::Integer(0))
   {
     coefficients.remove(0);
     nmin += 1;
