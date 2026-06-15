@@ -7820,6 +7820,153 @@ fn numerical_two_sided_limit(
   }
 }
 
+thread_local! {
+  static LIMIT_PRODUCT_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// How a single factor of a product behaves at the limit point.
+enum FactorAtPoint {
+  Zero,
+  Infinite,
+  Finite,
+  Unknown,
+}
+
+/// Substitute `var -> point` into `factor` and classify the resulting value.
+fn classify_factor_at(factor: &Expr, var: &str, point: &Expr) -> FactorAtPoint {
+  let subst = crate::syntax::substitute_variable(factor, var, point);
+  let saved = crate::snapshot_warnings();
+  crate::push_quiet();
+  let res = crate::evaluator::evaluate_expr_to_expr(&subst);
+  crate::pop_quiet();
+  crate::restore_warnings(saved);
+  let val = match res {
+    Ok(v) => v,
+    Err(_) => return FactorAtPoint::Unknown,
+  };
+  if matches!(&val, Expr::Integer(0))
+    || matches!(&val, Expr::Real(f) if *f == 0.0)
+  {
+    FactorAtPoint::Zero
+  } else if is_infinity(&val)
+    || is_negative_infinity(&val)
+    || matches!(&val, Expr::Identifier(n) if n == "ComplexInfinity")
+    || matches!(&val, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+  {
+    FactorAtPoint::Infinite
+  } else if matches!(&val, Expr::Identifier(n) if n == "Indeterminate") {
+    FactorAtPoint::Unknown
+  } else if crate::functions::math_ast::try_eval_to_f64(&val)
+    .is_some_and(|x| x != 0.0)
+    || matches!(&val, Expr::Constant(_))
+    || is_numeric_complex_constant(&val)
+  {
+    FactorAtPoint::Finite
+  } else {
+    FactorAtPoint::Unknown
+  }
+}
+
+/// Build a Times of the given factors (or the single factor / 1).
+fn product_of(mut factors: Vec<Expr>) -> Expr {
+  match factors.len() {
+    0 => Expr::Integer(1),
+    1 => factors.pop().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    },
+  }
+}
+
+/// Resolve a `0 * Infinity` indeterminate product at a finite point.
+///
+/// Splits the product into the factor(s) diverging to infinity (`N`) and the
+/// remaining factors that go to zero/finite values (`D`), then evaluates the
+/// equivalent `Limit[N / (1/D)]` (an Infinity/Infinity form) via one L'Hopital
+/// step. Returns `None` when the expression is not a clean `0 * Infinity`
+/// product, so the caller can fall back to the numerical path.
+fn limit_zero_times_infinity(
+  expr: &Expr,
+  var: &str,
+  point: &Expr,
+  rule_arg: &Expr,
+) -> Option<Expr> {
+  let factors: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().cloned().collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref().clone(), right.as_ref().clone()],
+    _ => return None,
+  };
+  if factors.len() < 2 {
+    return None;
+  }
+
+  let mut inf_factors: Vec<Expr> = Vec::new();
+  let mut rest_factors: Vec<Expr> = Vec::new();
+  let mut saw_zero = false;
+  for f in &factors {
+    match classify_factor_at(f, var, point) {
+      FactorAtPoint::Infinite => inf_factors.push(f.clone()),
+      FactorAtPoint::Zero => {
+        saw_zero = true;
+        rest_factors.push(f.clone());
+      }
+      FactorAtPoint::Finite => rest_factors.push(f.clone()),
+      FactorAtPoint::Unknown => return None,
+    }
+  }
+  // Only a genuine 0 * Infinity form qualifies.
+  if !saw_zero || inf_factors.is_empty() || rest_factors.is_empty() {
+    return None;
+  }
+
+  // Guard against pathological unbounded recursion.
+  let depth = LIMIT_PRODUCT_DEPTH.with(|d| d.get());
+  if depth >= 12 {
+    return None;
+  }
+
+  // N = (product of diverging factors), D = (product of the rest).
+  // Rewrite N * D as N / (1/D) — an Infinity/Infinity form — and apply one
+  // L'Hopital step: d/dx[N] / d/dx[1/D].
+  let numerator = product_of(inf_factors);
+  let denominator = product_of(rest_factors);
+  let recip_d = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::Integer(1)),
+    right: Box::new(denominator),
+  };
+  let dn = differentiate(&numerator, var).ok()?;
+  let d_recip = differentiate(&recip_d, var).ok()?;
+  // Evaluate (not just `simplify`) the quotient so fractional/negative powers
+  // recombine — e.g. (1/x)/(-1/2 x^(-3/2)) collapses to -2 Sqrt[x], which the
+  // recursive Limit can then resolve by direct substitution.
+  let quotient = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(dn),
+    right: Box::new(d_recip),
+  };
+  let new_expr =
+    crate::evaluator::evaluate_expr_to_expr(&quotient).unwrap_or(quotient);
+
+  LIMIT_PRODUCT_DEPTH.with(|d| d.set(depth + 1));
+  let result = limit_ast(&[new_expr, rule_arg.clone()]);
+  LIMIT_PRODUCT_DEPTH.with(|d| d.set(depth));
+
+  match result {
+    Ok(val) if !matches!(&val, Expr::FunctionCall { name, .. } if name == "Limit") => {
+      Some(val)
+    }
+    _ => None,
+  }
+}
+
 /// Limit[expr, x -> x0] - Compute the limit of expr as x approaches x0
 /// Limit[expr, x -> x0, Direction -> "FromAbove"] - One-sided limit
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -7973,6 +8120,17 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return limit_ast(&[new_expr, args[1].clone()]);
       }
     }
+  }
+
+  // Handle the 0 * Infinity indeterminate product at a finite point by
+  // rewriting it as an Infinity/Infinity quotient and applying L'Hopital,
+  // e.g. Limit[x Log[x], x -> 0] -> Limit[Log[x] / (1/x), x -> 0] = 0.
+  // (Genuine quotients are already handled by the 0/0 block above, so this
+  // only fires for products that direct substitution left Indeterminate.)
+  if let Some(result) =
+    limit_zero_times_infinity(&args[0], &var_name, &point, &args[1])
+  {
+    return Ok(result);
   }
 
   // Numerical approach for one-sided or two-sided limits

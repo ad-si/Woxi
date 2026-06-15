@@ -1445,6 +1445,46 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  // 0 * Infinity indeterminate products at a finite point, resolved by
+  // rewriting as an Infinity/Infinity quotient and applying L'Hopital.
+  #[test]
+  fn limit_x_log_x() {
+    assert_eq!(interpret("Limit[x Log[x], x -> 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_x_squared_log_x() {
+    assert_eq!(interpret("Limit[x^2 Log[x], x -> 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_sqrt_x_log_x() {
+    assert_eq!(interpret("Limit[Sqrt[x] Log[x], x -> 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_x_log_x_squared() {
+    // Iterated logarithm power: requires recursive L'Hopital.
+    assert_eq!(interpret("Limit[x Log[x]^2, x -> 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_sin_x_log_x() {
+    assert_eq!(interpret("Limit[Sin[x] Log[x], x -> 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn limit_x_cot_x() {
+    // x -> 0, Cot[x] -> Infinity; the product tends to 1.
+    assert_eq!(interpret("Limit[x Cot[x], x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn limit_product_zero_times_zero_unaffected() {
+    // Both factors -> 0 (not a 0*Infinity form): stays 0.
+    assert_eq!(interpret("Limit[x Sin[x], x -> 0]").unwrap(), "0");
+  }
+
   #[test]
   fn limit_compound_interest() {
     assert_eq!(interpret("Limit[(1 + 1/n)^n, n -> Infinity]").unwrap(), "E");
