@@ -843,12 +843,8 @@ pub fn imaginary_arg_reduction(
     },
     _ => Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![
-        Expr::Integer(-1),
-        Expr::Identifier("I".to_string()),
-        inner,
-      ]
-      .into(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string()), inner]
+        .into(),
     },
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&result))

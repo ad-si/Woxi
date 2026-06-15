@@ -6197,6 +6197,82 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // E^(Plus[terms]) with at least one Log term: pull out E^Log[z] = z and
+  // E^(c Log[z]) = z^c as factors, leaving the remaining terms together under
+  // E^(rest). E.g. E^(Log[x] + Log[y]) = x y, E^(Log[2] + 1) = 2 E. A Plus
+  // with no Log term is left untouched (E^(a + b) stays). Matches wolframscript.
+  if matches!(base, Expr::Identifier(s) if s == "E")
+    || matches!(base, Expr::Constant(s) if s == "E")
+  {
+    fn term_has_log(term: &Expr) -> bool {
+      match term {
+        Expr::FunctionCall { name, args }
+          if name == "Log" && args.len() == 1 =>
+        {
+          true
+        }
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          args.iter().any(term_has_log)
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left,
+          right,
+        } => term_has_log(left) || term_has_log(right),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } => term_has_log(operand),
+        _ => false,
+      }
+    }
+    let terms: Option<Vec<&Expr>> = match exp {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        Some(args.iter().collect())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left,
+        right,
+      } => Some(vec![left.as_ref(), right.as_ref()]),
+      _ => None,
+    };
+    if let Some(terms) = terms
+      && terms.iter().any(|t| term_has_log(t))
+    {
+      let e = Expr::Constant("E".to_string());
+      let mut factors: Vec<Expr> = Vec::new();
+      let mut rest: Vec<Expr> = Vec::new();
+      for t in &terms {
+        if term_has_log(t) {
+          factors.push(power_two(&e, t)?);
+        } else {
+          rest.push((*t).clone());
+        }
+      }
+      if !rest.is_empty() {
+        let rest_sum = if rest.len() == 1 {
+          rest.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: rest.into(),
+          }
+        };
+        factors.push(power_two(&e, &rest_sum)?);
+      }
+      let result = if factors.len() == 1 {
+        factors.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors.into(),
+        }
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
+  }
+
   // E^Log[x] -> x (inverse function identity)
   if (matches!(base, Expr::Identifier(s) if s == "E")
     || matches!(base, Expr::Constant(s) if s == "E"))

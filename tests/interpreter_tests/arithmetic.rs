@@ -3505,6 +3505,33 @@ mod exp_log_identity {
     assert_eq!(interpret("Exp[a Log[x]]").unwrap(), "x^a");
   }
 
+  // E^(Plus[...]) pulls each Log term out as a factor, keeping the rest under
+  // a single E^(rest). Verified against wolframscript.
+  #[test]
+  fn exp_of_log_sum() {
+    assert_eq!(interpret("Exp[Log[x] + Log[y]]").unwrap(), "x*y");
+    assert_eq!(interpret("Exp[Log[x] - Log[y]]").unwrap(), "x/y");
+    assert_eq!(
+      interpret("Exp[Log[x] + Log[y] + z]").unwrap(),
+      "E^z*x*y"
+    );
+    assert_eq!(interpret("E^(Log[5] + Log[3])").unwrap(), "15");
+  }
+
+  #[test]
+  fn exp_of_log_plus_constant() {
+    assert_eq!(interpret("Exp[Log[2] + 1]").unwrap(), "2*E");
+    assert_eq!(interpret("Exp[Log[x] + a]").unwrap(), "E^a*x");
+    assert_eq!(interpret("Exp[Log[2] + Log[3] + 1]").unwrap(), "6*E");
+  }
+
+  // A Plus exponent with no Log term is left untouched.
+  #[test]
+  fn exp_of_plain_sum_unchanged() {
+    assert_eq!(interpret("Exp[a + b]").unwrap(), "E^(a + b)");
+    assert_eq!(interpret("Exp[1 + a]").unwrap(), "E^(1 + a)");
+  }
+
   #[test]
   fn exp_half_log_x() {
     assert_eq!(interpret("Exp[Log[x] / 2]").unwrap(), "Sqrt[x]");
