@@ -5702,6 +5702,19 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[Abs[x]]").unwrap(), "Abs[x]");
   }
 
+  // Abs[base^exp] = Abs[base]^exp for a real numeric exponent.
+  #[test]
+  fn abs_of_power() {
+    assert_eq!(interpret("Abs[x^2]").unwrap(), "Abs[x]^2");
+    assert_eq!(interpret("Abs[x^3]").unwrap(), "Abs[x]^3");
+    assert_eq!(interpret("Abs[x^(1/2)]").unwrap(), "Sqrt[Abs[x]]");
+    assert_eq!(interpret("Abs[x^-1]").unwrap(), "Abs[x]^(-1)");
+    // Composes with the negation pull: Abs[-x^2] = Abs[x]^2.
+    assert_eq!(interpret("Abs[-x^2]").unwrap(), "Abs[x]^2");
+    // A symbolic exponent stays unevaluated.
+    assert_eq!(interpret("Abs[x^n]").unwrap(), "Abs[x^n]");
+  }
+
   // Fully symbolic products and genuine complex values are unchanged.
   #[test]
   fn abs_unaffected_cases() {
@@ -5742,6 +5755,15 @@ mod sign_simplifications {
   #[test]
   fn sign_idempotent() {
     assert_eq!(interpret("Sign[Sign[x]]").unwrap(), "Sign[x]");
+  }
+
+  // Sign[base^exp] = Sign[base]^exp for a real numeric exponent.
+  #[test]
+  fn sign_of_power() {
+    assert_eq!(interpret("Sign[x^2]").unwrap(), "Sign[x]^2");
+    assert_eq!(interpret("Sign[x^3]").unwrap(), "Sign[x]^3");
+    assert_eq!(interpret("Sign[x^(1/2)]").unwrap(), "Sqrt[Sign[x]]");
+    assert_eq!(interpret("Sign[x^n]").unwrap(), "Sign[x^n]");
   }
 
   // Fully symbolic products and genuine complex values are unchanged.

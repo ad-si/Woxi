@@ -127,6 +127,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // Abs[base^exp] = Abs[base]^exp for a real numeric exponent (|z^n| = |z|^n).
+  if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
+    let abs_base = abs_ast(&[base.clone()])?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![abs_base, exp.clone()].into(),
+    });
+  }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
     let g_r = gcd(rn, rd);
@@ -227,6 +235,36 @@ fn negative_literal_abs(f: &Expr) -> Option<Expr> {
       }
     }
     _ => None,
+  }
+}
+
+/// If `expr` is a power `base^exp` (in either Power form) whose exponent is a
+/// real numeric literal (Integer, Real, or Rational — not symbolic, not
+/// complex), return `(base, exp)`. Used by `Abs`/`Sign` for the rule
+/// `f[base^exp] = f[base]^exp`, valid for any base when exp is real.
+fn power_with_real_exponent(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let exp_is_real_numeric = match exp {
+    Expr::Integer(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      matches!((&args[0], &args[1]), (Expr::Integer(_), Expr::Integer(_)))
+    }
+    _ => false,
+  };
+  if exp_is_real_numeric {
+    Some((base, exp))
+  } else {
+    None
   }
 }
 
@@ -647,6 +685,15 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
     }
+  }
+  // Sign[base^exp] = Sign[base]^exp for a real numeric exponent
+  // (z^n / |z^n| = (z/|z|)^n).
+  if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
+    let sign_base = sign_ast(&[base.clone()])?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![sign_base, exp.clone()].into(),
+    });
   }
   Ok(Expr::FunctionCall {
     name: "Sign".to_string(),
