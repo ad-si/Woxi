@@ -7237,9 +7237,18 @@ mod count_roots {
   #[test]
   fn closed_interval_includes_endpoints() {
     let p = "(x - 1) (x - 2) (x - 3) (x - 4)";
-    assert_eq!(interpret(&format!("CountRoots[{p}, {{x, 0, 5}}]")).unwrap(), "4");
-    assert_eq!(interpret(&format!("CountRoots[{p}, {{x, 2, 4}}]")).unwrap(), "3");
-    assert_eq!(interpret(&format!("CountRoots[{p}, {{x, 2, 3}}]")).unwrap(), "2");
+    assert_eq!(
+      interpret(&format!("CountRoots[{p}, {{x, 0, 5}}]")).unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(&format!("CountRoots[{p}, {{x, 2, 4}}]")).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(&format!("CountRoots[{p}, {{x, 2, 3}}]")).unwrap(),
+      "2"
+    );
   }
 
   #[test]
@@ -7265,8 +7274,10 @@ mod count_roots {
   #[test]
   fn infinite_bounds() {
     assert_eq!(
-      interpret("CountRoots[(x - 1) (x - 2) (x - 3) (x - 4), {x, -Infinity, Infinity}]")
-        .unwrap(),
+      interpret(
+        "CountRoots[(x - 1) (x - 2) (x - 3) (x - 4), {x, -Infinity, Infinity}]"
+      )
+      .unwrap(),
       "4"
     );
     assert_eq!(
@@ -7300,5 +7311,43 @@ mod count_roots {
       interpret("CountRoots[Sin[x], x]").unwrap(),
       "CountRoots[Sin[x], x]"
     );
+  }
+}
+
+mod arctan_two_arg {
+  use super::*;
+
+  // ArcTan[x, y] reduces to the quadrant-adjusted ArcTan[y/x], kept symbolic
+  // when it doesn't simplify further.
+  #[test]
+  fn first_quadrant() {
+    assert_eq!(interpret("ArcTan[3, 4]").unwrap(), "ArcTan[4/3]");
+    assert_eq!(interpret("ArcTan[2, 6]").unwrap(), "ArcTan[3]");
+    assert_eq!(interpret("ArcTan[1/2, 3/4]").unwrap(), "ArcTan[3/2]");
+  }
+
+  #[test]
+  fn other_quadrants() {
+    assert_eq!(interpret("ArcTan[3, -4]").unwrap(), "-ArcTan[4/3]");
+    assert_eq!(interpret("ArcTan[-3, 4]").unwrap(), "Pi - ArcTan[4/3]");
+    assert_eq!(interpret("ArcTan[-3, -4]").unwrap(), "-Pi + ArcTan[4/3]");
+    assert_eq!(interpret("ArcTan[-1/2, 3/4]").unwrap(), "Pi - ArcTan[3/2]");
+  }
+
+  #[test]
+  fn axes_and_special_angles() {
+    assert_eq!(interpret("ArcTan[0, 5]").unwrap(), "Pi/2");
+    assert_eq!(interpret("ArcTan[5, 0]").unwrap(), "0");
+    assert_eq!(interpret("ArcTan[-5, 0]").unwrap(), "Pi");
+    assert_eq!(interpret("ArcTan[1, 1]").unwrap(), "Pi/4");
+    assert_eq!(interpret("ArcTan[1, Sqrt[3]]").unwrap(), "Pi/3");
+  }
+
+  // Single-argument ArcTan is odd: negative integers/rationals factor the sign.
+  #[test]
+  fn single_arg_odd_function() {
+    assert_eq!(interpret("ArcTan[-2]").unwrap(), "-ArcTan[2]");
+    assert_eq!(interpret("ArcTan[-4/3]").unwrap(), "-ArcTan[4/3]");
+    assert_eq!(interpret("ArcTan[-1]").unwrap(), "-1/4*Pi");
   }
 }

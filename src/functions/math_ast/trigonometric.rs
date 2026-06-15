@@ -2490,18 +2490,11 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
-  // ArcTan[-x] → -ArcTan[x] (odd function)
-  // Only apply for symbolic (non-numeric) arguments.
-  if !matches!(
-    &args[0],
-    Expr::Integer(_)
-      | Expr::Real(_)
-      | Expr::BigInteger(_)
-      | Expr::BigFloat(_, _)
-  ) && !matches!(
-    &args[0],
-    Expr::FunctionCall { name, .. } if name == "Rational"
-  ) && let Some(neg) = try_extract_negated(&args[0])
+  // ArcTan[-x] → -ArcTan[x] (odd function). Reals/BigFloats are excluded —
+  // they evaluate to a numeric atan directly below — but negative integers
+  // and rationals reduce to -ArcTan[|x|] (e.g. ArcTan[-4/3] = -ArcTan[4/3]).
+  if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _))
+    && let Some(neg) = try_extract_negated(&args[0])
   {
     let inner = crate::evaluator::evaluate_function_call_ast("ArcTan", &[neg])?;
     return crate::evaluator::evaluate_function_call_ast(
@@ -2661,42 +2654,62 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Exact special values for common angles
+  // Exact special values for common angles — nicer closed forms than the
+  // general ArcTan[y/x] reduction below.
   if let (Some(xn), Some(yn)) = (expr_to_i128(x), expr_to_i128(y)) {
-    return Ok(match (xn, yn) {
-      (_, 0) if xn > 0 => Expr::Integer(0), // ArcTan[+x, 0] = 0
-      (_, 0) if xn < 0 => rational_pi(1, 1), // ArcTan[-x, 0] = Pi
-      (0, _) if yn > 0 => rational_pi(1, 2), // ArcTan[0, +y] = Pi/2
-      (0, _) if yn < 0 => rational_pi(-1, 2), // ArcTan[0, -y] = -Pi/2
-      _ if xn > 0 && yn == xn => rational_pi(1, 4), // ArcTan[a, a] = Pi/4 (x>0)
-      _ if xn > 0 && yn == -xn => rational_pi(-1, 4), // ArcTan[a, -a] = -Pi/4 (x>0)
-      _ if xn < 0 && yn == -xn => rational_pi(3, 4),  // ArcTan[-a, a] = 3*Pi/4
-      _ if xn < 0 && yn == xn => rational_pi(-3, 4), // ArcTan[-a, -a] = -3*Pi/4
-      _ => Expr::FunctionCall {
-        name: "ArcTan".to_string(),
-        args: args.to_vec().into(),
-      },
-    });
+    let special = match (xn, yn) {
+      (_, 0) if xn > 0 => Some(Expr::Integer(0)), // ArcTan[+x, 0] = 0
+      (_, 0) if xn < 0 => Some(rational_pi(1, 1)), // ArcTan[-x, 0] = Pi
+      (0, _) if yn > 0 => Some(rational_pi(1, 2)), // ArcTan[0, +y] = Pi/2
+      (0, _) if yn < 0 => Some(rational_pi(-1, 2)), // ArcTan[0, -y] = -Pi/2
+      _ if xn > 0 && yn == xn => Some(rational_pi(1, 4)), // Pi/4
+      _ if xn > 0 && yn == -xn => Some(rational_pi(-1, 4)), // -Pi/4
+      _ if xn < 0 && yn == -xn => Some(rational_pi(3, 4)), // 3*Pi/4
+      _ if xn < 0 && yn == xn => Some(rational_pi(-3, 4)), // -3*Pi/4
+      _ => None,
+    };
+    if let Some(v) = special {
+      return Ok(v);
+    }
   }
 
-  // For x > 0 we can use the identity ArcTan[x, y] = ArcTan[y/x] and
-  // rely on the single-argument ArcTan to simplify common exact angles
-  // (e.g. ArcTan[1, Sqrt[3]] → ArcTan[Sqrt[3]] → Pi/3).
-  if is_positive_real(x) {
+  // General numeric reduction: ArcTan[x, y] = ArcTan[y/x] adjusted by the
+  // quadrant of (x, y). Wolfram keeps the single-argument ArcTan[y/x] even
+  // when it does not simplify further, e.g. ArcTan[3, 4] = ArcTan[4/3] and
+  // ArcTan[-3, 4] = Pi - ArcTan[4/3].
+  if let (Some(xf), Some(yf)) = (try_eval_to_f64(x), try_eval_to_f64(y)) {
+    if xf == 0.0 {
+      return Ok(if yf > 0.0 {
+        rational_pi(1, 2)
+      } else if yf < 0.0 {
+        rational_pi(-1, 2)
+      } else {
+        Expr::Identifier("Indeterminate".to_string())
+      });
+    }
     let y_over_x = crate::evaluator::evaluate_function_call_ast(
       "Divide",
       &[y.clone(), x.clone()],
     )?;
-    let simplified =
+    let at =
       crate::evaluator::evaluate_function_call_ast("ArcTan", &[y_over_x])?;
-    // Only keep the simplification if the single-argument form actually
-    // reduced to a closed form (otherwise keep the 2-arg form).
-    if !matches!(
-      &simplified,
-      Expr::FunctionCall { name, .. } if name == "ArcTan"
-    ) {
-      return Ok(simplified);
+    if xf > 0.0 {
+      return Ok(at);
     }
+    // x < 0: shift by +Pi (y >= 0) or -Pi (y < 0).
+    let pi_term = if yf >= 0.0 {
+      Expr::Constant("Pi".to_string())
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(Expr::Constant("Pi".to_string())),
+      }
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[pi_term, at],
+    );
   }
 
   // Return unevaluated for symbolic args
@@ -2704,37 +2717,6 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "ArcTan".to_string(),
     args: args.to_vec().into(),
   })
-}
-
-/// Heuristic: is `e` a positive real value? Covers the common exact
-/// cases that appear in ArcTan[x, y] calls — positive integers,
-/// positive rationals, and `Sqrt[n]` / `Sqrt[n/m]` / `Power[n, p/q]`
-/// where the base is a positive integer or rational.
-fn is_positive_real(e: &Expr) -> bool {
-  match e {
-    Expr::Integer(n) => *n > 0,
-    Expr::Real(f) => *f > 0.0,
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      matches!(
-        (&args[0], &args[1]),
-        (Expr::Integer(n), Expr::Integer(d)) if (*n > 0 && *d > 0) || (*n < 0 && *d < 0)
-      )
-    }
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      is_positive_real(&args[0])
-    }
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
-      left,
-      right: _,
-    } => is_positive_real(left),
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      is_positive_real(&args[0])
-    }
-    _ => false,
-  }
 }
 
 /// Try to split an expression into real part and exact imaginary coefficient.
