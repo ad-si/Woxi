@@ -6621,6 +6621,40 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
           ])
         }
+        // Sec[x] = 2/(E^(I*x) + E^(-I*x))
+        "Sec" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          times(&[
+            Expr::Integer(2),
+            power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
+          ])
+        }
+        // Cot[x] = -I*(E^(-I*x) + E^(I*x))/(E^(-I*x) - E^(I*x))
+        "Cot" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          times(&[
+            Expr::Integer(-1),
+            i,
+            plus(&[e_nix.clone(), e_ix.clone()]),
+            power(
+              plus(&[e_nix, times(&[Expr::Integer(-1), e_ix])]),
+              Expr::Integer(-1),
+            ),
+          ])
+        }
+        // Sech[x] = 2/(E^x + E^(-x))
+        "Sech" => {
+          let e_x = power(e.clone(), arg.clone());
+          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
+          times(&[
+            Expr::Integer(2),
+            power(plus(&[e_x, e_nx]), Expr::Integer(-1)),
+          ])
+        }
         // Other functions: recurse into args
         _ => Expr::FunctionCall {
           name: name.clone(),

@@ -5869,10 +5869,7 @@ mod negative_half_times_sum_display {
   #[test]
   fn other_cases_unchanged() {
     assert_eq!(interpret("Times[Rational[-1, 2], x]").unwrap(), "-1/2*x");
-    assert_eq!(
-      interpret("(-3/2)*(a + b)").unwrap(),
-      "(-3*(a + b))/2"
-    );
+    assert_eq!(interpret("(-3/2)*(a + b)").unwrap(), "(-3*(a + b))/2");
     assert_eq!(interpret("(1/2)*(a + b)").unwrap(), "(a + b)/2");
   }
 }

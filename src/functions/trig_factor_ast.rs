@@ -293,7 +293,8 @@ fn factor(expr: &Expr) -> Option<Expr> {
   // (Cos and Sin), so Woxi's Times ordering already matches Wolfram.
   //   Sin[p] + Sin[q] = 2 Cos[p/2 - q/2] Sin[p/2 + q/2]
   //   Sin[p] - Sin[q] = 2 Cos[p/2 + q/2] Sin[p/2 - q/2]
-  if let (Some((true, na, ua)), Some((true, nb, ub))) = (classify(a), classify(b))
+  if let (Some((true, na, ua)), Some((true, nb, ub))) =
+    (classify(a), classify(b))
     && matches!(ua, Expr::Identifier(_))
     && matches!(ub, Expr::Identifier(_))
     && !same(&ua, &ub)
@@ -303,13 +304,17 @@ fn factor(expr: &Expr) -> Option<Expr> {
     // Fold the overall sign into the leading coefficient (-2, not -(2 ...))
     // to match Wolfram's printed form.
     let cos_sin = |k: i128, c: Expr, s: Expr| {
-      times(vec![Expr::Integer(k), trig_call("Cos", c), trig_call("Sin", s)])
+      times(vec![
+        Expr::Integer(k),
+        trig_call("Cos", c),
+        trig_call("Sin", s),
+      ])
     };
     return Some(match (na, nb) {
-      (false, false) => cos_sin(2, hd, hs),   // +Sin[p] +Sin[q]
-      (false, true) => cos_sin(2, hs, hd),    // +Sin[p] -Sin[q]
-      (true, false) => cos_sin(-2, hs, hd),   // -Sin[p] +Sin[q]
-      (true, true) => cos_sin(-2, hd, hs),    // -Sin[p] -Sin[q]
+      (false, false) => cos_sin(2, hd, hs), // +Sin[p] +Sin[q]
+      (false, true) => cos_sin(2, hs, hd),  // +Sin[p] -Sin[q]
+      (true, false) => cos_sin(-2, hs, hd), // -Sin[p] +Sin[q]
+      (true, true) => cos_sin(-2, hd, hs),  // -Sin[p] -Sin[q]
     });
   }
 

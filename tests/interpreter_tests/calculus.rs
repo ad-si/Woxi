@@ -4667,6 +4667,35 @@ mod trig_to_exp {
   }
 
   #[test]
+  fn sec_to_exp() {
+    assert_eq!(
+      interpret("TrigToExp[Sec[x]]").unwrap(),
+      "2/(E^(-I*x) + E^(I*x))"
+    );
+  }
+
+  #[test]
+  fn cot_to_exp() {
+    assert_eq!(
+      interpret("TrigToExp[Cot[x]]").unwrap(),
+      "(-I*(E^(-I*x) + E^(I*x)))/(E^(-I*x) - E^(I*x))"
+    );
+  }
+
+  #[test]
+  fn sech_to_exp() {
+    assert_eq!(interpret("TrigToExp[Sech[x]]").unwrap(), "2/(E^(-x) + E^x)");
+  }
+
+  #[test]
+  fn sec_double_angle() {
+    assert_eq!(
+      interpret("TrigToExp[Sec[2 x]]").unwrap(),
+      "2/(E^((-2*I)*x) + E^((2*I)*x))"
+    );
+  }
+
+  #[test]
   fn symbolic() {
     // TrigToExp should not affect non-trig expressions
     assert_eq!(interpret("TrigToExp[x + 1]").unwrap(), "1 + x");
