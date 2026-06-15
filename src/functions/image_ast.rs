@@ -4247,9 +4247,22 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![Expr::Integer(1), Expr::Integer(10_000_000_000)].into(),
     }
   };
+  // When the data array contains any inexact value (Real/BigFloat), the whole
+  // result is real-valued: every surviving leaf and every introduced zero is
+  // converted to a machine Real, matching wolframscript. An all-exact array
+  // (Integers/Rationals) keeps its exact leaves. The threshold's own type does
+  // not affect this — only the data array's does.
+  fn contains_inexact(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::List(items) => items.iter().any(contains_inexact),
+      _ => false,
+    }
+  }
+  let promote_to_real = contains_inexact(&args[0]);
   // Walk the array recursively. A non-list, non-numeric leaf triggers
   // the Threshold::nlist message and aborts.
-  fn apply(data: &Expr, t: &Expr) -> Option<Expr> {
+  fn apply(data: &Expr, t: &Expr, promote: bool) -> Option<Expr> {
     match data {
       Expr::List(items) => {
         if items.is_empty() {
@@ -4259,12 +4272,19 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         let mut out = Vec::with_capacity(items.len());
         for item in items.iter() {
-          out.push(apply(item, t)?);
+          out.push(apply(item, t, promote)?);
         }
         Some(Expr::List(out.into()))
       }
       x if crate::functions::math_ast::try_eval_to_f64(x).is_some() => {
-        Some(threshold_one(x, t))
+        let r = threshold_one(x, t);
+        if promote {
+          Some(Expr::Real(
+            crate::functions::math_ast::try_eval_to_f64(&r).unwrap_or(0.0),
+          ))
+        } else {
+          Some(r)
+        }
       }
       _ => None,
     }
@@ -4279,7 +4299,7 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated());
   }
-  match apply(&args[0], &threshold) {
+  match apply(&args[0], &threshold, promote_to_real) {
     Some(result) => Ok(result),
     None => {
       crate::emit_message(&format!(
