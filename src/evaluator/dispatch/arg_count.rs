@@ -1275,7 +1275,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "VectorLess" => Some((1, 2)),
     "VectorLessEqual" => Some((1, 2)),
     "VectorPlot" => Some((3, usize::MAX)),
-    "VectorQ" => Some((1, 1)),
+    "VectorQ" => Some((1, 2)),
     "VertexEccentricity" => Some((2, 2)),
     "VertexInDegree" => Some((1, 2)),
     "VertexOutDegree" => Some((1, 2)),

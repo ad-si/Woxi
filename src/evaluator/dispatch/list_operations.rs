@@ -2416,6 +2416,11 @@ pub fn dispatch_list_operations(
     "VectorQ" if args.len() == 1 => {
       return Some(list_helpers_ast::vector_q_ast(&args[0]));
     }
+    "VectorQ" if args.len() == 2 => {
+      return Some(list_helpers_ast::vector_q_with_test_ast(
+        &args[0], &args[1],
+      ));
+    }
     "MatrixQ" if args.len() == 1 => {
       return Some(list_helpers_ast::matrix_q_ast(&args[0]));
     }

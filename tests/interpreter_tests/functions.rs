@@ -1144,6 +1144,49 @@ mod array_predicates {
   fn vector_q_false() {
     assert_eq!(interpret("VectorQ[{{1}, {2}}]").unwrap(), "False");
   }
+
+  // Two-argument form VectorQ[expr, test]
+
+  #[test]
+  fn vector_q_test_number_all_pass() {
+    assert_eq!(interpret("VectorQ[{1, 2, 3}, NumberQ]").unwrap(), "True");
+  }
+
+  #[test]
+  fn vector_q_test_number_one_fails() {
+    assert_eq!(interpret("VectorQ[{1, 2, x}, NumberQ]").unwrap(), "False");
+  }
+
+  #[test]
+  fn vector_q_test_listq_allows_nested() {
+    // With an explicit test, list elements are allowed if they pass it.
+    assert_eq!(
+      interpret("VectorQ[{{1}, {2, 3}}, ListQ]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn vector_q_test_positive() {
+    assert_eq!(interpret("VectorQ[{1, 2, 3}, Positive]").unwrap(), "True");
+    assert_eq!(interpret("VectorQ[{1, -2, 3}, Positive]").unwrap(), "False");
+  }
+
+  #[test]
+  fn vector_q_test_pure_function() {
+    assert_eq!(interpret("VectorQ[{1, 2, 3}, #>0&]").unwrap(), "True");
+  }
+
+  #[test]
+  fn vector_q_test_empty_is_true() {
+    // Vacuously true for an empty list.
+    assert_eq!(interpret("VectorQ[{}, NumberQ]").unwrap(), "True");
+  }
+
+  #[test]
+  fn vector_q_test_non_list_is_false() {
+    assert_eq!(interpret("VectorQ[5, NumberQ]").unwrap(), "False");
+  }
 }
 
 mod dimensions_extended {

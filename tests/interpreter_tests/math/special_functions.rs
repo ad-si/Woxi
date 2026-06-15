@@ -4961,10 +4961,7 @@ mod q_pochhammer {
   #[test]
   fn one_arg_rewrites_to_two_arg() {
     // QPochhammer[q] = QPochhammer[q, q] (Euler function)
-    assert_eq!(
-      interpret("QPochhammer[q]").unwrap(),
-      "QPochhammer[q, q]"
-    );
+    assert_eq!(interpret("QPochhammer[q]").unwrap(), "QPochhammer[q, q]");
   }
 
   #[test]
@@ -5009,8 +5006,10 @@ mod q_pochhammer {
 
   #[test]
   fn n_of_exact_evaluates() {
-    let val: f64 =
-      interpret("N[QPochhammer[1/2, 1/2]]").unwrap().parse().unwrap();
+    let val: f64 = interpret("N[QPochhammer[1/2, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
     assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
   }
 }

@@ -667,6 +667,19 @@ pub fn vector_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// VectorQ[expr, test] - True if expr is a list and test[elem] is True for
+/// every element. Unlike the one-argument form, elements may themselves be
+/// lists as long as they satisfy `test` (e.g. VectorQ[{{1}, {2, 3}}, ListQ]).
+pub fn vector_q_with_test_ast(
+  expr: &Expr,
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let ok = matches!(expr, Expr::List(_)) && all_leaves_pass_test(expr, 1, test);
+  Ok(Expr::Identifier(
+    if ok { "True" } else { "False" }.to_string(),
+  ))
+}
+
 /// MatrixQ[expr] - True if expr is a list of equal-length lists (2D rectangular array).
 pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
