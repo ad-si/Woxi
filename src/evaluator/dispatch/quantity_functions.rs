@@ -29,6 +29,9 @@ pub fn dispatch_quantity_functions(
     "UnitConvert" => {
       return Some(crate::functions::quantity_ast::unit_convert_ast(args));
     }
+    "UnitDimensions" if args.len() == 1 => {
+      return Some(crate::functions::quantity_ast::unit_dimensions_ast(args));
+    }
     _ => {}
   }
   None

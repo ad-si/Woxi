@@ -500,7 +500,8 @@ fn unit_convert_celsius_to_kelvin() {
 #[test]
 fn unit_convert_kelvin_to_celsius_real() {
   assert_eq!(
-    interpret("UnitConvert[Quantity[273.15, \"Kelvin\"], \"Celsius\"]").unwrap(),
+    interpret("UnitConvert[Quantity[273.15, \"Kelvin\"], \"Celsius\"]")
+      .unwrap(),
     "Quantity[0., DegreesCelsius]"
   );
 }
@@ -508,11 +509,13 @@ fn unit_convert_kelvin_to_celsius_real() {
 #[test]
 fn unit_convert_fahrenheit_celsius() {
   assert_eq!(
-    interpret("UnitConvert[Quantity[32, \"Fahrenheit\"], \"Celsius\"]").unwrap(),
+    interpret("UnitConvert[Quantity[32, \"Fahrenheit\"], \"Celsius\"]")
+      .unwrap(),
     "Quantity[0, DegreesCelsius]"
   );
   assert_eq!(
-    interpret("UnitConvert[Quantity[212, \"Fahrenheit\"], \"Celsius\"]").unwrap(),
+    interpret("UnitConvert[Quantity[212, \"Fahrenheit\"], \"Celsius\"]")
+      .unwrap(),
     "Quantity[100, DegreesCelsius]"
   );
 }
@@ -525,7 +528,8 @@ fn unit_convert_celsius_to_fahrenheit() {
     "Quantity[212, DegreesFahrenheit]"
   );
   assert_eq!(
-    interpret("UnitConvert[Quantity[37, \"Celsius\"], \"Fahrenheit\"]").unwrap(),
+    interpret("UnitConvert[Quantity[37, \"Celsius\"], \"Fahrenheit\"]")
+      .unwrap(),
     "Quantity[493/5, DegreesFahrenheit]"
   );
 }
@@ -533,7 +537,8 @@ fn unit_convert_celsius_to_fahrenheit() {
 #[test]
 fn unit_convert_fahrenheit_to_kelvin() {
   assert_eq!(
-    interpret("UnitConvert[Quantity[100, \"Fahrenheit\"], \"Kelvin\"]").unwrap(),
+    interpret("UnitConvert[Quantity[100, \"Fahrenheit\"], \"Kelvin\"]")
+      .unwrap(),
     "Quantity[55967/180, Kelvins]"
   );
   assert_eq!(
@@ -2225,4 +2230,73 @@ mod cases {
       r#"Quantity[1.3947436663504054, "Watts"^0.24]"#,
     );
   }
+}
+
+// ─── UnitDimensions ─────────────────────────────────────────────────────────
+
+#[test]
+fn unit_dimensions_base_units() {
+  assert_eq!(
+    interpret("UnitDimensions[\"Meters\"]").unwrap(),
+    "{{LengthUnit, 1}}"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[\"Kilograms\"]").unwrap(),
+    "{{MassUnit, 1}}"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[\"Seconds\"]").unwrap(),
+    "{{TimeUnit, 1}}"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[\"Amperes\"]").unwrap(),
+    "{{ElectricCurrentUnit, 1}}"
+  );
+}
+
+// Derived units decompose, ordered alphabetically by dimension name.
+#[test]
+fn unit_dimensions_derived_units() {
+  assert_eq!(
+    interpret("UnitDimensions[\"Newtons\"]").unwrap(),
+    "{{LengthUnit, 1}, {MassUnit, 1}, {TimeUnit, -2}}"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[\"Joules\"]").unwrap(),
+    "{{LengthUnit, 2}, {MassUnit, 1}, {TimeUnit, -2}}"
+  );
+}
+
+// Volume folds into LengthUnit cubed.
+#[test]
+fn unit_dimensions_volume_is_length_cubed() {
+  assert_eq!(
+    interpret("UnitDimensions[\"Liters\"]").unwrap(),
+    "{{LengthUnit, 3}}"
+  );
+}
+
+// Temperature scales are a separate dimension.
+#[test]
+fn unit_dimensions_temperature() {
+  assert_eq!(
+    interpret("UnitDimensions[\"Kelvins\"]").unwrap(),
+    "{{TemperatureUnit, 1}}"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[\"Celsius\"]").unwrap(),
+    "{{TemperatureUnit, 1}}"
+  );
+}
+
+#[test]
+fn unit_dimensions_compound_and_quantity() {
+  assert_eq!(
+    interpret("UnitDimensions[\"Meters\"/\"Seconds\"]").unwrap(),
+    "{{LengthUnit, 1}, {TimeUnit, -1}}"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[Quantity[1, \"Newtons\"]]").unwrap(),
+    "{{LengthUnit, 1}, {MassUnit, 1}, {TimeUnit, -2}}"
+  );
 }

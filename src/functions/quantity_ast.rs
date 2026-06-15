@@ -2033,6 +2033,75 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// UnitDimensions[unit] / UnitDimensions[Quantity[m, unit]] — the physical
+/// dimensions of a unit as `{{DimensionName, exponent}, …}`. Wolfram orders
+/// the pairs alphabetically by dimension name (e.g. ElectricCurrentUnit <
+/// LengthUnit < MassUnit < TemperatureUnit < TimeUnit), which a `BTreeMap`
+/// keyed on the name reproduces. Volume folds into `LengthUnit` raised to the
+/// third power.
+pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "UnitDimensions".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  // Accept a bare unit or a Quantity.
+  let unit = match is_quantity(&args[0]) {
+    Some((_mag, u)) => u.clone(),
+    None => args[0].clone(),
+  };
+
+  // Temperature scales are not part of the multiplicative dimension system.
+  if temperature_scale(&unit).is_some() {
+    return Ok(Expr::List(
+      vec![Expr::List(
+        vec![
+          Expr::Identifier("TemperatureUnit".to_string()),
+          Expr::Integer(1),
+        ]
+        .into(),
+      )]
+      .into(),
+    ));
+  }
+
+  let Some(info) = decompose_unit_expr(&unit) else {
+    return unevaluated();
+  };
+
+  // Fold the Woxi dimension map onto Wolfram dimension names, sorted by name.
+  let mut acc: BTreeMap<&'static str, i64> = BTreeMap::new();
+  for (dim, exp) in &info.dimensions {
+    let (name, factor) = match dim {
+      Dimension::Length => ("LengthUnit", 1),
+      Dimension::Mass => ("MassUnit", 1),
+      Dimension::Time => ("TimeUnit", 1),
+      Dimension::ElectricCurrent => ("ElectricCurrentUnit", 1),
+      Dimension::Volume => ("LengthUnit", 3),
+    };
+    *acc.entry(name).or_insert(0) += exp * factor;
+  }
+
+  let pairs: Vec<Expr> = acc
+    .into_iter()
+    .filter(|(_, exp)| *exp != 0)
+    .map(|(name, exp)| {
+      Expr::List(
+        vec![
+          Expr::Identifier(name.to_string()),
+          Expr::Integer(exp as i128),
+        ]
+        .into(),
+      )
+    })
+    .collect();
+  Ok(Expr::List(pairs.into()))
+}
+
 // ─── Arithmetic integration ────────────────────────────────────────────────
 
 /// Handle Plus when Quantity arguments are present.
