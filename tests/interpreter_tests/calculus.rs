@@ -1471,6 +1471,74 @@ mod limit {
     );
   }
 
+  // Slowly-growing monotonic forms diverging at +Infinity, detected
+  // structurally (they never reach the numeric |f| > 1e5 fast-path).
+  #[test]
+  fn limit_log_at_infinity() {
+    assert_eq!(
+      interpret("Limit[Log[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_sqrt_at_infinity() {
+    assert_eq!(
+      interpret("Limit[Sqrt[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Sqrt[x] + 1, x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_fractional_power_at_infinity() {
+    assert_eq!(
+      interpret("Limit[x^(1/3), x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_nested_and_scaled_log_at_infinity() {
+    assert_eq!(
+      interpret("Limit[Log[Log[x]], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Log[2 x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[Log[x]^2, x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_negated_log_at_infinity() {
+    assert_eq!(
+      interpret("Limit[-Log[x], x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_mixed_growth_defers_to_numeric() {
+    // Indeterminate Infinity - Infinity forms are left to the numeric path,
+    // which resolves them by the dominant term.
+    assert_eq!(
+      interpret("Limit[Log[x] - x, x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("Limit[x - Log[x], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
   #[test]
   fn limit_simple_pole_stays_indeterminate() {
     // ComplexInfinity, not a signed Infinity: the two sides disagree.

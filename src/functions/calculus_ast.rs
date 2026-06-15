@@ -7165,6 +7165,151 @@ fn contains_var(expr: &Expr, var_name: &str) -> bool {
   !is_constant_wrt(expr, var_name)
 }
 
+/// Structurally determine whether `expr` diverges to +Infinity (`Some(1)`) or
+/// -Infinity (`Some(-1)`) as `var -> point`. Only the `point == +Infinity`
+/// direction is handled; whenever the growth cannot be classified this returns
+/// `None` so the caller falls back to the numeric heuristic. This catches the
+/// slowly-growing monotonic forms (Log[x], Sqrt[x], x^(1/3), Log[Log[x]], …)
+/// that never reach the numeric `|f| > 1e5` divergence threshold.
+fn diverges_to_infinity(expr: &Expr, var: &str, point: &Expr) -> Option<i32> {
+  if !is_infinity(point) {
+    return None;
+  }
+  diverges_pos_infinity(expr, var)
+}
+
+fn diverges_pos_infinity(expr: &Expr, var: &str) -> Option<i32> {
+  // The variable itself diverges to +Infinity.
+  if let Expr::Identifier(name) = expr {
+    return if name == var { Some(1) } else { None };
+  }
+  // Anything free of `var` stays finite.
+  if is_constant_wrt(expr, var) {
+    return None;
+  }
+
+  // -f
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = expr
+  {
+    return diverges_pos_infinity(operand, var).map(|s| -s);
+  }
+
+  // a - b  ==  a + (-b)
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left,
+    right,
+  } = expr
+  {
+    let plus = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        (**left).clone(),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: right.clone(),
+        },
+      ]
+      .into(),
+    };
+    return diverges_pos_infinity(&plus, var);
+  }
+
+  // Sqrt[g] and Log[g] (single argument): diverge iff their argument does.
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && (name == "Sqrt" || name == "Log")
+  {
+    return (diverges_pos_infinity(&args[0], var) == Some(1)).then_some(1);
+  }
+
+  // base ^ exp, with a positive constant exponent.
+  if let Some((base, exp)) = extract_power(expr)
+    && is_constant_wrt(&exp, var)
+    && let Some(ev) = crate::functions::math_ast::try_eval_to_f64(&exp)
+    && ev > 0.0
+  {
+    return match diverges_pos_infinity(&base, var)? {
+      1 => Some(1), // (+Infinity)^positive -> +Infinity
+      -1 => match &exp {
+        // (-Infinity)^k: sign by parity, only safe for integer powers.
+        Expr::Integer(k) => Some(if k % 2 == 0 { 1 } else { -1 }),
+        _ => None,
+      },
+      _ => None,
+    };
+  }
+
+  // Product / sum of factors.
+  times_divergence(expr, var).or_else(|| plus_divergence(expr, var))
+}
+
+/// Sign of divergence of a product, or `None` if it doesn't diverge / can't be
+/// classified. A zero or non-divergent variable factor disqualifies it.
+fn times_divergence(expr: &Expr, var: &str) -> Option<i32> {
+  let factors: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => return None,
+  };
+  let mut total = 1i32;
+  let mut saw_divergent = false;
+  for f in &factors {
+    if is_constant_wrt(f, var) {
+      let v = crate::functions::math_ast::try_eval_to_f64(f)?;
+      if v == 0.0 {
+        return None;
+      }
+      if v < 0.0 {
+        total = -total;
+      }
+    } else {
+      total *= diverges_pos_infinity(f, var)?;
+      saw_divergent = true;
+    }
+  }
+  saw_divergent.then_some(total)
+}
+
+/// Sign of divergence of a sum. Finite (constant) terms are ignored; a
+/// non-constant term that doesn't itself diverge makes the sum unclassifiable,
+/// and a mix of +Infinity and -Infinity terms is left indeterminate.
+fn plus_divergence(expr: &Expr, var: &str) -> Option<i32> {
+  let terms: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => return None,
+  };
+  let mut has_pos = false;
+  let mut has_neg = false;
+  for t in &terms {
+    if is_constant_wrt(t, var) {
+      continue; // finite contribution
+    }
+    match diverges_pos_infinity(t, var) {
+      Some(1) => has_pos = true,
+      Some(-1) => has_neg = true,
+      _ => return None, // bounded/oscillating/unknown term: bail
+    }
+  }
+  match (has_pos, has_neg) {
+    (true, false) => Some(1),
+    (false, true) => Some(-1),
+    _ => None, // no divergent term, or indeterminate Infinity - Infinity
+  }
+}
+
 /// Handle limits at infinity.
 /// Strategies:
 /// 1. If expr is constant wrt var, return it directly
@@ -7302,6 +7447,20 @@ fn limit_at_infinity(
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
     }
+  }
+
+  // Structural detection of monotonic divergence to +/-Infinity for forms the
+  // numeric fast-path (which needs |f| > 1e5 at n = 1e6) misses because they
+  // grow slowly: Log[x], Sqrt[x], x^(1/3), Log[2 x], Log[Log[x]], Log[x]^2, …
+  if let Some(s) = diverges_to_infinity(expr, var_name, point) {
+    return Ok(if s >= 0 {
+      Expr::Identifier("Infinity".to_string())
+    } else {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      }
+    });
   }
 
   // For simple expressions, try evaluating at two large values to detect convergence
