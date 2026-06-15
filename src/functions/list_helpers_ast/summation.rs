@@ -1151,6 +1151,142 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns Some(result) if a closed form is found, None otherwise.
 /// Try to evaluate a symbolic Sum where at least one bound is not a concrete integer.
 /// Returns Some(expr) if a known closed form is found, None otherwise.
+/// Flatten the factors of a product, descending through both `Times[...]`
+/// (FunctionCall) and `BinaryOp::Times` spellings.
+fn collect_times_factors(e: &Expr, out: &mut Vec<Expr>) {
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_times_factors(left, out);
+      collect_times_factors(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args.iter() {
+        collect_times_factors(a, out);
+      }
+    }
+    _ => out.push(e.clone()),
+  }
+}
+
+/// If `f` is `base^var` (in either Power spelling), return `base`.
+fn power_with_exponent_var(f: &Expr, var_name: &str) -> Option<Expr> {
+  match f {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Identifier(s) if s == var_name) => {
+      Some((**left).clone())
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(s) if s == var_name) =>
+    {
+      Some(args[0].clone())
+    }
+    _ => None,
+  }
+}
+
+/// Binomial theorem: `Sum[c Binomial[N, k] r^k, {k, 0, N}] = c (1 + r)^N`,
+/// where the upper limit equals the Binomial's first argument and `c`, `r` are
+/// free of `k`. `r = -1` collapses to `KroneckerDelta[N]` to match Wolfram
+/// (e.g. `Sum[(-1)^k Binomial[n, k], {k, 0, n}]`). Returns None when the body
+/// is not of this shape.
+fn try_binomial_theorem_sum(
+  body: &Expr,
+  var_name: &str,
+  max_expr: &Expr,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::contains_var;
+  use crate::syntax::BinaryOperator;
+
+  let mut factors = Vec::new();
+  collect_times_factors(body, &mut factors);
+
+  let mut binom_n: Option<Expr> = None;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  let mut r_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    // Binomial[N, k] with N free of k.
+    if let Expr::FunctionCall { name, args } = f
+      && name == "Binomial"
+      && args.len() == 2
+      && matches!(&args[1], Expr::Identifier(s) if s == var_name)
+      && !contains_var(&args[0], var_name)
+    {
+      if binom_n.is_some() {
+        return None; // only a single Binomial factor is supported
+      }
+      binom_n = Some(args[0].clone());
+      continue;
+    }
+    // r^k with r free of k.
+    if let Some(base) = power_with_exponent_var(f, var_name)
+      && !contains_var(&base, var_name)
+    {
+      r_factors.push(base);
+      continue;
+    }
+    // Plain constant factor (free of k) folds into the coefficient.
+    if !contains_var(f, var_name) {
+      coeff_factors.push(f.clone());
+      continue;
+    }
+    return None; // a k-dependent factor we cannot fold into the theorem
+  }
+
+  let n = binom_n?;
+  // A leftover constant coefficient (e.g. `2 Binomial[n, k]`) would give a
+  // c (1+r)^N form that Wolfram further folds (2*2^n -> 2^(1+n)); avoid the
+  // form divergence by leaving those unevaluated.
+  if !coeff_factors.is_empty() {
+    return None;
+  }
+  // The upper limit must be exactly the Binomial's first argument.
+  if crate::syntax::expr_to_string(&n)
+    != crate::syntax::expr_to_string(max_expr)
+  {
+    return None;
+  }
+
+  // r = product of the r^k bases (default 1 when there is no power factor).
+  let r = match r_factors.len() {
+    0 => Expr::Integer(1),
+    1 => r_factors.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: r_factors.into(),
+    },
+  };
+  let one_plus_r = Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(Expr::Integer(1)),
+    right: Box::new(r),
+  };
+  let base = crate::evaluator::evaluate_expr_to_expr(&one_plus_r).ok()?;
+  // 1 + r == 0 (r == -1): the alternating sum is KroneckerDelta[N].
+  let term = if matches!(base, Expr::Integer(0)) {
+    Expr::FunctionCall {
+      name: "KroneckerDelta".to_string(),
+      args: vec![n].into(),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base),
+      right: Box::new(n),
+    }
+  };
+
+  Some(term)
+}
+
 fn try_symbolic_sum(
   body: &Expr,
   var_name: &str,
@@ -1178,6 +1314,13 @@ fn try_symbolic_sum(
       left: Box::new(body.clone()),
       right: Box::new(count),
     }));
+  }
+
+  // Binomial theorem: Sum[c Binomial[N, k] r^k, {k, 0, N}] = c (1 + r)^N.
+  if let Some(0) = min_concrete
+    && let Some(result) = try_binomial_theorem_sum(body, var_name, max_expr)
+  {
+    return Ok(Some(result));
   }
 
   // Sum[k, {k, 1, n}] = n*(1 + n)/2

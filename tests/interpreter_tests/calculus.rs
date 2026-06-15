@@ -706,10 +706,7 @@ mod differentiate_arctan2 {
   // Two-argument arctangent: d/dx ArcTan[u, v] = u v'/(u^2+v^2) - v u'/(u^2+v^2).
   #[test]
   fn d_arctan2_first_arg() {
-    assert_eq!(
-      interpret("D[ArcTan[x, y], x]").unwrap(),
-      "-(y/(x^2 + y^2))"
-    );
+    assert_eq!(interpret("D[ArcTan[x, y], x]").unwrap(), "-(y/(x^2 + y^2))");
   }
 
   #[test]
@@ -8490,6 +8487,76 @@ mod fourier_sin_cos_coefficient {
       interpret("FourierSinCoefficient[Sin[t], t, n]").unwrap(),
       "FourierSinCoefficient[Sin[t], t, n]"
     );
+  }
+}
+
+mod binomial_theorem_sum {
+  use super::*;
+
+  // Sum[Binomial[N, k] r^k, {k, 0, N}] = (1 + r)^N.
+  #[test]
+  fn row_sum_is_two_pow_n() {
+    assert_eq!(
+      interpret("Sum[Binomial[n, k], {k, 0, n}]").unwrap(),
+      "2^n"
+    );
+  }
+
+  #[test]
+  fn binomial_theorem_symbolic_base() {
+    assert_eq!(
+      interpret("Sum[Binomial[n, k] x^k, {k, 0, n}]").unwrap(),
+      "(1 + x)^n"
+    );
+  }
+
+  #[test]
+  fn binomial_theorem_numeric_base() {
+    assert_eq!(
+      interpret("Sum[Binomial[n, k] 2^k, {k, 0, n}]").unwrap(),
+      "3^n"
+    );
+  }
+
+  #[test]
+  fn binomial_theorem_combined_base() {
+    // (-1)^k 2^k = (-2)^k -> (1 - 2)^n = (-1)^n
+    assert_eq!(
+      interpret("Sum[Binomial[n, k] (-2)^k, {k, 0, n}]").unwrap(),
+      "(-1)^n"
+    );
+  }
+
+  #[test]
+  fn alternating_row_sum_is_kronecker_delta() {
+    assert_eq!(
+      interpret("Sum[(-1)^k Binomial[n, k], {k, 0, n}]").unwrap(),
+      "KroneckerDelta[n]"
+    );
+  }
+
+  // Must NOT fire when the upper limit differs from the Binomial's first
+  // argument, or for a different identity; those stay unevaluated.
+  #[test]
+  fn partial_row_sum_stays_unevaluated() {
+    assert_eq!(
+      interpret("Sum[Binomial[n, k], {k, 1, n}]").unwrap(),
+      "Sum[Binomial[n, k], {k, 1, n}]"
+    );
+  }
+
+  #[test]
+  fn k_weighted_sum_stays_unevaluated() {
+    assert_eq!(
+      interpret("Sum[k Binomial[n, k], {k, 0, n}]").unwrap(),
+      "Sum[k*Binomial[n, k], {k, 0, n}]"
+    );
+  }
+
+  // Concrete bounds are unaffected (computed directly, not via the identity).
+  #[test]
+  fn concrete_bounds_unaffected() {
+    assert_eq!(interpret("Sum[Binomial[5, k], {k, 0, 5}]").unwrap(), "32");
   }
 }
 
