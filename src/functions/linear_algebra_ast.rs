@@ -3102,6 +3102,9 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     basis.push(Expr::List(vec.into()));
   }
+  // Wolfram emits the basis in order of decreasing free-variable index, i.e.
+  // the reverse of the ascending free-column order built above.
+  basis.reverse();
   Ok(Expr::List(basis.into()))
 }
 

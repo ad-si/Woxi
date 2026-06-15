@@ -962,6 +962,24 @@ mod null_space {
   fn null_space_full_rank() {
     assert_eq!(interpret("NullSpace[{{1, 0}, {0, 1}}]").unwrap(), "{}");
   }
+
+  // Multiple basis vectors are emitted in order of decreasing free-variable
+  // index, matching Wolfram.
+  #[test]
+  fn null_space_multiple_vectors_ordering() {
+    assert_eq!(
+      interpret("NullSpace[{{1, 1, 1}}]").unwrap(),
+      "{{-1, 0, 1}, {-1, 1, 0}}"
+    );
+    assert_eq!(
+      interpret("NullSpace[{{1, 2, 3, 4}}]").unwrap(),
+      "{{-4, 0, 0, 1}, {-3, 0, 1, 0}, {-2, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("NullSpace[{{1, 1, 0, 0}, {0, 0, 1, 1}}]").unwrap(),
+      "{{0, 0, -1, 1}, {-1, 1, 0, 0}}"
+    );
+  }
 }
 
 mod fit {
