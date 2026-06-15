@@ -99,6 +99,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "ContinuedFraction"
       | "Boole"
       | "BitLength"
+      | "BitGet"
       | "EvenQ"
       | "OddQ"
       | "PrimeQ"

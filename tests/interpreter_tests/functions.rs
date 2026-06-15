@@ -3813,6 +3813,39 @@ mod bit_get {
     assert_eq!(interpret("BitGet[2.5, 1]").unwrap(), "BitGet[2.5, 1]");
     assert_eq!(interpret("BitGet[x, 2]").unwrap(), "BitGet[x, 2]");
   }
+
+  // BitGet is Listable and threads over either or both arguments.
+  #[test]
+  fn threads_over_position_list() {
+    // 10 = 1010b
+    assert_eq!(
+      interpret("BitGet[10, {0, 1, 2, 3}]").unwrap(),
+      "{0, 1, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn threads_over_number_list() {
+    assert_eq!(interpret("BitGet[{10, 20}, 0]").unwrap(), "{0, 0}");
+  }
+
+  #[test]
+  fn threads_over_both_lists_elementwise() {
+    assert_eq!(interpret("BitGet[{4, 8}, {2, 3}]").unwrap(), "{1, 1}");
+  }
+
+  #[test]
+  fn threads_with_negative_two_complement() {
+    assert_eq!(interpret("BitGet[-5, {0, 1, 2}]").unwrap(), "{1, 1, 0}");
+  }
+
+  #[test]
+  fn is_listable() {
+    assert_eq!(
+      interpret("Attributes[BitGet]").unwrap(),
+      "{Listable, Protected}"
+    );
+  }
 }
 
 mod golden_angle {
