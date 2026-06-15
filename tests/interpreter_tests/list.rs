@@ -13839,3 +13839,38 @@ mod quantifier_semantics {
     assert_eq!(interpret("NoneTrue[{1, 3}, EvenQ]").unwrap(), "True");
   }
 }
+
+mod numerical_order {
+  use super::*;
+
+  // NumericalOrder gives 1 / -1 / 0 by numeric value.
+  #[test]
+  fn numeric_comparison() {
+    assert_eq!(interpret("NumericalOrder[2, 5]").unwrap(), "1");
+    assert_eq!(interpret("NumericalOrder[5, 2]").unwrap(), "-1");
+    assert_eq!(interpret("NumericalOrder[3, 3]").unwrap(), "0");
+    assert_eq!(interpret("NumericalOrder[-1, 1]").unwrap(), "1");
+    assert_eq!(interpret("NumericalOrder[1/2, 0.6]").unwrap(), "1");
+    assert_eq!(interpret("NumericalOrder[Pi, 3]").unwrap(), "-1");
+  }
+
+  // Numerically-equal operands of different form give 0 (unlike Order).
+  #[test]
+  fn numerically_equal_distinct_form() {
+    assert_eq!(interpret("NumericalOrder[2.5, 5/2]").unwrap(), "0");
+    assert_eq!(interpret("NumericalOrder[3, 3.0]").unwrap(), "0");
+    // Order, in contrast, distinguishes them.
+    assert_eq!(interpret("Order[2.5, 5/2]").unwrap(), "1");
+  }
+
+  // Non-numeric operands fall back to canonical ordering.
+  #[test]
+  fn canonical_fallback() {
+    assert_eq!(interpret("NumericalOrder[\"a\", \"b\"]").unwrap(), "1");
+    assert_eq!(
+      interpret("NumericalOrder[\"banana\", \"apple\"]").unwrap(),
+      "-1"
+    );
+    assert_eq!(interpret("NumericalOrder[a, b]").unwrap(), "1");
+  }
+}

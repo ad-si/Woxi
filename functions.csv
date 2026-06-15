@@ -3403,7 +3403,7 @@ MorphologicalBranchPoints,,🚫,,8.0,3491
 NevilleThetaC,,,,3.0,3491
 NoneTrue,Checks if no element in a list is true,✅,pure,10.0,3491
 NotebookApply,,🚫,,3.0,3491
-NumericalOrder,,,,11.1,3491
+NumericalOrder,Orders two expressions by numeric value falling back to canonical order,✅,pure,11.1,3491
 WindSpeedData,,🚫,,10.0,3491
 CloudSave,,🚫,,10.0,3506
 CreateDatabin,,,,10.0,3506

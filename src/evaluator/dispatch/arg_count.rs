@@ -823,6 +823,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "OptionValue" => Some((1, 4)),
     "Or" => Some((0, usize::MAX)),
     "Order" => Some((2, 2)),
+    "NumericalOrder" => Some((2, 2)),
     "OrderedQ" => Some((1, 1)),
     "Ordering" => Some((1, 3)),
     "OrderingBy" => Some((2, 3)),
