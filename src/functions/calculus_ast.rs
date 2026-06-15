@@ -6245,7 +6245,285 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
   None
 }
 
+/// Exact integer square root, or None when `n` is not a perfect square.
+fn int_sqrt_exact(n: i128) -> Option<i128> {
+  if n < 0 {
+    return None;
+  }
+  let mut x = (n as f64).sqrt() as i128;
+  while x > 0 && x * x > n {
+    x -= 1;
+  }
+  while (x + 1) * (x + 1) <= n {
+    x += 1;
+  }
+  if x * x == n { Some(x) } else { None }
+}
+
+/// `Sqrt[e]` taken symbolically: perfect-square integers and even powers
+/// reduce (`a^2 -> a`, `9 -> 3`), everything else becomes `Power[e, 1/2]`.
+fn symbolic_sqrt(e: &Expr) -> Expr {
+  let half = || Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+  };
+  match e {
+    Expr::Integer(n) if *n >= 0 => {
+      if let Some(r) = int_sqrt_exact(*n) {
+        return Expr::Integer(r);
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      if let Expr::Integer(k) = &args[1]
+        && *k > 0
+        && k % 2 == 0
+      {
+        return if *k == 2 {
+          args[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![args[0].clone(), Expr::Integer(k / 2)].into(),
+          }
+        };
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(k) = right.as_ref()
+        && *k > 0
+        && k % 2 == 0
+      {
+        return if *k == 2 {
+          (**left).clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: left.clone(),
+            right: Box::new(Expr::Integer(k / 2)),
+          }
+        };
+      }
+    }
+    _ => {}
+  }
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![e.clone(), half()].into(),
+  }
+}
+
+/// True for a constant Wolfram treats as positive: a bare symbol or an even
+/// power (a square). Used to decide the sign of a quadratic's constant term.
+fn is_manifestly_positive_symbolic(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(_))
+    || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2
+          && matches!(&args[1], Expr::Integer(k) if *k > 0 && k % 2 == 0))
+    || matches!(e, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power, right, .. }
+        if matches!(right.as_ref(), Expr::Integer(k) if *k > 0 && k % 2 == 0))
+}
+
+/// Classify the constant term `q` of a quadratic denominator as
+/// `(is_negative, Sqrt[|q|])`. Positive constants (positive numbers, squares,
+/// bare symbols) give the ArcTan branch; a negated symbolic square (`-a^2`)
+/// gives the ArcTanh branch. Returns None for ambiguous signs (e.g. a bare
+/// negative number), so those defer to the partial-fraction/Log path.
+fn classify_quadratic_const(q: &Expr) -> Option<(bool, Expr)> {
+  match q {
+    Expr::Integer(n) if *n > 0 => Some((false, symbolic_sqrt(q))),
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!((&args[0], &args[1]),
+          (Expr::Integer(a), Expr::Integer(b)) if *a > 0 && *b > 0) =>
+    {
+      Some((false, symbolic_sqrt(q)))
+    }
+    _ if is_manifestly_positive_symbolic(q) => Some((false, symbolic_sqrt(q))),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1))
+        && is_manifestly_positive_symbolic(&args[1]) =>
+    {
+      Some((true, symbolic_sqrt(&args[1])))
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if is_manifestly_positive_symbolic(operand) => {
+      Some((true, symbolic_sqrt(operand)))
+    }
+    _ => None,
+  }
+}
+
+/// Coefficient `p` of `var^2` in `term` when `term` is `p * var^2` with `p`
+/// constant w.r.t. `var`; None otherwise.
+fn coeff_of_var_squared(term: &Expr, var: &str) -> Option<Expr> {
+  let is_var_sq = |e: &Expr| {
+    matches!(e, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power, left, right }
+        if matches!(left.as_ref(), Expr::Identifier(n) if n == var)
+          && matches!(right.as_ref(), Expr::Integer(2)))
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(n) if n == var)
+          && matches!(&args[1], Expr::Integer(2)))
+  };
+  if is_var_sq(term) {
+    return Some(Expr::Integer(1));
+  }
+  let factors: Vec<Expr> = match term {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => return None,
+  };
+  let mut coeff: Vec<Expr> = Vec::new();
+  let mut found = false;
+  for f in factors {
+    if is_var_sq(&f) {
+      if found {
+        return None;
+      }
+      found = true;
+    } else if is_constant_wrt(&f, var) {
+      coeff.push(f);
+    } else {
+      return None;
+    }
+  }
+  if !found {
+    return None;
+  }
+  Some(match coeff.len() {
+    0 => Expr::Integer(1),
+    1 => coeff.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff.into(),
+    },
+  })
+}
+
+/// ∫ 1/(p x^2 + q) dx for constants p, q (numeric or symbolic):
+///   q > 0:  ArcTan[Sqrt[p/q] x] / Sqrt[p q]
+///   q = -a^2 (symbolic): -ArcTanh[Sqrt[p/a^2] x] / Sqrt[p a^2]
+/// Numeric `x^2 - c` (c a positive number) is deferred to the Log path.
+fn try_integrate_reciprocal_quadratic(expr: &Expr, var: &str) -> Option<Expr> {
+  // expr must be 1/base.
+  let base = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(-1)) =>
+    {
+      args[0].clone()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => (**left).clone(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(1)) => (**right).clone(),
+    _ => return None,
+  };
+
+  let terms = crate::functions::polynomial_ast::collect_additive_terms(&base);
+  if terms.len() < 2 {
+    return None;
+  }
+  let mut p: Option<Expr> = None;
+  let mut q_terms: Vec<Expr> = Vec::new();
+  for t in &terms {
+    if let Some(coeff) = coeff_of_var_squared(t, var) {
+      if p.is_some() {
+        return None; // two x^2 terms: not a simple quadratic
+      }
+      p = Some(coeff);
+    } else if is_constant_wrt(t, var) {
+      q_terms.push(t.clone());
+    } else {
+      return None; // a linear term or other var dependence: defer
+    }
+  }
+  let p = p?;
+  if q_terms.is_empty() {
+    return None;
+  }
+  let q = match q_terms.len() {
+    1 => q_terms.into_iter().next().unwrap(),
+    _ => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: q_terms.into(),
+    })
+    .ok()?,
+  };
+
+  // Leading coefficient must read as positive; the constant term decides the
+  // ArcTan vs ArcTanh branch.
+  let (p_neg, sqrt_p) = classify_quadratic_const(&p)?;
+  if p_neg {
+    return None;
+  }
+  let (is_neg, sqrt_q) = classify_quadratic_const(&q)?;
+
+  let pow_neg1 = |e: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![e, Expr::Integer(-1)].into(),
+  };
+  // arg = sqrt_p * x / sqrt_q
+  let arg = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      sqrt_p.clone(),
+      Expr::Identifier(var.to_string()),
+      pow_neg1(sqrt_q.clone()),
+    ]
+    .into(),
+  };
+  // norm = sqrt_p * sqrt_q
+  let norm = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![sqrt_p, sqrt_q].into(),
+  };
+  let func = if is_neg { "ArcTanh" } else { "ArcTan" };
+  let inner = Expr::FunctionCall {
+    name: func.to_string(),
+    args: vec![arg].into(),
+  };
+  let mut result_factors = vec![inner, pow_neg1(norm)];
+  if is_neg {
+    result_factors.insert(0, Expr::Integer(-1));
+  }
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: result_factors.into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
+  // ∫ 1/(p x^2 + q) dx = ArcTan / Sqrt or -ArcTanh / Sqrt for constants p, q
+  // (handles symbolic a^2 and leading coefficients that the integer-coefficient
+  // rational path misses, e.g. 1/(x^2 + a^2), 1/(9 x^2 + 1)).
+  if let Some(result) = try_integrate_reciprocal_quadratic(expr, var) {
+    return Some(result);
+  }
+
   // General constant check: ∫ c dy = c*y for any expression c independent of y
   // (handles compound expressions like x^2, Sin[x], etc. when integrating w.r.t. a different variable)
   if is_constant_wrt(expr, var) {

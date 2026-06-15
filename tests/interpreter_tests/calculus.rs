@@ -3928,6 +3928,70 @@ mod integrate_rational {
   }
 }
 
+// Integral of 1/(p x^2 + q) for constant p, q (numeric or symbolic):
+//   q > 0:        ArcTan[Sqrt[p/q] x] / Sqrt[p q]
+//   q = -a^2:     -ArcTanh[x/a] / a
+mod integrate_reciprocal_quadratic {
+  use super::*;
+
+  #[test]
+  fn symbolic_a_squared_arctan() {
+    assert_eq!(
+      interpret("Integrate[1/(x^2 + a^2), x]").unwrap(),
+      "ArcTan[x/a]/a"
+    );
+  }
+
+  #[test]
+  fn symbolic_a_squared_order_independent() {
+    assert_eq!(
+      interpret("Integrate[1/(a^2 + x^2), x]").unwrap(),
+      "ArcTan[x/a]/a"
+    );
+  }
+
+  #[test]
+  fn symbolic_difference_arctanh() {
+    assert_eq!(
+      interpret("Integrate[1/(x^2 - a^2), x]").unwrap(),
+      "-(ArcTanh[x/a]/a)"
+    );
+  }
+
+  #[test]
+  fn bare_symbol_constant() {
+    assert_eq!(
+      interpret("Integrate[1/(b + x^2), x]").unwrap(),
+      "ArcTan[x/Sqrt[b]]/Sqrt[b]"
+    );
+  }
+
+  #[test]
+  fn leading_coefficient() {
+    assert_eq!(
+      interpret("Integrate[1/(9 x^2 + 1), x]").unwrap(),
+      "ArcTan[3*x]/3"
+    );
+  }
+
+  #[test]
+  fn numeric_constant_unchanged() {
+    assert_eq!(
+      interpret("Integrate[1/(x^2 + 4), x]").unwrap(),
+      "ArcTan[x/2]/2"
+    );
+  }
+
+  // Numeric x^2 - c stays in partial-fraction Log form (not ArcTanh).
+  #[test]
+  fn numeric_difference_stays_log() {
+    assert_eq!(
+      interpret("Integrate[1/(x^2 - 4), x]").unwrap(),
+      "Log[2 - x]/4 - Log[2 + x]/4"
+    );
+  }
+}
+
 mod dsolve {
   use super::*;
 
@@ -8496,10 +8560,7 @@ mod binomial_theorem_sum {
   // Sum[Binomial[N, k] r^k, {k, 0, N}] = (1 + r)^N.
   #[test]
   fn row_sum_is_two_pow_n() {
-    assert_eq!(
-      interpret("Sum[Binomial[n, k], {k, 0, n}]").unwrap(),
-      "2^n"
-    );
+    assert_eq!(interpret("Sum[Binomial[n, k], {k, 0, n}]").unwrap(), "2^n");
   }
 
   #[test]
