@@ -2824,6 +2824,39 @@ mod erf {
     assert_eq!(interpret("D[Erf[x],x]").unwrap(), "2/(E^x^2*Sqrt[Pi])");
   }
 
+  // Fresnel integrals: D[FresnelS[z]] = Sin[(Pi z^2)/2], etc.
+  #[test]
+  fn d_fresnel() {
+    assert_eq!(interpret("D[FresnelS[x], x]").unwrap(), "Sin[(Pi*x^2)/2]");
+    assert_eq!(interpret("D[FresnelC[x], x]").unwrap(), "Cos[(Pi*x^2)/2]");
+    assert_eq!(interpret("D[FresnelS[2 x], x]").unwrap(), "2*Sin[2*Pi*x^2]");
+    assert_eq!(
+      interpret("D[FresnelS[x^2], x]").unwrap(),
+      "2*x*Sin[(Pi*x^4)/2]"
+    );
+  }
+
+  #[test]
+  fn d_log_gamma_and_log_integral() {
+    assert_eq!(interpret("D[LogGamma[x], x]").unwrap(), "PolyGamma[0, x]");
+    assert_eq!(
+      interpret("D[LogGamma[x^2], x]").unwrap(),
+      "2*x*PolyGamma[0, x^2]"
+    );
+    assert_eq!(interpret("D[LogIntegral[x], x]").unwrap(), "Log[x]^(-1)");
+    assert_eq!(interpret("D[LogIntegral[2 x], x]").unwrap(), "2/Log[2*x]");
+  }
+
+  #[test]
+  fn d_airy() {
+    assert_eq!(interpret("D[AiryAi[x], x]").unwrap(), "AiryAiPrime[x]");
+    assert_eq!(interpret("D[AiryBi[x], x]").unwrap(), "AiryBiPrime[x]");
+    assert_eq!(
+      interpret("D[AiryAi[2 x], x]").unwrap(),
+      "2*AiryAiPrime[2*x]"
+    );
+  }
+
   #[test]
   fn n_erf_1() {
     // N[Erf[1], 20] — small argument, Taylor series path

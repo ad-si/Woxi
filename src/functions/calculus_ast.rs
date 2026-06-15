@@ -2434,6 +2434,87 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // FresnelS[z]: D = Sin[(Pi z^2)/2] * z'
+        // FresnelC[z]: D = Cos[(Pi z^2)/2] * z'
+        "FresnelS" | "FresnelC" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          // (Pi * z^2) / 2, evaluated so a compound argument's square expands.
+          let inner =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Constant("Pi".to_string())),
+                right: Box::new(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: Box::new(args[0].clone()),
+                  right: Box::new(Expr::Integer(2)),
+                }),
+              }),
+              right: Box::new(Expr::Integer(2)),
+            })
+            .unwrap_or_else(|_| args[0].clone());
+          let outer_head = if name == "FresnelS" { "Sin" } else { "Cos" };
+          let g = Expr::FunctionCall {
+            name: outer_head.to_string(),
+            args: vec![inner].into(),
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            simplify(g)
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(g),
+              right: Box::new(dz),
+            })
+          })
+        }
+        // LogGamma[z]: D = PolyGamma[0, z] * z'
+        // LogIntegral[z]: D = z' / Log[z]
+        // AiryAi[z]: D = AiryAiPrime[z] * z'; AiryBi[z]: D = AiryBiPrime[z] * z'
+        "LogGamma" | "LogIntegral" | "AiryAi" | "AiryBi" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let g = match name.as_str() {
+            "LogGamma" => Expr::FunctionCall {
+              name: "PolyGamma".to_string(),
+              args: vec![Expr::Integer(0), args[0].clone()].into(),
+            },
+            "LogIntegral" => Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Log".to_string(),
+                  args: vec![args[0].clone()].into(),
+                },
+                Expr::Integer(-1),
+              ]
+              .into(),
+            },
+            "AiryAi" => Expr::FunctionCall {
+              name: "AiryAiPrime".to_string(),
+              args: args.clone(),
+            },
+            _ => Expr::FunctionCall {
+              name: "AiryBiPrime".to_string(),
+              args: args.clone(),
+            },
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            simplify(g)
+          } else {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(g),
+            })
+          })
+        }
         // Gamma[z]: D[Gamma[z], z] = Gamma[z] * PolyGamma[0, z]
         "Gamma" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;
