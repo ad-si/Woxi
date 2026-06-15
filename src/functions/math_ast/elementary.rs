@@ -589,6 +589,65 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   }
+  // Sign[Sign[x]] = Sign[x] (idempotent).
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "Sign"
+    && inner.len() == 1
+  {
+    return Ok(args[0].clone());
+  }
+  // Sign[Times[...]]: Sign is multiplicative. Pull the sign of each
+  // real-constant factor out (positive → 1, negative → -1) and I (Sign[I] = I),
+  // keeping the remaining factors under a single Sign. E.g. Sign[-2 x] =
+  // -Sign[x], Sign[I x] = I Sign[x]. Matches wolframscript.
+  {
+    let mut factors: Vec<&Expr> = Vec::new();
+    let is_times = collect_times_factors(&args[0], &mut factors);
+    if is_times && factors.len() >= 2 {
+      let mut pulled: Vec<Expr> = Vec::new();
+      let mut kept: Vec<Expr> = Vec::new();
+      let mut simplified = false;
+      for f in &factors {
+        if crate::functions::math_ast::complex::is_strictly_positive_real(f) {
+          simplified = true; // Sign = 1, drop it
+        } else if negative_literal_abs(f).is_some() {
+          pulled.push(Expr::Integer(-1));
+          simplified = true;
+        } else if is_imaginary_unit(f) {
+          pulled.push(Expr::Identifier("I".to_string()));
+          simplified = true;
+        } else {
+          kept.push((*f).clone());
+        }
+      }
+      if simplified {
+        let mut all = pulled;
+        if !kept.is_empty() {
+          let kept_prod = if kept.len() == 1 {
+            kept.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: kept.into(),
+            }
+          };
+          all.push(Expr::FunctionCall {
+            name: "Sign".to_string(),
+            args: vec![kept_prod].into(),
+          });
+        }
+        let result = match all.len() {
+          0 => Expr::Integer(1),
+          1 => all.into_iter().next().unwrap(),
+          _ => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: all.into(),
+          },
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
+    }
+  }
   Ok(Expr::FunctionCall {
     name: "Sign".to_string(),
     args: args.to_vec().into(),

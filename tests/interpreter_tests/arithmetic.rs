@@ -5711,3 +5711,45 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[2 Pi]").unwrap(), "2*Pi");
   }
 }
+
+// Sign is multiplicative: it pulls the sign of each real-constant factor out
+// of a product (positive → 1, negative → -1) and Sign[I] = I, keeping the rest
+// under a single Sign. All verified against wolframscript.
+mod sign_simplifications {
+  use super::*;
+
+  #[test]
+  fn sign_negation() {
+    assert_eq!(interpret("Sign[-x]").unwrap(), "-Sign[x]");
+    assert_eq!(interpret("Sign[-a]").unwrap(), "-Sign[a]");
+  }
+
+  #[test]
+  fn sign_pulls_real_coefficient() {
+    assert_eq!(interpret("Sign[2 x]").unwrap(), "Sign[x]");
+    assert_eq!(interpret("Sign[-2 x]").unwrap(), "-Sign[x]");
+    assert_eq!(interpret("Sign[-3 x y]").unwrap(), "-Sign[x*y]");
+    assert_eq!(interpret("Sign[-Pi x]").unwrap(), "-Sign[x]");
+    assert_eq!(interpret("Sign[x/2]").unwrap(), "Sign[x]");
+  }
+
+  #[test]
+  fn sign_imaginary_factor() {
+    assert_eq!(interpret("Sign[I x]").unwrap(), "I*Sign[x]");
+    assert_eq!(interpret("Sign[-I x]").unwrap(), "-I*Sign[x]");
+  }
+
+  #[test]
+  fn sign_idempotent() {
+    assert_eq!(interpret("Sign[Sign[x]]").unwrap(), "Sign[x]");
+  }
+
+  // Fully symbolic products and genuine complex values are unchanged.
+  #[test]
+  fn sign_unaffected_cases() {
+    assert_eq!(interpret("Sign[a b]").unwrap(), "Sign[a*b]");
+    assert_eq!(interpret("Sign[a]").unwrap(), "Sign[a]");
+    assert_eq!(interpret("Sign[-Pi]").unwrap(), "-1");
+    assert_eq!(interpret("Sign[2 I]").unwrap(), "I");
+  }
+}
