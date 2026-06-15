@@ -385,6 +385,71 @@ mod string_split_regex {
 mod string_replace {
   use super::*;
 
+  // RegularExpression replacements expand $0/$1/… to capture groups.
+  #[test]
+  fn regex_capture_group_backreferences() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["2024-01-15", RegularExpression["(\\d+)-(\\d+)-(\\d+)"] -> "$3/$2/$1"]"#
+      )
+      .unwrap(),
+      "15/01/2024"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringReplace["John Smith", RegularExpression["(\\w+) (\\w+)"] -> "$2, $1"]"#
+      )
+      .unwrap(),
+      "Smith, John"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["hello", RegularExpression["(l+)"] -> "[$1]"]"#)
+        .unwrap(),
+      "he[ll]o"
+    );
+  }
+
+  #[test]
+  fn regex_dollar_zero_is_whole_match() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["abc", RegularExpression["(a)(b)(c)"] -> "$0"]"#
+      )
+      .unwrap(),
+      "abc"
+    );
+  }
+
+  // A lone `$` (and `$$`) is literal; a missing group expands to nothing.
+  #[test]
+  fn regex_dollar_edge_cases() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["price: 100", RegularExpression["(\\d+)"] -> "$$$1"]"#
+      )
+      .unwrap(),
+      "price: $$100"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["abc", RegularExpression["b"] -> "X$1Y"]"#)
+        .unwrap(),
+      "aXYc"
+    );
+  }
+
+  // A literal (non-RegularExpression) pattern keeps `$n` verbatim.
+  #[test]
+  fn literal_pattern_keeps_dollar_verbatim() {
+    assert_eq!(
+      interpret(r#"StringReplace["abc", "b" -> "$1"]"#).unwrap(),
+      "a$1c"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["aaa", "a" -> "$0"]"#).unwrap(),
+      "$0$0$0"
+    );
+  }
+
   #[test]
   fn shortest_in_string_expression_is_lazy() {
     // Shortest[___] in the middle of a StringExpression must match lazily, so

@@ -830,6 +830,72 @@ fn has_ignore_case_option(args: &[Expr]) -> bool {
 
 /// StringReplace[s, pattern -> replacement] - replaces occurrences
 /// StringReplace[s, {rule1, rule2, ...}] - applies multiple rules
+/// Expand regex capture-group backreferences in a RegularExpression
+/// replacement string: `$0` is the whole match, `$1`…`$n` (and `${n}`) the
+/// numbered groups. A `$` not followed by a digit or `{` (including `$$`) is
+/// left verbatim, matching Wolfram.
+fn expand_dollar_replacement(
+  template: &str,
+  caps: &regex::Captures,
+) -> String {
+  let mut out = String::new();
+  let mut chars = template.chars().peekable();
+  while let Some(c) = chars.next() {
+    if c != '$' {
+      out.push(c);
+      continue;
+    }
+    match chars.peek() {
+      Some('{') => {
+        chars.next(); // consume '{'
+        let mut num = String::new();
+        let mut closed = false;
+        for d in chars.by_ref() {
+          if d == '}' {
+            closed = true;
+            break;
+          }
+          num.push(d);
+        }
+        match (closed, num.parse::<usize>()) {
+          (true, Ok(n)) => {
+            if let Some(g) = caps.get(n) {
+              out.push_str(g.as_str());
+            }
+          }
+          // Malformed `${…}` is emitted verbatim.
+          _ => {
+            out.push_str("${");
+            out.push_str(&num);
+            if closed {
+              out.push('}');
+            }
+          }
+        }
+      }
+      Some(d) if d.is_ascii_digit() => {
+        let mut num = String::new();
+        while let Some(&d) = chars.peek() {
+          if d.is_ascii_digit() {
+            num.push(d);
+            chars.next();
+          } else {
+            break;
+          }
+        }
+        if let Ok(n) = num.parse::<usize>()
+          && let Some(g) = caps.get(n)
+        {
+          out.push_str(g.as_str());
+        }
+      }
+      // A lone `$` (or `$$`, `$x`, …) is literal.
+      _ => out.push('$'),
+    }
+  }
+  out
+}
+
 pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
@@ -867,6 +933,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Regex {
       regex: regex::Regex,
       replacement: String,
+      /// Whether `$0`/`$1`/… in the replacement expand to regex capture
+      /// groups. Only RegularExpression patterns do this; a plain literal
+      /// pattern (e.g. compiled for IgnoreCase) keeps `$n` verbatim.
+      expand_dollar: bool,
     },
     /// Regex pattern with a delayed replacement expression (RuleDelayed).
     /// Captured named groups are substituted into the expression before evaluation.
@@ -913,6 +983,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(ReplaceRule::Regex {
           regex: re,
           replacement,
+          expand_dollar: false,
         });
       }
       return Ok(ReplaceRule::Simple {
@@ -956,6 +1027,12 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(ReplaceRule::Regex {
         regex: re,
         replacement,
+        // Regex capture-group backreferences ($1, $2, …) are a
+        // RegularExpression feature.
+        expand_dollar: matches!(
+          pattern_expr,
+          Expr::FunctionCall { name, .. } if name == "RegularExpression"
+        ),
       });
     }
 
@@ -973,6 +1050,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(ReplaceRule::Regex {
           regex: re,
           replacement,
+          expand_dollar: false,
         });
       }
       return Ok(ReplaceRule::Simple {
@@ -1017,7 +1095,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       pos: usize,
     ) -> Option<&'a str> {
       for rule in rules {
-        if let ReplaceRule::Regex { regex, replacement } = rule
+        if let ReplaceRule::Regex {
+          regex, replacement, ..
+        } = rule
           && let Some(m) = regex.find_at(s, pos)
           && m.start() == pos
           && m.as_str().is_empty()
@@ -1060,15 +1140,24 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               break;
             }
           }
-          ReplaceRule::Regex { regex, replacement } => {
-            // Use find_at on the full string so anchors like ^ and \b can
+          ReplaceRule::Regex {
+            regex,
+            replacement,
+            expand_dollar,
+          } => {
+            // Use captures_at on the full string so anchors like ^ and \b can
             // inspect surrounding characters. Require the match to start
             // exactly at position i.
-            if let Some(m) = regex.find_at(s, i)
+            if let Some(caps) = regex.captures_at(s, i)
+              && let Some(m) = caps.get(0)
               && m.start() == i
               && !m.as_str().is_empty()
             {
-              result.push_str(replacement);
+              if *expand_dollar {
+                result.push_str(&expand_dollar_replacement(replacement, &caps));
+              } else {
+                result.push_str(replacement);
+              }
               i += m.len();
               count += 1;
               matched = true;
