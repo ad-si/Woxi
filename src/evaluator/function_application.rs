@@ -571,6 +571,15 @@ pub fn apply_function_to_arg(
       // curried head accumulates the extra argument.
       apply_curried_call(func, std::slice::from_ref(arg))
     }
+    // A compound arithmetic/relational head stays an inert curried call,
+    // e.g. `(f + g) @ x` → `(f + g)[x]`. Stringifying it would mistake
+    // "f + g" for a function name.
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. } => {
+      Ok(Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: vec![arg.clone()],
+      })
+    }
     _ => {
       // Fallback: create a function call expression
       let func_str = expr_to_string(func);
@@ -1313,6 +1322,14 @@ pub fn apply_curried_call(
       // structure rather than collapsing the head to a string-named
       // FunctionCall (which loses the AST shape that pattern-matchers
       // rely on, e.g. `s[a][b][c] /. s[x_][y_][z_] -> …`).
+      Ok(Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      })
+    }
+    // A compound arithmetic/relational head stays an inert curried call,
+    // e.g. `(f + g)[x]`, rather than being stringified to a function name.
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. } => {
       Ok(Expr::CurriedCall {
         func: Box::new(func.clone()),
         args: args.to_vec(),

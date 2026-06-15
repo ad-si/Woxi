@@ -2272,10 +2272,7 @@ mod map_operator_composite_head {
   // g[a] /@ {1, 2} → {g[a][1], g[a][2]}, not {g[a, 1], g[a, 2]}.
   #[test]
   fn map_composite_function_call_head() {
-    assert_eq!(
-      interpret("g[a] /@ {1, 2}").unwrap(),
-      "{g[a][1], g[a][2]}"
-    );
+    assert_eq!(interpret("g[a] /@ {1, 2}").unwrap(), "{g[a][1], g[a][2]}");
     assert_eq!(
       interpret("Map[g[a], {1, 2}]").unwrap(),
       "{g[a][1], g[a][2]}"
@@ -2313,5 +2310,37 @@ mod map_operator_composite_head {
   #[test]
   fn simple_head_unaffected() {
     assert_eq!(interpret("f /@ {1, 2}").unwrap(), "{f[1], f[2]}");
+  }
+}
+
+mod arithmetic_head_application {
+  use super::*;
+
+  // A compound arithmetic head stays an inert, parenthesized curried call
+  // across every application operator — not mis-associated as f + g[x].
+  #[test]
+  fn prefix_at() {
+    assert_eq!(interpret("(f + g) @ x").unwrap(), "(f + g)[x]");
+    assert_eq!(interpret("(a*b) @ x").unwrap(), "(a*b)[x]");
+    assert_eq!(interpret("(f - g) @ x").unwrap(), "(f - g)[x]");
+  }
+
+  #[test]
+  fn postfix_slashslash() {
+    assert_eq!(interpret("x // (f + g)").unwrap(), "(f + g)[x]");
+  }
+
+  #[test]
+  fn map_and_apply() {
+    assert_eq!(
+      interpret("(f + g) /@ {1, 2}").unwrap(),
+      "{(f + g)[1], (f + g)[2]}"
+    );
+    assert_eq!(interpret("(f + g) @@ {1, 2}").unwrap(), "(f + g)[1, 2]");
+  }
+
+  #[test]
+  fn full_form_is_curried() {
+    assert_eq!(interpret("Head[(f + g) @ x]").unwrap(), "f + g");
   }
 }
