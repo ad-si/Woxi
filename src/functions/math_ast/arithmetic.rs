@@ -358,6 +358,14 @@ fn try_series_data_plus(
     new_coeffs.remove(0);
     adjusted_nmin += 1;
   }
+  // Strip trailing zero coefficients too (keeping `new_nmax`), so a
+  // cancellation at the top order collapses to wolframscript's form — e.g.
+  // Series[Exp[x],…] + Series[Sin[x],…] where the x^3 terms cancel.
+  while !new_coeffs.is_empty()
+    && matches!(new_coeffs.last(), Some(Expr::Integer(0)))
+  {
+    new_coeffs.pop();
+  }
 
   // Collect non-SeriesData summands and prepend the unified SeriesData.
   let series_idx_set: std::collections::HashSet<usize> =
@@ -520,7 +528,18 @@ fn try_series_data_times(
       });
     }
   }
-  let (nmin_f, nmax_f, coeffs_f, _) = acc.unwrap();
+  let (mut nmin_f, nmax_f, mut coeffs_f, _) = acc.unwrap();
+  // Trim leading zeros (advancing nmin) and trailing zeros (keeping nmax),
+  // matching wolframscript — e.g. a Cauchy product whose top-order term cancels.
+  while !coeffs_f.is_empty() && matches!(&coeffs_f[0], Expr::Integer(0)) {
+    coeffs_f.remove(0);
+    nmin_f += 1;
+  }
+  while !coeffs_f.is_empty()
+    && matches!(coeffs_f.last(), Some(Expr::Integer(0)))
+  {
+    coeffs_f.pop();
+  }
 
   let merged = Expr::FunctionCall {
     name: "SeriesData".to_string(),

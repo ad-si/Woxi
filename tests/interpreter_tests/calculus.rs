@@ -1158,6 +1158,34 @@ mod series {
     );
   }
 
+  // A top-order cancellation in series addition/multiplication trims the
+  // trailing zero coefficient (keeping nmax). Verified against wolframscript.
+  #[test]
+  fn series_sum_trims_trailing_zero() {
+    // Exp + Sin: the x^3 terms (1/6 and -1/6) cancel.
+    assert_eq!(
+      interpret("Series[Exp[x], {x, 0, 3}] + Series[Sin[x], {x, 0, 3}]")
+        .unwrap(),
+      "SeriesData[x, 0, {1, 2, 1/2}, 0, 4, 1]"
+    );
+  }
+
+  #[test]
+  fn series_product_trims_trailing_zero() {
+    // Cos * Sin: the x^4 coefficient is zero.
+    assert_eq!(
+      interpret("Series[Cos[x], {x, 0, 4}] * Series[Sin[x], {x, 0, 4}]")
+        .unwrap(),
+      "SeriesData[x, 0, {1, 0, -2/3}, 1, 5, 1]"
+    );
+    // Exp[x] * Exp[-x] = 1: all higher coefficients cancel.
+    assert_eq!(
+      interpret("Series[Exp[x], {x, 0, 4}] * Series[Exp[-x], {x, 0, 4}]")
+        .unwrap(),
+      "SeriesData[x, 0, {1}, 0, 5, 1]"
+    );
+  }
+
   #[test]
   fn series_sin_around_pi() {
     assert_eq!(

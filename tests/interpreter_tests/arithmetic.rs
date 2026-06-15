@@ -3511,10 +3511,7 @@ mod exp_log_identity {
   fn exp_of_log_sum() {
     assert_eq!(interpret("Exp[Log[x] + Log[y]]").unwrap(), "x*y");
     assert_eq!(interpret("Exp[Log[x] - Log[y]]").unwrap(), "x/y");
-    assert_eq!(
-      interpret("Exp[Log[x] + Log[y] + z]").unwrap(),
-      "E^z*x*y"
-    );
+    assert_eq!(interpret("Exp[Log[x] + Log[y] + z]").unwrap(), "E^z*x*y");
     assert_eq!(interpret("E^(Log[5] + Log[3])").unwrap(), "15");
   }
 
