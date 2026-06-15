@@ -1389,6 +1389,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Absolute-value equations: Abs[f(x)] == c → f == c ∪ f == -c.
+  if let Some(result) = try_solve_abs_eq(&args[0], var) {
+    return result;
+  }
+
   // Try to solve equations with invertible functions:
   // Log[expr] == a → expr == E^a, Sqrt[expr] == a → expr == a^2, etc.
   if let Some(result) = try_solve_inverse_function(&args[0], var) {
@@ -2347,6 +2352,125 @@ fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
 /// `{-1, 0, 1}` (the cases where the inverse trig has a closed-form
 /// rational multiple of `Pi`). Returns `None` for everything else so the
 /// caller falls through to the generic polynomial path.
+/// Extract `(coeff, inner)` from `coeff * Abs[inner]` where `coeff` is free of
+/// `var`. Returns `None` if the expression isn't a constant multiple of a
+/// single `Abs[...]`.
+fn extract_abs_factor(e: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  let factors: Vec<Expr> = match e {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => vec![e.clone()],
+  };
+  let mut inner: Option<Expr> = None;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Expr::FunctionCall { name, args } = f
+      && name == "Abs"
+      && args.len() == 1
+    {
+      if inner.is_some() {
+        return None; // product of two Abs — not handled
+      }
+      inner = Some(args[0].clone());
+    } else if is_constant_wrt(f, var) {
+      coeff_factors.push(f.clone());
+    } else {
+      return None; // a non-constant factor that isn't the Abs
+    }
+  }
+  let inner = inner?;
+  let coeff = match coeff_factors.len() {
+    0 => Expr::Integer(1),
+    1 => coeff_factors.pop().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff_factors.into(),
+    },
+  };
+  Some((coeff, inner))
+}
+
+/// Solve `Abs[f(x)] == c` (optionally `k*Abs[f(x)] == c`). With `d = c/k`:
+/// `d < 0` → no solution, `d == 0` → `f == 0`, otherwise `f == d` ∪ `f == -d`.
+fn try_solve_abs_eq(
+  eq: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (lhs, rhs) = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      (operands[0].clone(), operands[1].clone())
+    }
+    _ => return None,
+  };
+  // Orient so the Abs (var-dependent) side is `abs_side`.
+  let (abs_side, val_side) =
+    if !is_constant_wrt(&lhs, var) && is_constant_wrt(&rhs, var) {
+      (lhs, rhs)
+    } else if !is_constant_wrt(&rhs, var) && is_constant_wrt(&lhs, var) {
+      (rhs, lhs)
+    } else {
+      return None;
+    };
+
+  let (coeff, inner) = extract_abs_factor(&abs_side, var)?;
+  let eff = if matches!(&coeff, Expr::Integer(1)) {
+    val_side
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(val_side),
+      right: Box::new(coeff),
+    })
+    .ok()?
+  };
+
+  // Solve `inner == value`, returning the outer list's solution entries.
+  let solve_branch = |value: Expr| -> Option<Vec<Expr>> {
+    let branch_eq = Expr::Comparison {
+      operands: vec![inner.clone(), value],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
+    let r = solve_ast(&[branch_eq, Expr::Identifier(var.to_string())]).ok()?;
+    match r {
+      Expr::List(ref items) => Some(items.to_vec()),
+      _ => None,
+    }
+  };
+
+  let mut solutions: Vec<Expr> = Vec::new();
+  match crate::functions::math_ast::try_eval_to_f64(&eff) {
+    Some(v) if v < 0.0 => {} // no real solution → {}
+    Some(v) if v == 0.0 => {
+      solutions.extend(solve_branch(Expr::Integer(0))?);
+    }
+    _ => {
+      // Positive numeric or symbolic value: both signs. The negative branch
+      // is added first so the symbolic case keeps wolframscript's order
+      // ({x -> -a} before {x -> a}); numeric cases are reordered by
+      // sort_solutions anyway.
+      let neg = crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(eff.clone()),
+      })
+      .ok()?;
+      solutions.extend(solve_branch(neg)?);
+      solutions.extend(solve_branch(eff)?);
+    }
+  }
+  sort_solutions(&mut solutions);
+  Some(Ok(Expr::List(solutions.into())))
+}
+
 fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   use crate::syntax::ComparisonOp;
   // Extract lhs == rhs.

@@ -2095,6 +2095,41 @@ mod solve {
     );
   }
 
+  // Abs[f(x)] == c → f == c ∪ f == -c.
+  #[test]
+  fn solve_abs_basic() {
+    assert_eq!(
+      interpret("Solve[Abs[x] == 3, x]").unwrap(),
+      "{{x -> -3}, {x -> 3}}"
+    );
+    assert_eq!(interpret("Solve[Abs[x] == 0, x]").unwrap(), "{{x -> 0}}");
+    assert_eq!(interpret("Solve[Abs[x] == -1, x]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn solve_abs_shifted_and_scaled() {
+    assert_eq!(
+      interpret("Solve[Abs[x - 2] == 5, x]").unwrap(),
+      "{{x -> -3}, {x -> 7}}"
+    );
+    assert_eq!(
+      interpret("Solve[Abs[2 x] == 4, x]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[3 Abs[x] == 12, x]").unwrap(),
+      "{{x -> -4}, {x -> 4}}"
+    );
+  }
+
+  #[test]
+  fn solve_abs_symbolic_rhs() {
+    assert_eq!(
+      interpret("Solve[Abs[x] == a, x]").unwrap(),
+      "{{x -> -a}, {x -> a}}"
+    );
+  }
+
   #[test]
   fn solve_log_equation() {
     assert_eq!(interpret("Solve[Log[x] == 2, x]").unwrap(), "{{x -> E^2}}");
