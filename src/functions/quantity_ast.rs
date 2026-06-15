@@ -1861,7 +1861,106 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
   }
 }
 
+/// Canonical temperature-scale name for a unit expr (string or identifier),
+/// or None for non-temperature units. Accepts both Wolfram spellings.
+fn temperature_scale(unit: &Expr) -> Option<&'static str> {
+  let name = match unit {
+    Expr::String(s) => s.as_str(),
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  match name {
+    "Celsius" | "DegreesCelsius" => Some("Celsius"),
+    "Kelvin" | "Kelvins" => Some("Kelvin"),
+    "Fahrenheit" | "DegreesFahrenheit" => Some("Fahrenheit"),
+    _ => None,
+  }
+}
+
+/// Affine map (mult_num, mult_den, off_num, off_den) taking a value `v` in the
+/// scale to Kelvin: `K = (mult)·v + (off)`.
+fn temp_to_kelvin_affine(scale: &str) -> (i128, i128, i128, i128) {
+  match scale {
+    "Kelvin" => (1, 1, 0, 1),
+    "Celsius" => (1, 1, 5463, 20), // K = C + 273.15
+    "Fahrenheit" => (5, 9, 45967, 180), // K = (F + 459.67)·5/9
+    _ => unreachable!(),
+  }
+}
+
+/// The unit name Wolfram emits for a target temperature scale.
+fn temp_output_unit(scale: &str) -> &'static str {
+  match scale {
+    "Kelvin" => "Kelvins",
+    "Celsius" => "DegreesCelsius",
+    "Fahrenheit" => "DegreesFahrenheit",
+    _ => unreachable!(),
+  }
+}
+
+/// UnitConvert between temperature scales, which is affine (an offset is
+/// involved) rather than the multiplicative conversion the general path uses.
+/// Returns None when the source is not a temperature quantity or the target is
+/// not a temperature scale (the caller then falls through).
+fn try_temperature_convert(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let Some((mag, unit)) = is_quantity(&args[0]) else {
+    return Ok(None);
+  };
+  let Some(src) = temperature_scale(unit) else {
+    return Ok(None);
+  };
+  // Default target (1-arg form) is the SI base, Kelvin.
+  let tgt = if args.len() == 2 {
+    match temperature_scale(&args[1]) {
+      Some(t) => t,
+      None => return Ok(None),
+    }
+  } else {
+    "Kelvin"
+  };
+
+  let (msn, msd, bsn, bsd) = temp_to_kelvin_affine(src);
+  let (mtn, mtd, btn, btd) = temp_to_kelvin_affine(tgt);
+  let int = Expr::Integer;
+  let binop = |op, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  // K = (msn/msd)·v + bsn/bsd; result = (K − btn/btd) / (mtn/mtd).
+  let term = binop(
+    BinaryOperator::Divide,
+    binop(BinaryOperator::Times, int(msn), mag.clone()),
+    int(msd),
+  );
+  let bs = binop(BinaryOperator::Divide, int(bsn), int(bsd));
+  let bt = binop(BinaryOperator::Divide, int(btn), int(btd));
+  let kelvin = binop(BinaryOperator::Plus, term, bs);
+  let shifted = binop(BinaryOperator::Minus, kelvin, bt);
+  let result = binop(
+    BinaryOperator::Divide,
+    binop(BinaryOperator::Times, shifted, int(mtd)),
+    int(mtn),
+  );
+  let new_mag = crate::evaluator::evaluate_expr_to_expr(&result)?;
+
+  Ok(Some(Expr::FunctionCall {
+    name: "Quantity".to_string(),
+    args: vec![new_mag, Expr::String(temp_output_unit(tgt).to_string())].into(),
+  }))
+}
+
 pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Temperature scales convert affinely (with an offset), so handle them
+  // before the general multiplicative path.
+  if !args.is_empty()
+    && let Some(result) = try_temperature_convert(args)?
+  {
+    return Ok(result);
+  }
   // 1-arg form: UnitConvert[quantity] → convert to base SI units
   if args.len() == 1 {
     if let Some((_mag, unit)) = is_quantity(&args[0])

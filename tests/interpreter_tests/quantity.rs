@@ -483,6 +483,74 @@ fn unit_convert_real_pounds_rounding() {
   );
 }
 
+// ─── Temperature (affine) conversions ───────────────────────────────────────
+
+#[test]
+fn unit_convert_celsius_to_kelvin() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[100, \"Celsius\"], \"Kelvin\"]").unwrap(),
+    "Quantity[7463/20, Kelvins]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[0, \"Celsius\"], \"Kelvin\"]").unwrap(),
+    "Quantity[5463/20, Kelvins]"
+  );
+}
+
+#[test]
+fn unit_convert_kelvin_to_celsius_real() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[273.15, \"Kelvin\"], \"Celsius\"]").unwrap(),
+    "Quantity[0., DegreesCelsius]"
+  );
+}
+
+#[test]
+fn unit_convert_fahrenheit_celsius() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[32, \"Fahrenheit\"], \"Celsius\"]").unwrap(),
+    "Quantity[0, DegreesCelsius]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[212, \"Fahrenheit\"], \"Celsius\"]").unwrap(),
+    "Quantity[100, DegreesCelsius]"
+  );
+}
+
+#[test]
+fn unit_convert_celsius_to_fahrenheit() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[100, \"Celsius\"], \"Fahrenheit\"]")
+      .unwrap(),
+    "Quantity[212, DegreesFahrenheit]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[37, \"Celsius\"], \"Fahrenheit\"]").unwrap(),
+    "Quantity[493/5, DegreesFahrenheit]"
+  );
+}
+
+#[test]
+fn unit_convert_fahrenheit_to_kelvin() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[100, \"Fahrenheit\"], \"Kelvin\"]").unwrap(),
+    "Quantity[55967/180, Kelvins]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[0, \"Kelvin\"], \"Fahrenheit\"]").unwrap(),
+    "Quantity[-45967/100, DegreesFahrenheit]"
+  );
+}
+
+// The 1-argument form converts to the SI base, Kelvin.
+#[test]
+fn unit_convert_celsius_one_arg() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Celsius\"]]").unwrap(),
+    "Quantity[5483/20, Kelvins]"
+  );
+}
+
 // ─── Comparisons ────────────────────────────────────────────────────────────
 
 #[test]
