@@ -4220,8 +4220,113 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // Gamma[a]/Gamma[b] with a - b = k (positive integer): the rising-factorial
+  // product b (b+1) … (b+k-1). Offered as a candidate so the leaf-count
+  // comparison keeps it only when it is no longer than the Gamma ratio —
+  // matching wolframscript, which reduces k ≤ 3 but leaves Gamma[n+4]/Gamma[n].
+  if let Some(prod) = gamma_ratio_product(expr) {
+    let c = leaf_count(&prod);
+    if c <= best_complexity {
+      best = prod;
+      best_complexity = c;
+    }
+  }
+
   let _ = best_complexity; // suppress unused warning
   best
+}
+
+/// Extract `(a, b)` from `Gamma[a] / Gamma[b]` in either the BinaryOp::Divide
+/// or the canonical `Times[Gamma[a], Power[Gamma[b], -1]]` form.
+fn extract_gamma_ratio(expr: &Expr) -> Option<(Expr, Expr)> {
+  let gamma_arg = |e: &Expr| -> Option<Expr> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Gamma"
+      && args.len() == 1
+    {
+      Some(args[0].clone())
+    } else {
+      None
+    }
+  };
+  let recip_gamma_arg = |e: &Expr| -> Option<Expr> {
+    let (base, exp) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return None,
+    };
+    if matches!(exp, Expr::Integer(-1)) {
+      gamma_arg(base)
+    } else {
+      None
+    }
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => Some((gamma_arg(left)?, gamma_arg(right)?)),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      for (i, j) in [(0, 1), (1, 0)] {
+        if let Some(a) = gamma_arg(&args[i])
+          && let Some(b) = recip_gamma_arg(&args[j])
+        {
+          return Some((a, b));
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// `Gamma[a]/Gamma[b]` → `b (b+1) … (b+k-1)` when `a - b` is a positive integer
+/// `k` (capped to keep the product bounded). Each factor is evaluated (so
+/// `(x+1)+1` collapses to `x+2`), but the product itself is left factored.
+fn gamma_ratio_product(expr: &Expr) -> Option<Expr> {
+  let (a, b) = extract_gamma_ratio(expr)?;
+  let diff = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      a,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), b.clone()].into(),
+      },
+    ]
+    .into(),
+  })
+  .ok()?;
+  let k = match diff {
+    Expr::Integer(k) if (1..=16).contains(&k) => k,
+    _ => return None,
+  };
+  let mut factors = Vec::with_capacity(k as usize);
+  for j in 0..k {
+    let f = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![b.clone(), Expr::Integer(j)].into(),
+    })
+    .ok()?;
+    factors.push(f);
+  }
+  Some(if factors.len() == 1 {
+    factors.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    }
+  })
 }
 
 // ─── Recursion guard for nested full_simplify ──────────────────────────────

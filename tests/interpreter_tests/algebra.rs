@@ -2206,6 +2206,51 @@ mod full_simplify {
     assert_eq!(interpret("FullSimplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }
 
+  // Gamma[a]/Gamma[b], a - b = k a positive integer: the rising-factorial
+  // product. Leaf-count gated, so k <= 3 reduces but k = 4 keeps the ratio.
+  #[test]
+  fn gamma_ratio_rising_factorial() {
+    assert_eq!(
+      interpret("FullSimplify[Gamma[n + 1]/Gamma[n]]").unwrap(),
+      "n"
+    );
+    assert_eq!(
+      interpret("FullSimplify[Gamma[n + 2]/Gamma[n]]").unwrap(),
+      "n*(1 + n)"
+    );
+    assert_eq!(
+      interpret("FullSimplify[Gamma[n + 3]/Gamma[n]]").unwrap(),
+      "n*(1 + n)*(2 + n)"
+    );
+    // a - b = 1 with a shifted denominator.
+    assert_eq!(
+      interpret("FullSimplify[Gamma[2 n]/Gamma[2 n - 1]]").unwrap(),
+      "-1 + 2*n"
+    );
+    assert_eq!(
+      interpret("FullSimplify[Gamma[x + 3]/Gamma[x + 1]]").unwrap(),
+      "(1 + x)*(2 + x)"
+    );
+  }
+
+  #[test]
+  fn gamma_ratio_not_reduced() {
+    // k = 4: the product is longer than the ratio, so the ratio is kept.
+    assert_eq!(
+      interpret("FullSimplify[Gamma[n + 4]/Gamma[n]]").unwrap(),
+      "Gamma[4 + n]/Gamma[n]"
+    );
+    // Non-integer difference, different symbols, and plain Simplify: unchanged.
+    assert_eq!(
+      interpret("FullSimplify[Gamma[n + 1/2]/Gamma[n]]").unwrap(),
+      "Gamma[1/2 + n]/Gamma[n]"
+    );
+    assert_eq!(
+      interpret("Simplify[Gamma[n + 1]/Gamma[n]]").unwrap(),
+      "Gamma[1 + n]/Gamma[n]"
+    );
+  }
+
   // ArcSin[u] + ArcCos[u] -> Pi/2 (and the ArcSec/ArcCsc pair). A
   // FullSimplify-only identity, applied only to a bare two-term sum.
   #[test]
