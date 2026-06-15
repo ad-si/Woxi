@@ -6273,9 +6273,7 @@ fn symbolic_sqrt(e: &Expr) -> Expr {
         return Expr::Integer(r);
       }
     }
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if let Expr::Integer(k) = &args[1]
         && *k > 0
         && k % 2 == 0
@@ -8758,6 +8756,38 @@ fn eval_near_point(
 }
 
 /// Compute a one-sided limit numerically by evaluating at points approaching x0
+/// For a one-sided limit, cross-check the direct-substitution value against the
+/// numerical one-sided limit. They agree when the function is continuous at the
+/// point (return the exact `direct`); they disagree at a jump discontinuity
+/// (e.g. Floor, Ceiling, Sign, UnitStep, FractionalPart), where the one-sided
+/// limit — not the value at the point — is the answer, so return the numerical
+/// result. Continuous cases keep their exact (possibly symbolic) form.
+fn reconcile_one_sided_direct(
+  direct: Expr,
+  expr: &Expr,
+  var_name: &str,
+  point: &Expr,
+  direction: LimitDirection,
+) -> Expr {
+  if matches!(direction, LimitDirection::TwoSided) {
+    return direct;
+  }
+  let d_f = match crate::functions::math_ast::try_eval_to_f64(&direct) {
+    Some(v) if v.is_finite() => v,
+    _ => return direct,
+  };
+  let num = match numerical_one_sided_limit(expr, var_name, point, direction) {
+    Some(n) => n,
+    None => return direct,
+  };
+  let n_f = match crate::functions::math_ast::try_eval_to_f64(&num) {
+    Some(v) if v.is_finite() => v,
+    _ => return direct,
+  };
+  let tol = 1e-4 * (1.0 + d_f.abs());
+  if (d_f - n_f).abs() <= tol { direct } else { num }
+}
+
 fn numerical_one_sided_limit(
   expr: &Expr,
   var_name: &str,
@@ -9329,7 +9359,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Check if the result is a valid numeric value (not Indeterminate, ComplexInfinity, etc.)
         match val {
           Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
-            return result;
+            return Ok(reconcile_one_sided_direct(
+              val.clone(),
+              &args[0],
+              &var_name,
+              &point,
+              direction,
+            ));
           }
           Expr::FunctionCall { name, args: fargs }
             if name == "Rational" && fargs.len() == 2 =>
@@ -9338,7 +9374,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if matches!(&fargs[1], Expr::Integer(0)) {
               // Fall through to L'Hôpital
             } else {
-              return result;
+              return Ok(reconcile_one_sided_direct(
+                val.clone(),
+                &args[0],
+                &var_name,
+                &point,
+                direction,
+              ));
             }
           }
           Expr::FunctionCall { name, .. }
@@ -9357,7 +9399,13 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             // Check if it evaluates to a number via N[]
             if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
-              return result;
+              return Ok(reconcile_one_sided_direct(
+                val.clone(),
+                &args[0],
+                &var_name,
+                &point,
+                direction,
+              ));
             }
             // Accept a finite complex-number constant (e.g. -I/2). Direct
             // substitution at a point where the expression is continuous is
@@ -9423,7 +9471,14 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // expressions that never resolve, so recursing would only get slower.
         // Fall through to the numerical methods instead.
         if expr_node_count_capped(&new_expr, 160) < 160 {
-          return limit_ast(&[new_expr, args[1].clone()]);
+          // Preserve the Direction option so one-sided limits of quotients
+          // that reduce to a discontinuous function (e.g. Abs[x]/x -> Sign[x])
+          // resolve to the correct side.
+          let mut next_args = vec![new_expr, args[1].clone()];
+          if args.len() == 3 {
+            next_args.push(args[2].clone());
+          }
+          return limit_ast(&next_args);
         }
       }
     }

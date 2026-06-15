@@ -1733,6 +1733,81 @@ mod limit {
     assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
   }
 
+  // One-sided limits at jump discontinuities must use the value approached
+  // from the given side, not the value AT the point.
+  #[test]
+  fn one_sided_floor_from_below() {
+    assert_eq!(
+      interpret("Limit[Floor[x], x -> 2, Direction -> \"FromBelow\"]")
+        .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn one_sided_floor_from_above() {
+    assert_eq!(
+      interpret("Limit[Floor[x], x -> 2, Direction -> \"FromAbove\"]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn one_sided_ceiling_from_above() {
+    assert_eq!(
+      interpret("Limit[Ceiling[x], x -> 2, Direction -> \"FromAbove\"]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn one_sided_sign_from_above() {
+    assert_eq!(
+      interpret("Limit[Sign[x], x -> 0, Direction -> \"FromAbove\"]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn one_sided_sign_from_below() {
+    assert_eq!(
+      interpret("Limit[Sign[x], x -> 0, Direction -> \"FromBelow\"]").unwrap(),
+      "-1"
+    );
+  }
+
+  #[test]
+  fn one_sided_unit_step_from_below() {
+    assert_eq!(
+      interpret("Limit[UnitStep[x], x -> 0, Direction -> \"FromBelow\"]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  // Abs[x]/x reduces via L'Hopital to Sign[x]; the Direction must propagate.
+  #[test]
+  fn one_sided_abs_over_x_from_below() {
+    assert_eq!(
+      interpret("Limit[Abs[x]/x, x -> 0, Direction -> \"FromBelow\"]")
+        .unwrap(),
+      "-1"
+    );
+  }
+
+  // A continuous point keeps its exact (symbolic) value — the cross-check must
+  // not force a numerical approximation here.
+  #[test]
+  fn one_sided_continuous_stays_exact() {
+    assert_eq!(
+      interpret("Limit[Floor[x] + Pi, x -> 5/2, Direction -> \"FromBelow\"]")
+        .unwrap(),
+      "2 + Pi"
+    );
+  }
+
   // Indeterminate power forms f^g, resolved via Exp[Limit[g Log[f]]].
   // 0^0 forms:
   #[test]
