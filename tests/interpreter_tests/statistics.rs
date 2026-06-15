@@ -386,6 +386,26 @@ mod root_mean_square {
     let val: f64 = result.parse().unwrap();
     assert!((val - 2.160246899469287).abs() < 1e-10);
   }
+
+  // The radical is reduced to Wolfram's form rather than left as Sqrt[25/2].
+  #[test]
+  fn rms_reduces_rational_radical() {
+    assert_eq!(interpret("RootMeanSquare[{3, 4}]").unwrap(), "5/Sqrt[2]");
+  }
+
+  #[test]
+  fn rms_extracts_square_factor() {
+    assert_eq!(
+      interpret("RootMeanSquare[{2, 4, 6}]").unwrap(),
+      "2*Sqrt[14/3]"
+    );
+  }
+
+  // Integer (denominator 1) non-perfect-square result is reduced too.
+  #[test]
+  fn rms_integer_radical_reduced() {
+    assert_eq!(interpret("RootMeanSquare[{6, 8}]").unwrap(), "5*Sqrt[2]");
+  }
 }
 
 mod rescale {

@@ -2051,10 +2051,16 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if root * root == numer {
             return Ok(Expr::Integer(root));
           }
-          return Ok(make_sqrt(Expr::Integer(numer)));
+          // Evaluate so the radical is reduced (e.g. Sqrt[8] -> 2 Sqrt[2]).
+          return crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
+            Expr::Integer(numer),
+          ));
         }
-        // Return Sqrt[Rational[numer, denom]]
-        return Ok(make_sqrt(make_rational(numer, denom)));
+        // Sqrt[Rational[numer, denom]], evaluated so it reduces to Wolfram's
+        // form (e.g. Sqrt[25/2] -> 5/Sqrt[2]).
+        return crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
+          make_rational(numer, denom),
+        ));
       }
       if has_real || !all_int {
         let mut vals = Vec::new();
