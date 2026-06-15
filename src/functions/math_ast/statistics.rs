@@ -295,8 +295,11 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           return Ok(make_rational(num, full_den));
         }
-        // Use BinaryOp::Divide to represent (sum) / n without distributing
-        Ok(Expr::BinaryOp {
+        // Represent the mean as (sum) / n and evaluate it: a symbolic sum
+        // like (a + b)/2 stays as-is (Plus does not distribute over Times),
+        // while a Quantity sum collapses (Quantity[6, Meters]/2 →
+        // Quantity[3, Meters]), matching wolframscript.
+        crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(evaluated_sum),
           right: Box::new(Expr::Integer(n)),

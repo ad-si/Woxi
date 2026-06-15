@@ -945,6 +945,29 @@ mod mean {
     // Mean of empty list returns unevaluated, matching Wolfram Language
     assert_eq!(interpret("Mean[{}]").unwrap(), "Mean[{}]");
   }
+
+  // Mean of quantities collapses the sum/count division into a single
+  // Quantity (verified against wolframscript).
+  #[test]
+  fn mean_quantities() {
+    assert_eq!(
+      interpret(r#"Mean[{Quantity[2, "Meters"], Quantity[4, "Meters"]}]"#)
+        .unwrap(),
+      "Quantity[3, Meters]"
+    );
+    assert_eq!(
+      interpret(r#"Mean[{Quantity[2, "Meters"], Quantity[5, "Meters"]}]"#)
+        .unwrap(),
+      "Quantity[7/2, Meters]"
+    );
+    assert_eq!(
+      interpret(
+        r#"Mean[{Quantity[1, "Meters"], Quantity[2, "Meters"], Quantity[3, "Meters"]}]"#
+      )
+      .unwrap(),
+      "Quantity[2, Meters]"
+    );
+  }
 }
 
 mod median_edge_cases {
@@ -954,6 +977,28 @@ mod median_edge_cases {
   fn median_empty_list() {
     // Median of empty list returns unevaluated
     assert_eq!(interpret("Median[{}]").unwrap(), "Median[{}]");
+  }
+
+  // Median of quantities sharing a unit: middle element (odd count) or the
+  // mean of the two middle ones (even count). Verified against wolframscript.
+  #[test]
+  fn median_quantities_odd() {
+    assert_eq!(
+      interpret(
+        r#"Median[{Quantity[6, "Meters"], Quantity[2, "Meters"], Quantity[4, "Meters"]}]"#
+      )
+      .unwrap(),
+      "Quantity[4, Meters]"
+    );
+  }
+
+  #[test]
+  fn median_quantities_even() {
+    assert_eq!(
+      interpret(r#"Median[{Quantity[5, "Meters"], Quantity[1, "Meters"]}]"#)
+        .unwrap(),
+      "Quantity[3, Meters]"
+    );
   }
 }
 

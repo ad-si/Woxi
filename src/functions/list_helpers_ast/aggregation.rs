@@ -944,6 +944,57 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Quantity lists sharing one unit: sort by magnitude, then take the middle
+  // element (odd count) or the mean of the two middle ones (even count).
+  // Matches wolframscript (e.g. Median[{Quantity[2,"m"], Quantity[4,"m"]}]).
+  let is_quantity = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2)
+  };
+  if items.iter().all(is_quantity) {
+    let unit_key = |e: &Expr| -> Option<String> {
+      if let Expr::FunctionCall { args, .. } = e {
+        Some(crate::syntax::expr_to_string(&args[1]))
+      } else {
+        None
+      }
+    };
+    let mag = |e: &Expr| -> Option<f64> {
+      if let Expr::FunctionCall { args, .. } = e {
+        expr_to_f64(&args[0])
+      } else {
+        None
+      }
+    };
+    let u0 = unit_key(&items[0]);
+    if u0.is_some()
+      && items.iter().all(|i| unit_key(i) == u0)
+      && items.iter().all(|i| mag(i).is_some())
+    {
+      let mut sorted: Vec<Expr> = items.iter().cloned().collect();
+      sorted.sort_by(|a, b| {
+        mag(a)
+          .unwrap()
+          .partial_cmp(&mag(b).unwrap())
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+      let len = sorted.len();
+      if len % 2 == 1 {
+        return Ok(sorted[len / 2].clone());
+      }
+      let avg = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![sorted[len / 2 - 1].clone(), sorted[len / 2].clone()]
+            .into(),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&avg);
+    }
+  }
+
   // Check if all items are integers
   let all_integers = items.iter().all(|i| matches!(i, Expr::Integer(_)));
 
