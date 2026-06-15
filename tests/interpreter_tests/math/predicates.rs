@@ -316,6 +316,40 @@ mod element {
     assert_eq!(interpret("Attributes[Element]").unwrap(), "{Protected}");
   }
 
+  // Real-valued (NumericQ) expressions are in Reals; purely/partly imaginary
+  // ones are not. Verified against wolframscript.
+  #[test]
+  fn element_real_valued_in_reals() {
+    assert_eq!(interpret("Element[Sqrt[2], Reals]").unwrap(), "True");
+    assert_eq!(interpret("Element[Log[2], Reals]").unwrap(), "True");
+    assert_eq!(interpret("Element[Pi^2, Reals]").unwrap(), "True");
+    assert_eq!(interpret("Element[Sqrt[2] + Pi, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_complex_not_in_reals() {
+    assert_eq!(interpret("Element[Sqrt[-2], Reals]").unwrap(), "False");
+    assert_eq!(interpret("Element[3 + 4 I, Reals]").unwrap(), "False");
+    assert_eq!(interpret("Element[2 I, Reals]").unwrap(), "False");
+  }
+
+  // Any number — real or complex — is in Complexes.
+  #[test]
+  fn element_numeric_in_complexes() {
+    assert_eq!(interpret("Element[Sqrt[2], Complexes]").unwrap(), "True");
+    assert_eq!(interpret("Element[Log[2], Complexes]").unwrap(), "True");
+    assert_eq!(interpret("Element[Sqrt[-2], Complexes]").unwrap(), "True");
+  }
+
+  // Symbolic arguments stay unevaluated.
+  #[test]
+  fn element_symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Element[x, Reals]").unwrap(),
+      "Element[x, Reals]"
+    );
+  }
+
   #[test]
   fn element_infix_named_char_pi_reals() {
     assert_eq!(interpret("Pi \\[Element] Reals").unwrap(), "True");

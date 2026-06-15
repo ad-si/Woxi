@@ -353,10 +353,23 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       }
       Expr::Identifier(name) if name == "I" => Some(false),
       _ => {
-        // Check for complex numbers with nonzero imaginary part
+        // Exact complex with nonzero imaginary part → not real.
         if let Some((_, (im, _))) =
           crate::functions::math_ast::try_extract_complex_exact(expr)
           && im != 0
+        {
+          return Some(false);
+        }
+        // Real-valued NumericQ expressions (Sqrt[2], Log[2], Pi^2, sums of
+        // reals, …) are real.
+        if crate::functions::math_ast::is_real_valued(expr) {
+          return Some(true);
+        }
+        // A numeric expression with a nonzero imaginary part (e.g.
+        // Sqrt[-2] = I Sqrt[2]) is not real.
+        if let Some((_, im)) =
+          crate::functions::math_ast::try_extract_complex_f64(expr)
+          && im != 0.0
         {
           return Some(false);
         }
@@ -380,7 +393,12 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       }
       Expr::Identifier(name) if name == "I" => Some(true),
       _ => {
+        // Any value that evaluates to a number — real (Sqrt[2], Log[2]) or
+        // complex (I Sqrt[2]) — is a complex number.
         if crate::functions::math_ast::try_extract_complex_exact(expr).is_some()
+          || crate::functions::math_ast::is_real_valued(expr)
+          || crate::functions::math_ast::try_extract_complex_f64(expr)
+            .is_some_and(|(re, im)| re.is_finite() && im.is_finite())
         {
           Some(true)
         } else {

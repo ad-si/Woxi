@@ -304,7 +304,7 @@ fn contains_bigfloat(expr: &Expr) -> bool {
 
 /// Check if an expression is known to be real-valued (not just known real constants,
 /// but also NumericQ expressions that evaluate to real numbers).
-fn is_real_valued(expr: &Expr) -> bool {
+pub fn is_real_valued(expr: &Expr) -> bool {
   if is_known_real(expr) {
     return true;
   }
