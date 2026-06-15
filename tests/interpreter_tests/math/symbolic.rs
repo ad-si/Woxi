@@ -64,6 +64,48 @@ mod symbolic_product {
       "2^((n*(1 + n))/2)"
     );
   }
+
+  // Constant body (independent of the product variable):
+  //   Product[c, {k, min, max}] = c^(max - min + 1)
+  #[test]
+  fn product_constant_symbol() {
+    assert_eq!(interpret("Product[x, {k, 1, n}]").unwrap(), "x^n");
+  }
+
+  #[test]
+  fn product_constant_number() {
+    assert_eq!(interpret("Product[2, {k, 1, n}]").unwrap(), "2^n");
+  }
+
+  #[test]
+  fn product_constant_from_zero() {
+    assert_eq!(interpret("Product[x, {k, 0, n}]").unwrap(), "x^(1 + n)");
+  }
+
+  #[test]
+  fn product_constant_symbolic_bounds() {
+    assert_eq!(interpret("Product[c, {k, m, n}]").unwrap(), "c^(1 - m + n)");
+  }
+
+  #[test]
+  fn product_constant_shifted_lower() {
+    assert_eq!(interpret("Product[x, {k, 2, n}]").unwrap(), "x^(-1 + n)");
+  }
+
+  // Product[k, {k, 2, n}] = n! (the (min-1)! = 1 denominator is dropped).
+  #[test]
+  fn product_var_from_two_is_factorial() {
+    assert_eq!(interpret("Product[k, {k, 2, n}]").unwrap(), "n!");
+  }
+
+  // Infinite product of the iteration variable stays unevaluated (not n!).
+  #[test]
+  fn product_var_to_infinity_unevaluated() {
+    assert_eq!(
+      interpret("Product[k, {k, 1, Infinity}]").unwrap(),
+      "Product[k, {k, 1, Infinity}]"
+    );
+  }
 }
 
 mod sum {

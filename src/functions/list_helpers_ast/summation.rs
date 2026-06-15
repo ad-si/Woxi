@@ -573,8 +573,42 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &items[1]
           };
 
+          let max_is_infinity =
+            matches!(max_expr, Expr::Identifier(s) if s == "Infinity");
+
+          // Body independent of the iteration variable:
+          //   Product[c, {k, min, max}] = c^(max - min + 1)
+          if !crate::functions::polynomial_ast::contains_var(body, &var_name)
+            && !max_is_infinity
+          {
+            let count = crate::evaluator::evaluate_expr_to_expr(
+              &Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  Expr::Integer(1),
+                  max_expr.clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), min_expr.clone()].into(),
+                  },
+                ]
+                .into(),
+              },
+            )?;
+            let power = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(body.clone()),
+              right: Box::new(count),
+            };
+            return crate::evaluator::evaluate_expr_to_expr(&power);
+          }
+
           // Body is the iteration variable itself: Product[k, {k, ...}]
-          if matches!(body, Expr::Identifier(name) if name == &var_name) {
+          // (the closed forms below use Factorial/Pochhammer, which are only
+          // valid for a finite upper limit).
+          if matches!(body, Expr::Identifier(name) if name == &var_name)
+            && !max_is_infinity
+          {
             if let Some(min_val) = min_concrete {
               if max_concrete.is_none() {
                 // Product[k, {k, concrete_min, symbolic_max}]
@@ -590,6 +624,10 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let mut denom: i128 = 1;
                 for j in 2..min_val {
                   denom *= j;
+                }
+                // (min-1)! == 1 (min <= 2): the product is just max!.
+                if denom == 1 {
+                  return Ok(n_factorial);
                 }
                 return Ok(Expr::BinaryOp {
                   op: crate::syntax::BinaryOperator::Divide,
