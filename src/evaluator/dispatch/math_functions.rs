@@ -2266,42 +2266,71 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::binomial_ast(args));
     }
     "BernsteinBasis" if args.len() == 3 => {
-      // BernsteinBasis[d, n, x] = Binomial[d, n] * x^n * (1-x)^(d-n).
-      // Only evaluate when d, n are integers AND x is numeric (matches
-      // wolframscript which leaves the symbolic form unevaluated).
-      let is_numeric_x = matches!(
-        &args[2],
-        Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
-      );
-      if let (Some(d), Some(n), true) =
-        (expr_to_i128(&args[0]), expr_to_i128(&args[1]), is_numeric_x)
-      {
-        // Wolfram emits a message and keeps the expression unevaluated for
-        // out-of-range n (matches BernsteinBasis::invidx2 / intnm).
-        if n < 0 {
-          crate::emit_message(&format!(
-            "BernsteinBasis::intnm: Non-negative machine-sized integer expected at position 2 in BernsteinBasis[{}, {}, {}].",
-            crate::syntax::expr_to_string(&args[0]),
-            crate::syntax::expr_to_string(&args[1]),
-            crate::syntax::expr_to_string(&args[2]),
-          ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "BernsteinBasis".to_string(),
-            args: args.to_vec().into(),
-          }));
+      // BernsteinBasis[d, n, x] is the piecewise Bernstein basis polynomial:
+      //   Binomial[d, n] x^n (1-x)^(d-n)   for 0 <= x <= 1,
+      //   0                                otherwise.
+      // It evaluates when d, n are integers with 0 <= n <= d and x is numeric;
+      // otherwise it stays unevaluated (the lone x-independent exception is
+      // d == n == 0, which is 1 for any x).
+      let unevaluated = || Expr::FunctionCall {
+        name: "BernsteinBasis".to_string(),
+        args: args.to_vec().into(),
+      };
+      let (Some(d), Some(n)) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+      else {
+        return Some(Ok(unevaluated()));
+      };
+      let Some(xf) = crate::functions::math_ast::try_eval_to_f64(&args[2])
+      else {
+        // Symbolic x: only d == n == 0 collapses to the constant 1.
+        if d == 0 && n == 0 {
+          return Some(Ok(Expr::Integer(1)));
         }
-        if n > d {
-          crate::emit_message(&format!(
-            "BernsteinBasis::invidx2: Index {} should be a machine-sized integer between 0 and {}.",
-            n, d,
-          ));
-          return Some(Ok(Expr::FunctionCall {
-            name: "BernsteinBasis".to_string(),
-            args: args.to_vec().into(),
-          }));
-        }
-        let coef = crate::functions::binomial_coeff(d, n);
-        let x = &args[2];
+        return Some(Ok(unevaluated()));
+      };
+      // Out-of-range index keeps the expression unevaluated (with a message).
+      if n < 0 {
+        crate::emit_message(&format!(
+          "BernsteinBasis::intnm: Non-negative machine-sized integer expected at position 2 in BernsteinBasis[{}, {}, {}].",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&args[1]),
+          crate::syntax::expr_to_string(&args[2]),
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      if n > d {
+        crate::emit_message(&format!(
+          "BernsteinBasis::invidx2: Index {} should be a machine-sized integer between 0 and {}.",
+          n, d,
+        ));
+        return Some(Ok(unevaluated()));
+      }
+      // Outside the unit interval the basis polynomial is exactly 0.
+      if xf < 0.0 || xf > 1.0 {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      // At the boundaries use exact 0/1 so the result is an exact integer
+      // (wolframscript: BernsteinBasis[3, 0, 0.] is 1, not 1.).
+      let x = if xf == 0.0 {
+        Expr::Integer(0)
+      } else if xf == 1.0 {
+        Expr::Integer(1)
+      } else {
+        args[2].clone()
+      };
+      let coef = crate::functions::binomial_coeff(d, n);
+      // A zero exponent yields 1 (the x^0 = 1 convention), avoiding a spurious
+      // 0^0 = Indeterminate at the x = 0 / x = 1 boundaries.
+      let xn = if n == 0 {
+        Expr::Integer(1)
+      } else {
+        crate::functions::math_ast::power_ast(&[x.clone(), Expr::Integer(n)])
+          .ok()?
+      };
+      let one_minus_x_dn = if d - n == 0 {
+        Expr::Integer(1)
+      } else {
         let one_minus_x = crate::functions::math_ast::plus_ast(&[
           Expr::Integer(1),
           crate::functions::math_ast::times_ast(&[
@@ -2311,26 +2340,19 @@ pub fn dispatch_math_functions(
           .ok()?,
         ])
         .ok()?;
-        let xn =
-          crate::functions::math_ast::power_ast(&[x.clone(), Expr::Integer(n)])
-            .ok()?;
-        let one_minus_x_dn = crate::functions::math_ast::power_ast(&[
+        crate::functions::math_ast::power_ast(&[
           one_minus_x,
           Expr::Integer(d - n),
         ])
-        .ok()?;
-        let result = crate::functions::math_ast::times_ast(&[
-          Expr::Integer(coef),
-          xn,
-          one_minus_x_dn,
-        ])
-        .ok()?;
-        return Some(Ok(result));
-      }
-      return Some(Ok(Expr::FunctionCall {
-        name: "BernsteinBasis".to_string(),
-        args: args.to_vec().into(),
-      }));
+        .ok()?
+      };
+      let result = crate::functions::math_ast::times_ast(&[
+        Expr::Integer(coef),
+        xn,
+        one_minus_x_dn,
+      ])
+      .ok()?;
+      return Some(Ok(result));
     }
     "Multinomial" => {
       return Some(crate::functions::math_ast::multinomial_ast(args));

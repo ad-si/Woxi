@@ -3670,3 +3670,69 @@ mod spherical_harmonic_canonical_form {
     );
   }
 }
+
+// BernsteinBasis[d, n, x] piecewise behavior, verified against wolframscript.
+// = Binomial[d,n] x^n (1-x)^(d-n) for 0<=x<=1, else 0; unevaluated when
+// d/n aren't valid integer indices or x is symbolic.
+mod bernstein_basis_piecewise {
+  use super::*;
+
+  #[test]
+  fn exact_rational_interior() {
+    assert_eq!(interpret("BernsteinBasis[3, 1, 1/2]").unwrap(), "3/8");
+    assert_eq!(interpret("BernsteinBasis[5, 2, 1/3]").unwrap(), "80/243");
+    assert_eq!(interpret("BernsteinBasis[2, 1, 2/3]").unwrap(), "4/9");
+  }
+
+  #[test]
+  fn real_interior() {
+    assert_eq!(interpret("BernsteinBasis[3, 1, 0.5]").unwrap(), "0.375");
+    assert_eq!(interpret("BernsteinBasis[2, 1, 0.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn clipped_to_zero_outside_unit_interval() {
+    // x > 1 or x < 0 (any numeric type, including exact constants) gives 0.
+    assert_eq!(interpret("BernsteinBasis[3, 1, 2]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 1, 3/2]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 1, -1]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 1, Pi]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 1, E]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 1, Sqrt[2]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn boundaries_give_exact_integers() {
+    // 0^0 = 1 convention; Real boundaries collapse to exact integers.
+    assert_eq!(interpret("BernsteinBasis[3, 0, 0]").unwrap(), "1");
+    assert_eq!(interpret("BernsteinBasis[3, 3, 1]").unwrap(), "1");
+    assert_eq!(interpret("BernsteinBasis[3, 0, 1]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 1, 0]").unwrap(), "0");
+    assert_eq!(interpret("BernsteinBasis[3, 0, 0.0]").unwrap(), "1");
+    assert_eq!(interpret("BernsteinBasis[3, 3, 1.0]").unwrap(), "1");
+    assert_eq!(interpret("BernsteinBasis[3, 1, 0.0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_and_invalid_indices_unevaluated() {
+    assert_eq!(
+      interpret("BernsteinBasis[3, 1, x]").unwrap(),
+      "BernsteinBasis[3, 1, x]"
+    );
+    // n > d stays unevaluated.
+    assert_eq!(
+      interpret("BernsteinBasis[3, 4, x]").unwrap(),
+      "BernsteinBasis[3, 4, x]"
+    );
+    // d == n == 0 is the lone x-independent case.
+    assert_eq!(interpret("BernsteinBasis[0, 0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn irrational_interior_stays_symbolic() {
+    assert_eq!(
+      interpret("BernsteinBasis[3, 1, 1/Pi]").unwrap(),
+      "(3*(1 - Pi^(-1))^2)/Pi"
+    );
+  }
+}
