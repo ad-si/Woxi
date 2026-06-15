@@ -1447,6 +1447,27 @@ mod monomial_list {
       "{x^3, 2*x, 1}"
     );
   }
+
+  // One-argument form auto-detects the variables (= Variables[poly]).
+  // Verified against wolframscript.
+  #[test]
+  fn one_argument_auto_variables() {
+    assert_eq!(
+      interpret("MonomialList[x^2 + 2 x y + y^2]").unwrap(),
+      "{x^2, 2*x*y, y^2}"
+    );
+    assert_eq!(interpret("MonomialList[1 + x + x^2]").unwrap(), "{x^2, x, 1}");
+    assert_eq!(
+      interpret("MonomialList[3 x y + 2 x^2]").unwrap(),
+      "{2*x^2, 3*x*y}"
+    );
+    assert_eq!(interpret("MonomialList[a x + b y]").unwrap(), "{a*x, b*y}");
+    assert_eq!(interpret("MonomialList[5]").unwrap(), "{5}");
+    assert_eq!(
+      interpret("MonomialList[(x + y)^2]").unwrap(),
+      "{x^2, 2*x*y, y^2}"
+    );
+  }
 }
 
 mod discriminant {

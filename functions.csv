@@ -1356,7 +1356,7 @@ LegendLabel,Option for specifying legend labels in plots,✅,none,9.0,1371
 BesselJZero,Compute zeros of the Bessel function J_n using bisection and Newton method,✅,pure,6.0,1375
 DiscretePlot3D,3D surface plot at discrete integer grid points,✅,none,8.0,1375
 EllipticThetaPrime,Derivative of Jacobi theta function with respect to z,✅,pure,3.0,1375
-MonomialList,List of monomials sorted by lexicographic order of exponent vectors,✅,none,7.0,1375
+MonomialList,List of monomials sorted by lexicographic order of exponent vectors,✅,pure,7.0,1375
 ComplexPlot,Domain coloring visualization of a complex function,✅,pure,12.0,1377
 RegionCentroid,Compute the centroid of a geometric region,✅,pure,10.0,1377
 APIFunction,Create a web API from a function,🚫,io,10.0,1379

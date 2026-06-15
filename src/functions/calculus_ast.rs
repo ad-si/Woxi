@@ -9057,9 +9057,7 @@ pub fn normalize_series_data(args: &[Expr]) -> Option<Expr> {
     coeffs.remove(0);
     new_nmin += 1;
   }
-  while !coeffs.is_empty()
-    && matches!(coeffs.last(), Some(Expr::Integer(0)))
-  {
+  while !coeffs.is_empty() && matches!(coeffs.last(), Some(Expr::Integer(0))) {
     coeffs.pop();
   }
   // All-zero series collapses to the empty O[(var-x0)^nmax] form (nmin = nmax).

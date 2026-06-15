@@ -104,6 +104,20 @@ pub fn dispatch_polynomial_functions(
     "MonomialList" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::monomial_list_ast(args));
     }
+    // MonomialList[poly] — auto-detect the variables: equivalent to
+    // MonomialList[poly, Variables[poly]].
+    "MonomialList" if args.len() == 1 => {
+      let vars = match crate::functions::math_ast::variables_ast(&[args[0]
+        .clone()])
+      {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(crate::functions::polynomial_ast::monomial_list_ast(&[
+        args[0].clone(),
+        vars,
+      ]));
+    }
     "CoefficientRules" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::coefficient_rules_ast(
         args,
