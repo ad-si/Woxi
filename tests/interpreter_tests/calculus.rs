@@ -356,6 +356,27 @@ mod integrate_with_sum {
     );
   }
 
+  // ∫ sech = -ArcCot[Sinh], ∫ csch = -ArcTanh[Cosh] (wolframscript's forms).
+  #[test]
+  fn integrate_sech_csch() {
+    assert_eq!(
+      interpret("Integrate[Sech[x], x]").unwrap(),
+      "-ArcCot[Sinh[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sech[2 x], x]").unwrap(),
+      "-1/2*ArcCot[Sinh[2*x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Csch[x], x]").unwrap(),
+      "-ArcTanh[Cosh[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Csch[3 x], x]").unwrap(),
+      "-1/3*ArcTanh[Cosh[3*x]]"
+    );
+  }
+
   #[test]
   fn integrate_four_sin_cos_product() {
     // ∫ 4 Sin[x] Cos[x] dx = -2 Cos[x]^2 (up to an additive constant;

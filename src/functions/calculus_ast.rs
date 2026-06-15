@@ -6728,6 +6728,36 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        "Sech" if args.len() == 1 => {
+          // ∫ sech(a*x) dx = -ArcCot[Sinh[a*x]]/a (wolframscript's form)
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let sinh_expr = Expr::FunctionCall {
+              name: "Sinh".to_string(),
+              args: args.clone(),
+            };
+            let arccot = Expr::FunctionCall {
+              name: "ArcCot".to_string(),
+              args: vec![sinh_expr].into(),
+            };
+            return Some(make_neg_divided(arccot, coeff));
+          }
+          None
+        }
+        "Csch" if args.len() == 1 => {
+          // ∫ csch(a*x) dx = -ArcTanh[Cosh[a*x]]/a (wolframscript's form)
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let cosh_expr = Expr::FunctionCall {
+              name: "Cosh".to_string(),
+              args: args.clone(),
+            };
+            let arctanh = Expr::FunctionCall {
+              name: "ArcTanh".to_string(),
+              args: vec![cosh_expr].into(),
+            };
+            return Some(make_neg_divided(arctanh, coeff));
+          }
+          None
+        }
         "Log" if args.len() == 1 => {
           // ∫ Log[x] dx = -x + x*Log[x]
           if let Expr::Identifier(name) = &args[0]
