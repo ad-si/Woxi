@@ -6600,6 +6600,66 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        "Tanh" if args.len() == 1 => {
+          // ∫ tanh(a*x) dx = Log[Cosh[a*x]]/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let cosh_expr = Expr::FunctionCall {
+              name: "Cosh".to_string(),
+              args: args.clone(),
+            };
+            let log_cosh = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![cosh_expr].into(),
+            };
+            return Some(make_divided(log_cosh, coeff));
+          }
+          None
+        }
+        "Coth" if args.len() == 1 => {
+          // ∫ coth(a*x) dx = Log[Sinh[a*x]]/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let sinh_expr = Expr::FunctionCall {
+              name: "Sinh".to_string(),
+              args: args.clone(),
+            };
+            let log_sinh = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![sinh_expr].into(),
+            };
+            return Some(make_divided(log_sinh, coeff));
+          }
+          None
+        }
+        "Sec" if args.len() == 1 => {
+          // ∫ sec(a*x) dx = ArcCoth[Sin[a*x]]/a (wolframscript's form)
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let sin_expr = Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: args.clone(),
+            };
+            let arccoth = Expr::FunctionCall {
+              name: "ArcCoth".to_string(),
+              args: vec![sin_expr].into(),
+            };
+            return Some(make_divided(arccoth, coeff));
+          }
+          None
+        }
+        "Csc" if args.len() == 1 => {
+          // ∫ csc(a*x) dx = -ArcTanh[Cos[a*x]]/a (wolframscript's form)
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let cos_expr = Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: args.clone(),
+            };
+            let arctanh = Expr::FunctionCall {
+              name: "ArcTanh".to_string(),
+              args: vec![cos_expr].into(),
+            };
+            return Some(make_neg_divided(arctanh, coeff));
+          }
+          None
+        }
         "Log" if args.len() == 1 => {
           // ∫ Log[x] dx = -x + x*Log[x]
           if let Expr::Identifier(name) = &args[0]

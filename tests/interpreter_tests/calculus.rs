@@ -273,6 +273,42 @@ mod integrate_with_sum {
     assert_eq!(interpret("Integrate[Log[x]/x, x]").unwrap(), "Log[x]^2/2");
   }
 
+  // Elementary hyperbolic / reciprocal-trig antiderivatives (wolframscript's
+  // ArcCoth/ArcTanh forms for Sec/Csc).
+  #[test]
+  fn integrate_tanh_coth() {
+    assert_eq!(interpret("Integrate[Tanh[x], x]").unwrap(), "Log[Cosh[x]]");
+    assert_eq!(
+      interpret("Integrate[Tanh[2 x], x]").unwrap(),
+      "Log[Cosh[2*x]]/2"
+    );
+    assert_eq!(interpret("Integrate[Coth[x], x]").unwrap(), "Log[Sinh[x]]");
+    assert_eq!(
+      interpret("Integrate[Coth[3 x], x]").unwrap(),
+      "Log[Sinh[3*x]]/3"
+    );
+  }
+
+  #[test]
+  fn integrate_sec_csc() {
+    assert_eq!(
+      interpret("Integrate[Sec[x], x]").unwrap(),
+      "ArcCoth[Sin[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Sec[2 x], x]").unwrap(),
+      "ArcCoth[Sin[2*x]]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Csc[x], x]").unwrap(),
+      "-ArcTanh[Cos[x]]"
+    );
+    assert_eq!(
+      interpret("Integrate[Csc[5 x], x]").unwrap(),
+      "-1/5*ArcTanh[Cos[5*x]]"
+    );
+  }
+
   #[test]
   fn integrate_sin_cos_product() {
     // ∫ Sin[x]*Cos[x] dx = -1/2*Cos[x]^2
