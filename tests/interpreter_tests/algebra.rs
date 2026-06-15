@@ -4689,6 +4689,43 @@ mod refine {
     );
   }
 
+  // Log[E^y] -> y when y is known real (the exponent's principal log).
+  #[test]
+  fn log_exp_real_var() {
+    assert_eq!(
+      interpret("Refine[Log[E^x], Element[x, Reals]]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn log_exp_positive_var() {
+    assert_eq!(interpret("Refine[Log[E^x], x > 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn log_exp_real_linear_exponent() {
+    assert_eq!(
+      interpret("Refine[Log[E^(2 x)], Element[x, Reals]]").unwrap(),
+      "2*x"
+    );
+    assert_eq!(
+      interpret("Refine[Log[Exp[x]], Element[x, Reals]]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn log_exp_unknown_var_unchanged() {
+    // No realness assumption: the 2*Pi*I branch ambiguity remains, so the
+    // logarithm must not be simplified.
+    assert_eq!(interpret("Refine[Log[E^x], True]").unwrap(), "Log[E^x]");
+    assert_eq!(
+      interpret("Refine[Log[E^x], Element[x, Complexes]]").unwrap(),
+      "Log[E^x]"
+    );
+  }
+
   // --- Trig with integer multiples of Pi ---
 
   #[test]

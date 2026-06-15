@@ -1867,6 +1867,34 @@ fn refine_log(
   info: &AssumptionInfo,
   _assumption: &Expr,
 ) -> Option<Expr> {
+  // Log[E^y] → y when y is known to be real: E^y is then a positive real
+  // whose principal logarithm is exactly y (no 2*Pi*I branch ambiguity).
+  let exp_arg = match arg {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Constant(c) if c == "E") => {
+      Some((**right).clone())
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Constant(c) if c == "E") =>
+    {
+      Some(args[1].clone())
+    }
+    Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  };
+  if let Some(y) = exp_arg
+    && is_known_real(&y, info)
+  {
+    return Some(y);
+  }
+
   // Log[x] with x < 0 → I*Pi + Log[-x]
   if let Expr::Identifier(var_name) = arg
     && info.negative_vars.contains(var_name)
