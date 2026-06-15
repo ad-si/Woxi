@@ -3681,6 +3681,56 @@ fn extract_linear_coefficient(expr: &Expr, var: &str) -> Option<Expr> {
 /// Try to integrate Sin[f(x)]^2 or Cos[f(x)]^2 using power-reduction identities.
 /// sin²(a*x) = x/2 - sin(2*a*x)/(4*a)
 /// cos²(a*x) = x/2 + sin(2*a*x)/(4*a)
+/// ∫ of a two-factor product that is exactly the derivative of an elementary
+/// reciprocal-trig / hyperbolic function:
+///   Sec[u] Tan[u]   ->  Sec[u]
+///   Csc[u] Cot[u]   -> -Csc[u]
+///   Sech[u] Tanh[u] -> -Sech[u]
+///   Csch[u] Coth[u] -> -Csch[u]
+/// where u = a*var is linear in var; the result carries the 1/a factor.
+fn try_integrate_derivative_product(
+  factors: &[&Expr],
+  var: &str,
+) -> Option<Expr> {
+  if factors.len() != 2 {
+    return None;
+  }
+  let head_arg = |e: &Expr| -> Option<(String, Expr)> {
+    if let Expr::FunctionCall { name, args } = e
+      && args.len() == 1
+    {
+      Some((name.clone(), args[0].clone()))
+    } else {
+      None
+    }
+  };
+  let (n0, a0) = head_arg(factors[0])?;
+  let (n1, a1) = head_arg(factors[1])?;
+  // Both factors must share the same (linear) argument.
+  if crate::syntax::expr_to_string(&a0) != crate::syntax::expr_to_string(&a1) {
+    return None;
+  }
+  let coeff = try_match_linear_arg(&a0, var)?;
+  let mut names = [n0.as_str(), n1.as_str()];
+  names.sort();
+  let (head, negate) = match (names[0], names[1]) {
+    ("Sec", "Tan") => ("Sec", false),
+    ("Cot", "Csc") => ("Csc", true),
+    ("Sech", "Tanh") => ("Sech", true),
+    ("Coth", "Csch") => ("Csch", true),
+    _ => return None,
+  };
+  let f = Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![a0].into(),
+  };
+  Some(if negate {
+    make_neg_divided(f, coeff)
+  } else {
+    make_divided(f, coeff)
+  })
+}
+
 fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   if let Expr::FunctionCall { name, args } = base
     && args.len() == 1
@@ -3706,6 +3756,24 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
         args: args.clone(),
       };
       return Some(make_neg_divided(cot_expr, coeff));
+    }
+    // ∫ Sech[a*x]^2 dx = Tanh[a*x]/a
+    if name == "Sech" {
+      let coeff = try_match_linear_arg(&args[0], var)?;
+      let tanh_expr = Expr::FunctionCall {
+        name: "Tanh".to_string(),
+        args: args.clone(),
+      };
+      return Some(make_divided(tanh_expr, coeff));
+    }
+    // ∫ Csch[a*x]^2 dx = -Coth[a*x]/a
+    if name == "Csch" {
+      let coeff = try_match_linear_arg(&args[0], var)?;
+      let coth_expr = Expr::FunctionCall {
+        name: "Coth".to_string(),
+        args: args.clone(),
+      };
+      return Some(make_neg_divided(coth_expr, coeff));
     }
     if !is_sin && !is_cos {
       return None;
@@ -6717,6 +6785,28 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(Expr::Identifier(var.to_string())),
             })
           } else {
+            // Direct-derivative products: Sec*Tan, Csc*Cot, Sech*Tanh,
+            // Csch*Coth (carrying through any constant factors).
+            if let Some(result) =
+              try_integrate_derivative_product(&var_factors, var)
+            {
+              if const_factors.is_empty() {
+                return Some(result);
+              }
+              let const_expr = if const_factors.len() == 1 {
+                const_factors[0].clone()
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: const_factors.iter().map(|e| (*e).clone()).collect(),
+                }
+              };
+              return Some(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(const_expr),
+                right: Box::new(result),
+              });
+            }
             // Multiple variable-dependent factors: check for fraction form
             // Times[..., Power[den, -1]] → treat as numerator / denominator
             let mut num_var_factors: Vec<Expr> = Vec::new();

@@ -318,6 +318,44 @@ mod integrate_with_sum {
     );
   }
 
+  // Products that are exact derivatives of an elementary function.
+  #[test]
+  fn integrate_derivative_products() {
+    assert_eq!(interpret("Integrate[Sec[x] Tan[x], x]").unwrap(), "Sec[x]");
+    assert_eq!(interpret("Integrate[Csc[x] Cot[x], x]").unwrap(), "-Csc[x]");
+    assert_eq!(
+      interpret("Integrate[Sech[x] Tanh[x], x]").unwrap(),
+      "-Sech[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[Csch[x] Coth[x], x]").unwrap(),
+      "-Csch[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_derivative_product_with_factors() {
+    // Linear argument carries a 1/a factor; constant factors pass through.
+    assert_eq!(
+      interpret("Integrate[Sec[2 x] Tan[2 x], x]").unwrap(),
+      "Sec[2*x]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[2 Sec[x] Tan[x], x]").unwrap(),
+      "2*Sec[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_hyperbolic_squares() {
+    assert_eq!(interpret("Integrate[Sech[x]^2, x]").unwrap(), "Tanh[x]");
+    assert_eq!(interpret("Integrate[Csch[x]^2, x]").unwrap(), "-Coth[x]");
+    assert_eq!(
+      interpret("Integrate[Sech[3 x]^2, x]").unwrap(),
+      "Tanh[3*x]/3"
+    );
+  }
+
   #[test]
   fn integrate_four_sin_cos_product() {
     // ∫ 4 Sin[x] Cos[x] dx = -2 Cos[x]^2 (up to an additive constant;
