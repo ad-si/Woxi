@@ -2695,6 +2695,33 @@ mod expand_threading {
     );
   }
 
+  // Conjugate of any real-valued (NumericQ) expression is the expression
+  // itself, not just exact constants. Verified against wolframscript.
+  #[test]
+  fn conjugate_real_valued_expressions() {
+    assert_eq!(interpret("Conjugate[Sqrt[2]]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("Conjugate[Pi^2]").unwrap(), "Pi^2");
+    assert_eq!(interpret("Conjugate[Log[2]]").unwrap(), "Log[2]");
+    assert_eq!(interpret("Conjugate[Sin[2]]").unwrap(), "Sin[2]");
+    assert_eq!(interpret("Conjugate[2^(1/3)]").unwrap(), "2^(1/3)");
+    assert_eq!(
+      interpret("Conjugate[Sqrt[2] + Pi]").unwrap(),
+      "Sqrt[2] + Pi"
+    );
+  }
+
+  // Complex-valued expressions must still be conjugated, not treated as real.
+  #[test]
+  fn conjugate_complex_still_works() {
+    assert_eq!(interpret("Conjugate[3 + 4 I]").unwrap(), "3 - 4*I");
+    assert_eq!(interpret("Conjugate[I]").unwrap(), "-I");
+    assert_eq!(interpret("Conjugate[Sqrt[-2]]").unwrap(), "-I*Sqrt[2]");
+    assert_eq!(
+      interpret("Conjugate[a + b I]").unwrap(),
+      "Conjugate[a] - I*Conjugate[b]"
+    );
+  }
+
   #[test]
   fn product_log_special_values() {
     assert_eq!(interpret("ProductLog[0]").unwrap(), "0");

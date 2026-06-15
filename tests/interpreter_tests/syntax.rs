@@ -1193,10 +1193,7 @@ mod rule_display {
   // The same parenthesization applies to rule-valued association keys.
   #[test]
   fn rule_keyed_association_parenthesized() {
-    assert_eq!(
-      interpret("<|(a -> b) -> 1|>").unwrap(),
-      "<|(a -> b) -> 1|>"
-    );
+    assert_eq!(interpret("<|(a -> b) -> 1|>").unwrap(), "<|(a -> b) -> 1|>");
     assert_eq!(
       interpret("Normal[<|(a -> b) -> 1|>]").unwrap(),
       "{(a -> b) -> 1}"

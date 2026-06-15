@@ -348,8 +348,12 @@ pub fn is_known_real(expr: &Expr) -> bool {
 /// For known reals, returns the value; for I, returns -I;
 /// for Plus/Times/List, distributes; otherwise wraps in Conjugate[...].
 pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
-  // Known real numbers are their own conjugate
-  if is_known_real(expr) {
+  // Real-valued expressions are their own conjugate. `is_real_valued` covers
+  // exact reals/constants plus any NumericQ expression that evaluates to a
+  // finite real (Sqrt[2], Log[2], Sin[2], Pi^2, sums of reals, …). Complex
+  // expressions evaluate to None here (they contain I, or a negative base
+  // under a fractional power → NaN), so they correctly fall through.
+  if is_real_valued(expr) {
     return Ok(expr.clone());
   }
 
