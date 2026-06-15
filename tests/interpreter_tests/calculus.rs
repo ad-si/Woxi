@@ -2920,8 +2920,11 @@ mod trig_sec_csc_cot {
 
   #[test]
   fn sec_one_point_zero_machine_real() {
-    // Sec[1.] = 1/Cos[1.] ≈ 1.8508157176809255 (matches wolframscript).
-    assert_eq!(interpret("Sec[1.]").unwrap(), "1.8508157176809255");
+    // Sec[1.] = 1/Cos[1.] ≈ 1.8508157176809255. The last ULP is platform-
+    // dependent (system libm differs across OSes; Linux CI gives ...257), so
+    // compare numerically rather than by exact string.
+    let val: f64 = interpret("Sec[1.]").unwrap().parse().unwrap();
+    assert!((val - 1.8508157176809255).abs() < 1e-12);
   }
 
   #[test]

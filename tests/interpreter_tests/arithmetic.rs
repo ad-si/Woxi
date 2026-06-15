@@ -2578,7 +2578,11 @@ mod expand_threading {
 
   #[test]
   fn arcsech_half() {
-    assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.3169578969248166");
+    // ArcSech[0.5] = ArcCosh[2] ≈ 1.3169578969248166. The last ULP is
+    // platform-dependent (system libm differs across OSes; Linux CI gives
+    // ...168), so compare numerically rather than by exact string.
+    let val: f64 = interpret("ArcSech[0.5]").unwrap().parse().unwrap();
+    assert!((val - 1.3169578969248166).abs() < 1e-12);
   }
 
   #[test]

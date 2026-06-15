@@ -2338,9 +2338,11 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn haversine_real_matches_wolframscript() {
-    // Regression: computing via Sin[x/2]^2 gives the same f64 value as
-    // wolframscript; the older (1 - Cos[x])/2 formula was one ULP off.
-    assert_eq!(interpret("Haversine[1.5]").unwrap(), "0.4646313991661485");
+    // Haversine[1.5] = Sin[1.5/2]^2 ≈ 0.4646313991661485. The exact last ULP
+    // is platform-dependent (system libm differs across OSes; Linux CI gives
+    // ...854), so compare numerically rather than by exact string.
+    let val: f64 = interpret("Haversine[1.5]").unwrap().parse().unwrap();
+    assert!((val - 0.4646313991661485).abs() < 1e-12);
   }
   #[test]
   fn inverse_haversine_zero() {
