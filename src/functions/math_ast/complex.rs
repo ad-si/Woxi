@@ -42,7 +42,7 @@ fn distribute_re_im(
     && args.len() >= 2
   {
     let (real_f, other_f): (Vec<Expr>, Vec<Expr>) =
-      args.iter().cloned().partition(|e| is_real_valued(e));
+      args.iter().cloned().partition(is_real_valued);
     if !real_f.is_empty() && !other_f.is_empty() {
       let real_prod = match times_ast(&real_f) {
         Ok(p) => p,

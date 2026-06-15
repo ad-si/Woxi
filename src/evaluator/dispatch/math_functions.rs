@@ -5167,7 +5167,9 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
 /// ComplexExpand[expr] — expand complex-valued functions assuming all
 /// variables are real. E.g. Sin[x + I*y] → Sin[x]*Cosh[y] + I*Cos[x]*Sinh[y].
 fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
-  Ok(complex_expand_recursive(expr))
+  // Re-evaluate so arithmetic left by the generic Plus/Times recursion folds
+  // (e.g. the `-0` from Re[a + b I] = -Im[b] + Re[a] → -0 + a).
+  Ok(ce_simplify(complex_expand_recursive(expr)))
 }
 
 /// Like `complex_expand_ast` but additionally distributes products via
@@ -6281,24 +6283,27 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 .into(),
               });
             }
-            // Re[a + I*b] = a
-            "Re" => return re,
-            // Im[a + I*b] = b
-            "Im" => return im,
-            // Conjugate[a + I*b] = a - I*b
-            "Conjugate" => {
-              return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(re),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Identifier("I".to_string())),
-                  right: Box::new(im),
-                }),
-              });
-            }
             _ => {}
           }
+        }
+        // Re/Im/Conjugate hold whether or not the imaginary part is zero —
+        // ComplexExpand assumes every symbol is real, so Re[a] = a, Im[a] = 0,
+        // Conjugate[a] = a. (When im != 0 this gives Re[a+I b] = a, etc.)
+        match name.as_str() {
+          "Re" => return ce_simplify(re),
+          "Im" => return ce_simplify(im),
+          "Conjugate" => {
+            return ce_simplify(Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(re),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Identifier("I".to_string())),
+                right: Box::new(im),
+              }),
+            });
+          }
+          _ => {}
         }
       }
 

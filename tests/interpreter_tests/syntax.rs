@@ -6933,6 +6933,37 @@ mod reim {
 mod complex_expand {
   use super::*;
 
+  // ComplexExpand assumes every symbol is real, so Re/Im/Conjugate of a bare
+  // symbol (and of a symbolic complex) collapse. Verified against wolframscript.
+  #[test]
+  fn re_im_conjugate_real_symbol() {
+    assert_eq!(interpret("ComplexExpand[Re[a]]").unwrap(), "a");
+    assert_eq!(interpret("ComplexExpand[Im[a]]").unwrap(), "0");
+    assert_eq!(interpret("ComplexExpand[Conjugate[a]]").unwrap(), "a");
+  }
+
+  #[test]
+  fn re_im_conjugate_symbolic_complex() {
+    assert_eq!(interpret("ComplexExpand[Re[a + b I]]").unwrap(), "a");
+    assert_eq!(interpret("ComplexExpand[Im[a + b I]]").unwrap(), "b");
+    assert_eq!(
+      interpret("ComplexExpand[Conjugate[a + b I]]").unwrap(),
+      "a - I*b"
+    );
+  }
+
+  #[test]
+  fn re_im_of_power() {
+    assert_eq!(
+      interpret("ComplexExpand[Re[(a + b I)^2]]").unwrap(),
+      "a^2 - b^2"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Im[(a + b I)^2]]").unwrap(),
+      "2*a*b"
+    );
+  }
+
   #[test]
   fn sin_complex() {
     // ComplexExpand[Sin[x + I*y]] = Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]

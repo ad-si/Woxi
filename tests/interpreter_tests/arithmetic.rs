@@ -2758,10 +2758,7 @@ mod expand_threading {
     assert_eq!(interpret("Im[a + b I]").unwrap(), "Im[a] + Re[b]");
     assert_eq!(interpret("Re[x + y + z I]").unwrap(), "-Im[z] + Re[x + y]");
     assert_eq!(interpret("Re[a - b I]").unwrap(), "Im[b] + Re[a]");
-    assert_eq!(
-      interpret("Re[2 a + 3 b I]").unwrap(),
-      "-3*Im[b] + 2*Re[a]"
-    );
+    assert_eq!(interpret("Re[2 a + 3 b I]").unwrap(), "-3*Im[b] + 2*Re[a]");
     assert_eq!(interpret("Im[a + b I + c]").unwrap(), "Im[a + c] + Re[b]");
   }
 
