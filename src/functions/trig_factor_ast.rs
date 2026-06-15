@@ -57,6 +57,22 @@ fn div(a: Expr, b: i128) -> Expr {
   }
 }
 
+/// Half-angle term `e/2`, printed as `e/2` (Wolfram's distributed form,
+/// not the collapsed `(...)/2`).
+fn half(e: &Expr) -> Expr {
+  div(e.clone(), 2)
+}
+
+/// `p/2 + q/2`.
+fn half_sum(p: &Expr, q: &Expr) -> Expr {
+  plus(vec![half(p), half(q)])
+}
+
+/// `p/2 - q/2`.
+fn half_diff(p: &Expr, q: &Expr) -> Expr {
+  plus(vec![half(p), neg(half(q))])
+}
+
 fn pow2(e: Expr) -> Expr {
   Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Power,
@@ -268,6 +284,33 @@ fn factor(expr: &Expr) -> Option<Expr> {
       (true, false) => Some(sqrt2_sin(&u, false, -1)),
       _ => None,
     };
+  }
+
+  // Sin[p] +- Sin[q] sum-to-product, restricted to distinct atomic
+  // arguments where Wolfram yields the plain single-step factoring
+  // (e.g. Sin[2 x] + Sin[4 x] factors further, so non-symbols are
+  // deliberately excluded). The two factors carry different heads
+  // (Cos and Sin), so Woxi's Times ordering already matches Wolfram.
+  //   Sin[p] + Sin[q] = 2 Cos[p/2 - q/2] Sin[p/2 + q/2]
+  //   Sin[p] - Sin[q] = 2 Cos[p/2 + q/2] Sin[p/2 - q/2]
+  if let (Some((true, na, ua)), Some((true, nb, ub))) = (classify(a), classify(b))
+    && matches!(ua, Expr::Identifier(_))
+    && matches!(ub, Expr::Identifier(_))
+    && !same(&ua, &ub)
+  {
+    let hd = half_diff(&ua, &ub);
+    let hs = half_sum(&ua, &ub);
+    // Fold the overall sign into the leading coefficient (-2, not -(2 ...))
+    // to match Wolfram's printed form.
+    let cos_sin = |k: i128, c: Expr, s: Expr| {
+      times(vec![Expr::Integer(k), trig_call("Cos", c), trig_call("Sin", s)])
+    };
+    return Some(match (na, nb) {
+      (false, false) => cos_sin(2, hd, hs),   // +Sin[p] +Sin[q]
+      (false, true) => cos_sin(2, hs, hd),    // +Sin[p] -Sin[q]
+      (true, false) => cos_sin(-2, hs, hd),   // -Sin[p] +Sin[q]
+      (true, true) => cos_sin(-2, hd, hs),    // -Sin[p] -Sin[q]
+    });
   }
 
   // Sin[u]^2 - Cos[u]^2 and Cos[u]^2 - Sin[u]^2

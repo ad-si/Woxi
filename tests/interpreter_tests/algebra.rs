@@ -7165,9 +7165,46 @@ mod trig_factor {
   }
 
   #[test]
+  fn sin_sum_to_product() {
+    // Sin[p] +- Sin[q] sum-to-product for distinct atomic arguments.
+    assert_eq!(
+      interpret("TrigFactor[Sin[x] + Sin[y]]").unwrap(),
+      "2*Cos[x/2 - y/2]*Sin[x/2 + y/2]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[x] - Sin[y]]").unwrap(),
+      "2*Cos[x/2 + y/2]*Sin[x/2 - y/2]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[a] + Sin[b]]").unwrap(),
+      "2*Cos[a/2 - b/2]*Sin[a/2 + b/2]"
+    );
+    assert_eq!(
+      interpret("TrigFactor[Sin[a] - Sin[b]]").unwrap(),
+      "2*Cos[a/2 + b/2]*Sin[a/2 - b/2]"
+    );
+    // Both terms negative: overall sign folds into the leading -2.
+    assert_eq!(
+      interpret("TrigFactor[-Sin[x] - Sin[y]]").unwrap(),
+      "-2*Cos[x/2 - y/2]*Sin[x/2 + y/2]"
+    );
+    // Reversed difference normalizes to x-before-y with a pulled sign.
+    assert_eq!(
+      interpret("TrigFactor[Sin[y] - Sin[x]]").unwrap(),
+      "-2*Cos[x/2 + y/2]*Sin[x/2 - y/2]"
+    );
+  }
+
+  #[test]
   fn passthrough_when_nothing_factors() {
     assert_eq!(interpret("TrigFactor[Sin[x]]").unwrap(), "Sin[x]");
     assert_eq!(interpret("TrigFactor[x + 1]").unwrap(), "1 + x");
+    // Integer-multiple arguments factor further in Wolfram, so the
+    // single-step sum-to-product rule deliberately leaves them alone.
+    assert_eq!(
+      interpret("TrigFactor[Sin[2 x] + Sin[4 x]]").unwrap(),
+      "Sin[2*x] + Sin[4*x]"
+    );
   }
 }
 
