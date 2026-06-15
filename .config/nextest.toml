@@ -37,6 +37,19 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 [profile.slow]
 slow-timeout = { period = "900s", terminate-after = 1 }
 
+# `script_egyptian_fractions` is allocation-throughput-bound (~330s standalone
+# in debug). Run concurrently with the other ~23 heavy scripts, the shared
+# allocator / memory-bandwidth contention on a CI runner pushes it past the
+# 900s ceiling and the job fails. Reserve all test threads so it runs in
+# isolation — its wall time then stays close to standalone — and give it a wide
+# timeout for the slower-than-local CI hardware. This override must precede the
+# broad `/^script_/` rule below, since nextest applies the FIRST matching
+# override for a given setting.
+[[profile.slow.overrides]]
+filter = 'test(script_egyptian_fractions)'
+threads-required = 'num-cpus'
+slow-timeout = { period = "1800s", terminate-after = 1 }
+
 [[profile.slow.overrides]]
 filter = 'test(/^script_/)'
 slow-timeout = { period = "900s", terminate-after = 1 }
