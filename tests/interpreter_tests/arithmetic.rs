@@ -5875,6 +5875,46 @@ mod trig_of_inverse_trig {
   }
 }
 
+mod hyperbolic_of_inverse_hyperbolic {
+  use super::*;
+
+  #[test]
+  fn same_function_collapses() {
+    assert_eq!(interpret("Sinh[ArcSinh[x]]").unwrap(), "x");
+    assert_eq!(interpret("Cosh[ArcCosh[x]]").unwrap(), "x");
+    assert_eq!(interpret("Tanh[ArcTanh[x]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn clean_sqrt_forms() {
+    assert_eq!(interpret("Sinh[ArcTanh[x]]").unwrap(), "x/Sqrt[1 - x^2]");
+    assert_eq!(interpret("Cosh[ArcSinh[x]]").unwrap(), "Sqrt[1 + x^2]");
+    assert_eq!(interpret("Cosh[ArcTanh[x]]").unwrap(), "1/Sqrt[1 - x^2]");
+    assert_eq!(interpret("Tanh[ArcSinh[x]]").unwrap(), "x/Sqrt[1 + x^2]");
+  }
+
+  // ArcCosh uses wolframscript's branch-cut form Sqrt[(-1+x)/(1+x)] (1+x).
+  #[test]
+  fn arccosh_branch_form() {
+    assert_eq!(
+      interpret("Sinh[ArcCosh[x]]").unwrap(),
+      "Sqrt[(-1 + x)/(1 + x)]*(1 + x)"
+    );
+    assert_eq!(
+      interpret("Tanh[ArcCosh[x]]").unwrap(),
+      "(Sqrt[(-1 + x)/(1 + x)]*(1 + x))/x"
+    );
+  }
+
+  #[test]
+  fn compound_argument_expands() {
+    assert_eq!(
+      interpret("Tanh[ArcSinh[2 x]]").unwrap(),
+      "(2*x)/Sqrt[1 + 4*x^2]"
+    );
+  }
+}
+
 mod imaginary_argument_trig {
   use super::*;
 

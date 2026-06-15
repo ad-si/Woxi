@@ -929,6 +929,56 @@ fn reciprocal_trig_of_inverse(outer: &str, inner: &Expr) -> Option<Expr> {
   Some(result)
 }
 
+/// `Sqrt[(-1 + x)/(1 + x)] * (1 + x)` — wolframscript's branch-cut form for
+/// the hyperbolic-of-ArcCosh identities.
+fn arccosh_branch_form(x: &Expr) -> Expr {
+  let one_plus = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(Expr::Integer(1)),
+    right: Box::new(x.clone()),
+  };
+  let minus_one_plus = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(x.clone()),
+  };
+  let sqrt = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(minus_one_plus),
+      right: Box::new(one_plus.clone()),
+    }]
+    .into(),
+  };
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![sqrt, one_plus].into(),
+  }
+}
+
+/// Hyperbolic (Sinh/Cosh/Tanh) of an inverse-hyperbolic function, collapsed to
+/// its algebraic form. Returns `None` unless the argument is `ArcSinh`/
+/// `ArcCosh`/`ArcTanh` of one argument.
+fn hyperbolic_of_inverse(outer: &str, inner: &Expr) -> Option<Expr> {
+  let (name, x) = match inner {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      (name.as_str(), &args[0])
+    }
+    _ => return None,
+  };
+  let result = match (outer, name) {
+    ("Sinh", "ArcCosh") => arccosh_branch_form(x),
+    ("Sinh", "ArcTanh") => divide(x.clone(), sqrt_one_minus_sq(x)),
+    ("Cosh", "ArcSinh") => sqrt_one_plus_sq(x),
+    ("Cosh", "ArcTanh") => divide(Expr::Integer(1), sqrt_one_minus_sq(x)),
+    ("Tanh", "ArcSinh") => divide(x.clone(), sqrt_one_plus_sq(x)),
+    ("Tanh", "ArcCosh") => divide(arccosh_branch_form(x), x.clone()),
+    _ => return None,
+  };
+  Some(result)
+}
+
 /// try exact Pi-fraction lookup, otherwise return unevaluated.
 pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -3279,6 +3329,10 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(ia[0].clone());
   }
+  // Sinh of an inverse hyperbolic function → algebraic form.
+  if let Some(r) = hyperbolic_of_inverse("Sinh", &args[0]) {
+    return Ok(r);
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -3318,6 +3372,10 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && ia.len() == 1
   {
     return Ok(ia[0].clone());
+  }
+  // Cosh of an inverse hyperbolic function → algebraic form.
+  if let Some(r) = hyperbolic_of_inverse("Cosh", &args[0]) {
+    return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -3363,6 +3421,10 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && ia.len() == 1
   {
     return Ok(ia[0].clone());
+  }
+  // Tanh of an inverse hyperbolic function → algebraic form.
+  if let Some(r) = hyperbolic_of_inverse("Tanh", &args[0]) {
+    return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
