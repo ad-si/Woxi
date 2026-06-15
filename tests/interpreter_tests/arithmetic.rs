@@ -2722,6 +2722,36 @@ mod expand_threading {
     );
   }
 
+  // Re/Im of a real-valued (NumericQ) expression: the expression and 0.
+  #[test]
+  fn re_im_real_valued_expressions() {
+    assert_eq!(interpret("Re[Sqrt[2]]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("Im[Sqrt[2]]").unwrap(), "0");
+    assert_eq!(interpret("Re[Pi^2]").unwrap(), "Pi^2");
+    assert_eq!(interpret("Im[Log[2]]").unwrap(), "0");
+    assert_eq!(interpret("Re[Sqrt[2] + Pi]").unwrap(), "Sqrt[2] + Pi");
+    assert_eq!(interpret("Im[Sqrt[2] + Pi]").unwrap(), "0");
+  }
+
+  // Re/Im still extract parts of genuine complex values.
+  #[test]
+  fn re_im_complex_still_works() {
+    assert_eq!(interpret("Re[3 + 4 I]").unwrap(), "3");
+    assert_eq!(interpret("Im[3 + 4 I]").unwrap(), "4");
+    assert_eq!(interpret("Im[2 I]").unwrap(), "2");
+    assert_eq!(interpret("Re[a]").unwrap(), "Re[a]");
+  }
+
+  // Arg of a real-valued expression: 0 for positive, Pi for negative.
+  #[test]
+  fn arg_real_valued_expressions() {
+    assert_eq!(interpret("Arg[Sqrt[2]]").unwrap(), "0");
+    assert_eq!(interpret("Arg[Log[2]]").unwrap(), "0");
+    assert_eq!(interpret("Arg[Pi^2]").unwrap(), "0");
+    assert_eq!(interpret("Arg[Pi - 4]").unwrap(), "Pi");
+    assert_eq!(interpret("Arg[-Sqrt[2]]").unwrap(), "Pi");
+  }
+
   #[test]
   fn product_log_special_values() {
     assert_eq!(interpret("ProductLog[0]").unwrap(), "0");

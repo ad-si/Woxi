@@ -24,9 +24,10 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
-  // Known real constants (Pi, E, etc.) are their own real part
-  // Check before complex extraction which would convert them to floats
-  if is_known_real(&args[0]) {
+  // Real-valued expressions (Pi, Sqrt[2], Log[2], Pi^2, sums of reals, …) are
+  // their own real part. Complex expressions evaluate to None here and fall
+  // through to the extraction paths below.
+  if is_real_valued(&args[0]) {
     return Ok(args[0].clone());
   }
 
@@ -97,9 +98,9 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
-  // Known real constants (Pi, E, etc.) have imaginary part 0
-  // Check before complex extraction which would convert them to floats
-  if is_known_real(&args[0]) {
+  // Real-valued expressions (Pi, Sqrt[2], Log[2], Pi^2, sums of reals, …) have
+  // imaginary part 0. Complex expressions fall through to the extractors.
+  if is_real_valued(&args[0]) {
     return Ok(Expr::Integer(0));
   }
 
@@ -744,6 +745,18 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if *f > 0.0 {
       Ok(Expr::Integer(0))
     } else if *f < 0.0 {
+      Ok(Expr::Identifier("Pi".to_string()))
+    } else {
+      Ok(Expr::Integer(0))
+    };
+  }
+
+  // Real-valued composite (Sqrt[2], Log[2], Pi^2, Pi - 4, …): Arg is 0 for a
+  // positive (or zero) value and Pi for a negative one.
+  if is_real_valued(&args[0])
+    && let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+  {
+    return if v < 0.0 {
       Ok(Expr::Identifier("Pi".to_string()))
     } else {
       Ok(Expr::Integer(0))
