@@ -963,8 +963,9 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // RGBColor[r, g, b] → RGBColor[1-r, 1-g, 1-b]
       // RGBColor[r, g, b, a] → RGBColor[1-r, 1-g, 1-b, a]
       fn negate_component(e: &Expr) -> Result<Expr, InterpreterError> {
+        // ColorNegate numericizes components: an exact 1 negates to the
+        // machine real `0.`, matching wolframscript's RGBColor[0., 1., 1.].
         match e {
-          Expr::Integer(n) => Ok(Expr::Integer(1 - n)),
           Expr::Real(r) => Ok(Expr::Real(1.0 - r)),
           _ => {
             let v = expr_to_f64(e)?;
@@ -1000,8 +1001,9 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: cargs } if name == "GrayLevel" => {
       // GrayLevel[v] → GrayLevel[1-v], alpha preserved if present
       fn negate_component(e: &Expr) -> Result<Expr, InterpreterError> {
+        // ColorNegate numericizes components: an exact 1 negates to the
+        // machine real `0.`, matching wolframscript's RGBColor[0., 1., 1.].
         match e {
-          Expr::Integer(n) => Ok(Expr::Integer(1 - n)),
           Expr::Real(r) => Ok(Expr::Real(1.0 - r)),
           _ => {
             let v = expr_to_f64(e)?;

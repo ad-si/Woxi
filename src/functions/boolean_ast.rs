@@ -416,6 +416,34 @@ pub fn bigfloat_digits_match_to(d0: &str, d1: &str, n: usize) -> bool {
   sig_prefix(d0, n) == sig_prefix(d1, n)
 }
 
+/// Whether two expressions are determinably equal component by component:
+/// the same head and arity with every leaf numerically or structurally
+/// equal. Lets `Equal` reduce e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`
+/// or `f[1., x] == f[1, x]` to True. Returns false when any component is not
+/// determinably equal (the caller then leaves the comparison symbolic rather
+/// than concluding False, matching Wolfram).
+pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
+  use crate::functions::math_ast::try_eval_to_f64;
+  match (a, b) {
+    (
+      Expr::FunctionCall { name: n1, args: a1 },
+      Expr::FunctionCall { name: n2, args: a2 },
+    ) if n1 == n2 && a1.len() == a2.len() => {
+      a1.iter().zip(a2.iter()).all(|(x, y)| all_components_equal(x, y))
+    }
+    (Expr::List(l1), Expr::List(l2)) if l1.len() == l2.len() => {
+      l1.iter().zip(l2.iter()).all(|(x, y)| all_components_equal(x, y))
+    }
+    _ => {
+      if let (Some(va), Some(vb)) = (try_eval_to_f64(a), try_eval_to_f64(b)) {
+        va == vb
+      } else {
+        crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+      }
+    }
+  }
+}
+
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
@@ -512,6 +540,16 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("False".to_string()));
       }
     }
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Structured operands sharing head and arity are equal when every component
+  // is determinably equal — e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`.
+  // Only ever concludes True here; mismatches fall through to the symbolic
+  // form (Wolfram leaves `f[1.] == f[2]` unevaluated, not False).
+  if matches!(&args[0], Expr::FunctionCall { .. } | Expr::List(_))
+    && args.iter().skip(1).all(|a| all_components_equal(&args[0], a))
+  {
     return Ok(Expr::Identifier("True".to_string()));
   }
 

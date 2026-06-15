@@ -3887,3 +3887,64 @@ mod cases {
     );
   }
 }
+
+mod color_negate_numericizes {
+  use super::*;
+
+  // ColorNegate numericizes components, so an exact 1 becomes the machine
+  // real 0. (matching wolframscript's RGBColor[0., 1., 1.]).
+  #[test]
+  fn integer_components_become_reals() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorNegate[RGBColor[1, 0, 0]]").unwrap(),
+      "RGBColor[0., 1., 1.]"
+    );
+    assert_eq!(
+      interpret("ColorNegate[Red]").unwrap(),
+      "RGBColor[0., 1., 1.]"
+    );
+    assert_eq!(interpret("ColorNegate[White]").unwrap(), "GrayLevel[0.]");
+  }
+
+  #[test]
+  fn alpha_channel_preserved() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorNegate[RGBColor[1, 0, 0, 0.5]]").unwrap(),
+      "RGBColor[0., 1., 1., 0.5]"
+    );
+  }
+}
+
+mod structural_numeric_equal {
+  use super::*;
+
+  // Equal compares same-head expressions component-wise, treating an exact
+  // integer and the equal machine real as equal.
+  #[test]
+  fn color_directives_compare_numerically() {
+    assert_eq!(
+      interpret("RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("ColorNegate[Yellow] == Blue").unwrap(), "True");
+  }
+
+  #[test]
+  fn generic_heads_and_lists() {
+    assert_eq!(interpret("f[1.] == f[1]").unwrap(), "True");
+    assert_eq!(interpret("f[1., x] == f[1, x]").unwrap(), "True");
+    assert_eq!(
+      interpret("point[{0., 0.}] == point[{0, 0}]").unwrap(),
+      "True"
+    );
+  }
+
+  // A determinably-different component leaves the comparison unevaluated
+  // (not False) for a symbolic head, matching Wolfram.
+  #[test]
+  fn mismatch_stays_symbolic() {
+    assert_eq!(interpret("f[1.] == f[2]").unwrap(), "f[1.] == f[2]");
+  }
+}

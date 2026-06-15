@@ -2402,6 +2402,12 @@ pub fn evaluate_expr_to_expr_inner(
                 )
               {
                 ord == std::cmp::Ordering::Equal
+              } else if crate::functions::boolean_ast::all_components_equal(
+                left, right,
+              ) {
+                // Same head and arity with every leaf determinably equal,
+                // e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`.
+                true
               } else if has_free_symbols(left) || has_free_symbols(right) {
                 // Symbolic: return unevaluated
                 return Ok(Expr::Comparison {
