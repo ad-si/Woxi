@@ -964,6 +964,20 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Exact symbolic complex with real-valued (possibly surd) parts that the
+  // rational extractor above can't see: Arg[z] = ArcTan[Re[z], Im[z]].
+  // E.g. Arg[1 + I Sqrt[3]] = ArcTan[1, Sqrt[3]] = Pi/3.
+  if let (Ok(re), Ok(im)) = (
+    crate::evaluator::evaluate_function_call_ast("Re", &[args[0].clone()]),
+    crate::evaluator::evaluate_function_call_ast("Im", &[args[0].clone()]),
+  ) && is_real_valued(&re)
+    && is_real_valued(&im)
+    && crate::functions::math_ast::try_eval_to_f64(&im)
+      .is_some_and(|v| v != 0.0)
+  {
+    return crate::evaluator::evaluate_function_call_ast("ArcTan", &[re, im]);
+  }
+
   // Try float extraction
   if let Some((re, im)) = try_extract_complex_float(&args[0])
     && (im != 0.0 || re != 0.0)

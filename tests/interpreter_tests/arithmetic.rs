@@ -2779,6 +2779,16 @@ mod expand_threading {
     assert_eq!(interpret("Arg[-Sqrt[2]]").unwrap(), "Pi");
   }
 
+  // Arg of a complex number with surd parts: Arg[z] = ArcTan[Re[z], Im[z]].
+  #[test]
+  fn arg_surd_complex() {
+    assert_eq!(interpret("Arg[1 + I Sqrt[3]]").unwrap(), "Pi/3");
+    assert_eq!(interpret("Arg[Sqrt[3] + I]").unwrap(), "Pi/6");
+    assert_eq!(interpret("Arg[-Sqrt[3] + I]").unwrap(), "(5*Pi)/6");
+    assert_eq!(interpret("Arg[I Sqrt[3]]").unwrap(), "Pi/2");
+    assert_eq!(interpret("Arg[-1 - I Sqrt[3]]").unwrap(), "(-2*Pi)/3");
+  }
+
   #[test]
   fn product_log_special_values() {
     assert_eq!(interpret("ProductLog[0]").unwrap(), "0");
