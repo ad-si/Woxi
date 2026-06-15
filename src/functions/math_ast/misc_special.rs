@@ -6,7 +6,17 @@ use num_bigint::BigInt;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.
 /// Computes Product[(1 - a*q^k), {k, 0, n-1}] for non-negative integer n.
+/// QPochhammer[a, q] — infinite q-Pochhammer Product[(1 - a*q^k), {k, 0, Inf}].
+/// QPochhammer[q]    — Euler function, equal to QPochhammer[q, q].
 pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // QPochhammer[q] = QPochhammer[q, q]
+  if args.len() == 1 {
+    return q_pochhammer_ast(&[args[0].clone(), args[0].clone()]);
+  }
+  // QPochhammer[a, q] = Product[(1 - a*q^k), {k, 0, Infinity}]
+  if args.len() == 2 {
+    return q_pochhammer_infinite(&args[0], &args[1]);
+  }
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "QPochhammer".to_string(),
@@ -73,6 +83,54 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(result)
+}
+
+/// Infinite q-Pochhammer symbol QPochhammer[a, q] = Product[(1 - a*q^k),
+/// {k, 0, Infinity}]. Matches wolframscript: stays symbolic for exact/symbolic
+/// arguments (no closed form), evaluates to a machine number only when an
+/// argument is inexact (e.g. under N), and is 1 when a == 0.
+fn q_pochhammer_infinite(a: &Expr, q: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "QPochhammer".to_string(),
+      args: vec![a.clone(), q.clone()].into(),
+    })
+  };
+
+  // QPochhammer[0, q] = 1 (every factor is 1).
+  if matches!(a, Expr::Integer(0)) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Only evaluate numerically when at least one argument is inexact, exactly
+  // like wolframscript (QPochhammer[1/2, 1/2] stays symbolic; the 0.5 form
+  // and N[...] evaluate).
+  let any_real = matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+    || matches!(q, Expr::Real(_) | Expr::BigFloat(_, _));
+  if !any_real {
+    return unevaluated();
+  }
+
+  let (Some(af), Some(qf)) = (try_eval_to_f64(a), try_eval_to_f64(q)) else {
+    return unevaluated();
+  };
+  // The infinite product converges only for |q| < 1.
+  if qf.abs() >= 1.0 {
+    return unevaluated();
+  }
+
+  let mut product = 1.0_f64;
+  let mut qk = 1.0_f64; // q^k, starting at q^0
+  for _ in 0..1_000_000 {
+    product *= 1.0 - af * qk;
+    qk *= qf;
+    // Remaining factors are (1 - a*q^k); once a*q^k is below machine epsilon
+    // they no longer change the product.
+    if (af * qk).abs() < 1e-18 {
+      break;
+    }
+  }
+  Ok(Expr::Real(product))
 }
 
 /// Return Some(n) when `e` is an exact integer (Integer, or a Rational that

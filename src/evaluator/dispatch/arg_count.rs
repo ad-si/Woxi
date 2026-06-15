@@ -911,7 +911,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PseudoInverse" => Some((1, 1)),
     "QBinomial" => Some((3, 3)),
     "QFactorial" => Some((2, 2)),
-    "QPochhammer" => Some((3, 3)),
+    "QPochhammer" => Some((1, 3)),
     "QRDecomposition" => Some((1, 1)),
     "QuadraticIrrationalQ" => Some((1, 1)),
     "CholeskyDecomposition" => Some((1, 1)),

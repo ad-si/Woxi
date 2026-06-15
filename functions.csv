@@ -860,7 +860,7 @@ EulerGamma,Euler-Mascheroni constant,✅,pure,1.0,868
 Implies,Logical implication,✅,pure,1.0,868
 DigitCharacter,Represents a digit character in string patterns,✅,pure,5.1,870
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure,1.0,870
-QPochhammer,q-Pochhammer symbol,✅,pure,7.0,871
+QPochhammer,q-Pochhammer symbol; finite QPochhammer[a;q;n]; infinite QPochhammer[a;q]; Euler function QPochhammer[q],✅,pure,7.0,871
 DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6.0,872
 EdgeStyle,Option for styling edges in graphs,✅,none,8.0,873
 FunctionExpand,Expands special functions into simpler forms,✅,pure,3.0,874

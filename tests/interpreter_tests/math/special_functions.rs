@@ -4955,6 +4955,64 @@ mod q_pochhammer {
     // QPochhammer[1, 1, 3] = (1-1)(1-1)(1-1) = 0
     assert_eq!(interpret("QPochhammer[1, 1, 3]").unwrap(), "0");
   }
+
+  // One- and two-argument (infinite product) forms.
+
+  #[test]
+  fn one_arg_rewrites_to_two_arg() {
+    // QPochhammer[q] = QPochhammer[q, q] (Euler function)
+    assert_eq!(
+      interpret("QPochhammer[q]").unwrap(),
+      "QPochhammer[q, q]"
+    );
+  }
+
+  #[test]
+  fn two_arg_symbolic_unevaluated() {
+    assert_eq!(interpret("QPochhammer[a, q]").unwrap(), "QPochhammer[a, q]");
+  }
+
+  #[test]
+  fn two_arg_zero_a() {
+    // Every factor is (1 - 0) = 1
+    assert_eq!(interpret("QPochhammer[0, q]").unwrap(), "1");
+  }
+
+  #[test]
+  fn two_arg_exact_stays_symbolic() {
+    // Like wolframscript, exact arguments keep the infinite product symbolic.
+    assert_eq!(
+      interpret("QPochhammer[1/2, 1/2]").unwrap(),
+      "QPochhammer[1/2, 1/2]"
+    );
+  }
+
+  #[test]
+  fn two_arg_numeric() {
+    let val: f64 = interpret("QPochhammer[0.5, 0.5]").unwrap().parse().unwrap();
+    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
+  fn two_arg_numeric_factor_vanishes() {
+    // a = 2, q = 0.5: the k=1 factor (1 - 2*0.5) = 0, so the product is 0.
+    let val: f64 = interpret("QPochhammer[2.0, 0.5]").unwrap().parse().unwrap();
+    assert!(val.abs() < 1e-15, "got {}", val);
+  }
+
+  #[test]
+  fn one_arg_numeric() {
+    // QPochhammer[0.5] = QPochhammer[0.5, 0.5]
+    let val: f64 = interpret("QPochhammer[0.5]").unwrap().parse().unwrap();
+    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
+  }
+
+  #[test]
+  fn n_of_exact_evaluates() {
+    let val: f64 =
+      interpret("N[QPochhammer[1/2, 1/2]]").unwrap().parse().unwrap();
+    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
+  }
 }
 
 mod spherical_bessel_j {
