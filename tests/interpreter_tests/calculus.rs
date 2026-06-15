@@ -700,6 +700,92 @@ mod integrate_reciprocal_powers {
   }
 }
 
+mod differentiate_arctan2 {
+  use super::*;
+
+  // Two-argument arctangent: d/dx ArcTan[u, v] = u v'/(u^2+v^2) - v u'/(u^2+v^2).
+  #[test]
+  fn d_arctan2_first_arg() {
+    assert_eq!(
+      interpret("D[ArcTan[x, y], x]").unwrap(),
+      "-(y/(x^2 + y^2))"
+    );
+  }
+
+  #[test]
+  fn d_arctan2_second_arg() {
+    assert_eq!(interpret("D[ArcTan[x, y], y]").unwrap(), "x/(x^2 + y^2)");
+  }
+
+  #[test]
+  fn d_arctan2_unrelated_var() {
+    assert_eq!(interpret("D[ArcTan[x, y], z]").unwrap(), "0");
+  }
+
+  #[test]
+  fn d_arctan2_scaled_first() {
+    assert_eq!(
+      interpret("D[ArcTan[2 x, y], x]").unwrap(),
+      "(-2*y)/(4*x^2 + y^2)"
+    );
+  }
+
+  #[test]
+  fn d_arctan2_squared_args() {
+    assert_eq!(
+      interpret("D[ArcTan[x^2, y^2], y]").unwrap(),
+      "(2*x^2*y)/(x^4 + y^4)"
+    );
+  }
+
+  #[test]
+  fn d_arctan2_const_first() {
+    assert_eq!(interpret("D[ArcTan[a, t], t]").unwrap(), "a/(a^2 + t^2)");
+  }
+
+  #[test]
+  fn d_arctan2_literal_const_first() {
+    assert_eq!(interpret("D[ArcTan[1, y], y]").unwrap(), "(1 + y^2)^(-1)");
+  }
+
+  // Both arguments depend on the variable (unit-circle parametrization): the
+  // chain rule keeps the sum of partials, matching Wolfram's unsimplified form.
+  #[test]
+  fn d_arctan2_unit_circle() {
+    assert_eq!(
+      interpret("D[ArcTan[Cos[t], Sin[t]], t]").unwrap(),
+      "Cos[t]^2/(Cos[t]^2 + Sin[t]^2) + Sin[t]^2/(Cos[t]^2 + Sin[t]^2)"
+    );
+  }
+
+  #[test]
+  fn d_arctan2_equal_args_cancels() {
+    assert_eq!(interpret("D[ArcTan[x, x], x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn d_arctan2_second_derivative() {
+    assert_eq!(
+      interpret("D[ArcTan[x, y], {x, 2}]").unwrap(),
+      "(2*x*y)/(x^2 + y^2)^2"
+    );
+  }
+
+  #[test]
+  fn d_arctan2_product_rule() {
+    assert_eq!(
+      interpret("D[x ArcTan[x, y], x]").unwrap(),
+      "-((x*y)/(x^2 + y^2)) + ArcTan[x, y]"
+    );
+  }
+
+  // Single-argument ArcTan derivative is unchanged.
+  #[test]
+  fn d_arctan_single_arg_unchanged() {
+    assert_eq!(interpret("D[ArcTan[x], x]").unwrap(), "(1 + x^2)^(-1)");
+  }
+}
+
 mod differentiate_plus_times {
   use super::*;
 

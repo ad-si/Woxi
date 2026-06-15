@@ -2013,6 +2013,65 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }),
           }))
         }
+        "ArcTan" if args.len() == 2 => {
+          // Two-argument arctangent (angle of the point (u, v)). Apply the
+          // chain rule term by term to match Wolfram's form, which keeps the
+          // sum of partials rather than a single combined fraction:
+          //   d/dx ArcTan[u, v] = (-v/(u^2+v^2)) u' + (u/(u^2+v^2)) v'
+          let u = args[0].clone();
+          let v = args[1].clone();
+          let du = differentiate(&u, var)?;
+          let dv = differentiate(&v, var)?;
+          let denom = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(u.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(v.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          let inv_denom = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![denom, Expr::Integer(-1)].into(),
+          };
+          // partial wrt first arg: -v / (u^2 + v^2)
+          let d_first = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(v),
+            }),
+            right: Box::new(inv_denom.clone()),
+          };
+          // partial wrt second arg: u / (u^2 + v^2)
+          let d_second = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(u),
+            right: Box::new(inv_denom),
+          };
+          let term1 = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(d_first),
+            right: Box::new(du),
+          };
+          let term2 = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(d_second),
+            right: Box::new(dv),
+          };
+          // Order the second-argument term first to match Wolfram's output,
+          // e.g. ArcTan[u, v]' = u v'/(u^2+v^2) - v u'/(u^2+v^2).
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(term2),
+            right: Box::new(term1),
+          }))
+        }
         "ArcTan" if args.len() == 1 => {
           // d/dx[arctan(f(x))] = f'(x) / (1 + f(x)^2)
           let df = differentiate(&args[0], var)?;
@@ -8862,8 +8921,7 @@ fn limit_power_form(
     _ => return None,
   };
 
-  let is_indet =
-    |e: &Expr| matches!(e, Expr::Identifier(n) | Expr::Constant(n) if n == "Indeterminate");
+  let is_indet = |e: &Expr| matches!(e, Expr::Identifier(n) | Expr::Constant(n) if n == "Indeterminate");
   let base_zero = matches!(&base_lim, Expr::Integer(0))
     || matches!(&base_lim, Expr::Real(f) if *f == 0.0);
   let base_one = matches!(&base_lim, Expr::Integer(1))
@@ -8874,9 +8932,8 @@ fn limit_power_form(
   let exp_inf = is_infinite_value(&exp_lim) || is_indet(&exp_lim);
 
   // Candidate indeterminate forms: 0^0, 1^Infinity, Infinity^0.
-  let candidate = (base_zero && exp_zero)
-    || (base_one && exp_inf)
-    || (base_inf && exp_zero);
+  let candidate =
+    (base_zero && exp_zero) || (base_one && exp_inf) || (base_inf && exp_zero);
   if !candidate {
     return None;
   }
