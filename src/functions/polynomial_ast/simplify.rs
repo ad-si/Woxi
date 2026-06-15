@@ -4142,7 +4142,9 @@ fn classify_radical_term(t: &Expr) -> Option<(i128, Option<i128>)> {
   }
   // Times of an integer coefficient and a single Sqrt factor.
   let factors: Vec<&Expr> = match t {
-    Expr::FunctionCall { name, args } if name == "Times" => args.iter().collect(),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,

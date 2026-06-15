@@ -1738,8 +1738,7 @@ mod limit {
   #[test]
   fn one_sided_floor_from_below() {
     assert_eq!(
-      interpret("Limit[Floor[x], x -> 2, Direction -> \"FromBelow\"]")
-        .unwrap(),
+      interpret("Limit[Floor[x], x -> 2, Direction -> \"FromBelow\"]").unwrap(),
       "1"
     );
   }
@@ -1747,8 +1746,7 @@ mod limit {
   #[test]
   fn one_sided_floor_from_above() {
     assert_eq!(
-      interpret("Limit[Floor[x], x -> 2, Direction -> \"FromAbove\"]")
-        .unwrap(),
+      interpret("Limit[Floor[x], x -> 2, Direction -> \"FromAbove\"]").unwrap(),
       "2"
     );
   }
@@ -1791,8 +1789,7 @@ mod limit {
   #[test]
   fn one_sided_abs_over_x_from_below() {
     assert_eq!(
-      interpret("Limit[Abs[x]/x, x -> 0, Direction -> \"FromBelow\"]")
-        .unwrap(),
+      interpret("Limit[Abs[x]/x, x -> 0, Direction -> \"FromBelow\"]").unwrap(),
       "-1"
     );
   }

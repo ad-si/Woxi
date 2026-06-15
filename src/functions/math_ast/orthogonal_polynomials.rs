@@ -21,7 +21,9 @@ fn binomial_i128(top: i128, bot: i128) -> i128 {
 fn jacobi_x_is_exact_numeric(x: &Expr) -> bool {
   match x {
     Expr::Integer(_) => true,
-    Expr::FunctionCall { name, .. } if name == "Rational" || name == "Complex" => {
+    Expr::FunctionCall { name, .. }
+      if name == "Rational" || name == "Complex" =>
+    {
       true
     }
     _ => false,
@@ -65,8 +67,7 @@ fn jacobi_p_integer_ab(
       crate::functions::math_ast::times_ast(&[two_plus_ab, x.clone()])?;
     let neg_b =
       crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b_e])?;
-    let numer =
-      crate::functions::math_ast::plus_ast(&[a_e, neg_b, coeff_x])?;
+    let numer = crate::functions::math_ast::plus_ast(&[a_e, neg_b, coeff_x])?;
     let half = Expr::FunctionCall {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(1), Expr::Integer(2)].into(),

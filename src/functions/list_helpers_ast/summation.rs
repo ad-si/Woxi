@@ -581,8 +581,8 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if !crate::functions::polynomial_ast::contains_var(body, &var_name)
             && !max_is_infinity
           {
-            let count = crate::evaluator::evaluate_expr_to_expr(
-              &Expr::FunctionCall {
+            let count =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: "Plus".to_string(),
                 args: vec![
                   Expr::Integer(1),
@@ -593,8 +593,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   },
                 ]
                 .into(),
-              },
-            )?;
+              })?;
             let power = Expr::BinaryOp {
               op: crate::syntax::BinaryOperator::Power,
               left: Box::new(body.clone()),

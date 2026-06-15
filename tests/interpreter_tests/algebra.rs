@@ -2243,10 +2243,8 @@ mod full_simplify {
   #[test]
   fn denest_sum_combines() {
     assert_eq!(
-      interpret(
-        "FullSimplify[Sqrt[5 + 2 Sqrt[6]] + Sqrt[5 - 2 Sqrt[6]]]"
-      )
-      .unwrap(),
+      interpret("FullSimplify[Sqrt[5 + 2 Sqrt[6]] + Sqrt[5 - 2 Sqrt[6]]]")
+        .unwrap(),
       "2*Sqrt[3]"
     );
   }

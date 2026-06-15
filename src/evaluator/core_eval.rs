@@ -2045,9 +2045,7 @@ pub fn evaluate_expr_to_expr_inner(
       // does (`Sequence[1, 2] - 3` -> `Plus[1, 2, -3]` = 0). Re-evaluating the
       // function-call form runs `flatten_sequences`, which performs the splice.
       {
-        let is_seq = |e: &Expr| {
-          matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence")
-        };
+        let is_seq = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence");
         if is_seq(&left_val) || is_seq(&right_val) {
           let neg = |e: Expr| Expr::FunctionCall {
             name: "Times".to_string(),

@@ -8785,7 +8785,11 @@ fn reconcile_one_sided_direct(
     _ => return direct,
   };
   let tol = 1e-4 * (1.0 + d_f.abs());
-  if (d_f - n_f).abs() <= tol { direct } else { num }
+  if (d_f - n_f).abs() <= tol {
+    direct
+  } else {
+    num
+  }
 }
 
 fn numerical_one_sided_limit(

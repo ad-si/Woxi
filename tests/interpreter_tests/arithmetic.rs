@@ -902,10 +902,7 @@ mod sequence_in_operators {
   // Sequence operands splice into the n-ary form of arithmetic operators.
   #[test]
   fn plus_two_sequences() {
-    assert_eq!(
-      interpret("Sequence[1, 2] + Sequence[3, 4]").unwrap(),
-      "10"
-    );
+    assert_eq!(interpret("Sequence[1, 2] + Sequence[3, 4]").unwrap(), "10");
   }
 
   #[test]
@@ -915,10 +912,7 @@ mod sequence_in_operators {
 
   #[test]
   fn times_sequences() {
-    assert_eq!(
-      interpret("Sequence[2, 3] * Sequence[4, 5]").unwrap(),
-      "120"
-    );
+    assert_eq!(interpret("Sequence[2, 3] * Sequence[4, 5]").unwrap(), "120");
   }
 
   #[test]
