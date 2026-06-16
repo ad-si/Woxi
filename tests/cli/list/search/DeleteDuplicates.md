@@ -26,3 +26,10 @@ $ wo 'DeleteDuplicates[{a}]'
 $ wo 'DeleteDuplicates[{}]'
 {}
 ```
+
+On an association, duplicates are removed by value, keeping the first key.
+
+```scrut
+$ wo 'DeleteDuplicates[<|a -> 1, b -> 1, c -> 2|>]'
+<|a -> 1, c -> 2|>
+```

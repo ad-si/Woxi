@@ -5090,6 +5090,33 @@ mod delete_duplicates_with_test {
       "{1, 2, 3, 4, 5, 6, 7}"
     );
   }
+
+  // On an association, deduplicate by value keeping the first key per value.
+  #[test]
+  fn delete_duplicates_association() {
+    assert_eq!(
+      interpret("DeleteDuplicates[<|a -> 1, b -> 1, c -> 2, d -> 2, e -> 1|>]")
+        .unwrap(),
+      "<|a -> 1, c -> 2|>"
+    );
+  }
+
+  #[test]
+  fn delete_duplicates_association_all_distinct() {
+    assert_eq!(
+      interpret("DeleteDuplicates[<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn delete_duplicates_association_with_test() {
+    assert_eq!(
+      interpret("DeleteDuplicates[<|a -> 2, b -> 4, c -> 3|>, EvenQ[#1 - #2] &]")
+        .unwrap(),
+      "<|a -> 2, c -> 3|>"
+    );
+  }
 }
 
 mod delete_deep {

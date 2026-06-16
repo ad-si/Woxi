@@ -135,6 +135,33 @@ pub fn delete_duplicates_ast(
   list: &Expr,
   test: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
+  // On an association, deduplicate by value, keeping the first key->value pair
+  // for each distinct value.
+  if let Expr::Association(pairs) = list {
+    if let Some(test_fn) = test {
+      let mut kept: Vec<(Expr, Expr)> = Vec::new();
+      'outer: for (k, v) in pairs.iter() {
+        for (_, rep_v) in &kept {
+          let r = apply_func_to_two_args(test_fn, rep_v, v)?;
+          if matches!(r, Expr::Identifier(ref s) if s == "True") {
+            continue 'outer;
+          }
+        }
+        kept.push((k.clone(), v.clone()));
+      }
+      return Ok(Expr::Association(kept));
+    }
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut result: Vec<(Expr, Expr)> = Vec::new();
+    for (k, v) in pairs.iter() {
+      if seen.insert(crate::syntax::expr_to_string(v)) {
+        result.push((k.clone(), v.clone()));
+      }
+    }
+    return Ok(Expr::Association(result));
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {

@@ -366,7 +366,7 @@ Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1.0,369
 ArcCsc,Returns the arc cosecant,✅,pure,1.0,370
 NestList,Returns the list of intermediate results from Nest,✅,pure,1.0,371
 ArcSec,Returns the arc secant,✅,pure,1.0,372
-DeleteDuplicates,Removes duplicate elements from a list,✅,pure,7.0,373
+DeleteDuplicates,Removes duplicate elements from a list (or pairs with duplicate values from an association),✅,pure,7.0,373
 Csc,Returns the cosecant,✅,pure,1.0,374
 DisplayFunction,Option controlling display output,✅,pure,1.0,375
 Product,Computes the product of an expression over a range,✅,pure,1.0,376
