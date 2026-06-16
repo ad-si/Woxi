@@ -275,6 +275,20 @@ mod association_map {
       "<|cat -> 3, horse -> 5, ox -> 2|>"
     );
   }
+
+  // Operator form: AssociationMap[f][list].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("AssociationMap[f][{1, 2, 3}]").unwrap(),
+      "<|1 -> f[1], 2 -> f[2], 3 -> f[3]|>"
+    );
+  }
+
+  #[test]
+  fn operator_stays_inert() {
+    assert_eq!(interpret("AssociationMap[f]").unwrap(), "AssociationMap[f]");
+  }
 }
 
 mod merge {
@@ -320,6 +334,20 @@ mod key_map {
       interpret("KeyMap[f, <|a -> 1, b -> 2|>]").unwrap(),
       "<|f[a] -> 1, f[b] -> 2|>"
     );
+  }
+
+  // Operator form: KeyMap[f][assoc].
+  #[test]
+  fn key_map_operator_form() {
+    assert_eq!(
+      interpret("KeyMap[f][<|a -> 1, b -> 2|>]").unwrap(),
+      "<|f[a] -> 1, f[b] -> 2|>"
+    );
+  }
+
+  #[test]
+  fn key_map_operator_stays_inert() {
+    assert_eq!(interpret("KeyMap[f]").unwrap(), "KeyMap[f]");
   }
 }
 
@@ -491,6 +519,15 @@ mod key_value_map {
     assert_eq!(
       interpret("KeyValueMap[#2 &, <|x -> 10, y -> 20|>]").unwrap(),
       "{10, 20}"
+    );
+  }
+
+  // Operator form: KeyValueMap[f][assoc].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("KeyValueMap[f][<|a -> 1, b -> 2|>]").unwrap(),
+      "{f[a, 1], f[b, 2]}"
     );
   }
 }

@@ -1195,6 +1195,9 @@ pub fn apply_curried_call(
           | "Between"
           | "Comap"
           | "ComapApply"
+          | "KeyMap"
+          | "AssociationMap"
+          | "KeyValueMap"
       ) {
         // `Derivative[n][const]` → `0&` for n ≥ 1, `const&` for n == 0.
         // Caught here (before flattening) so the multi-index `Derivative[1, 0]`

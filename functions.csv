@@ -1288,7 +1288,7 @@ FormFunction,,🚫,,10.0,1303
 GeneratedCell,,🚫,,3.0,1303
 StreamStyle,,🚫,,7.0,1304
 MaxValue,Global symbolic maximum value of a function over variables with optional constraints,✅,pure,7.0,1305
-KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
+KeyValueMap,Maps a function over key-value pairs; supports the operator form KeyValueMap[f][assoc],✅,pure,10.1,1306
 KelvinKei,Kelvin kei function (imaginary part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1307
 TabView,,🚫,,6.0,1308
 SinhIntegral,Hyperbolic sine integral Shi(z),✅,pure,3.0,1309
@@ -1505,7 +1505,7 @@ LineIndent,Line indentation option,✅,pure,3.0,1526
 FindDistributionParameters,Estimate distribution parameters,✅,pure,8.0,1528
 NetEncoder,Neural network encoder,✅,pure,11.0,1528
 LayeredGraphPlot,Layered graph plot,✅,pure,6.0,1529
-AssociationMap,Maps a function over an association,✅,pure,10.0,1530
+AssociationMap,Maps a function over an association; supports the operator form AssociationMap[f][data],✅,pure,10.0,1530
 Covariance,Covariance of two lists; with a single matrix gives the covariance matrix of its columns,✅,pure,6.0,1534
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10.0,1534
 NProbability,Numerical probability,✅,pure,8.0,1534
@@ -1821,7 +1821,7 @@ EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Mathieu C function,,unevaluated,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
 StringReplacePart,Replace part of string,✅,pure,3.0,1853
-KeyMap,Maps a function over the keys of an association,✅,pure,10.0,1855
+KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
 MetaInformation,Meta information option,,unevaluated,9.0,1855
 NotebookSave,Save notebook,,unevaluated,3.0,1857
 UpperCaseQ,Tests if a string consists entirely of uppercase letters,✅,pure,2.0,1857
