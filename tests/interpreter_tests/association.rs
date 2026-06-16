@@ -1350,10 +1350,7 @@ mod lookup {
   // Operator form: Lookup[key][assoc].
   #[test]
   fn lookup_operator_form() {
-    assert_eq!(
-      interpret("Lookup[a][<|a -> 1, b -> 2|>]").unwrap(),
-      "1"
-    );
+    assert_eq!(interpret("Lookup[a][<|a -> 1, b -> 2|>]").unwrap(), "1");
     assert_eq!(
       interpret("Lookup[c][<|a -> 1, b -> 2|>]").unwrap(),
       "Missing[KeyAbsent, c]"
