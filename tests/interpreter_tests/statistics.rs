@@ -1,5 +1,91 @@
 use super::*;
 
+// Statistics functions operate on an association's values, like wolframscript.
+mod association_statistics {
+  use super::*;
+
+  #[test]
+  fn geometric_mean() {
+    assert_eq!(
+      interpret("GeometricMean[<|a -> 1, b -> 2, c -> 4|>]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn harmonic_mean() {
+    assert_eq!(
+      interpret("HarmonicMean[<|a -> 1, b -> 2, c -> 4|>]").unwrap(),
+      "12/7"
+    );
+  }
+
+  #[test]
+  fn root_mean_square() {
+    assert_eq!(
+      interpret("RootMeanSquare[<|a -> 3, b -> 4|>]").unwrap(),
+      "5/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn kurtosis() {
+    assert_eq!(
+      interpret("Kurtosis[<|a -> 1, b -> 2, c -> 3, d -> 4|>]").unwrap(),
+      "41/25"
+    );
+  }
+
+  #[test]
+  fn skewness_numeric() {
+    // The symbolic form is Woxi's canonical one; the value matches Wolfram.
+    let v: f64 = interpret("N[Skewness[<|a -> 1, b -> 2, c -> 4|>]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((v - 0.381_801_774_160_606).abs() < 1e-12, "got {}", v);
+  }
+
+  #[test]
+  fn quartiles() {
+    assert_eq!(
+      interpret(
+        "Quartiles[<|a -> 1, b -> 2, c -> 3, d -> 4, e -> 5, f -> 6, g -> 7, h -> 8|>]"
+      )
+      .unwrap(),
+      "{5/2, 9/2, 13/2}"
+    );
+  }
+
+  #[test]
+  fn interquartile_range() {
+    assert_eq!(
+      interpret(
+        "InterquartileRange[<|a -> 1, b -> 2, c -> 3, d -> 4, e -> 5|>]"
+      )
+      .unwrap(),
+      "5/2"
+    );
+  }
+
+  #[test]
+  fn trimmed_mean() {
+    assert_eq!(
+      interpret("TrimmedMean[<|a -> 1, b -> 2, c -> 3, d -> 100|>, 1/4]")
+        .unwrap(),
+      "5/2"
+    );
+  }
+
+  #[test]
+  fn central_moment() {
+    assert_eq!(
+      interpret("CentralMoment[<|a -> 1, b -> 2, c -> 3|>, 2]").unwrap(),
+      "2/3"
+    );
+  }
+}
+
 mod variance {
   use super::*;
 

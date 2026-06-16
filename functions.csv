@@ -1276,7 +1276,7 @@ TableSpacing,,🚫,,2.0,1290
 FindDivisions,,🚫,,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
 FrontEndToken,,🚫,,3.0,1293
-GeometricMean,Returns the geometric mean of a list,✅,pure,6.0,1294
+GeometricMean,Returns the geometric mean of a list or an association's values,✅,pure,6.0,1294
 TextWords,Split text into a list of words (surrounding punctuation trimmed; internal hyphens/apostrophes kept); two-arg form returns the first n words,✅,pure,10.1,1295
 WindowTitle,,🚫,,3.0,1296
 CurrentImage,,🚫,,8.0,1298
@@ -2176,7 +2176,7 @@ FindFaces,Image processing,🚫,None,9.0,2217
 NotebookInformation,Notebook UI,🚫,None,5.0,2217
 SphericalHankelH1,Spherical Hankel function of the first kind,✅,1,6.0,2219
 ToNumberField,Algebraic number theory,🚫,None,6.0,2219
-HarmonicMean,Returns the harmonic mean of a list,✅,pure,6.0,2223
+HarmonicMean,Returns the harmonic mean of a list or an association's values,✅,pure,6.0,2223
 Masking,Image processing masking option,🚫,None,8.0,2223
 OverscriptBox,Low-level box construct for overscript display,✅,pure,3.0,2223
 PermutationList,Converts cycle notation to permutation list,✅,none,8.0,2223
@@ -2376,7 +2376,7 @@ Manual,documentation system,🚫,None,6.0,2425
 SystemsModelExtract,control systems,🚫,None,8.0,2425
 DisplayAllSteps,display option,🚫,None,6.0,2431
 ExternalEvaluate,external code execution,🚫,None,11.2,2431
-InterquartileRange,Difference between third and first quartiles,✅,1,6.0,2431
+InterquartileRange,Difference between third and first quartiles (of a list or an association's values),✅,pure,6.0,2431
 InverseFunctions,option for inverse computation,🚫,None,2.0,2431
 KolmogorovSmirnovTest,statistical test,🚫,None,8.0,2431
 Arrays,type system,🚫,None,9.0,2435

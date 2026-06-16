@@ -1406,7 +1406,20 @@ pub fn evaluate_function_call_ast_inner(
   // (Mean/Total/Max/Min already handle associations in their own routines.)
   if matches!(
     name,
-    "Median" | "MinMax" | "Variance" | "StandardDeviation" | "Quantile"
+    "Median"
+      | "MinMax"
+      | "Variance"
+      | "StandardDeviation"
+      | "Quantile"
+      | "GeometricMean"
+      | "HarmonicMean"
+      | "RootMeanSquare"
+      | "Kurtosis"
+      | "Skewness"
+      | "Quartiles"
+      | "InterquartileRange"
+      | "TrimmedMean"
+      | "CentralMoment"
   ) && let Some(Expr::Association(pairs)) = args.first()
   {
     let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
