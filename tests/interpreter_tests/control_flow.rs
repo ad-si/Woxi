@@ -659,9 +659,10 @@ mod switch_arity {
     clear_state();
     let four = interpret_with_stdout("Switch[2, 1, \"a\", 2]").unwrap();
     assert_eq!(four.result, "Switch[2, 1, a, 2]");
-    assert!(four.warnings[0].contains(
-      "Switch::argct: Switch called with 4 arguments."
-    ));
+    assert!(
+      four.warnings[0]
+        .contains("Switch::argct: Switch called with 4 arguments.")
+    );
   }
 
   #[test]
@@ -672,6 +673,45 @@ mod switch_arity {
     assert_eq!(interpret("Switch[5, _, \"x\"]").unwrap(), "x");
     // No match returns the unevaluated Switch.
     assert_eq!(interpret("Switch[2, 1, a]").unwrap(), "Switch[2, 1, a]");
+  }
+}
+
+mod uncaught_throw {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  #[test]
+  fn warns_nocatch_and_produces_no_result() {
+    clear_state();
+    // An uncaught Throw must surface Throw::nocatch (not leak the internal
+    // error) and yield no result value.
+    let r = interpret_with_stdout("Throw[3]").unwrap();
+    assert_eq!(r.result, "");
+    assert!(r.warnings[0].contains(
+      "Throw::nocatch: Uncaught Throw[3] returned to top level."
+    ));
+  }
+
+  #[test]
+  fn message_uses_output_form_and_keeps_tag() {
+    clear_state();
+    // The thrown value is shown in OutputForm (strings without quotes) and a
+    // tag is included.
+    let s = interpret_with_stdout(r#"Throw["x"]"#).unwrap();
+    assert!(s.warnings[0].contains(
+      "Throw::nocatch: Uncaught Throw[x] returned to top level."
+    ));
+    clear_state();
+    let t = interpret_with_stdout("Throw[5, tag]").unwrap();
+    assert!(t.warnings[0].contains(
+      "Throw::nocatch: Uncaught Throw[5, tag] returned to top level."
+    ));
+  }
+
+  #[test]
+  fn throw_inside_expression_still_caught_by_catch() {
+    // A matching Catch still works (no regression).
+    assert_eq!(interpret("Catch[1 + Throw[2]]").unwrap(), "2");
   }
 }
 

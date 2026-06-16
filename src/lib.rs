@@ -1490,6 +1490,27 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               ));
               syntax::Expr::Identifier("Null".to_string())
             }
+            Err(InterpreterError::ThrowValue(val, tag)) => {
+              // An uncaught Throw aborts evaluation at top level.
+              // wolframscript emits Throw::nocatch and produces no result;
+              // surface the same message instead of leaking the internal
+              // error. The throw form shows its value (and tag, if any).
+              let throw_args = match tag {
+                Some(t) => vec![*val, *t],
+                None => vec![*val],
+              };
+              let throw_expr = syntax::Expr::FunctionCall {
+                name: "Throw".to_string(),
+                args: throw_args.into(),
+              };
+              emit_message(&format!(
+                "Throw::nocatch: Uncaught {} returned to top level.",
+                syntax::format_expr(&throw_expr, syntax::ExprForm::Output)
+              ));
+              // wolframscript produces no result (the message is the only
+              // output), so return an empty string rather than a value.
+              return Ok(String::new());
+            }
             other => other?,
           };
         // Multi-statement input behaves like CompoundExpression: a
