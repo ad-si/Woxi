@@ -1840,6 +1840,12 @@ pub fn dispatch_list_operations(
         items.reverse();
         return Some(Ok(Expr::List(std::mem::take(items))));
       }
+      // On an association, Sort orders the pairs ascending by value; reverse
+      // them so ReverseSort is descending by value.
+      if let Expr::Association(ref mut pairs) = sorted {
+        pairs.reverse();
+        return Some(Ok(Expr::Association(std::mem::take(pairs))));
+      }
       return Some(Ok(sorted));
     }
     "List" => {

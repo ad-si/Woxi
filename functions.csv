@@ -2395,7 +2395,7 @@ CellLabel,,🚫,,3.0,2449
 Infix,Symbol for infix display formatting,✅,pure,1.0,2449
 MoleculePlot3D,,🚫,,12.0,2449
 PreserveImageOptions,,🚫,,6.0,2449
-ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
+ReverseSort,Sorts a list in reverse order (on an association sorts pairs descending by value),✅,pure,11.1,2449
 TimeSeriesResample,,🚫,,10.0,2449
 Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,✅,none,9.0,2452
 EventSeries,,🚫,,10.0,2452

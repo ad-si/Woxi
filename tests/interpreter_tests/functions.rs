@@ -1425,6 +1425,23 @@ mod reverse_sort {
       "{0, 1, 2, 3}"
     );
   }
+
+  // On an association, sorts the pairs descending by value.
+  #[test]
+  fn association() {
+    assert_eq!(
+      interpret("ReverseSort[<|a -> 1, b -> 3, c -> 2|>]").unwrap(),
+      "<|b -> 3, c -> 2, a -> 1|>"
+    );
+  }
+
+  #[test]
+  fn association_keeps_keys() {
+    assert_eq!(
+      interpret("ReverseSort[<|x -> 10, y -> 5, z -> 20|>]").unwrap(),
+      "<|z -> 20, x -> 10, y -> 5|>"
+    );
+  }
 }
 
 mod sort_with_comparator {
