@@ -1221,10 +1221,7 @@ mod covariance {
     assert_eq!(interpret("Covariance[{2, 4, 6}]").unwrap(), "4");
     assert_eq!(interpret("Covariance[{1, 2, 3, 4, 5}]").unwrap(), "5/2");
     // A length-1 list has too few observations and stays unevaluated.
-    assert_eq!(
-      interpret("Covariance[{5}]").unwrap(),
-      "Covariance[{5}]"
-    );
+    assert_eq!(interpret("Covariance[{5}]").unwrap(), "Covariance[{5}]");
   }
 
   #[test]

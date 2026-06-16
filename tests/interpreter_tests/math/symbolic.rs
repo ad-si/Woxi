@@ -829,6 +829,20 @@ mod cases {
       r#"{{a -> Function[{n}, 2^n]}}"#,
     );
   }
+  // The first-order general solution anchors its constant at n = 1, so the
+  // single root carries the exponent n-1 (matching wolframscript). Higher-order
+  // solutions keep the exponent n.
+  #[test]
+  fn r_solve_first_order_general() {
+    assert_case(
+      r#"RSolve[a[n] == 2 a[n-1], a[n], n]"#,
+      r#"{{a[n] -> 2^(-1 + n)*C[1]}}"#,
+    );
+    assert_case(
+      r#"RSolve[a[n] == -a[n-1], a[n], n]"#,
+      r#"{{a[n] -> (-1)^(-1 + n)*C[1]}}"#,
+    );
+  }
   #[test]
   fn r_solve_second_order_distinct_roots() {
     assert_case(

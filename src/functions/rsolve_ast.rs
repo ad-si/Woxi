@@ -439,6 +439,10 @@ fn build_general_solution(
   roots: &[(i128, i128)],
   var_name: &str,
 ) -> Option<Expr> {
+  // A first-order recurrence anchors its free constant at n = 1, so its single
+  // root carries the exponent n-1 (matching wolframscript, e.g.
+  // `a[n] -> 2^(-1 + n)*C[1]`). Higher-order solutions use the exponent n.
+  let single_root = roots.len() == 1;
   let mut terms = Vec::new();
   for (i, &(rn, rd)) in roots.iter().enumerate() {
     let const_expr = Expr::FunctionCall {
@@ -453,10 +457,20 @@ fn build_general_solution(
       } else {
         crate::functions::math_ast::make_rational_pub(rn, rd)
       };
+      let exponent = if single_root {
+        // `-1 + n` (constant first) to match wolframscript's display order.
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(Expr::Identifier(var_name.to_string())),
+        }
+      } else {
+        Expr::Identifier(var_name.to_string())
+      };
       let power = Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(root_expr),
-        right: Box::new(Expr::Identifier(var_name.to_string())),
+        right: Box::new(exponent),
       };
       Expr::BinaryOp {
         op: BinaryOperator::Times,
