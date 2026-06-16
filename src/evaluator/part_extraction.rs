@@ -451,7 +451,26 @@ pub fn extract_part_ast(
         None => return Ok(part_take_unevaluated(expr, index)),
       }
     }
-    Expr::Real(f) => *f as i64,
+    // Only integer-valued Reals are valid part specs (e.g. 2.0 -> 2).
+    // A non-integer Real (1.5) or a Rational (3/2) errors Part::pkspec1
+    // (matching wolframscript), rather than silently truncating 1.5 -> 1.
+    Expr::Real(f) if f.is_finite() && f.fract() == 0.0 => *f as i64,
+    Expr::Real(_) => {
+      crate::emit_message(&format!(
+        "Part::pkspec1: The expression {} cannot be used as a part specification.",
+        crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(part_take_unevaluated(expr, index));
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      crate::emit_message(&format!(
+        "Part::pkspec1: The expression {} cannot be used as a part specification.",
+        crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(part_take_unevaluated(expr, index));
+    }
     Expr::List(indices) => {
       // Part[expr, {i1, i2, ...}] → {Part[expr, i1], Part[expr, i2], ...}
       let mut results = Vec::new();

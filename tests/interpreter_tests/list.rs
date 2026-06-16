@@ -2704,6 +2704,37 @@ mod part_out_of_bounds {
   }
 }
 
+mod part_noninteger_spec {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  #[test]
+  fn non_integer_real_errors() {
+    // A non-integer Real cannot index — it must NOT silently truncate to 1.
+    let r = interpret_with_stdout("Part[{1, 2, 3}, 1.5]").unwrap();
+    assert_eq!(r.result, "{1, 2, 3}[[1.5]]");
+    assert!(r.warnings[0].contains(
+      "Part::pkspec1: The expression 1.5 cannot be used as a part specification."
+    ));
+  }
+
+  #[test]
+  fn integer_valued_real_works() {
+    // An integer-valued Real (2.0) is accepted, like wolframscript.
+    assert_eq!(interpret("Part[{10, 20, 30}, 2.0]").unwrap(), "20");
+    assert_eq!(interpret("{a, b, c}[[-1.0]]").unwrap(), "c");
+  }
+
+  #[test]
+  fn rational_spec_errors() {
+    let r = interpret_with_stdout("{a, b, c}[[3/2]]").unwrap();
+    assert_eq!(r.result, "{a, b, c}[[3/2]]");
+    assert!(r.warnings[0].contains(
+      "Part::pkspec1: The expression 3/2 cannot be used as a part specification."
+    ));
+  }
+}
+
 mod take_out_of_bounds {
   use super::*;
 
