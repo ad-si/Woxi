@@ -4923,6 +4923,62 @@ mod string_contains_free_patterns {
   }
 
   #[test]
+  fn insert_linebreaks_hard_break() {
+    // No spaces: hard-break every n characters, no trailing newline.
+    assert_eq!(
+      interpret(r#"InsertLinebreaks["abcdefgh", 3]"#).unwrap(),
+      "abc\ndef\ngh"
+    );
+  }
+
+  #[test]
+  fn insert_linebreaks_word_wrap() {
+    // Words are kept whole and packed greedily up to n characters.
+    assert_eq!(
+      interpret(r#"InsertLinebreaks["hello world foo bar", 7]"#).unwrap(),
+      "hello\nworld\nfoo bar"
+    );
+  }
+
+  #[test]
+  fn insert_linebreaks_overlong_word() {
+    // A word longer than n is hard-broken after the line break.
+    assert_eq!(
+      interpret(r#"InsertLinebreaks["hello worldlongword", 5]"#).unwrap(),
+      "hello\nworld\nlongw\nord"
+    );
+  }
+
+  #[test]
+  fn insert_linebreaks_short_fits() {
+    assert_eq!(
+      interpret(r#"InsertLinebreaks["abc", 5]"#).unwrap(),
+      "abc"
+    );
+  }
+
+  #[test]
+  fn insert_linebreaks_default_width() {
+    // The default width is 78 characters.
+    assert_eq!(
+      interpret(
+        r#"StringLength /@ StringSplit[InsertLinebreaks[StringJoin[Table["a", 200]]], "\n"]"#
+      )
+      .unwrap(),
+      "{78, 78, 44}"
+    );
+  }
+
+  #[test]
+  fn insert_linebreaks_invalid_width() {
+    // A non-positive width leaves the call unevaluated.
+    assert_eq!(
+      interpret(r#"InsertLinebreaks["abcde", 0]"#).unwrap(),
+      "InsertLinebreaks[abcde, 0]"
+    );
+  }
+
+  #[test]
   fn string_pad_right_list_default() {
     assert_eq!(
       interpret(r#"StringPadRight[{"a", "bc", "def"}, 5]"#).unwrap(),

@@ -4964,6 +4964,75 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// InsertLinebreaks[s] / InsertLinebreaks[s, n] — wrap `s` so each line is at
+/// most `n` characters (default 78). Greedy word wrap: words are kept whole
+/// where they fit, packed onto a line separated by single spaces; a word longer
+/// than `n` is hard-broken every `n` characters. The number of characters is
+/// counted by Unicode code point.
+pub fn insert_linebreaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "InsertLinebreaks".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated();
+  }
+  let s = match &args[0] {
+    Expr::String(s) => s.clone(),
+    _ => return unevaluated(),
+  };
+  // The width must be a positive integer; wolframscript leaves the call
+  // unevaluated (with an ::intp message) otherwise.
+  let n = match args.get(1) {
+    None => 78usize,
+    Some(Expr::Integer(n)) if *n > 0 => *n as usize,
+    Some(_) => return unevaluated(),
+  };
+
+  let mut lines: Vec<String> = Vec::new();
+  let mut current = String::new();
+  let mut line_has_word = false;
+
+  // Place a single (space-delimited) word, hard-breaking it when it does not
+  // fit on an empty line.
+  fn place_word(
+    word: &str,
+    n: usize,
+    lines: &mut Vec<String>,
+    current: &mut String,
+    line_has_word: &mut bool,
+  ) {
+    if *line_has_word {
+      let need = current.chars().count() + 1 + word.chars().count();
+      if need <= n {
+        current.push(' ');
+        current.push_str(word);
+        return;
+      }
+      // Does not fit: finish the current line and retry on a fresh one.
+      lines.push(std::mem::take(current));
+      *line_has_word = false;
+    }
+    // Empty line: hard-break any prefix that exceeds the width.
+    let mut rest: String = word.to_string();
+    while rest.chars().count() > n {
+      let head: String = rest.chars().take(n).collect();
+      lines.push(head);
+      rest = rest.chars().skip(n).collect();
+    }
+    *current = rest;
+    *line_has_word = true;
+  }
+
+  for word in s.split(' ') {
+    place_word(word, n, &mut lines, &mut current, &mut line_has_word);
+  }
+  lines.push(current);
+  Ok(Expr::String(lines.join("\n")))
+}
+
 /// StringCount[s, sub] - count occurrences of substring or pattern
 pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {

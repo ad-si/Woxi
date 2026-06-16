@@ -1094,6 +1094,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StringMatchQ" => Some((1, 3)),
     "StringPadLeft" => Some((2, 3)),
     "StringPadRight" => Some((2, 3)),
+    "InsertLinebreaks" => Some((1, 2)),
     "StringPart" => Some((2, 2)),
     "StringPartition" => Some((2, 3)),
     "StringPosition" => Some((2, usize::MAX)),
