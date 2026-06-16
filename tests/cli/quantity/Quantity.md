@@ -28,3 +28,11 @@ Functions like `Abs` and `Floor` apply to the magnitude and keep the unit.
 $ wo 'Abs[Quantity[-5, "Meters"]]'
 Quantity[5, Meters]
 ```
+
+`Max` and `Min` compare quantities after converting to a common unit, returning
+the winner in its original unit.
+
+```scrut
+$ wo 'Max[Quantity[1, "Meters"], Quantity[50, "Centimeters"]]'
+Quantity[1, Meters]
+```

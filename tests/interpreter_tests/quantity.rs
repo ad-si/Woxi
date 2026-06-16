@@ -286,6 +286,51 @@ fn quantity_sign_is_dimensionless() {
   assert_eq!(interpret("Sign[Quantity[5, \"Meters\"]]").unwrap(), "1");
 }
 
+// Max/Min over quantities compare magnitudes after unit conversion and return
+// the winning quantity in its original unit.
+#[test]
+fn quantity_max_min_same_unit() {
+  assert_eq!(
+    interpret("Max[Quantity[1, \"Meters\"], Quantity[2, \"Meters\"]]").unwrap(),
+    "Quantity[2, Meters]"
+  );
+  assert_eq!(
+    interpret("Min[Quantity[1, \"Meters\"], Quantity[2, \"Meters\"]]").unwrap(),
+    "Quantity[1, Meters]"
+  );
+  // List argument form.
+  assert_eq!(
+    interpret("Max[{Quantity[1, \"Meters\"], Quantity[2, \"Meters\"]}]")
+      .unwrap(),
+    "Quantity[2, Meters]"
+  );
+}
+
+#[test]
+fn quantity_max_min_mixed_units() {
+  // 1 m > 50 cm, returned in its original unit.
+  assert_eq!(
+    interpret("Max[Quantity[1, \"Meters\"], Quantity[50, \"Centimeters\"]]")
+      .unwrap(),
+    "Quantity[1, Meters]"
+  );
+  assert_eq!(
+    interpret("Min[Quantity[1, \"Meters\"], Quantity[50, \"Centimeters\"]]")
+      .unwrap(),
+    "Quantity[50, Centimeters]"
+  );
+}
+
+#[test]
+fn quantity_max_incompatible_units_unevaluated() {
+  // Length vs time cannot be compared, so the call stays unevaluated.
+  assert_eq!(
+    interpret("Max[Quantity[1, \"Meters\"], Quantity[2, \"Seconds\"]]")
+      .unwrap(),
+    "Max[Quantity[1, Meters], Quantity[2, Seconds]]"
+  );
+}
+
 // ─── Division ───────────────────────────────────────────────────────────────
 
 #[test]

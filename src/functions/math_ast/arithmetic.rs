@@ -7900,6 +7900,14 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("-Infinity".to_string()));
   }
 
+  // All-Quantity case: compare magnitudes after unit conversion and return the
+  // larger quantity in its original unit.
+  if let Some(result) =
+    crate::functions::quantity_ast::try_quantity_extreme(&items, true)
+  {
+    return Ok(result);
+  }
+
   // Separate numeric and symbolic arguments
   let mut best_val: Option<f64> = None;
   let mut best_expr: Option<&Expr> = None;
@@ -7961,6 +7969,14 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items = flatten_lists(args);
   if items.is_empty() {
     return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // All-Quantity case: compare magnitudes after unit conversion and return the
+  // smaller quantity in its original unit.
+  if let Some(result) =
+    crate::functions::quantity_ast::try_quantity_extreme(&items, false)
+  {
+    return Ok(result);
   }
 
   // Separate numeric and symbolic arguments

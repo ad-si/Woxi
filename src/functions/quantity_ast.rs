@@ -2355,6 +2355,28 @@ pub fn try_quantity_times(
   }
 }
 
+/// Max/Min over a list of quantities: compare magnitudes after converting to a
+/// common unit and return the winning quantity in its original unit. Returns
+/// `None` unless every item is a Quantity and all are pairwise comparable.
+pub fn try_quantity_extreme(items: &[&Expr], is_max: bool) -> Option<Expr> {
+  if items.is_empty() || !items.iter().all(|i| is_quantity(i).is_some()) {
+    return None;
+  }
+  let mut best = items[0];
+  for &item in &items[1..] {
+    let ord = try_quantity_compare(item, best)?;
+    let take = if is_max {
+      ord == std::cmp::Ordering::Greater
+    } else {
+      ord == std::cmp::Ordering::Less
+    };
+    if take {
+      best = item;
+    }
+  }
+  Some(best.clone())
+}
+
 /// Thread a unary numeric function through a `Quantity`'s magnitude.
 /// Most rounding/part functions keep the unit (`Abs[Quantity[-5, m]] ->
 /// Quantity[5, m]`), while `Sign` reduces to the dimensionless sign of the
@@ -2373,8 +2395,8 @@ pub fn try_quantity_unary(
       Some(crate::evaluator::evaluate_function_call_ast("Sign", &[mag]))
     }
     // These apply to the magnitude and keep the unit.
-    "Abs" | "Floor" | "Ceiling" | "Round" | "IntegerPart" | "FractionalPart"
-    | "Re" | "Im" | "Conjugate" => {
+    "Abs" | "Floor" | "Ceiling" | "Round" | "IntegerPart"
+    | "FractionalPart" | "Re" | "Im" | "Conjugate" => {
       match crate::evaluator::evaluate_function_call_ast(name, &[mag]) {
         Ok(new_mag) => Some(Ok(make_quantity(new_mag, unit))),
         Err(e) => Some(Err(e)),
