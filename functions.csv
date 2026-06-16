@@ -928,7 +928,7 @@ ScalingFunctions,,🚫,,8.0,936
 ChartElementFunction,,🚫,,7.0,937
 ComponentMeasurements,Requires external services or GUI infrastructure,🚫,io,8.0,938
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2.0,939
-RegionMember,,🚫,,10.0,940
+RegionMember,Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle),✅,pure,10.0,940
 Cycles,Permutation cycle notation wrapper,✅,none,8.0,941
 EdgeWeight,,🚫,,8.0,942
 LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1.0,943

@@ -1906,6 +1906,9 @@ pub fn dispatch_complex_and_special(
     "RegionMeasure" if args.len() == 1 => {
       return Some(compute_region_measure(&args[0]));
     }
+    "RegionMember" if args.len() == 2 => {
+      return Some(compute_region_member(&args[0], &args[1]));
+    }
     "RegionBounds" if args.len() == 1 => {
       return Some(compute_region_bounds(&args[0]));
     }
@@ -4771,6 +4774,106 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
     },
     // Atoms: return as-is
     _ => expr.clone(),
+  }
+}
+
+// ─── RegionMember ────────────────────────────────────────────────────────
+
+/// RegionMember[region, point] — test whether `point` lies in the (closed)
+/// `region`. Handles Disk/Ball (solid) and Circle/Sphere (their boundary) and
+/// Rectangle/Cuboid (axis-aligned boxes) with numeric coordinates; returns the
+/// call unevaluated for other regions or non-numeric input.
+fn compute_region_member(
+  region: &Expr,
+  point: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionMember".to_string(),
+      args: vec![region.clone(), point.clone()].into(),
+    })
+  };
+  let to_vec = |e: &Expr| -> Option<Vec<f64>> {
+    if let Expr::List(items) = e {
+      items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect()
+    } else {
+      None
+    }
+  };
+  let boolean =
+    |b: bool| Ok(Expr::Identifier(if b { "True" } else { "False" }.to_string()));
+  const EPS: f64 = 1e-10;
+
+  let Some(pt) = to_vec(point) else {
+    return unevaluated();
+  };
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+
+  match name.as_str() {
+    "Disk" | "Ball" | "Circle" | "Sphere" => {
+      let default_dim = if name == "Ball" || name == "Sphere" { 3 } else { 2 };
+      let center = match args.first() {
+        None => vec![0.0; default_dim],
+        Some(c) => match to_vec(c) {
+          Some(v) => v,
+          None => return unevaluated(),
+        },
+      };
+      let radius = match args.get(1) {
+        None => 1.0,
+        Some(r) => match crate::functions::math_ast::try_eval_to_f64(r) {
+          Some(v) => v,
+          None => return unevaluated(),
+        },
+      };
+      if pt.len() != center.len() {
+        return unevaluated();
+      }
+      let dist2: f64 =
+        pt.iter().zip(&center).map(|(a, b)| (a - b).powi(2)).sum();
+      let r2 = radius * radius;
+      let tol = EPS * r2.max(1.0);
+      // Disk/Ball are solid (distance <= r); Circle/Sphere are the boundary.
+      let inside = match name.as_str() {
+        "Circle" | "Sphere" => (dist2 - r2).abs() <= tol,
+        _ => dist2 <= r2 + tol,
+      };
+      boolean(inside)
+    }
+    "Rectangle" | "Cuboid" => {
+      // Defaults: Rectangle[] = {0,…}..{1,…}; Rectangle[c] = c..c+1.
+      let (lo, hi) = match (args.first(), args.get(1)) {
+        (None, _) => (vec![0.0; pt.len()], vec![1.0; pt.len()]),
+        (Some(c1), None) => {
+          let Some(c1) = to_vec(c1) else {
+            return unevaluated();
+          };
+          let c2: Vec<f64> = c1.iter().map(|x| x + 1.0).collect();
+          (c1, c2)
+        }
+        (Some(c1), Some(c2)) => {
+          let (Some(c1), Some(c2)) = (to_vec(c1), to_vec(c2)) else {
+            return unevaluated();
+          };
+          (c1, c2)
+        }
+      };
+      if pt.len() != lo.len() || pt.len() != hi.len() {
+        return unevaluated();
+      }
+      let inside =
+        pt.iter().zip(lo.iter().zip(hi.iter())).all(|(p, (a, b))| {
+          let (mn, mx) = if a <= b { (a, b) } else { (b, a) };
+          *p >= mn - EPS && *p <= mx + EPS
+        });
+      boolean(inside)
+    }
+    _ => unevaluated(),
   }
 }
 

@@ -291,8 +291,7 @@ fn quantity_sign_is_dimensionless() {
 #[test]
 fn quantity_mod_same_unit() {
   assert_eq!(
-    interpret("Mod[Quantity[7, \"Meters\"], Quantity[3, \"Meters\"]]")
-      .unwrap(),
+    interpret("Mod[Quantity[7, \"Meters\"], Quantity[3, \"Meters\"]]").unwrap(),
     "Quantity[1, Meters]"
   );
   // Wolfram's Mod is non-negative.

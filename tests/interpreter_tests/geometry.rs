@@ -1635,3 +1635,71 @@ mod transformation_function_compose {
     );
   }
 }
+
+mod region_member {
+  use super::*;
+
+  // RegionMember tests whether a point lies in a (closed) region.
+  #[test]
+  fn disk_interior_boundary_exterior() {
+    assert_eq!(
+      interpret("RegionMember[Disk[{0, 0}, 1], {0.5, 0.5}]").unwrap(),
+      "True"
+    );
+    // The boundary is included (closed disk).
+    assert_eq!(
+      interpret("RegionMember[Disk[{0, 0}, 1], {1, 0}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[Disk[{0, 0}, 1], {2, 0}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn disk_defaults_and_offset_center() {
+    // Disk[] is the unit disk at the origin.
+    assert_eq!(
+      interpret("RegionMember[Disk[], {0.3, 0.3}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[Disk[{1, 1}, 2], {2, 2}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn ball_three_dimensional() {
+    assert_eq!(
+      interpret("RegionMember[Ball[{0, 0, 0}, 1], {0.5, 0.5, 0.5}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn rectangle_inside_outside() {
+    assert_eq!(
+      interpret("RegionMember[Rectangle[{0, 0}, {2, 3}], {1, 1}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[Rectangle[{0, 0}, {2, 3}], {3, 1}]").unwrap(),
+      "False"
+    );
+  }
+
+  // Circle is the boundary curve, not the solid disk.
+  #[test]
+  fn circle_is_boundary() {
+    assert_eq!(
+      interpret("RegionMember[Circle[{0, 0}, 1], {1, 0}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("RegionMember[Circle[{0, 0}, 1], {0.5, 0.5}]").unwrap(),
+      "False"
+    );
+  }
+}
