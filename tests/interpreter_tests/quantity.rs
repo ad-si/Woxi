@@ -228,6 +228,25 @@ fn quantity_multiply_different_units() {
   );
 }
 
+// The factors of a compound product unit are ordered alphabetically by name,
+// matching wolframscript (e.g. Watts*Hours displays as Hours*Watts),
+// independent of the operand order.
+#[test]
+fn quantity_multiply_alphabetical_unit_order() {
+  assert_eq!(
+    interpret("Quantity[100, \"Watts\"] * Quantity[2, \"Hours\"]").unwrap(),
+    "Quantity[200, Hours*Watts]"
+  );
+  assert_eq!(
+    interpret("Quantity[1, \"Hours\"] * Quantity[1, \"Watts\"]").unwrap(),
+    "Quantity[1, Hours*Watts]"
+  );
+  assert_eq!(
+    interpret("Quantity[1, \"Volts\"] * Quantity[1, \"Amperes\"]").unwrap(),
+    "Quantity[1, Amperes*Volts]"
+  );
+}
+
 // ─── Division ───────────────────────────────────────────────────────────────
 
 #[test]

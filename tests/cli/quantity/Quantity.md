@@ -13,3 +13,11 @@ Singular unit names are canonicalized to their plural form.
 $ wo 'Quantity[1, "Mole"]'
 Quantity[1, Moles]
 ```
+
+When quantities are multiplied, the compound unit's factors are ordered
+alphabetically.
+
+```scrut
+$ wo 'Quantity[100, "Watts"] * Quantity[2, "Hours"]'
+Quantity[200, Hours*Watts]
+```

@@ -1059,10 +1059,16 @@ fn simplify_compound_unit(
 fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
   use crate::syntax::BinaryOperator;
 
+  // wolframscript orders the factors of a compound unit alphabetically by
+  // name (e.g. `Hours*Watts`, `Amperes*Seconds`), so sort the numerator and
+  // denominator parts by unit name rather than by dimension signature.
+  let mut sorted: Vec<(String, i64)> = components.to_vec();
+  sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
   let mut numer_parts: Vec<Expr> = Vec::new();
   let mut denom_parts: Vec<Expr> = Vec::new();
 
-  for (name, exp) in components {
+  for (name, exp) in &sorted {
     let base = Expr::String(name.clone());
     let abs_exp = exp.abs();
     let part = if abs_exp == 1 {
