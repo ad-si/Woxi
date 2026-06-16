@@ -843,6 +843,27 @@ mod cases {
       r#"{{a[n] -> (-1)^(-1 + n)*C[1]}}"#,
     );
   }
+  // A repeated characteristic root of multiplicity m contributes m terms whose
+  // j-th occurrence carries the factor n^j (j = 0, 1, …). Previously the second
+  // term dropped the n factor, collapsing to a one-parameter family.
+  #[test]
+  fn r_solve_repeated_roots() {
+    // Double root 2.
+    assert_case(
+      r#"RSolve[a[n] == 4 a[n-1] - 4 a[n-2], a[n], n]"#,
+      r#"{{a[n] -> 2^n*C[1] + 2^n*n*C[2]}}"#,
+    );
+    // Double root 1.
+    assert_case(
+      r#"RSolve[a[n] == 2 a[n-1] - a[n-2], a[n], n]"#,
+      r#"{{a[n] -> C[1] + n*C[2]}}"#,
+    );
+    // Triple root 1.
+    assert_case(
+      r#"RSolve[a[n] == 3 a[n-1] - 3 a[n-2] + a[n-3], a[n], n]"#,
+      r#"{{a[n] -> C[1] + n*C[2] + n^2*C[3]}}"#,
+    );
+  }
   #[test]
   fn r_solve_second_order_distinct_roots() {
     assert_case(

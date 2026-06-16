@@ -434,7 +434,9 @@ fn build_partial_solution(
 
 /// Build the general solution `C[1]*r1^n + C[2]*r2^n + ...`. Roots equal to
 /// 1 contribute a bare `C[k]` (since `1^n = 1`); negative-1 roots produce
-/// `(-1)^n*C[k]`.
+/// `(-1)^n*C[k]`. A root of multiplicity m contributes m terms whose j-th
+/// occurrence (j = 0, 1, …) carries the extra factor `n^j`, e.g. a double root
+/// 2 gives `2^n*C[1] + 2^n*n*C[2]`.
 fn build_general_solution(
   roots: &[(i128, i128)],
   var_name: &str,
@@ -449,9 +451,13 @@ fn build_general_solution(
       name: "C".to_string(),
       args: vec![Expr::Integer((i + 1) as i128)].into(),
     };
-    let term = if rn == 1 && rd == 1 {
-      const_expr
-    } else {
+    // Occurrence index of this root among the earlier roots — its power of `n`.
+    let mult_index = roots[..i].iter().filter(|&&r| r == (rn, rd)).count();
+
+    // Factors in wolframscript's display order: r^n (omitted when r == 1),
+    // then n^mult_index (omitted when 0), then the arbitrary constant.
+    let mut factors: Vec<Expr> = Vec::new();
+    if !(rn == 1 && rd == 1) {
       let root_expr = if rd == 1 {
         Expr::Integer(rn)
       } else {
@@ -467,17 +473,35 @@ fn build_general_solution(
       } else {
         Expr::Identifier(var_name.to_string())
       };
-      let power = Expr::BinaryOp {
+      factors.push(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(root_expr),
         right: Box::new(exponent),
-      };
-      Expr::BinaryOp {
+      });
+    }
+    if mult_index >= 1 {
+      factors.push(if mult_index == 1 {
+        Expr::Identifier(var_name.to_string())
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var_name.to_string())),
+          right: Box::new(Expr::Integer(mult_index as i128)),
+        }
+      });
+    }
+    factors.push(const_expr);
+
+    // Combine left-associatively so the rendered factor order is preserved.
+    let mut iter = factors.into_iter();
+    let mut term = iter.next().unwrap();
+    for f in iter {
+      term = Expr::BinaryOp {
         op: BinaryOperator::Times,
-        left: Box::new(power),
-        right: Box::new(const_expr),
-      }
-    };
+        left: Box::new(term),
+        right: Box::new(f),
+      };
+    }
     terms.push(term);
   }
   if terms.is_empty() {
