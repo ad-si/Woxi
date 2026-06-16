@@ -1324,7 +1324,8 @@ pub fn check_arg_count(
 
   // Format the error message following Wolfram Language conventions:
   // - argx: exactly 1 argument expected
-  // - argrx: exactly N (>1) arguments expected
+  // - argr: exactly N (>1) arguments expected, but called with 1 argument
+  // - argrx: exactly N (>1) arguments expected, called with any other count
   // - argt: min or max arguments expected (max - min == 1)
   // - argb: between min and max arguments are expected (max - min > 1)
   let arg_word = if n == 1 { "argument" } else { "arguments" };
@@ -1336,9 +1337,12 @@ pub fn check_arg_count(
         name, name, n, arg_word
       )
     } else {
+      // wolframscript uses the `argr` tag when called with exactly one
+      // argument, and `argrx` for any other (0, 2, 3, ...) count.
+      let tag = if n == 1 { "argr" } else { "argrx" };
       format!(
-        "{}::argrx: {} called with {} {}; {} arguments are expected.",
-        name, name, n, arg_word, min
+        "{}::{}: {} called with {} {}; {} arguments are expected.",
+        name, tag, name, n, arg_word, min
       )
     }
   } else if max == usize::MAX {

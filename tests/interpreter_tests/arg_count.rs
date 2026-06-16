@@ -26,6 +26,29 @@ mod arg_count_errors {
   }
 
   #[test]
+  fn exact_two_arg_function_called_with_one() {
+    // argr format: exactly N (>1) arguments expected but called with
+    // exactly one argument. wolframscript uses `argr` here, not `argrx`.
+    clear_state();
+    let result = interpret_with_stdout("NumericalOrder[a]").unwrap();
+    assert_eq!(result.result, "NumericalOrder[a]");
+    assert!(result.warnings[0].contains(
+      "NumericalOrder::argr: NumericalOrder called with 1 argument; 2 arguments are expected."
+    ));
+  }
+
+  #[test]
+  fn exact_two_arg_function_called_with_zero() {
+    // Zero args (not one) keeps the argrx tag.
+    clear_state();
+    let result = interpret_with_stdout("NumericalOrder[]").unwrap();
+    assert_eq!(result.result, "NumericalOrder[]");
+    assert!(result.warnings[0].contains(
+      "NumericalOrder::argrx: NumericalOrder called with 0 arguments; 2 arguments are expected."
+    ));
+  }
+
+  #[test]
   fn between_range_function() {
     // argb format: between min and max
     clear_state();
