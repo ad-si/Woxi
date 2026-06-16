@@ -2071,6 +2071,49 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Largest `e >= 0` with `g^e == n`, or `None` when `n` is not an exact power
+/// of `g`. Requires `g >= 2` and `n >= 1`.
+fn exact_integer_log(n: i128, g: i128) -> Option<i128> {
+  if n < 1 || g < 2 {
+    return None;
+  }
+  let mut val = n;
+  let mut e = 0i128;
+  while val % g == 0 {
+    val /= g;
+    e += 1;
+  }
+  if val == 1 { Some(e) } else { None }
+}
+
+/// Primitive root `(g, s)` of `base`: the unique `g >= 2` that is not itself a
+/// perfect power, with `base == g^s` and `s` maximal. E.g. 64 -> (2, 6),
+/// 4 -> (2, 2), 10 -> (10, 1).
+fn primitive_root(base: i128) -> (i128, i128) {
+  // base <= g^s with g >= 2 implies s <= log2(base); try the largest s first.
+  let max_s = ((base as f64).log2().floor() as i128).max(1);
+  let mut s = max_s;
+  while s >= 1 {
+    let g = (base as f64).powf(1.0 / s as f64).round() as i128;
+    if g >= 2 && g.checked_pow(s as u32) == Some(base) {
+      return (g, s);
+    }
+    s -= 1;
+  }
+  (base, 1)
+}
+
+/// `Log[base, p/q]` as an exact rational when both `p` and `q` are integer
+/// powers of `base`'s primitive root; otherwise `None`. Covers `Log[2, 8] = 3`,
+/// `Log[2, 1/8] = -3`, and `Log[4, 1/2] = -1/2`.
+fn log_base_exact(base: i128, p: i128, q: i128) -> Option<Expr> {
+  let (g, s) = primitive_root(base);
+  let a = exact_integer_log(p, g)?;
+  let c = exact_integer_log(q, g)?;
+  // base^k = g^(a - c) and base = g^s, so k = (a - c) / s.
+  Some(make_rational(a - c, s))
+}
+
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty()
     && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")
@@ -2370,36 +2413,18 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
     2 => {
-      // Log[base, x] — integer base and argument
-      if let (Some(base), Some(x)) =
-        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+      // Log[base, x] — integer base and a positive rational argument x = p/q.
+      // Collapses to a rational exponent when both are exact powers of a common
+      // primitive root (Log[2, 8] = 3, Log[2, 1/8] = -3, Log[4, 1/2] = -1/2).
+      // Non-power arguments fall through to the Log[x]/Log[base] canonical form.
+      if let (Some(base), Some((p, q))) =
+        (expr_to_i128(&args[0]), expr_to_rational(&args[1]))
         && base > 1
-        && x > 0
+        && p > 0
+        && q > 0
+        && let Some(result) = log_base_exact(base, p, q)
       {
-        // Check if x is an exact power of base
-        let mut val = x;
-        let mut exp = 0i128;
-        while val > 1 && val % base == 0 {
-          val /= base;
-          exp += 1;
-        }
-        if val == 1 {
-          return Ok(Expr::Integer(exp));
-        }
-        // Return Log[x]/Log[base] symbolically (evaluated so any
-        // numeric/limit reduction inside the Log calls fires).
-        let result = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![args[1].clone()].into(),
-          }),
-          right: Box::new(Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![args[0].clone()].into(),
-          }),
-        };
-        return crate::evaluator::evaluate_expr_to_expr(&result);
+        return Ok(result);
       }
       // Log[base, x] — evaluate for Real args
       if let (Expr::Real(base), Expr::Real(x)) = (&args[0], &args[1])

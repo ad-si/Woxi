@@ -669,6 +669,35 @@ mod log_rational_simplification {
   }
 }
 
+mod log_base_exact_power {
+  use super::*;
+
+  // Log[base, 1/base^k] collapses to the negative exponent.
+  #[test]
+  fn reciprocal_power() {
+    assert_eq!(interpret("Log[2, 1/8]").unwrap(), "-3");
+    assert_eq!(interpret("Log[2, 1/4]").unwrap(), "-2");
+    assert_eq!(interpret("Log[3, 1/9]").unwrap(), "-2");
+    assert_eq!(interpret("Log[10, 1/1000]").unwrap(), "-3");
+  }
+
+  // The exponent can be a fraction when the base is itself a power.
+  #[test]
+  fn fractional_exponent() {
+    assert_eq!(interpret("Log[4, 1/2]").unwrap(), "-1/2");
+    assert_eq!(interpret("Log[8, 2]").unwrap(), "1/3");
+    assert_eq!(interpret("Log[9, 1/3]").unwrap(), "-1/2");
+  }
+
+  // Integer powers still collapse, non-powers stay as the log ratio.
+  #[test]
+  fn integer_and_non_power() {
+    assert_eq!(interpret("Log[2, 8]").unwrap(), "3");
+    assert_eq!(interpret("Log[2, 1/3]").unwrap(), "-(Log[3]/Log[2])");
+    assert_eq!(interpret("Log[2, 3]").unwrap(), "Log[3]/Log[2]");
+  }
+}
+
 mod mixed_coefficient_combining {
   use super::*;
 
