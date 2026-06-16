@@ -2148,7 +2148,7 @@ GeneralizedLinearModelFit,Fits a generalized linear model to data,🚫,None,7.0,
 OpenAppend,Opens a file for appending,✅,effectful,1.0,2188
 ErlangDistribution,Probability distribution,🚫,None,8.0,2190
 FourierCosTransform,Fourier cosine transform of a function,✅,pure,4.0,2190
-KeySelect,Selects elements of an association by a key criterion,✅,pure,10.0,2191
+KeySelect,Selects elements of an association by a key criterion; supports the operator form KeySelect[crit][assoc],✅,pure,10.0,2191
 SkewNormalDistribution,Probability distribution,🚫,None,8.0,2193
 Sunset,Gives the time of sunset for a given location and date,🚫,None,10.0,2193
 HankelH2,Hankel function of the second kind,✅,pure,6.0,2197

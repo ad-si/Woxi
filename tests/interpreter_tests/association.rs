@@ -363,6 +363,27 @@ mod key_select {
       "<|5 -> z|>"
     );
   }
+
+  // Operator form: KeySelect[crit][assoc].
+  #[test]
+  fn key_select_operator_form() {
+    assert_eq!(
+      interpret("KeySelect[EvenQ][<|1 -> x, 2 -> y, 3 -> z|>]").unwrap(),
+      "<|2 -> y|>"
+    );
+    assert_eq!(
+      interpret("KeySelect[# =!= b &][<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn key_select_operator_stays_inert() {
+    assert_eq!(
+      interpret("KeySelect[EvenQ]").unwrap(),
+      "KeySelect[EvenQ]"
+    );
+  }
 }
 
 mod key_take {
