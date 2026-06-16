@@ -3653,6 +3653,50 @@ mod batch_unevaluated_wrappers_2 {
       "3"
     );
   }
+  // Pattern element matching.
+  #[test]
+  fn sequence_count_blank_sequence_runs() {
+    // {__Symbol} counts maximal runs of consecutive symbols.
+    assert_eq!(
+      interpret(
+        "SequenceCount[{1, 2, a, b, 3, c, d, 4, 5, 6, e, f, g, 7}, {__Symbol}]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("SequenceCount[{a, b, 1, c}, {__Symbol}]").unwrap(),
+      "2"
+    );
+  }
+  #[test]
+  fn sequence_count_single_blank_pattern() {
+    // {_Symbol} matches one symbol at a time.
+    assert_eq!(
+      interpret("SequenceCount[{1, a, 2, b, 3}, {_Symbol}]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("SequenceCount[{a, b, c}, {_Symbol}]").unwrap(), "3");
+  }
+  #[test]
+  fn sequence_count_multi_blank_window() {
+    // Two single-element patterns form a fixed window of length 2.
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 3}, {_Integer, _Integer}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("SequenceCount[{1, a, 2, b}, {_, _}]").unwrap(),
+      "2"
+    );
+  }
+  #[test]
+  fn sequence_count_mixed_literal_pattern() {
+    assert_eq!(
+      interpret("SequenceCount[{1, a, 1, b, 2}, {1, _}]").unwrap(),
+      "2"
+    );
+  }
   #[test]
   fn sequence_position_basic() {
     assert_eq!(

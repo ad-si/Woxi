@@ -3517,39 +3517,98 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(segments.into())));
       }
     }
-    // SequenceCount[list, sublist] — count non-overlapping occurrences
+    // SequenceCount[list, sublist] — count non-overlapping occurrences. The
+    // sublist elements may be patterns (e.g. `_Symbol`, `{__Symbol}`).
     "SequenceCount" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
         if sub.is_empty() {
           return Some(Ok(Expr::Integer(0)));
         }
+        use crate::evaluator::pattern_matching::match_pattern;
+
+        // A single-element-version of a BlankSequence pattern (`__h` -> `_h`),
+        // or None if the pattern is not a one-or-more sequence pattern.
+        fn single_of_blank_sequence(p: &Expr) -> Option<Expr> {
+          match p {
+            Expr::Pattern {
+              name,
+              head,
+              blank_type: 2,
+            } => Some(Expr::Pattern {
+              name: name.clone(),
+              head: head.clone(),
+              blank_type: 1,
+            }),
+            Expr::PatternTest {
+              name,
+              head,
+              blank_type: 2,
+              test,
+            } => Some(Expr::PatternTest {
+              name: name.clone(),
+              head: head.clone(),
+              blank_type: 1,
+              test: test.clone(),
+            }),
+            _ => None,
+          }
+        }
+        let is_seq_pattern = |p: &Expr| {
+          matches!(
+            p,
+            Expr::Pattern { blank_type, .. }
+              | Expr::PatternTest { blank_type, .. }
+              if *blank_type == 2 || *blank_type == 3
+          )
+        };
+
         // Optional `Overlaps -> True | All` option (default: non-overlapping).
         let overlaps = args.get(2).is_some_and(|opt| matches!(opt,
           Expr::Rule { pattern, replacement }
             if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Overlaps")
               && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True" || v == "All")));
-        let sub_len = sub.len();
-        let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
-        let mut count = 0i128;
-        let mut i = 0;
-        while i + sub_len <= list.len() {
-          let mut matches = true;
-          for j in 0..sub_len {
-            if expr_to_string(&list[i + j]) != sub_strs[j] {
-              matches = false;
-              break;
+
+        // Special case: the pattern is exactly one BlankSequence (`{__h}`) —
+        // count maximal greedy runs of consecutive matching elements.
+        if sub.len() == 1
+          && let Some(single) = single_of_blank_sequence(&sub[0])
+        {
+          let mut count = 0i128;
+          let mut i = 0;
+          while i < list.len() {
+            if match_pattern(&list[i], &single).is_some() {
+              count += 1;
+              while i < list.len() && match_pattern(&list[i], &single).is_some()
+              {
+                i += 1;
+              }
+            } else {
+              i += 1;
             }
           }
-          if matches {
-            count += 1;
-            // Overlapping matches advance by one; non-overlapping skip the
-            // whole matched subsequence.
-            i += if overlaps { 1 } else { sub_len };
-          } else {
-            i += 1;
-          }
+          return Some(Ok(Expr::Integer(count)));
         }
-        return Some(Ok(Expr::Integer(count)));
+
+        // General fixed-length window matching (no variable-length sequence
+        // patterns). Each sublist element matches exactly one list element.
+        if !sub.iter().any(is_seq_pattern) {
+          let sub_len = sub.len();
+          let mut count = 0i128;
+          let mut i = 0;
+          while i + sub_len <= list.len() {
+            let matches = (0..sub_len)
+              .all(|j| match_pattern(&list[i + j], &sub[j]).is_some());
+            if matches {
+              count += 1;
+              i += if overlaps { 1 } else { sub_len };
+            } else {
+              i += 1;
+            }
+          }
+          return Some(Ok(Expr::Integer(count)));
+        }
+        // Otherwise (mixed variable-length sequence patterns) — leave the call
+        // unevaluated rather than return a wrong count.
       }
     }
     // SequenceReplace[list, rule] / SequenceReplace[list, rule, n] —
@@ -4572,10 +4631,7 @@ pub fn dispatch_list_operations(
             })
             .collect(),
           Expr::FunctionCall { name, args: sp } if name == "Span" => {
-            match span_to_positions(sp, items.len()) {
-              Some(p) => p,
-              None => return None,
-            }
+            span_to_positions(sp, items.len())?
           }
           _ => return None,
         };
@@ -4613,9 +4669,7 @@ fn span_to_positions(span_args: &[Expr], len: usize) -> Option<Vec<usize>> {
   let resolve = |e: Option<&Expr>, default: i128| -> Option<i128> {
     match e {
       None => Some(default),
-      Some(Expr::Integer(n)) => {
-        Some(if *n < 0 { len_i + n + 1 } else { *n })
-      }
+      Some(Expr::Integer(n)) => Some(if *n < 0 { len_i + n + 1 } else { *n }),
       Some(Expr::Identifier(s)) if s == "All" => Some(default),
       _ => None,
     }
