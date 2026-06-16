@@ -1082,6 +1082,31 @@ mod association_list_operations {
   }
 
   #[test]
+  fn association_constructor_from_evaluated_argument() {
+    // Association evaluates its argument to normalize it: a Table/Map that
+    // produces a list of rules builds the association.
+    assert_eq!(
+      interpret("Association[Table[i -> i^2, {i, 3}]]").unwrap(),
+      "<|1 -> 1, 2 -> 4, 3 -> 9|>"
+    );
+    assert_eq!(
+      interpret("Association[Map[# -> #^2 &, {1, 2, 3}]]").unwrap(),
+      "<|1 -> 1, 2 -> 4, 3 -> 9|>"
+    );
+  }
+
+  #[test]
+  fn association_constructor_keeps_held_form_when_not_rules() {
+    // If the evaluated argument is not a valid association structure, the
+    // original held form is preserved (HoldAllComplete).
+    assert_eq!(
+      interpret("Association[Range[3]]").unwrap(),
+      "Association[Range[3]]"
+    );
+    assert_eq!(interpret("Association[x]").unwrap(), "Association[x]");
+  }
+
+  #[test]
   fn association_splices_nested_associations() {
     // Inner Association arguments have their pairs spliced into the outer one,
     // matching Wolfram: Association[a -> 1, Association[b -> 2]] -> <|a -> 1, b -> 2|>.

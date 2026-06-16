@@ -1844,6 +1844,24 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           if !args.iter().all(is_normalizable_assoc_arg) {
+            // HoldAllComplete, but Association still evaluates its arguments
+            // to see whether they normalize to a valid association structure
+            // — e.g. Association[Table[k -> v, ...]] builds from the resulting
+            // list of rules. If the evaluated form is a valid structure, build
+            // from it; otherwise keep the ORIGINAL held arguments
+            // (Association[Range[3]] and Association[x] stay unevaluated).
+            let evaluated: Vec<Expr> = args
+              .iter()
+              .map(crate::evaluator::evaluate_expr_to_expr)
+              .collect::<Result<_, _>>()?;
+            if evaluated.iter().all(is_normalizable_assoc_arg) {
+              return crate::evaluator::evaluate_expr_to_expr(
+                &Expr::FunctionCall {
+                  name: "Association".to_string(),
+                  args: evaluated.into(),
+                },
+              );
+            }
             return Ok(Expr::FunctionCall {
               name: name.to_string(),
               args: args.to_vec().into(),
