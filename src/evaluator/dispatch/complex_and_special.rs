@@ -1912,6 +1912,9 @@ pub fn dispatch_complex_and_special(
     "RegionDistance" if args.len() == 2 => {
       return Some(compute_region_distance(&args[0], &args[1]));
     }
+    "RegionNearest" if args.len() == 2 => {
+      return Some(compute_region_nearest(&args[0], &args[1]));
+    }
     "RegionBounds" if args.len() == 1 => {
       return Some(compute_region_bounds(&args[0]));
     }
@@ -4987,6 +4990,129 @@ fn compute_region_distance(
   };
 
   crate::evaluator::evaluate_expr_to_expr(&expr)
+}
+
+/// RegionNearest[region, point] — the point of `region` closest to `point`.
+/// For a solid Disk/Ball an interior point maps to itself; otherwise the point
+/// is projected onto the boundary. Circle/Sphere always project; Rectangle/
+/// Cuboid clamp each coordinate into the box. Built symbolically so exact
+/// inputs give exact coordinates (e.g. {6/5, 8/5}).
+fn compute_region_nearest(
+  region: &Expr,
+  point: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionNearest".to_string(),
+      args: vec![region.clone(), point.clone()].into(),
+    })
+  };
+  let Expr::List(pt) = point else {
+    return unevaluated();
+  };
+  let pt: Vec<Expr> = pt.iter().cloned().collect();
+  let n = pt.len();
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+
+  let call = |nm: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: nm.to_string(),
+    args: a.into(),
+  };
+  let binop = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let to_f64 = crate::functions::math_ast::try_eval_to_f64;
+
+  match name.as_str() {
+    // The nearest point of a single Point is the point itself.
+    "Point" if args.len() == 1 => eval(&args[0]),
+    "Disk" | "Ball" | "Circle" | "Sphere" => {
+      let dim = if name == "Ball" || name == "Sphere" {
+        3
+      } else {
+        2
+      };
+      let center: Vec<Expr> = match args.first() {
+        None => vec![Expr::Integer(0); dim],
+        Some(Expr::List(c)) => c.iter().cloned().collect(),
+        Some(_) => return unevaluated(),
+      };
+      let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      if center.len() != n {
+        return unevaluated();
+      }
+      let center_list = Expr::List(center.clone().into());
+      let dist_sym =
+        call("EuclideanDistance", vec![point.clone(), center_list]);
+      let dist = match to_f64(&eval(&dist_sym)?) {
+        Some(d) => d,
+        None => return unevaluated(),
+      };
+      let r = match to_f64(&radius) {
+        Some(r) => r,
+        None => return unevaluated(),
+      };
+      // A point at the center has no unique projection onto the boundary.
+      if dist <= 1e-12 {
+        return unevaluated();
+      }
+      let solid = matches!(name.as_str(), "Disk" | "Ball");
+      if solid && dist <= r + 1e-10 * r.max(1.0) {
+        // Inside the solid region → the point itself.
+        return eval(point);
+      }
+      // Project onto the boundary: center + r * (point - center) / dist.
+      let proj: Vec<Expr> = (0..n)
+        .map(|i| {
+          let diff =
+            binop(BinaryOperator::Minus, pt[i].clone(), center[i].clone());
+          let scaled = binop(
+            BinaryOperator::Divide,
+            binop(BinaryOperator::Times, radius.clone(), diff),
+            dist_sym.clone(),
+          );
+          binop(BinaryOperator::Plus, center[i].clone(), scaled)
+        })
+        .collect();
+      eval(&Expr::List(proj.into()))
+    }
+    "Rectangle" | "Cuboid" => {
+      let (c1, c2): (Vec<Expr>, Vec<Expr>) = match (args.first(), args.get(1)) {
+        (None, _) => (vec![Expr::Integer(0); n], vec![Expr::Integer(1); n]),
+        (Some(Expr::List(a)), None) => {
+          let a: Vec<Expr> = a.iter().cloned().collect();
+          let b = a
+            .iter()
+            .map(|x| call("Plus", vec![x.clone(), Expr::Integer(1)]))
+            .collect();
+          (a, b)
+        }
+        (Some(Expr::List(a)), Some(Expr::List(b))) => {
+          (a.iter().cloned().collect(), b.iter().cloned().collect())
+        }
+        _ => return unevaluated(),
+      };
+      if c1.len() != n || c2.len() != n {
+        return unevaluated();
+      }
+      let clamped: Vec<Expr> = (0..n)
+        .map(|i| {
+          let lo = call("Min", vec![c1[i].clone(), c2[i].clone()]);
+          let hi = call("Max", vec![c1[i].clone(), c2[i].clone()]);
+          let inner = call("Min", vec![hi, pt[i].clone()]);
+          call("Max", vec![lo, inner])
+        })
+        .collect();
+      eval(&Expr::List(clamped.into()))
+    }
+    _ => unevaluated(),
+  }
 }
 
 // ─── Area ──────────────────────────────────────────────────────────────

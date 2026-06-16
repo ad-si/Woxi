@@ -964,6 +964,62 @@ mod region_nearest {
   fn head() {
     assert_eq!(interpret("Head[RegionNearest]").unwrap(), "Symbol");
   }
+
+  // For a solid Disk/Ball an exterior point projects onto the boundary; an
+  // interior point maps to itself.
+  #[test]
+  fn disk_projection_and_interior() {
+    assert_eq!(
+      interpret("RegionNearest[Disk[{0, 0}, 1], {3, 0}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("RegionNearest[Disk[{0, 0}, 2], {3, 4}]").unwrap(),
+      "{6/5, 8/5}"
+    );
+    assert_eq!(
+      interpret("RegionNearest[Disk[{0, 0}, 1], {0.5, 0}]").unwrap(),
+      "{0.5, 0}"
+    );
+  }
+
+  #[test]
+  fn point_and_ball() {
+    assert_eq!(
+      interpret("RegionNearest[Point[{2, 3}], {5, 7}]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("RegionNearest[Ball[{0, 0, 0}, 1], {0, 0, 3}]").unwrap(),
+      "{0, 0, 1}"
+    );
+  }
+
+  // Circle is the boundary, so even an interior point projects onto it.
+  #[test]
+  fn circle_always_projects() {
+    assert_eq!(
+      interpret("RegionNearest[Circle[{0, 0}, 1], {3, 4}]").unwrap(),
+      "{3/5, 4/5}"
+    );
+  }
+
+  #[test]
+  fn rectangle_clamps() {
+    assert_eq!(
+      interpret("RegionNearest[Rectangle[{0, 0}, {2, 2}], {3, 1}]").unwrap(),
+      "{2, 1}"
+    );
+    assert_eq!(
+      interpret("RegionNearest[Rectangle[{0, 0}, {2, 2}], {3, 3}]").unwrap(),
+      "{2, 2}"
+    );
+    // Already inside.
+    assert_eq!(
+      interpret("RegionNearest[Rectangle[{0, 0}, {2, 2}], {1, 1}]").unwrap(),
+      "{1, 1}"
+    );
+  }
 }
 
 mod region_equal {

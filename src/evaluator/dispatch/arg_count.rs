@@ -968,6 +968,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RegionMeasure" => Some((1, 1)),
     "RegionMember" => Some((1, 2)),
     "RegionDistance" => Some((1, 2)),
+    "RegionNearest" => Some((1, 2)),
     "RegionPlot" => Some((3, usize::MAX)),
     "RegionWithin" => Some((2, 2)),
     "RegularExpression" => Some((1, 1)),
