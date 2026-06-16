@@ -16,3 +16,10 @@ $ wo 'ToString[{1, 2, 3}]'
 $ wo 'ToString[1 + 2]'
 3
 ```
+
+`NumberForm` renders a number to a given number of significant figures.
+
+```scrut
+$ wo 'ToString[NumberForm[3.14159, 3]]'
+3.14
+```

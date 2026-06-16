@@ -7222,6 +7222,33 @@ abb""#,
       r#"NumberForm[14310983091809]"#,
     );
   }
+  // ToString[NumberForm[x, n]] formats x to n significant figures.
+  #[test]
+  fn to_string_number_form_significant_digits() {
+    assert_case("ToString[NumberForm[3.14159, 3]]", "3.14");
+    assert_case("ToString[NumberForm[3.14159, 5]]", "3.1416");
+  }
+  #[test]
+  fn to_string_number_form_trailing_dot() {
+    assert_case("ToString[NumberForm[3.0, 3]]", "3.");
+    assert_case("ToString[NumberForm[100.0, 5]]", "100.");
+    assert_case("ToString[NumberForm[0.0, 3]]", "0.");
+  }
+  #[test]
+  fn to_string_number_form_rounds_integer_part() {
+    assert_case("ToString[NumberForm[1234.5678, 2]]", "1200.");
+  }
+  #[test]
+  fn to_string_number_form_small_and_negative() {
+    assert_case("ToString[NumberForm[0.00123456, 3]]", "0.00123");
+    assert_case("ToString[NumberForm[-3.14159, 3]]", "-3.14");
+  }
+  #[test]
+  fn to_string_number_form_integer_unchanged() {
+    // An integer argument is shown unchanged, ignoring the precision.
+    assert_case("ToString[NumberForm[2, 3]]", "2");
+    assert_case("ToString[NumberForm[1234567, 3]]", "1234567");
+  }
   #[test]
   fn set_4() {
     assert_case(

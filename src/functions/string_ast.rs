@@ -2570,11 +2570,67 @@ fn extract_cases_rules(
 }
 
 /// ToString[expr] - convert expression to string
+/// Render `NumberForm[x, n]` to a string: a real `x` is rounded to `n`
+/// significant figures and shown with a trailing decimal point and no padding
+/// zeros (`3.14`, `3.`, `1200.`); an integer `x` is shown unchanged.
+fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
+  // Integer argument: shown unchanged, ignoring the precision.
+  if let Expr::Integer(i) = x {
+    return Some(i.to_string());
+  }
+  let f = match x {
+    Expr::Real(f) => *f,
+    _ => return None,
+  };
+  if n < 1 {
+    return None;
+  }
+  if f == 0.0 {
+    return Some("0.".to_string());
+  }
+  let neg = f < 0.0;
+  let ax = f.abs();
+  let m = ax.log10().floor() as i64;
+  // Round to n significant figures.
+  let factor = 10f64.powi((n - 1 - m) as i32);
+  let rounded = (ax * factor).round() / factor;
+  // Rounding can bump the magnitude (e.g. 9.99 -> 10), so recompute it.
+  let m2 = if rounded == 0.0 {
+    0
+  } else {
+    rounded.log10().floor() as i64
+  };
+  let decimals = (n - 1 - m2).max(0) as usize;
+  let mut s = format!("{:.*}", decimals, rounded);
+  if s.contains('.') {
+    // Drop padding zeros but keep the trailing point (3.00 -> 3.).
+    while s.ends_with('0') {
+      s.pop();
+    }
+  } else {
+    s.push('.');
+  }
+  Some(if neg { format!("-{s}") } else { s })
+}
+
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "ToString expects 1 or 2 arguments".into(),
     ));
+  }
+
+  // NumberForm[x, n] — render x to n significant figures.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "NumberForm"
+    && inner_args.len() == 2
+    && let Expr::Integer(n) = &inner_args[1]
+    && let Some(rendered) = number_form_to_string(&inner_args[0], *n as i64)
+  {
+    return Ok(Expr::String(rendered));
   }
 
   // PaddedForm[expr, n] / PaddedForm[expr, {n, f}] — right-aligned
