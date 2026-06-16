@@ -4553,21 +4553,32 @@ pub fn dispatch_list_operations(
         args: args.to_vec().into(),
       }));
     }
-    // SubsetMap[f, list, positions] — apply f to elements at positions, put results back
+    // SubsetMap[f, list, positions] — apply f to elements at positions, put
+    // results back. `positions` may be a list of integer positions or a Span
+    // (e.g. `2 ;; 5`).
     "SubsetMap" if args.len() == 3 => {
-      if let (Expr::List(items), Expr::List(positions)) = (&args[1], &args[2]) {
+      if let Expr::List(items) = &args[1] {
         let f = &args[0];
-        // Extract elements at given positions
-        let pos_indices: Vec<usize> = positions
-          .iter()
-          .filter_map(|p| {
-            if let Expr::Integer(v) = p {
-              Some(*v as usize)
-            } else {
-              None
+        // Resolve the positions from either a list or a Span.
+        let pos_indices: Vec<usize> = match &args[2] {
+          Expr::List(positions) => positions
+            .iter()
+            .filter_map(|p| {
+              if let Expr::Integer(v) = p {
+                Some(*v as usize)
+              } else {
+                None
+              }
+            })
+            .collect(),
+          Expr::FunctionCall { name, args: sp } if name == "Span" => {
+            match span_to_positions(sp, items.len()) {
+              Some(p) => p,
+              None => return None,
             }
-          })
-          .collect();
+          }
+          _ => return None,
+        };
         let subset: Vec<Expr> = pos_indices
           .iter()
           .filter_map(|&idx| items.get(idx - 1).cloned())
@@ -4591,6 +4602,50 @@ pub fn dispatch_list_operations(
     _ => {}
   }
   None
+}
+
+/// Expand a `Span[start, end, step]` (the parsed form of `start ;; end ;; step`)
+/// into a list of 1-based positions within a list of length `len`. Supports
+/// `All` and negative endpoints (counting from the end) and an optional step.
+/// Returns None for non-integer / unsupported endpoints.
+fn span_to_positions(span_args: &[Expr], len: usize) -> Option<Vec<usize>> {
+  let len_i = len as i128;
+  let resolve = |e: Option<&Expr>, default: i128| -> Option<i128> {
+    match e {
+      None => Some(default),
+      Some(Expr::Integer(n)) => {
+        Some(if *n < 0 { len_i + n + 1 } else { *n })
+      }
+      Some(Expr::Identifier(s)) if s == "All" => Some(default),
+      _ => None,
+    }
+  };
+  let start = resolve(span_args.first(), 1)?;
+  let end = resolve(span_args.get(1), len_i)?;
+  let step = match span_args.get(2) {
+    None => 1,
+    Some(Expr::Integer(s)) if *s != 0 => *s,
+    _ => return None,
+  };
+
+  let mut positions = Vec::new();
+  let mut i = start;
+  if step > 0 {
+    while i <= end {
+      if i >= 1 && i <= len_i {
+        positions.push(i as usize);
+      }
+      i += step;
+    }
+  } else {
+    while i >= end {
+      if i >= 1 && i <= len_i {
+        positions.push(i as usize);
+      }
+      i += step;
+    }
+  }
+  Some(positions)
 }
 
 /// Extract a value from an association by key string

@@ -3003,10 +3003,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn text_words_count_exceeds_length() {
-    assert_eq!(
-      interpret("TextWords[\"a b c\", 5]").unwrap(),
-      "{a, b, c}"
-    );
+    assert_eq!(interpret("TextWords[\"a b c\", 5]").unwrap(), "{a, b, c}");
   }
   #[test]
   fn word_counts_basic() {
@@ -5380,6 +5377,43 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("SubsetMap[Reverse, {a, b, c, d, e}, {2, 4}]").unwrap(),
       "{a, d, c, b, e}"
+    );
+  }
+  // SubsetMap with a Span position specification.
+  #[test]
+  fn subset_map_span() {
+    assert_eq!(
+      interpret("SubsetMap[Accumulate, {x1, x2, x3, x4, x5, x6}, 2 ;; 5]")
+        .unwrap(),
+      "{x1, x2, x2 + x3, x2 + x3 + x4, x2 + x3 + x4 + x5, x6}"
+    );
+  }
+  #[test]
+  fn subset_map_span_numeric() {
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {10, 20, 30, 40, 50}, 2 ;; 4]").unwrap(),
+      "{10, 40, 30, 20, 50}"
+    );
+  }
+  #[test]
+  fn subset_map_span_negative_end() {
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {a, b, c, d, e, f}, 2 ;; -1]").unwrap(),
+      "{a, f, e, d, c, b}"
+    );
+  }
+  #[test]
+  fn subset_map_span_with_step() {
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {a, b, c, d, e, f}, 1 ;; 6 ;; 2]").unwrap(),
+      "{e, b, c, d, a, f}"
+    );
+  }
+  #[test]
+  fn subset_map_span_all_end() {
+    assert_eq!(
+      interpret("SubsetMap[Accumulate, {1, 2, 3, 4, 5}, 2 ;; All]").unwrap(),
+      "{1, 2, 5, 9, 14}"
     );
   }
 
