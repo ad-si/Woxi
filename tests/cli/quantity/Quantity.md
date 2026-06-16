@@ -43,3 +43,10 @@ Sign predicates test the magnitude.
 $ wo 'Positive[Quantity[5, "Meters"]]'
 True
 ```
+
+`Mod` of two compatible quantities returns the result in the divisor's unit.
+
+```scrut
+$ wo 'Mod[Quantity[7, "Meters"], Quantity[300, "Centimeters"]]'
+Quantity[100, Centimeters]
+```

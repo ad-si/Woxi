@@ -286,6 +286,42 @@ fn quantity_sign_is_dimensionless() {
   assert_eq!(interpret("Sign[Quantity[5, \"Meters\"]]").unwrap(), "1");
 }
 
+// Mod over two compatible quantities converts the dividend to the divisor's
+// unit, takes the modulus, and returns the result in the divisor's unit.
+#[test]
+fn quantity_mod_same_unit() {
+  assert_eq!(
+    interpret("Mod[Quantity[7, \"Meters\"], Quantity[3, \"Meters\"]]")
+      .unwrap(),
+    "Quantity[1, Meters]"
+  );
+  // Wolfram's Mod is non-negative.
+  assert_eq!(
+    interpret("Mod[Quantity[-7, \"Meters\"], Quantity[3, \"Meters\"]]")
+      .unwrap(),
+    "Quantity[2, Meters]"
+  );
+}
+
+#[test]
+fn quantity_mod_converts_to_divisor_unit() {
+  // 7 m = 700 cm; 700 mod 300 = 100, returned in centimeters.
+  assert_eq!(
+    interpret("Mod[Quantity[7, \"Meters\"], Quantity[300, \"Centimeters\"]]")
+      .unwrap(),
+    "Quantity[100, Centimeters]"
+  );
+}
+
+#[test]
+fn quantity_mod_incompatible_units_unevaluated() {
+  assert_eq!(
+    interpret("Mod[Quantity[7, \"Meters\"], Quantity[2, \"Seconds\"]]")
+      .unwrap(),
+    "Mod[Quantity[7, Meters], Quantity[2, Seconds]]"
+  );
+}
+
 // Sign predicates test the magnitude and return a Boolean.
 #[test]
 fn quantity_sign_predicates() {

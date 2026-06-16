@@ -2669,3 +2669,52 @@ pub fn try_quantity_compare(
   let r = crate::functions::math_ast::try_eval_to_f64(&converted_r)?;
   l.partial_cmp(&r)
 }
+
+/// Convert `mag` from `from_unit` to `to_unit` (assumed compatible), returning
+/// the converted magnitude or `None` if the conversion factor is unknown.
+fn convert_mag(mag: &Expr, from_unit: &Expr, to_unit: &Expr) -> Option<Expr> {
+  if let (Some(fi), Some(ti)) =
+    (decompose_unit_expr(from_unit), decompose_unit_expr(to_unit))
+  {
+    // factor = from_si / to_si.
+    let conv_numer = fi.si_numer * ti.si_denom;
+    let conv_denom = fi.si_denom * ti.si_numer;
+    if conv_numer == conv_denom {
+      Some(mag.clone())
+    } else {
+      multiply_magnitude_by_rational(mag, conv_numer, conv_denom).ok()
+    }
+  } else {
+    let from = unit_name(from_unit)?;
+    let to = unit_name(to_unit)?;
+    if from == to {
+      Some(mag.clone())
+    } else {
+      convert_magnitude(mag, from, to).ok()
+    }
+  }
+}
+
+/// `Mod[Quantity[a, ua], Quantity[b, ub]]` for compatible units: convert `a`
+/// to the divisor's unit `ub`, take the modulus, and return the result in `ub`
+/// (matching wolframscript, e.g. Mod[Quantity[7, m], Quantity[300, cm]] ->
+/// Quantity[100, cm]). Returns `None` unless both are Quantities with
+/// compatible units.
+pub fn try_quantity_mod(
+  a: &Expr,
+  b: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (mag_a, unit_a) = is_quantity(a)?;
+  let (mag_b, unit_b) = is_quantity(b)?;
+  if !units_compatible(unit_a, unit_b) {
+    return None;
+  }
+  let converted_a = convert_mag(mag_a, unit_a, unit_b)?;
+  match crate::evaluator::evaluate_function_call_ast(
+    "Mod",
+    &[converted_a, mag_b.clone()],
+  ) {
+    Ok(m) => Some(Ok(make_quantity(m, unit_b.clone()))),
+    Err(e) => Some(Err(e)),
+  }
+}

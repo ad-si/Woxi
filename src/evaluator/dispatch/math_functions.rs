@@ -396,7 +396,17 @@ pub fn dispatch_math_functions(
     "Round" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::round_ast(args));
     }
-    "Mod" if args.len() == 2 || args.len() == 3 => {
+    "Mod" if args.len() == 2 => {
+      // Mod over two compatible quantities returns a quantity in the divisor's
+      // unit; otherwise fall through to the ordinary numeric Mod.
+      if let Some(result) =
+        crate::functions::quantity_ast::try_quantity_mod(&args[0], &args[1])
+      {
+        return Some(result);
+      }
+      return Some(crate::functions::math_ast::mod_ast(args));
+    }
+    "Mod" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mod_ast(args));
     }
     "Quotient" if args.len() == 2 || args.len() == 3 => {
