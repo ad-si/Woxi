@@ -1891,7 +1891,7 @@ BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
 LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
 Overflow,Symbol representing arithmetic overflow,✅,pure,1.0,1926
 SignedRegionDistance,Computational geometry function for signed distance to a region,🚫,,10.0,1926
-TakeLargest,Takes the n largest elements from a list,✅,pure,10.1,1926
+TakeLargest,Takes the n largest elements from a list; supports the operator form TakeLargest[n][list],✅,pure,10.1,1926
 GeodesyData,,🚫,,7.0,1930
 InputAliases,Notebook interface option for input alias definitions,🚫,,4.0,1930
 IsomorphicGraphQ,Test whether two graphs are isomorphic (requires graph isomorphism algorithm),🚫,,8.0,1930
@@ -2385,7 +2385,7 @@ KleinInvariantJ,modular form (complex math),🚫,None,3.0,2435
 QueueProperties,queueing theory,🚫,None,9.0,2435
 Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1.0,2438
 FeatureSpacePlot,ML visualization,🚫,None,11.1,2438
-TakeSmallest,Takes the n smallest elements from a list,✅,pure,10.1,2438
+TakeSmallest,Takes the n smallest elements from a list; supports the operator form TakeSmallest[n][list],✅,pure,10.1,2438
 ARIMAProcess,time series model,🚫,None,9.0,2442
 ChoiceDialog,,🚫,,6.0,2442
 SystemsModelFeedbackConnect,,🚫,,8.0,2442

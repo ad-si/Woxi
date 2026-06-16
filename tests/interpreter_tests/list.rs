@@ -8595,6 +8595,20 @@ mod take_largest {
     assert_eq!(interpret("TakeLargest[{3, 1, 4}, 0]").unwrap(), "{}");
   }
 
+  // Operator form: TakeLargest[n][list].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("TakeLargest[2][{5, 1, 8, 3}]").unwrap(),
+      "{8, 5}"
+    );
+  }
+
+  #[test]
+  fn operator_stays_inert() {
+    assert_eq!(interpret("TakeLargest[2]").unwrap(), "TakeLargest[2]");
+  }
+
   #[test]
   fn empty_list_zero() {
     assert_eq!(interpret("TakeLargest[{}, 0]").unwrap(), "{}");
@@ -8655,6 +8669,15 @@ mod take_smallest {
     assert_eq!(
       interpret("TakeSmallest[{3, 1, 4, 1, 5, 9, 2, 6}, 3]").unwrap(),
       "{1, 1, 2}"
+    );
+  }
+
+  // Operator form: TakeSmallest[n][list].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("TakeSmallest[2][{5, 1, 8, 3}]").unwrap(),
+      "{1, 3}"
     );
   }
 
