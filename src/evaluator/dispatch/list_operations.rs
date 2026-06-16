@@ -2996,10 +2996,13 @@ pub fn dispatch_list_operations(
         return Some(Ok(last_emit));
       }
     }
-    // FoldPairList[f, x, list] — fold with pair output {emit, newState}
-    "FoldPairList" if args.len() == 3 => {
+    // FoldPairList[f, x, list] — fold with pair output {emit, newState}.
+    // FoldPairList[f, x, list, g] emits g applied to the whole {emit, newState}
+    // pair instead of just the first element.
+    "FoldPairList" if args.len() == 3 || args.len() == 4 => {
       if let Expr::List(ref elems) = args[2] {
         let f = &args[0];
+        let g = if args.len() == 4 { Some(&args[3]) } else { None };
         let mut state = args[1].clone();
         let mut results = Vec::new();
         for elem in elems {
@@ -3022,7 +3025,30 @@ pub fn dispatch_list_operations(
             .unwrap_or(applied);
           if let Expr::List(ref pair) = result {
             if pair.len() == 2 {
-              results.push(pair[0].clone());
+              let pair_expr = result.clone();
+              // Emit g[pair] for the 4-argument form, else the first element.
+              let emitted = match g {
+                Some(g) => {
+                  let g_applied = match g {
+                    Expr::Function { body } => crate::syntax::substitute_slots(
+                      body,
+                      &[pair_expr.clone()],
+                    ),
+                    Expr::Identifier(gname) => Expr::FunctionCall {
+                      name: gname.clone(),
+                      args: vec![pair_expr.clone()].into(),
+                    },
+                    _ => Expr::FunctionCall {
+                      name: expr_to_string(g),
+                      args: vec![pair_expr.clone()].into(),
+                    },
+                  };
+                  crate::evaluator::evaluate_expr_to_expr(&g_applied)
+                    .unwrap_or(g_applied)
+                }
+                None => pair[0].clone(),
+              };
+              results.push(emitted);
               state = pair[1].clone();
             } else {
               return Some(Ok(result));

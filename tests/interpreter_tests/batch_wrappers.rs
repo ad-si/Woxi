@@ -2866,6 +2866,33 @@ mod batch_unevaluated_wrappers_2 {
       "{1, 1, 0}"
     );
   }
+  // FoldPairList[f, x, list, g] emits g applied to the whole {emit, newState}
+  // pair instead of just the first element.
+  #[test]
+  fn fold_pair_list_four_arg_identity() {
+    assert_eq!(
+      interpret(
+        "FoldPairList[QuotientRemainder, 498, {100, 50, 20, 5, 1}, Identity]"
+      )
+      .unwrap(),
+      "{{4, 98}, {1, 48}, {2, 8}, {1, 3}, {3, 0}}"
+    );
+  }
+  #[test]
+  fn fold_pair_list_four_arg_pure_function() {
+    assert_eq!(
+      interpret("FoldPairList[{#1 + #2, #1*#2}&, 2, {3, 4}, # + 100 &]")
+        .unwrap(),
+      "{{105, 106}, {110, 124}}"
+    );
+  }
+  #[test]
+  fn fold_pair_list_four_arg_symbolic() {
+    assert_eq!(
+      interpret("FoldPairList[{#1 + #2, #1*#2}&, 2, {3, 4}, f]").unwrap(),
+      "{f[{5, 6}], f[{10, 24}]}"
+    );
+  }
   // FoldPair folds f[state, e] -> {emit, newState} and returns the last emit.
   #[test]
   fn fold_pair_add_mul() {

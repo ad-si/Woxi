@@ -2221,7 +2221,7 @@ RankedMin,k-th smallest element,✅,pure,8.0,2263
 AssociationQ,Tests if an expression is an association,✅,pure,10.1,2268
 BarcodeRecognize,Image recognition,🚫,None,10.0,2268
 CountsBy,Counts elements grouped by a function,✅,None,10.0,2268
-FoldPairList,Folds a list returning emitted values and new states,✅,None,10.2,2268
+FoldPairList,Folds a list returning emitted values and new states; optional fourth function is applied to each {emit;newState} pair before output,✅,None,10.2,2268
 AdjacencyList,Neighbor lists of a vertex or of all vertices (vertex-list order),✅,pure,9.0,2276
 CloudShare,Cloud service,🚫,None,10.2,2276
 EffectiveInterest,Effective annual rate from nominal rate compounded over a period,✅,pure,8.0,2276
