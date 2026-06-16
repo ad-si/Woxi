@@ -796,6 +796,7 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Integer(_)
     | Expr::Real(_)
+    | Expr::Identifier(_)
     | Expr::FunctionCall { .. }
     | Expr::BinaryOp { .. } => {
       // For distribution arguments, extract even negative power factors from
@@ -864,8 +865,11 @@ fn is_distribution_arg(expr: &Expr) -> bool {
   ))
 }
 
-/// Try to extract even negative power factors from a product and split the Sqrt.
-/// E.g. Sqrt[n * (1-p) * p^(-2)] → Sqrt[n*(1-p)] / p
+/// Try to extract even power factors from a product and split the Sqrt.
+/// Positive even powers come out of the radical into the numerator, negative
+/// even powers into the denominator. Because this is only used for distribution
+/// variances (whose parameters are positive), `Sqrt[x^2] = x` with no `Abs`.
+/// E.g. `Sqrt[n*(1-p)*p^(-2)] → Sqrt[n*(1-p)]/p` and `Sqrt[sigma^2] → sigma`.
 /// Returns None if there are no extractable factors.
 fn try_sqrt_extract_denom_factors(
   var: &Expr,
@@ -875,57 +879,61 @@ fn try_sqrt_extract_denom_factors(
   };
   use crate::syntax::BinaryOperator;
 
+  // Build `base^half`, collapsing the exponent to a bare base when half == 1.
+  let power_or_base = |base: Expr, half: i128| -> Expr {
+    if half == 1 {
+      base
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(Expr::Integer(half)),
+      }
+    }
+  };
+
   let factors = collect_multiplicative_factors(var);
+  // Factors that stay under the radical.
   let mut numerator_factors: Vec<Expr> = Vec::new();
+  // Even powers pulled out of the radical, by sign of the original exponent.
+  let mut pulled_numerator_factors: Vec<Expr> = Vec::new();
   let mut denominator_factors: Vec<Expr> = Vec::new();
 
   for f in &factors {
-    match f {
-      // x^(-2n) where n > 0: extract x^n into denominator
+    // Normalize a factor to (base, exponent) when it is an integer power.
+    let as_power: Option<(&Expr, i128)> = match f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: base,
         right: exp,
-      } if matches!(exp.as_ref(), Expr::Integer(n) if *n < 0 && n % 2 == 0) => {
-        if let Expr::Integer(n) = exp.as_ref() {
-          let half = (-n) / 2;
-          if half == 1 {
-            denominator_factors.push(*base.clone());
-          } else {
-            denominator_factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: base.clone(),
-              right: Box::new(Expr::Integer(half)),
-            });
-          }
-        }
-      }
-      // FunctionCall Power[x, -2n]
+      } => match exp.as_ref() {
+        Expr::Integer(n) => Some((base.as_ref(), *n)),
+        _ => None,
+      },
       Expr::FunctionCall {
         name: pname,
         args: pargs,
-      } if pname == "Power"
-        && pargs.len() == 2
-        && matches!(&pargs[1], Expr::Integer(n) if *n < 0 && n % 2 == 0) =>
-      {
-        if let Expr::Integer(n) = &pargs[1] {
-          let half = (-n) / 2;
-          if half == 1 {
-            denominator_factors.push(pargs[0].clone());
-          } else {
-            denominator_factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(pargs[0].clone()),
-              right: Box::new(Expr::Integer(half)),
-            });
-          }
-        }
+      } if pname == "Power" && pargs.len() == 2 => match &pargs[1] {
+        Expr::Integer(n) => Some((&pargs[0], *n)),
+        _ => None,
+      },
+      _ => None,
+    };
+
+    match as_power {
+      // x^(2n), n > 0: pull x^n out into the numerator.
+      Some((base, n)) if n > 0 && n % 2 == 0 => {
+        pulled_numerator_factors.push(power_or_base(base.clone(), n / 2));
+      }
+      // x^(-2n), n > 0: pull x^n out into the denominator.
+      Some((base, n)) if n < 0 && n % 2 == 0 => {
+        denominator_factors.push(power_or_base(base.clone(), -n / 2));
       }
       _ => numerator_factors.push(f.clone()),
     }
   }
 
-  if denominator_factors.is_empty() {
+  if denominator_factors.is_empty() && pulled_numerator_factors.is_empty() {
     return Ok(None);
   }
 
@@ -939,6 +947,27 @@ fn try_sqrt_extract_denom_factors(
 
   let sqrt_num = sqrt_ast(&[num_expr])?;
 
+  // Combine the pulled-out numerator factors with the residual radical.
+  let numerator = if pulled_numerator_factors.is_empty() {
+    sqrt_num
+  } else {
+    let pulled = if pulled_numerator_factors.len() == 1 {
+      pulled_numerator_factors.remove(0)
+    } else {
+      build_product(pulled_numerator_factors)
+    };
+    // Drop a trivial Sqrt[1] = 1 factor.
+    if matches!(sqrt_num, Expr::Integer(1)) {
+      pulled
+    } else {
+      build_product(vec![pulled, sqrt_num])
+    }
+  };
+
+  if denominator_factors.is_empty() {
+    return Ok(Some(numerator));
+  }
+
   let denom_expr = if denominator_factors.len() == 1 {
     denominator_factors.remove(0)
   } else {
@@ -947,7 +976,7 @@ fn try_sqrt_extract_denom_factors(
 
   Ok(Some(Expr::BinaryOp {
     op: BinaryOperator::Divide,
-    left: Box::new(sqrt_num),
+    left: Box::new(numerator),
     right: Box::new(denom_expr),
   }))
 }

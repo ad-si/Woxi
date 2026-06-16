@@ -184,6 +184,47 @@ mod geometric_distribution {
   }
 }
 
+mod standard_deviation_symbolic_distributions {
+  use super::*;
+
+  // Variance is sigma^2; the standard deviation must simplify Sqrt[sigma^2]
+  // to sigma (distribution parameters are positive, so no Abs).
+  #[test]
+  fn normal_symbolic_sigma() {
+    assert_eq!(
+      interpret("StandardDeviation[NormalDistribution[mu, sigma]]").unwrap(),
+      "sigma"
+    );
+  }
+
+  // Variance is a bare symbol (lambda); the standard deviation is Sqrt[lambda].
+  #[test]
+  fn poisson_symbolic_lambda() {
+    assert_eq!(
+      interpret("StandardDeviation[PoissonDistribution[lambda]]").unwrap(),
+      "Sqrt[lambda]"
+    );
+  }
+
+  // Variance is (1-p)/p^2; the p^2 in the denominator comes out as 1/p.
+  #[test]
+  fn geometric_symbolic_p() {
+    assert_eq!(
+      interpret("StandardDeviation[GeometricDistribution[p]]").unwrap(),
+      "Sqrt[1 - p]/p"
+    );
+  }
+
+  // Variance is n*p*(1-p); nothing is a perfect square, so it stays under Sqrt.
+  #[test]
+  fn binomial_symbolic() {
+    assert_eq!(
+      interpret("StandardDeviation[BinomialDistribution[n, p]]").unwrap(),
+      "Sqrt[n*(1 - p)*p]"
+    );
+  }
+}
+
 mod censored_distribution {
   use super::*;
 
