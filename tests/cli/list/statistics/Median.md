@@ -46,3 +46,10 @@ $ wo 'Median[{1.5, 2.5, 3.5, 4.5}]'
 $ wo 'Median[{100, 1, 50}]'
 50
 ```
+
+On an association, the values are used.
+
+```scrut
+$ wo 'Median[<|a -> 1, b -> 2, c -> 3|>]'
+2
+```

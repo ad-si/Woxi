@@ -1330,6 +1330,47 @@ mod exact_value_returns {
     assert_eq!(interpret("Median[{1.5, 2.5, 3.5, 4.5}]").unwrap(), "3.");
   }
 
+  // On an association, statistics operate on the values.
+  #[test]
+  fn median_association() {
+    assert_eq!(
+      interpret("Median[<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Median[<|a -> 1, b -> 2, c -> 3, d -> 4|>]").unwrap(),
+      "5/2"
+    );
+  }
+
+  #[test]
+  fn min_max_association() {
+    assert_eq!(
+      interpret("MinMax[<|a -> 3, b -> 1, c -> 5|>]").unwrap(),
+      "{1, 5}"
+    );
+  }
+
+  #[test]
+  fn variance_and_stddev_association() {
+    assert_eq!(
+      interpret("Variance[<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[<|a -> 2, b -> 4, c -> 6|>]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn quantile_association() {
+    assert_eq!(
+      interpret("Quantile[<|a -> 1, b -> 2, c -> 3, d -> 4|>, 1/2]").unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn quotient_positive() {
     assert_eq!(interpret("Quotient[23, 7]").unwrap(), "3");

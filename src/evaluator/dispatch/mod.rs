@@ -1401,6 +1401,20 @@ pub fn evaluate_function_call_ast_inner(
     return result;
   }
 
+  // Several statistics functions operate on an association's values: replace
+  // an association first argument with its list of values, like wolframscript.
+  // (Mean/Total/Max/Min already handle associations in their own routines.)
+  if matches!(
+    name,
+    "Median" | "MinMax" | "Variance" | "StandardDeviation" | "Quantile"
+  ) && let Some(Expr::Association(pairs)) = args.first()
+  {
+    let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+    let mut new_args = args.to_vec();
+    new_args[0] = Expr::List(values.into());
+    return evaluate_function_call_ast(name, &new_args);
+  }
+
   // Dispatch through built-in submodules (after user-defined functions)
   if let Some(result) = structural::dispatch_structural(name, args) {
     return result;

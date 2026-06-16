@@ -637,7 +637,7 @@ Fit,Performs a least-squares fit of data to a linear combination of basis functi
 Input,Reads user input (inert in Woxi),✅,effectful,1.0,642
 UnitConvert,Converts a quantity to a different unit,✅,pure,9.0,643
 BoundaryStyle,Option for boundary styling in plots,✅,none,6.0,644
-StandardDeviation,Returns the standard deviation of a list,✅,pure,5.0,645
+StandardDeviation,Returns the standard deviation of a list or an association's values,✅,pure,5.0,645
 MaxIterations,Option for maximum iterations,✅,pure,1.0,646
 GroupBy,Groups elements of a list by a criterion,✅,pure,10.0,647
 Nothing,Element that disappears from lists,✅,pure,10.2,648
@@ -657,7 +657,7 @@ ChartLabels,Option for labeling elements in charts,✅,none,7.0,661
 RightComposition,Compose functions left-to-right,✅,pure,10.0,662
 TextCell,A text cell in a notebook,✅,none,6.0,663
 BesselI,Modified Bessel function of the first kind,✅,pure,1.0,664
-Median,Returns the median value of a list,✅,pure,5.0,666
+Median,Returns the median value of a list or an association's values,✅,pure,5.0,666
 Keys,Returns the keys of an association,✅,pure,10.0,667
 AccuracyGoal,Option for accuracy goals,✅,pure,1.0,668
 WeatherData,,🚫,,7.0,669
@@ -728,7 +728,7 @@ FromCharacterCode,Converts character codes to a string,✅,pure,2.0,735
 Div,Compute the divergence of a vector field,✅,pure,9.0,736
 ToBoxes,Converts an expression to its box form representation for typesetting,✅,pure,3.0,737
 CompilationTarget,Option for compilation target,✅,none,8.0,738
-Quantile,Compute quantiles of a dataset or distribution,✅,pure,5.0,739
+Quantile,Compute quantiles of a dataset or distribution (accepts an association by value),✅,pure,5.0,739
 Scan,Applies a function to each element for side effects,✅,pure,1.0,740
 GeoGraphics,Creates geographic maps and visualizations,🚫,io,10.0,741
 Annotation,Attach an annotation to an expression,✅,none,6.0,742
@@ -747,7 +747,7 @@ StringForm,Format a string with placeholder substitution,✅,pure,1.0,754
 FrameMargins,Option specifying margins within a frame,✅,none,6.0,755
 RandomColor,Generate a random color,✅,none,10.0,756
 UniformDistribution,Represents a continuous uniform probability distribution,✅,pure,6.0,757
-Variance,Returns the variance of a list,✅,pure,5.0,758
+Variance,Returns the variance of a list or an association's values,✅,pure,5.0,758
 ImageResize,Resizes an image to specified dimensions,✅,pure,7.0,759
 LineLegend,Legend with line samples,✅,none,9.0,760
 ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1.0,761
@@ -874,7 +874,7 @@ ArrayPad,Pads an array with elements on each side,✅,pure,7.0,881
 Convolve,Symbolic convolution of two expressions over the real line,✅,pure,7.0,882
 AircraftData,,🚫,,10.0,883
 IntegerPartitions,Returns the integer partitions of n,✅,pure,6.0,884
-MinMax,Returns the minimum and maximum of a list,✅,pure,10.1,885
+MinMax,Returns the minimum and maximum of a list or an association's values,✅,pure,10.1,885
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5.0,886
 AbsoluteOptions,,🚫,,4.0,888
 GraphLayout,,🚫,,8.0,888
