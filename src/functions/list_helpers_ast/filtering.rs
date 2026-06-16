@@ -89,6 +89,25 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let pred = &args[1];
   let default = args.get(2);
 
+  let not_found = || match default {
+    Some(d) => d.clone(),
+    None => Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("NotFound".to_string())].into(),
+    },
+  };
+
+  // On an association, the predicate is tested against the values and the first
+  // matching value is returned.
+  if let Expr::Association(pairs) = list {
+    for (_k, v) in pairs.iter() {
+      if expr_to_bool(&apply_func_ast(pred, v)?) == Some(true) {
+        return Ok(v.clone());
+      }
+    }
+    return Ok(not_found());
+  }
+
   let items: &[Expr] = match list {
     Expr::List(items) => items.as_slice(),
     Expr::FunctionCall { args, .. } => args.as_slice(),
@@ -107,14 +126,7 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // No match found
-  match default {
-    Some(d) => Ok(d.clone()),
-    None => Ok(Expr::FunctionCall {
-      name: "Missing".to_string(),
-      args: vec![Expr::String("NotFound".to_string())].into(),
-    }),
-  }
+  Ok(not_found())
 }
 
 /// AST-based FirstCase: return first element matching a pattern.

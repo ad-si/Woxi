@@ -2157,10 +2157,7 @@ mod curry_applied {
   #[test]
   fn collects_n_in_order() {
     assert_eq!(interpret("CurryApplied[f, 2][a][b]").unwrap(), "f[a, b]");
-    assert_eq!(
-      interpret("CurryApplied[Plus, 3][1][2][3]").unwrap(),
-      "6"
-    );
+    assert_eq!(interpret("CurryApplied[Plus, 3][1][2][3]").unwrap(), "6");
     assert_eq!(interpret("CurryApplied[Power, 2][2][3]").unwrap(), "8");
   }
 

@@ -1626,6 +1626,32 @@ mod select_first {
   fn with_pure_function() {
     assert_eq!(interpret("SelectFirst[{1, 2, 3, 4}, (#>2&)]").unwrap(), "3");
   }
+
+  // On an association the predicate tests the values and the first matching
+  // value is returned.
+  #[test]
+  fn association_returns_first_matching_value() {
+    assert_eq!(
+      interpret("SelectFirst[<|a -> 1, b -> 4, c -> 9|>, # > 3 &]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn association_not_found() {
+    assert_eq!(
+      interpret("SelectFirst[<|a -> 1, b -> 2|>, # > 10 &]").unwrap(),
+      "Missing[NotFound]"
+    );
+  }
+
+  #[test]
+  fn association_with_default() {
+    assert_eq!(
+      interpret("SelectFirst[<|a -> 1, b -> 2|>, # > 10 &, missing]").unwrap(),
+      "missing"
+    );
+  }
 }
 
 mod patterns_ordered_q {

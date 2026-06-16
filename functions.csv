@@ -1489,7 +1489,7 @@ TildeTilde,Approximate equality relation,✅,pure,3.0,1509
 FindPath,Find paths in a graph,✅,pure,10.0,1510
 ImageRotate,Rotates an image by a given angle,✅,pure,7.0,1511
 LucasL,Returns the nth Lucas number,✅,pure,6.0,1512
-SelectFirst,Select first element matching a criterion,✅,pure,10.0,1514
+SelectFirst,Select first element matching a criterion (on an association tests the values and returns the first matching value),✅,pure,10.0,1514
 ArrayRules,Extract non-default elements as position rules,✅,pure,5.0,1517
 FindPeaks,Find peaks in data,✅,pure,10.0,1517
 NotebookClose,Close a notebook,✅,pure,3.0,1517
