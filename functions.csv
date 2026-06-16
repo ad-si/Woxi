@@ -1946,7 +1946,7 @@ WeightedAdjacencyMatrix,Builds the weighted adjacency matrix from a graph with E
 DayName,Return the name of the day of the week for a given date,✅,none,9.0,1981
 SuperPlus,Typesetting notation for superscript plus,🚫,,6.0,1982
 CommonName,Entity common name lookup,🚫,,10.0,1986
-KeyDrop,Drops specified keys from an association,✅,pure,10.0,1986
+KeyDrop,Drops specified keys from an association; supports the operator form KeyDrop[keys][assoc],✅,pure,10.0,1986
 TableDepth,Option for TableForm display depth,🚫,,2.0,1986
 TautologyQ,Tests whether a boolean expression is a tautology; two-arg form TautologyQ[expr;{vars}] tests over the given variables,✅,pure,7.0,1986
 CheckAbort,Evaluate expression and catch aborts,✅,pure,2.0,1991
@@ -2103,7 +2103,7 @@ ArgMin,Exact argument that minimizes an expression (optionally subject to constr
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144
 Underscript,Typesetting subscript,🚫,,6.0,2144
 EntityProperties,Lists properties available for an entity type,✅,pure,10.0,2147
-KeyTake,Takes specified keys from an association,✅,pure,10.0,2147
+KeyTake,Takes specified keys from an association; supports the operator form KeyTake[keys][assoc],✅,pure,10.0,2147
 Paneled,Panel wrapper for display,🚫,,6.0,2147
 BinLists,Group data points into equal-width bins,✅,pure,6.0,2149
 VertexIndex,Returns the 1-based position of a vertex in VertexList of a graph,✅,none,8.0,2149

@@ -375,6 +375,20 @@ mod key_take {
       "<|a -> 1, c -> 3|>"
     );
   }
+
+  // Operator form: KeyTake[keys][assoc].
+  #[test]
+  fn key_take_operator_form() {
+    assert_eq!(
+      interpret("KeyTake[{a, c}][<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn key_take_operator_stays_inert() {
+    assert_eq!(interpret("KeyTake[{a, c}]").unwrap(), "KeyTake[{a, c}]");
+  }
 }
 
 mod key_drop {
@@ -386,6 +400,24 @@ mod key_drop {
       interpret("KeyDrop[<|a -> 1, b -> 2, c -> 3|>, {a}]").unwrap(),
       "<|b -> 2, c -> 3|>"
     );
+  }
+
+  // Operator form: KeyDrop[keys][assoc], including a bare single key.
+  #[test]
+  fn key_drop_operator_form() {
+    assert_eq!(
+      interpret("KeyDrop[{b}][<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+    assert_eq!(
+      interpret("KeyDrop[b][<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn key_drop_operator_stays_inert() {
+    assert_eq!(interpret("KeyDrop[b]").unwrap(), "KeyDrop[b]");
   }
 }
 
