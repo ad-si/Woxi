@@ -2648,6 +2648,46 @@ mod expand_threading {
   }
 
   #[test]
+  fn fractional_part_of_infinity() {
+    // FractionalPart of an infinity is the full unit interval in that
+    // direction.
+    assert_eq!(
+      interpret("FractionalPart[Infinity]").unwrap(),
+      "Interval[{0, 1}]"
+    );
+    assert_eq!(
+      interpret("FractionalPart[-Infinity]").unwrap(),
+      "Interval[{-1, 0}]"
+    );
+    assert_eq!(
+      interpret("FractionalPart[ComplexInfinity]").unwrap(),
+      "Interval[{0, 1}]"
+    );
+    // 2 Infinity collapses to Infinity first.
+    assert_eq!(
+      interpret("FractionalPart[2 Infinity]").unwrap(),
+      "Interval[{0, 1}]"
+    );
+  }
+
+  #[test]
+  fn rounding_of_indeterminate() {
+    // Floor/Ceiling/Round/IntegerPart/FractionalPart of Indeterminate stay
+    // Indeterminate.
+    assert_eq!(interpret("Floor[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Ceiling[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Round[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("IntegerPart[Indeterminate]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("FractionalPart[Indeterminate]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
   fn integer_length_negative_base() {
     assert_eq!(
       interpret("IntegerLength[3, -2]").unwrap(),

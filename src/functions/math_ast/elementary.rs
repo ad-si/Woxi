@@ -1377,14 +1377,15 @@ fn exact_floor_ceil(arg: &Expr, is_floor: bool) -> Option<Expr> {
   None
 }
 
-/// Floor/Ceiling/Round/IntegerPart leave an (un)signed infinity unchanged:
-/// `Floor[Infinity] == Infinity`, `Floor[-Infinity] == -Infinity`,
-/// `Floor[ComplexInfinity] == ComplexInfinity`. Returns the canonical
-/// infinity expression to emit, or `None` when the argument is not an
-/// infinity. The two-argument forms (e.g. `Floor[Infinity, 2]`) also pass
-/// the infinity through, so callers check only the first argument.
+/// Floor/Ceiling/Round/IntegerPart leave an (un)signed infinity or
+/// `Indeterminate` unchanged: `Floor[Infinity] == Infinity`,
+/// `Floor[-Infinity] == -Infinity`, `Floor[ComplexInfinity] ==
+/// ComplexInfinity`, `Floor[Indeterminate] == Indeterminate`. Returns the
+/// canonical expression to emit, or `None` when the argument is finite. The
+/// two-argument forms (e.g. `Floor[Infinity, 2]`) also pass these through, so
+/// callers check only the first argument.
 fn infinity_passthrough(arg: &Expr) -> Option<Expr> {
-  if matches!(arg, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+  if matches!(arg, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity" || s == "Indeterminate")
   {
     return Some(arg.clone());
   }
@@ -2524,6 +2525,29 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "FractionalPart expects exactly 1 argument".into(),
     ));
+  }
+  // FractionalPart of an infinite quantity is the full unit interval in the
+  // corresponding direction (wolframscript): Infinity -> Interval[{0, 1}],
+  // -Infinity -> Interval[{-1, 0}], ComplexInfinity -> Interval[{0, 1}].
+  {
+    let unit_interval = |lo: i128, hi: i128| Expr::FunctionCall {
+      name: "Interval".to_string(),
+      args: vec![Expr::List(
+        vec![Expr::Integer(lo), Expr::Integer(hi)].into(),
+      )]
+      .into(),
+    };
+    if matches!(&args[0], Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+    {
+      return Ok(unit_interval(0, 1));
+    }
+    if crate::functions::math_ast::is_neg_infinity(&args[0]) {
+      return Ok(unit_interval(-1, 0));
+    }
+  }
+  // FractionalPart[Indeterminate] -> Indeterminate.
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   // Exact complex rational: apply FractionalPart to real and imag parts
   // separately (FractionalPart truncates toward zero).
