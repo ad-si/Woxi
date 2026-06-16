@@ -661,7 +661,7 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
     Expr::Identifier(s) | Expr::Constant(s) => {
       matches!(
         s.as_str(),
-        "Pi" | "E" | "GoldenRatio" | "EulerGamma" | "Catalan"
+        "Pi" | "E" | "GoldenRatio" | "EulerGamma" | "Catalan" | "Degree"
       )
     }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {

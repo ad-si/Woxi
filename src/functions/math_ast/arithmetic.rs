@@ -4685,6 +4685,103 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return times_ast(&rest);
   }
 
+  // Real-signed scalar × (±Infinity) collapses to ±Infinity. wolframscript:
+  //   2.5 Infinity → Infinity,  Pi Infinity → Infinity,  Sqrt[2] Infinity →
+  //   Infinity,  -2.5 Infinity → -Infinity. Only fires when every non-Infinity
+  //   factor has a known real sign (numeric, positive named constants, and
+  //   their products / negations), so symbolic factors like `x Infinity` are
+  //   left untouched. Integer/rational coefficients already collapsed above;
+  //   this extends the same rule to reals and positive constants.
+  {
+    // Known real sign of a factor: Some(1) positive, Some(-1) negative,
+    // None when the sign can't be determined (symbolic).
+    fn real_factor_sign(e: &Expr) -> Option<i8> {
+      if crate::functions::math_ast::complex::is_strictly_positive_real(e) {
+        return Some(1);
+      }
+      match e {
+        Expr::Integer(n) if *n < 0 => Some(-1),
+        Expr::Real(f) if *f < 0.0 => Some(-1),
+        Expr::BigInteger(n) => {
+          use num_traits::Signed;
+          if n.is_negative() { Some(-1) } else { None }
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          match (&args[0], &args[1]) {
+            (Expr::Integer(n), Expr::Integer(d)) if (*n < 0) ^ (*d < 0) => {
+              Some(-1)
+            }
+            _ => None,
+          }
+        }
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } => real_factor_sign(operand).map(|s| -s),
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          let mut sign = 1i8;
+          for a in args.iter() {
+            sign *= real_factor_sign(a)?;
+          }
+          Some(sign)
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left,
+          right,
+        } => Some(real_factor_sign(left)? * real_factor_sign(right)?),
+        _ => None,
+      }
+    }
+    let is_plain_infinity = |a: &Expr| -> Option<i8> {
+      match a {
+        Expr::Identifier(n) if n == "Infinity" => Some(1),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
+          Some(-1)
+        }
+        _ => None,
+      }
+    };
+    let inf_positions: Vec<(usize, i8)> = flat_args
+      .iter()
+      .enumerate()
+      .filter_map(|(i, a)| is_plain_infinity(a).map(|s| (i, s)))
+      .collect();
+    if inf_positions.len() == 1 {
+      let (ii, inf_sign) = inf_positions[0];
+      let others: Vec<&Expr> = flat_args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != ii)
+        .map(|(_, a)| a)
+        .collect();
+      if !others.is_empty()
+        && let Some(mut sign) =
+          others.iter().try_fold(inf_sign, |acc, a| {
+            real_factor_sign(a).map(|s| acc * s)
+          })
+      {
+        if sign == 0 {
+          sign = 1; // defensive; real_factor_sign never yields 0
+        }
+        let inf = Expr::Identifier("Infinity".to_string());
+        return Ok(if sign > 0 {
+          inf
+        } else {
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(inf),
+          }
+        });
+      }
+    }
+  }
+
   // Underflow[] / Overflow[] absorb non-zero numeric factors (Wolfram
   // keeps them symbolic when multiplied by symbols). 0 * Underflow[] = 0.
   let is_underflow = |a: &Expr| matches!(a, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty());

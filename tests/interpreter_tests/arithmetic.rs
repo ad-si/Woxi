@@ -1452,6 +1452,32 @@ mod infinity_arithmetic {
   }
 
   #[test]
+  fn real_coefficient_times_infinity() {
+    // A positive real coefficient × Infinity collapses to Infinity;
+    // a negative one to -Infinity (matching the integer/rational cases).
+    assert_eq!(interpret("2.5 Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("-2.5 Infinity").unwrap(), "-Infinity");
+    assert_eq!(interpret("2.5 (-Infinity)").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn positive_constant_times_infinity() {
+    // Known-positive constants and algebraic factors are absorbed.
+    assert_eq!(interpret("Pi Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("E Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("GoldenRatio Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("Degree Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("Sqrt[2] Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("-Pi Infinity").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn symbolic_coefficient_times_infinity_unchanged() {
+    // A factor of unknown sign keeps the product symbolic.
+    assert_eq!(interpret("a Infinity").unwrap(), "a*Infinity");
+  }
+
+  #[test]
   fn e_to_infinity() {
     assert_eq!(interpret("E^Infinity").unwrap(), "Infinity");
   }
