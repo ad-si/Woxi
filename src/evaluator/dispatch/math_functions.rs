@@ -4341,8 +4341,15 @@ pub fn dispatch_math_functions(
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Multiply) {
         return Some(evaluate_expr_to_expr(&result));
       }
-      if let Some(result) = apply_to_sides(&args[0], &args[1], "Times") {
-        return Some(evaluate_expr_to_expr(&result));
+      // Multiplying an equation by 0 collapses it; Wolfram errors, so keep it
+      // unevaluated rather than emitting 0 == 0.
+      if is_zero_literal(&args[1]) {
+        return None;
+      }
+      if let Some(result) = apply_to_sides(&args[0], &args[1], "Times")
+        && let Ok(scaled) = evaluate_expr_to_expr(&result)
+      {
+        return Some(guard_equation_scale(&args[0], &args[1], scaled));
       }
     }
     // DivideSides[rel, expr] — divide both sides by expr
@@ -4350,12 +4357,17 @@ pub fn dispatch_math_functions(
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Divide) {
         return Some(evaluate_expr_to_expr(&result));
       }
+      if is_zero_literal(&args[1]) {
+        return None;
+      }
       let inv = Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![args[1].clone(), Expr::Integer(-1)].into(),
       };
-      if let Some(result) = apply_to_sides(&args[0], &inv, "Times") {
-        return Some(evaluate_expr_to_expr(&result));
+      if let Some(result) = apply_to_sides(&args[0], &inv, "Times")
+        && let Ok(scaled) = evaluate_expr_to_expr(&result)
+      {
+        return Some(guard_equation_scale(&args[0], &args[1], scaled));
       }
     }
     // ApplySides[f, rel] — apply function f to both sides of a relation
@@ -6954,6 +6966,38 @@ fn is_nonzero_number(e: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// Wrap the result of multiplying/dividing both sides of an equation by a
+/// scalar in a `c != 0` guard when the scalar may be zero, matching
+/// wolframscript: MultiplySides[a == b, c] -> Piecewise[{{a c == b c, c != 0}},
+/// a == b]. A provably non-zero numeric scalar needs no guard, and only
+/// equations are guarded (inequalities need sign-dependent reasoning that is
+/// left to the plain scaled result).
+fn guard_equation_scale(
+  relation: &Expr,
+  scalar: &Expr,
+  scaled: Expr,
+) -> Result<Expr, InterpreterError> {
+  let is_equation = matches!(
+    relation,
+    Expr::Comparison { operands, operators }
+      if operands.len() == 2
+        && operators.first() == Some(&crate::syntax::ComparisonOp::Equal)
+  );
+  if !is_equation || is_nonzero_number(scalar) {
+    return Ok(scaled);
+  }
+  let cond = Expr::Comparison {
+    operands: vec![scalar.clone(), Expr::Integer(0)],
+    operators: vec![crate::syntax::ComparisonOp::NotEqual],
+  };
+  let branch = Expr::List(vec![scaled, cond].into());
+  let pw = Expr::FunctionCall {
+    name: "Piecewise".to_string(),
+    args: vec![Expr::List(vec![branch].into()), relation.clone()].into(),
+  };
+  evaluate_expr_to_expr(&pw)
 }
 
 /// Per-operand combiner for the `*Sides` family.

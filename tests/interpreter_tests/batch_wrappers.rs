@@ -4422,6 +4422,41 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("DivideSides[2*x == 6]").unwrap(), "x/3 == 1");
   }
 
+  // Multiplying/dividing an equation by a symbolic scalar is guarded by c != 0.
+  #[test]
+  fn multiply_sides_symbolic_scalar_guarded() {
+    assert_eq!(
+      interpret("MultiplySides[a == b, c]").unwrap(),
+      "Piecewise[{{a*c == b*c, c != 0}}, a == b]"
+    );
+  }
+  #[test]
+  fn divide_sides_symbolic_scalar_guarded() {
+    assert_eq!(
+      interpret("DivideSides[a == b, c]").unwrap(),
+      "Piecewise[{{a/c == b/c, c != 0}}, a == b]"
+    );
+  }
+  #[test]
+  fn multiply_sides_compound_scalar_guarded() {
+    assert_eq!(
+      interpret("MultiplySides[a == b, x + 1]").unwrap(),
+      "Piecewise[{{a*(1 + x) == b*(1 + x), 1 + x != 0}}, a == b]"
+    );
+  }
+  #[test]
+  fn multiply_sides_negative_numeric_no_guard() {
+    // A nonzero numeric scalar needs no guard.
+    assert_eq!(interpret("MultiplySides[x == 2, -3]").unwrap(), "-3*x == -6");
+  }
+  #[test]
+  fn divide_sides_negative_numeric_no_guard() {
+    assert_eq!(
+      interpret("DivideSides[a == b, -2]").unwrap(),
+      "-1/2*a == -1/2*b"
+    );
+  }
+
   // DayCount
   #[test]
   fn day_count_basic() {

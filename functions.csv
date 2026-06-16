@@ -2554,7 +2554,7 @@ ArrayMesh,Create a MeshRegion from a binary 1D or 2D array,✅,pure,10.4,2611
 ForwardBackward,Symbolic value for AnimationDirection option (forward then backward),✅,pure,6.0,2611
 KaryTree,K-ary tree graph,✅,1,8.0,2611
 LogisticDistribution,represents a logistic distribution,✅,Computation,6.0,2611
-MultiplySides,Multiply both sides of an equation by an expression; an equation second argument pairs the sides,✅,none,11.3,2611
+MultiplySides,Multiply both sides of an equation by an expression; a symbolic factor is guarded by c != 0 via Piecewise; an equation second argument pairs the sides,✅,none,11.3,2611
 URLShorten,,🚫,,10.0,2611
 DistributionParameterQ,Tests whether the parameters of a distribution are valid,✅,pure,8.0,2617
 PlanarAngle,Computes the angle at a vertex between two rays defined by three points,✅,pure,12.0,2617
@@ -2936,7 +2936,7 @@ Video,,🚫,,12.1,2999
 Booleans,Domain of booleans,✅,1,4.0,3008
 ClosenessCentrality,Closeness centrality of graph vertices,✅,1,8.0,3008
 CreateDataStructure,,,,12.1,3008
-DivideSides,Divide both sides of an equation by an expression; one-arg form divides by the rhs giving lhs/rhs==1; an equation second argument pairs the sides (guarded by c != 0),✅,none,11.3,3008
+DivideSides,Divide both sides of an equation by an expression; a symbolic divisor is guarded by c != 0 via Piecewise; one-arg form divides by the rhs giving lhs/rhs==1; an equation second argument pairs the sides,✅,none,11.3,3008
 ImageAspectRatio,Ratio of image height to width as an exact rational,✅,pure,8.0,3008
 PascalDistribution,Pascal distribution (number of trials until n successes),✅,pure,8.0,3008
 QFactorial,Compute the q-analog of the factorial,✅,pure,7.0,3008
