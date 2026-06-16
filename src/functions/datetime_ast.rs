@@ -46,7 +46,12 @@ pub fn parse_iso_date_components(s: &str) -> Option<Vec<Expr>> {
     }
   }
 
-  Some(comps.into_iter().map(|n| Expr::Integer(n as i128)).collect())
+  Some(
+    comps
+      .into_iter()
+      .map(|n| Expr::Integer(n as i128))
+      .collect(),
+  )
 }
 
 fn is_leap_year(year: i64) -> bool {
