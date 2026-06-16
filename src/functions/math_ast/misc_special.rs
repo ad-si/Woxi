@@ -3282,11 +3282,14 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = items.len() as i128;
   let base_str = base.map(crate::syntax::expr_to_string);
 
-  // Build: Log[n] + (1/n) Sum[-c_i Log[c_i]], dividing each Log by Log[base]
-  // when an explicit base is supplied.
+  // Build: Log[n] + (1/n) Sum[-c_i Log[c_i]], rebasing each Log to the given
+  // base when one is supplied. Use the two-argument `Log[base, x]` form rather
+  // than `Log[x]/Log[base]` so that exact powers collapse (`Log[2, 8] -> 3`)
+  // while non-powers stay as the ratio (`Log[2, 6] -> Log[6]/Log[2]`), matching
+  // wolframscript.
   let log = |x: String| -> String {
     match &base_str {
-      Some(b) => format!("Log[{}]/Log[{}]", x, b),
+      Some(b) => format!("Log[{}, {}]", b, x),
       None => format!("Log[{}]", x),
     }
   };

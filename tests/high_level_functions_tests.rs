@@ -63,6 +63,35 @@ mod high_level_functions_tests {
         "1.0114042647073518"
       );
     }
+
+    // When the base-rebased logs land on exact powers of the base they must
+    // collapse to integers/rationals, not stay as Log[k]/Log[b] ratios.
+    #[test]
+    fn test_explicit_base_2_two_equal_categories() {
+      assert_eq!(interpret("Entropy[2, {1, 1, 2, 2}]").unwrap(), "1");
+    }
+
+    #[test]
+    fn test_explicit_base_2_four_distinct() {
+      assert_eq!(interpret("Entropy[2, {a, b, c, d}]").unwrap(), "2");
+    }
+
+    #[test]
+    fn test_explicit_base_3_three_equal_categories() {
+      assert_eq!(
+        interpret("Entropy[3, {a, a, a, b, b, b, c, c, c}]").unwrap(),
+        "1"
+      );
+    }
+
+    // Non-power category counts keep the ratio form (matches wolframscript).
+    #[test]
+    fn test_explicit_base_2_non_power() {
+      assert_eq!(
+        interpret("Entropy[2, {a, a, b, b, c, c}]").unwrap(),
+        "-1 + Log[6]/Log[2]"
+      );
+    }
   }
 
   mod evenq_tests {
