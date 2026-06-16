@@ -1860,8 +1860,10 @@ pub fn evaluate_expr_to_expr_inner(
           }
           return crate::functions::control_flow_ast::quiet_ast(args);
         }
-        // Special handling for Switch - lazy evaluation of branches
-        if name == "Switch" && args.len() >= 3 {
+        // Special handling for Switch - lazy evaluation of branches.
+        // `>= 2` (rather than `>= 3`) so an even argument count like
+        // `Switch[2, 1]` reaches switch_ast, which reports Switch::argct.
+        if name == "Switch" && args.len() >= 2 {
           return crate::functions::control_flow_ast::switch_ast(args);
         }
         // Special handling for Piecewise - lazy evaluation of branches

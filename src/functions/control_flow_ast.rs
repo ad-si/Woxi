@@ -12,17 +12,27 @@ use crate::syntax::expr_to_string;
 /// Evaluates expr, then finds first matching pattern and returns corresponding value.
 /// Uses lazy evaluation — only matched branch is evaluated.
 pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 3 {
-    return Err(InterpreterError::EvaluationError(
-      "Switch called with too few arguments; at least 3 are expected.".into(),
+  // Switch[expr, p1, v1, p2, v2, ...] requires an odd number of arguments.
+  // An even count is an error in wolframscript (there is no trailing default;
+  // a catch-all uses the `_` pattern), reported as Switch::argct.
+  if args.len().is_multiple_of(2) {
+    crate::emit_message(&format!(
+      "Switch::argct: Switch called with {} arguments. \
+       Switch must be called with an odd number of arguments.",
+      args.len()
     ));
+    return Ok(Expr::FunctionCall {
+      name: "Switch".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Evaluate the test expression
   let test = evaluate_expr_to_expr(&args[0])?;
   let test_str = crate::syntax::expr_to_string(&test);
 
-  // Iterate pattern-value pairs
+  // Iterate pattern-value pairs (the argument list is odd, so `rest` is even
+  // and every pattern has a value — there is no leftover default argument).
   let rest = &args[1..];
   let mut i = 0;
   while i + 1 < rest.len() {
@@ -36,12 +46,7 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     i += 2;
   }
 
-  // Check for default (odd remaining argument)
-  if i < rest.len() {
-    return evaluate_expr_to_expr(&rest[i]);
-  }
-
-  // No match, no default — return unevaluated
+  // No match — return unevaluated
   Ok(Expr::FunctionCall {
     name: "Switch".to_string(),
     args: args.to_vec().into(),

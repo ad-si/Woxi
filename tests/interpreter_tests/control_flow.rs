@@ -626,14 +626,52 @@ mod which {
     // One argument: Which::argctu (singular), unevaluated.
     let one = interpret_with_stdout("Which[True]").unwrap();
     assert_eq!(one.result, "Which[True]");
-    assert!(one.warnings[0]
-      .contains("Which::argctu: Which called with 1 argument."));
+    assert!(
+      one.warnings[0].contains("Which::argctu: Which called with 1 argument.")
+    );
     // Three arguments: Which::argct (plural), unevaluated.
     clear_state();
     let three = interpret_with_stdout("Which[False, 1, True]").unwrap();
     assert_eq!(three.result, "Which[False, 1, True]");
-    assert!(three.warnings[0]
-      .contains("Which::argct: Which called with 3 arguments."));
+    assert!(
+      three.warnings[0]
+        .contains("Which::argct: Which called with 3 arguments.")
+    );
+  }
+}
+
+mod switch_arity {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  #[test]
+  fn even_argument_count_warns() {
+    clear_state();
+    // Switch needs an odd argument count; an even count is an error and must
+    // not silently treat the dangling pattern as a value.
+    let two = interpret_with_stdout("Switch[2, 1]").unwrap();
+    assert_eq!(two.result, "Switch[2, 1]");
+    assert!(two.warnings[0].contains(
+      "Switch::argct: Switch called with 2 arguments. \
+       Switch must be called with an odd number of arguments."
+    ));
+
+    clear_state();
+    let four = interpret_with_stdout("Switch[2, 1, \"a\", 2]").unwrap();
+    assert_eq!(four.result, "Switch[2, 1, a, 2]");
+    assert!(four.warnings[0].contains(
+      "Switch::argct: Switch called with 4 arguments."
+    ));
+  }
+
+  #[test]
+  fn odd_argument_count_still_matches() {
+    clear_state();
+    // A valid odd count keeps matching pattern/value pairs.
+    assert_eq!(interpret("Switch[2, 1, x, 2, y]").unwrap(), "y");
+    assert_eq!(interpret("Switch[5, _, \"x\"]").unwrap(), "x");
+    // No match returns the unevaluated Switch.
+    assert_eq!(interpret("Switch[2, 1, a]").unwrap(), "Switch[2, 1, a]");
   }
 }
 
