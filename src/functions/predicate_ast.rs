@@ -2084,6 +2084,17 @@ pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return Ok(bool_expr(false)),
       }
     }
+    // Accept string date specs: "2024" (year only) or ISO "2024-03-01".
+    // Wolfram parses the string as a date and tests its year, so take the
+    // leading run of digits as the year.
+    Expr::String(s) => {
+      let digits: String =
+        s.trim().chars().take_while(|c| c.is_ascii_digit()).collect();
+      match digits.parse::<i128>() {
+        Ok(y) if !digits.is_empty() => y,
+        _ => return Ok(bool_expr(false)),
+      }
+    }
     // Other forms return False
     _ => {
       return Ok(bool_expr(false));

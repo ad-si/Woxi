@@ -850,6 +850,20 @@ mod leap_year_q {
     // Divisible by 4 but not 100 -> leap
     assert_eq!(interpret("LeapYearQ[{2004}]").unwrap(), "True");
   }
+
+  #[test]
+  fn leap_year_string_format() {
+    // Wolfram parses a string date spec and tests its year.
+    // Year-only strings:
+    assert_eq!(interpret(r#"LeapYearQ["2024"]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"LeapYearQ["2023"]"#).unwrap(), "False");
+    assert_eq!(interpret(r#"LeapYearQ["1996"]"#).unwrap(), "True");
+    // Century rules also apply to string years:
+    assert_eq!(interpret(r#"LeapYearQ["2000"]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"LeapYearQ["1900"]"#).unwrap(), "False");
+    // ISO date string -> uses its year:
+    assert_eq!(interpret(r#"LeapYearQ["2024-03-01"]"#).unwrap(), "True");
+  }
 }
 
 mod cases {
