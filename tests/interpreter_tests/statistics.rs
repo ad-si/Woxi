@@ -1213,6 +1213,20 @@ mod covariance {
     );
   }
 
+  // A single flat numeric vector is one variable, so its covariance is its
+  // variance (covariance of the variable with itself).
+  #[test]
+  fn covariance_single_vector() {
+    assert_eq!(interpret("Covariance[{1, 2, 3}]").unwrap(), "1");
+    assert_eq!(interpret("Covariance[{2, 4, 6}]").unwrap(), "4");
+    assert_eq!(interpret("Covariance[{1, 2, 3, 4, 5}]").unwrap(), "5/2");
+    // A length-1 list has too few observations and stays unevaluated.
+    assert_eq!(
+      interpret("Covariance[{5}]").unwrap(),
+      "Covariance[{5}]"
+    );
+  }
+
   #[test]
   fn covariance_matrix_3x3() {
     assert_eq!(

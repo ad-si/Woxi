@@ -36,10 +36,7 @@ mod column_text_mode {
   #[test]
   fn column_to_string_stacks_lines() {
     clear_state();
-    assert_eq!(
-      interpret("ToString[Column[{1, 2, 3}]]").unwrap(),
-      "1\n2\n3"
-    );
+    assert_eq!(interpret("ToString[Column[{1, 2, 3}]]").unwrap(), "1\n2\n3");
     assert_eq!(
       interpret("ToString[Column[{a, bb, ccc}]]").unwrap(),
       "a\nbb\nccc"

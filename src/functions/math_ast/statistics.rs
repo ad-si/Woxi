@@ -1369,6 +1369,15 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if rows.len() < 2 {
       return unevaluated();
     }
+    // A flat vector is one variable, so its covariance is its variance
+    // (covariance of the variable with itself). Only numeric data is
+    // closed-formed here, matching the two-argument form.
+    if rows.iter().all(|r| !matches!(r, Expr::List(_))) {
+      if all_numeric_scalars(rows) {
+        return covariance_pair(rows, rows);
+      }
+      return unevaluated();
+    }
     let Some(cols) = transpose_rows(rows) else {
       return unevaluated();
     };

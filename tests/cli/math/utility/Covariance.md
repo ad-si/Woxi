@@ -7,6 +7,13 @@ $ wo 'Covariance[{1, 2, 3}, {4, 5, 6}]'
 1
 ```
 
+Given a single vector, returns its variance.
+
+```scrut
+$ wo 'Covariance[{1, 2, 3}]'
+1
+```
+
 Given a single matrix, returns the covariance matrix of its columns.
 
 ```scrut
