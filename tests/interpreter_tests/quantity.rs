@@ -286,6 +286,31 @@ fn quantity_sign_is_dimensionless() {
   assert_eq!(interpret("Sign[Quantity[5, \"Meters\"]]").unwrap(), "1");
 }
 
+// Sign predicates test the magnitude and return a Boolean.
+#[test]
+fn quantity_sign_predicates() {
+  assert_eq!(
+    interpret("Positive[Quantity[5, \"Meters\"]]").unwrap(),
+    "True"
+  );
+  assert_eq!(
+    interpret("Positive[Quantity[-5, \"Meters\"]]").unwrap(),
+    "False"
+  );
+  assert_eq!(
+    interpret("Negative[Quantity[-3, \"Meters\"]]").unwrap(),
+    "True"
+  );
+  assert_eq!(
+    interpret("NonNegative[Quantity[0, \"Meters\"]]").unwrap(),
+    "True"
+  );
+  assert_eq!(
+    interpret("NonPositive[Quantity[-1, \"Meters\"]]").unwrap(),
+    "True"
+  );
+}
+
 // Max/Min over quantities compare magnitudes after unit conversion and return
 // the winning quantity in its original unit.
 #[test]

@@ -1444,6 +1444,10 @@ pub fn evaluate_function_call_ast_inner(
         | "Im"
         | "Conjugate"
         | "Sign"
+        | "Positive"
+        | "Negative"
+        | "NonNegative"
+        | "NonPositive"
     )
     && let Some(result) =
       crate::functions::quantity_ast::try_quantity_unary(name, &args[0])

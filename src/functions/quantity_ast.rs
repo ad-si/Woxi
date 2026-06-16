@@ -2390,9 +2390,10 @@ pub fn try_quantity_unary(
   let mag = mag.clone();
   let unit = unit.clone();
   match name {
-    // The sign of a quantity is the (dimensionless) sign of its magnitude.
-    "Sign" => {
-      Some(crate::evaluator::evaluate_function_call_ast("Sign", &[mag]))
+    // Sign and the sign predicates reduce to the (dimensionless) result for
+    // the magnitude.
+    "Sign" | "Positive" | "Negative" | "NonNegative" | "NonPositive" => {
+      Some(crate::evaluator::evaluate_function_call_ast(name, &[mag]))
     }
     // These apply to the magnitude and keep the unit.
     "Abs" | "Floor" | "Ceiling" | "Round" | "IntegerPart"

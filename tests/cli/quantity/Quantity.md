@@ -36,3 +36,10 @@ the winner in its original unit.
 $ wo 'Max[Quantity[1, "Meters"], Quantity[50, "Centimeters"]]'
 Quantity[1, Meters]
 ```
+
+Sign predicates test the magnitude.
+
+```scrut
+$ wo 'Positive[Quantity[5, "Meters"]]'
+True
+```
