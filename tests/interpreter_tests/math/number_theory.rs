@@ -577,6 +577,55 @@ mod integer_name {
       "forty\u{2010}two"
     );
   }
+
+  // IntegerName[n, "Ordinal"] gives the ordinal name (regular hyphen).
+  #[test]
+  fn ordinal_units() {
+    assert_eq!(interpret(r#"IntegerName[1, "Ordinal"]"#).unwrap(), "first");
+    assert_eq!(interpret(r#"IntegerName[3, "Ordinal"]"#).unwrap(), "third");
+    assert_eq!(interpret(r#"IntegerName[8, "Ordinal"]"#).unwrap(), "eighth");
+    assert_eq!(interpret(r#"IntegerName[9, "Ordinal"]"#).unwrap(), "ninth");
+    assert_eq!(
+      interpret(r#"IntegerName[12, "Ordinal"]"#).unwrap(),
+      "twelfth"
+    );
+  }
+
+  #[test]
+  fn ordinal_tens() {
+    assert_eq!(
+      interpret(r#"IntegerName[20, "Ordinal"]"#).unwrap(),
+      "twentieth"
+    );
+    assert_eq!(
+      interpret(r#"IntegerName[42, "Ordinal"]"#).unwrap(),
+      "forty-second"
+    );
+    assert_eq!(
+      interpret(r#"IntegerName[99, "Ordinal"]"#).unwrap(),
+      "ninety-ninth"
+    );
+  }
+
+  #[test]
+  fn ordinal_hundreds() {
+    assert_eq!(
+      interpret(r#"IntegerName[100, "Ordinal"]"#).unwrap(),
+      "one hundredth"
+    );
+    assert_eq!(
+      interpret(r#"IntegerName[142, "Ordinal"]"#).unwrap(),
+      "one hundred forty-second"
+    );
+  }
+
+  #[test]
+  fn ordinal_list() {
+    assert_eq!(
+      interpret(r#"IntegerName[{1, 2, 3}, "Ordinal"]"#).unwrap(),
+      "{first, second, third}"
+    );
+  }
 }
 
 mod roman_numeral {

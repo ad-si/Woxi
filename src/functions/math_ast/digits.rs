@@ -2481,45 +2481,60 @@ pub fn spell_below_1000(n: u64) -> String {
   parts.join(" ")
 }
 
-pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // IntegerName[n] - convert integer to English name
-  // IntegerName also works on lists
-  if args.len() == 1
-    && let Expr::List(items) = &args[0]
-  {
-    let results: Result<Vec<Expr>, InterpreterError> = items
-      .iter()
-      .map(|item| integer_name_ast(&[item.clone()]))
-      .collect();
-    return Ok(Expr::List(results?.into()));
-  }
-
-  let n = match expr_to_i128(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "IntegerName".to_string(),
-        args: args.to_vec().into(),
-      });
+/// Convert a cardinal English number name to its ordinal form. Only the last
+/// word changes, and the tens-ones hyphen becomes a plain `-`:
+/// "forty‐two" -> "forty-second", "one hundred" -> "one hundredth".
+fn cardinal_to_ordinal(cardinal: &str) -> String {
+  let normalized = cardinal.replace('\u{2010}', "-");
+  match normalized.rfind([' ', '-']) {
+    Some(i) => {
+      let (prefix, last) = normalized.split_at(i + 1);
+      format!("{}{}", prefix, ordinalize_word(last))
     }
-  };
+    None => ordinalize_word(&normalized),
+  }
+}
 
+/// Ordinal form of a single number word.
+fn ordinalize_word(w: &str) -> String {
+  match w {
+    "one" => "first".to_string(),
+    "two" => "second".to_string(),
+    "three" => "third".to_string(),
+    "five" => "fifth".to_string(),
+    "eight" => "eighth".to_string(),
+    "nine" => "ninth".to_string(),
+    "twelve" => "twelfth".to_string(),
+    "twenty" => "twentieth".to_string(),
+    "thirty" => "thirtieth".to_string(),
+    "forty" => "fortieth".to_string(),
+    "fifty" => "fiftieth".to_string(),
+    "sixty" => "sixtieth".to_string(),
+    "seventy" => "seventieth".to_string(),
+    "eighty" => "eightieth".to_string(),
+    "ninety" => "ninetieth".to_string(),
+    _ => format!("{w}th"),
+  }
+}
+
+/// The cardinal English name of an integer, or None when it can't be named
+/// (e.g. magnitude beyond the known scale words).
+fn integer_name_cardinal(n: i128) -> Option<String> {
   let negative = n < 0;
   let abs_n = n.unsigned_abs();
 
   if abs_n == 0 {
-    return Ok(Expr::String("zero".to_string()));
+    return Some("zero".to_string());
   }
 
   // For numbers 1..=999, spell out entirely in words
   if abs_n <= 999 {
     let word = spell_below_1000(abs_n as u64);
-    let result = if negative {
+    return Some(if negative {
       format!("negative {}", word)
     } else {
       word
-    };
-    return Ok(Expr::String(result));
+    });
   }
 
   // For numbers >= 1000, break into groups of 3 digits.
@@ -2547,22 +2562,62 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let scale = if sidx < SCALES.len() {
         SCALES[sidx]
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "IntegerName".to_string(),
-          args: args.to_vec().into(),
-        });
+        return None;
       };
       parts.push(format!("{} {}", group, scale));
     }
   }
 
   let result = parts.join(" ");
-  let result = if negative {
+  Some(if negative {
     format!("negative {}", result)
   } else {
     result
+  })
+}
+
+pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "IntegerName".to_string(),
+      args: args.to_vec().into(),
+    })
   };
-  Ok(Expr::String(result))
+
+  // IntegerName works on lists; thread over the first argument, carrying any
+  // second argument (the name type) along.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut new_args = vec![item.clone()];
+        if args.len() == 2 {
+          new_args.push(args[1].clone());
+        }
+        integer_name_ast(&new_args)
+      })
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(v) => v,
+    None => return unevaluated(),
+  };
+
+  let cardinal = match integer_name_cardinal(n) {
+    Some(s) => s,
+    None => return unevaluated(),
+  };
+
+  // IntegerName[n, "Ordinal"] gives the ordinal name; the default (and
+  // "Words") is the cardinal name.
+  let ordinal =
+    args.len() == 2 && matches!(&args[1], Expr::String(s) if s == "Ordinal");
+  if ordinal {
+    return Ok(Expr::String(cardinal_to_ordinal(&cardinal)));
+  }
+  Ok(Expr::String(cardinal))
 }
 
 pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
