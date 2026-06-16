@@ -2565,6 +2565,37 @@ mod expand_threading {
   }
 
   #[test]
+  fn integer_part_complex() {
+    // IntegerPart applies componentwise, truncating toward zero, and always
+    // yields integer components regardless of input exactness.
+    assert_eq!(interpret("IntegerPart[2.5 + 3.5 I]").unwrap(), "2 + 3*I");
+    assert_eq!(
+      interpret("IntegerPart[-2.5 - 3.5 I]").unwrap(),
+      "-2 - 3*I"
+    );
+    assert_eq!(interpret("IntegerPart[5/2 + 7/2 I]").unwrap(), "2 + 3*I");
+    assert_eq!(interpret("IntegerPart[2 + 3 I]").unwrap(), "2 + 3*I");
+  }
+
+  #[test]
+  fn fractional_part_complex() {
+    // Exact rational complex keeps exact rational components.
+    assert_eq!(
+      interpret("FractionalPart[5/2 + 3/2 I]").unwrap(),
+      "1/2 + I/2"
+    );
+    assert_eq!(interpret("FractionalPart[2 + 3 I]").unwrap(), "0");
+    // Inexact complex: forming a complex from a Real promotes both parts, so
+    // an integer-valued component prints as `0.`.
+    assert_eq!(
+      interpret("FractionalPart[1.5 + 2.7 I]").unwrap(),
+      "0.5 + 0.7000000000000002*I"
+    );
+    assert_eq!(interpret("FractionalPart[2 + 2.5 I]").unwrap(), "0. + 0.5*I");
+    assert_eq!(interpret("FractionalPart[1.5 + 3 I]").unwrap(), "0.5 + 0.*I");
+  }
+
+  #[test]
   fn rounding_of_infinity() {
     // Floor/Ceiling/Round/IntegerPart leave (un)signed infinities unchanged.
     assert_eq!(interpret("Floor[Infinity]").unwrap(), "Infinity");

@@ -2386,6 +2386,39 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── IntegerPart / FractionalPart ──────────────────────────────────
 
+/// True when `expr` carries a machine-precision (inexact) literal anywhere.
+fn contains_inexact_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_literal(left) || contains_inexact_literal(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_literal(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_inexact_literal)
+    }
+    _ => false,
+  }
+}
+
+/// Build `re + im*I`, dropping a zero imaginary part. Used by the complex
+/// branches of IntegerPart/FractionalPart.
+fn build_complex_result(
+  re: Expr,
+  im: Expr,
+) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_function_call_ast(
+    "Plus",
+    &[
+      re,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![im, Expr::Identifier("I".to_string())].into(),
+      },
+    ],
+  )
+}
+
 /// IntegerPart[x] - Integer part (truncation towards zero)
 pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -2395,6 +2428,18 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(inf) = infinity_passthrough(&args[0]) {
     return Ok(inf);
+  }
+  // Complex number: IntegerPart[a + b I] = IntegerPart[a] + IntegerPart[b] I,
+  // truncating each component toward zero. Covers numeric/Real components;
+  // symbolic-constant components (Pi + E I) extract no float and fall through.
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    return build_complex_result(
+      Expr::Integer(re.trunc() as i128),
+      Expr::Integer(im.trunc() as i128),
+    );
   }
   match &args[0] {
     Expr::Integer(n) => Ok(Expr::Integer(*n)),
@@ -2460,19 +2505,23 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         make_rational(n, d)
       }
     };
-    return crate::evaluator::evaluate_function_call_ast(
-      "Plus",
-      &[
-        build(re_frac.0, re_frac.1),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            build(im_frac.0, im_frac.1),
-            Expr::Identifier("I".to_string()),
-          ]
-          .into(),
-        },
-      ],
+    return build_complex_result(
+      build(re_frac.0, re_frac.1),
+      build(im_frac.0, im_frac.1),
+    );
+  }
+  // Inexact complex: FractionalPart[a + b I] = FractionalPart[a] +
+  // FractionalPart[b] I with Real components. Forming a complex from a Real
+  // promotes both parts to Real (Complex[2., 2.5]), so even an integer-valued
+  // component yields `0.` here — matching wolframscript.
+  if contains_inexact_literal(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    return build_complex_result(
+      Expr::Real(re - re.trunc()),
+      Expr::Real(im - im.trunc()),
     );
   }
   match &args[0] {
