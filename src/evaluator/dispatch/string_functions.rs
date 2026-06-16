@@ -258,9 +258,9 @@ pub fn dispatch_string_functions(
       return Some(crate::functions::string_ast::character_counts_ast(args));
     }
     "CharacterCounts" if args.len() == 2 => {
-      return Some(
-        crate::functions::string_ast::character_counts_ngram_ast(args),
-      );
+      return Some(crate::functions::string_ast::character_counts_ngram_ast(
+        args,
+      ));
     }
     "RemoveDiacritics" if args.len() == 1 => {
       return Some(crate::functions::string_ast::remove_diacritics_ast(args));

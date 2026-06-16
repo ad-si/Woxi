@@ -6559,7 +6559,9 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Association(
     counts
       .into_iter()
-      .map(|(ch, count, _)| (Expr::String(ch.to_string()), Expr::Integer(count)))
+      .map(|(ch, count, _)| {
+        (Expr::String(ch.to_string()), Expr::Integer(count))
+      })
       .collect(),
   ))
 }
@@ -6567,7 +6569,9 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// LetterCounts[s, n] - counts of length-n letter n-grams. Non-letter
 /// characters break the sliding window (n-grams never span them), in
 /// first-occurrence order.
-pub fn letter_counts_ngram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn letter_counts_ngram_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   let s = expr_to_str(&args[0])?;
   let n = expr_to_int(&args[1])?;
   if n == 1 {
