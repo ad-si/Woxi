@@ -5900,6 +5900,19 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[3 + 4 I]").unwrap(), "5");
     assert_eq!(interpret("Abs[2 Pi]").unwrap(), "2*Pi");
   }
+
+  // The Sqrt of a complex modulus must pull out perfect-square factors rather
+  // than leaving e.g. Sqrt[8]; wolframscript returns 2 Sqrt[2].
+  #[test]
+  fn abs_complex_modulus_simplifies_sqrt() {
+    assert_eq!(interpret("Abs[2 + 2 I]").unwrap(), "2*Sqrt[2]");
+    assert_eq!(interpret("Abs[2 + 4 I]").unwrap(), "2*Sqrt[5]");
+    assert_eq!(interpret("Abs[-3 - 6 I]").unwrap(), "3*Sqrt[5]");
+    // A non-square modulus stays under the radical.
+    assert_eq!(interpret("Abs[3 + I]").unwrap(), "Sqrt[10]");
+    // Rational components.
+    assert_eq!(interpret("Abs[1/2 + 1/2 I]").unwrap(), "1/Sqrt[2]");
+  }
 }
 
 // Sign is multiplicative: it pulls the sign of each real-constant factor out

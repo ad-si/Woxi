@@ -173,8 +173,9 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if num_sqrt * num_sqrt == num2 && den_sqrt * den_sqrt == den2 {
         return Ok(make_rational(num_sqrt, den_sqrt));
       }
-      // Return Sqrt[num2/den2]
-      return Ok(make_sqrt(make_rational(num2, den2)));
+      // Sqrt[num2/den2], simplified so perfect-square factors come out of the
+      // radical (e.g. Abs[2 + 2 I] = Sqrt[8] = 2 Sqrt[2]), matching wolframscript.
+      return sqrt_ast(&[make_rational(num2, den2)]);
     }
   }
   // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)

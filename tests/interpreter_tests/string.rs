@@ -4951,10 +4951,7 @@ mod string_contains_free_patterns {
 
   #[test]
   fn insert_linebreaks_short_fits() {
-    assert_eq!(
-      interpret(r#"InsertLinebreaks["abc", 5]"#).unwrap(),
-      "abc"
-    );
+    assert_eq!(interpret(r#"InsertLinebreaks["abc", 5]"#).unwrap(), "abc");
   }
 
   #[test]
