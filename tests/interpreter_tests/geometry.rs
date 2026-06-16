@@ -1703,3 +1703,70 @@ mod region_member {
     );
   }
 }
+
+mod region_distance {
+  use super::*;
+
+  // RegionDistance is 0 inside a solid region and the boundary distance
+  // outside; exact inputs give exact results.
+  #[test]
+  fn disk_solid() {
+    assert_eq!(
+      interpret("RegionDistance[Disk[{0, 0}, 1], {3, 0}]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("RegionDistance[Disk[{0, 0}, 2], {3, 4}]").unwrap(),
+      "3"
+    );
+    // A point inside an exact region has distance 0; a machine point gives 0.
+    assert_eq!(
+      interpret("RegionDistance[Disk[{0, 0}, 1], {0.5, 0}]").unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn point_and_ball() {
+    assert_eq!(
+      interpret("RegionDistance[Point[{0, 0}], {3, 4}]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("RegionDistance[Ball[{0, 0, 0}, 1], {0, 0, 3}]").unwrap(),
+      "2"
+    );
+  }
+
+  // Circle is the boundary, so the distance to an interior point is nonzero.
+  #[test]
+  fn circle_boundary() {
+    assert_eq!(
+      interpret("RegionDistance[Circle[{0, 0}, 1], {0.5, 0}]").unwrap(),
+      "0.5"
+    );
+    assert_eq!(
+      interpret("RegionDistance[Circle[{0, 0}, 1], {3, 0}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn rectangle_edge_and_corner() {
+    // Distance to the nearest edge.
+    assert_eq!(
+      interpret("RegionDistance[Rectangle[{0, 0}, {2, 2}], {3, 1}]").unwrap(),
+      "1"
+    );
+    // Distance to a corner.
+    assert_eq!(
+      interpret("RegionDistance[Rectangle[{0, 0}, {2, 2}], {3, 3}]").unwrap(),
+      "Sqrt[2]"
+    );
+    // Inside the box.
+    assert_eq!(
+      interpret("RegionDistance[Rectangle[{0, 0}, {2, 2}], {1, 1}]").unwrap(),
+      "0"
+    );
+  }
+}

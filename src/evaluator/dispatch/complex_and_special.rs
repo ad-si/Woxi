@@ -1909,6 +1909,9 @@ pub fn dispatch_complex_and_special(
     "RegionMember" if args.len() == 2 => {
       return Some(compute_region_member(&args[0], &args[1]));
     }
+    "RegionDistance" if args.len() == 2 => {
+      return Some(compute_region_distance(&args[0], &args[1]));
+    }
     "RegionBounds" if args.len() == 1 => {
       return Some(compute_region_bounds(&args[0]));
     }
@@ -4882,6 +4885,108 @@ fn compute_region_member(
     }
     _ => unevaluated(),
   }
+}
+
+/// RegionDistance[region, point] — the shortest distance from `point` to the
+/// (closed) `region`, zero when inside a solid region. Handles Point, Disk/Ball
+/// (solid), Circle/Sphere (boundary) and Rectangle/Cuboid (axis-aligned boxes)
+/// by building a symbolic distance expression and evaluating it, so exact
+/// inputs give exact results and machine numbers give machine results.
+fn compute_region_distance(
+  region: &Expr,
+  point: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionDistance".to_string(),
+      args: vec![region.clone(), point.clone()].into(),
+    })
+  };
+  if !matches!(point, Expr::List(_)) {
+    return unevaluated();
+  }
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+
+  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: n.to_string(),
+    args: a.into(),
+  };
+  let euclid = |a: Expr, b: Expr| call("EuclideanDistance", vec![a, b]);
+  let sub = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let zeros = |n: usize| Expr::List(vec![Expr::Integer(0); n].into());
+
+  let expr = match name.as_str() {
+    "Point" if args.len() == 1 => euclid(point.clone(), args[0].clone()),
+    "Disk" | "Ball" => {
+      let dim = if name == "Ball" { 3 } else { 2 };
+      let center = args.first().cloned().unwrap_or_else(|| zeros(dim));
+      let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      // Solid: Max[0, dist - r]. The zero's type controls the result type for
+      // points inside the region (0 for exact input, 0. for machine input).
+      let zero = if expr_contains_real(point) || expr_contains_real(region) {
+        Expr::Real(0.0)
+      } else {
+        Expr::Integer(0)
+      };
+      call(
+        "Max",
+        vec![zero, sub(euclid(point.clone(), center), radius)],
+      )
+    }
+    "Circle" | "Sphere" => {
+      let dim = if name == "Sphere" { 3 } else { 2 };
+      let center = args.first().cloned().unwrap_or_else(|| zeros(dim));
+      let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      // Boundary: Abs[dist - r].
+      call("Abs", vec![sub(euclid(point.clone(), center), radius)])
+    }
+    "Rectangle" | "Cuboid" => {
+      let Expr::List(pt) = point else {
+        return unevaluated();
+      };
+      let n = pt.len();
+      // Corners with the same defaults as RegionMember.
+      let (c1, c2): (Vec<Expr>, Vec<Expr>) = match (args.first(), args.get(1)) {
+        (None, _) => (vec![Expr::Integer(0); n], vec![Expr::Integer(1); n]),
+        (Some(Expr::List(a)), None) => {
+          let a: Vec<Expr> = a.iter().cloned().collect();
+          let b = a
+            .iter()
+            .map(|x| call("Plus", vec![x.clone(), Expr::Integer(1)]))
+            .collect();
+          (a, b)
+        }
+        (Some(Expr::List(a)), Some(Expr::List(b))) => {
+          (a.iter().cloned().collect(), b.iter().cloned().collect())
+        }
+        _ => return unevaluated(),
+      };
+      if c1.len() != n || c2.len() != n {
+        return unevaluated();
+      }
+      // Clamp each coordinate to [min(c1,c2), max(c1,c2)], then take the
+      // distance to the clamped point.
+      let clamped: Vec<Expr> = (0..n)
+        .map(|i| {
+          let lo = call("Min", vec![c1[i].clone(), c2[i].clone()]);
+          let hi = call("Max", vec![c1[i].clone(), c2[i].clone()]);
+          let inner = call("Min", vec![hi, pt[i].clone()]);
+          call("Max", vec![lo, inner])
+        })
+        .collect();
+      euclid(point.clone(), Expr::List(clamped.into()))
+    }
+    _ => return unevaluated(),
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 // ─── Area ──────────────────────────────────────────────────────────────
