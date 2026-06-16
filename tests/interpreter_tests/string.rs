@@ -7249,6 +7249,26 @@ abb""#,
     assert_case("ToString[NumberForm[2, 3]]", "2");
     assert_case("ToString[NumberForm[1234567, 3]]", "1234567");
   }
+  // NumberForm[x, {n, f}] shows exactly f digits after the decimal point.
+  #[test]
+  fn to_string_number_form_fixed_decimals() {
+    assert_case("ToString[NumberForm[3.14159, {5, 2}]]", "3.14");
+    assert_case("ToString[NumberForm[1234.5678, {6, 2}]]", "1234.57");
+  }
+  #[test]
+  fn to_string_number_form_fixed_pads_zeros() {
+    assert_case("ToString[NumberForm[3.0, {5, 2}]]", "3.00");
+    assert_case("ToString[NumberForm[3.1, {5, 3}]]", "3.100");
+    assert_case("ToString[NumberForm[0.5, {4, 2}]]", "0.50");
+  }
+  #[test]
+  fn to_string_number_form_fixed_zero_decimals() {
+    assert_case("ToString[NumberForm[3.14159, {4, 0}]]", "3.");
+  }
+  #[test]
+  fn to_string_number_form_fixed_negative() {
+    assert_case("ToString[NumberForm[-2.5, {6, 3}]]", "-2.500");
+  }
   #[test]
   fn set_4() {
     assert_case(

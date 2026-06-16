@@ -2613,6 +2613,29 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
   Some(if neg { format!("-{s}") } else { s })
 }
 
+/// Render `NumberForm[x, {n, f}]`: a real `x` shown with exactly `f` digits
+/// after the decimal point (zero-padded), e.g. `3.0 -> 3.00`. An integer `x`
+/// is shown unchanged.
+fn number_form_fixed_to_string(x: &Expr, f: i64) -> Option<String> {
+  if let Expr::Integer(i) = x {
+    return Some(i.to_string());
+  }
+  let val = match x {
+    Expr::Real(v) => *v,
+    _ => return None,
+  };
+  if f < 0 {
+    return None;
+  }
+  let f = f as usize;
+  let mut s = format!("{:.*}", f, val);
+  // `{:.0}` omits the decimal point; NumberForm keeps a trailing one (3.).
+  if f == 0 {
+    s.push('.');
+  }
+  Some(s)
+}
+
 /// Default (one-argument) `DecimalForm` rendering of a real: always decimal
 /// notation, keeping the full integer part and rounding the fraction to machine
 /// precision (~6 significant figures). `1234567.89 -> 1234568.`, `0.0001 ->
@@ -2648,16 +2671,28 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // NumberForm[x, n] — render x to n significant figures.
+  // NumberForm[x, {n, f}] — render x with exactly f digits after the decimal
+  // point (zero-padded).
   if let Expr::FunctionCall {
     name,
     args: inner_args,
   } = &args[0]
     && name == "NumberForm"
     && inner_args.len() == 2
-    && let Expr::Integer(n) = &inner_args[1]
-    && let Some(rendered) = number_form_to_string(&inner_args[0], *n as i64)
   {
-    return Ok(Expr::String(rendered));
+    let rendered = match &inner_args[1] {
+      Expr::Integer(n) => number_form_to_string(&inner_args[0], *n as i64),
+      Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+        Expr::Integer(f) => {
+          number_form_fixed_to_string(&inner_args[0], *f as i64)
+        }
+        _ => None,
+      },
+      _ => None,
+    };
+    if let Some(rendered) = rendered {
+      return Ok(Expr::String(rendered));
+    }
   }
 
   // AccountingForm[x] / AccountingForm[x, n] — like NumberForm but negatives
@@ -2718,7 +2753,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(f) => Some(decimal_form_default(*f)),
         _ => None,
       },
-      Some(Expr::Integer(n)) => number_form_to_string(&inner_args[0], *n as i64),
+      Some(Expr::Integer(n)) => {
+        number_form_to_string(&inner_args[0], *n as i64)
+      }
       _ => None,
     };
     if let Some(rendered) = rendered {
