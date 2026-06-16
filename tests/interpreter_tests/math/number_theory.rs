@@ -1424,6 +1424,28 @@ mod gcd {
     // 2 = 2/1, so GCD[2, 1/3] = GCD[2, 1] / LCM[1, 3] = 1/3
     assert_eq!(interpret("GCD[2, 1/3]").unwrap(), "1/3");
   }
+
+  #[test]
+  fn inexact_argument_warns() {
+    use woxi::interpret_with_stdout;
+    // A Real argument keeps GCD unevaluated and warns ::exact, naming the
+    // first inexact argument in the Orderless-sorted form.
+    let r = interpret_with_stdout("GCD[12.0, 8]").unwrap();
+    assert_eq!(r.result, "GCD[8, 12.]");
+    assert!(r.warnings[0].contains(
+      "GCD::exact: Argument 12. in GCD[8, 12.] is not an exact number."
+    ));
+    // LCM behaves the same way.
+    let l = interpret_with_stdout("LCM[2.5, 5]").unwrap();
+    assert_eq!(l.result, "LCM[2.5, 5]");
+    assert!(l.warnings[0].contains(
+      "LCM::exact: Argument 2.5 in LCM[2.5, 5] is not an exact number."
+    ));
+    // A purely symbolic argument stays unevaluated WITHOUT a warning.
+    let s = interpret_with_stdout("GCD[Pi, 2]").unwrap();
+    assert_eq!(s.result, "GCD[2, Pi]");
+    assert!(s.warnings.is_empty());
+  }
 }
 
 mod extended_gcd {

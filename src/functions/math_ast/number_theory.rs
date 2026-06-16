@@ -20,6 +20,29 @@ pub fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
 ///
 /// Accepts integers and rationals. For rationals,
 /// `GCD[a/b, c/d] = GCD[a, c] / LCM[b, d]`.
+/// When GCD/LCM is given an inexact (Real/BigFloat) argument it stays
+/// unevaluated, but wolframscript first warns: `<F>::exact: Argument <v> in
+/// <F>[...] is not an exact number.`, naming the first inexact argument (the
+/// args are already Orderless-sorted by the time we see them). Purely symbolic
+/// arguments (e.g. Pi) do not trigger the message.
+fn emit_gcd_lcm_exact_message(name: &str, args: &[Expr]) {
+  if let Some(inexact) = args
+    .iter()
+    .find(|a| matches!(a, Expr::Real(_) | Expr::BigFloat(_, _)))
+  {
+    let call = Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    };
+    crate::emit_message(&format!(
+      "{}::exact: Argument {} in {} is not an exact number.",
+      name,
+      crate::syntax::expr_to_string(inexact),
+      crate::syntax::expr_to_string(&call),
+    ));
+  }
+}
+
 pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
@@ -31,6 +54,7 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_fraction(arg) {
       Some(f) => fractions.push(f),
       None => {
+        emit_gcd_lcm_exact_message("GCD", args);
         return Ok(Expr::FunctionCall {
           name: "GCD".to_string(),
           args: args.to_vec().into(),
@@ -171,6 +195,7 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_fraction(arg) {
       Some(f) => fractions.push(f),
       None => {
+        emit_gcd_lcm_exact_message("LCM", args);
         return Ok(Expr::FunctionCall {
           name: "LCM".to_string(),
           args: args.to_vec().into(),
