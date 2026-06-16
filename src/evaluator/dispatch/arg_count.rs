@@ -1208,7 +1208,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Tanh" => Some((1, 1)),
     "SatisfiabilityCount" => Some((1, 2)),
     "SatisfiableQ" => Some((1, 2)),
-    "TautologyQ" => Some((1, 1)),
+    "TautologyQ" => Some((1, 2)),
     "TemplateApply" => Some((2, 2)),
     "TensorProduct" => Some((2, usize::MAX)),
     "TensorContract" => Some((2, 2)),

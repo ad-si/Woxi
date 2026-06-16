@@ -1839,31 +1839,50 @@ fn collect_boolean_variables(expr: &Expr, vars: &mut BTreeSet<String>) {
   }
 }
 
-/// TautologyQ[expr] - True if the boolean expression is true for all variable assignments.
+/// TautologyQ[expr] - True if the boolean expression is true for all variable
+/// assignments. TautologyQ[expr, {vars}] tests over the explicitly given
+/// variables; if a variable of `expr` is missing from the list the expression
+/// is not Boolean-valued and the call stays unevaluated (matching wolframscript).
 pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Ok(Expr::FunctionCall {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
       name: "TautologyQ".to_string(),
       args: args.to_vec().into(),
-    });
+    })
+  };
+  if args.len() != 1 && args.len() != 2 {
+    return unevaluated();
   }
 
   let expr = &args[0];
+  let explicit_vars = args.len() == 2;
 
-  // Collect all boolean variables
-  let mut vars = BTreeSet::new();
-  collect_boolean_variables(expr, &mut vars);
-  let var_list: Vec<String> = vars.into_iter().collect();
+  // Determine the variables to enumerate over.
+  let var_list: Vec<String> = if explicit_vars {
+    let Expr::List(items) = &args[1] else {
+      return unevaluated();
+    };
+    let mut v = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      match item {
+        Expr::Identifier(name) => v.push(name.clone()),
+        _ => return unevaluated(),
+      }
+    }
+    v
+  } else {
+    let mut vars = BTreeSet::new();
+    collect_boolean_variables(expr, &mut vars);
+    vars.into_iter().collect()
+  };
   let n = var_list.len();
 
   // Limit to 20 variables to prevent combinatorial explosion
   if n > 20 {
-    return Ok(Expr::FunctionCall {
-      name: "TautologyQ".to_string(),
-      args: args.to_vec().into(),
-    });
+    return unevaluated();
   }
 
+  let mut has_false = false;
   for bits in 0..(1u64 << n) {
     let mut substituted = expr.clone();
     for (i, var_name) in var_list.iter().enumerate() {
@@ -1876,12 +1895,24 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::substitute_variable(&substituted, var_name, &val);
     }
     let result = evaluate_expr_to_expr(&substituted)?;
-    if !matches!(&result, Expr::Identifier(s) if s == "True") {
-      return Ok(Expr::Identifier("False".to_string()));
+    match &result {
+      Expr::Identifier(s) if s == "True" => {}
+      Expr::Identifier(s) if s == "False" => has_false = true,
+      _ => {
+        // A non-Boolean result means a free variable remained. With an explicit
+        // variable list this is the wolframscript `boolv` error → unevaluated;
+        // for the auto-detected form it cannot happen, but treat it as not-True.
+        if explicit_vars {
+          return unevaluated();
+        }
+        has_false = true;
+      }
     }
   }
 
-  Ok(Expr::Identifier("True".to_string()))
+  Ok(Expr::Identifier(
+    if has_false { "False" } else { "True" }.to_string(),
+  ))
 }
 
 /// BooleanMinimize[expr] - Find the minimal sum-of-products form.

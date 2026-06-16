@@ -1268,6 +1268,44 @@ mod tautology_q {
       "True"
     );
   }
+
+  // Two-argument form: TautologyQ[expr, {vars}] tests over the given variables.
+
+  #[test]
+  fn two_arg_not_tautology() {
+    assert_eq!(
+      interpret("TautologyQ[(a || b) && (!a || !b), {a, b}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn two_arg_tautology() {
+    assert_eq!(interpret("TautologyQ[a || !a, {a}]").unwrap(), "True");
+    assert_eq!(interpret("TautologyQ[Implies[a, a], {a}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn two_arg_extra_variable_allowed() {
+    // An extra variable in the list that does not appear in expr is fine.
+    assert_eq!(interpret("TautologyQ[a || !a, {a, b}]").unwrap(), "True");
+    assert_eq!(interpret("TautologyQ[a, {a, b}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn two_arg_constant() {
+    assert_eq!(interpret("TautologyQ[True, {a}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn two_arg_missing_variable_unevaluated() {
+    // `b` is free under the listed variables, so the expression is not
+    // Boolean-valued and the call stays unevaluated.
+    assert_eq!(
+      interpret("TautologyQ[a || b, {a}]").unwrap(),
+      "TautologyQ[a || b, {a}]"
+    );
+  }
 }
 
 mod all_match {

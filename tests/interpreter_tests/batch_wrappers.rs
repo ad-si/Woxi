@@ -4447,7 +4447,10 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn multiply_sides_negative_numeric_no_guard() {
     // A nonzero numeric scalar needs no guard.
-    assert_eq!(interpret("MultiplySides[x == 2, -3]").unwrap(), "-3*x == -6");
+    assert_eq!(
+      interpret("MultiplySides[x == 2, -3]").unwrap(),
+      "-3*x == -6"
+    );
   }
   #[test]
   fn divide_sides_negative_numeric_no_guard() {

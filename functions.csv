@@ -1948,7 +1948,7 @@ SuperPlus,Typesetting notation for superscript plus,🚫,,6.0,1982
 CommonName,Entity common name lookup,🚫,,10.0,1986
 KeyDrop,Drops specified keys from an association,✅,pure,10.0,1986
 TableDepth,Option for TableForm display depth,🚫,,2.0,1986
-TautologyQ,Tests whether a boolean expression is a tautology,✅,pure,7.0,1986
+TautologyQ,Tests whether a boolean expression is a tautology; two-arg form TautologyQ[expr;{vars}] tests over the given variables,✅,pure,7.0,1986
 CheckAbort,Evaluate expression and catch aborts,✅,pure,2.0,1991
 DayRange,Generate the list of DateObject days between two dates inclusive,✅,pure,9.0,1991
 ImageSizeAction,Option controlling image size behavior,🚫,,6.0,1991
