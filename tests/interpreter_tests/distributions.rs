@@ -135,11 +135,29 @@ mod geometric_distribution {
     assert_eq!(interpret("Mean[GeometricDistribution[1/3]]").unwrap(), "2");
   }
 
+  // wolframscript returns the mean in the expanded Apart form, not (1-p)/p.
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[GeometricDistribution[p]]").unwrap(),
+      "-1 + p^(-1)"
+    );
+  }
+
   #[test]
   fn variance() {
     assert_eq!(
       interpret("Variance[GeometricDistribution[1/3]]").unwrap(),
       "6"
+    );
+  }
+
+  // The variance keeps the combined-fraction form (unlike the mean).
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[GeometricDistribution[p]]").unwrap(),
+      "(1 - p)/p^2"
     );
   }
 

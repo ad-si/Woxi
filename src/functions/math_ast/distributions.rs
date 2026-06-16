@@ -3801,10 +3801,11 @@ fn distribution_mean_variance(
         ));
       }
       let p = dargs[0].clone();
-      // Mean = (1-p)/p, Var = (1-p)/p^2
-      let one_minus_p = minus(int(1), p.clone());
-      let mean = divide(one_minus_p.clone(), p.clone());
-      let var = divide(one_minus_p, power(p, int(2)));
+      // Mean = -1 + 1/p, Var = (1-p)/p^2. wolframscript returns the mean in
+      // the expanded `Apart` form (-1 + p^(-1)), but keeps the variance as the
+      // combined fraction.
+      let mean = plus(int(-1), power(p.clone(), int(-1)));
+      let var = divide(minus(int(1), p.clone()), power(p, int(2)));
       Ok((mean, var))
     }
     "CauchyDistribution" => {
