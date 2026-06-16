@@ -1390,7 +1390,7 @@ ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
 StringContainsQ,Tests if a string contains a substring; supports the one-argument operator form,✅,pure,10.1,1409
 Discriminant,Polynomial discriminant via resultant,✅,pure,6.0,1410
-FromLetterNumber,Get the nth letter of the English alphabet,✅,pure,10.1,1411
+FromLetterNumber,Get the nth letter of the alphabet; a second argument selects a named alphabet (Greek; Russian; Spanish; ...),✅,pure,10.1,1411
 Here,Current geo location,🚫,io,10.0,1413
 ImageTransformation,Apply geometric transformation to image,🚫,io,8.0,1413
 GroupElements,Elements of a group,✅,pure,8.0,1414

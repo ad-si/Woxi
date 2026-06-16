@@ -1115,6 +1115,33 @@ mod from_letter_number {
       "{v, w, x, y, z}"
     );
   }
+
+  // Two-argument form: index into a named alphabet.
+  #[test]
+  fn greek_alphabet() {
+    assert_eq!(interpret(r#"FromLetterNumber[3, "Greek"]"#).unwrap(), "γ");
+    assert_eq!(interpret(r#"FromLetterNumber[-1, "Greek"]"#).unwrap(), "ω");
+  }
+
+  #[test]
+  fn greek_list() {
+    assert_eq!(
+      interpret(r#"FromLetterNumber[{1, 2, 3}, "Greek"]"#).unwrap(),
+      "{α, β, γ}"
+    );
+  }
+
+  #[test]
+  fn russian_and_spanish() {
+    assert_eq!(interpret(r#"FromLetterNumber[1, "Russian"]"#).unwrap(), "а");
+    assert_eq!(interpret(r#"FromLetterNumber[3, "Spanish"]"#).unwrap(), "c");
+  }
+
+  #[test]
+  fn out_of_range_named() {
+    assert_eq!(interpret(r#"FromLetterNumber[100, "Greek"]"#).unwrap(), " ");
+    assert_eq!(interpret(r#"FromLetterNumber[0, "Greek"]"#).unwrap(), " ");
+  }
 }
 
 mod letter_number {

@@ -206,7 +206,7 @@ pub fn dispatch_string_functions(
     "Alphabet" if args.len() <= 1 => {
       return Some(crate::functions::string_ast::alphabet_ast(args));
     }
-    "FromLetterNumber" if args.len() == 1 => {
+    "FromLetterNumber" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::from_letter_number_ast(args));
     }
     "LetterNumber" if args.len() == 1 || args.len() == 2 => {

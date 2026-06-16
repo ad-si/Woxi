@@ -446,7 +446,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FromContinuedFraction" => Some((1, 1)),
     "FromDigits" => Some((1, 2)),
     "FromDMS" => Some((1, 1)),
-    "FromLetterNumber" => Some((1, 1)),
+    "FromLetterNumber" => Some((1, 2)),
     "FromPolarCoordinates" => Some((1, 1)),
     "FromSphericalCoordinates" => Some((1, 1)),
     "FullDefinition" => Some((1, 1)),

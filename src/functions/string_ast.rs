@@ -5540,6 +5540,48 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Negative numbers wrap cyclically (e.g., -1 -> z).
 /// Works with lists of integers too.
 pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Two-argument form: FromLetterNumber[n, alphabet] indexes into the named
+  // alphabet (1-based, negative counts from the end), with out-of-range or 0
+  // giving a space — the same convention as the English default.
+  if args.len() == 2 {
+    let unevaluated = || {
+      Ok(Expr::FunctionCall {
+        name: "FromLetterNumber".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
+    let alphabet = alphabet_ast(std::slice::from_ref(&args[1]))?;
+    let letters = match &alphabet {
+      Expr::List(items) => items,
+      _ => return unevaluated(),
+    };
+    let len = letters.len() as i128;
+    let from_index = |n: i128| -> Expr {
+      let pos = if (1..=len).contains(&n) {
+        n
+      } else if (-len..=-1).contains(&n) {
+        len + n + 1
+      } else {
+        return Expr::String(" ".to_string());
+      };
+      letters[(pos - 1) as usize].clone()
+    };
+    return match &args[0] {
+      Expr::Integer(n) => Ok(from_index(*n)),
+      Expr::List(items) => {
+        let results: Vec<Expr> = items
+          .iter()
+          .map(|item| match item {
+            Expr::Integer(n) => from_index(*n),
+            other => other.clone(),
+          })
+          .collect();
+        Ok(Expr::List(results.into()))
+      }
+      _ => unevaluated(),
+    };
+  }
+
   fn letter_from_int(n: i128) -> Expr {
     // Valid range: 1..=26 for positive, -26..=-1 for negative
     // Everything else (0, >26, <-26) returns space
