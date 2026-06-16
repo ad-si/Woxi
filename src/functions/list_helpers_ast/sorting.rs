@@ -328,13 +328,28 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
 /// AST-based SortBy: sort elements by the value of a function.
 /// SortBy[{a, b, c}, f] -> elements sorted by f[x]
+/// Compute the sort key for `item` under `func`. A list of functions
+/// `{f1, …, fn}` yields the tuple `{f1[item], …, fn[item]}`, giving a
+/// lexicographic multi-criteria sort; any other `func` is applied directly.
+fn sort_key(func: &Expr, item: &Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::List(funcs) = func {
+    let keys: Vec<Expr> = funcs
+      .iter()
+      .map(|f| apply_func_ast(f, item))
+      .collect::<Result<_, InterpreterError>>()?;
+    Ok(Expr::List(keys.into()))
+  } else {
+    apply_func_ast(func, item)
+  }
+}
+
 pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
       let mut keyed: Vec<(Expr, Expr)> = items
         .iter()
         .map(|item| {
-          let key = apply_func_ast(func, item)?;
+          let key = sort_key(func, item)?;
           Ok((item.clone(), key))
         })
         .collect::<Result<_, InterpreterError>>()?;
@@ -356,7 +371,7 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
       let mut keyed: Vec<((Expr, Expr), Expr)> = pairs
         .iter()
         .map(|(k, v)| {
-          let key = apply_func_ast(func, v)?;
+          let key = sort_key(func, v)?;
           Ok(((k.clone(), v.clone()), key))
         })
         .collect::<Result<_, InterpreterError>>()?;
@@ -378,7 +393,7 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
       let mut keyed: Vec<(Expr, Expr)> = args
         .iter()
         .map(|item| {
-          let key = apply_func_ast(func, item)?;
+          let key = sort_key(func, item)?;
           Ok((item.clone(), key))
         })
         .collect::<Result<_, InterpreterError>>()?;
