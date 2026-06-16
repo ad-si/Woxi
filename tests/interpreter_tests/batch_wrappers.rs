@@ -4247,6 +4247,23 @@ mod batch_unevaluated_wrappers_2 {
       "<|1 -> b, -2 -> c, -3 -> a|>"
     );
   }
+  // A list of functions sorts the keys lexicographically by each criterion.
+  #[test]
+  fn key_sort_by_multiple_criteria() {
+    assert_eq!(
+      interpret("KeySortBy[<|1 -> a, 2 -> b, 3 -> c|>, {Mod[#, 2] &, # &}]")
+        .unwrap(),
+      "<|2 -> b, 1 -> a, 3 -> c|>"
+    );
+  }
+  // Keys are compared numerically, not as strings (10 sorts after 2).
+  #[test]
+  fn key_sort_by_numeric_order() {
+    assert_eq!(
+      interpret("KeySortBy[<|10 -> a, 2 -> b, 1 -> c|>, # &]").unwrap(),
+      "<|1 -> c, 2 -> b, 10 -> a|>"
+    );
+  }
   #[test]
   fn max_filter_basic() {
     assert_eq!(
@@ -4946,6 +4963,25 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("ReverseSortBy[{3, 1, 2, 5, 4}, Identity]").unwrap(),
       "{5, 4, 3, 2, 1}"
+    );
+  }
+
+  // ReverseSortBy[list, f] == Reverse[SortBy[list, f]], so equal keys are
+  // reversed too (regression: ties used to keep their original order).
+  #[test]
+  fn reverse_sort_by_reverses_ties() {
+    assert_eq!(
+      interpret("ReverseSortBy[{1, 3, 2, 4}, EvenQ]").unwrap(),
+      "{4, 2, 3, 1}"
+    );
+  }
+
+  // A list of functions gives a lexicographic multi-criteria reverse sort.
+  #[test]
+  fn reverse_sort_by_multiple_criteria() {
+    assert_eq!(
+      interpret("ReverseSortBy[{1, 2, 3, 4}, {Mod[#, 2] &, # &}]").unwrap(),
+      "{3, 1, 4, 2}"
     );
   }
 

@@ -3755,34 +3755,30 @@ pub fn dispatch_list_operations(
     "KeySortBy" if args.len() == 2 => {
       if let Expr::Association(pairs) = &args[0] {
         let func = &args[1];
+        // Compute the sort key for a key `k`. A list of functions
+        // `{f1, …, fn}` yields the tuple `{f1[k], …, fn[k]}` for a
+        // lexicographic multi-criteria sort; any other function is applied
+        // directly. Both named and pure functions are supported.
+        let apply =
+          crate::evaluator::function_application::apply_function_to_arg;
+        let key_of = |k: &Expr| -> Expr {
+          if let Expr::List(funcs) = func {
+            Expr::List(
+              funcs
+                .iter()
+                .map(|f| apply(f, k).unwrap_or_else(|_| k.clone()))
+                .collect(),
+            )
+          } else {
+            apply(func, k).unwrap_or_else(|_| k.clone())
+          }
+        };
         let mut indexed: Vec<(usize, Expr)> = pairs
           .iter()
           .enumerate()
-          .map(|(i, (k, _))| {
-            // Apply the function to the key; this handles named functions,
-            // pure functions (`-#&`), and explicit `Function[...]` alike.
-            let applied =
-              crate::evaluator::function_application::apply_function_to_arg(
-                func, k,
-              )
-              .unwrap_or_else(|_| k.clone());
-            (i, applied)
-          })
+          .map(|(i, (k, _))| (i, key_of(k)))
           .collect();
-        indexed.sort_by(|a, b| {
-          let sa = expr_to_string(&a.1);
-          let sb = expr_to_string(&b.1);
-          // Try numeric comparison first
-          let na: Result<f64, _> = sa.parse();
-          let nb: Result<f64, _> = sb.parse();
-          if let (Ok(a_val), Ok(b_val)) = (na, nb) {
-            a_val
-              .partial_cmp(&b_val)
-              .unwrap_or(std::cmp::Ordering::Equal)
-          } else {
-            sa.cmp(&sb)
-          }
-        });
+        indexed.sort_by(|a, b| list_helpers_ast::canonical_cmp(&a.1, &b.1));
         let sorted_pairs: Vec<(Expr, Expr)> =
           indexed.iter().map(|(i, _)| pairs[*i].clone()).collect();
         return Some(Ok(Expr::Association(sorted_pairs)));
@@ -3960,31 +3956,20 @@ pub fn dispatch_list_operations(
     }
     // ReverseSortBy[list, f] — sort list in reverse order by applying f
     "ReverseSortBy" if args.len() == 2 => {
-      if let Expr::List(items) = &args[0] {
-        let func = &args[1];
-        let mut indexed: Vec<(usize, String)> = items
-          .iter()
-          .enumerate()
-          .map(|(i, item)| {
-            let key = apply_function_to_arg(func, item)
-              .unwrap_or_else(|_| item.clone());
-            let key_str = expr_to_string(&key);
-            (i, key_str)
-          })
-          .collect();
-        indexed.sort_by(|a, b| {
-          let fa = a.1.parse::<f64>();
-          let fb = b.1.parse::<f64>();
-          if let (Ok(va), Ok(vb)) = (fa, fb) {
-            vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)
-          } else {
-            b.1.cmp(&a.1)
-          }
-        });
-        let result: Vec<Expr> =
-          indexed.iter().map(|(i, _)| items[*i].clone()).collect();
-        return Some(Ok(Expr::List(result.into())));
-      }
+      // ReverseSortBy[list, f] == Reverse[SortBy[list, f]] — this reuses
+      // SortBy's stable, canonical, multi-criteria-aware key sorting (a list
+      // of functions sorts by each in turn) and reverses the whole result, so
+      // ties are reversed too (matching wolframscript).
+      let sorted = list_helpers_ast::sort_by_ast(&args[0], &args[1]);
+      return Some(sorted.map(|s| {
+        if let Expr::List(items) = &s {
+          Expr::List(items.iter().rev().cloned().collect::<Vec<_>>().into())
+        } else if let Expr::Association(pairs) = &s {
+          Expr::Association(pairs.iter().rev().cloned().collect())
+        } else {
+          s
+        }
+      }));
     }
     // IntersectingQ[list1, list2] — True if lists share any element
     "IntersectingQ" if args.len() == 2 => {
