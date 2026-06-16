@@ -1326,10 +1326,7 @@ mod correlation {
     assert_eq!(interpret("Correlation[{1, 2, 3}]").unwrap(), "1");
     assert_eq!(interpret("Correlation[{a, b, c}]").unwrap(), "1");
     // A length-1 list has too few observations and stays unevaluated.
-    assert_eq!(
-      interpret("Correlation[{5}]").unwrap(),
-      "Correlation[{5}]"
-    );
+    assert_eq!(interpret("Correlation[{5}]").unwrap(), "Correlation[{5}]");
   }
 }
 

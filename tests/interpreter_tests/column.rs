@@ -31,6 +31,26 @@ mod column_text_mode {
     assert_eq!(interpret("Column[1]").unwrap(), "Column[1]");
   }
 
+  // Under ToString, Column stacks its elements one per line (single newline).
+  // Trailing alignment/option arguments do not affect the plain-text form.
+  #[test]
+  fn column_to_string_stacks_lines() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Column[{1, 2, 3}]]").unwrap(),
+      "1\n2\n3"
+    );
+    assert_eq!(
+      interpret("ToString[Column[{a, bb, ccc}]]").unwrap(),
+      "a\nbb\nccc"
+    );
+    assert_eq!(interpret("ToString[Column[{1}]]").unwrap(), "1");
+    assert_eq!(
+      interpret("ToString[Column[{1, 2, 3}, Right]]").unwrap(),
+      "1\n2\n3"
+    );
+  }
+
   #[test]
   fn column_with_center_alignment() {
     clear_state();

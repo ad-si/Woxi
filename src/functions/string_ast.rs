@@ -2735,6 +2735,21 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
+  // Column[{e1, e2, ...}] — stack the elements one per line (single newline).
+  // Trailing alignment/option arguments do not affect the plain-text form.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "Column"
+    && !inner_args.is_empty()
+    && let Expr::List(items) = &inner_args[0]
+  {
+    let lines: Vec<String> =
+      items.iter().map(crate::syntax::expr_to_output).collect();
+    return Ok(Expr::String(lines.join("\n")));
+  }
+
   // NumberForm[x, n] — render x to n significant figures.
   // NumberForm[x, {n, f}] — render x with exactly f digits after the decimal
   // point (zero-padded).
