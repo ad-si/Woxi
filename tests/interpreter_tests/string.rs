@@ -3030,6 +3030,48 @@ mod string_form {
   }
 
   #[test]
+  fn to_string_table_form_matrix() {
+    assert_eq!(
+      interpret("ToString[TableForm[{{1, 2}, {3, 4}}]]").unwrap(),
+      "1   2\n\n3   4"
+    );
+  }
+
+  #[test]
+  fn to_string_table_form_column_widths() {
+    // Each column is padded to its widest cell; trailing space is trimmed.
+    assert_eq!(
+      interpret("ToString[TableForm[{{a, bb}, {ccc, d}}]]").unwrap(),
+      "a     bb\n\nccc   d"
+    );
+  }
+
+  #[test]
+  fn to_string_table_form_unequal_cell_widths() {
+    assert_eq!(
+      interpret("ToString[TableForm[{{1, 22}, {3, 4}}]]").unwrap(),
+      "1   22\n\n3   4"
+    );
+  }
+
+  #[test]
+  fn to_string_table_form_vector() {
+    // A flat vector renders one element per row.
+    assert_eq!(
+      interpret("ToString[TableForm[{1, 2, 3}]]").unwrap(),
+      "1\n\n2\n\n3"
+    );
+  }
+
+  #[test]
+  fn to_string_table_form_single_row() {
+    assert_eq!(
+      interpret("ToString[TableForm[{{1, 2, 3}}]]").unwrap(),
+      "1   2   3"
+    );
+  }
+
+  #[test]
   fn display_indexed_placeholders() {
     // Top-level StringForm renders as the literal wrapper.
     assert_eq!(

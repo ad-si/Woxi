@@ -2663,11 +2663,76 @@ fn decimal_form_default(f: f64) -> String {
   if neg { format!("-{s}") } else { s }
 }
 
+/// Render `TableForm[matrix]` (or a 1D vector) as the aligned text grid that
+/// Wolfram produces under `ToString`. Columns are left-aligned and padded to the
+/// widest cell in the column, joined by three spaces; rows are separated by a
+/// blank line (`\n\n`); trailing whitespace is trimmed from every line.
+/// Returns `None` for arguments that are not lists.
+fn table_form_to_string(arg: &Expr) -> Option<String> {
+  let Expr::List(items) = arg else {
+    return None;
+  };
+  // A matrix is a non-empty list whose every element is itself a list.
+  let is_matrix =
+    !items.is_empty() && items.iter().all(|it| matches!(it, Expr::List(_)));
+  if is_matrix {
+    let rows: Vec<Vec<String>> = items
+      .iter()
+      .map(|row| match row {
+        Expr::List(cells) => {
+          cells.iter().map(crate::syntax::expr_to_output).collect()
+        }
+        _ => vec![],
+      })
+      .collect();
+    let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut col_w = vec![0usize; ncols];
+    for row in &rows {
+      for (j, cell) in row.iter().enumerate() {
+        col_w[j] = col_w[j].max(cell.chars().count());
+      }
+    }
+    let lines: Vec<String> = rows
+      .iter()
+      .map(|row| {
+        let padded: Vec<String> = row
+          .iter()
+          .enumerate()
+          .map(|(j, cell)| {
+            let pad = col_w[j].saturating_sub(cell.chars().count());
+            format!("{}{}", cell, " ".repeat(pad))
+          })
+          .collect();
+        padded.join("   ").trim_end().to_string()
+      })
+      .collect();
+    Some(lines.join("\n\n"))
+  } else {
+    // A flat vector renders one element per row.
+    let lines: Vec<String> =
+      items.iter().map(crate::syntax::expr_to_output).collect();
+    Some(lines.join("\n\n"))
+  }
+}
+
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "ToString expects 1 or 2 arguments".into(),
     ));
+  }
+
+  // TableForm[matrix] — render as an aligned text grid (left-aligned columns
+  // padded to the widest cell, three-space separators, blank line between rows).
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "TableForm"
+    && inner_args.len() == 1
+    && let Some(rendered) = table_form_to_string(&inner_args[0])
+  {
+    return Ok(Expr::String(rendered));
   }
 
   // NumberForm[x, n] — render x to n significant figures.

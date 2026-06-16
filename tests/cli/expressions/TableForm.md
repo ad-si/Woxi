@@ -17,3 +17,11 @@ TableForm[{{1, 2, 3}, {4, 5, 6}}]
 $ wo 'TableForm[Table[{i, i^2}, {i, 3}]]'
 TableForm[{{1, 1}, {2, 4}, {3, 9}}]
 ```
+
+Under `ToString`, the wrapper renders as an aligned text grid: columns are
+left-aligned and padded to the widest cell, separated by three spaces.
+
+```scrut
+$ wo 'ToString[TableForm[{{1, 2, 3}}]]'
+1   2   3
+```
