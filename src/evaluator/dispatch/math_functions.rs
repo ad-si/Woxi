@@ -2400,13 +2400,15 @@ pub fn dispatch_math_functions(
     "BitLength" if args.len() == 1 => {
       return Some(crate::functions::math_ast::bit_length_ast(args));
     }
-    "BitAnd" if !args.is_empty() => {
+    // No arg guard: BitAnd[]/BitOr[]/BitXor[] return their identity element
+    // (-1, 0, 0), handled inside the functions.
+    "BitAnd" => {
       return Some(crate::functions::math_ast::bit_and_ast(args));
     }
-    "BitOr" if !args.is_empty() => {
+    "BitOr" => {
       return Some(crate::functions::math_ast::bit_or_ast(args));
     }
-    "BitXor" if !args.is_empty() => {
+    "BitXor" => {
       return Some(crate::functions::math_ast::bit_xor_ast(args));
     }
     "BitNot" if args.len() == 1 => {

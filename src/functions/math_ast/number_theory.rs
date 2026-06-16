@@ -3903,6 +3903,10 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// BitAnd[n1, n2, ...] - bitwise AND
 pub fn bit_and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // OneIdentity: a single argument returns itself (numeric or symbolic).
+  if args.len() == 1 {
+    return Ok(args[0].clone());
+  }
   let mut result: Option<BigInt> = None;
   for arg in args {
     match expr_to_bigint(arg) {
@@ -3922,15 +3926,17 @@ pub fn bit_and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match result {
     Some(n) => Ok(bigint_to_expr(n)),
-    None => Ok(Expr::FunctionCall {
-      name: "BitAnd".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // BitAnd[] is the identity for AND: -1 (all bits set).
+    None => Ok(Expr::Integer(-1)),
   }
 }
 
 /// BitOr[n1, n2, ...] - bitwise OR
 pub fn bit_or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // OneIdentity: a single argument returns itself (numeric or symbolic).
+  if args.len() == 1 {
+    return Ok(args[0].clone());
+  }
   let mut result: Option<BigInt> = None;
   for arg in args {
     match expr_to_bigint(arg) {
@@ -3950,15 +3956,17 @@ pub fn bit_or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match result {
     Some(n) => Ok(bigint_to_expr(n)),
-    None => Ok(Expr::FunctionCall {
-      name: "BitOr".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // BitOr[] is the identity for OR: 0.
+    None => Ok(Expr::Integer(0)),
   }
 }
 
 /// BitXor[n1, n2, ...] - bitwise XOR
 pub fn bit_xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // OneIdentity: a single argument returns itself (numeric or symbolic).
+  if args.len() == 1 {
+    return Ok(args[0].clone());
+  }
   let mut result: Option<BigInt> = None;
   for arg in args {
     match expr_to_bigint(arg) {
@@ -3978,10 +3986,8 @@ pub fn bit_xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match result {
     Some(n) => Ok(bigint_to_expr(n)),
-    None => Ok(Expr::FunctionCall {
-      name: "BitXor".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // BitXor[] is the identity for XOR: 0.
+    None => Ok(Expr::Integer(0)),
   }
 }
 

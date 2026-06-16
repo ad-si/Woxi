@@ -1317,6 +1317,23 @@ mod bitwise_ops {
   }
 
   #[test]
+  fn empty_returns_identity_element() {
+    // BitAnd[]/BitOr[]/BitXor[] return their identity element.
+    assert_eq!(interpret("BitAnd[]").unwrap(), "-1");
+    assert_eq!(interpret("BitOr[]").unwrap(), "0");
+    assert_eq!(interpret("BitXor[]").unwrap(), "0");
+  }
+
+  #[test]
+  fn single_argument_is_one_identity() {
+    // OneIdentity: a single argument returns itself, numeric or symbolic.
+    assert_eq!(interpret("BitAnd[12]").unwrap(), "12");
+    assert_eq!(interpret("BitAnd[x]").unwrap(), "x");
+    assert_eq!(interpret("BitOr[x]").unwrap(), "x");
+    assert_eq!(interpret("BitXor[a + b]").unwrap(), "a + b");
+  }
+
+  #[test]
   fn bit_not() {
     assert_eq!(interpret("BitNot[5]").unwrap(), "-6");
     assert_eq!(interpret("BitNot[0]").unwrap(), "-1");
