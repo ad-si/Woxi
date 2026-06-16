@@ -967,6 +967,16 @@ pub fn apply_curried_call(
           vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
+      // TakeLargestBy[f, n][list] -> TakeLargestBy[list, f, n] (and likewise
+      // TakeSmallestBy): the applied list becomes the first argument.
+      if (name == "TakeLargestBy" || name == "TakeSmallestBy")
+        && func_args.len() == 2
+        && args.len() == 1
+      {
+        let new_args =
+          vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       // NearestTo[x][data] -> Nearest[data, x];
       // NearestTo[x, n][data] -> Nearest[data, x, n].
       if name == "NearestTo" && (func_args.len() == 1 || func_args.len() == 2) {

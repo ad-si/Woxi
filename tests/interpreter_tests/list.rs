@@ -4732,6 +4732,23 @@ mod take_largest_by {
       "<|z -> 8, x -> 5|>"
     );
   }
+
+  // Operator form: TakeLargestBy[f, n][list].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("TakeLargestBy[Abs, 2][{-3, 1, -8, 4}]").unwrap(),
+      "{-8, 4}"
+    );
+  }
+
+  #[test]
+  fn operator_stays_inert() {
+    assert_eq!(
+      interpret("TakeLargestBy[Abs, 2]").unwrap(),
+      "TakeLargestBy[Abs, 2]"
+    );
+  }
 }
 
 mod take_smallest_by {
@@ -4742,6 +4759,15 @@ mod take_smallest_by {
     assert_eq!(
       interpret("TakeSmallestBy[{-1, -2, -3, 4, 5}, Abs, 2]").unwrap(),
       "{-1, -2}"
+    );
+  }
+
+  // Operator form: TakeSmallestBy[f, n][list].
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("TakeSmallestBy[Abs, 2][{-3, 1, -8, 4}]").unwrap(),
+      "{1, -3}"
     );
   }
 
@@ -8598,10 +8624,7 @@ mod take_largest {
   // Operator form: TakeLargest[n][list].
   #[test]
   fn operator_form() {
-    assert_eq!(
-      interpret("TakeLargest[2][{5, 1, 8, 3}]").unwrap(),
-      "{8, 5}"
-    );
+    assert_eq!(interpret("TakeLargest[2][{5, 1, 8, 3}]").unwrap(), "{8, 5}");
   }
 
   #[test]

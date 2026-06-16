@@ -1885,7 +1885,7 @@ DefaultDuration,Default duration option,,unevaluated,6.0,1916
 EditDistance,Returns the edit distance between two strings,✅,pure,6.0,1921
 NotElement,Test non-membership of an expression in a mathematical domain,✅,pure,6.0,1921
 SubsuperscriptBox,Represents a box with both subscript and superscript for typesetting,✅,pure,3.0,1921
-TakeLargestBy,Takes the n largest elements by a criterion,✅,pure,10.1,1921
+TakeLargestBy,Takes the n largest elements by a criterion; supports the operator form TakeLargestBy[f;n][list],✅,pure,10.1,1921
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8.0,1921
 BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
 LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
@@ -2706,7 +2706,7 @@ Yesterday,Returns a DateObject representing the previous calendar day,✅,contex
 Encrypt,,🚫,,10.1,2767
 ImageChannels,Returns the number of channels in an image,✅,pure,7.0,2767
 ImageClip,,🚫,,8.0,2767
-TakeSmallestBy,Takes the n smallest elements by a criterion,✅,pure,10.1,2767
+TakeSmallestBy,Takes the n smallest elements by a criterion; supports the operator form TakeSmallestBy[f;n][list],✅,pure,10.1,2767
 WeaklyConnectedComponents,weakly connected components of a graph,✅,Computation,9.0,2767
 BarabasiAlbertGraphDistribution,Barabasi-Albert random graph distribution,,unevaluated,8.0,2777
 GraphComplement,Complement of a graph,✅,1,8.0,2777
