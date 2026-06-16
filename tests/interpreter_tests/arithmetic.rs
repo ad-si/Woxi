@@ -2539,6 +2539,41 @@ mod expand_threading {
   }
 
   #[test]
+  fn rounding_of_infinity() {
+    // Floor/Ceiling/Round/IntegerPart leave (un)signed infinities unchanged.
+    assert_eq!(interpret("Floor[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("Ceiling[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("Round[Infinity]").unwrap(), "Infinity");
+    assert_eq!(interpret("IntegerPart[Infinity]").unwrap(), "Infinity");
+
+    assert_eq!(interpret("Floor[-Infinity]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Ceiling[-Infinity]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Round[-Infinity]").unwrap(), "-Infinity");
+    assert_eq!(interpret("IntegerPart[-Infinity]").unwrap(), "-Infinity");
+
+    assert_eq!(
+      interpret("Floor[ComplexInfinity]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("Round[ComplexInfinity]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("IntegerPart[ComplexInfinity]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn rounding_of_infinity_two_arg() {
+    // The two-argument forms also pass the infinity through.
+    assert_eq!(interpret("Floor[Infinity, 2]").unwrap(), "Infinity");
+    assert_eq!(interpret("Ceiling[-Infinity, 2]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Round[Infinity, 5]").unwrap(), "Infinity");
+  }
+
+  #[test]
   fn integer_length_negative_base() {
     assert_eq!(
       interpret("IntegerLength[3, -2]").unwrap(),

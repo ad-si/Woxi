@@ -1377,11 +1377,31 @@ fn exact_floor_ceil(arg: &Expr, is_floor: bool) -> Option<Expr> {
   None
 }
 
+/// Floor/Ceiling/Round/IntegerPart leave an (un)signed infinity unchanged:
+/// `Floor[Infinity] == Infinity`, `Floor[-Infinity] == -Infinity`,
+/// `Floor[ComplexInfinity] == ComplexInfinity`. Returns the canonical
+/// infinity expression to emit, or `None` when the argument is not an
+/// infinity. The two-argument forms (e.g. `Floor[Infinity, 2]`) also pass
+/// the infinity through, so callers check only the first argument.
+fn infinity_passthrough(arg: &Expr) -> Option<Expr> {
+  if matches!(arg, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+  {
+    return Some(arg.clone());
+  }
+  if crate::functions::math_ast::is_neg_infinity(arg) {
+    return Some(arg.clone());
+  }
+  None
+}
+
 pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "Floor expects 1 or 2 arguments".into(),
     ));
+  }
+  if let Some(inf) = infinity_passthrough(&args[0]) {
+    return Ok(inf);
   }
   if args.len() == 1
     && let Some(r) =
@@ -1447,6 +1467,9 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Ceiling expects 1 or 2 arguments".into(),
     ));
+  }
+  if let Some(inf) = infinity_passthrough(&args[0]) {
+    return Ok(inf);
   }
   if args.len() == 1
     && let Some(r) = crate::functions::interval_ast::map_monotonic_interval(
@@ -1591,6 +1614,9 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Round expects 1 or 2 arguments".into(),
     ));
+  }
+  if let Some(inf) = infinity_passthrough(&args[0]) {
+    return Ok(inf);
   }
   if args.len() == 1
     && let Some(r) =
@@ -2366,6 +2392,9 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "IntegerPart expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(inf) = infinity_passthrough(&args[0]) {
+    return Ok(inf);
   }
   match &args[0] {
     Expr::Integer(n) => Ok(Expr::Integer(*n)),
