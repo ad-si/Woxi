@@ -144,6 +144,24 @@ mod geometric_mean {
     assert_eq!(interpret("GeometricMean[{2, 8}]").unwrap(), "4");
   }
 
+  // An empty list stays unevaluated rather than raising an error (matching
+  // wolframscript). The same holds for HarmonicMean and RootMeanSquare.
+  #[test]
+  fn empty_list_unevaluated() {
+    assert_eq!(
+      interpret("GeometricMean[{}]").unwrap(),
+      "GeometricMean[{}]"
+    );
+    assert_eq!(
+      interpret("HarmonicMean[{}]").unwrap(),
+      "HarmonicMean[{}]"
+    );
+    assert_eq!(
+      interpret("RootMeanSquare[{}]").unwrap(),
+      "RootMeanSquare[{}]"
+    );
+  }
+
   #[test]
   fn geometric_mean_exact_irrational() {
     // (1*2*4*8)^(1/4) = 64^(1/4) = 2*Sqrt[2]

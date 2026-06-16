@@ -13,3 +13,10 @@ On an association, the values are used.
 $ wo 'GeometricMean[<|a -> 1, b -> 2, c -> 4|>]'
 2
 ```
+
+An empty list stays unevaluated.
+
+```scrut
+$ wo 'GeometricMean[{}]'
+GeometricMean[{}]
+```

@@ -992,10 +992,13 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::List(items) => {
+      // An empty list stays unevaluated (matching wolframscript) rather than
+      // raising an error.
       if items.is_empty() {
-        return Err(InterpreterError::EvaluationError(
-          "GeometricMean: empty list".into(),
-        ));
+        return Ok(Expr::FunctionCall {
+          name: "GeometricMean".to_string(),
+          args: args.to_vec().into(),
+        });
       }
       // List-of-lists (matrix) → column-wise geometric mean.
       if items.iter().all(|item| matches!(item, Expr::List(_))) {
@@ -1084,10 +1087,12 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::List(items) => {
+      // An empty list stays unevaluated (matching wolframscript).
       if items.is_empty() {
-        return Err(InterpreterError::EvaluationError(
-          "HarmonicMean: empty list".into(),
-        ));
+        return Ok(Expr::FunctionCall {
+          name: "HarmonicMean".to_string(),
+          args: args.to_vec().into(),
+        });
       }
       // Try all-integer exact path using rational arithmetic
       let mut all_int = true;
@@ -2079,10 +2084,12 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::List(items) => {
+      // An empty list stays unevaluated (matching wolframscript).
       if items.is_empty() {
-        return Err(InterpreterError::EvaluationError(
-          "RootMeanSquare: empty list".into(),
-        ));
+        return Ok(Expr::FunctionCall {
+          name: "RootMeanSquare".to_string(),
+          args: args.to_vec().into(),
+        });
       }
       // Try all-integer exact path
       let mut all_int = true;
