@@ -740,7 +740,7 @@ Raster,Graphics primitive representing raster image data,✅,none,2.0,747
 VertexSize,Option for vertex size in graphs,✅,none,8.0,748
 ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pure,3.0,749
 Enabled,Option for whether a control is enabled,✅,none,6.0,750
-Defer,Hold an expression unevaluated,✅,none,6.0,751
+Defer,Holds an expression unevaluated; a notebook displays it without the wrapper,✅,pure,6.0,751
 BesselY,Bessel function of the second kind Y_n(z),✅,pure,1.0,752
 LogLogPlot,Plots with logarithmic x and y axes,✅,pure,6.0,754
 StringForm,Format a string with placeholder substitution,✅,pure,1.0,754

@@ -199,6 +199,13 @@ thread_local! {
     static VISUAL_MODE: RefCell<bool> = const { RefCell::new(false) };
 }
 
+/// Whether the interpreter is in visual (notebook-like) display mode, where
+/// front-end-only behaviors apply (e.g. `Defer[expr]` shows `expr` without
+/// its wrapper). False in plain CLI/script mode, which matches wolframscript.
+pub fn is_visual_mode() -> bool {
+  VISUAL_MODE.with(|v| *v.borrow())
+}
+
 // Dark mode flag — when true, SVG output uses a dark color palette
 thread_local! {
     static DARK_MODE: RefCell<bool> = const { RefCell::new(false) };

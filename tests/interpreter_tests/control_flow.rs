@@ -687,9 +687,10 @@ mod uncaught_throw {
     // error) and yield no result value.
     let r = interpret_with_stdout("Throw[3]").unwrap();
     assert_eq!(r.result, "");
-    assert!(r.warnings[0].contains(
-      "Throw::nocatch: Uncaught Throw[3] returned to top level."
-    ));
+    assert!(
+      r.warnings[0]
+        .contains("Throw::nocatch: Uncaught Throw[3] returned to top level.")
+    );
   }
 
   #[test]
@@ -698,9 +699,10 @@ mod uncaught_throw {
     // The thrown value is shown in OutputForm (strings without quotes) and a
     // tag is included.
     let s = interpret_with_stdout(r#"Throw["x"]"#).unwrap();
-    assert!(s.warnings[0].contains(
-      "Throw::nocatch: Uncaught Throw[x] returned to top level."
-    ));
+    assert!(
+      s.warnings[0]
+        .contains("Throw::nocatch: Uncaught Throw[x] returned to top level.")
+    );
     clear_state();
     let t = interpret_with_stdout("Throw[5, tag]").unwrap();
     assert!(t.warnings[0].contains(
@@ -712,6 +714,29 @@ mod uncaught_throw {
   fn throw_inside_expression_still_caught_by_catch() {
     // A matching Catch still works (no regression).
     assert_eq!(interpret("Catch[1 + Throw[2]]").unwrap(), "2");
+  }
+}
+
+mod defer {
+  use super::*;
+
+  #[test]
+  fn keeps_wrapper_and_holds_argument_in_cli() {
+    // In script/CLI mode Defer prints its wrapper and holds its argument,
+    // matching wolframscript (the notebook front-end would show it stripped).
+    assert_eq!(interpret("Defer[1 + 1]").unwrap(), "Defer[1 + 1]");
+    assert_eq!(interpret("Defer[Sin[0]]").unwrap(), "Defer[Sin[0]]");
+    assert_eq!(interpret("Defer[a + b]").unwrap(), "Defer[a + b]");
+  }
+
+  #[test]
+  fn is_inert_inside_arithmetic() {
+    assert_eq!(interpret("2 + Defer[3 + 4]").unwrap(), "2 + Defer[3 + 4]");
+  }
+
+  #[test]
+  fn head_is_defer() {
+    assert_eq!(interpret("Head[Defer[1 + 1]]").unwrap(), "Defer");
   }
 }
 
