@@ -1918,6 +1918,32 @@ mod delete_missing {
   fn empty_list() {
     assert_eq!(interpret("DeleteMissing[{}]").unwrap(), "{}");
   }
+
+  // On an association, pairs whose value is Missing[...] are dropped.
+  #[test]
+  fn association() {
+    assert_eq!(
+      interpret("DeleteMissing[<|a -> 1, b -> Missing[], c -> 3|>]").unwrap(),
+      "<|a -> 1, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn association_with_missing_arg() {
+    assert_eq!(
+      interpret("DeleteMissing[<|a -> Missing[\"NotAvailable\"], b -> 2|>]")
+        .unwrap(),
+      "<|b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn association_no_missing() {
+    assert_eq!(
+      interpret("DeleteMissing[<|a -> 1, b -> 2|>]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
 }
 
 mod angle_bracket {

@@ -3050,7 +3050,10 @@ mod batch_unevaluated_wrappers_2 {
   // WordFrequency[text, word] gives the fraction of words equal to `word`.
   #[test]
   fn word_frequency_basic() {
-    assert_eq!(interpret("WordFrequency[\"a b a c\", \"a\"]").unwrap(), "0.5");
+    assert_eq!(
+      interpret("WordFrequency[\"a b a c\", \"a\"]").unwrap(),
+      "0.5"
+    );
   }
   #[test]
   fn word_frequency_word_list() {
@@ -3061,7 +3064,10 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn word_frequency_case_sensitive() {
-    assert_eq!(interpret("WordFrequency[\"The cat\", \"the\"]").unwrap(), "0.");
+    assert_eq!(
+      interpret("WordFrequency[\"The cat\", \"the\"]").unwrap(),
+      "0."
+    );
   }
   #[test]
   fn word_frequency_ignore_case() {

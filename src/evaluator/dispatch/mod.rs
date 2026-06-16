@@ -7756,6 +7756,17 @@ pub fn evaluate_function_call_ast_inner(
             .collect();
         return Ok(Expr::List(filtered.into()));
       }
+      // On an association, drop key->value pairs whose value is Missing[...].
+      Expr::Association(pairs) => {
+        let filtered: Vec<(Expr, Expr)> = pairs
+            .iter()
+            .filter(|(_k, v)| {
+              !matches!(v, Expr::FunctionCall { name, .. } if name == "Missing")
+            })
+            .cloned()
+            .collect();
+        return Ok(Expr::Association(filtered));
+      }
       Expr::FunctionCall {
         name: ds_name,
         args: ds_args,
