@@ -1504,11 +1504,31 @@ pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Ok(Expr::FunctionCall {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
       name: "Correlation".to_string(),
       args: args.to_vec().into(),
-    });
+    })
+  };
+  // Single-argument form.
+  if args.len() == 1 {
+    if let Expr::List(items) = &args[0]
+      && items.len() >= 2
+    {
+      // A data matrix → the p×p correlation matrix of its columns, which
+      // equals Correlation[m, m].
+      if items.iter().all(|r| matches!(r, Expr::List(_))) {
+        return correlation_ast(&[args[0].clone(), args[0].clone()]);
+      }
+      // A flat vector is one variable, so it correlates perfectly with itself.
+      if items.iter().all(|r| !matches!(r, Expr::List(_))) {
+        return Ok(Expr::Integer(1));
+      }
+    }
+    return unevaluated();
+  }
+  if args.len() != 2 {
+    return unevaluated();
   }
   // Matrix form: Correlation[A, B] for m×n A and m×p B → cross-correlation
   // matrix R[i, j] = Correlation(column_i(A), column_j(B)).

@@ -148,14 +148,8 @@ mod geometric_mean {
   // wolframscript). The same holds for HarmonicMean and RootMeanSquare.
   #[test]
   fn empty_list_unevaluated() {
-    assert_eq!(
-      interpret("GeometricMean[{}]").unwrap(),
-      "GeometricMean[{}]"
-    );
-    assert_eq!(
-      interpret("HarmonicMean[{}]").unwrap(),
-      "HarmonicMean[{}]"
-    );
+    assert_eq!(interpret("GeometricMean[{}]").unwrap(), "GeometricMean[{}]");
+    assert_eq!(interpret("HarmonicMean[{}]").unwrap(), "HarmonicMean[{}]");
     assert_eq!(
       interpret("RootMeanSquare[{}]").unwrap(),
       "RootMeanSquare[{}]"
@@ -1310,6 +1304,31 @@ mod correlation {
     assert_eq!(
       interpret("Correlation[{{a, b}, {c, d}}, {{x}, {y}}]").unwrap(),
       "{{((a - c)*(Conjugate[x] - Conjugate[y]))/(Sqrt[(a - c)*(Conjugate[a] - Conjugate[c])]*Sqrt[(x - y)*(Conjugate[x] - Conjugate[y])])}, {((b - d)*(Conjugate[x] - Conjugate[y]))/(Sqrt[(b - d)*(Conjugate[b] - Conjugate[d])]*Sqrt[(x - y)*(Conjugate[x] - Conjugate[y])])}}"
+    );
+  }
+
+  // Single-argument matrix form: the p×p correlation matrix of the columns.
+  #[test]
+  fn correlation_single_matrix() {
+    assert_eq!(
+      interpret("Correlation[{{1, 2}, {3, 5}, {5, 4}}]").unwrap(),
+      "{{1, Sqrt[3/7]}, {Sqrt[3/7], 1}}"
+    );
+    assert_eq!(
+      interpret("Correlation[{{1, 5}, {2, 4}, {3, 3}}]").unwrap(),
+      "{{1, -1}, {-1, 1}}"
+    );
+  }
+
+  // A single flat vector is one variable, perfectly correlated with itself.
+  #[test]
+  fn correlation_single_vector() {
+    assert_eq!(interpret("Correlation[{1, 2, 3}]").unwrap(), "1");
+    assert_eq!(interpret("Correlation[{a, b, c}]").unwrap(), "1");
+    // A length-1 list has too few observations and stays unevaluated.
+    assert_eq!(
+      interpret("Correlation[{5}]").unwrap(),
+      "Correlation[{5}]"
     );
   }
 }
