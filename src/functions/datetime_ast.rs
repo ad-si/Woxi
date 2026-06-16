@@ -3,6 +3,52 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// Parse an ISO-style date/time string into its integer components, e.g.
+/// `"2024-03-15"` → `{2024, 3, 15}` and `"2024-03-15 14:30:00"` →
+/// `{2024, 3, 15, 14, 30, 0}`. The date and time may be separated by a space or
+/// `T`. Returns `None` for anything that is not a plain `Y[-M[-D]][ HH:MM:SS]`
+/// string (e.g. natural-language dates), so the caller can leave it unparsed.
+pub fn parse_iso_date_components(s: &str) -> Option<Vec<Expr>> {
+  let s = s.trim();
+  if s.is_empty() {
+    return None;
+  }
+  let (date_part, time_part) = match s.find(['T', ' ']) {
+    Some(i) => (&s[..i], Some(s[i + 1..].trim())),
+    None => (s, None),
+  };
+
+  // Date: YYYY[-MM[-DD]] with each field a positive integer in range.
+  let mut comps: Vec<i64> = Vec::new();
+  for piece in date_part.split('-') {
+    comps.push(piece.trim().parse::<i64>().ok()?);
+  }
+  let valid_date = match comps.as_slice() {
+    [y] => (1..=9999).contains(y),
+    [y, m] => (1..=9999).contains(y) && (1..=12).contains(m),
+    [y, m, d] => {
+      (1..=9999).contains(y) && (1..=12).contains(m) && (1..=31).contains(d)
+    }
+    _ => false,
+  };
+  if !valid_date {
+    return None;
+  }
+
+  // Time: HH[:MM[:SS]] — only meaningful with a full Y-M-D date.
+  if let Some(t) = time_part {
+    if comps.len() != 3 || t.is_empty() {
+      return None;
+    }
+    for piece in t.split(':') {
+      // Seconds may be fractional; truncate toward zero.
+      comps.push(piece.trim().parse::<f64>().ok()? as i64);
+    }
+  }
+
+  Some(comps.into_iter().map(|n| Expr::Integer(n as i128)).collect())
+}
+
 fn is_leap_year(year: i64) -> bool {
   (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }

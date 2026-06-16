@@ -117,6 +117,19 @@ pub fn dispatch_datetime_functions(
           .into(),
         }));
       }
+      // DateObject["2024-03-15"] — parse an ISO date/time string into a
+      // component list and let the list logic below tag the granularity.
+      if args.len() == 1
+        && let Expr::String(s) = &args[0]
+        && let Some(components) =
+          crate::functions::datetime_ast::parse_iso_date_components(s)
+      {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "DateObject",
+          &[Expr::List(components.into())],
+        ));
+      }
+
       // DateObject[{y, ...}] adds a granularity tag based on list length.
       //   1 → Year, 2 → Month, 3 → Day
       //   4 → Hour, Gregorian, 0., 5 → Minute, Gregorian, 0.,

@@ -291,6 +291,49 @@ mod date_difference {
       "DateObject[{2016, 7, 23}, Day]"
     );
   }
+
+  // An ISO date/time string is parsed into a component list with the implied
+  // granularity (Y-M-D → Day, Y-M → Month, Y → Year, with a time → Instant).
+  #[test]
+  fn date_object_parses_iso_string() {
+    assert_eq!(
+      interpret("DateObject[\"2024-03-15\"]").unwrap(),
+      "DateObject[{2024, 3, 15}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[\"2024-3-15\"]").unwrap(),
+      "DateObject[{2024, 3, 15}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[\"2024-03\"]").unwrap(),
+      "DateObject[{2024, 3}, Month]"
+    );
+    assert_eq!(
+      interpret("DateObject[\"2024\"]").unwrap(),
+      "DateObject[{2024}, Year]"
+    );
+  }
+
+  #[test]
+  fn date_object_parses_iso_datetime() {
+    assert_eq!(
+      interpret("DateObject[\"2024-03-15 14:30:00\"]").unwrap(),
+      "DateObject[{2024, 3, 15, 14, 30, 0}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret("DateObject[\"2024-03-15T14:30:00\"]").unwrap(),
+      "DateObject[{2024, 3, 15, 14, 30, 0}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  // A string that is not an ISO date stays unparsed.
+  #[test]
+  fn date_object_non_iso_string_unparsed() {
+    assert_eq!(
+      interpret("DateObject[\"hello\"]").unwrap(),
+      "DateObject[hello]"
+    );
+  }
 }
 
 mod date_string {
