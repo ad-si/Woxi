@@ -4803,8 +4803,11 @@ fn compute_region_member(
       None
     }
   };
-  let boolean =
-    |b: bool| Ok(Expr::Identifier(if b { "True" } else { "False" }.to_string()));
+  let boolean = |b: bool| {
+    Ok(Expr::Identifier(
+      if b { "True" } else { "False" }.to_string(),
+    ))
+  };
   const EPS: f64 = 1e-10;
 
   let Some(pt) = to_vec(point) else {
@@ -4816,7 +4819,11 @@ fn compute_region_member(
 
   match name.as_str() {
     "Disk" | "Ball" | "Circle" | "Sphere" => {
-      let default_dim = if name == "Ball" || name == "Sphere" { 3 } else { 2 };
+      let default_dim = if name == "Ball" || name == "Sphere" {
+        3
+      } else {
+        2
+      };
       let center = match args.first() {
         None => vec![0.0; default_dim],
         Some(c) => match to_vec(c) {
