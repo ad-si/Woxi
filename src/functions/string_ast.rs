@@ -4852,17 +4852,58 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&msg);
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
-  // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
-  // in order and returns the last result, matching Wolfram semantics.
-  let evaluated = parse_and_evaluate_program(&s)?;
+  // Three-argument form ToExpression[str, form, h]: wrap the *parsed but
+  // unevaluated* expression with head `h`, then evaluate `h[parsed]`. This
+  // lets a holding head keep its argument unevaluated — e.g.
+  // ToExpression["1+1", InputForm, Hold] is Hold[1 + 1], not Hold[2].
   if args.len() == 3 {
+    let parsed = parse_program_to_expr(&s)?;
     let wrapped = crate::syntax::Expr::FunctionCall {
       name: crate::syntax::expr_to_string(&args[2]),
-      args: vec![evaluated].into(),
+      args: vec![parsed].into(),
     };
     return crate::evaluator::evaluate_expr_to_expr(&wrapped);
   }
-  Ok(evaluated)
+  // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
+  // in order and returns the last result, matching Wolfram semantics.
+  parse_and_evaluate_program(&s)
+}
+
+/// Parse `src` as a Wolfram program and return the (unevaluated) expression
+/// for its single top-level statement. Multiple `;`-separated statements
+/// become a `CompoundExpression`. Used by the three-argument ToExpression
+/// form so a holding head receives the unevaluated parse.
+fn parse_program_to_expr(src: &str) -> Result<Expr, InterpreterError> {
+  use crate::Rule;
+  use crate::syntax::pair_to_expr;
+  let normalized = if src.contains('\r') {
+    src.replace("\r\n", "\n").replace('\r', "\n")
+  } else {
+    src.to_string()
+  };
+  let preprocessed = crate::insert_statement_separators(normalized.trim());
+  if let Ok(mut pairs) = crate::parse(&preprocessed)
+    && let Some(program) = pairs.next()
+    && program.as_rule() == Rule::Program
+  {
+    let mut exprs: Vec<Expr> = Vec::new();
+    for node in program.into_inner() {
+      if matches!(node.as_rule(), Rule::Expression | Rule::TopLevelSpan) {
+        exprs.push(pair_to_expr(node));
+      }
+    }
+    match exprs.len() {
+      0 => {}
+      1 => return Ok(exprs.into_iter().next().unwrap()),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "CompoundExpression".to_string(),
+          args: exprs.into(),
+        });
+      }
+    }
+  }
+  crate::syntax::string_to_expr(&normalized)
 }
 
 /// If `src` is not syntactically valid Wolfram input, return the message

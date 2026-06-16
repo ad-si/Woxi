@@ -3329,9 +3329,10 @@ mod to_expression {
     use woxi::interpret_with_stdout;
     let r = interpret_with_stdout("ToExpression[\"][\"]").unwrap();
     assert_eq!(r.result, "$Failed");
-    assert!(r.warnings[0].contains(
-      "ToExpression::sntx: Invalid syntax in or before \"][\"."
-    ));
+    assert!(
+      r.warnings[0]
+        .contains("ToExpression::sntx: Invalid syntax in or before \"][\".")
+    );
   }
 
   #[test]
@@ -3350,6 +3351,25 @@ mod to_expression {
     assert_eq!(
       interpret("ToExpression[\"{2, 3, 1}\", InputForm, Max]").unwrap(),
       "3"
+    );
+  }
+
+  #[test]
+  fn three_args_head_wraps_unevaluated_parse() {
+    // The head is applied to the *parsed* expression before evaluation, so a
+    // holding head keeps its argument unevaluated: Hold[1 + 1], not Hold[2].
+    assert_eq!(
+      interpret("ToExpression[\"1+1\", InputForm, Hold]").unwrap(),
+      "Hold[1 + 1]"
+    );
+    assert_eq!(
+      interpret("ToExpression[\"Sin[0]\", InputForm, Hold]").unwrap(),
+      "Hold[Sin[0]]"
+    );
+    // A non-holding head still evaluates its argument.
+    assert_eq!(
+      interpret("ToExpression[\"2+3\", InputForm, List]").unwrap(),
+      "{5}"
     );
   }
 
