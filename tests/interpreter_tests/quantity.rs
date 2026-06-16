@@ -1588,6 +1588,40 @@ fn quantity_singular_henry() {
   );
 }
 
+#[test]
+fn quantity_singular_mole() {
+  // "Mole" canonicalizes to the plural "Moles" (amount of substance).
+  assert_eq!(
+    interpret("Quantity[1, \"Mole\"]").unwrap(),
+    "Quantity[1, Moles]"
+  );
+  assert_eq!(
+    interpret("N[Quantity[1, \"Mole\"]]").unwrap(),
+    "Quantity[1., Moles]"
+  );
+}
+
+#[test]
+fn quantity_mole_arithmetic_and_convert() {
+  assert_eq!(
+    interpret("Quantity[3, \"Mole\"] + Quantity[2, \"Mole\"]").unwrap(),
+    "Quantity[5, Moles]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1000, \"Millimoles\"], \"Moles\"]")
+      .unwrap(),
+    "Quantity[1, Moles]"
+  );
+}
+
+#[test]
+fn quantity_mole_dimensions() {
+  assert_eq!(
+    interpret("UnitDimensions[Quantity[1, \"Moles\"]]").unwrap(),
+    "{{AmountUnit, 1}}"
+  );
+}
+
 // ─── SVG rendering (playground) ─────────────────────────────────────────────
 
 #[test]

@@ -12,6 +12,7 @@ enum Dimension {
   Time,
   ElectricCurrent,
   Volume,
+  AmountOfSubstance,
 }
 
 /// Conversion factor to SI base unit as a rational (numerator, denominator).
@@ -192,6 +193,18 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     },
     "Milliamperes" => UnitInfo {
       dimensions: dims(&[(ElectricCurrent, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+
+    // ── Amount of substance → Moles ──────────────────────────────────
+    "Moles" => UnitInfo {
+      dimensions: dims(&[(AmountOfSubstance, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Millimoles" => UnitInfo {
+      dimensions: dims(&[(AmountOfSubstance, 1)]),
       to_si_numer: 1,
       to_si_denom: 1000,
     },
@@ -1799,6 +1812,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
       Time => "Seconds",
       ElectricCurrent => "Amperes",
       Volume => "Liters",
+      AmountOfSubstance => "Moles",
     }
   };
   // Collect positive and negative exponents
@@ -2082,6 +2096,7 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Dimension::Time => ("TimeUnit", 1),
       Dimension::ElectricCurrent => ("ElectricCurrentUnit", 1),
       Dimension::Volume => ("LengthUnit", 3),
+      Dimension::AmountOfSubstance => ("AmountUnit", 1),
     };
     *acc.entry(name).or_insert(0) += exp * factor;
   }
