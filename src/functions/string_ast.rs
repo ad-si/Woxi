@@ -4842,6 +4842,16 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(interpreted);
   }
   let s = expr_to_str(&args[0])?;
+  // Empty (or whitespace-only) input is Null, not a value.
+  if s.trim().is_empty() {
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+  // Syntactically invalid input yields $Failed with a Wolfram syntax message
+  // (sntxi/sntx), rather than leaking the internal parser error.
+  if let Some(msg) = to_expression_syntax_error(&s) {
+    crate::emit_message(&msg);
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
   // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
   // in order and returns the last result, matching Wolfram semantics.
   let evaluated = parse_and_evaluate_program(&s)?;
@@ -4853,6 +4863,54 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&wrapped);
   }
   Ok(evaluated)
+}
+
+/// If `src` is not syntactically valid Wolfram input, return the message
+/// `ToExpression` emits for it: `sntxi` for an incomplete expression (the
+/// parse failed at end of input) or `sntx` for invalid syntax elsewhere.
+/// Returns `None` when the input parses — it may still fail at evaluation
+/// time, which is handled by the normal evaluation path.
+fn to_expression_syntax_error(src: &str) -> Option<String> {
+  use crate::Rule;
+  let normalized = if src.contains('\r') {
+    src.replace("\r\n", "\n").replace('\r', "\n")
+  } else {
+    src.to_string()
+  };
+  let preprocessed = crate::insert_statement_separators(normalized.trim());
+  // The program grammar accepts it -> syntactically valid.
+  if let Ok(mut pairs) = crate::parse(&preprocessed)
+    && pairs.next().is_some_and(|p| p.as_rule() == Rule::Program)
+  {
+    return None;
+  }
+  // The single-expression fallback accepts it -> valid.
+  if crate::syntax::string_to_expr(&normalized).is_ok() {
+    return None;
+  }
+  // Both paths failed: classify the parse error by where it occurred.
+  let offset = match crate::parse(&preprocessed) {
+    Err(e) => {
+      use pest::error::InputLocation;
+      match e.location {
+        InputLocation::Pos(p) => p,
+        InputLocation::Span((s, _)) => s,
+      }
+    }
+    Ok(_) => return None,
+  };
+  if offset >= preprocessed.trim_end().len() {
+    Some(
+      "ToExpression::sntxi: Incomplete expression; more input is needed."
+        .to_string(),
+    )
+  } else {
+    let snippet = preprocessed[offset..].trim();
+    Some(format!(
+      "ToExpression::sntx: Invalid syntax in or before \"{}\".",
+      snippet
+    ))
+  }
 }
 
 /// Parse `src` as a Wolfram program and evaluate every top-level

@@ -3307,6 +3307,44 @@ mod to_expression {
   }
 
   #[test]
+  fn empty_string_is_null() {
+    // "\0" is the interpreter-level Null sentinel (the CLI renders it "Null").
+    assert_eq!(interpret("ToExpression[\"\"]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn incomplete_input_yields_failed_with_sntxi() {
+    use woxi::interpret_with_stdout;
+    // An incomplete expression must yield $Failed with ToExpression::sntxi,
+    // not leak the internal parser error.
+    let r = interpret_with_stdout("ToExpression[\"2+\"]").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings[0].contains(
+      "ToExpression::sntxi: Incomplete expression; more input is needed."
+    ));
+  }
+
+  #[test]
+  fn invalid_syntax_yields_failed_with_sntx() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("ToExpression[\"][\"]").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings[0].contains(
+      "ToExpression::sntx: Invalid syntax in or before \"][\"."
+    ));
+  }
+
+  #[test]
+  fn evaluation_error_is_not_failed() {
+    // A syntactically valid string that errors at evaluation time keeps its
+    // normal result (ComplexInfinity here), not $Failed.
+    assert_eq!(
+      interpret("ToExpression[\"1/0\"]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
   fn three_args_applies_head() {
     // The third argument is applied to the evaluated expression.
     assert_eq!(
