@@ -5980,6 +5980,16 @@ mod trig_of_inverse_trig {
     assert_eq!(interpret("Tan[ArcTan[x]]").unwrap(), "x");
   }
 
+  // Diagonal inverse identities for the reciprocal functions.
+  #[test]
+  fn reciprocal_same_function_collapses() {
+    assert_eq!(interpret("Sec[ArcSec[x]]").unwrap(), "x");
+    assert_eq!(interpret("Csc[ArcCsc[x]]").unwrap(), "x");
+    assert_eq!(interpret("Cot[ArcCot[x]]").unwrap(), "x");
+    // Also holds for explicit numeric arguments.
+    assert_eq!(interpret("Cot[ArcCot[5]]").unwrap(), "5");
+  }
+
   // Cross combinations auto-simplify to algebraic forms.
   #[test]
   fn sin_of_arccos_arctan() {
@@ -6049,6 +6059,15 @@ mod hyperbolic_of_inverse_hyperbolic {
     assert_eq!(interpret("Sinh[ArcSinh[x]]").unwrap(), "x");
     assert_eq!(interpret("Cosh[ArcCosh[x]]").unwrap(), "x");
     assert_eq!(interpret("Tanh[ArcTanh[x]]").unwrap(), "x");
+  }
+
+  // Diagonal inverse identities for the reciprocal hyperbolic functions.
+  #[test]
+  fn reciprocal_same_function_collapses() {
+    assert_eq!(interpret("Coth[ArcCoth[x]]").unwrap(), "x");
+    assert_eq!(interpret("Sech[ArcSech[x]]").unwrap(), "x");
+    assert_eq!(interpret("Csch[ArcCsch[x]]").unwrap(), "x");
+    assert_eq!(interpret("Coth[ArcCoth[3]]").unwrap(), "3");
   }
 
   #[test]

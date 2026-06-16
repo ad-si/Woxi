@@ -915,6 +915,10 @@ fn reciprocal_trig_of_inverse(outer: &str, inner: &Expr) -> Option<Expr> {
     _ => return None,
   };
   let result = match (outer, name) {
+    // Inverse-function identities: F[ArcF[x]] = x.
+    ("Sec", "ArcSec") => x.clone(),
+    ("Csc", "ArcCsc") => x.clone(),
+    ("Cot", "ArcCot") => x.clone(),
     ("Sec", "ArcSin") => divide(Expr::Integer(1), sqrt_one_minus_sq(x)),
     ("Sec", "ArcCos") => power_neg_one(x),
     ("Sec", "ArcTan") => sqrt_one_plus_sq(x),
@@ -3474,6 +3478,13 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
+  // Coth[ArcCoth[x]] = x (inverse function identity)
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcCoth"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
+  }
   match &args[0] {
     Expr::Integer(0) => {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
@@ -3515,6 +3526,13 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
+  // Sech[ArcSech[x]] = x (inverse function identity)
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcSech"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
@@ -3546,6 +3564,13 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  // Csch[ArcCsch[x]] = x (inverse function identity)
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcCsch"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
   }
   if let Expr::Real(f) = &args[0] {
     let s = f.sinh();
