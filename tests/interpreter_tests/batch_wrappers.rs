@@ -559,6 +559,19 @@ mod batch_unevaluated_wrappers_2 {
       "{5/2, 7/2}"
     );
   }
+  // Regression: MovingMap must apply pure functions to each window, not just
+  // named symbols.
+  #[test]
+  fn moving_map_pure_function() {
+    assert_eq!(
+      interpret("MovingMap[(#[[1]]*#[[2]]) &, {1, 2, 3, 4}, 1]").unwrap(),
+      "{2, 6, 12}"
+    );
+    assert_eq!(
+      interpret("MovingMap[Total[#]^2 &, {1, 2, 3, 4}, 1]").unwrap(),
+      "{9, 25, 49}"
+    );
+  }
 
   // ─── Unevaluated batch ────────────────────────────────────────────
   #[test]

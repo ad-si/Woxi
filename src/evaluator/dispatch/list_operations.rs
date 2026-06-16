@@ -719,21 +719,11 @@ pub fn dispatch_list_operations(
         let mut results = Vec::new();
         for i in 0..=(items.len() - window_size) {
           let sublist = Expr::List(items[i..i + window_size].to_vec().into());
-          // Construct f[sublist] using Map-like application
-          let applied = match f {
-            Expr::Identifier(fname) => Expr::FunctionCall {
-              name: fname.clone(),
-              args: vec![sublist].into(),
-            },
-            _ => {
-              // For pure functions etc, use general application
-              Expr::FunctionCall {
-                name: expr_to_string(f),
-                args: vec![sublist].into(),
-              }
-            }
-          };
-          match crate::evaluator::evaluate_expr_to_expr(&applied) {
+          // Apply f[sublist]; this handles named functions, pure functions
+          // (`#[[1]] + #[[2]] &`), and explicit `Function[...]` alike.
+          match crate::evaluator::function_application::apply_function_to_arg(
+            f, &sublist,
+          ) {
             Ok(val) => results.push(val),
             Err(e) => return Some(Err(e)),
           }
