@@ -2633,6 +2633,47 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
+  // AccountingForm[x] / AccountingForm[x, n] — like NumberForm but negatives
+  // are shown in parentheses, e.g. -1234.5 -> (1234.5).
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "AccountingForm"
+    && (inner_args.len() == 1 || inner_args.len() == 2)
+  {
+    let n = match inner_args.get(1) {
+      None => None,
+      Some(Expr::Integer(n)) => Some(*n as i64),
+      _ => None,
+    };
+    // Reject a non-integer second argument by falling through.
+    if inner_args.len() == 1 || n.is_some() {
+      let (is_neg, magnitude) = match &inner_args[0] {
+        Expr::Integer(i) => (*i < 0, Expr::Integer(i.abs())),
+        Expr::Real(f) => (*f < 0.0, Expr::Real(f.abs())),
+        _ => (false, inner_args[0].clone()),
+      };
+      let mag_str = match n {
+        Some(n) => number_form_to_string(&magnitude, n),
+        None => match to_string_ast(std::slice::from_ref(&magnitude)) {
+          Ok(e) => match &e {
+            Expr::String(s) => Some(s.clone()),
+            _ => None,
+          },
+          _ => None,
+        },
+      };
+      if let Some(mag_str) = mag_str {
+        return Ok(Expr::String(if is_neg {
+          format!("({mag_str})")
+        } else {
+          mag_str
+        }));
+      }
+    }
+  }
+
   // PaddedForm[expr, n] / PaddedForm[expr, {n, f}] — right-aligned
   // number rendering (width n+1 for the integer spec, n+2 for {n, f},
   // reserving sign/decimal-point columns like wolframscript)

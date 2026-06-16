@@ -1426,7 +1426,7 @@ SessionTime,Elapsed time in seconds since session start,✅,pure,2.0,1444
 NetGraph,Neural network graph structure,✅,pure,11.0,1445
 CMYKColor,CMYK color specification,✅,pure,2.0,1446
 FunctionInterpolation,Create interpolating function by sampling an expression,✅,pure,3.0,1447
-AccountingForm,Display numbers in accounting notation,✅,pure,2.0,1451
+AccountingForm,Display numbers in accounting notation (negatives in parentheses); ToString renders to a string like NumberForm,✅,pure,2.0,1451
 Before,Symbolic temporal ordering wrapper,✅,pure,3.0,1451
 ComplexityFunction,Option for specifying complexity measure in Simplify,✅,pure,3.0,1451
 LatticeData,,🚫,,6.0,1451

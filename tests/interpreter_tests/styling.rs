@@ -508,6 +508,38 @@ mod accounting_form {
       "{NHoldRest, Protected}"
     );
   }
+
+  // ToString renders AccountingForm like NumberForm, with negatives in parens.
+  #[test]
+  fn to_string_positive() {
+    assert_eq!(
+      interpret("ToString[AccountingForm[1234.5]]").unwrap(),
+      "1234.5"
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[1234567]]").unwrap(),
+      "1234567"
+    );
+  }
+  #[test]
+  fn to_string_negative_in_parens() {
+    assert_eq!(
+      interpret("ToString[AccountingForm[-1234.5]]").unwrap(),
+      "(1234.5)"
+    );
+    assert_eq!(interpret("ToString[AccountingForm[-5]]").unwrap(), "(5)");
+  }
+  #[test]
+  fn to_string_with_precision() {
+    assert_eq!(
+      interpret("ToString[AccountingForm[1234.5678, 3]]").unwrap(),
+      "1230."
+    );
+    assert_eq!(
+      interpret("ToString[AccountingForm[-3.14159, 3]]").unwrap(),
+      "(3.14)"
+    );
+  }
 }
 
 mod decimal_form {
