@@ -309,10 +309,21 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Which[test1, value1, test2, value2, ...] - Multi-way conditional
 pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || !args.len().is_multiple_of(2) {
-    return Err(InterpreterError::EvaluationError(
-      "Which expects an even number of arguments (test-value pairs)".into(),
-    ));
+  // Which takes test/value pairs, so an odd number of arguments is an error.
+  // wolframscript warns Which::argctu (1 argument) / Which::argct (other odd
+  // counts) and returns the call unevaluated. Which[] is valid and yields Null.
+  if !args.len().is_multiple_of(2) {
+    let n = args.len();
+    let (tag, word) = if n == 1 {
+      ("argctu", "argument")
+    } else {
+      ("argct", "arguments")
+    };
+    crate::emit_message(&format!("Which::{}: Which called with {} {}.", tag, n, word));
+    return Ok(Expr::FunctionCall {
+      name: "Which".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   for i in (0..args.len()).step_by(2) {

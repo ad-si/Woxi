@@ -611,6 +611,30 @@ mod which {
     clear_state();
     assert_eq!(interpret("Which[False, a, False, b]").unwrap(), "\0");
   }
+
+  #[test]
+  fn no_arguments_is_null() {
+    clear_state();
+    // Which[] is valid and yields Null (no condition matched).
+    assert_eq!(interpret("Which[]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn odd_argument_count_warns() {
+    use woxi::interpret_with_stdout;
+    clear_state();
+    // One argument: Which::argctu (singular), unevaluated.
+    let one = interpret_with_stdout("Which[True]").unwrap();
+    assert_eq!(one.result, "Which[True]");
+    assert!(one.warnings[0]
+      .contains("Which::argctu: Which called with 1 argument."));
+    // Three arguments: Which::argct (plural), unevaluated.
+    clear_state();
+    let three = interpret_with_stdout("Which[False, 1, True]").unwrap();
+    assert_eq!(three.result, "Which[False, 1, True]");
+    assert!(three.warnings[0]
+      .contains("Which::argct: Which called with 3 arguments."));
+  }
 }
 
 mod or_logical {

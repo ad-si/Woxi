@@ -56,7 +56,9 @@ pub fn dispatch_boolean_functions(
     "UnsameQ" => {
       return Some(crate::functions::boolean_ast::unsame_q_ast(args));
     }
-    "Which" if args.len() >= 2 && args.len().is_multiple_of(2) => {
+    "Which" => {
+      // which_ast handles all arities: Which[] -> Null, even counts process
+      // the test/value pairs, and an odd count warns Which::argct(u).
       return Some(crate::functions::boolean_ast::which_ast(args));
     }
     "While" if args.len() == 1 || args.len() == 2 => {

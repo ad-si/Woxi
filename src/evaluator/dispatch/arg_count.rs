@@ -1289,7 +1289,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "WeibullDistribution" => Some((2, 2)),
     "WeierstrassP" => Some((2, 2)),
     "WeierstrassPPrime" => Some((2, 2)),
-    "Which" => Some((2, usize::MAX)),
+    // Which accepts any even count (Which[] -> Null); an odd count is reported
+    // by which_ast itself with the Which::argct/argctu messages, so it is not
+    // registered here.
     "While" => Some((1, 2)),
     "WignerD" => Some((2, 4)),
     "WinsorizedMean" => Some((2, 2)),
