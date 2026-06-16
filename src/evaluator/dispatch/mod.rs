@@ -8960,6 +8960,9 @@ pub fn evaluate_function_call_ast_inner(
         // OperatorApplied[f][x][y] (handled in parse_curry_form), so it is
         // not "unimplemented".
         | "OperatorApplied"
+        // CurryApplied[f, n] is likewise a symbolic operator object applied
+        // as CurryApplied[f, n][x1]…[xn] (handled in parse_curry_form).
+        | "CurryApplied"
         // NearestTo[x, …] is the operator form of Nearest: it stays
         // unevaluated until applied as NearestTo[x][data] (handled in the
         // curried-call machinery), so it is not "unimplemented".

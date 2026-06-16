@@ -817,6 +817,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ArrayReduce" => Some((3, 3)),
     "FindRepeat" => Some((1, 2)),
     "OperatorApplied" => Some((1, 2)),
+    "CurryApplied" => Some((1, 2)),
     "ReverseApplied" => Some((1, 2)),
     "OptionQ" => Some((1, 1)),
     "Options" => Some((1, 2)),

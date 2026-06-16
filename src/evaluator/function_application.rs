@@ -607,8 +607,11 @@ pub fn apply_function_to_arg(
 /// (`{2, 1}`); `Curry[f, n]` collects `n` arguments in order (`{1, …, n}`);
 /// `Curry[f, {p1, …}]` uses the explicit permutation.
 fn parse_curry_form(func: &Expr) -> Option<(Expr, Vec<usize>, Vec<Expr>)> {
-  let parse_base = |cargs: &[Expr]| -> Option<(Expr, Vec<usize>)> {
+  let parse_base = |name: &str, cargs: &[Expr]| -> Option<(Expr, Vec<usize>)> {
     match cargs.len() {
+      // A bare `Curry[f]` / `OperatorApplied[f]` reverses two arguments, but
+      // `CurryApplied[f]` (no count) does not curry — it stays inert.
+      1 if name == "CurryApplied" => None,
       1 => Some((cargs[0].clone(), vec![2, 1])),
       2 => {
         let perm = match &cargs[1] {
@@ -633,14 +636,15 @@ fn parse_curry_form(func: &Expr) -> Option<(Expr, Vec<usize>, Vec<Expr>)> {
   // `OperatorApplied` is the public-facing spelling of the same operator:
   // `OperatorApplied[f]` reverses two args, `OperatorApplied[f, n]` collects n
   // in order, `OperatorApplied[f, {perm}]` uses the explicit permutation.
-  let is_curry = |n: &str| n == "Curry" || n == "OperatorApplied";
+  let is_curry =
+    |n: &str| n == "Curry" || n == "OperatorApplied" || n == "CurryApplied";
   match func {
     Expr::FunctionCall { name, args } if is_curry(name) => {
-      parse_base(args).map(|(f, perm)| (f, perm, Vec::new()))
+      parse_base(name, args).map(|(f, perm)| (f, perm, Vec::new()))
     }
     Expr::CurriedCall { func: inner, args } => match inner.as_ref() {
       Expr::FunctionCall { name, args: cargs } if is_curry(name) => {
-        parse_base(cargs).map(|(f, perm)| (f, perm, args.clone()))
+        parse_base(name, cargs).map(|(f, perm)| (f, perm, args.clone()))
       }
       _ => None,
     },

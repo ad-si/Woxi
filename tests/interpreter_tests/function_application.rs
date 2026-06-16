@@ -2150,6 +2150,57 @@ mod operator_applied {
   }
 }
 
+mod curry_applied {
+  use super::*;
+
+  // `CurryApplied[f, n]` collects n arguments in order, like Curry[f, n].
+  #[test]
+  fn collects_n_in_order() {
+    assert_eq!(interpret("CurryApplied[f, 2][a][b]").unwrap(), "f[a, b]");
+    assert_eq!(
+      interpret("CurryApplied[Plus, 3][1][2][3]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("CurryApplied[Power, 2][2][3]").unwrap(), "8");
+  }
+
+  #[test]
+  fn count_one_is_immediate() {
+    assert_eq!(interpret("CurryApplied[f, 1][a]").unwrap(), "f[a]");
+  }
+
+  // `CurryApplied[f, {perm}]` arranges by an explicit permutation.
+  #[test]
+  fn explicit_permutation() {
+    assert_eq!(
+      interpret("CurryApplied[f, {2, 1}][a][b]").unwrap(),
+      "f[b, a]"
+    );
+  }
+
+  // Unlike Curry/OperatorApplied, a bare CurryApplied[f] (no count) does not
+  // curry — it stays inert.
+  #[test]
+  fn no_count_stays_inert() {
+    assert_eq!(
+      interpret("CurryApplied[g][a][b]").unwrap(),
+      "CurryApplied[g][a][b]"
+    );
+  }
+
+  #[test]
+  fn bare_and_partial_forms_stay_symbolic() {
+    assert_eq!(
+      interpret("CurryApplied[f, 2]").unwrap(),
+      "CurryApplied[f, 2]"
+    );
+    assert_eq!(
+      interpret("CurryApplied[f, 2][a]").unwrap(),
+      "CurryApplied[f, 2][a]"
+    );
+  }
+}
+
 mod reverse_applied {
   use super::*;
 
