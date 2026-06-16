@@ -527,7 +527,7 @@ Maximize,Global symbolic maximization of a function over variables with optional
 TicksStyle,Option for specifying the style of plot ticks,✅,pure,6.0,531
 GatherBy,Groups elements by applying a function,✅,pure,7.0,532
 Permutations,Returns all permutations of a list,✅,pure,1.0,533
-RecurrenceTable,Generate a table of values from a recurrence relation,✅,none,7.0,534
+RecurrenceTable,Generate a table of values from a recurrence relation; range spec accepts {n;nmax} or {n;nmin;nmax},✅,none,7.0,534
 FindFit,Finds a least-squares fit of a model to data,✅,pure,5.0,535
 Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1.0,536
 Rationalize,Converts a real number to a nearby rational,✅,pure,1.0,537

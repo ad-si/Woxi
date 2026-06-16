@@ -972,22 +972,28 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(recurrence_table_unevaluated(args)),
   };
 
-  // Extract {n, nmin, nmax} range
+  // Extract the range spec: {n, nmax} (nmin defaults to 1) or {n, nmin, nmax}.
   let (var_name, nmin, nmax) = match &args[2] {
-    Expr::List(items) if items.len() == 3 => {
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
       let var = match &items[0] {
         Expr::Identifier(s) => s.clone(),
         _ => return Ok(recurrence_table_unevaluated(args)),
       };
-      let nmin = match &items[1] {
-        Expr::Integer(n) => *n,
-        _ => return Ok(recurrence_table_unevaluated(args)),
-      };
-      let nmax = match &items[2] {
-        Expr::Integer(n) => *n,
-        _ => return Ok(recurrence_table_unevaluated(args)),
-      };
-      (var, nmin, nmax)
+      let ints: Vec<i128> = items[1..]
+        .iter()
+        .filter_map(|e| match e {
+          Expr::Integer(n) => Some(*n),
+          _ => None,
+        })
+        .collect();
+      if ints.len() != items.len() - 1 {
+        return Ok(recurrence_table_unevaluated(args));
+      }
+      if ints.len() == 1 {
+        (var, 1, ints[0])
+      } else {
+        (var, ints[0], ints[1])
+      }
     }
     _ => return Ok(recurrence_table_unevaluated(args)),
   };

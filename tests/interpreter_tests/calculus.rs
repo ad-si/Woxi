@@ -5098,6 +5098,27 @@ mod recurrence_table {
       "RecurrenceTable[x, y]"
     );
   }
+
+  // The two-element range spec {n, nmax} defaults nmin to 1.
+  #[test]
+  fn two_element_range_fibonacci() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{a[n] == a[n-1] + a[n-2], a[1] == 1, a[2] == 1}, a, {n, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 2, 3, 5, 8, 13, 21, 34, 55}"
+    );
+  }
+
+  #[test]
+  fn two_element_range_geometric() {
+    assert_eq!(
+      interpret("RecurrenceTable[{a[n] == 2*a[n-1], a[1] == 1}, a, {n, 6}]")
+        .unwrap(),
+      "{1, 2, 4, 8, 16, 32}"
+    );
+  }
 }
 
 mod inverse_laplace_transform {
