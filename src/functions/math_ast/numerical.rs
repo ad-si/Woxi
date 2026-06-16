@@ -2172,7 +2172,9 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
 
-      if p == 1.0 {
+      // Match against `p_val`/`p_expr` (not the defaulted `p`) so a symbolic p
+      // falls through to the general p-norm instead of the 2-norm.
+      if p_val == Some(1.0) {
         // Sum of Abs[item]
         let terms: Vec<Expr> = items
           .iter()
@@ -2192,7 +2194,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return evaluate_expr_to_expr(&sum);
       }
 
-      if p == 2.0 {
+      if p_expr.is_none() || p_val == Some(2.0) {
         // Sqrt[Plus[item^2, ...]] (or Abs[item]^2 for unknown items)
         let sq_items: Vec<Expr> = items
           .iter()
@@ -2223,11 +2225,36 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return evaluate_expr_to_expr(&make_sqrt(sum_eval));
       }
 
-      // Fallback: leave unevaluated for other p values
-      Ok(Expr::FunctionCall {
-        name: "Norm".to_string(),
-        args: args.to_vec().into(),
-      })
+      // General p-norm (p is a number other than 1/2/Infinity, or symbolic):
+      // (Sum Abs[item]^p)^(1/p). Abs of a known real evaluates away, so
+      // numeric inputs collapse (Norm[{3, 4}, 4] -> 337^(1/4)).
+      let p_term = p_expr.clone().unwrap_or(Expr::Integer(2));
+      let power = |base: Expr, exp: Expr| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![base, exp].into(),
+      };
+      let terms: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          power(
+            Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![item.clone()].into(),
+            },
+            p_term.clone(),
+          )
+        })
+        .collect();
+      let sum = if terms.len() == 1 {
+        terms.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: terms.into(),
+        }
+      };
+      let result = power(sum, power(p_term, Expr::Integer(-1)));
+      evaluate_expr_to_expr(&result)
     }
     // Norm of a scalar: Abs[x]
     _ => {

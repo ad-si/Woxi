@@ -2461,6 +2461,37 @@ mod expand_threading {
   }
 
   #[test]
+  fn norm_vector_general_p_integer() {
+    // General p-norm: (Sum Abs[x]^p)^(1/p). Numeric inputs collapse.
+    assert_eq!(interpret("Norm[{3, 4}, 4]").unwrap(), "337^(1/4)");
+    assert_eq!(interpret("Norm[{3, 4}, 3]").unwrap(), "91^(1/3)");
+  }
+
+  #[test]
+  fn norm_vector_general_p_symbolic_entries() {
+    assert_eq!(
+      interpret("Norm[{a, b}, 3]").unwrap(),
+      "(Abs[a]^3 + Abs[b]^3)^(1/3)"
+    );
+  }
+
+  #[test]
+  fn norm_vector_symbolic_p() {
+    assert_eq!(
+      interpret("Norm[{a, b, c}, p]").unwrap(),
+      "(Abs[a]^p + Abs[b]^p + Abs[c]^p)^p^(-1)"
+    );
+  }
+
+  #[test]
+  fn norm_vector_general_p_real() {
+    assert_eq!(
+      interpret("Norm[{1.0, 2.0}, 3]").unwrap(),
+      "2.080083823051904"
+    );
+  }
+
+  #[test]
   fn norm_matrix_spectral() {
     // Default matrix norm is the spectral norm (largest singular value).
     assert_eq!(
