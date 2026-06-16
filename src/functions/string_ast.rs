@@ -2781,7 +2781,8 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "BaseForm"
     && inner_args.len() == 2
-    && let (Expr::Integer(n), Expr::Integer(b)) = (&inner_args[0], &inner_args[1])
+    && let (Expr::Integer(n), Expr::Integer(b)) =
+      (&inner_args[0], &inner_args[1])
     && (2..=36).contains(b)
   {
     let digits = integer_to_base_string(*n, *b);

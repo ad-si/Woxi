@@ -247,6 +247,45 @@ fn quantity_multiply_alphabetical_unit_order() {
   );
 }
 
+// ─── Unary functions thread through the magnitude ───────────────────────────
+
+// Abs/Floor/Ceiling/Round/IntegerPart/Re/Im/Conjugate apply to the magnitude
+// and keep the unit; Sign reduces to the dimensionless sign.
+#[test]
+fn quantity_unary_keeps_unit() {
+  assert_eq!(
+    interpret("Abs[Quantity[-5, \"Meters\"]]").unwrap(),
+    "Quantity[5, Meters]"
+  );
+  assert_eq!(
+    interpret("Floor[Quantity[5.7, \"Meters\"]]").unwrap(),
+    "Quantity[5, Meters]"
+  );
+  assert_eq!(
+    interpret("Ceiling[Quantity[5.2, \"Meters\"]]").unwrap(),
+    "Quantity[6, Meters]"
+  );
+  assert_eq!(
+    interpret("Round[Quantity[5.6, \"Meters\"]]").unwrap(),
+    "Quantity[6, Meters]"
+  );
+  assert_eq!(
+    interpret("IntegerPart[Quantity[5.7, \"Meters\"]]").unwrap(),
+    "Quantity[5, Meters]"
+  );
+  // Abs of a complex magnitude collapses to its modulus, keeping the unit.
+  assert_eq!(
+    interpret("Abs[Quantity[3 - 4 I, \"Meters\"]]").unwrap(),
+    "Quantity[5, Meters]"
+  );
+}
+
+#[test]
+fn quantity_sign_is_dimensionless() {
+  assert_eq!(interpret("Sign[Quantity[-5, \"Meters\"]]").unwrap(), "-1");
+  assert_eq!(interpret("Sign[Quantity[5, \"Meters\"]]").unwrap(), "1");
+}
+
 // ─── Division ───────────────────────────────────────────────────────────────
 
 #[test]

@@ -21,3 +21,10 @@ alphabetically.
 $ wo 'Quantity[100, "Watts"] * Quantity[2, "Hours"]'
 Quantity[200, Hours*Watts]
 ```
+
+Functions like `Abs` and `Floor` apply to the magnitude and keep the unit.
+
+```scrut
+$ wo 'Abs[Quantity[-5, "Meters"]]'
+Quantity[5, Meters]
+```

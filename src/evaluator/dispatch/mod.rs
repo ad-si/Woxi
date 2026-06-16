@@ -1428,6 +1428,29 @@ pub fn evaluate_function_call_ast_inner(
     return evaluate_function_call_ast(name, &new_args);
   }
 
+  // Unary numeric functions thread through a Quantity's magnitude (keeping the
+  // unit), matching wolframscript: Abs[Quantity[-5, m]] = Quantity[5, m], while
+  // Sign reduces to the bare sign of the magnitude.
+  if args.len() == 1
+    && matches!(
+      name,
+      "Abs"
+        | "Floor"
+        | "Ceiling"
+        | "Round"
+        | "IntegerPart"
+        | "FractionalPart"
+        | "Re"
+        | "Im"
+        | "Conjugate"
+        | "Sign"
+    )
+    && let Some(result) =
+      crate::functions::quantity_ast::try_quantity_unary(name, &args[0])
+  {
+    return result;
+  }
+
   // Dispatch through built-in submodules (after user-defined functions)
   if let Some(result) = structural::dispatch_structural(name, args) {
     return result;

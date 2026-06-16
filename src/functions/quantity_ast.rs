@@ -2355,6 +2355,35 @@ pub fn try_quantity_times(
   }
 }
 
+/// Thread a unary numeric function through a `Quantity`'s magnitude.
+/// Most rounding/part functions keep the unit (`Abs[Quantity[-5, m]] ->
+/// Quantity[5, m]`), while `Sign` reduces to the dimensionless sign of the
+/// magnitude. Returns `None` when `arg` is not a Quantity or `name` is not one
+/// of the supported functions.
+pub fn try_quantity_unary(
+  name: &str,
+  arg: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (mag, unit) = is_quantity(arg)?;
+  let mag = mag.clone();
+  let unit = unit.clone();
+  match name {
+    // The sign of a quantity is the (dimensionless) sign of its magnitude.
+    "Sign" => {
+      Some(crate::evaluator::evaluate_function_call_ast("Sign", &[mag]))
+    }
+    // These apply to the magnitude and keep the unit.
+    "Abs" | "Floor" | "Ceiling" | "Round" | "IntegerPart" | "FractionalPart"
+    | "Re" | "Im" | "Conjugate" => {
+      match crate::evaluator::evaluate_function_call_ast(name, &[mag]) {
+        Ok(new_mag) => Some(Ok(make_quantity(new_mag, unit))),
+        Err(e) => Some(Err(e)),
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Handle Divide when Quantity arguments are present.
 pub fn try_quantity_divide(
   a: &Expr,

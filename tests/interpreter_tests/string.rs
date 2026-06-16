@@ -3437,7 +3437,10 @@ mod base_form {
       interpret("ToString[BaseForm[10, 2]]").unwrap(),
       "1010\n    2"
     );
-    assert_eq!(interpret("ToString[BaseForm[255, 8]]").unwrap(), "377\n   8");
+    assert_eq!(
+      interpret("ToString[BaseForm[255, 8]]").unwrap(),
+      "377\n   8"
+    );
   }
 
   #[test]
