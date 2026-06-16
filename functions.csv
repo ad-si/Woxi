@@ -985,7 +985,7 @@ SuperscriptBox,Low-level box construct for superscript display,✅,pure,3.0,994
 Erfi,Returns the imaginary error function value,✅,pure,1.0,995
 NeumannValue,,🚫,,10.0,996
 Activate,Replaces Inactive[f] wrappers with the active function f and evaluates,✅,pure,10.0,997
-Lookup,Looks up a key in an association,✅,pure,10.0,998
+Lookup,Looks up a key in an association; supports the operator form Lookup[key][assoc],✅,pure,10.0,998
 ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12.0,999
 SplitBy,Splits list at boundaries where a function changes value,✅,pure,7.0,1000
 SphericalBesselJ,Spherical Bessel function of the first kind,✅,1,6.0,1001

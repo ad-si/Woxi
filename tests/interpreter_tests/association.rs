@@ -1346,6 +1346,32 @@ mod lookup {
       "default"
     );
   }
+
+  // Operator form: Lookup[key][assoc].
+  #[test]
+  fn lookup_operator_form() {
+    assert_eq!(
+      interpret("Lookup[a][<|a -> 1, b -> 2|>]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Lookup[c][<|a -> 1, b -> 2|>]").unwrap(),
+      "Missing[KeyAbsent, c]"
+    );
+  }
+
+  #[test]
+  fn lookup_operator_form_key_list() {
+    assert_eq!(
+      interpret("Lookup[{a, c}][<|a -> 1, b -> 2|>]").unwrap(),
+      "{1, Missing[KeyAbsent, c]}"
+    );
+  }
+
+  #[test]
+  fn lookup_operator_stays_inert() {
+    assert_eq!(interpret("Lookup[a]").unwrap(), "Lookup[a]");
+  }
 }
 
 mod cases {

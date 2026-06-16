@@ -689,7 +689,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LongestCommonSubsequence" => Some((2, 2)),
     "LongestCommonSubsequencePositions" => Some((2, 2)),
     "Longitude" => Some((1, 1)),
-    "Lookup" => Some((2, usize::MAX)),
+    "Lookup" => Some((1, usize::MAX)),
     "LowerCaseQ" => Some((1, 1)),
     "PrintableASCIIQ" => Some((1, 1)),
     "LowerTriangularize" => Some((1, 2)),
