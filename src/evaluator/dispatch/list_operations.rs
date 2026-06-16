@@ -3769,11 +3769,13 @@ pub fn dispatch_list_operations(
           .iter()
           .enumerate()
           .map(|(i, (k, _))| {
-            let applied = evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: expr_to_string(func),
-              args: vec![k.clone()].into(),
-            })
-            .unwrap_or(k.clone());
+            // Apply the function to the key; this handles named functions,
+            // pure functions (`-#&`), and explicit `Function[...]` alike.
+            let applied =
+              crate::evaluator::function_application::apply_function_to_arg(
+                func, k,
+              )
+              .unwrap_or_else(|_| k.clone());
             (i, applied)
           })
           .collect();

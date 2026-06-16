@@ -4213,6 +4213,27 @@ mod batch_unevaluated_wrappers_2 {
       "<|a -> 1, ba -> 2, ccc -> 3|>"
     );
   }
+  // Regression: KeySortBy must apply pure functions (not just named symbols).
+  #[test]
+  fn key_sort_by_pure_function() {
+    assert_eq!(
+      interpret("KeySortBy[<|3 -> a, 1 -> b, 2 -> c|>, -# &]").unwrap(),
+      "<|3 -> a, 2 -> c, 1 -> b|>"
+    );
+    assert_eq!(
+      interpret("KeySortBy[<|1 -> a, 2 -> b, 3 -> c|>, Function[k, -k]]")
+        .unwrap(),
+      "<|3 -> c, 2 -> b, 1 -> a|>"
+    );
+  }
+  // A named function that reorders the keys by magnitude.
+  #[test]
+  fn key_sort_by_abs() {
+    assert_eq!(
+      interpret("KeySortBy[<|-3 -> a, 1 -> b, -2 -> c|>, Abs]").unwrap(),
+      "<|1 -> b, -2 -> c, -3 -> a|>"
+    );
+  }
   #[test]
   fn max_filter_basic() {
     assert_eq!(
