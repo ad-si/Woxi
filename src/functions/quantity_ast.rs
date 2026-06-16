@@ -1387,6 +1387,14 @@ fn normalize_unit(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
       let s = s.clone();
+      // Temperature scales canonicalize to their Wolfram output spelling:
+      // "Celsius" -> "DegreesCelsius", "Fahrenheit" -> "DegreesFahrenheit",
+      // "Kelvin" -> "Kelvins". Done before the general unit lookup because
+      // these scales are recognised only via temperature_scale, not
+      // get_unit_info.
+      if let Some(scale) = temperature_scale(&Expr::String(s.clone())) {
+        return Expr::String(temp_output_unit(scale).to_string());
+      }
       if let Some(compound) = format_expand_compound_unit(&s) {
         compound
       } else if get_unit_info(&s).is_some() {

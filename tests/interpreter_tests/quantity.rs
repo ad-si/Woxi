@@ -649,6 +649,34 @@ fn unit_convert_real_pounds_rounding() {
 // ─── Temperature (affine) conversions ───────────────────────────────────────
 
 #[test]
+fn temperature_unit_names_canonicalize() {
+  // Temperature aliases canonicalize to their Wolfram output spelling at
+  // Quantity construction time.
+  assert_eq!(
+    interpret("Quantity[100, \"Celsius\"]").unwrap(),
+    "Quantity[100, DegreesCelsius]"
+  );
+  assert_eq!(
+    interpret("Quantity[32, \"Fahrenheit\"]").unwrap(),
+    "Quantity[32, DegreesFahrenheit]"
+  );
+  assert_eq!(
+    interpret("Quantity[100, \"Kelvin\"]").unwrap(),
+    "Quantity[100, Kelvins]"
+  );
+  // Already-canonical names are unchanged.
+  assert_eq!(
+    interpret("Quantity[100, \"DegreesCelsius\"]").unwrap(),
+    "Quantity[100, DegreesCelsius]"
+  );
+  // QuantityUnit reflects the canonical name.
+  assert_eq!(
+    interpret("QuantityUnit[Quantity[5, \"Celsius\"]]").unwrap(),
+    "DegreesCelsius"
+  );
+}
+
+#[test]
 fn unit_convert_celsius_to_kelvin() {
   assert_eq!(
     interpret("UnitConvert[Quantity[100, \"Celsius\"], \"Kelvin\"]").unwrap(),
