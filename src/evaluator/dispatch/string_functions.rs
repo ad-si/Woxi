@@ -297,19 +297,26 @@ pub fn dispatch_string_functions(
     "TextSentences" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::string_ast::text_sentences_ast(args));
     }
-    "TextWords" if args.len() == 1 => {
+    "TextWords" if args.len() == 1 || args.len() == 2 => {
       if let Expr::String(s) = &args[0] {
-        // Split into words, stripping punctuation from each word
-        let words: Vec<Expr> = s
-          .split_whitespace()
-          .map(|w| {
-            let trimmed: String =
-              w.chars().filter(|c| c.is_alphanumeric()).collect();
-            trimmed
-          })
-          .filter(|w| !w.is_empty())
-          .map(Expr::String)
-          .collect();
+        // Tokenize like WordCounts: surrounding punctuation is trimmed but
+        // internal hyphens/apostrophes are kept ("YT-1300", "don't").
+        let mut words = crate::functions::string_ast::text_word_tokens(s);
+        // TextWords[s, n] returns the first n words (n must be positive).
+        if args.len() == 2 {
+          match &args[1] {
+            Expr::Integer(n) if *n >= 1 => {
+              words.truncate(*n as usize);
+            }
+            _ => {
+              return Some(Ok(Expr::FunctionCall {
+                name: "TextWords".to_string(),
+                args: args.to_vec().into(),
+              }));
+            }
+          }
+        }
+        let words: Vec<Expr> = words.into_iter().map(Expr::String).collect();
         return Some(Ok(Expr::List(words.into())));
       }
     }

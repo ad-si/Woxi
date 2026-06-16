@@ -1277,7 +1277,7 @@ FindDivisions,,🚫,,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
 FrontEndToken,,🚫,,3.0,1293
 GeometricMean,Returns the geometric mean of a list,✅,pure,6.0,1294
-TextWords,Split text into a list of words,✅,pure,10.1,1295
+TextWords,Split text into a list of words (surrounding punctuation trimmed; internal hyphens/apostrophes kept); two-arg form returns the first n words,✅,pure,10.1,1295
 WindowTitle,,🚫,,3.0,1296
 CurrentImage,,🚫,,8.0,1298
 Equivalent,Logical equivalence,✅,pure,7.0,1298

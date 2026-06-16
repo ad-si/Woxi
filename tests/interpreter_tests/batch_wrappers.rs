@@ -2985,6 +2985,30 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn text_words_keeps_internal_punctuation() {
+    // Internal hyphens/apostrophes are part of the word.
+    assert_eq!(interpret("TextWords[\"YT-1300\"]").unwrap(), "{YT-1300}");
+    assert_eq!(
+      interpret("TextWords[\"don't stop\"]").unwrap(),
+      "{don't, stop}"
+    );
+  }
+  #[test]
+  fn text_words_count_limit() {
+    // TextWords[s, n] returns the first n words.
+    assert_eq!(
+      interpret("TextWords[\"first second third fourth\", 2]").unwrap(),
+      "{first, second}"
+    );
+  }
+  #[test]
+  fn text_words_count_exceeds_length() {
+    assert_eq!(
+      interpret("TextWords[\"a b c\", 5]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+  #[test]
   fn word_counts_basic() {
     assert_eq!(
       interpret("WordCounts[\"the cat sat on the mat\"]").unwrap(),

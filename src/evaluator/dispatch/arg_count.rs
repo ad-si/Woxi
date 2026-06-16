@@ -1217,7 +1217,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Tetrahedron" => Some((0, 2)),
     "TeXForm" => Some((1, 1)),
     "TextSentences" => Some((1, 2)),
-    "TextWords" => Some((1, 1)),
+    "TextWords" => Some((1, 2)),
     "Thread" => Some((1, 2)),
     "Through" => Some((1, 2)),
     "ToBoxes" => Some((1, 1)),

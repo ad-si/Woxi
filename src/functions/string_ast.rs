@@ -6497,11 +6497,7 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// "don't"). Empty results (pure punctuation) are dropped.
 pub fn text_word_tokens(s: &str) -> Vec<String> {
   s.split_whitespace()
-    .map(|tok| {
-      tok
-        .trim_matches(|c: char| !c.is_alphanumeric())
-        .to_string()
-    })
+    .map(|tok| tok.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
     .filter(|w| !w.is_empty())
     .collect()
 }
