@@ -3423,6 +3423,36 @@ mod base_form {
   fn unevaluated_symbolic() {
     assert_eq!(interpret("BaseForm[x, 2]").unwrap(), "BaseForm[x, 2]");
   }
+
+  // Under ToString, BaseForm renders the digits with the base as a subscript
+  // on the line below (indented by the digit-string width). Base 10 shows no
+  // subscript, and negatives keep their sign on the digit line.
+  #[test]
+  fn to_string_subscript() {
+    assert_eq!(
+      interpret("ToString[BaseForm[255, 16]]").unwrap(),
+      "ff\n  16"
+    );
+    assert_eq!(
+      interpret("ToString[BaseForm[10, 2]]").unwrap(),
+      "1010\n    2"
+    );
+    assert_eq!(interpret("ToString[BaseForm[255, 8]]").unwrap(), "377\n   8");
+  }
+
+  #[test]
+  fn to_string_base_ten_no_subscript() {
+    assert_eq!(interpret("ToString[BaseForm[255, 10]]").unwrap(), "255");
+  }
+
+  #[test]
+  fn to_string_negative_and_zero() {
+    assert_eq!(
+      interpret("ToString[BaseForm[-255, 16]]").unwrap(),
+      "-ff\n   16"
+    );
+    assert_eq!(interpret("ToString[BaseForm[0, 2]]").unwrap(), "0\n 2");
+  }
 }
 
 mod c_form {

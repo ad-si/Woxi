@@ -2663,6 +2663,28 @@ fn decimal_form_default(f: f64) -> String {
   if neg { format!("-{s}") } else { s }
 }
 
+/// Render an integer in the given base (2..=36) using lowercase digits, keeping
+/// a leading `-` for negatives. `255` in base 16 → `ff`, `-255` → `-ff`.
+fn integer_to_base_string(n: i128, base: i128) -> String {
+  if n == 0 {
+    return "0".to_string();
+  }
+  const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+  let neg = n < 0;
+  let mut value = n.unsigned_abs();
+  let base = base as u128;
+  let mut out: Vec<u8> = Vec::new();
+  while value > 0 {
+    out.push(DIGITS[(value % base) as usize]);
+    value /= base;
+  }
+  if neg {
+    out.push(b'-');
+  }
+  out.reverse();
+  String::from_utf8(out).unwrap()
+}
+
 /// Render `TableForm[matrix]` (or a 1D vector) as the aligned text grid that
 /// Wolfram produces under `ToString`. Columns are left-aligned and padded to the
 /// widest cell in the column, joined by three spaces; rows are separated by a
@@ -2748,6 +2770,28 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let lines: Vec<String> =
       items.iter().map(crate::syntax::expr_to_output).collect();
     return Ok(Expr::String(lines.join("\n")));
+  }
+
+  // BaseForm[n, b] — render the integer n in base b with the base shown as a
+  // subscript on the line below (e.g. `ff` over `  16`). Base 10 shows no
+  // subscript. Negative numbers keep their sign on the digit line.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "BaseForm"
+    && inner_args.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(b)) = (&inner_args[0], &inner_args[1])
+    && (2..=36).contains(b)
+  {
+    let digits = integer_to_base_string(*n, *b);
+    let rendered = if *b == 10 {
+      digits
+    } else {
+      let indent = " ".repeat(digits.chars().count());
+      format!("{}\n{}{}", digits, indent, b)
+    };
+    return Ok(Expr::String(rendered));
   }
 
   // NumberForm[x, n] — render x to n significant figures.
