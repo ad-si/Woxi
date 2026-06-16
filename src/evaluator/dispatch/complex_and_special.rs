@@ -1915,6 +1915,9 @@ pub fn dispatch_complex_and_special(
     "RegionNearest" if args.len() == 2 => {
       return Some(compute_region_nearest(&args[0], &args[1]));
     }
+    "SignedRegionDistance" if args.len() == 2 => {
+      return Some(compute_signed_region_distance(&args[0], &args[1]));
+    }
     "RegionBounds" if args.len() == 1 => {
       return Some(compute_region_bounds(&args[0]));
     }
@@ -5113,6 +5116,102 @@ fn compute_region_nearest(
     }
     _ => unevaluated(),
   }
+}
+
+/// SignedRegionDistance[region, point] — like RegionDistance but negative inside
+/// a solid region. For Point/Circle/Sphere (measure-zero) it equals the
+/// (non-negative) RegionDistance; for Disk/Ball it is `dist - r`, and for
+/// Rectangle/Cuboid it is the axis-aligned-box signed distance field.
+fn compute_signed_region_distance(
+  region: &Expr,
+  point: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "SignedRegionDistance".to_string(),
+      args: vec![region.clone(), point.clone()].into(),
+    })
+  };
+  let Expr::List(pt) = point else {
+    return unevaluated();
+  };
+  let pt: Vec<Expr> = pt.iter().cloned().collect();
+  let n = pt.len();
+  let Expr::FunctionCall { name, args } = region else {
+    return unevaluated();
+  };
+
+  let call = |nm: &str, a: Vec<Expr>| Expr::FunctionCall {
+    name: nm.to_string(),
+    args: a.into(),
+  };
+  let binop = |op: BinaryOperator, a: Expr, b: Expr| Expr::BinaryOp {
+    op,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let sub = |a: Expr, b: Expr| binop(BinaryOperator::Minus, a, b);
+  let euclid = |a: Expr, b: Expr| call("EuclideanDistance", vec![a, b]);
+  let zeros = |k: usize| Expr::List(vec![Expr::Integer(0); k].into());
+
+  let expr = match name.as_str() {
+    // Measure-zero regions: signed distance equals the ordinary distance.
+    "Point" if args.len() == 1 => euclid(point.clone(), args[0].clone()),
+    "Circle" | "Sphere" => {
+      let dim = if name == "Sphere" { 3 } else { 2 };
+      let center = args.first().cloned().unwrap_or_else(|| zeros(dim));
+      let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      call("Abs", vec![sub(euclid(point.clone(), center), radius)])
+    }
+    // Solid balls: dist - r (negative inside).
+    "Disk" | "Ball" => {
+      let dim = if name == "Ball" { 3 } else { 2 };
+      let center = args.first().cloned().unwrap_or_else(|| zeros(dim));
+      let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      sub(euclid(point.clone(), center), radius)
+    }
+    // Axis-aligned box signed distance:
+    //   d_i = max(lo_i - p_i, p_i - hi_i)
+    //   sdf = Norm[Max[d_i, 0]] + Min[Max_i d_i, 0]
+    "Rectangle" | "Cuboid" => {
+      let (c1, c2): (Vec<Expr>, Vec<Expr>) = match (args.first(), args.get(1)) {
+        (None, _) => (vec![Expr::Integer(0); n], vec![Expr::Integer(1); n]),
+        (Some(Expr::List(a)), None) => {
+          let a: Vec<Expr> = a.iter().cloned().collect();
+          let b = a
+            .iter()
+            .map(|x| call("Plus", vec![x.clone(), Expr::Integer(1)]))
+            .collect();
+          (a, b)
+        }
+        (Some(Expr::List(a)), Some(Expr::List(b))) => {
+          (a.iter().cloned().collect(), b.iter().cloned().collect())
+        }
+        _ => return unevaluated(),
+      };
+      if c1.len() != n || c2.len() != n {
+        return unevaluated();
+      }
+      let dx: Vec<Expr> = (0..n)
+        .map(|i| {
+          let lo = call("Min", vec![c1[i].clone(), c2[i].clone()]);
+          let hi = call("Max", vec![c1[i].clone(), c2[i].clone()]);
+          call("Max", vec![sub(lo, pt[i].clone()), sub(pt[i].clone(), hi)])
+        })
+        .collect();
+      let clamped: Vec<Expr> = dx
+        .iter()
+        .map(|d| call("Max", vec![d.clone(), Expr::Integer(0)]))
+        .collect();
+      let outside = call("Norm", vec![Expr::List(clamped.into())]);
+      let inside = call("Min", vec![call("Max", dx), Expr::Integer(0)]);
+      binop(BinaryOperator::Plus, outside, inside)
+    }
+    _ => return unevaluated(),
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 // ─── Area ──────────────────────────────────────────────────────────────

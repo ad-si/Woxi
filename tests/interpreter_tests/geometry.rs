@@ -1826,3 +1826,66 @@ mod region_distance {
     );
   }
 }
+
+mod signed_region_distance {
+  use super::*;
+
+  // Like RegionDistance but negative inside a solid region.
+  #[test]
+  fn disk_inside_negative_outside_positive() {
+    assert_eq!(
+      interpret("SignedRegionDistance[Disk[{0, 0}, 1], {3, 0}]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("SignedRegionDistance[Disk[{0, 0}, 1], {0.5, 0}]").unwrap(),
+      "-0.5"
+    );
+    assert_eq!(
+      interpret("SignedRegionDistance[Disk[{0, 0}, 1], {0, 0}]").unwrap(),
+      "-1"
+    );
+    // The boundary is exactly zero.
+    assert_eq!(
+      interpret("SignedRegionDistance[Disk[{0, 0}, 1], {1, 0}]").unwrap(),
+      "0"
+    );
+  }
+
+  // Point/Circle have no interior, so the signed distance is the ordinary one.
+  #[test]
+  fn point_and_circle_nonnegative() {
+    assert_eq!(
+      interpret("SignedRegionDistance[Point[{0, 0}], {3, 4}]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret("SignedRegionDistance[Circle[{0, 0}, 1], {0.5, 0}]").unwrap(),
+      "0.5"
+    );
+  }
+
+  // Axis-aligned box signed distance field.
+  #[test]
+  fn rectangle_signed() {
+    // Inside: negative distance to the nearest edge.
+    assert_eq!(
+      interpret("SignedRegionDistance[Rectangle[{0, 0}, {4, 2}], {1, 1}]")
+        .unwrap(),
+      "-1"
+    );
+    // Outside, nearest a corner.
+    assert_eq!(
+      interpret("SignedRegionDistance[Rectangle[{0, 0}, {2, 2}], {3, 3}]")
+        .unwrap(),
+      "Sqrt[2]"
+    );
+    assert_eq!(
+      interpret(
+        "SignedRegionDistance[Cuboid[{0, 0, 0}, {2, 2, 2}], {1, 1, 1}]"
+      )
+      .unwrap(),
+      "-1"
+    );
+  }
+}

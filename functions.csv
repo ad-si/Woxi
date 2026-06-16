@@ -1890,7 +1890,7 @@ WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,�
 BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
 LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
 Overflow,Symbol representing arithmetic overflow,✅,pure,1.0,1926
-SignedRegionDistance,Computational geometry function for signed distance to a region,🚫,,10.0,1926
+SignedRegionDistance,Signed distance from a point to a region (negative inside); Point/Disk/Ball/Circle/Sphere/Rectangle,✅,pure,10.0,1926
 TakeLargest,Takes the n largest elements from a list; supports the operator form TakeLargest[n][list],✅,pure,10.1,1926
 GeodesyData,,🚫,,7.0,1930
 InputAliases,Notebook interface option for input alias definitions,🚫,,4.0,1930
