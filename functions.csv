@@ -514,7 +514,7 @@ TableHeadings,Option specifying headings for table rows and columns,✅,none,2.0
 RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,✅,pure,6.0,518
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12.0,519
 Fibonacci,Returns the nth Fibonacci number or Fibonacci polynomial,✅,pure,3.0,520
-Tally,Counts occurrences of each distinct element,✅,pure,6.0,521
+Tally,Counts occurrences of each distinct element (on an association tallies the values),✅,pure,6.0,521
 MatrixRank,Returns the rank of a matrix,✅,pure,5.0,523
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
 MatrixQ,Tests if an expression is a matrix,✅,pure,1.0,524
@@ -887,7 +887,7 @@ GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form G
 SetterBar,,🚫,,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
 PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897
-Counts,Returns association of element counts,✅,pure,10.0,898
+Counts,Returns association of element counts (on an association counts the values),✅,pure,10.0,898
 PaddedForm,Pads numbers to fixed width via ToString rendering,✅,pure,2.0,900
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials,✅,pure,3.0,900
 Triangle,Geometric primitive representing a triangle,✅,none,10.0,901

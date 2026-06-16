@@ -21,3 +21,10 @@ $ wo 'Tally[{x, x, x}]'
 $ wo 'Tally[{}]'
 {}
 ```
+
+On an association, the values are tallied.
+
+```scrut
+$ wo 'Tally[<|a -> 1, b -> 1, c -> 2|>]'
+{{1, 2}, {2, 1}}
+```

@@ -4064,6 +4064,14 @@ mod cases {
     );
   }
   #[test]
+  fn tally_association_values() {
+    // On an association, Tally counts the values.
+    assert_case(
+      r#"Tally[<|a -> 1, b -> 1, c -> 2|>]"#,
+      r#"{{1, 2}, {2, 1}}"#,
+    );
+  }
+  #[test]
   fn dice_dissimilarity() {
     assert_case(
       r#"DiceDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]"#,

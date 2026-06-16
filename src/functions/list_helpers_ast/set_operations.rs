@@ -6,6 +6,11 @@ use super::*;
 /// AST-based Tally: count occurrences of each element.
 /// Tally[{a, b, a, c, b, a}] -> {{a, 3}, {b, 2}, {c, 1}}
 pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // On an association, tally the values.
+  if let Expr::Association(pairs) = list {
+    let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+    return tally_ast(&Expr::List(values.into()));
+  }
   let items = match list {
     Expr::List(items) => items,
     _ => {
@@ -92,6 +97,11 @@ pub fn tally_with_test_ast(
 ///// Counts[list] - Returns association of distinct elements with their counts
 /// Counts[{a, b, a, c, b, a}] -> <|a -> 3, b -> 2, c -> 1|>
 pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // On an association, count the values.
+  if let Expr::Association(pairs) = list {
+    let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+    return counts_ast(&Expr::List(values.into()));
+  }
   let items = match list {
     Expr::List(items) => items,
     _ => {

@@ -2157,6 +2157,19 @@ mod counts {
   fn all_same() {
     assert_eq!(interpret("Counts[{a, a, a}]").unwrap(), "<|a -> 3|>");
   }
+
+  // On an association, Counts tallies the values.
+  #[test]
+  fn association_counts_values() {
+    assert_eq!(
+      interpret("Counts[<|a -> 1, b -> 1, c -> 2|>]").unwrap(),
+      "<|1 -> 2, 2 -> 1|>"
+    );
+    assert_eq!(
+      interpret("Counts[<|a -> 1, b -> 2, c -> 1, d -> 3, e -> 1|>]").unwrap(),
+      "<|1 -> 3, 2 -> 1, 3 -> 1|>"
+    );
+  }
 }
 
 mod clip {
@@ -5112,8 +5125,10 @@ mod delete_duplicates_with_test {
   #[test]
   fn delete_duplicates_association_with_test() {
     assert_eq!(
-      interpret("DeleteDuplicates[<|a -> 2, b -> 4, c -> 3|>, EvenQ[#1 - #2] &]")
-        .unwrap(),
+      interpret(
+        "DeleteDuplicates[<|a -> 2, b -> 4, c -> 3|>, EvenQ[#1 - #2] &]"
+      )
+      .unwrap(),
       "<|a -> 2, c -> 3|>"
     );
   }
