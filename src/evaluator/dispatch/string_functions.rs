@@ -257,6 +257,11 @@ pub fn dispatch_string_functions(
     "CharacterCounts" if args.len() == 1 => {
       return Some(crate::functions::string_ast::character_counts_ast(args));
     }
+    "CharacterCounts" if args.len() == 2 => {
+      return Some(
+        crate::functions::string_ast::character_counts_ngram_ast(args),
+      );
+    }
     "RemoveDiacritics" if args.len() == 1 => {
       return Some(crate::functions::string_ast::remove_diacritics_ast(args));
     }
@@ -284,29 +289,10 @@ pub fn dispatch_string_functions(
       }
     }
     "LetterCounts" if args.len() == 1 => {
-      if let Expr::String(s) = &args[0] {
-        // Count letters (alphabetic only), sorted by count descending then last position descending
-        let mut counts: Vec<(char, i128, usize)> = Vec::new();
-        for (pos, ch) in s.chars().enumerate() {
-          if ch.is_alphabetic() {
-            if let Some(entry) = counts.iter_mut().find(|(c, _, _)| *c == ch) {
-              entry.1 += 1;
-              entry.2 = pos;
-            } else {
-              counts.push((ch, 1, pos));
-            }
-          }
-        }
-        // Sort by count descending, then by last position descending
-        counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
-        let pairs: Vec<(Expr, Expr)> = counts
-          .into_iter()
-          .map(|(ch, count, _)| {
-            (Expr::String(ch.to_string()), Expr::Integer(count))
-          })
-          .collect();
-        return Some(Ok(Expr::Association(pairs)));
-      }
+      return Some(crate::functions::string_ast::letter_counts_ast(args));
+    }
+    "LetterCounts" if args.len() == 2 => {
+      return Some(crate::functions::string_ast::letter_counts_ngram_ast(args));
     }
     "TextSentences" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::string_ast::text_sentences_ast(args));

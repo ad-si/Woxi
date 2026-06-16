@@ -6491,6 +6491,112 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(dist as i128))
 }
 
+/// Build an association of n-gram counts in first-occurrence order (the order
+/// Counts uses), as the two-argument CharacterCounts/LetterCounts forms do.
+pub fn ngram_counts(grams: Vec<String>) -> Expr {
+  let mut counts: Vec<(String, i128)> = Vec::new();
+  let mut seen: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
+  for g in grams {
+    if let Some(&idx) = seen.get(&g) {
+      counts[idx].1 += 1;
+    } else {
+      seen.insert(g.clone(), counts.len());
+      counts.push((g, 1));
+    }
+  }
+  Expr::Association(
+    counts
+      .into_iter()
+      .map(|(g, n)| (Expr::String(g), Expr::Integer(n)))
+      .collect(),
+  )
+}
+
+/// Sliding window n-grams (length `n`) over a slice of characters.
+fn char_ngrams(chars: &[char], n: usize) -> Vec<String> {
+  if n == 0 || chars.len() < n {
+    return Vec::new();
+  }
+  (0..=chars.len() - n)
+    .map(|i| chars[i..i + n].iter().collect())
+    .collect()
+}
+
+/// CharacterCounts[s, n] - counts of length-n character n-grams (sliding window
+/// over all characters), in first-occurrence order.
+pub fn character_counts_ngram_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let s = expr_to_str(&args[0])?;
+  let n = expr_to_int(&args[1])?;
+  if n == 1 {
+    return character_counts_ast(&args[0..1]);
+  }
+  if n < 1 {
+    return Ok(Expr::Association(Vec::new()));
+  }
+  let chars: Vec<char> = s.chars().collect();
+  Ok(ngram_counts(char_ngrams(&chars, n as usize)))
+}
+
+/// LetterCounts[s] - association of letter (alphabetic) frequencies, sorted by
+/// count descending then by last position descending.
+pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let s = expr_to_str(&args[0])?;
+  let mut counts: Vec<(char, i128, usize)> = Vec::new();
+  for (pos, ch) in s.chars().enumerate() {
+    if ch.is_alphabetic() {
+      if let Some(entry) = counts.iter_mut().find(|(c, _, _)| *c == ch) {
+        entry.1 += 1;
+        entry.2 = pos;
+      } else {
+        counts.push((ch, 1, pos));
+      }
+    }
+  }
+  counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+  Ok(Expr::Association(
+    counts
+      .into_iter()
+      .map(|(ch, count, _)| (Expr::String(ch.to_string()), Expr::Integer(count)))
+      .collect(),
+  ))
+}
+
+/// LetterCounts[s, n] - counts of length-n letter n-grams. Non-letter
+/// characters break the sliding window (n-grams never span them), in
+/// first-occurrence order.
+pub fn letter_counts_ngram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let s = expr_to_str(&args[0])?;
+  let n = expr_to_int(&args[1])?;
+  if n == 1 {
+    return letter_counts_ast(&args[0..1]);
+  }
+  if n < 1 {
+    return Ok(Expr::Association(Vec::new()));
+  }
+  let n = n as usize;
+  let mut grams: Vec<String> = Vec::new();
+  // Split into maximal runs of alphabetic characters and take n-grams in each.
+  let mut run: Vec<char> = Vec::new();
+  let flush = |run: &mut Vec<char>, grams: &mut Vec<String>| {
+    if !run.is_empty() {
+      grams.extend(char_ngrams(run, n));
+      run.clear();
+    }
+  };
+  for c in s.chars() {
+    if c.is_alphabetic() {
+      run.push(c);
+    } else {
+      flush(&mut run, &mut grams);
+    }
+  }
+  flush(&mut run, &mut grams);
+  Ok(ngram_counts(grams))
+}
+
 /// CharacterCounts[s] - association of character frequencies, sorted by frequency descending
 pub fn character_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

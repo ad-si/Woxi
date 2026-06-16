@@ -3002,7 +3002,11 @@ pub fn dispatch_list_operations(
     "FoldPairList" if args.len() == 3 || args.len() == 4 => {
       if let Expr::List(ref elems) = args[2] {
         let f = &args[0];
-        let g = if args.len() == 4 { Some(&args[3]) } else { None };
+        let g = if args.len() == 4 {
+          Some(&args[3])
+        } else {
+          None
+        };
         let mut state = args[1].clone();
         let mut results = Vec::new();
         for elem in elems {

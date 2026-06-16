@@ -2546,7 +2546,7 @@ ExpandNumerator,Expands the numerator of a rational expression,✅,pure,1.0,2605
 ExpressionGraph,Create a graph from the tree structure of an expression,✅,pure,12.1,2605
 ImageDifference,,🚫,,8.0,2605
 InverseGammaDistribution,represents an inverse gamma distribution,✅,Computation,7.0,2605
-LetterCounts,Counts letter occurrences in a string,✅,None,10.1,2605
+LetterCounts,Counts letter occurrences in a string; two-arg form counts letter n-grams (non-letters break the window),✅,None,10.1,2605
 NArgMin,Numerical arg min,✅,none,7.0,2605
 VertexOutComponent,Vertices reachable from a vertex,✅,1,8.0,2605
 ViewProjection,,🚫,,11.2,2605
@@ -3057,7 +3057,7 @@ CycleIndexPolynomial,Cycle index polynomial of a permutation group in given vari
 Dodecahedron,,,,12.0,3124
 EulerianGraphQ,Test whether a graph has an Eulerian circuit,✅,pure,8.0,3124
 CellEventActions,,🚫,,6.0,3134
-CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
+CharacterCounts,Returns an association of character frequencies in a string; two-arg form counts character n-grams,✅,pure,10.1,3134
 DayMatchQ,Tests whether a date matches a day-of-week specification,✅,pure,9.0,3134
 ExponentialFamily,,,,7.0,3134
 FileHash,,✅,,6.0,3134

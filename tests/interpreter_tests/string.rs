@@ -2016,6 +2016,62 @@ mod character_counts {
       "<|a -> 3|>"
     );
   }
+
+  // Two-argument form: counts of length-n character n-grams, in
+  // first-occurrence order (not sorted by count, unlike the 1-arg form).
+  #[test]
+  fn ngram_bigrams() {
+    assert_eq!(
+      interpret(r#"CharacterCounts["ababcab", 2]"#).unwrap(),
+      "<|ab -> 3, ba -> 1, bc -> 1, ca -> 1|>"
+    );
+  }
+  #[test]
+  fn ngram_first_occurrence_order() {
+    assert_eq!(
+      interpret(r#"CharacterCounts["banana", 2]"#).unwrap(),
+      "<|ba -> 1, an -> 2, na -> 2|>"
+    );
+  }
+  #[test]
+  fn ngram_trigrams() {
+    assert_eq!(
+      interpret(r#"CharacterCounts["banana", 3]"#).unwrap(),
+      "<|ban -> 1, ana -> 2, nan -> 1|>"
+    );
+  }
+  #[test]
+  fn ngram_too_long_is_empty() {
+    assert_eq!(interpret(r#"CharacterCounts["ab", 3]"#).unwrap(), "<||>");
+  }
+}
+
+mod letter_counts_ngram {
+  use super::*;
+
+  // LetterCounts[s, n]: n-grams within maximal runs of letters; non-letter
+  // characters break the window. First-occurrence order.
+  #[test]
+  fn ngram_breaks_on_non_letters() {
+    assert_eq!(
+      interpret(r#"LetterCounts["ab12cd34ab12", 2]"#).unwrap(),
+      "<|ab -> 2, cd -> 1|>"
+    );
+  }
+  #[test]
+  fn ngram_within_words() {
+    assert_eq!(
+      interpret(r#"LetterCounts["abc def", 2]"#).unwrap(),
+      "<|ab -> 1, bc -> 1, de -> 1, ef -> 1|>"
+    );
+  }
+  #[test]
+  fn ngram_trigrams() {
+    assert_eq!(
+      interpret(r#"LetterCounts["banana", 3]"#).unwrap(),
+      "<|ban -> 1, ana -> 2, nan -> 1|>"
+    );
+  }
 }
 
 mod remove_diacritics {
