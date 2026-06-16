@@ -6491,6 +6491,86 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(dist as i128))
 }
 
+/// Tokenize a string into words the way TextWords/WordCounts do: split on
+/// whitespace, then trim leading and trailing non-alphanumeric characters from
+/// each token (internal hyphens/apostrophes are kept, e.g. "YT-1300",
+/// "don't"). Empty results (pure punctuation) are dropped.
+pub fn text_word_tokens(s: &str) -> Vec<String> {
+  s.split_whitespace()
+    .map(|tok| {
+      tok
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_string()
+    })
+    .filter(|w| !w.is_empty())
+    .collect()
+}
+
+/// WordCounts[s] - counts of words; WordCounts[s, n] - counts of word n-grams
+/// (keyed by lists of n words). Sorted by count descending, then by last
+/// occurrence descending, matching wolframscript.
+pub fn word_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let s = expr_to_str(&args[0])?;
+  let n = if args.len() == 2 {
+    let n = expr_to_int(&args[1])?;
+    if n < 1 {
+      return Ok(Expr::Association(Vec::new()));
+    }
+    Some(n as usize)
+  } else {
+    None
+  };
+
+  let words = text_word_tokens(&s);
+
+  // Build the units to count: single words, or n-grams as word lists.
+  // Each unit carries a dedup key (the joined words) and its display Expr.
+  let units: Vec<(String, Expr)> = match n {
+    None => words
+      .iter()
+      .map(|w| (w.clone(), Expr::String(w.clone())))
+      .collect(),
+    Some(n) => {
+      if words.len() < n {
+        Vec::new()
+      } else {
+        (0..=words.len() - n)
+          .map(|i| {
+            let gram = &words[i..i + n];
+            let key = gram.join("\u{0}");
+            let list = Expr::List(
+              gram.iter().map(|w| Expr::String(w.clone())).collect(),
+            );
+            (key, list)
+          })
+          .collect()
+      }
+    }
+  };
+
+  // Count, tracking count and last position, preserving first display Expr.
+  let mut counts: Vec<(Expr, i128, usize)> = Vec::new();
+  let mut seen: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
+  for (pos, (key, disp)) in units.into_iter().enumerate() {
+    if let Some(&idx) = seen.get(&key) {
+      counts[idx].1 += 1;
+      counts[idx].2 = pos;
+    } else {
+      seen.insert(key, counts.len());
+      counts.push((disp, 1, pos));
+    }
+  }
+  // Sort by count descending, then by last position descending.
+  counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+  Ok(Expr::Association(
+    counts
+      .into_iter()
+      .map(|(disp, count, _)| (disp, Expr::Integer(count)))
+      .collect(),
+  ))
+}
+
 /// Build an association of n-gram counts in first-occurrence order (the order
 /// Counts uses), as the two-argument CharacterCounts/LetterCounts forms do.
 pub fn ngram_counts(grams: Vec<String>) -> Expr {

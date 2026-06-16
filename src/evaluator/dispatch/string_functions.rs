@@ -313,25 +313,8 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::List(words.into())));
       }
     }
-    "WordCounts" if args.len() == 1 => {
-      if let Expr::String(s) = &args[0] {
-        let mut counts: Vec<(String, i128, usize)> = Vec::new();
-        for (pos, word) in s.split_whitespace().enumerate() {
-          if let Some(entry) = counts.iter_mut().find(|(w, _, _)| w == word) {
-            entry.1 += 1;
-            entry.2 = pos;
-          } else {
-            counts.push((word.to_string(), 1, pos));
-          }
-        }
-        // Sort by count descending, then by last position descending
-        counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
-        let pairs: Vec<(Expr, Expr)> = counts
-          .into_iter()
-          .map(|(word, count, _)| (Expr::String(word), Expr::Integer(count)))
-          .collect();
-        return Some(Ok(Expr::Association(pairs)));
-      }
+    "WordCounts" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::string_ast::word_counts_ast(args));
     }
     "NumericalSort" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {

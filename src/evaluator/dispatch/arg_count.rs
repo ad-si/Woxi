@@ -1290,7 +1290,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "WinsorizedVariance" => Some((2, 2)),
     "With" => Some((2, 2)),
     "WordCount" => Some((1, 1)),
-    "WordCounts" => Some((1, 1)),
+    "WordCounts" => Some((1, 2)),
     "Write" => Some((2, usize::MAX)),
     "WriteString" => Some((2, usize::MAX)),
     "Wronskian" => Some((2, 2)),

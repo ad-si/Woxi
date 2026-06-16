@@ -2992,6 +2992,41 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn word_counts_strips_punctuation() {
+    // Trailing punctuation must not make "fish," and "fish" distinct words.
+    assert_eq!(
+      interpret("WordCounts[\"one fish, two fish, red fish\"]").unwrap(),
+      "<|fish -> 3, red -> 1, two -> 1, one -> 1|>"
+    );
+  }
+  #[test]
+  fn word_counts_keeps_internal_punctuation() {
+    // Internal hyphens/apostrophes are part of the word.
+    assert_eq!(
+      interpret("WordCounts[\"YT-1300 and don't stop\"]").unwrap(),
+      "<|stop -> 1, don't -> 1, and -> 1, YT-1300 -> 1|>"
+    );
+  }
+  #[test]
+  fn word_counts_bigrams() {
+    assert_eq!(
+      interpret("WordCounts[\"the fox jumped over the hare.\", 2]").unwrap(),
+      "<|{the, hare} -> 1, {over, the} -> 1, {jumped, over} -> 1, \
+       {fox, jumped} -> 1, {the, fox} -> 1|>"
+    );
+  }
+  #[test]
+  fn word_counts_bigrams_with_repeats() {
+    assert_eq!(
+      interpret("WordCounts[\"a b a b a\", 2]").unwrap(),
+      "<|{b, a} -> 2, {a, b} -> 2|>"
+    );
+  }
+  #[test]
+  fn word_counts_ngram_too_long() {
+    assert_eq!(interpret("WordCounts[\"hi\", 5]").unwrap(), "<||>");
+  }
+  #[test]
   fn text_sentences_basic() {
     assert_eq!(
       interpret(
