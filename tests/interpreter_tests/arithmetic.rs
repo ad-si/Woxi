@@ -2675,7 +2675,10 @@ mod expand_threading {
     // Floor/Ceiling/Round/IntegerPart/FractionalPart of Indeterminate stay
     // Indeterminate.
     assert_eq!(interpret("Floor[Indeterminate]").unwrap(), "Indeterminate");
-    assert_eq!(interpret("Ceiling[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("Ceiling[Indeterminate]").unwrap(),
+      "Indeterminate"
+    );
     assert_eq!(interpret("Round[Indeterminate]").unwrap(), "Indeterminate");
     assert_eq!(
       interpret("IntegerPart[Indeterminate]").unwrap(),
@@ -4320,6 +4323,18 @@ mod cases {
       r#"Variables[a x^2 + b x + c]; Variables[{a + b x, c y^2 + x/2}]"#,
       r#"{a, b, c, x, y}"#,
     );
+  }
+  #[test]
+  fn variables_of_non_polynomial_is_empty() {
+    // Relational and logical expressions are not polynomials, so Variables
+    // returns {} (rather than wrapping the whole expression as one variable).
+    assert_case(r#"Variables[2 x == 6]"#, r#"{}"#);
+    assert_case(r#"Variables[x > 2]"#, r#"{}"#);
+    assert_case(r#"Variables[x != 2]"#, r#"{}"#);
+    assert_case(r#"Variables[x^2 + 1 == 0 && y < 3]"#, r#"{}"#);
+    // Polynomials and transcendental kernels are unaffected.
+    assert_case(r#"Variables[x^2 + 1]"#, r#"{x}"#);
+    assert_case(r#"Variables[Sin[x] + y]"#, r#"{y, Sin[x]}"#);
   }
   #[test]
   fn divide_3() {

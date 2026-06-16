@@ -3143,6 +3143,37 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Variables expects exactly 1 argument".into(),
     ));
   }
+  // Variables only applies to polynomials. A relational or logical expression
+  // (equation, inequality, And/Or/...) is not a polynomial, so wolframscript
+  // returns {} rather than treating the whole expression as one variable.
+  let head = crate::evaluator::evaluate_function_call_ast(
+    "Head",
+    std::slice::from_ref(&args[0]),
+  )?;
+  if let Expr::Identifier(h) = &head
+    && matches!(
+      h.as_str(),
+      "Equal"
+        | "Unequal"
+        | "Less"
+        | "Greater"
+        | "LessEqual"
+        | "GreaterEqual"
+        | "Inequality"
+        | "And"
+        | "Or"
+        | "Not"
+        | "Nand"
+        | "Nor"
+        | "Xor"
+        | "Implies"
+        | "Equivalent"
+        | "SameQ"
+        | "UnsameQ"
+    )
+  {
+    return Ok(Expr::List(vec![].into()));
+  }
   let mut vars = Vec::new();
   collect_variables(&args[0], &mut vars);
   // Deduplicate while preserving order
