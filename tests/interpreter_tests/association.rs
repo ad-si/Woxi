@@ -379,10 +379,7 @@ mod key_select {
 
   #[test]
   fn key_select_operator_stays_inert() {
-    assert_eq!(
-      interpret("KeySelect[EvenQ]").unwrap(),
-      "KeySelect[EvenQ]"
-    );
+    assert_eq!(interpret("KeySelect[EvenQ]").unwrap(), "KeySelect[EvenQ]");
   }
 }
 
