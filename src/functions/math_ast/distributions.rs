@@ -6260,6 +6260,9 @@ fn distribution_raw_moment(
   let factorial = |n: i128| -> i128 { (2..=n).product() };
 
   match dist_name {
+    // E[x^k] = p for every k >= 1: the support is {0, 1}, so x^k = x.
+    // (k == 0 is handled above, returning 1.)
+    "BernoulliDistribution" if dargs.len() == 1 => Some(dargs[0].clone()),
     // E[x^k] = k!/lambda^k
     "ExponentialDistribution" if dargs.len() == 1 => {
       eval(divide(int(factorial(k)), power(dargs[0].clone(), int(k)))).ok()

@@ -1226,6 +1226,30 @@ mod polynomial_expectation {
   }
 
   #[test]
+  fn bernoulli_moments() {
+    // The support is {0, 1}, so x^k = x and every raw moment equals p.
+    // Previously E[x^k] for k >= 3 fell through to numerical integration and
+    // returned the call unevaluated for a symbolic parameter.
+    assert_eq!(
+      interpret("Expectation[x^3, x \\[Distributed] BernoulliDistribution[p]]")
+        .unwrap(),
+      "p"
+    );
+    assert_eq!(
+      interpret("Moment[BernoulliDistribution[p], 3]").unwrap(),
+      "p"
+    );
+    assert_eq!(
+      interpret("Moment[BernoulliDistribution[p], 5]").unwrap(),
+      "p"
+    );
+    assert_eq!(
+      interpret("Moment[BernoulliDistribution[1/3], 4]").unwrap(),
+      "1/3"
+    );
+  }
+
+  #[test]
   fn polynomial_combination() {
     assert_eq!(
       interpret(
