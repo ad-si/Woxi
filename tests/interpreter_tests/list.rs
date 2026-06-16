@@ -5318,6 +5318,32 @@ mod part_list_index {
       "{a, c, c}"
     );
   }
+
+  #[test]
+  fn list_index_out_of_range_fails_atomically() {
+    use woxi::interpret_with_stdout;
+    // A single out-of-range position fails the whole spec with one
+    // Part::partw naming the full index list — not a partial result.
+    let r = interpret_with_stdout("{a, b, c}[[{1, 5}]]").unwrap();
+    assert_eq!(r.result, "{a, b, c}[[{1, 5}]]");
+    assert!(r.warnings[0].contains(
+      "Part::partw: Part {1, 5} of {a, b, c} does not exist."
+    ));
+    // Order of the failing index does not matter.
+    let r2 = interpret_with_stdout("{a, b, c}[[{5, 1}]]").unwrap();
+    assert_eq!(r2.result, "{a, b, c}[[{5, 1}]]");
+  }
+
+  #[test]
+  fn list_index_preserves_head() {
+    // expr[[{positions}]] keeps the head of expr, not List.
+    assert_eq!(interpret("f[a, b, c][[{1, 3}]]").unwrap(), "f[a, c]");
+    assert_eq!(interpret("g[a, b, c, d][[{2, 4, 1}]]").unwrap(), "g[b, d, a]");
+    assert_eq!(interpret("(x -> y)[[{1, 2}]]").unwrap(), "x -> y");
+    assert_eq!(interpret("(a + b + c)[[{1, 3}]]").unwrap(), "a + c");
+    // A List stays a List.
+    assert_eq!(interpret("{a, b, c}[[{1, 3}]]").unwrap(), "{a, c}");
+  }
 }
 
 mod part_multi_index {

@@ -249,6 +249,56 @@ pub fn eval_part_base(e: &Expr) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(e)
 }
 
+/// Number of positionally-indexable parts of `expr`, or `None` for atoms and
+/// expressions (like ByteArray) whose part count differs from their argument
+/// count. Used to validate a list-of-positions spec atomically.
+fn positional_length(expr: &Expr) -> Option<usize> {
+  match expr {
+    Expr::List(items) => Some(items.len()),
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(2),
+    Expr::FunctionCall { name, args } if name != "ByteArray" => {
+      Some(args.len())
+    }
+    _ => None,
+  }
+}
+
+/// Rewrap the elements selected by a list-of-positions spec with the head of
+/// the original expression: `f[a,b,c][[{1,3}]]` is `f[a, c]`, `(x->y)[[{1,2}]]`
+/// is `x -> y`, and a List keeps the List head. Only used on expressions that
+/// `positional_length` accepts.
+fn rewrap_part_list(expr: &Expr, elems: Vec<Expr>) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, .. } => Expr::FunctionCall {
+      name: name.clone(),
+      args: elems.into(),
+    },
+    Expr::Rule { .. } if elems.len() == 2 => Expr::Rule {
+      pattern: Box::new(elems[0].clone()),
+      replacement: Box::new(elems[1].clone()),
+    },
+    Expr::RuleDelayed { .. } if elems.len() == 2 => Expr::RuleDelayed {
+      pattern: Box::new(elems[0].clone()),
+      replacement: Box::new(elems[1].clone()),
+    },
+    _ => Expr::List(elems.into()),
+  }
+}
+
+/// Concrete integer position from an index expression (Integer, integer-valued
+/// Real, or BigInteger), or `None` for anything else.
+fn simple_position(e: &Expr) -> Option<i64> {
+  match e {
+    Expr::Integer(n) => Some(*n as i64),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i64()
+    }
+    Expr::Real(f) if f.is_finite() && f.fract() == 0.0 => Some(*f as i64),
+    _ => None,
+  }
+}
+
 /// Extract part from expression on AST (expr[[index]])
 pub fn extract_part_ast(
   expr: &Expr,
@@ -472,7 +522,38 @@ pub fn extract_part_ast(
       return Ok(part_take_unevaluated(expr, index));
     }
     Expr::List(indices) => {
-      // Part[expr, {i1, i2, ...}] → {Part[expr, i1], Part[expr, i2], ...}
+      // Part[expr, {i1, i2, ...}] collects the elements at each position. When
+      // every position is a concrete integer and the expression has a known
+      // length, validate the bounds up front: a single out-of-range position
+      // fails the WHOLE spec with one Part::partw naming the full index list
+      // (matching wolframscript), instead of returning a partially-resolved
+      // list with a per-index message.
+      if let Some(len) = positional_length(expr) {
+        let positions: Option<Vec<i64>> =
+          indices.iter().map(simple_position).collect();
+        if let Some(positions) = positions {
+          let len = len as i64;
+          let in_range =
+            |i: i64| i == 0 || (1..=len).contains(&i) || (-len..=-1).contains(&i);
+          if !positions.iter().all(|&i| in_range(i)) {
+            crate::emit_message(&format!(
+              "Part::partw: Part {} of {} does not exist.",
+              crate::syntax::format_expr(index, crate::syntax::ExprForm::Output),
+              crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output),
+            ));
+            return Ok(part_take_unevaluated(expr, index));
+          }
+          // All positions valid: extract each part and keep the head of the
+          // original expression (f[a,b,c][[{1,3}]] -> f[a, c]).
+          let mut results = Vec::with_capacity(indices.len());
+          for idx_expr in indices.iter() {
+            results.push(extract_part_ast(expr, idx_expr)?);
+          }
+          return Ok(rewrap_part_list(expr, results));
+        }
+      }
+      // Fallback: non-positional expression (e.g. ByteArray) or non-integer
+      // index entries — extract each part under a List head (legacy behavior).
       let mut results = Vec::new();
       for idx_expr in indices {
         results.push(extract_part_ast(expr, idx_expr)?);
