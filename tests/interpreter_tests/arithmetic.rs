@@ -2569,10 +2569,7 @@ mod expand_threading {
     // IntegerPart applies componentwise, truncating toward zero, and always
     // yields integer components regardless of input exactness.
     assert_eq!(interpret("IntegerPart[2.5 + 3.5 I]").unwrap(), "2 + 3*I");
-    assert_eq!(
-      interpret("IntegerPart[-2.5 - 3.5 I]").unwrap(),
-      "-2 - 3*I"
-    );
+    assert_eq!(interpret("IntegerPart[-2.5 - 3.5 I]").unwrap(), "-2 - 3*I");
     assert_eq!(interpret("IntegerPart[5/2 + 7/2 I]").unwrap(), "2 + 3*I");
     assert_eq!(interpret("IntegerPart[2 + 3 I]").unwrap(), "2 + 3*I");
   }
@@ -2591,8 +2588,28 @@ mod expand_threading {
       interpret("FractionalPart[1.5 + 2.7 I]").unwrap(),
       "0.5 + 0.7000000000000002*I"
     );
-    assert_eq!(interpret("FractionalPart[2 + 2.5 I]").unwrap(), "0. + 0.5*I");
-    assert_eq!(interpret("FractionalPart[1.5 + 3 I]").unwrap(), "0.5 + 0.*I");
+    assert_eq!(
+      interpret("FractionalPart[2 + 2.5 I]").unwrap(),
+      "0. + 0.5*I"
+    );
+    assert_eq!(
+      interpret("FractionalPart[1.5 + 3 I]").unwrap(),
+      "0.5 + 0.*I"
+    );
+  }
+
+  #[test]
+  fn rounding_symbolic_complex() {
+    // Floor/Ceiling/Round/IntegerPart of a complex with symbolic-real parts
+    // (Pi + E I, Sqrt[2] + Sqrt[3] I) apply componentwise.
+    assert_eq!(interpret("Floor[Pi + E I]").unwrap(), "3 + 2*I");
+    assert_eq!(interpret("Ceiling[Pi + E I]").unwrap(), "4 + 3*I");
+    assert_eq!(interpret("Round[Pi + E I]").unwrap(), "3 + 3*I");
+    assert_eq!(interpret("IntegerPart[Pi + E I]").unwrap(), "3 + 2*I");
+    assert_eq!(interpret("Floor[Sqrt[2] + Sqrt[3] I]").unwrap(), "1 + I");
+    assert_eq!(interpret("Floor[E I]").unwrap(), "2*I");
+    // Fully symbolic (unknown sign) stays unevaluated, like wolframscript.
+    assert_eq!(interpret("Floor[x + y I]").unwrap(), "Floor[x + I*y]");
   }
 
   #[test]

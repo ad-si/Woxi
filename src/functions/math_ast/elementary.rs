@@ -1453,6 +1453,8 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )
     }
+  } else if let Some(r) = try_symbolic_complex_rounding(&args[0], floor_ast) {
+    Ok(r)
   } else {
     Ok(Expr::FunctionCall {
       name: "Floor".to_string(),
@@ -1516,6 +1518,8 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )
     }
+  } else if let Some(r) = try_symbolic_complex_rounding(&args[0], ceiling_ast) {
+    Ok(r)
   } else {
     Ok(Expr::FunctionCall {
       name: "Ceiling".to_string(),
@@ -1740,6 +1744,8 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(n) = try_eval_to_f64(&args[0]) {
     let rounded = bankers_round(n);
     Ok(Expr::Integer(rounded as i128))
+  } else if let Some(r) = try_symbolic_complex_rounding(&args[0], round_ast) {
+    Ok(r)
   } else {
     Ok(Expr::FunctionCall {
       name: "Round".to_string(),
@@ -2403,10 +2409,7 @@ fn contains_inexact_literal(e: &Expr) -> bool {
 
 /// Build `re + im*I`, dropping a zero imaginary part. Used by the complex
 /// branches of IntegerPart/FractionalPart.
-fn build_complex_result(
-  re: Expr,
-  im: Expr,
-) -> Result<Expr, InterpreterError> {
+fn build_complex_result(re: Expr, im: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast(
     "Plus",
     &[
@@ -2417,6 +2420,34 @@ fn build_complex_result(
       },
     ],
   )
+}
+
+/// Apply an integer-valued rounding function (Floor/Ceiling/Round/IntegerPart)
+/// componentwise to a complex `a + b*I` whose parts are symbolic-real, e.g.
+/// `Pi + E I` or `Sqrt[2] + Sqrt[3] I`. The scalar path already resolves such
+/// real components (`Floor[Pi] == 3`), so we split, round each part and
+/// recombine. Returns `None` when `arg` is not of real+imag*I form, has an
+/// identically-zero imaginary part, or either rounded component fails to
+/// resolve to an integer (so the caller leaves the call unevaluated, like
+/// wolframscript does for `Floor[x + y I]`).
+fn try_symbolic_complex_rounding(
+  arg: &Expr,
+  scalar: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Option<Expr> {
+  let (re, im) =
+    crate::evaluator::dispatch::complex_and_special::split_real_imag_symbolic(
+      arg,
+    )?;
+  if matches!(im, Expr::Integer(0)) || matches!(im, Expr::Real(z) if z == 0.0) {
+    return None;
+  }
+  let fr = scalar(std::slice::from_ref(&re)).ok()?;
+  let fi = scalar(std::slice::from_ref(&im)).ok()?;
+  let is_int = |e: &Expr| matches!(e, Expr::Integer(_) | Expr::BigInteger(_));
+  if !is_int(&fr) || !is_int(&fi) {
+    return None;
+  }
+  build_complex_result(fr, fi).ok()
 }
 
 /// IntegerPart[x] - Integer part (truncation towards zero)
@@ -2461,6 +2492,10 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       if let Some(f) = try_eval_to_f64(&args[0]) {
         Ok(Expr::Integer(f.trunc() as i128))
+      } else if let Some(r) =
+        try_symbolic_complex_rounding(&args[0], integer_part_ast)
+      {
+        Ok(r)
       } else {
         Ok(Expr::FunctionCall {
           name: "IntegerPart".to_string(),
