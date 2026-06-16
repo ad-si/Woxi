@@ -3047,6 +3047,35 @@ mod batch_unevaluated_wrappers_2 {
   fn word_counts_ngram_too_long() {
     assert_eq!(interpret("WordCounts[\"hi\", 5]").unwrap(), "<||>");
   }
+  // WordFrequency[text, word] gives the fraction of words equal to `word`.
+  #[test]
+  fn word_frequency_basic() {
+    assert_eq!(interpret("WordFrequency[\"a b a c\", \"a\"]").unwrap(), "0.5");
+  }
+  #[test]
+  fn word_frequency_word_list() {
+    assert_eq!(
+      interpret("WordFrequency[\"a b a c\", {\"a\", \"c\"}]").unwrap(),
+      "<|a -> 0.5, c -> 0.25|>"
+    );
+  }
+  #[test]
+  fn word_frequency_case_sensitive() {
+    assert_eq!(interpret("WordFrequency[\"The cat\", \"the\"]").unwrap(), "0.");
+  }
+  #[test]
+  fn word_frequency_ignore_case() {
+    let v: f64 =
+      interpret("WordFrequency[\"The cat the\", \"the\", IgnoreCase -> True]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((v - 2.0 / 3.0).abs() < 1e-12, "got {}", v);
+  }
+  #[test]
+  fn word_frequency_absent_word() {
+    assert_eq!(interpret("WordFrequency[\"a b c\", \"z\"]").unwrap(), "0.");
+  }
   #[test]
   fn text_sentences_basic() {
     assert_eq!(

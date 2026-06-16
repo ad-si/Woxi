@@ -323,6 +323,9 @@ pub fn dispatch_string_functions(
     "WordCounts" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::word_counts_ast(args));
     }
+    "WordFrequency" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::string_ast::word_frequency_ast(args));
+    }
     "NumericalSort" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {
         let mut items: Vec<Expr> = elems.to_vec();

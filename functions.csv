@@ -4173,7 +4173,7 @@ UnconstrainedParameters,,,,12.0,4291
 VectorGreaterEqual,,,,12.0,4291
 VolcanoData,,🚫,,10.0,4291
 WaveletScale,,🚫,,8.0,4291
-WordFrequency,,🚫,,10.4,4291
+WordFrequency,Fraction of words in a string equal to a given word (or association for a list of words); IgnoreCase option,✅,pure,10.4,4291
 AnnotationRules,,,,12.0,4315
 AskConfirm,,🚫,,10.4,4315
 CanonicalWarpingCorrespondence,,,,11.0,4315

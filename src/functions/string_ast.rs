@@ -6733,6 +6733,56 @@ pub fn text_word_tokens(s: &str) -> Vec<String> {
 /// WordCounts[s] - counts of words; WordCounts[s, n] - counts of word n-grams
 /// (keyed by lists of n words). Sorted by count descending, then by last
 /// occurrence descending, matching wolframscript.
+/// WordFrequency[text, word] - the fraction of words in `text` equal to
+/// `word` (a Real). `word` may be a list, giving an association of fractions.
+/// Case-sensitive by default; `IgnoreCase -> True` folds case.
+pub fn word_frequency_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "WordFrequency".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let s = expr_to_str(&args[0])?;
+  let ignore_case = extract_ignore_case(&args[2..]);
+  let words = text_word_tokens(&s);
+  let total = words.len();
+
+  let frequency = |target: &str| -> f64 {
+    if total == 0 {
+      return 0.0;
+    }
+    let count = words
+      .iter()
+      .filter(|w| {
+        if ignore_case {
+          w.to_lowercase() == target.to_lowercase()
+        } else {
+          w.as_str() == target
+        }
+      })
+      .count();
+    count as f64 / total as f64
+  };
+
+  match &args[1] {
+    Expr::String(word) => Ok(Expr::Real(frequency(word))),
+    Expr::List(items) => {
+      let mut pairs = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        match item {
+          Expr::String(w) => {
+            pairs.push((Expr::String(w.clone()), Expr::Real(frequency(w))));
+          }
+          _ => return unevaluated(),
+        }
+      }
+      Ok(Expr::Association(pairs))
+    }
+    _ => unevaluated(),
+  }
+}
+
 pub fn word_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = expr_to_str(&args[0])?;
   let n = if args.len() == 2 {
