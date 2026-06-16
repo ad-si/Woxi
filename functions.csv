@@ -323,7 +323,7 @@ Hold,Holds its arguments unevaluated,✅,pure,1.0,326
 ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,327
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure,1.0,328
 BesselJ,Bessel function of the first kind,✅,pure,1.0,329
-MapIndexed,Applies a function to each element along with its index,✅,pure,2.0,330
+MapIndexed,Applies a function to each element along with its index; on an association the index is {Key[key]},✅,pure,2.0,330
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7.0,331
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6.0,332
 SetAttributes,Sets attributes for a symbol,✅,stateful,1.0,333

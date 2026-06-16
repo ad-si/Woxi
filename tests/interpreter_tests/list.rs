@@ -638,6 +638,23 @@ mod map_indexed {
   }
 
   #[test]
+  fn association() {
+    // On an association, f is applied to each value with index {Key[key]}.
+    assert_eq!(
+      interpret("MapIndexed[f, <|\"x\" -> 10, \"y\" -> 20|>]").unwrap(),
+      "<|x -> f[10, {Key[x]}], y -> f[20, {Key[y]}]|>"
+    );
+  }
+
+  #[test]
+  fn association_mixed_keys() {
+    assert_eq!(
+      interpret("MapIndexed[f, <|\"a\" -> 1, a -> 2, 1 -> 1|>]").unwrap(),
+      "<|a -> f[1, {Key[a]}], a -> f[2, {Key[a]}], 1 -> f[1, {Key[1]}]|>"
+    );
+  }
+
+  #[test]
   fn level_spec_2() {
     assert_eq!(
       interpret("MapIndexed[f, {{a, b}, {c, d}}, {2}]").unwrap(),

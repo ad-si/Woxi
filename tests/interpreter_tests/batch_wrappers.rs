@@ -3676,7 +3676,10 @@ mod batch_unevaluated_wrappers_2 {
       interpret("SequenceCount[{1, a, 2, b, 3}, {_Symbol}]").unwrap(),
       "2"
     );
-    assert_eq!(interpret("SequenceCount[{a, b, c}, {_Symbol}]").unwrap(), "3");
+    assert_eq!(
+      interpret("SequenceCount[{a, b, c}, {_Symbol}]").unwrap(),
+      "3"
+    );
   }
   #[test]
   fn sequence_count_multi_blank_window() {

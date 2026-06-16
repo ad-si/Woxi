@@ -644,6 +644,24 @@ pub fn map_indexed_ast(
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
+    // On an association, f is applied to each value with the index {Key[key]},
+    // keeping the keys: <|k -> f[v, {Key[k]}], ...|>.
+    Expr::Association(pairs) => {
+      let new_pairs: Result<Vec<(Expr, Expr)>, _> = pairs
+        .iter()
+        .map(|(k, v)| {
+          let index = Expr::List(
+            vec![Expr::FunctionCall {
+              name: "Key".to_string(),
+              args: vec![k.clone()].into(),
+            }]
+            .into(),
+          );
+          apply_func_to_two_args(func, v, &index).map(|r| (k.clone(), r))
+        })
+        .collect();
+      return Ok(Expr::Association(new_pairs?));
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MapIndexed".to_string(),
