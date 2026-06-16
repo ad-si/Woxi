@@ -1416,7 +1416,7 @@ InfinitePlane,Infinite plane geometric region,🚫,pure,10.0,1434
 ProgressIndicator,Dynamic progress indicator,🚫,io,6.0,1435
 Square,Square geometric primitive,🚫,pure,3.0,1437
 StruveL,Modified Struve function L_n(z),✅,pure,4.0,1437
-DecimalForm,Display a number in decimal notation without scientific notation,✅,pure,11.2,1438
+DecimalForm,Display a number in decimal notation without scientific notation; ToString renders it (optional second arg gives significant figures),✅,pure,11.2,1438
 GeneratingFunction,Compute generating function of a sequence,✅,pure,7.0,1440
 Proportional,Symbolic proportional relation,✅,pure,3.0,1440
 ConnectedComponents,Find connected components of a graph,✅,pure,8.0,1441

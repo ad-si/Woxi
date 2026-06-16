@@ -2613,6 +2613,33 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
   Some(if neg { format!("-{s}") } else { s })
 }
 
+/// Default (one-argument) `DecimalForm` rendering of a real: always decimal
+/// notation, keeping the full integer part and rounding the fraction to machine
+/// precision (~6 significant figures). `1234567.89 -> 1234568.`, `0.0001 ->
+/// 0.0001`.
+fn decimal_form_default(f: f64) -> String {
+  if f == 0.0 {
+    return "0.".to_string();
+  }
+  let neg = f < 0.0;
+  let ax = f.abs();
+  let m = ax.log10().floor() as i64;
+  // Decimal places implied by 6 significant figures; never negative, so the
+  // integer part is always shown in full.
+  let decimals = (6 - 1 - m).max(0) as usize;
+  let factor = 10f64.powi(decimals as i32);
+  let rounded = (ax * factor).round() / factor;
+  let mut s = format!("{:.*}", decimals, rounded);
+  if s.contains('.') {
+    while s.ends_with('0') {
+      s.pop();
+    }
+  } else {
+    s.push('.');
+  }
+  if neg { format!("-{s}") } else { s }
+}
+
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2671,6 +2698,31 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           mag_str
         }));
       }
+    }
+  }
+
+  // DecimalForm[x] / DecimalForm[x, n] — decimal (non-scientific) rendering.
+  // The one-argument form keeps the integer part exact and rounds the fraction
+  // to machine precision; the two-argument form rounds to n significant
+  // figures. Both always use decimal notation and keep the minus sign.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "DecimalForm"
+    && (inner_args.len() == 1 || inner_args.len() == 2)
+  {
+    let rendered = match inner_args.get(1) {
+      None => match &inner_args[0] {
+        Expr::Integer(i) => Some(i.to_string()),
+        Expr::Real(f) => Some(decimal_form_default(*f)),
+        _ => None,
+      },
+      Some(Expr::Integer(n)) => number_form_to_string(&inner_args[0], *n as i64),
+      _ => None,
+    };
+    if let Some(rendered) = rendered {
+      return Ok(Expr::String(rendered));
     }
   }
 

@@ -583,6 +583,48 @@ mod decimal_form {
   fn head() {
     assert_eq!(interpret("Head[DecimalForm[3.14]]").unwrap(), "DecimalForm");
   }
+
+  // ToString renders DecimalForm in decimal (non-scientific) notation.
+  #[test]
+  fn to_string_basic() {
+    assert_eq!(
+      interpret("ToString[DecimalForm[3.14159]]").unwrap(),
+      "3.14159"
+    );
+    assert_eq!(interpret("ToString[DecimalForm[-5.5]]").unwrap(), "-5.5");
+    assert_eq!(interpret("ToString[DecimalForm[42]]").unwrap(), "42");
+  }
+  #[test]
+  fn to_string_forces_decimal_for_large() {
+    // The integer part is kept exact (not switched to scientific notation).
+    assert_eq!(
+      interpret("ToString[DecimalForm[1234567.89]]").unwrap(),
+      "1234568."
+    );
+    assert_eq!(
+      interpret("ToString[DecimalForm[123456789012.0]]").unwrap(),
+      "123456789012."
+    );
+  }
+  #[test]
+  fn to_string_small() {
+    assert_eq!(
+      interpret("ToString[DecimalForm[0.00012345678]]").unwrap(),
+      "0.000123457"
+    );
+  }
+  #[test]
+  fn to_string_with_precision() {
+    // Two-argument form rounds to n significant figures.
+    assert_eq!(
+      interpret("ToString[DecimalForm[1234.5678, 6]]").unwrap(),
+      "1234.57"
+    );
+    assert_eq!(
+      interpret("ToString[DecimalForm[1234567.89, 3]]").unwrap(),
+      "1230000."
+    );
+  }
 }
 
 mod thumbnail {
