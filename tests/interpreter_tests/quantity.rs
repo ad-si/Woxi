@@ -568,6 +568,35 @@ fn unit_convert_one_arg_to_si_base() {
   );
 }
 
+// Derived SI units display their compound base with Wolfram-matching
+// parenthesization: product numerators and product denominators are grouped,
+// so a/(b*c) and (a*b)/c render unambiguously.
+#[test]
+fn unit_convert_derived_unit_display() {
+  // Single numerator, product denominator → a/(b*c).
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Bars\"]]").unwrap(),
+    "Quantity[100000, Kilograms/(Meters*Seconds^2)]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Pascals\"]]").unwrap(),
+    "Quantity[1, Kilograms/(Meters*Seconds^2)]"
+  );
+  // Product numerator, single denominator → (a*b)/c.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Newtons\"]]").unwrap(),
+    "Quantity[1, (Kilograms*Meters)/Seconds^2]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Joules\"]]").unwrap(),
+    "Quantity[1, (Kilograms*Meters^2)/Seconds^2]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Watts\"]]").unwrap(),
+    "Quantity[1, (Kilograms*Meters^2)/Seconds^3]"
+  );
+}
+
 // Volume units (Length^3) interconvert with Meters^3 and with each other.
 #[test]
 fn unit_convert_volume_units() {

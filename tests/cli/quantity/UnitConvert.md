@@ -13,3 +13,15 @@ With one argument, converts to SI base units.
 $ wo 'UnitConvert[Quantity[1, "Liters"]]'
 Quantity[1/1000, Meters^3]
 ```
+
+Compound base units are grouped to render unambiguously.
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "Bars"]]'
+Quantity[100000, Kilograms/(Meters*Seconds^2)]
+```
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "Newtons"]]'
+Quantity[1, (Kilograms*Meters)/Seconds^2]
+```

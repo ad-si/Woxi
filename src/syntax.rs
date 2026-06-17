@@ -5998,9 +5998,25 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
       // Check for fraction form: Times[..., Power[den, -1]]
       let mut numer_parts: Vec<String> = Vec::new();
       let mut denom_parts: Vec<String> = Vec::new();
+      // A product base in the denominator (e.g. (m·s²) from
+      // Power[Times[m, s^2], -1]) must be parenthesized, otherwise
+      // a/(b*c) would mis-render as the differently-grouped a/b*c.
+      let is_product = |e: &Expr| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
+          || matches!(
+            e,
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              ..
+            }
+          )
+      };
       for a in args {
         if let Some((base, neg_exp)) = extract_neg_power_info(a) {
-          let base_str = quantity_unit_to_string(base);
+          let mut base_str = quantity_unit_to_string(base);
+          if is_product(base) {
+            base_str = format!("({})", base_str);
+          }
           if neg_exp == -1 {
             denom_parts.push(base_str);
           } else {
@@ -6013,12 +6029,21 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
       if denom_parts.is_empty() {
         numer_parts.join("*")
       } else {
+        // A product numerator is parenthesized when a denominator follows:
+        // (a*b)/c, matching Wolfram's display.
         let numer = if numer_parts.is_empty() {
           "1".to_string()
+        } else if numer_parts.len() > 1 {
+          format!("({})", numer_parts.join("*"))
         } else {
           numer_parts.join("*")
         };
-        let denom = denom_parts.join("*");
+        // Multiple denominator factors also need grouping: a/(b*c), not a/b*c.
+        let denom = if denom_parts.len() > 1 {
+          format!("({})", denom_parts.join("*"))
+        } else {
+          denom_parts.join("*")
+        };
         format!("{}/{}", numer, denom)
       }
     }
