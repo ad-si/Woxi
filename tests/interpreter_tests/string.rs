@@ -2273,6 +2273,23 @@ mod character_counts {
   fn ngram_too_long_is_empty() {
     assert_eq!(interpret(r#"CharacterCounts["ab", 3]"#).unwrap(), "<||>");
   }
+  // A list of strings threads: one association per string (not the list's
+  // own punctuation characters).
+  #[test]
+  fn list_of_strings_threads() {
+    assert_eq!(
+      interpret(r#"CharacterCounts[{"hello", "world"}]"#).unwrap(),
+      "{<|l -> 2, o -> 1, e -> 1, h -> 1|>, \
+       <|d -> 1, l -> 1, r -> 1, o -> 1, w -> 1|>}"
+    );
+  }
+  #[test]
+  fn list_of_strings_ngram_threads() {
+    assert_eq!(
+      interpret(r#"CharacterCounts[{"ab", "cd"}, 2]"#).unwrap(),
+      "{<|ab -> 1|>, <|cd -> 1|>}"
+    );
+  }
 }
 
 mod letter_counts_ngram {

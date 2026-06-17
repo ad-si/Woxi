@@ -7491,6 +7491,14 @@ fn char_ngrams(chars: &[char], n: usize) -> Vec<String> {
 pub fn character_counts_ngram_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // Thread over a list of strings: each string gets its own n-gram counts.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| character_counts_ngram_ast(&[s.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   let s = expr_to_str(&args[0])?;
   let n = expr_to_int(&args[1])?;
   if n == 1 {
@@ -7586,6 +7594,14 @@ pub fn character_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "CharacterCounts expects exactly 1 argument".into(),
     ));
+  }
+  // Thread over a list of strings: one association per string.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| character_counts_ast(std::slice::from_ref(s)))
+      .collect();
+    return Ok(Expr::List(results?.into()));
   }
   let s = expr_to_str(&args[0])?;
 
