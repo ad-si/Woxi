@@ -3714,6 +3714,61 @@ mod multivariate_poisson_distribution {
   }
 }
 
+mod binormal_distribution {
+  use super::*;
+
+  // BinormalDistribution[{m1, m2}, {s1, s2}, rho]: the mean is the location
+  // vector, variances are the squared sigmas, and Covariance is the 2x2 matrix.
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[BinormalDistribution[{m1, m2}, {s1, s2}, r]]").unwrap(),
+      "{m1, m2}"
+    );
+  }
+
+  #[test]
+  fn mean_numeric_and_standard() {
+    assert_eq!(
+      interpret("Mean[BinormalDistribution[{1, 2}, {1, 1}, 0]]").unwrap(),
+      "{1, 2}"
+    );
+    // One-argument standard form has zero means.
+    assert_eq!(interpret("Mean[BinormalDistribution[r]]").unwrap(), "{0, 0}");
+  }
+
+  #[test]
+  fn variance_and_standard_deviation() {
+    assert_eq!(
+      interpret("Variance[BinormalDistribution[{m1, m2}, {s1, s2}, r]]")
+        .unwrap(),
+      "{s1^2, s2^2}"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[BinormalDistribution[{m1, m2}, {s1, s2}, r]]")
+        .unwrap(),
+      "{s1, s2}"
+    );
+    assert_eq!(
+      interpret("Variance[BinormalDistribution[r]]").unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
+  fn covariance_matrix() {
+    assert_eq!(
+      interpret("Covariance[BinormalDistribution[{m1, m2}, {s1, s2}, r]]")
+        .unwrap(),
+      "{{s1^2, r*s1*s2}, {r*s1*s2, s2^2}}"
+    );
+    assert_eq!(
+      interpret("Covariance[BinormalDistribution[r]]").unwrap(),
+      "{{1, r}, {r, 1}}"
+    );
+  }
+}
+
 mod arcsin_distribution {
   use super::*;
 

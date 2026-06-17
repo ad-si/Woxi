@@ -637,6 +637,19 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "BinormalDistribution" => {
+      // Mean[BinormalDistribution[{m1, m2}, …]] = {m1, m2}.
+      match super::distributions::binormal_params(dargs) {
+        Some((m1, m2, ..)) => Ok(Expr::List(vec![m1, m2].into())),
+        None => Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "QuantityDistribution" && dargs.len() == 2 => {
       // Mean[QuantityDistribution[dist, unit]] = Quantity[Mean[dist], unit]
       let inner_mean = mean_ast(&[dargs[0].clone()])?;
@@ -877,6 +890,28 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "BinormalDistribution" => {
+      // Variance[BinormalDistribution[…, {s1, s2}, …]] = {s1^2, s2^2}.
+      match super::distributions::binormal_params(dargs) {
+        Some((_, _, s1, s2, _)) => {
+          let sq = |s: Expr| Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(s),
+            right: Box::new(Expr::Integer(2)),
+          };
+          crate::evaluator::evaluate_expr_to_expr(&Expr::List(
+            vec![sq(s1), sq(s2)].into(),
+          ))
+        }
+        None => Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: args.to_vec().into(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "QuantityDistribution" && dargs.len() == 2 => {
       // Variance[QuantityDistribution[dist, unit]] = Quantity[Variance[dist], unit^2]
       let inner_var = variance_ast(&[dargs[0].clone()])?;
@@ -1030,6 +1065,16 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "StandardDeviation".to_string(),
       args: args.to_vec().into(),
     });
+  }
+  // StandardDeviation[BinormalDistribution[…, {s1, s2}, …]] = {s1, s2}. Return
+  // the sigmas directly rather than Sqrt[s1^2], which Woxi cannot reduce for a
+  // symbolic sigma of unknown sign.
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "BinormalDistribution"
+    && let Some((_, _, s1, s2, _)) =
+      super::distributions::binormal_params(dargs)
+  {
+    return Ok(Expr::List(vec![s1, s2].into()));
   }
   // For list-of-lists, the variance returns a list of column variances
   let var = variance_ast(args)?;
@@ -1698,6 +1743,39 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     })
   };
+
+  // Covariance[BinormalDistribution[…, {s1, s2}, rho]] is the 2×2 covariance
+  // matrix {{s1^2, rho s1 s2}, {rho s1 s2, s2^2}}.
+  if args.len() == 1
+    && let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "BinormalDistribution"
+    && let Some((_, _, s1, s2, rho)) =
+      super::distributions::binormal_params(dargs)
+  {
+    use crate::syntax::BinaryOperator::{Power, Times};
+    let sq = |s: Expr| Expr::BinaryOp {
+      op: Power,
+      left: Box::new(s),
+      right: Box::new(Expr::Integer(2)),
+    };
+    let off = Expr::BinaryOp {
+      op: Times,
+      left: Box::new(rho),
+      right: Box::new(Expr::BinaryOp {
+        op: Times,
+        left: Box::new(s1.clone()),
+        right: Box::new(s2.clone()),
+      }),
+    };
+    let matrix = Expr::List(
+      vec![
+        Expr::List(vec![sq(s1.clone()), off.clone()].into()),
+        Expr::List(vec![off, sq(s2)].into()),
+      ]
+      .into(),
+    );
+    return crate::evaluator::evaluate_expr_to_expr(&matrix);
+  }
 
   // Single-argument matrix form: covariance matrix of the columns.
   if args.len() == 1 {
