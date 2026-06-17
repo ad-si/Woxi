@@ -25,3 +25,15 @@ Quantity[100000, Kilograms/(Meters*Seconds^2)]
 $ wo 'UnitConvert[Quantity[1, "Newtons"]]'
 Quantity[1, (Kilograms*Meters)/Seconds^2]
 ```
+
+Area units convert to the SI base `Meters^2`.
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "Acres"]]'
+Quantity[316160658/78125, Meters^2]
+```
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "Hectares"], "SquareMeters"]'
+Quantity[10000, Meters^2]
+```

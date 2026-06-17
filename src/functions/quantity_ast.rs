@@ -185,6 +185,23 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_denom: 125000000000,
     },
 
+    // ── Area = Length^2, SI base Meters^2 ─────────────────────────────
+    // Factors are relative to Meters^2. Hectares and Acres are genuine named
+    // units kept as-is; "SquareMeters"/"SquareKilometers" are aliases that
+    // canonicalize to "Meters"^2 / "Kilometers"^2 (see
+    // format_expand_compound_unit). Imperial "Square…" names like
+    // "SquareFeet" are not standalone WL units — they stay unevaluated.
+    "Hectares" => UnitInfo {
+      dimensions: dims(&[(Length, 2)]),
+      to_si_numer: 10000,
+      to_si_denom: 1,
+    },
+    "Acres" => UnitInfo {
+      dimensions: dims(&[(Length, 2)]),
+      to_si_numer: 316160658,
+      to_si_denom: 78125,
+    },
+
     // ── Electric Current → Amperes ───────────────────────────────────
     "Amperes" => UnitInfo {
       dimensions: dims(&[(ElectricCurrent, 1)]),
@@ -836,6 +853,11 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           dimensions: info.dimensions,
         });
       }
+      // Named compound aliases (e.g. "SquareMeters" → Meters^2,
+      // "KilowattHours" → Hours*Kilowatts) expand to their product form.
+      if let Some(expanded) = format_expand_compound_unit(name) {
+        return decompose_unit_expr(&expanded);
+      }
       // Try compound constants (e.g. SpeedOfLight)
       if let Some((mag_n, mag_d, components)) = resolve_compound_constant(name)
       {
@@ -988,6 +1010,36 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         }
       }
       result
+    }
+    // Power in function-call form, e.g. Power["Meters", 2] — produced by
+    // si_base_unit_expr and by the "SquareMeters" area-unit alias. Mirrors the
+    // BinaryOp Power case above so both spellings decompose identically.
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let base_info = decompose_unit_expr(&args[0])?;
+      let exp_val = match &args[1] {
+        Expr::Integer(n) => *n as i64,
+        _ => return None,
+      };
+      let components: Vec<(String, i64)> = base_info
+        .components
+        .iter()
+        .map(|(n, e)| (n.clone(), e * exp_val))
+        .collect();
+      let (pn, pd) =
+        rational_pow(base_info.si_numer, base_info.si_denom, exp_val);
+      let g = gcd(pn, pd);
+      let dims: BTreeMap<Dimension, i64> = base_info
+        .dimensions
+        .iter()
+        .map(|(d, e)| (*d, e * exp_val))
+        .filter(|(_, e)| *e != 0)
+        .collect();
+      Some(CompoundUnitInfo {
+        components,
+        si_numer: pn / g,
+        si_denom: pd / g,
+        dimensions: dims,
+      })
     }
     _ => None,
   }
@@ -1272,7 +1324,20 @@ pub fn format_expand_compound_unit(name: &str) -> Option<Expr> {
       left: Box::new(Expr::String("Hours".to_string())),
       right: Box::new(Expr::String("Watts".to_string())),
     }),
+    // Area aliases canonicalize to a squared length, matching Wolfram:
+    // Quantity[1, "SquareMeters"] → Quantity[1, Meters^2].
+    "SquareMeters" => Some(squared_length_unit("Meters")),
+    "SquareKilometers" => Some(squared_length_unit("Kilometers")),
     _ => None,
+  }
+}
+
+/// Build the unit expression `"<length>"^2` (e.g. Meters^2) used to canonicalize
+/// "Square…" area aliases.
+fn squared_length_unit(length: &str) -> Expr {
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![Expr::String(length.to_string()), Expr::Integer(2)].into(),
   }
 }
 

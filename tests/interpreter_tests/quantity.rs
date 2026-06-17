@@ -615,6 +615,65 @@ fn unit_convert_volume_units() {
   );
 }
 
+// Area units (Length^2). Hectares and Acres are genuine named units kept
+// as-is; "SquareMeters"/"SquareKilometers" are aliases that canonicalize to
+// a squared length (Meters^2 / Kilometers^2), matching Wolfram.
+#[test]
+fn unit_convert_area_units() {
+  // Named area units convert to the SI base Meters^2.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Acres\"]]").unwrap(),
+    "Quantity[316160658/78125, Meters^2]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Hectares\"]]").unwrap(),
+    "Quantity[10000, Meters^2]"
+  );
+  // "Square…" aliases canonicalize on construction.
+  assert_eq!(
+    interpret("Quantity[1, \"SquareMeters\"]").unwrap(),
+    "Quantity[1, Meters^2]"
+  );
+  assert_eq!(
+    interpret("Quantity[3, \"SquareKilometers\"]").unwrap(),
+    "Quantity[3, Kilometers^2]"
+  );
+  assert_eq!(
+    interpret("QuantityUnit[Quantity[1, \"SquareMeters\"]]").unwrap(),
+    "Meters^2"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"SquareKilometers\"]]").unwrap(),
+    "Quantity[1000000, Meters^2]"
+  );
+  // Interconvert between area units.
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Hectares\"], \"SquareMeters\"]")
+      .unwrap(),
+    "Quantity[10000, Meters^2]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[5, \"SquareMeters\"], \"SquareKilometers\"]")
+      .unwrap(),
+    "Quantity[1/200000, Kilometers^2]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[2.5, \"Acres\"], \"Hectares\"]").unwrap(),
+    "Quantity[1.0117141055999999, Hectares]"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[Quantity[1, \"Acres\"]]").unwrap(),
+    "{{LengthUnit, 2}}"
+  );
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Acres\"], Quantity[1, \"Hectares\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
 #[test]
 fn unit_convert_cm_to_m() {
   assert_eq!(
