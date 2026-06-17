@@ -1675,6 +1675,49 @@ mod sort_by {
   }
 }
 
+mod catenate_messages {
+  use super::*;
+
+  #[test]
+  fn non_list_argument_stays_unevaluated() {
+    // A non-list argument must not error; it stays unevaluated with no message.
+    clear_state();
+    assert_eq!(interpret("Catenate[5]").unwrap(), "Catenate[5]");
+    assert_eq!(interpret("Catenate[x]").unwrap(), "Catenate[x]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Catenate")),
+      "unexpected message: {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn invalid_element_emits_invrp() {
+    clear_state();
+    assert_eq!(interpret("Catenate[{1, 2}]").unwrap(), "Catenate[{1, 2}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Catenate::invrp: The argument 1 is not a valid Association or a list."
+      )),
+      "expected invrp for first invalid element, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn invrp_reports_first_invalid_element() {
+    clear_state();
+    assert_eq!(interpret("Catenate[{{1}, 2}]").unwrap(), "Catenate[{{1}, 2}]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Catenate::invrp: The argument 2 is not a valid Association or a list."
+      )),
+      "expected invrp naming the second element, got {msgs:?}"
+    );
+  }
+}
+
 mod sort_atomic_normal {
   use super::*;
 
@@ -9754,6 +9797,10 @@ mod cases {
   #[test]
   fn catenate() {
     assert_case(r#"Catenate[{{1, 2, 3}, {4, 5}}]"#, r#"{1, 2, 3, 4, 5}"#);
+  }
+  #[test]
+  fn catenate_associations() {
+    assert_case(r#"Catenate[{<|a -> 1|>, <|b -> 2|>}]"#, r#"{1, 2}"#);
   }
   #[test]
   fn complement_1() {

@@ -2096,13 +2096,14 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
 
 /// Catenate[{list1, list2, ...}] - concatenates lists or associations
 pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Expr::FunctionCall {
+    name: "Catenate".to_string(),
+    args: vec![list_of_lists.clone()].into(),
+  };
   let outer = match list_of_lists {
     Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Catenate expects a list of lists".into(),
-      ));
-    }
+    // A non-list argument stays unevaluated (no message), matching WL.
+    _ => return Ok(unevaluated()),
   };
   let mut result = Vec::new();
   for item in outer {
@@ -2111,10 +2112,14 @@ pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
       Expr::Association(pairs) => {
         result.extend(pairs.iter().map(|(_, v)| v.clone()));
       }
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Catenate expects all elements to be lists or associations".into(),
+      other => {
+        // The first element that isn't a list or association: emit invrp
+        // for it and leave the whole call unevaluated, matching WL.
+        crate::emit_message(&format!(
+          "Catenate::invrp: The argument {} is not a valid Association or a list.",
+          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
         ));
+        return Ok(unevaluated());
       }
     }
   }
