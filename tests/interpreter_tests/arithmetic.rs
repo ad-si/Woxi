@@ -2313,6 +2313,39 @@ mod expand_threading {
   }
 
   #[test]
+  fn warping_distance() {
+    // Dynamic time warping with |a - b| local cost; result is a Real.
+    assert_eq!(
+      interpret("WarpingDistance[{1, 2, 3}, {1, 2, 3}]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("WarpingDistance[{1, 2, 3}, {2, 3, 4}]").unwrap(),
+      "2."
+    );
+    // Warping stretches a value over several positions for free.
+    assert_eq!(
+      interpret("WarpingDistance[{0, 1, 2}, {0, 0, 1, 2}]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("WarpingDistance[{1, 2, 3, 4}, {1, 4}]").unwrap(),
+      "2."
+    );
+  }
+
+  #[test]
+  fn warping_distance_non_numeric_warns() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("WarpingDistance[{1, 2}, {x, 3}]").unwrap();
+    assert_eq!(r.result, "WarpingDistance[{1, 2}, {x, 3}]");
+    assert!(r.warnings[0].contains(
+      "WarpingDistance::invarg: Expecting a real-valued numeric or Boolean \
+       vector or matrix instead of {x, 3}."
+    ));
+  }
+
+  #[test]
   fn string_replace_with_limit() {
     assert_eq!(
       interpret("StringReplace[\"xyxyxyyyxxxyyxy\", \"xy\" -> \"A\", 2]")

@@ -3602,7 +3602,7 @@ NBodySimulation,,,,12.0,3697
 PearsonCorrelationTest,,,,9.0,3697
 StackedDateListPlot,,🚫,,11.2,3697
 TrainingProgressReporting,,🚫,,11.1,3697
-WarpingDistance,,,,11.0,3697
+WarpingDistance,Dynamic time warping distance between two numeric sequences,✅,pure,11.0,3697
 DifferentiatorFilter,,,,9.0,3717
 Encode,,,,2.0,3717
 FunctionAnalytic,,,,12.2,3717

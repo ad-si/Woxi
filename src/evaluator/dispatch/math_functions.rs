@@ -918,6 +918,9 @@ pub fn dispatch_math_functions(
     "EuclideanDistance" if args.len() == 2 => {
       return Some(crate::functions::math_ast::euclidean_distance_ast(args));
     }
+    "WarpingDistance" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::warping_distance_ast(args));
+    }
     "ManhattanDistance" if args.len() == 2 => {
       return Some(crate::functions::math_ast::manhattan_distance_ast(args));
     }

@@ -3350,6 +3350,63 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// EuclideanDistance[u, v] - Euclidean distance between two points
+/// WarpingDistance[s1, s2] - dynamic time warping distance between two numeric
+/// sequences, with the default Manhattan (|a - b|) local cost. The result is
+/// the accumulated cost along the optimal warping path (a Real, matching
+/// wolframscript). Returns None when an argument isn't a numeric sequence.
+fn warping_distance_value(a: &Expr, b: &Expr) -> Option<f64> {
+  let to_vec = |e: &Expr| -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      _ => None,
+    }
+  };
+  let a = to_vec(a)?;
+  let b = to_vec(b)?;
+  let (n, m) = (a.len(), b.len());
+  if n == 0 || m == 0 {
+    return None;
+  }
+  let inf = f64::INFINITY;
+  let mut dp = vec![vec![inf; m + 1]; n + 1];
+  dp[0][0] = 0.0;
+  for i in 1..=n {
+    for j in 1..=m {
+      let cost = (a[i - 1] - b[j - 1]).abs();
+      dp[i][j] = cost + dp[i - 1][j].min(dp[i][j - 1]).min(dp[i - 1][j - 1]);
+    }
+  }
+  Some(dp[n][m])
+}
+
+pub fn warping_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 {
+    if let Some(d) = warping_distance_value(&args[0], &args[1]) {
+      return Ok(Expr::Real(d));
+    }
+    // Identify the offending (non-numeric-vector) argument, matching the
+    // wolframscript WarpingDistance::invarg message.
+    let is_numeric_vec = |e: &Expr| {
+      matches!(e, Expr::List(items) if !items.is_empty()
+        && items.iter().all(|x| crate::functions::math_ast::try_eval_to_f64(x).is_some()))
+    };
+    if let Some(bad) = args.iter().find(|a| !is_numeric_vec(a)) {
+      crate::emit_message(&format!(
+        "WarpingDistance::invarg: Expecting a real-valued numeric or Boolean \
+         vector or matrix instead of {}.",
+        crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output)
+      ));
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "WarpingDistance".to_string(),
+    args: args.to_vec().into(),
+  })
+}
+
 pub fn euclidean_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
