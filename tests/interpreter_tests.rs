@@ -217,6 +217,31 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_accented_named_characters_decode() {
+    // Wolfram named characters for accented Latin letters must decode to
+    // their Unicode chars, so e.g. imported text ("Curaçao") compares
+    // equal to source written with escapes ("Cura\[CCedilla]ao").
+    clear_state();
+    assert_eq!(interpret("\"Cura\\[CCedilla]ao\"").unwrap(), "Curaçao");
+    assert_eq!(
+      interpret("\"Cura\\[CCedilla]ao\" == \"Curaçao\"").unwrap(),
+      "True"
+    );
+    // A lookup keyed by the escaped form must hit when queried with the
+    // decoded (imported) form — the exact pattern the FIFA notebook uses.
+    assert_eq!(
+      interpret("Lookup[<|\"Cura\\[CCedilla]ao\" -> 0.152|>, \"Curaçao\"]")
+        .unwrap(),
+      "0.152"
+    );
+    // Spot-check a few more across the Latin-1 range.
+    assert_eq!(interpret("\"\\[ODoubleDot]\"").unwrap(), "ö");
+    assert_eq!(interpret("\"\\[NTilde]\"").unwrap(), "ñ");
+    assert_eq!(interpret("\"\\[CapitalATilde]\\[Section]\"").unwrap(), "Ã§");
+    assert_eq!(interpret("\"\\[SZ]\"").unwrap(), "ß");
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();
