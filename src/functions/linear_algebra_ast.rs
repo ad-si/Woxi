@@ -546,6 +546,38 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Whether a `Vec<Vec<Expr>>` from `expr_to_matrix` is a nonempty square
+/// matrix (every row has length equal to the number of rows).
+fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
+  !m.is_empty() && m.iter().all(|row| row.len() == m.len())
+}
+
+/// Whether `arg` should trigger a `::matsq` message — a concrete non-matrix
+/// argument (a list, or a numeric value such as 5, Pi, 3/4). Bare symbols and
+/// symbolic expressions (`x`, `a + b`, `f[x]`) stay held with no message.
+fn is_matsq_subject(arg: &Expr) -> bool {
+  matches!(arg, Expr::List(_))
+    || crate::functions::predicate_ast::is_numeric_q_pub(arg)
+}
+
+/// Emit `<F>::matsq: Argument <m> at position 1 is not a nonempty square
+/// matrix.` (for concrete arguments) and return the unevaluated call,
+/// matching wolframscript for matrix functions given a non-square or
+/// non-matrix argument.
+fn matsq_unevaluated(name: &str, args: &[Expr]) -> Expr {
+  if is_matsq_subject(&args[0]) {
+    crate::emit_message(&format!(
+      "{}::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      name,
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+  }
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
 /// Det[matrix] - determinant of a square matrix
 pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -554,20 +586,9 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Det".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("Det", args)),
   };
-  let n = matrix.len();
-  if n == 0 || matrix.iter().any(|row| row.len() != n) {
-    return Err(InterpreterError::EvaluationError(
-      "Det: argument must be a square matrix".into(),
-    ));
-  }
   let det = determinant(&matrix);
   Ok(crate::functions::expand_and_combine(&det))
 }
@@ -674,20 +695,10 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Inverse".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("Inverse", args)),
   };
   let n = matrix.len();
-  if n == 0 || matrix.iter().any(|row| row.len() != n) {
-    return Err(InterpreterError::EvaluationError(
-      "Inverse: argument must be a square matrix".into(),
-    ));
-  }
 
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
@@ -1840,20 +1851,10 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Eigenvalues".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("Eigenvalues", args)),
   };
   let n = matrix.len();
-  if n == 0 || matrix.iter().any(|row| row.len() != n) {
-    return Err(InterpreterError::EvaluationError(
-      "Eigenvalues: argument must be a square matrix".into(),
-    ));
-  }
 
   // 1x1
   if n == 1 {
@@ -2211,20 +2212,10 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Eigenvectors".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    Some(m) if is_nonempty_square(&m) => m,
+    _ => return Ok(matsq_unevaluated("Eigenvectors", args)),
   };
   let n = matrix.len();
-  if n == 0 || matrix.iter().any(|row| row.len() != n) {
-    return Err(InterpreterError::EvaluationError(
-      "Eigenvectors: argument must be a square matrix".into(),
-    ));
-  }
 
   // 1x1
   if n == 1 {

@@ -4285,3 +4285,81 @@ mod hermite_decomposition {
     );
   }
 }
+
+mod matsq_messages {
+  use super::*;
+
+  // Det/Inverse/Eigenvalues/Eigenvectors emit <F>::matsq for a non-square or
+  // non-matrix concrete argument and stay unevaluated, rather than leaking an
+  // internal error. Symbolic arguments (x, a + b) stay held with no message.
+  fn assert_matsq(input: &str, call: &str, head: &str) {
+    clear_state();
+    assert_eq!(interpret(input).unwrap(), call);
+    let msgs = woxi::get_captured_messages_raw();
+    let expected = format!(
+      "{head}::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      &call[head.len() + 1..call.len() - 1]
+    );
+    assert!(
+      msgs.iter().any(|m| m.contains(&expected)),
+      "expected {expected:?} for {input}, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn det_non_square_emits_matsq() {
+    assert_matsq(
+      "Det[{{1, 2, 3}, {4, 5, 6}}]",
+      "Det[{{1, 2, 3}, {4, 5, 6}}]",
+      "Det",
+    );
+  }
+
+  #[test]
+  fn det_empty_vector_scalar_emit_matsq() {
+    assert_matsq("Det[{}]", "Det[{}]", "Det");
+    assert_matsq("Det[{1, 2, 3}]", "Det[{1, 2, 3}]", "Det");
+    assert_matsq("Det[5]", "Det[5]", "Det");
+    assert_matsq("Det[{{1, 2}, {3}}]", "Det[{{1, 2}, {3}}]", "Det");
+  }
+
+  #[test]
+  fn eigenvalues_eigenvectors_inverse_non_square() {
+    assert_matsq(
+      "Eigenvalues[{{1, 2, 3}, {4, 5, 6}}]",
+      "Eigenvalues[{{1, 2, 3}, {4, 5, 6}}]",
+      "Eigenvalues",
+    );
+    assert_matsq(
+      "Eigenvectors[{{1, 2, 3}, {4, 5, 6}}]",
+      "Eigenvectors[{{1, 2, 3}, {4, 5, 6}}]",
+      "Eigenvectors",
+    );
+    assert_matsq("Inverse[{}]", "Inverse[{}]", "Inverse");
+  }
+
+  #[test]
+  fn symbolic_argument_stays_held_without_message() {
+    for input in ["Det[x]", "Det[a + b]", "Eigenvalues[m]", "Inverse[x]"] {
+      clear_state();
+      let _ = interpret(input).unwrap();
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().all(|m| !m.contains("::matsq")),
+        "unexpected matsq for {input}: {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn valid_square_matrices_unaffected() {
+    clear_state();
+    assert_eq!(interpret("Det[{{1, 2}, {3, 4}}]").unwrap(), "-2");
+    assert_eq!(
+      interpret("Eigenvalues[{{2, 0}, {0, 3}}]").unwrap(),
+      "{3, 2}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().all(|m| !m.contains("::matsq")), "{msgs:?}");
+  }
+}
