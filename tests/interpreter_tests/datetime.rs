@@ -1555,4 +1555,46 @@ mod day_round {
       "DateObject[{2024, 6, 17}, Day]"
     );
   }
+
+  // DayRound[date] (no daytype) floors the date to its containing day.
+  #[test]
+  fn single_arg_floors_to_day() {
+    assert_eq!(
+      interpret("DayRound[{2024, 3, 15}]").unwrap(),
+      "DateObject[{2024, 3, 15}, Day]"
+    );
+  }
+
+  #[test]
+  fn single_arg_drops_time_components() {
+    // Any time of day truncates to the containing day (no half-up rounding).
+    assert_eq!(
+      interpret("DayRound[{2024, 3, 15, 8, 30, 0}]").unwrap(),
+      "DateObject[{2024, 3, 15}, Day]"
+    );
+    assert_eq!(
+      interpret("DayRound[{2024, 3, 15, 23, 59, 0}]").unwrap(),
+      "DateObject[{2024, 3, 15}, Day]"
+    );
+  }
+
+  #[test]
+  fn single_arg_completes_partial_dates() {
+    assert_eq!(
+      interpret("DayRound[{2024}]").unwrap(),
+      "DateObject[{2024, 1, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("DayRound[{2024, 2}]").unwrap(),
+      "DateObject[{2024, 2, 1}, Day]"
+    );
+  }
+
+  #[test]
+  fn single_arg_accepts_date_object() {
+    assert_eq!(
+      interpret("DayRound[DateObject[{2024, 3, 15}]]").unwrap(),
+      "DateObject[{2024, 3, 15}, Day]"
+    );
+  }
 }

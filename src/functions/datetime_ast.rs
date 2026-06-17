@@ -1722,6 +1722,31 @@ pub fn day_round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     })
   };
+  // DayRound[date] — floor the date to its containing day, returning a
+  // DateObject with Day granularity (the daytype defaults to every day).
+  if args.len() == 1 {
+    let Some(date_list) = resolve_date_to_list(&args[0]) else {
+      return unevaluated();
+    };
+    let Some(comps) = extract_date_components(&date_list) else {
+      return unevaluated();
+    };
+    if comps.len() < 3 {
+      return unevaluated();
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::Integer(comps[0] as i128),
+          Expr::Integer(comps[1] as i128),
+          Expr::Integer(comps[2] as i128),
+        ]
+        .into(),
+      )]
+      .into(),
+    });
+  }
   if args.len() != 2 {
     return unevaluated();
   }

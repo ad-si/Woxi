@@ -42,7 +42,7 @@ pub fn dispatch_datetime_functions(
     "DayMatchQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_match_q_ast(args));
     }
-    "DayRound" if args.len() == 2 => {
+    "DayRound" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_round_ast(args));
     }
     // DateInterval[{date1, date2}] — create a date interval
