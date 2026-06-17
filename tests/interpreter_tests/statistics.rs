@@ -380,6 +380,81 @@ mod spearman_rho {
   }
 }
 
+mod kendall_tau {
+  use super::*;
+
+  #[test]
+  fn rank_correlation_no_ties() {
+    assert_eq!(
+      interpret("KendallTau[{1, 2, 3, 4, 5}, {2, 1, 4, 3, 5}]").unwrap(),
+      "3/5"
+    );
+    // Identical and reversed orderings give +1 and -1.
+    assert_eq!(
+      interpret("KendallTau[{1, 2, 3, 4, 5}, {1, 2, 3, 4, 5}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("KendallTau[{1, 2, 3, 4, 5}, {5, 4, 3, 2, 1}]").unwrap(),
+      "-1"
+    );
+    // A single discordant pair out of three.
+    assert_eq!(
+      interpret("KendallTau[{1, 2, 3}, {1, 3, 2}]").unwrap(),
+      "1/3"
+    );
+    // Monotone shift is perfectly concordant.
+    assert_eq!(
+      interpret("KendallTau[{2, 4, 6, 8}, {1, 3, 5, 7}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn ties_use_tau_b_correction() {
+    // Tie corrections make the denominator a perfect square here.
+    assert_eq!(
+      interpret("KendallTau[{1, 1, 2, 3}, {1, 2, 2, 3}]").unwrap(),
+      "4/5"
+    );
+    // Ties can make the exact result irrational.
+    assert_eq!(
+      interpret("KendallTau[{1, 1, 1, 2}, {1, 2, 3, 4}]").unwrap(),
+      "1/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn machine_real_inputs_give_real_result() {
+    assert_eq!(
+      interpret("KendallTau[{1.5, 2.3, 3.1, 4.8}, {2.1, 1.9, 5.0, 4.2}]")
+        .unwrap(),
+      "0.3333333333333333"
+    );
+  }
+
+  #[test]
+  fn zero_variance_is_indeterminate() {
+    // Constant data in either vector cannot be ranked.
+    assert_eq!(
+      interpret("KendallTau[{5, 5, 5}, {1, 2, 3}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn mismatched_or_non_numeric_stays_unevaluated() {
+    assert_eq!(
+      interpret("KendallTau[{1, 2, 3}, {1, 2}]").unwrap(),
+      "KendallTau[{1, 2, 3}, {1, 2}]"
+    );
+    assert_eq!(
+      interpret("KendallTau[{a, b, c}, {1, 2, 3}]").unwrap(),
+      "KendallTau[{a, b, c}, {1, 2, 3}]"
+    );
+  }
+}
+
 mod quartile_skewness {
   use super::*;
 

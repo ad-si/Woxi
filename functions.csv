@@ -3678,7 +3678,7 @@ DynamicSetting,,🚫,,6.0,3785
 EmptyGraphQ,Tests whether a graph has no edges,✅,pure,8.0,3785
 FindVertexCover,,,,8.0,3785
 ImageFeatureTrack,,🚫,,9.0,3785
-KendallTau,,,,9.0,3785
+KendallTau,Kendall rank-correlation coefficient of two lists,✅,pure,9.0,3785
 LogMultinormalDistribution,,,,9.0,3785
 MathieuCharacteristicExponent,,,,3.0,3785
 NegativeSemidefiniteMatrixQ,Test whether a matrix is negative semidefinite,✅,none,10.0,3785

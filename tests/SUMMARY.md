@@ -673,6 +673,7 @@
       - [`IntervalUnion`](math/utility/IntervalUnion.md)
       - [`InverseGudermannian`](math/utility/InverseGudermannian.md)
       - [`JaccardDissimilarity`](math/utility/JaccardDissimilarity.md)
+      - [`KendallTau`](math/utility/KendallTau.md)
       - [`KroneckerDelta`](math/utility/KroneckerDelta.md)
       - [`Kurtosis`](math/utility/Kurtosis.md)
       - [`LCM`](math/utility/LCM.md)

@@ -888,6 +888,9 @@ pub fn dispatch_math_functions(
     "SpearmanRho" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spearman_rho_ast(args));
     }
+    "KendallTau" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::kendall_tau_ast(args));
+    }
     "CentralMoment" if args.len() == 2 => {
       return Some(crate::functions::math_ast::central_moment_ast(args));
     }

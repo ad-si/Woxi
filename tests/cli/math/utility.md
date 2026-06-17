@@ -74,6 +74,7 @@ and the membership predicate `MemberQ`.
 - [`Interval`](utility/Interval.md)
 - [`IntervalUnion`](utility/IntervalUnion.md)
 - [`InverseGudermannian`](utility/InverseGudermannian.md)
+- [`KendallTau`](utility/KendallTau.md)
 - [`Kurtosis`](utility/Kurtosis.md)
 - [`LCM`](utility/LCM.md)
 - [`LambertW`](utility/LambertW.md)

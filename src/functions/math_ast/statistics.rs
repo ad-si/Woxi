@@ -1747,6 +1747,119 @@ pub fn spearman_rho_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )
 }
 
+/// KendallTau[v1, v2] — Kendall's rank-correlation coefficient τ_b for two
+/// equal-length numeric vectors. Defined as
+///   τ_b = (C - D) / Sqrt[(n0 - n1)(n0 - n2)]
+/// where C and D are the counts of concordant and discordant pairs, n0 =
+/// n(n-1)/2 is the total number of pairs, and n1, n2 are the tie corrections
+/// Σ t(t-1)/2 over the groups of equal values in v1 and v2 respectively.
+/// Exact (integer/rational) inputs yield an exact result; machine-real inputs
+/// yield a machine-real result. Constant data (zero variance in either vector)
+/// emits `KendallTau::zrvr` and returns Indeterminate.
+pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "KendallTau".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let rctneqln = || {
+    crate::emit_message(
+      "KendallTau::rctneqln: The arguments to KendallTau are not a pair of vectors or matrices of equal length.",
+    );
+    unevaluated()
+  };
+  if args.len() != 2 {
+    return unevaluated();
+  }
+  let (x, y) = match (&args[0], &args[1]) {
+    (Expr::List(x), Expr::List(y)) if x.len() == y.len() && x.len() >= 2 => {
+      (x, y)
+    }
+    _ => return rctneqln(),
+  };
+  let (Some(xf), Some(yf)) = (
+    x.iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect::<Option<Vec<f64>>>(),
+    y.iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect::<Option<Vec<f64>>>(),
+  ) else {
+    return rctneqln();
+  };
+  let n = x.len();
+  // Numerator: Σ_{i<j} sign(x_j - x_i) · sign(y_j - y_i) = C - D.
+  let mut num: i128 = 0;
+  for i in 0..n {
+    for j in (i + 1)..n {
+      let sx = (xf[j] - xf[i]).partial_cmp(&0.0);
+      let sy = (yf[j] - yf[i]).partial_cmp(&0.0);
+      if let (Some(sx), Some(sy)) = (sx, sy) {
+        use std::cmp::Ordering::*;
+        let sxi = match sx {
+          Greater => 1i128,
+          Less => -1,
+          Equal => 0,
+        };
+        let syi = match sy {
+          Greater => 1i128,
+          Less => -1,
+          Equal => 0,
+        };
+        num += sxi * syi;
+      }
+    }
+  }
+  // Tie correction Σ t(t-1)/2 over groups of equal values.
+  let tie_sum = |vals: &[f64]| -> i128 {
+    let mut sorted = vals.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mut total: i128 = 0;
+    let mut i = 0;
+    while i < sorted.len() {
+      let mut j = i;
+      while j + 1 < sorted.len() && sorted[j + 1] == sorted[i] {
+        j += 1;
+      }
+      let t = (j - i + 1) as i128;
+      total += t * (t - 1) / 2;
+      i = j + 1;
+    }
+    total
+  };
+  let n0 = (n as i128) * (n as i128 - 1) / 2;
+  let n1 = tie_sum(&xf);
+  let n2 = tie_sum(&yf);
+  let denom_sq = (n0 - n1) * (n0 - n2);
+  if denom_sq == 0 {
+    crate::emit_message(
+      "KendallTau::zrvr: The input data has zero variance. The statistic cannot be computed.",
+    );
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  // Machine-real inputs give a machine-real result; otherwise stay exact.
+  let is_real = x
+    .iter()
+    .chain(y.iter())
+    .any(|e| matches!(e, Expr::Real(_) | Expr::BigFloat(_, _)));
+  if is_real {
+    return Ok(Expr::Real(num as f64 / (denom_sq as f64).sqrt()));
+  }
+  let expr = Expr::FunctionCall {
+    name: "Divide".to_string(),
+    args: vec![
+      Expr::Integer(num),
+      Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(denom_sq)].into(),
+      },
+    ]
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
+}
+
 pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
