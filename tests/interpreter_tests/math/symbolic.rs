@@ -829,6 +829,34 @@ mod cases {
       r#"{{a -> Function[{n}, 2^n]}}"#,
     );
   }
+  // First-order homogeneous recurrence with one initial condition. The closed
+  // form is `v * r^(n - k)`, with the coefficient's factors of r folded into
+  // the exponent the way wolframscript does (e.g. a[1]==6, r=2 → 3*2^n, not
+  // the value-equal 6*2^(-1 + n); a[2]==5, r=2 → 5*2^(-2 + n) rather than
+  // 5*2^n/4).
+  #[test]
+  fn r_solve_first_order_with_ic() {
+    assert_case(
+      r#"RSolve[{a[n] == 2 a[n-1], a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> 2^(-1 + n)}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == 2 a[n-1], a[0] == 3}, a[n], n]"#,
+      r#"{{a[n] -> 3*2^n}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == 2 a[n-1], a[2] == 5}, a[n], n]"#,
+      r#"{{a[n] -> 5*2^(-2 + n)}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == 2 a[n-1], a[1] == 6}, a[n], n]"#,
+      r#"{{a[n] -> 3*2^n}}"#,
+    );
+    assert_case(
+      r#"RSolve[{a[n] == 3 a[n-1], a[1] == 1}, a[n], n]"#,
+      r#"{{a[n] -> 3^(-1 + n)}}"#,
+    );
+  }
   // The first-order general solution anchors its constant at n = 1, so the
   // single root carries the exponent n-1 (matching wolframscript). Higher-order
   // solutions keep the exponent n.

@@ -304,6 +304,18 @@ fn solve_const_coeff_linear(
     return None;
   }
 
+  // First-order homogeneous with one initial condition: wolframscript writes
+  // the closed form as `v * r^(n - k)` and folds the coefficient's factors of
+  // r into the exponent (e.g. a[1]==6, r=2 → 3*2^n, not 6*2^(n-1)). Woxi's core
+  // Times/Power renderer doesn't fold powers of the base out of an integer
+  // coefficient, so build the folded form directly here.
+  if order == 1
+    && let Some(sol) =
+      build_first_order_with_ic(&roots[0], &initial_conditions[0], var_name)
+  {
+    return Some(sol);
+  }
+
   // Build and solve the system for constants
   // General solution: a[n] = c1*r1^n + c2*r2^n + ...
   // Apply initial conditions to find c1, c2, ...
@@ -311,6 +323,70 @@ fn solve_const_coeff_linear(
 
   // Build the solution expression: c1*r1^n + c2*r2^n + ...
   build_solution(&constants, &roots, var_name)
+}
+
+/// First-order homogeneous recurrence with a single initial condition.
+/// The closed form is `v * r^(n - k)` where `(k, v)` is the IC. wolframscript
+/// folds the coefficient's factors of `r` into the exponent, e.g.
+/// `a[1]==6, r=2` → `3*2^n` (since `6*2^(n-1) = 3*2^n`) and `a[2]==5, r=2` →
+/// `5*2^(-2 + n)`. Restricted to integer roots `r >= 2`; other roots
+/// (`1`, `-1`, negatives, rationals) fall through to the generic solver.
+fn build_first_order_with_ic(
+  root: &(i128, i128),
+  ic: &(i128, Expr),
+  var_name: &str,
+) -> Option<Expr> {
+  let (rn, rd) = *root;
+  if rd != 1 || rn < 2 {
+    return None;
+  }
+  let (k, v_expr) = ic;
+  let mut v = match v_expr {
+    Expr::Integer(v) => *v,
+    _ => return None,
+  };
+  if v == 0 {
+    return Some(Expr::Integer(0));
+  }
+  // Factor powers of r out of v, tracking the exponent shift m so that
+  // v_original * r^(n - k) == v_reduced * r^(n - k + m).
+  let mut m: i128 = 0;
+  while v % rn == 0 {
+    v /= rn;
+    m += 1;
+  }
+  let off = m - *k;
+  let n_var = Expr::Identifier(var_name.to_string());
+  // Exponent `n` (off == 0) or `off + n` (constant first, matching display).
+  let exponent = if off == 0 {
+    n_var
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(off)),
+      right: Box::new(n_var),
+    }
+  };
+  let power = Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(Expr::Integer(rn)),
+    right: Box::new(exponent),
+  };
+  let result = if v == 1 {
+    power
+  } else if v == -1 {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(power),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(v)),
+      right: Box::new(power),
+    }
+  };
+  Some(result)
 }
 
 /// Build the solution when there are fewer initial conditions than

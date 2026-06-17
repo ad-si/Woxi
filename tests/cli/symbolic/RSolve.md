@@ -17,6 +17,13 @@ $ wo 'RSolve[{a[n + 1] == 2 a[n], a[0] == 1}, a, n]'
 {{a -> Function[{n}, 2^n]}}
 ```
 
+An initial condition at a non-zero index shifts the exponent accordingly.
+
+```scrut
+$ wo 'RSolve[{a[n] == 2 a[n-1], a[2] == 5}, a[n], n]'
+{{a[n] -> 5*2^(-2 + n)}}
+```
+
 A repeated characteristic root contributes an extra factor of `n` per
 multiplicity.
 

@@ -6962,7 +6962,8 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         }
         // ArcCot[x] = I/2 Log[1 - I/x] - I/2 Log[1 + I/x]
         "ArcCot" => {
-          let i_over_x = times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]);
+          let i_over_x =
+            times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]);
           plus(&[
             times(&[
               i.clone(),
@@ -6985,7 +6986,10 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
           let inner = plus(&[
             sqrt_of(plus(&[
               Expr::Integer(1),
-              times(&[Expr::Integer(-1), power(arg.clone(), Expr::Integer(-2))]),
+              times(&[
+                Expr::Integer(-1),
+                power(arg.clone(), Expr::Integer(-2)),
+              ]),
             ])),
             times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
           ]);
@@ -6999,7 +7003,10 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
           let inner = plus(&[
             sqrt_of(plus(&[
               Expr::Integer(1),
-              times(&[Expr::Integer(-1), power(arg.clone(), Expr::Integer(-2))]),
+              times(&[
+                Expr::Integer(-1),
+                power(arg.clone(), Expr::Integer(-2)),
+              ]),
             ])),
             times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
           ]);
@@ -7008,7 +7015,10 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // ArcSinh[x] = Log[x + Sqrt[1 + x^2]]
         "ArcSinh" => log_of(plus(&[
           arg.clone(),
-          sqrt_of(plus(&[Expr::Integer(1), power(arg.clone(), Expr::Integer(2))])),
+          sqrt_of(plus(&[
+            Expr::Integer(1),
+            power(arg.clone(), Expr::Integer(2)),
+          ])),
         ])),
         // ArcCosh[x] = Log[x + Sqrt[-1 + x] Sqrt[1 + x]]
         "ArcCosh" => log_of(plus(&[
@@ -7028,7 +7038,10 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
               times(&[Expr::Integer(-1), arg.clone()]),
             ])),
           ]),
-          times(&[half.clone(), log_of(plus(&[Expr::Integer(1), arg.clone()]))]),
+          times(&[
+            half.clone(),
+            log_of(plus(&[Expr::Integer(1), arg.clone()])),
+          ]),
         ]),
         // ArcCoth[x] = -1/2 Log[1 - x^-1] + 1/2 Log[1 + x^-1]
         "ArcCoth" => {
