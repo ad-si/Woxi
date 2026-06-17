@@ -7100,7 +7100,9 @@ mod join_non_list {
       let msgs = woxi::get_captured_messages_raw();
       assert!(
         msgs.iter().any(|m| m.contains("GroupBy::list1:")
-          && m.contains("is not a valid list of Associations or rules or lists of rules.")),
+          && m.contains(
+            "is not a valid list of Associations or rules or lists of rules."
+          )),
         "expected GroupBy::list1 for {input}, got {msgs:?}"
       );
     }

@@ -950,6 +950,32 @@ mod total {
     );
   }
 
+  // Negative levels count from the deepest level: -1 is the last level.
+  #[test]
+  fn total_negative_through_level() {
+    // Total[list, -k] sums levels 1 through (depth - k + 1).
+    assert_eq!(interpret("Total[{1, 2, 3}, -1]").unwrap(), "6");
+    assert_eq!(interpret("Total[{{1, 2}, {3, 4}}, -1]").unwrap(), "10");
+    assert_eq!(
+      interpret("Total[{{{1}, {2}}, {{3}, {4}}}, -1]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn total_negative_exact_level() {
+    // Total[list, {-1}] sums the innermost lists; {-2} the level above.
+    assert_eq!(interpret("Total[{1, 2, 3}, {-1}]").unwrap(), "6");
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, {-1}]").unwrap(),
+      "{3, 7}"
+    );
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, {-2}]").unwrap(),
+      "{4, 6}"
+    );
+  }
+
   #[test]
   fn total_3d_exact_level_2() {
     assert_eq!(

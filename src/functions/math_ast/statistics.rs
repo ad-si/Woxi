@@ -36,21 +36,43 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // A small helper that accepts either a finite level number or
-  // `Infinity` and turns it into a `usize`.
-  fn level_to_usize(e: &Expr) -> Option<usize> {
+  // The number of nested list levels of `e` — the maximum valid Total level.
+  // A flat list {1, 2, 3} has depth 1; {{1, 2}, {3, 4}} has depth 2.
+  fn list_total_depth(e: &Expr) -> usize {
     match e {
-      Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
-      other => expr_to_num(other).map(|n| n as usize),
+      Expr::List(items) => {
+        1 + items.iter().map(list_total_depth).max().unwrap_or(0)
+      }
+      Expr::Association(pairs) => {
+        1 + pairs
+          .iter()
+          .map(|(_, v)| list_total_depth(v))
+          .max()
+          .unwrap_or(0)
+      }
+      _ => 0,
     }
   }
+
+  // Resolve a level component to a usize, accepting `Infinity` and negative
+  // levels (counted from the deepest level: -1 is the last level, matching
+  // wolframscript — Total[{{1,2},{3,4}}, {-1}] sums the innermost lists).
+  let depth = list_total_depth(&args[0]) as i64;
+  let resolve_level = |e: &Expr| -> Option<usize> {
+    if matches!(e, Expr::Identifier(s) if s == "Infinity") {
+      return Some(usize::MAX);
+    }
+    let n = expr_to_num(e)? as i64;
+    let r = if n >= 0 { n } else { depth + n + 1 };
+    if r < 0 { None } else { Some(r as usize) }
+  };
 
   // Parse level spec from second argument
   let level_spec = if args.len() == 2 {
     match &args[1] {
       // Total[list, {n}] - exact level n
       Expr::List(items) if items.len() == 1 => {
-        if let Some(n) = level_to_usize(&items[0]) {
+        if let Some(n) = resolve_level(&items[0]) {
           TotalLevelSpec::Exact(n)
         } else {
           return Ok(Expr::FunctionCall {
@@ -62,7 +84,7 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Total[list, {n1, n2}] - sum across levels n1 through n2
       Expr::List(items) if items.len() == 2 => {
         if let (Some(n1), Some(n2)) =
-          (level_to_usize(&items[0]), level_to_usize(&items[1]))
+          (resolve_level(&items[0]), resolve_level(&items[1]))
         {
           TotalLevelSpec::Range(n1, n2)
         } else {
@@ -78,8 +100,8 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Total[list, n] - through level n
       _ => {
-        if let Some(n) = expr_to_num(&args[1]) {
-          TotalLevelSpec::Through(n as usize)
+        if let Some(n) = resolve_level(&args[1]) {
+          TotalLevelSpec::Through(n)
         } else {
           return Ok(Expr::FunctionCall {
             name: "Total".to_string(),
