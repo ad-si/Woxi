@@ -3,6 +3,29 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// If the first argument is a numeric scalar, emit
+/// `<F>::rectt: Rectangular array expected at position 1 in <call>.`,
+/// matching wolframscript for statistics functions (Mean, Median, Variance,
+/// StandardDeviation, …) applied to a number. Non-numeric atoms (symbols,
+/// strings, Infinity, True) and expressions stay unevaluated with no message.
+pub fn emit_rectt_if_numeric(name: &str, args: &[Expr]) {
+  if let Some(first) = args.first()
+    && crate::functions::predicate_ast::is_numeric_q_pub(first)
+  {
+    crate::emit_message(&format!(
+      "{}::rectt: Rectangular array expected at position 1 in {}.",
+      name,
+      crate::syntax::format_expr(
+        &Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        },
+        crate::syntax::ExprForm::Output
+      )
+    ));
+  }
+}
+
 /// Total[list] - Sum of all elements in a list
 /// Total[list, n] - Sum across levels 1 through n
 /// Total[list, {n}] - Sum at exactly level n
@@ -440,10 +463,13 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
       mean_ast(&[Expr::List(values.into())])
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Mean".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      emit_rectt_if_numeric("Mean", args);
+      Ok(Expr::FunctionCall {
+        name: "Mean".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
@@ -675,10 +701,13 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![inner_var, unit_sq].into(),
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Variance".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      emit_rectt_if_numeric("Variance", args);
+      Ok(Expr::FunctionCall {
+        name: "Variance".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 
@@ -800,6 +829,16 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec().into(),
     });
   }
+  // A numeric scalar isn't a rectangular array: emit StandardDeviation::rectt
+  // directly and stay unevaluated, rather than delegating to Variance below
+  // (which would emit Variance::rectt instead).
+  if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
+    emit_rectt_if_numeric("StandardDeviation", args);
+    return Ok(Expr::FunctionCall {
+      name: "StandardDeviation".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
   // For list-of-lists, the variance returns a list of column variances
   let var = variance_ast(args)?;
   // If variance returned unevaluated (e.g. for too-few elements), return unevaluated too
@@ -836,10 +875,13 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       sqrt_ast(&[var.clone()])
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "StandardDeviation".to_string(),
-      args: args.to_vec().into(),
-    }),
+    _ => {
+      emit_rectt_if_numeric("StandardDeviation", args);
+      Ok(Expr::FunctionCall {
+        name: "StandardDeviation".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
   }
 }
 

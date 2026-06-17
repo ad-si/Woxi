@@ -1068,6 +1068,87 @@ mod normalize {
   }
 }
 
+mod rectt_messages {
+  use super::*;
+
+  // Mean/Median/Variance/StandardDeviation applied to a numeric scalar emit
+  // <F>::rectt and stay unevaluated; non-numeric atoms/expressions stay
+  // unevaluated with no message.
+  fn assert_rectt(input: &str, result: &str, fragment: &str) {
+    clear_state();
+    assert_eq!(interpret(input).unwrap(), result);
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(fragment)),
+      "expected {fragment:?}, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn mean_numeric_scalar() {
+    assert_rectt(
+      "Mean[5]",
+      "Mean[5]",
+      "Mean::rectt: Rectangular array expected at position 1 in Mean[5].",
+    );
+    assert_rectt(
+      "Mean[Pi]",
+      "Mean[Pi]",
+      "Mean::rectt: Rectangular array expected at position 1 in Mean[Pi].",
+    );
+  }
+
+  #[test]
+  fn median_numeric_scalar() {
+    assert_rectt(
+      "Median[5]",
+      "Median[5]",
+      "Median::rectt: Rectangular array expected at position 1 in Median[5].",
+    );
+  }
+
+  #[test]
+  fn variance_numeric_scalar() {
+    assert_rectt(
+      "Variance[5]",
+      "Variance[5]",
+      "Variance::rectt: Rectangular array expected at position 1 in Variance[5].",
+    );
+  }
+
+  #[test]
+  fn standard_deviation_numeric_scalar() {
+    // Must report StandardDeviation::rectt, not Variance::rectt from delegation.
+    assert_rectt(
+      "StandardDeviation[5]",
+      "StandardDeviation[5]",
+      "StandardDeviation::rectt: Rectangular array expected at position 1 in StandardDeviation[5].",
+    );
+  }
+
+  #[test]
+  fn non_numeric_arguments_emit_nothing() {
+    for input in [
+      "Mean[x]",
+      r#"Mean["str"]"#,
+      "Mean[True]",
+      "Mean[Infinity]",
+      "Mean[f[1, 2, 3]]",
+      "Mean[a + b]",
+      "Median[x]",
+      "StandardDeviation[x]",
+    ] {
+      clear_state();
+      let _ = interpret(input).unwrap();
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().all(|m| !m.contains("::rectt")),
+        "unexpected rectt for {input}: {msgs:?}"
+      );
+    }
+  }
+}
+
 mod mean {
   use super::*;
 

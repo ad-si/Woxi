@@ -4284,7 +4284,10 @@ mod select {
   #[test]
   fn function_call_head_is_preserved() {
     // A non-list head is preserved over its arguments.
-    assert_eq!(interpret("Select[f[1, 2, 3, 4], EvenQ]").unwrap(), "f[2, 4]");
+    assert_eq!(
+      interpret("Select[f[1, 2, 3, 4], EvenQ]").unwrap(),
+      "f[2, 4]"
+    );
   }
 
   #[test]

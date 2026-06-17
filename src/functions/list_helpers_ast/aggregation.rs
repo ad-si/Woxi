@@ -904,6 +904,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
+      crate::functions::math_ast::emit_rectt_if_numeric(
+        "Median",
+        std::slice::from_ref(list),
+      );
       return Ok(Expr::FunctionCall {
         name: "Median".to_string(),
         args: vec![list.clone()].into(),
