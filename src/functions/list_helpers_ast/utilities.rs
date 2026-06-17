@@ -107,8 +107,13 @@ pub fn apply_func_to_args(
   }
 }
 
-/// Get the head of an expression as a string
+/// Get the head of an expression as a string. Operator nodes
+/// (`Expr::BinaryOp`/`UnaryOp`/`Comparison`) resolve to their Wolfram
+/// canonical head — `x^2` is `Power`, `a*b`/`a/b`/`-x` are `Times`,
+/// `a-b` is `Plus`, `a==b` is `Equal` — so head-constrained patterns
+/// (`_Power`, `_Plus`, …) match them correctly. Mirrors `Head[]`.
 pub fn get_expr_head_str(expr: &Expr) -> &str {
+  use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real",
@@ -116,6 +121,47 @@ pub fn get_expr_head_str(expr: &Expr) -> &str {
     Expr::List(_) => "List",
     Expr::FunctionCall { name, .. } => name,
     Expr::Association(_) => "Association",
+    Expr::Rule { .. } => "Rule",
+    Expr::RuleDelayed { .. } => "RuleDelayed",
+    Expr::BinaryOp { op, left, .. } => match op {
+      // a - b is stored as a Minus node but is Plus[a, Times[-1, b]] in WL.
+      BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+      BinaryOperator::Times => "Times",
+      // a/b is Times[a, Power[b, -1]]; 1/b is just Power[b, -1].
+      BinaryOperator::Divide => {
+        if matches!(left.as_ref(), Expr::Integer(1)) {
+          "Power"
+        } else {
+          "Times"
+        }
+      }
+      BinaryOperator::Power => "Power",
+      BinaryOperator::And => "And",
+      BinaryOperator::Or => "Or",
+      BinaryOperator::StringJoin => "StringJoin",
+      BinaryOperator::Alternatives => "Alternatives",
+    },
+    Expr::UnaryOp { op, .. } => match op {
+      UnaryOperator::Minus => "Times",
+      UnaryOperator::Not => "Not",
+    },
+    Expr::Comparison { operators, .. } => {
+      let first = operators.first().copied();
+      if operators.iter().all(|o| Some(*o) == first) {
+        match first {
+          Some(ComparisonOp::Equal) | None => "Equal",
+          Some(ComparisonOp::NotEqual) => "Unequal",
+          Some(ComparisonOp::Less) => "Less",
+          Some(ComparisonOp::LessEqual) => "LessEqual",
+          Some(ComparisonOp::Greater) => "Greater",
+          Some(ComparisonOp::GreaterEqual) => "GreaterEqual",
+          Some(ComparisonOp::SameQ) => "SameQ",
+          Some(ComparisonOp::UnsameQ) => "UnsameQ",
+        }
+      } else {
+        "Inequality"
+      }
+    }
     _ => "Symbol",
   }
 }

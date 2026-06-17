@@ -1452,6 +1452,15 @@ mod free_q {
   }
 
   #[test]
+  fn free_q_head_constrained_power() {
+    // x^2 is a Power node, so the expression is not free of _Power.
+    assert_eq!(interpret("FreeQ[x^2 + y, _Power]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[1 + x^2, _Power]").unwrap(), "False");
+    // No Times node here.
+    assert_eq!(interpret("FreeQ[x^2 + y, _Times]").unwrap(), "True");
+  }
+
+  #[test]
   fn free_q_flat_subsequence_bc() {
     assert_eq!(interpret("FreeQ[a+b+c, b+c]").unwrap(), "False");
   }

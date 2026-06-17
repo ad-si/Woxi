@@ -9550,6 +9550,23 @@ mod cases {
       r#"True"#,
     );
   }
+  // Head-constrained patterns must match operator nodes by their Wolfram
+  // canonical head (Power, Times, Plus, …), not Symbol.
+  #[test]
+  fn member_q_power_head_pattern() {
+    assert_case(r#"MemberQ[{x^2, y}, _Power]"#, r#"True"#);
+  }
+  #[test]
+  fn member_q_operator_head_patterns() {
+    assert_case(r#"MemberQ[{a - b, c}, _Plus]"#, r#"True"#);
+    assert_case(r#"MemberQ[{a/b, c}, _Times]"#, r#"True"#);
+    assert_case(r#"MemberQ[{-x, y}, _Times]"#, r#"True"#);
+    assert_case(r#"MemberQ[{a == b, c}, _Equal]"#, r#"True"#);
+  }
+  #[test]
+  fn member_q_power_head_pattern_level() {
+    assert_case(r#"MemberQ[{x^2, y^3}, _Power, {1}]"#, r#"True"#);
+  }
   #[test]
   fn subset_q_1() {
     assert_case(r#"SubsetQ[{1, 2, 3}, {3, 1}]"#, r#"True"#);
