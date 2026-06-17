@@ -6940,6 +6940,111 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             power(plus(&[e_x, e_nx]), Expr::Integer(-1)),
           ])
         }
+        // ArcTan[x] = I/2 Log[1 - I x] - I/2 Log[1 + I x]
+        "ArcTan" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          plus(&[
+            times(&[
+              i.clone(),
+              half.clone(),
+              log_of(plus(&[
+                Expr::Integer(1),
+                times(&[Expr::Integer(-1), ix.clone()]),
+              ])),
+            ]),
+            times(&[
+              Expr::Integer(-1),
+              i.clone(),
+              half.clone(),
+              log_of(plus(&[Expr::Integer(1), ix])),
+            ]),
+          ])
+        }
+        // ArcCot[x] = I/2 Log[1 - I/x] - I/2 Log[1 + I/x]
+        "ArcCot" => {
+          let i_over_x = times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]);
+          plus(&[
+            times(&[
+              i.clone(),
+              half.clone(),
+              log_of(plus(&[
+                Expr::Integer(1),
+                times(&[Expr::Integer(-1), i_over_x.clone()]),
+              ])),
+            ]),
+            times(&[
+              Expr::Integer(-1),
+              i.clone(),
+              half.clone(),
+              log_of(plus(&[Expr::Integer(1), i_over_x])),
+            ]),
+          ])
+        }
+        // ArcSec[x] = Pi/2 + I Log[Sqrt[1 - x^-2] + I/x]
+        "ArcSec" => {
+          let inner = plus(&[
+            sqrt_of(plus(&[
+              Expr::Integer(1),
+              times(&[Expr::Integer(-1), power(arg.clone(), Expr::Integer(-2))]),
+            ])),
+            times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
+          ]);
+          plus(&[
+            times(&[Expr::Constant("Pi".to_string()), half.clone()]),
+            times(&[i.clone(), log_of(inner)]),
+          ])
+        }
+        // ArcCsc[x] = -I Log[Sqrt[1 - x^-2] + I/x]
+        "ArcCsc" => {
+          let inner = plus(&[
+            sqrt_of(plus(&[
+              Expr::Integer(1),
+              times(&[Expr::Integer(-1), power(arg.clone(), Expr::Integer(-2))]),
+            ])),
+            times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
+          ]);
+          times(&[Expr::Integer(-1), i.clone(), log_of(inner)])
+        }
+        // ArcSinh[x] = Log[x + Sqrt[1 + x^2]]
+        "ArcSinh" => log_of(plus(&[
+          arg.clone(),
+          sqrt_of(plus(&[Expr::Integer(1), power(arg.clone(), Expr::Integer(2))])),
+        ])),
+        // ArcCosh[x] = Log[x + Sqrt[-1 + x] Sqrt[1 + x]]
+        "ArcCosh" => log_of(plus(&[
+          arg.clone(),
+          times(&[
+            sqrt_of(plus(&[Expr::Integer(-1), arg.clone()])),
+            sqrt_of(plus(&[Expr::Integer(1), arg.clone()])),
+          ]),
+        ])),
+        // ArcTanh[x] = -1/2 Log[1 - x] + 1/2 Log[1 + x]
+        "ArcTanh" => plus(&[
+          times(&[
+            Expr::Integer(-1),
+            half.clone(),
+            log_of(plus(&[
+              Expr::Integer(1),
+              times(&[Expr::Integer(-1), arg.clone()]),
+            ])),
+          ]),
+          times(&[half.clone(), log_of(plus(&[Expr::Integer(1), arg.clone()]))]),
+        ]),
+        // ArcCoth[x] = -1/2 Log[1 - x^-1] + 1/2 Log[1 + x^-1]
+        "ArcCoth" => {
+          let x_inv = power(arg.clone(), Expr::Integer(-1));
+          plus(&[
+            times(&[
+              Expr::Integer(-1),
+              half.clone(),
+              log_of(plus(&[
+                Expr::Integer(1),
+                times(&[Expr::Integer(-1), x_inv.clone()]),
+              ])),
+            ]),
+            times(&[half.clone(), log_of(plus(&[Expr::Integer(1), x_inv]))]),
+          ])
+        }
         // NOTE: Coth, Csch and Csc are intentionally left to the default
         // recursive branch. Their exponential forms are value-correct but the
         // result contains a negative E-power (`-E^(-x)`) or a complex
@@ -6947,6 +7052,9 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // canonicalizes differently from wolframscript (`-(1/E^x)` and
         // `c*(…)^(-1)` rather than `-E^(-x)` and `c/(…)`). See the documented
         // complex-coeff / negative-E-exponent display divergence.
+        // ArcSin, ArcCos, ArcCsch and ArcSech are likewise omitted: their Log
+        // arguments are a Plus whose term order Woxi canonicalizes differently
+        // (e.g. `Sqrt[1-x^2] + I x` vs wolframscript's `I x + Sqrt[1-x^2]`).
         // Tanh[x] = E^x/(E^(-x) + E^x) - E^(-x)/(E^(-x) + E^x)
         "Tanh" => {
           let e_x = power(e.clone(), arg.clone());
@@ -7005,6 +7113,23 @@ fn power(base: Expr, exp: Expr) -> Expr {
     name: "Power".to_string(),
     args: vec![base, exp].into(),
   }
+}
+
+fn log_of(arg: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![arg].into(),
+  }
+}
+
+fn sqrt_of(arg: Expr) -> Expr {
+  power(
+    arg,
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+    },
+  )
 }
 
 /// Euler's totient function

@@ -5787,6 +5787,82 @@ mod trig_to_exp {
     // TrigToExp should not affect non-trig expressions
     assert_eq!(interpret("TrigToExp[x + 1]").unwrap(), "1 + x");
   }
+
+  // Inverse trigonometric and hyperbolic functions expand to logarithmic
+  // forms. (ArcSin/ArcCos/ArcCsch/ArcSech are intentionally not expanded:
+  // their Log argument is a Plus whose term order Woxi canonicalizes
+  // differently from wolframscript.)
+  #[test]
+  fn arctan_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcTan[x]]").unwrap(),
+      "I/2*Log[1 - I*x] - I/2*Log[1 + I*x]"
+    );
+  }
+
+  #[test]
+  fn arctan_double_angle() {
+    assert_eq!(
+      interpret("TrigToExp[ArcTan[2 x]]").unwrap(),
+      "I/2*Log[1 - (2*I)*x] - I/2*Log[1 + (2*I)*x]"
+    );
+  }
+
+  #[test]
+  fn arccot_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcCot[x]]").unwrap(),
+      "I/2*Log[1 - I/x] - I/2*Log[1 + I/x]"
+    );
+  }
+
+  #[test]
+  fn arcsec_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcSec[x]]").unwrap(),
+      "Pi/2 + I*Log[Sqrt[1 - x^(-2)] + I/x]"
+    );
+  }
+
+  #[test]
+  fn arccsc_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcCsc[x]]").unwrap(),
+      "-I*Log[Sqrt[1 - x^(-2)] + I/x]"
+    );
+  }
+
+  #[test]
+  fn arcsinh_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcSinh[x]]").unwrap(),
+      "Log[x + Sqrt[1 + x^2]]"
+    );
+  }
+
+  #[test]
+  fn arccosh_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcCosh[x]]").unwrap(),
+      "Log[x + Sqrt[-1 + x]*Sqrt[1 + x]]"
+    );
+  }
+
+  #[test]
+  fn arctanh_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcTanh[x]]").unwrap(),
+      "-1/2*Log[1 - x] + Log[1 + x]/2"
+    );
+  }
+
+  #[test]
+  fn arccoth_to_log() {
+    assert_eq!(
+      interpret("TrigToExp[ArcCoth[x]]").unwrap(),
+      "-1/2*Log[1 - x^(-1)] + Log[1 + x^(-1)]/2"
+    );
+  }
 }
 
 mod interpolation {

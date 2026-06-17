@@ -653,8 +653,10 @@ fn unit_convert_area_units() {
     "Quantity[10000, Meters^2]"
   );
   assert_eq!(
-    interpret("UnitConvert[Quantity[5, \"SquareMeters\"], \"SquareKilometers\"]")
-      .unwrap(),
+    interpret(
+      "UnitConvert[Quantity[5, \"SquareMeters\"], \"SquareKilometers\"]"
+    )
+    .unwrap(),
     "Quantity[1/200000, Kilometers^2]"
   );
   assert_eq!(
