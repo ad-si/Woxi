@@ -602,8 +602,11 @@ fn string_split_with_replacement(
       break; // stop after n-1 splits → at most n text pieces
     }
     result.push(Expr::String(s[last..m.start()].to_string()));
-    let rep =
-      split_replacement_value(rhs, cap_name.as_deref(), &s[m.start()..m.end()])?;
+    let rep = split_replacement_value(
+      rhs,
+      cap_name.as_deref(),
+      &s[m.start()..m.end()],
+    )?;
     result.push(rep);
     last = m.end();
     splits += 1;

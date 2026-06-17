@@ -1,5 +1,87 @@
 use super::*;
 
+mod notational_markup {
+  use super::*;
+
+  // Sub*/Super*/Over*/Under* markup heads are purely notational in WL: they
+  // have no evaluation rules and stay unevaluated as their canonical form.
+  // They must not be flagged as "not yet implemented".
+
+  fn assert_inert(input: &str, expected: &str) {
+    clear_state();
+    let result = interpret_with_stdout(input).unwrap();
+    assert_eq!(result.result, expected, "result mismatch for {input}");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .all(|w| !w.contains("not yet implemented")),
+      "unexpected unimplemented warning for {input}: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn sub_plus_stays_symbolic() {
+    assert_inert("SubPlus[5]", "SubPlus[5]");
+  }
+
+  #[test]
+  fn sub_minus_stays_symbolic() {
+    assert_inert("SubMinus[3]", "SubMinus[3]");
+  }
+
+  #[test]
+  fn sub_star_stays_symbolic() {
+    assert_inert("SubStar[x]", "SubStar[x]");
+  }
+
+  #[test]
+  fn super_plus_stays_symbolic() {
+    assert_inert("SuperPlus[a]", "SuperPlus[a]");
+  }
+
+  #[test]
+  fn super_minus_stays_symbolic() {
+    assert_inert("SuperMinus[b]", "SuperMinus[b]");
+  }
+
+  #[test]
+  fn super_star_stays_symbolic() {
+    assert_inert("SuperStar[z]", "SuperStar[z]");
+  }
+
+  #[test]
+  fn super_dagger_stays_symbolic() {
+    assert_inert("SuperDagger[m]", "SuperDagger[m]");
+  }
+
+  #[test]
+  fn over_hat_stays_symbolic() {
+    assert_inert("OverHat[x]", "OverHat[x]");
+  }
+
+  #[test]
+  fn under_bar_stays_symbolic() {
+    assert_inert("UnderBar[y]", "UnderBar[y]");
+  }
+
+  #[test]
+  fn head_is_the_markup_symbol() {
+    assert_inert("Head[SubMinus[3]]", "SubMinus");
+  }
+
+  #[test]
+  fn combines_arithmetically() {
+    assert_inert("SubPlus[x] + SubPlus[x]", "2*SubPlus[x]");
+  }
+
+  #[test]
+  fn multi_argument_form_stays_symbolic() {
+    assert_inert("SubPlus[a, b]", "SubPlus[a, b]");
+  }
+}
+
 mod image_size {
   use super::*;
 

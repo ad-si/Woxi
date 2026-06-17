@@ -958,7 +958,7 @@ Key,Operator form for extracting values from associations by key,✅,none,10.0,9
 ProbabilityDistribution,Defines a custom probability distribution,✅,1,8.0,967
 MeshCells,Requires external services or GUI infrastructure,🚫,io,10.0,968
 VertexStyle,,🚫,,8.0,969
-OverHat,,🚫,,6.0,970
+OverHat,Display form with a hat accent,✅,none,6.0,970
 ListLogLogPlot,Plots data with logarithmic x and y axes,✅,pure,6.0,971
 SetAccuracy,,🚫,,2.0,972
 LightRed,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6.0,973
@@ -966,7 +966,7 @@ NotebookWrite,Requires external services or GUI infrastructure,🚫,io,3.0,974
 ByteCount,Count bytes used internally to store an expression,✅,pure,1.0,975
 Ramp,Returns the ramp function (max of 0 and x),✅,pure,11.0,976
 ParametricNDSolveValue,,🚫,,9.0,977
-SuperStar,,🚫,,6.0,979
+SuperStar,Display form with a superscript star,✅,none,6.0,979
 Abort,Aborts evaluation,✅,effectful,2.0,980
 GammaDistribution,Gamma probability distribution,✅,pure,6.0,981
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3.0,982
@@ -1661,7 +1661,7 @@ SpanFromAbove,Span from above,,unevaluated,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688
 MinValue,Global symbolic minimum value of a function over variables with optional constraints,✅,pure,7.0,1690
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,1692
-SubPlus,Subscript plus notation,,unevaluated,6.0,1692
+SubPlus,Subscript plus notation,✅,none,6.0,1692
 Extension,Extension option,,unevaluated,3.0,1693
 KeySort,Sorts an association by its keys,✅,pure,10.0,1694
 WeightedAdjacencyGraph,Graph from a weight matrix (Infinity marks absent edges),✅,pure,8.0,1695
@@ -1678,7 +1678,7 @@ CommunityGraphPlot,Community graph plot,,unevaluated,9.0,1707
 Multinomial,Returns the multinomial coefficient,✅,pure,1.0,1707
 Primes,Domain of prime numbers used with Element and related predicates,✅,none,4.0,1707
 RandomPrime,Random prime number,✅,contextual,6.0,1709
-SuperDagger,Dagger superscript,,unevaluated,6.0,1709
+SuperDagger,Dagger superscript notation,✅,none,6.0,1709
 ReImPlot,Plots the real and imaginary parts of a complex function on the same axes,✅,pure,12.0,1710
 ExponentFunction,Exponent display function,,unevaluated,2.0,1712
 SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
@@ -1789,7 +1789,7 @@ DiscreteVariables,Discrete variables option,,unevaluated,9.0,1819
 PermutationReplace,Replaces each point in an expression by its image under a permutation given as Cycles or a permutation list,✅,pure,8.0,1819
 Standardize,Standardizes data by subtracting the mean and dividing by the standard deviation,✅,pure,7.0,1822
 StripOnInput,Strip on input option,,unevaluated,6.0,1822
-SubMinus,Subscript minus,,unevaluated,6.0,1822
+SubMinus,Subscript minus notation,✅,none,6.0,1822
 ColorQuantize,Quantize image colors,,unevaluated,7.0,1827
 CornerNeighbors,Corner neighbors option,,unevaluated,7.0,1827
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2.0,1827
@@ -1944,7 +1944,7 @@ TableDirections,Option for TableForm display directions,🚫,,2.0,1977
 PermutationGroup,Group theory permutation group representation,✅,pure,8.0,1979
 WeightedAdjacencyMatrix,Builds the weighted adjacency matrix from a graph with EdgeWeight,✅,none,8.0,1979
 DayName,Return the name of the day of the week for a given date,✅,none,9.0,1981
-SuperPlus,Typesetting notation for superscript plus,🚫,,6.0,1982
+SuperPlus,Typesetting notation for superscript plus,✅,none,6.0,1982
 CommonName,Entity common name lookup,🚫,,10.0,1986
 KeyDrop,Drops specified keys from an association; supports the operator form KeyDrop[keys][assoc],✅,pure,10.0,1986
 TableDepth,Option for TableForm display depth,🚫,,2.0,1986
@@ -2045,7 +2045,7 @@ SampledSoundList,Sampled sound representation,🚫,,2.0,2082
 CatenateLayer,Neural network concatenation layer,🚫,,11.0,2084
 CurveClosed,Check if curve is closed,🚫,,8.0,2084
 FactorialPower,Falling factorial n*(n-1)*...*(n-k+1),✅,none,7.0,2085
-SuperMinus,Typesetting notation for superscript minus,🚫,,6.0,2087
+SuperMinus,Typesetting notation for superscript minus,✅,none,6.0,2087
 Symmetric,Symmetric tensor symmetry,🚫,,9.0,2087
 AbortProtect,Protect computation from abort,🚫,,2.0,2089
 ConnectedGraphQ,Test whether a graph is connected (strongly connected for directed graphs),✅,pure,8.0,2089
@@ -3446,7 +3446,7 @@ PeriodogramArray,,🚫,,9.0,3537
 PoleZeroMarkers,,,,8.0,3537
 ReverseGraph,,,,8.0,3537
 SemialgebraicComponentInstances,,,,6.0,3537
-SubStar,,,,6.0,3537
+SubStar,Subscript star notation,✅,none,6.0,3537
 AbsoluteCorrelation,,,,9.0,3566
 AnnotationValue,,,,12.1,3566
 AudioDelay,,🚫,,11.0,3566
@@ -3687,7 +3687,7 @@ ReverseBiorthogonalSplineWavelet,,🚫,,8.0,3785
 ScaleRangeStyle,,,,9.0,3785
 ShiftedGompertzDistribution,,,,10.3,3785
 TextClipboardType,,,,7.0,3785
-UnderBar,,,,6.0,3785
+UnderBar,Display form with an underbar accent,✅,none,6.0,3785
 UnitRootTest,,,,9.0,3785
 AudioPad,,🚫,,11.0,3803
 BenktanderGibratDistribution,Benktander-Gibrat actuarial distribution,✅,pure,8.0,3803
