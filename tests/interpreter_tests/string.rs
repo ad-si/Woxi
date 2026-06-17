@@ -5186,6 +5186,36 @@ mod string_contains_free_patterns {
     ));
   }
 
+  // One-argument list form: pad every string to the longest one's length.
+  #[test]
+  fn string_pad_one_arg_list() {
+    assert_eq!(
+      interpret(r#"StringPadLeft[{"a", "ab", "abc"}]"#).unwrap(),
+      r#"{  a,  ab, abc}"#
+    );
+    assert_eq!(
+      interpret(r#"StringPadRight[{"a", "ab", "abc"}]"#).unwrap(),
+      r#"{a  , ab , abc}"#
+    );
+    assert_eq!(
+      interpret(r#"StringPadLeft[{"12", "abcd"}]"#).unwrap(),
+      r#"{  12, abcd}"#
+    );
+    // An empty list pads to itself.
+    assert_eq!(interpret(r#"StringPadLeft[{}]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn string_pad_one_arg_non_list_warns_strlist() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout(r#"StringPadLeft["abc"]"#).unwrap();
+    assert_eq!(r.result, "StringPadLeft[abc]");
+    assert!(r.warnings[0].contains(
+      "StringPadLeft::strlist: List of strings expected at position 1 in \
+       StringPadLeft[abc]."
+    ));
+  }
+
   #[test]
   fn string_pad_left_multi_char() {
     assert_eq!(

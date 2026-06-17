@@ -5148,7 +5148,63 @@ fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
 }
 
 /// StringPadLeft[s, n] or StringPadLeft[s, n, pad] - pad string on left
+/// Outcome of the one-argument `StringPad{Left,Right}[{s1, …}]` form.
+enum PadOneArg {
+  /// Pad every string to the longest one's length; delegate to the 2-arg form
+  /// with these arguments.
+  Rewrite(Vec<Expr>),
+  /// An empty list pads to itself.
+  Empty,
+  /// The argument is not a list of strings (`::strlist`).
+  Invalid,
+}
+
+/// Classify the single argument of `StringPad{Left,Right}[arg]`.
+fn string_pad_one_arg(args: &[Expr]) -> PadOneArg {
+  let [Expr::List(items)] = args else {
+    return PadOneArg::Invalid;
+  };
+  if items.is_empty() {
+    return PadOneArg::Empty;
+  }
+  if !items.iter().all(|e| matches!(e, Expr::String(_))) {
+    return PadOneArg::Invalid;
+  }
+  let max_len = items
+    .iter()
+    .filter_map(|e| match e {
+      Expr::String(s) => Some(s.chars().count()),
+      _ => None,
+    })
+    .max()
+    .unwrap_or(0);
+  PadOneArg::Rewrite(vec![args[0].clone(), Expr::Integer(max_len as i128)])
+}
+
+/// Emit `<name>::strlist` for a one-argument call whose argument is not a list
+/// of strings, and return the unevaluated call.
+fn string_pad_strlist(name: &str, args: &[Expr]) -> Expr {
+  let call = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  crate::emit_message(&format!(
+    "{}::strlist: List of strings expected at position 1 in {}.",
+    name,
+    crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+  ));
+  call
+}
+
 pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // StringPadLeft[{s1, …}] pads each string to the longest one's length.
+  if args.len() == 1 {
+    return match string_pad_one_arg(args) {
+      PadOneArg::Rewrite(rewritten) => string_pad_left_ast(&rewritten),
+      PadOneArg::Empty => Ok(Expr::List(vec![].into())),
+      PadOneArg::Invalid => Ok(string_pad_strlist("StringPadLeft", args)),
+    };
+  }
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "StringPadLeft expects 2 or 3 arguments".into(),
@@ -5223,6 +5279,14 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringPadRight[s, n] or StringPadRight[s, n, pad] - pad string on right
 pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // StringPadRight[{s1, …}] pads each string to the longest one's length.
+  if args.len() == 1 {
+    return match string_pad_one_arg(args) {
+      PadOneArg::Rewrite(rewritten) => string_pad_right_ast(&rewritten),
+      PadOneArg::Empty => Ok(Expr::List(vec![].into())),
+      PadOneArg::Invalid => Ok(string_pad_strlist("StringPadRight", args)),
+    };
+  }
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "StringPadRight expects 2 or 3 arguments".into(),

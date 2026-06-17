@@ -2776,7 +2776,7 @@ DisjointQ,True if lists share no common elements,✅,1,10.0,2837
 FormObject,,🚫,,10.0,2837
 ImageCorrespondingPoints,,🚫,,8.0,2837
 PositiveSemidefiniteMatrixQ,Test whether a matrix is positive semidefinite,✅,none,10.0,2837
-StringPadLeft,Pads a string on the left to a specified length,✅,pure,10.1,2837
+StringPadLeft,Pads a string on the left to a specified length; a bare list of strings is padded to the longest,✅,pure,10.1,2837
 UniformPolyhedron,,🚫,,12.0,2837
 ControllableModelQ,,🚫,,8.0,2842
 KeyUnion,Extends associations to have the union of all keys with Missing for absent keys,✅,pure,10.0,2842
@@ -3125,7 +3125,7 @@ FoldWhile,Folds while a test holds returning the first failing value,✅,pure,12
 MouseAnnotation,,🚫,,6.0,3200
 RectangleChart3D,,🚫,,7.0,3200
 RegionMoment,,,,10.4,3200
-StringPadRight,Pads a string on the right to a specified length,✅,pure,10.1,3200
+StringPadRight,Pads a string on the right to a specified length; a bare list of strings is padded to the longest,✅,pure,10.1,3200
 CellLabelAutoDelete,,🚫,,3.0,3215
 CloudDirectory,,🚫,,10.0,3215
 ConnectedMeshComponents,,🚫,,10.0,3215

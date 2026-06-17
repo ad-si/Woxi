@@ -1778,8 +1778,7 @@ pub fn dispatch_linear_algebra_functions(
             _ => {}
           }
           for (j, entry) in row.iter().enumerate() {
-            if (j as i64 - i as i64) != k
-              && !matches!(entry, Expr::Integer(0))
+            if (j as i64 - i as i64) != k && !matches!(entry, Expr::Integer(0))
             {
               let evaluated =
                 evaluate_expr_to_expr(entry).unwrap_or(entry.clone());
