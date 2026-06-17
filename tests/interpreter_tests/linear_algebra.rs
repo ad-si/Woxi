@@ -1417,6 +1417,41 @@ mod pseudo_inverse {
   }
 
   #[test]
+  fn rank_deficient_square() {
+    // Singular (rank-deficient) square matrices have an exact Moore-Penrose
+    // pseudoinverse computed via rank factorization — no Inverse::sing error.
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 0}, {0, 0}}]").unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 2}, {2, 4}}]").unwrap(),
+      "{{1/25, 2/25}, {2/25, 4/25}}"
+    );
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 1}, {1, 1}}]").unwrap(),
+      "{{1/4, 1/4}, {1/4, 1/4}}"
+    );
+  }
+
+  #[test]
+  fn rank_deficient_rectangular() {
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 2, 3}, {2, 4, 6}}]").unwrap(),
+      "{{1/70, 1/35}, {1/35, 2/35}, {3/70, 3/35}}"
+    );
+  }
+
+  #[test]
+  fn rank_deficient_no_singular_warning() {
+    use woxi::interpret_with_stdout;
+    // The internal singular probes must not leak an Inverse::sing message.
+    let r = interpret_with_stdout("PseudoInverse[{{1, 0}, {0, 0}}]").unwrap();
+    assert_eq!(r.result, "{{1, 0}, {0, 0}}");
+    assert!(r.warnings.is_empty());
+  }
+
+  #[test]
   fn rectangular_2x3() {
     assert_eq!(
       interpret("PseudoInverse[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),

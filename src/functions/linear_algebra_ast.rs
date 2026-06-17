@@ -43,6 +43,13 @@ fn mat_mul(a: &[Vec<Expr>], b: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
 
 /// Try to invert a square matrix. Returns None if singular.
 fn try_invert(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<Expr>>> {
+  // try_invert is a probe — a singular matrix is an expected, handled outcome
+  // (PseudoInverse falls through to another formula). Detect singularity up
+  // front via the determinant so we never call inverse_ast on a singular
+  // matrix (which would emit and capture an Inverse::sing message).
+  if is_zero_expr(&determinant(matrix)) {
+    return None;
+  }
   let expr = matrix_to_expr(matrix.to_vec());
   match inverse_ast(&[expr]) {
     Ok(result) => {
@@ -104,11 +111,13 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(matrix_to_expr(result));
   }
 
-  // Square non-singular: just use Inverse
+  // Square non-singular: just use the exact inverse. (try_invert returns None
+  // for a singular matrix, so we fall through to the rank-deficient path
+  // instead of emitting Inverse::sing.)
   if nrows == ncols
-    && let Ok(inv) = inverse_ast(&[args[0].clone()])
+    && let Some(inv) = try_invert(&matrix)
   {
-    return Ok(inv);
+    return Ok(matrix_to_expr(inv));
   }
 
   let mt = transpose_matrix(&matrix);
@@ -138,11 +147,51 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  // For rank-deficient matrices, return unevaluated
+  // Rank-deficient matrices: compute the Moore-Penrose pseudoinverse exactly
+  // via a rank factorization A = B·C (B = pivot columns of A, C = the non-zero
+  // RREF rows), giving A+ = Cᵀ (C Cᵀ)⁻¹ (Bᵀ B)⁻¹ Bᵀ.
+  if let Some(result) = rank_factor_pseudoinverse(&matrix) {
+    return Ok(result);
+  }
+
+  // Otherwise (e.g. symbolic entries we can't reduce), return unevaluated.
   Ok(Expr::FunctionCall {
     name: "PseudoInverse".to_string(),
     args: args.to_vec().into(),
   })
+}
+
+/// Moore-Penrose pseudoinverse of a rank-deficient matrix via rank
+/// factorization. Returns None when the matrix can't be reduced to exact
+/// pivots (e.g. symbolic entries).
+fn rank_factor_pseudoinverse(matrix: &[Vec<Expr>]) -> Option<Expr> {
+  let nrows = matrix.len();
+  let rref = row_reduce_impl(matrix);
+  // Pivot columns are the leading column of each non-zero RREF row; those rows
+  // form C (full row rank), the corresponding columns of A form B (full column
+  // rank).
+  let mut pivot_cols: Vec<usize> = Vec::new();
+  let mut c: Vec<Vec<Expr>> = Vec::new();
+  for row in &rref {
+    if let Some(lead) = row.iter().position(|e| !is_zero_expr(e)) {
+      pivot_cols.push(lead);
+      c.push(row.clone());
+    }
+  }
+  if pivot_cols.is_empty() {
+    return None;
+  }
+  let b: Vec<Vec<Expr>> = (0..nrows)
+    .map(|i| pivot_cols.iter().map(|&col| matrix[i][col].clone()).collect())
+    .collect();
+  let bt = transpose_matrix(&b);
+  let ct = transpose_matrix(&c);
+  let btb_inv = try_invert(&mat_mul(&bt, &b))?;
+  let cct_inv = try_invert(&mat_mul(&c, &ct))?;
+  // A+ = Cᵀ · (C Cᵀ)⁻¹ · (Bᵀ B)⁻¹ · Bᵀ
+  let step1 = mat_mul(&ct, &cct_inv);
+  let step2 = mat_mul(&step1, &btb_inv);
+  Some(matrix_to_expr(mat_mul(&step2, &bt)))
 }
 
 /// Orthogonalize[{v1, v2, ...}] — orthonormalize a set of vectors with the
