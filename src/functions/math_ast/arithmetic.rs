@@ -4761,10 +4761,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|(_, a)| a)
         .collect();
       if !others.is_empty()
-        && let Some(mut sign) =
-          others.iter().try_fold(inf_sign, |acc, a| {
-            real_factor_sign(a).map(|s| acc * s)
-          })
+        && let Some(mut sign) = others
+          .iter()
+          .try_fold(inf_sign, |acc, a| real_factor_sign(a).map(|s| acc * s))
       {
         if sign == 0 {
           sign = 1; // defensive; real_factor_sign never yields 0
@@ -8027,6 +8026,13 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Max is idempotent: Max[a, a] == a. Drop duplicate symbolic arguments
+  // (numeric duplicates already collapse into the single best value).
+  {
+    let mut seen = std::collections::HashSet::new();
+    symbolic.retain(|e| seen.insert(crate::syntax::expr_to_string(e)));
+  }
+
   if symbolic.is_empty() {
     // All numeric
     match best_expr {
@@ -8096,6 +8102,12 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       symbolic.push((*item).clone());
     }
+  }
+
+  // Min is idempotent: Min[a, a] == a. Drop duplicate symbolic arguments.
+  {
+    let mut seen = std::collections::HashSet::new();
+    symbolic.retain(|e| seen.insert(crate::syntax::expr_to_string(e)));
   }
 
   if symbolic.is_empty() {

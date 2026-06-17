@@ -3788,6 +3788,17 @@ mod min_max_identity {
   }
 
   #[test]
+  fn max_min_deduplicate_symbolic_args() {
+    // Max/Min are idempotent: duplicate symbolic arguments are removed.
+    assert_eq!(interpret("Max[a, b, a]").unwrap(), "Max[a, b]");
+    assert_eq!(interpret("Min[a, b, a]").unwrap(), "Min[a, b]");
+    assert_eq!(interpret("Max[a, a, a]").unwrap(), "a");
+    assert_eq!(interpret("Max[a, b, c, b]").unwrap(), "Max[a, b, c]");
+    // Numeric duplicates collapse into the best value alongside symbols.
+    assert_eq!(interpret("Max[2, a, 2, a]").unwrap(), "Max[2, a]");
+  }
+
+  #[test]
   fn min_max_basic() {
     assert_eq!(
       interpret("MinMax[{3, 1, 4, 1, 5, 9, 2, 6}]").unwrap(),
