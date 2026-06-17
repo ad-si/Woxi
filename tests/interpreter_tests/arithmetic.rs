@@ -749,6 +749,29 @@ mod big_integer {
     assert_eq!(interpret("CompositeQ[2^128]").unwrap(), "True");
   }
 
+  // CompositeQ, DigitSum, IntegerReverse, DigitCount are Listable: they
+  // thread element-wise over a list argument (previously CompositeQ wrongly
+  // returned a single False for the whole list).
+  #[test]
+  fn number_theory_predicates_thread() {
+    assert_eq!(
+      interpret("CompositeQ[{4, 5, 6}]").unwrap(),
+      "{True, False, True}"
+    );
+    assert_eq!(interpret("DigitSum[{12, 123}]").unwrap(), "{3, 6}");
+    assert_eq!(
+      interpret("IntegerReverse[{12, 34}]").unwrap(),
+      "{21, 43}"
+    );
+    assert_eq!(
+      interpret("DigitCount[{12, 123}, 10]").unwrap(),
+      "{{1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 1, 1, 0, 0, 0, 0, 0, 0, 0}}"
+    );
+    // Scalar forms unchanged.
+    assert_eq!(interpret("CompositeQ[7]").unwrap(), "False");
+    assert_eq!(interpret("DigitSum[123]").unwrap(), "6");
+  }
+
   #[test]
   fn nest_with_big_integer() {
     assert_eq!(

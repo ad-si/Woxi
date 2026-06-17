@@ -6,3 +6,10 @@ Returns the sum of digits of a number.
 $ wo 'DigitSum[0]'
 0
 ```
+
+It threads over a list.
+
+```scrut
+$ wo 'DigitSum[{12, 123}]'
+{3, 6}
+```
