@@ -1707,7 +1707,10 @@ mod catenate_messages {
   #[test]
   fn invrp_reports_first_invalid_element() {
     clear_state();
-    assert_eq!(interpret("Catenate[{{1}, 2}]").unwrap(), "Catenate[{{1}, 2}]");
+    assert_eq!(
+      interpret("Catenate[{{1}, 2}]").unwrap(),
+      "Catenate[{{1}, 2}]"
+    );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(

@@ -75,8 +75,34 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
       total_with_level(&Expr::List(values.into()), &level_spec)
     }
-    // Total[x] for non-list returns x
-    other => Ok(other.clone()),
+    // Non-list, non-association argument. A numeric scalar (e.g. 5, Pi,
+    // Sin[1], 1 + I) is its own total and is returned as-is — even with a
+    // level spec. A String can never become a list, so Total emits
+    // ::normal and stays unevaluated. Anything else (symbols, Infinity,
+    // True, x + y, f[…], rules) stays unevaluated with no message, matching
+    // wolframscript.
+    other => {
+      if crate::functions::predicate_ast::is_numeric_q_pub(other) {
+        Ok(other.clone())
+      } else {
+        if matches!(other, Expr::String(_)) {
+          crate::emit_message(&format!(
+            "Total::normal: Nonatomic expression expected at position 1 in {}.",
+            crate::syntax::format_expr(
+              &Expr::FunctionCall {
+                name: "Total".to_string(),
+                args: args.to_vec().into(),
+              },
+              crate::syntax::ExprForm::Output
+            )
+          ));
+        }
+        Ok(Expr::FunctionCall {
+          name: "Total".to_string(),
+          args: args.to_vec().into(),
+        })
+      }
+    }
   }
 }
 

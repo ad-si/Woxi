@@ -984,6 +984,42 @@ mod total {
   fn total_non_list() {
     assert_eq!(interpret("Total[5]").unwrap(), "5");
   }
+
+  // A numeric scalar is its own total and is returned as-is.
+  #[test]
+  fn total_numeric_scalar_returns_itself() {
+    assert_eq!(interpret("Total[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Total[Sin[1]]").unwrap(), "Sin[1]");
+    assert_eq!(interpret("Total[2 Pi]").unwrap(), "2*Pi");
+    assert_eq!(interpret("Total[1 + I]").unwrap(), "1 + I");
+    // The numeric short-circuit applies even with a level spec.
+    assert_eq!(interpret("Total[Pi, 2]").unwrap(), "Pi");
+  }
+
+  // A non-numeric, non-list argument stays unevaluated (no message).
+  #[test]
+  fn total_non_numeric_stays_unevaluated() {
+    assert_eq!(interpret("Total[x]").unwrap(), "Total[x]");
+    assert_eq!(interpret("Total[x + y]").unwrap(), "Total[x + y]");
+    assert_eq!(interpret("Total[Sin[x]]").unwrap(), "Total[Sin[x]]");
+    assert_eq!(interpret("Total[f[1, 2, 3]]").unwrap(), "Total[f[1, 2, 3]]");
+    assert_eq!(interpret("Total[Infinity]").unwrap(), "Total[Infinity]");
+    assert_eq!(interpret("Total[x, 2]").unwrap(), "Total[x, 2]");
+  }
+
+  // A string can never be a list: Total emits ::normal and stays unevaluated.
+  #[test]
+  fn total_string_emits_normal() {
+    clear_state();
+    assert_eq!(interpret(r#"Total["str"]"#).unwrap(), "Total[str]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Total::normal: Nonatomic expression expected at position 1 in Total[str]."
+      )),
+      "expected Total::normal, got {msgs:?}"
+    );
+  }
 }
 
 mod normalize {
