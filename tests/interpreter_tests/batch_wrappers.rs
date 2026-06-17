@@ -544,6 +544,110 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // ─── IndefiniteMatrixQ ─────────────────────────────────────────────
+  #[test]
+  fn indefinite_matrix_q_true_diag() {
+    // Eigenvalues -1 and 1: both signs present.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{-1, 0}, {0, 1}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_positive_definite() {
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{2, 0}, {0, 1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_negative_definite() {
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{-2, 0}, {0, -1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_semidefinite_zero_eigenvalue() {
+    // Eigenvalues 1 and 0: positive + zero is not indefinite.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{1, 0}, {0, 0}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_offdiagonal() {
+    // Eigenvalues 1 and -1.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{0, 1}, {1, 0}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_nonsymmetric_real_eigenvalues() {
+    // [[1,2],[3,4]] -> Hermitian part eigenvalues straddle zero.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_uses_hermitian_part_not_eigenvalues() {
+    // Nilpotent matrix: eigenvalues are both 0, but the Hermitian part
+    // {{0,1},{1,0}} has eigenvalues -1 and 1, so WL reports True.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{0, 2}, {0, 0}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_complex_eigenvalues_false() {
+    // Rotation matrix has purely imaginary eigenvalues; Hermitian part is
+    // all zeros, so it is not indefinite.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{0, -1}, {1, 0}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_three_by_three() {
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{1, 2, 0}, {0, 3, 0}, {0, 0, -1}}]")
+        .unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_real_valued() {
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{1.5, 0}, {0, -2.5}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_scalar_matrix() {
+    assert_eq!(interpret("IndefiniteMatrixQ[{{-3}}]").unwrap(), "False");
+  }
+  #[test]
+  fn indefinite_matrix_q_nonsquare() {
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn indefinite_matrix_q_vector() {
+    assert_eq!(interpret("IndefiniteMatrixQ[{1, 2, 3}]").unwrap(), "False");
+  }
+  #[test]
+  fn indefinite_matrix_q_symbolic_unknown_sign() {
+    // The sign of `a` is unknown, so it is not *explicitly* indefinite.
+    assert_eq!(
+      interpret("IndefiniteMatrixQ[{{a, 0}, {0, 1}}]").unwrap(),
+      "False"
+    );
+  }
+
   // ─── MovingMap ─────────────────────────────────────────────────────
   #[test]
   fn moving_map_total() {

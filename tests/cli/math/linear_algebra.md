@@ -45,6 +45,7 @@ normalised to `##` in this file.
 - [`HankelMatrix`](linear_algebra/HankelMatrix.md)
 - [`HermitianMatrixQ`](linear_algebra/HermitianMatrixQ.md)
 - [`HilbertMatrix`](linear_algebra/HilbertMatrix.md)
+- [`IndefiniteMatrixQ`](linear_algebra/IndefiniteMatrixQ.md)
 - [`KroneckerProduct`](linear_algebra/KroneckerProduct.md)
 - [`LUDecomposition`](linear_algebra/LUDecomposition.md)
 - [`LatticeReduce`](linear_algebra/LatticeReduce.md)

@@ -587,6 +587,7 @@ nav = [
         { "HermitianMatrixQ" = "math/linear_algebra/HermitianMatrixQ.md" },
         { "HilbertMatrix" = "math/linear_algebra/HilbertMatrix.md" },
         { "IdentityMatrix" = "math/linear_algebra/IdentityMatrix.md" },
+        { "IndefiniteMatrixQ" = "math/linear_algebra/IndefiniteMatrixQ.md" },
         { "Inverse" = "math/linear_algebra/Inverse.md" },
         { "KroneckerProduct" = "math/linear_algebra/KroneckerProduct.md" },
         { "LinearModelFit" = "math/linear_algebra/LinearModelFit.md" },

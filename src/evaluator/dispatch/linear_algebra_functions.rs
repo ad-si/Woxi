@@ -346,6 +346,72 @@ pub fn dispatch_linear_algebra_functions(
       }
       return Some(Ok(Expr::Identifier("False".to_string())));
     }
+    "IndefiniteMatrixQ" if args.len() == 1 => {
+      // A matrix is "explicitly indefinite" iff its Hermitian part
+      // H = (m + ConjugateTranspose[m])/2 has at least one strictly
+      // positive eigenvalue AND at least one strictly negative eigenvalue.
+      // Anything that can't be confirmed indefinite returns False.
+      let false_res = || Some(Ok(Expr::Identifier("False".to_string())));
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        if n == 0 {
+          return false_res();
+        }
+        // Require a square matrix (every row a list of length n).
+        for row in rows {
+          match row {
+            Expr::List(cols) if cols.len() == n => {}
+            _ => return false_res(),
+          }
+        }
+        // Build the Hermitian part: (m + ConjugateTranspose[m]) / 2.
+        let conj_t = Expr::FunctionCall {
+          name: "ConjugateTranspose".to_string(),
+          args: vec![args[0].clone()].into(),
+        };
+        let herm = Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![args[0].clone(), conj_t].into(),
+            },
+            Expr::Integer(2),
+          ]
+          .into(),
+        };
+        let herm_eval =
+          evaluate_expr_to_expr(&herm).unwrap_or_else(|_| herm.clone());
+        if let Ok(Expr::List(ref eigenvals)) =
+          crate::functions::linear_algebra_ast::eigenvalues_ast(&[herm_eval])
+        {
+          let mut has_pos = false;
+          let mut has_neg = false;
+          for ev in eigenvals.iter() {
+            let n_val = evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "N".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Re".to_string(),
+                args: vec![ev.clone()].into(),
+              }]
+              .into(),
+            });
+            match n_val {
+              Ok(Expr::Real(f)) if f > 0.0 => has_pos = true,
+              Ok(Expr::Real(f)) if f < 0.0 => has_neg = true,
+              Ok(Expr::Integer(v)) if v > 0 => has_pos = true,
+              Ok(Expr::Integer(v)) if v < 0 => has_neg = true,
+              _ => {}
+            }
+          }
+          if has_pos && has_neg {
+            return Some(Ok(Expr::Identifier("True".to_string())));
+          }
+        }
+        return false_res();
+      }
+      return false_res();
+    }
     "Eigenvectors" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvectors_ast(
         args,

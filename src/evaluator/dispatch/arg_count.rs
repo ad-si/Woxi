@@ -772,6 +772,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NDSolve" => Some((3, 3)),
     "NDSolveValue" => Some((3, 3)),
     "Negative" => Some((1, 1)),
+    "IndefiniteMatrixQ" => Some((1, 1)),
     "NegativeBinomialDistribution" => Some((2, 2)),
     "NegativeDefiniteMatrixQ" => Some((1, 1)),
     "NegativeSemidefiniteMatrixQ" => Some((1, 1)),
