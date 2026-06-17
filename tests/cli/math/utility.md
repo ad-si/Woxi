@@ -152,6 +152,7 @@ and the membership predicate `MemberQ`.
 - [`Subdivide`](utility/Subdivide.md)
 - [`Subfactorial`](utility/Subfactorial.md)
 - [`Tetrahedron`](utility/Tetrahedron.md)
+- [`Threshold`](utility/Threshold.md)
 - [`ToBoxes`](utility/ToBoxes.md)
 - [`ToPolarCoordinates`](utility/ToPolarCoordinates.md)
 - [`ToSphericalCoordinates`](utility/ToSphericalCoordinates.md)

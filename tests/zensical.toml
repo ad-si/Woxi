@@ -829,6 +829,7 @@ nav = [
         { "Subdivide" = "math/utility/Subdivide.md" },
         { "Subfactorial" = "math/utility/Subfactorial.md" },
         { "Tetrahedron" = "math/utility/Tetrahedron.md" },
+        { "Threshold" = "math/utility/Threshold.md" },
         { "ToBoxes" = "math/utility/ToBoxes.md" },
         { "ToPolarCoordinates" = "math/utility/ToPolarCoordinates.md" },
         { "ToSphericalCoordinates" = "math/utility/ToSphericalCoordinates.md" },

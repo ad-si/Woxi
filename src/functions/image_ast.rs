@@ -4233,19 +4233,39 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(_) = &args[0] else {
     return Ok(unevaluated());
   };
-  // Default threshold is 10^-10. When supplied explicitly, the threshold
-  // itself must be numeric (Integer, Rational, or Real); otherwise we
-  // bail out to unevaluated.
-  let threshold: Expr = if args.len() == 2 {
-    if crate::functions::math_ast::try_eval_to_f64(&args[1]).is_none() {
+  // Default threshold is 10^-10 with the "Hard" method. A second argument may
+  // be a bare numeric threshold (Hard) or a method spec
+  // {"Hard"|"Soft"|"PiecewiseGarrote", delta}. The "Firm" method and any
+  // unknown spec are left unevaluated. The threshold value must be numeric.
+  let (method, threshold): (ThreshMethod, Expr) = if args.len() == 2 {
+    if let Expr::List(spec) = &args[1] {
+      if spec.len() == 2
+        && let Expr::String(name) = &spec[0]
+        && crate::functions::math_ast::try_eval_to_f64(&spec[1]).is_some()
+      {
+        let m = match name.as_str() {
+          "Hard" => ThreshMethod::Hard,
+          "Soft" => ThreshMethod::Soft,
+          "PiecewiseGarrote" => ThreshMethod::Garrote,
+          _ => return Ok(unevaluated()),
+        };
+        (m, spec[1].clone())
+      } else {
+        return Ok(unevaluated());
+      }
+    } else if crate::functions::math_ast::try_eval_to_f64(&args[1]).is_some() {
+      (ThreshMethod::Hard, args[1].clone())
+    } else {
       return Ok(unevaluated());
     }
-    args[1].clone()
   } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(10_000_000_000)].into(),
-    }
+    (
+      ThreshMethod::Hard,
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(10_000_000_000)].into(),
+      },
+    )
   };
   // When the data array contains any inexact value (Real/BigFloat), the whole
   // result is real-valued: every surviving leaf and every introduced zero is
@@ -4262,7 +4282,12 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let promote_to_real = contains_inexact(&args[0]);
   // Walk the array recursively. A non-list, non-numeric leaf triggers
   // the Threshold::nlist message and aborts.
-  fn apply(data: &Expr, t: &Expr, promote: bool) -> Option<Expr> {
+  fn apply(
+    data: &Expr,
+    t: &Expr,
+    promote: bool,
+    method: ThreshMethod,
+  ) -> Option<Expr> {
     match data {
       Expr::List(items) => {
         if items.is_empty() {
@@ -4272,12 +4297,12 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         let mut out = Vec::with_capacity(items.len());
         for item in items.iter() {
-          out.push(apply(item, t, promote)?);
+          out.push(apply(item, t, promote, method)?);
         }
         Some(Expr::List(out.into()))
       }
       x if crate::functions::math_ast::try_eval_to_f64(x).is_some() => {
-        let r = threshold_one(x, t);
+        let r = threshold_one_method(x, t, method);
         if promote {
           Some(Expr::Real(
             crate::functions::math_ast::try_eval_to_f64(&r).unwrap_or(0.0),
@@ -4299,7 +4324,7 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated());
   }
-  match apply(&args[0], &threshold, promote_to_real) {
+  match apply(&args[0], &threshold, promote_to_real, method) {
     Some(result) => Ok(result),
     None => {
       crate::emit_message(&format!(
@@ -4307,6 +4332,38 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::expr_to_string(&args[0])
       ));
       Ok(unevaluated())
+    }
+  }
+}
+
+/// Thresholding method for `Threshold[data, {method, delta}]`.
+#[derive(Clone, Copy)]
+enum ThreshMethod {
+  /// Keep x when |x| > delta, else 0 (the default).
+  Hard,
+  /// Sign[x] * Max[|x| - delta, 0].
+  Soft,
+  /// Non-negative garrote: x - delta^2 / x when |x| > delta, else 0.
+  Garrote,
+}
+
+/// Apply a single thresholding method to one numeric leaf. "Soft" and
+/// "PiecewiseGarrote" always yield a machine real; "Hard" preserves the
+/// leaf's exact/inexact kind via `threshold_one`.
+fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
+  match method {
+    ThreshMethod::Hard => threshold_one(x, t),
+    ThreshMethod::Soft => {
+      let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
+      let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
+      let v = xf.signum() * (xf.abs() - tf).max(0.0);
+      Expr::Real(if v == 0.0 { 0.0 } else { v })
+    }
+    ThreshMethod::Garrote => {
+      let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
+      let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
+      let v = if xf.abs() > tf { xf - tf * tf / xf } else { 0.0 };
+      Expr::Real(if v == 0.0 { 0.0 } else { v })
     }
   }
 }
