@@ -2170,10 +2170,7 @@ mod append_prepend_nest_firstcase_operator_forms {
 
   #[test]
   fn first_case_operator_form() {
-    assert_eq!(
-      interpret("FirstCase[_?OddQ][{2, 4, 5, 6}]").unwrap(),
-      "5"
-    );
+    assert_eq!(interpret("FirstCase[_?OddQ][{2, 4, 5, 6}]").unwrap(), "5");
   }
 
   #[test]
@@ -2183,6 +2180,22 @@ mod append_prepend_nest_firstcase_operator_forms {
     assert_eq!(interpret("Prepend[x]").unwrap(), "Prepend[x]");
     assert_eq!(interpret("Nest[f, 3]").unwrap(), "Nest[f, 3]");
     assert_eq!(interpret("FirstCase[p]").unwrap(), "FirstCase[p]");
+  }
+
+  #[test]
+  fn replace_operator_form() {
+    use woxi::interpret_with_stdout;
+    // Replace[rules][expr] applies the rules — without a spurious argbu error.
+    let r = interpret_with_stdout("Replace[x_ :> x^2][5]").unwrap();
+    assert_eq!(r.result, "25");
+    assert!(r.warnings.is_empty());
+    assert_eq!(interpret("Replace[{a -> 1, b -> 2}][a]").unwrap(), "1");
+    assert_eq!(
+      interpret("Map[Replace[x_ :> x^2], {1, 2, 3}]").unwrap(),
+      "{1, 4, 9}"
+    );
+    // Bare operator object stays unevaluated.
+    assert_eq!(interpret("Replace[r]").unwrap(), "Replace[r]");
   }
 }
 
