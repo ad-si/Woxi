@@ -1666,12 +1666,36 @@ mod covariance {
   }
 
   #[test]
-  fn covariance_symbolic_unevaluated() {
-    // Symbolic data is left unevaluated rather than emitting an unsimplified
-    // form that diverges from Wolfram's closed form.
+  fn covariance_symbolic_vectors() {
+    // Symbolic vectors now produce wolframscript's closed form. For two
+    // elements it factors; for three or more it is the expanded sum (the
+    // mean of the second vector drops out because the first vector's
+    // deviations sum to zero).
     assert_eq!(
       interpret("Covariance[{a, b}, {x, y}]").unwrap(),
-      "Covariance[{a, b}, {x, y}]"
+      "((a - b)*(Conjugate[x] - Conjugate[y]))/2"
+    );
+    assert_eq!(
+      interpret("Covariance[{a, b, c}, {x, y, z}]").unwrap(),
+      "((2*a - b - c)*Conjugate[x] + (-a + 2*b - c)*Conjugate[y] \
+       + (-a - b + 2*c)*Conjugate[z])/6"
+    );
+    // One-argument vector form is the variance (covariance with itself).
+    assert_eq!(
+      interpret("Covariance[{a, b}]").unwrap(),
+      "((a - b)*(Conjugate[a] - Conjugate[b]))/2"
+    );
+  }
+
+  #[test]
+  fn covariance_symbolic_matrix_unevaluated() {
+    // The symbolic covariance *matrix* is still left unevaluated: its
+    // lower-triangle entries multiply a plain difference by a Conjugate
+    // difference, and Woxi's Times ordering of those factors diverges from
+    // wolframscript's.
+    assert_eq!(
+      interpret("Covariance[{{a, b}, {c, d}}]").unwrap(),
+      "Covariance[{{a, b}, {c, d}}]"
     );
   }
 }

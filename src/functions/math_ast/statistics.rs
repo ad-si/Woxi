@@ -1600,11 +1600,89 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
-/// True when every entry of the list is a numeric scalar. Covariance is only
-/// closed-formed here for numeric data; symbolic data is left unevaluated to
-/// avoid emitting an unsimplified expression that diverges from Wolfram's form.
+/// True when every entry of the list is a numeric scalar.
 fn all_numeric_scalars(items: &[Expr]) -> bool {
   items.iter().all(|e| expr_to_num(e).is_some())
+}
+
+/// Symbolic covariance of two equal-length vectors, in wolframscript's
+/// canonical form. The mean of `ys` drops out because the `xs`-deviations sum
+/// to zero, so the result is `sum_i (n*x_i - sum x) * Conjugate[y_i]`
+/// over `n*(n-1)`. For `n == 2` wolframscript factors this as
+/// `((x0 - x1)*(Conjugate[y0] - Conjugate[y1]))/2`, so build that shape
+/// directly; for `n >= 3` the expanded sum already matches.
+fn symbolic_covariance(
+  xs: &[Expr],
+  ys: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator::{Divide, Minus, Times};
+  let n = xs.len();
+  let conj = |e: &Expr| Expr::FunctionCall {
+    name: "Conjugate".to_string(),
+    args: vec![e.clone()].into(),
+  };
+  let result = if n == 2 {
+    let dx = Expr::BinaryOp {
+      op: Minus,
+      left: Box::new(xs[0].clone()),
+      right: Box::new(xs[1].clone()),
+    };
+    let dy = Expr::BinaryOp {
+      op: Minus,
+      left: Box::new(conj(&ys[0])),
+      right: Box::new(conj(&ys[1])),
+    };
+    Expr::BinaryOp {
+      op: Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: Times,
+        left: Box::new(dx),
+        right: Box::new(dy),
+      }),
+      right: Box::new(Expr::Integer(2)),
+    }
+  } else {
+    let sum_x = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: xs.to_vec().into(),
+    };
+    let mut terms = Vec::with_capacity(n);
+    for (x, y) in xs.iter().zip(ys.iter()) {
+      let coeff = Expr::BinaryOp {
+        op: Minus,
+        left: Box::new(Expr::BinaryOp {
+          op: Times,
+          left: Box::new(Expr::Integer(n as i128)),
+          right: Box::new(x.clone()),
+        }),
+        right: Box::new(sum_x.clone()),
+      };
+      terms.push(Expr::BinaryOp {
+        op: Times,
+        left: Box::new(coeff),
+        right: Box::new(conj(y)),
+      });
+    }
+    Expr::BinaryOp {
+      op: Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }),
+      right: Box::new(Expr::Integer((n * (n - 1)) as i128)),
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Covariance of two equal-length vectors: an exact numeric result when both
+/// are numeric, otherwise the symbolic closed form.
+fn covariance_two(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
+  if all_numeric_scalars(xs) && all_numeric_scalars(ys) {
+    covariance_pair(xs, ys)
+  } else {
+    symbolic_covariance(xs, ys)
+  }
 }
 
 /// Covariance[list1, list2] - sample covariance of two equal-length lists.
@@ -1626,17 +1704,18 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return unevaluated();
     }
     // A flat vector is one variable, so its covariance is its variance
-    // (covariance of the variable with itself). Only numeric data is
-    // closed-formed here, matching the two-argument form.
+    // (covariance of the variable with itself).
     if rows.iter().all(|r| !matches!(r, Expr::List(_))) {
-      if all_numeric_scalars(rows) {
-        return covariance_pair(rows, rows);
-      }
-      return unevaluated();
+      return covariance_two(rows, rows);
     }
     let Some(cols) = transpose_rows(rows) else {
       return unevaluated();
     };
+    // Only the numeric covariance matrix is closed-formed here. The symbolic
+    // matrix form is left unevaluated: its lower-triangle entries multiply a
+    // plain difference by a Conjugate-difference, and Woxi's Times ordering of
+    // those two factors diverges from wolframscript's (e.g. it prints
+    // (Conjugate[a] - Conjugate[c])*(b - d) where WL keeps (b - d) first).
     if !cols.iter().all(|c| all_numeric_scalars(c)) {
       return unevaluated();
     }
@@ -1659,14 +1738,14 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Expr::List(xs), Expr::List(ys))
       if xs.len() == ys.len()
         && xs.len() >= 2
-        && all_numeric_scalars(xs)
-        && all_numeric_scalars(ys) =>
+        && xs.iter().all(|e| !matches!(e, Expr::List(_)))
+        && ys.iter().all(|e| !matches!(e, Expr::List(_))) =>
     {
       (xs, ys)
     }
     _ => return unevaluated(),
   };
-  covariance_pair(xs, ys)
+  covariance_two(xs, ys)
 }
 
 /// Transpose a rectangular `rows` of `Expr::List` rows into a Vec of columns.
