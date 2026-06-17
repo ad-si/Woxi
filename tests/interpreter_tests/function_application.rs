@@ -2150,6 +2150,42 @@ mod operator_applied {
   }
 }
 
+mod append_prepend_nest_firstcase_operator_forms {
+  use super::*;
+
+  #[test]
+  fn append_prepend_operator_forms() {
+    assert_eq!(interpret("Append[x][{1, 2}]").unwrap(), "{1, 2, x}");
+    assert_eq!(interpret("Prepend[x][{1, 2}]").unwrap(), "{x, 1, 2}");
+    assert_eq!(
+      interpret("Map[Append[0], {{1}, {2}}]").unwrap(),
+      "{{1, 0}, {2, 0}}"
+    );
+  }
+
+  #[test]
+  fn nest_operator_form() {
+    assert_eq!(interpret("Nest[f, 3][x]").unwrap(), "f[f[f[x]]]");
+  }
+
+  #[test]
+  fn first_case_operator_form() {
+    assert_eq!(
+      interpret("FirstCase[_?OddQ][{2, 4, 5, 6}]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn unapplied_operator_forms_stay_unevaluated() {
+    // The bare operator object is valid (no arg-count error) and stays put.
+    assert_eq!(interpret("Append[x]").unwrap(), "Append[x]");
+    assert_eq!(interpret("Prepend[x]").unwrap(), "Prepend[x]");
+    assert_eq!(interpret("Nest[f, 3]").unwrap(), "Nest[f, 3]");
+    assert_eq!(interpret("FirstCase[p]").unwrap(), "FirstCase[p]");
+  }
+}
+
 mod curry_applied {
   use super::*;
 

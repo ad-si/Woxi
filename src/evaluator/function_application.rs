@@ -506,6 +506,12 @@ pub fn apply_function_to_arg(
         let new_args = vec![arg.clone(), args[0].clone(), args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
+      // Nest[f, n][x] -> Nest[f, x, n]: the applied expression goes in the
+      // middle.
+      if name == "Nest" && args.len() == 2 {
+        let new_args = vec![args[0].clone(), arg.clone(), args[1].clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       // NearestTo[x][data] -> Nearest[data, x] (operator form of Nearest),
       // so `Map[NearestTo[x], lists]` finds the nearest in each list.
       if name == "NearestTo" && (args.len() == 1 || args.len() == 2) {
@@ -541,6 +547,9 @@ pub fn apply_function_to_arg(
           | "Delete"
           | "ReplacePart"
           | "Extract"
+          | "Append"
+          | "Prepend"
+          | "FirstCase"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -1021,11 +1030,19 @@ pub fn apply_curried_call(
           | "Delete"
           | "ReplacePart"
           | "Extract"
+          | "Append"
+          | "Prepend"
+          | "FirstCase"
       ) && func_args.len() == 1
         && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
         let new_args = vec![args[0].clone(), func_args[0].clone()];
+        evaluate_function_call_ast(name, &new_args)
+      } else if name == "Nest" && func_args.len() == 2 && args.len() == 1 {
+        // Nest[f, n][x] -> Nest[f, x, n]
+        let new_args =
+          vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
         evaluate_function_call_ast(name, &new_args)
       } else if name == "Composition" && !func_args.is_empty() {
         // Composition[f, g, h][x] applies functions right-to-left: f[g[h[x]]]
