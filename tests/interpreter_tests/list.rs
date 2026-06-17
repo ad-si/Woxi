@@ -5422,6 +5422,75 @@ mod delete_duplicates_with_test {
   }
 }
 
+mod delete_duplicates_heads_and_atoms {
+  use super::*;
+
+  // DeleteDuplicates works on any head, preserving it, then evaluating the
+  // rebuilt expression (Plus reduces; an unknown head stays symbolic).
+  #[test]
+  fn function_call_head_is_preserved() {
+    assert_eq!(
+      interpret("DeleteDuplicates[f[1, 2, 2, 3]]").unwrap(),
+      "f[1, 2, 3]"
+    );
+    assert_eq!(
+      interpret("DeleteDuplicates[g[1, 1, 2, 3, 3]]").unwrap(),
+      "g[1, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn plus_head_is_evaluated() {
+    assert_eq!(
+      interpret("DeleteDuplicates[a + b + b + c]").unwrap(),
+      "a + 2*b + c"
+    );
+  }
+
+  #[test]
+  fn function_call_head_with_test() {
+    assert_eq!(
+      interpret("DeleteDuplicates[f[3, 1, 3], Greater]").unwrap(),
+      "f[3, 3]"
+    );
+  }
+
+  #[test]
+  fn atomic_argument_emits_normal() {
+    for (input, call) in [
+      ("DeleteDuplicates[5]", "DeleteDuplicates[5]"),
+      ("DeleteDuplicates[x]", "DeleteDuplicates[x]"),
+      (r#"DeleteDuplicates["str"]"#, "DeleteDuplicates[str]"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "DeleteDuplicates::normal: Nonatomic expression expected at position 1 in {call}."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn nonatomic_inputs_do_not_emit_normal() {
+    clear_state();
+    assert_eq!(
+      interpret("DeleteDuplicates[{1, 2, 2, 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(interpret("DeleteDuplicates[f[1, 1]]").unwrap(), "f[1]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::normal")),
+      "unexpected normal message: {msgs:?}"
+    );
+  }
+}
+
 mod delete_deep {
   use super::*;
 

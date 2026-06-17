@@ -172,12 +172,19 @@ pub fn delete_duplicates_ast(
     return Ok(Expr::Association(result));
   }
 
-  let items = match list {
-    Expr::List(items) => items,
+  // DeleteDuplicates works on any expression with parts, preserving the head
+  // (DeleteDuplicates[f[1, 2, 2, 3]] -> f[1, 2, 3]).
+  let (items, head_name): (&[Expr], Option<String>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
       let mut call_args = vec![list.clone()];
       if let Some(t) = test {
         call_args.push(t.clone());
+      }
+      // An atomic argument is invalid: emit ::normal, matching WL.
+      if is_atomic_arg(list) {
+        emit_nonatomic_normal_message("DeleteDuplicates", &call_args);
       }
       return Ok(Expr::FunctionCall {
         name: "DeleteDuplicates".to_string(),
@@ -186,7 +193,7 @@ pub fn delete_duplicates_ast(
     }
   };
 
-  if let Some(test_fn) = test {
+  let kept: Vec<Expr> = if let Some(test_fn) = test {
     // Custom equivalence: keep the first element from each equivalence
     // class, in first-seen order.
     let mut reps: Vec<Expr> = Vec::new();
@@ -199,21 +206,28 @@ pub fn delete_duplicates_ast(
       }
       reps.push(item.clone());
     }
-    return Ok(Expr::List(reps.into()));
-  }
-
-  use std::collections::HashSet;
-  let mut seen: HashSet<String> = HashSet::new();
-  let mut result = Vec::new();
-
-  for item in items {
-    let key_str = crate::syntax::expr_to_string(item);
-    if seen.insert(key_str) {
-      result.push(item.clone());
+    reps
+  } else {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut result = Vec::new();
+    for item in items {
+      if seen.insert(crate::syntax::expr_to_string(item)) {
+        result.push(item.clone());
+      }
     }
-  }
+    result
+  };
 
-  Ok(Expr::List(result.into()))
+  // Preserve the original head, then evaluate the rebuilt expression so a
+  // head with its own rules reduces; inert heads stay symbolic.
+  match head_name {
+    Some(name) => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name,
+      args: kept.into(),
+    }),
+    None => Ok(Expr::List(kept.into())),
+  }
 }
 
 /// AST-based Union: combine lists and remove duplicates.
