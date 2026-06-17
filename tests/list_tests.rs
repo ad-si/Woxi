@@ -2627,6 +2627,56 @@ mod list_tests {
   }
 
   #[test]
+  fn transpose_permutation_forms() {
+    // Partial permutation: trailing levels are left in place. {1} is the
+    // identity on level 1, so the tensor is returned unchanged (regression:
+    // previously leaked "permutation must cover every level").
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3, 4}}, {1}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(interpret("Transpose[{1, 2, 3}, {1}]").unwrap(), "{1, 2, 3}");
+    // A full permutation transposes as usual.
+    assert_eq!(
+      interpret("Transpose[{{1, 2, 3}, {4, 5, 6}}, {2, 1}]").unwrap(),
+      "{{1, 4}, {2, 5}, {3, 6}}"
+    );
+    // Repeated destination collapses levels onto a diagonal.
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3, 4}}, {1, 1}]").unwrap(),
+      "{1, 4}"
+    );
+    // Identity permutation longer than the rank is accepted (trailing levels).
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3, 4}}, {1, 2, 3}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    // Rank-3 partial swap of the first two levels.
+    assert_eq!(
+      interpret("Transpose[Array[a, {2, 2, 2}], {2, 1}]").unwrap(),
+      "{{{a[1, 1, 1], a[1, 1, 2]}, {a[2, 1, 1], a[2, 1, 2]}}, \
+       {{a[1, 2, 1], a[1, 2, 2]}, {a[2, 2, 1], a[2, 2, 2]}}}"
+    );
+    // Invalid permutations stay unevaluated (messages go to stderr).
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3, 4}}, {2, 2}]").unwrap(),
+      "Transpose[{{1, 2}, {3, 4}}, {2, 2}]"
+    );
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3, 4}}, {3}]").unwrap(),
+      "Transpose[{{1, 2}, {3, 4}}, {3}]"
+    );
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3, 4}}, {0}]").unwrap(),
+      "Transpose[{{1, 2}, {3, 4}}, {0}]"
+    );
+    assert_eq!(
+      interpret("Transpose[{{1, 2, 3}, {4, 5, 6}}, {1, 1}]").unwrap(),
+      "Transpose[{{1, 2, 3}, {4, 5, 6}}, {1, 1}]"
+    );
+  }
+
+  #[test]
   fn test_tensor_transpose() {
     // Matrix transpose via explicit permutation.
     assert_eq!(

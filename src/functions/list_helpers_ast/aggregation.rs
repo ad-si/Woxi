@@ -1087,8 +1087,9 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         });
       }
     }
-    keyed
-      .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    keyed.sort_by(|a, b| {
+      a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let len = keyed.len();
 

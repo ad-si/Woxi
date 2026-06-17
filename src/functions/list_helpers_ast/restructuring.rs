@@ -1039,59 +1039,114 @@ pub fn transpose_perm_ast(
 ) -> Result<Expr, InterpreterError> {
   let dims = tensor_dims(list);
   let rank = dims.len();
-  if rank < perm.len() {
-    return Err(InterpreterError::EvaluationError(
-      "Transpose: permutation length exceeds tensor rank".into(),
-    ));
-  }
-  // Parse and validate the permutation into 1-based axis indices.
-  let mut sigma: Vec<usize> = Vec::with_capacity(perm.len());
+  let k = perm.len();
+
+  // The literal call, used for messages and the unevaluated return value.
+  let perm_list = Expr::List(perm.to_vec().into());
+  let perm_str = crate::syntax::expr_to_string(&perm_list);
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Transpose".to_string(),
+      args: vec![list.clone(), perm_list.clone()].into(),
+    })
+  };
+
+  // perm[s] gives the result level that input level s is moved to. Entries must
+  // be positive machine integers (perm1) within 1..=k (perm2): at most k
+  // distinct result levels can come from k input levels.
+  let mut sigma: Vec<usize> = Vec::with_capacity(k);
   for p in perm {
     match p {
-      Expr::Integer(n) if *n >= 1 && (*n as usize) <= rank => {
-        sigma.push(*n as usize);
-      }
+      Expr::Integer(n) if *n >= 1 => sigma.push(*n as usize),
       _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Transpose: second argument must be a permutation of 1..n".into(),
+        crate::emit_message(&format!(
+          "Transpose::perm1: Entry {} in permutation {} is not a positive machine integer.",
+          crate::syntax::expr_to_string(p),
+          perm_str
         ));
+        return unevaluated();
       }
     }
   }
-  // Verify it's a permutation of 1..=perm.len() (must touch each axis
-  // exactly once; all remaining axes are left untouched).
-  let mut seen = vec![false; rank];
   for &s in &sigma {
-    if seen[s - 1] {
-      return Err(InterpreterError::EvaluationError(
-        "Transpose: duplicate axis in permutation".into(),
+    if s > k {
+      crate::emit_message(&format!(
+        "Transpose::perm2: Entry {} in {} is out of bounds for a permutation of length {}.",
+        s, perm_str, k
       ));
+      return unevaluated();
     }
-    seen[s - 1] = true;
   }
-  // Identity permutation → return the list unchanged.
-  let is_identity =
-    sigma.iter().enumerate().all(|(k, &n)| k + 1 == n) && sigma.len() == rank;
-  if is_identity {
+
+  // The identity permutation {1, 2, ..., k} leaves the tensor unchanged — even
+  // when it is longer than the rank (WL accepts trailing identity levels).
+  if sigma.iter().enumerate().all(|(idx, &n)| idx + 1 == n) {
     return Ok(list.clone());
   }
-  if sigma.len() != rank {
-    return Err(InterpreterError::EvaluationError(
-      "Transpose: permutation must cover every level of the tensor".into(),
+
+  // A non-identity permutation longer than the tensor rank is invalid (tperm).
+  if k > rank {
+    let dims_list = Expr::List(
+      dims.iter().map(|&d| Expr::Integer(d as i128)).collect::<Vec<_>>().into(),
+    );
+    crate::emit_message(&format!(
+      "Transpose::tperm: Permutation {} is longer than the dimensions {} of the expression.",
+      perm_str,
+      crate::syntax::expr_to_string(&dims_list)
     ));
+    return unevaluated();
   }
 
-  // Compute the inverse permutation so result axis t corresponds to
-  // list axis sigma^-1(t).
-  let mut inv = vec![0usize; rank];
-  for (k, &n) in sigma.iter().enumerate() {
-    inv[n - 1] = k + 1;
+  // The first k input levels target result levels 1..=m; every level in that
+  // range must be a destination, otherwise the rearrangement is ambiguous
+  // (newdims). m >= 1 because the empty/identity cases returned above.
+  let m = *sigma.iter().max().unwrap();
+  for r in 1..=m {
+    if !sigma.contains(&r) {
+      crate::emit_message(&format!(
+        "Transpose::newdims: Level rearrangement {} does not specify destination for level {}.",
+        perm_str, r
+      ));
+      return unevaluated();
+    }
   }
-  let result_shape: Vec<usize> = (0..rank).map(|t| dims[inv[t] - 1]).collect();
 
-  Ok(tensor_build(&result_shape, &mut |j| {
-    // Original index i_s = j_{sigma(s)} = j_{sigma[s-1] - 1}
-    let i: Vec<usize> = (0..rank).map(|s| j[sigma[s] - 1]).collect();
+  // Result level for each (1-based) input level. Trailing input levels beyond
+  // the permutation keep their order, after the rearranged ones.
+  let mut target = vec![0usize; rank];
+  target[..k].copy_from_slice(&sigma);
+  for (s, t) in target.iter_mut().enumerate().take(rank).skip(k) {
+    *t = m + (s - k) + 1;
+  }
+  let out_rank = m + (rank - k);
+
+  // Output dimension for each result level. Several input levels collapsed onto
+  // the same result level form a diagonal and must share a length (diagnl).
+  let mut out_dims = vec![0usize; out_rank];
+  for (r, out_dim) in out_dims.iter_mut().enumerate().map(|(i, d)| (i + 1, d)) {
+    let mut d: Option<usize> = None;
+    for (s, &dim) in dims.iter().enumerate() {
+      if target[s] == r {
+        match d {
+          None => d = Some(dim),
+          Some(prev) if prev != dim => {
+            crate::emit_message(&format!(
+              "Transpose::diagnl: Level rearrangement {} would require collapsing dimensions of unequal lengths.",
+              perm_str
+            ));
+            return unevaluated();
+          }
+          _ => {}
+        }
+      }
+    }
+    *out_dim = d.unwrap();
+  }
+
+  Ok(tensor_build(&out_dims, &mut |j| {
+    // Input level s reads result coordinate j[target[s]] (diagonal levels read
+    // the same coordinate, which selects the diagonal).
+    let i: Vec<usize> = (0..rank).map(|s| j[target[s] - 1]).collect();
     tensor_get(list, &i)
   }))
 }
