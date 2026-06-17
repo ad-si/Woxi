@@ -1087,7 +1087,11 @@ pub fn transpose_perm_ast(
   // A non-identity permutation longer than the tensor rank is invalid (tperm).
   if k > rank {
     let dims_list = Expr::List(
-      dims.iter().map(|&d| Expr::Integer(d as i128)).collect::<Vec<_>>().into(),
+      dims
+        .iter()
+        .map(|&d| Expr::Integer(d as i128))
+        .collect::<Vec<_>>()
+        .into(),
     );
     crate::emit_message(&format!(
       "Transpose::tperm: Permutation {} is longer than the dimensions {} of the expression.",

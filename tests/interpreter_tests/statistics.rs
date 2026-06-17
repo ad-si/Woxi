@@ -533,6 +533,36 @@ mod quartiles_edge_cases {
       "{5/2, 9/2, 13/2}"
     );
   }
+
+  // Matrix input is reduced columnwise (Map[f, Transpose[matrix]]), matching
+  // wolframscript. Regression: previously returned unevaluated.
+  #[test]
+  fn matrix_columnwise() {
+    assert_eq!(
+      interpret("Quartiles[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}]").unwrap(),
+      "{{3/2, 5/2, 7/2}, {15, 25, 35}}"
+    );
+    assert_eq!(
+      interpret("Quartiles[{{1, 10}, {2, 20}, {3, 30}, {4, 40}, {5, 50}}]")
+        .unwrap(),
+      "{{7/4, 3, 17/4}, {35/2, 30, 85/2}}"
+    );
+    assert_eq!(
+      interpret("InterquartileRange[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}]")
+        .unwrap(),
+      "{2, 20}"
+    );
+    assert_eq!(
+      interpret("QuartileDeviation[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}]")
+        .unwrap(),
+      "{1, 10}"
+    );
+    assert_eq!(
+      interpret("QuartileSkewness[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}]")
+        .unwrap(),
+      "{0, 0}"
+    );
+  }
 }
 
 mod root_mean_square {

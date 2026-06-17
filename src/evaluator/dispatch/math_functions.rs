@@ -2,6 +2,58 @@
 use super::*;
 use crate::functions::math_ast::make_sqrt;
 
+/// Columnwise quartile-family statistic for a matrix argument.
+///
+/// `Quartiles`, `InterquartileRange`, `QuartileDeviation`, and
+/// `QuartileSkewness` of a rectangular matrix (a list of equal-length lists)
+/// are computed per column, matching wolframscript (e.g.
+/// `InterquartileRange[{{1,10},{2,20},{3,30},{4,40}}]` → `{2, 20}`). Returns
+/// `None` when the single argument is not such a matrix, leaving the
+/// scalar/vector path to handle it.
+fn columnwise_quartile_stat(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let [Expr::List(items)] = args else {
+    return None;
+  };
+  if items.is_empty() || !items.iter().all(|i| matches!(i, Expr::List(_))) {
+    return None;
+  }
+  let rows: Vec<&[Expr]> = items
+    .iter()
+    .filter_map(|i| match i {
+      Expr::List(r) => Some(r.as_ref()),
+      _ => None,
+    })
+    .collect();
+  let ncols = rows[0].len();
+  if ncols == 0 || !rows.iter().all(|r| r.len() == ncols) {
+    return None;
+  }
+  let mut out = Vec::with_capacity(ncols);
+  for c in 0..ncols {
+    let col: Vec<Expr> = rows.iter().map(|r| r[c].clone()).collect();
+    let call = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![Expr::List(col.into())].into(),
+    };
+    match crate::evaluator::evaluate_expr_to_expr(&call) {
+      // A still-symbolic result means a column wasn't numeric; leave the whole
+      // call unevaluated rather than emitting a half-symbolic list.
+      Ok(v) if matches!(&v, Expr::FunctionCall { name: n, .. } if n == name) => {
+        return Some(Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      Ok(v) => out.push(v),
+      Err(e) => return Some(Err(e)),
+    }
+  }
+  Some(Ok(Expr::List(out.into())))
+}
+
 pub fn dispatch_math_functions(
   name: &str,
   args: &[Expr],
@@ -127,6 +179,13 @@ pub fn dispatch_math_functions(
       }
       // Quartiles uses Quantile with parameters {{1/2, 0}, {0, 1}}
       // Formula: pos = 1/2 + n*q, then linear interpolation
+      // Matrix input: compute quartiles columnwise, i.e.
+      // Map[Quartiles, Transpose[matrix]], matching wolframscript
+      // (Quartiles[{{1,10},{2,20},{3,30},{4,40}}] →
+      //  {{3/2, 5/2, 7/2}, {15, 25, 35}}).
+      if let Some(r) = columnwise_quartile_stat("Quartiles", args) {
+        return Some(r);
+      }
       if let Expr::List(items) = &args[0] {
         if items.is_empty() {
           return Some(Ok(Expr::FunctionCall {
@@ -241,6 +300,10 @@ pub fn dispatch_math_functions(
           return Some(crate::evaluator::evaluate_expr_to_expr(&iqr));
         }
       }
+      // Matrix input: one interquartile range per column.
+      if let Some(r) = columnwise_quartile_stat("InterquartileRange", args) {
+        return Some(r);
+      }
       // InterquartileRange = Q3 - Q1
       // Call the Quartiles logic by dispatching
       if let Some(Ok(Expr::List(ref qs))) =
@@ -257,6 +320,9 @@ pub fn dispatch_math_functions(
     }
     // QuartileDeviation = (Q3 - Q1) / 2, i.e. half the interquartile range.
     "QuartileDeviation" if args.len() == 1 => {
+      if let Some(r) = columnwise_quartile_stat("QuartileDeviation", args) {
+        return Some(r);
+      }
       if let Some(Ok(Expr::List(ref qs))) =
         dispatch_math_functions("Quartiles", args)
         && qs.len() == 3
@@ -276,6 +342,9 @@ pub fn dispatch_math_functions(
     // QuartileSkewness = (Q1 - 2 Q2 + Q3) / (Q3 - Q1), the Bowley skewness.
     // Reduces to Indeterminate (0/0) when all three quartiles coincide.
     "QuartileSkewness" if args.len() == 1 => {
+      if let Some(r) = columnwise_quartile_stat("QuartileSkewness", args) {
+        return Some(r);
+      }
       if let Some(Ok(Expr::List(ref qs))) =
         dispatch_math_functions("Quartiles", args)
         && qs.len() == 3
