@@ -988,7 +988,7 @@ Activate,Replaces Inactive[f] wrappers with the active function f and evaluates,
 Lookup,Looks up a key in an association; supports the operator form Lookup[key][assoc],✅,pure,10.0,998
 ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12.0,999
 SplitBy,Splits list at boundaries where a function changes value,✅,pure,7.0,1000
-SphericalBesselJ,Spherical Bessel function of the first kind,✅,1,6.0,1001
+SphericalBesselJ,Spherical Bessel function of the first kind,✅,pure,6.0,1001
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8.0,1002
 GridGraph,Constructs an m by n grid graph,✅,pure,8.0,1005
 ToUpperCase,Converts a string to uppercase,✅,pure,2.0,1005
@@ -2014,7 +2014,7 @@ LinkRead,Read from WSTP link,🚫,,3.0,2051
 SelectionEvaluate,Evaluate selected notebook content,🚫,,3.0,2051
 Annulus,Symbolic annular region; stays unevaluated and is consumed by region functions (RegionDimension/RegionMeasure/…),✅,unevaluated,10.2,2054
 GeometricAssertion,Assert geometric properties,🚫,,12.0,2054
-SphericalBesselY,Spherical Bessel function of second kind,✅,1,6.0,2054
+SphericalBesselY,Spherical Bessel function of second kind,✅,pure,6.0,2054
 NestGraph,Nest graph operation,🚫,,10.2,2057
 NoncentralStudentTDistribution,Non-central Student t distribution,🚫,,6.0,2057
 Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure,1.0,2057
@@ -2174,7 +2174,7 @@ DoubleLongRightArrow,Symbol notation,🚫,None,3.0,2214
 VectorMarkers,Visualization option,🚫,None,11.3,2214
 FindFaces,Image processing,🚫,None,9.0,2217
 NotebookInformation,Notebook UI,🚫,None,5.0,2217
-SphericalHankelH1,Spherical Hankel function of the first kind,✅,1,6.0,2219
+SphericalHankelH1,Spherical Hankel function of the first kind,✅,pure,6.0,2219
 ToNumberField,Algebraic number theory,🚫,None,6.0,2219
 HarmonicMean,Returns the harmonic mean of a list or an association's values,✅,pure,6.0,2223
 Masking,Image processing masking option,🚫,None,8.0,2223
@@ -3468,7 +3468,7 @@ QuantityForm,,,,9.0,3566
 RandomPolygon,,,,12.0,3566
 RowAlignments,,,,3.0,3566
 ScaleRanges,,,,9.0,3566
-SphericalHankelH2,Spherical Hankel function of the second kind,✅,1,6.0,3566
+SphericalHankelH2,Spherical Hankel function of the second kind,✅,pure,6.0,3566
 SplicedDistribution,,,,9.0,3566
 SymmetrizedIndependentComponents,,,,9.0,3566
 TelegraphProcess,,🚫,,9.0,3566

@@ -759,10 +759,7 @@ mod big_integer {
       "{True, False, True}"
     );
     assert_eq!(interpret("DigitSum[{12, 123}]").unwrap(), "{3, 6}");
-    assert_eq!(
-      interpret("IntegerReverse[{12, 34}]").unwrap(),
-      "{21, 43}"
-    );
+    assert_eq!(interpret("IntegerReverse[{12, 34}]").unwrap(), "{21, 43}");
     assert_eq!(
       interpret("DigitCount[{12, 123}, 10]").unwrap(),
       "{{1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, {1, 1, 1, 0, 0, 0, 0, 0, 0, 0}}"

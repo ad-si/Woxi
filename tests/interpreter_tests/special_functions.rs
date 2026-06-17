@@ -3888,4 +3888,35 @@ mod special_function_listability {
     assert_eq!(interpret("Pochhammer[{2, 3}, 2]").unwrap(), "{6, 12}");
     assert_eq!(interpret("Pochhammer[3, {1, 2}]").unwrap(), "{3, 12}");
   }
+
+  // HurwitzZeta and JacobiP thread (exact symbolic results).
+  #[test]
+  fn hurwitz_zeta_and_jacobi_thread() {
+    assert_eq!(
+      interpret("HurwitzZeta[2, {1, 2}]").unwrap(),
+      "{Pi^2/6, -1 + Pi^2/6}"
+    );
+    assert_eq!(
+      interpret("JacobiP[{1, 2}, 0, 0, x]").unwrap(),
+      "{x, (-1 + 3*x^2)/2}"
+    );
+    // Threads over a middle argument too.
+    assert_eq!(
+      interpret("JacobiP[2, {0, 1}, 0, x]").unwrap(),
+      "{(-1 + 3*x^2)/2, 3 + 6*(-1 + x) + (5*(-1 + x)^2)/2}"
+    );
+  }
+
+  // Spherical Bessel / Struve functions thread over their argument.
+  #[test]
+  fn spherical_and_struve_thread() {
+    assert_eq!(
+      interpret("SphericalBesselJ[0, {1., 2.}]").unwrap(),
+      "{0.8414709848078961, 0.4546487134128405}"
+    );
+    assert_eq!(
+      interpret("StruveH[0, {1., 2.}]").unwrap(),
+      "{0.5686566270482872, 0.7908588495080952}"
+    );
+  }
 }
