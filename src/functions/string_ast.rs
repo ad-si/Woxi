@@ -5002,10 +5002,16 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // else (empty string, a number, a list), even when the result would be a
   // pure truncation, so validate before threading or padding.
   if args.len() == 3 && !matches!(&args[2], Expr::String(p) if !p.is_empty()) {
-    return Ok(Expr::FunctionCall {
+    let call = Expr::FunctionCall {
       name: "StringPadLeft".to_string(),
       args: args.to_vec().into(),
-    });
+    };
+    crate::emit_message(&format!(
+      "StringPadLeft::stringnz: String of non-zero length expected at \
+       position 3 in {}.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(call);
   }
 
   // Thread over list of strings in the first argument.
@@ -5070,10 +5076,16 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // else (empty string, a number, a list), even when the result would be a
   // pure truncation, so validate before threading or padding.
   if args.len() == 3 && !matches!(&args[2], Expr::String(p) if !p.is_empty()) {
-    return Ok(Expr::FunctionCall {
+    let call = Expr::FunctionCall {
       name: "StringPadRight".to_string(),
       args: args.to_vec().into(),
-    });
+    };
+    crate::emit_message(&format!(
+      "StringPadRight::stringnz: String of non-zero length expected at \
+       position 3 in {}.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(call);
   }
 
   // Thread over list of strings in the first argument.

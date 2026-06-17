@@ -786,10 +786,7 @@ mod from_character_code {
       "Hi"
     );
     // Without an encoding the integers are code points (no decoding).
-    assert_eq!(
-      interpret("FromCharacterCode[{195, 169}]").unwrap(),
-      "Ã©"
-    );
+    assert_eq!(interpret("FromCharacterCode[{195, 169}]").unwrap(), "Ã©");
   }
 }
 
@@ -4985,6 +4982,27 @@ mod string_contains_free_patterns {
       interpret(r#"StringPadLeft["hi", 5, "0"]"#).unwrap(),
       "000hi"
     );
+  }
+
+  #[test]
+  fn string_pad_invalid_padding_warns_stringnz() {
+    use woxi::interpret_with_stdout;
+    // A non-string (or empty / list) padding emits StringPadLeft::stringnz
+    // and stays unevaluated.
+    let r = interpret_with_stdout(r#"StringPadLeft["7", 5, {"a", "b"}]"#)
+      .unwrap();
+    assert_eq!(r.result, "StringPadLeft[7, 5, {a, b}]");
+    assert!(r.warnings[0].contains(
+      "StringPadLeft::stringnz: String of non-zero length expected at \
+       position 3 in StringPadLeft[7, 5, {a, b}]."
+    ));
+    // StringPadRight behaves the same way.
+    let r2 = interpret_with_stdout(r#"StringPadRight["7", 5, 3]"#).unwrap();
+    assert_eq!(r2.result, "StringPadRight[7, 5, 3]");
+    assert!(r2.warnings[0].contains(
+      "StringPadRight::stringnz: String of non-zero length expected at \
+       position 3 in StringPadRight[7, 5, 3]."
+    ));
   }
 
   #[test]
