@@ -9826,7 +9826,12 @@ pub fn pade_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return unevaluated(),
       }
     }
-    _ => return unevaluated(),
+    // A single non-negative integer n is the diagonal [n/n] approximant,
+    // i.e. PadeApproximant[f, {x, x0, n}] == PadeApproximant[f, {x, x0, {n, n}}].
+    other => match crate::functions::math_ast::expr_to_i128(other) {
+      Some(n) if n >= 0 => (n, n),
+      _ => return unevaluated(),
+    },
   };
   let order = (m + n) as usize;
 

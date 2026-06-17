@@ -2663,6 +2663,20 @@ mod pade_approximant {
   }
 
   #[test]
+  fn single_order_spec_is_diagonal() {
+    // PadeApproximant[f, {x, x0, n}] is the diagonal [n/n] approximant,
+    // equivalent to PadeApproximant[f, {x, x0, {n, n}}].
+    assert_eq!(
+      interpret("PadeApproximant[Exp[x], {x, 0, 2}]").unwrap(),
+      "(1 + x/2 + x^2/12)/(1 - x/2 + x^2/12)"
+    );
+    assert_eq!(
+      interpret("PadeApproximant[Sin[x], {x, 0, 4}]").unwrap(),
+      "(x - (31*x^3)/294)/(1 + (3*x^2)/49 + (11*x^4)/5880)"
+    );
+  }
+
+  #[test]
   fn exp_three_two_unequal_degrees() {
     assert_eq!(
       interpret("PadeApproximant[Exp[x], {x, 0, {3, 2}}]").unwrap(),
