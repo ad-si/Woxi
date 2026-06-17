@@ -4432,8 +4432,7 @@ mod sequence_fold {
   #[test]
   fn pure_function_with_three_slots() {
     assert_eq!(
-      interpret("SequenceFoldList[#1 + #2 + #3 &, {0, 1}, {1, 2, 3}]")
-        .unwrap(),
+      interpret("SequenceFoldList[#1 + #2 + #3 &, {0, 1}, {1, 2, 3}]").unwrap(),
       "{0, 1, 2, 5, 10}"
     );
   }

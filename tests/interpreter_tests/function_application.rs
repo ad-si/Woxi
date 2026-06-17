@@ -2362,6 +2362,57 @@ mod apply_operator_composite_head {
   }
 }
 
+mod apply_held_arguments {
+  use super::*;
+
+  // When the source head held its arguments (Hold, HoldForm, …), replacing it
+  // with a non-holding head must evaluate those arguments, while replacing it
+  // with another holding head must not — i.e. the new head's attributes govern.
+
+  #[test]
+  fn list_evaluates_held_arguments() {
+    assert_eq!(
+      interpret("Apply[List, Hold[1 + 1, 2 + 2]]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn operator_form_evaluates_held_arguments() {
+    assert_eq!(interpret("List @@ Hold[1 + 1]").unwrap(), "{2}");
+    assert_eq!(interpret("Times @@ Hold[2 + 1, 3]").unwrap(), "9");
+  }
+
+  #[test]
+  fn unknown_head_evaluates_held_arguments() {
+    assert_eq!(interpret("Apply[f, Hold[1 + 1]]").unwrap(), "f[2]");
+  }
+
+  #[test]
+  fn holdform_source_is_evaluated_under_list() {
+    assert_eq!(interpret("Apply[List, HoldForm[1 + 1]]").unwrap(), "{2}");
+  }
+
+  #[test]
+  fn holding_new_head_keeps_arguments_unevaluated() {
+    // Hold has HoldAll, so the lifted (still unevaluated) argument stays put.
+    assert_eq!(
+      interpret("Apply[Hold, Hold[1 + 1]]").unwrap(),
+      "Hold[1 + 1]"
+    );
+    assert_eq!(
+      interpret("HoldForm @@ Hold[1 + 1]").unwrap(),
+      "HoldForm[1 + 1]"
+    );
+  }
+
+  #[test]
+  fn list_source_already_evaluated_then_held() {
+    // The source list evaluates 1 + 1 to 2 before Apply runs, so Hold[2].
+    assert_eq!(interpret("Apply[Hold, {1 + 1}]").unwrap(), "Hold[2]");
+  }
+}
+
 mod map_operator_composite_head {
   use super::*;
 

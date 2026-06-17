@@ -337,10 +337,17 @@ pub fn apply_apply_ast(
   match func {
     Expr::Identifier(func_name) => {
       // Resolve variable holding a function name: f = Plus; f @@ {1,2} → 3
-      if let Some(resolved) = resolve_identifier_to_func_name(func_name) {
-        return evaluate_function_call_ast(&resolved, &items);
-      }
-      evaluate_function_call_ast(func_name, &items)
+      let name = resolve_identifier_to_func_name(func_name)
+        .unwrap_or_else(|| func_name.clone());
+      // Build `name[items]` and evaluate it through the full pipeline so the
+      // new head's attributes govern argument evaluation: a non-holding head
+      // evaluates items the source head kept unevaluated
+      // (List @@ Hold[1 + 1] -> {2}), while a holding head leaves them
+      // untouched (Hold @@ Hold[1 + 1] -> Hold[1 + 1]).
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name,
+        args: items,
+      })
     }
     Expr::Function { body } => {
       // Anonymous function applied to a list

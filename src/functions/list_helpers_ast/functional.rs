@@ -323,9 +323,7 @@ pub fn fold_list_ast(
 /// `SequenceFoldList[f, {x1,…,xn}, {a1,…}, k]` instead feeds `f` the last n
 /// history values plus a sliding window of `k - n` a-values (the window
 /// advances by one each step). The default `k` is `n + 1` (window size 1).
-pub fn sequence_fold_list_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+pub fn sequence_fold_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
       name: "SequenceFoldList".to_string(),
@@ -358,8 +356,7 @@ pub fn sequence_fold_list_ast(
   if window <= a.len() {
     let num_steps = a.len() - window + 1;
     for i in 0..num_steps {
-      let mut call_args: Vec<Expr> =
-        history[history.len() - n..].to_vec();
+      let mut call_args: Vec<Expr> = history[history.len() - n..].to_vec();
       call_args.extend_from_slice(&a[i..i + window]);
       let next = apply_func_to_args(func, &call_args)?;
       history.push(next);
@@ -581,7 +578,15 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   };
   match func {
     Expr::Identifier(name) => {
-      crate::evaluator::evaluate_function_call_ast(name, &items)
+      // Build `name[items]` and evaluate it through the full pipeline so the
+      // new head's attributes govern argument evaluation: a non-holding head
+      // (List, Times, …) evaluates items that the source head kept unevaluated
+      // (e.g. Apply[List, Hold[1 + 1]] -> {2}), while a holding head (Hold,
+      // HoldForm) leaves them untouched (Apply[Hold, Hold[1 + 1]] -> Hold[1 + 1]).
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: name.clone(),
+        args: items.into(),
+      })
     }
     Expr::Function { body } => {
       let substituted = crate::syntax::substitute_slots(body, &items);
