@@ -3403,6 +3403,14 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(s))
 }
 
+/// Format `expr` the way `ToString[expr]` (default OutputForm) does:
+/// machine-precision Reals are shown at 6 significant digits (so the f64
+/// noise in e.g. `0.47000000000000003` renders as `0.47`). Used for chart
+/// labels, which Wolfram typesets in OutputForm rather than full precision.
+pub fn to_string_default_form(expr: &Expr) -> String {
+  crate::syntax::expr_to_output(&truncate_machine_reals_for_to_string(expr))
+}
+
 /// Round a machine-precision Real to 6 significant decimal digits — the
 /// width wolframscript uses for `ToString[real]` on a default
 /// (MachinePrecision) Real. Returns NaN/inf unchanged; 0.0 stays 0.0.

@@ -162,6 +162,9 @@ pub(crate) struct ChartOptions {
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
+  /// Named color scheme (e.g. `"Pastel"`) given via `ChartStyle -> "name"`.
+  /// Resolved to per-element colors once the element count is known.
+  pub chart_style_scheme: Option<String>,
   pub chart_legends: Vec<String>,
   /// Set when the user passed `ChartLegends -> Automatic`. Callers that know
   /// how to derive default labels from the input (e.g. Association keys)
@@ -228,6 +231,243 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
   expr_to_label(e).map(ChartLabel::plain)
 }
 
+// Control points of Wolfram's named `ColorData` gradient color schemes,
+// evenly spaced over [0, 1]. Sampling one with a linear `Blend`
+// reproduces `ChartStyle -> "<name>"` exactly (each was verified against
+// wolframscript: the RGB-linear Blend matches `ColorData[name]` to <1e-5).
+
+const PASTEL_GRADIENT: [(f64, f64, f64); 12] = [
+  (0.761959, 0.470832, 0.940597),
+  (0.809695, 0.585618, 0.953269),
+  (0.866514, 0.647659, 0.771795),
+  (0.909422, 0.699383, 0.647465),
+  (0.937061, 0.764486, 0.598975),
+  (0.954654, 0.842244, 0.587209),
+  (0.962197, 0.913524, 0.594117),
+  (0.948179, 0.953299, 0.634088),
+  (0.891128, 0.944422, 0.72627),
+  (0.771259, 0.887462, 0.856246),
+  (0.594516, 0.801371, 0.955499),
+  (0.431296, 0.709773, 0.927077),
+];
+
+const RAINBOW_GRADIENT: [(f64, f64, f64); 17] = [
+  (0.471412, 0.108766, 0.527016),
+  (0.31106, 0.11758, 0.664469),
+  (0.250728, 0.225386, 0.769152),
+  (0.24408, 0.361242, 0.816084),
+  (0.266122, 0.486664, 0.802529),
+  (0.305919, 0.585575, 0.739666),
+  (0.36048, 0.655759, 0.645692),
+  (0.429842, 0.701849, 0.540321),
+  (0.513417, 0.72992, 0.440682),
+  (0.607651, 0.743718, 0.358588),
+  (0.705038, 0.742591, 0.299167),
+  (0.794549, 0.721158, 0.260829),
+  (0.863512, 0.670771, 0.236564),
+  (0.901014, 0.582826, 0.216542),
+  (0.902853, 0.453964, 0.192014),
+  (0.878107, 0.293208, 0.160481),
+  (0.857359, 0.131106, 0.132128),
+];
+
+const SOLAR_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0.468742, 0., 0.0158236),
+  (0.822129, 0.122225, 0.0039559),
+  (0.969963, 0.376081, 0.0322881),
+  (1., 0.646929, 0.0801709),
+  (1., 0.820127, 0.126955),
+];
+
+const TEMPERATURE_MAP_GRADIENT: [(f64, f64, f64); 13] = [
+  (0.178927, 0.305394, 0.933501),
+  (0.308746, 0.441842, 0.940894),
+  (0.453318, 0.567063, 0.950106),
+  (0.642359, 0.720535, 0.964988),
+  (0.819984, 0.859297, 0.982692),
+  (0.935699, 0.951565, 0.993729),
+  (0.984192, 0.987731, 0.911643),
+  (0.995282, 0.992317, 0.727853),
+  (0.992503, 0.986373, 0.425376),
+  (0.955963, 0.863115, 0.283425),
+  (0.904227, 0.657999, 0.241797),
+  (0.858405, 0.449932, 0.203562),
+  (0.817319, 0.134127, 0.164218),
+];
+
+const THERMOMETER_COLORS_GRADIENT: [(f64, f64, f64); 12] = [
+  (0.163302, 0.119982, 0.79353),
+  (0.254221, 0.313173, 0.892833),
+  (0.407119, 0.543513, 0.938275),
+  (0.572715, 0.73338, 0.95065),
+  (0.720374, 0.855234, 0.928635),
+  (0.831017, 0.903518, 0.868326),
+  (0.894452, 0.880139, 0.77279),
+  (0.907999, 0.789417, 0.652903),
+  (0.874505, 0.639254, 0.522424),
+  (0.79915, 0.446142, 0.391971),
+  (0.685695, 0.242449, 0.268261),
+  (0.534081, 0.0853132, 0.16669),
+];
+
+const DARK_RAINBOW_GRADIENT: [(f64, f64, f64); 11] = [
+  (0.237736, 0.340215, 0.575113),
+  (0.253651, 0.344893, 0.558151),
+  (0.264425, 0.423024, 0.3849),
+  (0.291469, 0.47717, 0.271411),
+  (0.416394, 0.555345, 0.24182),
+  (0.624866, 0.673302, 0.264296),
+  (0.813033, 0.766292, 0.303458),
+  (0.877875, 0.731045, 0.326896),
+  (0.812807, 0.518694, 0.303459),
+  (0.72987, 0.239399, 0.230961),
+  (0.72987, 0.239399, 0.230961),
+];
+
+const AQUAMARINE_GRADIENT: [(f64, f64, f64); 8] = [
+  (0.68069, 0.735561, 0.850004),
+  (0.762233, 0.803087, 0.873397),
+  (0.738044, 0.801736, 0.849202),
+  (0.653851, 0.759285, 0.801252),
+  (0.555381, 0.703512, 0.753383),
+  (0.488359, 0.662194, 0.729431),
+  (0.498514, 0.663109, 0.75323),
+  (0.631571, 0.734035, 0.848615),
+];
+
+const STARRY_NIGHT_COLORS_GRADIENT: [(f64, f64, f64); 9] = [
+  (0.0863508, 0.145602, 0.203418),
+  (0.179449, 0.285129, 0.326534),
+  (0.260705, 0.406664, 0.445423),
+  (0.406613, 0.556979, 0.562914),
+  (0.575819, 0.695886, 0.635552),
+  (0.74555, 0.811361, 0.650903),
+  (0.866077, 0.862389, 0.597576),
+  (0.942459, 0.855345, 0.495749),
+  (0.957885, 0.809857, 0.369177),
+];
+
+const AVOCADO_COLORS_GRADIENT: [(f64, f64, f64); 5] = [
+  (0., 0., 0.),
+  (0., 0.442859, 0.0749256),
+  (0.289326, 0.685107, 0.108759),
+  (0.683989, 0.830896, 0.145815),
+  (1., 0.984375, 0.230411),
+];
+
+const SUNSET_COLORS_GRADIENT: [(f64, f64, f64); 7] = [
+  (0., 0., 0.),
+  (0.372793, 0.1358, 0.506503),
+  (0.788287, 0.259816, 0.270778),
+  (0.979377, 0.451467, 0.0511329),
+  (1., 0.682688, 0.129771),
+  (1., 0.882236, 0.491094),
+  (1., 1., 1.),
+];
+
+const FRUIT_PUNCH_COLORS_GRADIENT: [(f64, f64, f64); 8] = [
+  (1., 0.499474, 0.),
+  (0.989146, 0.606517, 0.00227297),
+  (0.89853, 0.670191, 0.038923),
+  (0.80904, 0.658225, 0.163438),
+  (0.769483, 0.571276, 0.370227),
+  (0.79659, 0.442924, 0.594615),
+  (0.875012, 0.339677, 0.712848),
+  (0.957321, 0.360967, 0.542092),
+];
+
+const CHERRY_TONES_GRADIENT: [(f64, f64, f64); 8] = [
+  (0.215686, 0.215686, 0.215686),
+  (0.563899, 0.155919, 0.156577),
+  (0.747389, 0.178584, 0.180272),
+  (0.836168, 0.264453, 0.26819),
+  (0.880144, 0.397868, 0.404399),
+  (0.911942, 0.567676, 0.576412),
+  (0.949724, 0.768164, 0.776002),
+  (1., 1., 1.),
+];
+
+/// Resolve a named ChartStyle color scheme to its gradient control points.
+fn named_color_scheme(name: &str) -> Option<&'static [(f64, f64, f64)]> {
+  let scheme: &'static [(f64, f64, f64)] = match name {
+    "Pastel" => &PASTEL_GRADIENT,
+    "Rainbow" => &RAINBOW_GRADIENT,
+    "SolarColors" => &SOLAR_COLORS_GRADIENT,
+    "TemperatureMap" => &TEMPERATURE_MAP_GRADIENT,
+    "ThermometerColors" => &THERMOMETER_COLORS_GRADIENT,
+    "DarkRainbow" => &DARK_RAINBOW_GRADIENT,
+    "Aquamarine" => &AQUAMARINE_GRADIENT,
+    "StarryNightColors" => &STARRY_NIGHT_COLORS_GRADIENT,
+    "AvocadoColors" => &AVOCADO_COLORS_GRADIENT,
+    "SunsetColors" => &SUNSET_COLORS_GRADIENT,
+    "FruitPunchColors" => &FRUIT_PUNCH_COLORS_GRADIENT,
+    "CherryTones" => &CHERRY_TONES_GRADIENT,
+    _ => return None,
+  };
+  Some(scheme)
+}
+
+/// Extract a scheme name from a `ChartStyle` value: either a bare string
+/// (`"Pastel"`) or `ColorData["Pastel"]`.
+fn scheme_name(val: &Expr) -> Option<String> {
+  match val {
+    Expr::String(s) => Some(s.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "ColorData" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::String(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Sample a gradient (linear `Blend` of its control points) at `n` evenly
+/// spaced parameters, returning one color per chart element. Matches
+/// wolframscript's `ChartStyle -> scheme` sampling (`t = i/(n-1)`).
+fn sample_gradient(controls: &[(f64, f64, f64)], n: usize) -> Vec<Color> {
+  if controls.is_empty() || n == 0 {
+    return Vec::new();
+  }
+  let m = controls.len();
+  (0..n)
+    .map(|i| {
+      let t = if n == 1 {
+        0.0
+      } else {
+        i as f64 / (n - 1) as f64
+      };
+      let p = t * (m - 1) as f64;
+      let idx = (p.floor() as usize).min(m - 1);
+      let frac = p - idx as f64;
+      let (r0, g0, b0) = controls[idx];
+      let (r1, g1, b1) = controls[(idx + 1).min(m - 1)];
+      Color::new(
+        r0 + frac * (r1 - r0),
+        g0 + frac * (g1 - g0),
+        b0 + frac * (b1 - b0),
+      )
+    })
+    .collect()
+}
+
+/// If a named `ChartStyle` scheme was given and no explicit colors were
+/// supplied, fill `chart_style` with `count` colors sampled from the scheme.
+fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
+  if !opts.chart_style.is_empty() {
+    return;
+  }
+  if let Some(controls) = opts
+    .chart_style_scheme
+    .as_deref()
+    .and_then(named_color_scheme)
+  {
+    opts.chart_style = sample_gradient(controls, count.max(1));
+  }
+}
+
 /// Parse options from chart arguments.
 fn parse_chart_options(args: &[Expr]) -> ChartOptions {
   let mut opts = ChartOptions {
@@ -239,6 +479,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     plot_label: None,
     axes_label: None,
     chart_style: Vec::new(),
+    chart_style_scheme: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
     plot_range_x: None,
@@ -370,6 +611,17 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
                 }
               }
             }
+            // A named color scheme, e.g. `ChartStyle -> "Pastel"` or
+            // `ChartStyle -> ColorData["Pastel"]`. Each chart element gets a
+            // distinct color sampled from the scheme's gradient. The actual
+            // colors are resolved later, once the element count is known.
+            _ if scheme_name(&val)
+              .as_deref()
+              .map(named_color_scheme)
+              .is_some_and(|s| s.is_some()) =>
+            {
+              opts.chart_style_scheme = scheme_name(&val);
+            }
             _ => {
               if let Some(c) = parse_color(&val) {
                 opts.chart_style.push(c);
@@ -418,7 +670,18 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
-  let opts = parse_chart_options(args);
+  let mut opts = parse_chart_options(args);
+
+  // Resolve a named ChartStyle scheme (e.g. "Pastel") to one color per
+  // bar. With a flat list each value is its own bar (color keyed by group
+  // index); with grouped data colors cycle within each group.
+  let bars_per_group = groups.iter().map(Vec::len).max().unwrap_or(1);
+  let color_count = if bars_per_group > 1 {
+    bars_per_group
+  } else {
+    groups.len()
+  };
+  apply_color_scheme(&mut opts, color_count);
 
   // LabelingFunction -> f produces a label drawn at each bar's end.
   let bar_labels: Vec<String> = match &opts.labeling_function {
@@ -490,7 +753,9 @@ fn apply_labeling_function(func: &Expr, value: f64) -> Option<String> {
   };
   match inner {
     Expr::String(s) => Some(s.clone()),
-    _ => Some(crate::syntax::expr_to_string(inner)),
+    // Charts typeset labels in OutputForm: machine-real noise like
+    // `0.47000000000000003` must render as `0.47`, matching wolframscript.
+    _ => Some(crate::functions::string_ast::to_string_default_form(inner)),
   }
 }
 
@@ -2260,4 +2525,176 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// Round a `Color`'s channels the same way SVG output does.
+  fn rgb_u8(c: &Color) -> (u8, u8, u8) {
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  }
+
+  #[test]
+  fn pastel_sampling_matches_wolfram_for_ten_bars() {
+    // Exact per-bar colors wolframscript produces for
+    // `BarChart[Range[10], ChartStyle -> "Pastel"]`
+    // (ColorData["Pastel"] sampled at t = i/9).
+    let expected = [
+      (194, 120, 240),
+      (210, 153, 233),
+      (226, 171, 183),
+      (237, 189, 157),
+      (243, 213, 150),
+      (245, 234, 153),
+      (237, 242, 170),
+      (210, 233, 204),
+      (162, 209, 238),
+      (110, 181, 236),
+    ];
+    let colors = sample_gradient(&PASTEL_GRADIENT, 10);
+    assert_eq!(colors.len(), 10);
+    for (i, c) in colors.iter().enumerate() {
+      assert_eq!(rgb_u8(c), expected[i], "bar {i} color mismatch");
+    }
+  }
+
+  #[test]
+  fn pastel_endpoints_are_exact() {
+    let one = sample_gradient(&PASTEL_GRADIENT, 1);
+    assert_eq!(rgb_u8(&one[0]), (194, 120, 240)); // t = 0
+    let two = sample_gradient(&PASTEL_GRADIENT, 2);
+    assert_eq!(rgb_u8(&two[0]), (194, 120, 240)); // t = 0
+    assert_eq!(rgb_u8(&two[1]), (110, 181, 236)); // t = 1
+  }
+
+  #[test]
+  fn rainbow_sampling_matches_wolfram_for_four_bars() {
+    // wolframscript `BarChart[Range[4], ChartStyle -> "Rainbow"]` colors.
+    let expected = [
+      (120, 28, 134),
+      (83, 155, 181),
+      (195, 186, 70),
+      (219, 33, 34),
+    ];
+    let colors = sample_gradient(named_color_scheme("Rainbow").unwrap(), 4);
+    for (i, c) in colors.iter().enumerate() {
+      assert_eq!(rgb_u8(c), expected[i], "rainbow bar {i} mismatch");
+    }
+  }
+
+  #[test]
+  fn all_named_schemes_resolve_and_sample() {
+    for name in [
+      "Pastel",
+      "Rainbow",
+      "SolarColors",
+      "TemperatureMap",
+      "ThermometerColors",
+      "DarkRainbow",
+      "Aquamarine",
+      "StarryNightColors",
+      "AvocadoColors",
+      "SunsetColors",
+      "FruitPunchColors",
+      "CherryTones",
+    ] {
+      let scheme = named_color_scheme(name)
+        .unwrap_or_else(|| panic!("scheme {name} should resolve"));
+      assert!(scheme.len() >= 2, "{name} needs >= 2 control points");
+      // Sampling N>1 must yield distinct first/last colors and the
+      // endpoints must equal the gradient's endpoints.
+      let n = 6;
+      let colors = sample_gradient(scheme, n);
+      assert_eq!(colors.len(), n);
+      let first = scheme.first().unwrap();
+      let last = scheme.last().unwrap();
+      assert_eq!(
+        rgb_u8(&colors[0]),
+        rgb_u8(&Color::new(first.0, first.1, first.2))
+      );
+      assert_eq!(
+        rgb_u8(&colors[n - 1]),
+        rgb_u8(&Color::new(last.0, last.1, last.2))
+      );
+    }
+    assert!(named_color_scheme("BrightBands").is_none());
+  }
+
+  #[test]
+  fn named_scheme_accepts_string_and_colordata() {
+    assert!(named_color_scheme("Pastel").is_some());
+    assert!(named_color_scheme("Nonexistent").is_none());
+    assert_eq!(
+      scheme_name(&Expr::String("Pastel".into())).as_deref(),
+      Some("Pastel")
+    );
+    assert_eq!(
+      scheme_name(&Expr::FunctionCall {
+        name: "ColorData".into(),
+        args: vec![Expr::String("Pastel".into())].into(),
+      })
+      .as_deref(),
+      Some("Pastel")
+    );
+  }
+
+  #[test]
+  fn bar_label_uses_output_form_not_float_noise() {
+    // Regression: `Round[#, 0.01]` of a value like Sweden's 0.4739…
+    // is the f64 0.47000000000000003. The bar label must render it in
+    // OutputForm ("0.47"), matching wolframscript — not the full repr.
+    let svg = crate::interpret(
+      "ExportString[BarChart[{0.47396298557626365}, BarOrigin -> Left, \
+       LabelingFunction -> (Placed[Round[#, 0.01], After] &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">0.47<"),
+      "expected label '0.47' in SVG, got:\n{svg}"
+    );
+    assert!(
+      !svg.contains("0.47000000000000003"),
+      "label still shows float noise"
+    );
+  }
+
+  #[test]
+  fn bar_chart_pastel_gives_distinct_fills() {
+    // End-to-end through the horizontal-bar SVG path (as the FIFA
+    // notebook uses): each bar gets its own Pastel color, exactly
+    // matching wolframscript.
+    let svg = crate::interpret(
+      "ExportString[BarChart[{1, 2, 3, 4}, BarOrigin -> Left, \
+       ChartStyle -> \"Pastel\"], \"SVG\"]",
+    )
+    .unwrap();
+    for expected in ["rgb(194,120,240)", "rgb(110,181,236)"] {
+      assert!(
+        svg.contains(expected),
+        "expected bar fill {expected} not found in SVG"
+      );
+    }
+    let fills: std::collections::HashSet<_> = svg
+      .match_indices("fill=\"rgb(")
+      .map(|(i, _)| {
+        let rest = &svg[i + 10..];
+        let end = rest.find(')').unwrap();
+        rest[..end].to_string()
+      })
+      .filter(|c| c != "255,255,255") // ignore the white background
+      .collect();
+    // Four bars → four distinct fill colors.
+    assert!(
+      fills.len() >= 4,
+      "expected >= 4 distinct bar colors, got {}: {:?}",
+      fills.len(),
+      fills
+    );
+  }
 }
