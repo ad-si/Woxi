@@ -5736,6 +5736,30 @@ mod trig_to_exp {
   }
 
   #[test]
+  fn tanh_to_exp() {
+    assert_eq!(
+      interpret("TrigToExp[Tanh[x]]").unwrap(),
+      "-(1/(E^x*(E^(-x) + E^x))) + E^x/(E^(-x) + E^x)"
+    );
+  }
+
+  #[test]
+  fn tanh_to_exp_double_angle() {
+    assert_eq!(
+      interpret("TrigToExp[Tanh[2 x]]").unwrap(),
+      "-(1/(E^(2*x)*(E^(-2*x) + E^(2*x)))) + E^(2*x)/(E^(-2*x) + E^(2*x))"
+    );
+  }
+
+  #[test]
+  fn tanh_to_exp_sum_argument() {
+    assert_eq!(
+      interpret("TrigToExp[Tanh[a + b]]").unwrap(),
+      "-(E^(-a - b)/(E^(-a - b) + E^(a + b))) + E^(a + b)/(E^(-a - b) + E^(a + b))"
+    );
+  }
+
+  #[test]
   fn sec_double_angle() {
     assert_eq!(
       interpret("TrigToExp[Sec[2 x]]").unwrap(),

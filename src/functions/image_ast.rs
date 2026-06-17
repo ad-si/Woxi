@@ -4362,7 +4362,11 @@ fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
     ThreshMethod::Garrote => {
       let xf = crate::functions::math_ast::try_eval_to_f64(x).unwrap_or(0.0);
       let tf = crate::functions::math_ast::try_eval_to_f64(t).unwrap_or(0.0);
-      let v = if xf.abs() > tf { xf - tf * tf / xf } else { 0.0 };
+      let v = if xf.abs() > tf {
+        xf - tf * tf / xf
+      } else {
+        0.0
+      };
       Expr::Real(if v == 0.0 { 0.0 } else { v })
     }
   }

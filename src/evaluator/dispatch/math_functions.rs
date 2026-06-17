@@ -6799,6 +6799,24 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             power(plus(&[e_x, e_nx]), Expr::Integer(-1)),
           ])
         }
+        // NOTE: Coth, Csch and Csc are intentionally left to the default
+        // recursive branch. Their exponential forms are value-correct but the
+        // result contains a negative E-power (`-E^(-x)`) or a complex
+        // coefficient over a reciprocal, both of which Woxi's core renderer
+        // canonicalizes differently from wolframscript (`-(1/E^x)` and
+        // `c*(…)^(-1)` rather than `-E^(-x)` and `c/(…)`). See the documented
+        // complex-coeff / negative-E-exponent display divergence.
+        // Tanh[x] = E^x/(E^(-x) + E^x) - E^(-x)/(E^(-x) + E^x)
+        "Tanh" => {
+          let e_x = power(e.clone(), arg.clone());
+          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
+          let denom =
+            power(plus(&[e_nx.clone(), e_x.clone()]), Expr::Integer(-1));
+          plus(&[
+            times(&[e_x, denom.clone()]),
+            times(&[Expr::Integer(-1), e_nx, denom]),
+          ])
+        }
         // Other functions: recurse into args
         _ => Expr::FunctionCall {
           name: name.clone(),

@@ -13,3 +13,10 @@ The reciprocal functions are supported as well:
 $ wo 'TrigToExp[Sec[x]]'
 2/(E^(-I*x) + E^(I*x))
 ```
+
+Hyperbolic functions are rewritten in terms of the real exponential:
+
+```scrut
+$ wo 'TrigToExp[Tanh[x]]'
+-(1/(E^x*(E^(-x) + E^x))) + E^x/(E^(-x) + E^x)
+```
