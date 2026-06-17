@@ -4763,6 +4763,58 @@ mod arma_covariance_function {
   }
 }
 
+mod data_covariance_function {
+  use super::*;
+
+  // Sample autocovariance of a numeric series at lag h:
+  //   gamma(h) = (1/n) Sum_{t=1}^{n-|h|} (x_t - xbar)(x_{t+|h|} - xbar).
+  #[test]
+  fn integer_lags() {
+    assert_eq!(interpret("CovarianceFunction[{2, 3, 4, 3}, 0]").unwrap(), "1/2");
+    assert_eq!(interpret("CovarianceFunction[{2, 3, 4, 3}, 1]").unwrap(), "0");
+    assert_eq!(
+      interpret("CovarianceFunction[{2, 3, 4, 3}, 2]").unwrap(),
+      "-1/4"
+    );
+    assert_eq!(interpret("CovarianceFunction[{2, 3, 4, 3}, 3]").unwrap(), "0");
+    assert_eq!(
+      interpret("CovarianceFunction[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "-1/5"
+    );
+  }
+
+  // The autocovariance is symmetric, so a negative lag equals its magnitude.
+  #[test]
+  fn negative_lag_symmetric() {
+    assert_eq!(
+      interpret("CovarianceFunction[{1, 2, 3, 4, 5}, -2]").unwrap(),
+      "-1/5"
+    );
+  }
+
+  // Machine-real data yields a machine-real result.
+  #[test]
+  fn real_data() {
+    assert_eq!(
+      interpret("CovarianceFunction[{1., 2., 3., 4., 5.}, 1]").unwrap(),
+      "0.8"
+    );
+  }
+
+  // A lag whose magnitude is not less than the length stays unevaluated.
+  #[test]
+  fn lag_out_of_range_unevaluated() {
+    assert_eq!(
+      interpret("CovarianceFunction[{2, 3, 4, 3}, 4]").unwrap(),
+      "CovarianceFunction[{2, 3, 4, 3}, 4]"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[{1, 2, 3, 4, 5}, -5]").unwrap(),
+      "CovarianceFunction[{1, 2, 3, 4, 5}, -5]"
+    );
+  }
+}
+
 mod characteristic_function {
   use super::*;
 

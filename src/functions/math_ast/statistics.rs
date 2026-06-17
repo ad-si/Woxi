@@ -4790,6 +4790,69 @@ fn asymptotic_binomial(
 
 // ─── CovarianceFunction[ARMAProcess[...], s, t] ───────────────────────
 
+/// CovarianceFunction[data, h] gives the sample autocovariance of a numeric
+/// time series at lag `h`:
+///   γ(h) = (1/n) · Σ_{t=1}^{n-|h|} (x_t − x̄)(x_{t+|h|} − x̄),  n = Length[data].
+/// (Note the 1/n normalization, not 1/(n−h).) The autocovariance is symmetric,
+/// so negative lags equal their magnitude. A lag whose magnitude is not less
+/// than the series length emits `CovarianceFunction::bdlag` and stays
+/// unevaluated. Returns `None` for non-numeric data or a non-integer lag so the
+/// caller leaves the call unevaluated.
+pub fn covariance_function_data(
+  data: &Expr,
+  lag: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(items) = data else {
+    return None;
+  };
+  let Expr::Integer(h) = lag else {
+    return None;
+  };
+  let h = *h;
+  if items.is_empty() || !all_numeric_scalars(items) {
+    return None;
+  }
+  let n = items.len();
+  // The lag magnitude must be strictly less than the series length.
+  if h.unsigned_abs() >= n as u128 {
+    crate::emit_message(&format!(
+      "CovarianceFunction::bdlag: The lag specification {h} should be a symbol, an integer with magnitude less than the length of the data or a range specification indicating such integers."
+    ));
+    return Some(Ok(Expr::FunctionCall {
+      name: "CovarianceFunction".to_string(),
+      args: vec![data.clone(), lag.clone()].into(),
+    }));
+  }
+  let mean = match mean_ast(&[Expr::List(items.to_vec().into())]) {
+    Ok(m) => m,
+    Err(e) => return Some(Err(e)),
+  };
+  let dev = |x: &Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(x.clone()),
+    right: Box::new(mean.clone()),
+  };
+  let h_us = h.unsigned_abs() as usize;
+  let mut terms = Vec::new();
+  for t in 0..(n - h_us) {
+    terms.push(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(dev(&items[t])),
+      right: Box::new(dev(&items[t + h_us])),
+    });
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(sum),
+    right: Box::new(Expr::Integer(n as i128)),
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&result))
+}
+
 /// CovarianceFunction[proc, s, t] gives the autocovariance Cov[X_s, X_t]
 /// for the stochastic process `proc`. This implementation handles
 /// ARMA(p, q) processes for (p, q) ∈ {(1,0), (0,1), (1,1)}, returning

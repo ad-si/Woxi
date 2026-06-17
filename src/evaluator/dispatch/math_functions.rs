@@ -948,6 +948,14 @@ pub fn dispatch_math_functions(
     "Covariance" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::covariance_ast(args));
     }
+    "CovarianceFunction" if args.len() == 2 => {
+      // Sample autocovariance of a numeric time series at an integer lag.
+      if let Some(result) =
+        crate::functions::math_ast::covariance_function_data(&args[0], &args[1])
+      {
+        return Some(result);
+      }
+    }
     "CovarianceFunction" if args.len() == 3 => {
       return Some(crate::functions::math_ast::covariance_function_ast(args));
     }
