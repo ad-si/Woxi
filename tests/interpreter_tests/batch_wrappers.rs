@@ -2802,6 +2802,28 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn continued_fraction_k_three_arg() {
+    // Three-argument form: K[f, g, {n, nmin, nmax}] uses f as the numerators
+    // and g as the denominators.
+    assert_eq!(
+      interpret("ContinuedFractionK[1, n, {n, 1, 5}]").unwrap(),
+      "157/225"
+    );
+    assert_eq!(
+      interpret("ContinuedFractionK[2 n - 1, n^2, {n, 1, 4}]").unwrap(),
+      "228/379"
+    );
+    assert_eq!(
+      interpret("ContinuedFractionK[1, n, {n, 1, 1}]").unwrap(),
+      "1"
+    );
+    // Symbolic numerator/denominator.
+    assert_eq!(
+      interpret("ContinuedFractionK[a, b, {n, 1, 2}]").unwrap(),
+      "a/(a/b + b)"
+    );
+  }
+  #[test]
   fn continued_fraction_k_infinity_constant_one() {
     // K_n=1^∞ 1/1 = 1/(1+1/(1+1/(1+...))) is the fixed point of x = 1/(1+x),
     // which equals -1 + GoldenRatio.

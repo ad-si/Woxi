@@ -2863,6 +2863,55 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "ContinuedFractionK" if args.len() == 3 => {
+      // ContinuedFractionK[f, g, {n, nmin, nmax}] =
+      //   f1/(g1 + f2/(g2 + ... + fk/gk)), with fi, gi = f, g at n = i.
+      if let Expr::List(ref spec) = args[2]
+        && spec.len() == 3
+        && let Expr::Identifier(var) = &spec[0]
+      {
+        let nmin_expr = crate::evaluator::evaluate_expr_to_expr(&spec[1])
+          .unwrap_or_else(|_| spec[1].clone());
+        let nmax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
+          .unwrap_or_else(|_| spec[2].clone());
+        if let (Expr::Integer(nmin), Expr::Integer(nmax)) =
+          (&nmin_expr, &nmax_expr)
+        {
+          let f = &args[0];
+          let g = &args[1];
+          let mut acc = Expr::Integer(0);
+          for k in (*nmin..=*nmax).rev() {
+            let fk = crate::syntax::replace_identifier_in_expr(
+              f,
+              var,
+              &Expr::Integer(k),
+            );
+            let fk_eval =
+              crate::evaluator::evaluate_expr_to_expr(&fk).unwrap_or(fk);
+            let gk = crate::syntax::replace_identifier_in_expr(
+              g,
+              var,
+              &Expr::Integer(k),
+            );
+            let gk_eval =
+              crate::evaluator::evaluate_expr_to_expr(&gk).unwrap_or(gk);
+            // acc = fk / (gk + acc)
+            let denom = Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(gk_eval),
+              right: Box::new(acc),
+            };
+            acc = Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(fk_eval),
+              right: Box::new(denom),
+            };
+            acc = crate::evaluator::evaluate_expr_to_expr(&acc).unwrap_or(acc);
+          }
+          return Some(Ok(acc));
+        }
+      }
+    }
     "FindLinearRecurrence" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {
         return Some(find_linear_recurrence_impl(elems));

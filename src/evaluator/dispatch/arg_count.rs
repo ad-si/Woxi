@@ -195,7 +195,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ContainsOnly" => Some((2, 3)),
     "Context" => Some((0, 1)),
     "ContinuedFraction" => Some((1, 2)),
-    "ContinuedFractionK" => Some((2, 2)),
+    "ContinuedFractionK" => Some((2, 3)),
     "ContourPlot" => Some((3, usize::MAX)),
     "ContourPlot3D" => Some((4, usize::MAX)),
     "Convergents" => Some((1, 2)),
