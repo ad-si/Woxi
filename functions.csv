@@ -650,7 +650,7 @@ Unprotect,Removes protection from symbols,✅,stateful,1.0,654
 ChebyshevT,Chebyshev polynomial of the first kind,✅,pure,1.0,655
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6.0,656
 VertexList,List of vertices in a graph,✅,none,8.0,657
-ColorNegate,Negates colors in an image,✅,pure,7.0,658
+ColorNegate,Negates the colors of an image or a color directive (preserving its color space),✅,pure,7.0,658
 InterpolatingFunction,Represents an interpolating function object,✅,none,2.0,659
 Prolog,Option specifying graphics primitives drawn before the main plot,✅,none,2.0,660
 ChartLabels,Option for labeling elements in charts,✅,none,7.0,661

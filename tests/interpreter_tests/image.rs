@@ -729,6 +729,25 @@ mod image_processing {
     );
   }
 
+  // ColorNegate stays in the input's color space: a Hue stays a Hue and a
+  // CMYKColor stays a CMYKColor (negation is computed via RGB).
+  #[test]
+  fn color_negate_preserves_hue_and_cmyk() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorNegate[Hue[0.5]]").unwrap(),
+      "Hue[0., 1., 1.]"
+    );
+    assert_eq!(
+      interpret("ColorNegate[Hue[0.2, 0.5, 0.8]]").unwrap(),
+      "Hue[0.7000000000000001, 0.6666666666666667, 0.6]"
+    );
+    assert_eq!(
+      interpret("ColorNegate[CMYKColor[0, 1, 1, 0]]").unwrap(),
+      "CMYKColor[1., 0., 0., 0.]"
+    );
+  }
+
   // wolframscript on `ColorNegate[<non-image>]` emits
   // `ColorNegate::imginv` and leaves the call unevaluated.
   // Regression for mathics color_operations.py

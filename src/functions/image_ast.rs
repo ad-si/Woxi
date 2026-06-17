@@ -1025,6 +1025,38 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )),
       }
     }
+    // Hue and CMYKColor negate via RGB but stay in their own color space:
+    // negate the RGB components, then convert back. (Lighter/Darker, by
+    // contrast, return RGBColor.)
+    Expr::FunctionCall { name, args: cargs }
+      if (name == "Hue"
+        && (cargs.len() == 1 || cargs.len() == 3 || cargs.len() == 4))
+        || (name == "CMYKColor"
+          && (cargs.len() == 4 || cargs.len() == 5)) =>
+    {
+      let Some((r, g, b, alpha)) = color_directive_to_rgb(&args[0]) else {
+        // Symbolic components: leave unevaluated.
+        return Ok(Expr::FunctionCall {
+          name: "ColorNegate".to_string(),
+          args: args.to_vec().into(),
+        });
+      };
+      let (nr, ng, nb) = (1.0 - r, 1.0 - g, 1.0 - b);
+      let mut out = if name == "Hue" {
+        let (h, s, v) = rgb_to_hsv(nr, ng, nb);
+        vec![Expr::Real(h), Expr::Real(s), Expr::Real(v)]
+      } else {
+        let (c, m, y, k) = rgb_to_cmyk(nr, ng, nb);
+        vec![Expr::Real(c), Expr::Real(m), Expr::Real(y), Expr::Real(k)]
+      };
+      if let Some(a) = alpha {
+        out.push(Expr::Real(a));
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: out.into(),
+      })
+    }
     other => {
       // Match wolframscript: when the argument isn't a valid
       // image / color directive, emit `ColorNegate::imginv` and
