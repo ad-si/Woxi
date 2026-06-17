@@ -1087,6 +1087,21 @@ mod linear_solve {
     );
   }
 
+  // Operator form: LinearSolve[m][b] == LinearSolve[m, b], and it can be
+  // mapped over several right-hand sides.
+  #[test]
+  fn solve_operator_form() {
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}][{5, 6}]").unwrap(),
+      "{-4, 9/2}"
+    );
+    assert_eq!(
+      interpret("Map[LinearSolve[{{1, 2}, {3, 4}}], {{5, 6}, {1, 0}}]")
+        .unwrap(),
+      "{{-4, 9/2}, {-2, 3/2}}"
+    );
+  }
+
   #[test]
   fn solve_diagonal() {
     // Diagonal matrix

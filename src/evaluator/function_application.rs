@@ -542,6 +542,14 @@ pub fn apply_function_to_arg(
         let new_args = vec![args[0].clone(), arg.clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
+      // LinearSolve[m][b] -> LinearSolve[m, b] (operator form).
+      if name == "LinearSolve"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_))
+      {
+        let new_args = vec![args[0].clone(), arg.clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)
@@ -877,6 +885,20 @@ pub fn apply_curried_call(
         | "HazardFunction"
     ) && func_args.len() == 1
       && matches!(&func_args[0], Expr::FunctionCall { .. }) =>
+    {
+      let mut new_args = func_args.to_vec();
+      new_args.extend(args.iter().cloned());
+      evaluate_function_call_ast(name, &new_args)
+    }
+    // LinearSolve operator form: LinearSolve[m][b] -> LinearSolve[m, b]. (The
+    // bare LinearSolve[m] is wolframscript's opaque LinearSolveFunction, which
+    // Woxi keeps unevaluated, but the application solves the system.)
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "LinearSolve"
+      && func_args.len() == 1
+      && matches!(&func_args[0], Expr::List(_)) =>
     {
       let mut new_args = func_args.to_vec();
       new_args.extend(args.iter().cloned());

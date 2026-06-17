@@ -673,7 +673,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LinearModelFit" => Some((1, 3)),
     "LinearRecurrence" => Some((3, 3)),
     "LineGraph" => Some((1, 1)),
-    "LinearSolve" => Some((2, 2)),
+    "LinearSolve" => Some((1, 2)),
     "LiouvilleLambda" => Some((1, 1)),
     "ListConvolve" => Some((2, 4)),
     "ListCorrelate" => Some((2, 4)),

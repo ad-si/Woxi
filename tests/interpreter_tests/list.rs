@@ -901,7 +901,10 @@ mod position_largest_smallest {
   // 1-based positions of all occurrences of the max / min element.
   #[test]
   fn basic() {
-    assert_eq!(interpret("PositionLargest[{3, 1, 4, 1, 5}]").unwrap(), "{5}");
+    assert_eq!(
+      interpret("PositionLargest[{3, 1, 4, 1, 5}]").unwrap(),
+      "{5}"
+    );
     assert_eq!(
       interpret("PositionSmallest[{3, 1, 4, 1, 5}]").unwrap(),
       "{2, 4}"
