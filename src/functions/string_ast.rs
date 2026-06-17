@@ -7506,6 +7506,14 @@ pub fn character_counts_ngram_ast(
 /// LetterCounts[s] - association of letter (alphabetic) frequencies, sorted by
 /// count descending then by last position descending.
 pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Thread over a list of strings: LetterCounts[{s1, …}] = {LetterCounts[s1], …}.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| letter_counts_ast(std::slice::from_ref(s)))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   let s = expr_to_str(&args[0])?;
   let mut counts: Vec<(char, i128, usize)> = Vec::new();
   for (pos, ch) in s.chars().enumerate() {
@@ -7535,6 +7543,14 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn letter_counts_ngram_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // Thread over a list of strings: each string gets its own n-gram counts.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| letter_counts_ngram_ast(&[s.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   let s = expr_to_str(&args[0])?;
   let n = expr_to_int(&args[1])?;
   if n == 1 {

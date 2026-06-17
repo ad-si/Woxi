@@ -115,10 +115,10 @@ pub fn dispatch_string_functions(
     "ToExpression" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::to_expression_ast(args));
     }
-    "StringPadLeft" if args.len() >= 1 && args.len() <= 3 => {
+    "StringPadLeft" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::string_pad_left_ast(args));
     }
-    "StringPadRight" if args.len() >= 1 && args.len() <= 3 => {
+    "StringPadRight" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::string_pad_right_ast(args));
     }
     "InsertLinebreaks" if args.len() == 1 || args.len() == 2 => {

@@ -2301,6 +2301,22 @@ mod letter_counts_ngram {
       "<|ban -> 1, ana -> 2, nan -> 1|>"
     );
   }
+  // A list of strings threads: each string gets its own association.
+  #[test]
+  fn list_of_strings_threads() {
+    assert_eq!(
+      interpret(r#"LetterCounts[{"hello", "world", "!"}]"#).unwrap(),
+      "{<|l -> 2, o -> 1, e -> 1, h -> 1|>, \
+       <|d -> 1, l -> 1, r -> 1, o -> 1, w -> 1|>, <||>}"
+    );
+  }
+  #[test]
+  fn list_of_strings_ngram_threads() {
+    assert_eq!(
+      interpret(r#"LetterCounts[{"ab12", "cdcd"}, 2]"#).unwrap(),
+      "{<|ab -> 1|>, <|cd -> 2, dc -> 1|>}"
+    );
+  }
 }
 
 mod remove_diacritics {
