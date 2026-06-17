@@ -69,6 +69,44 @@ pub fn apply_func_to_two_args(
   }
 }
 
+/// Apply a function to an arbitrary number of arguments (generalizes
+/// `apply_func_to_two_args` to n-ary application).
+pub fn apply_func_to_args(
+  func: &Expr,
+  call_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  match func {
+    Expr::Identifier(name) => {
+      crate::evaluator::evaluate_function_call_ast(name, call_args)
+    }
+    Expr::Function { body } => {
+      let substituted = crate::syntax::substitute_slots(body, call_args);
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    Expr::NamedFunction { params, body, .. } => {
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(call_args.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    Expr::FunctionCall { name, args } => {
+      // Curried function: f[a] applied to (b, c, …) becomes f[a, b, c, …]
+      let mut new_args = args.clone();
+      for a in call_args {
+        new_args.push(a.clone());
+      }
+      crate::evaluator::evaluate_function_call_ast(name, &new_args)
+    }
+    _ => {
+      let func_str = crate::syntax::expr_to_string(func);
+      crate::evaluator::evaluate_function_call_ast(&func_str, call_args)
+    }
+  }
+}
+
 /// Get the head of an expression as a string
 pub fn get_expr_head_str(expr: &Expr) -> &str {
   match expr {

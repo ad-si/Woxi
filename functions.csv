@@ -3498,7 +3498,7 @@ PolygonCoordinates,,,,12.0,3593
 RadialGradientImage,,🚫,,10.0,3593
 RadicalBox,Low-level box construct for nth root display,✅,pure,3.0,3593
 SaveConnection,,🚫,,12.0,3593
-SequenceFoldList,,,,10.2,3593
+SequenceFoldList,Fold over a list keeping an n-element history at each step and returning all results,✅,pure,10.2,3593
 ShapiroWilkTest,,,,8.0,3593
 SpearmanRho,Spearman rank-correlation coefficient of two lists,✅,pure,9.0,3593
 ApplyTo,,,,12.2,3612
@@ -4108,7 +4108,7 @@ MaxMixtureKernels,,,,8.0,4225
 MoleculeValue,,🚫,,12.0,4225
 NumberDecompose,Greedy decomposition of a number into unit multiples,✅,pure,10.2,4225
 ReferenceLineStyle,,,,8.0,4225
-SequenceFold,,,,10.2,4225
+SequenceFold,Fold over a list keeping an n-element history at each step and returning the last result,✅,pure,10.2,4225
 StringRotateRight,Rotates characters in a string to the right,✅,pure,9.0,4225
 TrainingProgressFunction,,🚫,,11.1,4225
 TransferFunctionCancel,,🚫,,8.0,4225

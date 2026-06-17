@@ -421,6 +421,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FoldPair" => Some((3, 4)),
     "FoldPairList" => Some((3, 4)),
     "FoldWhile" => Some((3, 4)),
+    "SequenceFold" => Some((3, 4)),
+    "SequenceFoldList" => Some((3, 4)),
     "FoldWhileList" => Some((3, 4)),
     "For" => Some((3, 4)),
     "FortranForm" => Some((1, 1)),

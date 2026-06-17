@@ -1927,6 +1927,12 @@ pub fn dispatch_list_operations(
     "Scan" if args.len() == 2 => {
       return Some(list_helpers_ast::scan_ast(&args[0], &args[1]));
     }
+    "SequenceFold" if args.len() == 3 || args.len() == 4 => {
+      return Some(list_helpers_ast::sequence_fold_ast(args));
+    }
+    "SequenceFoldList" if args.len() == 3 || args.len() == 4 => {
+      return Some(list_helpers_ast::sequence_fold_list_ast(args));
+    }
     "FoldList" if args.len() == 2 || args.len() == 3 => {
       if args.len() == 3 {
         return Some(list_helpers_ast::fold_list_ast(

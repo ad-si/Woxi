@@ -4367,6 +4367,78 @@ mod fold_list {
   }
 }
 
+mod sequence_fold {
+  use super::*;
+
+  #[test]
+  fn fold_list_two_history_plus() {
+    assert_eq!(
+      interpret("SequenceFoldList[Plus, {0, 1}, {1, 2, 3, 4}]").unwrap(),
+      "{0, 1, 2, 5, 10, 19}"
+    );
+  }
+
+  #[test]
+  fn fold_returns_last_element() {
+    assert_eq!(
+      interpret("SequenceFold[Plus, {0, 1}, {1, 2, 3, 4}]").unwrap(),
+      "19"
+    );
+  }
+
+  #[test]
+  fn fold_list_symbolic_function() {
+    assert_eq!(
+      interpret("SequenceFoldList[f, {x1, x2}, {a, b}]").unwrap(),
+      "{x1, x2, f[x1, x2, a], f[x2, f[x1, x2, a], b]}"
+    );
+  }
+
+  #[test]
+  fn single_history_element() {
+    // n = 1 reduces to an ordinary FoldList.
+    assert_eq!(
+      interpret("SequenceFoldList[f, {x1}, {a, b}]").unwrap(),
+      "{x1, f[x1, a], f[f[x1, a], b]}"
+    );
+  }
+
+  #[test]
+  fn three_history_elements() {
+    assert_eq!(
+      interpret("SequenceFoldList[Plus, {1, 2, 3}, {10, 20}]").unwrap(),
+      "{1, 2, 3, 16, 41}"
+    );
+  }
+
+  #[test]
+  fn k_argument_widens_window() {
+    // k = 4 with n = 2 feeds f a sliding window of two a-values per step.
+    assert_eq!(
+      interpret("SequenceFoldList[f, {x1, x2}, {a, b, c, d}, 4]").unwrap(),
+      "{x1, x2, f[x1, x2, a, b], f[x2, f[x1, x2, a, b], b, c], \
+       f[f[x1, x2, a, b], f[x2, f[x1, x2, a, b], b, c], c, d]}"
+    );
+  }
+
+  #[test]
+  fn k_argument_fold_value() {
+    assert_eq!(
+      interpret("SequenceFold[Plus, {0, 1}, {1, 1, 1, 1}, 3]").unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn pure_function_with_three_slots() {
+    assert_eq!(
+      interpret("SequenceFoldList[#1 + #2 + #3 &, {0, 1}, {1, 2, 3}]")
+        .unwrap(),
+      "{0, 1, 2, 5, 10}"
+    );
+  }
+}
+
 mod split_with_test {
   use super::*;
 

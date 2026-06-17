@@ -313,6 +313,75 @@ pub fn fold_list_ast(
   }
 }
 
+/// AST-based SequenceFoldList.
+///
+/// `SequenceFoldList[f, {x1,…,xn}, {a1,a2,…}]` keeps a running history seeded
+/// with the n initial values. At each step it applies `f` to the last n
+/// history values followed by the next element of the a-list, appending the
+/// result to the history; it returns the full history.
+///
+/// `SequenceFoldList[f, {x1,…,xn}, {a1,…}, k]` instead feeds `f` the last n
+/// history values plus a sliding window of `k - n` a-values (the window
+/// advances by one each step). The default `k` is `n + 1` (window size 1).
+pub fn sequence_fold_list_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "SequenceFoldList".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() < 3 || args.len() > 4 {
+    return unevaluated();
+  }
+  let func = &args[0];
+  let (Expr::List(x_init), Expr::List(a_items)) = (&args[1], &args[2]) else {
+    return unevaluated();
+  };
+  let n = x_init.len();
+  if n == 0 {
+    return unevaluated();
+  }
+  // Window of a-values consumed per step: k - n, default 1 (k = n + 1).
+  let window: usize = if args.len() == 4 {
+    match expr_to_i128(&args[3]) {
+      Some(k) if k > n as i128 => (k - n as i128) as usize,
+      _ => return unevaluated(),
+    }
+  } else {
+    1
+  };
+
+  let a: Vec<Expr> = a_items.iter().cloned().collect();
+  let mut history: Vec<Expr> = x_init.iter().cloned().collect();
+  if window <= a.len() {
+    let num_steps = a.len() - window + 1;
+    for i in 0..num_steps {
+      let mut call_args: Vec<Expr> =
+        history[history.len() - n..].to_vec();
+      call_args.extend_from_slice(&a[i..i + window]);
+      let next = apply_func_to_args(func, &call_args)?;
+      history.push(next);
+    }
+  }
+  Ok(Expr::List(history.into()))
+}
+
+/// AST-based SequenceFold: the last element of the SequenceFoldList history.
+pub fn sequence_fold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match sequence_fold_list_ast(args)? {
+    Expr::List(ref items) if !items.is_empty() => {
+      Ok(items.last().cloned().unwrap())
+    }
+    // SequenceFoldList stayed unevaluated → keep SequenceFold unevaluated.
+    _ => Ok(Expr::FunctionCall {
+      name: "SequenceFold".to_string(),
+      args: args.to_vec().into(),
+    }),
+  }
+}
+
 /// AST-based FixedPointList: list of values until fixed point.
 pub fn fixed_point_list_ast(
   func: &Expr,
