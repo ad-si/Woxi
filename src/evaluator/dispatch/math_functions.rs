@@ -1575,6 +1575,25 @@ pub fn dispatch_math_functions(
     // InverseCDF[dist, q] coincides with Quantile[dist, q] for the
     // closed-form distributions (numeric q only)
     "InverseCDF" if args.len() == 2 => {
+      // InverseCDF[dist, {p1, ...}] threads over the probability list (the
+      // second argument is always a scalar probability).
+      if matches!(&args[0], Expr::FunctionCall { .. })
+        && let Expr::List(ps) = &args[1]
+      {
+        let results: Result<Vec<Expr>, _> = ps
+          .iter()
+          .map(|p| {
+            dispatch_math_functions("InverseCDF", &[args[0].clone(), p.clone()])
+              .unwrap_or_else(|| {
+                Ok(Expr::FunctionCall {
+                  name: "InverseCDF".to_string(),
+                  args: vec![args[0].clone(), p.clone()].into(),
+                })
+              })
+          })
+          .collect();
+        return Some(results.map(|v| Expr::List(v.into())));
+      }
       if let Expr::FunctionCall {
         name: dist_name,
         args: dargs,

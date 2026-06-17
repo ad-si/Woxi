@@ -121,6 +121,19 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Thread a univariate PDF over a list of points (discrete PDFs otherwise leak
+  // the list into a Piecewise condition). Multivariate distributions take a
+  // list as a single point, so they are excluded.
+  if let Expr::List(xs) = &args[1]
+    && !is_multivariate_distribution(dist_name)
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = xs
+      .iter()
+      .map(|xi| pdf_ast(&[args[0].clone(), xi.clone()]))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
+
   let x = args[1].clone();
 
   match dist_name {

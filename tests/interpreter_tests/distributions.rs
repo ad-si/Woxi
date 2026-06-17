@@ -91,6 +91,30 @@ mod distribution_list_threading {
       "Log[2]"
     );
   }
+
+  // PDF of a univariate (discrete) distribution at a list of points threads,
+  // rather than leaking the list into a Piecewise condition.
+  #[test]
+  fn pdf_threads_over_value_list() {
+    assert_eq!(
+      interpret("PDF[PoissonDistribution[3], {1, 2, 3}]").unwrap(),
+      "{3/E^3, 9/(2*E^3), 9/(2*E^3)}"
+    );
+    // Scalar form unchanged.
+    assert_eq!(
+      interpret("PDF[PoissonDistribution[3], 2]").unwrap(),
+      "9/(2*E^3)"
+    );
+  }
+
+  // InverseCDF threads over a list of probabilities.
+  #[test]
+  fn inverse_cdf_threads_over_probability_list() {
+    assert_eq!(
+      interpret("InverseCDF[NormalDistribution[], {1/4, 1/2}]").unwrap(),
+      "{-(Sqrt[2]*InverseErfc[1/2]), 0}"
+    );
+  }
 }
 
 mod hypoexponential_distribution {
