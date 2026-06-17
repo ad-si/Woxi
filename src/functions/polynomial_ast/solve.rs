@@ -1646,7 +1646,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (sqrt_out, sqrt_in) = simplify_sqrt_parts(disc_int);
           // roots = (-bi ± sqrt_out * Sqrt[sqrt_in]) / (2*ai)
           if sqrt_in == 1 {
-            // Perfect square discriminant: exact integer/rational roots
+            // Perfect square discriminant: exact integer/rational roots.
             let sol1 = solve_divide(
               &Expr::Integer(-bi - sqrt_out),
               &Expr::Integer(2 * ai),
@@ -1655,9 +1655,13 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               &Expr::Integer(-bi + sqrt_out),
               &Expr::Integer(2 * ai),
             );
-            return Ok(Expr::List(
-              vec![make_rule(sol1), make_rule(sol2)].into(),
-            ));
+            // Dividing by 2a flips the root order when a < 0, so emit the
+            // smaller (more negative) root first to match Wolfram.
+            return Ok(if ai < 0 {
+              Expr::List(vec![make_rule(sol2), make_rule(sol1)].into())
+            } else {
+              Expr::List(vec![make_rule(sol1), make_rule(sol2)].into())
+            });
           } else {
             // Irrational roots: (-bi ± sqrt_out*Sqrt[sqrt_in]) / (2*ai)
             // Simplify by dividing common factors
@@ -1666,9 +1670,16 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let nb = -bi / g;
             let so = sqrt_out / g;
             let den = 2 * ai / g;
-            // Normalize sign
+            // Normalize the denominator to be positive. Only the numerator's
+            // additive term (`nb`) and the denominator flip sign; the radical
+            // coefficient `so` must stay non-negative. (Negating `so` here made
+            // `sqrt_part` negative, so the minus root came out as the
+            // unsimplified `-(-Sqrt[..])` instead of `Sqrt[..]`.) Because both
+            // ± roots are emitted, keeping `so > 0` with `den > 0` still yields
+            // the smaller (more negative) root from `make_sol(true)`, matching
+            // Wolfram's negative-root-first ordering.
             let (nb, so, den) = if den < 0 {
-              (-nb, -so, -den)
+              (-nb, so, -den)
             } else {
               (nb, so, den)
             };
@@ -1803,8 +1814,12 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let nb = -bi / g;
             let so = sqrt_out / g;
             let den = 2 * ai / g;
+            // Keep the radical coefficient `so` non-negative; only `nb` and
+            // `den` flip when the denominator is negative (see the real-root
+            // branch above — negating `so` produced an unsimplified
+            // `-(I*(-Sqrt[..]))`).
             let (nb, so, den) = if den < 0 {
-              (-nb, -so, -den)
+              (-nb, so, -den)
             } else {
               (nb, so, den)
             };
@@ -1847,8 +1862,13 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 }
               }
             };
-            let sol1 = make_sol(true);
-            let sol2 = make_sol(false);
+            // Re-evaluate so a raw negation collapses (e.g. -(I*Sqrt[2]) →
+            // -I*Sqrt[2]), matching wolframscript's complex-root form.
+            let finish = |e: Expr| {
+              crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
+            };
+            let sol1 = finish(make_sol(true));
+            let sol2 = finish(make_sol(false));
             return Ok(Expr::List(
               vec![make_rule(sol1), make_rule(sol2)].into(),
             ));

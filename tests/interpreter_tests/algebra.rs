@@ -2107,6 +2107,37 @@ mod solve {
     );
   }
 
+  // Regression: a negative leading coefficient (e.g. the `c - x^2` factors of
+  // x^4 - 4) must still yield simplified, correctly ordered roots — not
+  // `-(-Sqrt[2])` / `I*(-Sqrt[2])` and not a flipped order.
+  #[test]
+  fn solve_negative_leading_coefficient() {
+    // Irrational real roots.
+    assert_eq!(
+      interpret("Solve[2 - x^2 == 0, x]").unwrap(),
+      "{{x -> -Sqrt[2]}, {x -> Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[3 - x^2 == 0, x]").unwrap(),
+      "{{x -> -Sqrt[3]}, {x -> Sqrt[3]}}"
+    );
+    // Complex roots stay simplified.
+    assert_eq!(
+      interpret("Solve[-2 - x^2 == 0, x]").unwrap(),
+      "{{x -> -I*Sqrt[2]}, {x -> I*Sqrt[2]}}"
+    );
+    // Perfect-square discriminant: smaller (more negative) root first.
+    assert_eq!(
+      interpret("Solve[6 - x - x^2 == 0, x]").unwrap(),
+      "{{x -> -3}, {x -> 2}}"
+    );
+    // The audit case: real-domain roots of a biquadratic factor product.
+    assert_eq!(
+      interpret("SolveValues[(x^2 + 2)*(x^2 - 2) == 0, x, Reals]").unwrap(),
+      "{-Sqrt[2], Sqrt[2]}"
+    );
+  }
+
   #[test]
   fn solve_sqrt_equation() {
     assert_eq!(interpret("Solve[Sqrt[x] == 3, x]").unwrap(), "{{x -> 9}}");
