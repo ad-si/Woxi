@@ -291,6 +291,7 @@ pub fn dispatch_image_functions(
         &args[0],
         Expr::FunctionCall { name: n, .. }
           if n == "RGBColor" || n == "GrayLevel"
+            || n == "Hue" || n == "CMYKColor"
       );
       if matches!(&args[0], Expr::Image { .. }) || is_color_directive {
         return Some(crate::functions::image_ast::color_convert_ast(args));

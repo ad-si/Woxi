@@ -755,7 +755,7 @@ WordList,Returns a list of common English words,🚫,io,10.3,762
 EdgeList,List of edges in a graph,✅,none,8.0,763
 Refine,Simplifies expressions using assumptions,✅,pure,5.0,764
 Expression,Type specifier for reading expressions,✅,pure,1.0,765
-ColorConvert,Convert between color spaces,✅,pure,7.0,766
+ColorConvert,Convert colors or images between color spaces (RGB Grayscale CMYK HSB),✅,pure,7.0,766
 ReadList,Read a list of items from a file or stream,✅,effectful,1.0,767
 LinearModelFit,Fits a linear model to data and returns a FittedModel object,✅,pure,7.0,768
 ExclusionsStyle,Option for styling exclusion lines in plots,✅,none,6.0,769

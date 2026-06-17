@@ -2954,6 +2954,33 @@ mod image_advanced {
     );
   }
 
+  // RGB <-> CMYK and RGB <-> HSB conversions on color directives.
+  #[test]
+  fn color_convert_cmyk_and_hsb() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorConvert[RGBColor[1, 0, 0], \"CMYK\"]").unwrap(),
+      "CMYKColor[0., 1., 1., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorConvert[RGBColor[1, 0, 0], \"HSB\"]").unwrap(),
+      "Hue[0., 1., 1.]"
+    );
+    // Hue and CMYKColor are accepted as inputs too.
+    assert_eq!(
+      interpret("ColorConvert[Hue[0.5], \"RGB\"]").unwrap(),
+      "RGBColor[0., 1., 1.]"
+    );
+    assert_eq!(
+      interpret("ColorConvert[CMYKColor[0, 1, 1, 0], \"RGB\"]").unwrap(),
+      "RGBColor[1., 0., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorConvert[CMYKColor[0, 1, 1, 0], \"HSB\"]").unwrap(),
+      "Hue[0., 1., 1.]"
+    );
+  }
+
   #[test]
   fn image_add() {
     clear_state();

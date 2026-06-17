@@ -2731,7 +2731,90 @@ fn color_directive_to_rgb(e: &Expr) -> Option<(f64, f64, f64, Option<f64>)> {
       let v = to_f(&args[0])?;
       Some((v, v, v, Some(to_f(&args[1])?)))
     }
+    // Hue[h] uses full saturation and brightness; Hue[h, s, b(, a)] is the
+    // general HSB form.
+    "Hue" if args.len() == 1 => {
+      let (r, g, b) = hsv_to_rgb(to_f(&args[0])?, 1.0, 1.0);
+      Some((r, g, b, None))
+    }
+    "Hue" if args.len() == 3 || args.len() == 4 => {
+      let (r, g, b) =
+        hsv_to_rgb(to_f(&args[0])?, to_f(&args[1])?, to_f(&args[2])?);
+      let alpha = if args.len() == 4 {
+        Some(to_f(&args[3])?)
+      } else {
+        None
+      };
+      Some((r, g, b, alpha))
+    }
+    "CMYKColor" if args.len() == 4 || args.len() == 5 => {
+      let c = to_f(&args[0])?;
+      let m = to_f(&args[1])?;
+      let y = to_f(&args[2])?;
+      let k = to_f(&args[3])?;
+      let r = (1.0 - c) * (1.0 - k);
+      let g = (1.0 - m) * (1.0 - k);
+      let b = (1.0 - y) * (1.0 - k);
+      let alpha = if args.len() == 5 {
+        Some(to_f(&args[4])?)
+      } else {
+        None
+      };
+      Some((r, g, b, alpha))
+    }
     _ => None,
+  }
+}
+
+/// HSB/HSV → RGB. `h`, `s`, `v` in [0, 1]; the hue wraps modulo 1.
+fn hsv_to_rgb(h: f64, s: f64, v: f64) -> (f64, f64, f64) {
+  let h6 = h.rem_euclid(1.0) * 6.0;
+  let i = h6.floor();
+  let f = h6 - i;
+  let p = v * (1.0 - s);
+  let q = v * (1.0 - s * f);
+  let t = v * (1.0 - s * (1.0 - f));
+  match (i as i64) % 6 {
+    0 => (v, t, p),
+    1 => (q, v, p),
+    2 => (p, v, t),
+    3 => (p, q, v),
+    4 => (t, p, v),
+    _ => (v, p, q),
+  }
+}
+
+/// RGB → HSB/HSV, each component in [0, 1].
+fn rgb_to_hsv(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+  let max = r.max(g).max(b);
+  let min = r.min(g).min(b);
+  let delta = max - min;
+  let v = max;
+  let s = if max == 0.0 { 0.0 } else { delta / max };
+  let h = if delta == 0.0 {
+    0.0
+  } else if max == r {
+    (((g - b) / delta).rem_euclid(6.0)) / 6.0
+  } else if max == g {
+    ((b - r) / delta + 2.0) / 6.0
+  } else {
+    ((r - g) / delta + 4.0) / 6.0
+  };
+  (h, s, v)
+}
+
+/// RGB → CMYK, each component in [0, 1].
+fn rgb_to_cmyk(r: f64, g: f64, b: f64) -> (f64, f64, f64, f64) {
+  let k = 1.0 - r.max(g).max(b);
+  if (1.0 - k).abs() < 1e-12 {
+    (0.0, 0.0, 0.0, k)
+  } else {
+    (
+      (1.0 - r - k) / (1.0 - k),
+      (1.0 - g - k) / (1.0 - k),
+      (1.0 - b - k) / (1.0 - k),
+      k,
+    )
   }
 }
 
@@ -2787,6 +2870,30 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::FunctionCall {
           name: "RGBColor".to_string(),
           args: rargs.into(),
+        });
+      }
+      "CMYK" => {
+        let (c, m, y, k) = rgb_to_cmyk(r, g, b);
+        let mut cargs =
+          vec![Expr::Real(c), Expr::Real(m), Expr::Real(y), Expr::Real(k)];
+        if let Some(a) = alpha {
+          cargs.push(Expr::Real(a));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "CMYKColor".to_string(),
+          args: cargs.into(),
+        });
+      }
+      // "HSB" produces the Hue[h, s, b(, a)] directive.
+      "HSB" | "Hue" => {
+        let (h, s, v) = rgb_to_hsv(r, g, b);
+        let mut hargs = vec![Expr::Real(h), Expr::Real(s), Expr::Real(v)];
+        if let Some(a) = alpha {
+          hargs.push(Expr::Real(a));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Hue".to_string(),
+          args: hargs.into(),
         });
       }
       _ => {}
