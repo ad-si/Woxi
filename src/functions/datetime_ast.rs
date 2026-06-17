@@ -86,6 +86,51 @@ fn days_in_year(year: i64) -> i64 {
   if is_leap_year(year) { 366 } else { 365 }
 }
 
+/// DayCount[d1, d2, weekday]: count occurrences of `weekday` in the interval
+/// between the two dates, excluding the earlier endpoint and including the
+/// later (half-open `(min, max]`). Symmetric for reversed dates. Returns None
+/// when an argument can't be interpreted (caller leaves it unevaluated).
+pub fn day_count_weekday_ast(
+  d1: &Expr,
+  d2: &Expr,
+  weekday: &Expr,
+) -> Option<Expr> {
+  let target = match weekday {
+    Expr::Identifier(s) | Expr::String(s) => weekday_index(s)?,
+    _ => return None,
+  };
+  let ymd = |e: &Expr| -> Option<(i64, i64, i64)> {
+    let c = extract_date_components(e)?;
+    Some((
+      *c.first()? as i64,
+      c.get(1).map(|v| *v as i64).unwrap_or(1),
+      c.get(2).map(|v| *v as i64).unwrap_or(1),
+    ))
+  };
+  let (y1, m1, dd1) = ymd(d1)?;
+  let (y2, m2, dd2) = ymd(d2)?;
+  let abs1 = date_to_absolute_days(y1, m1, dd1);
+  let abs2 = date_to_absolute_days(y2, m2, dd2);
+  let dow1 = day_of_week(y1, m1, dd1);
+  let dow2 = day_of_week(y2, m2, dd2);
+  let (lo, hi, lo_dow) = if abs1 <= abs2 {
+    (abs1, abs2, dow1)
+  } else {
+    (abs2, abs1, dow2)
+  };
+  let n = hi - lo; // number of days in (lo, hi]
+  // Count k in [1, n] with (lo_dow + k) ≡ target (mod 7), i.e. k ≡ r (mod 7).
+  let r = ((target - lo_dow) % 7 + 7) % 7;
+  let count = if r == 0 {
+    n / 7
+  } else if r <= n {
+    (n - r) / 7 + 1
+  } else {
+    0
+  };
+  Some(Expr::Integer(count as i128))
+}
+
 /// Convert a date {y,m,d} to absolute days since 1900-01-01 (day 0)
 fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
   let mut total_days: i64 = 0;

@@ -4713,6 +4713,28 @@ mod batch_unevaluated_wrappers_2 {
       "30"
     );
   }
+  #[test]
+  fn day_count_weekday() {
+    // 3-arg form counts a specific weekday in (start, end].
+    assert_eq!(
+      interpret("DayCount[{2024, 1, 1}, {2024, 12, 31}, Sunday]").unwrap(),
+      "52"
+    );
+    assert_eq!(
+      interpret("DayCount[{2024, 1, 1}, {2024, 1, 15}, Saturday]").unwrap(),
+      "2"
+    );
+    // The earlier endpoint is excluded: Jan 1 2024 is a Monday, not counted.
+    assert_eq!(
+      interpret("DayCount[{2024, 1, 1}, {2024, 1, 7}, Monday]").unwrap(),
+      "0"
+    );
+    // Symmetric for reversed dates.
+    assert_eq!(
+      interpret("DayCount[{2024, 1, 8}, {2024, 1, 1}, Monday]").unwrap(),
+      "1"
+    );
+  }
 
   // ArrayResample
   #[test]

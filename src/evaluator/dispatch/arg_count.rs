@@ -244,7 +244,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DateDifference" => Some((2, usize::MAX)),
     "DateInterval" => Some((1, 1)),
     "DatePlus" => Some((2, 2)),
-    "DayCount" => Some((2, 2)),
+    "DayCount" => Some((2, 3)),
     "DayName" => Some((1, 1)),
     "DayPlus" => Some((2, 3)),
     "DayRange" => Some((2, 3)),
