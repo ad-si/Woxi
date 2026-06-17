@@ -12462,6 +12462,29 @@ mod position_specs_and_messages {
   }
 
   #[test]
+  fn head_constrained_pattern_uses_real_operator_head() {
+    // Regression: Position used a matcher that treated operator nodes
+    // (Power, Times, …) as having head Symbol, so `_Symbol` wrongly matched
+    // the `x^2`/`y^2` subexpressions and `_Power` matched nothing.
+    assert_eq!(
+      interpret("Position[x^2 + y^2, _Symbol, Infinity]").unwrap(),
+      "{{0}, {1, 0}, {1, 1}, {2, 0}, {2, 1}}"
+    );
+    assert_eq!(
+      interpret("Position[x^2 + y^2, _Power, Infinity]").unwrap(),
+      "{{1}, {2}}"
+    );
+    assert_eq!(
+      interpret("Position[f[x^2], _Symbol, Infinity]").unwrap(),
+      "{{0}, {1, 0}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret("Position[{x^2, y}, _Symbol, Infinity]").unwrap(),
+      "{{0}, {1, 0}, {1, 1}, {2}}"
+    );
+  }
+
+  #[test]
   fn atomic_subjects() {
     // Regression: Position[x, x] stayed unevaluated
     assert_eq!(interpret("Position[x, x]").unwrap(), "{{}}");

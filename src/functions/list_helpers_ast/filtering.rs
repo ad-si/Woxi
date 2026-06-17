@@ -813,7 +813,8 @@ fn position_visit(
   }
 
   if position_level_match(path.len(), position_depth(expr), min, max)
-    && matches_pattern_ast(expr, pattern)
+    && crate::evaluator::pattern_matching::match_pattern(expr, pattern)
+      .is_some()
   {
     out.push(Expr::List(path.clone().into()));
     if full(out) {

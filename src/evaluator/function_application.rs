@@ -344,10 +344,7 @@ pub fn apply_apply_ast(
       // evaluates items the source head kept unevaluated
       // (List @@ Hold[1 + 1] -> {2}), while a holding head leaves them
       // untouched (Hold @@ Hold[1 + 1] -> Hold[1 + 1]).
-      evaluate_expr_to_expr(&Expr::FunctionCall {
-        name,
-        args: items,
-      })
+      evaluate_expr_to_expr(&Expr::FunctionCall { name, args: items })
     }
     Expr::Function { body } => {
       // Anonymous function applied to a list
