@@ -270,7 +270,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DiagonalizableMatrixQ" => Some((1, 1)),
     "DiagonalMatrix" => Some((1, 2)),
     "DiceDissimilarity" => Some((2, 2)),
-    "DiagonalMatrixQ" => Some((1, 1)),
+    "DiagonalMatrixQ" => Some((1, 2)),
     "DiamondMatrix" => Some((1, 1)),
     "DictionaryWordQ" => Some((1, 1)),
     "Differences" => Some((1, 3)),

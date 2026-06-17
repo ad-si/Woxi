@@ -1741,30 +1741,53 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
-    // DiagonalMatrixQ[m] — True if m is diagonal
-    "DiagonalMatrixQ" if args.len() == 1 => {
+    // DiagonalMatrixQ[m] — True if m is diagonal (nonzeros only on the main
+    // diagonal). DiagonalMatrixQ[m, k] allows nonzeros only on the k-th
+    // diagonal (j - i == k; k > 0 super-, k < 0 sub-diagonal). Works on
+    // rectangular matrices, not just square ones.
+    "DiagonalMatrixQ" if args.len() == 1 || args.len() == 2 => {
+      let k: i64 = if args.len() == 2 {
+        match &args[1] {
+          Expr::Integer(n) => *n as i64,
+          // A non-integer band specification is left unevaluated.
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "DiagonalMatrixQ".to_string(),
+              args: args.to_vec().into(),
+            }));
+          }
+        }
+      } else {
+        0
+      };
       if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
         let mut is_diag = true;
-        'diag: for i in 0..n {
-          if let Expr::List(row) = &rows[i] {
-            if row.len() != n {
+        let mut ncols: Option<usize> = None;
+        'diag: for (i, r) in rows.iter().enumerate() {
+          let Expr::List(row) = r else {
+            is_diag = false;
+            break;
+          };
+          // Require a rectangular matrix (consistent row length).
+          match ncols {
+            None => ncols = Some(row.len()),
+            Some(c) if c != row.len() => {
               is_diag = false;
               break;
             }
-            for j in 0..n {
-              if i != j && !matches!(&row[j], Expr::Integer(0)) {
-                let evaluated =
-                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
-                if !matches!(evaluated, Expr::Integer(0)) {
-                  is_diag = false;
-                  break 'diag;
-                }
+            _ => {}
+          }
+          for (j, entry) in row.iter().enumerate() {
+            if (j as i64 - i as i64) != k
+              && !matches!(entry, Expr::Integer(0))
+            {
+              let evaluated =
+                evaluate_expr_to_expr(entry).unwrap_or(entry.clone());
+              if !matches!(evaluated, Expr::Integer(0)) {
+                is_diag = false;
+                break 'diag;
               }
             }
-          } else {
-            is_diag = false;
-            break;
           }
         }
         return Some(Ok(Expr::Identifier(

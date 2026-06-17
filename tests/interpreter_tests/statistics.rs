@@ -3734,7 +3734,10 @@ mod binormal_distribution {
       "{1, 2}"
     );
     // One-argument standard form has zero means.
-    assert_eq!(interpret("Mean[BinormalDistribution[r]]").unwrap(), "{0, 0}");
+    assert_eq!(
+      interpret("Mean[BinormalDistribution[r]]").unwrap(),
+      "{0, 0}"
+    );
   }
 
   #[test]
@@ -3745,8 +3748,10 @@ mod binormal_distribution {
       "{s1^2, s2^2}"
     );
     assert_eq!(
-      interpret("StandardDeviation[BinormalDistribution[{m1, m2}, {s1, s2}, r]]")
-        .unwrap(),
+      interpret(
+        "StandardDeviation[BinormalDistribution[{m1, m2}, {s1, s2}, r]]"
+      )
+      .unwrap(),
       "{s1, s2}"
     );
     assert_eq!(

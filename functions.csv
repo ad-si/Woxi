@@ -3628,7 +3628,7 @@ CharacterName,,,,10.2,3737
 ContourDetect,,,,8.0,3737
 Databins,,🚫,,10.0,3737
 DependentVariables,,,,5.0,3737
-DiagonalMatrixQ,True if a matrix is diagonal,✅,1,12.0,3737
+DiagonalMatrixQ,True if a (possibly rectangular) matrix has nonzeros only on the k-th diagonal,✅,pure,12.0,3737
 DirichletL,Dirichlet L-function (Zeta and exact integer-s values),✅,pure,7.0,3737
 GeoImage,,🚫,,11.2,3737
 HatchShading,,,,12.1,3737

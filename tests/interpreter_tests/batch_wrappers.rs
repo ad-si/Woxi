@@ -5228,6 +5228,51 @@ mod batch_unevaluated_wrappers_2 {
       "False"
     );
   }
+  // DiagonalMatrixQ[m, k] — nonzeros allowed only on the k-th diagonal.
+  #[test]
+  fn diagonal_matrix_q_band_offset() {
+    // Superdiagonal (k = 1).
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{0, 1, 0}, {0, 0, 1}, {0, 0, 0}}, 1]")
+        .unwrap(),
+      "True"
+    );
+    // A main-diagonal matrix is not 1-banded.
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, 1]")
+        .unwrap(),
+      "False"
+    );
+    // Subdiagonal (k = -1).
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, -1]")
+        .unwrap(),
+      "True"
+    );
+    // Symbolic nonzeros on the k-th diagonal are allowed.
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{0, a, 0}, {0, 0, b}, {0, 0, 0}}, 1]")
+        .unwrap(),
+      "True"
+    );
+    // A band beyond the matrix means every entry must be zero.
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{1, 2}, {3, 4}}, 5]").unwrap(),
+      "False"
+    );
+  }
+  // Regression: rectangular (non-square) matrices are accepted.
+  #[test]
+  fn diagonal_matrix_q_rectangular() {
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{1, 0, 0}, {0, 2, 0}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{0, 1, 0}, {0, 0, 2}}, 1]").unwrap(),
+      "True"
+    );
+  }
 
   // UpperTriangularMatrixQ
   #[test]

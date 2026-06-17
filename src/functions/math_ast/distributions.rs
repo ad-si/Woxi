@@ -3101,10 +3101,18 @@ pub fn distribution_mean_variance_pub(
 ///   BinormalDistribution[rho]                       — standard (means 0,
 ///                                                     unit variances)
 /// Returns `None` for any other shape.
-pub fn binormal_params(dargs: &[Expr]) -> Option<(Expr, Expr, Expr, Expr, Expr)> {
+pub fn binormal_params(
+  dargs: &[Expr],
+) -> Option<(Expr, Expr, Expr, Expr, Expr)> {
   match dargs {
     [Expr::List(m), Expr::List(s), rho] if m.len() == 2 && s.len() == 2 => {
-      Some((m[0].clone(), m[1].clone(), s[0].clone(), s[1].clone(), rho.clone()))
+      Some((
+        m[0].clone(),
+        m[1].clone(),
+        s[0].clone(),
+        s[1].clone(),
+        rho.clone(),
+      ))
     }
     [rho] => Some((
       Expr::Integer(0),
