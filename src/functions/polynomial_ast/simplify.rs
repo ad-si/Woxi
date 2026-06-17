@@ -43,7 +43,17 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let expr = &args[0];
-  let assumption = &args[1];
+  // Refine[expr, Assumptions -> cond] — unwrap the option to its condition
+  // (the same way Simplify does), so it behaves like Refine[expr, cond].
+  let assumption: &Expr = match &args[1] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions") => {
+      replacement.as_ref()
+    }
+    other => other,
+  };
 
   // Extract assumption info
   let info = extract_assumption_info(assumption);

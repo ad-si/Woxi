@@ -1871,10 +1871,7 @@ mod solve {
     // An underdetermined system uses a non-obvious variable-selection
     // heuristic in wolframscript, so Woxi leaves it unevaluated rather than
     // guessing the wrong variable.
-    assert_eq!(
-      interpret("Solve[x + y == 3]").unwrap(),
-      "Solve[x + y == 3]"
-    );
+    assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "Solve[x + y == 3]");
   }
 
   #[test]
@@ -4661,6 +4658,28 @@ mod refine {
   #[test]
   fn abs_y_positive() {
     assert_eq!(interpret("Refine[Abs[y], y > 0]").unwrap(), "y");
+  }
+
+  #[test]
+  fn assumptions_option_form() {
+    // Refine[expr, Assumptions -> cond] behaves like Refine[expr, cond].
+    assert_eq!(
+      interpret("Refine[Abs[x], Assumptions -> x > 0]").unwrap(),
+      "x"
+    );
+    assert_eq!(
+      interpret("Refine[Sqrt[x^2], Assumptions -> x > 0]").unwrap(),
+      "x"
+    );
+    assert_eq!(
+      interpret("Refine[Sign[x], Assumptions -> x > 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Refine[Floor[x], Assumptions -> Element[x, Integers]]")
+        .unwrap(),
+      "x"
+    );
   }
 
   #[test]
