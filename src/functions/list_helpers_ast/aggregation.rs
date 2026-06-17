@@ -915,6 +915,19 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Median requires a rectangular array of real numbers; a ragged/mixed array
+  // or one with symbolic or complex entries emits Median::rectn. (Empty lists
+  // pass through to the unevaluated handling below.)
+  if !items.is_empty()
+    && let Some(uneval) =
+      crate::functions::math_ast::rectn_if_not_real_rectangular(
+        "Median",
+        std::slice::from_ref(list),
+      )
+  {
+    return Ok(uneval);
+  }
+
   if items.is_empty() {
     return Ok(Expr::FunctionCall {
       name: "Median".to_string(),

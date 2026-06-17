@@ -1250,6 +1250,57 @@ mod rectt_messages {
       "unexpected rectt: {msgs:?}"
     );
   }
+
+  // Median is stricter than Mean: it requires a rectangular array of real
+  // numbers, so a ragged/mixed array OR symbolic/complex entries emit the
+  // (differently-tagged) Median::rectn message. A numeric scalar still emits
+  // Median::rectt.
+  fn assert_rectn(input: &str, call: &str) {
+    clear_state();
+    assert_eq!(interpret(input).unwrap(), call);
+    let expected = format!(
+      "Median::rectn: A rectangular array of real numbers is expected at position 1 in {call}."
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(&expected)),
+      "expected {expected:?}, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn median_ragged_and_mixed_emit_rectn() {
+    assert_rectn("Median[{{1, 2}, {3}}]", "Median[{{1, 2}, {3}}]");
+    assert_rectn("Median[{1, {2, 3}}]", "Median[{1, {2, 3}}]");
+  }
+
+  #[test]
+  fn median_symbolic_and_complex_emit_rectn() {
+    assert_rectn("Median[{a, b, c}]", "Median[{a, b, c}]");
+    assert_rectn("Median[{1, 2, x}]", "Median[{1, 2, x}]");
+    assert_rectn("Median[{1, 2, 3 + I}]", "Median[{1, 2, 3 + I}]");
+    assert_rectn("Median[{{a, b}, {c, d}}]", "Median[{{a, b}, {c, d}}]");
+  }
+
+  #[test]
+  fn median_real_arrays_and_quantities_unaffected() {
+    clear_state();
+    assert_eq!(interpret("Median[{3, 1, 2}]").unwrap(), "2");
+    assert_eq!(interpret("Median[{1, 2, 3, 4}]").unwrap(), "5/2");
+    assert_eq!(interpret("Median[{1.5, 2.5, 3.5}]").unwrap(), "2.5");
+    assert_eq!(interpret("Median[{{1, 2}, {3, 4}}]").unwrap(), "{2, 3}");
+    // A list of compatible quantities is valid (sorted by magnitude).
+    assert_eq!(
+      interpret(r#"Median[{Quantity[2, "Meters"], Quantity[4, "Meters"]}]"#)
+        .unwrap(),
+      "Quantity[3, Meters]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::rectn")),
+      "unexpected rectn: {msgs:?}"
+    );
+  }
 }
 
 mod mean {

@@ -83,6 +83,58 @@ pub fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
   }
 }
 
+/// Whether every leaf of a (possibly nested) list is a real number — used by
+/// Median, which requires a rectangular array of real numbers (symbols and
+/// complex values are rejected, but Pi, Sin[1], 1/2, 1.5 are accepted).
+fn all_leaves_real_numeric(e: &Expr) -> bool {
+  match e {
+    Expr::List(items) => items.iter().all(all_leaves_real_numeric),
+    // A Quantity with a real magnitude is acceptable: Median sorts a list of
+    // compatible quantities by magnitude.
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      all_leaves_real_numeric(&args[0])
+    }
+    _ => {
+      crate::functions::predicate_ast::is_numeric_q_pub(e)
+        && !crate::functions::predicate_ast::is_complex_number(e)
+    }
+  }
+}
+
+/// If `args[0]` is a list that is not a rectangular array of real numbers,
+/// emit `<F>::rectn: A rectangular array of real numbers is expected at
+/// position 1 in <call>.` and return the unevaluated call. Used by Median,
+/// which is stricter than Mean (it rejects ragged arrays and symbolic /
+/// complex entries). Returns `None` for a non-list argument.
+pub fn rectn_if_not_real_rectangular(
+  name: &str,
+  args: &[Expr],
+) -> Option<Expr> {
+  if matches!(args.first(), Some(Expr::List(_)))
+    && !(is_rectangular_array(&args[0]) && all_leaves_real_numeric(&args[0]))
+  {
+    crate::emit_message(&format!(
+      "{}::rectn: A rectangular array of real numbers is expected at position 1 in {}.",
+      name,
+      crate::syntax::format_expr(
+        &Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        },
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    Some(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  } else {
+    None
+  }
+}
+
 /// Total[list] - Sum of all elements in a list
 /// Total[list, n] - Sum across levels 1 through n
 /// Total[list, {n}] - Sum at exactly level n
