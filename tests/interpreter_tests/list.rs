@@ -11369,6 +11369,54 @@ mod cases {
   }
 }
 
+mod commonest {
+  use super::*;
+
+  #[test]
+  fn list_argument() {
+    assert_eq!(interpret("Commonest[{1, 1, 2}]").unwrap(), "{1}");
+    assert_eq!(interpret("Commonest[{1, 1, 2, 2, 3}, 2]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("Commonest[{}]").unwrap(), "{}");
+  }
+
+  // Commonest only accepts a list; anything else (number, symbol, function
+  // call, association, string) emits Commonest::arg1 and stays unevaluated.
+  #[test]
+  fn non_list_argument_emits_arg1() {
+    for (input, call) in [
+      ("Commonest[5]", "Commonest[5]"),
+      ("Commonest[x]", "Commonest[x]"),
+      ("Commonest[f[1, 1, 2]]", "Commonest[f[1, 1, 2]]"),
+      (r#"Commonest["str"]"#, "Commonest[str]"),
+      (
+        "Commonest[<|a -> 1, b -> 1|>]",
+        "Commonest[<|a -> 1, b -> 1|>]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains(
+          "Commonest::arg1: The first argument is expected to be a list."
+        )),
+        "expected Commonest::arg1 for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn list_argument_emits_nothing() {
+    clear_state();
+    assert_eq!(interpret("Commonest[{1, 1, 2}]").unwrap(), "{1}");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Commonest::arg1")),
+      "unexpected arg1 message: {msgs:?}"
+    );
+  }
+}
+
 mod commonest_filter {
   use super::*;
 

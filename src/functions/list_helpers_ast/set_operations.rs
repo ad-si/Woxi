@@ -630,7 +630,12 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let items = match &args[0] {
     Expr::List(items) => items,
+    // Commonest only accepts a list (not even an Association): any other
+    // first argument emits ::arg1 and stays unevaluated, matching WL.
     _ => {
+      crate::emit_message(
+        "Commonest::arg1: The first argument is expected to be a list.",
+      );
       return Ok(Expr::FunctionCall {
         name: "Commonest".to_string(),
         args: args.to_vec().into(),
