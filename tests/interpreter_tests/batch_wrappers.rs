@@ -4220,6 +4220,14 @@ mod batch_unevaluated_wrappers_2 {
   fn liouville_lambda_prime_power() {
     assert_eq!(interpret("LiouvilleLambda[8]").unwrap(), "-1");
   }
+  // LiouvilleLambda is Listable.
+  #[test]
+  fn liouville_lambda_threads_over_list() {
+    assert_eq!(
+      interpret("LiouvilleLambda[{1, 2, 3, 4}]").unwrap(),
+      "{1, -1, -1, 1}"
+    );
+  }
   #[test]
   fn bray_curtis_distance() {
     assert_eq!(

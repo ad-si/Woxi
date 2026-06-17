@@ -4483,6 +4483,14 @@ fn partitions_q(n: usize) -> BigInt {
 
 /// PrimeOmega[n] - number of prime factors with multiplicity
 pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // PrimeOmega is Listable: thread over a list of arguments.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|x| prime_omega_ast(std::slice::from_ref(x)))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   // wolframscript leaves PrimeOmega[0] unevaluated (0 has no prime
   // factorization); without this guard FactorInteger[0] = {{0, 1}} would
   // be miscounted as one prime factor.
@@ -4520,6 +4528,14 @@ pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// PrimeNu[n] - number of distinct prime factors
 pub fn prime_nu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // PrimeNu is Listable: thread over a list of arguments.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|x| prime_nu_ast(std::slice::from_ref(x)))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   // wolframscript leaves PrimeNu[0] unevaluated (0 has no prime
   // factorization); without this guard FactorInteger[0] = {{0, 1}} would
   // be miscounted as one distinct prime.

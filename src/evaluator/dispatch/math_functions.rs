@@ -2133,6 +2133,22 @@ pub fn dispatch_math_functions(
       }
     }
     "LiouvilleLambda" if args.len() == 1 => {
+      // LiouvilleLambda is Listable: thread over a list of arguments.
+      if let Expr::List(items) = &args[0] {
+        let results: Result<Vec<Expr>, _> = items
+          .iter()
+          .map(|x| {
+            dispatch_math_functions("LiouvilleLambda", std::slice::from_ref(x))
+              .unwrap_or_else(|| {
+                Ok(Expr::FunctionCall {
+                  name: "LiouvilleLambda".to_string(),
+                  args: vec![x.clone()].into(),
+                })
+              })
+          })
+          .collect();
+        return Some(results.map(|v| Expr::List(v.into())));
+      }
       // LiouvilleLambda[n] = (-1)^Omega(n) where Omega counts prime factors with multiplicity
       if let Expr::Integer(n) = &args[0] {
         if *n == 0 {

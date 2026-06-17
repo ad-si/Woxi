@@ -2204,7 +2204,7 @@ DateHistogram,Date visualization,🚫,None,10.2,2246
 DirectedGraph,Graph construction,🚫,None,8.0,2246
 BooleanRegion,Geometric region construction,🚫,None,10.0,2251
 GraphUnion,Graph operations,🚫,None,8.0,2251
-PrimeOmega,Count prime factors with multiplicity,✅,1,7.0,2251
+PrimeOmega,Count prime factors with multiplicity (Listable),✅,pure,7.0,2251
 SubValues,Returns the sub values of a symbol,✅,pure,2.0,2251
 ToDiscreteTimeModel,Control systems,🚫,None,8.0,2251
 FileNameSetter,UI file picker,🚫,None,6.0,2254
@@ -2228,7 +2228,7 @@ EffectiveInterest,Effective annual rate from nominal rate compounded over a peri
 FindHamiltonianCycle,Graph algorithm,🚫,None,8.0,2276
 GumbelDistribution,Gumbel minimum extreme value distribution,✅,pure,6.0,2276
 LimitsPositioning,Typesetting option,🚫,None,3.0,2276
-PrimeNu,Count distinct prime factors of an integer,✅,1,7.0,2276
+PrimeNu,Count distinct prime factors of an integer (Listable),✅,pure,7.0,2276
 SyntaxForm,Typesetting,🚫,None,3.0,2276
 ProbabilityScalePlot,Statistical visualization,🚫,None,8.0,2278
 VectorDensityPlot,Visualization,🚫,None,7.0,2278
@@ -3413,7 +3413,7 @@ FareySequence,Farey fractions of order n (full list or single rank),✅,pure,10.
 GraphDifference,,,,8.0,3506
 GraphPower,,,,8.0,3506
 LaminaData,,🚫,,10.0,3506
-LiouvilleLambda,Liouville lambda function,✅,none,7.0,3506
+LiouvilleLambda,Liouville lambda function (Listable),✅,pure,7.0,3506
 MenuCommandKey,,🚫,,6.0,3506
 Octahedron,,,,12.0,3506
 SavitzkyGolayMatrix,,,,10.0,3506

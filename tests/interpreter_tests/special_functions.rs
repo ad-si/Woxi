@@ -1069,6 +1069,19 @@ mod prime_omega {
   fn zero_unevaluated() {
     assert_eq!(interpret("PrimeOmega[0]").unwrap(), "PrimeOmega[0]");
   }
+
+  // PrimeOmega is Listable.
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("PrimeOmega[{12, 30}]").unwrap(),
+      "{3, 3}"
+    );
+    assert_eq!(
+      interpret("PrimeOmega[{2, 4, 8, 16}]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
 }
 
 mod prime_nu {
@@ -1107,6 +1120,12 @@ mod prime_nu {
   #[test]
   fn zero_unevaluated() {
     assert_eq!(interpret("PrimeNu[0]").unwrap(), "PrimeNu[0]");
+  }
+
+  // PrimeNu is Listable.
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(interpret("PrimeNu[{12, 30}]").unwrap(), "{2, 3}");
   }
 }
 
