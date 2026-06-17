@@ -13,3 +13,10 @@ The value argument threads over a list of points.
 $ wo 'CDF[PoissonDistribution[3], {1, 2, 3}]'
 {4/E^3, 17/(2*E^3), 13/E^3}
 ```
+
+`CDF[dist]` is an operator: `CDF[dist][x]` equals `CDF[dist, x]`.
+
+```scrut
+$ wo 'CDF[PoissonDistribution[3]][2]'
+17/(2*E^3)
+```

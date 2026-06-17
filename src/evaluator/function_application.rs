@@ -523,6 +523,25 @@ pub fn apply_function_to_arg(
         new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
+      // Distribution operator forms: CDF[dist][x] -> CDF[dist, x], and the
+      // same for PDF / Quantile / InverseCDF / SurvivalFunction /
+      // HazardFunction. The applied argument is appended. Guarded so the head
+      // already holds a distribution object (a FunctionCall like
+      // NormalDistribution[0, 1]).
+      if matches!(
+        name.as_str(),
+        "CDF"
+          | "PDF"
+          | "Quantile"
+          | "InverseCDF"
+          | "SurvivalFunction"
+          | "HazardFunction"
+      ) && args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { .. })
+      {
+        let new_args = vec![args[0].clone(), arg.clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)
@@ -841,6 +860,27 @@ pub fn apply_curried_call(
     } if name == "Interpreter" && func_args.len() == 1 => {
       // Interpreter["Country"][input] — resolve input to an Entity.
       crate::functions::country_data::apply_interpreter(&func_args[0], args)
+    }
+    // Distribution operator forms: CDF[dist][x] -> CDF[dist, x] (and PDF,
+    // Quantile, InverseCDF, SurvivalFunction, HazardFunction). Guarded so the
+    // head holds a distribution object (a FunctionCall).
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if matches!(
+      name.as_str(),
+      "CDF"
+        | "PDF"
+        | "Quantile"
+        | "InverseCDF"
+        | "SurvivalFunction"
+        | "HazardFunction"
+    ) && func_args.len() == 1
+      && matches!(&func_args[0], Expr::FunctionCall { .. }) =>
+    {
+      let mut new_args = func_args.to_vec();
+      new_args.extend(args.iter().cloned());
+      evaluate_function_call_ast(name, &new_args)
     }
     Expr::FunctionCall {
       name,

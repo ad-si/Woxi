@@ -115,6 +115,32 @@ mod distribution_list_threading {
       "{-(Sqrt[2]*InverseErfc[1/2]), 0}"
     );
   }
+
+  // Operator (curried) forms: f[dist][x] == f[dist, x].
+  #[test]
+  fn operator_forms() {
+    assert_eq!(
+      interpret("CDF[PoissonDistribution[3]][2]").unwrap(),
+      "17/(2*E^3)"
+    );
+    assert_eq!(
+      interpret("PDF[NormalDistribution[]][0]").unwrap(),
+      "1/Sqrt[2*Pi]"
+    );
+    assert_eq!(
+      interpret("Quantile[NormalDistribution[]][1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("SurvivalFunction[ExponentialDistribution[1]][2]").unwrap(),
+      "E^(-2)"
+    );
+    // The operator form composes with value-list threading.
+    assert_eq!(
+      interpret("CDF[PoissonDistribution[3]][{1, 2, 3}]").unwrap(),
+      "{4/E^3, 17/(2*E^3), 13/E^3}"
+    );
+  }
 }
 
 mod hypoexponential_distribution {
