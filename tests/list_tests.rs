@@ -1604,6 +1604,30 @@ mod list_tests {
   }
 
   #[test]
+  fn median_exact_rational_and_symbolic() {
+    // Rational lists keep an exact result (regression: previously returned
+    // the call unevaluated because the f64 sort path rejected rationals).
+    assert_eq!(interpret("Median[{1/2, 1/3, 1/4}]").unwrap(), "1/3");
+    assert_eq!(interpret("Median[{1/2, 1/3, 1/4, 1/5}]").unwrap(), "7/24");
+    // Symbolic-but-real elements are ordered by numeric value and the exact
+    // element / mean is preserved.
+    assert_eq!(interpret("Median[{Pi, E, 1}]").unwrap(), "E");
+    assert_eq!(interpret("Median[{Pi, E, 1, 2}]").unwrap(), "(2 + E)/2");
+    assert_eq!(
+      interpret("Median[{Sin[1], Cos[1]}]").unwrap(),
+      "(Cos[1] + Sin[1])/2"
+    );
+    // A single inexact element does not coerce the selected exact element.
+    assert_eq!(interpret("Median[{1.5, 1/2, 1/3}]").unwrap(), "1/2");
+    // Plain integer/real lists are unchanged.
+    assert_eq!(interpret("Median[{1, 2, 3, 4}]").unwrap(), "5/2");
+    assert_eq!(interpret("Median[{1, 2, 3, 4, 5}]").unwrap(), "3");
+    assert_eq!(interpret("Median[{1., 2., 3., 4.}]").unwrap(), "2.5");
+    // Non-numeric symbolic lists stay unevaluated (Median::rectn).
+    assert_eq!(interpret("Median[{a, b, c}]").unwrap(), "Median[{a, b, c}]");
+  }
+
+  #[test]
   fn frechet_median_symbolic() {
     // Median is always defined: b * Log[2]^(-1/a).
     assert_eq!(

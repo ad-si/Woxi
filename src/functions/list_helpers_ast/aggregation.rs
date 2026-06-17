@@ -893,6 +893,25 @@ fn gcd_i128(a: i128, b: i128) -> i128 {
   a
 }
 
+/// Numeric ordering key for a Median element. Handles plain numbers and
+/// rationals directly, and falls back to numericizing symbolic-but-real values
+/// (Pi, E, Sin[1], ...) via `N[expr]` so an exact list like {Pi, E, 1} can be
+/// sorted. Returns `None` for non-numeric expressions.
+fn median_sort_key(e: &Expr) -> Option<f64> {
+  if let Some(n) = crate::functions::math_ast::expr_to_num(e) {
+    return Some(n);
+  }
+  let n_call = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![e.clone()].into(),
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&n_call).ok()? {
+    Expr::Real(f) => Some(f),
+    Expr::Integer(n) => Some(n as f64),
+    other => crate::functions::math_ast::expr_to_num(&other),
+  }
+}
+
 /// AST-based Median: calculate median of a list.
 pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // Distribution-form input: Median[dist] → quantile at p = 1/2.
@@ -1052,14 +1071,15 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    // Check if any Real inputs - preserve Real type
-    let has_real = items.iter().any(|i| matches!(i, Expr::Real(_)));
-
-    // Extract numeric values as f64
-    let mut values: Vec<f64> = Vec::new();
+    // Numeric sort key for every element. `median_sort_key` handles rationals
+    // and symbolic-but-real values (Pi, E, Sin[1], ...) so we can order an
+    // exact list like {Pi, E, 1} or {1/2, 1/3, 1/4}. If any element has no
+    // numeric value the rectn check above should already have bailed, but stay
+    // safe.
+    let mut keyed: Vec<(f64, &Expr)> = Vec::with_capacity(items.len());
     for item in items {
-      if let Some(n) = expr_to_f64(item) {
-        values.push(n);
+      if let Some(n) = median_sort_key(item) {
+        keyed.push((n, item));
       } else {
         return Ok(Expr::FunctionCall {
           name: "Median".to_string(),
@@ -1067,22 +1087,29 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         });
       }
     }
+    keyed
+      .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    values
-      .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let len = keyed.len();
 
-    let len = values.len();
-    let result = if len % 2 == 1 {
-      values[len / 2]
+    // Median returns the middle element verbatim (odd count) or the mean of the
+    // two middle elements (even count), preserving each element's exact/inexact
+    // nature: the selected element keeps its type, and the even-case mean is
+    // re-evaluated so it simplifies (e.g. {1/2,1/3,1/4,1/5} -> 7/24,
+    // {Pi,E,1,2} -> (2 + E)/2, {1.,3} -> 2.).
+    if len % 2 == 1 {
+      Ok(keyed[len / 2].1.clone())
     } else {
-      (values[len / 2 - 1] + values[len / 2]) / 2.0
-    };
-
-    // Preserve Real type if inputs had Real
-    if has_real {
-      Ok(Expr::Real(result))
-    } else {
-      Ok(f64_to_expr(result))
+      let avg = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![keyed[len / 2 - 1].1.clone(), keyed[len / 2].1.clone()]
+            .into(),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&avg)
     }
   }
 }
