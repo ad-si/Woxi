@@ -3923,7 +3923,7 @@ WindowStatusArea,,🚫,,6.0,4027
 WinsorizedMean,Mean after winsorizing extreme values,✅,none,11.1,4027
 AnglePath3D,,,,11.1,4052
 AudioPitchShift,,🚫,,11.0,4052
-BaseEncode,,,,11.3,4052
+BaseEncode,Base64-encode a ByteArray to a string,✅,pure,11.3,4052
 ButtonMinHeight,,🚫,,3.0,4052
 CanonicalWarpingDistance,,,,11.0,4052
 ClassPriors,,🚫,,10.0,4052
@@ -4993,7 +4993,7 @@ AtomCoordinates,,,,12.0,5390
 AtomCount,,,,12.0,5390
 AuthenticationDialog,,🚫,,11.3,5390
 AutocompletionFunction,,🚫,,10.2,5390
-BaseDecode,,,,11.3,5390
+BaseDecode,Base64-decode a string to a ByteArray,✅,pure,11.3,5390
 BinomialPointProcess,,🚫,,12.2,5390
 BlockchainContractValue,,🚫,,12.0,5390
 BondList,,,,12.0,5390

@@ -8579,6 +8579,91 @@ pub fn byte_array_to_string_ast(
   })
 }
 
+/// Extract the bytes of a ByteArray, which stores its data either as a base64
+/// string or as a list of integer byte values.
+fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "ByteArray"
+    && args.len() == 1
+  {
+    use base64::Engine;
+    let engine = base64::engine::general_purpose::STANDARD;
+    return match &args[0] {
+      Expr::String(b64) => engine.decode(b64).ok(),
+      Expr::List(items) => items
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(n) if (0..=255).contains(n) => Some(*n as u8),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    };
+  }
+  None
+}
+
+/// BaseEncode[bytearray] — Base64-encode a ByteArray to a string.
+pub fn base_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "BaseEncode".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  match byte_array_bytes(&args[0]) {
+    Some(bytes) => {
+      use base64::Engine;
+      let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+      Ok(Expr::String(b64))
+    }
+    None => {
+      crate::emit_message(&format!(
+        "BaseEncode::barray: {} is not a ByteArray object.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+      unevaluated()
+    }
+  }
+}
+
+/// BaseDecode["string"] — Base64-decode a string to a ByteArray.
+pub fn base_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "BaseDecode".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  if args.len() != 1 {
+    return unevaluated();
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      use base64::Engine;
+      let engine = base64::engine::general_purpose::STANDARD;
+      match engine.decode(s) {
+        // Store the (canonicalised) base64 — Woxi's ByteArray representation.
+        Ok(bytes) => Ok(Expr::FunctionCall {
+          name: "ByteArray".to_string(),
+          args: vec![Expr::String(engine.encode(&bytes))].into(),
+        }),
+        Err(_) => unevaluated(),
+      }
+    }
+    other => {
+      crate::emit_message(&format!(
+        "BaseDecode::strx: String expected instead of {}.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      ));
+      unevaluated()
+    }
+  }
+}
+
 /// TextSentences["string"] — split a string into sentences.
 /// TextSentences["string", n] — first n sentences.
 ///

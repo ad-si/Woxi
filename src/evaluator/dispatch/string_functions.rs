@@ -404,6 +404,12 @@ pub fn dispatch_string_functions(
         args,
       ));
     }
+    "BaseEncode" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::base_encode_ast(args));
+    }
+    "BaseDecode" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::base_decode_ast(args));
+    }
     _ => {}
   }
   None

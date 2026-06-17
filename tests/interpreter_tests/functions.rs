@@ -3124,6 +3124,56 @@ mod morphological_operations {
   }
 }
 
+mod base_encode_decode {
+  use super::*;
+
+  #[test]
+  fn base_encode_byte_array() {
+    assert_eq!(
+      interpret("BaseEncode[ByteArray[{1, 2, 3}]]").unwrap(),
+      "AQID"
+    );
+    assert_eq!(
+      interpret(r#"BaseEncode[StringToByteArray["hello"]]"#).unwrap(),
+      "aGVsbG8="
+    );
+  }
+
+  #[test]
+  fn base_decode_string() {
+    assert_eq!(interpret(r#"BaseDecode["AQID"]"#).unwrap(), "ByteArray[<3>]");
+    // Round-trips through ByteArrayToString.
+    assert_eq!(
+      interpret(r#"ByteArrayToString[BaseDecode["aGVsbG8="]]"#).unwrap(),
+      "hello"
+    );
+    // Encode/decode round trip.
+    assert_eq!(
+      interpret(r#"BaseEncode[BaseDecode["aGVsbG8="]]"#).unwrap(),
+      "aGVsbG8="
+    );
+  }
+
+  #[test]
+  fn base_encode_non_byte_array_warns() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("BaseEncode[{1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "BaseEncode[{1, 2, 3}]");
+    assert!(r.warnings[0].contains(
+      "BaseEncode::barray: {1, 2, 3} is not a ByteArray object."
+    ));
+  }
+
+  #[test]
+  fn base_decode_non_string_warns() {
+    use woxi::interpret_with_stdout;
+    let r = interpret_with_stdout("BaseDecode[123]").unwrap();
+    assert_eq!(r.result, "BaseDecode[123]");
+    assert!(r.warnings[0]
+      .contains("BaseDecode::strx: String expected instead of 123."));
+  }
+}
+
 mod string_to_byte_array {
   use super::*;
 
