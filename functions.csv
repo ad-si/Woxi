@@ -2541,7 +2541,7 @@ ConstantImage,Create a constant image filled with a specified color or gray leve
 Decrypt,,🚫,,10.1,2596
 ImageForwardTransformation,,🚫,,8.0,2596
 NetMapOperator,,🚫,,11.1,2596
-DayCount,Count days between two dates,✅,none,9.0,2605
+DayCount,Count days (or occurrences of a given weekday) between two dates,✅,pure,9.0,2605
 ExpandNumerator,Expands the numerator of a rational expression,✅,pure,1.0,2605
 ExpressionGraph,Create a graph from the tree structure of an expression,✅,pure,12.1,2605
 ImageDifference,,🚫,,8.0,2605
