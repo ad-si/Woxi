@@ -319,7 +319,10 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       ("argct", "arguments")
     };
-    crate::emit_message(&format!("Which::{}: Which called with {} {}.", tag, n, word));
+    crate::emit_message(&format!(
+      "Which::{}: Which called with {} {}.",
+      tag, n, word
+    ));
     return Ok(Expr::FunctionCall {
       name: "Which".to_string(),
       args: args.to_vec().into(),

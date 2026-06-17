@@ -133,7 +133,7 @@ pub fn dispatch_polynomial_functions(
     "PolynomialQ" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::polynomial_q_ast(args));
     }
-    "Solve" if args.len() >= 1 && args.len() <= 3 => {
+    "Solve" if !args.is_empty() && args.len() <= 3 => {
       // 1-arg Solve[eqns] auto-detects the variables.
       return Some(crate::functions::polynomial_ast::solve_ast(args));
     }

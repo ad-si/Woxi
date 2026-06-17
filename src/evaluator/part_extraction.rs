@@ -533,12 +533,16 @@ pub fn extract_part_ast(
           indices.iter().map(simple_position).collect();
         if let Some(positions) = positions {
           let len = len as i64;
-          let in_range =
-            |i: i64| i == 0 || (1..=len).contains(&i) || (-len..=-1).contains(&i);
+          let in_range = |i: i64| {
+            i == 0 || (1..=len).contains(&i) || (-len..=-1).contains(&i)
+          };
           if !positions.iter().all(|&i| in_range(i)) {
             crate::emit_message(&format!(
               "Part::partw: Part {} of {} does not exist.",
-              crate::syntax::format_expr(index, crate::syntax::ExprForm::Output),
+              crate::syntax::format_expr(
+                index,
+                crate::syntax::ExprForm::Output
+              ),
               crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output),
             ));
             return Ok(part_take_unevaluated(expr, index));

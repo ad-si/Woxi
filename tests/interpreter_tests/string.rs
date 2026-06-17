@@ -178,6 +178,103 @@ mod string_split_list_delimiters {
   }
 }
 
+mod string_split_rule_delimiters {
+  use super::*;
+
+  #[test]
+  fn replace_fixed_string() {
+    assert_eq!(
+      interpret("StringSplit[\"a-b-c\", \"-\" -> \"+\"]").unwrap(),
+      "{a, +, b, +, c}"
+    );
+  }
+
+  #[test]
+  fn replace_rule_delayed() {
+    assert_eq!(
+      interpret("StringSplit[\"aXbXc\", \"X\" :> \"Y\"]").unwrap(),
+      "{a, Y, b, Y, c}"
+    );
+  }
+
+  #[test]
+  fn leading_and_trailing_delimiters() {
+    // Leading/trailing empty text segments are dropped, the replaced
+    // delimiters are kept.
+    assert_eq!(
+      interpret("StringSplit[\"-a-b-\", \"-\" -> \"+\"]").unwrap(),
+      "{+, a, +, b, +}"
+    );
+  }
+
+  #[test]
+  fn adjacent_delimiters_keep_inner_empty() {
+    assert_eq!(
+      interpret("StringSplit[\"a--b\", \"-\" -> \"+\"]").unwrap(),
+      "{a, +, , +, b}"
+    );
+  }
+
+  #[test]
+  fn no_match_returns_whole_string() {
+    assert_eq!(
+      interpret("StringSplit[\"abc\", \"-\" -> \"+\"]").unwrap(),
+      "{abc}"
+    );
+  }
+
+  #[test]
+  fn list_of_delimiters() {
+    assert_eq!(
+      interpret("StringSplit[\"a,b;c\", {\",\", \";\"} -> \"|\"]").unwrap(),
+      "{a, |, b, |, c}"
+    );
+  }
+
+  #[test]
+  fn character_class_delimiter() {
+    assert_eq!(
+      interpret("StringSplit[\"a1b22c\", DigitCharacter -> \"X\"]").unwrap(),
+      "{a, X, b, X, , X, c}"
+    );
+  }
+
+  #[test]
+  fn max_parts_limits_splits() {
+    assert_eq!(
+      interpret("StringSplit[\"a-b-c\", \"-\" -> \"+\", 2]").unwrap(),
+      "{a, +, b-c}"
+    );
+  }
+
+  #[test]
+  fn captured_delimiter_identity() {
+    assert_eq!(
+      interpret("StringSplit[\"aXbYc\", x : {\"X\", \"Y\"} :> x]").unwrap(),
+      "{a, X, b, Y, c}"
+    );
+  }
+
+  #[test]
+  fn captured_delimiter_transformed() {
+    assert_eq!(
+      interpret(
+        "StringSplit[\"a1b2c\", d : DigitCharacter :> \"<\" <> d <> \">\"]"
+      )
+      .unwrap(),
+      "{a, <1>, b, <2>, c}"
+    );
+  }
+
+  #[test]
+  fn threads_over_list_of_strings() {
+    assert_eq!(
+      interpret("StringSplit[{\"a-b\", \"c-d\"}, \"-\" -> \"/\"]").unwrap(),
+      "{{a, /, b}, {c, /, d}}"
+    );
+  }
+}
+
 mod string_split_single_arg {
   use super::*;
 
@@ -4989,8 +5086,8 @@ mod string_contains_free_patterns {
     use woxi::interpret_with_stdout;
     // A non-string (or empty / list) padding emits StringPadLeft::stringnz
     // and stays unevaluated.
-    let r = interpret_with_stdout(r#"StringPadLeft["7", 5, {"a", "b"}]"#)
-      .unwrap();
+    let r =
+      interpret_with_stdout(r#"StringPadLeft["7", 5, {"a", "b"}]"#).unwrap();
     assert_eq!(r.result, "StringPadLeft[7, 5, {a, b}]");
     assert!(r.warnings[0].contains(
       "StringPadLeft::stringnz: String of non-zero length expected at \

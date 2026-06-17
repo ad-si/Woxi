@@ -859,7 +859,8 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn is_solve_constant(s: &str) -> bool {
   matches!(
     s,
-    "Pi" | "E"
+    "Pi"
+      | "E"
       | "I"
       | "Infinity"
       | "ComplexInfinity"
@@ -881,10 +882,8 @@ fn is_solve_constant(s: &str) -> bool {
 /// arithmetic and function arguments. Used by the one-argument Solve form.
 fn collect_solve_vars(expr: &Expr, out: &mut Vec<String>) {
   match expr {
-    Expr::Identifier(s) => {
-      if !is_solve_constant(s) && !out.contains(s) {
-        out.push(s.clone());
-      }
+    Expr::Identifier(s) if !is_solve_constant(s) && !out.contains(s) => {
+      out.push(s.clone());
     }
     Expr::Comparison { operands, .. } => {
       for e in operands {

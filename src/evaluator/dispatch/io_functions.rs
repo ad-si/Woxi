@@ -620,8 +620,7 @@ pub fn dispatch_io_functions(
       // "Text"/"Lines"/"List": a string is emitted verbatim; a list has each
       // element rendered (OutputForm, strings unquoted) on its own line; an
       // atom is rendered directly.
-      if format_str == "Text" || format_str == "Lines" || format_str == "List"
-      {
+      if format_str == "Text" || format_str == "Lines" || format_str == "List" {
         let elem = |e: &Expr| match e {
           Expr::String(s) => s.clone(),
           _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),

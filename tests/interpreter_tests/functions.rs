@@ -3141,7 +3141,10 @@ mod base_encode_decode {
 
   #[test]
   fn base_decode_string() {
-    assert_eq!(interpret(r#"BaseDecode["AQID"]"#).unwrap(), "ByteArray[<3>]");
+    assert_eq!(
+      interpret(r#"BaseDecode["AQID"]"#).unwrap(),
+      "ByteArray[<3>]"
+    );
     // Round-trips through ByteArrayToString.
     assert_eq!(
       interpret(r#"ByteArrayToString[BaseDecode["aGVsbG8="]]"#).unwrap(),
@@ -3159,9 +3162,10 @@ mod base_encode_decode {
     use woxi::interpret_with_stdout;
     let r = interpret_with_stdout("BaseEncode[{1, 2, 3}]").unwrap();
     assert_eq!(r.result, "BaseEncode[{1, 2, 3}]");
-    assert!(r.warnings[0].contains(
-      "BaseEncode::barray: {1, 2, 3} is not a ByteArray object."
-    ));
+    assert!(
+      r.warnings[0]
+        .contains("BaseEncode::barray: {1, 2, 3} is not a ByteArray object.")
+    );
   }
 
   #[test]
@@ -3169,8 +3173,10 @@ mod base_encode_decode {
     use woxi::interpret_with_stdout;
     let r = interpret_with_stdout("BaseDecode[123]").unwrap();
     assert_eq!(r.result, "BaseDecode[123]");
-    assert!(r.warnings[0]
-      .contains("BaseDecode::strx: String expected instead of 123."));
+    assert!(
+      r.warnings[0]
+        .contains("BaseDecode::strx: String expected instead of 123.")
+    );
   }
 }
 

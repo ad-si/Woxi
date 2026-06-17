@@ -174,9 +174,11 @@ pub fn dispatch_datetime_functions(
     // DayCount[date1, date2] — number of days between two dates
     "DayCount" if args.len() == 3 => {
       // DayCount[d1, d2, weekday]: count occurrences of a specific weekday.
-      if let Some(result) = crate::functions::datetime_ast::day_count_weekday_ast(
-        &args[0], &args[1], &args[2],
-      ) {
+      if let Some(result) =
+        crate::functions::datetime_ast::day_count_weekday_ast(
+          &args[0], &args[1], &args[2],
+        )
+      {
         return Some(Ok(result));
       }
       return Some(Ok(Expr::FunctionCall {

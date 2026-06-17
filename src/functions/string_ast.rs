@@ -498,6 +498,134 @@ fn trim_empty_strings(parts: Vec<Expr>) -> Vec<Expr> {
 /// StringSplit[s] - splits by whitespace; StringSplit[s, delim] - splits by delimiter
 /// StringSplit[s, RegularExpression[pat]] - splits by regex pattern
 /// Options: IgnoreCase -> True/False
+/// Build a regex for the LHS of a `StringSplit` rule delimiter. Returns the
+/// regex source plus, for a named pattern `name : sub`, the captured name so
+/// the replacement can reference the actual matched delimiter.
+fn split_delim_regex(
+  lhs: &Expr,
+) -> Result<(String, Option<String>), InterpreterError> {
+  // Named pattern: Pattern[name, sub]
+  if let Expr::FunctionCall { name, args } = lhs
+    && name == "Pattern"
+    && args.len() == 2
+    && let Expr::Identifier(var) = &args[0]
+  {
+    let (re, _) = split_delim_regex(&args[1])?;
+    return Ok((re, Some(var.clone())));
+  }
+  // Literal string delimiter.
+  if let Expr::String(d) = lhs {
+    return Ok((regex::escape(d), None));
+  }
+  // List of delimiters → alternation, longest source first so that overlapping
+  // literals (e.g. {"::", ":"}) prefer the longer match.
+  if let Expr::List(items) = lhs {
+    let mut alts: Vec<String> = Vec::new();
+    for it in items {
+      let (re, _) = split_delim_regex(it)?;
+      alts.push(format!("(?:{})", re));
+    }
+    alts.sort_by(|a, b| b.len().cmp(&a.len()));
+    return Ok((alts.join("|"), None));
+  }
+  // Character classes / string patterns (DigitCharacter, RegularExpression…).
+  if let Some(p) = extract_regex_pattern(lhs) {
+    return Ok((p, None));
+  }
+  if let Some(p) = string_pattern_to_regex(lhs) {
+    return Ok((p, None));
+  }
+  // Fallback: treat as a literal string.
+  Ok((regex::escape(&expr_to_str(lhs)?), None))
+}
+
+/// Compute the replacement expression for a matched delimiter. A plain string
+/// RHS is used verbatim; otherwise the captured name (if any) is substituted
+/// with the matched text and the result evaluated.
+fn split_replacement_value(
+  rhs: &Expr,
+  cap_name: Option<&str>,
+  matched: &str,
+) -> Result<Expr, InterpreterError> {
+  if let Expr::String(r) = rhs {
+    return Ok(Expr::String(r.clone()));
+  }
+  if let Some(name) = cap_name {
+    let substituted = crate::syntax::substitute_variable(
+      rhs,
+      name,
+      &Expr::String(matched.to_string()),
+    );
+    // Identity capture (`x : patt :> x`) needs no evaluation.
+    if let Expr::String(_) = substituted {
+      return Ok(substituted);
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&substituted);
+  }
+  crate::evaluator::evaluate_expr_to_expr(rhs)
+}
+
+/// `StringSplit[s, patt -> repl]` / `patt :> repl`: split on `patt`, replacing
+/// each matched delimiter with `repl` and keeping it between the pieces. Only
+/// leading and trailing empty text segments are dropped (internal empties,
+/// e.g. between adjacent delimiters, are preserved — matching WL).
+fn string_split_with_replacement(
+  s: &str,
+  lhs: &Expr,
+  rhs: &Expr,
+  max_parts: Option<usize>,
+  ignore_case: bool,
+) -> Result<Expr, InterpreterError> {
+  let (pat, cap_name) = split_delim_regex(lhs)?;
+  let pat = if ignore_case {
+    format!("(?i){}", pat)
+  } else {
+    pat
+  };
+  let re = compile_regex(&pat).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Invalid regular expression: {}",
+      e
+    ))
+  })?;
+
+  let mut result: Vec<Expr> = Vec::new();
+  let mut last = 0usize;
+  let mut splits = 0usize;
+  for m in re.find_iter(s) {
+    if m.start() == m.end() {
+      continue; // ignore zero-width matches
+    }
+    if let Some(n) = max_parts
+      && splits + 1 >= n
+    {
+      break; // stop after n-1 splits → at most n text pieces
+    }
+    result.push(Expr::String(s[last..m.start()].to_string()));
+    let rep =
+      split_replacement_value(rhs, cap_name.as_deref(), &s[m.start()..m.end()])?;
+    result.push(rep);
+    last = m.end();
+    splits += 1;
+  }
+  result.push(Expr::String(s[last..].to_string()));
+
+  // Drop a leading / trailing empty *text* segment (positions 0 and last).
+  if let Some(Expr::String(t)) = result.last()
+    && t.is_empty()
+    && result.len() > 1
+  {
+    result.pop();
+  }
+  if let Some(Expr::String(t)) = result.first()
+    && t.is_empty()
+    && result.len() > 1
+  {
+    result.remove(0);
+  }
+  Ok(Expr::List(result.into()))
+}
+
 pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -540,6 +668,26 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (None, 2)
   };
   let ignore_case = extract_ignore_case(&args[option_start..]);
+
+  // Delimiter given as a rule `patt -> repl` or `patt :> repl`: split on
+  // `patt` and keep the (replaced) delimiters interleaved between the pieces.
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  } = &args[1]
+  {
+    return string_split_with_replacement(
+      &s,
+      pattern,
+      replacement,
+      max_parts,
+      ignore_case,
+    );
+  }
 
   // Check if the delimiter is a RegularExpression or string pattern. Plain
   // string literals (and lists of them) use the literal-delimiter path below;

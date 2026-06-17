@@ -16,7 +16,9 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript for genuinely unsolvable equations) rather than leaking an
   // internal "DSolve: …" error to the user.
   match dsolve_ast_inner(args) {
-    Err(InterpreterError::EvaluationError(msg)) if msg.starts_with("DSolve:") => {
+    Err(InterpreterError::EvaluationError(msg))
+      if msg.starts_with("DSolve:") =>
+    {
       Ok(Expr::FunctionCall {
         name: "DSolve".to_string(),
         args: args.to_vec().into(),

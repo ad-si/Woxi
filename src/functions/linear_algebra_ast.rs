@@ -182,7 +182,12 @@ fn rank_factor_pseudoinverse(matrix: &[Vec<Expr>]) -> Option<Expr> {
     return None;
   }
   let b: Vec<Vec<Expr>> = (0..nrows)
-    .map(|i| pivot_cols.iter().map(|&col| matrix[i][col].clone()).collect())
+    .map(|i| {
+      pivot_cols
+        .iter()
+        .map(|&col| matrix[i][col].clone())
+        .collect()
+    })
     .collect();
   let bt = transpose_matrix(&b);
   let ct = transpose_matrix(&c);
