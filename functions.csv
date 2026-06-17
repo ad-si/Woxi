@@ -595,7 +595,7 @@ Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1.0,599
 PolyhedronData,,🚫,,6.0,601
-Nearest,Find the nearest elements in a list to a given value,✅,none,6.0,602
+Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance),✅,pure,6.0,602
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3.0,605
 Inactive,Wrapper to prevent evaluation,✅,none,10.0,606

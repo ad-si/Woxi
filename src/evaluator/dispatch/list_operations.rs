@@ -5245,6 +5245,16 @@ fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
       }
       Some(sum.sqrt())
     }
+    // Strings compare via EditDistance (Wolfram's default string metric).
+    (Expr::String(_), Expr::String(_)) => {
+      match crate::functions::string_ast::edit_distance_ast(&[
+        a.clone(),
+        b.clone(),
+      ]) {
+        Ok(Expr::Integer(d)) => Some(d as f64),
+        _ => None,
+      }
+    }
     _ => {
       let av = expr_to_f64(a)?;
       let bv = expr_to_f64(b)?;

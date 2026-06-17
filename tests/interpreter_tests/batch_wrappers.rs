@@ -4342,6 +4342,29 @@ mod batch_unevaluated_wrappers_2 {
       "{3, 2}"
     );
   }
+  // Strings are compared via EditDistance (Wolfram's default string metric).
+  #[test]
+  fn nearest_strings_edit_distance() {
+    assert_eq!(
+      interpret(r#"Nearest[{"aaaa", "abaa", "bbbb", "aaaba"}, "aaba", 3]"#)
+        .unwrap(),
+      "{aaaa, aaaba, abaa}"
+    );
+    assert_eq!(
+      interpret(r#"Nearest[{"cat", "car", "dog"}, "cot"]"#).unwrap(),
+      "{cat}"
+    );
+    assert_eq!(
+      interpret(r#"Nearest[{"cat", "car", "dog", "cab"}, "cat", 2]"#).unwrap(),
+      "{cat, car}"
+    );
+    // The labelled form draws the result from the labels.
+    assert_eq!(
+      interpret(r#"Nearest[{"cat", "car", "dog"} -> {1, 2, 3}, "cot"]"#)
+        .unwrap(),
+      "{1}"
+    );
+  }
   #[test]
   fn key_sort_by_basic() {
     assert_eq!(
