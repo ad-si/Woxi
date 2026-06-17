@@ -179,6 +179,37 @@ mod abs_complex_tests {
       "True"
     );
   }
+
+  // Abs[b^z] = b^Re[z] for a strictly-positive real base b, since
+  // b^z = E^(z Log b) with Log b real.
+  #[test]
+  fn abs_exp_pure_imaginary() {
+    assert_eq!(interpret("Abs[Exp[2 I]]").unwrap(), "1");
+    assert_eq!(interpret("Abs[E^(I Pi)]").unwrap(), "1");
+  }
+
+  #[test]
+  fn abs_exp_complex_exponent() {
+    assert_eq!(interpret("Abs[Exp[2 + 3 I]]").unwrap(), "E^2");
+    assert_eq!(interpret("Abs[Exp[-1 + I]]").unwrap(), "E^(-1)");
+  }
+
+  #[test]
+  fn abs_exp_symbolic_exponent() {
+    assert_eq!(interpret("Abs[Exp[x]]").unwrap(), "E^Re[x]");
+    assert_eq!(interpret("Abs[Exp[I x]]").unwrap(), "E^(-Im[x])");
+    assert_eq!(
+      interpret("Abs[Exp[a + b I]]").unwrap(),
+      "E^(-Im[b] + Re[a])"
+    );
+  }
+
+  #[test]
+  fn abs_positive_base_power() {
+    assert_eq!(interpret("Abs[2^(I x)]").unwrap(), "2^(-Im[x])");
+    assert_eq!(interpret("Abs[3^(2 + I)]").unwrap(), "9");
+    assert_eq!(interpret("Abs[Pi^(I x)]").unwrap(), "Pi^(-Im[x])");
+  }
 }
 
 mod conjugate_tests {

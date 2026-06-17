@@ -127,6 +127,22 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // Abs[b^z] = b^Re[z] for a strictly-positive real base b. Since
+  // b^z = E^(z Log b) with Log b real, the magnitude is b^Re(z). This covers
+  // complex/symbolic exponents the real-exponent rule below can't reach,
+  // e.g. Abs[E^(2 I)] = 1, Abs[E^(2 + 3 I)] = E^2, Abs[2^(I x)] = 2^(-Im[x]).
+  if let Some((base, exp)) = as_power(&args[0])
+    && crate::functions::math_ast::complex::is_strictly_positive_real(base)
+  {
+    let re_exp = Expr::FunctionCall {
+      name: "Re".to_string(),
+      args: vec![exp.clone()].into(),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base.clone(), re_exp].into(),
+    });
+  }
   // Abs[base^exp] = Abs[base]^exp for a real numeric exponent (|z^n| = |z|^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
     let abs_base = abs_ast(&[base.clone()])?;
@@ -243,6 +259,22 @@ fn negative_literal_abs(f: &Expr) -> Option<Expr> {
 /// real numeric literal (Integer, Real, or Rational — not symbolic, not
 /// complex), return `(base, exp)`. Used by `Abs`/`Sign` for the rule
 /// `f[base^exp] = f[base]^exp`, valid for any base when exp is real.
+/// Extract `(base, exponent)` from a power expression in either the BinaryOp
+/// or FunctionCall["Power", …] representation, for any exponent.
+fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
 fn power_with_real_exponent(expr: &Expr) -> Option<(&Expr, &Expr)> {
   let (base, exp) = match expr {
     Expr::BinaryOp {
