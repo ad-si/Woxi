@@ -268,6 +268,43 @@ mod association_map {
   }
 
   #[test]
+  fn invalid_rule_result_emits_invrlf_per_element() {
+    // Applying a function over an association's rules that does not yield
+    // valid rules emits AssociationMap::invrlf for each element.
+    clear_state();
+    let result =
+      interpret_with_stdout("AssociationMap[f, <|a -> 1, b -> 2|>]").unwrap();
+    assert_eq!(result.result, "Association[f[a -> 1], f[b -> 2]]");
+    let invrlf: Vec<_> = result
+      .warnings
+      .iter()
+      .filter(|w| w.contains("AssociationMap::invrlf"))
+      .collect();
+    assert_eq!(invrlf.len(), 2, "warnings: {:?}", result.warnings);
+    assert!(result.warnings.iter().any(|w| w.contains(
+      "Applying f to a -> 1 yields f[a -> 1], which is not a valid rule, list of rules or association."
+    )));
+    assert!(result.warnings.iter().any(|w| w.contains(
+      "Applying f to b -> 2 yields f[b -> 2], which is not a valid rule, list of rules or association."
+    )));
+  }
+
+  #[test]
+  fn valid_rule_result_emits_no_warning() {
+    // Reverse turns each rule into a valid rule, so no message is emitted.
+    clear_state();
+    let result =
+      interpret_with_stdout("AssociationMap[Reverse, <|a -> 1, b -> 2|>]")
+        .unwrap();
+    assert_eq!(result.result, "<|1 -> a, 2 -> b|>");
+    assert!(
+      result.warnings.iter().all(|w| !w.contains("invrlf")),
+      "unexpected warning: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
   fn on_list() {
     assert_eq!(
       interpret("AssociationMap[StringLength, {\"cat\", \"horse\", \"ox\"}]")

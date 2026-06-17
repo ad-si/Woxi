@@ -5,6 +5,21 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// Whether an expression is a valid association entry: a single rule, a
+/// list of rules, or an association. Used by AssociationMap to decide when
+/// applying a function yields a result that can't form an association.
+fn is_valid_rule_result(expr: &Expr) -> bool {
+  match expr {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Association(_) => {
+      true
+    }
+    Expr::List(items) => items
+      .iter()
+      .all(|e| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })),
+    _ => false,
+  }
+}
+
 /// Emit `<F>::<tag>: The argument <subject> is not a valid <what>.` and
 /// build the unevaluated call, matching wolframscript's message family
 /// for association functions applied to invalid subjects.
@@ -497,43 +512,55 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Association(items) => {
-      let mut new_items = Vec::new();
+      // Apply f once to each key -> value rule.
+      let mut applied: Vec<(Expr, Expr)> = Vec::new(); // (rule, f[rule])
       for (key, value) in items {
         let rule = Expr::Rule {
           pattern: Box::new(key.clone()),
           replacement: Box::new(value.clone()),
         };
-        let mut result = crate::evaluator::apply_function_to_arg(func, &rule)?;
-        match &mut result {
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => {
-            let p = std::mem::replace(pattern.as_mut(), Expr::Integer(0));
-            let r = std::mem::replace(replacement.as_mut(), Expr::Integer(0));
-            new_items.push((p, r));
-          }
-          _ => {
-            // When f doesn't produce rules, collect all results as Association args
-            // Wolfram returns Association[f[...], f[...]] (not a plain List)
-            let results: Result<Vec<Expr>, InterpreterError> = items
-              .iter()
-              .map(|(k, v)| {
-                let r = Expr::Rule {
-                  pattern: Box::new(k.clone()),
-                  replacement: Box::new(v.clone()),
-                };
-                crate::evaluator::apply_function_to_arg(func, &r)
-              })
-              .collect();
-            return Ok(Expr::FunctionCall {
-              name: "Association".to_string(),
-              args: results?.into(),
-            });
-          }
+        let result = crate::evaluator::apply_function_to_arg(func, &rule)?;
+        applied.push((rule, result));
+      }
+      // If every result is a plain rule, build the association directly.
+      if applied.iter().all(|(_, r)| {
+        matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      }) {
+        let new_items: Vec<(Expr, Expr)> = applied
+          .iter()
+          .map(|(_, r)| match r {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } => ((**pattern).clone(), (**replacement).clone()),
+            _ => unreachable!(),
+          })
+          .collect();
+        return Ok(Expr::Association(new_items));
+      }
+      // Otherwise the results don't form a valid association: emit
+      // AssociationMap::invrlf for each invalid result (matching
+      // wolframscript) and keep the unevaluated `Association[f[…], …]`.
+      let func_str =
+        crate::syntax::format_expr(func, crate::syntax::ExprForm::Output);
+      for (rule, result) in &applied {
+        if !is_valid_rule_result(result) {
+          crate::emit_message(&format!(
+            "AssociationMap::invrlf: Applying {} to {} yields {}, which is not a valid rule, list of rules or association.",
+            func_str,
+            crate::syntax::format_expr(rule, crate::syntax::ExprForm::Output),
+            crate::syntax::format_expr(result, crate::syntax::ExprForm::Output),
+          ));
         }
       }
-      Ok(Expr::Association(new_items))
+      Ok(Expr::FunctionCall {
+        name: "Association".to_string(),
+        args: applied.into_iter().map(|(_, r)| r).collect::<Vec<_>>().into(),
+      })
     }
     Expr::List(items) => {
       // AssociationMap[f, {e1, e2, ...}] creates <|e1 -> f[e1], e2 -> f[e2], ...|>
