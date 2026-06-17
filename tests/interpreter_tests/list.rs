@@ -7084,6 +7084,42 @@ mod join_non_list {
     );
   }
 
+  // GroupBy needs a list or association; any other first argument emits
+  // ::list1 and stays unevaluated, preserving all arguments.
+  #[test]
+  fn group_by_non_list_emits_list1() {
+    for (input, call) in [
+      ("GroupBy[5, EvenQ]", "GroupBy[5, EvenQ]"),
+      ("GroupBy[x, EvenQ]", "GroupBy[x, EvenQ]"),
+      ("GroupBy[f[1, 2, 3], EvenQ]", "GroupBy[f[1, 2, 3], EvenQ]"),
+      // The reducer argument is preserved in the unevaluated form.
+      ("GroupBy[5, EvenQ, Total]", "GroupBy[5, EvenQ, Total]"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains("GroupBy::list1:")
+          && m.contains("is not a valid list of Associations or rules or lists of rules.")),
+        "expected GroupBy::list1 for {input}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn group_by_valid_inputs_emit_nothing() {
+    clear_state();
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4}, EvenQ]").unwrap(),
+      "<|False -> {1, 3}, True -> {2, 4}|>"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("GroupBy::list1")),
+      "unexpected list1 message: {msgs:?}"
+    );
+  }
+
   #[test]
   fn group_by_with_reducer() {
     assert_eq!(
@@ -11375,7 +11411,10 @@ mod commonest {
   #[test]
   fn list_argument() {
     assert_eq!(interpret("Commonest[{1, 1, 2}]").unwrap(), "{1}");
-    assert_eq!(interpret("Commonest[{1, 1, 2, 2, 3}, 2]").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("Commonest[{1, 1, 2, 2, 3}, 2]").unwrap(),
+      "{1, 2}"
+    );
     assert_eq!(interpret("Commonest[{}]").unwrap(), "{}");
   }
 

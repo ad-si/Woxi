@@ -812,6 +812,19 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::count_by_ast(&args[0], &args[1]));
     }
     "GroupBy" if args.len() == 2 || args.len() == 3 => {
+      // GroupBy needs a list (incl. list of rules) or an association as its
+      // first argument; anything else emits ::list1 and stays unevaluated
+      // (preserving all arguments), matching wolframscript.
+      if !matches!(&args[0], Expr::List(_) | Expr::Association(_)) {
+        crate::emit_message(&format!(
+          "GroupBy::list1: The argument {} is not a valid list of Associations or rules or lists of rules.",
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        ));
+        return Some(Ok(Expr::FunctionCall {
+          name: "GroupBy".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       let result = list_helpers_ast::group_by_ast(&args[0], &args[1]);
       if args.len() == 3 {
         // GroupBy[list, f, reducer] - apply reducer to each group
