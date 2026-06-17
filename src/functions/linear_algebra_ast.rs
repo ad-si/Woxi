@@ -299,7 +299,7 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper: extract a matrix (list of lists) from an Expr.
 /// Returns None if it's not a valid matrix.
-fn expr_to_matrix(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
+pub fn expr_to_matrix(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
   if let Expr::List(rows) = expr {
     let mut matrix = Vec::new();
     let ncols = if let Expr::List(first) = rows.first()? {
@@ -548,14 +548,14 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Whether a `Vec<Vec<Expr>>` from `expr_to_matrix` is a nonempty square
 /// matrix (every row has length equal to the number of rows).
-fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
+pub fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
   !m.is_empty() && m.iter().all(|row| row.len() == m.len())
 }
 
 /// Whether `arg` should trigger a `::matsq` message — a concrete non-matrix
 /// argument (a list, or a numeric value such as 5, Pi, 3/4). Bare symbols and
 /// symbolic expressions (`x`, `a + b`, `f[x]`) stay held with no message.
-fn is_matsq_subject(arg: &Expr) -> bool {
+pub fn is_matsq_subject(arg: &Expr) -> bool {
   matches!(arg, Expr::List(_))
     || crate::functions::predicate_ast::is_numeric_q_pub(arg)
 }
@@ -564,7 +564,7 @@ fn is_matsq_subject(arg: &Expr) -> bool {
 /// matrix.` (for concrete arguments) and return the unevaluated call,
 /// matching wolframscript for matrix functions given a non-square or
 /// non-matrix argument.
-fn matsq_unevaluated(name: &str, args: &[Expr]) -> Expr {
+pub fn matsq_unevaluated(name: &str, args: &[Expr]) -> Expr {
   if is_matsq_subject(&args[0]) {
     crate::emit_message(&format!(
       "{}::matsq: Argument {} at position 1 is not a nonempty square matrix.",
@@ -6438,7 +6438,9 @@ pub fn matrix_function_ast(
     _ => 0,
   };
   if n == 0 {
-    return Ok(unevaluated(args));
+    // Not a nonempty square matrix: emit <head>::matsq for a concrete
+    // argument, hold symbolic ones.
+    return Ok(matsq_unevaluated(head, args));
   }
 
   let is_zero = |e: &Expr| {

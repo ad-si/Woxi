@@ -4412,4 +4412,58 @@ mod matsq_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(msgs.iter().all(|m| !m.contains("::matsq")), "{msgs:?}");
   }
+
+  // MatrixPower takes two arguments, so the matsq message reports only the
+  // matrix (position 1), not the exponent.
+  #[test]
+  fn matrix_power_non_square_and_scalar() {
+    for (input, arg) in [
+      (
+        "MatrixPower[{{1, 2, 3}, {4, 5, 6}}, 2]",
+        "{{1, 2, 3}, {4, 5, 6}}",
+      ),
+      ("MatrixPower[{1, 2, 3}, 2]", "{1, 2, 3}"),
+      ("MatrixPower[5, 2]", "5"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), input);
+      let expected = format!(
+        "MatrixPower::matsq: Argument {arg} at position 1 is not a nonempty square matrix."
+      );
+      assert!(
+        woxi::get_captured_messages_raw()
+          .iter()
+          .any(|m| m.contains(&expected)),
+        "expected {expected:?} for {input}"
+      );
+    }
+  }
+
+  #[test]
+  fn matrix_exp_and_log_non_square() {
+    assert_matsq(
+      "MatrixExp[{{1, 2, 3}, {4, 5, 6}}]",
+      "MatrixExp[{{1, 2, 3}, {4, 5, 6}}]",
+      "MatrixExp",
+    );
+    assert_matsq("MatrixExp[{1, 2}]", "MatrixExp[{1, 2}]", "MatrixExp");
+    assert_matsq("MatrixLog[{1, 2, 3}]", "MatrixLog[{1, 2, 3}]", "MatrixLog");
+  }
+
+  #[test]
+  fn matrix_power_symbolic_and_valid_unaffected() {
+    clear_state();
+    // A symbol holds (no message); a valid square matrix computes.
+    assert_eq!(interpret("MatrixPower[x, 2]").unwrap(), "MatrixPower[x, 2]");
+    assert_eq!(
+      interpret("MatrixPower[{{1, 2}, {3, 4}}, 2]").unwrap(),
+      "{{7, 10}, {15, 22}}"
+    );
+    assert_eq!(
+      interpret("MatrixExp[{{0, 0}, {0, 0}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.iter().all(|m| !m.contains("::matsq")), "{msgs:?}");
+  }
 }

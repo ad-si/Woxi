@@ -516,6 +516,23 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     "MatrixPower" if args.len() == 2 => {
+      // Validate the matrix independently of the exponent: a non-square or
+      // non-matrix concrete first argument emits MatrixPower::matsq (a valid
+      // matrix with a symbolic exponent still falls through to the symbolic
+      // handling below).
+      let valid_matrix = matches!(
+        crate::functions::linear_algebra_ast::expr_to_matrix(&args[0]),
+        Some(ref m)
+          if crate::functions::linear_algebra_ast::is_nonempty_square(m)
+      );
+      if !valid_matrix {
+        return Some(Ok(
+          crate::functions::linear_algebra_ast::matsq_unevaluated(
+            "MatrixPower",
+            args,
+          ),
+        ));
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         let mat = &args[0];
         // Check matrix is a list of lists and is square
