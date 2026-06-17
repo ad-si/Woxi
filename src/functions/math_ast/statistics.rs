@@ -203,6 +203,12 @@ pub fn add_exprs_recursive(
         .collect();
       Ok(Expr::List(results?.into()))
     }
+    // Two lists of unequal length can't be added: raise the raw error so the
+    // caller (Total) reports Total::tllen. Going through plus_ast here would
+    // instead emit Thread::tdlen, which is wrong for Total.
+    (Expr::List(_), Expr::List(_)) => Err(InterpreterError::EvaluationError(
+      "Lists must have the same length".into(),
+    )),
     _ => plus_ast(&[a.clone(), b.clone()]),
   }
 }

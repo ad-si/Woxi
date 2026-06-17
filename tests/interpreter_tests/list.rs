@@ -66,6 +66,44 @@ mod list_threading {
   fn unequal_length_lists_times_unevaluated() {
     assert_eq!(interpret("{1, 2} * {4, 5, 6}").unwrap(), "{1, 2}*{4, 5, 6}");
   }
+
+  // The Plus[...] function-call form (e.g. via Plus @@ matrix) must behave
+  // like the infix form: emit Thread::tdlen and stay unevaluated, rather than
+  // leaking an internal evaluation error.
+  #[test]
+  fn unequal_length_plus_function_call_form() {
+    clear_state();
+    assert_eq!(
+      interpret("Plus[{1, 2}, {3, 4, 5}]").unwrap(),
+      "{1, 2} + {3, 4, 5}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Thread::tdlen: Objects of unequal length in {1, 2} + {3, 4, 5} cannot be combined."
+      )),
+      "expected Thread::tdlen, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn unequal_length_plus_apply_form() {
+    assert_eq!(
+      interpret("Plus @@ {{1, 2}, {3, 4, 5}}").unwrap(),
+      "{1, 2} + {3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn equal_length_plus_function_call_form() {
+    clear_state();
+    assert_eq!(interpret("Plus[{1, 2}, {3, 4}]").unwrap(), "{4, 6}");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("tdlen")),
+      "unexpected tdlen message: {msgs:?}"
+    );
+  }
 }
 
 mod table_with_list_iterator {

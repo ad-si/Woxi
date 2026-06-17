@@ -712,11 +712,30 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check for list threading
   let has_list = flat_args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
-    return thread_binary_over_lists(&flat_args, |a, b| {
+    let result = thread_binary_over_lists(&flat_args, |a, b| {
       // Delegate to plus_ast so rationals, bigints, symbolic terms,
       // etc. are handled consistently with the non-list path.
       plus_ast(&[a.clone(), b.clone()])
     });
+    // Adding two lists of unequal length surfaces as an internal error;
+    // turn it into Thread::tdlen and leave `a + b` unevaluated, matching the
+    // infix path and wolframscript (e.g. Plus[{1, 2}, {3, 4, 5}]).
+    if let Err(InterpreterError::EvaluationError(ref m)) = result
+      && m == "Lists must have the same length"
+      && flat_args.len() == 2
+    {
+      let unevaluated = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(flat_args[0].clone()),
+        right: Box::new(flat_args[1].clone()),
+      };
+      crate::emit_message(&format!(
+        "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+        crate::syntax::expr_to_string(&unevaluated)
+      ));
+      return Ok(unevaluated);
+    }
+    return result;
   }
 
   // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
