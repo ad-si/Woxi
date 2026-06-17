@@ -591,6 +591,10 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "BenktanderGibratDistribution"
         | "GumbelDistribution"
         | "ZipfDistribution"
+        // Mean only: the symbolic Variance form factors as
+        // (1 - ns/nt)*(-n + nt), but Woxi's Times canonicalization orders
+        // those two factors the other way, diverging from wolframscript.
+        | "HypergeometricDistribution"
     ) =>
     {
       let (mean, _) =

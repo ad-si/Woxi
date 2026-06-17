@@ -3387,6 +3387,32 @@ fn distribution_mean_variance(
       let var = times(alpha, power(beta, int(2)));
       Ok((mean, var))
     }
+    "HypergeometricDistribution" => {
+      // HypergeometricDistribution[n, n_succ, n_tot]: draw n without
+      // replacement from a population of n_tot with n_succ successes.
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "HypergeometricDistribution expects 3 arguments".into(),
+        ));
+      }
+      let n = dargs[0].clone();
+      let ns = dargs[1].clone();
+      let nt = dargs[2].clone();
+      // Mean = (n*ns)/nt.
+      let mean = divide(times(n.clone(), ns.clone()), nt.clone());
+      // Var = (n*ns*(1 - ns/nt)*(nt - n)) / ((nt - 1)*nt).
+      let var = divide(
+        times(
+          times(
+            times(n.clone(), ns.clone()),
+            minus(int(1), divide(ns, nt.clone())),
+          ),
+          minus(nt.clone(), n),
+        ),
+        times(minus(nt.clone(), int(1)), nt),
+      );
+      Ok((mean, var))
+    }
     "BetaDistribution" => {
       if dargs.len() != 2 {
         return Err(InterpreterError::EvaluationError(

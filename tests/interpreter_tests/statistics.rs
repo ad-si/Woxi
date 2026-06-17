@@ -4770,13 +4770,22 @@ mod data_covariance_function {
   //   gamma(h) = (1/n) Sum_{t=1}^{n-|h|} (x_t - xbar)(x_{t+|h|} - xbar).
   #[test]
   fn integer_lags() {
-    assert_eq!(interpret("CovarianceFunction[{2, 3, 4, 3}, 0]").unwrap(), "1/2");
-    assert_eq!(interpret("CovarianceFunction[{2, 3, 4, 3}, 1]").unwrap(), "0");
+    assert_eq!(
+      interpret("CovarianceFunction[{2, 3, 4, 3}, 0]").unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("CovarianceFunction[{2, 3, 4, 3}, 1]").unwrap(),
+      "0"
+    );
     assert_eq!(
       interpret("CovarianceFunction[{2, 3, 4, 3}, 2]").unwrap(),
       "-1/4"
     );
-    assert_eq!(interpret("CovarianceFunction[{2, 3, 4, 3}, 3]").unwrap(), "0");
+    assert_eq!(
+      interpret("CovarianceFunction[{2, 3, 4, 3}, 3]").unwrap(),
+      "0"
+    );
     assert_eq!(
       interpret("CovarianceFunction[{1, 2, 3, 4, 5}, 2]").unwrap(),
       "-1/5"

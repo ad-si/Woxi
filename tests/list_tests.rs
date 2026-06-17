@@ -2249,6 +2249,37 @@ mod list_tests {
   }
 
   #[test]
+  fn hypergeometric_mean() {
+    // Mean[HypergeometricDistribution[n, ns, nt]] = (n*ns)/nt.
+    assert_eq!(
+      interpret("Mean[HypergeometricDistribution[n, ns, nt]]").unwrap(),
+      "(n*ns)/nt"
+    );
+    // The audit case with subscripted parameters.
+    assert_eq!(
+      interpret(
+        "Mean[HypergeometricDistribution[n, Subscript[n, succ], \
+         Subscript[n, tot]]]"
+      )
+      .unwrap(),
+      "(n*Subscript[n, succ])/Subscript[n, tot]"
+    );
+    // Concrete parameters collapse to an exact number / a machine real.
+    assert_eq!(
+      interpret("Mean[HypergeometricDistribution[5, 10, 50]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Mean[HypergeometricDistribution[10, 20, 100]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("N[Mean[HypergeometricDistribution[5, 10, 50]]]").unwrap(),
+      "1."
+    );
+  }
+
+  #[test]
   fn binomial_mean_variance_symbolic() {
     // Mean[BinomialDistribution[n, p]] = n*p.
     assert_eq!(
