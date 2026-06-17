@@ -222,10 +222,12 @@ pub fn delete_duplicates_ast(
   // Preserve the original head, then evaluate the rebuilt expression so a
   // head with its own rules reduces; inert heads stay symbolic.
   match head_name {
-    Some(name) => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name,
-      args: kept.into(),
-    }),
+    Some(name) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name,
+        args: kept.into(),
+      })
+    }
     None => Ok(Expr::List(kept.into())),
   }
 }

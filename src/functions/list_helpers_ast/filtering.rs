@@ -1755,12 +1755,20 @@ pub fn take_while_ast(
     return Ok(Expr::Association(result));
   }
 
-  let items = match list {
-    Expr::List(items) => items,
+  // TakeWhile works on any expression with parts, preserving the head
+  // (TakeWhile[f[2, 4, 1, 6], EvenQ] -> f[2, 4]).
+  let (items, head_name): (&[Expr], Option<String>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
+      let call_args = vec![list.clone(), pred.clone()];
+      // An atomic first argument is invalid: emit ::normal, matching WL.
+      if is_atomic_arg(list) {
+        emit_nonatomic_normal_message("TakeWhile", &call_args);
+      }
       return Ok(Expr::FunctionCall {
         name: "TakeWhile".to_string(),
-        args: vec![list.clone(), pred.clone()].into(),
+        args: call_args.into(),
       });
     }
   };
@@ -1775,7 +1783,15 @@ pub fn take_while_ast(
     }
   }
 
-  Ok(Expr::List(result.into()))
+  // Preserve the original head, then evaluate the rebuilt expression so a
+  // head with its own rules reduces; inert heads stay symbolic.
+  match head_name {
+    Some(name) => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name,
+      args: result.into(),
+    }),
+    None => Ok(Expr::List(result.into())),
+  }
 }
 
 /// ContainsOnly[list, elems] - True if every element of list is in elems

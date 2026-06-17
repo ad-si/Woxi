@@ -4969,6 +4969,52 @@ mod take_while {
       "<||>"
     );
   }
+
+  // TakeWhile works on any head, preserving it; the rebuilt expression is
+  // evaluated (an unknown head stays symbolic).
+  #[test]
+  fn function_call_head_is_preserved() {
+    assert_eq!(
+      interpret("TakeWhile[f[2, 4, 1, 6], EvenQ]").unwrap(),
+      "f[2, 4]"
+    );
+    assert_eq!(
+      interpret("TakeWhile[g[2, 4, 6], EvenQ]").unwrap(),
+      "g[2, 4, 6]"
+    );
+  }
+
+  #[test]
+  fn atomic_argument_emits_normal() {
+    for (input, call) in [
+      ("TakeWhile[5, EvenQ]", "TakeWhile[5, EvenQ]"),
+      ("TakeWhile[x, EvenQ]", "TakeWhile[x, EvenQ]"),
+      (r#"TakeWhile["str", EvenQ]"#, "TakeWhile[str, EvenQ]"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "TakeWhile::normal: Nonatomic expression expected at position 1 in {call}."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn nonatomic_inputs_do_not_emit_normal() {
+    clear_state();
+    assert_eq!(interpret("TakeWhile[{2, 4, 1}, EvenQ]").unwrap(), "{2, 4}");
+    assert_eq!(interpret("TakeWhile[f[2, 1], EvenQ]").unwrap(), "f[2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::normal")),
+      "unexpected normal message: {msgs:?}"
+    );
+  }
 }
 
 mod length_while {
