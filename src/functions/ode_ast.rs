@@ -12,6 +12,21 @@ use crate::syntax::{BinaryOperator, Expr};
 /// DSolve[eqn, y[x], x] or DSolve[{eqn, ic1, ...}, y[x], x]
 /// Also DSolve[eqn, y, x] (returns Function form)
 pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An ODE Woxi can't classify/solve should stay unevaluated (like
+  // wolframscript for genuinely unsolvable equations) rather than leaking an
+  // internal "DSolve: …" error to the user.
+  match dsolve_ast_inner(args) {
+    Err(InterpreterError::EvaluationError(msg)) if msg.starts_with("DSolve:") => {
+      Ok(Expr::FunctionCall {
+        name: "DSolve".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    other => other,
+  }
+}
+
+fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(Expr::FunctionCall {
       name: "DSolve".to_string(),

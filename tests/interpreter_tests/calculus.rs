@@ -4093,6 +4093,21 @@ mod dsolve {
     );
   }
 
+  #[test]
+  fn unsolvable_ode_stays_unevaluated() {
+    // A nonlinear ODE Woxi can't classify must return the unevaluated DSolve
+    // (like wolframscript for genuinely unsolvable equations), not leak an
+    // internal "DSolve: cannot classify…" error.
+    assert_eq!(
+      interpret("DSolve[y'[x] == y[x]^2, y[x], x]").unwrap(),
+      "DSolve[Derivative[1][y][x] == y[x]^2, y[x], x]"
+    );
+    assert_eq!(
+      interpret("DSolve[y'[x] == Sin[y[x]], y[x], x]").unwrap(),
+      "DSolve[Derivative[1][y][x] == Sin[y[x]], y[x], x]"
+    );
+  }
+
   // Initial conditions pin the constant: the ODE must not be misread as an
   // initial condition (its point is the variable x, not a number).
   #[test]
