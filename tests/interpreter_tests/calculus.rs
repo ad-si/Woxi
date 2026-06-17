@@ -836,6 +836,21 @@ mod differentiate_plus_times {
     );
   }
 
+  // Regression: D builds the Cos derivative as a UnaryOp minus (-Sin[t]).
+  // Raising that to an integer power must distribute the sign correctly:
+  // (-Sin[t])^2 = Sin[t]^2, not -Sin[t]^2.
+  #[test]
+  fn power_of_cos_derivative_signs_correctly() {
+    assert_eq!(interpret("D[Cos[t], t]^2").unwrap(), "Sin[t]^2");
+    assert_eq!(interpret("D[Cos[t], t]^3").unwrap(), "-Sin[t]^3");
+    assert_eq!(interpret("Power[D[Cos[t], t], 4]").unwrap(), "Sin[t]^4");
+    // The Pythagorean speed of a unit circle: Cos^2 + Sin^2 (then 1).
+    assert_eq!(
+      interpret("D[Cos[x], x]^2 + D[Sin[x], x]^2").unwrap(),
+      "Cos[x]^2 + Sin[x]^2"
+    );
+  }
+
   #[test]
   fn d_times_three_factors() {
     // D[4*(3 + 2*x)*x, x] should work with 3-factor Times

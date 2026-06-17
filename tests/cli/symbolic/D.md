@@ -19,6 +19,19 @@ $ wo 'D[x^2 y, {x, 2}]'
 2*y
 ```
 
+Squaring a derivative distributes the sign correctly, so the Pythagorean
+speed of a unit circle collapses cleanly:
+
+```scrut
+$ wo 'D[Cos[t], t]^2'
+Sin[t]^2
+```
+
+```scrut
+$ wo 'D[Cos[x], x]^2 + D[Sin[x], x]^2'
+Cos[x]^2 + Sin[x]^2
+```
+
 Differentiating a power series with respect to its expansion variable applies
 the term-by-term power rule:
 

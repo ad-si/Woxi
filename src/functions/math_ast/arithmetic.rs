@@ -6703,6 +6703,25 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
+  // (-x)^n → (-1)^n * x^n for integer n. A `UnaryOp` minus base (e.g. the
+  // `-Sin[t]` that D produces for the Cos derivative) is otherwise not picked
+  // up by the Times-distribution below, so `(-Sin[t])^2` would mis-evaluate to
+  // `-Sin[t]^2` instead of `Sin[t]^2`.
+  if let Expr::Integer(n) = exp
+    && let Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } = base
+  {
+    let inner_pow = power_two(operand, &Expr::Integer(*n))?;
+    let sign = if n.rem_euclid(2) == 0 {
+      Expr::Integer(1)
+    } else {
+      Expr::Integer(-1)
+    };
+    return times_ast(&[sign, inner_pow]);
+  }
+
   // (a * b * ...)^n → Times[a^n, b^n, ...] for integer n
   // This matches Wolfram's normalization: Power[Times[...], n] distributes
   if let Expr::Integer(n) = exp {
