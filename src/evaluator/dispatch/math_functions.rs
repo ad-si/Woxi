@@ -1256,6 +1256,35 @@ pub fn dispatch_math_functions(
     "GammaRegularized" if args.len() == 2 => {
       return Some(crate::functions::math_ast::gamma_regularized_ast(args));
     }
+    // Generalized form GammaRegularized[a, z0, z1] = GammaRegularized[a, z0] -
+    // GammaRegularized[a, z1]. wolframscript keeps this symbolic except for the
+    // elementary a == 1 case (GammaRegularized[1, z] = E^-z). Match that and
+    // otherwise leave the 3-arg form unevaluated (rather than emitting ::argrx).
+    "GammaRegularized" if args.len() == 3 => {
+      if matches!(&args[0], Expr::Integer(1)) {
+        let exp_neg = |z: &Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::Constant("E".to_string()),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), z.clone()].into(),
+            },
+          ]
+          .into(),
+        };
+        let diff = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(exp_neg(&args[1])),
+          right: Box::new(exp_neg(&args[2])),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "GammaRegularized".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "Hypergeometric1F1Regularized" if args.len() == 3 => {
       return Some(
         crate::functions::math_ast::hypergeometric_1f1_regularized_ast(args),

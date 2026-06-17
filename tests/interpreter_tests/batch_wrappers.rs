@@ -6570,6 +6570,19 @@ mod batch_unevaluated_wrappers_2 {
       "Piecewise[{{GammaRegularized[n/2, 0, x^2/2], x > 0}}, 0]"
     );
   }
+  // Generalized 3-argument GammaRegularized: stays symbolic except the
+  // elementary a == 1 case. Regression: it previously emitted ::argrx.
+  #[test]
+  fn gamma_regularized_three_arg() {
+    assert_eq!(
+      interpret("GammaRegularized[1, 0, 1]").unwrap(),
+      "1 - E^(-1)"
+    );
+    assert_eq!(
+      interpret("GammaRegularized[2, 1, 3]").unwrap(),
+      "GammaRegularized[2, 1, 3]"
+    );
+  }
 
   // ResetDirectory
   #[test]

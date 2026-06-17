@@ -1212,6 +1212,20 @@ fn pdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 // ─── CDF ──────────────────────────────────────────────────────────────
 
 /// CDF[dist, x] - Cumulative distribution function
+/// Distributions whose sample value is itself a list (a single multivariate
+/// point), so a list argument to PDF/CDF must NOT be threaded over.
+fn is_multivariate_distribution(name: &str) -> bool {
+  matches!(
+    name,
+    "MultinormalDistribution"
+      | "BinormalDistribution"
+      | "MultivariatePoissonDistribution"
+      | "MultinomialDistribution"
+      | "ProductDistribution"
+      | "CopulaDistribution"
+  )
+}
+
 pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1238,6 +1252,20 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "CDF".to_string(),
       args: args.to_vec().into(),
     });
+  }
+
+  // For a univariate distribution, a list of values means "evaluate the CDF at
+  // each point" — thread over it. (Multivariate distributions take a list as a
+  // single point, so they are excluded.) Without this, discrete CDFs built as
+  // a Piecewise leak a list into the Piecewise condition.
+  if let Expr::List(xs) = &args[1]
+    && !is_multivariate_distribution(dist_name)
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = xs
+      .iter()
+      .map(|xi| cdf_ast(&[args[0].clone(), xi.clone()]))
+      .collect();
+    return Ok(Expr::List(results?.into()));
   }
 
   let x = args[1].clone();

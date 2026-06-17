@@ -2802,6 +2802,19 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Quantile expects 2 or 3 arguments".into(),
     ));
   }
+  // Quantile[dist, {p1, p2, ...}] for a distribution head threads over the
+  // probability list (the second argument of Quantile is always a scalar
+  // probability, so a list there always means "evaluate at each").
+  if args.len() == 2
+    && matches!(&args[0], Expr::FunctionCall { .. })
+    && let Expr::List(ps) = &args[1]
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = ps
+      .iter()
+      .map(|p| quantile_ast(&[args[0].clone(), p.clone()]))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   // 3-argument parametric form Quantile[list, q, {{a,b},{c,d}}] (Hyndman-Fan).
   // The parameter list must be {{a,b},{c,d}} with exact numeric entries; the
   // 2-argument form is the special case {{0,0},{1,0}}.

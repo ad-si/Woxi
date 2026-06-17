@@ -468,7 +468,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GraphDistance" => Some((2, 3)),
     "GraphDistanceMatrix" => Some((1, 1)),
     "GammaDistribution" => Some((2, 2)),
-    "GammaRegularized" => Some((2, 2)),
+    "GammaRegularized" => Some((2, 3)),
     "Gather" => Some((1, 2)),
     "GatherBy" => Some((2, usize::MAX)),
     "GegenbauerC" => Some((2, 3)),

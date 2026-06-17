@@ -59,6 +59,40 @@ mod cauchy_distribution {
   }
 }
 
+mod distribution_list_threading {
+  use super::*;
+
+  // CDF of a univariate distribution at a list of points threads, rather than
+  // leaking the list into a Piecewise condition (the discrete-distribution
+  // bug).
+  #[test]
+  fn cdf_threads_over_value_list() {
+    assert_eq!(
+      interpret("CDF[PoissonDistribution[3], {1, 2, 3}]").unwrap(),
+      "{4/E^3, 17/(2*E^3), 13/E^3}"
+    );
+    // Scalar form unchanged.
+    assert_eq!(
+      interpret("CDF[PoissonDistribution[3], 2]").unwrap(),
+      "17/(2*E^3)"
+    );
+  }
+
+  // Quantile of a distribution at a list of probabilities threads.
+  #[test]
+  fn quantile_threads_over_probability_list() {
+    assert_eq!(
+      interpret("Quantile[ExponentialDistribution[1], {1/2, 3/4}]").unwrap(),
+      "{Log[2], Log[4]}"
+    );
+    // Scalar form unchanged.
+    assert_eq!(
+      interpret("Quantile[ExponentialDistribution[1], 1/2]").unwrap(),
+      "Log[2]"
+    );
+  }
+}
+
 mod hypoexponential_distribution {
   use super::*;
 

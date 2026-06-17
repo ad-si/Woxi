@@ -46,6 +46,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Gudermannian"
       | "InverseGudermannian"
       | "Exp"
+      | "ProductLog"
       | "Log"
       | "Log2"
       | "Log10"
