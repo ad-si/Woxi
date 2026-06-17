@@ -1675,6 +1675,78 @@ mod sort_by {
   }
 }
 
+mod sort_atomic_normal {
+  use super::*;
+
+  fn assert_normal(input: &str, expected_result: &str, msg_fragment: &str) {
+    clear_state();
+    assert_eq!(interpret(input).unwrap(), expected_result);
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(msg_fragment)),
+      "expected normal message containing {msg_fragment:?}, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn sort_integer_emits_normal() {
+    assert_normal(
+      "Sort[5]",
+      "Sort[5]",
+      "Sort::normal: Nonatomic expression expected at position 1 in Sort[5].",
+    );
+  }
+
+  #[test]
+  fn sort_symbol_emits_normal() {
+    assert_normal(
+      "Sort[x]",
+      "Sort[x]",
+      "Sort::normal: Nonatomic expression expected at position 1 in Sort[x].",
+    );
+  }
+
+  #[test]
+  fn sort_string_emits_normal() {
+    assert_normal(
+      r#"Sort["abc"]"#,
+      "Sort[abc]",
+      "Sort::normal: Nonatomic expression expected at position 1 in Sort[abc].",
+    );
+  }
+
+  #[test]
+  fn sort_two_arg_atom_emits_normal() {
+    assert_normal(
+      "Sort[5, Greater]",
+      "Sort[5, Greater]",
+      "Sort::normal: Nonatomic expression expected at position 1 in Sort[5, Greater].",
+    );
+  }
+
+  #[test]
+  fn sort_by_atom_emits_normal() {
+    assert_normal(
+      "SortBy[5, f]",
+      "SortBy[5, f]",
+      "SortBy::normal: Nonatomic expression expected at position 1 in SortBy[5, f].",
+    );
+  }
+
+  #[test]
+  fn nonatomic_inputs_do_not_emit() {
+    // Lists and function calls are valid: no message, normal sorting.
+    clear_state();
+    assert_eq!(interpret("Sort[{3, 1, 2}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("Sort[f[3, 1, 2]]").unwrap(), "f[1, 2, 3]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::normal")),
+      "unexpected normal message: {msgs:?}"
+    );
+  }
+}
+
 mod sort_canonical {
   use super::*;
 

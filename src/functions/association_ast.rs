@@ -10,9 +10,7 @@ use crate::syntax::Expr;
 /// applying a function yields a result that can't form an association.
 fn is_valid_rule_result(expr: &Expr) -> bool {
   match expr {
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Association(_) => {
-      true
-    }
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Association(_) => true,
     Expr::List(items) => items
       .iter()
       .all(|e| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })),
@@ -523,9 +521,10 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         applied.push((rule, result));
       }
       // If every result is a plain rule, build the association directly.
-      if applied.iter().all(|(_, r)| {
-        matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-      }) {
+      if applied
+        .iter()
+        .all(|(_, r)| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      {
         let new_items: Vec<(Expr, Expr)> = applied
           .iter()
           .map(|(_, r)| match r {
@@ -559,7 +558,11 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::FunctionCall {
         name: "Association".to_string(),
-        args: applied.into_iter().map(|(_, r)| r).collect::<Vec<_>>().into(),
+        args: applied
+          .into_iter()
+          .map(|(_, r)| r)
+          .collect::<Vec<_>>()
+          .into(),
       })
     }
     Expr::List(items) => {

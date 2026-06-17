@@ -1730,6 +1730,14 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::sort_ast(&args[0]));
     }
     "Sort" if args.len() == 2 => {
+      // Sort[atom, p] is invalid: emit ::normal and stay unevaluated.
+      if list_helpers_ast::is_atomic_sort_arg(&args[0]) {
+        list_helpers_ast::emit_sort_normal_message("Sort", args);
+        return Some(Ok(Expr::FunctionCall {
+          name: "Sort".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
       // Sort[assoc, p] - sort the association entries by their values using p,
       // mirroring Sort[assoc] (which orders by value). Keys ride along.
       if let Expr::Association(entries) = &args[0] {

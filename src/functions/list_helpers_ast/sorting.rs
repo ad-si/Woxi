@@ -412,10 +412,15 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
         args: keyed.into_iter().map(|(item, _)| item).collect(),
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "SortBy".to_string(),
-      args: vec![list.clone(), func.clone()].into(),
-    }),
+    other => {
+      if is_atomic_sort_arg(other) {
+        emit_sort_normal_message("SortBy", &[list.clone(), func.clone()]);
+      }
+      Ok(Expr::FunctionCall {
+        name: "SortBy".to_string(),
+        args: vec![list.clone(), func.clone()].into(),
+      })
+    }
   }
 }
 
@@ -793,6 +798,38 @@ pub fn maximal_by_ast(
 }
 
 /// AST-based Sort: sort a list.
+/// Whether `e` is an atomic argument for which the sort family emits
+/// `::normal` (numbers, strings, symbols, constants). Lists, function calls,
+/// and associations are nonatomic and sortable.
+pub fn is_atomic_sort_arg(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Constant(_)
+  )
+}
+
+/// Emit `<F>::normal: Nonatomic expression expected at position 1 in <call>.`,
+/// matching wolframscript for sort-family functions applied to an atom.
+pub fn emit_sort_normal_message(name: &str, args: &[Expr]) {
+  crate::emit_message(&format!(
+    "{}::normal: Nonatomic expression expected at position 1 in {}.",
+    name,
+    crate::syntax::format_expr(
+      &Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      },
+      crate::syntax::ExprForm::Output
+    )
+  ));
+}
+
 pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
@@ -813,10 +850,15 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         args: sorted,
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Sort".to_string(),
-      args: vec![list.clone()].into(),
-    }),
+    other => {
+      if is_atomic_sort_arg(other) {
+        emit_sort_normal_message("Sort", &[other.clone()]);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Sort".to_string(),
+        args: vec![list.clone()].into(),
+      })
+    }
   }
 }
 
