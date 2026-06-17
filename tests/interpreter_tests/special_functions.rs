@@ -3842,10 +3842,7 @@ mod special_function_listability {
       "{BesselJ[0, 1], BesselJ[0, 2]}"
     );
     assert_eq!(interpret("Beta[{1, 2}, 3]").unwrap(), "{1/3, 1/12}");
-    assert_eq!(
-      interpret("FactorialPower[{4, 5}, 2]").unwrap(),
-      "{12, 20}"
-    );
+    assert_eq!(interpret("FactorialPower[{4, 5}, 2]").unwrap(), "{12, 20}");
   }
 
   #[test]
@@ -3876,5 +3873,19 @@ mod special_function_listability {
     assert_eq!(interpret("Zeta[2]").unwrap(), "Pi^2/6");
     assert_eq!(interpret("Beta[2, 3]").unwrap(), "1/12");
     assert_eq!(interpret("Zeta[s]").unwrap(), "Zeta[s]");
+  }
+
+  // CubeRoot threads (it rewrites to Surd, which must also thread).
+  #[test]
+  fn cube_root_threads() {
+    assert_eq!(interpret("CubeRoot[{8, 27}]").unwrap(), "{2, 3}");
+    assert_eq!(interpret("CubeRoot[-8]").unwrap(), "-2");
+  }
+
+  // Pochhammer threads over either argument.
+  #[test]
+  fn pochhammer_threads_both_args() {
+    assert_eq!(interpret("Pochhammer[{2, 3}, 2]").unwrap(), "{6, 12}");
+    assert_eq!(interpret("Pochhammer[3, {1, 2}]").unwrap(), "{3, 12}");
   }
 }
