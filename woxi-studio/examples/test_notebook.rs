@@ -5,11 +5,7 @@
 
 use std::path::PathBuf;
 
-// Pull in the studio's notebook parser.
-#[path = "../src/notebook.rs"]
-mod notebook;
-
-use notebook::{CellEntry, CellStyle, parse_notebook};
+use woxi::notebook::{CellEntry, CellStyle, parse_notebook};
 
 fn main() {
   let path: PathBuf = std::env::args()

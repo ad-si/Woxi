@@ -3,7 +3,89 @@ mod jupyter;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use woxi::notebook::{CellStyle, parse_notebook};
 use woxi::{interpret, set_script_command_line, without_shebang};
+
+/// Execute a script file referenced by `absolute_path`.
+///
+/// `.nb` notebook files are parsed and their Input/Code cells are
+/// evaluated in order (printing each cell's result, like notebook
+/// evaluation).  Every other file is treated as a plain Wolfram
+/// Language script: the shebang is stripped and the whole content is
+/// interpreted with the final expression's value suppressed.
+fn run_script_file(absolute_path: &std::path::Path) {
+  let content = match fs::read_to_string(absolute_path) {
+    Ok(content) => content,
+    Err(e) => {
+      eprintln!("Error reading file: {}", e);
+      return;
+    }
+  };
+
+  let is_notebook = absolute_path
+    .extension()
+    .is_some_and(|ext| ext.eq_ignore_ascii_case("nb"));
+
+  if is_notebook {
+    // Running a `.nb` file: its directory is known, so make
+    // `NotebookDirectory[]` resolve to it (e.g. for Export paths).
+    if let Some(parent) = absolute_path.parent() {
+      woxi::set_notebook_directory(Some(parent.to_string_lossy().into_owned()));
+    }
+    run_notebook(&content);
+  } else {
+    let code = without_shebang(&content);
+    match interpret(&code) {
+      Ok(_result) => {
+        // Suppress automatic output of the final expression value when
+        // running a script file.  Side-effects (Print[…]) have already
+        // been written by the interpreter itself.
+      }
+      Err(e) => {
+        eprintln!("Error interpreting file: {}", e);
+        if let Some(trace) = woxi::take_error_trace() {
+          eprintln!("{}", trace);
+        }
+      }
+    }
+  }
+}
+
+/// Parse a `.nb` notebook and evaluate its Input/Code cells in order,
+/// printing the result of each cell that produces a value.
+fn run_notebook(content: &str) {
+  let notebook = match parse_notebook(content) {
+    Ok(nb) => nb,
+    Err(e) => {
+      eprintln!("Error parsing notebook: {}", e);
+      return;
+    }
+  };
+
+  for (_group, cell) in notebook.flat_cells() {
+    if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+      continue;
+    }
+    if cell.content.trim().is_empty() {
+      continue;
+    }
+    match interpret(&cell.content) {
+      Ok(result) => {
+        // "\0" marks suppressed output (Null, trailing semicolon, …).
+        if result != "\0" && !result.is_empty() {
+          println!("{result}");
+        }
+      }
+      Err(woxi::InterpreterError::EmptyInput) => {}
+      Err(e) => {
+        eprintln!("Error interpreting cell: {}", e);
+        if let Some(trace) = woxi::take_error_trace() {
+          eprintln!("{}", trace);
+        }
+      }
+    }
+  }
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -162,25 +244,7 @@ fn main() {
       cmd_line.extend(args);
       set_script_command_line(&cmd_line);
 
-      match fs::read_to_string(&absolute_path) {
-        Ok(content) => {
-          let code = without_shebang(&content);
-          match interpret(&code) {
-            Ok(_result) => {
-              // Suppress automatic output of the final expression value
-              // when running a script file.  Side-effects (Print[…]) have
-              // already been written by the interpreter itself.
-            }
-            Err(e) => {
-              eprintln!("Error interpreting file: {}", e);
-              if let Some(trace) = woxi::take_error_trace() {
-                eprintln!("{}", trace);
-              }
-            }
-          }
-        }
-        Err(e) => eprintln!("Error reading file: {}", e),
-      }
+      run_script_file(&absolute_path);
     }
     Commands::Jupyter { connection_file } => {
       if let Err(e) = jupyter::run(connection_file.as_deref()) {
@@ -214,21 +278,7 @@ fn main() {
       cmd_line.extend(args.into_iter().skip(1));
       set_script_command_line(&cmd_line);
 
-      match fs::read_to_string(&absolute_path) {
-        Ok(content) => {
-          let code = without_shebang(&content);
-          match interpret(&code) {
-            Ok(_result) => { /* suppress final value for shebang scripts */ }
-            Err(e) => {
-              eprintln!("Error interpreting file: {}", e);
-              if let Some(trace) = woxi::take_error_trace() {
-                eprintln!("{}", trace);
-              }
-            }
-          }
-        }
-        Err(e) => eprintln!("Error reading file: {}", e),
-      }
+      run_script_file(&absolute_path);
     }
   }
 }

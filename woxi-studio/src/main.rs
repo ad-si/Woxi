@@ -3,7 +3,8 @@ mod highlighter;
 #[cfg(target_os = "macos")]
 mod macos_open;
 mod manipulate;
-mod notebook;
+
+use woxi::notebook;
 
 use iced::keyboard;
 use iced::overlay::menu;

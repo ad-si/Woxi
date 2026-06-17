@@ -174,10 +174,9 @@ fn parse_cell_entry(s: &str) -> Result<CellEntry, String> {
 
   // Check if it's a CellGroupData
   let inner_trimmed = inner.trim();
-  if inner_trimmed.starts_with("CellGroupData[") {
+  if let Some(after_prefix) = inner_trimmed.strip_prefix("CellGroupData[") {
     // Find the matching `]` for `CellGroupData[` so we can ignore any
     // trailing options on the outer Cell (e.g. `ExpressionUUID -> "…"`).
-    let after_prefix = &inner_trimmed["CellGroupData[".len()..];
     let (group_inner, _trailing_options) = find_matching_bracket(after_prefix)?;
     return parse_cell_group_body(group_inner);
   }
@@ -608,13 +607,11 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             }
             name.push(ch);
           }
-          if code {
-            if let Some(op) = named_char_to_code_op(&name) {
-              result.push_str(op);
-              continue;
-            }
+          if code && let Some(op) = named_char_to_code_op(&name) {
+            result.push_str(op);
+            continue;
           }
-          match woxi::syntax::named_char_to_unicode(&name) {
+          match crate::syntax::named_char_to_unicode(&name) {
             Some(uni) => result.push_str(uni),
             None => result.push_str(&format!("\\[{name}]")),
           }
@@ -1708,8 +1705,11 @@ Cell["Chapter 2", "Chapter"]
 
   #[test]
   fn test_parse_real_hello_world_nb() {
-    let contents =
-      std::fs::read_to_string("../tests/notebooks/hello_world.nb").unwrap();
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/hello_world.nb"
+    ))
+    .unwrap();
     let nb = parse_notebook(&contents).unwrap();
     assert_eq!(nb.cells.len(), 1);
     match &nb.cells[0] {
@@ -1736,8 +1736,11 @@ Cell["Chapter 2", "Chapter"]
 
   #[test]
   fn test_parse_real_syntax_nb() {
-    let contents =
-      std::fs::read_to_string("../tests/notebooks/syntax.nb").unwrap();
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/syntax.nb"
+    ))
+    .unwrap();
     let nb = parse_notebook(&contents).unwrap();
     // syntax.nb has 8 cell groups (each input/output pair)
     assert_eq!(nb.cells.len(), 8);
@@ -1756,9 +1759,11 @@ Cell["Chapter 2", "Chapter"]
 
   #[test]
   fn test_parse_real_layout_typography_nb() {
-    let contents =
-      std::fs::read_to_string("../tests/notebooks/layout_typography.nb")
-        .unwrap();
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/layout_typography.nb"
+    ))
+    .unwrap();
     let nb = parse_notebook(&contents).unwrap();
     // Should have one top-level group containing all the heading cells
     assert!(!nb.cells.is_empty(), "Expected at least one cell entry");
@@ -1927,9 +1932,11 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
 
   #[test]
   fn test_parse_layout_typography_no_backslashes() {
-    let contents =
-      std::fs::read_to_string("../tests/notebooks/layout_typography.nb")
-        .unwrap();
+    let contents = std::fs::read_to_string(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/notebooks/layout_typography.nb"
+    ))
+    .unwrap();
     let nb = parse_notebook(&contents).unwrap();
     let flat = nb.flat_cells();
 

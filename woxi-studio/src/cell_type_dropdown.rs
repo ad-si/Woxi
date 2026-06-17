@@ -17,7 +17,7 @@ use iced::{
 use iced::advanced::svg::{self as svg_core, Renderer as SvgRenderer};
 use iced::advanced::text::Renderer as TextRenderer;
 
-use crate::notebook::CellStyle;
+use woxi::notebook::CellStyle;
 
 // ── SVG icons ──────────────────────────────────────────────────────
 

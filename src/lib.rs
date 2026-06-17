@@ -10,6 +10,7 @@ use thiserror::Error;
 pub mod evaluator;
 pub mod expr_list;
 pub mod functions;
+pub mod notebook;
 pub mod syntax;
 pub mod utils;
 #[cfg(target_arch = "wasm32")]

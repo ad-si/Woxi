@@ -116,3 +116,79 @@ fn eval_stdin_handles_large_image_input() {
   assert!(ok, "woxi eval - on large image failed: stderr={}", stderr);
   assert_eq!(stdout.trim(), "Image");
 }
+
+/// Run `woxi run <file>` and return (stdout, stderr, success).
+fn run_file(path: &std::path::Path) -> (String, String, bool) {
+  let output = Command::new(woxi_bin())
+    .arg("run")
+    .arg(path)
+    .output()
+    .expect("failed to spawn woxi");
+  (
+    String::from_utf8_lossy(&output.stdout).into_owned(),
+    String::from_utf8_lossy(&output.stderr).into_owned(),
+    output.status.success(),
+  )
+}
+
+#[test]
+fn run_notebook_hello_world() {
+  // `woxi run` should accept a real `.nb` notebook file, evaluate its
+  // Input cells, and print their results (skipping Output cells).
+  let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    .join("tests/notebooks/hello_world.nb");
+  let (stdout, stderr, ok) = run_file(&path);
+  assert!(ok, "woxi run hello_world.nb failed: stderr={}", stderr);
+  assert_eq!(stdout.trim(), "Hello World!");
+}
+
+#[test]
+fn run_notebook_evaluates_only_input_cells_in_order() {
+  // Multiple Input/Code cells evaluate top-to-bottom; Output, Text and
+  // heading cells are skipped. Print side-effects appear inline.
+  let nb = r#"Notebook[{
+Cell["A title", "Title"],
+Cell[CellGroupData[{
+Cell[BoxData["1 + 2"], "Input"],
+Cell[BoxData["3"], "Output"]
+}, Open]],
+Cell["prose to ignore", "Text"],
+Cell[CellGroupData[{
+Cell[BoxData["Range[3]"], "Input"],
+Cell[BoxData["{1, 2, 3}"], "Output"]
+}, Open]],
+Cell[BoxData[RowBox[{"Print[\"hi\"]", "\n", "x = 5"}]], "Code"]
+}]
+"#;
+  let dir = std::env::temp_dir();
+  let path = dir.join("woxi_cli_test_notebook.nb");
+  std::fs::write(&path, nb).expect("write temp notebook");
+  let (stdout, stderr, ok) = run_file(&path);
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run notebook failed: stderr={}", stderr);
+  assert_eq!(stdout, "3\n{1, 2, 3}\nhi\n5\n");
+}
+
+#[test]
+fn run_notebook_notebook_directory_resolves_to_file_dir() {
+  // Regression: `NotebookDirectory[]` must resolve to the `.nb` file's
+  // own directory when run via `woxi run` (so Export paths etc. work),
+  // instead of emitting the `nosv` "not available outside a front-end"
+  // message.
+  let dir = std::env::temp_dir();
+  let path = dir.join("woxi_cli_test_nbdir.nb");
+  let nb =
+    "Notebook[{\nCell[BoxData[\"NotebookDirectory[]\"], \"Input\"]\n}]\n";
+  std::fs::write(&path, nb).expect("write temp notebook");
+  let (stdout, stderr, ok) = run_file(&path);
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run notebook failed: stderr={}", stderr);
+  // The canonical temp dir, with a trailing separator (WL convention).
+  let expected = format!("{}/", dir.to_string_lossy().trim_end_matches('/'));
+  assert!(
+    !stderr.contains("nosv"),
+    "NotebookDirectory emitted nosv message: stderr={}",
+    stderr
+  );
+  assert_eq!(stdout.trim(), expected.trim_end_matches('/'));
+}
