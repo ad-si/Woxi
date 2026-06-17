@@ -767,6 +767,30 @@ mod from_character_code {
       "äö"
     );
   }
+
+  #[test]
+  fn utf8_decodes_byte_sequences() {
+    // With a UTF-8 encoding the integers are bytes: a multi-byte sequence
+    // decodes to a single character (not one code point per byte).
+    assert_eq!(
+      interpret(r#"FromCharacterCode[{195, 169}, "UTF8"]"#).unwrap(),
+      "é"
+    );
+    assert_eq!(
+      interpret(r#"FromCharacterCode[{226, 130, 172}, "UTF8"]"#).unwrap(),
+      "€"
+    );
+    // ASCII bytes are unchanged.
+    assert_eq!(
+      interpret(r#"FromCharacterCode[{72, 105}, "UTF8"]"#).unwrap(),
+      "Hi"
+    );
+    // Without an encoding the integers are code points (no decoding).
+    assert_eq!(
+      interpret("FromCharacterCode[{195, 169}]").unwrap(),
+      "Ã©"
+    );
+  }
 }
 
 mod character_range {

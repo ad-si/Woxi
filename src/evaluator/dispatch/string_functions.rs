@@ -206,6 +206,42 @@ pub fn dispatch_string_functions(
           args: args.to_vec().into(),
         }));
       }
+      // With a "UTF8"/"UTF-8" encoding the integers are UTF-8 *bytes*, not
+      // code points: decode the byte sequence into characters. (Other
+      // ASCII-compatible encodings pass through unchanged below.)
+      if args.len() == 2
+        && let Expr::String(enc) = &args[1]
+        && (enc == "UTF8" || enc == "UTF-8")
+      {
+        let bytes: Option<Vec<u8>> = match &args[0] {
+          Expr::Integer(n) if (0..=255).contains(n) => Some(vec![*n as u8]),
+          Expr::List(items) => items
+            .iter()
+            .map(|it| match it {
+              Expr::Integer(n) if (0..=255).contains(n) => Some(*n as u8),
+              _ => None,
+            })
+            .collect(),
+          _ => None,
+        };
+        if let Some(bytes) = bytes {
+          match String::from_utf8(bytes) {
+            Ok(s) => return Some(Ok(Expr::String(s))),
+            Err(_) => {
+              // Invalid byte sequence: wolframscript warns, then falls back
+              // to interpreting the integers as code points.
+              crate::emit_message(&format!(
+                "$CharacterEncoding::utf8: The byte sequence {} could not be \
+                 interpreted as a character in the UTF-8 character encoding.",
+                crate::syntax::format_expr(
+                  &args[0],
+                  crate::syntax::ExprForm::Output
+                )
+              ));
+            }
+          }
+        }
+      }
       return Some(crate::functions::string_ast::from_character_code_ast(
         &args[0..1],
       ));
