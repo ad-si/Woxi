@@ -1057,7 +1057,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Slot" => Some((1, 1)),
     "SlotSequence" => Some((1, 1)),
     "SmithDecomposition" => Some((1, 1)),
-    "Solve" => Some((2, 3)),
+    // 1-arg Solve[eqns] auto-detects the variables.
+    "Solve" => Some((1, 3)),
     "SolveValues" => Some((2, 3)),
     "SolveAlways" => Some((2, 2)),
     "SokalSneathDissimilarity" => Some((2, 2)),

@@ -855,7 +855,99 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(values.into()))
 }
 
+/// Whether `s` names a built-in constant rather than a solve variable.
+fn is_solve_constant(s: &str) -> bool {
+  matches!(
+    s,
+    "Pi" | "E"
+      | "I"
+      | "Infinity"
+      | "ComplexInfinity"
+      | "Indeterminate"
+      | "GoldenRatio"
+      | "EulerGamma"
+      | "Catalan"
+      | "Degree"
+      | "Glaisher"
+      | "Khinchin"
+      | "True"
+      | "False"
+      | "Null"
+  )
+}
+
+/// Collect the free variable symbols of an equation (or list/And of
+/// equations), in first-appearance order, descending through comparisons,
+/// arithmetic and function arguments. Used by the one-argument Solve form.
+fn collect_solve_vars(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::Identifier(s) => {
+      if !is_solve_constant(s) && !out.contains(s) {
+        out.push(s.clone());
+      }
+    }
+    Expr::Comparison { operands, .. } => {
+      for e in operands {
+        collect_solve_vars(e, out);
+      }
+    }
+    Expr::List(items) => {
+      for e in items {
+        collect_solve_vars(e, out);
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for e in args {
+        collect_solve_vars(e, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_solve_vars(left, out);
+      collect_solve_vars(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_solve_vars(operand, out),
+    _ => {}
+  }
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // One-argument form Solve[eqns]: auto-detect the variables and delegate to
+  // the two-argument form. Only the unambiguous cases are handled — a single
+  // variable, or a determined/overdetermined system (variables <= equations).
+  // An underdetermined system (which wolframscript solves with a non-obvious
+  // variable-selection heuristic) is left unevaluated rather than guessed.
+  if args.len() == 1 {
+    // A trivially true/false condition (e.g. Solve[x == x] after x == x
+    // evaluated to True) needs no variables: True -> {{}}, False -> {}.
+    if let Expr::Identifier(s) = &args[0] {
+      if s == "True" {
+        return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
+      }
+      if s == "False" {
+        return Ok(Expr::List(vec![].into()));
+      }
+    }
+    let mut vars = Vec::new();
+    collect_solve_vars(&args[0], &mut vars);
+    let n_eqns = match &args[0] {
+      Expr::List(items) => items.len(),
+      _ => 1,
+    };
+    let var_arg = if vars.len() == 1 {
+      Some(Expr::Identifier(vars.remove(0)))
+    } else if vars.len() >= 2 && vars.len() <= n_eqns {
+      Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
+    } else {
+      None
+    };
+    return match var_arg {
+      Some(va) => solve_ast(&[args[0].clone(), va]),
+      None => Ok(Expr::FunctionCall {
+        name: "Solve".to_string(),
+        args: args.to_vec().into(),
+      }),
+    };
+  }
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Solve expects 2 or 3 arguments".into(),

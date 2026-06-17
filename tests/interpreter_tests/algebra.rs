@@ -1850,6 +1850,34 @@ mod solve {
   }
 
   #[test]
+  fn one_argument_auto_detects_variable() {
+    // Single-variable: the variable is inferred from the equation.
+    assert_eq!(interpret("Solve[2 x == 6]").unwrap(), "{{x -> 3}}");
+    assert_eq!(
+      interpret("Solve[x^2 - 5 x + 6 == 0]").unwrap(),
+      "{{x -> 2}, {x -> 3}}"
+    );
+    // Determined system: solve for all variables.
+    assert_eq!(
+      interpret("Solve[{x + y == 3, x - y == 1}]").unwrap(),
+      "{{x -> 2, y -> 1}}"
+    );
+    // A trivially-true condition yields the empty solution {{}}.
+    assert_eq!(interpret("Solve[x == x]").unwrap(), "{{}}");
+  }
+
+  #[test]
+  fn one_argument_underdetermined_stays_unevaluated() {
+    // An underdetermined system uses a non-obvious variable-selection
+    // heuristic in wolframscript, so Woxi leaves it unevaluated rather than
+    // guessing the wrong variable.
+    assert_eq!(
+      interpret("Solve[x + y == 3]").unwrap(),
+      "Solve[x + y == 3]"
+    );
+  }
+
+  #[test]
   fn quadratic_symmetric() {
     assert_eq!(
       interpret("Solve[x^2 - 4 == 0, x]").unwrap(),
