@@ -168,6 +168,19 @@ mod arc_length {
     );
   }
 
+  // Unbounded 1-D regions have infinite arc length.
+  #[test]
+  fn unbounded_regions_are_infinite() {
+    assert_eq!(
+      interpret("ArcLength[HalfLine[{0, 0}, {1, 1}]]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("ArcLength[InfiniteLine[{0, 0}, {1, 1}]]").unwrap(),
+      "Infinity"
+    );
+  }
+
   #[test]
   fn circle_with_radius() {
     assert_eq!(interpret("ArcLength[Circle[{0, 0}, r]]").unwrap(), "2*Pi*r");

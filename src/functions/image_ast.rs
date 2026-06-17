@@ -1031,8 +1031,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: cargs }
       if (name == "Hue"
         && (cargs.len() == 1 || cargs.len() == 3 || cargs.len() == 4))
-        || (name == "CMYKColor"
-          && (cargs.len() == 4 || cargs.len() == 5)) =>
+        || (name == "CMYKColor" && (cargs.len() == 4 || cargs.len() == 5)) =>
     {
       let Some((r, g, b, alpha)) = color_directive_to_rgb(&args[0]) else {
         // Symbolic components: leave unevaluated.

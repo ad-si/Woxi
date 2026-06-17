@@ -19,3 +19,10 @@ $ wo 'ArcLength[{Sin[t], Cos[t]}, {t, 0, 2 Pi}]'
 $ wo 'ArcLength[{Cos[t], Sin[t], t}, {t, 0, 2 Pi}]'
 2*Sqrt[2]*Pi
 ```
+
+Unbounded regions have infinite length.
+
+```scrut
+$ wo 'ArcLength[HalfLine[{0, 0}, {1, 1}]]'
+Infinity
+```

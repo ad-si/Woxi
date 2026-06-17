@@ -7224,6 +7224,10 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
           unevaluated()
         }
       }
+      // Unbounded 1-D regions have infinite arc length.
+      "HalfLine" | "InfiniteLine" if !args.is_empty() => {
+        Ok(Expr::Identifier("Infinity".to_string()))
+      }
       // Line[{{x1,y1},{x2,y2},...}] -> sum of segment lengths
       "Line" => {
         if args.len() == 1
