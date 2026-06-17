@@ -1814,7 +1814,8 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Tie correction Σ t(t-1)/2 over groups of equal values.
   let tie_sum = |vals: &[f64]| -> i128 {
     let mut sorted = vals.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted
+      .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mut total: i128 = 0;
     let mut i = 0;
     while i < sorted.len() {

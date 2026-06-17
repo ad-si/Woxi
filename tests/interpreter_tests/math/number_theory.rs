@@ -2464,6 +2464,68 @@ mod arithmetic_geometric_mean {
       "{Listable, NumericFunction, Orderless, Protected, ReadProtected}"
     );
   }
+
+  #[test]
+  fn zero_arg_preserves_type() {
+    // A machine-real zero yields a machine-real zero; an exact zero yields 0.
+    assert_eq!(interpret("ArithmeticGeometricMean[0., 5.]").unwrap(), "0.");
+    assert_eq!(interpret("ArithmeticGeometricMean[3, 0.]").unwrap(), "0.");
+    assert_eq!(interpret("ArithmeticGeometricMean[5., 0]").unwrap(), "0");
+    assert_eq!(interpret("ArithmeticGeometricMean[0., 0.]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn equal_args_with_real_is_real() {
+    assert_eq!(interpret("ArithmeticGeometricMean[1, 1.]").unwrap(), "1.");
+    assert_eq!(interpret("ArithmeticGeometricMean[2.0, 2.0]").unwrap(), "2.");
+  }
+
+  #[test]
+  fn negative_real_args() {
+    // AGM[-a, -b] = -AGM[a, b] for same-sign reals.
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[-2., -8.]").unwrap(),
+      "-4.486057160575205"
+    );
+    assert_eq!(interpret("ArithmeticGeometricMean[-1., -1.]").unwrap(), "-1.");
+  }
+
+  #[test]
+  fn orderless_sorts_arguments() {
+    // The Orderless attribute canonicalizes the argument order.
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[24, 6]").unwrap(),
+      "ArithmeticGeometricMean[6, 24]"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[b, a]").unwrap(),
+      "ArithmeticGeometricMean[a, b]"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[x, 2]").unwrap(),
+      "ArithmeticGeometricMean[2, x]"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[1/2, 1/8]").unwrap(),
+      "ArithmeticGeometricMean[1/8, 1/2]"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[-2, -8]").unwrap(),
+      "ArithmeticGeometricMean[-8, -2]"
+    );
+  }
+
+  #[test]
+  fn machine_real_values() {
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[1.8, 1.2]").unwrap(),
+      "1.4848082617417828"
+    );
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[3.0, 7.0]").unwrap(),
+      "4.789013583140951"
+    );
+  }
 }
 
 mod random_prime {

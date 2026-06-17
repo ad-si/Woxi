@@ -4402,27 +4402,47 @@ pub fn arithmetic_geometric_mean_ast(
     ));
   }
 
-  // AGM[0, b] = 0 and AGM[a, 0] = 0
+  // At least one argument is an inexact (machine-real) number, so the result
+  // is a machine real rather than an exact/symbolic expression.
+  let inexact =
+    matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+
+  // AGM[a, 0] = AGM[0, b] = 0, returning the zero argument so its type
+  // (exact 0 vs. machine 0.) is preserved, matching wolframscript.
   let is_zero = |e: &Expr| {
     matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(x) if *x == 0.0)
   };
-  if is_zero(&args[0]) || is_zero(&args[1]) {
-    return Ok(Expr::Integer(0));
+  if is_zero(&args[0]) {
+    return Ok(args[0].clone());
+  }
+  if is_zero(&args[1]) {
+    return Ok(args[1].clone());
   }
 
-  // AGM[a, a] = a (for integer/real values)
-  if let (Some(a), Some(b)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
+  let (fa, fb) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]));
+
+  // AGM[a, a] = a. With a machine-real argument the result is a machine real.
+  if let (Some(a), Some(b)) = (fa, fb)
     && a == b
   {
+    if inexact {
+      return Ok(Expr::Real(a));
+    }
     return Ok(args[0].clone());
   }
 
-  // Numeric evaluation when both are numeric and at least one is Real
-  if let (Some(a), Some(b)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1])) {
-    let is_numeric_eval =
-      matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
-    if is_numeric_eval {
+  // Numeric evaluation when both are numeric and at least one is Real.
+  // The AGM iteration converges to a real value only for arguments of the
+  // same sign; AGM[-a, -b] = -AGM[a, b]. Mixed-sign reals yield a complex
+  // value and are left for symbolic handling.
+  if let (Some(a), Some(b)) = (fa, fb)
+    && inexact
+  {
+    if a > 0.0 && b > 0.0 {
       return Ok(Expr::Real(agm(a, b)));
+    }
+    if a < 0.0 && b < 0.0 {
+      return Ok(Expr::Real(-agm(-a, -b)));
     }
   }
 
