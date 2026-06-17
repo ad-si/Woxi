@@ -3537,7 +3537,7 @@ ListLineIntegralConvolutionPlot,,🚫,,7.0,3636
 OuterPolygon,,,,12.0,3636
 ParentNotebook,,🚫,,10.0,3636
 ScalePadding,,,,9.0,3636
-SmithWatermanSimilarity,,,,7.0,3636
+SmithWatermanSimilarity,Local sequence-alignment similarity score,✅,pure,7.0,3636
 TaskRemove,,🚫,,11.2,3636
 TopHatTransform,,🚫,,7.0,3636
 WarpingCorrespondence,,,,11.0,3636
@@ -3883,7 +3883,7 @@ ListZTransform,,,,9.0,4006
 MandelbrotSetIterationCount,,,,10.0,4006
 MardiaSkewnessTest,,,,8.0,4006
 MessageList,,,,2.0,4006
-NeedlemanWunschSimilarity,,,,7.0,4006
+NeedlemanWunschSimilarity,Global sequence-alignment similarity score,✅,pure,7.0,4006
 PaulWavelet,,🚫,,8.0,4006
 Precedence,Returns the parsing precedence of a symbol or expression,✅,pure,1.0,4005
 PrecedenceForm,Formatting wrapper that specifies precedence for output display,✅,none,1.0,4006

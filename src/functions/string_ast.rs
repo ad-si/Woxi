@@ -6590,6 +6590,88 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(dp[n][m] as i128))
 }
 
+/// Tokenize an alignment argument: a string into its characters, a list into
+/// its (output-formatted) elements.
+fn alignment_tokens(expr: &Expr) -> Result<Vec<String>, InterpreterError> {
+  match expr {
+    Expr::String(s) => Ok(s.chars().map(|c| c.to_string()).collect()),
+    Expr::List(items) => {
+      Ok(items.iter().map(crate::syntax::expr_to_output).collect())
+    }
+    _ => {
+      let s = expr_to_str(expr)?;
+      Ok(s.chars().map(|c| c.to_string()).collect())
+    }
+  }
+}
+
+/// NeedlemanWunschSimilarity[s1, s2] - global sequence-alignment score with the
+/// default scoring (match +1, mismatch -1, gap penalty 1). When one input is
+/// empty, wolframscript returns the length of the other.
+pub fn needleman_wunsch_similarity_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "NeedlemanWunschSimilarity".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let a = alignment_tokens(&args[0])?;
+  let b = alignment_tokens(&args[1])?;
+  let (n, m) = (a.len(), b.len());
+  if n == 0 || m == 0 {
+    return Ok(Expr::Real(n.max(m) as f64));
+  }
+  let mut dp = vec![vec![0i64; m + 1]; n + 1];
+  for (i, row) in dp.iter_mut().enumerate() {
+    row[0] = -(i as i64);
+  }
+  for j in 0..=m {
+    dp[0][j] = -(j as i64);
+  }
+  for i in 1..=n {
+    for j in 1..=m {
+      let s = if a[i - 1] == b[j - 1] { 1 } else { -1 };
+      dp[i][j] = (dp[i - 1][j - 1] + s)
+        .max(dp[i - 1][j] - 1)
+        .max(dp[i][j - 1] - 1);
+    }
+  }
+  Ok(Expr::Real(dp[n][m] as f64))
+}
+
+/// SmithWatermanSimilarity[s1, s2] - local sequence-alignment score with the
+/// default scoring (match +1, mismatch -1, gap penalty 1). Cell scores are
+/// floored at 0 and the result is the maximum cell value.
+pub fn smith_waterman_similarity_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "SmithWatermanSimilarity".to_string(),
+      args: args.to_vec().into(),
+    });
+  }
+  let a = alignment_tokens(&args[0])?;
+  let b = alignment_tokens(&args[1])?;
+  let (n, m) = (a.len(), b.len());
+  let mut dp = vec![vec![0i64; m + 1]; n + 1];
+  let mut best = 0i64;
+  for i in 1..=n {
+    for j in 1..=m {
+      let s = if a[i - 1] == b[j - 1] { 1 } else { -1 };
+      let v = (dp[i - 1][j - 1] + s)
+        .max(dp[i - 1][j] - 1)
+        .max(dp[i][j - 1] - 1)
+        .max(0);
+      dp[i][j] = v;
+      best = best.max(v);
+    }
+  }
+  Ok(Expr::Real(best as f64))
+}
+
 /// DamerauLevenshteinDistance[s1, s2] - like Levenshtein distance but also
 /// allows a single transposition of two adjacent characters as a unit cost.
 /// Also accepts lists of items (compared by equality).

@@ -5360,6 +5360,58 @@ mod damerau_levenshtein_distance {
   }
 }
 
+mod sequence_alignment_similarity {
+  use super::*;
+
+  #[test]
+  fn needleman_wunsch_global() {
+    // match +1, mismatch -1, gap -1.
+    assert_eq!(
+      interpret(r#"NeedlemanWunschSimilarity["abc", "abc"]"#).unwrap(),
+      "3."
+    );
+    assert_eq!(
+      interpret(r#"NeedlemanWunschSimilarity["abc", "abd"]"#).unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret(r#"NeedlemanWunschSimilarity["abcde", "ace"]"#).unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret(r#"NeedlemanWunschSimilarity["abc", "xyz"]"#).unwrap(),
+      "-3."
+    );
+    // Empty input -> length of the other.
+    assert_eq!(
+      interpret(r#"NeedlemanWunschSimilarity["abc", ""]"#).unwrap(),
+      "3."
+    );
+  }
+
+  #[test]
+  fn smith_waterman_local() {
+    assert_eq!(
+      interpret(r#"SmithWatermanSimilarity["abc", "abd"]"#).unwrap(),
+      "2."
+    );
+    assert_eq!(
+      interpret(r#"SmithWatermanSimilarity["abcd", "bc"]"#).unwrap(),
+      "2."
+    );
+    // No positive local alignment -> 0.
+    assert_eq!(
+      interpret(r#"SmithWatermanSimilarity["abc", "xyz"]"#).unwrap(),
+      "0."
+    );
+    // Lists of items align by equality.
+    assert_eq!(
+      interpret("SmithWatermanSimilarity[{1, 2, 3}, {2, 3, 4}]").unwrap(),
+      "2."
+    );
+  }
+}
+
 mod string_position_anchors {
   use super::*;
 

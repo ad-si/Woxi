@@ -132,6 +132,16 @@ pub fn dispatch_string_functions(
         crate::functions::string_ast::damerau_levenshtein_distance_ast(args),
       );
     }
+    "NeedlemanWunschSimilarity" if args.len() == 2 => {
+      return Some(
+        crate::functions::string_ast::needleman_wunsch_similarity_ast(args),
+      );
+    }
+    "SmithWatermanSimilarity" if args.len() == 2 => {
+      return Some(
+        crate::functions::string_ast::smith_waterman_similarity_ast(args),
+      );
+    }
     "SequenceAlignment" if args.len() == 2 => {
       return Some(crate::functions::string_ast::sequence_alignment_ast(args));
     }
