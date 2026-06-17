@@ -554,6 +554,38 @@ fn unit_convert_km_to_m() {
   );
 }
 
+// One-argument UnitConvert converts to SI base units. Volume is Length^3, so
+// the SI base of a volume unit is Meters^3 (not Liters).
+#[test]
+fn unit_convert_one_arg_to_si_base() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Liters\"]]").unwrap(),
+    "Quantity[1/1000, Meters^3]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Hours\"]]").unwrap(),
+    "Quantity[3600, Seconds]"
+  );
+}
+
+// Volume units (Length^3) interconvert with Meters^3 and with each other.
+#[test]
+fn unit_convert_volume_units() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Liters\"], \"Meters\"^3]").unwrap(),
+    "Quantity[1/1000, Meters^3]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1000, \"Milliliters\"], \"Liters\"]")
+      .unwrap(),
+    "Quantity[1, Liters]"
+  );
+  assert_eq!(
+    interpret("UnitDimensions[Quantity[1, \"Liters\"]]").unwrap(),
+    "{{LengthUnit, 3}}"
+  );
+}
+
 #[test]
 fn unit_convert_cm_to_m() {
   assert_eq!(

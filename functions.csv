@@ -635,7 +635,7 @@ FourierTransform,computes the symbolic Fourier transform of an expression,✅,pu
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
 Fit,Performs a least-squares fit of data to a linear combination of basis functions,✅,pure,1.0,641
 Input,Reads user input (inert in Woxi),✅,effectful,1.0,642
-UnitConvert,Converts a quantity to a different unit,✅,pure,9.0,643
+UnitConvert,Converts a quantity to a different unit; with one argument converts to SI base units,✅,pure,9.0,643
 BoundaryStyle,Option for boundary styling in plots,✅,none,6.0,644
 StandardDeviation,Returns the standard deviation of a list or an association's values,✅,pure,5.0,645
 MaxIterations,Option for maximum iterations,✅,pure,1.0,646

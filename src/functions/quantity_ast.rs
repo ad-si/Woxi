@@ -11,7 +11,6 @@ enum Dimension {
   Mass,
   Time,
   ElectricCurrent,
-  Volume,
   AmountOfSubstance,
 }
 
@@ -168,21 +167,22 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_denom: 1000000000,
     },
 
-    // ── Volume → Liters ──────────────────────────────────────────────
+    // ── Volume = Length^3, SI base Meters^3 ───────────────────────────
+    // 1 L = 1/1000 m^3; factors are relative to Meters^3.
     "Liters" => UnitInfo {
-      dimensions: dims(&[(Volume, 1)]),
-      to_si_numer: 1,
-      to_si_denom: 1,
-    },
-    "Milliliters" => UnitInfo {
-      dimensions: dims(&[(Volume, 1)]),
+      dimensions: dims(&[(Length, 3)]),
       to_si_numer: 1,
       to_si_denom: 1000,
     },
+    "Milliliters" => UnitInfo {
+      dimensions: dims(&[(Length, 3)]),
+      to_si_numer: 1,
+      to_si_denom: 1000000,
+    },
     "Gallons" => UnitInfo {
-      dimensions: dims(&[(Volume, 1)]),
+      dimensions: dims(&[(Length, 3)]),
       to_si_numer: 473176473,
-      to_si_denom: 125000000,
+      to_si_denom: 125000000000,
     },
 
     // ── Electric Current → Amperes ───────────────────────────────────
@@ -1825,7 +1825,6 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
       Mass => "Kilograms",
       Time => "Seconds",
       ElectricCurrent => "Amperes",
-      Volume => "Liters",
       AmountOfSubstance => "Moles",
     }
   };
@@ -1846,7 +1845,10 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
     let mut terms: Vec<Expr> = entries
       .iter()
       .map(|(d, e)| {
-        let base = Expr::Identifier(base_name(*d).to_string());
+        // Use string unit names so compound SI bases (e.g. "Meters"^3) are
+        // accepted as unit specifications by the conversion path (bare
+        // identifiers in a compound unit are treated as non-units).
+        let base = Expr::String(base_name(*d).to_string());
         if *e == 1 {
           base
         } else {
@@ -1995,7 +1997,12 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && let Some(from) = decompose_unit_expr(unit)
     {
       let target = si_base_unit_expr(&from.dimensions);
-      return unit_convert_ast(&[args[0].clone(), target]);
+      // Evaluate the 2-argument call so the freshly-built target unit is
+      // normalized the same way a typed unit specification would be.
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "UnitConvert".to_string(),
+        args: vec![args[0].clone(), target].into(),
+      });
     }
     return Ok(Expr::FunctionCall {
       name: "UnitConvert".to_string(),
@@ -2109,7 +2116,6 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Dimension::Mass => ("MassUnit", 1),
       Dimension::Time => ("TimeUnit", 1),
       Dimension::ElectricCurrent => ("ElectricCurrentUnit", 1),
-      Dimension::Volume => ("LengthUnit", 3),
       Dimension::AmountOfSubstance => ("AmountUnit", 1),
     };
     *acc.entry(name).or_insert(0) += exp * factor;
