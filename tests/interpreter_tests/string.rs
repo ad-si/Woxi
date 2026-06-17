@@ -176,6 +176,90 @@ mod string_split_list_delimiters {
       "{a, b, c}"
     );
   }
+
+  // Like the single-delimiter form, a list of delimiters drops the empty
+  // pieces at the very start and end while keeping interior empties.
+  #[test]
+  fn drops_leading_and_trailing_empties() {
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", {\"1\", \"2\", \"3\"}]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"1a2b3\", {\"1\", \"2\", \"3\"}]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"xayb\", {\"x\", \"y\"}]").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn keeps_interior_empties() {
+    assert_eq!(
+      interpret("StringSplit[\"a1b22c3\", {\"1\", \"2\", \"3\"}]").unwrap(),
+      "{a, b, , c}"
+    );
+  }
+}
+
+// When an explicit maximum number of pieces is given, StringSplit does NOT
+// drop empty pieces, and the final piece keeps the original remainder
+// verbatim (the un-split tail of the string).
+mod string_split_max_parts {
+  use super::*;
+
+  #[test]
+  fn single_delimiter_keeps_empties() {
+    assert_eq!(
+      interpret("StringSplit[\",a,b,\", \",\", 5]").unwrap(),
+      "{, a, b, }"
+    );
+    assert_eq!(
+      interpret("StringSplit[\",a,b,\", \",\", 2]").unwrap(),
+      "{, a,b,}"
+    );
+  }
+
+  #[test]
+  fn single_delimiter_remainder_unsplit() {
+    assert_eq!(
+      interpret("StringSplit[\"a,b,c,d\", \",\", 2]").unwrap(),
+      "{a, b,c,d}"
+    );
+  }
+
+  #[test]
+  fn multiple_delimiters_remainder_keeps_original() {
+    // The tail "b2c3" must keep its original delimiters, not be rejoined
+    // with the first delimiter of the list.
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", {\"1\", \"2\", \"3\"}, 2]").unwrap(),
+      "{a, b2c3}"
+    );
+    assert_eq!(
+      interpret("StringSplit[\"1a2b3c\", {\"1\", \"2\", \"3\"}, 2]").unwrap(),
+      "{, a2b3c}"
+    );
+  }
+
+  #[test]
+  fn multiple_delimiters_exact_count_keeps_trailing_empty() {
+    assert_eq!(
+      interpret("StringSplit[\"a1b2c3\", {\"1\", \"2\", \"3\"}, 4]").unwrap(),
+      "{a, b, c, }"
+    );
+  }
+
+  // Without a max-parts argument the trailing empty is still dropped.
+  #[test]
+  fn no_max_parts_still_trims() {
+    assert_eq!(
+      interpret("StringSplit[\",a,b,\", \",\"]").unwrap(),
+      "{a, b}"
+    );
+  }
 }
 
 mod string_split_rule_delimiters {

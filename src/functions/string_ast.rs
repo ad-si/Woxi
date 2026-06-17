@@ -722,7 +722,14 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       re.split(&s).map(|p| Expr::String(p.to_string())).collect()
     };
-    return Ok(Expr::List(trim_empty_strings(parts).into()));
+    // Leading/trailing empty pieces are only dropped when no explicit
+    // maximum number of pieces was requested.
+    let parts = if max_parts.is_none() {
+      trim_empty_strings(parts)
+    } else {
+      parts
+    };
+    return Ok(Expr::List(parts.into()));
   }
 
   // Collect delimiters: either a single string or a list of strings
@@ -737,7 +744,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![expr_to_str(&args[1])?],
   };
 
-  let mut parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
+  let parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
     s.chars().map(|c| Expr::String(c.to_string())).collect()
   } else if delims.len() == 1 {
     if ignore_case {
@@ -747,28 +754,27 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map_err(|e| {
           InterpreterError::EvaluationError(format!("Regex error: {}", e))
         })?;
-      let raw: Vec<Expr> = if let Some(n) = max_parts {
+      if let Some(n) = max_parts {
         re.splitn(&s, n)
           .map(|p| Expr::String(p.to_string()))
           .collect()
       } else {
         re.split(&s).map(|p| Expr::String(p.to_string())).collect()
-      };
-      trim_empty_strings(raw)
+      }
+    } else if let Some(n) = max_parts {
+      s.splitn(n, &delims[0])
+        .map(|p| Expr::String(p.to_string()))
+        .collect()
     } else {
-      let raw: Vec<Expr> = if let Some(n) = max_parts {
-        s.splitn(n, &delims[0])
-          .map(|p| Expr::String(p.to_string()))
-          .collect()
-      } else {
-        s.split(&delims[0])
-          .map(|p| Expr::String(p.to_string()))
-          .collect()
-      };
-      trim_empty_strings(raw)
+      s.split(&delims[0])
+        .map(|p| Expr::String(p.to_string()))
+        .collect()
     }
   } else {
-    // Split by multiple delimiters: scan left to right, try longest delimiter match first
+    // Split by multiple delimiters: scan left to right, trying the longest
+    // delimiter match first. Once `max_parts - 1` pieces have been emitted,
+    // stop splitting so the final piece keeps the original remainder verbatim
+    // (mirroring `splitn`), matching wolframscript.
     let mut sorted_delims = delims.clone();
     sorted_delims.sort_by(|a, b| b.len().cmp(&a.len()));
     let mut result = Vec::new();
@@ -776,13 +782,19 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0;
     while i < chars.len() {
+      if let Some(n) = max_parts
+        && result.len() == n - 1
+      {
+        current.extend(&chars[i..]);
+        break;
+      }
       let remaining: String = chars[i..].iter().collect();
       let mut matched = false;
       for d in &sorted_delims {
         if !d.is_empty() && remaining.starts_with(d.as_str()) {
           result.push(Expr::String(current.clone()));
           current.clear();
-          i += d.len();
+          i += d.chars().count();
           matched = true;
           break;
         }
@@ -795,26 +807,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result.push(Expr::String(current));
     result
   };
-  // For multi-delimiter splits, apply max_parts by joining excess parts
-  if let Some(n) = max_parts
-    && parts.len() > n
-  {
-    let keep: Vec<Expr> = parts[..n - 1].to_vec();
-    let rest: Vec<String> = parts[n - 1..]
-      .iter()
-      .map(|e| {
-        if let Expr::String(s) = e {
-          s.clone()
-        } else {
-          crate::syntax::expr_to_string(e)
-        }
-      })
-      .collect();
-    let joined = rest.join(&delims[0]);
-    let mut result = keep;
-    result.push(Expr::String(joined));
-    parts = result;
-  }
+  // Leading/trailing empty pieces are only dropped when no explicit maximum
+  // number of pieces was requested.
+  let parts = if max_parts.is_none() {
+    trim_empty_strings(parts)
+  } else {
+    parts
+  };
   Ok(Expr::List(parts.into()))
 }
 
