@@ -114,11 +114,30 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     TotalLevelSpec::Through(1)
   };
 
+  // Adding rows of unequal length surfaces as an internal error from the
+  // list-threading helper; turn it into Total::tllen (matching wolframscript)
+  // and leave the call unevaluated instead of leaking the error.
+  let tllen = |result: Result<Expr, InterpreterError>| match result {
+    Err(InterpreterError::EvaluationError(ref m))
+      if m == "Lists must have the same length" =>
+    {
+      crate::emit_message(&format!(
+        "Total::tllen: Lists of unequal length in {} cannot be added.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+      Ok(Expr::FunctionCall {
+        name: "Total".to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+    other => other,
+  };
+
   match &args[0] {
-    Expr::List(_) => total_with_level(&args[0], &level_spec),
+    Expr::List(_) => tllen(total_with_level(&args[0], &level_spec)),
     Expr::Association(pairs) => {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
-      total_with_level(&Expr::List(values.into()), &level_spec)
+      tllen(total_with_level(&Expr::List(values.into()), &level_spec))
     }
     // Non-list, non-association argument. A numeric scalar (e.g. 5, Pi,
     // Sin[1], 1 + I) is its own total and is returned as-is — even with a

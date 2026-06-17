@@ -976,6 +976,35 @@ mod total {
     );
   }
 
+  // Summing rows of unequal length emits Total::tllen and stays unevaluated
+  // (rather than leaking an internal error).
+  #[test]
+  fn total_unequal_rows_emit_tllen() {
+    clear_state();
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4, 5}}]").unwrap(),
+      "Total[{{1, 2}, {3, 4, 5}}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Total::tllen: Lists of unequal length in {{1, 2}, {3, 4, 5}} cannot be added."
+      )),
+      "expected Total::tllen, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn total_equal_rows_emit_nothing() {
+    clear_state();
+    assert_eq!(interpret("Total[{{1, 2}, {3, 4}}]").unwrap(), "{4, 6}");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Total::tllen")),
+      "unexpected tllen message: {msgs:?}"
+    );
+  }
+
   #[test]
   fn total_3d_exact_level_2() {
     assert_eq!(
