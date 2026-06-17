@@ -1111,6 +1111,46 @@ mod total {
   }
 
   #[test]
+  fn total_exact_level_0_is_identity() {
+    // Total[list, {0}] addresses level 0 — the whole expression — so it is
+    // left unchanged, unlike {1} which sums the outermost list.
+    assert_eq!(interpret("Total[{1, 2, 3}, {0}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, {0}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(interpret("Total[5, {0}]").unwrap(), "5");
+  }
+
+  // An empty top-level list totals to 0 at every positive level, but a pure
+  // level-0 spec leaves it untouched as {}.
+  #[test]
+  fn total_empty_list_exact_level() {
+    assert_eq!(interpret("Total[{}, {1}]").unwrap(), "0");
+    assert_eq!(interpret("Total[{}, {2}]").unwrap(), "0");
+    assert_eq!(interpret("Total[{}, {3}]").unwrap(), "0");
+    assert_eq!(interpret("Total[{}, {1, 2}]").unwrap(), "0");
+    assert_eq!(interpret("Total[{}, Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn total_empty_list_level_0_untouched() {
+    assert_eq!(interpret("Total[{}, 0]").unwrap(), "{}");
+    assert_eq!(interpret("Total[{}, {0}]").unwrap(), "{}");
+  }
+
+  // Nested empty lists keep their structure: only the addressed level is
+  // collapsed, and there is nothing to collapse below an empty list.
+  #[test]
+  fn total_nested_empty_lists() {
+    assert_eq!(interpret("Total[{{}}, {1}]").unwrap(), "{}");
+    assert_eq!(interpret("Total[{{}}, {2}]").unwrap(), "{0}");
+    assert_eq!(interpret("Total[{{}}, {3}]").unwrap(), "{{}}");
+    assert_eq!(interpret("Total[{{{}}}, {3}]").unwrap(), "{{0}}");
+    assert_eq!(interpret("Total[{{}, {1, 2}}, {2}]").unwrap(), "{0, 3}");
+  }
+
+  #[test]
   fn total_non_list() {
     assert_eq!(interpret("Total[5]").unwrap(), "5");
   }

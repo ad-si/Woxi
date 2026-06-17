@@ -2477,7 +2477,10 @@ mod arithmetic_geometric_mean {
   #[test]
   fn equal_args_with_real_is_real() {
     assert_eq!(interpret("ArithmeticGeometricMean[1, 1.]").unwrap(), "1.");
-    assert_eq!(interpret("ArithmeticGeometricMean[2.0, 2.0]").unwrap(), "2.");
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[2.0, 2.0]").unwrap(),
+      "2."
+    );
   }
 
   #[test]
@@ -2487,7 +2490,10 @@ mod arithmetic_geometric_mean {
       interpret("ArithmeticGeometricMean[-2., -8.]").unwrap(),
       "-4.486057160575205"
     );
-    assert_eq!(interpret("ArithmeticGeometricMean[-1., -1.]").unwrap(), "-1.");
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[-1., -1.]").unwrap(),
+      "-1."
+    );
   }
 
   #[test]

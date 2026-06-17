@@ -242,6 +242,24 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => other,
   };
 
+  // An empty top-level list totals to 0 (the additive identity) at every
+  // positive level. Only a pure level-0 spec leaves it as the untouched {}.
+  // (Nested empty lists are handled structurally by total_with_level — e.g.
+  // Total[{{}}, {3}] stays {{}} — so this guard is restricted to the top.)
+  if let Expr::List(items) = &args[0]
+    && items.is_empty()
+  {
+    let untouched = matches!(
+      level_spec,
+      TotalLevelSpec::Exact(0) | TotalLevelSpec::Through(0)
+    );
+    return Ok(if untouched {
+      args[0].clone()
+    } else {
+      Expr::Integer(0)
+    });
+  }
+
   match &args[0] {
     Expr::List(_) => tllen(total_with_level(&args[0], &level_spec)),
     Expr::Association(pairs) => {
@@ -393,7 +411,10 @@ pub fn total_at_exact_level(
   expr: &Expr,
   n: usize,
 ) -> Result<Expr, InterpreterError> {
-  if n <= 1 {
+  if n == 0 {
+    // Level 0 is the whole expression itself; nothing is summed.
+    Ok(expr.clone())
+  } else if n == 1 {
     // Sum at this level
     match expr {
       Expr::List(items) => total_sum_level1(items),
