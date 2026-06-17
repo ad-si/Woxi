@@ -425,6 +425,52 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 ///// Ordering[list] / Ordering[list, n] / Ordering[list, n, p]
+/// PositionLargest[list] / PositionSmallest[list]: the 1-based positions of all
+/// occurrences of the maximum (resp. minimum) element of a numeric list, in
+/// ascending order. Non-numeric lists are left unevaluated. (The 2-argument
+/// n-extrema form is not handled here.)
+pub fn position_extreme_ast(
+  args: &[Expr],
+  largest: bool,
+) -> Result<Expr, InterpreterError> {
+  let name = if largest {
+    "PositionLargest"
+  } else {
+    "PositionSmallest"
+  };
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  let Some(Expr::List(items)) = args.first() else {
+    return unevaluated();
+  };
+  if items.is_empty() {
+    return unevaluated();
+  }
+  let mut vals = Vec::with_capacity(items.len());
+  for it in items.iter() {
+    match crate::functions::math_ast::try_eval_to_f64(it) {
+      Some(v) => vals.push(v),
+      None => return unevaluated(),
+    }
+  }
+  let target = if largest {
+    vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+  } else {
+    vals.iter().cloned().fold(f64::INFINITY, f64::min)
+  };
+  let positions: Vec<Expr> = vals
+    .iter()
+    .enumerate()
+    .filter(|(_, v)| **v == target)
+    .map(|(i, _)| Expr::Integer((i + 1) as i128))
+    .collect();
+  Ok(Expr::List(positions.into()))
+}
+
 pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(

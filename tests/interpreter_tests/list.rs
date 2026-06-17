@@ -895,6 +895,33 @@ mod tensor_product {
   }
 }
 
+mod position_largest_smallest {
+  use super::*;
+
+  // 1-based positions of all occurrences of the max / min element.
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("PositionLargest[{3, 1, 4, 1, 5}]").unwrap(), "{5}");
+    assert_eq!(
+      interpret("PositionSmallest[{3, 1, 4, 1, 5}]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn ties() {
+    // Every occurrence of the extremum is reported, in ascending order.
+    assert_eq!(
+      interpret("PositionLargest[{1, 3, 2, 3}]").unwrap(),
+      "{2, 4}"
+    );
+    assert_eq!(
+      interpret("PositionLargest[{1.5, 2.5, 2.5}]").unwrap(),
+      "{2, 3}"
+    );
+  }
+}
+
 mod ordering {
   use super::*;
 

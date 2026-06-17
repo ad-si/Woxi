@@ -5869,8 +5869,8 @@ PoissonPDEComponent,,,,12.2,
 PolarCurve,,,,14.1,
 PolynomialExpressionQ,,,,12.2,
 PolynomialSumOfSquaresList,,,,13.0,
-PositionLargest,,,,13.2,
-PositionSmallest,,,,13.2,
+PositionLargest,Positions of the largest elements of a numeric list,✅,pure,13.2,5589
+PositionSmallest,Positions of the smallest elements of a numeric list,✅,pure,13.2,5590
 PositiveQ,Tests if a number is positive,✅,pure,,
 PositivelyOrientedPoints,,,,12.2,
 PredictorMeasurementsObject,,🚫,,10.1,
