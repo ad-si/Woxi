@@ -1073,10 +1073,7 @@ mod prime_omega {
   // PrimeOmega is Listable.
   #[test]
   fn threads_over_list() {
-    assert_eq!(
-      interpret("PrimeOmega[{12, 30}]").unwrap(),
-      "{3, 3}"
-    );
+    assert_eq!(interpret("PrimeOmega[{12, 30}]").unwrap(), "{3, 3}");
     assert_eq!(
       interpret("PrimeOmega[{2, 4, 8, 16}]").unwrap(),
       "{1, 2, 3, 4}"

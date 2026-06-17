@@ -104,6 +104,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "BitClear"
       | "PowerMod"
       | "JacobiSymbol"
+      | "KroneckerSymbol"
+      | "NextPrime"
       | "IntegerExponent"
       | "EvenQ"
       | "OddQ"

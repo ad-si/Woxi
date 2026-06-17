@@ -5352,6 +5352,25 @@ mod batch_unevaluated_wrappers_2 {
   fn kronecker_symbol_zero() {
     assert_eq!(interpret("KroneckerSymbol[7, 7]").unwrap(), "0");
   }
+  // KroneckerSymbol is Listable (threads over either argument).
+  #[test]
+  fn kronecker_symbol_threads() {
+    assert_eq!(
+      interpret("KroneckerSymbol[{1, 2}, 5]").unwrap(),
+      "{1, -1}"
+    );
+    assert_eq!(
+      interpret("KroneckerSymbol[2, {3, 5, 7}]").unwrap(),
+      "{-1, -1, 1}"
+    );
+  }
+  // NextPrime is Listable.
+  #[test]
+  fn next_prime_threads() {
+    assert_eq!(interpret("NextPrime[{10, 20}]").unwrap(), "{11, 23}");
+    assert_eq!(interpret("NextPrime[{10, 20}, 2]").unwrap(), "{13, 29}");
+    assert_eq!(interpret("NextPrime[10, {1, 2}]").unwrap(), "{11, 13}");
+  }
 
   // NormalizedSquaredEuclideanDistance
   #[test]

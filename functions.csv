@@ -1026,7 +1026,7 @@ NonNegative,Tests if a number is non-negative,✅,pure,1.0,1036
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7.0,1038
 TimeSeries,,🚫,,10.0,1038
 VectorPoints,,🚫,,7.0,1039
-NextPrime,Returns the smallest prime greater than n,✅,pure,6.0,1040
+NextPrime,Returns the smallest prime greater than n (Listable),✅,pure,6.0,1040
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1.0,1041
 MultinormalDistribution,Multivariate normal distribution (PDF for diagonal covariance plus Mean Covariance Variance),✅,pure,8.0,1042
 UnitBox,Unit box function (1 for |x| <= 1/2),✅,pure,7.0,1043
@@ -2909,7 +2909,7 @@ CapsuleShape,,,,10.2,2978
 FindIndependentVertexSet,Maximum independent vertex set (lexicographic by vertex order),✅,pure,8.0,2978
 HighpassFilter,Apply a highpass filter to data,✅,pure,9.0,2978
 KeyMemberQ,True if key exists in association,✅,1,10.3,2978
-KroneckerSymbol,Generalized Jacobi symbol,✅,1,6.0,2978
+KroneckerSymbol,Generalized Jacobi (Kronecker) symbol (Listable),✅,pure,6.0,2978
 SliceDistribution,,,,9.0,2978
 TraceOriginal,,,,2.0,2978
 DirichletCharacter,j-th Dirichlet character modulo k at n (Wolfram indexing),✅,pure,7.0,2986
