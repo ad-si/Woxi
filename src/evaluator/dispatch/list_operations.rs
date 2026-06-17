@@ -1731,8 +1731,8 @@ pub fn dispatch_list_operations(
     }
     "Sort" if args.len() == 2 => {
       // Sort[atom, p] is invalid: emit ::normal and stay unevaluated.
-      if list_helpers_ast::is_atomic_sort_arg(&args[0]) {
-        list_helpers_ast::emit_sort_normal_message("Sort", args);
+      if list_helpers_ast::is_atomic_arg(&args[0]) {
+        list_helpers_ast::emit_nonatomic_normal_message("Sort", args);
         return Some(Ok(Expr::FunctionCall {
           name: "Sort".to_string(),
           args: args.to_vec().into(),

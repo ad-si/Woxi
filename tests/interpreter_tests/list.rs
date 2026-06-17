@@ -4282,6 +4282,53 @@ mod select {
   }
 
   #[test]
+  fn function_call_head_is_preserved() {
+    // A non-list head is preserved over its arguments.
+    assert_eq!(interpret("Select[f[1, 2, 3, 4], EvenQ]").unwrap(), "f[2, 4]");
+  }
+
+  #[test]
+  fn rebuilt_head_is_evaluated() {
+    // Filtering a Plus down to one numeric term yields Plus[2], which must
+    // evaluate to 2 rather than display as Plus[2].
+    assert_eq!(interpret("Select[a + b + 2, NumberQ]").unwrap(), "2");
+    assert_eq!(interpret("Select[a + b + 2 + 3, NumberQ]").unwrap(), "5");
+    assert_eq!(interpret("Select[a*b*2*3, NumberQ]").unwrap(), "6");
+  }
+
+  #[test]
+  fn atomic_argument_emits_normal() {
+    for (input, call) in [
+      ("Select[5, EvenQ]", "Select[5, EvenQ]"),
+      ("Select[x, EvenQ]", "Select[x, EvenQ]"),
+      (r#"Select["str", EvenQ]"#, "Select[str, EvenQ]"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "Select::normal: Nonatomic expression expected at position 1 in {call}."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?}, got {msgs:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn nonatomic_inputs_do_not_emit_normal() {
+    clear_state();
+    assert_eq!(interpret("Select[{1, 2, 3}, OddQ]").unwrap(), "{1, 3}");
+    assert_eq!(interpret("Select[f[1, 2], EvenQ]").unwrap(), "f[2]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::normal")),
+      "unexpected normal message: {msgs:?}"
+    );
+  }
+
+  #[test]
   fn even_q() {
     assert_eq!(
       interpret("Select[{1, 2, 3, 4, 5}, EvenQ]").unwrap(),

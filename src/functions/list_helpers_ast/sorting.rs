@@ -413,8 +413,8 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
       })
     }
     other => {
-      if is_atomic_sort_arg(other) {
-        emit_sort_normal_message("SortBy", &[list.clone(), func.clone()]);
+      if is_atomic_arg(other) {
+        emit_nonatomic_normal_message("SortBy", &[list.clone(), func.clone()]);
       }
       Ok(Expr::FunctionCall {
         name: "SortBy".to_string(),
@@ -798,10 +798,10 @@ pub fn maximal_by_ast(
 }
 
 /// AST-based Sort: sort a list.
-/// Whether `e` is an atomic argument for which the sort family emits
+/// Whether `e` is an atomic argument for which list functions emit
 /// `::normal` (numbers, strings, symbols, constants). Lists, function calls,
-/// and associations are nonatomic and sortable.
-pub fn is_atomic_sort_arg(e: &Expr) -> bool {
+/// and associations are nonatomic and operable.
+pub fn is_atomic_arg(e: &Expr) -> bool {
   matches!(
     e,
     Expr::Integer(_)
@@ -815,8 +815,8 @@ pub fn is_atomic_sort_arg(e: &Expr) -> bool {
 }
 
 /// Emit `<F>::normal: Nonatomic expression expected at position 1 in <call>.`,
-/// matching wolframscript for sort-family functions applied to an atom.
-pub fn emit_sort_normal_message(name: &str, args: &[Expr]) {
+/// matching wolframscript for list functions applied to an atom.
+pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
   crate::emit_message(&format!(
     "{}::normal: Nonatomic expression expected at position 1 in {}.",
     name,
@@ -851,8 +851,8 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       })
     }
     other => {
-      if is_atomic_sort_arg(other) {
-        emit_sort_normal_message("Sort", &[other.clone()]);
+      if is_atomic_arg(other) {
+        emit_nonatomic_normal_message("Sort", &[other.clone()]);
       }
       Ok(Expr::FunctionCall {
         name: "Sort".to_string(),

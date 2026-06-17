@@ -45,6 +45,10 @@ pub fn select_ast(
       if let Some(limit) = n {
         args.push(limit.clone());
       }
+      // An atomic first argument is invalid: emit ::normal, matching WL.
+      if is_atomic_arg(list) {
+        emit_nonatomic_normal_message("Select", &args);
+      }
       return Ok(Expr::FunctionCall {
         name: "Select".to_string(),
         args: args.into(),
@@ -65,12 +69,16 @@ pub fn select_ast(
     }
   }
 
-  // Preserve the original head
+  // Preserve the original head, then evaluate the rebuilt expression so a
+  // head with its own rules reduces (e.g. Select[a + b + 2, NumberQ] keeps
+  // Plus[2], which evaluates to 2). Inert heads stay symbolic.
   match head_name {
-    Some(name) => Ok(Expr::FunctionCall {
-      name,
-      args: kept.into(),
-    }),
+    Some(name) => {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name,
+        args: kept.into(),
+      })
+    }
     None => Ok(Expr::List(kept.into())),
   }
 }
