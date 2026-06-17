@@ -26,6 +26,63 @@ pub fn emit_rectt_if_numeric(name: &str, args: &[Expr]) {
   }
 }
 
+/// Dimensions of a rectangular nested-list array, or `None` if the list is
+/// ragged or of mixed depth. Scalars have empty dimensions.
+fn array_dimensions(e: &Expr) -> Option<Vec<usize>> {
+  match e {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Some(vec![0]);
+      }
+      let first = array_dimensions(&items[0])?;
+      for it in items.iter().skip(1) {
+        if array_dimensions(it)? != first {
+          return None;
+        }
+      }
+      let mut dims = Vec::with_capacity(first.len() + 1);
+      dims.push(items.len());
+      dims.extend(first);
+      Some(dims)
+    }
+    _ => Some(Vec::new()),
+  }
+}
+
+/// Whether `e` is a rectangular array — a list whose elements all share the
+/// same dimensions (recursively). Scalars are trivially rectangular.
+pub fn is_rectangular_array(e: &Expr) -> bool {
+  array_dimensions(e).is_some()
+}
+
+/// If `args[0]` is a non-rectangular list (ragged rows or mixed scalar/list
+/// depth), emit `<F>::rectt: Rectangular array expected at position 1 in
+/// <call>.` and return the unevaluated call. Returns `None` for a valid
+/// rectangular array or a non-list argument.
+pub fn rectt_if_ragged(name: &str, args: &[Expr]) -> Option<Expr> {
+  if matches!(args.first(), Some(Expr::List(_)))
+    && !is_rectangular_array(&args[0])
+  {
+    crate::emit_message(&format!(
+      "{}::rectt: Rectangular array expected at position 1 in {}.",
+      name,
+      crate::syntax::format_expr(
+        &Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec().into(),
+        },
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    Some(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    })
+  } else {
+    None
+  }
+}
+
 /// Total[list] - Sum of all elements in a list
 /// Total[list, n] - Sum across levels 1 through n
 /// Total[list, {n}] - Sum at exactly level n
@@ -312,6 +369,11 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Mean expects exactly 1 argument".into(),
     ));
   }
+  // A ragged / mixed-depth list is not a rectangular array: emit ::rectt
+  // and stay unevaluated rather than producing a bogus column-wise result.
+  if let Some(uneval) = rectt_if_ragged("Mean", args) {
+    return Ok(uneval);
+  }
   match &args[0] {
     Expr::List(items) => {
       if items.is_empty() {
@@ -567,6 +629,9 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Variance expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(uneval) = rectt_if_ragged("Variance", args) {
+    return Ok(uneval);
   }
   match &args[0] {
     Expr::List(items) => {
@@ -860,6 +925,9 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StandardDeviation expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(uneval) = rectt_if_ragged("StandardDeviation", args) {
+    return Ok(uneval);
   }
   // Emit the StandardDeviation::shlen warning directly when the list has
   // fewer than two elements, instead of falling through to Variance's

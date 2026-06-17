@@ -1202,6 +1202,54 @@ mod rectt_messages {
       );
     }
   }
+
+  // A ragged (unequal-length rows) or mixed scalar/list array is not
+  // rectangular: emit ::rectt and stay unevaluated rather than returning a
+  // bogus column-wise result.
+  #[test]
+  fn mean_ragged_emits_rectt() {
+    assert_rectt(
+      "Mean[{{1, 2}, {3}}]",
+      "Mean[{{1, 2}, {3}}]",
+      "Mean::rectt: Rectangular array expected at position 1 in Mean[{{1, 2}, {3}}].",
+    );
+    assert_rectt(
+      "Mean[{1, {2, 3}}]",
+      "Mean[{1, {2, 3}}]",
+      "Mean::rectt: Rectangular array expected at position 1 in Mean[{1, {2, 3}}].",
+    );
+  }
+
+  #[test]
+  fn variance_std_ragged_emit_rectt() {
+    assert_rectt(
+      "Variance[{{1, 2}, {3}}]",
+      "Variance[{{1, 2}, {3}}]",
+      "Variance::rectt: Rectangular array expected at position 1 in Variance[{{1, 2}, {3}}].",
+    );
+    assert_rectt(
+      "StandardDeviation[{{1, 2}, {3}}]",
+      "StandardDeviation[{{1, 2}, {3}}]",
+      "StandardDeviation::rectt: Rectangular array expected at position 1 in StandardDeviation[{{1, 2}, {3}}].",
+    );
+  }
+
+  #[test]
+  fn rectangular_arrays_unaffected() {
+    clear_state();
+    assert_eq!(interpret("Mean[{{1, 2}, {3, 4}}]").unwrap(), "{2, 3}");
+    assert_eq!(
+      interpret("Mean[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{5/2, 7/2, 9/2}"
+    );
+    assert_eq!(interpret("Mean[{1, 2, 3}]").unwrap(), "2");
+    assert_eq!(interpret("Variance[{1, 2, 3, 4}]").unwrap(), "5/3");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("::rectt")),
+      "unexpected rectt: {msgs:?}"
+    );
+  }
 }
 
 mod mean {
