@@ -6286,6 +6286,24 @@ mod trig_reduce {
   }
 
   #[test]
+  fn sum_of_terms_is_combined() {
+    // After reducing each term, like terms are collected.
+    assert_eq!(interpret("TrigReduce[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
+    assert_eq!(
+      interpret("TrigReduce[Sin[x]^2 - Cos[x]^2]").unwrap(),
+      "-Cos[2*x]"
+    );
+    assert_eq!(
+      interpret("TrigReduce[Sin[x]^2 + Cos[x]^2 + 1]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("TrigReduce[3 Sin[x]^2 + 3 Cos[x]^2]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
   fn sin_cos_product() {
     assert_eq!(
       interpret("TrigReduce[Sin[x] Cos[x]]").unwrap(),

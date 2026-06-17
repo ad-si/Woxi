@@ -4974,7 +4974,15 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   let result = trig_reduce_recursive(&args[0]);
-  crate::evaluator::evaluate_expr_to_expr(&result)
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
+  // Combine the per-term reductions: a sum like Sin[x]^2 + Cos[x]^2 reduces to
+  // (1 + Cos[2x])/2 + (1 - Cos[2x])/2, which should collapse to 1. Together
+  // merges the fractions and Cancel reduces the result, while an
+  // already-combined single fraction (e.g. (Cos[x-y] - Cos[x+y])/2) is left
+  // intact.
+  let combined =
+    crate::evaluator::evaluate_function_call_ast("Together", &[evaluated])?;
+  crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])
 }
 
 /// Recursively apply TrigReduce.
