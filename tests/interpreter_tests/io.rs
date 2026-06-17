@@ -1290,6 +1290,41 @@ mod export_string {
     assert_eq!(result, "1\n2\n3\n4\n");
   }
 
+  // ─── ExportString Text / Lines / List ────────────────────────────
+  #[test]
+  fn export_string_text_list_newline_joined() {
+    clear_state();
+    assert_eq!(
+      interpret("ExportString[{1, 2, 3}, \"Text\"]").unwrap(),
+      "1\n2\n3"
+    );
+    // Nested elements render in OutputForm.
+    assert_eq!(
+      interpret("ExportString[{{1, 2}, {3, 4}}, \"Text\"]").unwrap(),
+      "{1, 2}\n{3, 4}"
+    );
+    // Strings are unquoted.
+    assert_eq!(
+      interpret("ExportString[{\"a\", \"b\"}, \"Lines\"]").unwrap(),
+      "a\nb"
+    );
+    assert_eq!(
+      interpret("ExportString[{1, 2, 3}, \"List\"]").unwrap(),
+      "1\n2\n3"
+    );
+  }
+
+  #[test]
+  fn export_string_text_atom_verbatim() {
+    clear_state();
+    assert_eq!(interpret("ExportString[42, \"Text\"]").unwrap(), "42");
+    // A string is emitted verbatim, embedded newlines kept.
+    assert_eq!(
+      interpret("ExportString[\"line1\\nline2\", \"Text\"]").unwrap(),
+      "line1\nline2"
+    );
+  }
+
   #[test]
   fn export_string_csv_strings_always_quoted() {
     clear_state();

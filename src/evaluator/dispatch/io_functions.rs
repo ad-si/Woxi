@@ -617,6 +617,24 @@ pub fn dispatch_io_functions(
       {
         return Some(Ok(Expr::String(json)));
       }
+      // "Text"/"Lines"/"List": a string is emitted verbatim; a list has each
+      // element rendered (OutputForm, strings unquoted) on its own line; an
+      // atom is rendered directly.
+      if format_str == "Text" || format_str == "Lines" || format_str == "List"
+      {
+        let elem = |e: &Expr| match e {
+          Expr::String(s) => s.clone(),
+          _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),
+        };
+        let s = match &args[0] {
+          Expr::String(s) => s.clone(),
+          Expr::List(items) => {
+            items.iter().map(elem).collect::<Vec<_>>().join("\n")
+          }
+          other => elem(other),
+        };
+        return Some(Ok(Expr::String(s)));
+      }
       // Return unevaluated for unsupported formats
       return Some(Ok(Expr::FunctionCall {
         name: "ExportString".to_string(),
