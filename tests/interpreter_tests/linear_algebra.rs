@@ -1129,6 +1129,56 @@ mod linear_solve {
     );
   }
 
+  // A target whose length differs from the (square) coefficient matrix emits
+  // LinearSolve::lslc and stays unevaluated, rather than leaking an error.
+  #[test]
+  fn dimension_mismatch_emits_lslc() {
+    clear_state();
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, {1, 2, 3}]").unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, {1, 2, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LinearSolve::lslc: Coefficient matrix and target vector(s) or matrix do not have the same dimensions."
+      )),
+      "expected LinearSolve::lslc, got {msgs:?}"
+    );
+  }
+
+  // A singular system with no solution emits LinearSolve::nosol.
+  #[test]
+  fn no_solution_emits_nosol() {
+    clear_state();
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {2, 4}}, {1, 3}]").unwrap(),
+      "LinearSolve[{{1, 2}, {2, 4}}, {1, 3}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "LinearSolve::nosol: Linear equation encountered that has no solution."
+      )),
+      "expected LinearSolve::nosol, got {msgs:?}"
+    );
+  }
+
+  // A singular but consistent system still solves (free variable -> 0).
+  #[test]
+  fn singular_consistent_still_solves() {
+    clear_state();
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {2, 4}}, {2, 4}]").unwrap(),
+      "{2, 0}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("nosol")),
+      "unexpected nosol message: {msgs:?}"
+    );
+  }
+
   #[test]
   fn solve_matrix_rhs_2x2() {
     // When b is a matrix, the result must stay in exact rational form,

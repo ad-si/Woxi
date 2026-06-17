@@ -3343,9 +3343,13 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if b.len() != n {
-    return Err(InterpreterError::EvaluationError(
-      "LinearSolve: matrix and vector dimensions must agree".into(),
-    ));
+    crate::emit_message(
+      "LinearSolve::lslc: Coefficient matrix and target vector(s) or matrix do not have the same dimensions.",
+    );
+    return Ok(Expr::FunctionCall {
+      name: "LinearSolve".to_string(),
+      args: args.to_vec().into(),
+    });
   }
 
   // Build augmented matrix [A | b]
@@ -3402,9 +3406,13 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Consistency check: any fully-zero row in A must have zero b.
   for row in 0..n {
     if pivot_col_of_row[row].is_none() && !is_zero_expr(&aug[row][n]) {
-      return Err(InterpreterError::EvaluationError(
-        "LinearSolve: matrix is singular".into(),
-      ));
+      crate::emit_message(
+        "LinearSolve::nosol: Linear equation encountered that has no solution.",
+      );
+      return Ok(Expr::FunctionCall {
+        name: "LinearSolve".to_string(),
+        args: args.to_vec().into(),
+      });
     }
   }
 
