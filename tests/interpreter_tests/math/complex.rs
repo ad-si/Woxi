@@ -477,6 +477,34 @@ mod im_tests {
     assert_eq!(interpret("Im[I*Log[2]]").unwrap(), "Log[2]");
   }
 
+  // I times an exact constant (Pi) must keep the constant exact rather than
+  // collapsing it to a machine float. Regression: the float extractor used to
+  // run before the exact I*real extractor.
+  #[test]
+  fn im_i_times_pi() {
+    assert_eq!(interpret("Im[I Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Re[I Pi]").unwrap(), "0");
+  }
+
+  #[test]
+  fn im_i_times_pi_fraction() {
+    assert_eq!(interpret("Im[I Pi/3]").unwrap(), "Pi/3");
+  }
+
+  // Nested Times: 5 Pi I/3 buries I in an inner product; the imaginary part is
+  // still extracted exactly.
+  #[test]
+  fn im_nested_pi_multiple() {
+    assert_eq!(interpret("Im[5 Pi I/3]").unwrap(), "(5*Pi)/3");
+    assert_eq!(interpret("Im[3 I Pi/7]").unwrap(), "(3*Pi)/7");
+  }
+
+  #[test]
+  fn im_real_plus_pi_imaginary() {
+    assert_eq!(interpret("Im[2 + 3 Pi I]").unwrap(), "3*Pi");
+    assert_eq!(interpret("Re[2 + 3 Pi I]").unwrap(), "2");
+  }
+
   // ── Arg ──────────────────────────────────────────────────
 
   #[test]

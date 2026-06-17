@@ -136,12 +136,9 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(re);
   }
 
-  // Try float complex extraction: handles 1.5 + 2.5*I patterns
-  if let Some((re, _)) = try_extract_complex_float(&args[0]) {
-    return Ok(Expr::Real(re));
-  }
-
-  // Handle I * real_expr: Re[I * real] = 0
+  // Handle I * real_expr: Re[I * real] = 0. Run the exact extractors before
+  // the float collapse below, so an exact factor like Pi isn't downgraded to a
+  // machine Real — e.g. Re[I Pi] must be the exact 0, not 0. (float).
   if let Some(real_part) = extract_i_times_real(&args[0]) {
     let _ = real_part; // only need to know it's purely imaginary
     return Ok(Expr::Integer(0));
@@ -151,6 +148,13 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(factor) = extract_i_times_any(&args[0]) {
     let im = im_ast(&[factor])?;
     return times_ast(&[Expr::Integer(-1), im]);
+  }
+
+  // Float complex extraction: handles 1.5 + 2.5*I patterns. Kept ahead of the
+  // Plus-distributing path so a machine-precision summand wins, e.g.
+  // Re[1 + 2.3 I] is the machine real 1., not the exact integer 1.
+  if let Some((re, _)) = try_extract_complex_float(&args[0]) {
+    return Ok(Expr::Real(re));
   }
 
   // Distribute over Times (pull real factors) / Plus (split I terms).
@@ -203,12 +207,10 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(im);
   }
 
-  // Try float complex extraction: handles 1.5 + 2.5*I patterns
-  if let Some((_, im)) = try_extract_complex_float(&args[0]) {
-    return Ok(Expr::Real(im));
-  }
-
-  // Handle I * real_expr: Im[I * real] = real
+  // Handle I * real_expr: Im[I * real] = real. Run the exact extractors before
+  // the float collapse below, otherwise an exact factor like Pi (which the
+  // float extractor evaluates numerically) would be downgraded to a machine
+  // Real — e.g. Im[I Pi] must be Pi, not 3.14159…
   if let Some(real_part) = extract_i_times_real(&args[0]) {
     return Ok(real_part);
   }
@@ -216,6 +218,13 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle I * expr (symbolic): Im[I * expr] = Re[expr]
   if let Some(factor) = extract_i_times_any(&args[0]) {
     return re_ast(&[factor]);
+  }
+
+  // Float complex extraction: handles 1.5 + 2.5*I patterns. Kept ahead of the
+  // Plus-distributing path so a machine-precision summand wins, e.g.
+  // Im[1 + 2.3 I] is the machine real 2.3, not an exact value.
+  if let Some((_, im)) = try_extract_complex_float(&args[0]) {
+    return Ok(Expr::Real(im));
   }
 
   // Distribute over Times (pull real factors) / Plus (split I terms).
@@ -230,38 +239,79 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Flatten a product into its leaf factors, descending through nested Times
+/// nodes in both the FunctionCall["Times", …] and BinaryOp Times spellings.
+/// `5 Pi I/3` parses to a nested Times where `I` is buried, so a single-level
+/// scan would miss it.
+fn flatten_times_factors(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args {
+        flatten_times_factors(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_times_factors(left, out);
+      flatten_times_factors(right, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Split a product into (count of `I` factors, the non-`I` factors), flattening
+/// nested Times. Returns None if the expression is not a product.
+fn split_i_factors(expr: &Expr) -> Option<(usize, Vec<Expr>)> {
+  let is_product = matches!(expr, Expr::FunctionCall { name, .. } if name == "Times")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        ..
+      }
+    );
+  if !is_product {
+    return None;
+  }
+  let mut factors = Vec::new();
+  flatten_times_factors(expr, &mut factors);
+  let mut i_count = 0;
+  let mut other_factors = Vec::new();
+  for f in factors {
+    if matches!(&f, Expr::Identifier(s) if s == "I") {
+      i_count += 1;
+    } else {
+      other_factors.push(f);
+    }
+  }
+  Some((i_count, other_factors))
+}
+
+fn product_of(mut factors: Vec<Expr>) -> Expr {
+  if factors.len() == 1 {
+    factors.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: factors.into(),
+    }
+  }
+}
+
 /// Extract the real factor from an expression of the form `I * real_expr`.
 /// Returns Some(real_expr) if the expression is I times a NumericQ real expression,
 /// or None otherwise.
 fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
-  // Check for Times[I, ...] or Times[-1, I, ...] etc.
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Times"
+  let (i_count, other_factors) = split_i_factors(expr)?;
+  // Exactly one I, and all other factors are real-valued
+  if i_count == 1
+    && !other_factors.is_empty()
+    && other_factors.iter().all(is_real_valued)
   {
-    // Find if I is among the factors
-    let mut i_count = 0;
-    let mut other_factors: Vec<Expr> = Vec::new();
-    for arg in args {
-      if matches!(arg, Expr::Identifier(s) if s == "I") {
-        i_count += 1;
-      } else {
-        other_factors.push(arg.clone());
-      }
-    }
-    // Exactly one I, and all other factors are real-valued
-    if i_count == 1
-      && !other_factors.is_empty()
-      && other_factors.iter().all(is_real_valued)
-    {
-      return if other_factors.len() == 1 {
-        Some(other_factors.into_iter().next().unwrap())
-      } else {
-        Some(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: other_factors.into(),
-        })
-      };
-    }
+    return Some(product_of(other_factors));
   }
   None
 }
@@ -269,28 +319,9 @@ fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
 /// Extract the factor from I * expr (any symbolic expression, not just real).
 /// Returns Some(expr) if the expression is I times something, None otherwise.
 fn extract_i_times_any(expr: &Expr) -> Option<Expr> {
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Times"
-  {
-    let mut i_count = 0;
-    let mut other_factors: Vec<Expr> = Vec::new();
-    for arg in args {
-      if matches!(arg, Expr::Identifier(s) if s == "I") {
-        i_count += 1;
-      } else {
-        other_factors.push(arg.clone());
-      }
-    }
-    if i_count == 1 && !other_factors.is_empty() {
-      return if other_factors.len() == 1 {
-        Some(other_factors.into_iter().next().unwrap())
-      } else {
-        Some(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: other_factors.into(),
-        })
-      };
-    }
+  let (i_count, other_factors) = split_i_factors(expr)?;
+  if i_count == 1 && !other_factors.is_empty() {
+    return Some(product_of(other_factors));
   }
   None
 }

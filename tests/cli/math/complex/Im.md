@@ -17,3 +17,15 @@ $ wo 'Im[3.14]'
 $ wo 'Im[3 + 4*I]'
 4
 ```
+
+An exact symbolic coefficient of `I` is kept exact, not collapsed to a float.
+
+```scrut
+$ wo 'Im[I Pi]'
+Pi
+```
+
+```scrut
+$ wo 'Im[5 Pi I/3]'
+(5*Pi)/3
+```
