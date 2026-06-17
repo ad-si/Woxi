@@ -5355,10 +5355,7 @@ mod batch_unevaluated_wrappers_2 {
   // KroneckerSymbol is Listable (threads over either argument).
   #[test]
   fn kronecker_symbol_threads() {
-    assert_eq!(
-      interpret("KroneckerSymbol[{1, 2}, 5]").unwrap(),
-      "{1, -1}"
-    );
+    assert_eq!(interpret("KroneckerSymbol[{1, 2}, 5]").unwrap(), "{1, -1}");
     assert_eq!(
       interpret("KroneckerSymbol[2, {3, 5, 7}]").unwrap(),
       "{-1, -1, 1}"

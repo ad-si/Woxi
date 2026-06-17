@@ -3819,3 +3819,62 @@ mod bernstein_basis_piecewise {
     );
   }
 }
+
+// Special functions are Listable: they thread element-wise over list
+// arguments (with scalar broadcasting), matching wolframscript.
+mod special_function_listability {
+  use super::*;
+
+  #[test]
+  fn single_argument_threads() {
+    assert_eq!(interpret("Zeta[{2, 4}]").unwrap(), "{Pi^2/6, Pi^4/90}");
+    assert_eq!(
+      interpret("PolyGamma[{1, 2}]").unwrap(),
+      "{-EulerGamma, 1 - EulerGamma}"
+    );
+    assert_eq!(interpret("LogGamma[{2, 3}]").unwrap(), "{0, Log[2]}");
+  }
+
+  #[test]
+  fn second_argument_threads() {
+    assert_eq!(
+      interpret("BesselJ[0, {1, 2}]").unwrap(),
+      "{BesselJ[0, 1], BesselJ[0, 2]}"
+    );
+    assert_eq!(interpret("Beta[{1, 2}, 3]").unwrap(), "{1/3, 1/12}");
+    assert_eq!(
+      interpret("FactorialPower[{4, 5}, 2]").unwrap(),
+      "{12, 20}"
+    );
+  }
+
+  #[test]
+  fn orthogonal_polynomials_thread() {
+    assert_eq!(
+      interpret("LegendreP[{1, 2}, x]").unwrap(),
+      "{x, (-1 + 3*x^2)/2}"
+    );
+    assert_eq!(
+      interpret("ChebyshevT[{1, 2}, x]").unwrap(),
+      "{x, -1 + 2*x^2}"
+    );
+    assert_eq!(
+      interpret("HermiteH[{1, 2}, x]").unwrap(),
+      "{2*x, -2 + 4*x^2}"
+    );
+    // Regression: GegenbauerC previously threaded the head but left the
+    // index list unthreaded inside ChebyshevT.
+    assert_eq!(
+      interpret("GegenbauerC[{1, 2}, x]").unwrap(),
+      "{2*x, -1 + 2*x^2}"
+    );
+  }
+
+  // Scalar forms are unchanged.
+  #[test]
+  fn scalar_forms_unchanged() {
+    assert_eq!(interpret("Zeta[2]").unwrap(), "Pi^2/6");
+    assert_eq!(interpret("Beta[2, 3]").unwrap(), "1/12");
+    assert_eq!(interpret("Zeta[s]").unwrap(), "Zeta[s]");
+  }
+}
