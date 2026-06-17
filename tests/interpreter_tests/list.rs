@@ -2076,6 +2076,71 @@ mod sort_canonical {
   }
 }
 
+mod lexicographic_sort {
+  use super::*;
+
+  // LexicographicSort orders elements element-wise lexicographically. Unlike
+  // canonical Sort (which places shorter expressions first), it compares
+  // entries position by position, treating a shorter list as a prefix.
+  #[test]
+  fn strings() {
+    assert_eq!(
+      interpret(r#"LexicographicSort[{"cat", "car", "care", "apple"}]"#)
+        .unwrap(),
+      "{apple, car, care, cat}"
+    );
+  }
+
+  #[test]
+  fn string_case_ordering() {
+    assert_eq!(
+      interpret(r#"LexicographicSort[{"a", "B", "c", "A"}]"#).unwrap(),
+      "{a, A, B, c}"
+    );
+  }
+
+  #[test]
+  fn nested_lists_unequal_length() {
+    // {2} (length 1) sorts by its first element, between {1, 2} and {3, 1}
+    // — not pulled to the front the way canonical Sort would.
+    assert_eq!(
+      interpret("LexicographicSort[{{3, 1}, {1, 2}, {1, 1}, {2}}]").unwrap(),
+      "{{1, 1}, {1, 2}, {2}, {3, 1}}"
+    );
+  }
+
+  #[test]
+  fn prefix_lists() {
+    assert_eq!(
+      interpret(r#"LexicographicSort[{"abc", "ab", "abcd"}]"#).unwrap(),
+      "{ab, abc, abcd}"
+    );
+  }
+
+  #[test]
+  fn numbers() {
+    assert_eq!(
+      interpret("LexicographicSort[{10, 9, 100, 2}]").unwrap(),
+      "{2, 9, 10, 100}"
+    );
+  }
+
+  #[test]
+  fn empty_and_single() {
+    assert_eq!(interpret("LexicographicSort[{}]").unwrap(), "{}");
+    assert_eq!(interpret("LexicographicSort[{5}]").unwrap(), "{5}");
+  }
+
+  #[test]
+  fn atomic_arg_stays_unevaluated() {
+    // A non-list atom yields ::normal and the unevaluated expression.
+    assert_eq!(
+      interpret("LexicographicSort[5]").unwrap(),
+      "LexicographicSort[5]"
+    );
+  }
+}
+
 mod complement {
   use super::*;
 

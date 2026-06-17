@@ -1745,6 +1745,23 @@ pub fn dispatch_list_operations(
     "Reverse" if args.len() == 2 => {
       return Some(list_helpers_ast::reverse_level_ast(&args[0], &args[1]));
     }
+    "LexicographicSort" if args.len() == 1 => {
+      // Atomic arg: emit ::normal and stay unevaluated (matches Sort).
+      if list_helpers_ast::is_atomic_arg(&args[0]) {
+        list_helpers_ast::emit_nonatomic_normal_message(
+          "LexicographicSort",
+          args,
+        );
+        return Some(Ok(Expr::FunctionCall {
+          name: "LexicographicSort".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+      // Woxi's Sort orders elements element-wise lexicographically (shorter
+      // lists are NOT pulled to the front the way Wolfram's canonical Sort
+      // does), which is exactly LexicographicSort's semantics.
+      return Some(list_helpers_ast::sort_ast(&args[0]));
+    }
     "Sort" if args.len() == 1 => {
       return Some(list_helpers_ast::sort_ast(&args[0]));
     }
