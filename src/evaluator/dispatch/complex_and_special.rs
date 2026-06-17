@@ -1930,6 +1930,9 @@ pub fn dispatch_complex_and_special(
     "ArcLength" if args.len() == 1 => {
       return Some(compute_arc_length(&args[0]));
     }
+    "ArcLength" if args.len() == 2 => {
+      return Some(compute_arc_length_curve(&args[0], &args[1], args));
+    }
     "Perimeter" if args.len() == 1 => {
       return Some(compute_perimeter(&args[0]));
     }
@@ -7111,6 +7114,81 @@ fn try_polynomial(vals: &[(i128, i128)], var_name: &str) -> Option<Expr> {
 
 /// Compute the arc length of a 1D curve.
 /// ArcLength works for Circle and Line. Other regions return Undefined.
+/// ArcLength[curve, {t, a, b}] — arc length of a curve parameterized by `t`.
+///   • parametric: curve = {f1(t), …, fk(t)} → ∫ Sqrt[Σ fi'(t)²] dt
+///   • scalar: curve = f(t) (the graph {t, f(t)}) → ∫ Sqrt[1 + f'(t)²] dt
+/// over the range [a, b]. Leaves the call unevaluated if Woxi's Integrate
+/// cannot close the resulting integral.
+fn compute_arc_length_curve(
+  curve: &Expr,
+  iter: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ArcLength".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+  // The iterator must be {t, a, b} with `t` a symbol.
+  let Expr::List(spec) = iter else {
+    return unevaluated();
+  };
+  if spec.len() != 3 || !matches!(&spec[0], Expr::Identifier(_)) {
+    return unevaluated();
+  }
+  let t = &spec[0];
+  // Evaluate each derivative to a concrete expression BEFORE squaring. Squaring
+  // a still-unevaluated `D[…]` whose value is `-g(t)` mis-signs the result
+  // (Power over a freshly-reduced Times[-1, …] base), whereas squaring the
+  // already-evaluated derivative is correct.
+  let deriv = |f: &Expr| -> Result<Expr, InterpreterError> {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "D".to_string(),
+      args: vec![f.clone(), t.clone()].into(),
+    })
+  };
+  let square = |e: Expr| Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![e, Expr::Integer(2)].into(),
+  };
+  let sum_of_squares = match curve {
+    Expr::List(comps) if !comps.is_empty() => {
+      let mut terms = Vec::with_capacity(comps.len());
+      for c in comps.iter() {
+        terms.push(square(deriv(c)?));
+      }
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      }
+    }
+    // Scalar function f(t): the graph {t, f(t)} has speed Sqrt[1 + f'(t)^2].
+    scalar => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(1), square(deriv(scalar)?)].into(),
+    },
+  };
+  // Simplify the speed first: Woxi's Integrate does not apply the Pythagorean
+  // identity on its own, so e.g. Sqrt[Cos[t]^2 + Sin[t]^2] must collapse to 1
+  // before integration.
+  let integrand = Expr::FunctionCall {
+    name: "Simplify".to_string(),
+    args: vec![make_sqrt(sum_of_squares)].into(),
+  };
+  let integral = Expr::FunctionCall {
+    name: "Integrate".to_string(),
+    args: vec![integrand, iter.clone()].into(),
+  };
+  let result = evaluate_expr_to_expr(&integral)?;
+  // If Integrate could not resolve it, keep ArcLength unevaluated rather than
+  // leaking an Integrate[...] expression.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Integrate") {
+    return unevaluated();
+  }
+  Ok(result)
+}
+
 fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {

@@ -141,6 +141,33 @@ mod arc_length {
     assert_eq!(interpret("ArcLength[Circle[]]").unwrap(), "2*Pi");
   }
 
+  // ArcLength[curve, {t, a, b}] — parameterized curves. Integrand = speed
+  // Sqrt[Sum of squared derivatives]; for a scalar f it is Sqrt[1 + f'^2].
+  #[test]
+  fn parametric_unit_circle() {
+    assert_eq!(
+      interpret("ArcLength[{Sin[t], Cos[t]}, {t, 0, 2 Pi}]").unwrap(),
+      "2*Pi"
+    );
+  }
+
+  #[test]
+  fn parametric_radius_three_semicircle() {
+    assert_eq!(
+      interpret("ArcLength[{3 Cos[t], 3 Sin[t]}, {t, 0, Pi}]").unwrap(),
+      "3*Pi"
+    );
+  }
+
+  #[test]
+  fn parametric_helix() {
+    // One turn of a helix {Cos[t], Sin[t], t}: speed Sqrt[2].
+    assert_eq!(
+      interpret("ArcLength[{Cos[t], Sin[t], t}, {t, 0, 2 Pi}]").unwrap(),
+      "2*Sqrt[2]*Pi"
+    );
+  }
+
   #[test]
   fn circle_with_radius() {
     assert_eq!(interpret("ArcLength[Circle[{0, 0}, r]]").unwrap(), "2*Pi*r");

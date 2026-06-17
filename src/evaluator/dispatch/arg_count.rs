@@ -51,7 +51,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ArcCscDegrees" => Some((1, 1)),
     "ArcCsch" => Some((1, 1)),
     "ArcCurvature" => Some((2, 2)),
-    "ArcLength" => Some((1, 1)),
+    "ArcLength" => Some((1, 2)),
     "ArcSec" => Some((1, 1)),
     "ArcSecDegrees" => Some((1, 1)),
     "ArcSech" => Some((1, 1)),
