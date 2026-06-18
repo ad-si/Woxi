@@ -1765,6 +1765,8 @@ pub fn dispatch_linear_algebra_functions(
           return Some(Ok(Expr::Identifier("True".to_string())));
         }
       }
+      // Not a square matrix → False (a predicate, like SymmetricMatrixQ).
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     "AntihermitianMatrixQ" if args.len() == 1 => {
       // Antihermitian: M == -ConjugateTranspose[M]
@@ -1800,6 +1802,8 @@ pub fn dispatch_linear_algebra_functions(
           return Some(Ok(Expr::Identifier("True".to_string())));
         }
       }
+      // Not a square matrix → False (a predicate, like SymmetricMatrixQ).
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     "NormalMatrixQ" if args.len() == 1 => {
       // Normal: M.M^H == M^H.M where M^H is conjugate transpose
@@ -1844,6 +1848,8 @@ pub fn dispatch_linear_algebra_functions(
           }
         }
       }
+      // Not a square matrix → False (a predicate, like SymmetricMatrixQ).
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     // DiagonalMatrixQ[m] — True if m is diagonal (nonzeros only on the main
     // diagonal). DiagonalMatrixQ[m, k] allows nonzeros only on the k-th

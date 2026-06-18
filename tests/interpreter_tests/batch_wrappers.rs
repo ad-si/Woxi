@@ -4184,6 +4184,33 @@ mod batch_unevaluated_wrappers_2 {
       "False"
     );
   }
+  // Matrix predicates return False (not unevaluated) for non-square or
+  // non-matrix arguments, matching wolframscript.
+  #[test]
+  fn normal_matrix_q_non_matrix() {
+    assert_eq!(interpret("NormalMatrixQ[5]").unwrap(), "False");
+    assert_eq!(interpret("NormalMatrixQ[{1, 2, 3}]").unwrap(), "False");
+    assert_eq!(
+      interpret("NormalMatrixQ[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn hermitian_matrix_q_non_matrix() {
+    assert_eq!(interpret("HermitianMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("HermitianMatrixQ[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn antihermitian_matrix_q_non_matrix() {
+    assert_eq!(interpret("AntihermitianMatrixQ[{1, 2}]").unwrap(), "False");
+    assert_eq!(
+      interpret("AntihermitianMatrixQ[{{0, 1}, {-1, 0}}]").unwrap(),
+      "True"
+    );
+  }
   #[test]
   fn parallel_sum_basic() {
     assert_eq!(interpret("ParallelSum[i^2, {i, 1, 5}]").unwrap(), "55");
