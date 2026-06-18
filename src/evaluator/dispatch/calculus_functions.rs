@@ -468,10 +468,10 @@ pub fn dispatch_calculus_functions(
     "Grad" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::calculus_ast::grad_ast(args));
     }
-    "Laplacian" if args.len() == 2 => {
+    "Laplacian" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::calculus_ast::laplacian_ast(args));
     }
-    "Div" if args.len() == 2 => {
+    "Div" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::calculus_ast::div_ast(args));
     }
     "Wronskian" if args.len() == 2 => {

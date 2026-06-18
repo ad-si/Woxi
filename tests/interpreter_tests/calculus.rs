@@ -5507,6 +5507,50 @@ mod laplacian {
   fn laplacian_single_var() {
     assert_eq!(interpret("Laplacian[x^3, {x}]").unwrap(), "6*x");
   }
+
+  // Laplacian[f, vars, "Coordinates"] uses orthogonal-curvilinear scale
+  // factors: Lap f = (1/J) Σ ∂/∂x_i((J/h_i²) ∂f/∂x_i).
+  #[test]
+  fn laplacian_polar() {
+    assert_eq!(
+      interpret(r#"Laplacian[r^2, {r, t}, "Polar"]"#).unwrap(),
+      "4"
+    );
+    // Log[r] is harmonic in 2D.
+    assert_eq!(
+      interpret(r#"Laplacian[Log[r], {r, t}, "Polar"]"#).unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn laplacian_cylindrical() {
+    assert_eq!(
+      interpret(r#"Laplacian[r^2, {r, t, z}, "Cylindrical"]"#).unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn laplacian_spherical() {
+    // 1/r is harmonic in 3D.
+    assert_eq!(
+      interpret(r#"Laplacian[1/r, {r, t, p}, "Spherical"]"#).unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(r#"Laplacian[r^3, {r, t, p}, "Spherical"]"#).unwrap(),
+      "12*r"
+    );
+  }
+
+  #[test]
+  fn laplacian_unknown_coordinates_unevaluated() {
+    assert_eq!(
+      interpret(r#"Laplacian[r^2, {r, t}, "Bogus"]"#).unwrap(),
+      "Laplacian[r^2, {r, t}, Bogus]"
+    );
+  }
 }
 
 mod div {
@@ -5528,6 +5572,41 @@ mod div {
   #[test]
   fn div_constant_field() {
     assert_eq!(interpret("Div[{1, 2, 3}, {x, y, z}]").unwrap(), "0");
+  }
+
+  // Div[F, vars, "Coordinates"] uses orthogonal-curvilinear scale factors:
+  // Div F = (1/J) Σ ∂/∂x_i((J/h_i) F_i).
+  #[test]
+  fn div_polar() {
+    assert_eq!(interpret(r#"Div[{r, 0}, {r, t}, "Polar"]"#).unwrap(), "2");
+    assert_eq!(
+      interpret(r#"Div[{1/r, 0}, {r, t}, "Polar"]"#).unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn div_cylindrical() {
+    assert_eq!(
+      interpret(r#"Div[{r, 0, z}, {r, t, z}, "Cylindrical"]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn div_spherical() {
+    assert_eq!(
+      interpret(r#"Div[{r, 0, 0}, {r, t, p}, "Spherical"]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn div_unknown_coordinates_unevaluated() {
+    assert_eq!(
+      interpret(r#"Div[{r, 0}, {r, t}, "Bogus"]"#).unwrap(),
+      "Div[{r, 0}, {r, t}, Bogus]"
+    );
   }
 }
 

@@ -12070,6 +12070,95 @@ fn coord_scale_factors(cs: &str, vars: &[Expr]) -> Option<Vec<Expr>> {
   }
 }
 
+/// Build a product expression, dropping trivial factors of 1.
+fn cc_product(factors: Vec<Expr>) -> Expr {
+  let kept: Vec<Expr> = factors
+    .into_iter()
+    .filter(|f| !matches!(f, Expr::Integer(1)))
+    .collect();
+  match kept.len() {
+    0 => Expr::Integer(1),
+    1 => kept.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: kept.into(),
+    },
+  }
+}
+
+/// Build `1/e` as `Power[e, -1]` (left as 1 when e is 1).
+fn cc_reciprocal(e: Expr) -> Expr {
+  if matches!(e, Expr::Integer(1)) {
+    return Expr::Integer(1);
+  }
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![e, Expr::Integer(-1)].into(),
+  }
+}
+
+/// Divergence in orthogonal curvilinear coordinates with scale factors h:
+/// Div F = (1/J) Σ_i ∂/∂x_i( (J/h_i) F_i ),  J = Π h_i.
+fn divergence_curvilinear(
+  funcs: &[Expr],
+  var_names: &[String],
+  scales: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let jac = cc_product(scales.to_vec());
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let mut terms = Vec::with_capacity(funcs.len());
+  for i in 0..funcs.len() {
+    let coef = eval(&cc_product(vec![
+      jac.clone(),
+      cc_reciprocal(scales[i].clone()),
+    ]))?;
+    let inner = eval(&cc_product(vec![coef, funcs[i].clone()]))?;
+    terms.push(differentiate_expr(&inner, &var_names[i])?);
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  eval(&cc_product(vec![sum, cc_reciprocal(jac)]))
+}
+
+/// Laplacian in orthogonal curvilinear coordinates with scale factors h:
+/// Lap f = (1/J) Σ_i ∂/∂x_i( (J/h_i²) ∂f/∂x_i ),  J = Π h_i.
+fn laplacian_curvilinear(
+  f: &Expr,
+  var_names: &[String],
+  scales: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let jac = cc_product(scales.to_vec());
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let mut terms = Vec::with_capacity(var_names.len());
+  for (i, var) in var_names.iter().enumerate() {
+    let coef = eval(&cc_product(vec![
+      jac.clone(),
+      cc_reciprocal(scales[i].clone()),
+      cc_reciprocal(scales[i].clone()),
+    ]))?;
+    let dfi = differentiate_expr(f, var)?;
+    let inner = eval(&cc_product(vec![coef, dfi]))?;
+    terms.push(differentiate_expr(&inner, var)?);
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.into(),
+  };
+  eval(&cc_product(vec![sum, cc_reciprocal(jac)]))
+}
+
+/// Extract the coordinate-system scale factors from a 3rd argument, or None if
+/// it is not a recognized system string / matched variable list.
+fn coord_scales_from_arg(cs_arg: &Expr, vars: &[Expr]) -> Option<Vec<Expr>> {
+  let cs = match cs_arg {
+    Expr::String(s) | Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  coord_scale_factors(cs, vars)
+}
+
 /// Grad[f, {x1, x2, ...}] - Gradient of a scalar function.
 /// Grad[f, {x1, ...}, "Coordinates"] uses orthogonal-curvilinear scale factors.
 pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -12194,47 +12283,51 @@ pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Div[{f1, f2, ...}, {x1, x2, ...}] = divergence = Sum[D[fi, xi]]
 pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "Div expects exactly 2 arguments".into(),
+      "Div expects 2 or 3 arguments".into(),
     ));
   }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Div".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
   let funcs = match &args[0] {
     Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Div".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return unevaluated(),
   };
   let vars = match &args[1] {
     Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Div".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return unevaluated(),
   };
 
   if funcs.len() != vars.len() {
-    return Ok(Expr::FunctionCall {
-      name: "Div".to_string(),
-      args: args.to_vec().into(),
-    });
+    return unevaluated();
+  }
+
+  // The 3-argument form uses orthogonal-curvilinear scale factors.
+  if args.len() == 3 {
+    let scales = match coord_scales_from_arg(&args[2], vars) {
+      Some(h) => h,
+      None => return unevaluated(),
+    };
+    let mut var_names = Vec::with_capacity(vars.len());
+    for var in vars {
+      match var {
+        Expr::Identifier(s) => var_names.push(s.clone()),
+        _ => return unevaluated(),
+      }
+    }
+    return divergence_curvilinear(funcs, &var_names, &scales);
   }
 
   let mut terms = Vec::with_capacity(vars.len());
   for (f, var) in funcs.iter().zip(vars.iter()) {
     let var_name = match var {
       Expr::Identifier(s) => s,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Div".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      _ => return unevaluated(),
     };
     let deriv = differentiate_expr(f, var_name)?;
     let evald = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
@@ -12253,31 +12346,43 @@ pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Laplacian[f, {x1, x2, ...}] = Sum of second partial derivatives
 pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "Laplacian expects exactly 2 arguments".into(),
+      "Laplacian expects 2 or 3 arguments".into(),
     ));
   }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Laplacian".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
   let vars = match &args[1] {
     Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Laplacian".to_string(),
-        args: args.to_vec().into(),
-      });
-    }
+    _ => return unevaluated(),
   };
+
+  // The 3-argument form uses orthogonal-curvilinear scale factors.
+  if args.len() == 3 {
+    let scales = match coord_scales_from_arg(&args[2], vars) {
+      Some(h) => h,
+      None => return unevaluated(),
+    };
+    let mut var_names = Vec::with_capacity(vars.len());
+    for var in vars {
+      match var {
+        Expr::Identifier(s) => var_names.push(s.clone()),
+        _ => return unevaluated(),
+      }
+    }
+    return laplacian_curvilinear(&args[0], &var_names, &scales);
+  }
 
   let mut terms = Vec::with_capacity(vars.len());
   for var in vars {
     let var_name = match var {
       Expr::Identifier(s) => s,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Laplacian".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      _ => return unevaluated(),
     };
     // Second derivative: D[D[f, x], x]
     let first = differentiate_expr(&args[0], var_name)?;
