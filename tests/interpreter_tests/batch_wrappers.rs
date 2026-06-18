@@ -559,7 +559,10 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn positive_semidefinite_matrix_q_non_matrix() {
-    assert_eq!(interpret("PositiveSemidefiniteMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("PositiveSemidefiniteMatrixQ[5]").unwrap(),
+      "False"
+    );
     assert_eq!(
       interpret("PositiveSemidefiniteMatrixQ[{1, 2}]").unwrap(),
       "False"
@@ -575,7 +578,10 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn negative_semidefinite_matrix_q_non_matrix() {
-    assert_eq!(interpret("NegativeSemidefiniteMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("NegativeSemidefiniteMatrixQ[5]").unwrap(),
+      "False"
+    );
     assert_eq!(
       interpret("NegativeSemidefiniteMatrixQ[{1, 2, 3}]").unwrap(),
       "False"
@@ -5402,6 +5408,26 @@ mod batch_unevaluated_wrappers_2 {
       interpret("LowerTriangularMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
       "False"
     );
+  }
+
+  // Non-matrix arguments (scalar, symbol, vector) answer False rather than
+  // staying unevaluated, matching wolframscript.
+  #[test]
+  fn diagonal_matrix_q_non_matrix() {
+    assert_eq!(interpret("DiagonalMatrixQ[5]").unwrap(), "False");
+    assert_eq!(interpret("DiagonalMatrixQ[x]").unwrap(), "False");
+    assert_eq!(interpret("DiagonalMatrixQ[{1, 2, 3}]").unwrap(), "False");
+  }
+  #[test]
+  fn upper_triangular_q_non_matrix() {
+    assert_eq!(interpret("UpperTriangularMatrixQ[5]").unwrap(), "False");
+    assert_eq!(interpret("UpperTriangularMatrixQ[x]").unwrap(), "False");
+    assert_eq!(interpret("UpperTriangularMatrixQ[{1, 2}]").unwrap(), "False");
+  }
+  #[test]
+  fn lower_triangular_q_non_matrix() {
+    assert_eq!(interpret("LowerTriangularMatrixQ[5]").unwrap(), "False");
+    assert_eq!(interpret("LowerTriangularMatrixQ[{1, 2}]").unwrap(), "False");
   }
 
   // KroneckerSymbol

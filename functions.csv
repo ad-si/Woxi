@@ -4232,7 +4232,7 @@ ParentCell,,🚫,,10.0,4356
 ParzenWindow,,,,9.0,4356
 PersistentObject,,🚫,,11.1,4356
 StateTransformationLinearize,,,,10.0,4356
-UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,1,12.0,4356
+UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,pure,12.0,4356
 WeierstrassHalfPeriods,,,,3.0,4356
 BesselYZero,,,,6.0,4387
 BlockchainAddressData,,🚫,,12.0,4387
@@ -5299,7 +5299,7 @@ IndependentPhysicalQuantity,,,,11.3,5587
 InterpretationBoxOptions,,🚫,,4.0,5587
 LicenseEntitlementObject,,,,12.2,5587
 LicenseEntitlements,,,,12.2,5587
-LowerTriangularMatrixQ,True if a matrix is lower triangular,✅,1,12.0,5587
+LowerTriangularMatrixQ,True if a matrix is lower triangular,✅,pure,12.0,5587
 MailAddressValidation,,🚫,,11.2,5587
 MailResponseFunction,,🚫,,10.2,5587
 MailSearch,,🚫,,11.3,5587

@@ -1921,6 +1921,8 @@ pub fn dispatch_linear_algebra_functions(
           if is_diag { "True" } else { "False" }.to_string(),
         )));
       }
+      // A non-list argument (scalar, symbol, …) is not a matrix → False.
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     // UpperTriangularMatrixQ[m] — True if m is upper triangular
     "UpperTriangularMatrixQ" if args.len() == 1 => {
@@ -1948,6 +1950,8 @@ pub fn dispatch_linear_algebra_functions(
           if is_upper { "True" } else { "False" }.to_string(),
         )));
       }
+      // A non-list argument (scalar, symbol, …) is not a matrix → False.
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     // LowerTriangularMatrixQ[m] — True if m is lower triangular
     "LowerTriangularMatrixQ" if args.len() == 1 => {
@@ -1975,6 +1979,8 @@ pub fn dispatch_linear_algebra_functions(
           if is_lower { "True" } else { "False" }.to_string(),
         )));
       }
+      // A non-list argument (scalar, symbol, …) is not a matrix → False.
+      return Some(Ok(Expr::Identifier("False".to_string())));
     }
     // AntisymmetricMatrixQ[m] — True if m is antisymmetric (m[i][j] == -m[j][i])
     "AntisymmetricMatrixQ" if args.len() == 1 => {
@@ -2558,7 +2564,10 @@ fn is_zero_expr(expr: &Expr) -> bool {
 fn is_square_matrix_expr(expr: &Expr) -> bool {
   if let Expr::List(rows) = expr {
     let n = rows.len();
-    n > 0 && rows.iter().all(|r| matches!(r, Expr::List(c) if c.len() == n))
+    n > 0
+      && rows
+        .iter()
+        .all(|r| matches!(r, Expr::List(c) if c.len() == n))
   } else {
     false
   }

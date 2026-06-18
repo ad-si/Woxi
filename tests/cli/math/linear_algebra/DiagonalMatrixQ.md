@@ -21,3 +21,10 @@ Rectangular matrices are accepted.
 $ wo 'DiagonalMatrixQ[{{1, 0, 0}, {0, 2, 0}}]'
 True
 ```
+
+A non-matrix argument (scalar, symbol, vector) is not diagonal.
+
+```scrut
+$ wo 'DiagonalMatrixQ[5]'
+False
+```
