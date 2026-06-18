@@ -544,9 +544,8 @@ pub fn seq_spec_shape_ok(spec: &Expr) -> bool {
     // integers or `All`, and a step must be a nonzero machine integer. It is
     // converted to the equivalent list form by take_ast/drop_ast.
     Expr::FunctionCall { name, args } if name == "Span" => {
-      let bound = |e: &Expr| {
-        machine(e) || matches!(e, Expr::Identifier(s) if s == "All")
-      };
+      let bound =
+        |e: &Expr| machine(e) || matches!(e, Expr::Identifier(s) if s == "All");
       match args.as_slice() {
         [i, j] => bound(i) && bound(j),
         [i, j, s] => {

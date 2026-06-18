@@ -12038,36 +12038,95 @@ fn adaptive_simpson_rec(
   }
 }
 
-/// Grad[f, {x1, x2, ...}] - Gradient of a scalar function
+/// Orthogonal-curvilinear scale factors h_i for a named coordinate system, so
+/// the gradient component along variable i is `(1/h_i) ∂f/∂x_i`. Returns None
+/// for an unknown system or a mismatched variable count.
+fn coord_scale_factors(cs: &str, vars: &[Expr]) -> Option<Vec<Expr>> {
+  let one = || Expr::Integer(1);
+  let sin = |e: &Expr| Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![e.clone()].into(),
+  };
+  let times = |a: Expr, b: Expr| Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![a, b].into(),
+  };
+  match cs {
+    // h_i = 1 for every Cartesian axis.
+    "Cartesian" => Some(vars.iter().map(|_| one()).collect()),
+    // {r, θ}: h = {1, r}.
+    "Polar" if vars.len() == 2 => Some(vec![one(), vars[0].clone()]),
+    // {r, θ, z}: h = {1, r, 1}.
+    "Cylindrical" if vars.len() == 3 => {
+      Some(vec![one(), vars[0].clone(), one()])
+    }
+    // {r, θ, φ} (θ the polar angle): h = {1, r, r Sin[θ]}.
+    "Spherical" if vars.len() == 3 => Some(vec![
+      one(),
+      vars[0].clone(),
+      times(vars[0].clone(), sin(&vars[1])),
+    ]),
+    _ => None,
+  }
+}
+
+/// Grad[f, {x1, x2, ...}] - Gradient of a scalar function.
+/// Grad[f, {x1, ...}, "Coordinates"] uses orthogonal-curvilinear scale factors.
 pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "Grad expects exactly 2 arguments".into(),
+      "Grad expects 2 or 3 arguments".into(),
     ));
   }
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Grad".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
   let vars = match &args[1] {
     Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Grad".to_string(),
-        args: args.to_vec().into(),
-      });
+    _ => return unevaluated(),
+  };
+
+  // Scale factors: all 1 for the plain (Cartesian) form, or system-specific.
+  let scales: Vec<Expr> = if args.len() == 3 {
+    let cs = match &args[2] {
+      Expr::String(s) | Expr::Identifier(s) => s.as_str(),
+      _ => return unevaluated(),
+    };
+    match coord_scale_factors(cs, vars) {
+      Some(h) => h,
+      None => return unevaluated(),
     }
+  } else {
+    vars.iter().map(|_| Expr::Integer(1)).collect()
   };
 
   let mut components = Vec::with_capacity(vars.len());
-  for var in vars {
+  for (var, h) in vars.iter().zip(scales) {
     let var_name = match var {
       Expr::Identifier(s) => s,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Grad".to_string(),
-          args: args.to_vec().into(),
-        });
-      }
+      _ => return unevaluated(),
     };
     let deriv = differentiate_expr(&args[0], var_name)?;
-    let evald = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
+    // component = (1/h) ∂f/∂x; the scale factor is 1 for Cartesian axes.
+    let comp = if matches!(h, Expr::Integer(1)) {
+      deriv
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          deriv,
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![h, Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      }
+    };
+    let evald = crate::evaluator::evaluate_expr_to_expr(&comp)?;
     components.push(evald);
   }
   Ok(Expr::List(components.into()))

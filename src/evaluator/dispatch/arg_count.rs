@@ -478,7 +478,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GeometricMean" => Some((1, 1)),
     "Get" => Some((1, 1)),
     "GompertzMakehamDistribution" => Some((2, 2)),
-    "Grad" => Some((2, 2)),
+    "Grad" => Some((2, 3)),
     "Greater" => Some((2, usize::MAX)),
     "GreaterEqual" => Some((2, usize::MAX)),
     "GreaterEqualThan" => Some((1, 1)),

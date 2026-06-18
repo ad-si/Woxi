@@ -5099,6 +5099,55 @@ mod grad {
   fn single_variable() {
     assert_eq!(interpret("Grad[x^3, {x}]").unwrap(), "{3*x^2}");
   }
+
+  // Grad[f, vars, "Coordinates"] applies orthogonal-curvilinear scale factors:
+  // component i = (1/h_i) ∂f/∂x_i.
+  #[test]
+  fn polar() {
+    assert_eq!(
+      interpret(r#"Grad[r^2, {r, t}, "Polar"]"#).unwrap(),
+      "{2*r, 0}"
+    );
+    // The 1/r factor on the angular component shows up here.
+    assert_eq!(
+      interpret(r#"Grad[r Cos[t], {r, t}, "Polar"]"#).unwrap(),
+      "{Cos[t], -Sin[t]}"
+    );
+  }
+
+  #[test]
+  fn cylindrical() {
+    assert_eq!(
+      interpret(r#"Grad[r^2 z, {r, t, z}, "Cylindrical"]"#).unwrap(),
+      "{2*r*z, 0, r^2}"
+    );
+  }
+
+  #[test]
+  fn spherical() {
+    // r and theta components; the phi component is 0 here (f independent of p).
+    assert_eq!(
+      interpret(r#"Grad[r^2, {r, t, p}, "Spherical"]"#).unwrap(),
+      "{2*r, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn cartesian_named() {
+    assert_eq!(
+      interpret(r#"Grad[x^2, {x, y}, "Cartesian"]"#).unwrap(),
+      "{2*x, 0}"
+    );
+  }
+
+  // An unknown coordinate system stays unevaluated.
+  #[test]
+  fn unknown_coordinates_unevaluated() {
+    assert_eq!(
+      interpret(r#"Grad[r^2, {r, t}, "Bogus"]"#).unwrap(),
+      "Grad[r^2, {r, t}, Bogus]"
+    );
+  }
 }
 
 mod recurrence_table {

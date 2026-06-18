@@ -465,7 +465,7 @@ pub fn dispatch_calculus_functions(
         args,
       ));
     }
-    "Grad" if args.len() == 2 => {
+    "Grad" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::calculus_ast::grad_ast(args));
     }
     "Laplacian" if args.len() == 2 => {

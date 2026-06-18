@@ -3168,10 +3168,7 @@ mod take_drop_span {
       interpret("Drop[{1, 2, 3, 4, 5}, 2;;3]").unwrap(),
       "{1, 4, 5}"
     );
-    assert_eq!(
-      interpret("Drop[{1, 2, 3, 4, 5}, ;;-2]").unwrap(),
-      "{5}"
-    );
+    assert_eq!(interpret("Drop[{1, 2, 3, 4, 5}, ;;-2]").unwrap(), "{5}");
   }
 
   // A non-Span invalid spec still errors and stays unevaluated.
