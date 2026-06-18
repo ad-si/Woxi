@@ -1331,6 +1331,31 @@ mod date_value {
     );
   }
 
+  // "MonthNameShort" returns the abbreviated month name.
+  #[test]
+  fn month_name_short() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "MonthNameShort"]"#).unwrap(),
+      "Mar"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 1, 1}, "MonthNameShort"]"#).unwrap(),
+      "Jan"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 12, 25}, "MonthNameShort"]"#).unwrap(),
+      "Dec"
+    );
+    // Works in a property list alongside other short names.
+    assert_eq!(
+      interpret(
+        r#"DateValue[{2024, 3, 15}, {"MonthNameShort", "DayNameShort"}]"#
+      )
+      .unwrap(),
+      "{Mar, Fri}"
+    );
+  }
+
   // ISO-8601 week date: "ISOWeek" and "ISOWeekYear", which differ from the
   // calendar values near year boundaries. Verified against wolframscript.
   #[test]

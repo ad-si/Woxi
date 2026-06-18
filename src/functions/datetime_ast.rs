@@ -1609,6 +1609,7 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
       }
       "MonthName" => Expr::Identifier(month_name(mo).to_string()),
+      "MonthNameShort" => Expr::String(month_name_short(mo).to_string()),
       "DayNameShort" => {
         Expr::String(day_name_short(day_of_week(y, mo, d)).to_string())
       }
