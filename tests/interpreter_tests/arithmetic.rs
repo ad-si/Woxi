@@ -2819,6 +2819,26 @@ mod expand_threading {
   }
 
   #[test]
+  fn mod_real_operand_keeps_real_result() {
+    // When an operand is an inexact machine real, Mod returns a Real even for a
+    // whole-number result (regression: Woxi returned Integer 0).
+    assert_eq!(interpret("Mod[1.5, 0.5]").unwrap(), "0.");
+    assert_eq!(interpret("Mod[10.0, 5.0]").unwrap(), "0.");
+    assert_eq!(interpret("Mod[5, 2.0]").unwrap(), "1.");
+    assert_eq!(interpret("Mod[6.0, 3]").unwrap(), "0.");
+    assert_eq!(interpret("Mod[1.0, 1.0]").unwrap(), "0.");
+    // Non-whole real results are unaffected.
+    assert_eq!(interpret("Mod[5.5, 2]").unwrap(), "1.5");
+    assert_eq!(interpret("Mod[-5.5, 2]").unwrap(), "0.5");
+    // 3-argument form behaves the same.
+    assert_eq!(interpret("Mod[6.0, 3, 0]").unwrap(), "0.");
+    assert_eq!(interpret("Mod[10, 3.0, 1]").unwrap(), "1.");
+    // Pure-integer Mod still yields an Integer.
+    assert_eq!(interpret("Mod[17, 5]").unwrap(), "2");
+    assert_eq!(interpret("Mod[6, 3]").unwrap(), "0");
+  }
+
+  #[test]
   fn coth_zero() {
     assert_eq!(interpret("Coth[0]").unwrap(), "ComplexInfinity");
   }

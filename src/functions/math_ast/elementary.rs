@@ -1983,7 +1983,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     let result = ((a % b) + b) % b;
-    return Ok(num_to_expr(result));
+    // This path is only reached when an operand is an inexact machine real, so
+    // the result stays Real even when it is a whole number (Mod[10., 5.] = 0.,
+    // not 0) — num_to_expr would otherwise collapse it to an Integer.
+    return Ok(Expr::Real(result));
   }
 
   // Symbolic
@@ -2106,7 +2109,9 @@ pub fn mod3_ast(
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     let result = a - b * ((a - c) / b).floor();
-    return Ok(num_to_expr(result));
+    // Reached only when an operand is an inexact machine real, so the result
+    // stays Real even when it is a whole number (Mod[6., 3, 0] = 0., not 0).
+    return Ok(Expr::Real(result));
   }
 
   // Symbolic

@@ -5636,7 +5636,11 @@ fn divide_by_zero_result(a: &Expr) -> Expr {
   let a_is_zero =
     matches!(a, Expr::Integer(0)) || matches!(a, Expr::Real(z) if *z == 0.0);
   if a_is_zero {
-    let zero = if matches!(a, Expr::Real(_)) { "0." } else { "0" };
+    let zero = if matches!(a, Expr::Real(_)) {
+      "0."
+    } else {
+      "0"
+    };
     crate::emit_message(&format!(
       "Infinity::indet: Indeterminate expression {zero} ComplexInfinity \
        encountered."
