@@ -4877,6 +4877,60 @@ mod refine {
     assert_eq!(interpret("Refine[Im[x], Element[x, Reals]]").unwrap(), "0");
   }
 
+  // --- Abs[u]^(even) → u^(even) for real u ---
+
+  #[test]
+  fn abs_squared_real() {
+    assert_eq!(
+      interpret("Refine[Abs[x]^2, Element[x, Reals]]").unwrap(),
+      "x^2"
+    );
+    assert_eq!(
+      interpret("Simplify[Abs[x]^2, Element[x, Reals]]").unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn abs_higher_even_power_real() {
+    assert_eq!(
+      interpret("Refine[Abs[x]^4, Element[x, Reals]]").unwrap(),
+      "x^4"
+    );
+    assert_eq!(
+      interpret("Refine[Abs[x]^6, Element[x, Reals]]").unwrap(),
+      "x^6"
+    );
+  }
+
+  // Odd powers of Abs stay, even with a real assumption.
+  #[test]
+  fn abs_odd_power_real_unchanged() {
+    assert_eq!(
+      interpret("Simplify[Abs[x]^3, Element[x, Reals]]").unwrap(),
+      "Abs[x]^3"
+    );
+  }
+
+  // The Abs argument may itself be a real expression.
+  #[test]
+  fn abs_squared_real_expression() {
+    assert_eq!(
+      interpret("Simplify[Abs[x + 1]^2, Element[x, Reals]]").unwrap(),
+      "(1 + x)^2"
+    );
+    assert_eq!(
+      interpret("Simplify[Abs[2 x]^2, Element[x, Reals]]").unwrap(),
+      "4*x^2"
+    );
+  }
+
+  // Without any real assumption the form is preserved (x may be complex).
+  #[test]
+  fn abs_squared_no_assumption_unchanged() {
+    assert_eq!(interpret("Simplify[Abs[x]^2]").unwrap(), "Abs[x]^2");
+  }
+
   // --- Floor/Ceiling with Element[x, Integers] ---
 
   #[test]

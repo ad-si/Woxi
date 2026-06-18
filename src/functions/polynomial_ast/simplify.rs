@@ -696,6 +696,41 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       expr.clone()
     }
 
+    // Abs[u]^n → u^n when n is a positive even integer and u is real.
+    // For real u, |u|^2 = u^2 (and any even power). Odd powers stay |u|^n.
+    // e.g. Simplify[Abs[x]^2, x ∈ Reals] = x^2, Abs[2 x]^2 = 4 x^2.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0)
+      && matches!(left.as_ref(),
+        Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1) =>
+    {
+      if let (
+        Expr::FunctionCall { args, .. },
+        Expr::Integer(n),
+      ) = (left.as_ref(), right.as_ref())
+        && is_known_real(&args[0], info)
+      {
+        return refine_expr(
+          &Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::Integer(*n)),
+          },
+          info,
+          assumption,
+        );
+      }
+      // Sign of the Abs argument is unknown: refine children only.
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(refine_expr(left, info, assumption)),
+        right: Box::new(refine_expr(right, info, assumption)),
+      }
+    }
+
     // (var^n)^(1/m) → var^(n/m) when var >= 0 and n divisible by m
     // Also handles Sqrt[var^2] as special case (m=2, n=2)
     // For var < 0: only simplifies when n is even
