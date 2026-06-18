@@ -2583,20 +2583,57 @@ mod high_level_functions_tests {
         "         2\n1.23 \u{00d7} 10"
       );
       // Exponent 0 collapses to just the mantissa (no `× 10`).
-      assert_eq!(
-        interpret("ToString[ScientificForm[5.0]]").unwrap(),
-        "5."
-      );
+      assert_eq!(interpret("ToString[ScientificForm[5.0]]").unwrap(), "5.");
       // Rounding that bumps the mantissa to 10 renormalizes the exponent.
       assert_eq!(
         interpret("ToString[ScientificForm[9999.995]]").unwrap(),
         "       4\n1. \u{00d7} 10"
       );
       // Integers are shown unchanged.
+      assert_eq!(interpret("ToString[ScientificForm[123]]").unwrap(), "123");
+    }
+
+    #[test]
+    fn test_engineering_form_to_string() {
+      // EngineeringForm is like ScientificForm but the exponent is forced to a
+      // multiple of 3, so the mantissa lies in [1, 1000).
       assert_eq!(
-        interpret("ToString[ScientificForm[123]]").unwrap(),
-        "123"
+        interpret("ToString[EngineeringForm[12345.678]]").unwrap(),
+        "            3\n12.3457 \u{00d7} 10"
       );
+      // 1.2345e8 -> 123.45 × 10^6 (exponent stepped to a multiple of 3).
+      assert_eq!(
+        interpret("ToString[EngineeringForm[1.2345*^8]]").unwrap(),
+        "           6\n123.45 \u{00d7} 10"
+      );
+      // Negative exponent, also a multiple of 3.
+      assert_eq!(
+        interpret("ToString[EngineeringForm[0.000012345]]").unwrap(),
+        "           -6\n12.345 \u{00d7} 10"
+      );
+      // Negative mantissa.
+      assert_eq!(
+        interpret("ToString[EngineeringForm[-9876.5]]").unwrap(),
+        "            3\n-9.8765 \u{00d7} 10"
+      );
+      // Values with exponent 0 collapse to just the mantissa.
+      assert_eq!(
+        interpret("ToString[EngineeringForm[123.45]]").unwrap(),
+        "123.45"
+      );
+      assert_eq!(interpret("ToString[EngineeringForm[5.0]]").unwrap(), "5.");
+      // Explicit precision.
+      assert_eq!(
+        interpret("ToString[EngineeringForm[123.45, 3]]").unwrap(),
+        "123."
+      );
+      // Mantissa fills all three integer digits when needed.
+      assert_eq!(
+        interpret("ToString[EngineeringForm[999999.0]]").unwrap(),
+        "            3\n999.999 \u{00d7} 10"
+      );
+      // Integers are shown unchanged.
+      assert_eq!(interpret("ToString[EngineeringForm[123]]").unwrap(), "123");
     }
 
     #[test]

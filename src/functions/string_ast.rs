@@ -2835,6 +2835,53 @@ fn scientific_form_to_string(x: &Expr, n: i64) -> Option<String> {
   Some(format!("{indent}{exp}\n{line2}"))
 }
 
+/// Render `EngineeringForm[x]` / `EngineeringForm[x, n]` to a string: like
+/// `ScientificForm` but the exponent is forced to a multiple of 3, so the
+/// mantissa lies in `[1, 1000)` (e.g. `12.3457 × 10` over `3`). Default `n` is 6
+/// significant figures. An exponent of 0 collapses to just the mantissa. An
+/// integer `x` is shown unchanged.
+fn engineering_form_to_string(x: &Expr, n: i64) -> Option<String> {
+  // Integer argument: shown unchanged, ignoring the precision.
+  if let Expr::Integer(i) = x {
+    return Some(i.to_string());
+  }
+  let v = match x {
+    Expr::Real(f) => *f,
+    _ => return None,
+  };
+  let n = if n < 1 { 1 } else { n };
+  let prec = (n - 1) as usize;
+  // Scientific decomposition (normalized mantissa, renormalized after rounding).
+  let formatted = format!("{:.*e}", prec, v);
+  let (mantissa_raw, exp_raw) = formatted.split_once('e')?;
+  let e: i64 = exp_raw.parse().ok()?;
+  // Engineering exponent is the largest multiple of 3 not exceeding `e`; the
+  // mantissa's decimal point shifts right by `shift` places accordingly.
+  let shift = e.rem_euclid(3);
+  let eng_exp = e - shift;
+  let neg = mantissa_raw.starts_with('-');
+  let body = mantissa_raw.trim_start_matches('-');
+  let mut digits: String = body.chars().filter(|c| *c != '.').collect();
+  let int_len = (shift + 1) as usize;
+  while digits.len() < int_len {
+    digits.push('0');
+  }
+  let (ip, fp) = digits.split_at(int_len);
+  let fp = fp.trim_end_matches('0');
+  let mantissa = if fp.is_empty() {
+    format!("{ip}.")
+  } else {
+    format!("{ip}.{fp}")
+  };
+  let mantissa = if neg { format!("-{mantissa}") } else { mantissa };
+  if eng_exp == 0 {
+    return Some(mantissa);
+  }
+  let line2 = format!("{mantissa} \u{00d7} 10");
+  let indent = " ".repeat(line2.chars().count());
+  Some(format!("{indent}{eng_exp}\n{line2}"))
+}
+
 /// Render `NumberForm[x, {n, f}]`: a real `x` shown with exactly `f` digits
 /// after the decimal point (zero-padded), e.g. `3.0 -> 3.00`. An integer `x`
 /// is shown unchanged.
@@ -3073,6 +3120,28 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if let Some(n) = n
       && let Some(rendered) = scientific_form_to_string(&inner_args[0], n)
+    {
+      return Ok(Expr::String(rendered));
+    }
+  }
+
+  // EngineeringForm[x] / EngineeringForm[x, n] — like ScientificForm but the
+  // exponent is forced to a multiple of 3 (mantissa in [1, 1000)).
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "EngineeringForm"
+    && !is_input_form
+    && (inner_args.len() == 1 || inner_args.len() == 2)
+  {
+    let n = match inner_args.get(1) {
+      None => Some(6),
+      Some(Expr::Integer(n)) => Some(*n as i64),
+      _ => None,
+    };
+    if let Some(n) = n
+      && let Some(rendered) = engineering_form_to_string(&inner_args[0], n)
     {
       return Ok(Expr::String(rendered));
     }
