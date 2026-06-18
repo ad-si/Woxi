@@ -5334,8 +5334,14 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         }
       };
-      // String-keyed views: points -> "Index" / "Distance" / "Element".
-      if let Expr::String(s) = replacement.as_ref() {
+      // points -> Automatic: label each point by its 1-based position, so the
+      // result is the indices of the nearest points (same as the "Index" view).
+      if matches!(replacement.as_ref(),
+        Expr::Identifier(s) | Expr::Constant(s) if s == "Automatic")
+      {
+        view = View::Index;
+        (pts.to_vec(), None)
+      } else if let Expr::String(s) = replacement.as_ref() {
         match s.as_str() {
           "Index" => {
             view = View::Index;

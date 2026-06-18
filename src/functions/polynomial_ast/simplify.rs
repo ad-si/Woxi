@@ -707,10 +707,8 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       && matches!(left.as_ref(),
         Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1) =>
     {
-      if let (
-        Expr::FunctionCall { args, .. },
-        Expr::Integer(n),
-      ) = (left.as_ref(), right.as_ref())
+      if let (Expr::FunctionCall { args, .. }, Expr::Integer(n)) =
+        (left.as_ref(), right.as_ref())
         && is_known_real(&args[0], info)
       {
         return refine_expr(

@@ -4450,6 +4450,24 @@ mod batch_unevaluated_wrappers_2 {
       "{3, 2}"
     );
   }
+
+  // Nearest[points -> Automatic, target] labels each point by its 1-based
+  // position, so the result is the indices of the nearest points.
+  #[test]
+  fn nearest_automatic_returns_indices() {
+    assert_eq!(
+      interpret("Nearest[{1, 5, 10, 15} -> Automatic, 7]").unwrap(),
+      "{2}"
+    );
+    assert_eq!(
+      interpret("Nearest[{1, 5, 10, 15} -> Automatic, 7, 2]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("Nearest[{1, 5, 10, 15} -> Automatic, 7, All]").unwrap(),
+      "{2, 3, 1, 4}"
+    );
+  }
   // Strings are compared via EditDistance (Wolfram's default string metric).
   #[test]
   fn nearest_strings_edit_distance() {
