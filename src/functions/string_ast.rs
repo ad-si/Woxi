@@ -6794,6 +6794,22 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // The inserted text (position 2) must be a single string. A list or any
+  // other expression there emits StringInsert::string and stays unevaluated,
+  // matching wolframscript (checked before the list-of-strings first-argument
+  // form, so the message reports the whole original call).
+  if !matches!(&args[1], Expr::String(_)) {
+    let call = Expr::FunctionCall {
+      name: "StringInsert".to_string(),
+      args: args.to_vec().into(),
+    };
+    crate::emit_message(&format!(
+      "StringInsert::string: String expected at position 2 in {}.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(call);
+  }
+
   // Handle list of strings as first argument
   if let Expr::List(strings) = &args[0] {
     let mut results = Vec::new();

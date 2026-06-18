@@ -7043,6 +7043,28 @@ abb""#,
       r#""1.234.567.890.123.456""#,
     );
   }
+  // The inserted text (position 2) must be a single string; a list or other
+  // expression there stays unevaluated (WL emits StringInsert::string).
+  #[test]
+  fn string_insert_nonstring_snew_list() {
+    assert_case(
+      r#"StringInsert["abc", {"X", "Y"}, {1, 3}]"#,
+      r#"StringInsert[abc, {X, Y}, {1, 3}]"#,
+    );
+  }
+  #[test]
+  fn string_insert_nonstring_snew_integer() {
+    assert_case(r#"StringInsert["abc", 5, 2]"#, r#"StringInsert[abc, 5, 2]"#);
+  }
+  #[test]
+  fn string_insert_nonstring_snew_with_list_first_arg() {
+    // The check fires before the list-of-strings first-argument form, so the
+    // message reports the whole original call (single result, not per element).
+    assert_case(
+      r#"StringInsert[{"ab", "cd"}, {"X", "Y"}, 2]"#,
+      r#"StringInsert[{ab, cd}, {X, Y}, 2]"#,
+    );
+  }
   #[test]
   fn string_join_1() {
     assert_case(r#"StringJoin["a", "b", "c"]"#, r#""abc""#);
