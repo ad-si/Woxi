@@ -2257,6 +2257,28 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // PrimitiveRoot[n, k] — smallest primitive root modulo n that is >= k.
+    // Uses the full list of primitive roots (PrimitiveRootList[n]); returns
+    // unevaluated when no primitive root reaches k (matching wolframscript).
+    "PrimitiveRoot" if args.len() == 2 => {
+      if let (Some(n), Some(k)) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+        && n > 1
+      {
+        let n_u = n as u64;
+        let phi = euler_totient(n_u);
+        for g in 1..n_u {
+          if (g as i128) >= k && is_primitive_root(g, n_u, phi) {
+            return Some(Ok(Expr::Integer(g as i128)));
+          }
+        }
+        // No primitive root >= k: leave unevaluated.
+        return Some(Ok(Expr::FunctionCall {
+          name: "PrimitiveRoot".to_string(),
+          args: args.to_vec().into(),
+        }));
+      }
+    }
     // PrimitiveRoot[n] — smallest primitive root modulo n
     "PrimitiveRoot" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {

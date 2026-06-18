@@ -3062,6 +3062,37 @@ mod primitive_root {
     assert_eq!(interpret("PrimitiveRoot[25]").unwrap(), "2");
     assert_eq!(interpret("PrimitiveRoot[49]").unwrap(), "3");
   }
+
+  // PrimitiveRoot[n, k] — smallest primitive root modulo n that is >= k.
+  #[test]
+  fn with_lower_bound() {
+    assert_eq!(interpret("PrimitiveRoot[7, 2]").unwrap(), "3");
+    assert_eq!(interpret("PrimitiveRoot[7, 4]").unwrap(), "5");
+    assert_eq!(interpret("PrimitiveRoot[11, 3]").unwrap(), "6");
+    assert_eq!(interpret("PrimitiveRoot[23, 6]").unwrap(), "7");
+    assert_eq!(interpret("PrimitiveRoot[14, 5]").unwrap(), "5");
+  }
+
+  // For n = 2 p^k the bounded form uses the list's smallest root (3),
+  // not the special unbounded value PrimitiveRoot[10] = 7.
+  #[test]
+  fn with_lower_bound_uses_full_list() {
+    assert_eq!(interpret("PrimitiveRoot[10, 1]").unwrap(), "3");
+    assert_eq!(interpret("PrimitiveRoot[10, 3]").unwrap(), "3");
+  }
+
+  // No primitive root reaches k, or n has none at all: stay unevaluated.
+  #[test]
+  fn with_lower_bound_unevaluated() {
+    assert_eq!(
+      interpret("PrimitiveRoot[7, 6]").unwrap(),
+      "PrimitiveRoot[7, 6]"
+    );
+    assert_eq!(
+      interpret("PrimitiveRoot[8, 2]").unwrap(),
+      "PrimitiveRoot[8, 2]"
+    );
+  }
 }
 
 mod morphological_operations {
