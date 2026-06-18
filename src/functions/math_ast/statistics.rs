@@ -1310,15 +1310,17 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return geometric_mean_columnwise(items);
       }
       let n = items.len() as i128;
+      let has_real = items
+        .iter()
+        .any(|i| matches!(i, Expr::Real(_) | Expr::BigFloat(_, _)));
       // Exact path: if all elements are exact (integers or rationals),
       // compute product symbolically and return Power[product, 1/n]
       let product = super::times_ast(items);
-      if let Ok(ref prod) = product {
-        let has_real = items.iter().any(|i| matches!(i, Expr::Real(_)));
-        if !has_real {
-          let exponent = super::make_rational(1, n);
-          return super::power_two(prod, &exponent);
-        }
+      if let Ok(ref prod) = product
+        && !has_real
+      {
+        let exponent = super::make_rational(1, n);
+        return super::power_two(prod, &exponent);
       }
       // Float path
       let mut vals = Vec::new();
@@ -1335,8 +1337,13 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n_f = vals.len() as f64;
       let product: f64 = vals.iter().product();
       let result = product.powf(1.0 / n_f);
-      // Check if result is an integer
-      Ok(num_to_expr(result))
+      // A Real element makes the result inexact even when it is a whole number
+      // (GeometricMean[{4., 9}] = 6., not 6); num_to_expr would collapse it.
+      Ok(if has_real {
+        Expr::Real(result)
+      } else {
+        num_to_expr(result)
+      })
     }
     _ => Ok(Expr::FunctionCall {
       name: "GeometricMean".to_string(),

@@ -144,6 +144,18 @@ mod geometric_mean {
     assert_eq!(interpret("GeometricMean[{2, 8}]").unwrap(), "4");
   }
 
+  #[test]
+  fn geometric_mean_real_element_keeps_real() {
+    // A Real element makes the result inexact even when it is a whole number
+    // (regression: Woxi returned Integer 6 instead of Real 6.).
+    assert_eq!(interpret("GeometricMean[{4.0, 9}]").unwrap(), "6.");
+    assert_eq!(interpret("GeometricMean[{4, 9.0}]").unwrap(), "6.");
+    assert_eq!(interpret("GeometricMean[{2.0, 2, 2}]").unwrap(), "2.");
+    assert_eq!(interpret("GeometricMean[{1.0, 1, 1}]").unwrap(), "1.");
+    // All-exact input still yields an exact result.
+    assert_eq!(interpret("GeometricMean[{2, 8}]").unwrap(), "4");
+  }
+
   // An empty list stays unevaluated rather than raising an error (matching
   // wolframscript). The same holds for HarmonicMean and RootMeanSquare.
   #[test]

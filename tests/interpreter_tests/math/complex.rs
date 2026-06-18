@@ -1272,15 +1272,9 @@ mod arctan_two_arg {
     assert_eq!(interpret("ArcTan[0., 0.]").unwrap(), "0.");
     assert_eq!(interpret("ArcTan[0, 0.]").unwrap(), "0.");
     assert_eq!(interpret("ArcTan[0., 0]").unwrap(), "0.");
-    assert_eq!(
-      interpret("ArcTan[0, 2.0]").unwrap(),
-      "1.5707963267948966"
-    );
+    assert_eq!(interpret("ArcTan[0, 2.0]").unwrap(), "1.5707963267948966");
     assert_eq!(interpret("ArcTan[1.0, 0]").unwrap(), "0.");
-    assert_eq!(
-      interpret("ArcTan[1, 2.0]").unwrap(),
-      "1.1071487177940904"
-    );
+    assert_eq!(interpret("ArcTan[1, 2.0]").unwrap(), "1.1071487177940904");
     // No spurious indeterminate message in the inexact-origin case.
     let r = interpret_with_stdout("ArcTan[0, 0.]").unwrap();
     assert_eq!(r.result, "0.");
