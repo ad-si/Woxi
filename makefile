@@ -38,7 +38,7 @@ test-slow:
 # #! /usr/bin/env bash
 # wolframscript -c "$*"
 .PHONY: test-cli
-test-cli: install
+test-cli: install-cli
 	@if ! command -v scrut &> /dev/null; \
 		then cargo install scrut; \
 		fi
@@ -46,7 +46,7 @@ test-cli: install
 
 
 .PHONY: test-cli-wolframscript
-test-cli-wolframscript: install
+test-cli-wolframscript: install-cli
 	@if ! command -v scrut &> /dev/null; \
 		then cargo install scrut; \
 		fi
@@ -55,7 +55,7 @@ test-cli-wolframscript: install
 
 
 .PHONY: test-shebang
-test-shebang: install
+test-shebang: install-cli
 	test "$$(./tests/woxi/hello_world.wls)" = 'Hello World!'
 
 
@@ -68,7 +68,7 @@ test-scripts-wolframscript:
 
 
 .PHONY: test-unit-wolframscript
-test-unit-wolframscript: install
+test-unit-wolframscript: install-cli
 	@echo "Verifying unit tests against wolframscript …"
 	node tests/wolframscript/verify_unit_tests.ts
 	@echo "All unit test verifications passed."
@@ -106,9 +106,13 @@ format:
 	# nix fmt
 
 
-.PHONY: install
-install:
+.PHONY: install-cli
+install-cli:
 	cargo install --path .
+
+
+.PHONY: install
+install: install-cli
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		$(MAKE) install-macos-app; \
 	fi
