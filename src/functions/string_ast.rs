@@ -1174,10 +1174,26 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
 
-    // For simple string literals, use direct matching (delayed doesn't matter
-    // since there are no pattern variables to bind). With IgnoreCase, compile
-    // the escaped literal as a case-insensitive regex instead.
+    // For simple string literals, use direct matching. A delayed rule (:>)
+    // still has to evaluate its RHS for each match, so compile the escaped
+    // literal as a regex and route it through RegexDelayed. With IgnoreCase,
+    // compile the escaped literal as a case-insensitive regex instead.
     if let Expr::String(pat_str) = pattern_expr {
+      if is_delayed && !pat_str.is_empty() {
+        let prefix = if ignore_case { "(?i)" } else { "" };
+        let re =
+          compile_regex(&format!("{}{}", prefix, regex::escape(pat_str)))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!(
+                "StringReplace: invalid pattern regex: {}",
+                e
+              ))
+            })?;
+        return Ok(ReplaceRule::RegexDelayed {
+          regex: re,
+          replacement_expr: replacement_expr.clone(),
+        });
+      }
       let replacement = expr_to_str(replacement_expr)?;
       if ignore_case && !pat_str.is_empty() {
         let re = compile_regex(&format!("(?i){}", regex::escape(pat_str)))
@@ -1213,8 +1229,11 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ))
       })?;
 
-      // If delayed and the regex has named captures, keep the expression
-      if is_delayed && re.capture_names().flatten().next().is_some() {
+      // Delayed rules (:>) evaluate their RHS for each match (after
+      // substituting any named captures), so route them through RegexDelayed
+      // even when the pattern has no capture groups — otherwise a constant
+      // RHS like `LetterCharacter :> ToUpperCase["x"]` is inserted unevaluated.
+      if is_delayed {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),

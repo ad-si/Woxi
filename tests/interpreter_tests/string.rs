@@ -566,6 +566,51 @@ mod string_split_regex {
 mod string_replace {
   use super::*;
 
+  // A delayed rule (:>) must evaluate its RHS for each match, even when the
+  // RHS is a constant expression that does not reference the matched text.
+  #[test]
+  fn delayed_constant_rhs_is_evaluated() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["aAbB", LetterCharacter :> ToUpperCase["x"]]"#
+      )
+      .unwrap(),
+      "XXXX"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["a1b2", DigitCharacter :> ToString[1 + 1]]"#)
+        .unwrap(),
+      "a2b2"
+    );
+    // Same for a literal-string pattern with a delayed RHS.
+    assert_eq!(
+      interpret(r#"StringReplace["aa", "a" :> ToString[1 + 1]]"#).unwrap(),
+      "22"
+    );
+  }
+
+  // A delayed rule whose RHS references the matched pattern variable.
+  #[test]
+  fn delayed_rhs_uses_match() {
+    assert_eq!(
+      interpret(r#"StringReplace["abc", c_ :> ToUpperCase[c]]"#).unwrap(),
+      "ABC"
+    );
+    assert_eq!(
+      interpret(r#"StringReplace["abc", x_ :> x <> x]"#).unwrap(),
+      "aabbcc"
+    );
+  }
+
+  // A delayed rule whose RHS is already a string stays literal.
+  #[test]
+  fn delayed_literal_string_rhs() {
+    assert_eq!(
+      interpret(r#"StringReplace["aaa", "a" :> "b"]"#).unwrap(),
+      "bbb"
+    );
+  }
+
   // RegularExpression replacements expand $0/$1/… to capture groups.
   #[test]
   fn regex_capture_group_backreferences() {
