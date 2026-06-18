@@ -190,6 +190,44 @@ mod complete_graph {
     );
   }
 
+  // CompleteGraph[{n1, ..., nk}] is the complete k-partite graph: edges only
+  // between vertices in different groups.
+  #[test]
+  fn multipartite_bipartite() {
+    assert_eq!(
+      interpret("EdgeList[CompleteGraph[{2, 3}]]").unwrap(),
+      "{1 \u{f3d4} 3, 1 \u{f3d4} 4, 1 \u{f3d4} 5, 2 \u{f3d4} 3, 2 \u{f3d4} 4, 2 \u{f3d4} 5}"
+    );
+    assert_eq!(
+      interpret("VertexCount[CompleteGraph[{2, 3}]]").unwrap(),
+      "5"
+    );
+    // K_{2,3} is bipartite by construction.
+    assert_eq!(
+      interpret("BipartiteGraphQ[CompleteGraph[{2, 3}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn multipartite_three_parts() {
+    assert_eq!(
+      interpret("EdgeList[CompleteGraph[{2, 2, 1}]]").unwrap(),
+      "{1 \u{f3d4} 3, 1 \u{f3d4} 4, 1 \u{f3d4} 5, 2 \u{f3d4} 3, 2 \u{f3d4} 4, \
+       2 \u{f3d4} 5, 3 \u{f3d4} 5, 4 \u{f3d4} 5}"
+    );
+  }
+
+  // A single-element list {n} is the ordinary complete graph K_n.
+  #[test]
+  fn single_part_is_complete_graph() {
+    assert_eq!(
+      interpret("EdgeList[CompleteGraph[{3}]]").unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}"
+    );
+    assert_eq!(interpret("EdgeList[CompleteGraph[{1}]]").unwrap(), "{}");
+  }
+
   #[test]
   fn with_vertex_size_option() {
     // CompleteGraph now accepts trailing Rule options.

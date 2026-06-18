@@ -2433,6 +2433,63 @@ pub fn evaluate_function_call_ast_inner(
         args: graph_args.into(),
       });
     }
+    // CompleteGraph[{n1, ..., nk}] → complete k-partite graph: vertices
+    // partitioned into groups of the given sizes, with an edge between every
+    // pair of vertices in *different* groups. A single-element list {n} is the
+    // ordinary complete graph K_n (matching wolframscript).
+    if let Expr::List(parts) = &args[0] {
+      let sizes: Option<Vec<usize>> = parts
+        .iter()
+        .map(|p| match p {
+          Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+          _ => None,
+        })
+        .collect();
+      if let Some(sizes) = sizes
+        && !sizes.is_empty()
+      {
+        let total: usize = sizes.iter().sum();
+        let vertices: Vec<Expr> =
+          (1..=total).map(|i| Expr::Integer(i as i128)).collect();
+        // part_of[v] = index of the group containing 1-indexed vertex v.
+        let single_part = sizes.len() == 1;
+        let mut part_of = vec![0usize; total + 1];
+        let mut v = 1;
+        for (pi, &sz) in sizes.iter().enumerate() {
+          for _ in 0..sz {
+            part_of[v] = pi;
+            v += 1;
+          }
+        }
+        let mut edges = Vec::new();
+        for i in 1..=total {
+          for j in (i + 1)..=total {
+            // K_n for a single part; otherwise only cross-part edges.
+            if single_part || part_of[i] != part_of[j] {
+              edges.push(Expr::FunctionCall {
+                name: "UndirectedEdge".to_string(),
+                args: vec![Expr::Integer(i as i128), Expr::Integer(j as i128)]
+                  .into(),
+              });
+            }
+          }
+        }
+        let opts: Vec<Expr> = args[1..]
+          .iter()
+          .filter(|a| matches!(a, Expr::Rule { .. }))
+          .cloned()
+          .collect();
+        let mut graph_args =
+          vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+        if !opts.is_empty() {
+          graph_args.push(Expr::List(opts.into()));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Graph".to_string(),
+          args: graph_args.into(),
+        });
+      }
+    }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec().into(),

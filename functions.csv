@@ -1048,7 +1048,7 @@ BarOrigin,,🚫,,7.0,1058
 Label,Label for Goto targets,✅,pure,1.0,1059
 HammingDistance,Returns the number of positions where two equal-length strings differ,✅,pure,6.0,1060
 BetaDistribution,Represents a beta probability distribution with parameters a and b,✅,1,6.0,1061
-CompleteGraph,Generates a complete graph with n vertices,✅,none,8.0,1062
+CompleteGraph,Generates a complete graph on n vertices or a complete multipartite graph from group sizes,✅,none,8.0,1062
 Catenate,Flattens one level of lists,✅,pure,10.0,1063
 SplineKnots,,🚫,,7.0,1064
 StirlingS1,Returns the Stirling number of the first kind,✅,pure,1.0,1065
