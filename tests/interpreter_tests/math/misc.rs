@@ -462,6 +462,37 @@ mod log {
     // Log[E^x] stays unevaluated for symbolic x
     assert_eq!(interpret("Log[E^x]").unwrap(), "Log[E^x]");
   }
+
+  // Log[E^z] for a numeric complex exponent z reduces to z with its imaginary
+  // part brought into (-Pi, Pi].
+  #[test]
+  fn log_e_to_imaginary() {
+    assert_eq!(interpret("Log[E^(2 I)]").unwrap(), "2*I");
+    assert_eq!(interpret("Log[E^(3 I)]").unwrap(), "3*I");
+    assert_eq!(interpret("Log[E^(I Pi/2)]").unwrap(), "I/2*Pi");
+  }
+
+  #[test]
+  fn log_e_to_imaginary_reduced() {
+    // Im outside (-Pi, Pi] is reduced by a multiple of 2 Pi.
+    assert_eq!(interpret("Log[E^(5 I)]").unwrap(), "5*I - (2*I)*Pi");
+    assert_eq!(interpret("Log[E^(-5 I)]").unwrap(), "-5*I + (2*I)*Pi");
+  }
+
+  #[test]
+  fn log_e_to_complex_in_range() {
+    // Re concrete, Im in range: result is the exponent itself.
+    assert_eq!(interpret("Log[E^(2 + 3 I)]").unwrap(), "2 + 3*I");
+  }
+
+  #[test]
+  fn log_e_to_complex_symbolic_real_part() {
+    // A symbolic real part keeps it unevaluated (E^a need not be positive real).
+    assert_eq!(
+      interpret("Log[E^(a + 3 I)]").unwrap(),
+      "Log[E^(a + 3*I)]"
+    );
+  }
 }
 
 mod linear_recurrence {

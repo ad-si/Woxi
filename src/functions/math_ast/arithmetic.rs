@@ -7876,10 +7876,9 @@ fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
         has_i = true;
         match &args[1] {
           Expr::Integer(n) => coeff_numer *= *n,
-          Expr::FunctionCall {
-            name: rn,
-            args: ra,
-          } if rn == "Rational" && ra.len() == 2 => {
+          Expr::FunctionCall { name: rn, args: ra }
+            if rn == "Rational" && ra.len() == 2 =>
+          {
             if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
               coeff_numer *= *p;
               coeff_denom *= *q;
