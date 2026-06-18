@@ -2799,6 +2799,42 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
   Some(if neg { format!("-{s}") } else { s })
 }
 
+/// Render `ScientificForm[x]` / `ScientificForm[x, n]` to a string: a real `x`
+/// is shown as `mantissa × 10` with the exponent placed as a superscript on the
+/// line above (e.g. `1.23457 × 10` over `4`). Default `n` is 6 significant
+/// figures. An exponent of 0 collapses to just the mantissa (`5.`). An integer
+/// `x` is shown unchanged.
+fn scientific_form_to_string(x: &Expr, n: i64) -> Option<String> {
+  // Integer argument: shown unchanged, ignoring the precision.
+  if let Expr::Integer(i) = x {
+    return Some(i.to_string());
+  }
+  let v = match x {
+    Expr::Real(f) => *f,
+    _ => return None,
+  };
+  let n = if n < 1 { 1 } else { n };
+  let prec = (n - 1) as usize;
+  // Rust's `{:e}` formatter produces a normalized mantissa (one nonzero digit
+  // before the point) and renormalizes after rounding (9.9995e3 -> 1.00000e4).
+  let formatted = format!("{:.*e}", prec, v);
+  let (mantissa_raw, exp_raw) = formatted.split_once('e')?;
+  let exp: i64 = exp_raw.parse().ok()?;
+  // Drop padding zeros from the fractional part but keep the trailing point.
+  let mantissa = match mantissa_raw.split_once('.') {
+    Some((int_part, frac_part)) => {
+      format!("{}.{}", int_part, frac_part.trim_end_matches('0'))
+    }
+    None => format!("{mantissa_raw}."),
+  };
+  if exp == 0 {
+    return Some(mantissa);
+  }
+  let line2 = format!("{mantissa} \u{00d7} 10");
+  let indent = " ".repeat(line2.chars().count());
+  Some(format!("{indent}{exp}\n{line2}"))
+}
+
 /// Render `NumberForm[x, {n, f}]`: a real `x` shown with exactly `f` digits
 /// after the decimal point (zero-padded), e.g. `3.0 -> 3.00`. An integer `x`
 /// is shown unchanged.
@@ -3015,6 +3051,29 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(rendered) = rendered {
+      return Ok(Expr::String(rendered));
+    }
+  }
+
+  // ScientificForm[x] / ScientificForm[x, n] — scientific (mantissa × 10^exp)
+  // rendering. Default 6 significant figures; the exponent is shown as a
+  // superscript on the line above. Exponent 0 collapses to just the mantissa.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "ScientificForm"
+    && !is_input_form
+    && (inner_args.len() == 1 || inner_args.len() == 2)
+  {
+    let n = match inner_args.get(1) {
+      None => Some(6),
+      Some(Expr::Integer(n)) => Some(*n as i64),
+      _ => None,
+    };
+    if let Some(n) = n
+      && let Some(rendered) = scientific_form_to_string(&inner_args[0], n)
+    {
       return Ok(Expr::String(rendered));
     }
   }

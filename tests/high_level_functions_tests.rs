@@ -2555,6 +2555,51 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_scientific_form_to_string() {
+      // ScientificForm renders as `mantissa × 10` with the exponent placed as a
+      // superscript on the line above. Default precision is 6 significant figs.
+      assert_eq!(
+        interpret("ToString[ScientificForm[12345.678]]").unwrap(),
+        "            4\n1.23457 \u{00d7} 10"
+      );
+      // Trailing zeros in the mantissa are dropped (123.45 -> 1.2345).
+      assert_eq!(
+        interpret("ToString[ScientificForm[123.45]]").unwrap(),
+        "           2\n1.2345 \u{00d7} 10"
+      );
+      // Negative exponents.
+      assert_eq!(
+        interpret("ToString[ScientificForm[0.000012345]]").unwrap(),
+        "           -5\n1.2345 \u{00d7} 10"
+      );
+      // Negative mantissa.
+      assert_eq!(
+        interpret("ToString[ScientificForm[-9876.5]]").unwrap(),
+        "            3\n-9.8765 \u{00d7} 10"
+      );
+      // Explicit precision: ScientificForm[x, n] uses n significant figures.
+      assert_eq!(
+        interpret("ToString[ScientificForm[123.45, 3]]").unwrap(),
+        "         2\n1.23 \u{00d7} 10"
+      );
+      // Exponent 0 collapses to just the mantissa (no `× 10`).
+      assert_eq!(
+        interpret("ToString[ScientificForm[5.0]]").unwrap(),
+        "5."
+      );
+      // Rounding that bumps the mantissa to 10 renormalizes the exponent.
+      assert_eq!(
+        interpret("ToString[ScientificForm[9999.995]]").unwrap(),
+        "       4\n1. \u{00d7} 10"
+      );
+      // Integers are shown unchanged.
+      assert_eq!(
+        interpret("ToString[ScientificForm[123]]").unwrap(),
+        "123"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");
