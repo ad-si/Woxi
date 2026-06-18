@@ -7789,23 +7789,47 @@ fn contains_real(expr: &Expr) -> bool {
 /// - `Times[k, Times[I, Pi]]`    → recursive
 /// - `Times[-1, I, Pi]`          → k = -1/1
 fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
-  let factors: Vec<&Expr> = match expr {
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      args.iter().collect()
+  // Flatten nested Times so that left-associative parses such as
+  // `2 Pi I` → Times[Times[2, Pi], I] are handled the same as the already-
+  // flattened `2 I Pi` → Times[Complex[0, 2], Pi].
+  fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          flatten(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+      }
+      _ => out.push(e),
     }
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
-      left,
-      right,
-    } => vec![left.as_ref(), right.as_ref()],
-    _ => return None,
-  };
+  }
+  let is_times = matches!(expr, Expr::FunctionCall { name, .. } if name == "Times")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        ..
+      }
+    );
+  if !is_times {
+    return None;
+  }
+  let mut factors: Vec<&Expr> = Vec::new();
+  flatten(expr, &mut factors);
 
   let mut has_i = false;
   let mut has_pi = false;
+  // Coefficients accumulate by multiplication so the factor order doesn't
+  // matter and a numeric coefficient can ride alongside a Complex `I` factor.
   let mut coeff_numer: i128 = 1;
   let mut coeff_denom: i128 = 1;
-  let mut has_numeric_coeff = false;
 
   for factor in &factors {
     match factor {
@@ -7815,19 +7839,17 @@ fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
         } // Two I factors
         has_i = true;
       }
-      Expr::Constant(s) if s == "Pi" => {
+      // Pi may arrive as either a Constant or an Identifier depending on the
+      // parse order (e.g. `2 I Pi` stores Constant("Pi") but `2 Pi I` stores
+      // Identifier("Pi")); accept both spellings.
+      Expr::Constant(s) | Expr::Identifier(s) if s == "Pi" => {
         if has_pi {
           return None;
         } // Two Pi factors
         has_pi = true;
       }
       Expr::Integer(n) => {
-        if has_numeric_coeff {
-          return None;
-        }
-        coeff_numer = *n;
-        coeff_denom = 1;
-        has_numeric_coeff = true;
+        coeff_numer *= n;
       }
       Expr::FunctionCall { name, args }
         if name == "Rational"
@@ -7835,13 +7857,37 @@ fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
           && matches!(&args[0], Expr::Integer(_))
           && matches!(&args[1], Expr::Integer(_)) =>
       {
-        if has_numeric_coeff {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+          coeff_numer *= *p;
+          coeff_denom *= *q;
+        }
+      }
+      // Pure imaginary `Complex[0, b] = b*I`. Woxi folds an integer coefficient
+      // of I into a Complex atom (e.g. `2 I` → Complex[0, 2]), so `2 Pi I`
+      // arrives as Times[Complex[0, 2], Pi] with no standalone I factor.
+      Expr::FunctionCall { name, args }
+        if name == "Complex"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(0)) =>
+      {
+        if has_i {
           return None;
         }
-        if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
-          coeff_numer = *p;
-          coeff_denom = *q;
-          has_numeric_coeff = true;
+        has_i = true;
+        match &args[1] {
+          Expr::Integer(n) => coeff_numer *= *n,
+          Expr::FunctionCall {
+            name: rn,
+            args: ra,
+          } if rn == "Rational" && ra.len() == 2 => {
+            if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
+              coeff_numer *= *p;
+              coeff_denom *= *q;
+            } else {
+              return None;
+            }
+          }
+          _ => return None,
         }
       }
       // Nested Times (e.g., Times[Rational[2,3], Times[I, Pi]])

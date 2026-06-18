@@ -357,10 +357,7 @@ mod conjugate_tests {
 
   #[test]
   fn conjugate_minus_pi_imaginary() {
-    assert_eq!(
-      interpret("Conjugate[2 - 3 Pi I]").unwrap(),
-      "2 + (3*I)*Pi"
-    );
+    assert_eq!(interpret("Conjugate[2 - 3 Pi I]").unwrap(), "2 + (3*I)*Pi");
   }
 }
 
@@ -778,6 +775,25 @@ mod im_tests {
   #[test]
   fn exp_2_i_pi() {
     assert_eq!(interpret("Exp[2 I Pi]").unwrap(), "1");
+  }
+
+  // The `Pi I` factor order stores Pi as an Identifier (not a Constant) and
+  // parses left-associatively, so the integer-multiple reduction must still
+  // fire. Regression: Exp[2 Pi I] used to stay E^(2 I Pi) unevaluated.
+  #[test]
+  fn exp_integer_pi_i_order() {
+    assert_eq!(interpret("Exp[2 Pi I]").unwrap(), "1");
+    assert_eq!(interpret("Exp[4 Pi I]").unwrap(), "1");
+    assert_eq!(interpret("Exp[3 Pi I]").unwrap(), "-1");
+    assert_eq!(interpret("Exp[6 Pi I]").unwrap(), "1");
+    assert_eq!(interpret("Exp[-2 Pi I]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exp_half_integer_pi_i_order() {
+    assert_eq!(interpret("Exp[3 Pi I/2]").unwrap(), "-I");
+    assert_eq!(interpret("Exp[5 Pi I/2]").unwrap(), "I");
+    assert_eq!(interpret("Exp[-3 Pi I/2]").unwrap(), "I");
   }
 
   #[test]
