@@ -2251,6 +2251,17 @@ pub fn dispatch_complex_and_special(
           }));
         }
       }
+      // A zero uncertainty collapses to the bare value (Around[5, 0] -> 5,
+      // Around[5., 0.] -> 5.), matching wolframscript.
+      let zero_uncertainty = new_args.len() == 2
+        && match &new_args[1] {
+          Expr::Integer(0) => true,
+          Expr::Real(z) => *z == 0.0,
+          _ => false,
+        };
+      if zero_uncertainty {
+        return Some(Ok(new_args[0].clone()));
+      }
       if let Expr::Integer(n) = &new_args[0] {
         // If any other argument is Real, convert integer to Real
         let has_real = new_args[1..].iter().any(|a| matches!(a, Expr::Real(_)));

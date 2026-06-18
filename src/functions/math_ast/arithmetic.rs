@@ -7786,7 +7786,8 @@ fn as_around(e: &Expr) -> Option<(f64, f64)> {
   if let Expr::FunctionCall { name, args } = e
     && name == "Around"
     && args.len() == 2
-    && let (Some(v), Some(d)) = (around_literal(&args[0]), around_literal(&args[1]))
+    && let (Some(v), Some(d)) =
+      (around_literal(&args[0]), around_literal(&args[1]))
   {
     Some((v, d))
   } else {
@@ -7815,6 +7816,11 @@ fn around_literal(e: &Expr) -> Option<f64> {
 }
 
 fn make_around(value: f64, uncertainty: f64) -> Expr {
+  // A zero uncertainty collapses to the bare value (matching wolframscript,
+  // e.g. Cos[Around[0, 0.1]] -> 1. since the propagated uncertainty is 0).
+  if uncertainty == 0.0 {
+    return Expr::Real(value);
+  }
   Expr::FunctionCall {
     name: "Around".to_string(),
     args: vec![Expr::Real(value), Expr::Real(uncertainty)].into(),
@@ -7883,6 +7889,49 @@ pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   let value = a.powf(n);
   let uncertainty = (n * a.powf(n - 1.0)).abs() * d;
   Some(make_around(value, uncertainty))
+}
+
+/// (f(a), f'(a)) for an elementary unary function, used to propagate an
+/// Around through it. None for functions without a smooth real derivative here.
+fn around_func_and_deriv(name: &str, a: f64) -> Option<(f64, f64)> {
+  let v = match name {
+    "Sqrt" => (a.sqrt(), 0.5 / a.sqrt()),
+    "Exp" => (a.exp(), a.exp()),
+    "Log" => (a.ln(), 1.0 / a),
+    "Sin" => (a.sin(), a.cos()),
+    "Cos" => (a.cos(), -a.sin()),
+    "Tan" => (a.tan(), 1.0 / (a.cos() * a.cos())),
+    "Cot" => (1.0 / a.tan(), -1.0 / (a.sin() * a.sin())),
+    "Sinh" => (a.sinh(), a.cosh()),
+    "Cosh" => (a.cosh(), a.sinh()),
+    "Tanh" => (a.tanh(), 1.0 - a.tanh() * a.tanh()),
+    "ArcSin" => (a.asin(), 1.0 / (1.0 - a * a).sqrt()),
+    "ArcCos" => (a.acos(), -1.0 / (1.0 - a * a).sqrt()),
+    "ArcTan" => (a.atan(), 1.0 / (1.0 + a * a)),
+    "ArcSinh" => (a.asinh(), 1.0 / (a * a + 1.0).sqrt()),
+    "ArcCosh" => (a.acosh(), 1.0 / (a * a - 1.0).sqrt()),
+    "ArcTanh" => (a.atanh(), 1.0 / (1.0 - a * a)),
+    _ => return None,
+  };
+  Some(v)
+}
+
+/// f[Around[a, δ]] = Around[f(a), |f'(a)|·δ] for an elementary unary f.
+/// Returns None unless `args` is a single Around and `name` is supported, so
+/// normal dispatch handles everything else.
+pub fn try_around_unary(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1 {
+    return None;
+  }
+  let (a, d) = as_around(&args[0])?;
+  let (fa, fpa) = around_func_and_deriv(name, a)?;
+  if !fa.is_finite() || !fpa.is_finite() {
+    return None;
+  }
+  Some(Ok(make_around(fa, fpa.abs() * d)))
 }
 
 fn contains_real(expr: &Expr) -> bool {

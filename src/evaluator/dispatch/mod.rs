@@ -568,6 +568,12 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // Propagate uncertainty through an elementary unary function applied to an
+  // Around value: f[Around[a, δ]] = Around[f[a], |f'[a]|·δ].
+  if let Some(result) = crate::functions::try_around_unary(name, args) {
+    return result;
+  }
+
   // Apply Flat attribute: flatten nested calls of the same function
   let has_flat = is_builtin_flat(name)
     || crate::FUNC_ATTRS.with(|m| {

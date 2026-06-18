@@ -6547,10 +6547,7 @@ mod batch_inert_symbols_2 {
       "Around[8., 2.23606797749979]"
     );
     // A constant shifts the value but not the uncertainty.
-    assert_eq!(
-      interpret("Around[5, 1] + 10").unwrap(),
-      "Around[15., 1.]"
-    );
+    assert_eq!(interpret("Around[5, 1] + 10").unwrap(), "Around[15., 1.]");
     // Subtraction goes through Times[-1, …] + Plus.
     assert_eq!(
       interpret("Around[5, 1] - Around[3, 1]").unwrap(),
@@ -6560,18 +6557,12 @@ mod batch_inert_symbols_2 {
 
   #[test]
   fn around_times() {
-    assert_eq!(
-      interpret("Around[10, 2] * 2").unwrap(),
-      "Around[20., 4.]"
-    );
+    assert_eq!(interpret("Around[10, 2] * 2").unwrap(), "Around[20., 4.]");
     assert_eq!(
       interpret("Around[5, 1] * Around[3, 1]").unwrap(),
       "Around[15., 5.830951894845301]"
     );
-    assert_eq!(
-      interpret("-Around[5, 1]").unwrap(),
-      "Around[-5., 1.]"
-    );
+    assert_eq!(interpret("-Around[5, 1]").unwrap(), "Around[-5., 1.]");
   }
 
   #[test]
@@ -6582,10 +6573,33 @@ mod batch_inert_symbols_2 {
   // A symbolic term leaves the sum unevaluated (no propagation possible).
   #[test]
   fn around_plus_symbolic_stays() {
+    assert_eq!(interpret("Around[5, 1] + x").unwrap(), "x + Around[5, 1]");
+  }
+
+  // Elementary unary functions propagate: f[Around[a,d]] = Around[f[a],|f'[a]|d].
+  #[test]
+  fn around_unary_functions() {
+    assert_eq!(interpret("Sqrt[Around[4, 1]]").unwrap(), "Around[2., 0.25]");
+    assert_eq!(interpret("Exp[Around[0, 0.1]]").unwrap(), "Around[1., 0.1]");
     assert_eq!(
-      interpret("Around[5, 1] + x").unwrap(),
-      "x + Around[5, 1]"
+      interpret("Log[Around[2, 0.1]]").unwrap(),
+      "Around[0.6931471805599453, 0.05]"
     );
+    assert_eq!(interpret("Sin[Around[0, 0.1]]").unwrap(), "Around[0., 0.1]");
+    assert_eq!(
+      interpret("ArcTan[Around[1, 0.1]]").unwrap(),
+      "Around[0.7853981633974483, 0.05]"
+    );
+  }
+
+  // A zero (propagated or given) uncertainty collapses to the bare value.
+  #[test]
+  fn around_zero_uncertainty_collapses() {
+    assert_eq!(interpret("Around[5, 0]").unwrap(), "5");
+    assert_eq!(interpret("Around[5., 0.]").unwrap(), "5.");
+    // Cos'(0) = 0, so the propagated uncertainty vanishes.
+    assert_eq!(interpret("Cos[Around[0, 0.1]]").unwrap(), "1.");
+    assert_eq!(interpret("Sin[Around[0, 0]]").unwrap(), "0");
   }
 
   #[test]
