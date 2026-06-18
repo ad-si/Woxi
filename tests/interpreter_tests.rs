@@ -529,6 +529,46 @@ mod interpreter_tests {
     }
   }
 
+  #[test]
+  fn control_wrappers_stay_symbolic_without_warning() {
+    // Interactive control / display / annotation wrapper heads stay
+    // unevaluated as their canonical form in wolframscript's script mode and
+    // must NOT emit a spurious "not yet implemented" warning.
+    let cases = [
+      ("Button[a, b]", "Button[a, b]"),
+      ("ActionMenu[a, b]", "ActionMenu[a, b]"),
+      ("Tooltip[a, b]", "Tooltip[a, b]"),
+      ("Interpretation[a, b]", "Interpretation[a, b]"),
+      ("Invisible[x]", "Invisible[x]"),
+      ("Subsuperscript[x, 1, 2]", "Subsuperscript[x, 1, 2]"),
+      ("Deploy[x]", "Deploy[x]"),
+      ("MouseAppearance[a, b]", "MouseAppearance[a, b]"),
+      ("Editable[x]", "Editable[x]"),
+      ("Selectable[x]", "Selectable[x]"),
+      ("DynamicWrapper[a, b]", "DynamicWrapper[a, b]"),
+      ("Dynamic[x]", "Dynamic[x]"),
+      ("Setter[a, b]", "Setter[a, b]"),
+      ("Slider[0.5]", "Slider[0.5]"),
+      ("Toggler[a, b]", "Toggler[a, b]"),
+      ("Manipulator[x]", "Manipulator[x]"),
+      ("ColorSlider[x]", "ColorSlider[x]"),
+      ("Opener[x]", "Opener[x]"),
+      ("TabView[x]", "TabView[x]"),
+      ("MenuView[x]", "MenuView[x]"),
+      ("SlideView[x]", "SlideView[x]"),
+      ("FlipView[x]", "FlipView[x]"),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+        "unexpected 'not yet implemented' warning for {input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
   mod case_helpers;
 
   mod algebra;

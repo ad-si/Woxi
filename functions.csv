@@ -130,7 +130,7 @@ Mod,Returns the remainder on division (m - n Floor[m/n]),✅,pure,1.0,134
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
-Dynamic,,🚫,,6.0,138
+Dynamic,Dynamic display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,138
 Not,Logical negation of an expression,✅,pure,1.0,139
 Last,Returns the last element of a list,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
@@ -254,7 +254,7 @@ Circle,Represents a circle graphics primitive,✅,pure,2.0,256
 AbsoluteTiming,Returns the time taken to evaluate an expression,✅,contextual,5.0,257
 Blend,Blend colors together using linear interpolation,✅,none,6.0,258
 Cosh,Returns the hyperbolic cosine,✅,pure,1.0,259
-Tooltip,Interactive tooltip element,🚫,effectful,6.0,260
+Tooltip,Tooltip display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,260
 Spacings,Spacing specification for grids and layouts,✅,none,6.0,261
 Assumptions,Specify assumptions for symbolic computation,✅,none,3.0,262
 Real,Head type for real (floating-point) numbers,✅,pure,1.0,263
@@ -274,7 +274,7 @@ Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1.0,2
 RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3.0,277
 Sinh,Returns the hyperbolic sine,✅,pure,1.0,278
 Round,Returns the nearest integer to a number,✅,pure,1.0,279
-Button,Interactive button element,🚫,effectful,6.0,280
+Button,Interactive button element (stays symbolic in script mode),✅,unevaluated,6.0,280
 Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
 Sphere,3D sphere graphics primitive,✅,none,6.0,282
 Get,Reads and evaluates a file returning the last result,✅,effectful,1.0,283
@@ -616,7 +616,7 @@ BaselinePosition,Option for baseline alignment,✅,none,6.0,619
 GraphicsGrid,Arranges graphics in a 2D grid,✅,pure,6.0,620
 EvaluationNotebook,Return the current evaluation notebook,✅,none,3.0,621
 ListPlot3D,Creates a 3D plot from data,✅,pure,1.0,622
-Slider,,🚫,,6.0,623
+Slider,Slider control element (stays symbolic in script mode),✅,unevaluated,6.0,623
 DiracDelta,Dirac delta generalized function,✅,pure,4.0,624
 KroneckerProduct,Kronecker (tensor) product of vectors and matrices,✅,pure,6.0,625
 ScriptMinSize,Minimum size for sub/superscripts,✅,none,3.0,626
@@ -897,7 +897,7 @@ StringFreeQ,Tests if a string is free of a pattern,✅,pure,5.1,903
 Log2,Returns the base-2 logarithm of a number,✅,pure,7.0,904
 ProductLog,Returns the Lambert W function value,✅,pure,3.0,905
 KnotData,,🚫,,6.0,906
-Invisible,,🚫,,6.0,907
+Invisible,Invisible display wrapper (stays symbolic),✅,unevaluated,6.0,907
 StyleData,,🚫,,3.0,908
 NestWhile,Applies a function repeatedly while a condition holds,✅,pure,4.0,909
 Depth,Returns the depth of an expression,✅,pure,1.0,911
@@ -1138,7 +1138,7 @@ SinIntegral,Sine integral Si(z),✅,pure,2.0,1148
 DiscretizeGraphics,,🚫,,10.0,1149
 GroebnerBasis,Reduced lexicographic Groebner basis over the rationals,✅,pure,2.0,1150
 LegendMarkerSize,,🚫,,9.0,1151
-Subsuperscript,,🚫,,3.0,1152
+Subsuperscript,Subsuperscript notation wrapper (stays symbolic),✅,unevaluated,3.0,1152
 KelvinBei,Kelvin bei function (imaginary part of BesselJ on a rotated argument),✅,pure,6.0,1153
 CubeRoot,Returns the real-valued cube root,✅,pure,9.0,1154
 ContinuousAction,,🚫,,6.0,1155
@@ -1187,7 +1187,7 @@ Xor,Checks if exactly one condition is true,✅,pure,1.0,1197
 FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
 SmoothHistogram,,🚫,,8.0,1200
-Manipulator,,🚫,,6.0,1201
+Manipulator,Manipulator control element (stays symbolic in script mode),✅,unevaluated,6.0,1201
 EndOfString,Represents the end of a string in string patterns,✅,1,5.1,1202
 ParallelMap,Applies a function in parallel to each element,✅,1,7.0,1204
 ButtonData,,🚫,,3.0,1205
@@ -1218,10 +1218,10 @@ Cancel,Cancels common factors in a rational expression,✅,pure,1.0,1229
 AiryAi,Airy function of the first kind Ai(x),✅,pure,1.0,1230
 ParametricNDSolve,,🚫,,9.0,1231
 AllTrue,Checks if all elements in a list are true,✅,pure,10.0,1232
-Editable,,🚫,,3.0,1233
+Editable,Editable display option wrapper (stays symbolic),✅,unevaluated,3.0,1233
 MoebiusMu,Returns the Möbius function value,✅,pure,1.0,1235
 FinancialDerivative,,🚫,,8.0,1236
-Setter,,🚫,,6.0,1237
+Setter,Setter control element (stays symbolic in script mode),✅,unevaluated,6.0,1237
 GraphicsColumn,Arranges graphics in a vertical column,✅,pure,6.0,1239
 MakeExpression,,🚫,,3.0,1239
 BoundaryDiscretizeRegion,,🚫,,10.0,1240
@@ -1291,7 +1291,7 @@ StreamStyle,,🚫,,7.0,1304
 MaxValue,Global symbolic maximum value of a function over variables with optional constraints,✅,pure,7.0,1305
 KeyValueMap,Maps a function over key-value pairs; supports the operator form KeyValueMap[f][assoc],✅,pure,10.1,1306
 KelvinKei,Kelvin kei function (imaginary part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1307
-TabView,,🚫,,6.0,1308
+TabView,Tabbed view control (stays symbolic in script mode),✅,unevaluated,6.0,1308
 SinhIntegral,Hyperbolic sine integral Shi(z),✅,pure,3.0,1309
 KelvinKer,Kelvin ker function (real part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1310
 ComplexPlot3D,Plot the modulus of a complex function as a 3D surface over the complex plane,✅,pure,12.0,1311
@@ -1302,7 +1302,7 @@ FirstPosition,Find the position of the first element matching a pattern (support
 FourierSeries,,🚫,,7.0,1317
 Inactivate,,✅,,10.0,1317
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
-Deploy,,🚫,,6.0,1320
+Deploy,Deploy display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,1320
 RegionMeasure,Measure of a region's intrinsic dimension (length/area/volume),✅,pure,2.0,1320
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8.0,1322
 WeibullDistribution,Weibull probability distribution,✅,,6.0,1322
@@ -1813,7 +1813,7 @@ MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
 QuantilePlot,Quantile plot,,unevaluated,8.0,1842
 ResourceObject,Resource object,,unevaluated,11.0,1844
 StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; N gives machine values up to order 10),✅,pure,3.0,1844
-DynamicWrapper,,🚫,,8.0,1846
+DynamicWrapper,Dynamic wrapper (stays symbolic in script mode),✅,unevaluated,8.0,1846
 PolarTicks,Polar ticks option,,unevaluated,7.0,1846
 BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849
 CoordinateTransformData,,🚫,,9.0,1849
@@ -1869,7 +1869,7 @@ Haversine,Haversine function (Listable),✅,pure,7.0,1901
 PolarGridLines,Polar grid lines option,,unevaluated,7.0,1901
 RootApproximant,Root approximant,✅,unevaluated,6.0,1901
 Databin,Databin cloud storage,,unevaluated,10.0,1905
-Interpretation,Interpretation wrapper,,unevaluated,6.0,1905
+Interpretation,Interpretation display wrapper (stays symbolic),✅,unevaluated,6.0,1905
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
 SymmetricGroup,Symbolic symmetric group S_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators,✅,unevaluated,8.0,1905
 InverseErf,Inverse error function,✅,pure,3.0,1906
@@ -1912,7 +1912,7 @@ SquareFreeQ,Tests if a polynomial or integer is square-free,✅,pure,6.0,1944
 UnitTriangle,Unit triangle function (1-|x| for |x| <= 1),✅,pure,7.0,1944
 MessageDialog,GUI dialog for displaying messages,🚫,,6.0,1946
 SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6.0,1946
-ColorSlider,GUI widget for interactive color selection,🚫,,6.0,1949
+ColorSlider,Color slider control element (stays symbolic in script mode),✅,unevaluated,6.0,1949
 Saturday,Day name constant (unevaluated symbol),🚫,,9.0,1949
 TemplateApply,Applies arguments to a string template with backtick slots,✅,pure,10.0,1949
 ImageReflect,Reflects an image horizontally or vertically,✅,pure,7.0,1951
@@ -1940,7 +1940,7 @@ MeshCellCount,Count mesh cells in a region,🚫,,10.0,1975
 ModularInverse,Returns the modular multiplicative inverse,✅,pure,11.1,1975
 PopupWindow,GUI popup window element,🚫,,6.0,1975
 Resultant,Resultant of two polynomials via Sylvester matrix determinant,✅,pure,1.0,1975
-Selectable,GUI option for content selectability,🚫,,3.0,1977
+Selectable,Selectable display option wrapper (stays symbolic),✅,unevaluated,3.0,1977
 TableDirections,Option for TableForm display directions,🚫,,2.0,1977
 PermutationGroup,Group theory permutation group representation,✅,pure,8.0,1979
 WeightedAdjacencyMatrix,Builds the weighted adjacency matrix from a graph with EdgeWeight,✅,none,8.0,1979
@@ -2041,7 +2041,7 @@ EngineeringForm,Display wrapper for engineering notation formatting,✅,pure,1.0
 NeighborhoodGraph,Induced subgraph within distance r (default 1) of the given centers,✅,pure,8.0,2079
 ValidationSet,Validation dataset for ML,🚫,,10.0,2079
 EulerMatrix,Rotation matrix from Euler angles using the default {3 2 3} (ZYZ) convention or an explicit axis sequence,✅,pure,10.2,2082
-MouseAppearance,Custom mouse cursor appearance,🚫,,8.0,2082
+MouseAppearance,Custom mouse cursor appearance wrapper (stays symbolic),✅,unevaluated,8.0,2082
 SampledSoundList,Sampled sound representation,🚫,,2.0,2082
 CatenateLayer,Neural network concatenation layer,🚫,,11.0,2084
 CurveClosed,Check if curve is closed,🚫,,8.0,2084
@@ -2062,7 +2062,7 @@ HTTPRequest,HTTP request object,🚫,,11.0,2100
 ImageConvolve,Convolve image with kernel,✅,,7.0,2100
 SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
 AudioPlot,Plot audio waveform,🚫,,11.0,2102
-FlipView,Flippable GUI view,🚫,,6.0,2102
+FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
 EmptyRegion,Empty geometric region,🚫,,10.0,2108
 HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7.0,2108
@@ -2073,7 +2073,7 @@ MaxStepFraction,ODE solver step size option,🚫,,4.0,2112
 NotebookEvaluate,Evaluate notebook programmatically,🚫,,8.0,2112
 SymmetricReduction,Symmetric polynomial reduction,🚫,,6.0,2112
 SymmetrizedArray,Array with symmetry constraints,🚫,,9.0,2112
-ActionMenu,Dropdown action menu,🚫,,6.0,2116
+ActionMenu,Dropdown action menu (stays symbolic in script mode),✅,unevaluated,6.0,2116
 BitShiftLeft,Shifts integer bits to the left,✅,pure,6.0,2116
 ButtonNotebook,Notebook containing buttons,🚫,,3.0,2116
 SequenceReplace,Replace non-overlapping subsequences matching a rule pattern with its replacement,✅,pure,11.3,2116
@@ -2561,7 +2561,7 @@ DistributionParameterQ,Tests whether the parameters of a distribution are valid,
 PlanarAngle,Computes the angle at a vertex between two rays defined by three points,✅,pure,12.0,2617
 PrivateFontOptions,,🚫,,3.0,2617
 StarGraph,Star graph with n vertices,✅,1,8.0,2617
-Toggler,,🚫,,6.0,2617
+Toggler,Toggler control element (stays symbolic in script mode),✅,unevaluated,6.0,2617
 GraphDiameter,Maximum shortest path distance,✅,1,8.0,2625
 ImageCorners,,🚫,,9.0,2625
 Inpaint,,🚫,,8.0,2625
@@ -2791,7 +2791,7 @@ DifferentialRootReduce,,🚫,,7.0,2851
 FontVariations,,🚫,,3.0,2851
 MathematicalFunctionData,,🚫,,10.3,2851
 NominalVariables,,🚫,,7.0,2851
-Opener,,🚫,,6.0,2851
+Opener,Opener control element (stays symbolic in script mode),✅,unevaluated,6.0,2851
 SpheroidalPSPrime,,🚫,,6.0,2851
 ButterworthFilterModel,,🚫,,9.0,2854
 CompositeQ,Tests if a number is composite (Listable),✅,pure,10.0,2854
@@ -2979,7 +2979,7 @@ LongestCommonSubsequence,Returns the longest contiguous subsequence common to tw
 NotebookDynamicExpression,,🚫,,8.0,3048
 RangeFilter,,🚫,,8.0,3048
 SectorChart3D,,🚫,,7.0,3048
-SlideView,,🚫,,6.0,3048
+SlideView,Slide view control (stays symbolic in script mode),✅,unevaluated,6.0,3048
 SpanMaxSize,,,,3.0,3048
 TestReport,,,,10.0,3048
 BetaPrimeDistribution,Beta prime distribution (exact PDF and CDF and conditional moments),✅,pure,8.0,3059
@@ -3024,7 +3024,7 @@ EdgeQ,True if edge exists in graph,✅,1,8.0,3094
 EvaluatePacket,,🚫,,3.0,3094
 FindEquationalProof,,,,11.3,3094
 IndexGraph,Replace graph vertices with integer indices,✅,pure,8.0,3094
-MenuView,,🚫,,6.0,3094
+MenuView,Menu view control (stays symbolic in script mode),✅,unevaluated,6.0,3094
 MinStableDistribution,Min-stable (GEV-min) distribution with shape-cased forms,✅,pure,8.0,3094
 NHoldAll,,,,3.0,3094
 Vee,,,,3.0,3094

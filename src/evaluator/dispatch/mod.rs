@@ -9132,6 +9132,34 @@ pub fn evaluate_function_call_ast_inner(
         // consumed by the quantum framework, so they are not "unimplemented".
         | "Ket"
         | "Bra"
+        // More notation/display wrapper heads. Like Subscript/Framed, these
+        // describe layout rather than a value to compute, so wolframscript
+        // leaves them unevaluated as their canonical form.
+        | "Subsuperscript"
+        | "Tooltip"
+        | "Interpretation"
+        | "Invisible"
+        | "MouseAppearance"
+        | "Editable"
+        | "Selectable"
+        // Interactive control / view wrapper heads. In script mode (the
+        // wolframscript -code reference) these stay unevaluated rather than
+        // producing an interactive object, so they are not "unimplemented".
+        | "Button"
+        | "ActionMenu"
+        | "Deploy"
+        | "Dynamic"
+        | "DynamicWrapper"
+        | "Setter"
+        | "Slider"
+        | "Toggler"
+        | "Manipulator"
+        | "ColorSlider"
+        | "Opener"
+        | "TabView"
+        | "MenuView"
+        | "SlideView"
+        | "FlipView"
     )
   {
     let args_str = args
