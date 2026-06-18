@@ -2167,7 +2167,9 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(
       vec![Expr::List(
         vec![
-          Expr::Identifier("TemperatureUnit".to_string()),
+          // Dimension names are Strings (`"TemperatureUnit"`), matching the
+          // general path below and wolframscript — not bare symbols.
+          Expr::String("TemperatureUnit".to_string()),
           Expr::Integer(1),
         ]
         .into(),
@@ -2198,11 +2200,7 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter(|(_, exp)| *exp != 0)
     .map(|(name, exp)| {
       Expr::List(
-        vec![
-          Expr::Identifier(name.to_string()),
-          Expr::Integer(exp as i128),
-        ]
-        .into(),
+        vec![Expr::String(name.to_string()), Expr::Integer(exp as i128)].into(),
       )
     })
     .collect();

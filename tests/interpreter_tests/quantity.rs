@@ -2668,6 +2668,11 @@ fn unit_dimensions_temperature() {
     interpret("UnitDimensions[\"Celsius\"]").unwrap(),
     "{{TemperatureUnit, 1}}"
   );
+  // The dimension name is a String, not a bare symbol (matches wolframscript).
+  assert_eq!(
+    interpret("ToString[UnitDimensions[\"Kelvins\"], InputForm]").unwrap(),
+    "{{\"TemperatureUnit\", 1}}"
+  );
 }
 
 #[test]
