@@ -3125,6 +3125,65 @@ mod take_multi_dim {
   }
 }
 
+// Take / Drop with a Span (i;;j;;k) spec, equivalent to the {i, j, k} list
+// form.
+mod take_drop_span {
+  use super::*;
+
+  #[test]
+  fn take_span() {
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, ;;3]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, 2;;4]").unwrap(),
+      "{2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, 2;;]").unwrap(),
+      "{2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, ;;-2]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn take_span_with_step() {
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, 1;;-1;;2]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn drop_span() {
+    assert_eq!(
+      interpret("Drop[{1, 2, 3, 4, 5}, ;;2]").unwrap(),
+      "{3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("Drop[{1, 2, 3, 4, 5}, 2;;3]").unwrap(),
+      "{1, 4, 5}"
+    );
+    assert_eq!(
+      interpret("Drop[{1, 2, 3, 4, 5}, ;;-2]").unwrap(),
+      "{5}"
+    );
+  }
+
+  // A non-Span invalid spec still errors and stays unevaluated.
+  #[test]
+  fn invalid_spec_unevaluated() {
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, x]").unwrap(),
+      "Take[{1, 2, 3, 4, 5}, x]"
+    );
+  }
+}
+
 mod constant_array {
   use super::*;
 

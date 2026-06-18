@@ -2826,7 +2826,10 @@ mod string_take_drop_span {
 
   #[test]
   fn take_span_with_step() {
-    assert_eq!(interpret(r#"StringTake["hello", 1;;-1;;2]"#).unwrap(), "hlo");
+    assert_eq!(
+      interpret(r#"StringTake["hello", 1;;-1;;2]"#).unwrap(),
+      "hlo"
+    );
   }
 
   #[test]

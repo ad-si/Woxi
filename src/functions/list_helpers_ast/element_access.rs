@@ -540,6 +540,21 @@ pub fn seq_spec_shape_ok(spec: &Expr) -> bool {
       }
       _ => false,
     },
+    // A Span (i;;j;;k) is a valid sequence spec; its bounds may be machine
+    // integers or `All`, and a step must be a nonzero machine integer. It is
+    // converted to the equivalent list form by take_ast/drop_ast.
+    Expr::FunctionCall { name, args } if name == "Span" => {
+      let bound = |e: &Expr| {
+        machine(e) || matches!(e, Expr::Identifier(s) if s == "All")
+      };
+      match args.as_slice() {
+        [i, j] => bound(i) && bound(j),
+        [i, j, s] => {
+          bound(i) && bound(j) && machine(s) && !matches!(s, Expr::Integer(0))
+        }
+        _ => false,
+      }
+    }
     _ => false,
   }
 }
@@ -589,10 +604,42 @@ pub fn take_multi_ast(
   }
 }
 
+/// Convert a `Span[i, j]` / `Span[i, j, k]` sequence spec into the equivalent
+/// `{i, j}` / `{i, j, k}` list form that Take/Drop understand. A missing/`All`
+/// start becomes 1 and a missing/`All` end becomes -1. Returns None for a
+/// non-Span or a symbolic (non-integer) bound.
+fn span_to_take_spec(span: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = span else {
+    return None;
+  };
+  if name != "Span" || !(args.len() == 2 || args.len() == 3) {
+    return None;
+  }
+  let bound = |e: &Expr, all_default: i128| -> Option<Expr> {
+    match e {
+      Expr::Integer(_) => Some(e.clone()),
+      Expr::Identifier(s) if s == "All" => Some(Expr::Integer(all_default)),
+      _ => None,
+    }
+  };
+  let mut spec = vec![bound(&args[0], 1)?, bound(&args[1], -1)?];
+  if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(_) => spec.push(args[2].clone()),
+      _ => return None,
+    }
+  }
+  Some(Expr::List(spec.into()))
+}
+
 pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // Handle All: return the list unchanged
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(list.clone());
+  }
+  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
+  if let Some(spec) = span_to_take_spec(n) {
+    return take_ast(list, &spec);
   }
 
   // Handle associations: Take on values, reconstruct association
@@ -774,6 +821,10 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Drop: drop first n elements.
 pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
+  if let Some(spec) = span_to_take_spec(n) {
+    return drop_ast(list, &spec);
+  }
   // Handle associations: convert to rules, apply Drop, convert back
   if let Expr::Association(pairs) = list {
     let rules: Vec<Expr> = pairs
