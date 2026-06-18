@@ -1617,10 +1617,12 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // 12-hour clock: 0 and 12 both map to 12, 13..23 map to 1..11.
       "Hour12" => int((h + 11).rem_euclid(12) + 1),
       "AMPM" => Expr::String(if h < 12 { "AM" } else { "PM" }.to_string()),
+      // DayName is a Symbol (`Saturday`), not a String — matching `DayName[…]`
+      // and wolframscript. The other name keys (MonthName, *Short) are Strings.
       "DayName" => {
         Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
       }
-      "MonthName" => Expr::Identifier(month_name(mo).to_string()),
+      "MonthName" => Expr::String(month_name(mo).to_string()),
       "MonthNameShort" => Expr::String(month_name_short(mo).to_string()),
       "DayNameShort" => {
         Expr::String(day_name_short(day_of_week(y, mo, d)).to_string())

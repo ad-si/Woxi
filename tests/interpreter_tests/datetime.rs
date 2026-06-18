@@ -1308,6 +1308,20 @@ mod date_value {
       interpret(r#"DateValue[{2024, 6, 15}, "DayName"]"#).unwrap(),
       "Saturday"
     );
+    // DayName is a Symbol (no quotes in InputForm), matching wolframscript;
+    // MonthName below is a String.
+    assert_eq!(
+      interpret(r#"ToString[DateValue[{2024, 6, 15}, "DayName"], InputForm]"#)
+        .unwrap(),
+      "Saturday"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[DateValue[{2024, 6, 15}, "MonthName"], InputForm]"#
+      )
+      .unwrap(),
+      "\"June\""
+    );
     assert_eq!(
       interpret(r#"DateValue[{2024, 6, 15}, "MonthName"]"#).unwrap(),
       "June"
