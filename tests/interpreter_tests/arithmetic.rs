@@ -6004,6 +6004,36 @@ mod zero_divisor {
   use super::*;
 
   #[test]
+  fn real_division_by_zero_does_not_error() {
+    // Regression: real / 0 used to raise a hard "Division by zero" error
+    // instead of returning ComplexInfinity (or Indeterminate for 0./0) with
+    // the Power::infy message, matching wolframscript's `/`-operator behaviour.
+    assert_eq!(interpret("1.5/0").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Divide[1.5, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("0./0").unwrap(), "Indeterminate");
+    // Integer forms keep working.
+    assert_eq!(interpret("5/0").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("0/0").unwrap(), "Indeterminate");
+    assert_eq!(interpret("a/0").unwrap(), "ComplexInfinity");
+    // The Power::infy reciprocal message is emitted (not a thrown error).
+    let r = interpret_with_stdout("1.5/0").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Power::infy: Infinite expression")),
+      "expected Power::infy message, got: {:?}",
+      r.warnings
+    );
+    // 0./0 names the real dividend in the indeterminate message.
+    let r = interpret_with_stdout("0./0").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Infinity::indet: Indeterminate expression 0. ComplexInfinity encountered."
+    )));
+  }
+
+  #[test]
   fn infinity_indeterminate_forms_emit_message() {
     // Indeterminate forms involving Infinity return Indeterminate AND emit the
     // Infinity::indet message (Woxi previously returned Indeterminate silently).

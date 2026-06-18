@@ -5602,6 +5602,10 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return thread_binary_over_lists(args, divide_two);
   }
 
+  // NOTE: both the `/` operator and the Divide[] head reach this function, so
+  // they cannot be distinguished here. wolframscript reports Power::infy for
+  // `a/0` and Divide::infy for `Divide[a, 0]`; Woxi uses the operator form
+  // (Power::infy, via divide_two) for both since `/` is far more common.
   divide_two(&args[0], &args[1])
 }
 
@@ -5616,6 +5620,30 @@ pub fn is_infinity_like(expr: &Expr) -> bool {
     } => matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"),
     _ => false,
   }
+}
+
+/// Result of dividing a value by zero in the shared `/`-operator / Divide path.
+/// wolframscript treats `x/0` as `x*(1/0)`, so it emits the Power::infy message
+/// for the reciprocal `1/0` sub-expression (rendered as a 2D fraction) and
+/// returns ComplexInfinity — or Indeterminate for `0/0`, with an additional
+/// Infinity::indet message naming the dividend (`0` or `0.`).
+fn divide_by_zero_result(a: &Expr) -> Expr {
+  crate::emit_message(
+    "                                 1\n\
+     Power::infy: Infinite expression - encountered.\n\
+     \x20                                0",
+  );
+  let a_is_zero =
+    matches!(a, Expr::Integer(0)) || matches!(a, Expr::Real(z) if *z == 0.0);
+  if a_is_zero {
+    let zero = if matches!(a, Expr::Real(_)) { "0." } else { "0" };
+    crate::emit_message(&format!(
+      "Infinity::indet: Indeterminate expression {zero} ComplexInfinity \
+       encountered."
+    ));
+    return Expr::Identifier("Indeterminate".to_string());
+  }
+  Expr::Identifier("ComplexInfinity".to_string())
 }
 
 /// Helper for division of two arguments
@@ -5719,23 +5747,15 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(a.clone());
   }
 
+  // x / 0 → ComplexInfinity (or Indeterminate for 0/0), for any dividend type
+  // (Integer, Real, Rational, symbolic). Handled uniformly here so reals no
+  // longer raise a hard "Division by zero" error.
+  if b_is_zero {
+    return Ok(divide_by_zero_result(a));
+  }
+
   // For two integers, keep as Rational (fraction)
   if let (Expr::Integer(numer), Expr::Integer(denom)) = (a, b) {
-    if *denom == 0 {
-      // n/0 → ComplexInfinity (with warning), 0/0 → Indeterminate
-      crate::emit_message(
-        "                                 1\n\
-         Power::infy: Infinite expression - encountered.\n\
-         \x20                                0",
-      );
-      if *numer == 0 {
-        crate::emit_message(
-          "\nInfinity::indet: Indeterminate expression 0 ComplexInfinity encountered.",
-        );
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
-      }
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-    }
     return Ok(make_rational(*numer, *denom));
   }
 
@@ -5748,18 +5768,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if let (Some(numer), Some(denom)) = (a_big, b_big) {
       use num_traits::Zero;
       if denom.is_zero() {
-        crate::emit_message(
-          "                                 1\n\
-           Power::infy: Infinite expression - encountered.\n\
-           \x20                                0",
-        );
-        if numer.is_zero() {
-          crate::emit_message(
-            "\nInfinity::indet: Indeterminate expression 0 ComplexInfinity encountered.",
-          );
-          return Ok(Expr::Identifier("Indeterminate".to_string()));
-        }
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(divide_by_zero_result(a));
       }
       let g = bigint_gcd(numer.clone(), denom.clone());
       let mut rn = &numer / &g;
@@ -6006,9 +6015,8 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     let denom = a_d.checked_mul(b_n);
     if let (Some(n), Some(d)) = (numer, denom) {
       if d == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Division by zero".into(),
-        ));
+        // A zero rational divisor: same as x/0.
+        return Ok(divide_by_zero_result(a));
       }
       return Ok(make_rational(n, d));
     }
@@ -6025,7 +6033,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   match (eval_fn(a), eval_fn(b)) {
     (Some(x), Some(y)) => {
       if y == 0.0 {
-        Err(InterpreterError::EvaluationError("Division by zero".into()))
+        Ok(divide_by_zero_result(a))
       } else {
         Ok(Expr::Real(x / y))
       }
