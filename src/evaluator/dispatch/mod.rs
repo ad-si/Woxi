@@ -6076,6 +6076,28 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
+  // WeaklyConnectedGraphQ[g] — True iff the underlying undirected graph is
+  // connected (edge directions ignored). Mirrors ConnectedGraphQ but counts
+  // weakly-connected components. A non-graph argument is False.
+  if name == "WeaklyConnectedGraphQ" && args.len() == 1 {
+    let is_graph = matches!(&args[0], Expr::FunctionCall { name: gname, args: gargs }
+      if gname == "Graph"
+        && gargs.len() >= 2
+        && matches!(gargs[0], Expr::List(_))
+        && matches!(gargs[1], Expr::List(_)));
+    if is_graph {
+      let comps =
+        evaluate_function_call_ast_inner("WeaklyConnectedComponents", args)?;
+      if let Expr::List(comp_lists) = &comps {
+        let connected = comp_lists.len() <= 1;
+        return Ok(Expr::Identifier(
+          if connected { "True" } else { "False" }.to_string(),
+        ));
+      }
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
   // ConnectedComponents[Graph[{vertices}, {edges}]]
   // For undirected graphs: finds connected components (union-find)
   // For directed graphs: finds strongly connected components (Tarjan's)

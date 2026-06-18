@@ -155,6 +155,60 @@ mod connected_graph_q {
   }
 }
 
+// WeaklyConnectedGraphQ ignores edge direction: True iff the underlying
+// undirected graph is connected.
+mod weakly_connected_graph_q {
+  use super::*;
+
+  // A directed path is weakly connected (undirected version is a path).
+  #[test]
+  fn directed_path_weakly_connected() {
+    assert_eq!(
+      interpret("WeaklyConnectedGraphQ[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "True"
+    );
+  }
+
+  // Two separate directed edges are not weakly connected.
+  #[test]
+  fn two_components_not_weakly_connected() {
+    assert_eq!(
+      interpret("WeaklyConnectedGraphQ[Graph[{1 -> 2, 3 -> 4}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("WeaklyConnectedGraphQ[Graph[{1 -> 2, 2 -> 3, 4 -> 5}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn directed_bidirectional_weakly_connected() {
+    assert_eq!(
+      interpret("WeaklyConnectedGraphQ[Graph[{1 -> 2, 2 -> 1}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn undirected_and_complete_weakly_connected() {
+    assert_eq!(
+      interpret("WeaklyConnectedGraphQ[Graph[{1 <-> 2, 2 <-> 3}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("WeaklyConnectedGraphQ[CompleteGraph[3]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_graph_is_false() {
+    assert_eq!(interpret("WeaklyConnectedGraphQ[5]").unwrap(), "False");
+  }
+}
+
 mod complete_graph {
   use super::*;
 

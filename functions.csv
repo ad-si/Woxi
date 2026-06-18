@@ -3918,7 +3918,7 @@ TextElement,,🚫,,10.3,4027
 TransferFunctionTransform,,🚫,,9.0,4027
 URLDecode,Decode a percent-encoded URL string,✅,pure,10.0,4027
 VertexCapacity,,,,9.0,4027
-WeaklyConnectedGraphQ,,,,9.0,4027
+WeaklyConnectedGraphQ,Test whether a directed graph is weakly connected (underlying undirected graph is connected),✅,pure,9.0,4027
 WindowStatusArea,,🚫,,6.0,4027
 WinsorizedMean,Mean after winsorizing extreme values,✅,none,11.1,4027
 AnglePath3D,,,,11.1,4052
