@@ -3244,13 +3244,13 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "NumberForm"
-    && !is_input_form
-    && inner_args.iter().any(|a| matches!(
+    && !is_input_form && inner_args.iter().any(|a| {
+    matches!(
       a,
       Expr::Rule { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DigitBlock")
-    ))
-  {
+    )
+  }) {
     // Defaults: comma between integer groups, space between fractional groups.
     let mut block: Option<i64> = None;
     let mut int_sep = ",".to_string();
@@ -9502,25 +9502,57 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
 /// Integer spec n: right-aligned to width n + 1. List spec {n, f}:
 /// rounded to f decimals (with trailing zeros) and right-aligned to
 /// width n + 2. None for non-numeric values or malformed specs.
+/// Right-align an integer's digit string into a padded field. A column is always
+/// reserved for the sign, and the digit field widens past `n` when the number
+/// has more digits, so e.g. `123` with n=2 renders as ` 123` (width 4).
+fn pad_integer_body(body: &str, n: usize) -> String {
+  let num_digits = body.trim_start_matches('-').chars().count();
+  let width = n.max(num_digits) + 1;
+  format!("{body:>width$}")
+}
+
 fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
-  let v = crate::functions::math_ast::expr_to_num(value)?;
+  // A list pads each element with the same spec and renders as `{e1, e2, ...}`.
+  if let Expr::List(items) = value {
+    let parts: Option<Vec<String>> =
+      items.iter().map(|e| padded_form_to_string(e, spec)).collect();
+    return Some(format!("{{{}}}", parts?.join(", ")));
+  }
   match spec {
-    Expr::Integer(n) if *n >= 0 => {
-      let body = match value {
-        Expr::Integer(i) => i.to_string(),
-        _ => crate::syntax::expr_to_output(value),
-      };
-      let width = (*n as usize) + 1;
-      Some(format!("{body:>width$}"))
-    }
+    Expr::Integer(n) if *n >= 0 => match value {
+      Expr::Integer(i) => Some(pad_integer_body(&i.to_string(), *n as usize)),
+      Expr::BigInteger(i) => {
+        Some(pad_integer_body(&i.to_string(), *n as usize))
+      }
+      _ => {
+        // Reals/rationals: render via output form, padded to width n+1.
+        crate::functions::math_ast::expr_to_num(value)?;
+        let body = crate::syntax::expr_to_output(value);
+        let width = (*n as usize) + 1;
+        Some(format!("{body:>width$}"))
+      }
+    },
     Expr::List(parts) if parts.len() == 2 => {
       if let (Expr::Integer(n), Expr::Integer(f)) = (&parts[0], &parts[1])
         && *n >= 0
         && *f >= 0
       {
-        let body = format!("{v:.prec$}", prec = *f as usize);
-        let width = (*n as usize) + 2;
-        Some(format!("{body:>width$}"))
+        match value {
+          // An integer ignores the fractional spec: it is shown as an integer
+          // padded to width n+1, never with a spurious decimal part.
+          Expr::Integer(i) => {
+            Some(pad_integer_body(&i.to_string(), *n as usize))
+          }
+          Expr::BigInteger(i) => {
+            Some(pad_integer_body(&i.to_string(), *n as usize))
+          }
+          _ => {
+            let v = crate::functions::math_ast::expr_to_num(value)?;
+            let body = format!("{v:.prec$}", prec = *f as usize);
+            let width = (*n as usize) + 2;
+            Some(format!("{body:>width$}"))
+          }
+        }
       } else {
         None
       }

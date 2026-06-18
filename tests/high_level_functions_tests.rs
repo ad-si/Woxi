@@ -2806,6 +2806,55 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_padded_form() {
+      // A list pads each element to the same field width (n+1), right-aligned,
+      // and renders as a brace list.
+      assert_eq!(
+        interpret("ToString[PaddedForm[{1, 22, 333}, 4]]").unwrap(),
+        "{    1,    22,   333}"
+      );
+      // Negatives keep the sign within the reserved column.
+      assert_eq!(
+        interpret("ToString[PaddedForm[{1, -22, 333}, 4]]").unwrap(),
+        "{    1,   -22,   333}"
+      );
+      assert_eq!(
+        interpret("ToString[PaddedForm[{10, 200, 3}, 5]]").unwrap(),
+        "{    10,    200,      3}"
+      );
+      // Scalar padding still works.
+      assert_eq!(interpret("ToString[PaddedForm[12, 4]]").unwrap(), "   12");
+      // Regression: an integer with a {n, f} spec stays an integer (no spurious
+      // decimals) and is padded to width n+1.
+      assert_eq!(interpret("ToString[PaddedForm[1, {4, 1}]]").unwrap(), "    1");
+      assert_eq!(
+        interpret("ToString[PaddedForm[22, {4, 1}]]").unwrap(),
+        "   22"
+      );
+      assert_eq!(
+        interpret("ToString[PaddedForm[123, {2, 1}]]").unwrap(),
+        " 123"
+      );
+      // Regression: when the number has more digits than n, the field widens
+      // but still reserves a sign column.
+      assert_eq!(interpret("ToString[PaddedForm[123, 2]]").unwrap(), " 123");
+      assert_eq!(
+        interpret("ToString[PaddedForm[12345, 3]]").unwrap(),
+        " 12345"
+      );
+      // A real with a {n, f} spec is shown with exactly f decimals.
+      assert_eq!(
+        interpret("ToString[PaddedForm[1.5, {4, 2}]]").unwrap(),
+        "  1.50"
+      );
+      // PaddedForm keeps its symbolic head under InputForm.
+      assert_eq!(
+        interpret("ToString[PaddedForm[{1, 22, 333}, 4], InputForm]").unwrap(),
+        "PaddedForm[{1, 22, 333}, 4]"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");

@@ -889,7 +889,7 @@ SetterBar,,🚫,,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
 PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897
 Counts,Returns association of element counts (on an association counts the values),✅,pure,10.0,898
-PaddedForm,Pads numbers to fixed width via ToString rendering,✅,pure,2.0,900
+PaddedForm,Pads numbers (or a list of numbers) to fixed width via ToString rendering,✅,pure,2.0,900
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials and inverse functions to logarithms,✅,pure,3.0,900
 Triangle,Geometric primitive representing a triangle,✅,none,10.0,901
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1.0,902
