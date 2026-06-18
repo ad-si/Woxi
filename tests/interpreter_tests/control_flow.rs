@@ -850,6 +850,111 @@ mod xor_logical {
   }
 }
 
+mod boolean_convert_dnf {
+  use super::*;
+
+  // Two-variable Xor: literals ordered by variable, positive before negated,
+  // clauses in descending-minterm order (matching wolframscript).
+  #[test]
+  fn xor_two_args() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Xor[a, b]]").unwrap(),
+      "(a &&  !b) || ( !a && b)"
+    );
+  }
+
+  // Three-variable Xor must NOT contain contradictory clauses like
+  // `!a && a && c`; it is the four odd-parity minterms.
+  #[test]
+  fn xor_three_args_no_contradictions() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Xor[a, b, c]]").unwrap(),
+      "(a && b && c) || (a &&  !b &&  !c) || ( !a && b &&  !c) || \
+       ( !a &&  !b && c)"
+    );
+  }
+
+  #[test]
+  fn equivalent_two_args() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Equivalent[a, b]]").unwrap(),
+      "(a && b) || ( !a &&  !b)"
+    );
+  }
+
+  #[test]
+  fn equivalent_three_args() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Equivalent[a, b, c]]").unwrap(),
+      "(a && b && c) || ( !a &&  !b &&  !c)"
+    );
+  }
+
+  #[test]
+  fn implies_is_or() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Implies[a, b]]").unwrap(),
+      " !a || b"
+    );
+  }
+
+  #[test]
+  fn nand_and_nor() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Nand[a, b]]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[Nor[a, b]]").unwrap(),
+      " !a &&  !b"
+    );
+  }
+
+  // A pure contradiction collapses to False; a tautology over a single
+  // clause is dropped entirely.
+  #[test]
+  fn contradiction_is_false() {
+    clear_state();
+    assert_eq!(interpret("BooleanConvert[a && !a]").unwrap(), "False");
+  }
+
+  // Absorption: `a || (a && b)` reduces to `a`.
+  #[test]
+  fn absorption() {
+    clear_state();
+    assert_eq!(interpret("BooleanConvert[a || (a && b)]").unwrap(), "a");
+  }
+
+  // Already-DNF expressions keep their (canonically ordered) form.
+  #[test]
+  fn keeps_dnf_form() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[a || b && c]").unwrap(),
+      "a || (b && c)"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[(a && b) || (!a && c)]").unwrap(),
+      "(a && b) || ( !a && c)"
+    );
+  }
+
+  #[test]
+  fn distributes_and_over_or() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[a && (b || c)]").unwrap(),
+      "(a && b) || (a && c)"
+    );
+  }
+}
+
 mod xnor_logical {
   use super::*;
 

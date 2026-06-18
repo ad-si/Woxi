@@ -2,7 +2,7 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
@@ -1181,6 +1181,171 @@ fn to_dnf(expr: &Expr) -> Expr {
   distribute_and_over_or(&negated)
 }
 
+/// Decompose a literal into `(variable-key, is_positive, positive-atom)`.
+/// Negation is recognised in either the `Not[..]` head form or the
+/// `UnaryOp::Not` form produced by `normalize_not`.
+fn dnf_literal(e: &Expr) -> (String, bool, Expr) {
+  match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand,
+    } => (
+      crate::syntax::expr_to_string(operand),
+      false,
+      (**operand).clone(),
+    ),
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => (
+      crate::syntax::expr_to_string(&args[0]),
+      false,
+      args[0].clone(),
+    ),
+    _ => (crate::syntax::expr_to_string(e), true, e.clone()),
+  }
+}
+
+/// Canonicalize a DNF expression to match Wolfram's `BooleanConvert` output:
+/// drop contradictory conjunctions (those containing a variable and its
+/// negation, or a `False`), remove `True` literals, dedup repeated literals
+/// and clauses, apply absorption (drop a clause subsumed by a more general
+/// one), then order literals within each conjunction by variable name and
+/// order the conjunctions positive-literal-first (descending minterm order).
+fn canonicalize_dnf(expr: &Expr) -> Expr {
+  use std::cmp::Ordering;
+
+  // Reduce one conjunction to its literal set. `None` => the clause is
+  // unsatisfiable (contains `False` or contradictory literals).
+  let clause_lits = |clause: &Expr| -> Option<BTreeMap<String, (bool, Expr)>> {
+    let parts: Vec<Expr> = match clause {
+      Expr::FunctionCall { name, args } if name == "And" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut lits: BTreeMap<String, (bool, Expr)> = BTreeMap::new();
+    for p in &parts {
+      if let Expr::Identifier(s) = p {
+        if s == "True" {
+          continue;
+        }
+        if s == "False" {
+          return None;
+        }
+      }
+      let (key, positive, atom) = dnf_literal(p);
+      match lits.get(&key) {
+        Some((existing, _)) if *existing != positive => return None,
+        _ => {
+          lits.insert(key, (positive, atom));
+        }
+      }
+    }
+    Some(lits)
+  };
+
+  let clause_exprs: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Or" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+
+  // Collect satisfiable clauses as sorted literal vectors.
+  let mut clauses: Vec<Vec<(String, bool, Expr)>> = Vec::new();
+  for c in &clause_exprs {
+    match clause_lits(c) {
+      None => continue,
+      Some(lits) => {
+        if lits.is_empty() {
+          // An empty conjunction is `True`, which absorbs the whole Or.
+          return Expr::Identifier("True".to_string());
+        }
+        clauses.push(
+          lits
+            .into_iter()
+            .map(|(k, (pos, atom))| (k, pos, atom))
+            .collect(),
+        );
+      }
+    }
+  }
+  if clauses.is_empty() {
+    return Expr::Identifier("False".to_string());
+  }
+
+  // Signature for dedup/subset tests: the (variable, sign) pairs.
+  let sig = |c: &[(String, bool, Expr)]| -> Vec<(String, bool)> {
+    c.iter().map(|(k, p, _)| (k.clone(), *p)).collect()
+  };
+
+  // Dedup identical clauses.
+  let mut seen: BTreeSet<Vec<(String, bool)>> = BTreeSet::new();
+  clauses.retain(|c| seen.insert(sig(c)));
+
+  // Absorption: drop a clause that is subsumed by a strictly more general one.
+  let sigs: Vec<Vec<(String, bool)>> = clauses.iter().map(|c| sig(c)).collect();
+  let keep: Vec<bool> = (0..clauses.len())
+    .map(|i| {
+      !sigs.iter().enumerate().any(|(j, other)| {
+        j != i
+          && other.len() < sigs[i].len()
+          && other.iter().all(|lit| sigs[i].contains(lit))
+      })
+    })
+    .collect();
+  let mut clauses: Vec<Vec<(String, bool, Expr)>> = clauses
+    .into_iter()
+    .zip(keep)
+    .filter_map(|(c, k)| if k { Some(c) } else { None })
+    .collect();
+
+  // Order conjunctions: lexicographically by variable name, positive literal
+  // before its negation, shorter clause first.
+  clauses.sort_by(|a, b| {
+    for (x, y) in a.iter().zip(b.iter()) {
+      match x.0.cmp(&y.0) {
+        Ordering::Equal => {}
+        o => return o,
+      }
+      match (x.1, y.1) {
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        _ => {}
+      }
+    }
+    a.len().cmp(&b.len())
+  });
+
+  let rebuild = |lits: &[(String, bool, Expr)]| -> Expr {
+    let parts: Vec<Expr> = lits
+      .iter()
+      .map(|(_, pos, atom)| {
+        if *pos {
+          atom.clone()
+        } else {
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Not,
+            operand: Box::new(atom.clone()),
+          }
+        }
+      })
+      .collect();
+    if parts.len() == 1 {
+      parts.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: parts.into(),
+      }
+    }
+  };
+
+  let rebuilt: Vec<Expr> = clauses.iter().map(|c| rebuild(c)).collect();
+  if rebuilt.len() == 1 {
+    rebuilt.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Or".to_string(),
+      args: rebuilt.into(),
+    }
+  }
+}
+
 /// Step 1: Eliminate Implies, Equivalent, Xor, Nand, Nor
 fn eliminate_connectives(expr: &Expr) -> Expr {
   match expr {
@@ -1793,7 +1958,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = match form.as_str() {
     "DNF" => {
       let dnf = to_dnf(expr);
-      sort_boolean_expr(&normalize_not(&dnf))
+      canonicalize_dnf(&normalize_not(&dnf))
     }
     "CNF" => {
       let cnf = to_cnf(expr);
