@@ -2262,11 +2262,12 @@ pub fn dispatch_complex_and_special(
       if zero_uncertainty {
         return Some(Ok(new_args[0].clone()));
       }
-      if let Expr::Integer(n) = &new_args[0] {
-        // If any other argument is Real, convert integer to Real
-        let has_real = new_args[1..].iter().any(|a| matches!(a, Expr::Real(_)));
-        if has_real {
-          new_args[0] = Expr::Real(*n as f64);
+      // Around stores its central value and uncertainty as machine reals, so
+      // integer arguments are promoted to Real: Around[5, 1] -> Around[5., 1.]
+      // (matching wolframscript). Symbolic arguments are left untouched.
+      for a in new_args.iter_mut() {
+        if let Expr::Integer(n) = a {
+          *a = Expr::Real(*n as f64);
         }
       }
       return Some(Ok(Expr::FunctionCall {

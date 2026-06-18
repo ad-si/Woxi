@@ -6573,7 +6573,7 @@ mod batch_inert_symbols_2 {
   // A symbolic term leaves the sum unevaluated (no propagation possible).
   #[test]
   fn around_plus_symbolic_stays() {
-    assert_eq!(interpret("Around[5, 1] + x").unwrap(), "x + Around[5, 1]");
+    assert_eq!(interpret("Around[5, 1] + x").unwrap(), "x + Around[5., 1.]");
   }
 
   // Elementary unary functions propagate: f[Around[a,d]] = Around[f[a],|f'[a]|d].
