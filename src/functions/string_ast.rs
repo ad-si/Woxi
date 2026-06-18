@@ -2930,6 +2930,15 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // When the requested form is structural InputForm, display-directive
+  // wrappers (TableForm, Column, BaseForm, NumberForm, AccountingForm,
+  // DecimalForm, PaddedForm) are NOT rendered to their 2D text form — they
+  // keep the symbolic head, matching wolframscript:
+  // `ToString[Column[{1,2,3}], InputForm]` -> "Column[{1, 2, 3}]". The
+  // InputForm branch further down handles this via expr_to_input_form.
+  let is_input_form = args.len() == 2
+    && matches!(&args[1], Expr::Identifier(f) if f == "InputForm");
+
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
   if let Expr::FunctionCall {
@@ -2937,6 +2946,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "TableForm"
+    && !is_input_form
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -2950,6 +2960,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "Column"
+    && !is_input_form
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -2966,6 +2977,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "BaseForm"
+    && !is_input_form
     && inner_args.len() == 2
     && let (Expr::Integer(n), Expr::Integer(b)) =
       (&inner_args[0], &inner_args[1])
@@ -2989,6 +3001,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "NumberForm"
+    && !is_input_form
     && inner_args.len() == 2
   {
     let rendered = match &inner_args[1] {
@@ -3013,6 +3026,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "AccountingForm"
+    && !is_input_form
     && (inner_args.len() == 1 || inner_args.len() == 2)
   {
     let n = match inner_args.get(1) {
@@ -3056,6 +3070,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "DecimalForm"
+    && !is_input_form
     && (inner_args.len() == 1 || inner_args.len() == 2)
   {
     let rendered = match inner_args.get(1) {
@@ -3082,6 +3097,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: inner_args,
   } = &args[0]
     && name == "PaddedForm"
+    && !is_input_form
     && inner_args.len() == 2
     && let Some(rendered) =
       padded_form_to_string(&inner_args[0], &inner_args[1])
