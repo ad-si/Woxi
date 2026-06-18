@@ -581,7 +581,10 @@ pub fn dispatch_calculus_functions(
         && let Some(den) = crate::functions::math_ast::expr_to_i128(&sd_args[5])
         && den > 0
       {
-        // Normalise q to (num, denom) with denom > 0.
+        // Normalise q to (num, denom) with denom > 0. The index may be given
+        // as a bare Integer/Rational exponent or as a `{x, x0, n}` spec, in
+        // which case the exponent n is used (matching wolframscript, e.g.
+        // SeriesCoefficient[Series[Exp[x], {x, 0, 10}], {x, 0, 5}] == 1/120).
         let (q_num, q_den): (i128, i128) = match &args[1] {
           Expr::Integer(n) => (*n, 1),
           Expr::FunctionCall { name: rn, args: ra }
@@ -590,6 +593,12 @@ pub fn dispatch_calculus_functions(
             match (&ra[0], &ra[1]) {
               (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => (*n, *d),
               _ => return None,
+            }
+          }
+          Expr::List(spec) if spec.len() == 3 => {
+            match crate::functions::math_ast::expr_to_i128(&spec[2]) {
+              Some(n) => (n, 1),
+              None => return None,
             }
           }
           _ => return None,

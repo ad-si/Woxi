@@ -5422,12 +5422,18 @@ mod batch_unevaluated_wrappers_2 {
   fn upper_triangular_q_non_matrix() {
     assert_eq!(interpret("UpperTriangularMatrixQ[5]").unwrap(), "False");
     assert_eq!(interpret("UpperTriangularMatrixQ[x]").unwrap(), "False");
-    assert_eq!(interpret("UpperTriangularMatrixQ[{1, 2}]").unwrap(), "False");
+    assert_eq!(
+      interpret("UpperTriangularMatrixQ[{1, 2}]").unwrap(),
+      "False"
+    );
   }
   #[test]
   fn lower_triangular_q_non_matrix() {
     assert_eq!(interpret("LowerTriangularMatrixQ[5]").unwrap(), "False");
-    assert_eq!(interpret("LowerTriangularMatrixQ[{1, 2}]").unwrap(), "False");
+    assert_eq!(
+      interpret("LowerTriangularMatrixQ[{1, 2}]").unwrap(),
+      "False"
+    );
   }
 
   // KroneckerSymbol

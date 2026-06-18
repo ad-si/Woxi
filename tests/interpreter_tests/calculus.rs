@@ -5656,6 +5656,34 @@ mod series_coefficient {
       "Indeterminate"
     );
   }
+
+  // SeriesCoefficient[series, {x, x0, n}] — the {x, x0, n} spec also works
+  // when the first argument is an already-computed SeriesData, using n as
+  // the exponent.
+  #[test]
+  fn seriesdata_with_spec_form() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Series[Exp[x], {x, 0, 10}], {x, 0, 5}]")
+        .unwrap(),
+      "1/120"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Series[Sin[x], {x, 0, 10}], {x, 0, 3}]")
+        .unwrap(),
+      "-1/6"
+    );
+    // Even-order Sine coefficient is 0.
+    assert_eq!(
+      interpret("SeriesCoefficient[Series[Sin[x], {x, 0, 10}], {x, 0, 2}]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("SeriesCoefficient[Series[Exp[x], {x, 0, 10}], {x, 0, 0}]")
+        .unwrap(),
+      "1"
+    );
+  }
 }
 
 mod exp_to_trig {
