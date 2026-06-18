@@ -5540,7 +5540,14 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
 fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Re-evaluate so arithmetic left by the generic Plus/Times recursion folds
   // (e.g. the `-0` from Re[a + b I] = -Im[b] + Re[a] → -0 + a).
-  Ok(ce_simplify(complex_expand_recursive(expr)))
+  let folded = ce_simplify(complex_expand_recursive(expr));
+  // Distribute products and integer powers of sums, matching wolframscript:
+  // ComplexExpand[(x+1)^2] = 1 + 2 x + x^2, and hence
+  // ComplexExpand[Abs[x+1]^2] = 1 + 2 x + x^2 (via Abs[x+1] = Sqrt[(x+1)^2]).
+  Ok(
+    crate::evaluator::evaluate_function_call_ast("Expand", &[folded.clone()])
+      .unwrap_or(folded),
+  )
 }
 
 /// Like `complex_expand_ast` but additionally distributes products via
@@ -6081,9 +6088,15 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       power_split_real_imag(&args[0], &args[1])
     }
-    // Re[v] / Im[v] / other Re-valued function calls: treat as real.
+    // Abs[v] is real-valued, but under ComplexExpand it rewrites to
+    // Sqrt[Re[v]^2 + Im[v]^2] (e.g. Sqrt[x^2] for real x). Carry that form
+    // so nested uses like Re[Abs[x]^2] reduce to x^2 rather than Abs[x]^2.
+    Expr::FunctionCall { name, .. } if name == "Abs" => {
+      Some((complex_expand_recursive(expr), Expr::Integer(0)))
+    }
+    // Re[v] / Im[v] / Arg[v]: treat as real.
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg") =>
+      if matches!(name.as_str(), "Re" | "Im" | "Arg") =>
     {
       Some((expr.clone(), Expr::Integer(0)))
     }
@@ -6106,15 +6119,17 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
   // return it as-is. This catches `Power[real, -1]` (denominator
   // factors) so split_real_imag flows through Plus/Times rather than
   // bailing.
-  if let Some((_, b_im)) = split_real_imag(base)
+  if let Some((b_re, b_im)) = split_real_imag(base)
     && matches!(b_im, Expr::Integer(0))
     && let Some((_, e_im)) = split_real_imag(exp)
     && matches!(e_im, Expr::Integer(0))
   {
+    // Use the rewritten real part of the base, not the original: under
+    // ComplexExpand Abs[x] becomes Sqrt[x^2], so Re[Abs[x]^2] = x^2.
     return Some((
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![base.clone(), exp.clone()].into(),
+        args: vec![b_re, exp.clone()].into(),
       },
       Expr::Integer(0),
     ));
@@ -6663,6 +6678,30 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
         match name.as_str() {
           "Re" => return ce_simplify(re),
           "Im" => return ce_simplify(im),
+          // Real argument (im == 0): Abs[u] = Sqrt[u^2]. The im != 0 case is
+          // handled in the block above. wolframscript treats every symbol as
+          // real, so ComplexExpand[Abs[x]] = Sqrt[x^2] and hence
+          // ComplexExpand[Abs[x]^2] = x^2, ComplexExpand[Abs[x]^3] =
+          // (x^2)^(3/2).
+          "Abs" => {
+            return ce_simplify(Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(re),
+                  right: Box::new(Expr::Integer(2)),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(im),
+                  right: Box::new(Expr::Integer(2)),
+                }),
+              }]
+              .into(),
+            });
+          }
           "Conjugate" => {
             return ce_simplify(Expr::BinaryOp {
               op: BinaryOperator::Minus,

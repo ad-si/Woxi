@@ -7068,6 +7068,61 @@ mod complex_expand {
       "Sqrt[x^2 + y^2]"
     );
   }
+
+  // For a real symbol Abs[x] = Sqrt[x^2]; powers follow from that.
+  #[test]
+  fn abs_real_symbol() {
+    assert_eq!(interpret("ComplexExpand[Abs[x]]").unwrap(), "Sqrt[x^2]");
+    assert_eq!(interpret("ComplexExpand[Abs[I x]]").unwrap(), "Sqrt[x^2]");
+    assert_eq!(
+      interpret("ComplexExpand[Abs[x]^3]").unwrap(),
+      "(x^2)^(3/2)"
+    );
+  }
+
+  // Even powers of Abs[real] collapse to plain powers.
+  #[test]
+  fn abs_even_power_collapses() {
+    assert_eq!(interpret("ComplexExpand[Abs[x]^2]").unwrap(), "x^2");
+    assert_eq!(interpret("ComplexExpand[Abs[x]^4]").unwrap(), "x^4");
+    assert_eq!(
+      interpret("ComplexExpand[Abs[x*y]^2]").unwrap(),
+      "x^2*y^2"
+    );
+    assert_eq!(interpret("ComplexExpand[Abs[2 x]^2]").unwrap(), "4*x^2");
+  }
+
+  // Abs[x+1]^2 expands like any polynomial: 1 + 2 x + x^2.
+  #[test]
+  fn abs_squared_expands_polynomial() {
+    assert_eq!(
+      interpret("ComplexExpand[Abs[x + 1]^2]").unwrap(),
+      "1 + 2*x + x^2"
+    );
+  }
+
+  // The single-argument form distributes products and integer powers.
+  #[test]
+  fn single_arg_expands_products() {
+    assert_eq!(
+      interpret("ComplexExpand[(x + 1)^2]").unwrap(),
+      "1 + 2*x + x^2"
+    );
+  }
+
+  // Re/Im/Conjugate of Abs[real]^2 reduce through the Sqrt[x^2] rewrite.
+  #[test]
+  fn re_conjugate_of_abs_squared() {
+    assert_eq!(
+      interpret("ComplexExpand[Re[Abs[x]^2]]").unwrap(),
+      "x^2"
+    );
+    assert_eq!(interpret("ComplexExpand[Im[Abs[x]^2]]").unwrap(), "0");
+    assert_eq!(
+      interpret("ComplexExpand[Conjugate[Abs[x]^2]]").unwrap(),
+      "x^2"
+    );
+  }
 }
 
 mod abs_arg {
