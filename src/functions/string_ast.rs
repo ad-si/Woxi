@@ -3010,6 +3010,56 @@ fn table_form_to_string(arg: &Expr) -> Option<String> {
   }
 }
 
+/// Render `MatrixForm[matrix]` to a text grid. Unlike `TableForm` (which sizes
+/// each column independently), every cell is padded to a single uniform width —
+/// the widest cell anywhere in the matrix — left-aligned, with three-space
+/// separators and a blank line between rows. A flat vector renders as a single
+/// column, one element per row.
+fn matrix_form_to_string(arg: &Expr) -> Option<String> {
+  let Expr::List(items) = arg else {
+    return None;
+  };
+  let is_matrix =
+    !items.is_empty() && items.iter().all(|it| matches!(it, Expr::List(_)));
+  if is_matrix {
+    let rows: Vec<Vec<String>> = items
+      .iter()
+      .map(|row| match row {
+        Expr::List(cells) => {
+          cells.iter().map(crate::syntax::expr_to_output).collect()
+        }
+        _ => vec![],
+      })
+      .collect();
+    // Single uniform column width: the widest cell anywhere in the matrix.
+    let width = rows
+      .iter()
+      .flat_map(|r| r.iter())
+      .map(|c| c.chars().count())
+      .max()
+      .unwrap_or(0);
+    let lines: Vec<String> = rows
+      .iter()
+      .map(|row| {
+        let padded: Vec<String> = row
+          .iter()
+          .map(|cell| {
+            let pad = width.saturating_sub(cell.chars().count());
+            format!("{}{}", cell, " ".repeat(pad))
+          })
+          .collect();
+        padded.join("   ").trim_end().to_string()
+      })
+      .collect();
+    Some(lines.join("\n\n"))
+  } else {
+    // A flat vector renders one element per row (single column).
+    let lines: Vec<String> =
+      items.iter().map(crate::syntax::expr_to_output).collect();
+    Some(lines.join("\n\n"))
+  }
+}
+
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -3036,6 +3086,20 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !is_input_form
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
+  {
+    return Ok(Expr::String(rendered));
+  }
+
+  // MatrixForm[matrix] — like TableForm but with a single uniform column width
+  // (the widest cell anywhere in the matrix) rather than per-column widths.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "MatrixForm"
+    && !is_input_form
+    && inner_args.len() == 1
+    && let Some(rendered) = matrix_form_to_string(&inner_args[0])
   {
     return Ok(Expr::String(rendered));
   }

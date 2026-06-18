@@ -2702,6 +2702,42 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_matrix_form_renders_grid() {
+      // MatrixForm renders an aligned text grid: every cell padded to a single
+      // uniform width (the widest cell), left-aligned, three-space separators,
+      // blank line between rows.
+      assert_eq!(
+        interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}]]").unwrap(),
+        "1   2\n\n3   4"
+      );
+      // Uniform width comes from the widest cell anywhere (here \"444\" -> 3).
+      assert_eq!(
+        interpret("ToString[MatrixForm[{{1, 22, 3}, {444, 5, 6}}]]").unwrap(),
+        "1     22    3\n\n444   5     6"
+      );
+      // A single wide cell widens every column.
+      assert_eq!(
+        interpret("ToString[MatrixForm[{{1, 2}, {3, 4444}}]]").unwrap(),
+        "1      2\n\n3      4444"
+      );
+      // A flat vector renders as a single column, one element per row.
+      assert_eq!(
+        interpret("ToString[MatrixForm[{1, 2, 3}]]").unwrap(),
+        "1\n\n2\n\n3"
+      );
+      // Reals and negatives are rendered with their normal output form.
+      assert_eq!(
+        interpret("ToString[MatrixForm[{{1, -2}, {3.5, 4}}]]").unwrap(),
+        "1     -2\n\n3.5   4"
+      );
+      // MatrixForm keeps its symbolic head under InputForm.
+      assert_eq!(
+        interpret("ToString[MatrixForm[{{1, 2}, {3, 4}}], InputForm]").unwrap(),
+        "MatrixForm[{{1, 2}, {3, 4}}]"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");
