@@ -1380,6 +1380,24 @@ mod minimal_by {
       "{1, 3, 5}"
     );
   }
+
+  // The optional count must be a non-negative integer (WL emits
+  // MinimalBy::arg3 for `All` / negatives and stays unevaluated).
+  #[test]
+  fn rejects_all_third_arg() {
+    assert_eq!(
+      interpret("MinimalBy[{5, 3, 8, 3}, Identity, All]").unwrap(),
+      "MinimalBy[{5, 3, 8, 3}, Identity, All]"
+    );
+  }
+
+  #[test]
+  fn rejects_negative_third_arg() {
+    assert_eq!(
+      interpret("MinimalBy[{5, 3, 8}, Identity, -2]").unwrap(),
+      "MinimalBy[{5, 3, 8}, Identity, -2]"
+    );
+  }
 }
 
 mod maximal_by {
@@ -1436,6 +1454,32 @@ mod maximal_by {
     assert_eq!(
       interpret("MaximalBy[{-3, 1, 2, -5, 4}, Abs, 10]").unwrap(),
       "{-5, 4, -3, 2, 1}"
+    );
+  }
+
+  // The optional count must be a non-negative integer; `All` and negative
+  // integers stay unevaluated (WL emits MaximalBy::arg3).
+  #[test]
+  fn rejects_all_third_arg() {
+    assert_eq!(
+      interpret("MaximalBy[{5, 3, 8, 3}, Identity, All]").unwrap(),
+      "MaximalBy[{5, 3, 8, 3}, Identity, All]"
+    );
+  }
+
+  #[test]
+  fn rejects_negative_third_arg() {
+    assert_eq!(
+      interpret("MaximalBy[{5, 3, 8}, Identity, -1]").unwrap(),
+      "MaximalBy[{5, 3, 8}, Identity, -1]"
+    );
+  }
+
+  #[test]
+  fn zero_third_arg_is_empty() {
+    assert_eq!(
+      interpret("MaximalBy[{5, 3, 8}, Identity, 0]").unwrap(),
+      "{}"
     );
   }
 }

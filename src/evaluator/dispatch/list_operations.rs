@@ -46,6 +46,34 @@ fn invalid_seq_spec(
   None
 }
 
+/// Validate the optional third argument `n` of `MaximalBy`/`MinimalBy`, which
+/// Wolfram requires to be a non-negative integer. Returns `Ok(n)` when valid,
+/// or `Err(unevaluated)` after emitting `<name>::arg3` for anything else
+/// (`All`, negative integers, non-integers, …).
+fn extremal_by_count(name: &str, args: &[Expr]) -> Result<i128, Expr> {
+  let arg3 = &args[2];
+  let valid = match arg3 {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      expr_to_i128(arg3).filter(|k| *k >= 0)
+    }
+    _ => None,
+  };
+  match valid {
+    Some(n) => Ok(n),
+    None => {
+      crate::emit_message(&format!(
+        "{}::arg3: The third argument {} is expected to be a non-negative integer.",
+        name,
+        crate::syntax::format_expr(arg3, crate::syntax::ExprForm::Output)
+      ));
+      Err(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      })
+    }
+  }
+}
+
 /// A non-negative machine-sized integer, or None.
 fn nonneg_machine_int(e: &Expr) -> Option<i128> {
   match e {
@@ -2396,7 +2424,10 @@ pub fn dispatch_list_operations(
     }
     "MinimalBy" if args.len() == 2 || args.len() == 3 => {
       let n = if args.len() == 3 {
-        expr_to_i128(&args[2])
+        match extremal_by_count("MinimalBy", args) {
+          Ok(n) => Some(n),
+          Err(unevaluated) => return Some(Ok(unevaluated)),
+        }
       } else {
         None
       };
@@ -2404,7 +2435,10 @@ pub fn dispatch_list_operations(
     }
     "MaximalBy" if args.len() == 2 || args.len() == 3 => {
       let n = if args.len() == 3 {
-        expr_to_i128(&args[2])
+        match extremal_by_count("MaximalBy", args) {
+          Ok(n) => Some(n),
+          Err(unevaluated) => return Some(Ok(unevaluated)),
+        }
       } else {
         None
       };
