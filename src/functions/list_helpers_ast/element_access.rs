@@ -1560,11 +1560,39 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(original())
   };
 
+  // A position component that the simple ExtractComp path can't represent
+  // but `Part` handles directly: `All`, `Span[..]`, or a list of indices
+  // (`{1, 3}`). Such a path is resolved by delegating to the Part machinery.
+  let is_part_index = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::Integer(_) | Expr::BigInteger(_) | Expr::String(_) | Expr::List(_)
+    ) || matches!(e, Expr::Identifier(s) if s == "All")
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Span" || name == "Key")
+  };
+
+  // A single path: either a simple integer/key path (resolved via
+  // `extract_resolve`, with Extract's own messages) or a path containing
+  // `All`/`Span`/list selectors (resolved by delegating to `Part`).
+  enum Path {
+    Simple(Vec<ExtractComp>),
+    ViaPart(Vec<Expr>),
+  }
+  let classify = |comps: &[Expr]| -> Option<Path> {
+    match comps.iter().map(&parse_comp).collect::<Option<Vec<_>>>() {
+      Some(path) => Some(Path::Simple(path)),
+      None if comps.iter().all(&is_part_index) => {
+        Some(Path::ViaPart(comps.to_vec()))
+      }
+      None => None,
+    }
+  };
+
   // Parse the spec into one or many paths. A list of lists is a
   // multi-path spec; the empty list extracts nothing.
   enum Paths {
-    Single(Vec<ExtractComp>),
-    Multi(Vec<Vec<ExtractComp>>),
+    Single(Path),
+    Multi(Vec<Path>),
   }
   let paths = match spec {
     Expr::List(items) if items.iter().all(|e| matches!(e, Expr::List(_))) => {
@@ -1573,23 +1601,21 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let Expr::List(comps) = item else {
           unreachable!()
         };
-        match comps.iter().map(parse_comp).collect::<Option<Vec<_>>>() {
+        match classify(comps) {
           Some(path) => multi.push(path),
           None => return psl1(),
         }
       }
       Paths::Multi(multi)
     }
-    Expr::List(items) => {
-      match items.iter().map(parse_comp).collect::<Option<Vec<_>>>() {
-        Some(path) => Paths::Single(path),
-        None => return psl1(),
-      }
-    }
-    // A bare position component (integer index, `Key[k]`, or a string key)
-    // is a single-element path.
-    other => match parse_comp(other) {
-      Some(comp) => Paths::Single(vec![comp]),
+    Expr::List(items) => match classify(items) {
+      Some(path) => Paths::Single(path),
+      None => return psl1(),
+    },
+    // A bare position component (integer index, `Key[k]`, a string key, or
+    // `All`) is a single-element path.
+    other => match classify(std::slice::from_ref(other)) {
+      Some(path) => Paths::Single(path),
       None => return psl1(),
     },
   };
@@ -1608,7 +1634,28 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let resolve_one =
-    |path: &[ExtractComp]| -> Result<Option<Expr>, InterpreterError> {
+    |p: &Path| -> Result<Option<Expr>, InterpreterError> {
+      let path = match p {
+        Path::Simple(path) => path,
+        Path::ViaPart(comps) => {
+          // Delegate to Part, which handles All / Span / list selectors.
+          let mut part = Expr::Part {
+            expr: Box::new(subject.clone()),
+            index: Box::new(comps[0].clone()),
+          };
+          for c in &comps[1..] {
+            part = Expr::Part {
+              expr: Box::new(part),
+              index: Box::new(c.clone()),
+            };
+          }
+          let result = crate::evaluator::evaluate_expr_to_expr(&part)?;
+          // A failed Part comes back unevaluated; treat it as no result.
+          let failed = matches!(&result, Expr::Part { .. })
+            || matches!(&result, Expr::FunctionCall { name, .. } if name == "Part");
+          return if failed { Ok(None) } else { Ok(Some(wrap(result)?)) };
+        }
+      };
       match extract_resolve(subject, path) {
         ExtractOutcome::Found(part) => Ok(Some(wrap(part)?)),
         ExtractOutcome::Partw => {

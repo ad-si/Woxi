@@ -129,6 +129,44 @@ mod list_tests {
   }
 
   #[test]
+  fn extract_all_span_part_specs() {
+    let m = "{{a, b, c}, {d, e, f}, {g, h, i}}";
+    // `All` selects every element at that level: column 2.
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{All, 2}}]")).unwrap(),
+      "{b, e, h}"
+    );
+    // `All` in the last position returns whole rows.
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{2, All}}]")).unwrap(),
+      "{d, e, f}"
+    );
+    // `All` at both levels reproduces the matrix.
+    assert_eq!(interpret(&format!("Extract[{m}, {{All, All}}]")).unwrap(), m);
+    // A list of indices selects several columns per row.
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{All, {{1, 3}}}}]")).unwrap(),
+      "{{a, c}, {d, f}, {g, i}}"
+    );
+    // A single-path All spec wrapped in an outer list is a one-element
+    // multi-path spec.
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{{{All, 2}}}}]")).unwrap(),
+      "{{b, e, h}}"
+    );
+    // The optional head wraps the extracted result once.
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{All, 2}}, Hold]")).unwrap(),
+      "Hold[{b, e, h}]"
+    );
+    // A Span selector inside a path.
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{1 ;; 2, 2}}]")).unwrap(),
+      "{b, e}"
+    );
+  }
+
+  #[test]
   fn catenate() {
     assert_eq!(
       interpret("Catenate[{{1, 2}, {3, 4}}]").unwrap(),
