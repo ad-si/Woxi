@@ -167,6 +167,7 @@ Tan,Returns the tangent of a number,✅,pure,1.0,171
 NumericQ,Tests if expression has a numeric value,✅,pure,3.0,172
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2.0,173
 Column,Displays elements in a vertical column,✅,pure,6.0,174
+ColumnForm,Legacy display directive stacking elements one per line (renders at top level and under every form),✅,pure,1.0,174
 FontColor,Option symbol for specifying text color in Style,✅,pure,3.0,175
 NIntegrate,Computes a numerical integral,✅,pure,1.0,176
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177

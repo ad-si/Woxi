@@ -3040,14 +3040,15 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
-  // Column[{e1, e2, ...}] — stack the elements one per line (single newline).
-  // Trailing alignment/option arguments do not affect the plain-text form.
+  // Column[{e1, e2, ...}] / ColumnForm[{e1, e2, ...}] — stack the elements one
+  // per line (single newline). Trailing alignment/option arguments do not
+  // affect the plain-text form. Column keeps its symbolic head under InputForm;
+  // ColumnForm (the legacy directive) renders to text under every form.
   if let Expr::FunctionCall {
     name,
     args: inner_args,
   } = &args[0]
-    && name == "Column"
-    && !is_input_form
+    && ((name == "Column" && !is_input_form) || name == "ColumnForm")
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {

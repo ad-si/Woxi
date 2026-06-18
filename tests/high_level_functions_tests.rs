@@ -2668,6 +2668,40 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_column_form_renders_stacked() {
+      // ColumnForm is the legacy display directive: it stacks elements one per
+      // line. Unlike Column, it renders at top level and under every form
+      // (including InputForm).
+      assert_eq!(
+        interpret("ToString[ColumnForm[{1, 2, 3}]]").unwrap(),
+        "1\n2\n3"
+      );
+      assert_eq!(
+        interpret("ToString[ColumnForm[{a, b, c}]]").unwrap(),
+        "a\nb\nc"
+      );
+      // Bare top-level ColumnForm renders too (Column stays symbolic).
+      assert_eq!(interpret("ColumnForm[{1, 2, 3}]").unwrap(), "1\n2\n3");
+      // Trailing alignment arguments do not affect the text.
+      assert_eq!(
+        interpret("ToString[ColumnForm[{1, 2, 3}, Center]]").unwrap(),
+        "1\n2\n3"
+      );
+      // ColumnForm renders even under InputForm (Column does not).
+      assert_eq!(
+        interpret("ToString[ColumnForm[{1, 2, 3}], InputForm]").unwrap(),
+        "1\n2\n3"
+      );
+      // An empty list renders as an empty string.
+      assert_eq!(interpret("ToString[ColumnForm[{}]]").unwrap(), "");
+      // Regression: Column stays symbolic under InputForm.
+      assert_eq!(
+        interpret("ToString[Column[{1, 2, 3}], InputForm]").unwrap(),
+        "Column[{1, 2, 3}]"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");

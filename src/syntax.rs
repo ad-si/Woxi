@@ -12627,6 +12627,20 @@ fn render_box_form(expr: &Expr) -> String {
 
 pub fn top_level_output(expr: &Expr) -> String {
   match expr {
+    // ColumnForm[{e1, e2, ...}] is a legacy display directive that renders at
+    // top level (unlike Column, which stays symbolic): each element is stacked
+    // on its own line. Trailing alignment arguments do not affect the text.
+    Expr::FunctionCall { name, args }
+      if name == "ColumnForm"
+        && !args.is_empty()
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      if let Expr::List(items) = &args[0] {
+        let lines: Vec<String> = items.iter().map(expr_to_output).collect();
+        return lines.join("\n");
+      }
+      expr_to_output(expr)
+    }
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
