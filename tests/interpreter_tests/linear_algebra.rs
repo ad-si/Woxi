@@ -2083,6 +2083,69 @@ mod transformation_function_apply {
   }
 }
 
+// ReflectionTransform[v] reflects in the hyperplane through the origin
+// perpendicular to v: linear part I - 2 (v⊗v)/(v·v) in a homogeneous matrix.
+mod reflection_transform {
+  use super::*;
+
+  #[test]
+  fn axis_aligned() {
+    assert_eq!(
+      interpret("ReflectionTransform[{1, 0}]").unwrap(),
+      "TransformationFunction[{{-1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("ReflectionTransform[{0, 1}]").unwrap(),
+      "TransformationFunction[{{1, 0, 0}, {0, -1, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn diagonal_vector() {
+    assert_eq!(
+      interpret("ReflectionTransform[{1, 1}]").unwrap(),
+      "TransformationFunction[{{0, -1, 0}, {-1, 0, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn rational_entries() {
+    assert_eq!(
+      interpret("ReflectionTransform[{3, 4}]").unwrap(),
+      "TransformationFunction[{{7/25, -24/25, 0}, {-24/25, -7/25, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn three_dimensional() {
+    assert_eq!(
+      interpret("ReflectionTransform[{1, 0, 0}]").unwrap(),
+      "TransformationFunction[{{-1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn through_point() {
+    // Reflection in the hyperplane perpendicular to v through pt.
+    assert_eq!(
+      interpret("ReflectionTransform[{1, 0}, {2, 3}]").unwrap(),
+      "TransformationFunction[{{-1, 0, 4}, {0, 1, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn applied_to_point() {
+    assert_eq!(
+      interpret("ReflectionTransform[{1, 1}][{2, 3}]").unwrap(),
+      "{-3, -2}"
+    );
+    assert_eq!(
+      interpret("ReflectionTransform[{0, 1}][{4, 5}]").unwrap(),
+      "{4, -5}"
+    );
+  }
+}
+
 mod tensor_rank {
   use super::*;
 

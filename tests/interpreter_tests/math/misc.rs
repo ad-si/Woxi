@@ -488,10 +488,7 @@ mod log {
   #[test]
   fn log_e_to_complex_symbolic_real_part() {
     // A symbolic real part keeps it unevaluated (E^a need not be positive real).
-    assert_eq!(
-      interpret("Log[E^(a + 3 I)]").unwrap(),
-      "Log[E^(a + 3*I)]"
-    );
+    assert_eq!(interpret("Log[E^(a + 3 I)]").unwrap(), "Log[E^(a + 3*I)]");
   }
 }
 

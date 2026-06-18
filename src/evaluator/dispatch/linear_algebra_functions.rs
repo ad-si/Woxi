@@ -1180,6 +1180,89 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec().into(),
       }));
     }
+    // ReflectionTransform[v] → reflection in the hyperplane through the origin
+    // perpendicular to v. The linear part is M = I - 2 (v⊗v)/(v·v), embedded in
+    // an (n+1)×(n+1) homogeneous matrix. ReflectionTransform[v, pt] reflects in
+    // the hyperplane through pt instead, giving the translation pt - M·pt.
+    "ReflectionTransform" if args.len() == 1 || args.len() == 2 => {
+      let unevaluated = || {
+        Some(Ok(Expr::FunctionCall {
+          name: "ReflectionTransform".to_string(),
+          args: args.to_vec().into(),
+        }))
+      };
+      let Expr::List(v) = &args[0] else {
+        return unevaluated();
+      };
+      let n = v.len();
+      let center = if args.len() == 2 {
+        match &args[1] {
+          Expr::List(c) if c.len() == n => Some(c),
+          _ => return unevaluated(),
+        }
+      } else {
+        None
+      };
+      if n == 0 {
+        return unevaluated();
+      }
+      let power = |b: Expr, e: i128| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b, Expr::Integer(e)].into(),
+      };
+      let times = |factors: Vec<Expr>| Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors.into(),
+      };
+      let plus = |terms: Vec<Expr>| Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      // v·v
+      let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
+      // Linear part M[i][j] = delta_ij - 2 v_i v_j / (v·v).
+      let m_entry = |i: usize, j: usize| {
+        let off = times(vec![
+          Expr::Integer(-2),
+          v[i].clone(),
+          v[j].clone(),
+          power(vv.clone(), -1),
+        ]);
+        if i == j {
+          plus(vec![Expr::Integer(1), off])
+        } else {
+          off
+        }
+      };
+      let mut rows = Vec::with_capacity(n + 1);
+      for i in 0..n {
+        let mut row: Vec<Expr> = (0..n).map(|j| m_entry(i, j)).collect();
+        // Translation column: pt_i - sum_j M[i][j] pt_j (0 when no center).
+        let translation = match center {
+          Some(c) => {
+            let mut terms = vec![c[i].clone()];
+            for (j, cj) in c.iter().enumerate() {
+              terms
+                .push(times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()]));
+            }
+            plus(terms)
+          }
+          None => Expr::Integer(0),
+        };
+        row.push(translation);
+        rows.push(Expr::List(row.into()));
+      }
+      let mut last_row = vec![Expr::Integer(0); n + 1];
+      last_row[n] = Expr::Integer(1);
+      rows.push(Expr::List(last_row.into()));
+      let matrix = Expr::List(rows.into());
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix].into(),
+        },
+      ));
+    }
     // ShearingTransform[phi, e, n] → TransformationFunction[ homogeneous shear ]
     // A point x is mapped to x + Tan[phi] (nhat·x) ep, where nhat = n/Norm[n]
     // is the unit normal and ep is the unit vector along the component of the

@@ -1025,6 +1025,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ScalarTripleProduct" => Some((3, 3)),
     "ScalingMatrix" => Some((1, 1)),
     "ScalingTransform" => Some((1, 2)),
+    "ReflectionTransform" => Some((1, 2)),
     "ShearingTransform" => Some((3, 3)),
     "Scan" => Some((1, 2)),
     "Sec" => Some((1, 1)),

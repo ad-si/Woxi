@@ -291,6 +291,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GeneratingFunction"
     | "ExponentialGeneratingFunction"
     | "ScalingTransform"
+    | "ReflectionTransform"
     | "ShearingTransform"
     | "AffineTransform"
     | "NetGraph"
