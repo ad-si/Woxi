@@ -2083,6 +2083,57 @@ mod transformation_function_apply {
   }
 }
 
+// TransformationMatrix extracts the homogeneous matrix from a
+// TransformationFunction; other arguments stay unevaluated.
+mod transformation_matrix {
+  use super::*;
+
+  #[test]
+  fn from_rotation() {
+    assert_eq!(
+      interpret("TransformationMatrix[RotationTransform[Pi/2]]").unwrap(),
+      "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn from_scaling() {
+    assert_eq!(
+      interpret("TransformationMatrix[ScalingTransform[{2, 3}]]").unwrap(),
+      "{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn from_translation() {
+    assert_eq!(
+      interpret("TransformationMatrix[TranslationTransform[{1, 2}]]").unwrap(),
+      "{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn from_reflection() {
+    assert_eq!(
+      interpret("TransformationMatrix[ReflectionTransform[{1, 0}]]").unwrap(),
+      "{{-1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn non_transform_stays_unevaluated() {
+    assert_eq!(
+      interpret("TransformationMatrix[5]").unwrap(),
+      "TransformationMatrix[5]"
+    );
+    // A plain matrix is not a TransformationFunction.
+    assert_eq!(
+      interpret("TransformationMatrix[{{1, 2}, {3, 4}}]").unwrap(),
+      "TransformationMatrix[{{1, 2}, {3, 4}}]"
+    );
+  }
+}
+
 // ReflectionTransform[v] reflects in the hyperplane through the origin
 // perpendicular to v: linear part I - 2 (v⊗v)/(v·v) in a homogeneous matrix.
 mod reflection_transform {

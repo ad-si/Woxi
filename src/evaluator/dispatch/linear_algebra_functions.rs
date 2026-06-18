@@ -972,6 +972,24 @@ pub fn dispatch_linear_algebra_functions(
         },
       ));
     }
+    // TransformationMatrix[TransformationFunction[m]] → m. Extracts the
+    // homogeneous matrix from a transformation; any other argument (a plain
+    // matrix, a non-transform) stays unevaluated, matching wolframscript.
+    "TransformationMatrix" if args.len() == 1 => {
+      if let Expr::FunctionCall {
+        name: tf_name,
+        args: tf_args,
+      } = &args[0]
+        && tf_name == "TransformationFunction"
+        && tf_args.len() == 1
+      {
+        return Some(Ok(tf_args[0].clone()));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "TransformationMatrix".to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     "RotationTransform" if args.len() == 1 || args.len() == 2 => {
@@ -1242,8 +1260,11 @@ pub fn dispatch_linear_algebra_functions(
           Some(c) => {
             let mut terms = vec![c[i].clone()];
             for (j, cj) in c.iter().enumerate() {
-              terms
-                .push(times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()]));
+              terms.push(times(vec![
+                Expr::Integer(-1),
+                m_entry(i, j),
+                cj.clone(),
+              ]));
             }
             plus(terms)
           }

@@ -1253,6 +1253,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToUpperCase" => Some((1, 1)),
     "Tr" => Some((1, 2)),
     "TraditionalForm" => Some((1, 1)),
+    "TransformationMatrix" => Some((1, 1)),
     "TranslationTransform" => Some((1, 1)),
     "Transpose" => Some((1, 2)),
     "TensorTranspose" => Some((1, 2)),

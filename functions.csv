@@ -2294,7 +2294,7 @@ SequenceHold,Attribute that prevents Sequence objects in a function's arguments 
 BoundaryMesh,mesh generation,🚫,None,10.0,2344
 ImageCorrelate,image processing,🚫,None,7.0,2344
 ParameterEstimator,statistical estimation,🚫,None,8.0,2344
-TransformationMatrix,requires TransformationFunction framework,🚫,None,6.0,2344
+TransformationMatrix,Gives the homogeneous matrix of a transformation function,✅,pure,6.0,2344
 VectorAspectRatio,visualization option,🚫,None,12.1,2344
 CylindricalDecomposition,algebraic geometry,🚫,None,5.0,2350
 FindMinValue,Finds the value at a local minimum of a function numerically,✅,pure,7.0,2350
