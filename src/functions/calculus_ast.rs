@@ -12169,11 +12169,7 @@ fn curl_curvilinear(
     let d2 = differentiate_expr(&ha_fa, &var_names[b])?;
     let inner = Expr::FunctionCall {
       name: "Plus".to_string(),
-      args: vec![
-        d1,
-        cc_product(vec![Expr::Integer(-1), d2]),
-      ]
-      .into(),
+      args: vec![d1, cc_product(vec![Expr::Integer(-1), d2])].into(),
     };
     eval(&cc_product(vec![prefactor, inner]))
   };

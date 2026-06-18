@@ -629,6 +629,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Around (uncertain-value) error propagation.
+  if let Some(result) = try_around_plus(args) {
+    return Ok(result);
+  }
+
   // Flatten nested Plus arguments (recursive to handle deeply nested Plus).
   // Both `FunctionCall { name: "Plus", … }` and `BinaryOp::Plus` are
   // unwrapped so that, for example, `Plus[1., Plus[0., 0.*I]]` (the
@@ -4535,6 +4540,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Around (uncertain-value) error propagation.
+  if let Some(result) = try_around_times(args) {
+    return Ok(result);
+  }
+
   // Flatten nested Times arguments (including BinaryOp forms)
   let mut flat_args: Vec<Expr> = Vec::new();
   fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
@@ -6230,6 +6240,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Around[a, δ]^n error propagation.
+  if let Some(result) = try_around_power(base, exp) {
+    return Ok(result);
+  }
+
   // x^1 -> x
   if matches!(exp, Expr::Integer(1)) {
     return Ok(base.clone());
@@ -7766,6 +7781,110 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an expression contains any `Expr::Real` (float) value.
+/// (value, uncertainty) of an `Around[v, d]` with numeric components.
+fn as_around(e: &Expr) -> Option<(f64, f64)> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Around"
+    && args.len() == 2
+    && let (Some(v), Some(d)) = (around_literal(&args[0]), around_literal(&args[1]))
+  {
+    Some((v, d))
+  } else {
+    None
+  }
+}
+
+/// f64 value of a literal number (Integer/Real/Rational), excluding symbolic
+/// constants like Pi so they don't get numerically folded into an Around.
+fn around_literal(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          Some(*n as f64 / *d as f64)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+fn make_around(value: f64, uncertainty: f64) -> Expr {
+  Expr::FunctionCall {
+    name: "Around".to_string(),
+    args: vec![Expr::Real(value), Expr::Real(uncertainty)].into(),
+  }
+}
+
+/// Around[a, δa] + Around[b, δb] + c = Around[a+b+c, Sqrt[δa²+δb²]] —
+/// first-order error propagation treating each Around as independent. Returns
+/// None unless at least one argument is an Around and every other argument is a
+/// literal number (a symbolic term leaves the sum unevaluated).
+pub fn try_around_plus(args: &[Expr]) -> Option<Expr> {
+  if !args.iter().any(|a| as_around(a).is_some()) {
+    return None;
+  }
+  let mut value = 0.0;
+  let mut var = 0.0;
+  for a in args {
+    if let Some((v, d)) = as_around(a) {
+      value += v;
+      var += d * d;
+    } else if let Some(c) = around_literal(a) {
+      value += c;
+    } else {
+      return None;
+    }
+  }
+  Some(make_around(value, var.sqrt()))
+}
+
+/// Product of Around values and literal scalars, with the absolute partial
+/// uncertainties added in quadrature: Sqrt[Σ ((Π/a_i)·δ_i)²]. Computing the
+/// absolute partials (rather than scaling a relative sum) keeps the float
+/// result aligned with wolframscript, e.g. Around[5,1]*Around[3,1] gives
+/// exactly Sqrt[34].
+pub fn try_around_times(args: &[Expr]) -> Option<Expr> {
+  if !args.iter().any(|a| as_around(a).is_some()) {
+    return None;
+  }
+  let mut value = 1.0;
+  let mut arounds: Vec<(f64, f64)> = Vec::new();
+  for a in args {
+    if let Some((v, d)) = as_around(a) {
+      if v == 0.0 {
+        return None; // partial (Π/a_i) undefined at 0
+      }
+      value *= v;
+      arounds.push((v, d));
+    } else if let Some(c) = around_literal(a) {
+      value *= c;
+    } else {
+      return None;
+    }
+  }
+  let mut var = 0.0;
+  for (v, d) in arounds {
+    let partial = (value / v) * d;
+    var += partial * partial;
+  }
+  Some(make_around(value, var.sqrt()))
+}
+
+/// Around[a, δ]^n = Around[a^n, |n·a^(n-1)|·δ] for a literal exponent n.
+pub fn try_around_power(base: &Expr, exp: &Expr) -> Option<Expr> {
+  let (a, d) = as_around(base)?;
+  let n = around_literal(exp)?;
+  let value = a.powf(n);
+  let uncertainty = (n * a.powf(n - 1.0)).abs() * d;
+  Some(make_around(value, uncertainty))
+}
+
 fn contains_real(expr: &Expr) -> bool {
   match expr {
     Expr::Real(_) | Expr::BigFloat(_, _) => true,

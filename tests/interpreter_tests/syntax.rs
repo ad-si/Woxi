@@ -6534,6 +6534,60 @@ mod batch_inert_symbols_2 {
     );
   }
 
+  // Around arithmetic propagates uncertainty (independent first-order):
+  // sums add variances, products add absolute partials in quadrature.
+  #[test]
+  fn around_plus() {
+    assert_eq!(
+      interpret("Around[5, 1] + Around[3, 1]").unwrap(),
+      "Around[8., 1.4142135623730951]"
+    );
+    assert_eq!(
+      interpret("Around[5, 1] + Around[3, 2]").unwrap(),
+      "Around[8., 2.23606797749979]"
+    );
+    // A constant shifts the value but not the uncertainty.
+    assert_eq!(
+      interpret("Around[5, 1] + 10").unwrap(),
+      "Around[15., 1.]"
+    );
+    // Subtraction goes through Times[-1, …] + Plus.
+    assert_eq!(
+      interpret("Around[5, 1] - Around[3, 1]").unwrap(),
+      "Around[2., 1.4142135623730951]"
+    );
+  }
+
+  #[test]
+  fn around_times() {
+    assert_eq!(
+      interpret("Around[10, 2] * 2").unwrap(),
+      "Around[20., 4.]"
+    );
+    assert_eq!(
+      interpret("Around[5, 1] * Around[3, 1]").unwrap(),
+      "Around[15., 5.830951894845301]"
+    );
+    assert_eq!(
+      interpret("-Around[5, 1]").unwrap(),
+      "Around[-5., 1.]"
+    );
+  }
+
+  #[test]
+  fn around_power() {
+    assert_eq!(interpret("Around[5, 1]^2").unwrap(), "Around[25., 10.]");
+  }
+
+  // A symbolic term leaves the sum unevaluated (no propagation possible).
+  #[test]
+  fn around_plus_symbolic_stays() {
+    assert_eq!(
+      interpret("Around[5, 1] + x").unwrap(),
+      "x + Around[5, 1]"
+    );
+  }
+
   #[test]
   fn specularity() {
     assert_eq!(
