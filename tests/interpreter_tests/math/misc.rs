@@ -410,6 +410,41 @@ mod curl {
       "{0, 0, -2}"
     );
   }
+
+  // Curl[F, vars, "Coordinates"] uses orthogonal-curvilinear scale factors.
+  // 2D gives a scalar; 3D gives a vector.
+  #[test]
+  fn curl_polar_scalar() {
+    assert_eq!(interpret(r#"Curl[{0, r}, {r, t}, "Polar"]"#).unwrap(), "2");
+  }
+
+  #[test]
+  fn curl_cylindrical() {
+    assert_eq!(
+      interpret(r#"Curl[{0, 0, r}, {r, t, z}, "Cylindrical"]"#).unwrap(),
+      "{0, -1, 0}"
+    );
+    assert_eq!(
+      interpret(r#"Curl[{r, 0, 0}, {r, t, z}, "Cylindrical"]"#).unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn curl_spherical() {
+    assert_eq!(
+      interpret(r#"Curl[{0, 0, r Sin[t]}, {r, t, p}, "Spherical"]"#).unwrap(),
+      "{2*Cos[t], -2*Sin[t], 0}"
+    );
+  }
+
+  #[test]
+  fn curl_unknown_coordinates_unevaluated() {
+    assert_eq!(
+      interpret(r#"Curl[{0, r}, {r, t}, "Bogus"]"#).unwrap(),
+      "Curl[{0, r}, {r, t}, Bogus]"
+    );
+  }
 }
 
 mod log {

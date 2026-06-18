@@ -5579,10 +5579,7 @@ mod div {
   #[test]
   fn div_polar() {
     assert_eq!(interpret(r#"Div[{r, 0}, {r, t}, "Polar"]"#).unwrap(), "2");
-    assert_eq!(
-      interpret(r#"Div[{1/r, 0}, {r, t}, "Polar"]"#).unwrap(),
-      "0"
-    );
+    assert_eq!(interpret(r#"Div[{1/r, 0}, {r, t}, "Polar"]"#).unwrap(), "0");
   }
 
   #[test]

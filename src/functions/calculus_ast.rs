@@ -12149,6 +12149,45 @@ fn laplacian_curvilinear(
   eval(&cc_product(vec![sum, cc_reciprocal(jac)]))
 }
 
+/// Curl in orthogonal curvilinear coordinates with scale factors h.
+/// 2D ({F1, F2}) gives the scalar (1/(h1 h2))[∂(h2 F2)/∂x1 − ∂(h1 F1)/∂x2].
+/// 3D gives the vector whose i-th component (with (i,j,k) cyclic) is
+/// (1/(hj hk))[∂(hk Fk)/∂xj − ∂(hj Fj)/∂xk].
+fn curl_curvilinear(
+  field: &[Expr],
+  var_names: &[String],
+  scales: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  // (1/(h_a h_b)) [ ∂(h_b F_b)/∂x_a − ∂(h_a F_a)/∂x_b ]
+  let component = |a: usize, b: usize| -> Result<Expr, InterpreterError> {
+    let prefactor =
+      cc_reciprocal(cc_product(vec![scales[a].clone(), scales[b].clone()]));
+    let hb_fb = eval(&cc_product(vec![scales[b].clone(), field[b].clone()]))?;
+    let d1 = differentiate_expr(&hb_fb, &var_names[a])?;
+    let ha_fa = eval(&cc_product(vec![scales[a].clone(), field[a].clone()]))?;
+    let d2 = differentiate_expr(&ha_fa, &var_names[b])?;
+    let inner = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        d1,
+        cc_product(vec![Expr::Integer(-1), d2]),
+      ]
+      .into(),
+    };
+    eval(&cc_product(vec![prefactor, inner]))
+  };
+  if field.len() == 2 {
+    return component(0, 1);
+  }
+  // 3D: component i uses axes (j, k) = ((i+1)%3, (i+2)%3).
+  let mut comps = Vec::with_capacity(3);
+  for i in 0..3 {
+    comps.push(component((i + 1) % 3, (i + 2) % 3)?);
+  }
+  Ok(Expr::List(comps.into()))
+}
+
 /// Extract the coordinate-system scale factors from a 3rd argument, or None if
 /// it is not a recognized system string / matched variable list.
 fn coord_scales_from_arg(cs_arg: &Expr, vars: &[Expr]) -> Option<Vec<Expr>> {
@@ -12405,9 +12444,9 @@ pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Curl[{f1, f2}, {x1, x2}] - 2D curl (scalar)
 /// Curl[{f1, f2, f3}, {x1, x2, x3}] - 3D curl (vector)
 pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "Curl expects exactly 2 arguments".into(),
+      "Curl expects 2 or 3 arguments".into(),
     ));
   }
   let vars = match &args[1] {
@@ -12419,6 +12458,36 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // The 3-argument form uses orthogonal-curvilinear scale factors and requires
+  // a vector field of 2 (scalar result) or 3 (vector result) components.
+  if args.len() == 3 {
+    let unevaluated = || {
+      Ok(Expr::FunctionCall {
+        name: "Curl".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
+    let field = match &args[0] {
+      Expr::List(items) => items,
+      _ => return unevaluated(),
+    };
+    if field.len() != vars.len() || !(field.len() == 2 || field.len() == 3) {
+      return unevaluated();
+    }
+    let scales = match coord_scales_from_arg(&args[2], vars) {
+      Some(h) => h,
+      None => return unevaluated(),
+    };
+    let mut var_names = Vec::with_capacity(vars.len());
+    for v in vars {
+      match v {
+        Expr::Identifier(s) => var_names.push(s.clone()),
+        _ => return unevaluated(),
+      }
+    }
+    return curl_curvilinear(field, &var_names, &scales);
+  }
   // Curl[s, {x, y}] for a scalar s: the 2D scalar curl equals
   // {-D[s, y], D[s, x]} (the perpendicular gradient). Matches Wolfram.
   if !matches!(&args[0], Expr::List(_)) && vars.len() == 2 {
