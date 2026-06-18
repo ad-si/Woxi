@@ -6004,6 +6004,48 @@ mod zero_divisor {
   use super::*;
 
   #[test]
+  fn infinity_indeterminate_forms_emit_message() {
+    // Indeterminate forms involving Infinity return Indeterminate AND emit the
+    // Infinity::indet message (Woxi previously returned Indeterminate silently).
+    let plus_cases = ["Infinity - Infinity", "2 Infinity - Infinity"];
+    for input in plus_cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, "Indeterminate", "result for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(
+          "Infinity::indet: Indeterminate expression -Infinity + Infinity \
+           encountered."
+        )),
+        "missing -Infinity + Infinity message for {input}: {:?}",
+        r.warnings
+      );
+    }
+    let times_cases = ["0 * Infinity", "Infinity / Infinity", "Infinity*0"];
+    for input in times_cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, "Indeterminate", "result for {input}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(
+          "Infinity::indet: Indeterminate expression 0 Infinity encountered."
+        )),
+        "missing 0 Infinity message for {input}: {:?}",
+        r.warnings
+      );
+    }
+    // ComplexInfinity names itself in the message.
+    let r = interpret_with_stdout("0 * ComplexInfinity").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Infinity::indet: Indeterminate expression 0 ComplexInfinity encountered."
+    )));
+    // Indeterminate propagation (already-Indeterminate operand) does NOT
+    // re-emit the message.
+    let r = interpret_with_stdout("Indeterminate + 1").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    assert!(!r.warnings.iter().any(|w| w.contains("Infinity::indet")));
+  }
+
+  #[test]
   fn mod_by_zero_is_indeterminate() {
     assert_eq!(interpret("Mod[3, 0]").unwrap(), "Indeterminate");
     assert_eq!(interpret("Mod[0, 0]").unwrap(), "Indeterminate");

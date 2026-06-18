@@ -700,6 +700,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     if has_pos_inf && has_neg_inf {
+      crate::emit_message(
+        "Infinity::indet: Indeterminate expression -Infinity + Infinity \
+         encountered.",
+      );
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // Infinity + finite terms → Infinity, -Infinity + finite terms → -Infinity
@@ -4650,6 +4654,10 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_complex_inf {
     let has_zero = flat_args.iter().any(|a| matches!(a, Expr::Integer(0)));
     if has_zero {
+      crate::emit_message(
+        "Infinity::indet: Indeterminate expression 0 ComplexInfinity \
+         encountered.",
+      );
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
@@ -5346,6 +5354,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 0 * Infinity = Indeterminate (check before the general 0 * anything = 0 rule)
   if combined_numer == 0 && symbolic_args.iter().any(is_infinity_like) {
+    crate::emit_message(
+      "Infinity::indet: Indeterminate expression 0 Infinity encountered.",
+    );
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
@@ -5630,8 +5641,11 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Infinity / Infinity → Indeterminate
+  // Infinity / Infinity → Indeterminate (the indeterminate 0 Infinity form)
   if is_infinity_like(a) && is_infinity_like(b) {
+    crate::emit_message(
+      "Infinity::indet: Indeterminate expression 0 Infinity encountered.",
+    );
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
