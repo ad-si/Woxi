@@ -3042,13 +3042,30 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x = &args[0];
   let y = &args[1];
 
-  // Numeric case: both Real
-  if let (Expr::Real(fx), Expr::Real(fy)) = (x, y) {
-    return Ok(Expr::Real(fy.atan2(*fx)));
+  // If either argument is an inexact machine real, ArcTan[x, y] is computed
+  // numerically (atan2), matching wolframscript: ArcTan[0, 2.] is 1.5707…
+  // (not Pi/2) and ArcTan[0, 0.] is 0. (not Indeterminate).
+  fn has_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { left, right, .. } => has_real(left) || has_real(right),
+      Expr::UnaryOp { operand, .. } => has_real(operand),
+      Expr::FunctionCall { args, .. } => args.iter().any(has_real),
+      _ => false,
+    }
+  }
+  if (has_real(x) || has_real(y))
+    && let (Some(fx), Some(fy)) = (try_eval_to_f64(x), try_eval_to_f64(y))
+  {
+    return Ok(Expr::Real(fy.atan2(fx)));
   }
 
-  // ArcTan[0, 0] = Indeterminate
+  // ArcTan[0, 0] = Indeterminate, with the ArcTan::indet message (matching
+  // wolframscript). The inexact case ArcTan[0., 0.] above returns 0. instead.
   if matches!((x, y), (Expr::Integer(0), Expr::Integer(0))) {
+    crate::emit_message(
+      "ArcTan::indet: Indeterminate expression ArcTan[0, 0] encountered.",
+    );
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 

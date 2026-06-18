@@ -1208,7 +1208,7 @@ mod re_im_listable {
 }
 
 mod arctan_two_arg {
-  use woxi::interpret;
+  use woxi::{interpret, interpret_with_stdout};
 
   #[test]
   fn arctan2_positive_positive() {
@@ -1253,6 +1253,38 @@ mod arctan_two_arg {
   #[test]
   fn arctan2_origin_indeterminate() {
     assert_eq!(interpret("ArcTan[0, 0]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn arctan2_exact_origin_emits_indet_message() {
+    // ArcTan[0, 0] (exact integers) emits the ArcTan::indet message.
+    let r = interpret_with_stdout("ArcTan[0, 0]").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "ArcTan::indet: Indeterminate expression ArcTan[0, 0] encountered."
+    )));
+  }
+
+  #[test]
+  fn arctan2_inexact_origin_is_zero() {
+    // A machine-Real operand makes ArcTan numeric: the origin gives 0., not
+    // Indeterminate, and the y-axis gives a float, not Pi/2.
+    assert_eq!(interpret("ArcTan[0., 0.]").unwrap(), "0.");
+    assert_eq!(interpret("ArcTan[0, 0.]").unwrap(), "0.");
+    assert_eq!(interpret("ArcTan[0., 0]").unwrap(), "0.");
+    assert_eq!(
+      interpret("ArcTan[0, 2.0]").unwrap(),
+      "1.5707963267948966"
+    );
+    assert_eq!(interpret("ArcTan[1.0, 0]").unwrap(), "0.");
+    assert_eq!(
+      interpret("ArcTan[1, 2.0]").unwrap(),
+      "1.1071487177940904"
+    );
+    // No spurious indeterminate message in the inexact-origin case.
+    let r = interpret_with_stdout("ArcTan[0, 0.]").unwrap();
+    assert_eq!(r.result, "0.");
+    assert!(!r.warnings.iter().any(|w| w.contains("ArcTan::indet")));
   }
 
   #[test]
