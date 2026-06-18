@@ -3903,6 +3903,54 @@ mod special_function_listability {
     assert_eq!(interpret("CubeRoot[-8]").unwrap(), "-2");
   }
 
+  // Surd of exact arguments returns the exact real n-th root (via Power),
+  // not a machine-float approximation.
+  #[test]
+  fn surd_exact_arguments() {
+    // Non-perfect roots stay symbolic and exact.
+    assert_eq!(interpret("Surd[2, 2]").unwrap(), "Sqrt[2]");
+    assert_eq!(interpret("Surd[2, 3]").unwrap(), "2^(1/3)");
+    assert_eq!(interpret("Surd[12, 2]").unwrap(), "2*Sqrt[3]");
+    assert_eq!(interpret("Surd[-2, 3]").unwrap(), "-2^(1/3)");
+    // Perfect roots reduce.
+    assert_eq!(interpret("Surd[8, 3]").unwrap(), "2");
+    assert_eq!(interpret("Surd[-8, 3]").unwrap(), "-2");
+    assert_eq!(interpret("Surd[81, 4]").unwrap(), "3");
+    // Negative degree gives the exact reciprocal root.
+    assert_eq!(interpret("Surd[8, -3]").unwrap(), "1/2");
+    assert_eq!(interpret("Surd[-8, -3]").unwrap(), "-1/2");
+    assert_eq!(interpret("Surd[2, -3]").unwrap(), "2^(-1/3)");
+    // Rational base.
+    assert_eq!(interpret("Surd[1/4, 2]").unwrap(), "1/2");
+    // Degree 1 is the value itself.
+    assert_eq!(interpret("Surd[5, 1]").unwrap(), "5");
+    // A machine-Real base still evaluates numerically.
+    assert_eq!(interpret("Surd[2.0, 3]").unwrap(), "1.2599210498948732");
+  }
+
+  // Surd error cases: degree 0 and even roots of negatives.
+  #[test]
+  fn surd_indeterminate_cases() {
+    // Degree 0 → Indeterminate (Surd::indet).
+    assert_eq!(interpret("Surd[0, 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[5, 0]").unwrap(), "Indeterminate");
+    // Even root of a negative value → Indeterminate (Surd::noneg).
+    assert_eq!(interpret("Surd[-16, 4]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[-8, 2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[-16, -4]").unwrap(), "Indeterminate");
+    // The messages are emitted.
+    let r = interpret_with_stdout("Surd[5, 0]").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Surd::indet: Indeterminate expression Surd[5, 0] encountered."
+    )));
+    let r = interpret_with_stdout("Surd[-16, 4]").unwrap();
+    assert_eq!(r.result, "Indeterminate");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Surd::noneg: Surd is not defined for even roots of negative values."
+    )));
+  }
+
   // Pochhammer threads over either argument.
   #[test]
   fn pochhammer_threads_both_args() {

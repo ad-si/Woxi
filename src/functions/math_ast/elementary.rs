@@ -1271,11 +1271,60 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Surd expects exactly 2 arguments".into(),
     ));
   }
-  match (expr_to_num(&args[0]), expr_to_num(&args[1])) {
-    (Some(x), Some(n)) => {
-      if n == 0.0 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  let base = &args[0];
+  let degree = &args[1];
+
+  // Surd[x, 0] → Surd::indet, Indeterminate (for any x, including symbolic).
+  if is_literal_zero(degree) {
+    crate::emit_message(&format!(
+      "Surd::indet: Indeterminate expression Surd[{}, 0] encountered.",
+      crate::syntax::expr_to_string(base)
+    ));
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  // Exact path: an integer degree n with an exact (non-machine-Real) base.
+  // Surd is the real n-th root, so delegate to Power, which returns the exact
+  // symbolic form (Surd[2, 2] = Sqrt[2], Surd[8, -3] = 1/2, Surd[12, 2] =
+  // 2 Sqrt[3], ...). A negative base with an odd n uses the real negative
+  // root -(|b|^(1/n)); with an even n it is undefined.
+  let base_is_exact = matches!(base, Expr::Integer(_) | Expr::BigInteger(_))
+    || matches!(base, Expr::FunctionCall { name, .. } if name == "Rational");
+  if let Expr::Integer(n) = degree
+    && base_is_exact
+    && let Some(x) = expr_to_num(base)
+  {
+    let n = *n;
+    let power = |b: Expr| -> Result<Expr, InterpreterError> {
+      let expr = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b, make_rational(1, n)].into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&expr)
+    };
+    let negate = |e: Expr| -> Result<Expr, InterpreterError> {
+      let expr = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), e].into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&expr)
+    };
+    if x < 0.0 {
+      if n.rem_euclid(2) == 0 {
+        crate::emit_message(
+          "Surd::noneg: Surd is not defined for even roots of negative values.",
+        );
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
       }
+      // Odd root of a negative value: -(|b|^(1/n)).
+      return negate(power(negate(base.clone())?)?);
+    }
+    return power(base.clone());
+  }
+
+  // Numeric fallback: a machine-Real base (or non-integer degree).
+  match (expr_to_num(base), expr_to_num(degree)) {
+    (Some(x), Some(n)) => {
       // Real-valued nth root: sign(x) * |x|^(1/n)
       let result = if x < 0.0 && n.fract() == 0.0 && (n as i128) % 2 != 0 {
         // Odd integer root of negative number
