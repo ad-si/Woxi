@@ -4608,6 +4608,22 @@ mod batch_unevaluated_wrappers_2 {
       "11/2"
     );
   }
+  // WinsorizedMean[list, {flow, fhigh}] winsorizes asymmetrically.
+  #[test]
+  fn winsorized_mean_two_fractions() {
+    assert_eq!(
+      interpret("WinsorizedMean[Range[10], {1/10, 1/10}]").unwrap(),
+      "11/2"
+    );
+    assert_eq!(
+      interpret("WinsorizedMean[Range[10], {2/10, 1/10}]").unwrap(),
+      "57/10"
+    );
+    assert_eq!(
+      interpret("WinsorizedMean[Range[20], {1/10, 1/10}]").unwrap(),
+      "21/2"
+    );
+  }
   #[test]
   fn trimmed_variance_basic() {
     assert_eq!(

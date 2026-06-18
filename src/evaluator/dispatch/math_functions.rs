@@ -816,27 +816,46 @@ pub fn dispatch_math_functions(
       }
     }
     "WinsorizedMean" if args.len() == 2 => {
-      // WinsorizedMean[list, frac] — replace extremes with boundary values then mean
-      if let Expr::List(elems) = &args[0]
-        && let Some(frac) = expr_to_f64(&args[1])
-      {
+      // WinsorizedMean[list, f]         — replace the lowest/highest round(f*n)
+      //                                   values with the boundary value, mean.
+      // WinsorizedMean[list, {f1, f2}]  — winsorize round(f1*n) at the bottom,
+      //                                   round(f2*n) at the top.
+      if let Expr::List(elems) = &args[0] {
         let n = elems.len();
-        let trim = (n as f64 * frac).round() as usize;
-        if 2 * trim < n {
+        let (trim_lo, trim_hi) = match &args[1] {
+          Expr::List(fs) if fs.len() == 2 => {
+            match (expr_to_f64(&fs[0]), expr_to_f64(&fs[1])) {
+              (Some(f1), Some(f2)) => (
+                (n as f64 * f1).round() as usize,
+                (n as f64 * f2).round() as usize,
+              ),
+              _ => return None,
+            }
+          }
+          other => match expr_to_f64(other) {
+            Some(f) => {
+              let t = (n as f64 * f).round() as usize;
+              (t, t)
+            }
+            None => return None,
+          },
+        };
+        if trim_lo + trim_hi < n {
           let mut sorted: Vec<Expr> = elems.to_vec();
           sorted.sort_by(|a, b| {
             let fa = expr_to_f64(a).unwrap_or(0.0);
             let fb = expr_to_f64(b).unwrap_or(0.0);
             fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
           });
-          // Replace bottom trim with sorted[trim], top trim with sorted[n-trim-1]
-          let low = sorted[trim].clone();
-          let high = sorted[n - trim - 1].clone();
+          // Replace the bottom trim_lo with sorted[trim_lo] and the top
+          // trim_hi with sorted[n-trim_hi-1].
+          let low = sorted[trim_lo].clone();
+          let high = sorted[n - trim_hi - 1].clone();
           let mut winsorized = sorted.clone();
-          for item in winsorized.iter_mut().take(trim) {
+          for item in winsorized.iter_mut().take(trim_lo) {
             *item = low.clone();
           }
-          for item in winsorized.iter_mut().skip(n - trim) {
+          for item in winsorized.iter_mut().skip(n - trim_hi) {
             *item = high.clone();
           }
           let sum_expr = Expr::FunctionCall {
