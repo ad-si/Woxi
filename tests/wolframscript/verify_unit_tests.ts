@@ -940,6 +940,97 @@ function main() {
     // Sqrt[2]*Sqrt[InverseGammaRegularized[3/2, 0, 1/2]], Wolfram fuses the
     // square roots to Sqrt[2*InverseGammaRegularized[3/2, 0, 1/2]].
     "Median[ChiDistribution[3]]",
+
+    // ───────────────────────────────────────────────────────────────────────
+    // CAS capabilities Woxi returns unevaluated where Wolfram computes a closed
+    // form (parametric/underdetermined solving, nonlinear ODEs, symbolic
+    // transforms/sums, Piecewise/DiscreteDelta results, sum-to-product
+    // factoring). Woxi's own unit tests assert the unevaluated/symbolic result.
+    "Solve[x + y == 3]", // underdetermined linear system
+    "GroebnerBasis[{Sin[x]}, {x}]", // non-polynomial generator passthrough
+    "PadeApproximant[1/(1 - x), {x, 0, {2, 2}}]", // rank-deficient Padé system
+    "TrigFactor[Sin[2 x] + Sin[4 x]]", // sum-to-product factoring
+    "DSolve[y'[x] == y[x]^2, y[x], x]", // nonlinear first-order ODE
+    "DSolve[y'[x] == Sin[y[x]], y[x], x]",
+    "FunctionRange[Gamma[x], x, y]",
+    "ZTransform[Sin[n], n, z]",
+    "ZTransform[n^2 + n + 1, n, z]",
+    "FourierCoefficient[Sin[t], t, n]", // Piecewise result
+    "FourierSinCoefficient[Sin[t], t, n]", // DiscreteDelta result
+    "Sum[Binomial[n, k], {k, 1, n}]", // symbolic binomial sums
+    "Sum[k Binomial[n, k], {k, 0, n}]",
+    "Sum[k r^k, {k, 0, Infinity}]", // symbolic geometric-type sums
+    "Sum[k/k!, {k, 1, Infinity}]",
+    "SumConvergence[Sin[n], n]", // n-th-term divergence test
+    "HazardFunction[PoissonDistribution[2], x]", // Piecewise result
+    "PDF[MultinormalDistribution[{0, 0}, {{2, 1}, {1, 3}}], {x, y}]",
+    "EmpiricalDistribution[{x, y}]", // DataDistribution wrapper
+    "PDF[MinStableDistribution[2, 3, 0], x]",
+    "Covariance[{{a, b}, {c, d}}]", // Conjugate expansion
+    "LogLikelihood[ExponentialDistribution[a], {x1, x2}]", // Piecewise result
+    "JordanDecomposition[{{1, 1, 0}, {0, 1, 0}, {0, 0, 2}}]",
+    "Threshold[{1., -2., 3., 4.}, {\"Firm\", 1, 3}]", // "Firm" shrinkage mode
+
+    // Canonical Plus/Times ordering differences (mathematically identical):
+    "ZTransform[a^n, n, z]", // -(z/(a - z)) vs z/(-a + z)
+    "ZTransform[n^2 a^n, n, z]",
+    "Log[E^(a + 3 I)]", // a + 3*I vs 3*I + a (numeric-imaginary term first)
+
+    // PermutationProduct prints with the private-use centred-dot infix glyph
+    // (U+F3DE); Woxi keeps the call symbolic with the standard head.
+    "PermutationProduct[{2, 1, 4}, {1, 3, 2}]",
+
+    // Symbol[]-in-Set: Woxi's dynamic_variable_names feature assigns to `xy`
+    // (returns 99); Wolfram's Set holds Symbol["xy"] literally so `xy` stays
+    // unbound. Intentional Woxi divergence (rosetta_script_fixes). This test is
+    // a single interpret() call, so the verify's c.expr is the whole chain.
+    "Set[Symbol[\"xy\"], 99]; xy",
+
+    // DeleteCases at level {0} deletes the root → Sequence[]. Wolfram's empty
+    // Sequence[] flattens into the verify harness's ToString[(...), InputForm]
+    // wrapper, yielding the literal "InputForm"; Woxi returns Null.
+    "DeleteCases[{1, a, 2}, _, {0}]",
+
+    // Entity / CountryData: Woxi's bundled entity data differs from Wolfram's
+    // online knowledge base (canonical names, population figures, Failure head).
+    "Interpreter[\"Country\"][\"USA\"]",
+    "Interpreter[\"Country\"][\"Bosnia & Herzegovina\"]",
+    "Head[Interpreter[\"Country\"][\"Scotland\"]]",
+    "CountryData[\"Qatar\", \"Population\"]",
+
+    // Graph-valued results: Wolfram stores graphs as an internal SparseArray
+    // adjacency encoding (and attaches GraphLayout/VertexCoordinates options);
+    // Woxi uses an explicit edge list. Same reason as the AdjacencyGraph /
+    // StarGraph / CompleteGraph / GridGraph skips above.
+    "TransitiveClosureGraph[Graph[{1 -> 2, 2 -> 3}]]",
+    "TransitiveClosureGraph[{1 -> 2}]",
+    "WeightedAdjacencyGraph[{{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}]",
+    "NearestNeighborGraph[{{0, 0}, {1, 0}, {5, 5}, {6, 5}}]",
+    "HararyGraph[2, 8]",
+    "HararyGraph[4, 9]",
+    "HararyGraph[3, 7, PlotLabel -> x]",
+    "EdgeConnectivity[CycleGraph[5], 1, 7]",
+    "VertexConnectivity[CycleGraph[5], 9, 2]",
+    "KCoreComponents[CycleGraph[5], 2, \"Bogus\"]",
+    "KCoreComponents[CycleGraph[5], 1.5]",
+    "KCoreComponents[CycleGraph[5]]",
+    "FindClique[CycleGraph[5], 0]",
+    "FindClique[CycleGraph[5], {1, 2, 3}]",
+    "Subgraph[CycleGraph[5], {1, 9}]",
+    "Subgraph[CycleGraph[5], 3]",
+    "AdjacencyList[CycleGraph[5], 9]",
+    "EdgeIndex[CycleGraph[5], 1 <-> 3]",
+
+    // Large-real OutputForm: Wolfram renders scientific notation as a 2D
+    // `mantissa 10^exp` superscript; Woxi emits the 1D `*^` form.
+    "ToString[15000000000.]",
+    "ToString[12000000000.]",
+    "ToString[2.0*^10]",
+    "ToString[123456789012.]",
+
+    // Last-ULP f64 differences at machine precision (different algorithms):
+    "SphericalBesselJ[0, {1., 2.}]",
+    "StruveH[0, {1., 2.}]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
