@@ -763,6 +763,39 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Integer arguments with at least one non-positive: resolve via the Gamma
+  // pole structure of Beta[a, b] = Gamma[a] Gamma[b] / Gamma[a+b]. Each of
+  // a <= 0 and b <= 0 contributes a numerator pole; a+b <= 0 contributes a
+  // denominator pole. A surviving numerator pole gives ComplexInfinity; when
+  // the poles exactly cancel the limit is finite.
+  if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+    let (a, b) = (*a, *b);
+    let num_poles = (a <= 0) as i32 + (b <= 0) as i32;
+    if num_poles > 0 {
+      let den_pole = (a + b <= 0) as i32;
+      if num_poles - den_pole >= 1 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      // Poles cancel (exactly one argument non-positive and a+b <= 0): the
+      // finite limit is (-1)^pos * (pos-1)! * (m - pos)! / m!, where `pos` is
+      // the positive argument and m = -neg (the magnitude of the other one).
+      let (pos, neg) = if a > 0 { (a, b) } else { (b, a) };
+      let m = -neg;
+      if let (Some(p_fact), Some(rem_fact), Some(m_fact)) = (
+        factorial_i128((pos - 1) as usize),
+        factorial_i128((m - pos) as usize),
+        factorial_i128(m as usize),
+      ) {
+        let signed = if pos % 2 == 0 {
+          p_fact * rem_fact
+        } else {
+          -(p_fact * rem_fact)
+        };
+        return Ok(make_rational(signed, m_fact));
+      }
+    }
+  }
+
   // Try rational args for half-integer cases
   // Beta[p/q, r/s] for half-integers involves Gamma at half-integers
   if let (Some(a_f), Some(b_f)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))

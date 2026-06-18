@@ -2645,6 +2645,27 @@ mod cases {
   fn beta() {
     assert_case(r#"Beta[2, 3]"#, r#"1 / 12"#);
   }
+
+  #[test]
+  fn beta_non_positive_integer_args() {
+    // A surviving numerator pole gives ComplexInfinity.
+    assert_case("Beta[0, 0]", "ComplexInfinity");
+    assert_case("Beta[0, 2]", "ComplexInfinity");
+    assert_case("Beta[2, 0]", "ComplexInfinity");
+    assert_case("Beta[-1, 2]", "ComplexInfinity");
+    assert_case("Beta[-1, 5]", "ComplexInfinity");
+    assert_case("Beta[-1, -1]", "ComplexInfinity");
+    // Cancelling poles give the finite analytic-continuation value.
+    assert_case("Beta[-2, 1]", "-1/2");
+    assert_case("Beta[1, -2]", "-1/2");
+    assert_case("Beta[-3, 2]", "1/6");
+    assert_case("Beta[-5, 2]", "1/20");
+    assert_case("Beta[-4, 3]", "-1/12");
+    assert_case("Beta[-5, 3]", "-1/30");
+    // Positive-integer and symbolic forms are unaffected.
+    assert_case("Beta[5, 2]", "1/30");
+    assert_case("Beta[a, b]", "Beta[a, b]");
+  }
   #[test]
   fn times() {
     assert_case(r#"Beta[2, 3]; 12* Beta[1., 2, 3]"#, r#"1."#);
