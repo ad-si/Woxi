@@ -543,6 +543,44 @@ mod batch_unevaluated_wrappers_2 {
       "True"
     );
   }
+  // Definiteness predicates answer False (no error, not unevaluated) for a
+  // scalar, vector, or non-square matrix, matching wolframscript.
+  #[test]
+  fn positive_definite_matrix_q_non_matrix() {
+    assert_eq!(interpret("PositiveDefiniteMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[{1, 2, 3}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn positive_semidefinite_matrix_q_non_matrix() {
+    assert_eq!(interpret("PositiveSemidefiniteMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("PositiveSemidefiniteMatrixQ[{1, 2}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn negative_definite_matrix_q_non_matrix() {
+    assert_eq!(interpret("NegativeDefiniteMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("NegativeDefiniteMatrixQ[{{-2, 0}, {0, -3}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn negative_semidefinite_matrix_q_non_matrix() {
+    assert_eq!(interpret("NegativeSemidefiniteMatrixQ[5]").unwrap(), "False");
+    assert_eq!(
+      interpret("NegativeSemidefiniteMatrixQ[{1, 2, 3}]").unwrap(),
+      "False"
+    );
+  }
 
   // ─── IndefiniteMatrixQ ─────────────────────────────────────────────
   #[test]

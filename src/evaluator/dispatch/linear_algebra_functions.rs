@@ -324,6 +324,11 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     "PositiveDefiniteMatrixQ" if args.len() == 1 => {
+      // Non-square arguments are not positive definite. Guard before calling
+      // eigenvalues_ast, which would otherwise emit a spurious matsq message.
+      if !is_square_matrix_expr(&args[0]) {
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
       // Compute eigenvalues and check all are strictly positive
       let eigenvals_result =
         crate::functions::linear_algebra_ast::eigenvalues_ast(args);
@@ -1566,6 +1571,11 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     "PositiveSemidefiniteMatrixQ" if args.len() == 1 => {
+      // Non-square arguments (scalar, vector, ragged) are not positive
+      // semidefinite — answer False rather than staying unevaluated.
+      if !is_square_matrix_expr(&args[0]) {
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
       // Check if all eigenvalues are non-negative
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
@@ -1625,6 +1635,10 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     "NegativeDefiniteMatrixQ" if args.len() == 1 => {
+      // Non-square arguments are not negative definite — answer False.
+      if !is_square_matrix_expr(&args[0]) {
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
       // All eigenvalues must be strictly negative
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
@@ -1676,6 +1690,10 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     "NegativeSemidefiniteMatrixQ" if args.len() == 1 => {
+      // Non-square arguments are not negative semidefinite — answer False.
+      if !is_square_matrix_expr(&args[0]) {
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
       // All eigenvalues must be <= 0
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
@@ -2530,6 +2548,19 @@ fn is_zero_expr(expr: &Expr) -> bool {
     Expr::Integer(0) => true,
     Expr::Real(v) => *v == 0.0,
     _ => false,
+  }
+}
+
+/// True iff `expr` is a non-empty square matrix: a list of n rows, each a list
+/// of exactly n elements. Used by the definiteness predicates so a scalar,
+/// vector, or non-square matrix answers False instead of erroring or staying
+/// unevaluated (matching wolframscript).
+fn is_square_matrix_expr(expr: &Expr) -> bool {
+  if let Expr::List(rows) = expr {
+    let n = rows.len();
+    n > 0 && rows.iter().all(|r| matches!(r, Expr::List(c) if c.len() == n))
+  } else {
+    false
   }
 }
 
