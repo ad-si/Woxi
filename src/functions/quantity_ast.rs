@@ -1636,6 +1636,19 @@ fn multiply_magnitude_by_rational(
 pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     1 => {
+      // A bare number is not a valid unit specification: wolframscript emits
+      // Quantity::unkunit and leaves Quantity[n] unevaluated (rather than
+      // treating the number as a unit with magnitude 1).
+      if is_pure_number(&args[0]) {
+        crate::emit_message(&format!(
+          "Quantity::unkunit: Unable to interpret unit specification {}.",
+          crate::syntax::expr_to_output(&args[0])
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "Quantity".to_string(),
+          args: args.to_vec().into(),
+        });
+      }
       // Quantity["Meters"] → Quantity[1, Meters]
       let unit = args[0].clone();
       Ok(make_quantity(Expr::Integer(1), unit))

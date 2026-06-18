@@ -19,6 +19,23 @@ fn quantity_one_arg() {
 }
 
 #[test]
+fn quantity_one_numeric_arg_is_unkunit() {
+  // A bare number is not a valid unit: Quantity[2] must stay unevaluated and
+  // emit Quantity::unkunit (NOT become Quantity[1, 2]).
+  assert_eq!(interpret("Quantity[2]").unwrap(), "Quantity[2]");
+  assert_eq!(interpret("Quantity[2.5]").unwrap(), "Quantity[2.5]");
+  let r = interpret_with_stdout("Quantity[2]").unwrap();
+  assert_eq!(r.result, "Quantity[2]");
+  assert!(
+    r.warnings.iter().any(|w| w.contains(
+      "Quantity::unkunit: Unable to interpret unit specification 2."
+    )),
+    "expected unkunit message, got: {:?}",
+    r.warnings
+  );
+}
+
+#[test]
 fn quantity_zero_magnitude() {
   assert_eq!(
     interpret("Quantity[0, \"Meters\"]").unwrap(),
