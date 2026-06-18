@@ -1605,6 +1605,18 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Hour" => int(h),
       "Minute" => int(mi),
       "Second" => int(sec),
+      // "…Short" component forms. For most fields these equal the plain
+      // integer component (the "Short" only suppresses zero-padding in
+      // DateString), but "YearShort" is the year modulo 100.
+      "YearShort" => int(y.rem_euclid(100)),
+      "MonthShort" => int(mo),
+      "DayShort" => int(d),
+      "HourShort" => int(h),
+      "MinuteShort" => int(mi),
+      "SecondShort" => int(sec),
+      // 12-hour clock: 0 and 12 both map to 12, 13..23 map to 1..11.
+      "Hour12" => int((h + 11).rem_euclid(12) + 1),
+      "AMPM" => Expr::String(if h < 12 { "AM" } else { "PM" }.to_string()),
       "DayName" => {
         Expr::Identifier(day_name(day_of_week(y, mo, d)).to_string())
       }

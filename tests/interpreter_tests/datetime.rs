@@ -1356,6 +1356,64 @@ mod date_value {
     );
   }
 
+  // "Hour12" is the 12-hour-clock hour: 0 and 12 both map to 12, 13..23 to
+  // 1..11. "AMPM" is the meridiem string.
+  #[test]
+  fn hour12_and_ampm() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 14, 30, 0}, "Hour12"]"#).unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 0, 0, 0}, "Hour12"]"#).unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 12, 0, 0}, "Hour12"]"#).unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 14, 0, 0}, "AMPM"]"#).unwrap(),
+      "PM"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 0, 0, 0}, "AMPM"]"#).unwrap(),
+      "AM"
+    );
+  }
+
+  // "…Short" component forms return the plain integer field, except
+  // "YearShort" which is the year modulo 100.
+  #[test]
+  fn short_component_forms() {
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "YearShort"]"#).unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2005, 3, 15}, "YearShort"]"#).unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "MonthShort"]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15}, "DayShort"]"#).unwrap(),
+      "15"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 14, 30, 45}, "HourShort"]"#)
+        .unwrap(),
+      "14"
+    );
+    assert_eq!(
+      interpret(r#"DateValue[{2024, 3, 15, 14, 30, 45}, "SecondShort"]"#)
+        .unwrap(),
+      "45"
+    );
+  }
+
   // ISO-8601 week date: "ISOWeek" and "ISOWeekYear", which differ from the
   // calendar values near year boundaries. Verified against wolframscript.
   #[test]
