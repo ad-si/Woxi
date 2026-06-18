@@ -152,8 +152,11 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Float complex extraction: handles 1.5 + 2.5*I patterns. Kept ahead of the
   // Plus-distributing path so a machine-precision summand wins, e.g.
-  // Re[1 + 2.3 I] is the machine real 1., not the exact integer 1.
-  if let Some((re, _)) = try_extract_complex_float(&args[0]) {
+  // Re[1 + 2.3 I] is the machine real 1., not the exact integer 1. Gated on a
+  // machine Real so an exact summand like `I Pi` isn't collapsed to a float.
+  if contains_machine_real(&args[0])
+    && let Some((re, _)) = try_extract_complex_float(&args[0])
+  {
     return Ok(Expr::Real(re));
   }
 
@@ -222,8 +225,11 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Float complex extraction: handles 1.5 + 2.5*I patterns. Kept ahead of the
   // Plus-distributing path so a machine-precision summand wins, e.g.
-  // Im[1 + 2.3 I] is the machine real 2.3, not an exact value.
-  if let Some((_, im)) = try_extract_complex_float(&args[0]) {
+  // Im[1 + 2.3 I] is the machine real 2.3, not an exact value. Gated on a
+  // machine Real so an exact summand like `I Pi` isn't collapsed to a float.
+  if contains_machine_real(&args[0])
+    && let Some((_, im)) = try_extract_complex_float(&args[0])
+  {
     return Ok(Expr::Real(im));
   }
 
@@ -469,6 +475,23 @@ pub fn is_known_real(expr: &Expr) -> bool {
 /// Conjugate a single expression, returning the conjugated form.
 /// For known reals, returns the value; for I, returns -I;
 /// for Plus/Times/List, distributes; otherwise wraps in Conjugate[...].
+/// True iff `expr` contains a machine-precision `Real` leaf. The float complex
+/// extractors evaluate exact constants like `Pi`/`E` numerically, so Re/Im/
+/// Conjugate must only fall back to them when the expression is genuinely
+/// machine-precision — otherwise an exact `I Pi` would collapse to `3.14159…`.
+fn contains_machine_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_machine_real(left) || contains_machine_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_machine_real(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_machine_real),
+    Expr::List(items) => items.iter().any(contains_machine_real),
+    _ => false,
+  }
+}
+
 pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Real-valued expressions are their own conjugate. `is_real_valued` covers
   // exact reals/constants plus any NumericQ expression that evaluates to a
@@ -503,8 +526,12 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(build_complex_expr(rn, rd, -in_, id));
   }
 
-  // Try float complex extraction: handles 1.5 + 2.5*I patterns
-  if let Some((re, im)) = try_extract_complex_float(expr) {
+  // Float complex extraction: handles 1.5 + 2.5*I patterns. Gated on the
+  // presence of a machine Real so an exact `I Pi` isn't downgraded to a float;
+  // exact expressions fall through to the symbolic distribution below.
+  if contains_machine_real(expr)
+    && let Some((re, im)) = try_extract_complex_float(expr)
+  {
     return Ok(build_complex_float_expr(re, -im));
   }
 

@@ -336,6 +336,32 @@ mod conjugate_tests {
     // Conjugate[a + 2] = 2 + Conjugate[a]
     assert_eq!(interpret("Conjugate[a + 2]").unwrap(), "2 + Conjugate[a]");
   }
+
+  // An exact constant coefficient of I (Pi, E) must stay exact rather than
+  // collapsing to a machine float. Regression: the float complex extractor ran
+  // unconditionally and evaluated Constant Pi numerically.
+  #[test]
+  fn conjugate_i_times_pi() {
+    assert_eq!(interpret("Conjugate[I Pi]").unwrap(), "-I*Pi");
+  }
+
+  #[test]
+  fn conjugate_i_times_e() {
+    assert_eq!(interpret("Conjugate[I E]").unwrap(), "-I*E");
+  }
+
+  #[test]
+  fn conjugate_real_plus_pi_imaginary() {
+    assert_eq!(interpret("Conjugate[2 + I Pi]").unwrap(), "2 - I*Pi");
+  }
+
+  #[test]
+  fn conjugate_minus_pi_imaginary() {
+    assert_eq!(
+      interpret("Conjugate[2 - 3 Pi I]").unwrap(),
+      "2 + (3*I)*Pi"
+    );
+  }
 }
 
 mod re_tests {
