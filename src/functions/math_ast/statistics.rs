@@ -3018,8 +3018,16 @@ pub fn quantile_parametric(
     return Ok(lo);
   }
   let hi = sorted[clamp(k + 1) - 1].clone();
-  // w = c + d * frac
-  let w = ev(&plus(c.clone(), times(d.clone(), frac)))?;
+  // w = c + d * frac. When d is exactly zero there is no interpolation, so
+  // the weight is just c — and the (inexact) fractional part of x must not
+  // leak into the result. wolframscript keeps e.g.
+  // Quantile[{1,2,3,4,5}, 0.5, {{0,0},{1,0}}] = 3 (exact), not 3., because
+  // the d*frac term drops out entirely rather than producing 0.*0.5 = 0.
+  let w = if matches!(d, Expr::Integer(0)) {
+    c.clone()
+  } else {
+    ev(&plus(c.clone(), times(d.clone(), frac)))?
+  };
   // result = lo + w * (hi - lo)
   let diff = ev(&plus(hi, times(Expr::Integer(-1), lo.clone())))?;
   ev(&plus(lo, times(w, diff)))

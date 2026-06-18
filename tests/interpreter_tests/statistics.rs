@@ -5298,4 +5298,45 @@ mod quantile_parametric {
     assert_eq!(interpret("Quantile[{1,2,3,4,5}, 1/2]").unwrap(), "3");
     assert_eq!(interpret("Quantile[{1,2,3,4}, 0.25]").unwrap(), "1");
   }
+
+  // With d = 0 the result is an exact list element; an inexact probability
+  // must not leak a real into it (the d*frac term drops out entirely).
+  // wolframscript: Quantile[{1,2,3,4,5}, 0.5, {{0,0},{1,0}}] = 3, not 3.
+  #[test]
+  fn real_probability_stays_exact_when_d_zero() {
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4,5}, 0.5, {{0,0},{1,0}}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4,5}, 0.3, {{0,0},{1,0}}]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Quantile[{10,20,30,40}, 0.25, {{0,0},{1,0}}]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4,5}, 0.6, {{1/2,0},{0,0}}]").unwrap(),
+      "3"
+    );
+  }
+
+  // A real list still yields a real result (the elements carry the type).
+  #[test]
+  fn real_list_stays_real_when_d_zero() {
+    assert_eq!(
+      interpret("Quantile[{1.,2.,3.,4.,5.}, 0.5, {{0,0},{1,0}}]").unwrap(),
+      "3."
+    );
+  }
+
+  // Genuine interpolation (d != 0) with a real probability is still real.
+  #[test]
+  fn real_probability_interpolates_when_d_nonzero() {
+    assert_eq!(
+      interpret("Quantile[{1,2,3,4,5}, 0.7, {{1,-1},{0,1}}]").unwrap(),
+      "3.8"
+    );
+  }
 }
