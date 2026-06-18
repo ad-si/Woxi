@@ -1502,6 +1502,40 @@ fn unit_convert_atmospheres_to_bars() {
   );
 }
 
+// ─── Extended units: Force ─────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_newtons_to_dynes() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Newtons\"], \"Dynes\"]").unwrap(),
+    "Quantity[100000, Dynes]"
+  );
+}
+
+#[test]
+fn unit_convert_dynes_to_newtons() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[100, \"Dynes\"], \"Newtons\"]").unwrap(),
+    "Quantity[1/1000, Newtons]"
+  );
+}
+
+#[test]
+fn unit_convert_dynes_to_si() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Dynes\"]]").unwrap(),
+    "Quantity[1/100000, (Kilograms*Meters)/Seconds^2]"
+  );
+}
+
+#[test]
+fn quantity_add_dynes_and_newtons() {
+  assert_eq!(
+    interpret("Quantity[5, \"Dynes\"] + Quantity[3, \"Newtons\"]").unwrap(),
+    "Quantity[300005, Dynes]"
+  );
+}
+
 // ─── Extended units: Energy ────────────────────────────────────────────────
 
 #[test]

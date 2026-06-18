@@ -232,6 +232,12 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 1,
       to_si_denom: 1,
     },
+    // 1 dyne = 1e-5 N
+    "Dynes" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 1), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 100000,
+    },
 
     // ── Pressure: Pascals = kg/(m⋅s²) ────────────────────────────────
     "Pascals" => UnitInfo {
@@ -714,6 +720,7 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "pF" => "Picofarads",
     "C" => "Coulombs",
     "N" => "Newtons",
+    "dyn" => "Dynes",
     "Pa" => "Pascals",
     "kPa" => "Kilopascals",
     "MPa" => "Megapascals",
