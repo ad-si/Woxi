@@ -2236,6 +2236,51 @@ pub fn dispatch_math_functions(
     "JacobiSymbol" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_symbol_ast(args));
     }
+    // MultiplicativeOrder[k, n, {r1, ..., rs}] — generalized order: the
+    // smallest m >= 1 for which k^m is congruent to one of the rᵢ modulo n.
+    // Stays unevaluated when no power of k reaches any residue.
+    "MultiplicativeOrder" if args.len() == 3 => {
+      if let (Expr::Integer(k), Expr::Integer(n), Expr::List(residues)) =
+        (&args[0], &args[1], &args[2])
+        && *n > 0
+      {
+        // Normalise the target residues into [0, n).
+        let mut targets: Vec<i128> = Vec::with_capacity(residues.len());
+        let mut ok = true;
+        for r in residues.iter() {
+          match r {
+            Expr::Integer(ri) => targets.push(((*ri % *n) + *n) % *n),
+            _ => {
+              ok = false;
+              break;
+            }
+          }
+        }
+        if ok && !targets.is_empty() {
+          let k_mod = ((*k % *n) + *n) % *n;
+          let mut power = k_mod;
+          let mut seen: Vec<i128> = Vec::new();
+          let mut m = 1i128;
+          loop {
+            if targets.contains(&power) {
+              return Some(Ok(Expr::Integer(m)));
+            }
+            if seen.contains(&power) {
+              // Cycled without reaching a residue: no solution.
+              break;
+            }
+            seen.push(power);
+            power = (power * k_mod) % *n;
+            m += 1;
+          }
+          // Leave unevaluated when unsolvable.
+          return Some(Ok(Expr::FunctionCall {
+            name: "MultiplicativeOrder".to_string(),
+            args: args.to_vec().into(),
+          }));
+        }
+      }
+    }
     "MultiplicativeOrder" if args.len() == 2 => {
       if let (Expr::Integer(a), Expr::Integer(n)) = (&args[0], &args[1])
         && *n > 0

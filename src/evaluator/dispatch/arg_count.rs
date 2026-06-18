@@ -761,7 +761,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MovingMap" => Some((3, 3)),
     "MovingMedian" => Some((2, 2)),
     "MultinomialDistribution" => Some((2, 2)),
-    "MultiplicativeOrder" => Some((2, 2)),
+    "MultiplicativeOrder" => Some((2, 3)),
     "MultiplySides" => Some((2, 2)),
     "MultivariatePoissonDistribution" => Some((2, 2)),
     "N" => Some((1, 2)),

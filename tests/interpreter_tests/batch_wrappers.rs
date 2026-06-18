@@ -1706,6 +1706,35 @@ mod batch_unevaluated_wrappers_2 {
   fn multiplicative_order_10_7() {
     assert_eq!(interpret("MultiplicativeOrder[10, 7]").unwrap(), "6");
   }
+  // Generalized form: smallest m with k^m congruent to some residue mod n.
+  #[test]
+  fn multiplicative_order_generalized() {
+    assert_eq!(
+      interpret("MultiplicativeOrder[2, 7, {1, -1}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("MultiplicativeOrder[7, 11, {1, 3, 9}]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("MultiplicativeOrder[3, 10, {1, -1}]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("MultiplicativeOrder[2, 7, {2}]").unwrap(), "1");
+  }
+  // No power of k reaches any residue: stays unevaluated.
+  #[test]
+  fn multiplicative_order_generalized_unevaluated() {
+    assert_eq!(
+      interpret("MultiplicativeOrder[2, 7, {3}]").unwrap(),
+      "MultiplicativeOrder[2, 7, {3}]"
+    );
+    assert_eq!(
+      interpret("MultiplicativeOrder[6, 9, {1}]").unwrap(),
+      "MultiplicativeOrder[6, 9, {1}]"
+    );
+  }
 
   // ─── Unevaluated batch 8 ──────────────────────────────────────────
   #[test]
