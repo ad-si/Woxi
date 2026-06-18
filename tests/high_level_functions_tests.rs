@@ -2637,6 +2637,37 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_accounting_form_never_scientific() {
+      // AccountingForm never uses scientific notation: a large Real that the
+      // default OutputForm would render as `1.23457*^6` is shown in full
+      // decimal instead (regression — Woxi used to emit `1.23457*^6`).
+      assert_eq!(
+        interpret("ToString[AccountingForm[1234567.]]").unwrap(),
+        "1234567."
+      );
+      // Fractional digits beyond the displayed precision round into the integer.
+      assert_eq!(
+        interpret("ToString[AccountingForm[1234567.89]]").unwrap(),
+        "1234568."
+      );
+      // Very large magnitudes keep every integer digit.
+      assert_eq!(
+        interpret("ToString[AccountingForm[12345678901234.]]").unwrap(),
+        "12345678901234."
+      );
+      // Powers of ten do not collapse to `1.*^6`.
+      assert_eq!(
+        interpret("ToString[AccountingForm[1000000.]]").unwrap(),
+        "1000000."
+      );
+      // Negatives are parenthesised, still without scientific notation.
+      assert_eq!(
+        interpret("ToString[AccountingForm[-1234567.]]").unwrap(),
+        "(1234567.)"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");

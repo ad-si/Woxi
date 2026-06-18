@@ -2873,7 +2873,11 @@ fn engineering_form_to_string(x: &Expr, n: i64) -> Option<String> {
   } else {
     format!("{ip}.{fp}")
   };
-  let mantissa = if neg { format!("-{mantissa}") } else { mantissa };
+  let mantissa = if neg {
+    format!("-{mantissa}")
+  } else {
+    mantissa
+  };
   if eng_exp == 0 {
     return Some(mantissa);
   }
@@ -3171,12 +3175,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let mag_str = match n {
         Some(n) => number_form_to_string(&magnitude, n),
-        None => match to_string_ast(std::slice::from_ref(&magnitude)) {
-          Ok(e) => match &e {
-            Expr::String(s) => Some(s.clone()),
+        // AccountingForm never uses scientific notation, so a large/small
+        // Real is rendered in full decimal (like DecimalForm) rather than via
+        // the default OutputForm `*^` notation.
+        None => match &magnitude {
+          Expr::Integer(i) => Some(i.to_string()),
+          Expr::Real(f) => Some(decimal_form_default(*f)),
+          _ => match to_string_ast(std::slice::from_ref(&magnitude)) {
+            Ok(Expr::String(ref s)) => Some(s.clone()),
             _ => None,
           },
-          _ => None,
         },
       };
       if let Some(mag_str) = mag_str {
