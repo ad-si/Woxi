@@ -2810,6 +2810,33 @@ mod string_take_extended {
   }
 }
 
+// StringTake / StringDrop with a Span (i;;j;;k) spec, equivalent to the
+// {i, j, k} list form.
+mod string_take_drop_span {
+  use super::*;
+
+  #[test]
+  fn take_span() {
+    assert_eq!(interpret(r#"StringTake["hello", ;;3]"#).unwrap(), "hel");
+    assert_eq!(interpret(r#"StringTake["hello", 2;;4]"#).unwrap(), "ell");
+    assert_eq!(interpret(r#"StringTake["hello", 2;;]"#).unwrap(), "ello");
+    assert_eq!(interpret(r#"StringTake["hello", ;;-2]"#).unwrap(), "hell");
+    assert_eq!(interpret(r#"StringTake["hello", ;;]"#).unwrap(), "hello");
+  }
+
+  #[test]
+  fn take_span_with_step() {
+    assert_eq!(interpret(r#"StringTake["hello", 1;;-1;;2]"#).unwrap(), "hlo");
+  }
+
+  #[test]
+  fn drop_span() {
+    assert_eq!(interpret(r#"StringDrop["hello", ;;2]"#).unwrap(), "llo");
+    assert_eq!(interpret(r#"StringDrop["hello", 2;;3]"#).unwrap(), "hlo");
+    assert_eq!(interpret(r#"StringDrop["hello", ;;-2]"#).unwrap(), "o");
+  }
+}
+
 mod string_match_q_patterns {
   use super::*;
 

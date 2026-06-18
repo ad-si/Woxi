@@ -317,12 +317,44 @@ fn string_take_drop(
   }
 }
 
+/// Convert a `Span[i, j]` / `Span[i, j, k]` spec into the equivalent list form
+/// `{i, j}` / `{i, j, k}` that StringTake/StringDrop already understand. A
+/// missing/`All` start becomes 1 and a missing/`All` end becomes -1. Returns
+/// None for non-Span or non-integer (symbolic) bounds.
+fn span_to_list_arg(span: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = span else {
+    return None;
+  };
+  if name != "Span" || !(args.len() == 2 || args.len() == 3) {
+    return None;
+  }
+  let bound = |e: &Expr, all_default: i128| -> Option<Expr> {
+    match e {
+      Expr::Integer(_) => Some(e.clone()),
+      Expr::Identifier(s) if s == "All" => Some(Expr::Integer(all_default)),
+      _ => None,
+    }
+  };
+  let mut list = vec![bound(&args[0], 1)?, bound(&args[1], -1)?];
+  if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(_) => list.push(args[2].clone()),
+      _ => return None,
+    }
+  }
+  Some(Expr::List(list.into()))
+}
+
 pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(Expr::FunctionCall {
       name: "StringTake".to_string(),
       args: args.to_vec().into(),
     });
+  }
+  // StringTake[s, i;;j] — a Span spec maps to the {i, j} list form.
+  if let Some(list) = span_to_list_arg(&args[1]) {
+    return string_take_drop("StringTake", &[args[0].clone(), list]);
   }
   string_take_drop("StringTake", args)
 }
@@ -335,6 +367,10 @@ pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "StringDrop".to_string(),
       args: args.to_vec().into(),
     });
+  }
+  // StringDrop[s, i;;j] — a Span spec maps to the {i, j} list form.
+  if let Some(list) = span_to_list_arg(&args[1]) {
+    return string_take_drop("StringDrop", &[args[0].clone(), list]);
   }
   string_take_drop("StringDrop", args)
 }
