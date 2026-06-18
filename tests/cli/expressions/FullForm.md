@@ -1,47 +1,51 @@
-# `FullForm` - Prints the full form of the expression with no special syntax
+# `FullForm` - Prints the full form of the expression
+
+In `wolframscript`'s script (`-code`) mode the result is printed in InputForm,
+so `FullForm[expr]` echoes with its wrapper as `FullForm[<expr in InputForm>]`
+rather than as the bare `Head[...]` tree. Woxi matches this exactly.
 
 ```scrut
 $ wo 'FullForm[x+y+z]'
-Plus[x, y, z]
+FullForm[x + y + z]
 ```
 
 ```scrut
 $ wo 'FullForm[x y z]'
-Times[x, y, z]
+FullForm[x*y*z]
 ```
 
 ```scrut
 $ wo 'FullForm[5*x]'
-Times[5, x]
+FullForm[5*x]
 ```
 
 ```scrut
 $ wo 'FullForm[x^n]'
-Power[x, n]
+FullForm[x^n]
 ```
 
 ```scrut
 $ wo 'FullForm[{a,b,c}]'
-List[a, b, c]
+FullForm[{a, b, c}]
 ```
 
 ```scrut
 $ wo 'FullForm[a->b]'
-Rule[a, b]
+FullForm[a -> b]
 ```
 
-<!-- TODO: Why is this not Set[a, b] -->
+<!-- `a = b` evaluates to `b` before FullForm sees it. -->
 ```scrut
 $ wo 'FullForm[a=b]'
-b
+FullForm[b]
 ```
 
 ```scrut
 $ wo 'FullForm[a b + c]'
-Plus[Times[a, b], c]
+FullForm[a*b + c]
 ```
 
 ```scrut
 $ wo 'FullForm[a (b + c)]'
-Times[a, Plus[b, c]]
+FullForm[a*(b + c)]
 ```

@@ -5903,6 +5903,35 @@ mod trig_to_exp {
     assert_eq!(interpret("TrigToExp[Sech[x]]").unwrap(), "2/(E^(-x) + E^x)");
   }
 
+  // InputForm parenthesises imaginary coefficients: `(-I)*x`, `(I/2)*x`.
+  // OutputForm (the bare echo above) keeps the bare `-I*x` / `I/2*x` form.
+  #[test]
+  fn imaginary_coefficient_input_form() {
+    assert_eq!(
+      interpret("ToString[TrigToExp[Sec[x]], InputForm]").unwrap(),
+      "2/(E^((-I)*x) + E^(I*x))"
+    );
+    assert_eq!(
+      interpret("ToString[TrigToExp[Cot[x]], InputForm]").unwrap(),
+      "((-I)*(E^((-I)*x) + E^(I*x)))/(E^((-I)*x) - E^(I*x))"
+    );
+    assert_eq!(
+      interpret("ToString[TrigToExp[ArcTan[x]], InputForm]").unwrap(),
+      "(I/2)*Log[1 - I*x] - (I/2)*Log[1 + I*x]"
+    );
+    assert_eq!(
+      interpret("ToString[2^(-I*x), InputForm]").unwrap(),
+      "2^((-I)*x)"
+    );
+    // OutputForm bare echo keeps the bare form (no extra parens).
+    assert_eq!(interpret("E^(I Pi/4)").unwrap(), "E^(I/4*Pi)");
+    assert_eq!(
+      interpret("CharacteristicFunction[UniformDistribution[{a, b}], t]")
+        .unwrap(),
+      "(-I*(-E^(I*a*t) + E^(I*b*t)))/((-a + b)*t)"
+    );
+  }
+
   #[test]
   fn tanh_to_exp() {
     assert_eq!(

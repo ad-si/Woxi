@@ -3814,7 +3814,7 @@ mod named_logical_operators {
     );
     assert_eq!(
       interpret(r"FullForm[a \[Equivalent] b \[Implies] c]").unwrap(),
-      "FullForm[Implies[a \u{29e6} b, c]]"
+      "FullForm[Implies[Equivalent[a, b], c]]"
     );
     assert_eq!(
       interpret(r"FullForm[a \[Nand] b \[And] c]").unwrap(),
@@ -3854,7 +3854,7 @@ mod named_logical_operators {
   fn equivalent_keeps_infix_in_full_form() {
     assert_eq!(
       interpret(r"FullForm[a \[Equivalent] b]").unwrap(),
-      "FullForm[a \u{29e6} b]"
+      "FullForm[Equivalent[a, b]]"
     );
     assert_eq!(
       interpret("InputForm[Equivalent[a, b]]").unwrap(),

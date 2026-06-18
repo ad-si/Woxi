@@ -6492,11 +6492,7 @@ fn format_times_with_denominator(
   Some(format!("{}/{}", numer_str, denom_str))
 }
 
-fn expr_to_part_index_string(expr: &Expr) -> String {
-  // String part indices display unquoted (wolframscript: x[["a"]] -> x[[a]])
-  if let Expr::String(s) = expr {
-    return s.clone();
-  }
+fn expr_to_part_index_string(expr: &Expr, form: ExprForm) -> String {
   if let Expr::FunctionCall { name, args } = expr
     && name == "Span"
   {
@@ -6516,7 +6512,7 @@ fn expr_to_part_index_string(expr: &Expr) -> String {
       );
     }
   }
-  expr_to_string(expr)
+  format_expr(expr, form)
 }
 
 /// The form to use for formatting expressions.
@@ -7461,11 +7457,15 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           .collect();
         return parts.join(" && ");
       }
-      // Equivalent[a, b, …] renders as `a ⧦ b ⧦ c` (U+29E6), matching
-      // wolframscript's default display of logical equivalence.
+      // Equivalent[a, b, …] renders as the infix `a ⧦ b ⧦ c` (U+29E6) in
+      // OutputForm, but as the functional `Equivalent[a, b, c]` in InputForm,
+      // matching wolframscript.
       if name == "Equivalent" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" \u{29e6} ");
+        if is_output {
+          return parts.join(" \u{29e6} ");
+        }
+        return format!("Equivalent[{}]", parts.join(", "));
       }
       // Special case: Alternatives[a, b, ...] displays as a | b | ...
       if name == "Alternatives" && args.len() >= 2 {
@@ -7553,31 +7553,31 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         // Also decompose BinaryOp::Divide into numerator + Power[denom, -1]
         // so that format_times_with_denominator can render e.g. Times[a, d/(c+b*d)]
         // as (a*d)/(c + b*d).
-        let flat_args: Vec<Expr> = args
+        let mut flat_args: Vec<Expr> = Vec::with_capacity(args.len());
+        for a in args.iter() {
+          flatten_times_recursive(a, &mut flat_args);
+        }
+        // Normalize a pure-imaginary integer Complex coefficient
+        // (`Complex[0, n]` = `n*I`) into explicit `[n, I]` factors so the
+        // shared imaginary-coefficient handling below renders it uniformly
+        // (`(-I)*x`, `(2*I)*x`). `Complex[0, 1]` collapses to plain `I`.
+        let flat_args: Vec<Expr> = flat_args
           .iter()
           .flat_map(|a| match a {
-            Expr::FunctionCall {
-              name: inner_name,
-              args: inner_args,
-            } if inner_name == "Times" => inner_args.clone(),
-            Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left,
-              right,
-            } => vec![*left.clone(), *right.clone()].into(),
-            Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left,
-              right,
-            } => vec![
-              *left.clone(),
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![*right.clone(), Expr::Integer(-1)].into(),
-              },
-            ]
-            .into(),
-            other => vec![other.clone()].into(),
+            Expr::FunctionCall { name: cn, args: ca }
+              if cn == "Complex"
+                && ca.len() == 2
+                && matches!(&ca[0], Expr::Integer(0)) =>
+            {
+              match &ca[1] {
+                Expr::Integer(1) => vec![Expr::Identifier("I".to_string())],
+                Expr::Integer(n) => {
+                  vec![Expr::Integer(*n), Expr::Identifier("I".to_string())]
+                }
+                _ => vec![a.clone()],
+              }
+            }
+            other => vec![other.clone()],
           })
           .collect();
         let args = &flat_args;
@@ -7912,7 +7912,25 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           return format!("-1/{}*{}", d, formatted);
         }
         // Handle Times[-1, x, ...] as "-x*..."
-        if matches!(&args[0], Expr::Integer(-1)) {
+        // In InputForm, `Times[-1, I, sym…]` is rendered by the imaginary-
+        // coefficient block below as `(-I)*sym…` (parenthesised), so skip the
+        // bare `-…` negation path here when an imaginary unit AND a symbolic
+        // factor are both present. Pure imaginary coefficients (`-I`, with no
+        // symbolic factor) keep the `-I` form, and OutputForm always does.
+        let is_i_unit_factor = |a: &Expr| {
+          matches!(a, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+            || matches!(a, Expr::FunctionCall { name: cn, args: ca }
+              if cn == "Complex" && ca.len() == 2
+                && matches!((&ca[0], &ca[1]), (Expr::Integer(0), Expr::Integer(1))))
+        };
+        let leading_neg1_has_i = in_true_input_form()
+          && args.iter().any(is_i_unit_factor)
+          && args.iter().any(|a| {
+            !matches!(a, Expr::Integer(_) | Expr::Real(_))
+              && !is_i_unit_factor(a)
+              && !matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
+          });
+        if matches!(&args[0], Expr::Integer(-1)) && !leading_neg1_has_i {
           // Special case: if Infinity is among the factors, wolframscript
           // merges the -1 into it and prints `-Infinity` inline, e.g.
           // Times[-1, a, b, Infinity] → "a*b*-Infinity" (not "-(a*b*Infinity)").
@@ -8028,7 +8046,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         // The imaginary unit can appear as either Identifier("I") or
         // Complex[0, 1] in the underlying AST.
         let is_i_unit = |a: &Expr| match a {
-          Expr::Identifier(n) => n == "I",
+          Expr::Identifier(n) | Expr::Constant(n) => n == "I",
           Expr::FunctionCall { name: cn, args: ca } => {
             cn == "Complex"
               && ca.len() == 2
@@ -8069,10 +8087,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                 Expr::Integer(1) => Some("I".to_string()),
                 Expr::Integer(-1) => {
                   // InputForm: "(-I)", OutputForm: "-I"
-                  if is_output {
-                    Some("-I".to_string())
-                  } else {
+                  if in_true_input_form() {
                     Some("(-I)".to_string())
+                  } else {
+                    Some("-I".to_string())
                   }
                 }
                 Expr::Integer(n) => Some(format!("({}*I)", n)),
@@ -8082,13 +8100,17 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                   if let (Expr::Integer(num), Expr::Integer(den)) =
                     (&ra[0], &ra[1])
                   {
-                    // wolframscript prints `Times[1/2, I, x]` as `I/2*x`,
-                    // not `(I/2)*x` — `*` already binds tighter than `/`,
-                    // so the parens are redundant. Negative rationals stay
-                    // parenthesized (`(-1/2*I)*x`) so the leading `-` is
-                    // not pulled out as unary minus by the parser.
+                    // InputForm: wolframscript parenthesises the imaginary
+                    // coefficient (`(I/2)*x`). OutputForm uses the bare
+                    // `I/2*x` 1D form. Negative rationals stay parenthesized
+                    // (`(-1/2*I)*x`) so the leading `-` is not pulled out as
+                    // unary minus by the parser.
                     if *num == 1 {
-                      Some(format!("I/{}", den))
+                      if in_true_input_form() {
+                        Some(format!("(I/{})", den))
+                      } else {
+                        Some(format!("I/{}", den))
+                      }
                     } else if *num == -1 {
                       Some(format!("(-1/{}*I)", den))
                     } else {
@@ -8105,25 +8127,81 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             };
             if let Some(i_part) = i_part_opt {
               // If the symbolic side contains a denominator factor
-              // (Power[base, negative]) split it out as `(I*<numer>)/<denom>`,
-              // matching wolframscript's `Times[I, …, Power[d, -1]]` form.
+              // (Power[base, negative]) split it out as `(<i_part>*<numer>)/<denom>`,
+              // matching wolframscript's `Times[I, …, Power[d, -1]]` form. The
+              // imaginary coefficient is folded into the numerator and the
+              // whole numerator product is parenthesised when it has more than
+              // one factor: `(I*y)/x`, `((-I)*(a + b))/c`, `I/x`.
               if symbolic_factors.iter().any(|a| is_denominator_factor(a)) {
-                let combined: Vec<Expr> =
-                  std::iter::once(Expr::Identifier("I".to_string()))
-                    .chain(symbolic_factors.iter().cloned().cloned())
-                    .collect();
-                if let Some(frac) =
-                  format_times_with_denominator(&combined, fmt_fn)
-                {
-                  // i_part may be `-I`, `(-I)`, `I/2`, etc. The combined
-                  // path above always produces an `I`-prefixed numerator;
-                  // if i_part != "I", prefix the `-` / fold the rational
-                  // back over the fraction. For the common cases it's
-                  // sufficient to just use `frac` when i_part is `I`.
-                  if i_part == "I" {
-                    return frac;
+                let numer_factors: Vec<&Expr> = symbolic_factors
+                  .iter()
+                  .copied()
+                  .filter(|a| !is_denominator_factor(a))
+                  .collect();
+                let denom_exprs: Vec<Expr> = symbolic_factors
+                  .iter()
+                  .copied()
+                  .filter(|a| is_denominator_factor(a))
+                  .map(denominator_form)
+                  .collect();
+                let fmt_factor = |a: &Expr| -> String {
+                  let s = fmt(a);
+                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                    || matches!(
+                      a,
+                      Expr::BinaryOp {
+                        op: BinaryOperator::Plus | BinaryOperator::Minus,
+                        ..
+                      }
+                    )
+                  {
+                    format!("({})", s)
+                  } else {
+                    s
                   }
-                }
+                };
+                let numer_str = if numer_factors.is_empty() {
+                  i_part.clone()
+                } else {
+                  let mut parts = vec![i_part.clone()];
+                  parts.extend(numer_factors.iter().map(|a| fmt_factor(a)));
+                  format!("({})", parts.join("*"))
+                };
+                let needs_parens = |e: &Expr| -> bool {
+                  matches!(e, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+                    || matches!(
+                      e,
+                      Expr::BinaryOp {
+                        op: BinaryOperator::Plus
+                          | BinaryOperator::Minus
+                          | BinaryOperator::Times,
+                        ..
+                      }
+                    )
+                };
+                let denom_str = if denom_exprs.len() == 1 {
+                  let s = fmt(&denom_exprs[0]);
+                  if needs_parens(&denom_exprs[0]) {
+                    format!("({})", s)
+                  } else {
+                    s
+                  }
+                } else {
+                  let inner = denom_exprs
+                    .iter()
+                    .map(|a| {
+                      let s = fmt(a);
+                      if needs_parens(a) {
+                        format!("({})", s)
+                      } else {
+                        s
+                      }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("*");
+                  format!("({})", inner)
+                };
+                return format!("{}/{}", numer_str, denom_str);
               }
               let rest: Vec<String> = symbolic_factors
                 .iter()
@@ -9428,14 +9506,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
     }
     Expr::Part { expr, index } => {
       // Flatten nested Part into a single [[i, j, k]] notation
-      let mut indices = vec![expr_to_part_index_string(index)];
+      let mut indices = vec![expr_to_part_index_string(index, form)];
       let mut base = expr.as_ref();
       while let Expr::Part {
         expr: inner_expr,
         index: inner_index,
       } = base
       {
-        indices.push(expr_to_part_index_string(inner_index));
+        indices.push(expr_to_part_index_string(inner_index, form));
         base = inner_expr.as_ref();
       }
       indices.reverse();
@@ -9701,6 +9779,58 @@ fn flatten_binary_times<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
   }
 }
 
+/// Recursively flatten a Times product into its factor list, descending into
+/// nested `Times` (both `FunctionCall` and `BinaryOp` forms) and decomposing
+/// `BinaryOp::Divide` into `numerator` + `Power[denom, -1]`. Times is Flat, so
+/// a one-level flatten can leave nested `BinaryOp::Times(-1, I)` factors that
+/// hide the imaginary unit from coefficient handling.
+fn flatten_times_recursive(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } if name == "Times" => {
+      for a in inner_args.iter() {
+        flatten_times_recursive(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_times_recursive(left, out);
+      flatten_times_recursive(right, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      flatten_times_recursive(left, out);
+      out.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![(**right).clone(), Expr::Integer(-1)].into(),
+      });
+    }
+    // `-x` inside a product is `(-1)*x`; split out the `-1` so an imaginary
+    // operand (`-I`) is exposed to the coefficient handling. Don't split a
+    // bare negative literal (`-2`) — that is already a numeric coefficient.
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if !matches!(
+      operand.as_ref(),
+      Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+    ) =>
+    {
+      out.push(Expr::Integer(-1));
+      flatten_times_recursive(operand, out);
+    }
+    other => out.push(other.clone()),
+  }
+}
+
 /// Check if an expression tree contains any Expr::String nodes.
 fn contains_string(expr: &Expr) -> bool {
   match expr {
@@ -9778,8 +9908,32 @@ fn input_form_rule_lhs(e: &Expr) -> String {
   }
 }
 
+thread_local! {
+  /// True while rendering *genuine* InputForm (via `expr_to_input_form`).
+  /// `format_expr` reuses its InputForm path as the 1D renderer for OutputForm
+  /// BinaryOps, so `is_output` alone cannot tell the two apart. This flag lets
+  /// the imaginary-coefficient handling emit the parenthesised InputForm
+  /// (`(-I)*x`, `(I/2)*x`) only when truly producing InputForm, and keep the
+  /// bare OutputForm (`-I*x`, `I/2*x`) for the bare echo.
+  static IN_TRUE_INPUT_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the current render is genuine InputForm (see `IN_TRUE_INPUT_FORM`).
+fn in_true_input_form() -> bool {
+  IN_TRUE_INPUT_FORM.with(|c| c.get())
+}
+
+/// RAII guard that restores the previous `IN_TRUE_INPUT_FORM` value on drop.
+struct TrueInputFormGuard(bool);
+impl Drop for TrueInputFormGuard {
+  fn drop(&mut self) {
+    IN_TRUE_INPUT_FORM.with(|c| c.set(self.0));
+  }
+}
+
 /// Render Expr in InputForm - like expr_to_output but strings are quoted.
 pub fn expr_to_input_form(expr: &Expr) -> String {
+  let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
   match expr {
     Expr::String(s) => {
       let escaped = escape_string_for_input_form(s);
@@ -9858,13 +10012,13 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       };
       format!("{} :> {}", expr_to_input_form(&args[0]), rhs_final)
     }
-    // Equivalent keeps its infix character in InputForm (and therefore
-    // inside FullForm wrappers): a ⧦ b, matching wolframscript.
+    // Equivalent renders in functional form in InputForm: `Equivalent[a, b]`
+    // (the infix `⧦` glyph is OutputForm-only), matching wolframscript.
     Expr::FunctionCall { name, args }
       if name == "Equivalent" && args.len() >= 2 =>
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
-      parts.join(" \u{29e6} ")
+      format!("Equivalent[{}]", parts.join(", "))
     }
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
@@ -10334,6 +10488,21 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("\u{2329} {} \u{232A}", parts.join(", "))
     }
+    // Named slot Slot["name"] displays as #name (matching wolframscript),
+    // mirroring the format_expr arm. Must precede the generic FunctionCall
+    // arm below, which would otherwise render it as `Slot["name"]`.
+    Expr::FunctionCall { name, args }
+      if name == "Slot"
+        && args.len() == 1
+        && matches!(&args[0], Expr::String(key)
+          if key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && key.chars().all(|c| c.is_ascii_alphanumeric())) =>
+    {
+      match &args[0] {
+        Expr::String(key) => format!("#{}", key),
+        _ => unreachable!(),
+      }
+    }
     // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
     // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
     // since they rarely contain string literals and need infix rendering.
@@ -10618,76 +10787,53 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         })
         .collect();
       let args = &flat_args;
-      // Check for imaginary unit patterns: -I * something
-      let has_i = args.iter().any(|a| match a {
-        Expr::Identifier(n) => n == "I",
-        Expr::FunctionCall { name, args: ca } => {
-          name == "Complex"
-            && ca.len() == 2
-            && matches!((&ca[0], &ca[1]), (Expr::Integer(0), Expr::Integer(1)))
-        }
-        _ => false,
-      });
-      let has_neg1 = args.iter().any(|a| matches!(a, Expr::Integer(-1)));
-      if has_i && has_neg1 {
-        let s = expr_to_output(expr);
-        if s.starts_with("-I*") {
-          // In InputForm, -I*x needs parens: (-I)*x
-          let rest_expr = if args.len() == 3 {
-            // Times[-1, I, x] → render x via input form
-            let other: Vec<&Expr> = args
-              .iter()
-              .filter(|a| {
-                !matches!(a, Expr::Integer(-1))
-                  && !matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == "I")
-              })
-              .collect();
-            if other.len() == 1 {
-              expr_to_input_form(other[0])
-            } else {
-              s[3..].to_string()
-            }
-          } else {
-            s[3..].to_string()
-          };
-          format!("(-I)*{}", rest_expr)
+      // When the product contains a string literal, render factor-by-factor
+      // with input_form so the string is quoted (expr_to_output / format_expr
+      // would mis-quote embedded strings).
+      let needs_input_form = args.iter().any(contains_string);
+      if needs_input_form {
+        // Handle Times[-1, ...] as negation
+        if matches!(&args[0], Expr::Integer(-1)) {
+          let rest: Vec<String> = args[1..]
+            .iter()
+            .map(|a| {
+              let s = expr_to_input_form(a);
+              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                || matches!(
+                  a,
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Plus | BinaryOperator::Minus,
+                    ..
+                  }
+                )
+              {
+                format!("({})", s)
+              } else {
+                s
+              }
+            })
+            .collect();
+          format!("-{}", rest.join("*"))
         } else {
-          s
+          let parts: Vec<String> = args.iter().map(|a| {
+            let s = expr_to_input_form(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
+              || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
+                && args.len() == 2
+                && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
+            {
+              format!("({})", s)
+            } else { s }
+          }).collect();
+          parts.join("*")
         }
       } else {
-        // General Times: render using expr_to_output structure but fix string quoting
-        // by re-rendering the result with input_form for Quantity-like subexpressions
-        let needs_input_form = args.iter().any(contains_string);
-        if needs_input_form {
-          // Re-render each factor with input_form
-          // Handle Times[-1, ...] as negation
-          if matches!(&args[0], Expr::Integer(-1)) {
-            let rest: Vec<String> = args[1..].iter().map(|a| {
-              let s = expr_to_input_form(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-                || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
-              {
-                format!("({})", s)
-              } else { s }
-            }).collect();
-            format!("-{}", rest.join("*"))
-          } else {
-            let parts: Vec<String> = args.iter().map(|a| {
-              let s = expr_to_input_form(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-                || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
-                || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
-                  && args.len() == 2
-                  && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
-              {
-                format!("({})", s)
-              } else { s }
-            }).collect();
-            parts.join("*")
-          }
-        } else {
-          expr_to_output(expr)
-        }
+        // String-free Times: expr_to_output renders the structure (fractions,
+        // Power, Sqrt, base parens) in 1D; the IN_TRUE_INPUT_FORM flag drives
+        // format_expr's imaginary-coefficient parenthesisation so the result
+        // is the InputForm `(-I)*x` / `(I/2)*x` rather than `-I*x` / `I/2*x`.
+        expr_to_output(expr)
       }
     }
     // Image: produce NumericArray InputForm
@@ -10776,6 +10922,22 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         func_str
       };
       format!("{}[{}]", func_display, args_str.join(", "))
+    }
+    // Part: flatten nested Part into a single [[i, j, k]] notation, keeping
+    // string bases/indices quoted (InputForm). Mirrors the format_expr arm.
+    Expr::Part { expr: e, index } => {
+      let mut indices = vec![expr_to_part_index_string(index, ExprForm::Input)];
+      let mut base = e.as_ref();
+      while let Expr::Part {
+        expr: inner_expr,
+        index: inner_index,
+      } = base
+      {
+        indices.push(expr_to_part_index_string(inner_index, ExprForm::Input));
+        base = inner_expr.as_ref();
+      }
+      indices.reverse();
+      format!("{}[[{}]]", expr_to_input_form(base), indices.join(","))
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),

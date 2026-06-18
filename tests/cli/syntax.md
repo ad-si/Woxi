@@ -103,7 +103,7 @@ $ wo 'FullForm[a[[1,2,3]]]'
 
 Part::partd: Part specification a[[1,2,3]] is longer than depth of object.
 .* (regex*)
-Part[a, 1, 2, 3]
+FullForm[a[[1,2,3]]]
 ```
 
 
