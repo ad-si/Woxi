@@ -2826,7 +2826,10 @@ mod high_level_functions_tests {
       assert_eq!(interpret("ToString[PaddedForm[12, 4]]").unwrap(), "   12");
       // Regression: an integer with a {n, f} spec stays an integer (no spurious
       // decimals) and is padded to width n+1.
-      assert_eq!(interpret("ToString[PaddedForm[1, {4, 1}]]").unwrap(), "    1");
+      assert_eq!(
+        interpret("ToString[PaddedForm[1, {4, 1}]]").unwrap(),
+        "    1"
+      );
       assert_eq!(
         interpret("ToString[PaddedForm[22, {4, 1}]]").unwrap(),
         "   22"

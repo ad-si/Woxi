@@ -1572,7 +1572,7 @@ CoprimeQ,Tests whether integers are pairwise coprime (Listable),✅,pure,6.0,159
 NotebookPut,Create notebook from expression,,unevaluated,3.0,1597
 PositiveDefiniteMatrixQ,Test if a matrix is positive definite,✅,computation,6.0,1597
 ThreeJSymbol,Wigner 3-j symbol,✅,pure,2.0,1597
-Magnify,Magnify a display object,,unevaluated,6.0,1599
+Magnify,Magnify display wrapper (stays symbolic),✅,unevaluated,6.0,1599
 ScriptBaselineShifts,Script baseline shift option,,unevaluated,3.0,1599
 HoldRest,Attribute holding all but first argument,✅,pure,1.0,1600
 LineSpacing,Line spacing specification,,unevaluated,3.0,1601
@@ -1636,7 +1636,7 @@ RotationAction,Rotation action option,,unevaluated,6.0,1661
 BoundaryDiscretizeGraphics,Boundary discretize graphics,,unevaluated,10.0,1665
 ClearAttributes,Removes attributes from a symbol,✅,stateful,1.0,1665
 DiscreteMarkovProcess,Discrete Markov process,,unevaluated,9.0,1665
-Ket,Dirac ket notation,,unevaluated,13.3,1665
+Ket,Dirac ket notation (stays symbolic),✅,unevaluated,13.3,1665
 TradingChart,Financial trading chart,,unevaluated,8.0,1666
 ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668
 FindMaxValue,Finds the value at a local maximum of a function numerically,✅,pure,7.0,1668
@@ -1654,7 +1654,7 @@ HazardFunction,Hazard function PDF/SurvivalFunction of a distribution,✅,pure,8
 HornerForm,Converts a polynomial to Horner (nested) form,✅,pure,6.0,1682
 NExpectation,Numerical expectation,,unevaluated,8.0,1682
 WordBoundary,Represents a word boundary in string patterns (like regex \b),✅,pure,5.1,1682
-Mouseover,Mouseover display,,unevaluated,6.0,1683
+Mouseover,Mouseover display wrapper (stays symbolic),✅,unevaluated,6.0,1683
 AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
 LogLikelihood,Log-likelihood of numeric observations under a distribution,✅,pure,8.0,1687
 RectangleChart,Rectangle chart,,unevaluated,7.0,1687
@@ -1671,9 +1671,9 @@ Compiled,Compiled option,,unevaluated,2.0,1697
 AudioGenerator,Audio generator,,unevaluated,11.0,1698
 FourierCoefficient,Fourier series coefficient of polynomials over the standard period,✅,pure,7.0,1701
 PageWidth,Option specifying the page width for output formatting,✅,pure,1.0,1701
-Underlined,Underlined text,,unevaluated,6.0,1701
+Underlined,Underlined display wrapper (stays symbolic),✅,unevaluated,6.0,1701
 Constant,Attribute indicating zero derivative with respect to all parameters,✅,pure,1.0,1704
-Overscript,Overscript notation,,unevaluated,3.0,1704
+Overscript,Overscript notation wrapper (stays symbolic),✅,unevaluated,3.0,1704
 UpValues,Returns the up values of a symbol,✅,pure,2.0,1704
 CommunityGraphPlot,Community graph plot,,unevaluated,9.0,1707
 Multinomial,Returns the multinomial coefficient,✅,pure,1.0,1707
@@ -1767,7 +1767,7 @@ FileBaseName,Returns the base name of a file (without directory and extension),�
 SequencePosition,Finds positions of subsequences matching a pattern in a list (overlapping by default; supports a count limit and the Overlaps option),✅,pure,10.1,1796
 ColorCombine,Combine color channels,,unevaluated,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
-Highlighted,Highlighted display,,unevaluated,10.4,1800
+Highlighted,Highlighted display wrapper (stays symbolic),✅,unevaluated,10.4,1800
 TextGrid,Displays data in a text grid layout,✅,pure,10.3,1800
 NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
 ColorSetter,Color setter control,,unevaluated,6.0,1803
@@ -2102,7 +2102,7 @@ RootSum,Sum over polynomial roots,✅,,3.0,2141
 ServiceExecute,Execute external service,🚫,,10.0,2141
 ArgMin,Exact argument that minimizes an expression (optionally subject to constraints),✅,None,7.0,2144
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144
-Underscript,Typesetting subscript,🚫,,6.0,2144
+Underscript,Underscript notation wrapper (stays symbolic),✅,unevaluated,6.0,2144
 EntityProperties,Lists properties available for an entity type,✅,pure,10.0,2147
 KeyTake,Takes specified keys from an association; supports the operator form KeyTake[keys][assoc],✅,pure,10.0,2147
 Paneled,Panel wrapper for display,🚫,,6.0,2147
@@ -2283,7 +2283,7 @@ HeavisideLambda,Triangular pulse function: 1 - |x| for |x| < 1,✅,1,7.0,2329
 NDEigenvalues,numerical PDE eigenvalues,🚫,None,10.2,2329
 Star,graphics primitive,🚫,None,3.0,2329
 TimeSeriesWindow,time series,🚫,None,10.0,2329
-Bra,quantum notation,🚫,None,13.3,2333
+Bra,Dirac bra notation (stays symbolic),✅,unevaluated,13.3,2333
 CellContext,notebook UI,🚫,None,6.0,2333
 ComposeList,Returns list of successive function compositions,✅,pure,2.0,2333
 ZernikeR,Radial Zernike polynomial R_n^m(x) for non-negative integer orders,✅,pure,1.0,2333
@@ -3707,7 +3707,7 @@ QuartileDeviation,Half the interquartile range of a list (or columnwise for a ma
 RamanujanTau,Ramanujan tau function,✅,pure,6.0,3803
 RowMinHeight,,,,3.0,3803
 StateSpaceRealization,,🚫,,8.0,3803
-Underoverscript,,,,3.0,3803
+Underoverscript,Underoverscript notation wrapper (stays symbolic),✅,unevaluated,3.0,3803
 BlackmanHarrisWindow,,,,9.0,3823
 CloudSubmit,,🚫,,10.2,3823
 ControllerManipulate,,🚫,,6.0,3823

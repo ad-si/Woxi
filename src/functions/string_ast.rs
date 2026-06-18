@@ -9514,8 +9514,10 @@ fn pad_integer_body(body: &str, n: usize) -> String {
 fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
   // A list pads each element with the same spec and renders as `{e1, e2, ...}`.
   if let Expr::List(items) = value {
-    let parts: Option<Vec<String>> =
-      items.iter().map(|e| padded_form_to_string(e, spec)).collect();
+    let parts: Option<Vec<String>> = items
+      .iter()
+      .map(|e| padded_form_to_string(e, spec))
+      .collect();
     return Some(format!("{{{}}}", parts?.join(", ")));
   }
   match spec {

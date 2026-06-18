@@ -502,6 +502,33 @@ mod interpreter_tests {
     assert_eq!(interpret("CircleMinus[5]").unwrap(), "CircleMinus[5]");
   }
 
+  #[test]
+  fn notation_wrappers_stay_symbolic_without_warning() {
+    // Notation/display wrapper heads stay unevaluated as their canonical form
+    // in wolframscript and must NOT emit a spurious "not yet implemented"
+    // warning (like Subscript/Superscript/Framed already behave).
+    let cases = [
+      ("Overscript[x, 2]", "Overscript[x, 2]"),
+      ("Underscript[x, 2]", "Underscript[x, 2]"),
+      ("Underoverscript[x, 1, 2]", "Underoverscript[x, 1, 2]"),
+      ("Underlined[\"x\"]", "Underlined[x]"),
+      ("Highlighted[\"x\"]", "Highlighted[x]"),
+      ("Mouseover[a, b]", "Mouseover[a, b]"),
+      ("Magnify[x, 2]", "Magnify[x, 2]"),
+      ("Ket[0]", "Ket[0]"),
+      ("Bra[0]", "Bra[0]"),
+    ];
+    for (input, expected) in cases {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+        "unexpected 'not yet implemented' warning for {input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
   mod case_helpers;
 
   mod algebra;

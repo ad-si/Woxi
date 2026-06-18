@@ -9117,6 +9117,21 @@ pub fn evaluate_function_call_ast_inner(
         // unevaluated until applied as NearestTo[x][data] (handled in the
         // curried-call machinery), so it is not "unimplemented".
         | "NearestTo"
+        // Notation/display wrapper heads stay unevaluated as their canonical
+        // form in wolframscript (like Subscript/Superscript/Framed already do):
+        // they describe how something is laid out, not a value to compute, so
+        // flagging them as "unimplemented" is a false positive.
+        | "Overscript"
+        | "Underscript"
+        | "Underoverscript"
+        | "Underlined"
+        | "Highlighted"
+        | "Mouseover"
+        | "Magnify"
+        // Ket/Bra are Dirac bra-ket notation objects; they stay symbolic until
+        // consumed by the quantum framework, so they are not "unimplemented".
+        | "Ket"
+        | "Bra"
     )
   {
     let args_str = args
