@@ -330,7 +330,7 @@ Item,Wrapper for specifying individual item options in Grid and similar construc
 SetAttributes,Sets attributes for a symbol,✅,stateful,1.0,333
 SparseArray,Creates a sparse array representation,✅,pure,5.0,334
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
-NumberForm,Displays a number with specified formatting; ToString renders x to n significant figures or with {n;f} to exactly f decimal places,✅,pure,1.0,336
+NumberForm,Displays a number with specified formatting; ToString renders x to n significant figures or with {n;f} to exactly f decimal places and supports DigitBlock/NumberSeparator digit grouping,✅,pure,1.0,336
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2.0,337
 RandomChoice,Random selection with replacement,✅,contextual,6.0,338
 Collect,Collects terms with the same powers of a variable,✅,pure,1.0,339

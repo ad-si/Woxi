@@ -2738,6 +2738,74 @@ mod high_level_functions_tests {
     }
 
     #[test]
+    fn test_number_form_digit_block() {
+      // DigitBlock -> n groups integer-part digits into blocks of n from the
+      // right, separated by commas by default.
+      assert_eq!(
+        interpret("ToString[NumberForm[1234567, DigitBlock -> 3]]").unwrap(),
+        "1,234,567"
+      );
+      // Block size 2.
+      assert_eq!(
+        interpret("ToString[NumberForm[12345678, DigitBlock -> 2]]").unwrap(),
+        "12,34,56,78"
+      );
+      // Negative integers keep the sign before the grouped digits.
+      assert_eq!(
+        interpret("ToString[NumberForm[-1234567, DigitBlock -> 3]]").unwrap(),
+        "-1,234,567"
+      );
+      // Fewer digits than a block: no separator added.
+      assert_eq!(
+        interpret("ToString[NumberForm[12, DigitBlock -> 3]]").unwrap(),
+        "12"
+      );
+      // Reals: integer part grouped with commas, fractional part untouched
+      // when shorter than a block.
+      assert_eq!(
+        interpret("ToString[NumberForm[1234.567, DigitBlock -> 3]]").unwrap(),
+        "1,234.57"
+      );
+      assert_eq!(
+        interpret("ToString[NumberForm[12345.6789, DigitBlock -> 2]]").unwrap(),
+        "1,23,45.7"
+      );
+      // Fractional-part digits group from the left with spaces by default.
+      assert_eq!(
+        interpret("ToString[NumberForm[1.23456789, 9, DigitBlock -> 3]]")
+          .unwrap(),
+        "1.234 567 89"
+      );
+      assert_eq!(
+        interpret("ToString[NumberForm[0.123456, 6, DigitBlock -> 2]]")
+          .unwrap(),
+        "0.12 34 56"
+      );
+      // NumberSeparator as a single string applies to both sides.
+      assert_eq!(
+        interpret(
+          "ToString[NumberForm[1234567, DigitBlock -> 3, NumberSeparator -> \".\"]]"
+        )
+        .unwrap(),
+        "1.234.567"
+      );
+      // NumberSeparator as {intSep, fracSep}.
+      assert_eq!(
+        interpret(
+          "ToString[NumberForm[12345.6789, DigitBlock -> 3, NumberSeparator -> {\".\", \"_\"}]]"
+        )
+        .unwrap(),
+        "12.345.7"
+      );
+      // DigitBlock keeps the symbolic head under InputForm.
+      assert_eq!(
+        interpret("ToString[NumberForm[1234567, DigitBlock -> 3], InputForm]")
+          .unwrap(),
+        "NumberForm[1234567, DigitBlock -> 3]"
+      );
+    }
+
+    #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");

@@ -2799,6 +2799,98 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
   Some(if neg { format!("-{s}") } else { s })
 }
 
+/// Group a digit string into blocks of `block`, counting from the RIGHT (used
+/// for the integer part), joined by `sep`. E.g. ("1234567", 3, ",") -> "1,234,567".
+fn group_digits_from_right(digits: &str, block: usize, sep: &str) -> String {
+  let chars: Vec<char> = digits.chars().collect();
+  if chars.is_empty() {
+    return String::new();
+  }
+  let mut groups: Vec<String> = Vec::new();
+  let mut i = chars.len();
+  while i > 0 {
+    let start = i.saturating_sub(block);
+    groups.push(chars[start..i].iter().collect());
+    i = start;
+  }
+  groups.reverse();
+  groups.join(sep)
+}
+
+/// Group a digit string into blocks of `block`, counting from the LEFT (used
+/// for the fractional part), joined by `sep`. E.g. ("23457", 3, " ") -> "234 57".
+fn group_digits_from_left(digits: &str, block: usize, sep: &str) -> String {
+  let chars: Vec<char> = digits.chars().collect();
+  if chars.is_empty() {
+    return String::new();
+  }
+  let mut groups: Vec<String> = Vec::new();
+  let mut i = 0;
+  while i < chars.len() {
+    let end = (i + block).min(chars.len());
+    groups.push(chars[i..end].iter().collect());
+    i = end;
+  }
+  groups.join(sep)
+}
+
+/// Render `NumberForm[x, DigitBlock -> n]` (with optional positional precision
+/// and `NumberSeparator`): group the integer-part digits into blocks of `n`
+/// from the right and the fractional-part digits into blocks of `n` from the
+/// left, with the given separators (default `,` integer side, ` ` fractional
+/// side). Returns None for cases wolframscript renders in scientific notation
+/// (integer part wider than the precision), so the caller keeps the symbolic
+/// form.
+fn number_form_digit_block_to_string(
+  x: &Expr,
+  prec: i64,
+  block: i64,
+  int_sep: &str,
+  frac_sep: &str,
+) -> Option<String> {
+  if block < 1 {
+    return None;
+  }
+  let block = block as usize;
+  let (neg, int_digits, frac_digits, real_no_frac) = match x {
+    Expr::Integer(i) => {
+      (*i < 0, i.unsigned_abs().to_string(), String::new(), false)
+    }
+    Expr::Real(f) => {
+      let f = *f;
+      if f != 0.0 {
+        let m = f.abs().log10().floor() as i64;
+        // wolframscript switches to scientific when the integer part is wider
+        // than the displayed precision; that form is not handled here.
+        if m >= prec {
+          return None;
+        }
+      }
+      let s = number_form_to_string(&Expr::Real(f.abs()), prec)?;
+      match s.split_once('.') {
+        Some((ip, fp)) => {
+          (f < 0.0, ip.to_string(), fp.to_string(), fp.is_empty())
+        }
+        None => (f < 0.0, s, String::new(), true),
+      }
+    }
+    _ => return None,
+  };
+  let mut out = String::new();
+  if neg {
+    out.push('-');
+  }
+  out.push_str(&group_digits_from_right(&int_digits, block, int_sep));
+  if !frac_digits.is_empty() {
+    out.push('.');
+    out.push_str(&group_digits_from_left(&frac_digits, block, frac_sep));
+  } else if real_no_frac {
+    // A real with no fractional digits keeps its trailing point ("123,457.").
+    out.push('.');
+  }
+  Some(out)
+}
+
 /// Render `ScientificForm[x]` / `ScientificForm[x, n]` to a string: a real `x`
 /// is shown as `mantissa × 10` with the exponent placed as a superscript on the
 /// line above (e.g. `1.23457 × 10` over `4`). Default `n` is 6 significant
@@ -3143,6 +3235,72 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       format!("{}\n{}{}", digits, indent, b)
     };
     return Ok(Expr::String(rendered));
+  }
+
+  // NumberForm[x, DigitBlock -> n, ...] — group digits into blocks. Detected by
+  // the presence of a `DigitBlock` option among the arguments.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "NumberForm"
+    && !is_input_form
+    && inner_args.iter().any(|a| matches!(
+      a,
+      Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DigitBlock")
+    ))
+  {
+    // Defaults: comma between integer groups, space between fractional groups.
+    let mut block: Option<i64> = None;
+    let mut int_sep = ",".to_string();
+    let mut frac_sep = " ".to_string();
+    for a in inner_args.iter() {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = a
+        && let Expr::Identifier(opt) = pattern.as_ref()
+      {
+        match opt.as_str() {
+          "DigitBlock" => {
+            if let Expr::Integer(n) = replacement.as_ref() {
+              block = Some(*n as i64);
+            }
+          }
+          "NumberSeparator" => match replacement.as_ref() {
+            Expr::String(s) => {
+              int_sep = s.clone();
+              frac_sep = s.clone();
+            }
+            Expr::List(items) if items.len() == 2 => {
+              if let Expr::String(s) = &items[0] {
+                int_sep = s.clone();
+              }
+              if let Expr::String(s) = &items[1] {
+                frac_sep = s.clone();
+              }
+            }
+            _ => {}
+          },
+          _ => {}
+        }
+      }
+    }
+    let positional: Vec<&Expr> = inner_args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. }))
+      .collect();
+    let prec = match positional.get(1) {
+      Some(Expr::Integer(n)) => *n as i64,
+      _ => 6,
+    };
+    if let (Some(x), Some(block)) = (positional.first(), block)
+      && let Some(rendered) =
+        number_form_digit_block_to_string(x, prec, block, &int_sep, &frac_sep)
+    {
+      return Ok(Expr::String(rendered));
+    }
   }
 
   // NumberForm[x, n] — render x to n significant figures.
