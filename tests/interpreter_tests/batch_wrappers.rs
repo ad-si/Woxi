@@ -2553,6 +2553,19 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("Haversine[x]").unwrap(), "Haversine[x]");
   }
   #[test]
+  fn haversine_exact_rational_angles() {
+    // Nice-angle arguments where (1 - Cos[x])/2 reduces to a rational are
+    // evaluated eagerly, matching wolframscript.
+    assert_eq!(interpret("Haversine[Pi/3]").unwrap(), "1/4");
+    assert_eq!(interpret("Haversine[2 Pi/3]").unwrap(), "3/4");
+    assert_eq!(interpret("Haversine[2 Pi]").unwrap(), "0");
+    assert_eq!(interpret("Haversine[3 Pi/2]").unwrap(), "1/2");
+    assert_eq!(interpret("Haversine[-Pi/3]").unwrap(), "1/4");
+    // An exact integer argument has no rational Haversine, so it stays held
+    // (Cos[1] does not simplify).
+    assert_eq!(interpret("Haversine[1]").unwrap(), "Haversine[1]");
+  }
+  #[test]
   fn haversine_real_matches_wolframscript() {
     // Haversine[1.5] = Sin[1.5/2]^2 ≈ 0.4646313991661485. The exact last ULP
     // is platform-dependent (system libm differs across OSes; Linux CI gives

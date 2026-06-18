@@ -1764,31 +1764,31 @@ pub fn dispatch_math_functions(
         };
         return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
       }
-      // Exact-value shortcuts wolframscript evaluates eagerly.
-      if matches!(&args[0], Expr::Integer(0)) {
-        return Some(Ok(Expr::Integer(0)));
-      }
-      if matches!(&args[0], Expr::Constant(c) if c == "Pi") {
-        return Some(Ok(Expr::Integer(1)));
-      }
-      // Haversine[Pi/2] = 1/2 — parsed as Times[Rational[1,2], Pi]
-      if let Expr::FunctionCall { name, args: targs } = &args[0]
-        && name == "Times"
-        && targs.len() == 2
-        && matches!(&targs[1], Expr::Constant(c) if c == "Pi")
-        && let Expr::FunctionCall {
-          name: rn,
-          args: rargs,
-        } = &targs[0]
-        && rn == "Rational"
-        && rargs.len() == 2
-        && matches!(&rargs[0], Expr::Integer(1))
-        && matches!(&rargs[1], Expr::Integer(2))
-      {
-        return Some(Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        }));
+      // Exact args: Haversine[x] = (1 - Cos[x])/2. wolframscript evaluates the
+      // nice-angle cases (Pi/3 -> 1/4, 2 Pi -> 0, 2 Pi/3 -> 3/4, ...). Return
+      // the computed value only when it reduces to a rational number — radical
+      // results (e.g. Pi/4, Pi/5) are left unevaluated to avoid a canonical
+      // radical-form divergence from wolframscript.
+      let cos_x = Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![args[0].clone()].into(),
+      };
+      let half = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(cos_x),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&half) {
+        let is_rational = matches!(&result, Expr::Integer(_))
+          || matches!(&result, Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2);
+        if is_rational {
+          return Some(Ok(result));
+        }
       }
     }
     "InverseHaversine" if args.len() == 1 => {
