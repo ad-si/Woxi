@@ -142,7 +142,10 @@ mod list_tests {
       "{d, e, f}"
     );
     // `All` at both levels reproduces the matrix.
-    assert_eq!(interpret(&format!("Extract[{m}, {{All, All}}]")).unwrap(), m);
+    assert_eq!(
+      interpret(&format!("Extract[{m}, {{All, All}}]")).unwrap(),
+      m
+    );
     // A list of indices selects several columns per row.
     assert_eq!(
       interpret(&format!("Extract[{m}, {{All, {{1, 3}}}}]")).unwrap(),

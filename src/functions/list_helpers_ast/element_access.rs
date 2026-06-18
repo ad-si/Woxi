@@ -1633,87 +1633,90 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let resolve_one =
-    |p: &Path| -> Result<Option<Expr>, InterpreterError> {
-      let path = match p {
-        Path::Simple(path) => path,
-        Path::ViaPart(comps) => {
-          // Delegate to Part, which handles All / Span / list selectors.
-          let mut part = Expr::Part {
-            expr: Box::new(subject.clone()),
-            index: Box::new(comps[0].clone()),
+  let resolve_one = |p: &Path| -> Result<Option<Expr>, InterpreterError> {
+    let path = match p {
+      Path::Simple(path) => path,
+      Path::ViaPart(comps) => {
+        // Delegate to Part, which handles All / Span / list selectors.
+        let mut part = Expr::Part {
+          expr: Box::new(subject.clone()),
+          index: Box::new(comps[0].clone()),
+        };
+        for c in &comps[1..] {
+          part = Expr::Part {
+            expr: Box::new(part),
+            index: Box::new(c.clone()),
           };
-          for c in &comps[1..] {
-            part = Expr::Part {
-              expr: Box::new(part),
-              index: Box::new(c.clone()),
-            };
-          }
-          let result = crate::evaluator::evaluate_expr_to_expr(&part)?;
-          // A failed Part comes back unevaluated; treat it as no result.
-          let failed = matches!(&result, Expr::Part { .. })
-            || matches!(&result, Expr::FunctionCall { name, .. } if name == "Part");
-          return if failed { Ok(None) } else { Ok(Some(wrap(result)?)) };
         }
-      };
-      match extract_resolve(subject, path) {
-        ExtractOutcome::Found(part) => Ok(Some(wrap(part)?)),
-        ExtractOutcome::Partw => {
-          let first = match path.first() {
-            Some(ExtractComp::Idx(n)) => Expr::Integer(*n),
-            Some(ExtractComp::Key(k)) => Expr::FunctionCall {
-              name: "Key".to_string(),
-              args: vec![k.clone()].into(),
-            },
-            None => Expr::Integer(0),
-          };
-          crate::emit_message(&format!(
-            "Extract::partw: Part {} of {} does not exist.",
-            show(&first),
-            show(subject)
-          ));
+        let result = crate::evaluator::evaluate_expr_to_expr(&part)?;
+        // A failed Part comes back unevaluated; treat it as no result.
+        let failed = matches!(&result, Expr::Part { .. })
+          || matches!(&result, Expr::FunctionCall { name, .. } if name == "Part");
+        return if failed {
           Ok(None)
-        }
-        ExtractOutcome::Partd => {
-          let path_expr = Expr::List(
-            path
-              .iter()
-              .map(|c| match c {
-                ExtractComp::Idx(n) => Expr::Integer(*n),
-                ExtractComp::Key(k) => Expr::FunctionCall {
-                  name: "Key".to_string(),
-                  args: vec![k.clone()].into(),
-                },
-              })
-              .collect(),
-          );
-          crate::emit_message(&format!(
-            "Extract::partd: Part specification {} is longer than depth of object.",
-            show(&path_expr)
-          ));
-          Ok(None)
-        }
-        ExtractOutcome::Keyw(key, container) => {
-          crate::emit_message(&format!(
-            "Extract::keyw: Key {} does not exist in {}.",
-            show(&key),
-            show(&container)
-          ));
-          let missing = Expr::FunctionCall {
-            name: "Missing".to_string(),
-            args: vec![
-              Expr::String("KeyAbsent".to_string()),
-              Expr::FunctionCall {
-                name: "Key".to_string(),
-                args: vec![key].into(),
-              },
-            ]
-            .into(),
-          };
-          Ok(Some(missing))
-        }
+        } else {
+          Ok(Some(wrap(result)?))
+        };
       }
     };
+    match extract_resolve(subject, path) {
+      ExtractOutcome::Found(part) => Ok(Some(wrap(part)?)),
+      ExtractOutcome::Partw => {
+        let first = match path.first() {
+          Some(ExtractComp::Idx(n)) => Expr::Integer(*n),
+          Some(ExtractComp::Key(k)) => Expr::FunctionCall {
+            name: "Key".to_string(),
+            args: vec![k.clone()].into(),
+          },
+          None => Expr::Integer(0),
+        };
+        crate::emit_message(&format!(
+          "Extract::partw: Part {} of {} does not exist.",
+          show(&first),
+          show(subject)
+        ));
+        Ok(None)
+      }
+      ExtractOutcome::Partd => {
+        let path_expr = Expr::List(
+          path
+            .iter()
+            .map(|c| match c {
+              ExtractComp::Idx(n) => Expr::Integer(*n),
+              ExtractComp::Key(k) => Expr::FunctionCall {
+                name: "Key".to_string(),
+                args: vec![k.clone()].into(),
+              },
+            })
+            .collect(),
+        );
+        crate::emit_message(&format!(
+          "Extract::partd: Part specification {} is longer than depth of object.",
+          show(&path_expr)
+        ));
+        Ok(None)
+      }
+      ExtractOutcome::Keyw(key, container) => {
+        crate::emit_message(&format!(
+          "Extract::keyw: Key {} does not exist in {}.",
+          show(&key),
+          show(&container)
+        ));
+        let missing = Expr::FunctionCall {
+          name: "Missing".to_string(),
+          args: vec![
+            Expr::String("KeyAbsent".to_string()),
+            Expr::FunctionCall {
+              name: "Key".to_string(),
+              args: vec![key].into(),
+            },
+          ]
+          .into(),
+        };
+        Ok(Some(missing))
+      }
+    }
+  };
 
   match paths {
     Paths::Single(path) => match resolve_one(&path)? {
