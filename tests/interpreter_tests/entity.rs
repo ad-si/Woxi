@@ -424,3 +424,71 @@ mod country_data_tests {
     );
   }
 }
+
+mod interpreter_scalar_tests {
+  use super::*;
+
+  #[test]
+  fn integer_from_string() {
+    assert_eq!(interpret(r#"Interpreter["Integer"]["42"]"#).unwrap(), "42");
+    assert_eq!(interpret(r#"Interpreter["Integer"]["-7"]"#).unwrap(), "-7");
+  }
+
+  #[test]
+  fn integer_handles_bignum() {
+    assert_eq!(
+      interpret(r#"Interpreter["Integer"]["99999999999999999999999999"]"#)
+        .unwrap(),
+      "99999999999999999999999999"
+    );
+  }
+
+  #[test]
+  fn number_keeps_integers_and_reals() {
+    assert_eq!(interpret(r#"Interpreter["Number"]["42"]"#).unwrap(), "42");
+    assert_eq!(
+      interpret(r#"Interpreter["Number"]["3.14"]"#).unwrap(),
+      "3.14"
+    );
+    // Scientific notation and signs.
+    assert_eq!(
+      interpret(r#"Interpreter["Number"]["1e3"]"#).unwrap(),
+      "1000."
+    );
+    assert_eq!(
+      interpret(r#"Interpreter["Number"]["-3.5"]"#).unwrap(),
+      "-3.5"
+    );
+  }
+
+  #[test]
+  fn real_always_returns_a_real() {
+    assert_eq!(interpret(r#"Interpreter["Real"]["3.14"]"#).unwrap(), "3.14");
+    assert_eq!(interpret(r#"Interpreter["Real"]["42"]"#).unwrap(), "42.");
+  }
+
+  #[test]
+  fn boolean_parses_case_insensitively() {
+    assert_eq!(
+      interpret(r#"Interpreter["Boolean"]["true"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"Interpreter["Boolean"]["False"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_returns_input() {
+    assert_eq!(
+      interpret(r#"Interpreter["String"]["hello"]"#).unwrap(),
+      "hello"
+    );
+  }
+
+  #[test]
+  fn integer_passthrough_for_numeric_input() {
+    assert_eq!(interpret(r#"Interpreter["Integer"][42]"#).unwrap(), "42");
+  }
+}

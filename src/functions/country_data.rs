@@ -325,6 +325,63 @@ fn entity(canonical: &str) -> Expr {
   }
 }
 
+/// Parse `val` according to a scalar Interpreter type. Returns `None` when the
+/// type is unknown or the value cannot be interpreted (so the caller leaves the
+/// expression unevaluated).
+fn interpret_scalar(ty: &str, val: &Expr) -> Option<Expr> {
+  // Is the string an integer literal (optional sign, digits only)?
+  let parse_integer = |s: &str| -> Option<Expr> {
+    let t = s.trim();
+    match t.parse::<i128>() {
+      Ok(n) => Some(Expr::Integer(n)),
+      Err(_) => match t.parse::<num_bigint::BigInt>() {
+        Ok(n) => Some(Expr::BigInteger(n)),
+        Err(_) => None,
+      },
+    }
+  };
+  let parse_real =
+    |s: &str| -> Option<Expr> { s.trim().parse::<f64>().ok().map(Expr::Real) };
+
+  match ty {
+    "String" => match val {
+      Expr::String(s) => Some(Expr::String(s.clone())),
+      _ => None,
+    },
+    "Boolean" => {
+      let s = match val {
+        Expr::String(s) => s.trim().to_lowercase(),
+        _ => return None,
+      };
+      match s.as_str() {
+        "true" => Some(Expr::Identifier("True".to_string())),
+        "false" => Some(Expr::Identifier("False".to_string())),
+        _ => None,
+      }
+    }
+    "Integer" => match val {
+      Expr::Integer(n) => Some(Expr::Integer(*n)),
+      Expr::BigInteger(n) => Some(Expr::BigInteger(n.clone())),
+      Expr::String(s) => parse_integer(s),
+      _ => None,
+    },
+    "Real" => match val {
+      Expr::Integer(n) => Some(Expr::Real(*n as f64)),
+      Expr::Real(r) => Some(Expr::Real(*r)),
+      Expr::String(s) => parse_real(s),
+      _ => None,
+    },
+    "Number" => match val {
+      Expr::Integer(n) => Some(Expr::Integer(*n)),
+      Expr::Real(r) => Some(Expr::Real(*r)),
+      // Integer literals stay integers; anything else numeric becomes a Real.
+      Expr::String(s) => parse_integer(s).or_else(|| parse_real(s)),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 /// `Interpreter["Country"][input]` — resolve `input` to `Entity["Country", …]`
 /// or `Missing` when it can't be interpreted. `domain` is the argument to
 /// `Interpreter` (here `"Country"`); `applied` are the arguments it is then
@@ -342,6 +399,17 @@ pub fn apply_interpreter(
       None => missing("NoInterpretation", input),
     });
   }
+
+  // Scalar interpreter types: parse a string (or numeric input) into a typed
+  // value, matching wolframscript. Unparseable inputs stay unevaluated (the
+  // Failure object wolframscript returns is not reproduced here).
+  if let Expr::String(d) = domain
+    && let [val] = applied
+    && let Some(result) = interpret_scalar(d, val)
+  {
+    return Ok(result);
+  }
+
   // Unhandled domain/arguments: keep the curried form unevaluated.
   Ok(Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
