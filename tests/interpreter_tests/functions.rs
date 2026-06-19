@@ -2744,6 +2744,24 @@ mod array_rules {
     );
   }
 
+  // Normal acts at all levels: SparseArrays nested inside a list densify too
+  // (e.g. Normal[CoefficientArrays[...]]). Regression: a list of SparseArrays
+  // was returned unchanged.
+  #[test]
+  fn normal_threads_into_list_of_sparse_arrays() {
+    assert_eq!(
+      interpret(
+        "Normal[{SparseArray[{1 -> 3}, 2], SparseArray[{2 -> 5}, 3]}]"
+      )
+      .unwrap(),
+      "{{3, 0}, {0, 5, 0}}"
+    );
+    assert_eq!(
+      interpret("Normal[CoefficientArrays[1 + 2 x + 3 x^2, x]]").unwrap(),
+      "{1, {2}, {{3}}}"
+    );
+  }
+
   // Canonical form is idempotent under re-normalization.
   #[test]
   fn sparse_array_canonical_idempotent() {

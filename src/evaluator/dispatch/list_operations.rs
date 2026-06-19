@@ -5132,6 +5132,33 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
     {
       normal_convert_associations(&args[0])
     }
+    // A SparseArray nested inside a container densifies, then we keep recursing
+    // (Normal acts at all levels, so `Normal[{SparseArray[..], ..}]` returns a
+    // list of dense lists — e.g. Normal[CoefficientArrays[...]]).
+    Expr::FunctionCall { name, args } if name == "SparseArray" => {
+      match list_helpers_ast::sparse_array_ast(args) {
+        Ok(dense) => normal_convert_associations(&dense),
+        Err(_) => Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(normal_convert_associations).collect(),
+        },
+      }
+    }
+    // A nested SeriesData collapses to its polynomial via the full Normal path.
+    Expr::FunctionCall { name, args }
+      if name == "SeriesData" && args.len() == 6 =>
+    {
+      let normalized = Expr::FunctionCall {
+        name: "Normal".to_string(),
+        args: vec![expr.clone()].into(),
+      };
+      match evaluate_expr_to_expr(&normalized) {
+        Ok(r) if expr_to_string(&r) != expr_to_string(expr) => {
+          normal_convert_associations(&r)
+        }
+        _ => expr.clone(),
+      }
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(normal_convert_associations).collect(),
