@@ -662,8 +662,10 @@ mod string_replace {
   #[test]
   fn regex_backreferences_with_delayed_rule() {
     assert_eq!(
-      interpret(r#"StringReplace["abc", RegularExpression["(a)(b)"] :> "$2$1"]"#)
-        .unwrap(),
+      interpret(
+        r#"StringReplace["abc", RegularExpression["(a)(b)"] :> "$2$1"]"#
+      )
+      .unwrap(),
       "bac"
     );
     assert_eq!(
