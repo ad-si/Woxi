@@ -1233,7 +1233,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // substituting any named captures), so route them through RegexDelayed
       // even when the pattern has no capture groups — otherwise a constant
       // RHS like `LetterCharacter :> ToUpperCase["x"]` is inserted unevaluated.
-      if is_delayed {
+      // A *plain-string* RHS is constant, so the delayed/immediate distinction
+      // is moot: route it like a Rule below so `$1`/`$2` backreferences expand
+      // (RegularExpression["(a)(b)"] :> "$2$1" -> "ba", matching wolframscript).
+      if is_delayed && !matches!(replacement_expr, Expr::String(_)) {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),

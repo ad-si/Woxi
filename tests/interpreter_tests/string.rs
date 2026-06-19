@@ -656,6 +656,33 @@ mod string_replace {
     );
   }
 
+  // A delayed rule (:>) with a plain-string replacement expands $n
+  // backreferences just like an immediate rule (->) — the constant RHS
+  // makes the delayed/immediate distinction irrelevant.
+  #[test]
+  fn regex_backreferences_with_delayed_rule() {
+    assert_eq!(
+      interpret(r#"StringReplace["abc", RegularExpression["(a)(b)"] :> "$2$1"]"#)
+        .unwrap(),
+      "bac"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringReplace["2024-01-15", RegularExpression["(\\d+)-(\\d+)-(\\d+)"] :> "$3/$2/$1"]"#
+      )
+      .unwrap(),
+      "15/01/2024"
+    );
+    // A delayed rule whose RHS must be evaluated per match still works.
+    assert_eq!(
+      interpret(
+        r#"StringReplace["hello", RegularExpression["l"] :> ToUpperCase["l"]]"#
+      )
+      .unwrap(),
+      "heLLo"
+    );
+  }
+
   #[test]
   fn regex_dollar_zero_is_whole_match() {
     assert_eq!(
