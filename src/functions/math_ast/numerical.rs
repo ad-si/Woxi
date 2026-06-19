@@ -2279,13 +2279,18 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result = power(sum, power(p_term, Expr::Integer(-1)));
       evaluate_expr_to_expr(&result)
     }
-    // Norm of a scalar: Abs[x]
+    // Norm of a scalar. For a number (real or complex) Norm[x] = Abs[x],
+    // evaluated symbolically so exact values are preserved (Norm[Pi] -> Pi,
+    // Norm[2/3] -> 2/3, Norm[3 + 4 I] -> 5). For a non-numeric scalar (x,
+    // a + b I, …) wolframscript leaves Norm unevaluated.
     _ => {
-      if let Some(v) = try_eval_to_f64(&args[0]) {
-        Ok(num_to_expr(v.abs()))
-      } else {
-        // Evaluate Abs[x] (handles complex numbers etc.)
+      if crate::functions::predicate_ast::is_numeric_q_pub(&args[0]) {
         crate::evaluator::evaluate_function_call_ast("Abs", &[args[0].clone()])
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Norm".to_string(),
+          args: args.to_vec().into(),
+        })
       }
     }
   }

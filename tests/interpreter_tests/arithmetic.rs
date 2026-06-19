@@ -2511,6 +2511,31 @@ mod expand_threading {
   }
 
   #[test]
+  fn norm_exact_real_scalar_kept_exact() {
+    // Real numeric scalars give an exact Abs, not a machine float.
+    assert_eq!(interpret("Norm[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Norm[-Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Norm[2/3]").unwrap(), "2/3");
+    assert_eq!(interpret("Norm[-2/3]").unwrap(), "2/3");
+    assert_eq!(interpret("Norm[Sqrt[2]]").unwrap(), "Sqrt[2]");
+  }
+
+  #[test]
+  fn norm_symbolic_scalar_unevaluated() {
+    // A non-numeric scalar leaves Norm unevaluated (real-ness unknown).
+    assert_eq!(interpret("Norm[x]").unwrap(), "Norm[x]");
+    assert_eq!(interpret("Norm[a]").unwrap(), "Norm[a]");
+    assert_eq!(interpret("Norm[a + b I]").unwrap(), "Norm[a + I*b]");
+  }
+
+  #[test]
+  fn norm_numeric_complex_scalar_evaluates() {
+    assert_eq!(interpret("Norm[3 + 4 I]").unwrap(), "5");
+    assert_eq!(interpret("Norm[2 - 3 I]").unwrap(), "Sqrt[13]");
+    assert_eq!(interpret("Norm[3 I]").unwrap(), "3");
+  }
+
+  #[test]
   fn norm_symbolic_list_with_sin() {
     // Known-real scalar elements (integers, Sin[k] for integer k, etc.)
     // should stay exact/symbolic — not collapse to a machine float.
