@@ -3053,6 +3053,47 @@ mod string_match_q_patterns {
   }
 
   #[test]
+  fn number_string_signed() {
+    // NumberString matches an optional leading sign as part of the number.
+    assert_eq!(
+      interpret(r#"StringCases["2024-03-15", NumberString]"#).unwrap(),
+      "{2024, -03, -15}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["a-5b+3c", NumberString]"#).unwrap(),
+      "{-5, +3}"
+    );
+    assert_eq!(interpret(r#"StringMatchQ["-5", NumberString]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"StringMatchQ["+5", NumberString]"#).unwrap(), "True");
+    // Only a single sign is allowed.
+    assert_eq!(
+      interpret(r#"StringMatchQ["--5", NumberString]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn number_string_leading_and_trailing_decimal() {
+    // A leading-decimal form (.5) and a trailing-decimal form (1.) both match.
+    assert_eq!(interpret(r#"StringCases[".5", NumberString]"#).unwrap(), "{.5}");
+    assert_eq!(interpret(r#"StringCases["1.", NumberString]"#).unwrap(), "{1.}");
+    assert_eq!(
+      interpret(r#"StringCases["-.5", NumberString]"#).unwrap(),
+      "{-.5}"
+    );
+    // Greedy decimal stops at a second dot.
+    assert_eq!(
+      interpret(r#"StringCases["3.14.15", NumberString]"#).unwrap(),
+      "{3.14, .15}"
+    );
+    // No exponent: `1e5` is two number strings.
+    assert_eq!(
+      interpret(r#"StringCases["1e5", NumberString]"#).unwrap(),
+      "{1, 5}"
+    );
+  }
+
+  #[test]
   fn wildcard_star() {
     assert_eq!(interpret(r#"StringMatchQ["Hello", "H*"]"#).unwrap(), "True");
     assert_eq!(

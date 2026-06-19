@@ -2298,7 +2298,12 @@ fn string_pattern_to_regex_inner(
       // wolframscript across the BMP.
       "PunctuationCharacter" => Some("(?:\\p{P}|[$+<=>^`|~])".to_string()),
       "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
-      "NumberString" => Some("[0-9]+(?:\\.[0-9]*)?".to_string()),
+      // NumberString matches an optional leading sign followed by digits
+      // with an optional decimal point, or a leading-decimal form like `.5`
+      // (no exponent — Wolfram treats `1e5` as two number strings).
+      "NumberString" => {
+        Some("[+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)".to_string())
+      }
       "_" => Some(".".to_string()), // Blank: any single character
       "__" => Some(".+".to_string()), // BlankSequence: one or more characters
       "___" => Some(".*".to_string()), // BlankNullSequence: zero or more characters
