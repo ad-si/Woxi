@@ -442,6 +442,24 @@ mod simplify {
   }
 
   #[test]
+  fn simplify_rational_equality_proves_true() {
+    // Equation simplification must combine rational functions over a common
+    // denominator, not just Expand: both sides reduce to 1/(1+x^2).
+    assert_eq!(
+      interpret(
+        "Simplify[1/2 * (1/(1 - I x) + 1/(1 + I x)) == 1/(1 + x*x)]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A genuinely-unequal pair stays an unevaluated comparison.
+    assert_eq!(
+      interpret("Simplify[1/(1 + x) == 1/(1 + x^2)]").unwrap(),
+      "(1 + x)^(-1) == (1 + x^2)^(-1)"
+    );
+  }
+
+  #[test]
   fn pythagorean_identity() {
     assert_eq!(interpret("Simplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }

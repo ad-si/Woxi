@@ -5141,6 +5141,12 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
       {
         // Nonzero constant difference means the equation is always False
         Expr::Identifier("False".to_string())
+      } else if is_zero_constant(&simplify_expr_with_together(&diff)) {
+        // Rational-function case: `Expand` alone can't cancel two fractions
+        // over different denominators (e.g. a partial-fraction sum vs its
+        // closed form). Combine over a common denominator with the full
+        // simplifier and check whether the difference vanishes.
+        Expr::Identifier("True".to_string())
       } else {
         Expr::Comparison {
           operands: vec![lhs, rhs],
