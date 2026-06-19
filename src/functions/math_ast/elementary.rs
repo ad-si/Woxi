@@ -1653,6 +1653,43 @@ pub fn floor_ceil_two_arg(
       args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
     });
   }
+  // Exact step `a` (rational): the result follows the type of `a`, so it stays
+  // exact even when `x` is a symbolic constant (Floor[Pi, 1/10]) or a machine
+  // float (Floor[2.7, 1/10] -> 27/10), matching wolframscript. Compute
+  // a * Floor[x/a] via the single-argument Floor/Ceiling, which resolves both
+  // exact transcendentals and floats to an integer. Falls through when the
+  // quotient does not reduce to an integer (e.g. a symbolic x).
+  if let (Some(an), Some(ad)) = (expr_numerator(a), expr_denominator(a))
+    && an != 0
+  {
+    // q = x / a = x * (ad / an)
+    let q = crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[x.clone(), make_rational(ad, an)],
+    )?;
+    let fq = if is_floor {
+      floor_ast(std::slice::from_ref(&q))?
+    } else {
+      ceiling_ast(std::slice::from_ref(&q))?
+    };
+    if let Expr::Integer(k) = fq {
+      // result = a * k = (an * k) / ad
+      let res_num = an * k;
+      if ad == 1 {
+        return Ok(Expr::Integer(res_num));
+      }
+      let g = gcd_i128(res_num.abs(), ad.abs());
+      let rn = res_num / g;
+      let rd = ad / g;
+      if rd == 1 {
+        return Ok(Expr::Integer(rn));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
+      });
+    }
+  }
   // Fall back to floating point
   if let (Some(xf), Some(af)) = (try_eval_to_f64(x), try_eval_to_f64(a)) {
     if af == 0.0 {

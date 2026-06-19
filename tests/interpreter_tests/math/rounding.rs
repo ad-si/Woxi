@@ -198,6 +198,24 @@ mod floor {
     assert_eq!(interpret("Floor[7/2, 1/3]").unwrap(), "10/3");
   }
 
+  // An exact rational step keeps the result exact even when the first
+  // argument is a symbolic constant — Floor[Pi, 1/10] is 31/10, not 3.1.
+  #[test]
+  fn two_arg_exact_step_symbolic_arg() {
+    assert_eq!(interpret("Floor[Pi, 1/10]").unwrap(), "31/10");
+    assert_eq!(interpret("Floor[E, 1/10]").unwrap(), "27/10");
+    assert_eq!(interpret("Floor[Sqrt[2], 1/10]").unwrap(), "7/5");
+    assert_eq!(interpret("Floor[-Pi, 1/10]").unwrap(), "-16/5");
+  }
+
+  // The result follows the (exact) step, so a machine-float first argument
+  // still yields an exact rational: Floor[2.7, 1/10] is 27/10, not 2.7.
+  #[test]
+  fn two_arg_exact_step_float_arg() {
+    assert_eq!(interpret("Floor[2.7, 1/10]").unwrap(), "27/10");
+    assert_eq!(interpret("Floor[3.14159, 1/100]").unwrap(), "157/50");
+  }
+
   #[test]
   fn two_arg_float_step() {
     assert_eq!(interpret("Floor[5.5, 0.5]").unwrap(), "5.5");
@@ -223,6 +241,14 @@ mod ceiling_two_arg {
   #[test]
   fn rational_step() {
     assert_eq!(interpret("Ceiling[7/2, 1/3]").unwrap(), "11/3");
+  }
+
+  // Exact step keeps the result exact for symbolic and float first arguments.
+  #[test]
+  fn exact_step_symbolic_and_float_arg() {
+    assert_eq!(interpret("Ceiling[Pi, 1/10]").unwrap(), "16/5");
+    assert_eq!(interpret("Ceiling[Sqrt[2], 1/100]").unwrap(), "71/50");
+    assert_eq!(interpret("Ceiling[2.71, 1/10]").unwrap(), "14/5");
   }
 
   #[test]
