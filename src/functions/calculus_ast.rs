@@ -3390,6 +3390,124 @@ fn extract_trig_factor(expr: &Expr) -> Option<(&str, &Expr, i64)> {
   None
 }
 
+/// Try to integrate `E^(a x) Sin[b x]` or `E^(a x) Cos[b x]` (with `a`, `b`
+/// constant w.r.t. `var` and the exponent / trig argument linear in `var`):
+///   ∫ E^(a x) Sin[b x] dx = E^(a x) (a Sin[b x] - b Cos[b x]) / (a^2 + b^2)
+///   ∫ E^(a x) Cos[b x] dx = E^(a x) (a Cos[b x] + b Sin[b x]) / (a^2 + b^2)
+/// A constant phase/offset in either argument is preserved automatically by
+/// carrying the original exponent and trig argument through unchanged.
+fn try_integrate_exp_trig_product(
+  factors: &[&Expr],
+  var: &str,
+) -> Option<Expr> {
+  if factors.len() != 2 {
+    return None;
+  }
+
+  // The exponent of an `E^expo` / `Exp[expo]` factor, else None.
+  let exp_exponent = |f: &Expr| -> Option<Expr> {
+    match f {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E") => {
+        Some((**right).clone())
+      }
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2
+        && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E") =>
+      {
+        Some(args[1].clone())
+      }
+      Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  };
+  // `(head, arg)` if `f` is `Sin[arg]` or `Cos[arg]`, else None.
+  let trig_parts = |f: &Expr| -> Option<(String, Expr)> {
+    if let Expr::FunctionCall { name, args } = f
+      && (name == "Sin" || name == "Cos")
+      && args.len() == 1
+    {
+      Some((name.clone(), args[0].clone()))
+    } else {
+      None
+    }
+  };
+
+  // Try both orderings of the two factors.
+  for (ef, tf) in [(factors[0], factors[1]), (factors[1], factors[0])] {
+    let Some(exponent) = exp_exponent(ef) else {
+      continue;
+    };
+    let Some((trig, arg)) = trig_parts(tf) else {
+      continue;
+    };
+    // a = d/dx(exponent), b = d/dx(arg); both must be constant (linear args).
+    let a = differentiate(&exponent, var).ok()?;
+    let b = differentiate(&arg, var).ok()?;
+    if !is_constant_wrt(&a, var) || !is_constant_wrt(&b, var) {
+      continue;
+    }
+
+    let times = |x: Expr, y: Expr| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![x, y].into(),
+    };
+    let cos = Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![arg.clone()].into(),
+    };
+    let sin = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg.clone()].into(),
+    };
+    // Numerator combination (Cos term first, matching wolframscript):
+    //   Sin → -b Cos + a Sin ; Cos → a Cos + b Sin
+    let combo = if trig == "Sin" {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          times(times(Expr::Integer(-1), b.clone()), cos),
+          times(a.clone(), sin),
+        ]
+        .into(),
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![times(a.clone(), cos), times(b.clone(), sin)].into(),
+      }
+    };
+    // Denominator a^2 + b^2.
+    let denom = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(a.clone()),
+          right: Box::new(Expr::Integer(2)),
+        },
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(b.clone()),
+          right: Box::new(Expr::Integer(2)),
+        },
+      ]
+      .into(),
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(times(ef.clone(), combo)),
+      right: Box::new(denom),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result).ok();
+  }
+  None
+}
+
 /// Try to integrate a product of Sin[f]^m * Cos[f]^n where f is linear in var.
 /// Handles:
 ///   - Sin[f] * Cos[f]^n → -Cos[f]^(n+1) / ((n+1)*a)
@@ -7492,6 +7610,28 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             }
             // Try trig product: Sin[f]^m * Cos[f]^n
             let var_refs: Vec<&Expr> = var_factors.to_vec();
+            // ∫ E^(a x) Sin[b x] dx / ∫ E^(a x) Cos[b x] dx
+            if let Some(et_result) =
+              try_integrate_exp_trig_product(&var_refs, var)
+            {
+              if const_factors.is_empty() {
+                return Some(et_result);
+              } else {
+                let const_expr = if const_factors.len() == 1 {
+                  const_factors[0].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: const_factors.into_iter().cloned().collect(),
+                  }
+                };
+                return Some(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(const_expr),
+                  right: Box::new(et_result),
+                });
+              }
+            }
             if let Some(trig_result) =
               try_integrate_sin_cos_product(&var_refs, var)
             {

@@ -251,6 +251,52 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_exp_times_sin() {
+    assert_eq!(
+      interpret("Integrate[E^x Sin[x], x]").unwrap(),
+      "(E^x*(-Cos[x] + Sin[x]))/2"
+    );
+  }
+
+  #[test]
+  fn integrate_exp_times_cos() {
+    assert_eq!(
+      interpret("Integrate[E^x Cos[x], x]").unwrap(),
+      "(E^x*(Cos[x] + Sin[x]))/2"
+    );
+  }
+
+  #[test]
+  fn integrate_exp_times_trig_scaled() {
+    // Scaled exponent and trig argument: a = 2, b = 3, a^2 + b^2 = 13.
+    assert_eq!(
+      interpret("Integrate[E^(2 x) Sin[3 x], x]").unwrap(),
+      "(E^(2*x)*(-3*Cos[3*x] + 2*Sin[3*x]))/13"
+    );
+    // Negative exponent coefficient.
+    assert_eq!(
+      interpret("Integrate[E^(-x) Cos[x], x]").unwrap(),
+      "(-Cos[x] + Sin[x])/(2*E^x)"
+    );
+  }
+
+  #[test]
+  fn integrate_exp_times_trig_symbolic() {
+    assert_eq!(
+      interpret("Integrate[E^(a x) Sin[b x], x]").unwrap(),
+      "(E^(a*x)*(-(b*Cos[b*x]) + a*Sin[b*x]))/(a^2 + b^2)"
+    );
+  }
+
+  #[test]
+  fn integrate_const_times_exp_trig() {
+    assert_eq!(
+      interpret("Integrate[3 E^x Sin[x], x]").unwrap(),
+      "(3*E^x*(-Cos[x] + Sin[x]))/2"
+    );
+  }
+
+  #[test]
   fn integrate_one_over_x_one_plus_log() {
     assert_eq!(
       interpret("Integrate[1/(x (1 + Log[x])), x]").unwrap(),
