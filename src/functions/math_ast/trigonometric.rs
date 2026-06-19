@@ -863,6 +863,26 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
           right,
         };
       }
+      // Otherwise pull the denominator's integer factor into a -1/k
+      // coefficient, matching Wolfram: -(Sqrt[3]/2) => -1/2*Sqrt[3] and
+      // -((-1 + Sqrt[3])/(2 Sqrt[2])) => -1/2*(-1 + Sqrt[3])/Sqrt[2].
+      if let Some((k, rest)) = denom_integer_factor(right) {
+        let mut factors = vec![
+          crate::functions::math_ast::make_rational_pub(-1, k),
+          (**left).clone(),
+        ];
+        if let Some(rest) = rest {
+          factors.push(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(rest),
+            right: Box::new(Expr::Integer(-1)),
+          });
+        }
+        return Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors.into(),
+        };
+      }
       // fall through to default
     }
     _ => {}
@@ -871,6 +891,50 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
   Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![Expr::Integer(-1), expr].into(),
+  }
+}
+
+/// Split a denominator into `(k, rest)` where `k > 1` is its leading positive
+/// integer factor and `rest` is the remaining (non-integer) part, or `None`
+/// when there is no such integer factor. `2` → `(2, None)`,
+/// `2*Sqrt[2]` → `(2, Some(Sqrt[2]))`.
+fn denom_integer_factor(denom: &Expr) -> Option<(i128, Option<Expr>)> {
+  match denom {
+    Expr::Integer(n) if *n > 1 => Some((*n, None)),
+    Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() >= 2 =>
+    {
+      if let Expr::Integer(n) = &args[0]
+        && *n > 1
+      {
+        let rest: Vec<Expr> = args[1..].to_vec();
+        let rest_expr = if rest.len() == 1 {
+          rest.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: rest.into(),
+          }
+        };
+        Some((*n, Some(rest_expr)))
+      } else {
+        None
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(n) = left.as_ref()
+        && *n > 1
+      {
+        Some((*n, Some((**right).clone())))
+      } else {
+        None
+      }
+    }
+    _ => None,
   }
 }
 

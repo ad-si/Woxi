@@ -44,6 +44,22 @@ mod degree_constant {
   }
 
   #[test]
+  fn negative_radical_fraction_form() {
+    // A negated radical-over-integer keeps Wolfram's `-1/2*Sqrt[3]` form
+    // rather than `-(Sqrt[3]/2)`.
+    assert_eq!(interpret("Sin[4 Pi/3]").unwrap(), "-1/2*Sqrt[3]");
+    assert_eq!(interpret("Cos[5 Pi/6]").unwrap(), "-1/2*Sqrt[3]");
+    assert_eq!(interpret("Sin[10 Pi/3]").unwrap(), "-1/2*Sqrt[3]");
+    // Compound denominator (12th-angle): -1/2 pulled out, /Sqrt[2] kept.
+    assert_eq!(
+      interpret("Cos[7 Pi/12]").unwrap(),
+      "-1/2*(-1 + Sqrt[3])/Sqrt[2]"
+    );
+    // Positive values are unaffected.
+    assert_eq!(interpret("Sin[Pi/3]").unwrap(), "Sqrt[3]/2");
+  }
+
+  #[test]
   fn cos_exact_values() {
     assert_eq!(interpret("Cos[0]").unwrap(), "1");
     assert_eq!(
@@ -245,30 +261,12 @@ mod degree_trig_functions {
   #[test]
   fn hyperbolic_at_complex_infinity() {
     // All six hyperbolic functions are Indeterminate at ComplexInfinity.
-    assert_eq!(
-      interpret("Sinh[ComplexInfinity]").unwrap(),
-      "Indeterminate"
-    );
-    assert_eq!(
-      interpret("Cosh[ComplexInfinity]").unwrap(),
-      "Indeterminate"
-    );
-    assert_eq!(
-      interpret("Tanh[ComplexInfinity]").unwrap(),
-      "Indeterminate"
-    );
-    assert_eq!(
-      interpret("Coth[ComplexInfinity]").unwrap(),
-      "Indeterminate"
-    );
-    assert_eq!(
-      interpret("Sech[ComplexInfinity]").unwrap(),
-      "Indeterminate"
-    );
-    assert_eq!(
-      interpret("Csch[ComplexInfinity]").unwrap(),
-      "Indeterminate"
-    );
+    assert_eq!(interpret("Sinh[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Cosh[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Tanh[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Coth[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Sech[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Csch[ComplexInfinity]").unwrap(), "Indeterminate");
   }
 
   #[test]
