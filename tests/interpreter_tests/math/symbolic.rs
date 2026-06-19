@@ -316,6 +316,32 @@ mod sum {
     );
   }
 
+  // Logarithmic (Mercator) series Sum[base^k/k, {k, 1, Infinity}] = -Log[1-base].
+  #[test]
+  fn infinite_sum_logarithmic() {
+    assert_eq!(
+      interpret("Sum[x^k/k, {k, 1, Infinity}]").unwrap(),
+      "-Log[1 - x]"
+    );
+    assert_eq!(
+      interpret("Sum[(-1)^k x^k/k, {k, 1, Infinity}]").unwrap(),
+      "-Log[1 + x]"
+    );
+    assert_eq!(
+      interpret("Sum[2 x^k/k, {k, 1, Infinity}]").unwrap(),
+      "-2*Log[1 - x]"
+    );
+    // Convergent numeric base evaluates to a number.
+    assert_eq!(
+      interpret("Sum[(1/2)^k/k, {k, 1, Infinity}]").unwrap(),
+      "Log[2]"
+    );
+    assert_eq!(
+      interpret("Sum[(1/3)^k/k, {k, 1, Infinity}]").unwrap(),
+      "Log[3/2]"
+    );
+  }
+
   // Exponential series Sum[base^k/k!, {k, 0, Infinity}] = E^base.
   #[test]
   fn infinite_sum_exponential() {

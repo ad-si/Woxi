@@ -1969,6 +1969,127 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   Some((coeff, base.clone()))
 }
 
+/// Match a logarithmic-series body `coeff * base^var / var`, i.e. a geometric
+/// term over the first power of the summation variable. Returns `(coeff, base)`
+/// with `base` the product of all `base^var` factors. Used for the Mercator
+/// series Sum[base^k/k, {k,1,Infinity}] = -Log[1 - base].
+fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
+  use crate::syntax::BinaryOperator;
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        collect(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        collect(left, out);
+        out.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        });
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args.iter() {
+          collect(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  fn power_base(f: &Expr, var_name: &str) -> Option<Expr> {
+    let (base, exp) = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref().clone(), right.as_ref().clone()),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (args[0].clone(), args[1].clone())
+      }
+      _ => return None,
+    };
+    match &exp {
+      Expr::Identifier(n) if n == var_name => Some(base),
+      _ => None,
+    }
+  }
+  let is_recip_var = |f: &Expr| -> bool {
+    let (base, exp) = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return false,
+    };
+    matches!(base, Expr::Identifier(n) if n == var_name)
+      && matches!(exp, Expr::Integer(-1))
+  };
+
+  let mut factors = Vec::new();
+  collect(body, &mut factors);
+  let mut bases: Vec<Expr> = Vec::new();
+  let mut seen_recip_var = false;
+  let mut coeff_factors: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Some(b) = power_base(f, var_name) {
+      bases.push(b);
+      continue;
+    }
+    if !seen_recip_var && is_recip_var(f) {
+      seen_recip_var = true;
+      continue;
+    }
+    if !crate::functions::calculus_ast::is_constant_wrt(f, var_name) {
+      return None;
+    }
+    coeff_factors.push(f.clone());
+  }
+  if !seen_recip_var || bases.is_empty() {
+    return None;
+  }
+  if bases
+    .iter()
+    .any(|b| !crate::functions::calculus_ast::is_constant_wrt(b, var_name))
+  {
+    return None;
+  }
+  let base = if bases.len() == 1 {
+    bases.pop().unwrap()
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: bases.into(),
+    })
+    .ok()?
+  };
+  let coeff = match coeff_factors.len() {
+    0 => Expr::Integer(1),
+    1 => coeff_factors.into_iter().next().unwrap(),
+    _ => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: coeff_factors.into(),
+    },
+  };
+  Some((coeff, base))
+}
+
 /// Match an exponential-series body `c * base^var / var!` where `base` is free
 /// of `var` (numeric or symbolic) and `var` appears only as the exponent of
 /// `base` and inside the factorial. Returns `(coefficient, base)`; the base
@@ -2361,6 +2482,39 @@ fn try_infinite_sum(
       };
       return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
     }
+  }
+
+  // Logarithmic series Sum[base^k/k, {k, 1, Infinity}] = -Log[1 - base]
+  // (the Mercator/Taylor series for -Log[1-x]). A numeric base needs
+  // |base| < 1 to converge; a symbolic base yields the formal result.
+  if min == 1
+    && let Some((coeff, base)) = match_log_geometric(body, var_name)
+  {
+    use crate::syntax::BinaryOperator;
+    if let Some(b) = crate::functions::math_ast::try_eval_to_f64(&base)
+      && !(b.abs() < 1.0)
+    {
+      return Ok(None);
+    }
+    // -coeff * Log[1 - base]
+    let log_term = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(base),
+        }),
+      }]
+      .into(),
+    };
+    let closed = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), coeff, log_term].into(),
+    };
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
 
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
