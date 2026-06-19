@@ -3400,6 +3400,39 @@ mod ramp {
       "{0, 3.2, 0., 7}"
     );
   }
+
+  #[test]
+  fn ramp_exact_rational() {
+    // Rationals stay exact (were left unevaluated before).
+    assert_eq!(interpret("Ramp[1/2]").unwrap(), "1/2");
+    assert_eq!(interpret("Ramp[3/2]").unwrap(), "3/2");
+    assert_eq!(interpret("Ramp[-1/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn ramp_symbolic_constants() {
+    // Real-valued symbolic numerics: kept when >= 0, else 0.
+    assert_eq!(interpret("Ramp[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Ramp[-Pi]").unwrap(), "0");
+    assert_eq!(interpret("Ramp[Sqrt[5]]").unwrap(), "Sqrt[5]");
+  }
+
+  #[test]
+  fn ramp_symbolic_expression_sign() {
+    // Sqrt[2] - 2 < 0 and E - 3 < 0, so both clamp to 0.
+    assert_eq!(interpret("Ramp[Sqrt[2] - 2]").unwrap(), "0");
+    assert_eq!(interpret("Ramp[E - 3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn ramp_nonnumeric_stays_unevaluated() {
+    assert_eq!(interpret("Ramp[x]").unwrap(), "Ramp[x]");
+  }
+
+  #[test]
+  fn ramp_mixed_list_kept_exact() {
+    assert_eq!(interpret("Ramp[{Pi, -Pi, 1/2}]").unwrap(), "{Pi, 0, 1/2}");
+  }
 }
 
 mod kronecker_delta {

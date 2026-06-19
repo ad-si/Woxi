@@ -3127,10 +3127,17 @@ pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         items.iter().map(|x| ramp_ast(&[x.clone()])).collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Ramp".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // Exact rationals and real-valued symbolic numerics (Pi, Sqrt[2], E - 3,
+    // …): Ramp[x] = x for x >= 0, else 0. The exact input is preserved; a
+    // negative value yields the integer 0 (the Real case is handled above).
+    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+      Some(v) if v >= 0.0 => Ok(other.clone()),
+      Some(_) => Ok(Expr::Integer(0)),
+      None => Ok(Expr::FunctionCall {
+        name: "Ramp".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
   }
 }
 
