@@ -1048,6 +1048,51 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
+  // Machine-precision Real argument. Wolfram returns only the terms justified
+  // by the number's precision, which equal Drop[ContinuedFraction[Rationalize[x]], -1]
+  // (e.g. ContinuedFraction[2.5] = {2}, ContinuedFraction[3.245] = {3, 4, 12}).
+  // A whole-number Real (Rationalize gives an integer) is left unevaluated, as
+  // is a non-positive/non-integer second argument.
+  if matches!(&args[0], Expr::Real(_)) {
+    let unevaluated = || {
+      Ok(Expr::FunctionCall {
+        name: "ContinuedFraction".to_string(),
+        args: args.to_vec().into(),
+      })
+    };
+    let n_cap: Option<usize> = if args.len() == 2 {
+      match &args[1] {
+        Expr::Integer(n) if *n > 0 => Some(*n as usize),
+        _ => return unevaluated(),
+      }
+    } else {
+      None
+    };
+    let rat = crate::evaluator::evaluate_function_call_ast(
+      "Rationalize",
+      std::slice::from_ref(&args[0]),
+    )?;
+    if matches!(rat, Expr::Integer(_)) {
+      return unevaluated();
+    }
+    let full = continued_fraction_ast(&[rat])?;
+    if let Expr::List(items) = &full {
+      let mut terms: Vec<Expr> = items.iter().cloned().collect();
+      // Drop the last (precision-unjustified) term.
+      terms.pop();
+      if terms.is_empty() {
+        return unevaluated();
+      }
+      if let Some(n) = n_cap
+        && terms.len() > n
+      {
+        terms.truncate(n);
+      }
+      return Ok(Expr::List(terms.into()));
+    }
+    return unevaluated();
+  }
+
   // ContinuedFraction[Sqrt[D]] — periodic CF for non-square positive integers.
   // Note: Sqrt[n] is canonicalized internally to Power[n, Rational[1, 2]], so
   // this matcher reaches for the Power shape.

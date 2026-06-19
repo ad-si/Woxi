@@ -3085,6 +3085,38 @@ mod cases {
     );
   }
   #[test]
+  fn continued_fraction_real_1() {
+    // Machine reals return only precision-justified terms.
+    assert_case(r#"ContinuedFraction[3.245]"#, r#"{3, 4, 12}"#);
+  }
+  #[test]
+  fn continued_fraction_real_2() {
+    assert_case(r#"ContinuedFraction[2.5]"#, r#"{2}"#);
+  }
+  #[test]
+  fn continued_fraction_real_3() {
+    assert_case(r#"ContinuedFraction[0.1]; ContinuedFraction[-3.245]"#, r#"{-3, -4, -12}"#);
+  }
+  #[test]
+  fn continued_fraction_real_4() {
+    assert_case(
+      r#"ContinuedFraction[3.14159]"#,
+      r#"{3, 7, 15, 1, 25, 1, 7}"#,
+    );
+  }
+  #[test]
+  fn continued_fraction_real_with_count() {
+    // The count caps the precision-justified terms (3.245 has only 3).
+    assert_case(r#"ContinuedFraction[3.245, 2]"#, r#"{3, 4}"#);
+    assert_case(r#"ContinuedFraction[3.245, 4]"#, r#"{3, 4, 12}"#);
+    assert_case(r#"ContinuedFraction[2.5, 3]"#, r#"{2}"#);
+  }
+  #[test]
+  fn continued_fraction_whole_real_unevaluated() {
+    // A whole-number Real has no fractional CF terms; Wolfram leaves it as is.
+    assert_case(r#"ContinuedFraction[3.]"#, r#"ContinuedFraction[3.]"#);
+  }
+  #[test]
   fn divisors_1() {
     assert_case(r#"Divisors[20]"#, r#"{1, 2, 4, 5, 10, 20}"#);
   }
