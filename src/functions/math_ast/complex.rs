@@ -947,6 +947,61 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return arg_ast(&[inner[0].clone()]);
   }
 
+  // Arg[E^z] = Im[z] reduced into (-Pi, Pi], when Re[z] and Im[z] are concrete
+  // reals (then E^z = E^Re[z] · E^(I·Im[z]) has positive real modulus, so the
+  // argument is just the imaginary part of the exponent). Mirrors the
+  // principal-branch reduction Log[E^z] uses.
+  {
+    let e_exp: Option<&Expr> = match &args[0] {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E") => {
+        Some(right.as_ref())
+      }
+      Expr::FunctionCall { name, args: pa }
+        if name == "Power"
+          && pa.len() == 2
+          && matches!(&pa[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E") =>
+      {
+        Some(&pa[1])
+      }
+      _ => None,
+    };
+    if let Some(z) = e_exp {
+      let imz =
+        crate::evaluator::evaluate_function_call_ast("Im", &[z.clone()])?;
+      let rez =
+        crate::evaluator::evaluate_function_call_ast("Re", &[z.clone()])?;
+      if let (Some(im_f), Some(_re_f)) = (
+        crate::functions::math_ast::try_eval_to_f64(&imz),
+        crate::functions::math_ast::try_eval_to_f64(&rez),
+      ) {
+        use std::f64::consts::PI;
+        let two_pi = 2.0 * PI;
+        // k brings im into (-Pi, Pi]: im - 2*k*Pi ∈ (-Pi, Pi].
+        let k = ((im_f - PI) / two_pi - 1e-9).ceil() as i128;
+        if k == 0 {
+          return Ok(imz);
+        }
+        let result = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            imz,
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-2 * k), Expr::Constant("Pi".to_string())]
+                .into(),
+            },
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
+    }
+  }
+
   // Arg[Re[v] + I*Im[v]] = Arg[v] — collapse the canonical complex split
   // (used by ComplexExpand) back to Arg[v] when both pieces refer to the
   // same symbol.

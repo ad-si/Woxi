@@ -664,6 +664,33 @@ mod im_tests {
   }
 
   #[test]
+  fn arg_of_exponential() {
+    // Arg[E^z] is Im[z] reduced into (-Pi, Pi].
+    assert_eq!(interpret("Arg[Exp[I]]").unwrap(), "1");
+    assert_eq!(interpret("Arg[Exp[3 I]]").unwrap(), "3");
+    assert_eq!(interpret("Arg[Exp[-I]]").unwrap(), "-1");
+    assert_eq!(interpret("Arg[E^(I Pi/3)]").unwrap(), "Pi/3");
+    // Real part of the exponent (the modulus E^Re) doesn't affect Arg.
+    assert_eq!(interpret("Arg[E^(2 + 3 I)]").unwrap(), "3");
+    assert_eq!(interpret("Arg[E^(1/2 I)]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn arg_of_exponential_range_reduction() {
+    // Imaginary parts outside (-Pi, Pi] are reduced by multiples of 2 Pi.
+    assert_eq!(interpret("Arg[Exp[4 I]]").unwrap(), "4 - 2*Pi");
+    assert_eq!(interpret("Arg[E^(5 I)]").unwrap(), "5 - 2*Pi");
+    assert_eq!(interpret("Arg[Exp[10 I]]").unwrap(), "10 - 4*Pi");
+  }
+
+  #[test]
+  fn arg_of_exponential_symbolic_unevaluated() {
+    // A symbolic exponent stays unevaluated (the modulus need not be real).
+    assert_eq!(interpret("Arg[E^(I x)]").unwrap(), "Arg[E^(I*x)]");
+    assert_eq!(interpret("Arg[E^(a + I)]").unwrap(), "Arg[E^(I + a)]");
+  }
+
+  #[test]
   fn arg_scaled_complex() {
     assert_eq!(interpret("Arg[2+2I]").unwrap(), "Pi/4");
   }
