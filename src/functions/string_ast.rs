@@ -1493,10 +1493,18 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
-  let chars: Vec<Expr> =
-    s.chars().map(|c| Expr::String(c.to_string())).collect();
-  Ok(Expr::List(chars.into()))
+  // Only a string yields a character list. Any other expression (number,
+  // symbol, compound expression) stays unevaluated — wolframscript accepts
+  // only a string or a list of strings and emits no message otherwise.
+  if let Expr::String(s) = &args[0] {
+    let chars: Vec<Expr> =
+      s.chars().map(|c| Expr::String(c.to_string())).collect();
+    return Ok(Expr::List(chars.into()));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Characters".to_string(),
+    args: args.to_vec().into(),
+  })
 }
 
 /// StringRiffle[list] or StringRiffle[list, sep] or StringRiffle[list, {left, sep, right}]

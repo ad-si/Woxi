@@ -450,6 +450,25 @@ mod string_split_single_arg {
     assert_eq!(interpret(r#"Characters[""]"#).unwrap(), "{}");
   }
 
+  // Only a string (or list of strings) yields characters; any other
+  // expression stays unevaluated, matching wolframscript.
+  #[test]
+  fn characters_nonstring_stays_unevaluated() {
+    assert_eq!(interpret("Characters[123]").unwrap(), "Characters[123]");
+    assert_eq!(interpret("Characters[1.5]").unwrap(), "Characters[1.5]");
+    assert_eq!(interpret("Characters[a]").unwrap(), "Characters[a]");
+    assert_eq!(interpret("Characters[x + y]").unwrap(), "Characters[x + y]");
+  }
+
+  // List threading leaves non-string elements as unevaluated Characters[...].
+  #[test]
+  fn characters_threads_with_nonstring_element() {
+    assert_eq!(
+      interpret(r#"Characters[{"ab", 5}]"#).unwrap(),
+      "{{a, b}, Characters[5]}"
+    );
+  }
+
   #[test]
   fn to_upper_case_single_string() {
     assert_eq!(interpret(r#"ToUpperCase["abc"]"#).unwrap(), "ABC");
