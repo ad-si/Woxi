@@ -2492,6 +2492,73 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
         }
       }
+      // Log[c*I] for an exact (integer/rational) real coefficient c:
+      //   = Log[Abs[c]] + Sign[c]*I*Pi/2.
+      // Real coefficients (e.g. 2.5 I) are handled by the numeric complex
+      // path below; symbolic-real ones (Pi I, Sqrt[2] I) stay unevaluated,
+      // matching wolframscript.
+      if let Some(coeff) =
+        crate::functions::math_ast::complex::extract_i_times_real(&args[0])
+      {
+        let is_exact_real = matches!(&coeff, Expr::Integer(_))
+          || matches!(&coeff, Expr::FunctionCall { name, .. } if name == "Rational");
+        if is_exact_real {
+          // Log[Abs[c]] + Sign[c]*I*Pi/2, evaluated as a whole so Abs/Sign/Log
+          // and the product all reduce (e.g. Log[1/2] → -Log[2], 1*… → …).
+          let result = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Abs".to_string(),
+                  args: vec![coeff.clone()].into(),
+                }]
+                .into(),
+              },
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Sign".to_string(),
+                    args: vec![coeff.clone()].into(),
+                  },
+                  crate::functions::math_ast::make_rational_pub(1, 2),
+                  Expr::Identifier("I".to_string()),
+                  Expr::Constant("Pi".to_string()),
+                ]
+                .into(),
+              },
+            ]
+            .into(),
+          };
+          return crate::evaluator::evaluate_expr_to_expr(&result);
+        }
+      }
+      // Log[-r] for a negative rational r: = I*Pi + Log[-r].
+      if let Expr::FunctionCall { name, args: ra } = &args[0]
+        && name == "Rational"
+        && ra.len() == 2
+        && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
+        && (*p < 0) ^ (*q < 0)
+      {
+        let result = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::Identifier("I".to_string())),
+              right: Box::new(Expr::Constant("Pi".to_string())),
+            },
+            Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![make_rational(p.abs(), q.abs())].into(),
+            },
+          ]
+          .into(),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
       // Log[-n] for negative integers: Log[-1] = I*Pi, Log[-n] = I*Pi + Log[n]
       if let Expr::Integer(n) = &args[0]
         && *n < 0

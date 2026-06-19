@@ -371,7 +371,7 @@ fn product_of(mut factors: Vec<Expr>) -> Expr {
 /// Extract the real factor from an expression of the form `I * real_expr`.
 /// Returns Some(real_expr) if the expression is I times a NumericQ real expression,
 /// or None otherwise.
-fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
+pub fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
   let (i_count, other_factors) = split_i_factors(expr)?;
   // Exactly one I, and all other factors are real-valued
   if i_count == 1
@@ -765,9 +765,7 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       left,
       right,
     } => Some((left.as_ref(), right.as_ref())),
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       Some((&args[0], &args[1]))
     }
     _ => None,

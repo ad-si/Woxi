@@ -3052,6 +3052,31 @@ mod expand_threading {
   }
 
   #[test]
+  fn log_negative_rational() {
+    assert_eq!(interpret("Log[-5/2]").unwrap(), "I*Pi + Log[5/2]");
+    assert_eq!(interpret("Log[-1/3]").unwrap(), "I*Pi - Log[3]");
+  }
+
+  #[test]
+  fn log_pure_imaginary() {
+    // Log[c I] = Log[Abs[c]] + Sign[c]*I*Pi/2 for exact rational c.
+    assert_eq!(interpret("Log[2 I]").unwrap(), "I/2*Pi + Log[2]");
+    assert_eq!(interpret("Log[3 I]").unwrap(), "I/2*Pi + Log[3]");
+    assert_eq!(interpret("Log[-2 I]").unwrap(), "(-1/2*I)*Pi + Log[2]");
+    assert_eq!(interpret("Log[I/2]").unwrap(), "I/2*Pi - Log[2]");
+    assert_eq!(interpret("Log[-I/3]").unwrap(), "(-1/2*I)*Pi - Log[3]");
+  }
+
+  #[test]
+  fn log_imaginary_symbolic_coefficient_unevaluated() {
+    // A symbolic-real coefficient (Pi, Sqrt[2], a) stays unevaluated, as in
+    // Wolfram, since Sign/Abs of it can't be determined here.
+    assert_eq!(interpret("Log[Pi I]").unwrap(), "Log[I*Pi]");
+    assert_eq!(interpret("Log[Sqrt[2] I]").unwrap(), "Log[I*Sqrt[2]]");
+    assert_eq!(interpret("Log[a I]").unwrap(), "Log[I*a]");
+  }
+
+  #[test]
   fn sin_complex_float() {
     assert_eq!(
       interpret("Sin[1.0 + I]").unwrap(),
