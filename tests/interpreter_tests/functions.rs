@@ -4102,6 +4102,64 @@ mod string_extract {
   }
 
   #[test]
+  fn span_of_blocks() {
+    // A span `i ;; j` selects a contiguous range of blocks (a list).
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc aa d", 2 ;; 4]"#).unwrap(),
+      "{bbb, cccc, aa}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc aa d", 2 ;; -1]"#).unwrap(),
+      "{bbb, cccc, aa, d}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", -2 ;; -1]"#).unwrap(),
+      "{bbb, cccc}"
+    );
+  }
+
+  #[test]
+  fn span_endpoints_clamp() {
+    // Both endpoints clamp into [1, len]; a reversed range yields {}.
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", 2 ;; 5]"#).unwrap(),
+      "{bbb, cccc}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", 5 ;; 7]"#).unwrap(),
+      "{cccc}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", 0 ;; 2]"#).unwrap(),
+      "{a, bbb}"
+    );
+    assert_eq!(interpret(r#"StringExtract["a bbb cccc", 3 ;; 2]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn open_spans() {
+    // `;; j` is `1 ;; j`; `i ;;` runs to the last block.
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", ;; 2]"#).unwrap(),
+      "{a, bbb}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", 2 ;;]"#).unwrap(),
+      "{bbb, cccc}"
+    );
+  }
+
+  #[test]
+  fn stepped_span_rejected() {
+    // A three-part (stepped) span is not a valid extraction spec; it stays
+    // unevaluated and emits ::patt, matching Wolfram.
+    assert_eq!(
+      interpret(r#"StringExtract["a bbb cccc", 1 ;; 3 ;; 2]"#).unwrap(),
+      "StringExtract[a bbb cccc, Span[1, 3, 2]]"
+    );
+  }
+
+  #[test]
   fn list_of_strings_maps() {
     assert_eq!(
       interpret(r#"StringExtract[{"a b", "c d"}, 2]"#).unwrap(),

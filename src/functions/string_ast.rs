@@ -9617,6 +9617,8 @@ fn padded_form_to_string(value: &Expr, spec: &Expr) -> Option<String> {
 enum Pos {
   One(i64),
   Many(Vec<i64>),
+  /// A span `i ;; j` of block positions (end `None` means `All`/open).
+  Range(i64, Option<i64>),
 }
 
 pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -9663,6 +9665,24 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Some(Pos::Many(v))
+      }
+      // A span `i ;; j` selects a contiguous range of blocks. Only the
+      // two-argument form is supported; a stepped span `i ;; j ;; k` is
+      // rejected (matching Wolfram's ::patt behaviour).
+      Expr::FunctionCall { name, args }
+        if name == "Span" && args.len() == 2 =>
+      {
+        let start = match &args[0] {
+          Expr::Integer(n) => *n as i64,
+          Expr::Identifier(a) if a == "All" => 1,
+          _ => return None,
+        };
+        let end = match &args[1] {
+          Expr::Integer(n) => Some(*n as i64),
+          Expr::Identifier(a) if a == "All" => None,
+          _ => return None,
+        };
+        Some(Pos::Range(start, end))
       }
       _ => None,
     }
@@ -9766,6 +9786,33 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Pos::One(n) => one(*n),
           Pos::Many(ns) => {
             Expr::List(ns.iter().map(|&n| one(n)).collect::<Vec<_>>().into())
+          }
+          Pos::Range(start, end) => {
+            // Resolve each endpoint (negatives count from the end) and
+            // clamp both into [1, len]; an empty/reversed range yields {}.
+            let len = fields.len() as i64;
+            let resolve = |n: i64| -> i64 {
+              let r = if n > 0 {
+                n
+              } else if n < 0 {
+                len + n + 1
+              } else {
+                0
+              };
+              r.max(1).min(len)
+            };
+            let lo = resolve(*start);
+            let hi = match end {
+              Some(e) => resolve(*e),
+              None => len,
+            };
+            let mut out = Vec::new();
+            if len > 0 && lo <= hi {
+              for idx in lo..=hi {
+                out.push(one(idx));
+              }
+            }
+            Expr::List(out.into())
           }
         }
       }
