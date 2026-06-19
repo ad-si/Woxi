@@ -2159,13 +2159,16 @@ pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
     name: "Catenate".to_string(),
     args: vec![list_of_lists.clone()].into(),
   };
-  let outer = match list_of_lists {
-    Expr::List(items) => items,
-    // A non-list argument stays unevaluated (no message), matching WL.
+  // The outer container is iterated by its elements (a list) or by its values
+  // (an association). `Catenate[<|a -> {1}, b -> {2, 3}|>]` -> `{1, 2, 3}`.
+  let outer: Vec<Expr> = match list_of_lists {
+    Expr::List(items) => items.iter().cloned().collect(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+    // A non-list, non-association argument stays unevaluated, matching WL.
     _ => return Ok(unevaluated()),
   };
   let mut result = Vec::new();
-  for item in outer {
+  for item in &outer {
     match item {
       Expr::List(inner) => result.extend(inner.clone()),
       Expr::Association(pairs) => {

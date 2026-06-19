@@ -8290,7 +8290,7 @@ fn md2(data: &[u8]) -> [u8; 16] {
   // Pad so the length is a multiple of 16; the pad byte equals the pad length.
   let mut msg = data.to_vec();
   let pad = 16 - (msg.len() % 16);
-  msg.extend(std::iter::repeat(pad as u8).take(pad));
+  msg.extend(std::iter::repeat_n(pad as u8, pad));
 
   // Append the 16-byte checksum.
   let mut checksum = [0u8; 16];

@@ -190,6 +190,24 @@ mod list_tests {
   }
 
   #[test]
+  fn catenate_association_of_lists() {
+    // An association argument is catenated over its values.
+    assert_eq!(
+      interpret("Catenate[<|a -> {1}, b -> {2, 3}|>]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Catenate[<|a -> {1, 2}, b -> {3}, c -> {4, 5}|>]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn catenate_empty_association() {
+    assert_eq!(interpret("Catenate[<||>]").unwrap(), "{}");
+  }
+
+  #[test]
   fn apply() {
     assert_eq!(interpret("Apply[Plus, {1, 2, 3}]").unwrap(), "6");
     assert_eq!(interpret("Apply[Times, {2, 3, 4}]").unwrap(), "24");
