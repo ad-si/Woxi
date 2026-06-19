@@ -3889,6 +3889,42 @@ mod named_logical_operators {
   }
 }
 
+mod implies_simplification {
+  use super::*;
+
+  #[test]
+  fn symbolic_antecedent_true_consequent() {
+    // Implies[a, True] -> True (anything implies a truth).
+    assert_eq!(interpret("Implies[a, True]").unwrap(), "True");
+    assert_eq!(interpret("Implies[x > 0, True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_antecedent_false_consequent() {
+    // Implies[a, False] -> Not[a].
+    assert_eq!(interpret("Implies[a, False]").unwrap(), " !a");
+  }
+
+  #[test]
+  fn identical_antecedent_and_consequent() {
+    // Implies[a, a] -> True (p -> p is a tautology).
+    assert_eq!(interpret("Implies[a, a]").unwrap(), "True");
+    assert_eq!(interpret("Implies[a && b, a && b]").unwrap(), "True");
+  }
+
+  #[test]
+  fn distinct_symbolic_stays_unevaluated() {
+    assert_eq!(interpret("Implies[a, b]").unwrap(), "Implies[a, b]");
+  }
+
+  #[test]
+  fn literal_antecedent_rules_unchanged() {
+    assert_eq!(interpret("Implies[True, b]").unwrap(), "b");
+    assert_eq!(interpret("Implies[False, b]").unwrap(), "True");
+    assert_eq!(interpret("Implies[True, False]").unwrap(), "False");
+  }
+}
+
 mod rule_chains {
   use super::*;
 

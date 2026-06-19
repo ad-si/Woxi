@@ -1728,7 +1728,7 @@ pub fn evaluate_expr_to_expr_inner(
                 } else {
                   Expr::CurriedCall {
                     func: Box::new(f),
-                    args: vec![*val, tag_expr].into(),
+                    args: vec![*val, tag_expr],
                   }
                 };
                 return evaluate_expr_to_expr(&application);

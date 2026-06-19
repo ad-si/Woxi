@@ -940,10 +940,29 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => Ok(b), // True implies symbolic expr → return the expr
       }
     }
-    None => Ok(Expr::FunctionCall {
-      name: "Implies".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // Symbolic antecedent: simplify based on the consequent.
+    None => {
+      let b = evaluate_expr_to_expr(&args[1])?;
+      match as_bool(&b) {
+        // Implies[a, True] → True (anything implies a truth).
+        Some(true) => Ok(Expr::Identifier("True".to_string())),
+        // Implies[a, False] → Not[a].
+        Some(false) => not_ast(&[a]),
+        None => {
+          // Implies[a, a] → True.
+          if crate::syntax::expr_to_string(&a)
+            == crate::syntax::expr_to_string(&b)
+          {
+            Ok(Expr::Identifier("True".to_string()))
+          } else {
+            Ok(Expr::FunctionCall {
+              name: "Implies".to_string(),
+              args: vec![a, b].into(),
+            })
+          }
+        }
+      }
+    }
   }
 }
 
