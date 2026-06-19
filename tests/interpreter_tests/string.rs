@@ -2613,6 +2613,43 @@ mod hash {
   }
 
   #[test]
+  fn md2_hex_string() {
+    // RFC 1319 test vector for "abc".
+    assert_eq!(
+      interpret(r#"Hash["abc", "MD2", "HexString"]"#).unwrap(),
+      "da853b0d3f88d99b30283a69e6ded6bb"
+    );
+  }
+
+  #[test]
+  fn md2_empty_hex_string() {
+    // RFC 1319 test vector for the empty string.
+    assert_eq!(
+      interpret(r#"Hash["", "MD2", "HexString"]"#).unwrap(),
+      "8350e5a3e24c153df2275c9f80692773"
+    );
+  }
+
+  #[test]
+  fn md2_integer() {
+    assert_eq!(
+      interpret(r#"Hash["abc", "MD2"]"#).unwrap(),
+      "290463476275092517648070427531620046523"
+    );
+  }
+
+  #[test]
+  fn md2_quick_brown_fox() {
+    assert_eq!(
+      interpret(
+        r#"Hash["The quick brown fox jumps over the lazy dog", "MD2", "HexString"]"#
+      )
+      .unwrap(),
+      "03d85a0d629d2c442e987525319fc471"
+    );
+  }
+
+  #[test]
   fn default_returns_integer() {
     // Default Hash uses Expression type (SipHash on InputForm)
     let result = interpret(r#"Hash["hello"]"#).unwrap();
