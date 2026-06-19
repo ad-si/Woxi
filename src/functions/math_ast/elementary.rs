@@ -3239,33 +3239,36 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Multi-arg: UnitStep[x1, x2, ...] = product of UnitStep[xi]
+  // Multi-arg: UnitStep[x1, x2, ...] = product of UnitStep[xi]; it is 0 if any
+  // xi < 0 and 1 if all are >= 0. Arguments known to be >= 0 are dropped, and
+  // the remaining symbolic arguments are deduplicated and sorted, matching
+  // wolframscript (UnitStep[1/2, x] -> UnitStep[x], UnitStep[b, a] ->
+  // UnitStep[a, b]).
   if args.len() > 1 {
-    let mut has_symbolic = false;
+    let mut remaining: Vec<Expr> = Vec::new();
     for arg in args {
-      match arg {
-        Expr::Integer(n) => {
-          if *n < 0 {
-            return Ok(Expr::Integer(0));
+      match crate::functions::math_ast::try_eval_to_f64(arg) {
+        Some(v) if v < 0.0 => return Ok(Expr::Integer(0)),
+        Some(_) => {} // >= 0: contributes 1, drop it
+        None => {
+          let s = crate::syntax::expr_to_string(arg);
+          if !remaining
+            .iter()
+            .any(|e| crate::syntax::expr_to_string(e) == s)
+          {
+            remaining.push(arg.clone());
           }
-        }
-        Expr::Real(f) => {
-          if *f < 0.0 {
-            return Ok(Expr::Integer(0));
-          }
-        }
-        _ => {
-          has_symbolic = true;
         }
       }
     }
-    if has_symbolic {
-      return Ok(Expr::FunctionCall {
-        name: "UnitStep".to_string(),
-        args: args.to_vec().into(),
-      });
+    if remaining.is_empty() {
+      return Ok(Expr::Integer(1));
     }
-    return Ok(Expr::Integer(1));
+    remaining.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
+    return Ok(Expr::FunctionCall {
+      name: "UnitStep".to_string(),
+      args: remaining.into(),
+    });
   }
 
   // Single arg
@@ -3329,10 +3332,16 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         items.iter().map(|x| unit_step_ast(&[x.clone()])).collect();
       Ok(Expr::List(results?.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "UnitStep".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // Exact rationals and real-valued symbolic numerics (Sqrt[2] - 2, …):
+    // UnitStep[x] = 1 for x >= 0, else 0.
+    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+      Some(v) if v >= 0.0 => Ok(Expr::Integer(1)),
+      Some(_) => Ok(Expr::Integer(0)),
+      None => Ok(Expr::FunctionCall {
+        name: "UnitStep".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
   }
 }
 
@@ -3429,10 +3438,16 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }),
     },
     Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
-    _ => Ok(Expr::FunctionCall {
-      name: "HeavisideTheta".to_string(),
-      args: args.to_vec().into(),
-    }),
+    // Exact rationals and real-valued symbolic numerics (Sqrt[2] - 2, …):
+    // HeavisideTheta[x] = 1 for x > 0, 0 for x < 0, and stays unevaluated at 0.
+    other => match crate::functions::math_ast::try_eval_to_f64(other) {
+      Some(v) if v > 0.0 => Ok(Expr::Integer(1)),
+      Some(v) if v < 0.0 => Ok(Expr::Integer(0)),
+      _ => Ok(Expr::FunctionCall {
+        name: "HeavisideTheta".to_string(),
+        args: args.to_vec().into(),
+      }),
+    },
   }
 }
 

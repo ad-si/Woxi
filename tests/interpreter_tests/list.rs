@@ -3554,6 +3554,24 @@ mod unit_step {
     assert_eq!(interpret("UnitStep[-E]").unwrap(), "0");
     assert_eq!(interpret("UnitStep[-Infinity]").unwrap(), "0");
   }
+
+  #[test]
+  fn rational_and_symbolic_expr() {
+    // Rationals and real-valued symbolic expressions classify by sign.
+    assert_eq!(interpret("UnitStep[1/2]").unwrap(), "1");
+    assert_eq!(interpret("UnitStep[-1/2]").unwrap(), "0");
+    assert_eq!(interpret("UnitStep[Sqrt[2] - 2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn multi_arg_drops_nonnegative_and_sorts() {
+    // Arguments known to be >= 0 are dropped; symbolic ones are deduped/sorted.
+    assert_eq!(interpret("UnitStep[1/2, x]").unwrap(), "UnitStep[x]");
+    assert_eq!(interpret("UnitStep[b, a]").unwrap(), "UnitStep[a, b]");
+    assert_eq!(interpret("UnitStep[x, y, 3]").unwrap(), "UnitStep[x, y]");
+    assert_eq!(interpret("UnitStep[x, x]").unwrap(), "UnitStep[x]");
+    assert_eq!(interpret("UnitStep[1/2, -1/2]").unwrap(), "0");
+  }
 }
 
 mod heaviside_theta {
@@ -3602,6 +3620,16 @@ mod heaviside_theta {
   #[test]
   fn constant_positive() {
     assert_eq!(interpret("HeavisideTheta[Pi]").unwrap(), "1");
+  }
+
+  #[test]
+  fn rational_and_symbolic_expr() {
+    // Rationals: 1 for > 0, 0 for < 0.
+    assert_eq!(interpret("HeavisideTheta[1/2]").unwrap(), "1");
+    assert_eq!(interpret("HeavisideTheta[-1/2]").unwrap(), "0");
+    // Real-valued symbolic expressions classify by sign.
+    assert_eq!(interpret("HeavisideTheta[Sqrt[2] - 2]").unwrap(), "0");
+    assert_eq!(interpret("HeavisideTheta[E - 3]").unwrap(), "0");
   }
 }
 
