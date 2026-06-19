@@ -428,6 +428,20 @@ mod simplify {
   }
 
   #[test]
+  fn simplify_combines_conjugate_partial_fractions() {
+    // Sum of complex-conjugate partial fractions must combine and factor the
+    // resulting denominator: 1/2*(1/(1-I x)+1/(1+I x)) -> 1/(1+x^2).
+    assert_eq!(
+      interpret("Simplify[1/2 * (1/(1 - I x) + 1/(1 + I x))]").unwrap(),
+      "(1 + x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(1 - I x) + 1/(1 + I x)]").unwrap(),
+      "2/(1 + x^2)"
+    );
+  }
+
+  #[test]
   fn pythagorean_identity() {
     assert_eq!(interpret("Simplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
   }

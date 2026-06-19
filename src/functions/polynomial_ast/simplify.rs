@@ -3819,8 +3819,10 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   }
 
   // Candidate 3: Expand — wolframscript prefers `-1 + x^2` over
-  // `(x-1)*(x+1)` because the expanded form has fewer leaves.
-  if let Ok(expanded) = super::expand::expand_ast(&[simplified.clone()]) {
+  // `(x-1)*(x+1)` because the expanded form has fewer leaves. Apply to the
+  // current `best` so an Expand also runs on the combined-fraction form the
+  // Together candidate may have produced.
+  if let Ok(expanded) = super::expand::expand_ast(&[best.clone()]) {
     let ec = leaf_count(&expanded);
     if ec < best_c {
       best = expanded;
@@ -3831,8 +3833,10 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // Candidate 4: Factor — wolframscript prefers `(1+a)^3` over the expanded
   // `1 + 3a + 3a^2 + a^3` and also picks `3*(1+a)` over `3 + 3a` on a tie,
   // so accept the factored form on `<=`. Skip when Factor returns a larger
-  // form (e.g. it would unexpand `-1 + x^2` to `(-1+x)*(1+x)`).
-  if let Ok(factored) = super::factor::factor_ast(&[simplified.clone()]) {
+  // form (e.g. it would unexpand `-1 + x^2` to `(-1+x)*(1+x)`). Factoring the
+  // current `best` lets a Together-combined fraction like
+  // `2/(2*((1-I*x)*(1+I*x)))` collapse to `(1+x^2)^(-1)`.
+  if let Ok(factored) = super::factor::factor_ast(&[best.clone()]) {
     let fc = leaf_count(&factored);
     if fc <= best_c && !exprs_equal(&factored, &best) {
       best = factored;
