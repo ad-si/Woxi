@@ -3583,6 +3583,18 @@ mod nest_while_list {
     );
   }
 
+  // A symbolic, never-satisfied test (UnsameQ) with an explicit iteration cap
+  // builds a deeply nested history. Regression: comparing the steps used to
+  // crash the process with a stack overflow (and was pathologically slow from
+  // re-evaluating already-evaluated deep arguments inside UnsameQ).
+  #[test]
+  fn symbolic_capped_deep_history() {
+    assert_eq!(
+      interpret("Length[NestWhileList[f, x, UnsameQ, 2, 300]]").unwrap(),
+      "301"
+    );
+  }
+
   #[test]
   fn collatz_sequence() {
     assert_eq!(

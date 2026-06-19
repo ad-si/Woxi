@@ -208,13 +208,16 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("True".to_string()));
   }
 
-  let first = evaluate_expr_to_expr(&args[0])?;
-  let first_str = crate::syntax::expr_to_string(&first);
+  // SameQ is not HoldAll, so its arguments are already evaluated by the time
+  // this runs — re-evaluating them is redundant and, for deeply nested
+  // arguments (e.g. comparing the steps of NestWhileList[f, x, UnsameQ, 2]),
+  // turns each comparison into a costly re-traversal.
+  let first = &args[0];
+  let first_str = crate::syntax::expr_to_string(first);
 
   for arg in args.iter().skip(1) {
-    let val = evaluate_expr_to_expr(arg)?;
-    let val_str = crate::syntax::expr_to_string(&val);
-    if val_str != first_str && !same_q_real_bigfloat(&first, &val) {
+    let val_str = crate::syntax::expr_to_string(arg);
+    if val_str != first_str && !same_q_real_bigfloat(first, arg) {
       return Ok(Expr::Identifier("False".to_string()));
     }
   }
@@ -289,12 +292,10 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("True".to_string()));
   }
 
-  // Evaluate all arguments and get string representations
-  let mut strs = Vec::with_capacity(args.len());
-  for arg in args {
-    let val = evaluate_expr_to_expr(arg)?;
-    strs.push(crate::syntax::expr_to_string(&val));
-  }
+  // UnsameQ is not HoldAll: arguments arrive already evaluated, so just take
+  // their string forms (re-evaluating deep arguments is needlessly expensive).
+  let strs: Vec<String> =
+    args.iter().map(crate::syntax::expr_to_string).collect();
 
   // UnsameQ is True only if ALL pairs are different
   for i in 0..strs.len() {

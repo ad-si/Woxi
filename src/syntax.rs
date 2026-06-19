@@ -6619,6 +6619,16 @@ fn format_percent_form(expr: &Expr, form: ExprForm) -> String {
 }
 
 pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
+  // Grow the stack when running low so formatting a deeply nested expression
+  // (e.g. SameQ/UnsameQ on Nest[f, x, 5000], which compares via expr_to_string)
+  // doesn't overflow. Mirrors the guard on evaluate_expr_to_expr; the recursion
+  // re-enters through this public entry, so every level is checked.
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    format_expr_impl(expr, form)
+  })
+}
+
+fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
   let fmt_fn: fn(&Expr) -> String = match form {
     ExprForm::Input => expr_to_string,

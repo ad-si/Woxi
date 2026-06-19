@@ -1829,6 +1829,23 @@ mod symbolic_equal {
     assert_eq!(interpret("x =!= x").unwrap(), "False");
     assert_eq!(interpret("x =!= y").unwrap(), "True");
   }
+
+  // SameQ/UnsameQ compare deeply nested expressions without overflowing the
+  // stack. Regression: comparing Nest[f, x, 5000] used to crash with a
+  // stack overflow because the formatter (expr_to_string) was not stack-safe.
+  #[test]
+  fn same_q_deeply_nested_no_overflow() {
+    // Depth 600 is comfortably past the old ~500-deep stack-overflow point
+    // while staying cheap enough to run under the parallel test harness.
+    assert_eq!(
+      interpret("UnsameQ[Nest[f, x, 600], Nest[f, x, 601]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SameQ[Nest[f, x, 600], Nest[f, x, 600]]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod solve {
