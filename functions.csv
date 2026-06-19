@@ -1195,7 +1195,7 @@ Evaluator,,🚫,,3.0,1206
 DateDifference,Difference between two dates,✅,pure,6.0,1208
 FresnelC,Returns the Fresnel cosine integral,✅,pure,3.0,1208
 PathGraph,Creates a path graph from a list of vertices,✅,1,8.0,1209
-DateRange,,🚫,,9.0,1210
+DateRange,Generate the list of dates between two dates with a given increment,✅,pure,9.0,1210
 ToRadicals,Attempts to express in terms of radicals,✅,pure,3.0,1211
 LowerTriangularize,Zero out elements above a diagonal,✅,pure,7.0,1212
 BitAnd,Returns the bitwise AND of integers,✅,pure,4.0,1213

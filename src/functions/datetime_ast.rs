@@ -2066,6 +2066,196 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// DateRange[start, end] / DateRange[start, end, increment]
+///
+/// Returns the list of dates from `start` to `end` (inclusive), each rendered
+/// as a six-element date list `{y, m, d, h, min, sec.}` (the seconds field is
+/// always a Real, matching wolframscript). The default increment is one day.
+///
+/// The increment may be a bare integer (interpreted as days), a `Quantity[n,
+/// unit]` (units "Seconds", "Minutes", "Hours", "Days", "Weeks", "Months",
+/// "Years"), or a string unit name (increment of one). "Months" and "Years"
+/// step by the calendar; the other units step by a fixed number of seconds.
+/// If `start` is after `end` the result is the empty list.
+pub fn date_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "DateRange".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  if args.len() != 2 && args.len() != 3 {
+    return unevaluated();
+  }
+
+  let start_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let end_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
+
+  // Pad a partial date spec to six components {y, m, d, h, min, sec}.
+  let pad_full = |c: Vec<f64>| -> Option<[f64; 6]> {
+    if c.is_empty() {
+      return None;
+    }
+    let mut out = [0.0_f64; 6];
+    out[1] = 1.0; // default month
+    out[2] = 1.0; // default day
+    for (i, v) in c.into_iter().take(6).enumerate() {
+      out[i] = v;
+    }
+    Some(out)
+  };
+
+  let start = match extract_date_components(&start_arg).and_then(pad_full) {
+    Some(c) => c,
+    None => return unevaluated(),
+  };
+  let end = match extract_date_components(&end_arg).and_then(pad_full) {
+    Some(c) => c,
+    None => return unevaluated(),
+  };
+
+  // Parse the optional increment into either a fixed number of seconds or a
+  // calendar step expressed as (months, years).
+  enum Step {
+    Seconds(f64),
+    Calendar { months: i64 },
+  }
+
+  let unit_to_step = |unit: &str, qty: f64| -> Option<Step> {
+    match unit {
+      "Second" | "Seconds" => Some(Step::Seconds(qty)),
+      "Minute" | "Minutes" => Some(Step::Seconds(qty * 60.0)),
+      "Hour" | "Hours" => Some(Step::Seconds(qty * 3600.0)),
+      "Day" | "Days" => Some(Step::Seconds(qty * 86400.0)),
+      "Week" | "Weeks" => Some(Step::Seconds(qty * 7.0 * 86400.0)),
+      "Month" | "Months" => Some(Step::Calendar { months: qty as i64 }),
+      "Year" | "Years" => Some(Step::Calendar {
+        months: qty as i64 * 12,
+      }),
+      _ => None,
+    }
+  };
+
+  let step = if args.len() == 3 {
+    let inc = crate::evaluator::evaluate_expr_to_expr(&args[2])?;
+    match &inc {
+      // Bare integer/real → number of days.
+      Expr::Integer(n) => Step::Seconds(*n as f64 * 86400.0),
+      Expr::Real(r) => Step::Seconds(*r * 86400.0),
+      // String unit name → step of one of that unit.
+      Expr::String(u) => match unit_to_step(u, 1.0) {
+        Some(s) => s,
+        None => return unevaluated(),
+      },
+      // Quantity[n, "Unit"]
+      Expr::FunctionCall { name, args: qargs }
+        if name == "Quantity" && qargs.len() == 2 =>
+      {
+        let qty = match &qargs[0] {
+          Expr::Integer(n) => *n as f64,
+          Expr::Real(r) => *r,
+          _ => return unevaluated(),
+        };
+        let unit = match &qargs[1] {
+          Expr::String(u) => u.clone(),
+          _ => return unevaluated(),
+        };
+        match unit_to_step(&unit, qty) {
+          Some(s) => s,
+          None => return unevaluated(),
+        }
+      }
+      _ => return unevaluated(),
+    }
+  } else {
+    Step::Seconds(86400.0)
+  };
+
+  let make_elem = |y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64| {
+    Expr::List(
+      vec![
+        Expr::Integer(y as i128),
+        Expr::Integer(m as i128),
+        Expr::Integer(d as i128),
+        Expr::Integer(h as i128),
+        Expr::Integer(min as i128),
+        Expr::Real(sec),
+      ]
+      .into(),
+    )
+  };
+
+  let start_secs = date_to_absolute_seconds(
+    start[0] as i64,
+    start[1] as i64,
+    start[2] as i64,
+    start[3] as i64,
+    start[4] as i64,
+    start[5],
+  );
+  let end_secs = date_to_absolute_seconds(
+    end[0] as i64,
+    end[1] as i64,
+    end[2] as i64,
+    end[3] as i64,
+    end[4] as i64,
+    end[5],
+  );
+
+  let mut result = Vec::new();
+
+  match step {
+    Step::Seconds(step_secs) => {
+      if step_secs <= 0.0 {
+        return unevaluated();
+      }
+      // Guard against pathologically large ranges.
+      let count = ((end_secs - start_secs) / step_secs).floor();
+      if count > 1_000_000.0 {
+        return unevaluated();
+      }
+      let mut secs = start_secs;
+      while secs <= end_secs + 1e-6 {
+        let (y, m, d, h, min, sec) = absolute_seconds_to_date(secs);
+        result.push(make_elem(y, m, d, h, min, sec));
+        secs += step_secs;
+      }
+    }
+    Step::Calendar { months } => {
+      if months <= 0 {
+        return unevaluated();
+      }
+      // Step by whole months, preserving the day/time of `start` and clamping
+      // the day to the number of days available in the target month.
+      let base_y = start[0] as i64;
+      let base_m0 = start[1] as i64 - 1; // zero-based month index
+      let base_d = start[2] as i64;
+      let h = start[3] as i64;
+      let min = start[4] as i64;
+      let sec = start[5];
+      let mut k: i64 = 0;
+      loop {
+        let total_m0 = base_m0 + k * months;
+        let y = base_y + total_m0.div_euclid(12);
+        let m = total_m0.rem_euclid(12) + 1;
+        let d = base_d.min(days_in_month(y, m));
+        let secs = date_to_absolute_seconds(y, m, d, h, min, sec);
+        if secs > end_secs + 1e-6 {
+          break;
+        }
+        result.push(make_elem(y, m, d, h, min, sec));
+        k += 1;
+        if k > 1_000_000 {
+          return unevaluated();
+        }
+      }
+    }
+  }
+
+  Ok(Expr::List(result.into()))
+}
+
 /// JulianDate[] / JulianDate[{y, m, d, h, min, s}] - Julian date of the
 /// current instant or of a proleptic-Gregorian date list. Wolfram has
 /// no input year zero: 0 and -1 both denote 1 BC (astronomical year 0),

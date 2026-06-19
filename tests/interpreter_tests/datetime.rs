@@ -1087,6 +1087,90 @@ mod cases {
   }
 }
 
+mod date_range {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn date_range_basic_daily() {
+    // Default increment is one day; each element is a six-field date list with
+    // a Real seconds component.
+    assert_case(
+      r#"DateRange[{2024, 1, 1}, {2024, 1, 3}]"#,
+      r#"{{2024, 1, 1, 0, 0, 0.}, {2024, 1, 2, 0, 0, 0.}, {2024, 1, 3, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_single_element() {
+    assert_case(
+      r#"DateRange[{2024, 1, 1}, {2024, 1, 1}]"#,
+      r#"{{2024, 1, 1, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_integer_increment_is_days() {
+    assert_case(
+      r#"DateRange[{2024, 1, 1}, {2024, 1, 10}, 2]"#,
+      r#"{{2024, 1, 1, 0, 0, 0.}, {2024, 1, 3, 0, 0, 0.}, {2024, 1, 5, 0, 0, 0.}, {2024, 1, 7, 0, 0, 0.}, {2024, 1, 9, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_quantity_days() {
+    assert_case(
+      r#"DateRange[{2024, 1, 1}, {2024, 1, 10}, Quantity[3, "Days"]]"#,
+      r#"{{2024, 1, 1, 0, 0, 0.}, {2024, 1, 4, 0, 0, 0.}, {2024, 1, 7, 0, 0, 0.}, {2024, 1, 10, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_quantity_weeks() {
+    assert_case(
+      r#"DateRange[{2024, 1, 1}, {2024, 1, 15}, Quantity[1, "Weeks"]]"#,
+      r#"{{2024, 1, 1, 0, 0, 0.}, {2024, 1, 8, 0, 0, 0.}, {2024, 1, 15, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_quantity_hours_preserves_time() {
+    assert_case(
+      r#"DateRange[{2024, 1, 1, 12, 0, 0}, {2024, 1, 1, 15, 0, 0}, Quantity[1, "Hours"]]"#,
+      r#"{{2024, 1, 1, 12, 0, 0.}, {2024, 1, 1, 13, 0, 0.}, {2024, 1, 1, 14, 0, 0.}, {2024, 1, 1, 15, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_calendar_months() {
+    assert_case(
+      r#"DateRange[{2024, 1, 15}, {2024, 4, 15}, Quantity[1, "Months"]]"#,
+      r#"{{2024, 1, 15, 0, 0, 0.}, {2024, 2, 15, 0, 0, 0.}, {2024, 3, 15, 0, 0, 0.}, {2024, 4, 15, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_calendar_years() {
+    assert_case(
+      r#"DateRange[{2020, 6, 1}, {2023, 6, 1}, Quantity[1, "Years"]]"#,
+      r#"{{2020, 6, 1, 0, 0, 0.}, {2021, 6, 1, 0, 0, 0.}, {2022, 6, 1, 0, 0, 0.}, {2023, 6, 1, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_string_unit() {
+    assert_case(
+      r#"DateRange[{2024, 1, 1}, {2024, 3, 1}, "Month"]"#,
+      r#"{{2024, 1, 1, 0, 0, 0.}, {2024, 2, 1, 0, 0, 0.}, {2024, 3, 1, 0, 0, 0.}}"#,
+    );
+  }
+
+  #[test]
+  fn date_range_reversed_is_empty() {
+    // Unlike DayRange, DateRange does not normalize a descending range.
+    assert_case(r#"DateRange[{2024, 1, 5}, {2024, 1, 1}]"#, r#"{}"#);
+  }
+}
+
 mod julian_date {
   use super::*;
 
