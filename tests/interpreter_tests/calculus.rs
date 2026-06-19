@@ -323,6 +323,41 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_deriv_over_power() {
+    // ∫ g'(x)/g(x)^n dx = g^(1-n)/(1-n) (u = g(x) substitution, n >= 2).
+    assert_eq!(
+      interpret("Integrate[x/(x^2 + 1)^2, x]").unwrap(),
+      "-1/2*1/(1 + x^2)"
+    );
+    assert_eq!(
+      interpret("Integrate[x/(x^2 + 1)^3, x]").unwrap(),
+      "-1/4*1/(1 + x^2)^2"
+    );
+    assert_eq!(
+      interpret("Integrate[x/(x^2 + 4)^2, x]").unwrap(),
+      "-1/2*1/(4 + x^2)"
+    );
+    // Numerator that is exactly g'(x).
+    assert_eq!(
+      interpret("Integrate[(2 x + 1)/(x^2 + x + 1)^2, x]").unwrap(),
+      "-(1 + x + x^2)^(-1)"
+    );
+    // Higher-degree base.
+    assert_eq!(
+      interpret("Integrate[x^2/(x^3 + 1)^2, x]").unwrap(),
+      "-1/3*1/(1 + x^3)"
+    );
+  }
+
+  #[test]
+  fn integrate_deriv_over_power_definite() {
+    assert_eq!(
+      interpret("Integrate[x/(x^2 + 1)^2, {x, 0, 1}]").unwrap(),
+      "1/4"
+    );
+  }
+
+  #[test]
   fn integrate_one_over_x_one_plus_log() {
     assert_eq!(
       interpret("Integrate[1/(x (1 + Log[x])), x]").unwrap(),

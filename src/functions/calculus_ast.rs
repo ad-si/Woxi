@@ -6321,6 +6321,83 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
 /// The test is exact: if `integrand · g / g'` evaluates to a value free of
 /// `var`, then `integrand == c · g'/g` identically, so the antiderivative is
 /// `c · Log[g]`.
+/// ∫ c·g'(x)/g(x)^n dx = c·g(x)^(1-n)/(1-n) for an integer n >= 2 (the u = g(x)
+/// substitution). Returns None unless the denominator is a power g^n (n >= 2)
+/// and the numerator is a nonzero constant multiple of g'(x).
+fn try_integrate_power_derivative(expr: &Expr, var: &str) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  // Extract the denominator: literal `a / b` or the Times[..., Power[d, -k]] form.
+  let den = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      right,
+      ..
+    } => (**right).clone(),
+    _ => extract_quotient_from_times(expr).map(|(_, d)| d)?,
+  };
+  // Denominator must be g^n with an integer n >= 2.
+  let (g, n): (Expr, i128) = match &den {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(k) => ((**left).clone(), *k),
+      _ => return None,
+    },
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      match &args[1] {
+        Expr::Integer(k) => (args[0].clone(), *k),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  if n < 2 || is_constant_wrt(&g, var) {
+    return None;
+  }
+  let dg = differentiate(&g, var).ok()?;
+  // ratio = expr · g^n / g' = numerator / g'  must be a nonzero constant.
+  let ratio = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      expr.clone(),
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![g.clone(), Expr::Integer(n)].into(),
+      },
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![dg, Expr::Integer(-1)].into(),
+      },
+    ]
+    .into(),
+  };
+  let c = crate::evaluator::evaluate_expr_to_expr(&ratio).ok()?;
+  if !is_constant_wrt(&c, var) || matches!(&c, Expr::Integer(0)) {
+    return None;
+  }
+  // result = c/(1 - n) * g^(1 - n)
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(c),
+        right: Box::new(Expr::Integer(1 - n)),
+      },
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![g, Expr::Integer(1 - n)].into(),
+      },
+    ]
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
 fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
   // Decompose into a denominator. Either a literal `a / b` or the canonical
   // Times[..., Power[d, -k]] form.
@@ -6681,6 +6758,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   // ∫ c·g'(x)/g(x) dx = c·Log[g(x)] for a sub-expression g (covers
   // transcendental g such as Log[x], Sin[x], 1 + E^x).
   if let Some(result) = try_integrate_log_derivative(expr, var) {
+    return Some(result);
+  }
+
+  // ∫ c·g'(x)/g(x)^n dx = c·g(x)^(1-n)/(1-n) (n >= 2), the u = g(x) substitution.
+  if let Some(result) = try_integrate_power_derivative(expr, var) {
     return Some(result);
   }
 
