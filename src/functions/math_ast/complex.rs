@@ -137,6 +137,14 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Re[Conjugate[x]] = Re[x]
+  if let Expr::FunctionCall { name, args: ca } = &args[0]
+    && name == "Conjugate"
+    && ca.len() == 1
+  {
+    return re_ast(&[ca[0].clone()]);
+  }
+
   match &args[0] {
     Expr::Integer(_)
     | Expr::Real(_)
@@ -217,6 +225,15 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Im expects exactly 1 argument".into(),
     ));
+  }
+
+  // Im[Conjugate[x]] = -Im[x]
+  if let Expr::FunctionCall { name, args: ca } = &args[0]
+    && name == "Conjugate"
+    && ca.len() == 1
+  {
+    let inner = im_ast(&[ca[0].clone()])?;
+    return times_ast(&[Expr::Integer(-1), inner]);
   }
 
   match &args[0] {
@@ -544,6 +561,18 @@ pub fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   // under a fractional power → NaN), so they correctly fall through.
   if is_real_valued(expr) {
     return Ok(expr.clone());
+  }
+
+  // Conjugate is an involution, and Re/Im/Abs/Arg are real-valued for any
+  // argument, so Conjugate of them is themselves.
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+  {
+    match name.as_str() {
+      "Conjugate" => return Ok(args[0].clone()),
+      "Re" | "Im" | "Abs" | "Arg" => return Ok(expr.clone()),
+      _ => {}
+    }
   }
 
   // Complex[a, b] -> Complex[a, -b]

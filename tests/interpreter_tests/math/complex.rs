@@ -261,6 +261,34 @@ mod conjugate_tests {
   }
 
   #[test]
+  fn conjugate_involution() {
+    // Conjugate is its own inverse, even after distributing over a sum.
+    assert_eq!(interpret("Conjugate[Conjugate[z]]").unwrap(), "z");
+    assert_eq!(interpret("Conjugate[Conjugate[a + b]]").unwrap(), "a + b");
+  }
+
+  #[test]
+  fn conjugate_of_real_valued_heads() {
+    // Re/Im/Abs/Arg are real-valued, so Conjugate leaves them unchanged.
+    assert_eq!(interpret("Conjugate[Re[z]]").unwrap(), "Re[z]");
+    assert_eq!(interpret("Conjugate[Im[z]]").unwrap(), "Im[z]");
+    assert_eq!(interpret("Conjugate[Abs[z]]").unwrap(), "Abs[z]");
+    assert_eq!(interpret("Conjugate[Arg[z]]").unwrap(), "Arg[z]");
+  }
+
+  #[test]
+  fn re_im_of_conjugate() {
+    // Re[Conjugate[z]] = Re[z]; Im[Conjugate[z]] = -Im[z].
+    assert_eq!(interpret("Re[Conjugate[z]]").unwrap(), "Re[z]");
+    assert_eq!(interpret("Im[Conjugate[z]]").unwrap(), "-Im[z]");
+    assert_eq!(
+      interpret("Re[Conjugate[x + I y]]").unwrap(),
+      "-Im[y] + Re[x]"
+    );
+    assert_eq!(interpret("Im[Conjugate[2 - 5 I]]").unwrap(), "5");
+  }
+
+  #[test]
   fn conjugate_complex_rational() {
     assert_eq!(
       interpret("Conjugate[1/2 + 3/4*I]").unwrap(),
